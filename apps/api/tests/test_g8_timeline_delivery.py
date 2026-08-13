@@ -137,6 +137,18 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
         delivery = delivery_response.json()["delivery"]
         assert delivery["status"] == "VERIFIED"
         assert client.get(f"/api/v1/delivery-packages/{delivery['id']}:verify").json()["delivery"]["status"] == "VERIFIED"
+        observed = client.get(f"/api/v1/episodes/{episode['id']}/timeline-status")
+        assert observed.status_code == 200, observed.text
+        status = observed.json()["status"]
+        assert status["timeline"]["revision_count"] == 1
+        assert status["subtitles"]["revision_count"] == 1
+        assert status["audio"] == {"binding_count": 1, "verified_local_count": 1}
+        assert status["renders"]["count"] == 1
+        assert status["renders"]["verified_count"] == 1
+        assert status["delivery"]["count"] == 1
+        assert status["delivery"]["verified_count"] == 1
+        assert status["read_only"] is True
+        assert status["runtime_contacted"] is False and status["network_contacted"] is False and status["mutated"] is False
 
         delivery_file = workspace.projects_root / str(project["root_rel"]) / str(delivery["rel_path"]) / "EPISODE_001.mp4"
         with delivery_file.open("ab") as changed:
