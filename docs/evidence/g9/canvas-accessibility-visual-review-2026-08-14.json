@@ -1,0 +1,25 @@
+{
+  "review_mode": "assistant_authorized_visual_review",
+  "scope": "G9 canvas accessibility baseline",
+  "reviewed_at": "2026-08-14T04:17:00+08:00",
+  "viewport": "1024x768",
+  "policy": "DOM/state inspection only; no original media requested; no business mutation.",
+  "assertions": {
+    "canvas_aria_label": true,
+    "keyboard_node_list_aria_label": true,
+    "search_input_placeholder": true,
+    "visible_focusable_controls": 28,
+    "direct_node_button_count": 2,
+    "selected_node_visible": true,
+    "horizontal_overflow": false,
+    "console_errors": [],
+    "page_errors": [],
+    "failed_responses": [],
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "mutated": false
+  },
+  "visual_result": "PASS",
+  "decision": "PASS_FOR_ACCESSIBILITY_BASELINE_ONLY",
+  "does_not_change": "This smoke result is not the full G9 accessibility checklist or the 100-300 node performance exit."
+}
