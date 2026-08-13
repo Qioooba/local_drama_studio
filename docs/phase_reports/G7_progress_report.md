@@ -15,6 +15,7 @@
 - Migration `0017_g7_zero_public_network_e2e`：真实 loopback HTTP 服务驱动 Comfy/LLM/diagnostics client；socket guard 记录本地连接，`203.0.113.1` 在 connect 前被拒绝。生产 attestation `51b05922-fce9-496e-bb9e-a627ba346f77`。
 - Migration `0018_g7_workspace_asset_authorization`：生产 KEYFRAME `0d389e44-0fc3-47e2-9edd-ee587ffdedf3` 重新计算内容 hash/size 后获得 `AUTHORIZED`；授权 `853fd791-0bc8-4cf5-bf12-fc54c3542caa`；BrandKit ACTIVE v1 `5a0d3a95-1aea-4482-a137-2a85439c8373`。
 - Profile Editor 真 UAT：1440×900 只做一次 DRAFT→validate，1280×800/1024×768 只读；三档零溢出、零 console/page error、零失败响应、零原片请求；PASS 8/8，缩略图为 720px WebP。
+- G7-05/G7-06 只读配置快照：`GET /api/v1/projects/{id}/configuration` 显示 ProductionPlanVersion、Profile binding matrix、DeliveryTargetVersion、冻结 Job/DeliveryPackage 影响；明确 Profile 切换不改写旧 Job、REMOTE transport 禁用；API 与三档 UI 验收通过。
 
 ## 当前硬阻塞
 
@@ -24,7 +25,7 @@
 
 ## 回归
 
-- `pnpm api:test:safe`：100 passed / 4 Comfy live deselected。
+- `pnpm api:test:safe`：102 passed / 4 Comfy live deselected。
 - `pnpm web:test`：9/9；`pnpm web:build`：TypeScript/Vite PASS。
 - Ruff PASS；mypy PASS（81 source files）。
 - 生产迁移 `0019→0020` 完成，在线备份与 `integrity_check=ok`，WAL；API 3210、Web 5173，ComfyUI 8188 无监听。

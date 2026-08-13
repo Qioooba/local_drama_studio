@@ -26,9 +26,10 @@ for (const [index, [width, height]] of sizes.entries()) {
     if (/\/content\b/.test(response.url())) mediaRequests.push(`original-content:${response.url()}`);
   });
   await page.goto(`http://127.0.0.1:5173/?view=profiles&project=${projectId}`, { waitUntil: "networkidle" });
+  await page.getByRole("heading", { name: "项目配置快照与切换影响" }).waitFor({ timeout: 15000 });
   await page.getByRole("heading", { name: "本地能力契约与不可变版本" }).waitFor();
 
-  const record = { width, height, mutating: index === 0, consoleErrors, pageErrors, failedResponses, originalVideoRequested: false, horizontalOverflow: false };
+  const record = { width, height, mutating: index === 0, consoleErrors, pageErrors, failedResponses, originalVideoRequested: false, horizontalOverflow: false, configurationSnapshot: true };
   if (index === 0) {
     // Always mutate a known immutable Published source; never re-validate a
     // DRAFT/PUBLISHED version left by a prior acceptance run.

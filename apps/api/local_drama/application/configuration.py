@@ -20,6 +20,12 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def _contract_hash(value: dict[str, Any]) -> str:
+    import hashlib
+
+    return hashlib.sha256(_json(value).encode("utf-8")).hexdigest()
+
+
 def _validate_local_target(spec: dict[str, Any]) -> None:
     target_rel = str(spec.get("path_rel", ""))
     if not target_rel or PurePosixPath(target_rel).is_absolute() or ".." in PurePosixPath(target_rel).parts:
@@ -144,3 +150,117 @@ class ConfigurationService:
         if not row["delivery_bound"]:
             blockers.append("DELIVERY_TARGET_NOT_BOUND")
         return blockers
+
+    def inspect_project_configuration(self, project_id: str) -> dict[str, Any]:
+        """Return a read-only project configuration snapshot and switch impact.
+
+        The snapshot is intentionally derived from persisted bindings and job
+        snapshots. It never probes a runtime or mutates a binding; historical
+        jobs remain tied to the profile version captured at submission time.
+        """
+        with self.database.connect() as connection:
+            project = connection.execute(
+                "SELECT id, code, title, production_plan_version_id FROM projects WHERE id=?",
+                (project_id,),
+            ).fetchone()
+            if project is None:
+                raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
+            plan = connection.execute(
+                """SELECT pp.id AS production_plan_id, pp.code, pp.title,
+                ppv.id AS version_id, ppv.version_no, ppv.plan_json, ppv.status
+                FROM production_plan_versions ppv
+                JOIN production_plans pp ON pp.id=ppv.production_plan_id
+                WHERE ppv.id=?""",
+                (project["production_plan_version_id"],),
+            ).fetchone()
+            bindings = connection.execute(
+                """SELECT ppb.capability, ppb.status AS binding_status,
+                epv.id AS profile_version_id, epv.version_no, epv.status AS profile_status,
+                epv.input_contract_json, epv.parameter_schema_json, epv.output_contract_json,
+                epv.resource_policy_json, ep.code AS profile_code, ep.title AS profile_title
+                FROM project_profile_bindings ppb
+                JOIN execution_profile_versions epv ON epv.id=ppb.execution_profile_version_id
+                JOIN execution_profiles ep ON ep.id=epv.execution_profile_id
+                WHERE ppb.project_id=? ORDER BY ppb.capability""",
+                (project_id,),
+            ).fetchall()
+            targets = connection.execute(
+                """SELECT dt.id AS target_id, dt.code, dt.title, dt.transport, dt.status AS target_status,
+                dtv.id AS version_id, dtv.version_no, dtv.target_spec_json, dtv.status AS version_status
+                FROM delivery_targets dt JOIN delivery_target_versions dtv ON dtv.delivery_target_id=dt.id
+                WHERE dt.project_id=? ORDER BY dt.code, dtv.version_no DESC""",
+                (project_id,),
+            ).fetchall()
+            profile_jobs = connection.execute(
+                """SELECT execution_profile_version_id AS version_id, COUNT(*) AS count
+                FROM jobs WHERE project_id=? AND execution_profile_version_id IS NOT NULL
+                GROUP BY execution_profile_version_id""",
+                (project_id,),
+            ).fetchall()
+            delivery_packages = connection.execute(
+                """SELECT dp.target_version_id AS version_id, COUNT(*) AS count
+                FROM delivery_packages dp
+                JOIN episode_render_versions erv ON erv.id=dp.episode_render_version_id
+                JOIN episodes e ON e.id=erv.episode_id
+                JOIN seasons s ON s.id=e.season_id
+                WHERE s.project_id=? GROUP BY dp.target_version_id""",
+                (project_id,),
+            ).fetchall()
+        job_counts = {str(row["version_id"]): int(row["count"]) for row in profile_jobs}
+        package_counts = {str(row["version_id"]): int(row["count"]) for row in delivery_packages}
+        parsed_plan = json.loads(str(plan["plan_json"])) if plan else None
+        profile_items = [
+            {
+                "capability": str(row["capability"]),
+                "binding_status": str(row["binding_status"]),
+                "profile_version_id": str(row["profile_version_id"]),
+                "profile_code": str(row["profile_code"]),
+                "profile_title": str(row["profile_title"]),
+                "version_no": int(row["version_no"]),
+                "profile_status": str(row["profile_status"]),
+                "contract_hash": _contract_hash({
+                    "input_contract": json.loads(str(row["input_contract_json"] or "{}")),
+                    "parameter_schema": json.loads(str(row["parameter_schema_json"] or "{}")),
+                    "output_contract": json.loads(str(row["output_contract_json"] or "{}")),
+                    "resource_policy": json.loads(str(row["resource_policy_json"] or "{}")),
+                }),
+                "frozen_job_count": job_counts.get(str(row["profile_version_id"]), 0),
+            }
+            for row in bindings
+        ]
+        target_items = [
+            {
+                "target_id": str(row["target_id"]),
+                "code": str(row["code"]),
+                "title": str(row["title"]),
+                "transport": str(row["transport"]),
+                "target_status": str(row["target_status"]),
+                "version_id": str(row["version_id"]),
+                "version_no": int(row["version_no"]),
+                "version_status": str(row["version_status"]),
+                "spec": json.loads(str(row["target_spec_json"] or "{}")),
+                "delivery_package_count": package_counts.get(str(row["version_id"]), 0),
+            }
+            for row in targets
+        ]
+        active_targets = [item for item in target_items if item["target_status"] == "ACTIVE" and item["version_status"] == "ACTIVE"]
+        return {
+            "project": {"id": str(project["id"]), "code": str(project["code"]), "title": str(project["title"])},
+            "production_plan": ({
+                "id": str(plan["production_plan_id"]), "code": str(plan["code"]), "title": str(plan["title"]),
+                "version_id": str(plan["version_id"]), "version_no": int(plan["version_no"]),
+                "status": str(plan["status"]), "plan": parsed_plan,
+            } if plan else None),
+            "profile_bindings": profile_items,
+            "delivery_targets": target_items,
+            "selected_delivery_target_version_id": active_targets[0]["version_id"] if len(active_targets) == 1 else None,
+            "impact": {
+                "profile_switches_preserve_frozen_jobs": True,
+                "profile_frozen_job_counts": {item["profile_version_id"]: item["frozen_job_count"] for item in profile_items},
+                "delivery_package_counts": {item["version_id"]: item["delivery_package_count"] for item in target_items},
+                "remote_transport_allowed": False,
+            },
+            "runtime_contacted": False,
+            "network_contacted": False,
+            "mutated": False,
+        }

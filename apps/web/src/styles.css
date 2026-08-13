@@ -161,6 +161,17 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .project-row span:first-child { display: grid; gap: 4px; }
 .project-row small, .profile-card small { color: #78746d; }
 .production-summary { margin-top: 26px; padding-top: 18px; border-top: 1px solid var(--border); }
+.configuration-snapshot { margin-top: 16px; }
+.configuration-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 14px 0; }
+.configuration-card { display: grid; gap: 5px; min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-muted); }
+.configuration-card small { color: var(--text-muted); font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
+.configuration-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.configuration-card span { color: var(--text-muted); font-size: 10px; }
+.configuration-table { display: grid; gap: 0; border-top: 1px solid var(--border); }
+.configuration-row { display: grid; grid-template-columns: 1fr 1.5fr 1fr .7fr; gap: 10px; align-items: center; min-width: 0; padding: 9px 0; border-bottom: 1px solid #e7e2d9; color: var(--text-muted); font-size: 11px; }
+.configuration-row > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.configuration-row .status-pill { justify-self: start; }
+.configuration-header { color: var(--text-muted); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
 .shot-row, .diagnostic-row { display: grid; grid-template-columns: 1.1fr .8fr 1fr 2fr; gap: 16px; align-items: center; padding: 12px 0; border-bottom: 1px solid #e7e2d9; color: var(--text-muted); font-size: 12px; }
 .shot-row strong, .diagnostic-row strong { color: var(--text); }
 .blocker-text { color: var(--attention); }
@@ -383,6 +394,7 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
   .profile-version-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .profile-contract-editor { padding-left: 0; padding-top: 18px; border-left: 0; border-top: 1px solid var(--border); }
   .review-detail { padding: 20px 0 0; border-top: 1px solid var(--border); border-left: 0; }
+  .configuration-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 760px) {

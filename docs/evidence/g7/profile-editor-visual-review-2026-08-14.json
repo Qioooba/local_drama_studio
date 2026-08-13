@@ -1,12 +1,12 @@
 {
   "review_mode": "assistant_authorized_visual_review",
-  "scope": "Profile Editor responsive acceptance",
+  "scope": "Profile Editor and project configuration snapshot responsive acceptance",
   "policy": "Only low-bitrate WebP thumbnails with max dimension 720px were loaded; no original media requested.",
   "reviewed_at": "2026-08-14",
   "screenshots": [
-    {"viewport": "1440x900", "thumbnail": "apps/web/output/playwright/profile-editor-flow-1440x900.webp", "max_dimension": 720, "visual_result": "PASS", "observations": ["dark persistent chrome and warm work surface remain legible", "profile list, contract fields, PASS feedback and actions are visible", "no clipping or horizontal overflow"]},
-    {"viewport": "1280x800", "thumbnail": "apps/web/output/playwright/profile-editor-flow-1280x800.webp", "max_dimension": 720, "visual_result": "PASS", "observations": ["workbench remains readable with clear status hierarchy", "published and draft states use text plus semantic color", "no clipping or horizontal overflow"]},
-    {"viewport": "1024x768", "thumbnail": "apps/web/output/playwright/profile-editor-flow-1024x768.webp", "max_dimension": 720, "visual_result": "PASS", "observations": ["collapsed navigation preserves primary controls", "two-column version list remains readable", "no clipping or horizontal overflow"]}
+    {"viewport": "1440x900", "thumbnail": "apps/web/output/playwright/profile-editor-flow-1440x900.webp", "max_dimension": 720, "visual_result": "PASS", "configuration_snapshot_visible": true, "observations": ["dark persistent chrome and warm work surface remain legible", "profile list, contract fields, PASS feedback, actions and read-only configuration snapshot are visible", "no clipping or horizontal overflow"]},
+    {"viewport": "1280x800", "thumbnail": "apps/web/output/playwright/profile-editor-flow-1280x800.webp", "max_dimension": 720, "visual_result": "PASS", "configuration_snapshot_visible": true, "observations": ["workbench remains readable with clear status hierarchy", "published and draft states use text plus semantic color", "no clipping or horizontal overflow"]},
+    {"viewport": "1024x768", "thumbnail": "apps/web/output/playwright/profile-editor-flow-1024x768.webp", "max_dimension": 720, "visual_result": "PASS", "configuration_snapshot_visible": true, "observations": ["collapsed navigation preserves primary controls", "two-column version list remains readable", "no clipping or horizontal overflow"]}
   ],
   "browser_assertions": {"console_errors": [], "page_errors": [], "failed_responses": [], "original_video_requested": false, "horizontal_overflow": false},
   "decision": "PASS_FOR_THIS_UI_ACCEPTANCE",

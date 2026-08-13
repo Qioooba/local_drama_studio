@@ -4,6 +4,7 @@ import { Background, Controls, MiniMap, ReactFlow, type Node, type NodeChange, a
 import "@xyflow/react/dist/style.css";
 import {
   getProductionCanvas,
+  getProjectConfiguration,
   getProfileVersion,
   getEpisodeProduction,
   getG6Readiness,
@@ -96,6 +97,7 @@ export function App() {
   const h3Runtime = useQuery({ queryKey: ["h3", "candidate-runtime"], queryFn: () => h3CandidateRuntime(), enabled: view === "generation" || view === "overview" });
   const reviewTemplates = useQuery({ queryKey: ["reviews", "templates"], queryFn: () => listReviewTemplates(), enabled: view === "reviews" });
   const selectedProject = projects.data?.items.some((item) => item.id === selectedProjectId) ? selectedProjectId : projects.data?.items[0]?.id ?? null;
+  const projectConfiguration = useQuery({ queryKey: ["project-configuration", selectedProject], queryFn: () => getProjectConfiguration(selectedProject as string), enabled: Boolean(selectedProject) && (view === "profiles" || view === "projects") });
   const seasons = useQuery({ queryKey: ["project", selectedProject, "seasons"], queryFn: () => listSeasons(selectedProject as string), enabled: Boolean(selectedProject) });
   const selectedSeason = seasons.data?.items[0]?.id ?? null;
   const episodes = useQuery({ queryKey: ["season", selectedSeason, "episodes"], queryFn: () => listEpisodes(selectedSeason as string), enabled: Boolean(selectedSeason) });
@@ -253,6 +255,7 @@ export function App() {
                 {production.data?.items.map((shot) => <div className="shot-row" key={String(shot.id)}><strong>{String(shot.code)}</strong><span>{String(shot.status)}</span><span className="blocker-text">{Array.isArray(shot.blockers) ? `${shot.blockers.length} 个阻塞` : "读取中"}</span><span>{String(shot.next_action)}</span></div>)}
                 {production.data?.items.length === 0 && <p className="empty-state">当前集还没有镜头；请从真实 API 创建镜头。</p>}
               </div>}
+              {projectConfiguration.data?.configuration && <ProjectConfigurationSnapshot configuration={projectConfiguration.data.configuration} />}
             </section>
           )}
 
@@ -262,7 +265,7 @@ export function App() {
 
           {view === "jobs" && <JobsPanel jobs={jobs.data?.items ?? []} loading={jobs.isPending} />}
 
-          {view === "profiles" && <ProfileConfigurationPanel profiles={profiles.data?.items ?? []} workflows={workflows.data?.items ?? []} workflowsLoading={workflows.isPending} onChanged={() => { void profiles.refetch(); }} />}
+          {view === "profiles" && <><ProfileConfigurationPanel profiles={profiles.data?.items ?? []} workflows={workflows.data?.items ?? []} workflowsLoading={workflows.isPending} onChanged={() => { void profiles.refetch(); }} />{projectConfiguration.data?.configuration && <ProjectConfigurationSnapshot configuration={projectConfiguration.data.configuration} />}</>}
 
           {view === "generation" && <GenerationWorkbench profiles={profiles.data?.items ?? []} videos={(reviewItems.data?.items ?? []).filter((item) => item.media_kind === "VIDEO")} h3={h3Runtime.data?.runtime} g6Readiness={g6Readiness.data?.readiness} i2vProbePlan={i2vProbePlan.data?.plan} shots={production.data?.items ?? []} selectedShotId={selectedShot} onSelectShot={selectShot} onOpenProfiles={() => navigate("profiles")} onOpenReviews={(mediaVersionId) => { void queryClient.invalidateQueries({ queryKey: ["reviews", "inbox"] }); void queryClient.invalidateQueries({ queryKey: ["gates", "g6"] }); void queryClient.invalidateQueries({ queryKey: ["gates", "g6", "i2v-probe-plan"] }); if (mediaVersionId) setSelectedReviewVersionId(mediaVersionId); setView("reviews"); writeLocationState({ view: "reviews", projectId: selectedProject, episodeId: selectedEpisode, shotId: selectedShot, reviewId: mediaVersionId ?? null }); }} />}
 
@@ -280,6 +283,23 @@ function parseObject(value: string, label: string): Record<string, unknown> {
   try { parsed = JSON.parse(value); } catch { throw new Error(`${label} 必须是有效 JSON。`); }
   if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") throw new Error(`${label} 必须是 JSON 对象。`);
   return parsed as Record<string, unknown>;
+}
+
+function ProjectConfigurationSnapshot({ configuration }: { configuration: import("../generated/api").ProjectConfiguration }) {
+  return <section className="panel configuration-snapshot" aria-labelledby="configuration-snapshot-title">
+    <div className="panel-heading"><div><p className="eyebrow">G7 PROJECT CONFIGURATION</p><h3 id="configuration-snapshot-title">项目配置快照与切换影响</h3></div><span className="status-pill">只读 · LOCAL_ONLY</span></div>
+    <p className="muted">当前绑定、版本和已冻结任务来自持久化状态。切换 Profile 不会改写历史 Job；交付目标必须显式选择，远程 transport 永不启用。</p>
+    <div className="configuration-grid">
+      <div className="configuration-card"><small>ProductionPlan</small><strong>{configuration.production_plan ? `${configuration.production_plan.code} · v${configuration.production_plan.version_no}` : "未绑定"}</strong><span>{configuration.production_plan?.status ?? "BLOCKED"}</span></div>
+      <div className="configuration-card"><small>DeliveryTargetVersion</small><strong>{configuration.selected_delivery_target_version_id ? (configuration.delivery_targets.find((item) => item.version_id === configuration.selected_delivery_target_version_id)?.code ?? "已选择") : "需明确选择"}</strong><span>{configuration.impact.remote_transport_allowed ? "REMOTE 可用" : "REMOTE 已禁用"}</span></div>
+      <div className="configuration-card"><small>Profile 矩阵</small><strong>{configuration.profile_bindings.length} 个绑定</strong><span>{configuration.profile_bindings.reduce((total, item) => total + item.frozen_job_count, 0)} 个历史 Job 快照</span></div>
+    </div>
+    <div className="configuration-table" role="table" aria-label="Profile 绑定矩阵">
+      <div className="configuration-row configuration-header" role="row"><strong>能力</strong><strong>Profile 版本</strong><strong>状态</strong><strong>冻结 Job</strong></div>
+      {configuration.profile_bindings.map((item) => <div className="configuration-row" role="row" key={`${item.capability}-${item.profile_version_id}`}><span>{item.capability}</span><span>{item.profile_code} · v{item.version_no}</span><span className="status-pill">{item.profile_status}</span><span>{item.frozen_job_count}</span></div>)}
+      {configuration.profile_bindings.length === 0 && <p className="empty-state">尚未绑定 Profile。</p>}
+    </div>
+  </section>;
 }
 
 function ProfileConfigurationPanel({ profiles, workflows, workflowsLoading, onChanged }: { profiles: Profile[]; workflows: WorkflowVersionSummary[]; workflowsLoading: boolean; onChanged: () => void }) {
