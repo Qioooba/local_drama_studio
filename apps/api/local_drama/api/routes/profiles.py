@@ -76,6 +76,22 @@ async def publish_profile_contract(profile_version_id: str, request: Request) ->
         raise api_error_from_domain(error) from error
 
 
+@router.post("/profile-versions/{profile_version_id}:validate-compatibility", operation_id="validateProfileCompatibility")
+async def validate_profile_compatibility(profile_version_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"compatibility": service(request).validate_compatibility(profile_version_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/profile-versions/{profile_version_id}:retire", operation_id="retireProfileVersion")
+async def retire_profile_version(profile_version_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"profile_version": service(request).retire_version(profile_version_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.post("/profiles:sync", operation_id="syncProfiles")
 async def sync_profiles(request: Request) -> dict[str, object]:
     try:

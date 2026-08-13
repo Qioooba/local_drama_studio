@@ -264,6 +264,7 @@ class ProfileService:
             "status": str(row["status"]),
             "revision": int(row["revision"]),
             **payload,
+            "capability_contract": json.loads(str(row["capability_json"] or "{}")),
             "contract_hash": self._contract_hash(payload),
             "validation": ({**dict(validation), "checks": json.loads(str(validation["checks_json"]))} if validation else None),
         }
@@ -422,6 +423,84 @@ class ProfileService:
             )
         return self.get_version(profile_version_id)
 
+    @staticmethod
+    def _compatibility_checks(row: Any) -> list[dict[str, Any]]:
+        input_contract = json.loads(str(row["input_contract_json"] or "{}"))
+        parameter_schema = json.loads(str(row["parameter_schema_json"] or "{}"))
+        output_contract = json.loads(str(row["output_contract_json"] or "{}"))
+        resource_policy = json.loads(str(row["resource_policy_json"] or "{}"))
+        checks: list[dict[str, Any]] = []
+        transport = str(input_contract.get("transport", ""))
+        checks.append({"code": "LOCAL_TRANSPORT", "passed": transport in {"LOOPBACK_HTTP", "LOCAL_PROCESS", "LOCAL_CLI"}})
+        slots = input_contract.get("input_slots", {})
+        slots_ok = isinstance(slots, dict) and all(
+            isinstance(spec, dict) and isinstance(spec.get("min", 0), int) and isinstance(spec.get("max", 0), int)
+            and 0 <= int(spec["min"]) <= int(spec["max"])
+            for spec in slots.values()
+        )
+        checks.append({"code": "INPUT_SLOT_BOUNDS", "passed": slots_ok})
+        seed = parameter_schema.get("seed")
+        checks.append({"code": "SEED_DETERMINISM", "passed": isinstance(seed, dict) and str(seed.get("determinism", "")) in {"EXPLICIT", "BEST_EFFORT", "NONDETERMINISTIC", "profile_declared"}})
+        checks.append({"code": "OUTPUT_MEDIA_KIND", "passed": str(output_contract.get("media_kind", "")) in {"IMAGE", "VIDEO", "AUDIO", "DOCUMENT"}})
+        checks.append({"code": "GPU_CONCURRENCY", "passed": resource_policy.get("gpu_heavy_concurrency") == 1})
+        matrix = parameter_schema.get("capabilities")
+        matrix_ok = isinstance(matrix, dict)
+        for name in ("extend", "V2V", "reference", "motion"):
+            item = matrix.get(name) if isinstance(matrix, dict) else None
+            support = item.get("support") if isinstance(item, dict) else None
+            valid_support = support in {"NATIVE", "PROMPT_FALLBACK", "UNSUPPORTED"}
+            required_inputs = item.get("required_inputs", []) if isinstance(item, dict) else []
+            inputs_ok = isinstance(required_inputs, list) and all(str(slot) in slots for slot in required_inputs)
+            fallback_ok = support != "PROMPT_FALLBACK" or (isinstance(item, dict) and item.get("prompt_fallback") is True)
+            checks.append({"code": f"CAPABILITY_{name.upper()}", "passed": bool(matrix_ok and valid_support and inputs_ok and fallback_ok)})
+        return checks
+
+    def validate_compatibility(self, profile_version_id: str, actor: str = "local-user") -> dict[str, Any]:
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT * FROM execution_profile_versions WHERE id=?", (profile_version_id,)).fetchone()
+        if row is None:
+            raise DomainRuleError("PROFILE_VERSION_NOT_FOUND", "ExecutionProfileVersion 不存在")
+        payload = self._contract_payload(row)
+        contract_hash = self._contract_hash(payload)
+        checks = self._compatibility_checks(row)
+        status = "PASS" if all(item["passed"] for item in checks) else "FAIL"
+        attestation_id = str(uuid.uuid4())
+        now = _utc_now()
+        with self.database.transaction() as connection:
+            connection.execute(
+                """INSERT INTO profile_compatibility_attestations
+                (id, profile_version_id, contract_hash, status, checks_json, created_at, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (attestation_id, profile_version_id, contract_hash, status, _json(checks), now, actor),
+            )
+            connection.execute(
+                """INSERT INTO audit_events
+                (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json)
+                VALUES (?, 'operator', 'PROFILE_COMPATIBILITY_VALIDATED', 'execution_profile_version', ?, ?, ?)""",
+                (actor, profile_version_id, f"Profile capability compatibility {status}", _json({"attestation_id": attestation_id})),
+            )
+        return {"id": attestation_id, "profile_version_id": profile_version_id, "contract_hash": contract_hash, "status": status, "checks": checks, "runtime_contacted": False, "network_contacted": False}
+
+    def retire_version(self, profile_version_id: str, actor: str = "local-user") -> dict[str, Any]:
+        now = _utc_now()
+        with self.database.transaction() as connection:
+            row = connection.execute("SELECT * FROM execution_profile_versions WHERE id=?", (profile_version_id,)).fetchone()
+            if row is None:
+                raise DomainRuleError("PROFILE_VERSION_NOT_FOUND", "ExecutionProfileVersion 不存在")
+            if row["status"] != "PUBLISHED":
+                raise DomainRuleError("PROFILE_RETIRE_REQUIRES_PUBLISHED", "只有 PUBLISHED ProfileVersion 可退休")
+            if connection.execute("SELECT 1 FROM project_profile_bindings WHERE execution_profile_version_id=? AND status='ACTIVE'", (profile_version_id,)).fetchone():
+                raise DomainRuleError("PROFILE_VERSION_IN_USE", "项目仍绑定该 ProfileVersion，不能退休")
+            if connection.execute("SELECT 1 FROM jobs WHERE execution_profile_version_id=?", (profile_version_id,)).fetchone():
+                raise DomainRuleError("PROFILE_VERSION_HAS_JOBS", "已有 Job 快照引用该 ProfileVersion，不能退休")
+            connection.execute("UPDATE execution_profile_versions SET status='RETIRED', updated_at=?, revision=revision+1 WHERE id=?", (now, profile_version_id))
+            connection.execute(
+                """INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json)
+                VALUES (?, 'operator', 'PROFILE_VERSION_RETIRED', 'execution_profile_version', ?, '退休未绑定的重复 ProfileVersion', ?)""",
+                (actor, profile_version_id, _json({"prior_status": "PUBLISHED"})),
+            )
+        return self.get_version(profile_version_id)
+
     def get_manifest(self) -> dict[str, Any]:
         return self.load().as_public_dict()
 
@@ -458,6 +537,22 @@ class ProfileService:
                         "PROFILE_VALIDATION_REQUIRED",
                         "DRAFT Profile 真实证据发布需要匹配当前 contract hash 的 PASS 验证证明",
                     )
+                contract_compatibility = connection.execute(
+                    """SELECT * FROM profile_compatibility_attestations WHERE profile_version_id=?
+                    ORDER BY created_at DESC LIMIT 1""",
+                    (candidate_version_id,),
+                ).fetchone()
+                if (
+                    contract_compatibility is None
+                    or contract_compatibility["status"] != "PASS"
+                    or contract_compatibility["contract_hash"] != self._contract_hash(contract_payload)
+                ):
+                    raise DomainRuleError(
+                        "PROFILE_COMPATIBILITY_REQUIRED",
+                        "DRAFT Profile 真实证据发布需要匹配当前 contract hash 的 PASS capability compatibility 证明",
+                    )
+            else:
+                contract_compatibility = None
             workflow = connection.execute(
                 "SELECT * FROM workflow_versions WHERE id=?", (workflow_version_id,)
             ).fetchone()
@@ -530,8 +625,16 @@ class ProfileService:
                 (candidate["execution_profile_id"], workflow_version_id),
             ).fetchone()
             if existing is not None:
-                existing_input_contract = json.loads(str(existing["input_contract_json"] or "{}"))
-                if existing_input_contract.get("input_slots") == workflow_input_slots:
+                effective_input = json.loads(str(candidate["input_contract_json"] or "{}"))
+                effective_input["input_slots"] = workflow_input_slots
+                effective_input["transport"] = "LOOPBACK_HTTP"
+                effective_payload = {
+                    "input_contract": effective_input,
+                    "parameter_schema": json.loads(str(candidate["parameter_schema_json"] or "{}")),
+                    "output_contract": json.loads(str(candidate["output_contract_json"] or "{}")),
+                    "resource_policy": json.loads(str(candidate["resource_policy_json"] or "{}")),
+                }
+                if self._contract_hash(effective_payload) == self._contract_hash(self._contract_payload(existing)):
                     return dict(existing)
             next_no = int(
                 connection.execute(
@@ -558,11 +661,24 @@ class ProfileService:
                     "evidence_job_attempt_id": evidence["source_job_attempt_id"],
                     "workflow_version_id": workflow_version_id,
                     "contract_validation_attestation_id": str(contract_validation["id"]) if contract_validation else None,
+                    "contract_compatibility_attestation_id": str(contract_compatibility["id"]) if contract_compatibility else None,
                     "manifest_capability": manifest_capability,
                 }
             )
             input_contract = json.loads(str(candidate["input_contract_json"] or "{}"))
-            input_contract["input_slots"] = workflow_input_slots
+            declared_slots = input_contract.get("input_slots", {})
+            if not isinstance(declared_slots, dict):
+                raise DomainRuleError("PROFILE_INPUT_CONTRACT_INVALID", "Profile input_slots 契约无效")
+            merged_slots = dict(declared_slots)
+            for slot_name, workflow_slot in workflow_input_slots.items():
+                if slot_name in merged_slots and merged_slots[slot_name] != workflow_slot:
+                    raise DomainRuleError(
+                        "PROFILE_WORKFLOW_INPUT_CONFLICT",
+                        "Profile 与 workflow 对同一 input slot 的约束不一致",
+                        {"slot": slot_name, "profile": merged_slots[slot_name], "workflow": workflow_slot},
+                    )
+                merged_slots[slot_name] = workflow_slot
+            input_contract["input_slots"] = merged_slots
             input_contract["transport"] = "LOOPBACK_HTTP"
             connection.execute(
                 """INSERT INTO execution_profile_versions

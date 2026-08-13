@@ -1896,6 +1896,212 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/gates/g7/network-e2e": {
+      "post": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "Run G7 Network E2E",
+        "operationId": "runG7NetworkE2E",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Rung7Networke2E"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/workspace-assets/authorize": {
+      "post": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "Authorize Workspace Asset",
+        "operationId": "authorizeWorkspaceAsset",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceAssetAuthorizationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Authorizeworkspaceasset"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/brand-kits": {
+      "post": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "Create Brand Kit",
+        "operationId": "createBrandKit",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrandKitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Createbrandkit"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/model-compatibility-report": {
+      "post": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "Create Model Compatibility Report",
+        "operationId": "createModelCompatibilityReport",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelCompatibilityRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Createmodelcompatibilityreport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/imports": {
       "post": {
         "tags": [
@@ -3769,6 +3975,94 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Publishprofilecontractversion"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/profile-versions/{profile_version_id}:validate-compatibility": {
+      "post": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "Validate Profile Compatibility",
+        "operationId": "validateProfileCompatibility",
+        "parameters": [
+          {
+            "name": "profile_version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Validateprofilecompatibility"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/profile-versions/{profile_version_id}:retire": {
+      "post": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "Retire Profile Version",
+        "operationId": "retireProfileVersion",
+        "parameters": [
+          {
+            "name": "profile_version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Retireprofileversion"
                 }
               }
             }
@@ -6827,6 +7121,35 @@
         ],
         "title": "BatchPreflightRequest"
       },
+      "BrandKitRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "tokens": {
+            "additionalProperties": true,
+            "type": "object",
+            "minProperties": 1,
+            "title": "Tokens"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "title",
+          "tokens"
+        ],
+        "title": "BrandKitRequest"
+      },
       "BreakdownRequest": {
         "properties": {
           "profile_version_id": {
@@ -7710,6 +8033,20 @@
           "source_path"
         ],
         "title": "MediaImportRequest"
+      },
+      "ModelCompatibilityRequest": {
+        "properties": {
+          "model_artifact_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Model Artifact Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_artifact_id"
+        ],
+        "title": "ModelCompatibilityRequest"
       },
       "PostProcessRecipeRequest": {
         "properties": {
@@ -8943,6 +9280,20 @@
           "validation_id"
         ],
         "title": "WorkflowPublishRequest"
+      },
+      "WorkspaceAssetAuthorizationRequest": {
+        "properties": {
+          "media_version_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Media Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "media_version_id"
+        ],
+        "title": "WorkspaceAssetAuthorizationRequest"
       }
     }
   }

@@ -18,7 +18,7 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         profile_columns = {row[1] for row in connection.execute("PRAGMA table_info(execution_profile_versions)")}
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         foreign_keys = connection.execute("PRAGMA foreign_keys").fetchone()[0]
-    assert version == "0015_g7_profile_contract_editor"
+    assert version == "0019_g7_model_compatibility_reports"
     assert "provider_random_nonce" in variant_columns
     assert {"requested_time_us", "resolved_time_us", "source_sha256", "extraction_method"} <= anchor_columns
     assert "source_artifact_id" in media_columns
@@ -47,6 +47,11 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         "canvas_layouts",
         "workflow_validation_attestations",
         "profile_validation_attestations",
+        "profile_compatibility_attestations",
+        "g7_network_e2e_attestations",
+        "workspace_asset_authorizations",
+        "brand_kits",
+        "model_compatibility_reports",
         "canvas_execution_plans",
         "prompts",
         "prompt_revisions",

@@ -26,6 +26,9 @@ export type HealthCheck = { status: string; checks: Record<string, string> };
 export type SystemContract = Record<string, string>;
 export type Project = { id: string; code: string; title: string; status: string; revision: number; [key: string]: unknown };
 export type Profile = { id: string; code: string; title: string; version_id: string; capability: string; status: string; [key: string]: unknown };
+export type ProfileContract = { input_contract: Record<string, unknown>; parameter_schema: Record<string, unknown>; output_contract: Record<string, unknown>; resource_policy: Record<string, unknown> };
+export type ProfileValidation = { id: string; profile_version_id?: string; contract_hash: string; status: 'PASS' | 'FAIL'; checks: Array<{ code: string; passed: boolean; label?: string }>; runtime_contacted?: false; network_contacted?: false };
+export type ProfileVersionDetail = { id: string; execution_profile_id: string; code: string; title: string; version_no: number; capability: string; status: string; revision: number; input_contract: Record<string, unknown>; parameter_schema: Record<string, unknown>; output_contract: Record<string, unknown>; resource_policy: Record<string, unknown>; capability_contract?: Record<string, unknown>; contract_hash: string; validation: ProfileValidation | null };
 export type DiagnosticRun = { id: string; status: string; checks: Array<{ code: string; category: string; status: string; observed: Record<string, unknown> }> };
 export type ReviewTemplate = { id: string; code: string; version_no: number; subject_type: string; items: Array<{ id: string; label: string; required: boolean }> };
 export type ReviewInboxItem = { media_version_id: string; media_asset_id: string; project_id: string; media_kind: string; stage: string; decision: string | null; is_stale: number | null; [key: string]: unknown };
@@ -69,6 +72,22 @@ export async function listProjects(baseUrl = ''): Promise<{ items: Project[] }> 
 
 export async function listProfiles(baseUrl = ''): Promise<{ items: Profile[] }> {
   return requestJson<{ items: Profile[] }>('/api/v1/profiles', undefined, baseUrl);
+}
+
+export async function getProfileVersion(profileVersionId: string, baseUrl = ''): Promise<{ profile_version: ProfileVersionDetail }> {
+  return requestJson(`/api/v1/profile-versions/${encodeURIComponent(profileVersionId)}`, undefined, baseUrl);
+}
+
+export async function deriveProfileContractVersion(profileVersionId: string, payload: { expected_source_revision: number; input_contract: Record<string, unknown>; parameter_schema: Record<string, unknown>; output_contract: Record<string, unknown>; resource_policy: Record<string, unknown> }, baseUrl = ''): Promise<{ profile_version: ProfileVersionDetail }> {
+  return requestJson(`/api/v1/profile-versions/${encodeURIComponent(profileVersionId)}:derive-contract`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function validateProfileContractVersion(profileVersionId: string, baseUrl = ''): Promise<{ validation: ProfileValidation }> {
+  return requestJson(`/api/v1/profile-versions/${encodeURIComponent(profileVersionId)}:validate-contract`, { method: 'POST' }, baseUrl);
+}
+
+export async function publishProfileContractVersion(profileVersionId: string, baseUrl = ''): Promise<{ profile_version: ProfileVersionDetail }> {
+  return requestJson(`/api/v1/profile-versions/${encodeURIComponent(profileVersionId)}:publish-contract`, { method: 'POST' }, baseUrl);
 }
 
 export async function latestDiagnostics(baseUrl = ''): Promise<{ run: DiagnosticRun | null }> {

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
+import json
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -49,10 +51,34 @@ class G7ReadinessService:
             editor_published = [
                 row
                 for row in published_profiles
-                if bool(__import__("json").loads(str(row["output_contract_json"] or "{}")))
-                and bool(__import__("json").loads(str(row["resource_policy_json"] or "{}")))
-                and bool(__import__("json").loads(str(row["capability_json"] or "{}")).get("contract_validation_attestation_id"))
+                if bool(json.loads(str(row["output_contract_json"] or "{}")))
+                and bool(json.loads(str(row["resource_policy_json"] or "{}")))
+                and bool(json.loads(str(row["capability_json"] or "{}")).get("contract_validation_attestation_id"))
             ]
+            compatibility_candidates = connection.execute(
+                """SELECT epv.id, epv.input_contract_json, epv.parameter_schema_json,
+                epv.output_contract_json, epv.resource_policy_json, epv.capability_json,
+                pca.contract_hash
+                FROM execution_profile_versions epv
+                JOIN profile_compatibility_attestations pca
+                ON pca.profile_version_id=epv.id
+                OR pca.id=json_extract(epv.capability_json, '$.contract_compatibility_attestation_id')
+                WHERE epv.status='PUBLISHED' AND pca.status='PASS'
+                AND pca.created_at=(SELECT MAX(p2.created_at) FROM profile_compatibility_attestations p2
+                WHERE p2.profile_version_id=epv.id
+                OR p2.id=json_extract(epv.capability_json, '$.contract_compatibility_attestation_id'))"""
+            ).fetchall()
+            compatibility_profiles = []
+            for row in compatibility_candidates:
+                payload = {
+                    "input_contract": json.loads(str(row["input_contract_json"] or "{}")),
+                    "parameter_schema": json.loads(str(row["parameter_schema_json"] or "{}")),
+                    "output_contract": json.loads(str(row["output_contract_json"] or "{}")),
+                    "resource_policy": json.loads(str(row["resource_policy_json"] or "{}")),
+                }
+                contract_hash = hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+                if contract_hash == str(row["contract_hash"]):
+                    compatibility_profiles.append(row)
             bindings = connection.execute(
                 """SELECT ppb.capability, ppb.status, ppb.execution_profile_version_id, epv.status AS profile_status
                 FROM project_profile_bindings ppb
@@ -80,6 +106,23 @@ class G7ReadinessService:
                 if row["transport"] == "LOCAL_FILESYSTEM" and row["status"] == "ACTIVE" and row["version_status"] == "ACTIVE"
             ]
             remote_targets = [row for row in targets if row["transport"] != "LOCAL_FILESYSTEM"]
+            network_e2e = connection.execute(
+                """SELECT id, status FROM g7_network_e2e_attestations
+                WHERE project_id=? ORDER BY created_at DESC LIMIT 1""",
+                (project_id,),
+            ).fetchone()
+            workspace_asset = connection.execute(
+                """SELECT waa.id, bk.id AS brand_kit_id FROM workspace_asset_authorizations waa
+                JOIN brand_kits bk ON bk.project_id=waa.project_id AND bk.status='ACTIVE'
+                WHERE waa.project_id=? AND waa.authorization_status='AUTHORIZED'
+                AND waa.license_status='LOCAL_PROJECT_AUTHORIZED'
+                ORDER BY waa.updated_at DESC LIMIT 1""",
+                (project_id,),
+            ).fetchone()
+            model_report = connection.execute(
+                """SELECT id FROM model_compatibility_reports WHERE report_status='PASS'
+                AND license_status IN ('LOCAL_LICENSE_VERIFIED','USER_OWNED') ORDER BY created_at DESC LIMIT 1"""
+            ).fetchone()
 
         active_published_bindings = [
             row for row in bindings if row["status"] == "ACTIVE" and row["profile_status"] == "PUBLISHED"
@@ -95,10 +138,10 @@ class G7ReadinessService:
             # These G7 exit items need dedicated persisted evidence. They remain hard
             # blockers instead of being inferred from the older G3 configuration tables.
             {"code": "PROFILE_EDITOR_TEST_PUBLISH", "passed": bool(editor_published), "count": len(editor_published)},
-            {"code": "PROFILE_CAPABILITY_COMPATIBILITY", "passed": False},
-            {"code": "ZERO_PUBLIC_NETWORK_E2E", "passed": False},
-            {"code": "WORKSPACE_ASSET_AUTHORIZATION", "passed": False},
-            {"code": "MODEL_LICENSE_HASH_QUANTIZATION_REPORT", "passed": False},
+            {"code": "PROFILE_CAPABILITY_COMPATIBILITY", "passed": bool(compatibility_profiles), "count": len(compatibility_profiles)},
+            {"code": "ZERO_PUBLIC_NETWORK_E2E", "passed": bool(network_e2e and network_e2e["status"] == "PASS")},
+            {"code": "WORKSPACE_ASSET_AUTHORIZATION", "passed": bool(workspace_asset)},
+            {"code": "MODEL_LICENSE_HASH_QUANTIZATION_REPORT", "passed": bool(model_report)},
         ]
         first_blocker = next((item["code"] for item in checks if not item["passed"]), None)
         return {
@@ -113,6 +156,10 @@ class G7ReadinessService:
                 "production_plan_version_id": str(plan["production_plan_version_id"]) if plan else None,
                 "profile_binding_version_ids": [str(row["execution_profile_version_id"]) for row in active_published_bindings],
                 "delivery_target_version_ids": [str(row["id"]) for row in active_local_targets],
+                "network_e2e_attestation_id": str(network_e2e["id"]) if network_e2e else None,
+                "workspace_asset_authorization_id": str(workspace_asset["id"]) if workspace_asset else None,
+                "brand_kit_id": str(workspace_asset["brand_kit_id"]) if workspace_asset else None,
+                "model_compatibility_report_id": str(model_report["id"]) if model_report else None,
             },
             "runtime_contacted": False,
             "network_contacted": False,
