@@ -103,7 +103,7 @@
 | layout persistence 与业务依赖隔离 | VERIFIED | `canvas_layouts`、未知 node 拒绝、layout 后 edges 不变测试 |
 | run node/from/to/range preflight | VERIFIED | `canvas_execution_plans`、max node/GPU concurrency/HITL/blocker 计划 |
 | 画布性能基础、键盘/不可连接/不可删除替代约束 | PARTIAL / VERIFIED_BASELINE | lazy graph、300 node 上限、节点点击；正式 100—300 交互 benchmark 待 UAT |
-| 三视图 route/selection 同步、画布搜索与上/下游聚焦 | VERIFIED BASELINE | URL 状态同步；G9 画布新增本地搜索、传递闭包聚焦上游/下游；只改变可视节点集合，不改变业务 edges；App tests + 三档 Playwright |
+| 三视图 route/selection 同步、画布搜索与上/下游聚焦 | VERIFIED BASELINE | URL 状态同步；G9 画布新增本地搜索、传递闭包聚焦上游/下游；节点/键盘选择会回写 `shot` 查询参数并可从 URL 恢复；只改变可视节点集合，不改变业务 edges；App tests + 三档 Playwright + 1024 route-sync Playwright |
 | automation/webhook/产能看板 | IN_PROGRESS | P1 后续 G9 工作项；尚未实现，禁止以静态声明冒充 loopback webhook 或真实产能数据 |
 | G9-09 本机队列产能观测 | VERIFIED BASELINE | `GET /capacity/snapshot`；真实 SQLite Job/Attempt 状态、GPU 并发和近 24h 完成数；`OBSERVED_NOT_BENCHMARKED`、`would_create_jobs=false`、无 runtime/network/mutation；`test_capacity_snapshot.py` |
 

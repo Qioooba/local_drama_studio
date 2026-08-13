@@ -9,6 +9,7 @@
 - G9-09 只读产能快照：`GET /api/v1/capacity/snapshot` 基于真实 SQLite Job/Attempt 观测排队、Worker、GPU_H3 并发与近 24h 完成数，标记 `OBSERVED_NOT_BENCHMARKED`；不创建任务、不 claim lease、不触碰 runtime/network。
 - 任务页 1024×768 真实 UAT：快照显示 `queued=1`、`active_attempt=0`、`GPU=0/1`、近 24h 完成 `12`；零 console/page error、零失败响应、零水平溢出；视觉证据仅为 720px WebP。
 - G9-07 键盘替代操作：画布提供独立键盘节点按钮列表；Enter/Space 可选中节点并驱动聚焦/预检，不编辑业务边或布局；1024×768 验收 10 个键盘按钮、零错误、零溢出。
+- G9-06 route/selection 同步：画布节点和键盘按钮选择会写入现有 `shot` URL 参数，刷新后由同一 read model 恢复选中 shot；1024×768 真实验收无错误/失败响应；证据 `docs/evidence/g9/canvas-route-sync-visual-review-2026-08-14.json`。
 - episode/shot lazy graph read model；节点汇总 take、variant、blocker、active/failed job 和连续性约束。
 - 视觉布局独立持久化，乐观并发；布局提交不能增加、删除或改变业务 edges。
 - NODE/FROM/TO/RANGE 执行 preflight，只生成计划，不直接绕过人工门禁提交任务。

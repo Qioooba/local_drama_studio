@@ -1,0 +1,12 @@
+{
+  "review_mode": "assistant_authorized_visual_review",
+  "scope": "G9-06 canvas selection and route synchronization",
+  "policy": "Only a <=720px low-bitrate WebP thumbnail was loaded; no original media was requested.",
+  "reviewed_at": "2026-08-14T04:02:00+08:00",
+  "thumbnail": "apps/web/output/playwright/canvas-route-sync-1024x768.webp",
+  "max_dimension": 720,
+  "visual_result": "PASS",
+  "browser_assertions": {"shot_query_updated": true, "selected_node_visible": true, "console_errors": [], "page_errors": [], "failed_responses": [], "horizontal_overflow": false},
+  "decision": "PASS_FOR_THIS_UI_ACCEPTANCE",
+  "does_not_change": "Selection synchronization changes URL/read-model context only; it does not mutate business edges or submit work."
+}
