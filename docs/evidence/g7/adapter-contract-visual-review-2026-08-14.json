@@ -1,0 +1,23 @@
+{
+  "review_mode": "assistant_authorized_visual_review",
+  "scope": "G7 local adapter contract diagnostics panel",
+  "policy": "Only a <=720px low-bitrate WebP thumbnail was loaded; no original media was requested.",
+  "reviewed_at": "2026-08-14T03:31:00+08:00",
+  "thumbnail": "apps/web/output/playwright/adapter-contracts-diagnostics-1024x768.webp",
+  "max_dimension": 720,
+  "visual_result": "PASS",
+  "browser_assertions": {
+    "adapter_rows": 5,
+    "console_errors": [],
+    "page_errors": [],
+    "failed_responses": [],
+    "horizontal_overflow": false
+  },
+  "observations": [
+    "diagnostics workbench keeps the adapter registry in the warm-surface panel hierarchy",
+    "four adapter declarations are readable with transport, status and capability columns",
+    "LOCAL_ONLY and no-runtime/no-network wording remain visible; no clipping"
+  ],
+  "decision": "PASS_FOR_THIS_UI_ACCEPTANCE",
+  "does_not_change": "This visual review does not alter G7 readiness or create model license evidence."
+}

@@ -435,7 +435,7 @@ function ProjectList({ projects, selectedProjectId, onSelect }: { projects: Arra
 
 function DiagnosticPanel({ run }: { run: { status: string; checks: Array<{ code: string; status: string; observed: Record<string, unknown> }> } | null }) {
   if (!run) return <p className="empty-state">还没有诊断记录；点击“运行诊断”执行本机只读检查。</p>;
-  return <div className="diagnostic-grid"><div className="diagnostic-status"><span>整体状态</span><strong>{run.status}</strong></div>{run.checks.map((check) => <div className="diagnostic-row" key={check.code}><span>{check.code}</span><strong>{check.status}</strong></div>)}</div>;
+  return <div className="diagnostic-grid"><div className="diagnostic-status"><span>整体状态</span><strong>{run.status}</strong></div>{run.checks.map((check, index) => <div className="diagnostic-row" key={`${check.code}-${index}`}><span>{check.code}</span><strong>{check.status}</strong></div>)}</div>;
 }
 
 function ReviewInboxPanel({
