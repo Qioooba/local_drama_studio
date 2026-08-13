@@ -6,6 +6,11 @@
   "thumbnail": "apps/web/output/playwright/g8-timeline-status-1024x768.webp",
   "max_dimension": 720,
   "viewport": "1024x768",
+  "viewport_matrix": [
+    {"viewport": "1440x900", "console_errors": [], "page_errors": [], "failed_responses": [], "horizontal_overflow": false, "truthful_empty_state_visible": true},
+    {"viewport": "1280x800", "console_errors": [], "page_errors": [], "failed_responses": [], "horizontal_overflow": false, "truthful_empty_state_visible": true},
+    {"viewport": "1024x768", "console_errors": [], "page_errors": [], "failed_responses": [], "horizontal_overflow": false, "truthful_empty_state_visible": true}
+  ],
   "visual_result": "PASS",
   "browser_assertions": {
     "truthful_empty_state_visible": true,
