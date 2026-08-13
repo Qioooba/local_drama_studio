@@ -22,6 +22,8 @@ UI evidence
 - graph is loaded by episode page and capped by backend at 300 visible nodes
 - local search plus upstream/downstream focus filters only the rendered read model; business edges remain backend-authoritative and unchanged
 - keyboard node selection and React Flow clicks sync the existing `shot` URL parameter; a 1024×768 route-sync run restored the selected node without mutation
+- selected-node read model includes `variant_lineage`, `experiment_progress`, and deduplicated `adjacent_constraints`; the UI labels these as read-only and reports empty real data explicitly
+- G9-08 browser smoke (local in-app browser): canvas route loaded with real SHOT_001 lineage (9 variants), selected-node detail rendered, and 1440×900 / 1280×800 / 1024×768 checks each reported canvas/detail present with `scrollWidth - clientWidth = 0`; no ComfyUI listener was present.
 
 Exit decision
 - automated baseline: PASS

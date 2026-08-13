@@ -106,6 +106,7 @@
 | 三视图 route/selection 同步、画布搜索与上/下游聚焦 | VERIFIED BASELINE | URL 状态同步；G9 画布新增本地搜索、传递闭包聚焦上游/下游；节点/键盘选择会回写 `shot` 查询参数并可从 URL 恢复；只改变可视节点集合，不改变业务 edges；App tests + 三档 Playwright + 1024 route-sync Playwright |
 | automation/webhook/产能看板 | IN_PROGRESS | P1 后续 G9 工作项；尚未实现，禁止以静态声明冒充 loopback webhook 或真实产能数据 |
 | G9-09 本机队列产能观测 | VERIFIED BASELINE | `GET /capacity/snapshot`；真实 SQLite Job/Attempt 状态、GPU 并发和近 24h 完成数；`OBSERVED_NOT_BENCHMARKED`、`would_create_jobs=false`、无 runtime/network/mutation；`test_capacity_snapshot.py` |
+| G9-08 变体谱系、实验进度、相邻边界约束只读可视化 | VERIFIED BASELINE | Canvas graph read model 汇总真实 generation_variants/generation_experiments/experiment_cells/shot_transition_constraints；选中节点显示摘要，空数据不造数；`test_g9_canvas.py`、G9 validation evidence |
 
 ## G6 历史进度状态（已由 2026-08-14 退出证据取代）
 

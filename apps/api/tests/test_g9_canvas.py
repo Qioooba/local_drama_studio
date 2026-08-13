@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from local_drama.application.generation import GenerationService
 from local_drama.application.projects import ProjectService
 from local_drama.main import create_app
 
@@ -29,6 +30,10 @@ def test_g9_lazy_canvas_layout_is_separate_from_dependencies_and_preflights(work
         graph = first.json()["graph"]
         assert graph["page"] == {"cursor": 0, "limit": 20, "returned_shots": 20, "total_shots": 62, "next_cursor": 20}
         assert len(graph["nodes"]) == 100
+        assert {"variant_lineage", "experiment_progress", "adjacent_constraints"}.issubset(graph["nodes"][0])
+        assert graph["nodes"][0]["variant_lineage"] == []
+        assert graph["nodes"][0]["experiment_progress"] == []
+        assert graph["nodes"][0]["adjacent_constraints"] == []
         assert graph["invariants"]["layout_changes_business_dependencies"] is False
         original_edges = graph["edges"]
         node_id = graph["nodes"][0]["id"]
@@ -70,3 +75,28 @@ def test_g9_lazy_canvas_layout_is_separate_from_dependencies_and_preflights(work
         next_page = client.get(f"/api/v1/canvas/EPISODE/{episode['id']}?cursor=20&limit=20").json()["graph"]
         assert next_page["page"]["returned_shots"] == 20
         assert next_page["nodes"][0]["shot_code"] == "S021"
+
+
+def test_g9_canvas_node_detail_aggregates_real_lineage_experiment_and_constraints(workspace, database) -> None:
+    projects = ProjectService(database, workspace.projects_root)
+    project = projects.create_project(code="g9_detail", title="G9 detail", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1, target_duration_ms=60_000, allow_unconfigured_capabilities=True)
+    season = projects.list_seasons(str(project["id"]))[0]
+    episode = projects.list_episodes(str(season["id"]))[0]
+    first = projects.create_shot(str(episode["id"]), "S001", 1000)
+    second = projects.create_shot(str(episode["id"]), "S002", 1000)
+    intent = GenerationService(database, workspace).create_intent(str(project["id"]), "SHOT", str(first["id"]), "I2V", "canvas detail")
+    with database.transaction() as connection:
+        now = "2026-08-14T00:00:00Z"
+        connection.execute("""INSERT INTO generation_experiments
+            (id, intent_id, title, axis_definitions_json, cell_count, max_parallel, resource_estimate_json, status, plan_hash, created_at, updated_at, created_by, revision, schema_version)
+            VALUES (?, ?, 'canvas experiment', '{\"axes\":{\"seed\":[1,2]}}', 2, 1, '{}', 'CONFIRMED', 'hash', ?, ?, 'test', 1, 'v2')""", ("exp-g9-detail", str(intent["id"]), now, now))
+        connection.execute("""INSERT INTO experiment_cells (id, experiment_id, cell_key, variant_id, job_id, status) VALUES ('cell-g9-1', 'exp-g9-detail', 'seed=1', NULL, NULL, 'SUCCEEDED')""")
+        connection.execute("""INSERT INTO shot_transition_constraints
+            (id, from_shot_id, to_shot_id, constraint_type, enforcement, compatibility_status, note, created_at, updated_at, created_by, revision, schema_version)
+            VALUES ('constraint-g9-detail', ?, ?, 'POSE_CONTINUITY', 'HARD', 'PASS', 'canvas detail', ?, ?, 'test', 1, 'v2')""", (str(first["id"]), str(second["id"]), now, now))
+    from local_drama.application.canvas import ProductionCanvasService
+
+    graph = ProductionCanvasService(database).graph("EPISODE", str(episode["id"]))
+    direct = next(node for node in graph["nodes"] if node["shot_id"] == str(first["id"]) and node["type"] == "DIRECT")
+    assert direct["experiment_progress"] == [{"id": "exp-g9-detail", "title": "canvas experiment", "status": "CONFIRMED", "cell_count": 2, "expanded_count": 1, "succeeded_count": 1, "failed_count": 0}]
+    assert direct["adjacent_constraints"][0]["constraint_type"] == "POSE_CONTINUITY"

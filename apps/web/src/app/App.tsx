@@ -430,7 +430,7 @@ function ProductionCanvasPanel({ episodeId, selectedShotId, onSelectShot }: { ep
     setNodes(graph.nodes.map((item, index) => ({
       id: item.id,
       position: item.position ?? { x: (index % 5) * 230, y: Math.floor(index / 5) * 145 },
-      data: { label: item.label, state: item.state, blockers: item.blockers, takeCount: item.take_count, variantCount: item.variant_count },
+      data: { label: item.label, state: item.state, blockers: item.blockers, takeCount: item.take_count, variantCount: item.variant_count, variantLineage: item.variant_lineage, experimentProgress: item.experiment_progress, adjacentConstraints: item.adjacent_constraints },
       className: `canvas-node state-${item.state.toLowerCase()}`,
     })));
   }, [graph]);
@@ -451,6 +451,7 @@ function ProductionCanvasPanel({ episodeId, selectedShotId, onSelectShot }: { ep
   }, [allEdges, focus, nodes, search, selectedNodeId]);
   const visibleNodes = useMemo(() => nodes.filter((node) => visibleNodeIds.has(node.id)), [nodes, visibleNodeIds]);
   const edges = useMemo(() => allEdges.filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target)), [allEdges, visibleNodeIds]);
+  const selectedGraphNode = graph?.nodes.find((item) => item.id === selectedNodeId) ?? null;
   const onNodesChange = useCallback((changes: NodeChange[]) => setNodes((items) => applyNodeChanges(changes, items)), []);
   const saveMutation = useMutation({
     mutationFn: () => saveProductionCanvasLayout("EPISODE", episodeId as string, { expected_revision: graph?.layout.revision || undefined, positions: Object.fromEntries(nodes.map((node) => [node.id, node.position])), groups: graph?.layout.groups, viewport: graph?.layout.viewport }),
@@ -470,6 +471,7 @@ function ProductionCanvasPanel({ episodeId, selectedShotId, onSelectShot }: { ep
     <div className="canvas-node-list" aria-label="键盘节点列表">{visibleNodes.map((node) => <button key={`keyboard-${node.id}`} className={selectedNodeId === node.id ? "selected" : ""} onClick={() => { setSelectedNodeId(node.id); const match = node.id.match(/^shot:([^:]+):/); if (match) onSelectShot(match[1]); }}>{String((node.data as { label?: string }).label ?? node.id)}</button>)}</div>
     <div className="canvas-workspace" aria-label="业务画布"><ReactFlow nodes={visibleNodes} edges={edges} onNodesChange={onNodesChange} onNodeClick={(_, node) => { setSelectedNodeId(node.id); const match = node.id.match(/^shot:([^:]+):/); if (match) onSelectShot(match[1]); }} fitView minZoom={0.15} maxZoom={1.8} nodesConnectable={false} deleteKeyCode={null}><Background /><Controls /><MiniMap pannable zoomable nodeColor={(node) => String(node.className).includes("blocked") ? "#df9d4b" : String(node.className).includes("running") ? "#7c91ff" : "#45d3b3"} /></ReactFlow></div>
     <div className="canvas-status"><span>选中：{selectedNodeId ?? "无"}</span><span>显示：{visibleNodes.length}/{nodes.length} 节点</span><span>布局 revision：{graph.layout.revision}</span><span>业务依赖可编辑：否</span>{plan && <strong>计划 {plan.status} · {plan.node_ids.length} 节点 · {plan.blockers.length} 阻塞</strong>}</div>
+    {selectedGraphNode && <div className="canvas-node-detail" aria-label="节点谱系与边界约束"><span><strong>变体谱系</strong> {selectedGraphNode.variant_lineage.length} 个 · {selectedGraphNode.variant_lineage.map((item) => `v${item.variant_no} ${item.status}${item.is_stale ? " · stale" : ""}`).join(" / ") || "暂无真实变体"}</span><span><strong>实验进度</strong> {selectedGraphNode.experiment_progress.map((item) => `${item.title}: ${item.succeeded_count}/${item.expanded_count || item.cell_count} succeeded${item.failed_count ? ` · ${item.failed_count} failed` : ""}`).join(" / ") || "暂无真实实验"}</span><span><strong>相邻边界约束</strong> {selectedGraphNode.adjacent_constraints.map((item) => `${item.constraint_type} · ${item.compatibility_status} · ${item.enforcement}`).join(" / ") || "暂无真实边界约束"}</span></div>}
   </section>;
 }
 

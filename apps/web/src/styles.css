@@ -260,6 +260,8 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .canvas-edge { stroke: #8d8a82; }
 .canvas-status { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 14px; color: #706d66; font-size: 12px; }
 .canvas-status strong { color: var(--attention); }
+.canvas-node-detail { display: grid; gap: 6px; margin-top: 12px; padding: 12px 14px; border: 1px solid #d7d1c6; border-radius: 10px; background: #fffdf8; color: #706d66; font-size: 12px; line-height: 1.5; }
+.canvas-node-detail strong { color: #2f3940; }
 .react-flow__controls button { min-height: 26px; background: #fff; color: #333; border-color: #d2ccc0; }
 .react-flow__minimap { background: #eee9df; }
 

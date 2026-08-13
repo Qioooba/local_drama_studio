@@ -70,7 +70,7 @@ class ProductionCanvasService:
                     (episode_id, limit, cursor),
                 ).fetchall()
             shot_ids = [str(row["id"]) for row in shots]
-            data: dict[str, dict[str, Any]] = {shot_id: {"media": [], "jobs": [], "variants": [], "constraints": []} for shot_id in shot_ids}
+            data: dict[str, dict[str, Any]] = {shot_id: {"media": [], "jobs": [], "variants": [], "experiments": [], "constraints": []} for shot_id in shot_ids}
             if shot_ids:
                 placeholders = ",".join("?" for _ in shot_ids)
                 media = connection.execute(
@@ -96,6 +96,19 @@ class ProductionCanvasService:
                 ).fetchall()
                 for item in variants:
                     data[str(item["shot_id"])]["variants"].append(dict(item))
+                experiments = connection.execute(
+                    f"""SELECT gi.owner_id AS shot_id, ge.id, ge.title, ge.status, ge.cell_count,
+                    ge.max_parallel, COUNT(ec.id) AS expanded_count,
+                    COALESCE(SUM(CASE WHEN ec.status='SUCCEEDED' THEN 1 ELSE 0 END), 0) AS succeeded_count,
+                    COALESCE(SUM(CASE WHEN ec.status IN ('FAILED','NEEDS_ATTENTION') THEN 1 ELSE 0 END), 0) AS failed_count
+                    FROM generation_experiments ge JOIN generation_intents gi ON gi.id=ge.intent_id
+                    LEFT JOIN experiment_cells ec ON ec.experiment_id=ge.id
+                    WHERE gi.owner_type='SHOT' AND gi.owner_id IN ({placeholders})
+                    GROUP BY gi.owner_id, ge.id ORDER BY ge.created_at""",
+                    shot_ids,
+                ).fetchall()
+                for item in experiments:
+                    data[str(item["shot_id"])]["experiments"].append(dict(item))
                 constraints = connection.execute(
                     f"""SELECT * FROM shot_transition_constraints
                     WHERE from_shot_id IN ({placeholders}) OR to_shot_id IN ({placeholders})""",
@@ -166,6 +179,42 @@ class ProductionCanvasService:
             "variant_count": len(variants),
             "active_job_count": len(active),
             "thumbnail_media_version_id": media[-1]["media_version_id"] if media else None,
+            "variant_lineage": [
+                {
+                    "id": str(item["id"]),
+                    "variant_no": int(item["variant_no"]),
+                    "variant_type": str(item["variant_type"]),
+                    "parent_variant_id": str(item["parent_variant_id"]) if item["parent_variant_id"] else None,
+                    "status": str(item["status"]),
+                    "is_stale": bool(item.get("is_stale", 0)),
+                    "branch_reason": str(item["branch_reason"]),
+                }
+                for item in sorted(variants, key=lambda value: int(value["variant_no"]))
+            ],
+            "experiment_progress": [
+                {
+                    "id": str(item["id"]),
+                    "title": str(item["title"]),
+                    "status": str(item["status"]),
+                    "cell_count": int(item["cell_count"]),
+                    "expanded_count": int(item["expanded_count"]),
+                    "succeeded_count": int(item["succeeded_count"]),
+                    "failed_count": int(item["failed_count"]),
+                }
+                for item in facts["experiments"]
+            ],
+            "adjacent_constraints": [
+                {
+                    "id": str(item["id"]),
+                    "from_shot_id": str(item["from_shot_id"]),
+                    "to_shot_id": str(item["to_shot_id"]),
+                    "constraint_type": str(item["constraint_type"]),
+                    "compatibility_status": str(item["compatibility_status"]),
+                    "enforcement": str(item["enforcement"]),
+                    "is_stale": bool(item.get("is_stale", 0)),
+                }
+                for item in {str(item["id"]): item for item in facts["constraints"]}.values()
+            ],
             "keyboard_action": "OPEN_NODE",
         }
 
