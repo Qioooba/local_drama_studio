@@ -293,6 +293,30 @@
         }
       }
     },
+    "/api/v1/adapters/contracts": {
+      "get": {
+        "tags": [
+          "adapters"
+        ],
+        "summary": "Get Adapter Contracts",
+        "description": "Return static adapter declarations; this endpoint never probes a runtime.",
+        "operationId": "getAdapterContracts",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Getadaptercontracts"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects": {
       "get": {
         "tags": [

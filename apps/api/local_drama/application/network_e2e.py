@@ -110,7 +110,7 @@ def _egress_guard() -> Iterator[tuple[list[str], list[str]]]:
     try:
         yield observed, blocked
     finally:
-        socket.socket.connect = original_connect  # type: ignore[assignment]
+        socket.socket.connect = original_connect  # type: ignore[method-assign]
 
 
 class NetworkE2EService:

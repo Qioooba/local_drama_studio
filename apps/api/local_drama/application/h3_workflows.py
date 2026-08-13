@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
@@ -19,9 +19,9 @@ class H3WorkflowFactory:
             manifest = json.loads(self.settings.manifest_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
             raise DomainRuleError("MANIFEST_INVALID", "H3 workflow 需要有效的本机 model_manifest.json") from error
-        if not manifest.get("read_only_inventory"):
+        if not isinstance(manifest, dict) or not manifest.get("read_only_inventory"):
             raise DomainRuleError("MANIFEST_NOT_READ_ONLY", "模型 manifest 必须是只读 inventory")
-        return manifest
+        return cast(dict[str, Any], manifest)
 
     def candidate_assets(self) -> dict[str, str]:
         partitions = self._manifest().get("models", {}).get("partitions", {}).get("FL2VA", {})

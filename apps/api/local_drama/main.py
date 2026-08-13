@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from .api.routes.adapters import router as adapters_router
 from .api.routes.canvas import router as canvas_router
 from .api.routes.configuration import router as configuration_router
 from .api.routes.diagnostics import router as diagnostics_router
@@ -72,6 +73,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_exception_handler(ApiError, api_error_handler)
     app.include_router(health_router, prefix="/api/v1")
     app.include_router(canvas_router, prefix="/api/v1")
+    app.include_router(adapters_router, prefix="/api/v1")
     app.include_router(project_router, prefix="/api/v1")
     app.include_router(configuration_router, prefix="/api/v1")
     app.include_router(diagnostics_router, prefix="/api/v1")

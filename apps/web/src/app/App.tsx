@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Background, Controls, MiniMap, ReactFlow, type Node, type NodeChange, applyNodeChanges } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
+  getAdapterContracts,
   getProductionCanvas,
   getProjectConfiguration,
   getProfileVersion,
@@ -90,6 +91,7 @@ export function App() {
   const queryClient = useQueryClient();
   const live = useQuery<HealthCheck>({ queryKey: ["health", "live"], queryFn: () => healthLive() });
   const contract = useQuery<SystemContract>({ queryKey: ["system", "contract"], queryFn: () => systemContract() });
+  const adapterContracts = useQuery({ queryKey: ["adapters", "contracts"], queryFn: () => getAdapterContracts(), enabled: view === "overview" || view === "diagnostics" });
   const projects = useQuery({ queryKey: ["projects"], queryFn: () => listProjects() });
   const profiles = useQuery({ queryKey: ["profiles"], queryFn: () => listProfiles(), enabled: view === "profiles" || view === "generation" || view === "overview" });
   const workflows = useQuery({ queryKey: ["workflow-versions"], queryFn: () => listWorkflowVersions(), enabled: view === "profiles" });
@@ -269,7 +271,7 @@ export function App() {
 
           {view === "generation" && <GenerationWorkbench profiles={profiles.data?.items ?? []} videos={(reviewItems.data?.items ?? []).filter((item) => item.media_kind === "VIDEO")} h3={h3Runtime.data?.runtime} g6Readiness={g6Readiness.data?.readiness} i2vProbePlan={i2vProbePlan.data?.plan} shots={production.data?.items ?? []} selectedShotId={selectedShot} onSelectShot={selectShot} onOpenProfiles={() => navigate("profiles")} onOpenReviews={(mediaVersionId) => { void queryClient.invalidateQueries({ queryKey: ["reviews", "inbox"] }); void queryClient.invalidateQueries({ queryKey: ["gates", "g6"] }); void queryClient.invalidateQueries({ queryKey: ["gates", "g6", "i2v-probe-plan"] }); if (mediaVersionId) setSelectedReviewVersionId(mediaVersionId); setView("reviews"); writeLocationState({ view: "reviews", projectId: selectedProject, episodeId: selectedEpisode, shotId: selectedShot, reviewId: mediaVersionId ?? null }); }} />}
 
-          {view === "diagnostics" && <section className="panel"><div className="panel-heading"><div><p className="eyebrow">诊断中心</p><h3>本机环境检查</h3></div><button className="secondary" onClick={() => diagnosticMutation.mutate()} disabled={diagnosticMutation.isPending}>{diagnosticMutation.isPending ? "检查中…" : "运行诊断"}</button></div><DiagnosticPanel run={diagnostics.data?.run ?? null} /></section>}
+          {view === "diagnostics" && <><section className="panel"><div className="panel-heading"><div><p className="eyebrow">诊断中心</p><h3>本机环境检查</h3></div><button className="secondary" onClick={() => diagnosticMutation.mutate()} disabled={diagnosticMutation.isPending}>{diagnosticMutation.isPending ? "检查中…" : "运行诊断"}</button></div><DiagnosticPanel run={diagnostics.data?.run ?? null} /></section><AdapterContractsPanel registry={adapterContracts.data?.registry} /></>}
 
           <p className="footer-note">{contract.data?.legacy_migration ?? "G11 legacy migration deferred"} · 业务状态来自真实本地后端；ComfyUI/本地 LLM 不可用时保持可解释阻塞。</p>
         </section>
@@ -298,6 +300,18 @@ function ProjectConfigurationSnapshot({ configuration }: { configuration: import
       <div className="configuration-row configuration-header" role="row"><strong>能力</strong><strong>Profile 版本</strong><strong>状态</strong><strong>冻结 Job</strong></div>
       {configuration.profile_bindings.map((item) => <div className="configuration-row" role="row" key={`${item.capability}-${item.profile_version_id}`}><span>{item.capability}</span><span>{item.profile_code} · v{item.version_no}</span><span className="status-pill">{item.profile_status}</span><span>{item.frozen_job_count}</span></div>)}
       {configuration.profile_bindings.length === 0 && <p className="empty-state">尚未绑定 Profile。</p>}
+    </div>
+  </section>;
+}
+
+function AdapterContractsPanel({ registry }: { registry?: import("../generated/api").AdapterRegistry }) {
+  return <section className="panel adapter-contracts" aria-labelledby="adapter-contracts-title">
+    <div className="panel-heading"><div><p className="eyebrow">G7 ADAPTER SDK</p><h3 id="adapter-contracts-title">本地适配器契约</h3></div><span className="status-pill">静态检查 · 无运行时接触</span></div>
+    <p className="muted">这里仅展示 transport 边界与能力声明；不会启动 ComfyUI、Ollama、CLI 或 FFmpeg，也不会打开网络连接。</p>
+    <div className="configuration-table" role="table" aria-label="本地适配器契约">
+      <div className="configuration-row configuration-header" role="row"><strong>适配器</strong><strong>Transport</strong><strong>状态</strong><strong>能力</strong></div>
+      {(registry?.contracts ?? []).map((item) => <div className="configuration-row" role="row" key={item.code}><span>{item.title}</span><span>{item.transport}</span><span className="status-pill">{item.status}</span><span>{item.capabilities.slice(0, 3).join(" · ")}</span></div>)}
+      {!registry && <p className="empty-state">正在读取本地契约…</p>}
     </div>
   </section>;
 }
