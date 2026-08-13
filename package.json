@@ -1,0 +1,14 @@
+{
+  "name": "local-drama-studio",
+  "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "web:install": "pnpm --dir apps/web install --frozen-lockfile=false",
+    "web:build": "pnpm --dir apps/web build",
+    "web:test": "pnpm --dir apps/web test",
+    "generate:client": "python scripts/generate_client.py",
+    "api:test": "python -m pytest apps/api/tests",
+    "api:test:safe": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test_api_safe.ps1",
+    "check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check.ps1"
+  }
+}

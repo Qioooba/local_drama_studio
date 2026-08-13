@@ -1,0 +1,458 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Background, Controls, MiniMap, ReactFlow, type Node, type NodeChange, applyNodeChanges } from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import {
+  getProductionCanvas,
+  getProfileVersion,
+  getEpisodeProduction,
+  getG6Readiness,
+  planG6I2VProbe,
+  getReviewContext,
+  healthLive,
+  h3CandidateRuntime,
+  listReviewTemplates,
+  latestDiagnostics,
+  listEpisodes,
+  listJobs,
+  listProfiles,
+  listProjects,
+  listSeasons,
+  listWorkflowVersions,
+  deriveProfileContractVersion,
+  validateProfileContractVersion,
+  publishProfileContractVersion,
+  preflightProductionCanvasRun,
+  runDiagnostics,
+  reviewInbox,
+  selectMediaVersion,
+  saveProductionCanvasLayout,
+  systemContract,
+  submitReview,
+  type HealthCheck,
+  type CanvasGraph,
+  type SystemContract,
+  type Profile,
+  type ProfileVersionDetail,
+  type WorkflowVersionSummary,
+} from "../generated/api";
+import { GenerationWorkbench } from "../features/generation/GenerationWorkbench";
+
+type View = "overview" | "projects" | "canvas" | "reviews" | "jobs" | "profiles" | "generation" | "diagnostics";
+const views: View[] = ["overview", "projects", "canvas", "reviews", "jobs", "profiles", "generation", "diagnostics"];
+
+function readLocationState() {
+  const params = new URLSearchParams(window.location.search);
+  const requestedView = params.get("view");
+  return {
+    view: views.includes(requestedView as View) ? requestedView as View : "overview",
+    projectId: params.get("project"),
+    episodeId: params.get("episode"),
+    shotId: params.get("shot"),
+    reviewId: params.get("review"),
+  };
+}
+
+function writeLocationState(state: { view: View; projectId: string | null; episodeId: string | null; shotId: string | null; reviewId?: string | null }, replace = false) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("view", state.view);
+  const selections: Array<[string, string | null]> = [["project", state.projectId], ["episode", state.episodeId], ["shot", state.shotId]];
+  selections.forEach(([key, value]) => {
+    if (value) url.searchParams.set(key, value);
+    else url.searchParams.delete(key);
+  });
+  if (state.reviewId) url.searchParams.set("review", state.reviewId);
+  else if (state.reviewId === null || state.view !== "reviews") url.searchParams.delete("review");
+  window.history[replace ? "replaceState" : "pushState"]({}, "", url);
+}
+
+function StatusCard({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <section className="status-card">
+      <span className="status-label">{label}</span>
+      <strong>{value}</strong>
+      <span className="status-detail">{detail}</span>
+    </section>
+  );
+}
+
+function ViewButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return <button className={`nav-item${active ? " active" : ""}`} aria-current={active ? "page" : undefined} onClick={onClick}><span className="nav-label">{label}</span><svg aria-hidden="true" viewBox="0 0 16 16"><path d="m6 3 5 5-5 5" /></svg></button>;
+}
+
+export function App() {
+  const initialLocation = useMemo(readLocationState, []);
+  const [view, setView] = useState<View>(initialLocation.view);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(initialLocation.projectId);
+  const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(initialLocation.episodeId);
+  const [selectedShotId, setSelectedShotId] = useState<string | null>(initialLocation.shotId);
+  const queryClient = useQueryClient();
+  const live = useQuery<HealthCheck>({ queryKey: ["health", "live"], queryFn: () => healthLive() });
+  const contract = useQuery<SystemContract>({ queryKey: ["system", "contract"], queryFn: () => systemContract() });
+  const projects = useQuery({ queryKey: ["projects"], queryFn: () => listProjects() });
+  const profiles = useQuery({ queryKey: ["profiles"], queryFn: () => listProfiles(), enabled: view === "profiles" || view === "generation" || view === "overview" });
+  const workflows = useQuery({ queryKey: ["workflow-versions"], queryFn: () => listWorkflowVersions(), enabled: view === "profiles" });
+  const diagnostics = useQuery({ queryKey: ["diagnostics", "latest"], queryFn: () => latestDiagnostics(), enabled: view === "diagnostics" || view === "overview" });
+  const h3Runtime = useQuery({ queryKey: ["h3", "candidate-runtime"], queryFn: () => h3CandidateRuntime(), enabled: view === "generation" || view === "overview" });
+  const reviewTemplates = useQuery({ queryKey: ["reviews", "templates"], queryFn: () => listReviewTemplates(), enabled: view === "reviews" });
+  const selectedProject = projects.data?.items.some((item) => item.id === selectedProjectId) ? selectedProjectId : projects.data?.items[0]?.id ?? null;
+  const seasons = useQuery({ queryKey: ["project", selectedProject, "seasons"], queryFn: () => listSeasons(selectedProject as string), enabled: Boolean(selectedProject) });
+  const selectedSeason = seasons.data?.items[0]?.id ?? null;
+  const episodes = useQuery({ queryKey: ["season", selectedSeason, "episodes"], queryFn: () => listEpisodes(selectedSeason as string), enabled: Boolean(selectedSeason) });
+  const selectedEpisode = episodes.data?.items.some((item) => item.id === selectedEpisodeId) ? selectedEpisodeId : episodes.data?.items[0]?.id ?? null;
+  const production = useQuery({ queryKey: ["episode", selectedEpisode, "production"], queryFn: () => getEpisodeProduction(selectedEpisode as string), enabled: Boolean(selectedEpisode) });
+  const selectedShot = production.data?.items.some((item) => String(item.id) === selectedShotId) ? selectedShotId : production.data?.items[0] ? String(production.data.items[0].id) : null;
+  const reviewItems = useQuery({ queryKey: ["reviews", "inbox", selectedProject], queryFn: () => reviewInbox(selectedProject as string), enabled: Boolean(selectedProject) && (view === "reviews" || view === "generation") });
+  const g6Readiness = useQuery({ queryKey: ["gates", "g6", selectedProject], queryFn: () => getG6Readiness(selectedProject as string), enabled: Boolean(selectedProject) && view === "generation" });
+  const i2vProbePlan = useQuery({ queryKey: ["gates", "g6", "i2v-probe-plan", selectedProject], queryFn: () => planG6I2VProbe(selectedProject as string), enabled: Boolean(selectedProject) && view === "generation" });
+  const [selectedReviewVersionId, setSelectedReviewVersionId] = useState<string | null>(initialLocation.reviewId);
+  const selectedReviewVersion = selectedReviewVersionId ?? reviewItems.data?.items[0]?.media_version_id ?? null;
+  const reviewContext = useQuery({ queryKey: ["reviews", "context", selectedReviewVersion], queryFn: () => getReviewContext(selectedReviewVersion as string), enabled: Boolean(selectedReviewVersion) && view === "reviews" });
+  const jobs = useQuery({ queryKey: ["jobs", selectedProject], queryFn: () => listJobs(selectedProject ?? undefined), enabled: view === "jobs" });
+  const diagnosticMutation = useMutation({
+    mutationFn: () => runDiagnostics(),
+    onSuccess: (data) => queryClient.setQueryData(["diagnostics", "latest"], data),
+  });
+  const selectMutation = useMutation({
+    mutationFn: ({ mediaVersionId, selectionType }: { mediaVersionId: string; selectionType: string }) => selectMediaVersion(mediaVersionId, selectionType),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["reviews", "inbox"] });
+      void queryClient.invalidateQueries({ queryKey: ["reviews", "context"] });
+    },
+  });
+  const reviewMutation = useMutation({
+    mutationFn: ({ mediaVersionId, payload }: { mediaVersionId: string; payload: Parameters<typeof submitReview>[1] }) => submitReview(mediaVersionId, payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["reviews", "inbox"] });
+      void queryClient.invalidateQueries({ queryKey: ["reviews", "context"] });
+    },
+  });
+  const navigate = useCallback((nextView: View) => {
+    setView(nextView);
+    writeLocationState({ view: nextView, projectId: selectedProject, episodeId: selectedEpisode, shotId: selectedShot });
+  }, [selectedEpisode, selectedProject, selectedShot]);
+  const selectProject = useCallback((projectId: string, nextView = view) => {
+    setSelectedProjectId(projectId);
+    setSelectedEpisodeId(null);
+    setSelectedShotId(null);
+    if (nextView !== view) setView(nextView);
+    writeLocationState({ view: nextView, projectId, episodeId: null, shotId: null });
+  }, [view]);
+  const selectEpisode = useCallback((episodeId: string) => {
+    setSelectedEpisodeId(episodeId);
+    setSelectedShotId(null);
+    writeLocationState({ view, projectId: selectedProject, episodeId, shotId: null });
+  }, [selectedProject, view]);
+  const selectShot = useCallback((shotId: string) => {
+    setSelectedShotId(shotId);
+    writeLocationState({ view, projectId: selectedProject, episodeId: selectedEpisode, shotId });
+  }, [selectedEpisode, selectedProject, view]);
+  useEffect(() => {
+    const onPopState = () => {
+      const location = readLocationState();
+      setView(location.view);
+      setSelectedProjectId(location.projectId);
+      setSelectedEpisodeId(location.episodeId);
+      setSelectedShotId(location.shotId);
+      setSelectedReviewVersionId(location.reviewId);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+  useEffect(() => {
+    if (!projects.data || !selectedProject) return;
+    const location = readLocationState();
+    if (location.projectId === selectedProject && (!selectedEpisode || location.episodeId === selectedEpisode) && (!selectedShot || location.shotId === selectedShot)) return;
+    setSelectedProjectId(selectedProject);
+    if (selectedEpisode) setSelectedEpisodeId(selectedEpisode);
+    if (selectedShot) setSelectedShotId(selectedShot);
+    writeLocationState({ view, projectId: selectedProject, episodeId: selectedEpisode, shotId: selectedShot }, true);
+  }, [projects.data, selectedEpisode, selectedProject, selectedShot, view]);
+  useEffect(() => {
+    if (view !== "jobs") return undefined;
+    const source = new EventSource(`/api/v1/events?after_event_id=0&follow=true${selectedProject ? `&project_id=${encodeURIComponent(selectedProject)}` : ""}`);
+    const refresh = () => { void queryClient.invalidateQueries({ queryKey: ["jobs", selectedProject] }); };
+    ["JOB_QUEUED", "JOB_CLAIMED", "JOB_HEARTBEAT", "JOB_FINISHED", "JOB_RECONCILED", "JOB_REQUEUED", "JOB_CANCEL_REQUESTED", "ARTIFACT_REGISTERED"].forEach((eventName) => source.addEventListener(eventName, refresh));
+    return () => { source.close(); };
+  }, [queryClient, selectedProject, view]);
+
+  const reload = () => {
+    void live.refetch();
+    void contract.refetch();
+    void projects.refetch();
+    void profiles.refetch();
+    void diagnostics.refetch();
+  };
+
+  return (
+    <main className="shell">
+      <a className="skip-link" href="#workspace-content">跳到工作区内容</a>
+      <header className="topbar">
+        <div className="brand-lockup">
+          <span className="brand-mark" aria-hidden="true">剧</span>
+          <div><p className="eyebrow">LOCAL PRODUCTION OS</p><h1>LocalDramaStudio</h1></div>
+        </div>
+        <div className="topbar-context">
+          <div className="context-selectors">
+            <label>项目<select aria-label="当前项目" value={selectedProject ?? ""} onChange={(event) => selectProject(event.target.value)} disabled={!projects.data?.items.length}><option value="">未选择项目</option>{projects.data?.items.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
+            <label>分集<select aria-label="当前分集" value={selectedEpisode ?? ""} onChange={(event) => selectEpisode(event.target.value)} disabled={!episodes.data?.items.length}><option value="">未选择分集</option>{episodes.data?.items.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
+          </div>
+          <div className="mode-badge" aria-label="执行模式：本地-only"><span aria-hidden="true">●</span> LOCAL_ONLY</div>
+        </div>
+      </header>
+
+      <div className="layout">
+        <nav className="sidebar" aria-label="全局导航">
+          <span className="nav-title">制片中心</span>
+          <ViewButton label="概览" active={view === "overview"} onClick={() => navigate("overview")} />
+          <ViewButton label="分集生产" active={view === "projects"} onClick={() => navigate("projects")} />
+          <ViewButton label="AI 生成工作台" active={view === "generation"} onClick={() => navigate("generation")} />
+          <ViewButton label="审核收件箱" active={view === "reviews"} onClick={() => navigate("reviews")} />
+          <ViewButton label="业务画布" active={view === "canvas"} onClick={() => navigate("canvas")} />
+          <span className="nav-title nav-section">资源与系统</span>
+          <ViewButton label="模型与能力" active={view === "profiles"} onClick={() => navigate("profiles")} />
+          <ViewButton label="任务与机器" active={view === "jobs"} onClick={() => navigate("jobs")} />
+          <ViewButton label="诊断中心" active={view === "diagnostics"} onClick={() => navigate("diagnostics")} />
+          <div className="sidebar-foot"><span>本地任务持续运行</span><small>关闭浏览器不会中断 Worker</small></div>
+        </nav>
+
+        <section className="content" id="workspace-content" aria-live="polite" tabIndex={-1}>
+          <div className="hero">
+            <div>
+              <p className="eyebrow">{view === "generation" ? "CREATE / COMPARE / PROMOTE" : "PRODUCTION OVERVIEW"}</p>
+              <h2>{view === "generation" ? "从镜头意图到可审核候选，一条清晰的生成路径。" : "回到最需要你决策的地方。"}</h2>
+              <p className="muted">{view === "generation" ? "先选择生成方式和本地能力，再锁定输入、预检资源、生成候选；任何结果都不会覆盖历史。" : "项目进度、待审内容与本机任务使用真实数据；不可运行的能力会说明原因和下一步。"}</p>
+            </div>
+            <button className="secondary" onClick={reload} disabled={live.isFetching || projects.isFetching}>
+              {live.isFetching || projects.isFetching ? "刷新中…" : "刷新数据"}
+            </button>
+          </div>
+
+          {view === "overview" ? <div className="card-grid">
+            <StatusCard label="API live" value={live.data?.status ?? (live.isPending ? "加载中…" : "不可用")} detail={live.error ? String(live.error) : "FastAPI /health/live"} />
+            <StatusCard label="网络策略" value={contract.data?.mode ?? "读取中…"} detail={contract.data?.remote_provider ?? "仅允许本地 loopback"} />
+            <StatusCard label="数据库" value={contract.data?.database_authority ?? "SQLite"} detail="SQLite WAL 是业务状态权威" />
+            <StatusCard label="本机 Profile" value={profiles.data?.items.length === undefined ? "读取中…" : String(profiles.data.items.length)} detail="候选版本需显式发布" />
+          </div> : <div className="system-strip" aria-label="本机系统状态"><span><i className={live.data?.status === "HEALTHY" ? "ok" : "warn"} /> API {live.data?.status ?? "读取中"}</span><span>网络 {contract.data?.mode ?? "读取中"}</span><span>SQLite WAL</span><button onClick={() => navigate("diagnostics")}>查看诊断</button></div>}
+
+          {view === "overview" && (
+            <section className="panel">
+              <div className="panel-heading"><div><p className="eyebrow">项目概览</p><h3>从真实项目继续工作</h3></div><span className="status-pill">{projects.data?.items.length ?? 0} 个项目</span></div>
+              <ProjectList projects={projects.data?.items ?? []} selectedProjectId={selectedProject} onSelect={(id) => selectProject(id, "projects")} />
+            </section>
+          )}
+
+          {view === "projects" && (
+            <section className="panel">
+              <div className="panel-heading"><div><p className="eyebrow">项目与生产台</p><h3>项目 → 季 → 集 → 镜头 read model</h3></div><span className="status-pill">单次生产查询</span></div>
+              <ProjectList projects={projects.data?.items ?? []} selectedProjectId={selectedProject} onSelect={selectProject} />
+              {selectedProject && <div className="production-summary">
+                <p className="eyebrow">当前集</p>
+                <p className="muted">{seasons.data?.items[0]?.title ?? "季数据加载中…"} · {episodes.data?.items[0]?.title ?? "集数据加载中…"}</p>
+                {production.isPending && <p className="empty-state">正在读取生产行…</p>}
+                {production.data?.items.map((shot) => <div className="shot-row" key={String(shot.id)}><strong>{String(shot.code)}</strong><span>{String(shot.status)}</span><span className="blocker-text">{Array.isArray(shot.blockers) ? `${shot.blockers.length} 个阻塞` : "读取中"}</span><span>{String(shot.next_action)}</span></div>)}
+                {production.data?.items.length === 0 && <p className="empty-state">当前集还没有镜头；请从真实 API 创建镜头。</p>}
+              </div>}
+            </section>
+          )}
+
+          {view === "canvas" && <ProductionCanvasPanel episodeId={selectedEpisode} />}
+
+          {view === "reviews" && <ReviewInboxPanel items={reviewItems.data?.items ?? []} templates={reviewTemplates.data?.items ?? []} selectedVersionId={selectedReviewVersion} context={reviewContext.data} onSelect={(id) => { setSelectedReviewVersionId(id); writeLocationState({ view: "reviews", projectId: selectedProject, episodeId: selectedEpisode, shotId: selectedShot, reviewId: id }, true); }} onPromote={(mediaVersionId, selectionType) => selectMutation.mutate({ mediaVersionId, selectionType })} selecting={selectMutation.isPending} onSubmit={(mediaVersionId, payload) => reviewMutation.mutate({ mediaVersionId, payload })} submitting={reviewMutation.isPending} submitError={reviewMutation.error ? String(reviewMutation.error) : null} submitSucceeded={reviewMutation.isSuccess} />}
+
+          {view === "jobs" && <JobsPanel jobs={jobs.data?.items ?? []} loading={jobs.isPending} />}
+
+          {view === "profiles" && <ProfileConfigurationPanel profiles={profiles.data?.items ?? []} workflows={workflows.data?.items ?? []} workflowsLoading={workflows.isPending} onChanged={() => { void profiles.refetch(); }} />}
+
+          {view === "generation" && <GenerationWorkbench profiles={profiles.data?.items ?? []} videos={(reviewItems.data?.items ?? []).filter((item) => item.media_kind === "VIDEO")} h3={h3Runtime.data?.runtime} g6Readiness={g6Readiness.data?.readiness} i2vProbePlan={i2vProbePlan.data?.plan} shots={production.data?.items ?? []} selectedShotId={selectedShot} onSelectShot={selectShot} onOpenProfiles={() => navigate("profiles")} onOpenReviews={(mediaVersionId) => { void queryClient.invalidateQueries({ queryKey: ["reviews", "inbox"] }); void queryClient.invalidateQueries({ queryKey: ["gates", "g6"] }); void queryClient.invalidateQueries({ queryKey: ["gates", "g6", "i2v-probe-plan"] }); if (mediaVersionId) setSelectedReviewVersionId(mediaVersionId); setView("reviews"); writeLocationState({ view: "reviews", projectId: selectedProject, episodeId: selectedEpisode, shotId: selectedShot, reviewId: mediaVersionId ?? null }); }} />}
+
+          {view === "diagnostics" && <section className="panel"><div className="panel-heading"><div><p className="eyebrow">诊断中心</p><h3>本机环境检查</h3></div><button className="secondary" onClick={() => diagnosticMutation.mutate()} disabled={diagnosticMutation.isPending}>{diagnosticMutation.isPending ? "检查中…" : "运行诊断"}</button></div><DiagnosticPanel run={diagnostics.data?.run ?? null} /></section>}
+
+          <p className="footer-note">{contract.data?.legacy_migration ?? "G11 legacy migration deferred"} · 业务状态来自真实本地后端；ComfyUI/本地 LLM 不可用时保持可解释阻塞。</p>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function parseObject(value: string, label: string): Record<string, unknown> {
+  let parsed: unknown;
+  try { parsed = JSON.parse(value); } catch { throw new Error(`${label} 必须是有效 JSON。`); }
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") throw new Error(`${label} 必须是 JSON 对象。`);
+  return parsed as Record<string, unknown>;
+}
+
+function ProfileConfigurationPanel({ profiles, workflows, workflowsLoading, onChanged }: { profiles: Profile[]; workflows: WorkflowVersionSummary[]; workflowsLoading: boolean; onChanged: () => void }) {
+  const [selectedId, setSelectedId] = useState<string | null>(profiles.find((item) => item.status === "PUBLISHED")?.version_id ?? profiles[0]?.version_id ?? null);
+  const selected = profiles.find((item) => item.version_id === selectedId) ?? profiles[0] ?? null;
+  const detail = useQuery({ queryKey: ["profile-version", selected?.version_id], queryFn: () => getProfileVersion(selected!.version_id), enabled: Boolean(selected) });
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const activeDetail = useQuery({ queryKey: ["profile-version", draftId], queryFn: () => getProfileVersion(draftId as string), enabled: Boolean(draftId) });
+  const current: ProfileVersionDetail | undefined = draftId ? activeDetail.data?.profile_version : detail.data?.profile_version;
+  const [inputJson, setInputJson] = useState("{}");
+  const [parameterJson, setParameterJson] = useState("{}");
+  const [outputJson, setOutputJson] = useState("{}");
+  const [resourceJson, setResourceJson] = useState("{}");
+  const [feedback, setFeedback] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+  useEffect(() => {
+    const item = current;
+    if (!item) return;
+    setInputJson(JSON.stringify(item.input_contract, null, 2));
+    setParameterJson(JSON.stringify(item.parameter_schema, null, 2));
+    setOutputJson(JSON.stringify(item.output_contract, null, 2));
+    setResourceJson(JSON.stringify(item.resource_policy, null, 2));
+  }, [current?.id]);
+  const derive = useMutation({
+    mutationFn: async () => {
+      if (!current) throw new Error("Profile 版本尚未加载。");
+      return deriveProfileContractVersion(current.id, { expected_source_revision: current.revision, input_contract: parseObject(inputJson, "输入契约"), parameter_schema: parseObject(parameterJson, "参数 Schema"), output_contract: parseObject(outputJson, "输出契约"), resource_policy: parseObject(resourceJson, "资源策略") });
+    },
+    onSuccess: (data) => { setDraftId(data.profile_version.id); setFeedback({ kind: "success", message: `已创建不可变 DRAFT v${data.profile_version.version_no}；原版本未覆盖。` }); onChanged(); },
+    onError: (error) => setFeedback({ kind: "error", message: String(error) }),
+  });
+  const validate = useMutation({
+    mutationFn: () => validateProfileContractVersion(current!.id),
+    onSuccess: (data) => { void activeDetail.refetch(); setFeedback({ kind: data.validation.status === "PASS" ? "success" : "error", message: data.validation.status === "PASS" ? "本地契约验证 PASS；未连接 runtime 或网络。" : "契约验证未通过，请查看字段和验证项。" }); },
+    onError: (error) => setFeedback({ kind: "error", message: String(error) }),
+  });
+  const publish = useMutation({
+    mutationFn: () => publishProfileContractVersion(current!.id),
+    onSuccess: (data) => { setFeedback({ kind: "success", message: `Profile v${data.profile_version.version_no} 已发布。` }); setDraftId(null); onChanged(); },
+    onError: (error) => setFeedback({ kind: "error", message: `${String(error)} 执行指纹变化时必须转入真实媒体证据发布。` }),
+  });
+  const isDraft = current?.status === "DRAFT";
+  return <section className="panel">
+    <div className="panel-heading"><div><p className="eyebrow">G7 PROFILE CONFIGURATION</p><h3>本地能力契约与不可变版本</h3></div><span className="status-pill">LOCAL_ONLY</span></div>
+    <p className="muted">编辑只会派生新 DRAFT；本地验证不会连接 ComfyUI。执行指纹有变化时，发布必须提供真实成功媒体证据。</p>
+    <div className="profile-editor-layout">
+      <aside className="profile-version-list" aria-label="Profile 版本">
+        {profiles.map((profile) => <button key={profile.version_id} className={`profile-version-choice${selected?.version_id === profile.version_id ? " selected" : ""}`} onClick={() => { setSelectedId(profile.version_id); setDraftId(null); setFeedback(null); }}><span><strong>{profile.code}</strong><small>{profile.capability} · v{String(profile.version_no ?? "—")}</small></span><span className={`status-pill${profile.status === "PUBLISHED" ? "" : " neutral"}`}>{profile.status}</span></button>)}
+      </aside>
+      <div className="profile-contract-editor">
+        {!current ? <p className="empty-state">正在读取 Profile 契约…</p> : <>
+          <div className="profile-contract-meta"><span><small>版本</small><strong>v{current.version_no}</strong></span><span><small>能力</small><strong>{current.capability}</strong></span><span><small>状态</small><strong>{current.status}</strong></span><span><small>契约 hash</small><code>{current.contract_hash.slice(0, 12)}</code></span></div>
+          <div className="profile-contract-fields">
+            <label>输入契约<textarea value={inputJson} onChange={(event) => setInputJson(event.target.value)} spellCheck={false} /><small>声明 transport 与语义输入槽；只允许本地 transport。</small></label>
+            <label>参数 Schema<textarea value={parameterJson} onChange={(event) => setParameterJson(event.target.value)} spellCheck={false} /><small>必须明确 seed 与 determinism。</small></label>
+            <label>输出契约<textarea value={outputJson} onChange={(event) => setOutputJson(event.target.value)} spellCheck={false} /><small>必须声明 media_kind；容器、编码按能力补充。</small></label>
+            <label>资源策略<textarea value={resourceJson} onChange={(event) => setResourceJson(event.target.value)} spellCheck={false} /><small>GPU heavy 并发必须为 1。</small></label>
+          </div>
+          {current.validation && <div className={`profile-validation ${current.validation.status === "PASS" ? "passed" : "failed"}`}><strong>最新验证：{current.validation.status}</strong><small>{current.validation.checks.filter((item) => item.passed).length}/{current.validation.checks.length} 项 · hash {current.validation.contract_hash.slice(0, 12)}</small></div>}
+          {feedback && <p className={feedback.kind === "error" ? "inline-error" : "review-success"} role="status">{feedback.message}</p>}
+          <div className="profile-editor-actions">
+            {!isDraft ? <button className="primary-action" onClick={() => derive.mutate()} disabled={derive.isPending}>{derive.isPending ? "创建中…" : "保存为新 DRAFT"}</button> : <>
+              <button className="secondary" onClick={() => validate.mutate()} disabled={validate.isPending}>{validate.isPending ? "验证中…" : "运行本地契约验证"}</button>
+              <button className="primary-action" onClick={() => publish.mutate()} disabled={publish.isPending || current.validation?.status !== "PASS"}>{publish.isPending ? "发布中…" : "发布已验证版本"}</button>
+            </>}
+          </div>
+          {isDraft && current.validation?.status !== "PASS" && <small className="action-help">发布保持禁用，直到当前 contract hash 获得 PASS 验证证明。</small>}
+        </>}
+      </div>
+    </div>
+    <div className="workflow-history-heading"><div><p className="eyebrow">WORKFLOW HISTORY</p><h3>工作流发布证据</h3></div><span className="status-pill neutral">只读 · 未连接 ComfyUI</span></div>
+    {workflowsLoading ? <p className="empty-state">正在读取本地工作流版本…</p> : <div className="workflow-history">{workflows.map((workflow) => <article className="workflow-version" key={workflow.id}><div><strong>{workflow.code}</strong><small>v{workflow.version_no} · {String(workflow.contract.capability ?? "未声明 capability")}</small></div><span className={`status-pill${workflow.status === "PUBLISHED" ? "" : " neutral"}`}>{workflow.status}</span><code>{workflow.content_hash.slice(0, 12)}</code><small>{workflow.published_at ? `发布于 ${new Date(workflow.published_at).toLocaleString()}` : "尚未发布；验证、发布与回滚均需显式操作。"}</small></article>)}</div>}
+  </section>;
+}
+
+function ProductionCanvasPanel({ episodeId }: { episodeId: string | null }) {
+  const graphQuery = useQuery({ queryKey: ["canvas", episodeId], queryFn: () => getProductionCanvas("EPISODE", episodeId as string, 0, 60), enabled: Boolean(episodeId) });
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [plan, setPlan] = useState<{ status: string; node_ids: string[]; blockers: Array<Record<string, unknown>>; estimate: Record<string, unknown> } | null>(null);
+  const graph = graphQuery.data?.graph;
+  useEffect(() => {
+    if (!graph) return;
+    setNodes(graph.nodes.map((item, index) => ({
+      id: item.id,
+      position: item.position ?? { x: (index % 5) * 230, y: Math.floor(index / 5) * 145 },
+      data: { label: item.label, state: item.state, blockers: item.blockers, takeCount: item.take_count, variantCount: item.variant_count },
+      className: `canvas-node state-${item.state.toLowerCase()}`,
+    })));
+  }, [graph]);
+  const edges = useMemo(() => graph?.edges.map((edge) => ({ id: edge.id, source: edge.source, target: edge.target, type: "smoothstep", animated: edge.kind === "TRANSITION_CONSTRAINT", className: `canvas-edge kind-${edge.kind.toLowerCase()}` })) ?? [], [graph]);
+  const onNodesChange = useCallback((changes: NodeChange[]) => setNodes((items) => applyNodeChanges(changes, items)), []);
+  const saveMutation = useMutation({
+    mutationFn: () => saveProductionCanvasLayout("EPISODE", episodeId as string, { expected_revision: graph?.layout.revision || undefined, positions: Object.fromEntries(nodes.map((node) => [node.id, node.position])), groups: graph?.layout.groups, viewport: graph?.layout.viewport }),
+    onSuccess: () => { void graphQuery.refetch(); },
+  });
+  const planMutation = useMutation({
+    mutationFn: () => preflightProductionCanvasRun("EPISODE", episodeId as string, { mode: "NODE", from_node_id: selectedNodeId as string, max_nodes: 20 }),
+    onSuccess: (data) => setPlan(data.plan),
+  });
+  if (!episodeId) return <section className="panel"><p className="empty-state">请先选择一个包含集的项目。</p></section>;
+  if (graphQuery.isPending) return <section className="panel"><p className="empty-state">正在懒加载业务 DAG…</p></section>;
+  if (!graph) return <section className="panel"><p className="empty-state">业务画布读取失败。</p></section>;
+  return <section className="panel canvas-panel">
+    <div className="panel-heading"><div><p className="eyebrow">G9 PRODUCTION CANVAS</p><h3>业务依赖 DAG · 拖动只保存布局</h3></div><div className="canvas-actions"><button className="secondary" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>{saveMutation.isPending ? "保存中…" : "保存布局"}</button><button className="secondary" onClick={() => planMutation.mutate()} disabled={!selectedNodeId || planMutation.isPending}>{planMutation.isPending ? "预检中…" : "运行节点预检"}</button></div></div>
+    <p className="muted">节点显示状态、take、variant 和阻塞；edges 来自后端业务依赖，布局接口无法修改它们。当前页 {graph.page.returned_shots}/{graph.page.total_shots} 个镜头，最多显示 {graph.invariants.max_visible_nodes} 个节点。</p>
+    <div className="canvas-workspace" aria-label="业务画布"><ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onNodeClick={(_, node) => setSelectedNodeId(node.id)} fitView minZoom={0.15} maxZoom={1.8} nodesConnectable={false} deleteKeyCode={null}><Background /><Controls /><MiniMap pannable zoomable nodeColor={(node) => String(node.className).includes("blocked") ? "#df9d4b" : String(node.className).includes("running") ? "#7c91ff" : "#45d3b3"} /></ReactFlow></div>
+    <div className="canvas-status"><span>选中：{selectedNodeId ?? "无"}</span><span>布局 revision：{graph.layout.revision}</span><span>业务依赖可编辑：否</span>{plan && <strong>计划 {plan.status} · {plan.node_ids.length} 节点 · {plan.blockers.length} 阻塞</strong>}</div>
+  </section>;
+}
+
+function JobsPanel({ jobs, loading }: { jobs: Array<{ id: string; type: string; state: string; channel: string; priority: number; revision: number }>; loading: boolean }) {
+  return <section className="panel"><div className="panel-heading"><div><p className="eyebrow">G5 TASKS & MACHINES</p><h3>持久任务队列与本地 worker</h3></div><span className="status-pill">SSE / OUTBOX</span></div><p className="muted">状态来自 SQLite jobs/attempts/outbox；页面关闭后队列继续运行，worker lease 过期由 reconcile 接管。</p>{loading ? <p className="empty-state">正在读取任务…</p> : jobs.length === 0 ? <p className="empty-state">当前项目没有任务。</p> : <div className="job-list">{jobs.map((job) => <div className="job-row" key={job.id}><strong>{job.type}</strong><span>{job.channel}</span><span className={job.state === "SUCCEEDED" ? "status-pill" : "blocker-text"}>{job.state}</span><small>priority {job.priority} · rev {job.revision}</small></div>)}</div>}</section>;
+}
+
+function ProjectList({ projects, selectedProjectId, onSelect }: { projects: Array<{ id: string; code: string; title: string; status: string }>; selectedProjectId: string | null; onSelect: (id: string) => void }) {
+  if (!projects.length) return <p className="empty-state">暂无项目。通过真实项目 API 创建后，项目会出现在这里。</p>;
+  return <div className="project-list">{projects.map((project) => <button className={`project-row${selectedProjectId === project.id ? " selected" : ""}`} key={project.id} onClick={() => onSelect(project.id)}><span><strong>{project.title}</strong><small>{project.code}</small></span><span className="status-pill">{project.status}</span></button>)}</div>;
+}
+
+function DiagnosticPanel({ run }: { run: { status: string; checks: Array<{ code: string; status: string; observed: Record<string, unknown> }> } | null }) {
+  if (!run) return <p className="empty-state">还没有诊断记录；点击“运行诊断”执行本机只读检查。</p>;
+  return <div className="diagnostic-grid"><div className="diagnostic-status"><span>整体状态</span><strong>{run.status}</strong></div>{run.checks.map((check) => <div className="diagnostic-row" key={check.code}><span>{check.code}</span><strong>{check.status}</strong></div>)}</div>;
+}
+
+function ReviewInboxPanel({
+  items,
+  templates,
+  selectedVersionId,
+  context,
+  onSelect,
+  onPromote,
+  selecting,
+  onSubmit,
+  submitting,
+  submitError,
+  submitSucceeded,
+}: {
+  items: Array<{ media_version_id: string; media_asset_id: string; project_id: string; media_kind: string; stage: string; decision: string | null; is_stale: number | null }>;
+  templates: Array<{ id: string; code: string; items: Array<{ id: string; label: string; required: boolean }> }>;
+  selectedVersionId: string | null;
+  context: Awaited<ReturnType<typeof getReviewContext>> | undefined;
+  onSelect: (id: string) => void;
+  onPromote: (mediaVersionId: string, selectionType: string) => void;
+  selecting: boolean;
+  onSubmit: (mediaVersionId: string, payload: Parameters<typeof submitReview>[1]) => void;
+  submitting: boolean;
+  submitError: string | null;
+  submitSucceeded: boolean;
+}) {
+  const [checks, setChecks] = useState<Record<string, "PASS" | "FAIL">>({});
+  const [decision, setDecision] = useState<"APPROVED" | "REJECTED" | "NEEDS_CHANGES">("APPROVED");
+  const selectedItem = items.find((item) => item.media_version_id === selectedVersionId);
+  const selectedMediaKind = selectedItem?.media_kind ?? String(context?.media_version.media_kind ?? "");
+  const selectedStage = selectedItem?.stage ?? String(context?.media_version.stage ?? "");
+  const supportsThumbnail = (mediaKind: string | undefined) => mediaKind === "IMAGE" || mediaKind === "VIDEO";
+  const selectionType = selectedStage === "FORMAL" ? "FORMAL_SELECTION" : selectedStage === "PROXY" ? "PROXY_WINNER" : "KEYFRAME";
+  const currentSelection = context?.selections.find((item) => item["media_version_id"] === selectedVersionId && item["selection_type"] === selectionType);
+  const currentApproval = context?.reviews.find((item) => item["decision"] === "APPROVED" && !item["is_stale"]);
+  useEffect(() => { setChecks({}); setDecision("APPROVED"); }, [selectedVersionId]);
+  const requiredComplete = context?.template.items.every((item) => !item.required || Boolean(checks[item.id])) ?? false;
+  const missingRequired = currentApproval ? [] : context?.template.items.filter((item) => item.required && !checks[item.id]) ?? [];
+  const submitCurrentReview = () => {
+    if (!context || !selectedVersionId) return;
+    onSubmit(selectedVersionId, {
+      template_version_id: context.template.id,
+      decision,
+      expected_subject_revision: context.subject_revision,
+      checks: context.template.items.map((item) => ({ item_id: item.id, result: checks[item.id] })),
+    });
+  };
+  return <section className="panel"><div className="panel-heading"><div><p className="eyebrow">G4 REVIEW INBOX</p><h3>媒体版本审核与选择</h3></div><span className="status-pill">{items.length} 个待处理</span></div>
+    <p className="muted">审核模板、机器检查和选择指针均来自本地 API；selection 与 approval 分离，旧 revision 会显示 stale。</p>
+    <div className="review-layout"><div className="review-list">{items.length === 0 ? <p className="empty-state">当前项目没有待审核媒体版本。</p> : items.map((item) => <button className={`project-row review-row${item.media_version_id === selectedVersionId ? " selected" : ""}`} key={item.media_version_id} onClick={() => onSelect(item.media_version_id)}>{supportsThumbnail(item.media_kind) ? <img src={`/api/v1/media-versions/${encodeURIComponent(item.media_version_id)}/thumbnail?size=small&frame=poster`} alt="" width="80" height="45" loading="lazy" decoding="async" /> : <span className="media-kind-placeholder" aria-hidden="true">{item.media_kind}</span>}<span><strong>{item.stage} · {item.media_kind}</strong><small>{item.media_version_id.slice(0, 12)} · {item.decision ?? "未审核"}</small></span><span className={item.is_stale ? "blocker-text" : "status-pill"}>{item.is_stale ? "STALE" : "待处理"}</span></button>)}</div>
+      <div className="review-detail">{!context ? <p className="empty-state">选择一个媒体版本读取审核上下文。</p> : <><div className="review-preview">{supportsThumbnail(selectedMediaKind) ? <img src={`/api/v1/media-versions/${encodeURIComponent(selectedVersionId ?? "")}/thumbnail?size=small&frame=poster`} alt="当前审核版本缩略图" width="320" height="180" decoding="async" /> : <strong>{selectedMediaKind || "MEDIA"} 暂无视觉缩略图</strong>}<span>{supportsThumbnail(selectedMediaKind) ? "固定请求 320px small 缩略图；此处不加载原片" : "不探测或下载原始媒体"}</span></div><div className="panel-heading"><div><p className="eyebrow">{context.template.code}</p><h3>{String(context.media_version.stage)} · {String(context.media_version.mime_type)}</h3></div><button className="secondary" onClick={() => selectedVersionId && onPromote(selectedVersionId, selectionType)} disabled={!selectedVersionId || selecting || Boolean(currentSelection)}>{selecting ? "保存中…" : currentSelection ? `已选择 ${selectionType}` : `选择为 ${selectionType}`}</button></div>{currentApproval && <p className="review-success" role="status">当前版本已批准，审核记录 {String(currentApproval["id"]).slice(0, 12)}。如需改变结论，请先撤回当前审核；重复点击不会新增记录。</p>}<div className="review-checklist">{context.template.items.map((item) => <fieldset className="review-check" key={item.id} disabled={Boolean(currentApproval)}><legend>{item.label}{item.required ? " *" : ""}</legend><label><input type="radio" name={`check-${item.id}`} checked={checks[item.id] === "PASS"} onChange={() => setChecks((value) => ({ ...value, [item.id]: "PASS" }))} />通过</label><label><input type="radio" name={`check-${item.id}`} checked={checks[item.id] === "FAIL"} onChange={() => setChecks((value) => ({ ...value, [item.id]: "FAIL" }))} />不通过</label></fieldset>)}</div>{missingRequired.length > 0 && <p className="review-guidance" aria-live="polite">还需完成 {missingRequired.length} 个必填检查：{missingRequired.map((item) => item.label).join("、")}。选择“批准”不会自动提交。</p>}<div className="review-submit"><label htmlFor="review-decision">审核决定<select id="review-decision" value={decision} onChange={(event) => setDecision(event.target.value as typeof decision)} disabled={Boolean(currentApproval)}><option value="APPROVED">批准</option><option value="NEEDS_CHANGES">需要修改</option><option value="REJECTED">拒绝</option></select></label><button className="primary-action" onClick={submitCurrentReview} disabled={Boolean(currentApproval) || !requiredComplete || submitting}>{currentApproval ? "已批准" : submitting ? "提交中…" : "提交审核"}</button></div>{submitError && <p className="inline-error" role="alert">提交失败：{submitError}</p>}{submitSucceeded && context.reviews.length > 0 && <p className="review-success" role="status">审核已保存：{String(context.reviews[0]?.decision ?? decision)}。选择指针仍需通过上方独立按钮确认。</p>}<div className="review-meta"><span>机器检查：{String(context.machine_checks[0]?.status ?? "未运行")}</span><span>审核记录：{context.reviews.length}</span><span>选择指针：{currentSelection ? selectionType : "未选择"}</span><span>subject revision：{context.subject_revision}</span><span>候选模板：{templates.length}</span></div></>}</div></div>
+  </section>;
+}

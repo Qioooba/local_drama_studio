@@ -1,0 +1,43 @@
+G2 validation evidence
+======================
+
+Date: 2026-08-12
+Repository: F:\AI_Projects\h3\local_drama_studio
+
+Real database inspection
+------------------------
+schema_version=0001_g2_core
+table_count=42
+journal_mode=wal
+integrity_check=ok
+application_foreign_keys=1
+application_integrity=ok
+
+Commands
+--------
+.\.venv\Scripts\pytest.exe apps\api\tests -q
+15 passed, 0 failed
+
+.\.venv\Scripts\ruff.exe check apps\api\local_drama apps\api\tests scripts
+All checks passed
+
+.\.venv\Scripts\mypy.exe apps\api\local_drama
+Success: no issues found in 25 source files
+
+.\.venv\Scripts\python.exe scripts\g0_validate.py
+fr_count=86, nfr_count=14, tc_count=85
+
+Migration cwd portability
+-------------------------
+Invoked scripts\migrate.py from apps\api with a fresh SQLite target:
+migration complete ... integrity=ok
+
+Coverage represented by the G2 tests
+-------------------------------------
+- real Alembic migration, SQLite WAL, foreign keys, schema and online backup
+- project template with 60 episodes and stable episode identity/order
+- failure cleanup without half-created project trees
+- optimistic revision conflict protection
+- explicit shot readiness blockers
+- review/delivery/remote-transport/variant-lineage domain rules
+- API create/read/update with real migrated storage

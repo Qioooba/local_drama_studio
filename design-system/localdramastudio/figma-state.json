@@ -1,0 +1,67 @@
+{
+  "runId": "localdramastudio-product-design-20260812",
+  "fileKey": "ZtpUS9N1Of3vRYIFQDSJqh",
+  "fileUrl": "https://www.figma.com/design/ZtpUS9N1Of3vRYIFQDSJqh",
+  "phase": "blocked-phase2",
+  "step": "starter-mcp-rate-limit",
+  "entities": {
+    "collections": {
+      "primitives": "VariableCollectionId:2:2",
+      "color": "VariableCollectionId:2:3",
+      "dimensions": "VariableCollectionId:2:4",
+      "typography": "VariableCollectionId:2:5"
+    },
+    "variables": {},
+    "pages": {
+      "01 Foundations": "0:1",
+      "02 Components": "3:86",
+      "03 Generation Workbench": "3:87"
+    },
+    "styles": {
+      "text": [
+        "Display/Page",
+        "Heading/Page",
+        "Heading/Section",
+        "Body/Default",
+        "Body/Compact",
+        "Label/Control",
+        "Meta/Uppercase"
+      ],
+      "effect": ["Elevation/Panel", "Elevation/Popover"]
+    },
+    "components": {},
+    "screens": {
+      "coverAndGettingStarted": "4:2",
+      "foundationsDocumentation": "6:2"
+    }
+  },
+  "pendingValidations": [
+    "P2.fix-transparent-auto-layout-fills",
+    "P3.components",
+    "P4.generation-workbench",
+    "P4.figma-qa"
+  ],
+  "completedSteps": [
+    "P0.a",
+    "P0.b",
+    "P0.c",
+    "P0.d",
+    "P0.e",
+    "P0.f",
+    "P1.a",
+    "P1.b",
+    "P1.c",
+    "P1.d",
+    "P1.e",
+    "P1.f",
+    "P1.g",
+    "P1.h",
+    "P2.a",
+    "P2.b.partial"
+  ],
+  "blocker": {
+    "type": "figma_starter_mcp_rate_limit",
+    "message": "You've reached the Figma MCP tool call limit on the Starter plan.",
+    "resumeFrom": "Remove default white fills from transparent wrapper IDs, then continue Components and Generation Workbench pages."
+  }
+}

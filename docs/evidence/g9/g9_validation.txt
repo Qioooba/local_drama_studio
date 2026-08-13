@@ -1,0 +1,27 @@
+G9 validation status: IN_PROGRESS — implementation and automated baseline green; formal UAT/performance exit pending
+Date: 2026-08-12 (Asia/Shanghai)
+
+Migration and contracts
+- migration head: 0007_g9_production_canvas
+- canvas_layouts persists visual positions/groups/viewport independently from business edges
+- canvas_execution_plans persists NODE/FROM/TO/RANGE preflight snapshots
+- generated OpenAPI and TypeScript client include graph/layout/preflight APIs
+
+Automated evidence
+- full API suite: 34 passed
+- G9 targeted suite: lazy 62-shot fixture, 20-shot pages, 100 returned nodes, layout/edge isolation, revision conflict, unknown-node rejection, range preflight
+- Ruff: PASS
+- mypy: PASS, 67 source files
+- web production build: PASS, 238 transformed modules
+- Vitest: 1 passed
+
+UI evidence
+- @xyflow/react Production Canvas view
+- nodesConnectable=false and deleteKeyCode=null prevent editing authoritative business dependency graph
+- MiniMap, zoom/pan controls, state coloring, selected-node preflight and layout save are available
+- graph is loaded by episode page and capped by backend at 300 visible nodes
+
+Exit decision
+- automated baseline: PASS
+- formal G9 exit: PENDING three-view route/selection UAT, 100—300 visible-node browser benchmark, accessibility checklist, screenshots and P1 automation/capacity scope audit
+- G6 remains open; this G9 evidence does not authorize declaring G0—G10 complete

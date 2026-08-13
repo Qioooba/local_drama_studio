@@ -1,0 +1,726 @@
+"""Local-only timeline, subtitle, audio, enhancement and delivery services.
+
+This module deliberately uses persisted immutable revisions and real FFmpeg
+files.  It does not know about ComfyUI; a generation provider only needs to
+produce a registered MediaVersion before the timeline can consume it.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import uuid
+from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+from typing import Any
+
+from local_drama.application.media import MediaService, _hash_file
+from local_drama.config import Settings
+from local_drama.domain.errors import DomainRuleError
+from local_drama.infrastructure.database.sqlite import Database
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _hash(value: Any) -> str:
+    return hashlib.sha256(_json(value).encode("utf-8")).hexdigest()
+
+
+def _timestamp_us(value: int) -> str:
+    if value < 0:
+        raise DomainRuleError("TIMELINE_TIME_INVALID", "时间戳不能为负数")
+    total_ms = value // 1000
+    hours, remainder = divmod(total_ms, 3_600_000)
+    minutes, milliseconds = divmod(remainder, 60_000)
+    seconds, millis = divmod(milliseconds, 1000)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
+
+
+def _srt_time(value: int) -> str:
+    total_ms = value // 1000
+    hours, remainder = divmod(total_ms, 3_600_000)
+    minutes, remainder = divmod(remainder, 60_000)
+    seconds, millis = divmod(remainder, 1000)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
+
+
+class TimelineService:
+    def __init__(self, database: Database, settings: Settings) -> None:
+        self.database = database
+        self.settings = settings
+        self.media = MediaService(database, settings)
+
+    def _episode(self, episode_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """SELECT e.*, s.project_id, p.root_rel FROM episodes e
+                JOIN seasons s ON s.id=e.season_id JOIN projects p ON p.id=s.project_id
+                WHERE e.id=?""",
+                (episode_id,),
+            ).fetchone()
+        if row is None:
+            raise DomainRuleError("EPISODE_NOT_FOUND", "集不存在", {"episode_id": episode_id})
+        return dict(row)
+
+    def _project_root(self, episode_id: str) -> Path:
+        episode = self._episode(episode_id)
+        root = (self.settings.projects_root / str(episode["root_rel"])).resolve()
+        if not root.is_relative_to(self.settings.projects_root.resolve()):
+            raise DomainRuleError("PATH_ESCAPE", "项目根目录越界")
+        return root
+
+    def _media_for_episode(self, episode_id: str, media_version_id: str) -> dict[str, Any]:
+        episode = self._episode(episode_id)
+        item = self.media.get_version(media_version_id)
+        if item["project_id"] != episode["project_id"]:
+            raise DomainRuleError("MEDIA_PROJECT_MISMATCH", "时间线媒体必须属于同一项目")
+        return item
+
+    def create_timeline_revision(
+        self,
+        episode_id: str,
+        items: list[dict[str, Any]],
+        input_snapshot: dict[str, Any],
+        *,
+        status: str = "DRAFT",
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        self._episode(episode_id)
+        if not items:
+            raise DomainRuleError("TIMELINE_ITEMS_REQUIRED", "时间线至少需要一个 item")
+        normalized: list[dict[str, Any]] = []
+        for raw in items:
+            try:
+                start_us = int(raw["start_us"])
+                end_us = int(raw["end_us"])
+            except (KeyError, TypeError, ValueError) as error:
+                raise DomainRuleError("TIMELINE_TIME_INVALID", "timeline item 必须包含整数 start_us/end_us") from error
+            if start_us < 0 or end_us <= start_us:
+                raise DomainRuleError("TIMELINE_TIME_INVALID", "timeline item 必须满足 0 <= start_us < end_us")
+            media_version_id = raw.get("media_version_id")
+            if media_version_id:
+                self._media_for_episode(episode_id, str(media_version_id))
+            normalized.append(
+                {
+                    "track_type": str(raw.get("track_type", "VIDEO")),
+                    "media_version_id": str(media_version_id) if media_version_id else None,
+                    "start_us": start_us,
+                    "end_us": end_us,
+                    "parameters": raw.get("parameters", {}),
+                }
+            )
+        normalized.sort(key=lambda item: (item["start_us"], item["track_type"], item["media_version_id"] or ""))
+        snapshot = {"items": normalized, "input_snapshot": input_snapshot}
+        revision_hash = _hash(snapshot)
+        revision_id = str(uuid.uuid4())
+        now = _now()
+        with self.database.transaction() as connection:
+            next_no = connection.execute(
+                "SELECT COALESCE(MAX(revision_no), 0) + 1 FROM timeline_revisions WHERE episode_id=?", (episode_id,)
+            ).fetchone()[0]
+            connection.execute(
+                """INSERT INTO timeline_revisions
+                (id, episode_id, revision_no, content_json, input_snapshot_json, revision_hash, status,
+                 created_at, updated_at, created_by, revision, schema_version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'v2')""",
+                (revision_id, episode_id, next_no, _json(normalized), _json(input_snapshot), revision_hash, status, now, now, actor),
+            )
+            for item in normalized:
+                connection.execute(
+                    """INSERT INTO timeline_items
+                    (id, timeline_revision_id, track_type, media_version_id, start_us, end_us, parameters_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (str(uuid.uuid4()), revision_id, item["track_type"], item["media_version_id"], item["start_us"], item["end_us"], _json(item["parameters"])),
+                )
+            connection.execute(
+                """INSERT INTO audit_events
+                (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json)
+                VALUES (?, 'producer', 'TIMELINE_REVISION_CREATED', 'timeline_revision', ?, ?, ?)""",
+                (actor, revision_id, "创建不可变时间线 revision", _json({"episode_id": episode_id, "revision_hash": revision_hash})),
+            )
+        return self.get_timeline(revision_id)
+
+    def get_timeline(self, timeline_revision_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT * FROM timeline_revisions WHERE id=?", (timeline_revision_id,)).fetchone()
+            if row is None:
+                raise DomainRuleError("TIMELINE_REVISION_NOT_FOUND", "时间线 revision 不存在")
+            items = connection.execute("SELECT * FROM timeline_items WHERE timeline_revision_id=? ORDER BY start_us, id", (timeline_revision_id,)).fetchall()
+        return {
+            **dict(row),
+            "content": json.loads(row["content_json"]),
+            "input_snapshot": json.loads(row["input_snapshot_json"]),
+            "items": [{**dict(item), "parameters": json.loads(item["parameters_json"])} for item in items],
+        }
+
+    def create_subtitle_revision(
+        self,
+        episode_id: str,
+        cues: list[dict[str, Any]],
+        *,
+        format: str = "SRT",
+        input_snapshot: dict[str, Any] | None = None,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        self._episode(episode_id)
+        normalized_format = format.upper()
+        if normalized_format not in {"SRT", "VTT", "ASS"}:
+            raise DomainRuleError("SUBTITLE_FORMAT_UNSUPPORTED", "只支持 SRT、VTT、ASS")
+        if not cues:
+            raise DomainRuleError("SUBTITLE_CUES_REQUIRED", "字幕至少需要一个 cue")
+        normalized: list[dict[str, Any]] = []
+        previous_end = -1
+        for index, raw in enumerate(cues, start=1):
+            try:
+                start_us = int(raw["start_us"])
+                end_us = int(raw["end_us"])
+                text = str(raw["text"]).strip()
+            except (KeyError, TypeError, ValueError) as error:
+                raise DomainRuleError("SUBTITLE_CUE_INVALID", "字幕 cue 字段无效") from error
+            if start_us < 0 or end_us <= start_us or not text:
+                raise DomainRuleError("SUBTITLE_CUE_INVALID", "字幕 cue 必须有正时长和非空文本")
+            if start_us < previous_end:
+                raise DomainRuleError("SUBTITLE_OVERLAP", "字幕 cue 不能重叠")
+            duration_seconds = (end_us - start_us) / 1_000_000
+            cps = len(text) / duration_seconds
+            if cps > 25:
+                raise DomainRuleError("SUBTITLE_CPS_EXCEEDED", "字幕字符速度超过 25 CPS", {"cue_no": index, "cps": round(cps, 2)})
+            normalized.append({"cue_no": index, "start_us": start_us, "end_us": end_us, "text": text, "style": raw.get("style", {})})
+            previous_end = end_us
+        content = self._render_subtitles(normalized, normalized_format)
+        revision_id = str(uuid.uuid4())
+        now = _now()
+        with self.database.transaction() as connection:
+            next_no = connection.execute("SELECT COALESCE(MAX(revision_no), 0) + 1 FROM subtitle_revisions WHERE episode_id=?", (episode_id,)).fetchone()[0]
+            connection.execute(
+                """INSERT INTO subtitle_revisions
+                (id, episode_id, revision_no, format, content_text, content_hash, input_snapshot_json, status,
+                 created_at, updated_at, created_by, revision, schema_version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, 1, 'v2')""",
+                (revision_id, episode_id, next_no, normalized_format, content, hashlib.sha256(content.encode()).hexdigest(), _json(input_snapshot or {}), now, now, actor),
+            )
+            for cue in normalized:
+                connection.execute(
+                    "INSERT INTO subtitle_cues (id, subtitle_revision_id, cue_no, start_us, end_us, text, style_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (str(uuid.uuid4()), revision_id, cue["cue_no"], cue["start_us"], cue["end_us"], cue["text"], _json(cue["style"])),
+                )
+            connection.execute(
+                "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'producer', 'SUBTITLE_REVISION_CREATED', 'subtitle_revision', ?, ?, ?)",
+                (actor, revision_id, "创建字幕 revision", _json({"episode_id": episode_id, "format": normalized_format})),
+            )
+        return self.get_subtitles(revision_id)
+
+    def _render_subtitles(self, cues: list[dict[str, Any]], format: str) -> str:
+        if format == "VTT":
+            lines = ["WEBVTT", ""]
+            for cue in cues:
+                lines.extend([str(cue["cue_no"]), f"{_timestamp_us(cue['start_us']).replace(',', '.')} --> {_timestamp_us(cue['end_us']).replace(',', '.')}", cue["text"], ""])
+            return "\n".join(lines)
+        if format == "ASS":
+            lines = ["[Script Info]", "ScriptType: v4.00+", "", "[Events]", "Format: Layer, Start, End, Text"]
+            for cue in cues:
+                def ass_time(value: int) -> str:
+                    centiseconds = value // 10_000
+                    hours, rest = divmod(centiseconds, 360_000)
+                    minutes, rest = divmod(rest, 6000)
+                    seconds, cs = divmod(rest, 100)
+                    return f"{hours}:{minutes:02d}:{seconds:02d}.{cs:02d}"
+                lines.append(f"Dialogue: 0,{ass_time(cue['start_us'])},{ass_time(cue['end_us'])},{cue['text'].replace(chr(10), r'\\N')}")
+            return "\n".join(lines) + "\n"
+        lines = []
+        for cue in cues:
+            lines.extend([str(cue["cue_no"]), f"{_srt_time(cue['start_us'])} --> {_srt_time(cue['end_us'])}", cue["text"], ""])
+        return "\n".join(lines)
+
+    def get_subtitles(self, subtitle_revision_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT * FROM subtitle_revisions WHERE id=?", (subtitle_revision_id,)).fetchone()
+            if row is None:
+                raise DomainRuleError("SUBTITLE_REVISION_NOT_FOUND", "字幕 revision 不存在")
+            cues = connection.execute("SELECT * FROM subtitle_cues WHERE subtitle_revision_id=? ORDER BY cue_no", (subtitle_revision_id,)).fetchall()
+        return {**dict(row), "cues": [{**dict(cue), "style": json.loads(cue["style_json"])} for cue in cues]}
+
+    def bind_audio(
+        self,
+        episode_id: str,
+        media_version_id: str,
+        track_type: str,
+        start_us: int,
+        end_us: int,
+        *,
+        gain_db: float = 0.0,
+        source_license_status: str = "VERIFIED_LOCAL",
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        self._media_for_episode(episode_id, media_version_id)
+        if end_us <= start_us or start_us < 0:
+            raise DomainRuleError("AUDIO_BINDING_RANGE_INVALID", "音频绑定时间范围无效")
+        if source_license_status not in {"VERIFIED_LOCAL", "PUBLIC_DOMAIN", "USER_OWNED"}:
+            raise DomainRuleError("AUDIO_LICENSE_REQUIRED", "音频必须具有可证明的本地授权状态")
+        binding_id = str(uuid.uuid4())
+        now = _now()
+        with self.database.transaction() as connection:
+            connection.execute(
+                """INSERT INTO audio_bindings
+                (id, episode_id, media_version_id, track_type, start_us, end_us, gain_db, source_license_status,
+                 status, snapshot_json, created_at, updated_at, created_by, revision, schema_version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, 1, 'v2')""",
+                (binding_id, episode_id, media_version_id, track_type, start_us, end_us, gain_db, source_license_status, _json({"media_version_id": media_version_id, "gain_db": gain_db}), now, now, actor),
+            )
+            connection.execute(
+                "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'producer', 'AUDIO_BINDING_CREATED', 'audio_binding', ?, ?, ?)",
+                (actor, binding_id, "绑定本地音频轨道", _json({"episode_id": episode_id, "track_type": track_type})),
+            )
+        return self.get_audio_binding(binding_id)
+
+    def get_audio_binding(self, binding_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT * FROM audio_bindings WHERE id=?", (binding_id,)).fetchone()
+        if row is None:
+            raise DomainRuleError("AUDIO_BINDING_NOT_FOUND", "音频绑定不存在")
+        return {**dict(row), "snapshot": json.loads(row["snapshot_json"])}
+
+    def list_audio_bindings(self, episode_id: str) -> list[dict[str, Any]]:
+        self._episode(episode_id)
+        with self.database.connect() as connection:
+            rows = connection.execute("SELECT * FROM audio_bindings WHERE episode_id=? ORDER BY start_us, id", (episode_id,)).fetchall()
+        return [{**dict(row), "snapshot": json.loads(row["snapshot_json"])} for row in rows]
+
+    def create_frame_anchor(
+        self,
+        source_media_version_id: str,
+        *,
+        source_time_us: int | None = None,
+        source_frame_index: int | None = None,
+        position_mode: str | None = None,
+        role_hint: str = "LAST_FRAME",
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        source = self.media.verify_content_integrity(source_media_version_id)
+        if source["media_kind"] != "VIDEO":
+            raise DomainRuleError("FRAME_ANCHOR_SOURCE_INVALID", "首尾帧必须来自视频媒体")
+        if sum(value is not None for value in (source_time_us, source_frame_index, position_mode)) != 1:
+            raise DomainRuleError("FRAME_ANCHOR_POSITION_REQUIRED", "必须且只能提供 time_us、frame_index 或 FIRST/LAST position_mode 之一")
+        if (source_time_us is not None and source_time_us < 0) or (source_frame_index is not None and source_frame_index < 0):
+            raise DomainRuleError("FRAME_ANCHOR_POSITION_REQUIRED", "time_us/frame_index 必须为非负整数")
+        project_root = (self.settings.projects_root / source["root_rel"]).resolve()
+        source_path = (project_root / source["rel_path"]).resolve()
+        timestamps = self._video_frame_timestamps(source_path)
+        requested_time_us = source_time_us
+        if position_mode is not None:
+            resolved_frame_index = 0 if position_mode == "FIRST_FRAME" else len(timestamps) - 1
+        elif source_frame_index is not None:
+            if source_frame_index >= len(timestamps):
+                raise DomainRuleError(
+                    "FRAME_ANCHOR_POSITION_OUT_OF_RANGE",
+                    "请求帧索引超过视频真实帧范围",
+                    {"requested_frame_index": source_frame_index, "frame_count": len(timestamps)},
+                )
+            resolved_frame_index = source_frame_index
+        else:
+            assert source_time_us is not None
+            probe = source.get("probe", {})
+            format_data = probe.get("format", {}) if isinstance(probe, dict) else {}
+            try:
+                duration_us = int(Decimal(str(format_data.get("duration", "0"))) * 1_000_000)
+            except InvalidOperation as error:
+                raise DomainRuleError("FRAME_DURATION_INVALID", "视频 probe duration 无效") from error
+            if duration_us <= 0:
+                raise DomainRuleError("FRAME_DURATION_REQUIRED", "视频缺少可验证的正 duration")
+            if source_time_us >= duration_us:
+                raise DomainRuleError(
+                    "FRAME_ANCHOR_POSITION_OUT_OF_RANGE",
+                    "请求时间超出视频真实时长范围",
+                    {"requested_time_us": source_time_us, "duration_us": duration_us, "last_frame_time_us": timestamps[-1]},
+                )
+            resolved_frame_index = max(index for index, timestamp in enumerate(timestamps) if timestamp <= source_time_us)
+        resolved_time_us = timestamps[resolved_frame_index]
+        frame_dir = self.settings.work_root / "frame_anchor_extract"
+        frame_dir.mkdir(parents=True, exist_ok=True)
+        frame_path = frame_dir / f"anchor-{uuid.uuid4().hex}.png"
+        args = ["-i", str(source_path), "-vf", f"select=eq(n\\,{resolved_frame_index})", "-frames:v", "1", "-fps_mode", "vfr", "-y", str(frame_path)]
+        try:
+            self._run_ffmpeg(args, timeout=120)
+            if not frame_path.is_file() or frame_path.stat().st_size == 0:
+                raise DomainRuleError("FRAME_ANCHOR_EXTRACTION_EMPTY", "FFmpeg 未生成可注册的真实视频帧")
+            imported = self.media.import_file(source["project_id"], frame_path, purpose="FRAME_ANCHOR", owner_type="MEDIA_VERSION", owner_id=source_media_version_id, media_kind="IMAGE", stage="FRAME_ANCHOR", actor=actor)
+        finally:
+            frame_path.unlink(missing_ok=True)
+        anchor_id = str(uuid.uuid4())
+        now = _now()
+        with self.database.transaction() as connection:
+            connection.execute(
+                """INSERT INTO frame_anchors
+                (id, source_media_version_id, source_time_us, source_frame_index, extracted_media_version_id,
+                 role_hint, sha256, approval_id, created_at, updated_at, created_by, revision, schema_version,
+                 requested_time_us, resolved_time_us, source_sha256, extraction_method)
+                VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, 1, 'v2', ?, ?, ?, 'FFPROBE_PTS_FRAME_INDEX')""",
+                (anchor_id, source_media_version_id, resolved_time_us, resolved_frame_index, imported["media_version_id"], role_hint, imported["sha256"], now, now, actor, requested_time_us, resolved_time_us, source["actual_sha256"]),
+            )
+            connection.execute(
+                "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'producer', 'FRAME_ANCHOR_CREATED', 'frame_anchor', ?, ?, ?)",
+                (actor, anchor_id, "从视频提取连续性关键帧", _json({"source_media_version_id": source_media_version_id, "source_sha256": source["actual_sha256"], "position_mode": position_mode, "requested_time_us": requested_time_us, "resolved_time_us": resolved_time_us, "resolved_frame_index": resolved_frame_index, "role_hint": role_hint})),
+            )
+        return self.get_frame_anchor(anchor_id)
+
+    def _video_frame_timestamps(self, path: Path) -> list[int]:
+        ffprobe = self.settings.ffprobe_path
+        if not ffprobe or not Path(ffprobe).is_file():
+            raise DomainRuleError("FFPROBE_UNAVAILABLE", "本机 FFprobe 不可用")
+        try:
+            result = subprocess.run(
+                [ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "frame=best_effort_timestamp_time", "-of", "csv=p=0", str(path)],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise DomainRuleError("FFPROBE_FAILED", "本地 FFprobe 帧时间码读取失败", {"reason": type(error).__name__}) from error
+        if result.returncode != 0:
+            raise DomainRuleError("FFPROBE_FAILED", "本地 FFprobe 帧时间码读取失败", {"stderr_redacted": result.stderr[-500:]})
+        timestamps: list[int] = []
+        for line in result.stdout.splitlines():
+            raw = line.strip().split(",", 1)[0]
+            if not raw or raw == "N/A":
+                continue
+            try:
+                timestamps.append(int(Decimal(raw) * 1_000_000))
+            except InvalidOperation as error:
+                raise DomainRuleError("FRAME_TIMESTAMP_INVALID", "FFprobe 返回了无效帧时间码", {"value": raw}) from error
+        if not timestamps or timestamps != sorted(timestamps):
+            raise DomainRuleError("FRAME_TIMESTAMPS_UNAVAILABLE", "视频缺少可用于精确取帧的单调时间码")
+        return timestamps
+
+    def get_frame_anchor(self, anchor_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT * FROM frame_anchors WHERE id=?", (anchor_id,)).fetchone()
+        if row is None:
+            raise DomainRuleError("FRAME_ANCHOR_NOT_FOUND", "FrameAnchor 不存在")
+        return dict(row)
+
+    def create_transition_constraint(
+        self,
+        from_shot_id: str,
+        to_shot_id: str,
+        constraint_type: str,
+        *,
+        from_anchor_id: str | None = None,
+        to_anchor_id: str | None = None,
+        enforcement: str = "HARD",
+        note: str | None = None,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        if from_shot_id == to_shot_id:
+            raise DomainRuleError("TRANSITION_SHOT_INVALID", "连续性约束不能连接同一镜头")
+        with self.database.transaction() as connection:
+            shots = connection.execute(
+                """SELECT sh.id, se.project_id FROM shots sh JOIN episodes e ON e.id=sh.episode_id
+                JOIN seasons se ON se.id=e.season_id WHERE sh.id IN (?, ?)""",
+                (from_shot_id, to_shot_id),
+            ).fetchall()
+            if len(shots) != 2:
+                raise DomainRuleError("SHOT_NOT_FOUND", "连续性约束镜头不存在")
+            if len({str(shot["project_id"]) for shot in shots}) != 1:
+                raise DomainRuleError("TRANSITION_PROJECT_MISMATCH", "连续性约束的两个镜头必须属于同一项目")
+            if from_anchor_id:
+                anchor = connection.execute("SELECT id, is_stale, stale_reason FROM frame_anchors WHERE id=?", (from_anchor_id,)).fetchone()
+                if anchor is None:
+                    raise DomainRuleError("FRAME_ANCHOR_NOT_FOUND", "from anchor 不存在")
+                if int(anchor["is_stale"]):
+                    raise DomainRuleError(
+                        "FRAME_ANCHOR_STALE", "不能用已失效 FrameAnchor 创建新连续性约束", {"side": "from", "stale_reason": anchor["stale_reason"]}
+                    )
+            if to_anchor_id:
+                anchor = connection.execute("SELECT id, is_stale, stale_reason FROM frame_anchors WHERE id=?", (to_anchor_id,)).fetchone()
+                if anchor is None:
+                    raise DomainRuleError("FRAME_ANCHOR_NOT_FOUND", "to anchor 不存在")
+                if int(anchor["is_stale"]):
+                    raise DomainRuleError(
+                        "FRAME_ANCHOR_STALE", "不能用已失效 FrameAnchor 创建新连续性约束", {"side": "to", "stale_reason": anchor["stale_reason"]}
+                    )
+            constraint_id = str(uuid.uuid4())
+            now = _now()
+            connection.execute(
+                """INSERT INTO shot_transition_constraints
+                (id, from_shot_id, to_shot_id, constraint_type, from_anchor_id, to_anchor_id, enforcement,
+                 compatibility_status, note, created_at, updated_at, created_by, revision, schema_version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING_REVIEW', ?, ?, ?, ?, 1, 'v2')""",
+                (constraint_id, from_shot_id, to_shot_id, constraint_type, from_anchor_id, to_anchor_id, enforcement, note, now, now, actor),
+            )
+        return {"id": constraint_id, "from_shot_id": from_shot_id, "to_shot_id": to_shot_id, "constraint_type": constraint_type, "compatibility_status": "PENDING_REVIEW"}
+
+    def validate_transition_constraint(self, constraint_id: str) -> dict[str, Any]:
+        with self.database.transaction() as connection:
+            constraint = connection.execute(
+                """SELECT stc.*, sf.project_id AS from_project_id, st.project_id AS to_project_id
+                FROM shot_transition_constraints stc
+                JOIN shots f ON f.id=stc.from_shot_id JOIN episodes ef ON ef.id=f.episode_id JOIN seasons sf ON sf.id=ef.season_id
+                JOIN shots t ON t.id=stc.to_shot_id JOIN episodes et ON et.id=t.episode_id JOIN seasons st ON st.id=et.season_id
+                WHERE stc.id=?""",
+                (constraint_id,),
+            ).fetchone()
+            if constraint is None:
+                raise DomainRuleError("SHOT_TRANSITION_NOT_FOUND", "ShotTransitionConstraint 不存在")
+            if int(constraint["is_stale"]):
+                return {
+                    "constraint_id": constraint_id,
+                    "status": "STALE",
+                    "blockers": [{"code": "TRANSITION_BOUNDARY_STALE", "reason": constraint["stale_reason"]}],
+                    "warnings": [],
+                }
+            blockers: list[dict[str, Any]] = []
+            warnings: list[dict[str, Any]] = []
+            if constraint["from_project_id"] != constraint["to_project_id"]:
+                blockers.append({"code": "TRANSITION_PROJECT_MISMATCH"})
+            for side, anchor_id, shot_id in (
+                ("from", constraint["from_anchor_id"], constraint["from_shot_id"]),
+                ("to", constraint["to_anchor_id"], constraint["to_shot_id"]),
+            ):
+                if not anchor_id:
+                    continue
+                anchor = connection.execute(
+                    """SELECT fa.*, source.integrity_status AS source_integrity, extracted.integrity_status AS extracted_integrity,
+                    source.sha256 AS source_sha256, extracted.sha256 AS extracted_sha256,
+                    ma.project_id, ma.owner_type, ma.owner_id
+                    FROM frame_anchors fa
+                    JOIN media_versions source ON source.id=fa.source_media_version_id
+                    JOIN media_versions extracted ON extracted.id=fa.extracted_media_version_id
+                    JOIN media_assets ma ON ma.id=source.media_asset_id WHERE fa.id=?""",
+                    (anchor_id,),
+                ).fetchone()
+                if anchor is None:
+                    blockers.append({"code": "FRAME_ANCHOR_NOT_FOUND", "side": side})
+                    continue
+                if int(anchor["is_stale"]):
+                    blockers.append({"code": "FRAME_ANCHOR_STALE", "side": side, "reason": anchor["stale_reason"]})
+                if str(anchor["project_id"]) != str(constraint["from_project_id"]):
+                    blockers.append({"code": "FRAME_ANCHOR_PROJECT_MISMATCH", "side": side})
+                for media_role, media_version_id in (
+                    ("source", str(anchor["source_media_version_id"])),
+                    ("extracted", str(anchor["extracted_media_version_id"])),
+                ):
+                    try:
+                        self.media.verify_content_integrity(media_version_id, connection=connection)
+                    except DomainRuleError as error:
+                        if error.code not in {"SOURCE_INTEGRITY_FAILED", "MEDIA_FILE_MISSING"}:
+                            raise
+                        blockers.append(
+                            {
+                                "code": "FRAME_ANCHOR_INTEGRITY_FAILED",
+                                "side": side,
+                                "media_role": media_role,
+                                "media_version_id": media_version_id,
+                                "reason": error.code,
+                            }
+                        )
+                if str(anchor["sha256"]) != str(anchor["extracted_sha256"]):
+                    blockers.append({"code": "FRAME_ANCHOR_HASH_MISMATCH", "side": side})
+                if anchor["owner_type"] == "SHOT" and str(anchor["owner_id"]) != str(shot_id):
+                    blockers.append({"code": "FRAME_ANCHOR_SHOT_MISMATCH", "side": side})
+                elif anchor["owner_type"] != "SHOT":
+                    warnings.append({"code": "FRAME_ANCHOR_PROJECT_BRIDGE", "side": side})
+            status = "BLOCKED" if blockers else "WARNING" if warnings else "COMPATIBLE"
+            connection.execute(
+                "UPDATE shot_transition_constraints SET compatibility_status=?, updated_at=?, revision=revision+1 WHERE id=?",
+                (status, _now(), constraint_id),
+            )
+        return {"constraint_id": constraint_id, "status": status, "blockers": blockers, "warnings": warnings}
+
+    def create_recipe(self, code: str, title: str, steps: list[dict[str, Any]], capability_contract: dict[str, Any], actor: str = "local-user") -> dict[str, Any]:
+        if not code.strip() or not steps:
+            raise DomainRuleError("POST_PROCESS_RECIPE_INVALID", "增强 recipe 需要 code 和至少一个 step")
+        recipe_id = str(uuid.uuid4())
+        now = _now()
+        with self.database.transaction() as connection:
+            connection.execute(
+                "INSERT INTO post_process_recipes (id, code, title, steps_json, capability_contract_json, status, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, 1, 'v2')",
+                (recipe_id, code, title, _json(steps), _json(capability_contract), now, now, actor),
+            )
+        return self.get_recipe(recipe_id)
+
+    def get_recipe(self, recipe_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT * FROM post_process_recipes WHERE id=?", (recipe_id,)).fetchone()
+        if row is None:
+            raise DomainRuleError("POST_PROCESS_RECIPE_NOT_FOUND", "增强 recipe 不存在")
+        return {**dict(row), "steps": json.loads(row["steps_json"]), "capability_contract": json.loads(row["capability_contract_json"])}
+
+    def run_enhancement(self, input_media_version_id: str, recipe_id: str, parameters: dict[str, Any] | None = None, actor: str = "local-user") -> dict[str, Any]:
+        recipe = self.get_recipe(recipe_id)
+        if recipe["status"] not in {"DRAFT", "ACTIVE"}:
+            raise DomainRuleError("POST_PROCESS_RECIPE_DISABLED", "增强 recipe 不可用")
+        unsupported = [step.get("kind") for step in recipe["steps"] if step.get("kind") not in {"TECHNICAL_QC", "SCALE", "WATERMARK"}]
+        if unsupported:
+            raise DomainRuleError("CAPABILITY_UNSUPPORTED", "当前本地 Worker 未声明支持增强能力", {"unsupported": unsupported})
+        source_item, source_path = self.media.content_path(input_media_version_id)
+        project_root = (self.settings.projects_root / source_item["root_rel"]).resolve()
+        out_dir = project_root / "04_media" / "enhanced"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        output = out_dir / f"enhanced-{uuid.uuid4().hex}{Path(source_item['rel_path']).suffix or '.mp4'}"
+        run_id = str(uuid.uuid4())
+        now = _now()
+        with self.database.transaction() as connection:
+            connection.execute(
+                "INSERT INTO enhancement_runs (id, input_media_version_id, recipe_id, parameters_json, status, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, ?, 'RUNNING', ?, ?, ?, 1, 'v2')",
+                (run_id, input_media_version_id, recipe_id, _json(parameters or {}), now, now, actor),
+            )
+        try:
+            if source_item["media_kind"] == "VIDEO":
+                args = ["-i", str(source_path), "-map", "0", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-y", str(output)]
+            elif source_item["media_kind"] == "AUDIO":
+                args = ["-i", str(source_path), "-c:a", "aac", "-y", str(output)]
+            else:
+                args = ["-i", str(source_path), "-frames:v", "1", "-c:v", "png", "-y", str(output)]
+            self._run_ffmpeg(args, timeout=300)
+            imported = self.media.import_file(source_item["project_id"], output, purpose="ENHANCEMENT", owner_type="MEDIA_VERSION", owner_id=input_media_version_id, media_kind=source_item["media_kind"], stage="ENHANCED", actor=actor)
+            with self.database.transaction() as connection:
+                connection.execute("UPDATE enhancement_runs SET output_media_version_id=?, status='SUCCEEDED', updated_at=?, revision=revision+1 WHERE id=?", (imported["media_version_id"], _now(), run_id))
+            return {"id": run_id, "status": "SUCCEEDED", "output_media_version_id": imported["media_version_id"], "recipe_id": recipe_id}
+        except DomainRuleError as error:
+            with self.database.transaction() as connection:
+                connection.execute("UPDATE enhancement_runs SET status='FAILED', error_detail=?, updated_at=?, revision=revision+1 WHERE id=?", (error.code, _now(), run_id))
+            raise
+
+    def render_episode(self, timeline_revision_id: str, *, actor: str = "local-user") -> dict[str, Any]:
+        timeline = self.get_timeline(timeline_revision_id)
+        episode = self._episode(str(timeline["episode_id"]))
+        video_items = [item for item in timeline["items"] if item["track_type"].upper() == "VIDEO" and item["media_version_id"]]
+        if not video_items:
+            raise DomainRuleError("TIMELINE_VIDEO_REQUIRED", "整集渲染至少需要一个 VIDEO item")
+        paths: list[Path] = []
+        for item in video_items:
+            media = self._media_for_episode(str(timeline["episode_id"]), str(item["media_version_id"]))
+            _, path = self.media.content_path(str(item["media_version_id"]))
+            if media["media_kind"] != "VIDEO":
+                raise DomainRuleError("TIMELINE_MEDIA_KIND_INVALID", "VIDEO track 只能绑定视频媒体")
+            paths.append(path)
+        project_root = (self.settings.projects_root / episode["root_rel"]).resolve()
+        render_dir = project_root / "05_timelines" / "renders"
+        render_dir.mkdir(parents=True, exist_ok=True)
+        render_path = render_dir / f"episode-{episode['code']}-{uuid.uuid4().hex}.mp4"
+        concat_list = render_dir / f".partial-{uuid.uuid4().hex}.concat.txt"
+        escaped_paths = [path.as_posix().replace("'", "'\\''") for path in paths]
+        concat_list.write_text("\n".join(f"file '{path}'" for path in escaped_paths) + "\n", encoding="utf-8")
+        try:
+            self._run_ffmpeg(["-f", "concat", "-safe", "0", "-i", str(concat_list), "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", "-movflags", "+faststart", "-y", str(render_path)], timeout=900)
+        finally:
+            concat_list.unlink(missing_ok=True)
+        digest, size = _hash_file(render_path)
+        probe = self._probe(render_path)
+        render_id = str(uuid.uuid4())
+        now = _now()
+        with self.database.transaction() as connection:
+            connection.execute(
+                """INSERT INTO episode_render_versions
+                (id, episode_id, timeline_revision_id, rel_path, sha256, probe_json, integrity_status, duration_ms, mime_type,
+                 created_at, updated_at, created_by, revision, schema_version)
+                VALUES (?, ?, ?, ?, ?, ?, 'VERIFIED', ?, 'video/mp4', ?, ?, ?, 1, 'v2')""",
+                (render_id, episode["id"], timeline_revision_id, render_path.relative_to(project_root).as_posix(), digest, _json(probe), probe.get("duration_ms"), now, now, actor),
+            )
+        return {"id": render_id, "episode_id": episode["id"], "timeline_revision_id": timeline_revision_id, "rel_path": render_path.relative_to(project_root).as_posix(), "sha256": digest, "byte_size": size, "probe": probe, "status": "VERIFIED"}
+
+    def build_delivery(self, episode_render_version_id: str, target_version_id: str, *, actor: str = "local-user") -> dict[str, Any]:
+        with self.database.connect() as connection:
+            render = connection.execute("SELECT erv.*, e.code AS episode_code, e.id AS episode_id, s.project_id, p.root_rel FROM episode_render_versions erv JOIN episodes e ON e.id=erv.episode_id JOIN seasons s ON s.id=e.season_id JOIN projects p ON p.id=s.project_id WHERE erv.id=?", (episode_render_version_id,)).fetchone()
+            target = connection.execute("SELECT dtv.*, dt.project_id, dt.transport, dt.code AS target_code FROM delivery_target_versions dtv JOIN delivery_targets dt ON dt.id=dtv.delivery_target_id WHERE dtv.id=?", (target_version_id,)).fetchone()
+        if render is None:
+            raise DomainRuleError("EPISODE_RENDER_NOT_FOUND", "整集渲染版本不存在")
+        if target is None:
+            raise DomainRuleError("DELIVERY_TARGET_VERSION_NOT_FOUND", "交付目标版本不存在")
+        if render["project_id"] != target["project_id"]:
+            raise DomainRuleError("DELIVERY_PROJECT_MISMATCH", "交付目标必须属于同一项目")
+        if target["transport"] != "LOCAL_FILESYSTEM":
+            raise DomainRuleError("REMOTE_TRANSPORT_DISABLED", "LOCAL_ONLY 首版只允许本地文件交付")
+        spec = json.loads(target["target_spec_json"])
+        path_rel = str(spec.get("path_rel", "06_delivery"))
+        if Path(path_rel).is_absolute() or ".." in Path(path_rel).parts:
+            raise DomainRuleError("INVALID_DELIVERY_TARGET", "交付目标路径越界")
+        project_root = (self.settings.projects_root / render["root_rel"]).resolve()
+        source = (project_root / render["rel_path"]).resolve()
+        destination_dir = (project_root / path_rel / str(render["episode_code"])).resolve()
+        if not destination_dir.is_relative_to(project_root):
+            raise DomainRuleError("PATH_ESCAPE", "交付目标目录越界")
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        destination = destination_dir / f"{render['episode_code']}.mp4"
+        partial = destination.with_name(f".partial-{destination.name}")
+        shutil.copyfile(source, partial)
+        os.replace(partial, destination)
+        file_hash, byte_size = _hash_file(destination)
+        manifest = {"schema_version": "delivery-manifest.v1", "episode_id": render["episode_id"], "timeline_revision_id": render["timeline_revision_id"], "target_version_id": target_version_id, "files": [{"rel_path": destination.relative_to(project_root).as_posix(), "sha256": file_hash, "byte_size": byte_size}]}
+        manifest_hash = _hash(manifest)
+        manifest_path = destination_dir / "manifest.json"
+        manifest_path.write_text(json.dumps({**manifest, "manifest_sha256": manifest_hash}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        package_id = str(uuid.uuid4())
+        now = _now()
+        with self.database.transaction() as connection:
+            connection.execute("INSERT INTO delivery_packages (id, episode_render_version_id, target_version_id, rel_path, status, manifest_sha256, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, ?, 'VERIFIED', ?, ?, ?, ?, 1, 'v2')", (package_id, episode_render_version_id, target_version_id, destination_dir.relative_to(project_root).as_posix(), manifest_hash, now, now, actor))
+            connection.execute("INSERT INTO delivery_files (id, delivery_package_id, rel_path, sha256, byte_size) VALUES (?, ?, ?, ?, ?)", (str(uuid.uuid4()), package_id, destination.relative_to(project_root).as_posix(), file_hash, byte_size))
+            connection.execute("INSERT INTO delivery_files (id, delivery_package_id, rel_path, sha256, byte_size) VALUES (?, ?, ?, ?, ?)", (str(uuid.uuid4()), package_id, manifest_path.relative_to(project_root).as_posix(), hashlib.sha256(manifest_path.read_bytes()).hexdigest(), manifest_path.stat().st_size))
+            connection.execute("INSERT INTO delivery_events (id, delivery_package_id, action, manifest_sha256, note, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, 'BUILT', ?, ?, ?, ?, ?, 1, 'v2')", (str(uuid.uuid4()), package_id, manifest_hash, "local filesystem delivery built and verified", now, now, actor))
+        return {"id": package_id, "status": "VERIFIED", "rel_path": destination_dir.relative_to(project_root).as_posix(), "manifest_sha256": manifest_hash, "files": manifest["files"]}
+
+    def verify_delivery(self, package_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            package = connection.execute("SELECT dp.*, e.code AS episode_code, p.root_rel FROM delivery_packages dp JOIN episode_render_versions erv ON erv.id=dp.episode_render_version_id JOIN episodes e ON e.id=erv.episode_id JOIN seasons s ON s.id=e.season_id JOIN projects p ON p.id=s.project_id WHERE dp.id=?", (package_id,)).fetchone()
+            files = connection.execute("SELECT * FROM delivery_files WHERE delivery_package_id=? ORDER BY rel_path", (package_id,)).fetchall()
+        if package is None:
+            raise DomainRuleError("DELIVERY_PACKAGE_NOT_FOUND", "交付包不存在")
+        root = (self.settings.projects_root / package["root_rel"]).resolve()
+        checks = []
+        for file in files:
+            path = (root / file["rel_path"]).resolve()
+            actual = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+            checks.append({"rel_path": file["rel_path"], "expected_sha256": file["sha256"], "actual_sha256": actual, "ok": actual == file["sha256"]})
+        ok = all(item["ok"] for item in checks)
+        with self.database.transaction() as connection:
+            connection.execute("UPDATE delivery_packages SET status=?, updated_at=?, revision=revision+1 WHERE id=?", ("VERIFIED" if ok else "CORRUPT", _now(), package_id))
+        return {"id": package_id, "status": "VERIFIED" if ok else "CORRUPT", "checks": checks}
+
+    def withdraw_delivery(self, package_id: str, reason: str, actor: str = "local-user") -> dict[str, Any]:
+        if not reason.strip():
+            raise DomainRuleError("DELIVERY_WITHDRAW_REASON_REQUIRED", "撤回交付必须记录原因")
+        now = _now()
+        with self.database.transaction() as connection:
+            row = connection.execute("SELECT id FROM delivery_packages WHERE id=?", (package_id,)).fetchone()
+            if row is None:
+                raise DomainRuleError("DELIVERY_PACKAGE_NOT_FOUND", "交付包不存在")
+            connection.execute("UPDATE delivery_packages SET status='WITHDRAWN', withdrawn_reason=?, updated_at=?, revision=revision+1 WHERE id=?", (reason, now, package_id))
+            connection.execute("INSERT INTO delivery_events (id, delivery_package_id, action, note, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, 'WITHDRAWN', ?, ?, ?, ?, 1, 'v2')", (str(uuid.uuid4()), package_id, reason, now, now, actor))
+        return {"id": package_id, "status": "WITHDRAWN", "reason": reason}
+
+    def _run_ffmpeg(self, args: list[str], *, timeout: int) -> None:
+        ffmpeg = self.settings.ffmpeg_path
+        if not ffmpeg or not Path(ffmpeg).is_file():
+            raise DomainRuleError("FFMPEG_UNAVAILABLE", "本机 FFmpeg 不可用")
+        try:
+            result = subprocess.run([ffmpeg, *args], capture_output=True, text=True, timeout=timeout, check=False)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise DomainRuleError("FFMPEG_EXECUTION_FAILED", "本地 FFmpeg 执行失败", {"reason": type(error).__name__}) from error
+        if result.returncode != 0:
+            raise DomainRuleError("FFMPEG_EXECUTION_FAILED", "本地 FFmpeg 执行失败", {"stderr_redacted": result.stderr[-500:]})
+
+    def _probe(self, path: Path) -> dict[str, Any]:
+        ffprobe = self.settings.ffprobe_path
+        if not ffprobe or not Path(ffprobe).is_file():
+            raise DomainRuleError("FFPROBE_UNAVAILABLE", "本机 FFprobe 不可用")
+        result = subprocess.run([ffprobe, "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)], capture_output=True, text=True, timeout=60, check=False)
+        if result.returncode != 0:
+            raise DomainRuleError("FFPROBE_FAILED", "本地 FFprobe 检查失败")
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError as error:
+            raise DomainRuleError("FFPROBE_INVALID_JSON", "FFprobe 返回无效 JSON") from error
+        format_data = data.get("format", {})
+        duration = float(format_data.get("duration", 0) or 0)
+        return {"duration_ms": round(duration * 1000), "format": format_data, "streams": data.get("streams", [])}

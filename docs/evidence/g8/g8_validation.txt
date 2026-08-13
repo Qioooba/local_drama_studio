@@ -1,0 +1,38 @@
+G8 validation status: IN_PROGRESS — implementation and automated real-media validation green; formal phase exit pending
+Date: 2026-08-12 (Asia/Shanghai)
+Scope: immutable timeline, subtitles, audio, FrameAnchor/continuity, enhancement, render and LOCAL_ONLY delivery
+
+Migration and API
+- migration head: 0006_g8_timeline_audio_delivery
+- migration command: `scripts/migrate.py --database data/local_drama.sqlite3`
+- migration result: integrity=ok
+- generated OpenAPI: `docs/openapi/openapi.json`
+- generated client: `apps/web/src/generated/api.ts`
+
+Automated checks
+- `pytest apps/api/tests/test_g8_timeline_delivery.py -q`: 1 passed
+- `pytest apps/api/tests -q`: 33 passed
+- Ruff: PASS
+- mypy: PASS, 64 source files
+
+Real media evidence
+- test creates a real 160x90 one-second MP4 with local FFmpeg and imports it as a verified MediaVersion
+- test creates a real WAV audio source and persists an authorized local audio binding
+- FrameAnchor uses real FFmpeg extraction and registers the extracted PNG as a new immutable IMAGE MediaVersion
+- subtitle revision renders valid SRT and rejects overlapping cues and >25 CPS cues
+- transition constraint persists LAST_TO_FIRST with explicit FrameAnchor reference and PENDING_REVIEW status
+- enhancement recipe runs local FFmpeg and registers a new derived MediaVersion
+- timeline render creates a verified MP4 through FFmpeg concat/transcode
+- local filesystem delivery writes episode MP4 plus manifest with SHA-256 and byte size
+- post-build tampering is detected as CORRUPT; withdrawal records a recovery event and WITHDRAWN state
+
+Security and scope
+- delivery transport is restricted to LOCAL_FILESYSTEM
+- delivery target rejects absolute paths and `..` traversal
+- service performs project ownership checks for timeline/audio media
+- no ComfyUI task was launched by this G8 validation
+
+Exit decision
+- automated implementation evidence: PASS
+- formal G8 exit: PENDING screenshots/sample/UAT checklist and phase gate audit
+- G9/G10 must not be declared complete from this file alone

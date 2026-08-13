@@ -1,0 +1,55 @@
+G4 validation evidence
+======================
+
+Date: 2026-08-12
+Repository: F:\AI_Projects\h3\local_drama_studio
+Migration head: 0003_g4_review_selection
+
+Automated verification
+----------------------
+scripts/check.ps1: G4 check passed
+- G0 baseline: 86 FR, 14 NFR, 85 TC
+- API/domain/migration/media/review tests: 22 passed, 0 failed
+- G4 dedicated tests: 2 passed
+- Ruff: all checks passed for local_drama, tests and scripts
+- mypy: no issues found in 43 source files
+- Web: Vite build passed; Vitest 1 passed
+- OpenAPI and generated TypeScript client regenerated after G4 routes
+
+G4 invariant coverage
+---------------------
+- Immutable local media version registration with explicit PROXY/FORMAL stage and derived parent lineage.
+- Selection types KEYFRAME, PROXY_WINNER and FORMAL_SELECTION have stage validation and persisted selection pointers.
+- Human review checks are template-backed; incomplete or failed checks cannot produce APPROVED.
+- Machine QC persists file-integrity and decode checks; FORMAL approval is blocked until the latest machine QC is PASS.
+- Review records retain subject revision; shot revision changes mark related media reviews stale and auditable.
+- Batch review requires a short-lived preflight token and rejects selection/revision changes after preflight.
+- API and UI expose review templates, inbox, context, real selection action and stale/approval separation.
+
+Real local media / API evidence
+-------------------------------
+- Imported source: local historical H3 MP4; no mock or generated static business data.
+- SHA-256: 417E7F7D55CFC3DB58599FE0E128EBB9AC44C32900D4A5DA50CCBA07A5E3D7AC
+- Media version: 46f63d95-a36f-46a7-a831-a023bc26c289
+- Probe: PASS; H.264/AAC, 480x832, 24 fps, 4.458333 seconds.
+- Machine QC run: c138fc68-05f6-4e44-aeb5-bbdc233fcd0c; status PASS; file_integrity PASS; decode PASS.
+- UI selection action: PROXY_WINNER persisted and rendered as `已选择 PROXY_WINNER`.
+
+Browser evidence
+----------------
+- `g4_review_inbox.png`: real local API review inbox, proxy video, template context and unreviewed checks.
+- `g4_selection.png`: real selection action reflected by persisted PROXY_WINNER pointer.
+- g4_review_inbox.png SHA-256: 06EEADB6441C8AC4F3D71D15E70952CD3BCDA01EDBBC613C500978388D060101
+- g4_selection.png SHA-256: 524A5ED617A578CDA98CAD37204E92C1B8221EBC431A98E473751E5D41F7F76A
+
+Recovery evidence
+-----------------
+- `scripts/migrate.py` preflight backup executed against the running SQLite WAL database before the no-op head migration.
+- Backup: `backups/pre_migration_20260811T201011Z.sqlite3`, 778240 bytes.
+- Backup `PRAGMA integrity_check`: ok.
+- Active DB migration and integrity: head 0003_g4_review_selection, integrity ok.
+- Cache/media source remains immutable; review/selection state is SQLite-authoritative and auditable.
+
+Known boundary
+--------------
+G4 does not claim persistent queue/recovery, real generation, local LLM breakdown execution, audio/subtitle/timeline/delivery, scale UAT or release readiness. Those remain ordered G5-G10 gates. G11 legacy migration remains deferred and was not implemented.

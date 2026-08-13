@@ -1,0 +1,37 @@
+G6 validation status: IN_PROGRESS — NOT EXIT PASS
+Date: 2026-08-12 (Asia/Shanghai)
+Scope: G6 ComfyUI / local LLM / semantic generation / candidate runtime truthfulness
+
+Automated checks
+- pytest apps/api/tests/test_g6_workflows.py: 5 passed
+- pytest apps/api/tests (latest before this evidence refresh): 32 passed
+- ruff apps/api/local_drama apps/api/tests scripts: PASS
+- mypy apps/api/local_drama --ignore-missing-imports: PASS, 61 source files
+- web pnpm build: PASS
+- web pnpm test -- --run: PASS, 1 test
+
+Workflow package evidence
+- migration head: 0006_g8_timeline_audio_delivery
+- generic loopback workflow: real /object_info validation PASS; package written atomically; explicit publish PASS
+- H3 candidate workflow version: 4d4cac74-b795-4421-be02-8646a69cf71d (published candidate; prior invalid version retired)
+- H3 workflow validation: real ComfyUI 0.31.0 /object_info PASS, no missing node classes
+- H3 candidate runtime layout: PASS; actual manifest-backed component directories and config sidecars were found under FL2VA
+- H3 real prompt: 51d88c9d-72af-4c39-9740-d559c901f711
+- H3 real job: 8f4ca4ca-b251-4469-9824-bfc242ff5248
+- H3 real attempt: adb0a841-90bc-4317-a628-d0a6f2143677
+- H3 real result: ComfyUI loopback process disappeared during model load; no artifact registered; queue reconciled to NEEDS_ATTENTION/ORPHANED with WORKER_LEASE_EXPIRED and uncertain_side_effect=true
+- Current operator choice: do not launch a new ComfyUI task while the user-selected task is running; G6 remains open
+
+Local LLM evidence
+- Ollama loopback service started locally, no download/network fallback
+- inventory discovered: qwen3:8b, qwen3:32b, deepseek-r1:14b
+- explicit profile: local-llm-ollama-qwen3-8b, version 5fae10cb-d6d8-5d10-b139-6642ee658e27
+- tags probe: PASS; minimum real load probe: BLOCKED with HTTP 500 model-load failure
+- profile automatically downgraded from PUBLISHED to CANDIDATE_UNVERIFIED; script breakdown did not create a fake draft
+
+Browser evidence
+- g6_generation_lab.png SHA-256 C33CF89D9C90AF558E92FBBFE8CEA0BDCB37D71933DD1160501BB28C67F9D45C
+- g6_generation_blocked.png SHA-256 49D2BF47D6F3EE2EF8089FA52AC2E661D43B30C794D89531E4977371F1632E5E
+
+Exit decision
+- BLOCKED / continue G6. Runtime layout and recovery evidence are green, but real local model load, a successful H3 artifact, four real proxy takes, formal selection/review and crash-isolation evidence are not green. Do not claim G6 exit.

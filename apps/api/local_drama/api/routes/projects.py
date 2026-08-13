@@ -1,0 +1,171 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Header, Request
+
+from local_drama.api.schemas.projects import (
+    ProjectCreateRequest,
+    ProjectUpdateRequest,
+    ShotCreateRequest,
+    ShotRevisionRequest,
+)
+from local_drama.application.errors import api_error_from_domain
+from local_drama.application.projects import ProjectService
+from local_drama.domain.errors import DomainRuleError
+
+router = APIRouter(prefix="/projects", tags=["projects"])
+
+
+def service(request: Request) -> ProjectService:
+    settings = request.app.state.settings
+    return ProjectService(request.app.state.database, settings.projects_root)
+
+
+@router.get("", operation_id="listProjects")
+async def list_projects(request: Request, limit: int = 50) -> dict[str, object]:
+    return {"items": service(request).list_projects(limit), "page": {"next_cursor": None, "has_more": False}}
+
+
+@router.post("", operation_id="createProject", status_code=201)
+async def create_project(
+    request: Request,
+    payload: ProjectCreateRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, object]:
+    del idempotency_key  # G5 will make idempotency persistence universal; project codes are unique in G2.
+    try:
+        result = service(request).create_project(
+            code=payload.code,
+            title=payload.title,
+            episode_count=payload.episode_count,
+            aspect_ratio=payload.aspect_ratio,
+            fps_num=payload.fps.numerator if payload.fps else None,
+            fps_den=payload.fps.denominator if payload.fps else None,
+            target_duration_ms=payload.target_duration_ms,
+            allow_unconfigured_capabilities=payload.allow_unconfigured_capabilities,
+            request_id=getattr(request.state, "request_id", None),
+        )
+        return {"project": result, "blockers": [] if payload.allow_unconfigured_capabilities is False else ["PROFILE_NOT_CONFIGURED"]}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/{project_id}", operation_id="getProject")
+async def get_project(project_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"project": service(request).get_project(project_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.patch("/{project_id}", operation_id="updateProject")
+async def update_project(project_id: str, payload: ProjectUpdateRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"project": service(request).update_project_title(project_id, payload.title, payload.expected_revision)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/{project_id}:activate", operation_id="activateProject")
+async def activate_project(project_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"project": service(request).transition_project(project_id, "ACTIVE")}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/{project_id}:pause", operation_id="pauseProject")
+async def pause_project(project_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"project": service(request).transition_project(project_id, "PAUSED")}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/{project_id}:archive", operation_id="archiveProject")
+async def archive_project(project_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"project": service(request).transition_project(project_id, "ARCHIVED")}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/{project_id}:restore", operation_id="restoreProject")
+async def restore_project(project_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"project": service(request).transition_project(project_id, "ACTIVE")}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/{project_id}/health", operation_id="projectHealth")
+async def project_health(project_id: str, request: Request) -> dict[str, object]:
+    try:
+        project = service(request).get_project(project_id)
+        root = request.app.state.settings.projects_root / project["root_rel"]
+        return {"project_id": project_id, "status": "HEALTHY" if root.exists() else "BLOCKED", "root_exists": root.exists()}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/{project_id}/seasons", operation_id="listSeasons")
+async def list_seasons(project_id: str, request: Request) -> dict[str, object]:
+    return {"items": service(request).list_seasons(project_id)}
+
+
+@router.get("/seasons/{season_id}/episodes", operation_id="listEpisodes")
+async def list_episodes(season_id: str, request: Request) -> dict[str, object]:
+    return {"items": service(request).list_episodes(season_id)}
+
+
+@router.get("/episodes/{episode_id}", operation_id="getEpisode")
+async def get_episode(episode_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"episode": service(request).get_episode(episode_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/episodes/{episode_id}:reorder", operation_id="reorderEpisode")
+async def reorder_episode(episode_id: str, display_order: int, request: Request) -> dict[str, object]:
+    try:
+        return {"episode": service(request).reorder_episode(episode_id, display_order)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/episodes/{episode_id}/shots", operation_id="listShots")
+async def list_shots(episode_id: str, request: Request) -> dict[str, object]:
+    return {"items": service(request).list_shots(episode_id)}
+
+
+@router.get("/shots/{shot_id}", operation_id="getShot")
+async def get_shot(shot_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"shot": service(request).get_shot(shot_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/{project_id}/episodes/{episode_id}/shots", operation_id="createShot", status_code=201)
+async def create_shot(project_id: str, episode_id: str, payload: ShotCreateRequest, request: Request) -> dict[str, object]:
+    del project_id
+    try:
+        return {"shot": service(request).create_shot(episode_id, payload.code, payload.target_duration_ms, payload.shot_type)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/shots/{shot_id}/revisions", operation_id="createShotRevision", status_code=201)
+async def create_shot_revision(shot_id: str, payload: ShotRevisionRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"shot_revision": service(request).create_shot_revision(shot_id, payload.fields, payload.freeze)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/shots/{shot_id}:mark-production-ready", operation_id="markShotProductionReady")
+async def mark_production_ready(shot_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"shot": service(request).mark_shot_production_ready(shot_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error

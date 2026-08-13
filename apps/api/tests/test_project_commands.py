@@ -1,0 +1,108 @@
+from __future__ import annotations
+
+import pytest
+
+from local_drama.application.projects import ProjectService
+from local_drama.domain.errors import DomainRuleError
+
+
+def make_service(workspace, database) -> ProjectService:
+    return ProjectService(database, workspace.projects_root)
+
+
+def test_create_project_materializes_template_and_episodes(workspace, database) -> None:
+    service = make_service(workspace, database)
+    project = service.create_project(
+        code="g2_contract",
+        title="G2 Contract",
+        episode_count=60,
+        aspect_ratio="9:16",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=120000,
+        allow_unconfigured_capabilities=False,
+    )
+    root = workspace.projects_root / "g2_contract"
+    assert root.is_dir()
+    assert (root / "project.json").is_file()
+    assert len(service.list_episodes(service.list_seasons(project["id"])[0]["id"])) == 60
+    assert project["root_rel"] == "g2_contract"
+
+
+def test_create_failure_leaves_no_half_project(workspace, database) -> None:
+    service = make_service(workspace, database)
+    with pytest.raises(RuntimeError, match="simulated project creation failure"):
+        service.create_project(
+            code="g2_rollback",
+            title="Rollback",
+            episode_count=2,
+            aspect_ratio="16:9",
+            fps_num=25,
+            fps_den=1,
+            target_duration_ms=60000,
+            allow_unconfigured_capabilities=False,
+            simulate_failure=True,
+        )
+    assert not (workspace.projects_root / "g2_rollback").exists()
+    with database.connect() as connection:
+        assert connection.execute("SELECT 1 FROM projects WHERE code = 'g2_rollback'").fetchone() is None
+
+
+def test_episode_reorder_preserves_identity_and_code(workspace, database) -> None:
+    service = make_service(workspace, database)
+    project = service.create_project(
+        code="g2_order",
+        title="Order",
+        episode_count=2,
+        aspect_ratio="1:1",
+        fps_num=30,
+        fps_den=1,
+        target_duration_ms=60000,
+        allow_unconfigured_capabilities=False,
+    )
+    season = service.list_seasons(project["id"])[0]
+    episodes = service.list_episodes(season["id"])
+    moved = service.reorder_episode(episodes[1]["id"], 1)
+    assert moved["id"] == episodes[1]["id"]
+    assert moved["code"] == "EPISODE_002"
+    assert service.get_episode(episodes[0]["id"])["code"] == "EPISODE_001"
+
+
+def test_expected_revision_conflict_never_overwrites(workspace, database) -> None:
+    service = make_service(workspace, database)
+    project = service.create_project(
+        code="g2_revision",
+        title="Revision",
+        episode_count=1,
+        aspect_ratio="9:16",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=60000,
+        allow_unconfigured_capabilities=False,
+    )
+    updated = service.update_project_title(project["id"], "First", expected_revision=1)
+    assert updated["revision"] == 2
+    with pytest.raises(DomainRuleError) as error:
+        service.update_project_title(project["id"], "Stale", expected_revision=1)
+    assert error.value.code == "REVISION_CONFLICT"
+    assert service.get_project(project["id"])["title"] == "First"
+
+
+def test_shot_ready_requires_explicit_fields(workspace, database) -> None:
+    service = make_service(workspace, database)
+    project = service.create_project(
+        code="g2_shot",
+        title="Shot",
+        episode_count=1,
+        aspect_ratio="9:16",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=60000,
+        allow_unconfigured_capabilities=False,
+    )
+    episode = service.list_episodes(service.list_seasons(project["id"])[0]["id"])[0]
+    shot = service.create_shot(episode["id"], "SHOT_001", 4000)
+    service.create_shot_revision(shot["id"], {"subject_action": "walk"}, freeze=True)
+    with pytest.raises(DomainRuleError) as error:
+        service.mark_shot_production_ready(shot["id"])
+    assert error.value.code == "SHOT_NOT_PRODUCTION_READY"

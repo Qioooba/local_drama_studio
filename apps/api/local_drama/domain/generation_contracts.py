@@ -1,0 +1,72 @@
+"""Typed production contracts for camera and motion semantics."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from .errors import DomainRuleError
+
+
+@dataclass(frozen=True)
+class CameraPlan:
+    mode: str
+    shot_type: str
+    movement: str
+    prompt_text: str = ""
+
+    def validate(self) -> None:
+        if self.mode not in {"NATIVE", "PROMPT_FALLBACK", "UNSUPPORTED"}:
+            raise DomainRuleError("CAMERA_PLAN_MODE_INVALID", "CameraPlan mode 无效")
+        if not self.shot_type.strip() or not self.movement.strip():
+            raise DomainRuleError("CAMERA_PLAN_REQUIRED", "CameraPlan 必须包含 shot_type 和 movement")
+        if self.mode == "PROMPT_FALLBACK" and not self.prompt_text.strip():
+            raise DomainRuleError("CAMERA_PROMPT_REQUIRED", "CameraPlan prompt fallback 必须有显式 prompt")
+        if self.mode == "UNSUPPORTED" and self.prompt_text.strip():
+            raise DomainRuleError("CAMERA_UNSUPPORTED_PROMPT", "UNSUPPORTED CameraPlan 不得伪装为可执行 prompt")
+
+
+@dataclass(frozen=True)
+class MotionMask:
+    media_version_id: str
+    subject_role: str
+    invert: bool = False
+
+    def validate(self) -> None:
+        if not self.media_version_id.strip() or not self.subject_role.strip():
+            raise DomainRuleError("MOTION_MASK_REQUIRED", "MotionMask 必须绑定媒体版本和 subject role")
+
+
+@dataclass(frozen=True)
+class TimedDirection:
+    time_us: int
+    direction: str
+    strength: float
+
+    def validate(self) -> None:
+        if self.time_us < 0:
+            raise DomainRuleError("TIMED_DIRECTION_TIME_INVALID", "TimedDirection 时间必须是非负整数微秒")
+        if not self.direction.strip() or not 0.0 <= self.strength <= 1.0:
+            raise DomainRuleError("TIMED_DIRECTION_VALUE_INVALID", "TimedDirection direction/strength 无效")
+
+
+@dataclass(frozen=True)
+class PerformanceBinding:
+    actor_id: str
+    action: str
+    start_us: int
+    end_us: int
+
+    def validate(self) -> None:
+        if not self.actor_id.strip() or not self.action.strip() or self.start_us < 0 or self.end_us <= self.start_us:
+            raise DomainRuleError("PERFORMANCE_BINDING_INVALID", "PerformanceBinding actor/action/time range 无效")
+
+
+def resolve_camera_plan(*, native_supported: bool, prompt_fallback_supported: bool, shot_type: str, movement: str, prompt_text: str = "") -> CameraPlan:
+    if native_supported:
+        plan = CameraPlan("NATIVE", shot_type, movement, prompt_text)
+    elif prompt_fallback_supported:
+        plan = CameraPlan("PROMPT_FALLBACK", shot_type, movement, prompt_text or f"camera: {movement}")
+    else:
+        plan = CameraPlan("UNSUPPORTED", shot_type, movement)
+    plan.validate()
+    return plan

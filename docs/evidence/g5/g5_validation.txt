@@ -1,0 +1,62 @@
+G5 validation evidence
+======================
+
+Date: 2026-08-12
+Repository: F:\AI_Projects\h3\local_drama_studio
+Migration head: 0004_g5_job_queue
+
+Automated verification
+----------------------
+- `scripts/check.ps1`: G5 check passed.
+- G0 baseline: 86 FR, 14 NFR, 85 TC.
+- API/domain/migration/media/review/queue tests: 27 passed, 0 failed.
+- G5 dedicated tests: 5 passed, including 20 CPU jobs, real worker media jobs, matrix expansion and actual worker-process kill.
+- Ruff: all checks passed for local_drama, tests and scripts.
+- mypy: no issues found in 50 source files.
+- Web: Vite build passed; Vitest 1 passed.
+- OpenAPI and generated TypeScript client regenerated after G5 jobs, events and matrix-plan routes.
+
+Queue / recovery invariants
+---------------------------
+- Job create requires Idempotency-Key; same payload replays one persisted Job, different payload fails with stable mismatch error.
+- Dependencies block claim until upstream Job is SUCCEEDED; claim is transactional and priority/creation ordered.
+- A worker cannot hold more than one active attempt; each Attempt has an unguessable lease token, 60-second default lease and heartbeat extension.
+- Worker lease expiry marks Attempt ORPHANED and requeues only when side effects are not known; provider-job uncertainty goes to NEEDS_ATTENTION.
+- retry creates a new Attempt path without changing input snapshot; clone creates a new Job with explicit clone lineage; cancel is separate from retry.
+- Outbox events are persisted with queue state changes and exposed by cursor-based SSE; frontend follows the loopback stream and refreshes real job state.
+- Artifact registration rejects absolute/escape/partial/symlink paths, hashes completed local files and is idempotent for the same Attempt/kind/path.
+- Matrix plan estimate/confirm uses lazy expansion and per-cell Jobs; per-cell cancel is independent.
+
+Real local worker evidence
+--------------------------
+- `scripts/run_worker.py --worker-id evidence-worker --max-jobs 1` processed a real queued `CPU_TEST` Job.
+- Job: `bebd6890-4f8a-4da1-ac91-3c5d028adff4`; final state SUCCEEDED.
+- Attempt: `02922821-df7c-43df-8c21-f47a3dda827b`; final state SUCCEEDED.
+- Artifact: `3043fd29-f3b0-4d2b-b508-accbbbad5a7b`; `TEXT_RESULT`, VERIFIED, 66 bytes.
+- Artifact SHA-256: `209984415d273ea2081b52499b75a0434fa94fc8404e57c270f6fedc68fad18f`.
+- G5 media worker tests run real FFmpeg/FFprobe for MP4 proxy and WebP thumbnail, with verified artifact registration.
+
+Browser / SSE evidence
+----------------------
+- `g5_queue.png`: real local API queue with a queued CPU job.
+- `g5_queue_succeeded.png`: same queue after the local worker completed the job.
+- `g5_sse_live.png`: after a new Job was inserted through the API, the open SSE-following task page rendered both the new QUEUED row and the prior SUCCEEDED row.
+- g5_queue.png SHA-256: `82683CEDCF8C55FAC6EB2F04A37812C45C7B60570596F34EBD54A15A828E7B6F`.
+- g5_queue_succeeded.png SHA-256: `C569DB97F055EC0A3C2721380255E1F2FFB08A782620AB8D12DDAC5DBCD15840`.
+- g5_sse_live.png SHA-256: `5ED81D56E87339CEF74BF8A83CE87EA649E94329EB8B65C76092E29131995802`.
+
+Worker kill / recovery evidence
+-------------------------------
+- `test_worker_process_kill_is_reconciled_without_duplicate_attempt` starts a separate Python worker process, observes its persisted claim, kills the process, then runs reconcile.
+- The killed Attempt is ORPHANED and the Job returns to QUEUED with no duplicate Attempt created during reconciliation.
+- Lease-token mismatch and expired lease writes are rejected.
+
+Database recovery evidence
+--------------------------
+- `scripts/migrate.py` preflight online backup executed before applying 0004 to the running SQLite WAL database.
+- Backup: `backups/pre_migration_20260811T201011Z.sqlite3`, 778240 bytes, `PRAGMA integrity_check=ok`.
+- Active database migration head: `0004_g5_job_queue`; active integrity: ok.
+
+Known boundary
+--------------
+G5 does not claim ComfyUI/local-LLM generation, published H3 profile, formal audio/subtitle/timeline/delivery, full scale/UAT or release readiness. G6-G10 remain ordered gates. G11 legacy migration remains deferred and was not implemented.
