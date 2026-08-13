@@ -25,7 +25,7 @@ def test_registry_is_static_and_declares_all_local_adapters(workspace) -> None:
         socket.socket.connect = original  # type: ignore[assignment]
     assert calls == []
     assert registry["remote_transport_allowed"] is False
-    assert {item["kind"] for item in registry["contracts"]} == {"COMFY", "OPENAI_COMPATIBLE_LLM", "CLI", "FFMPEG"}
+    assert {item["kind"] for item in registry["contracts"]} == {"COMFY", "LOCAL_LLM_LOOPBACK", "CLI", "FFMPEG"}
     assert all(item["network_contacted"] is False for item in registry["contracts"])
 
 
@@ -34,7 +34,7 @@ def test_registry_is_static_and_declares_all_local_adapters(workspace) -> None:
     [
         ("REMOTE_HTTP_SERVICE", "https://api.example.com", None, "REMOTE_PROVIDER_DISABLED_IN_LOCAL_RELEASE"),
         ("LOOPBACK_HTTP", "https://api.example.com", None, "LOOPBACK_ONLY"),
-        ("OPENAI_COMPATIBLE_LOOPBACK", "http://10.0.0.1:11434", None, "LOOPBACK_ONLY"),
+        ("LOCAL_LLM_LOOPBACK", "http://10.0.0.1:11434", None, "LOOPBACK_ONLY"),
         ("LOCAL_CLI", None, "https://download.example.com/tool", "LOCAL_EXECUTABLE_REQUIRED"),
     ],
 )

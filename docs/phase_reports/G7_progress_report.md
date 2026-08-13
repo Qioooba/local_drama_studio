@@ -17,7 +17,7 @@
 - Profile Editor 真 UAT：1440×900 只做一次 DRAFT→validate，1280×800/1024×768 只读；三档零溢出、零 console/page error、零失败响应、零原片请求；PASS 8/8，缩略图为 720px WebP。
 - Adapter contract diagnostics UAT：1024×768 读取四类本地 adapter 声明，5 行（含表头）可见；零 console/page error、零失败响应、零水平溢出；视觉证据仅为 720px WebP `docs/evidence/g7/adapter-contract-visual-review-2026-08-14.json`。
 - G7-05/G7-06 只读配置快照：`GET /api/v1/projects/{id}/configuration` 显示 ProductionPlanVersion、Profile binding matrix、DeliveryTargetVersion、冻结 Job/DeliveryPackage 影响；明确 Profile 切换不改写旧 Job、REMOTE transport 禁用；API 与三档 UI 验收通过。
-- G7-03/G7-07 本地适配器契约：`GET /api/v1/adapters/contracts` 只读列出 Comfy loopback、OpenAI-compatible loopback、Local CLI、FFmpeg/FFprobe 四类 adapter；静态检查拒绝 REMOTE、公网 HTTP、URL 凭据和远程 executable，不打开 socket、不启动 runtime。
+- G7-03/G7-07 本地适配器契约：`GET /api/v1/adapters/contracts` 只读列出 Comfy loopback、当前真实 Local LLM loopback（Ollama API）、Local CLI、FFmpeg/FFprobe 四类 adapter；静态检查拒绝 REMOTE、公网 HTTP、URL 凭据和远程 executable，不打开 socket、不启动 runtime。
 
 ## 当前硬阻塞
 

@@ -18,7 +18,7 @@ from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
-HTTP_TRANSPORTS = {"LOOPBACK_HTTP", "OPENAI_COMPATIBLE_LOOPBACK"}
+HTTP_TRANSPORTS = {"LOOPBACK_HTTP", "LOCAL_LLM_LOOPBACK"}
 LOCAL_EXECUTABLE_TRANSPORTS = {"LOCAL_CLI", "LOCAL_PROCESS", "FFMPEG_LOCAL"}
 
 
@@ -126,10 +126,10 @@ class AdapterContractRegistry:
                 capabilities=("system_stats", "object_info", "queue", "prompt", "history", "interrupt", "collect"),
             ),
             _contract(
-                code="openai-compatible-loopback",
-                title="OpenAI-compatible local LLM adapter",
-                kind="OPENAI_COMPATIBLE_LLM",
-                transport="OPENAI_COMPATIBLE_LOOPBACK",
+                code="local-llm-loopback",
+                title="Local LLM loopback adapter",
+                kind="LOCAL_LLM_LOOPBACK",
+                transport="LOCAL_LLM_LOOPBACK",
                 base_url=self.settings.llm_base_url,
                 capabilities=("model_list", "chat_json", "deterministic_temperature_zero"),
             ),

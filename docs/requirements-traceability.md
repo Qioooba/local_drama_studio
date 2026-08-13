@@ -163,7 +163,7 @@ G7 已可按蓝图 09 顺序开始，但当前不是 PASS；G8/G9 仍只记 prog
 | Project Profile binding matrix | VERIFIED BASELINE | I2V formal `2147a504...`、T2V `988b3fc3...`、SCRIPT_BREAKDOWN_LLM `08789ef4...` 均为 Published/ACTIVE；旧 Job 快照未改写 |
 | DeliveryTargetVersion 显式选择 | VERIFIED BASELINE | LOCAL_FILESYSTEM `f001acd0-096f-44f1-b466-e0f11212a090`，项目内 `06_delivery/master`；REMOTE transport 继续硬禁用 |
 | G7-05/G7-06 configuration snapshot and impact analysis | VERIFIED (read-only) | `GET /projects/{id}/configuration`；ProductionPlan/Profile/DeliveryTargetVersion 矩阵与 frozen Job/DeliveryPackage 计数，`mutated=false`；`test_configuration_impact.py`、三档 Playwright |
-| G7-03/G7-07 local adapter SDK and REMOTE contract guard | VERIFIED (static contract) | `GET /adapters/contracts`；Comfy/OpenAI-compatible loopback、Local CLI、FFmpeg/FFprobe 四类声明；公网/REMOTE/凭据/远程 executable 拒绝；`test_adapter_contracts.py`；无 runtime/network/mutation |
+| G7-03/G7-07 local adapter SDK and REMOTE contract guard | VERIFIED (static contract) | `GET /adapters/contracts`；Comfy/Local LLM loopback（Ollama API）、Local CLI、FFmpeg/FFprobe 四类声明；公网/REMOTE/凭据/远程 executable 拒绝；`test_adapter_contracts.py`；无 runtime/network/mutation |
 | Profile editor/test/publish | VERIFIED | 0015 contract editor；真实 DRAFT→validate→publish-evidence 证据，Web 9/9，三档 Profile Editor Playwright PASS |
 | Capability compatibility | VERIFIED | 0016；Published v12 `f63b3ac7...` + PASS attestation `da5d5f66...`，涵盖 input/seed/extend/V2V/reference/motion |
 | Zero-public-network full-chain | VERIFIED | 0017；真实 loopback Comfy/LLM/diagnostics harness，socket 层拒绝 `203.0.113.1`；attestation `51b05922-fce9-496e-bb9e-a627ba346f77` |
