@@ -4,6 +4,7 @@ import { Background, Controls, MiniMap, ReactFlow, type Node, type NodeChange, a
 import "@xyflow/react/dist/style.css";
 import {
   getAdapterContracts,
+  getCapacitySnapshot,
   getProductionCanvas,
   getProjectConfiguration,
   getProfileVersion,
@@ -99,6 +100,7 @@ export function App() {
   const h3Runtime = useQuery({ queryKey: ["h3", "candidate-runtime"], queryFn: () => h3CandidateRuntime(), enabled: view === "generation" || view === "overview" });
   const reviewTemplates = useQuery({ queryKey: ["reviews", "templates"], queryFn: () => listReviewTemplates(), enabled: view === "reviews" });
   const selectedProject = projects.data?.items.some((item) => item.id === selectedProjectId) ? selectedProjectId : projects.data?.items[0]?.id ?? null;
+  const capacitySnapshot = useQuery({ queryKey: ["capacity", selectedProject], queryFn: () => getCapacitySnapshot(selectedProject ?? undefined), enabled: view === "overview" || view === "jobs" });
   const projectConfiguration = useQuery({ queryKey: ["project-configuration", selectedProject], queryFn: () => getProjectConfiguration(selectedProject as string), enabled: Boolean(selectedProject) && (view === "profiles" || view === "projects") });
   const seasons = useQuery({ queryKey: ["project", selectedProject, "seasons"], queryFn: () => listSeasons(selectedProject as string), enabled: Boolean(selectedProject) });
   const selectedSeason = seasons.data?.items[0]?.id ?? null;
@@ -265,7 +267,7 @@ export function App() {
 
           {view === "reviews" && <ReviewInboxPanel items={reviewItems.data?.items ?? []} templates={reviewTemplates.data?.items ?? []} selectedVersionId={selectedReviewVersion} context={reviewContext.data} onSelect={(id) => { setSelectedReviewVersionId(id); writeLocationState({ view: "reviews", projectId: selectedProject, episodeId: selectedEpisode, shotId: selectedShot, reviewId: id }, true); }} onPromote={(mediaVersionId, selectionType) => selectMutation.mutate({ mediaVersionId, selectionType })} selecting={selectMutation.isPending} onSubmit={(mediaVersionId, payload) => reviewMutation.mutate({ mediaVersionId, payload })} submitting={reviewMutation.isPending} submitError={reviewMutation.error ? String(reviewMutation.error) : null} submitSucceeded={reviewMutation.isSuccess} />}
 
-          {view === "jobs" && <JobsPanel jobs={jobs.data?.items ?? []} loading={jobs.isPending} />}
+          {view === "jobs" && <><JobsPanel jobs={jobs.data?.items ?? []} loading={jobs.isPending} /><CapacitySnapshotPanel snapshot={capacitySnapshot.data?.snapshot} /></>}
 
           {view === "profiles" && <><ProfileConfigurationPanel profiles={profiles.data?.items ?? []} workflows={workflows.data?.items ?? []} workflowsLoading={workflows.isPending} onChanged={() => { void profiles.refetch(); }} />{projectConfiguration.data?.configuration && <ProjectConfigurationSnapshot configuration={projectConfiguration.data.configuration} />}</>}
 
@@ -463,6 +465,21 @@ function ProductionCanvasPanel({ episodeId }: { episodeId: string | null }) {
 
 function JobsPanel({ jobs, loading }: { jobs: Array<{ id: string; type: string; state: string; channel: string; priority: number; revision: number }>; loading: boolean }) {
   return <section className="panel"><div className="panel-heading"><div><p className="eyebrow">G5 TASKS & MACHINES</p><h3>持久任务队列与本地 worker</h3></div><span className="status-pill">SSE / OUTBOX</span></div><p className="muted">状态来自 SQLite jobs/attempts/outbox；页面关闭后队列继续运行，worker lease 过期由 reconcile 接管。</p>{loading ? <p className="empty-state">正在读取任务…</p> : jobs.length === 0 ? <p className="empty-state">当前项目没有任务。</p> : <div className="job-list">{jobs.map((job) => <div className="job-row" key={job.id}><strong>{job.type}</strong><span>{job.channel}</span><span className={job.state === "SUCCEEDED" ? "status-pill" : "blocker-text"}>{job.state}</span><small>priority {job.priority} · rev {job.revision}</small></div>)}</div>}</section>;
+}
+
+function CapacitySnapshotPanel({ snapshot }: { snapshot?: import("../generated/api").CapacitySnapshot }) {
+  if (!snapshot) return <section className="panel"><p className="empty-state">正在读取真实队列产能快照…</p></section>;
+  return <section className="panel capacity-panel" aria-labelledby="capacity-title">
+    <div className="panel-heading"><div><p className="eyebrow">G9 CAPACITY OBSERVATION</p><h3 id="capacity-title">本机队列产能快照</h3></div><span className="status-pill neutral">只读 · 未基准测试</span></div>
+    <p className="muted">仅统计 SQLite 已持久化的真实 Job/Attempt；不创建任务、不抢占 Worker、不连接 webhook。吞吐数字不是 benchmark。</p>
+    <div className="configuration-grid capacity-grid">
+      <div className="configuration-card"><small>排队</small><strong>{snapshot.queued_count}</strong><span>{snapshot.oldest_queued_age_seconds === null ? "暂无排队" : `最老 ${snapshot.oldest_queued_age_seconds}s`}</span></div>
+      <div className="configuration-card"><small>活跃 Attempt</small><strong>{snapshot.active_attempt_count}</strong><span>{snapshot.active_worker_count} 个 Worker</span></div>
+      <div className="configuration-card"><small>GPU_H3</small><strong>{snapshot.gpu_active_count}/{snapshot.gpu_concurrency_limit}</strong><span>并发上限来自本地策略</span></div>
+      <div className="configuration-card"><small>近 24h 完成</small><strong>{snapshot.completed_last_24h}</strong><span>OBSERVED_NOT_BENCHMARKED</span></div>
+    </div>
+    <div className="canvas-status"><span>Webhook：{snapshot.webhook_status}</span><span>runtime_contacted=false</span><span>network_contacted=false</span><span>mutated=false</span></div>
+  </section>;
 }
 
 function ProjectList({ projects, selectedProjectId, onSelect }: { projects: Array<{ id: string; code: string; title: string; status: string }>; selectedProjectId: string | null; onSelect: (id: string) => void }) {

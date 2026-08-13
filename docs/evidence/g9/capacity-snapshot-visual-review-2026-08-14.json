@@ -1,0 +1,14 @@
+{
+  "review_mode": "assistant_authorized_visual_review",
+  "scope": "G9-09 read-only capacity observation panel",
+  "policy": "Only a <=720px low-bitrate WebP thumbnail was loaded; no original media was requested.",
+  "reviewed_at": "2026-08-14T03:52:00+08:00",
+  "thumbnail": "apps/web/output/playwright/capacity-snapshot-1024x768.webp",
+  "max_dimension": 720,
+  "visual_result": "PASS",
+  "browser_assertions": {"contains_observed_not_benchmarked": true, "contains_webhook_not_implemented": true, "console_errors": [], "page_errors": [], "failed_responses": [], "horizontal_overflow": false},
+  "observed_production_snapshot": {"queued_count": 1, "active_attempt_count": 0, "gpu_active_count": 0, "completed_last_24h": 12, "would_create_jobs": false, "runtime_contacted": false, "network_contacted": false, "mutated": false},
+  "observations": ["task list and capacity panel share the same production-workstation hierarchy", "observed/not-benchmarked and webhook-not-implemented labels are explicit", "no clipping or overflow"],
+  "decision": "PASS_FOR_THIS_UI_ACCEPTANCE",
+  "does_not_change": "This observation does not claim a performance benchmark, implement webhook, or alter G7/G9 gate status."
+}

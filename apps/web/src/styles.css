@@ -248,6 +248,7 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .canvas-focus-actions button { min-height: 36px; padding: 7px 10px; border: 1px solid #cfc8bb; border-radius: 8px; color: #625d55; background: #fff; font-size: 11px; font-weight: 800; cursor: pointer; }
 .canvas-focus-actions button.active { border-color: var(--creative); color: var(--creative-dark); background: var(--creative-subtle); }
 .canvas-focus-actions button:disabled { opacity: .5; cursor: not-allowed; }
+.capacity-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .canvas-workspace { height: 560px; margin-top: 18px; overflow: hidden; border: 1px solid #d7d1c6; border-radius: 12px; background: #f9f6ef; }
 .canvas-node { width: 200px !important; border: 1px solid #bdb7aa !important; border-radius: 9px !important; padding: 12px !important; color: #262b27 !important; background: var(--surface) !important; font-size: 11px !important; box-shadow: 0 5px 16px rgba(48, 42, 34, .08); }
 .canvas-node.state-blocked { border-color: var(--attention) !important; }
