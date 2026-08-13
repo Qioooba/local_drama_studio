@@ -87,7 +87,7 @@ class CapacitySnapshotService:
             "gpu_concurrency_limit": 1,
             "completed_last_24h": int(completed_24h["count"]),
             "observation_status": "OBSERVED_NOT_BENCHMARKED",
-            "webhook_status": "NOT_IMPLEMENTED",
+            "webhook_status": "LOOPBACK_EXPLICIT_BOUNDED",
             "would_create_jobs": False,
             "runtime_contacted": False,
             "network_contacted": False,

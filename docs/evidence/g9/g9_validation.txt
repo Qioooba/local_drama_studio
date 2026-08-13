@@ -24,6 +24,7 @@ UI evidence
 - keyboard node selection and React Flow clicks sync the existing `shot` URL parameter; a 1024×768 route-sync run restored the selected node without mutation
 - selected-node read model includes `variant_lineage`, `experiment_progress`, and deduplicated `adjacent_constraints`; the UI labels these as read-only and reports empty real data explicitly
 - G9-08 browser smoke (local in-app browser): canvas route loaded with real SHOT_001 lineage (9 variants), selected-node detail rendered, and 1440×900 / 1280×800 / 1024×768 checks each reported canvas/detail present with `scrollWidth - clientWidth = 0`; no ComfyUI listener was present.
+- G9-09 outbox delivery: a temporary `127.0.0.1` HTTP server received real persisted project events; only 2xx responses were marked delivered, a second read returned `NO_EVENTS`, public endpoint input was rejected before mutation, and the service reported `bounded=true`, `remote_transport_allowed=false`, `runtime_contacted=false`, `network_contacted=false`.
 
 Exit decision
 - automated baseline: PASS

@@ -7,6 +7,7 @@
 - React Flow 业务画布、MiniMap、缩放/平移和状态节点。
 - 画布本地搜索和上游/下游聚焦：对业务 DAG 做传递闭包筛选，仅改变可视节点与 edges，不持久化、不改变业务依赖。
 - G9-09 只读产能快照：`GET /api/v1/capacity/snapshot` 基于真实 SQLite Job/Attempt 观测排队、Worker、GPU_H3 并发与近 24h 完成数，标记 `OBSERVED_NOT_BENCHMARKED`；不创建任务、不 claim lease、不触碰 runtime/network。
+- G9-09 loopback webhook：`POST /api/v1/events:deliver` 显式接收 loopback endpoint，按上限 100 条读取未投递 outbox，2xx 后才标记 `delivered_at`；拒绝公网/凭据 URL、失败停在当前事件、不自动重试或接触 ComfyUI；本地临时 HTTP 服务真实回归通过。
 - 任务页 1024×768 真实 UAT：快照显示 `queued=1`、`active_attempt=0`、`GPU=0/1`、近 24h 完成 `12`；零 console/page error、零失败响应、零水平溢出；视觉证据仅为 720px WebP。
 - G9-07 键盘替代操作：画布提供独立键盘节点按钮列表；Enter/Space 可选中节点并驱动聚焦/预检，不编辑业务边或布局；1024×768 验收 10 个键盘按钮、零错误、零溢出。
 - G9-06 route/selection 同步：画布节点和键盘按钮选择会写入现有 `shot` URL 参数，刷新后由同一 read model 恢复选中 shot；1024×768 真实验收无错误/失败响应；证据 `docs/evidence/g9/canvas-route-sync-visual-review-2026-08-14.json`。
@@ -21,5 +22,5 @@
 未完成：
 
 - 正式 100—300 可见节点浏览器性能证据、键盘/可访问性完整清单和阶段截图。
-- G9-09 的 loopback automation/webhook 仍未实现；产能观测已完成但不等价于 benchmark 或 webhook 能力。
+- G9-09 的真实产能 benchmark、循环上限/HITL 策略看板仍待阶段退出证据；loopback webhook 基础投递已实现，但不等价于公网 webhook 或后台自动重试。
 - G6 H3/本地 LLM 门禁仍未全部通过，不能宣称顺序门禁整体完成。

@@ -501,7 +501,7 @@ function CapacitySnapshotPanel({ snapshot }: { snapshot?: import("../generated/a
   if (!snapshot) return <section className="panel"><p className="empty-state">正在读取真实队列产能快照…</p></section>;
   return <section className="panel capacity-panel" aria-labelledby="capacity-title">
     <div className="panel-heading"><div><p className="eyebrow">G9 CAPACITY OBSERVATION</p><h3 id="capacity-title">本机队列产能快照</h3></div><span className="status-pill neutral">只读 · 未基准测试</span></div>
-    <p className="muted">仅统计 SQLite 已持久化的真实 Job/Attempt；不创建任务、不抢占 Worker、不连接 webhook。吞吐数字不是 benchmark。</p>
+    <p className="muted">仅统计 SQLite 已持久化的真实 Job/Attempt；Webhook 仅支持显式 loopback 批量投递，默认不投递、不创建任务、不抢占 Worker。吞吐数字不是 benchmark。</p>
     <div className="configuration-grid capacity-grid">
       <div className="configuration-card"><small>排队</small><strong>{snapshot.queued_count}</strong><span>{snapshot.oldest_queued_age_seconds === null ? "暂无排队" : `最老 ${snapshot.oldest_queued_age_seconds}s`}</span></div>
       <div className="configuration-card"><small>活跃 Attempt</small><strong>{snapshot.active_attempt_count}</strong><span>{snapshot.active_worker_count} 个 Worker</span></div>

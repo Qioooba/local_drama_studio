@@ -17,9 +17,11 @@ from local_drama.api.schemas.jobs import (
     JobCreateRequest,
     JobHeartbeatRequest,
 )
+from local_drama.api.schemas.outbox import OutboxDeliveryRequest
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.jobs import JobService
 from local_drama.application.media import MediaService
+from local_drama.application.outbox_delivery import OutboxDeliveryService
 from local_drama.domain.errors import DomainRuleError
 
 router = APIRouter(tags=["jobs"])
@@ -153,3 +155,11 @@ async def stream_events(request: Request, after_event_id: int = 0, project_id: s
             await asyncio.sleep(0.5)
 
     return StreamingResponse(body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@router.post("/events:deliver", operation_id="deliverOutboxEvents")
+async def deliver_events(payload: OutboxDeliveryRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"delivery": OutboxDeliveryService(request.app.state.database).deliver(**payload.model_dump())}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error

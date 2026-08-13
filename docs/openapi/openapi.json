@@ -3114,6 +3114,49 @@
         }
       }
     },
+    "/api/v1/events:deliver": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Deliver Events",
+        "operationId": "deliverOutboxEvents",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutboxDeliveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Deliveroutboxevents"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/local-llm/status": {
       "get": {
         "tags": [
@@ -8302,6 +8345,45 @@
           "license_status"
         ],
         "title": "ModelLicenseEvidenceRequest"
+      },
+      "OutboxDeliveryRequest": {
+        "properties": {
+          "endpoint_url": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Endpoint Url"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "after_event_id": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "After Event Id",
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "default": 20
+          }
+        },
+        "type": "object",
+        "required": [
+          "endpoint_url"
+        ],
+        "title": "OutboxDeliveryRequest"
       },
       "PostProcessRecipeRequest": {
         "properties": {

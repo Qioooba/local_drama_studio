@@ -19,7 +19,7 @@ def test_capacity_snapshot_is_read_only_and_observed(workspace, database) -> Non
         before.close()
     snapshot = CapacitySnapshotService(database).inspect(str(project["id"]))
     assert snapshot["observation_status"] == "OBSERVED_NOT_BENCHMARKED"
-    assert snapshot["webhook_status"] == "NOT_IMPLEMENTED"
+    assert snapshot["webhook_status"] == "LOOPBACK_EXPLICIT_BOUNDED"
     assert snapshot["would_create_jobs"] is False
     assert snapshot["runtime_contacted"] is False
     assert snapshot["network_contacted"] is False
