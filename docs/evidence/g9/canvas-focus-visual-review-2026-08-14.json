@@ -1,0 +1,15 @@
+{
+  "review_mode": "assistant_authorized_visual_review",
+  "scope": "G9 production canvas search and focus baseline",
+  "policy": "Only <=720px low-bitrate WebP thumbnails were loaded; no original media was requested.",
+  "reviewed_at": "2026-08-14T03:45:00+08:00",
+  "viewports": [
+    {"viewport": "1440x900", "thumbnail": "apps/web/output/playwright/canvas-focus-1440x900.webp", "max_dimension": 720, "visual_result": "PASS", "visible_nodes": "5/5"},
+    {"viewport": "1280x800", "thumbnail": "apps/web/output/playwright/canvas-focus-1280x800.webp", "max_dimension": 720, "visual_result": "PASS", "visible_nodes": "5/5"},
+    {"viewport": "1024x768", "thumbnail": "apps/web/output/playwright/canvas-focus-1024x768.webp", "max_dimension": 720, "visual_result": "PASS", "visible_nodes": "5/5"}
+  ],
+  "browser_assertions": {"console_errors": [], "page_errors": [], "failed_responses": [], "horizontal_overflow": false, "business_edges_mutated": false},
+  "observations": ["search control stays above the canvas", "focus controls are readable and disabled until a node is selected", "no clipping or overflow"],
+  "decision": "PASS_FOR_THIS_UI_ACCEPTANCE",
+  "does_not_change": "This is a read-model visual review and does not alter G7/G8/G9 gate status."
+}

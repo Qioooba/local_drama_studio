@@ -20,6 +20,7 @@ UI evidence
 - nodesConnectable=false and deleteKeyCode=null prevent editing authoritative business dependency graph
 - MiniMap, zoom/pan controls, state coloring, selected-node preflight and layout save are available
 - graph is loaded by episode page and capped by backend at 300 visible nodes
+- local search plus upstream/downstream focus filters only the rendered read model; business edges remain backend-authoritative and unchanged
 
 Exit decision
 - automated baseline: PASS

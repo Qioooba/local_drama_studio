@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { App } from "./App";
+import { App, focusCanvasNodeIds } from "./App";
 
 vi.mock("../generated/api", () => ({
   healthLive: vi.fn().mockResolvedValue({ status: "HEALTHY", checks: { mode: "LOCAL_ONLY" } }),
   systemContract: vi.fn().mockResolvedValue({ mode: "LOCAL_ONLY", remote_provider: "disabled", legacy_migration: "deferred_to_g11" }),
+  getAdapterContracts: vi.fn().mockResolvedValue({ registry: { mode: "LOCAL_ONLY", contracts: [], remote_transport_allowed: false, runtime_contacted: false, network_contacted: false, mutated: false } }),
   listProjects: vi.fn().mockResolvedValue({ items: [] }),
   listProfiles: vi.fn().mockResolvedValue({ items: [] }),
   latestDiagnostics: vi.fn().mockResolvedValue({ run: null }),
@@ -34,5 +35,19 @@ describe("G1 app shell", () => {
     render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
     expect(await screen.findByRole("heading", { name: /先锁定镜头/ })).toBeTruthy();
     expect(new URLSearchParams(window.location.search).get("view")).toBe("generation");
+  });
+});
+
+describe("G9 canvas focus", () => {
+  const edges = [{ source: "a", target: "b" }, { source: "b", target: "c" }, { source: "x", target: "b" }];
+
+  it("finds transitive upstream and downstream nodes without changing edges", () => {
+    expect([...focusCanvasNodeIds("b", edges, "UPSTREAM")].sort()).toEqual(["a", "b", "x"]);
+    expect([...focusCanvasNodeIds("b", edges, "DOWNSTREAM")].sort()).toEqual(["b", "c"]);
+  });
+
+  it("returns an empty filter for all or no selection", () => {
+    expect(focusCanvasNodeIds(null, edges, "UPSTREAM").size).toBe(0);
+    expect(focusCanvasNodeIds("b", edges, "ALL").size).toBe(0);
   });
 });

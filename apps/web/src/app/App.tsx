@@ -388,10 +388,35 @@ function ProfileConfigurationPanel({ profiles, workflows, workflowsLoading, onCh
   </section>;
 }
 
+type CanvasFocus = "ALL" | "UPSTREAM" | "DOWNSTREAM";
+
+export function focusCanvasNodeIds(selectedNodeId: string | null, edges: Array<{ source: string; target: string }>, focus: CanvasFocus): Set<string> {
+  if (!selectedNodeId || focus === "ALL") return new Set();
+  const adjacency = new Map<string, string[]>();
+  edges.forEach((edge) => {
+    const key = focus === "UPSTREAM" ? edge.target : edge.source;
+    const value = focus === "UPSTREAM" ? edge.source : edge.target;
+    adjacency.set(key, [...(adjacency.get(key) ?? []), value]);
+  });
+  const included = new Set<string>([selectedNodeId]);
+  const queue = [selectedNodeId];
+  while (queue.length > 0) {
+    const current = queue.shift() as string;
+    for (const neighbor of adjacency.get(current) ?? []) {
+      if (included.has(neighbor)) continue;
+      included.add(neighbor);
+      queue.push(neighbor);
+    }
+  }
+  return included;
+}
+
 function ProductionCanvasPanel({ episodeId }: { episodeId: string | null }) {
   const graphQuery = useQuery({ queryKey: ["canvas", episodeId], queryFn: () => getProductionCanvas("EPISODE", episodeId as string, 0, 60), enabled: Boolean(episodeId) });
   const [nodes, setNodes] = useState<Node[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [focus, setFocus] = useState<CanvasFocus>("ALL");
   const [plan, setPlan] = useState<{ status: string; node_ids: string[]; blockers: Array<Record<string, unknown>>; estimate: Record<string, unknown> } | null>(null);
   const graph = graphQuery.data?.graph;
   useEffect(() => {
@@ -403,7 +428,18 @@ function ProductionCanvasPanel({ episodeId }: { episodeId: string | null }) {
       className: `canvas-node state-${item.state.toLowerCase()}`,
     })));
   }, [graph]);
-  const edges = useMemo(() => graph?.edges.map((edge) => ({ id: edge.id, source: edge.source, target: edge.target, type: "smoothstep", animated: edge.kind === "TRANSITION_CONSTRAINT", className: `canvas-edge kind-${edge.kind.toLowerCase()}` })) ?? [], [graph]);
+  const allEdges = useMemo(() => graph?.edges.map((edge) => ({ id: edge.id, source: edge.source, target: edge.target, type: "smoothstep" as const, animated: edge.kind === "TRANSITION_CONSTRAINT", className: `canvas-edge kind-${edge.kind.toLowerCase()}` })) ?? [], [graph]);
+  const visibleNodeIds = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const focused = focusCanvasNodeIds(selectedNodeId, allEdges, focus);
+    return new Set(nodes.filter((node) => {
+      const data = node.data as { label?: string; state?: string; blockers?: string[] };
+      const matchesSearch = !query || [node.id, data.label, data.state, ...(data.blockers ?? [])].filter(Boolean).some((value) => String(value).toLowerCase().includes(query));
+      return matchesSearch && (focus === "ALL" || focused.has(node.id));
+    }).map((node) => node.id));
+  }, [allEdges, focus, nodes, search, selectedNodeId]);
+  const visibleNodes = useMemo(() => nodes.filter((node) => visibleNodeIds.has(node.id)), [nodes, visibleNodeIds]);
+  const edges = useMemo(() => allEdges.filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target)), [allEdges, visibleNodeIds]);
   const onNodesChange = useCallback((changes: NodeChange[]) => setNodes((items) => applyNodeChanges(changes, items)), []);
   const saveMutation = useMutation({
     mutationFn: () => saveProductionCanvasLayout("EPISODE", episodeId as string, { expected_revision: graph?.layout.revision || undefined, positions: Object.fromEntries(nodes.map((node) => [node.id, node.position])), groups: graph?.layout.groups, viewport: graph?.layout.viewport }),
@@ -419,8 +455,9 @@ function ProductionCanvasPanel({ episodeId }: { episodeId: string | null }) {
   return <section className="panel canvas-panel">
     <div className="panel-heading"><div><p className="eyebrow">G9 PRODUCTION CANVAS</p><h3>业务依赖 DAG · 拖动只保存布局</h3></div><div className="canvas-actions"><button className="secondary" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>{saveMutation.isPending ? "保存中…" : "保存布局"}</button><button className="secondary" onClick={() => planMutation.mutate()} disabled={!selectedNodeId || planMutation.isPending}>{planMutation.isPending ? "预检中…" : "运行节点预检"}</button></div></div>
     <p className="muted">节点显示状态、take、variant 和阻塞；edges 来自后端业务依赖，布局接口无法修改它们。当前页 {graph.page.returned_shots}/{graph.page.total_shots} 个镜头，最多显示 {graph.invariants.max_visible_nodes} 个节点。</p>
-    <div className="canvas-workspace" aria-label="业务画布"><ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onNodeClick={(_, node) => setSelectedNodeId(node.id)} fitView minZoom={0.15} maxZoom={1.8} nodesConnectable={false} deleteKeyCode={null}><Background /><Controls /><MiniMap pannable zoomable nodeColor={(node) => String(node.className).includes("blocked") ? "#df9d4b" : String(node.className).includes("running") ? "#7c91ff" : "#45d3b3"} /></ReactFlow></div>
-    <div className="canvas-status"><span>选中：{selectedNodeId ?? "无"}</span><span>布局 revision：{graph.layout.revision}</span><span>业务依赖可编辑：否</span>{plan && <strong>计划 {plan.status} · {plan.node_ids.length} 节点 · {plan.blockers.length} 阻塞</strong>}</div>
+    <div className="canvas-filterbar" aria-label="画布搜索与聚焦"><label>搜索节点<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="镜头、状态或阻塞" /></label><div className="canvas-focus-actions"><button className={focus === "ALL" ? "active" : ""} onClick={() => setFocus("ALL")}>全部</button><button className={focus === "UPSTREAM" ? "active" : ""} onClick={() => setFocus("UPSTREAM")} disabled={!selectedNodeId}>聚焦上游</button><button className={focus === "DOWNSTREAM" ? "active" : ""} onClick={() => setFocus("DOWNSTREAM")} disabled={!selectedNodeId}>聚焦下游</button></div></div>
+    <div className="canvas-workspace" aria-label="业务画布"><ReactFlow nodes={visibleNodes} edges={edges} onNodesChange={onNodesChange} onNodeClick={(_, node) => setSelectedNodeId(node.id)} fitView minZoom={0.15} maxZoom={1.8} nodesConnectable={false} deleteKeyCode={null}><Background /><Controls /><MiniMap pannable zoomable nodeColor={(node) => String(node.className).includes("blocked") ? "#df9d4b" : String(node.className).includes("running") ? "#7c91ff" : "#45d3b3"} /></ReactFlow></div>
+    <div className="canvas-status"><span>选中：{selectedNodeId ?? "无"}</span><span>显示：{visibleNodes.length}/{nodes.length} 节点</span><span>布局 revision：{graph.layout.revision}</span><span>业务依赖可编辑：否</span>{plan && <strong>计划 {plan.status} · {plan.node_ids.length} 节点 · {plan.blockers.length} 阻塞</strong>}</div>
   </section>;
 }
 
