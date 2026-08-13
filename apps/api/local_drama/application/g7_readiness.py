@@ -120,8 +120,12 @@ class G7ReadinessService:
                 (project_id,),
             ).fetchone()
             model_report = connection.execute(
-                """SELECT id FROM model_compatibility_reports WHERE report_status='PASS'
-                AND license_status IN ('LOCAL_LICENSE_VERIFIED','USER_OWNED') ORDER BY created_at DESC LIMIT 1"""
+                """SELECT mcr.id FROM model_compatibility_reports mcr
+                JOIN model_license_evidence mle ON mle.model_artifact_id=mcr.model_artifact_id
+                WHERE mle.project_id=? AND mcr.report_status='PASS'
+                AND mcr.license_status IN ('LOCAL_LICENSE_VERIFIED','USER_OWNED')
+                AND mle.artifact_sha256=mcr.sha256 ORDER BY mcr.created_at DESC LIMIT 1""",
+                (project_id,),
             ).fetchone()
 
         active_published_bindings = [

@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 from local_drama.api.schemas.g7 import BrandKitRequest, WorkspaceAssetAuthorizationRequest
-from local_drama.api.schemas.g7_model import ModelCompatibilityRequest
+from local_drama.api.schemas.g7_model import ModelCompatibilityRequest, ModelLicenseEvidenceRequest
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.g6_readiness import G6ReadinessService
 from local_drama.application.g7_readiness import G7ReadinessService
@@ -70,6 +70,24 @@ async def create_model_compatibility_report(project_id: str, payload: ModelCompa
         with request.app.state.database.connect() as connection:
             if connection.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone() is None:
                 raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
-        return {"report": ModelCompatibilityService(request.app.state.database).report(payload.model_artifact_id)}
+        return {"report": ModelCompatibilityService(request.app.state.database).report(payload.model_artifact_id, project_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/projects/{project_id}/model-license-evidence", status_code=201, operation_id="importModelLicenseEvidence")
+async def import_model_license_evidence(project_id: str, payload: ModelLicenseEvidenceRequest, request: Request) -> dict[str, object]:
+    try:
+        service = ModelCompatibilityService(request.app.state.database)
+        evidence = service.import_license_evidence(
+            project_id,
+            payload.model_artifact_id,
+            payload.evidence_path,
+            payload.license_name,
+            payload.license_status,
+            request.app.state.settings,
+        )
+        report = service.report(payload.model_artifact_id, project_id)
+        return {"evidence": evidence, "report": report}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error

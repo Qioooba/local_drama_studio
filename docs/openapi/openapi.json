@@ -2102,6 +2102,60 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/model-license-evidence": {
+      "post": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "Import Model License Evidence",
+        "operationId": "importModelLicenseEvidence",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelLicenseEvidenceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Importmodellicenseevidence"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/imports": {
       "post": {
         "tags": [
@@ -8047,6 +8101,43 @@
           "model_artifact_id"
         ],
         "title": "ModelCompatibilityRequest"
+      },
+      "ModelLicenseEvidenceRequest": {
+        "properties": {
+          "model_artifact_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Model Artifact Id"
+          },
+          "evidence_path": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Evidence Path"
+          },
+          "license_name": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "License Name"
+          },
+          "license_status": {
+            "type": "string",
+            "enum": [
+              "LOCAL_LICENSE_VERIFIED",
+              "USER_OWNED"
+            ],
+            "title": "License Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_artifact_id",
+          "evidence_path",
+          "license_name",
+          "license_status"
+        ],
+        "title": "ModelLicenseEvidenceRequest"
       },
       "PostProcessRecipeRequest": {
         "properties": {

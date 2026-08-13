@@ -1,6 +1,13 @@
-# G7 进度报告（2026-08-14）
+# G7 进度报告（2026-08-14 续跑）
 
 状态：`IN_PROGRESS`。G7-01—G7-09 当前闭环证据已落库；G7-10 模型 license 证据仍是硬阻塞，不能进入 G8 退出验收，也不能宣告 G7 PASS。
+
+## 本轮完成
+
+- Migration `0020_g7_model_license_evidence`：新增项目内本地 license evidence 导入；只接受不可越界、非 symlink、UTF-8 JSON 记录，并强制声明当前模型 SHA-256 与 license 名称。支持 `LOCAL_LICENSE_VERIFIED`/`USER_OWNED`，不下载、不联网、不猜测许可证；旧报告不原地改写。
+- 新 API：`POST /api/v1/projects/{project_id}/model-license-evidence`，导入后自动生成新的 hash/header/量化报告；不具备真实证据时仍保持 BLOCKED。
+- 新回归：license evidence 正常闭环、SHA 不匹配、项目越界路径共 3 项；全 API 回归已升至 `100 passed / 4 deselected`。
+- Playwright Profile Editor 三档已修正为确定性流程：1440×900 从 Published v12 派生一次新 DRAFT v15 后验证，1280×800/1024×768 只读；全部无水平溢出、console/page error、失败响应、原片请求。视觉复核只读取 720px WebP 缩略图，结果记录于 `docs/evidence/g7/profile-editor-visual-review-2026-08-14.json`。
 
 ## 已闭环
 
@@ -11,16 +18,16 @@
 
 ## 当前硬阻塞
 
-- Migration `0019_g7_model_compatibility_reports` 支持离线完整 SHA-256、大小、safetensors header tensor/dtype 与量化声明对照；不启动 ComfyUI、不加载模型、不联网。
+- Migration `0019_g7_model_compatibility_reports` + `0020_g7_model_license_evidence` 支持离线完整 SHA-256、大小、safetensors header tensor/dtype、量化声明与项目内 license evidence 绑定；不启动 ComfyUI、不加载模型、不联网。
 - H3 video VAE 报告 `d586967e-0634-4c8d-8887-193d398beda9`：SHA-256 `5a624684fad53d4acd0762aa7b07de4204de0bbb90f92c479605e326ccceb148`，5,207,806,104 bytes，560 tensors，F16 header 与 FP16 声明匹配。
-- 报告状态 `BLOCKED`：没有可审计的本地许可证记录（`LICENSE_EVIDENCE_MISSING`）。manifest 说明和文件存在性不能冒充 license；补入真实 operator license record 后才可推进 readiness。
+- 报告状态仍为 `BLOCKED`：磁盘中没有可审计的真实本地许可证记录（`LICENSE_EVIDENCE_MISSING`）。manifest 说明和文件存在性不能冒充 license；只有操作者提供真实 record 后通过新 API 导入，才可推进 readiness。未伪造证据。
 
 ## 回归
 
-- `pnpm api:test:safe`：97 passed / 4 Comfy live deselected。
+- `pnpm api:test:safe`：100 passed / 4 Comfy live deselected。
 - `pnpm web:test`：9/9；`pnpm web:build`：TypeScript/Vite PASS。
 - Ruff PASS；mypy PASS（81 source files）。
-- 生产迁移 `0016→0019` 完成，在线备份与 `integrity_check=ok`；API 3210、Web 5173，ComfyUI 8188 无监听。
+- 生产迁移 `0019→0020` 完成，在线备份与 `integrity_check=ok`，WAL；API 3210、Web 5173，ComfyUI 8188 无监听。
 
 ## 下一步
 

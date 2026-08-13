@@ -46,6 +46,8 @@ export type GenerationExperimentEstimate = { experiment_id: string; cell_count: 
 export type LocalLLMStatus = { status: string; base_url: string; model: string | null; error_code?: string; available_models?: string[]; model_present?: boolean };
 export type H3Runtime = { status: string; release_root?: string; missing_sidecars?: string[]; missing_model_files?: string[]; required_sidecars?: string[] };
 export type G6Readiness = { gate: 'G6'; status: 'PASS' | 'IN_PROGRESS'; project_id: string; checks: Array<{ code: string; passed: boolean; count?: number }>; next_required_action: string | null; evidence: Record<string, unknown>; mutated: false };
+export type G7Readiness = { gate: 'G7'; status: 'PASS' | 'IN_PROGRESS'; project_id: string; checks: Array<{ code: string; passed: boolean; count?: number }>; next_required_action: string | null; evidence: Record<string, unknown>; runtime_contacted: false; network_contacted: false; mutated: false };
+export type ModelCompatibilityReport = { id: string; model_artifact_id: string; path_ref: string; sha256: string; byte_size: number; header: Record<string, unknown>; quantization: Record<string, unknown>; license_status: string; report_status: 'PASS' | 'BLOCKED'; blockers: string[]; license_evidence_id?: string | null; runtime_contacted: false; network_contacted: false };
 export type I2VProbePlan = { status: 'READY' | 'BLOCKED'; blockers: string[]; snapshot: { project_id: string; purpose: string; approved_keyframe: { media_version_id: string; shot_id: string; approval_id: string; approved_at: string; sha256: string; byte_size: number } | null; workflow: { id: string; content_hash: string; revision: number } | null; candidate_profile: { id: string; capability: string; status: string; manifest_sha256: string; revision: number } | null; semantic_inputs: Record<string, unknown>; resource_policy: Record<string, unknown> }; plan_hash: string; would_create_job: false; would_contact_comfyui: false; confirmation_required: true };
 export type WorkflowVersionSummary = { id: string; workflow_id: string; code: string; title: string; version_no: number; content_hash: string; status: string; contract: Record<string, unknown>; package_rel_path: string | null; published_at: string | null; created_at: string; updated_at: string; revision: number };
 export type CanvasNode = { id: string; type: string; shot_id: string; shot_code: string; label: string; state: string; blockers: string[]; take_count: number; variant_count: number; active_job_count: number; thumbnail_media_version_id: string | null; position: { x: number; y: number } | null };
@@ -235,6 +237,30 @@ export async function getG6Readiness(projectId: string, baseUrl = ''): Promise<{
 
 export async function planG6I2VProbe(projectId: string, baseUrl = ''): Promise<{ plan: I2VProbePlan }> {
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/gates/g6/i2v-probe-plan`, undefined, baseUrl);
+}
+
+export async function getG7Readiness(projectId: string, baseUrl = ''): Promise<{ readiness: G7Readiness }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/gates/g7`, undefined, baseUrl);
+}
+
+export async function runG7NetworkE2E(projectId: string, baseUrl = ''): Promise<{ attestation: Record<string, unknown> }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/gates/g7/network-e2e`, { method: 'POST' }, baseUrl);
+}
+
+export async function authorizeWorkspaceAsset(projectId: string, mediaVersionId: string, baseUrl = ''): Promise<{ authorization: Record<string, unknown> }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/workspace-assets/authorize`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ media_version_id: mediaVersionId }) }, baseUrl);
+}
+
+export async function createBrandKit(projectId: string, payload: { code: string; title: string; tokens: Record<string, unknown> }, baseUrl = ''): Promise<{ brand_kit: Record<string, unknown> }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/brand-kits`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function createModelCompatibilityReport(projectId: string, modelArtifactId: string, baseUrl = ''): Promise<{ report: ModelCompatibilityReport }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/model-compatibility-report`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_artifact_id: modelArtifactId }) }, baseUrl);
+}
+
+export async function importModelLicenseEvidence(projectId: string, payload: { model_artifact_id: string; evidence_path: string; license_name: string; license_status: 'LOCAL_LICENSE_VERIFIED' | 'USER_OWNED' }, baseUrl = ''): Promise<{ evidence: Record<string, unknown>; report: ModelCompatibilityReport }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/model-license-evidence`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
 export async function listWorkflowVersions(baseUrl = ''): Promise<{ items: WorkflowVersionSummary[]; runtime_contacted: false }> {

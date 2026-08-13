@@ -166,8 +166,8 @@ G7 已可按蓝图 09 顺序开始，但当前不是 PASS；G8/G9 仍只记 prog
 | Capability compatibility | VERIFIED | 0016；Published v12 `f63b3ac7...` + PASS attestation `da5d5f66...`，涵盖 input/seed/extend/V2V/reference/motion |
 | Zero-public-network full-chain | VERIFIED | 0017；真实 loopback Comfy/LLM/diagnostics harness，socket 层拒绝 `203.0.113.1`；attestation `51b05922-fce9-496e-bb9e-a627ba346f77` |
 | Workspace asset authorization / BrandKit | VERIFIED | 0018；KEYFRAME 重新 hash/size 后授权 `853fd791-0bc8-4cf5-bf12-fc54c3542caa`，BrandKit ACTIVE v1 `5a0d3a95...` |
-| Offline model license/hash/quantization report | IN_PROGRESS / BLOCKED_BY_LICENSE_EVIDENCE | 0019；H3 video VAE SHA-256 `5a624684...ceb148`、5,207,806,104 bytes、560 tensors/F16；报告 `d586967e...` 因缺真实 license evidence 阻塞 |
-| G7 regression | PASS (current scope) | 安全 API 97 passed / 4 live deselected；Web 9/9、production build、Ruff、mypy 81 source files；三档 Playwright 全绿 |
+| Offline model license/hash/quantization report | IN_PROGRESS / BLOCKED_BY_LICENSE_EVIDENCE | 0019 + 0020；H3 video VAE SHA-256 `5a624684...ceb148`、5,207,806,104 bytes、560 tensors/F16；项目内 license evidence 导入与 SHA/symlink/path 校验已实现，但磁盘仍无真实许可证记录，报告 `d586967e...` 保持 BLOCKED |
+| G7 regression | PASS (current scope) | 安全 API 100 passed / 4 live deselected；Web 9/9、production build、Ruff、mypy 81 source files；三档 Playwright 全绿且视觉只读 720px WebP |
 
 G7 当前 `IN_PROGRESS`，首阻塞 `MODEL_LICENSE_HASH_QUANTIZATION_REPORT`，禁止进入 G8 退出验收或宣告 G7 PASS。
 
