@@ -1,0 +1,22 @@
+{
+  "review_mode": "assistant_authorized_visual_review",
+  "scope": "G8 read-only timeline and delivery status surface",
+  "policy": "Only a <=720px low-bitrate WebP thumbnail was loaded; no original media was requested.",
+  "reviewed_at": "2026-08-14T04:10:00+08:00",
+  "thumbnail": "apps/web/output/playwright/g8-timeline-status-1024x768.webp",
+  "max_dimension": 720,
+  "viewport": "1024x768",
+  "visual_result": "PASS",
+  "browser_assertions": {
+    "truthful_empty_state_visible": true,
+    "console_errors": [],
+    "page_errors": [],
+    "failed_responses": [],
+    "horizontal_overflow": false,
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "mutated": false
+  },
+  "decision": "PASS_FOR_THIS_UI_ACCEPTANCE",
+  "does_not_change": "The projection is read-only and does not create timeline revisions, media, jobs, renders, or delivery packages."
+}

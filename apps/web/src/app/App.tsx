@@ -9,6 +9,7 @@ import {
   getProjectConfiguration,
   getProfileVersion,
   getEpisodeProduction,
+  getEpisodeTimelineStatus,
   getG6Readiness,
   planG6I2VProbe,
   getReviewContext,
@@ -38,6 +39,7 @@ import {
   type Profile,
   type ProfileVersionDetail,
   type WorkflowVersionSummary,
+  type TimelineStatus,
 } from "../generated/api";
 import { GenerationWorkbench } from "../features/generation/GenerationWorkbench";
 
@@ -107,6 +109,7 @@ export function App() {
   const episodes = useQuery({ queryKey: ["season", selectedSeason, "episodes"], queryFn: () => listEpisodes(selectedSeason as string), enabled: Boolean(selectedSeason) });
   const selectedEpisode = episodes.data?.items.some((item) => item.id === selectedEpisodeId) ? selectedEpisodeId : episodes.data?.items[0]?.id ?? null;
   const production = useQuery({ queryKey: ["episode", selectedEpisode, "production"], queryFn: () => getEpisodeProduction(selectedEpisode as string), enabled: Boolean(selectedEpisode) });
+  const timelineStatus = useQuery({ queryKey: ["episode", selectedEpisode, "timeline-status"], queryFn: () => getEpisodeTimelineStatus(selectedEpisode as string), enabled: Boolean(selectedEpisode) && view === "projects" });
   const selectedShot = production.data?.items.some((item) => String(item.id) === selectedShotId) ? selectedShotId : production.data?.items[0] ? String(production.data.items[0].id) : null;
   const reviewItems = useQuery({ queryKey: ["reviews", "inbox", selectedProject], queryFn: () => reviewInbox(selectedProject as string), enabled: Boolean(selectedProject) && (view === "reviews" || view === "generation") });
   const g6Readiness = useQuery({ queryKey: ["gates", "g6", selectedProject], queryFn: () => getG6Readiness(selectedProject as string), enabled: Boolean(selectedProject) && view === "generation" });
@@ -258,6 +261,7 @@ export function App() {
                 {production.isPending && <p className="empty-state">正在读取生产行…</p>}
                 {production.data?.items.map((shot) => <div className="shot-row" key={String(shot.id)}><strong>{String(shot.code)}</strong><span>{String(shot.status)}</span><span className="blocker-text">{Array.isArray(shot.blockers) ? `${shot.blockers.length} 个阻塞` : "读取中"}</span><span>{String(shot.next_action)}</span></div>)}
                 {production.data?.items.length === 0 && <p className="empty-state">当前集还没有镜头；请从真实 API 创建镜头。</p>}
+                {timelineStatus.data?.status && <TimelineStatusPanel status={timelineStatus.data.status} loading={timelineStatus.isPending} />}
               </div>}
               {projectConfiguration.data?.configuration && <ProjectConfigurationSnapshot configuration={projectConfiguration.data.configuration} />}
             </section>
@@ -466,6 +470,24 @@ function ProductionCanvasPanel({ episodeId, selectedShotId, onSelectShot }: { ep
     <div className="canvas-node-list" aria-label="键盘节点列表">{visibleNodes.map((node) => <button key={`keyboard-${node.id}`} className={selectedNodeId === node.id ? "selected" : ""} onClick={() => { setSelectedNodeId(node.id); const match = node.id.match(/^shot:([^:]+):/); if (match) onSelectShot(match[1]); }}>{String((node.data as { label?: string }).label ?? node.id)}</button>)}</div>
     <div className="canvas-workspace" aria-label="业务画布"><ReactFlow nodes={visibleNodes} edges={edges} onNodesChange={onNodesChange} onNodeClick={(_, node) => { setSelectedNodeId(node.id); const match = node.id.match(/^shot:([^:]+):/); if (match) onSelectShot(match[1]); }} fitView minZoom={0.15} maxZoom={1.8} nodesConnectable={false} deleteKeyCode={null}><Background /><Controls /><MiniMap pannable zoomable nodeColor={(node) => String(node.className).includes("blocked") ? "#df9d4b" : String(node.className).includes("running") ? "#7c91ff" : "#45d3b3"} /></ReactFlow></div>
     <div className="canvas-status"><span>选中：{selectedNodeId ?? "无"}</span><span>显示：{visibleNodes.length}/{nodes.length} 节点</span><span>布局 revision：{graph.layout.revision}</span><span>业务依赖可编辑：否</span>{plan && <strong>计划 {plan.status} · {plan.node_ids.length} 节点 · {plan.blockers.length} 阻塞</strong>}</div>
+  </section>;
+}
+
+function TimelineStatusPanel({ status }: { status: TimelineStatus; loading: boolean }) {
+  const latestTimeline = status.timeline.latest;
+  const latestSubtitle = status.subtitles.latest;
+  const latestRender = status.renders.latest;
+  const latestDelivery = status.delivery.latest;
+  return <section className="panel timeline-status-panel" aria-labelledby="timeline-status-title">
+    <div className="panel-heading"><div><p className="eyebrow">G8 TIMELINE / DELIVERY</p><h3 id="timeline-status-title">时间线与交付状态</h3></div><span className="status-pill neutral">只读观测</span></div>
+    <p className="muted">仅汇总当前集已持久化的 timeline、字幕、音频、渲染和交付记录；没有真实记录就明确显示为空，不会自动生成样片或交付包。</p>
+    <div className="configuration-grid capacity-grid">
+      <div className="configuration-card"><small>Timeline revision</small><strong>{status.timeline.revision_count}</strong><span>{latestTimeline ? `最新 v${String(latestTimeline.revision_no)}` : "暂无真实 revision"}</span></div>
+      <div className="configuration-card"><small>字幕 / 音频</small><strong>{status.subtitles.revision_count} / {status.audio.binding_count}</strong><span>{latestSubtitle ? `${String(latestSubtitle.format)} · ${String(latestSubtitle.cue_count)} cues` : "暂无字幕；音频授权记录按实际汇总"}</span></div>
+      <div className="configuration-card"><small>整集渲染</small><strong>{status.renders.count}</strong><span>{latestRender ? String(latestRender.status) : "暂无真实 render"}</span></div>
+      <div className="configuration-card"><small>交付包</small><strong>{status.delivery.count}</strong><span>{latestDelivery ? String(latestDelivery.status) : "暂无真实 delivery"}</span></div>
+    </div>
+    <div className="canvas-status"><span>本地授权音频：{status.audio.verified_local_count}</span><span>已验证渲染：{status.renders.verified_count}</span><span>已验证交付：{status.delivery.verified_count}</span><span>runtime_contacted=false</span><span>network_contacted=false</span><span>mutated=false</span></div>
   </section>;
 }
 

@@ -52,6 +52,7 @@ export type ProjectConfiguration = { project: { id: string; code: string; title:
 export type AdapterContract = { code: string; title: string; kind: string; transport: string; base_url: string | null; executable_ref: string | null; capabilities: string[]; status: string; blockers: string[]; runtime_contacted: false; network_contacted: false; mutated: false };
 export type AdapterRegistry = { mode: 'LOCAL_ONLY'; contracts: AdapterContract[]; remote_transport_allowed: false; runtime_contacted: false; network_contacted: false; mutated: false };
 export type CapacitySnapshot = { scope: { project_id: string | null }; observed_at: string; jobs_by_state: Record<string, number>; jobs_by_channel: Record<string, number>; queued_count: number; oldest_queued_age_seconds: number | null; active_attempt_count: number; active_worker_count: number; gpu_active_count: number; gpu_concurrency_limit: number; completed_last_24h: number; observation_status: 'OBSERVED_NOT_BENCHMARKED'; webhook_status: 'NOT_IMPLEMENTED'; would_create_jobs: false; runtime_contacted: false; network_contacted: false; mutated: false };
+export type TimelineStatus = { episode: { id: string; code: string; title: string; project_id: string }; timeline: { revision_count: number; latest: Record<string, unknown> | null }; subtitles: { revision_count: number; latest: Record<string, unknown> | null }; audio: { binding_count: number; verified_local_count: number }; renders: { count: number; verified_count: number; latest: Record<string, unknown> | null }; delivery: { count: number; verified_count: number; latest: Record<string, unknown> | null }; observed_at: string; read_only: true; runtime_contacted: false; network_contacted: false; mutated: false };
 export type I2VProbePlan = { status: 'READY' | 'BLOCKED'; blockers: string[]; snapshot: { project_id: string; purpose: string; approved_keyframe: { media_version_id: string; shot_id: string; approval_id: string; approved_at: string; sha256: string; byte_size: number } | null; workflow: { id: string; content_hash: string; revision: number } | null; candidate_profile: { id: string; capability: string; status: string; manifest_sha256: string; revision: number } | null; semantic_inputs: Record<string, unknown>; resource_policy: Record<string, unknown> }; plan_hash: string; would_create_job: false; would_contact_comfyui: false; confirmation_required: true };
 export type WorkflowVersionSummary = { id: string; workflow_id: string; code: string; title: string; version_no: number; content_hash: string; status: string; contract: Record<string, unknown>; package_rel_path: string | null; published_at: string | null; created_at: string; updated_at: string; revision: number };
 export type CanvasNode = { id: string; type: string; shot_id: string; shot_code: string; label: string; state: string; blockers: string[]; take_count: number; variant_count: number; active_job_count: number; thumbnail_media_version_id: string | null; position: { x: number; y: number } | null };
@@ -225,6 +226,10 @@ export async function listEpisodes(seasonId: string, baseUrl = ''): Promise<{ it
 
 export async function getEpisodeProduction(episodeId: string, baseUrl = ''): Promise<{ episode: Record<string, unknown>; items: Array<Record<string, unknown>> }> {
   return requestJson(`/api/v1/episodes/${encodeURIComponent(episodeId)}/production`, undefined, baseUrl);
+}
+
+export async function getEpisodeTimelineStatus(episodeId: string, baseUrl = ''): Promise<{ status: TimelineStatus }> {
+  return requestJson(`/api/v1/episodes/${encodeURIComponent(episodeId)}/timeline-status`, undefined, baseUrl);
 }
 
 export async function localLLMStatus(baseUrl = ''): Promise<{ status: LocalLLMStatus }> {

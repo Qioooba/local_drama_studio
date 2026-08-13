@@ -16,9 +16,18 @@ from local_drama.api.schemas.g8 import (
 )
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.timeline import TimelineService
+from local_drama.application.timeline_status import TimelineStatusService
 from local_drama.domain.errors import DomainRuleError
 
 router = APIRouter(tags=["timeline", "delivery"])
+
+
+@router.get("/episodes/{episode_id}/timeline-status", operation_id="getEpisodeTimelineStatus")
+async def get_episode_timeline_status(episode_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"status": TimelineStatusService(request.app.state.database).inspect(episode_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
 
 
 def service(request: Request) -> TimelineService:

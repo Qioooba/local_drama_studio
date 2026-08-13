@@ -3,7 +3,7 @@ Date: 2026-08-12 (Asia/Shanghai)
 Scope: immutable timeline, subtitles, audio, FrameAnchor/continuity, enhancement, render and LOCAL_ONLY delivery
 
 Migration and API
-- migration head: 0006_g8_timeline_audio_delivery
+- migration head: production 0020_g7_model_license_evidence (G8 schema introduced by 0006_g8_timeline_audio_delivery)
 - migration command: `scripts/migrate.py --database data/local_drama.sqlite3`
 - migration result: integrity=ok
 - generated OpenAPI: `docs/openapi/openapi.json`
@@ -31,6 +31,11 @@ Security and scope
 - delivery target rejects absolute paths and `..` traversal
 - service performs project ownership checks for timeline/audio media
 - no ComfyUI task was launched by this G8 validation
+
+Read-only production observation
+- `GET /api/v1/episodes/{episode_id}/timeline-status` reads persisted timeline/subtitle/audio/render/delivery rows without mutation or runtime/network contact
+- production EPISODE_001 currently has 0 timeline revisions, 0 subtitle revisions, 0 audio bindings, 0 renders and 0 delivery packages; UI shows truthful empty state
+- 1024×768 browser visual evidence: `docs/evidence/g8/timeline-status-visual-review-2026-08-14.json` (720px WebP only)
 
 Exit decision
 - automated implementation evidence: PASS
