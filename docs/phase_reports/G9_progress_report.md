@@ -14,7 +14,7 @@
 - 视觉布局独立持久化，乐观并发；布局提交不能增加、删除或改变业务 edges。
 - NODE/FROM/TO/RANGE 执行 preflight，只生成计划，不直接绕过人工门禁提交任务。
 - 300 可见节点硬上限和 GPU 重任务并发 1 估算。
-- migration/OpenAPI/generated client、34 API tests、Ruff/mypy、web build/Vitest 全绿。
+- migration/OpenAPI/generated client、112 API tests（4 Comfy live deselected）、Ruff/mypy、web build/Vitest 全绿。
 
 未完成：
 

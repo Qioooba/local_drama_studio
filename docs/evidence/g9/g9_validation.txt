@@ -21,6 +21,7 @@ UI evidence
 - MiniMap, zoom/pan controls, state coloring, selected-node preflight and layout save are available
 - graph is loaded by episode page and capped by backend at 300 visible nodes
 - local search plus upstream/downstream focus filters only the rendered read model; business edges remain backend-authoritative and unchanged
+- keyboard node selection and React Flow clicks sync the existing `shot` URL parameter; a 1024×768 route-sync run restored the selected node without mutation
 
 Exit decision
 - automated baseline: PASS

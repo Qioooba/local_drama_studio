@@ -27,9 +27,9 @@
 
 ## 回归
 
-- `pnpm api:test:safe`：108 passed / 4 Comfy live deselected（含 adapter contract tests）。
+- `pnpm api:test:safe`：112 passed / 4 Comfy live deselected（含 adapter contract、G8 timeline-status tests）。
 - `pnpm web:test`：9/9；`pnpm web:build`：TypeScript/Vite PASS。
-- Ruff PASS；mypy PASS（83 source files）。
+- Ruff PASS；mypy PASS（86 source files）。
 - 生产迁移 `0019→0020` 完成，在线备份与 `integrity_check=ok`，WAL；API 3210、Web 5173，ComfyUI 8188 无监听。
 
 ## 下一步
