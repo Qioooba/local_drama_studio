@@ -51,4 +51,5 @@ describe("G9 canvas focus", () => {
     expect(focusCanvasNodeIds(null, edges, "UPSTREAM").size).toBe(0);
     expect(focusCanvasNodeIds("b", edges, "ALL").size).toBe(0);
   });
+
 });

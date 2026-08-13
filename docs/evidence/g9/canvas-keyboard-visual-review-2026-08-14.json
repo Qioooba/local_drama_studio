@@ -1,0 +1,12 @@
+{
+  "review_mode": "assistant_authorized_visual_review",
+  "scope": "G9-07 canvas keyboard alternate operation",
+  "policy": "Only a <=720px low-bitrate WebP thumbnail was loaded; no original media was requested.",
+  "reviewed_at": "2026-08-14T03:58:00+08:00",
+  "thumbnail": "apps/web/output/playwright/canvas-keyboard-1024x768.webp",
+  "max_dimension": 720,
+  "visual_result": "PASS",
+  "browser_assertions": {"keyboard_buttons": 10, "selected_node_after_enter": true, "console_errors": [], "page_errors": [], "failed_responses": [], "horizontal_overflow": false},
+  "decision": "PASS_FOR_THIS_UI_ACCEPTANCE",
+  "does_not_change": "Keyboard selection is a read-model action; it does not modify business edges or G9 gate status."
+}
