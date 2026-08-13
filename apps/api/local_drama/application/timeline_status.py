@@ -48,6 +48,7 @@ class TimelineStatusService:
                 FROM episode_render_versions erv WHERE erv.episode_id=? ORDER BY erv.created_at DESC LIMIT 1""", (episode_id,)
             ).fetchone()
             render_count = int(connection.execute("SELECT COUNT(*) FROM episode_render_versions WHERE episode_id=?", (episode_id,)).fetchone()[0])
+            render_verified_count = int(connection.execute("SELECT COUNT(*) FROM episode_render_versions WHERE episode_id=? AND integrity_status='VERIFIED'", (episode_id,)).fetchone()[0])
             delivery = connection.execute(
                 """SELECT dp.id, dp.status, dp.rel_path, dp.manifest_sha256, dp.created_at
                 FROM delivery_packages dp JOIN episode_render_versions erv ON erv.id=dp.episode_render_version_id
@@ -60,7 +61,7 @@ class TimelineStatusService:
             "timeline": {"revision_count": timeline_count, "latest": dict(timeline) if timeline else None},
             "subtitles": {"revision_count": subtitle_count, "latest": dict(subtitle) if subtitle else None},
             "audio": {"binding_count": int(audio["total"] or 0), "verified_local_count": int(audio["verified"] or 0)},
-            "renders": {"count": render_count, "verified_count": 1 if render and render["status"] == "VERIFIED" else 0, "latest": dict(render) if render else None},
+            "renders": {"count": render_count, "verified_count": render_verified_count, "latest": dict(render) if render else None},
             "delivery": {"count": delivery_count, "verified_count": delivery_verified, "latest": dict(delivery) if delivery else None},
             "observed_at": _now(), "read_only": True, "runtime_contacted": False, "network_contacted": False, "mutated": False,
         }
