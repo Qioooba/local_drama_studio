@@ -1,0 +1,656 @@
+{
+  "schema_version": "g10.local_uat_readonly.v1",
+  "observed_at": "2026-08-14T15:44:00.011665+00:00",
+  "status": "PASS",
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "episode_id": "d4db1033-9517-4bd0-958d-4228e0abead1",
+  "checks": {
+    "health": {
+      "path": "/api/v1/health/ready",
+      "status_code": 200,
+      "payload": {
+        "status": "HEALTHY",
+        "checks": {
+          "mode": "ok",
+          "data_root": "ok",
+          "projects_root": "ok",
+          "work_root": "ok",
+          "cache_root": "ok",
+          "database": "ok"
+        }
+      }
+    },
+    "system_contract": {
+      "path": "/api/v1/system/contract",
+      "status_code": 200,
+      "payload": {
+        "app": "LocalDramaStudio",
+        "version": "0.1.0-g1",
+        "mode": "LOCAL_ONLY",
+        "database_authority": "sqlite_wal_after_g2",
+        "media_authority": "project_filesystem",
+        "profile_registry": "manifest_backed_candidates_after_g3",
+        "remote_provider": "disabled",
+        "legacy_migration": "deferred_to_g11"
+      }
+    },
+    "adapters": {
+      "path": "/api/v1/adapters/contracts",
+      "status_code": 200,
+      "payload": {
+        "registry": {
+          "mode": "LOCAL_ONLY",
+          "contracts": [
+            {
+              "code": "comfyui-loopback",
+              "title": "ComfyUI H3 loopback adapter",
+              "kind": "COMFY",
+              "transport": "LOOPBACK_HTTP",
+              "base_url": "http://127.0.0.1:8188",
+              "executable_ref": null,
+              "capabilities": [
+                "system_stats",
+                "object_info",
+                "queue",
+                "prompt",
+                "history",
+                "interrupt",
+                "collect"
+              ],
+              "status": "DECLARED",
+              "blockers": [],
+              "runtime_contacted": false,
+              "network_contacted": false,
+              "mutated": false
+            },
+            {
+              "code": "local-llm-loopback",
+              "title": "Local LLM loopback adapter",
+              "kind": "LOCAL_LLM_LOOPBACK",
+              "transport": "LOCAL_LLM_LOOPBACK",
+              "base_url": "http://127.0.0.1:11434",
+              "executable_ref": null,
+              "capabilities": [
+                "model_list",
+                "chat_json",
+                "deterministic_temperature_zero"
+              ],
+              "status": "DECLARED",
+              "blockers": [],
+              "runtime_contacted": false,
+              "network_contacted": false,
+              "mutated": false
+            },
+            {
+              "code": "local-cli",
+              "title": "Local CLI adapter",
+              "kind": "CLI",
+              "transport": "LOCAL_CLI",
+              "base_url": null,
+              "executable_ref": "local-cli",
+              "capabilities": [
+                "version",
+                "stdin_stdout",
+                "isolated_workspace"
+              ],
+              "status": "DECLARED",
+              "blockers": [],
+              "runtime_contacted": false,
+              "network_contacted": false,
+              "mutated": false
+            },
+            {
+              "code": "ffmpeg-local",
+              "title": "FFmpeg/FFprobe local media adapter",
+              "kind": "FFMPEG",
+              "transport": "FFMPEG_LOCAL",
+              "base_url": null,
+              "executable_ref": "E:\\Tools\\ffmpeg\\bin\\ffmpeg.exe",
+              "capabilities": [
+                "ffmpeg",
+                "ffprobe",
+                "thumbnail",
+                "proxy",
+                "render",
+                "probe"
+              ],
+              "status": "DECLARED",
+              "blockers": [],
+              "runtime_contacted": false,
+              "network_contacted": false,
+              "mutated": false
+            }
+          ],
+          "remote_transport_allowed": false,
+          "runtime_contacted": false,
+          "network_contacted": false,
+          "mutated": false
+        }
+      }
+    },
+    "capacity": {
+      "path": "/api/v1/capacity/snapshot?project_id=e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+      "status_code": 200,
+      "payload": {
+        "snapshot": {
+          "scope": {
+            "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7"
+          },
+          "observed_at": "2026-08-14T15:43:59.912437+00:00",
+          "jobs_by_state": {
+            "CANCELLED": 4,
+            "FAILED": 3,
+            "NEEDS_ATTENTION": 5,
+            "QUEUED": 1,
+            "SUCCEEDED": 14
+          },
+          "jobs_by_channel": {
+            "GPU_H3": 25,
+            "CPU": 2
+          },
+          "queued_count": 1,
+          "oldest_queued_age_seconds": 242077,
+          "active_attempt_count": 0,
+          "active_worker_count": 0,
+          "gpu_active_count": 0,
+          "gpu_concurrency_limit": 1,
+          "completed_last_24h": 2,
+          "observation_status": "OBSERVED_NOT_BENCHMARKED",
+          "webhook_status": "LOOPBACK_EXPLICIT_BOUNDED",
+          "would_create_jobs": false,
+          "runtime_contacted": false,
+          "network_contacted": false,
+          "mutated": false
+        }
+      }
+    },
+    "g7": {
+      "path": "/api/v1/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/gates/g7",
+      "status_code": 200,
+      "payload": {
+        "readiness": {
+          "gate": "G7",
+          "status": "IN_PROGRESS",
+          "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+          "checks": [
+            {
+              "code": "LOCAL_RUNTIME_REGISTRY",
+              "passed": true,
+              "count": 2
+            },
+            {
+              "code": "NO_REMOTE_RUNTIME_TRANSPORT",
+              "passed": true,
+              "count": 0
+            },
+            {
+              "code": "PUBLISHED_CAPABILITY_PROFILE",
+              "passed": true,
+              "count": 8
+            },
+            {
+              "code": "PROJECT_PRODUCTION_PLAN",
+              "passed": true
+            },
+            {
+              "code": "PROJECT_PROFILE_BINDING",
+              "passed": true,
+              "count": 3
+            },
+            {
+              "code": "LOCAL_DELIVERY_TARGET_VERSION",
+              "passed": true,
+              "count": 1
+            },
+            {
+              "code": "NO_REMOTE_DELIVERY_TRANSPORT",
+              "passed": true,
+              "count": 0
+            },
+            {
+              "code": "PROFILE_EDITOR_TEST_PUBLISH",
+              "passed": true,
+              "count": 3
+            },
+            {
+              "code": "PROFILE_CAPABILITY_COMPATIBILITY",
+              "passed": true,
+              "count": 2
+            },
+            {
+              "code": "ZERO_PUBLIC_NETWORK_E2E",
+              "passed": true
+            },
+            {
+              "code": "WORKSPACE_ASSET_AUTHORIZATION",
+              "passed": true
+            },
+            {
+              "code": "MODEL_LICENSE_HASH_QUANTIZATION_REPORT",
+              "passed": false
+            }
+          ],
+          "next_required_action": "MODEL_LICENSE_HASH_QUANTIZATION_REPORT",
+          "evidence": {
+            "runtime_ids": [
+              "698e346b-fcc4-53f0-a8fe-bda51c7f30fd",
+              "6cc62a93-edd4-5ecb-b39c-8a69102d3c92"
+            ],
+            "published_profile_version_ids": [
+              "050c5caf-f47d-4641-8ec3-893e663efdc9",
+              "0d4df862-e8b9-4b2c-bdf7-fcb189ac6ce2",
+              "2147a504-e7ae-4756-8e35-77de81c9cbdc",
+              "7855a1b8-9be1-45bb-94b8-acdaf35bfde2",
+              "c6f3e7f1-aa02-4dc3-a5ba-023c79bef4fb",
+              "f63b3ac7-e264-4d44-adcc-eaf525aa1c34",
+              "08789ef4-9449-56d2-8c88-6b06fc274465",
+              "988b3fc3-f546-4300-b6ca-7f4756803179"
+            ],
+            "production_plan_version_id": "5a0a2a07-8703-4642-9df5-3bd33ad41970",
+            "profile_binding_version_ids": [
+              "2147a504-e7ae-4756-8e35-77de81c9cbdc",
+              "08789ef4-9449-56d2-8c88-6b06fc274465",
+              "988b3fc3-f546-4300-b6ca-7f4756803179"
+            ],
+            "delivery_target_version_ids": [
+              "f001acd0-096f-44f1-b466-e0f11212a090"
+            ],
+            "network_e2e_attestation_id": "51b05922-fce9-496e-bb9e-a627ba346f77",
+            "workspace_asset_authorization_id": "853fd791-0bc8-4cf5-bf12-fc54c3542caa",
+            "brand_kit_id": "5a0d3a95-1aea-4482-a137-2a85439c8373",
+            "model_compatibility_report_id": null
+          },
+          "runtime_contacted": false,
+          "network_contacted": false,
+          "mutated": false
+        }
+      }
+    },
+    "g8": {
+      "path": "/api/v1/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/gates/g8?episode_id=d4db1033-9517-4bd0-958d-4228e0abead1",
+      "status_code": 200,
+      "payload": {
+        "readiness": {
+          "gate": "G8",
+          "status": "IN_PROGRESS",
+          "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+          "episode": {
+            "id": "d4db1033-9517-4bd0-958d-4228e0abead1",
+            "code": "EPISODE_001",
+            "title": "第 1 集"
+          },
+          "checks": [
+            {
+              "code": "THREE_REAL_SHOTS",
+              "passed": false,
+              "count": 0,
+              "required": 3,
+              "detail": "timeline 中真实 SHOT-owned VIDEO 至少 3 个"
+            },
+            {
+              "code": "DIALOGUE_ENVIRONMENT_SFX_MUSIC",
+              "passed": false,
+              "count": 0,
+              "required_tracks": [
+                "DIALOGUE",
+                "ENVIRONMENT",
+                "SFX",
+                "MUSIC"
+              ],
+              "observed_tracks": [],
+              "detail": "四类本地授权音轨必须真实绑定"
+            },
+            {
+              "code": "SUBTITLES",
+              "passed": false,
+              "count": 0,
+              "detail": "至少一个真实字幕 revision"
+            },
+            {
+              "code": "TIMELINE_INPUT_LOCKED",
+              "passed": false,
+              "count": 0,
+              "detail": "timeline revision 与输入媒体快照必须存在"
+            },
+            {
+              "code": "APPROVED_EPISODE_RENDER",
+              "passed": false,
+              "count": 0,
+              "detail": "整集 render 必须通过机器完整性并存在真实批准决定"
+            },
+            {
+              "code": "VERIFIED_DELIVERY",
+              "passed": false,
+              "count": 0,
+              "detail": "delivery manifest/hash verify 必须为 VERIFIED"
+            },
+            {
+              "code": "TAMPER_DETECTION",
+              "passed": false,
+              "count": 0,
+              "detail": "正式验收需记录改 1 字节后 verify=CORRUPT；当前无真实 delivery 样本"
+            }
+          ],
+          "next_required_action": "THREE_REAL_SHOTS",
+          "evidence": {
+            "timeline_revision_id": null,
+            "render_id": null,
+            "delivery_id": null,
+            "audio_tracks": [],
+            "subtitle_revision_count": 0
+          },
+          "observed_at": "2026-08-14T15:43:59.973508+00:00",
+          "runtime_contacted": false,
+          "network_contacted": false,
+          "mutated": false
+        }
+      }
+    },
+    "g9": {
+      "path": "/api/v1/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/gates/g9?episode_id=d4db1033-9517-4bd0-958d-4228e0abead1",
+      "status_code": 200,
+      "payload": {
+        "readiness": {
+          "gate": "G9",
+          "status": "IN_PROGRESS",
+          "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+          "episode": {
+            "id": "d4db1033-9517-4bd0-958d-4228e0abead1",
+            "code": "EPISODE_001",
+            "title": "第 1 集"
+          },
+          "checks": [
+            {
+              "code": "LAZY_GRAPH_READ_MODEL",
+              "passed": true,
+              "count": 5,
+              "detail": "后端 read model 分页且可见节点上限为 300"
+            },
+            {
+              "code": "LAYOUT_DEPENDENCY_ISOLATION",
+              "passed": true,
+              "count": 0,
+              "detail": "布局只保存视觉状态，不改变业务 edges"
+            },
+            {
+              "code": "PREFLIGHT_PERSISTENCE",
+              "passed": true,
+              "count": 1,
+              "detail": "运行必须先生成持久化 preflight 计划，不能直接提交"
+            },
+            {
+              "code": "VISIBLE_NODE_PERFORMANCE_UAT",
+              "passed": false,
+              "count": 5,
+              "required_range": [
+                100,
+                300
+              ],
+              "detail": "正式退出需要 100—300 可见节点浏览器性能证据；生产当前集不是规模样本"
+            },
+            {
+              "code": "ACCESSIBILITY_ROUTE_UAT",
+              "passed": false,
+              "count": 0,
+              "detail": "完整三视图键盘/可访问性 checklist 尚未形成正式退出证据"
+            }
+          ],
+          "next_required_action": "VISIBLE_NODE_PERFORMANCE_UAT",
+          "evidence": {
+            "production_total_shots": 1,
+            "production_visible_nodes": 5,
+            "persisted_layout_count": 0,
+            "persisted_preflight_count": 1,
+            "automated_fixture": "apps/api/tests/test_g9_canvas.py creates 62 shots and asserts 100-node page; fixture is not production evidence"
+          },
+          "observed_at": "2026-08-14T15:44:00.002236+00:00",
+          "runtime_contacted": false,
+          "network_contacted": false,
+          "mutated": false
+        }
+      }
+    },
+    "model_compatibility": {
+      "path": "/api/v1/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/model-compatibility",
+      "status_code": 200,
+      "payload": {
+        "compatibility": {
+          "reports": [
+            {
+              "artifact_id": "01bff193-6e3d-55c6-a3f5-548d23f80e75",
+              "code": "h3-fl2va-transformer",
+              "kind": "FL2VA DiT",
+              "machine_path_ref": "E:\\AI\\ComfyUI-Models\\diffusers\\MiniMax-H3\\FL2VA\\transformer_int8_convrot\\MiniMax-H3-FL2VA-int8_convrot.safetensors",
+              "artifact_status": "CANDIDATE",
+              "artifact_sha256": null,
+              "report_id": null,
+              "report_sha256": null,
+              "byte_size": null,
+              "license_status": null,
+              "report_status": null,
+              "report_created_at": null,
+              "license_evidence_id": null,
+              "license_path_rel": null,
+              "quantization": {},
+              "blockers": [],
+              "has_report": false,
+              "has_license_evidence": false
+            },
+            {
+              "artifact_id": "83c66a47-b0a3-536a-93f1-f7af6d14bbe1",
+              "code": "h3-fl2va-transformer-1fb8580b7075",
+              "kind": "FL2VA DiT",
+              "machine_path_ref": "E:\\AI\\ComfyUI-Models\\diffusers\\MiniMax-H3\\FL2VA\\transformer_int8_convrot\\MiniMax-H3-FL2VA-int8_convrot.safetensors",
+              "artifact_status": "CANDIDATE",
+              "artifact_sha256": null,
+              "report_id": null,
+              "report_sha256": null,
+              "byte_size": null,
+              "license_status": null,
+              "report_status": null,
+              "report_created_at": null,
+              "license_evidence_id": null,
+              "license_path_rel": null,
+              "quantization": {},
+              "blockers": [],
+              "has_report": false,
+              "has_license_evidence": false
+            },
+            {
+              "artifact_id": "04621e56-66ca-5310-835b-63883237d57a",
+              "code": "h3-fl2va-audio-vae",
+              "kind": "H3 audio VAE",
+              "machine_path_ref": "E:\\AI\\ComfyUI-Models\\diffusers\\MiniMax-H3\\FL2VA\\vae\\audio_vae\\MiniMax-H3-audio_vae.safetensors",
+              "artifact_status": "CANDIDATE",
+              "artifact_sha256": null,
+              "report_id": null,
+              "report_sha256": null,
+              "byte_size": null,
+              "license_status": null,
+              "report_status": null,
+              "report_created_at": null,
+              "license_evidence_id": null,
+              "license_path_rel": null,
+              "quantization": {},
+              "blockers": [],
+              "has_report": false,
+              "has_license_evidence": false
+            },
+            {
+              "artifact_id": "a3cad3fb-d70e-5e98-8197-f8f8c6fd1803",
+              "code": "h3-fl2va-audio-vae-1fb8580b7075",
+              "kind": "H3 audio VAE",
+              "machine_path_ref": "E:\\AI\\ComfyUI-Models\\diffusers\\MiniMax-H3\\FL2VA\\vae\\audio_vae\\MiniMax-H3-audio_vae.safetensors",
+              "artifact_status": "CANDIDATE",
+              "artifact_sha256": null,
+              "report_id": null,
+              "report_sha256": null,
+              "byte_size": null,
+              "license_status": null,
+              "report_status": null,
+              "report_created_at": null,
+              "license_evidence_id": null,
+              "license_path_rel": null,
+              "quantization": {},
+              "blockers": [],
+              "has_report": false,
+              "has_license_evidence": false
+            },
+            {
+              "artifact_id": "b91df4a8-9719-540e-8676-1f28f74bb674",
+              "code": "h3-fl2va-video-vae",
+              "kind": "H3 video VAE",
+              "machine_path_ref": "E:\\AI\\ComfyUI-Models\\diffusers\\MiniMax-H3\\FL2VA\\vae\\video_vae\\MiniMax-H3-video_vae.safetensors",
+              "artifact_status": "CANDIDATE",
+              "artifact_sha256": "5a624684fad53d4acd0762aa7b07de4204de0bbb90f92c479605e326ccceb148",
+              "report_id": "d586967e-0634-4c8d-8887-193d398beda9",
+              "report_sha256": "5a624684fad53d4acd0762aa7b07de4204de0bbb90f92c479605e326ccceb148",
+              "byte_size": 5207806104,
+              "license_status": "UNVERIFIED_NO_LOCAL_LICENSE_EVIDENCE",
+              "report_status": "BLOCKED",
+              "report_created_at": "2026-08-13T18:18:52.648275+00:00",
+              "license_evidence_id": null,
+              "license_path_rel": null,
+              "quantization": {
+                "declared": "FP16",
+                "header_dtypes": [
+                  "F16"
+                ],
+                "status": "HEADER_MATCHED"
+              },
+              "blockers": [
+                "LICENSE_EVIDENCE_MISSING",
+                "FORMAL_IMPORT_REQUIRES_OPERATOR_LICENSE_RECORD"
+              ],
+              "has_report": true,
+              "has_license_evidence": false
+            },
+            {
+              "artifact_id": "949bf2a5-94b9-5ecf-92b9-0c237956387c",
+              "code": "h3-fl2va-video-vae-1fb8580b7075",
+              "kind": "H3 video VAE",
+              "machine_path_ref": "E:\\AI\\ComfyUI-Models\\diffusers\\MiniMax-H3\\FL2VA\\vae\\video_vae\\MiniMax-H3-video_vae.safetensors",
+              "artifact_status": "CANDIDATE",
+              "artifact_sha256": null,
+              "report_id": null,
+              "report_sha256": null,
+              "byte_size": null,
+              "license_status": null,
+              "report_status": null,
+              "report_created_at": null,
+              "license_evidence_id": null,
+              "license_path_rel": null,
+              "quantization": {},
+              "blockers": [],
+              "has_report": false,
+              "has_license_evidence": false
+            },
+            {
+              "artifact_id": "c1a1b566-049a-5fd1-8aea-aa8e5909f181",
+              "code": "h3-fl2va-text-encoder",
+              "kind": "Qwen3-VL text/multimodal encoder",
+              "machine_path_ref": "E:\\AI\\ComfyUI-Models\\diffusers\\MiniMax-H3\\FL2VA\\text_encoder_int8_convrot\\qwen3-vl-32b-int8_convrot.safetensors",
+              "artifact_status": "CANDIDATE",
+              "artifact_sha256": null,
+              "report_id": null,
+              "report_sha256": null,
+              "byte_size": null,
+              "license_status": null,
+              "report_status": null,
+              "report_created_at": null,
+              "license_evidence_id": null,
+              "license_path_rel": null,
+              "quantization": {},
+              "blockers": [],
+              "has_report": false,
+              "has_license_evidence": false
+            },
+            {
+              "artifact_id": "a5d9e1b8-265f-56de-9db3-89b953c7dc03",
+              "code": "h3-fl2va-text-encoder-1fb8580b7075",
+              "kind": "Qwen3-VL text/multimodal encoder",
+              "machine_path_ref": "E:\\AI\\ComfyUI-Models\\diffusers\\MiniMax-H3\\FL2VA\\text_encoder_int8_convrot\\qwen3-vl-32b-int8_convrot.safetensors",
+              "artifact_status": "CANDIDATE",
+              "artifact_sha256": null,
+              "report_id": null,
+              "report_sha256": null,
+              "byte_size": null,
+              "license_status": null,
+              "report_status": null,
+              "report_created_at": null,
+              "license_evidence_id": null,
+              "license_path_rel": null,
+              "quantization": {},
+              "blockers": [],
+              "has_report": false,
+              "has_license_evidence": false
+            },
+            {
+              "artifact_id": "e9c49b0b-ca65-5340-9710-7d2565a5f3ba",
+              "code": "h3-ref2va-transformer",
+              "kind": "Ref2VA DiT",
+              "machine_path_ref": "E:\\AI\\ComfyUI-Models\\diffusers\\MiniMax-H3\\Ref2VA\\transformer_int8_convrot\\MiniMax-H3-Ref2VA-int8_convrot.safetensors",
+              "artifact_status": "CANDIDATE",
+              "artifact_sha256": null,
+              "report_id": null,
+              "report_sha256": null,
+              "byte_size": null,
+              "license_status": null,
+              "report_status": null,
+              "report_created_at": null,
+              "license_evidence_id": null,
+              "license_path_rel": null,
+              "quantization": {},
+              "blockers": [],
+              "has_report": false,
+              "has_license_evidence": false
+            },
+            {
+              "artifact_id": "02652f43-80c8-54a7-bd54-0069e50399a8",
+              "code": "h3-ref2va-transformer-1fb8580b7075",
+              "kind": "Ref2VA DiT",
+              "machine_path_ref": "E:\\AI\\ComfyUI-Models\\diffusers\\MiniMax-H3\\Ref2VA\\transformer_int8_convrot\\MiniMax-H3-Ref2VA-int8_convrot.safetensors",
+              "artifact_status": "CANDIDATE",
+              "artifact_sha256": null,
+              "report_id": null,
+              "report_sha256": null,
+              "byte_size": null,
+              "license_status": null,
+              "report_status": null,
+              "report_created_at": null,
+              "license_evidence_id": null,
+              "license_path_rel": null,
+              "quantization": {},
+              "blockers": [],
+              "has_report": false,
+              "has_license_evidence": false
+            }
+          ],
+          "summary": {
+            "artifact_count": 10,
+            "reported_count": 1,
+            "pass_count": 0,
+            "blocked_count": 1,
+            "missing_license_evidence_count": 10
+          },
+          "runtime_contacted": false,
+          "network_contacted": false,
+          "mutated": false
+        }
+      }
+    }
+  },
+  "summary": {
+    "get_requests": 8,
+    "successful_gets": 8,
+    "safety_assertions": 6,
+    "safety_passed": true
+  },
+  "safety": {
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "mutated": false,
+    "jobs_created": false
+  },
+  "interpretation": "Read-only local baseline only; it cannot substitute for G7 license evidence, G8 production media, G9 performance/accessibility UAT, or final release approval."
+}

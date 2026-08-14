@@ -50,4 +50,12 @@ release_status: DRAFT
 条目没有可由本地元数据确认的许可证，使用 SPDX `NOASSERTION`；因此 SBOM 和本文件
 仍保持 `DRAFT`，不能替代最终许可证、来源和运行镜像复核。
 
+## 本地只读 UAT 基线（2026-08-14）
+
+`scripts/local_uat_readonly.py` 已对健康状态、系统契约、adapter 声明、容量快照、
+G7/G8/G9 readiness 和模型兼容性执行 8 个 GET 请求；8/8 成功，6 项安全断言通过，
+未接触 runtime、网络或任务队列。证据见
+`docs/evidence/g10/local-uat-readonly-2026-08-14.json`。该基线不替代完整本地一条龙
+UAT、真实生成、性能/可访问性验收或最终发布评审。
+
 在上述演练完成并留存证据前，不得把本文件的草稿状态改为 `FINAL`。

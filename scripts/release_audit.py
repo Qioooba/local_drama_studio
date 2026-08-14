@@ -94,6 +94,26 @@ def _sbom_inventory(path: Path) -> dict[str, Any]:
     return {"valid": valid, "package_count": package_count if isinstance(package_count, int) else 0}
 
 
+def _local_uat_passed(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    try:
+        evidence = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return False
+    summary = evidence.get("summary", {})
+    safety = evidence.get("safety", {})
+    return (
+        evidence.get("status") == "PASS"
+        and summary.get("get_requests", 0) == summary.get("successful_gets", -1)
+        and summary.get("safety_passed") is True
+        and safety.get("runtime_contacted") is False
+        and safety.get("network_contacted") is False
+        and safety.get("mutated") is False
+        and safety.get("jobs_created") is False
+    )
+
+
 def audit() -> dict[str, Any]:
     database = Database(DB_PATH)
     with database.connect() as connection:
@@ -119,6 +139,7 @@ def audit() -> dict[str, Any]:
     rehearsal_path = ROOT / "docs" / "evidence" / "g10" / "upgrade-rollback-rehearsal-2026-08-14.json"
     sbom_path = ROOT / "docs" / "release" / "sbom.json"
     sbom_inventory = _sbom_inventory(sbom_path)
+    local_uat_path = ROOT / "docs" / "evidence" / "g10" / "local-uat-readonly-2026-08-14.json"
     artifact_state = {
         name: {"exists": path.is_file(), "final": _is_final(path) if requires_final else path.is_file(), "path": path.relative_to(ROOT).as_posix()}
         for name, (path, requires_final) in required_artifacts.items()
@@ -133,6 +154,7 @@ def audit() -> dict[str, Any]:
         {"code": "ORDERED_G9", "passed": g9["status"] == "PASS", "observed": g9["status"], "next_required_action": g9["next_required_action"]},
         {"code": "UPGRADE_ROLLBACK_REHEARSAL", "passed": _rehearsal_passed(rehearsal_path), "evidence": rehearsal_path.relative_to(ROOT).as_posix()},
         {"code": "SBOM_INVENTORY", "passed": sbom_inventory["valid"], "package_count": sbom_inventory["package_count"], "evidence": sbom_path.relative_to(ROOT).as_posix()},
+        {"code": "LOCAL_UAT_READONLY_BASELINE", "passed": _local_uat_passed(local_uat_path), "evidence": local_uat_path.relative_to(ROOT).as_posix()},
         {"code": "RELEASE_ARTIFACTS", "passed": release_artifacts_ready, "artifacts": artifact_state},
     ]
     return {
