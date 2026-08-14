@@ -1,0 +1,25 @@
+{
+  "bomFormat": "SPDX",
+  "specVersion": "2.3",
+  "release_status": "DRAFT",
+  "name": "LocalDramaStudio",
+  "versionInfo": "unreleased",
+  "completeness": "DIRECT_DEPENDENCIES_ONLY",
+  "comment": "G10 草稿；完整传递依赖、许可证与 hash 尚未由最终生成器复核，不得作为发布 SBOM。",
+  "source_lockfiles": [
+    "apps/api/requirements.lock",
+    "pnpm-lock.yaml"
+  ],
+  "packages": [
+    {"name": "FastAPI", "licenseConcluded": "MIT"},
+    {"name": "Pydantic", "licenseConcluded": "MIT"},
+    {"name": "SQLAlchemy", "licenseConcluded": "MIT"},
+    {"name": "Alembic", "licenseConcluded": "MIT"},
+    {"name": "React", "licenseConcluded": "MIT"},
+    {"name": "TanStack Query", "licenseConcluded": "MIT"},
+    {"name": "Vite", "licenseConcluded": "MIT"},
+    {"name": "TypeScript", "licenseConcluded": "Apache-2.0"},
+    {"name": "Vitest", "licenseConcluded": "MIT"},
+    {"name": "Playwright", "licenseConcluded": "Apache-2.0"}
+  ]
+}

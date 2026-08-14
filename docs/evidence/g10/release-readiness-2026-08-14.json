@@ -1,0 +1,90 @@
+{
+  "schema_version": "g10.release_audit.read_only.v1",
+  "observed_at": "2026-08-14T01:46:26.890786+00:00",
+  "status": "IN_PROGRESS",
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "checks": [
+    {
+      "code": "DATABASE_INTEGRITY",
+      "passed": true,
+      "observed": "ok"
+    },
+    {
+      "code": "MIGRATION_HEAD",
+      "passed": true,
+      "observed": "0020_g7_model_license_evidence"
+    },
+    {
+      "code": "BACKUP_INTEGRITY",
+      "passed": true,
+      "observed_count": 5
+    },
+    {
+      "code": "ORDERED_G7",
+      "passed": false,
+      "observed": "IN_PROGRESS",
+      "next_required_action": "MODEL_LICENSE_HASH_QUANTIZATION_REPORT"
+    },
+    {
+      "code": "ORDERED_G8",
+      "passed": false,
+      "observed": "IN_PROGRESS",
+      "next_required_action": "THREE_REAL_SHOTS"
+    },
+    {
+      "code": "ORDERED_G9",
+      "passed": false,
+      "observed": "IN_PROGRESS",
+      "next_required_action": "VISIBLE_NODE_PERFORMANCE_UAT"
+    },
+    {
+      "code": "RELEASE_ARTIFACTS",
+      "passed": false,
+      "artifacts": {
+        "api_lock": {
+          "exists": true,
+          "final": true,
+          "path": "apps/api/requirements.lock"
+        },
+        "web_lock": {
+          "exists": true,
+          "final": true,
+          "path": "pnpm-lock.yaml"
+        },
+        "start_script": {
+          "exists": true,
+          "final": true,
+          "path": "scripts/start.ps1"
+        },
+        "migration_script": {
+          "exists": true,
+          "final": true,
+          "path": "scripts/migrate.py"
+        },
+        "install_upgrade_rollback": {
+          "exists": true,
+          "final": false,
+          "path": "docs/release/install-upgrade-rollback.md"
+        },
+        "sbom": {
+          "exists": true,
+          "final": false,
+          "path": "docs/release/sbom.json"
+        },
+        "go_no_go": {
+          "exists": true,
+          "final": false,
+          "path": "docs/release/go-no-go.md"
+        }
+      }
+    }
+  ],
+  "safety": {
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "mutated": false,
+    "migrations_run": false,
+    "jobs_created": false
+  },
+  "exit_decision": "G10 release go/no-go is pending; missing or blocked checks must not be bypassed"
+}
