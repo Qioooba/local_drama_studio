@@ -2,6 +2,14 @@
 
 状态：`IN_PROGRESS`。G7-01—G7-09 当前闭环证据已落库；G7-10 模型 license 证据仍是硬阻塞，不能进入 G8 退出验收，也不能宣告 G7 PASS。
 
+## 最新自动续跑（2026-08-14）
+
+- G7 readiness 实际为 `11/12 PASS`，唯一 false check 仍为 `MODEL_LICENSE_HASH_QUANTIZATION_REPORT`；未手改状态。
+- H3 video VAE safetensors header 仅读取结果为 `__metadata__={}`；模型目录没有 LICENSE/NOTICE/EULA/README，仍无可导入的真实操作者许可证记录。
+- API 回归 `120 passed / 4 deselected`，Web `11 passed`，production build、Ruff、mypy 全部通过；只读本地 UAT 基线 8/8 GET 成功、6/6 安全断言通过。
+- 三档项目页、业务画布、模型与能力页均无水平溢出、Application error 或 console error/warning；ComfyUI 只保持回环监听，未提交生成任务。
+- SBOM 已离线盘点 317 个锁定包；G10 `UPGRADE_ROLLBACK_REHEARSAL`、`SBOM_INVENTORY`、`LOCAL_UAT_READONLY_BASELINE` 均为 PASS，但 G10 仍 `IN_PROGRESS/NO-GO`。
+
 ## 本轮完成
 
 - Migration `0020_g7_model_license_evidence`：新增项目内本地 license evidence 导入；只接受不可越界、非 symlink、UTF-8 JSON 记录，并强制声明当前模型 SHA-256 与 license 名称。支持 `LOCAL_LICENSE_VERIFIED`/`USER_OWNED`，不下载、不联网、不猜测许可证；旧报告不原地改写。
