@@ -1,0 +1,74 @@
+{
+  "schema_version": "localdrama.uat.timeline-export.v1",
+  "observed_at": "2026-08-15T05:38:00+08:00",
+  "requirement": "FR-TML-004",
+  "status": "PASS",
+  "scope": {
+    "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+    "episode_id": "d4db1033-9517-4bd0-958d-4228e0abead1",
+    "timeline_revision_id": "f76432ce-15e1-455f-9c90-573b360cc737",
+    "revision_hash": "d0d9d5848fc688e4cbbe5ad204f6d4db6c76e9e30b7510f495407994c3130bb7",
+    "video_item_count": 3,
+    "fps": "24/1"
+  },
+  "export": {
+    "writer_version": 2,
+    "export_hash": "a3cd25d01d62903f140ed84d747ffbb18e4820ac2513453c9bbde1e234ddcf69",
+    "rel_path": "05_timelines/EPISODE_001/exports/timeline-v1-a3cd25d01d62",
+    "files": [
+      {
+        "rel_path": "EPISODE_001-v1.otio",
+        "byte_size": 3134,
+        "sha256": "807adcbfcfedc647d5b1a0fbbc5f16f3051729e6acdccb2a5b6a65b006cecbef",
+        "schema": "Timeline.1",
+        "clip_schema": "Clip.2",
+        "media_reference_mode": "project-relative URL plus frozen media id/hash/size"
+      },
+      {
+        "rel_path": "EPISODE_001-v1.edl",
+        "byte_size": 808,
+        "sha256": "0219eb0c4ab309a491bfc0180a5b8995aa7088021b2e1e8608cb500c833d4802",
+        "format": "CMX 3600 NON-DROP FRAME"
+      }
+    ],
+    "repeat_result": "REUSED_AFTER_FULL_FILE_INTEGRITY_VERIFICATION"
+  },
+  "browser": {
+    "route": "/?view=projects",
+    "viewports": [
+      { "width": 1440, "height": 900, "horizontal_overflow": false, "button_visible": true },
+      { "width": 1280, "height": 800, "horizontal_overflow": false, "button_visible": true },
+      { "width": 1024, "height": 768, "horizontal_overflow": false, "button_visible": true }
+    ],
+    "console_errors": 0,
+    "console_warnings": 0,
+    "failed_responses": 0,
+    "original_media_requests": 0,
+    "export_response_status": 200
+  },
+  "automated_regression": {
+    "api_tests": 3,
+    "web_tests": 2,
+    "covered": [
+      "OTIO timeline/track/gap/clip and relative ExternalReference output",
+      "CMX 3600 record/source timecodes",
+      "frozen revision and media SHA identity",
+      "manifest file size/SHA verification",
+      "SQLite row-count invariance",
+      "idempotent verified reuse",
+      "source tamper rejection",
+      "existing export tamper rejection",
+      "failure preserves TimelineRevision",
+      "HTTP route and interactive UI"
+    ]
+  },
+  "invariants": {
+    "database_mutated": false,
+    "timeline_revision_mutated": false,
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "public_network_contacted": false,
+    "original_visual_loaded_or_displayed": false
+  },
+  "gate_effect": "FR-TML-004 verified; G7 remains blocked by model license evidence and ordered G8 exit is unchanged"
+}

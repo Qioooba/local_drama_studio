@@ -5,7 +5,7 @@ export function EpisodeContactSheetAction({ episodeId }: { episodeId: string | n
   const mutation = useMutation({ mutationFn: () => exportEpisodeContactSheet(episodeId as string) });
   const exported = mutation.data?.export;
   return (
-    <div className="contact-sheet-action">
+    <div className="local-export-action">
       <div>
         <strong>已选媒体联系表</strong>
         <p className="muted">复制当前集已选原文件并生成 320px WebP 缩略图；不修改 SQLite，也不接触运行时或网络。</p>

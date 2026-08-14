@@ -16,6 +16,7 @@ from local_drama.api.schemas.g8 import (
 )
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.timeline import TimelineService
+from local_drama.application.timeline_exports import TimelineExportService
 from local_drama.application.timeline_status import TimelineStatusService
 from local_drama.domain.errors import DomainRuleError
 
@@ -46,6 +47,14 @@ async def create_timeline_revision(episode_id: str, payload: TimelineRevisionReq
 async def get_timeline_revision(timeline_revision_id: str, request: Request) -> dict[str, object]:
     try:
         return {"timeline": service(request).get_timeline(timeline_revision_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/timeline-revisions/{timeline_revision_id}:export", operation_id="exportTimelineRevision")
+async def export_timeline_revision(timeline_revision_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"export": TimelineExportService(request.app.state.database, request.app.state.settings).export_revision(timeline_revision_id)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
