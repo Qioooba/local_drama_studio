@@ -36,6 +36,12 @@ class ProjectTemplateCopyRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
 
 
+class ProjectPackageDryRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rel_path: str = Field(min_length=1, max_length=500)
+
+
 class ShotCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

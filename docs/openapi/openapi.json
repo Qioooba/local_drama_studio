@@ -855,6 +855,104 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/packages:export": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Export Project Package",
+        "operationId": "exportProjectPackage",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Exportprojectpackage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/packages:dry-run": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Dry Run Project Package",
+        "operationId": "dryRunProjectPackage",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectPackageDryRunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Dryrunprojectpackage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}:restore": {
       "post": {
         "tags": [
@@ -8999,6 +9097,22 @@
           "target_duration_ms"
         ],
         "title": "ProjectCreateRequest"
+      },
+      "ProjectPackageDryRunRequest": {
+        "properties": {
+          "rel_path": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Rel Path"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rel_path"
+        ],
+        "title": "ProjectPackageDryRunRequest"
       },
       "ProjectTemplateCopyRequest": {
         "properties": {

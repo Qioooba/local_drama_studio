@@ -5,6 +5,8 @@ export type SystemContract = Record<string, string>;
 export type Project = { id: string; code: string; title: string; status: string; revision: number; [key: string]: unknown };
 export type ProjectCreatePayload = { code: string; title: string; episode_count: number; target_duration_ms: number; aspect_ratio: string; fps: { numerator: number; denominator: number }; allow_unconfigured_capabilities: boolean };
 export type ProjectCreationPlan = { status: 'READY' | 'READY_WITH_CONFIGURATION_BLOCKERS' | 'BLOCKED'; checks: Array<{ code: string; passed: boolean; free_bytes?: number; required_bytes?: number }>; blockers: string[]; configuration_blockers: string[]; accepted_unconfigured: boolean; target_root_rel: string; estimated_bytes: number; would_create_project: true; mutated: false; runtime_contacted: false; network_contacted: false };
+export type ProjectPackageExport = { status: 'EXPORTED'; project_id: string; rel_path: string; byte_size: number; sha256: string; entry_count: number; expanded_bytes: number; reused: boolean; database_mutated: false; runtime_contacted: false; network_contacted: false };
+export type ProjectPackageDryRun = { status: 'READY_REBIND_EXISTING' | 'IDENTITY_CONFLICT' | 'READY_IMPORT' | 'BLOCKED'; project_id: string; project_code: string; entry_count: number; expanded_bytes: number; free_bytes: number; blockers: string[]; conflict_options: string[]; would_import: false; mutated: false; runtime_contacted: false; network_contacted: false };
 export type Profile = { id: string; code: string; title: string; version_id: string; capability: string; status: string; [key: string]: unknown };
 export type ProfileContract = { input_contract: Record<string, unknown>; parameter_schema: Record<string, unknown>; output_contract: Record<string, unknown>; resource_policy: Record<string, unknown> };
 export type ProfileValidation = { id: string; profile_version_id?: string; contract_hash: string; status: 'PASS' | 'FAIL'; checks: Array<{ code: string; passed: boolean; label?: string }>; runtime_contacted?: false; network_contacted?: false };
@@ -150,6 +152,14 @@ export async function createProject(payload: ProjectCreatePayload, baseUrl = '')
 
 export async function copyProjectTemplate(projectId: string, payload: { code: string; title: string }, baseUrl = ''): Promise<{ project: Project; copy_report: { source_project_id: string; copied: Record<string, number>; excluded: string[] } }> {
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}:copy-template`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function exportProjectPackage(projectId: string, baseUrl = ''): Promise<{ package: ProjectPackageExport }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/packages:export`, { method: 'POST' }, baseUrl);
+}
+
+export async function dryRunProjectPackage(projectId: string, relPath: string, baseUrl = ''): Promise<{ dry_run: ProjectPackageDryRun }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/packages:dry-run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rel_path: relPath }) }, baseUrl);
 }
 
 export async function listProfiles(baseUrl = ''): Promise<{ items: Profile[] }> {

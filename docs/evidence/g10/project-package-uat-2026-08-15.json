@@ -1,0 +1,74 @@
+{
+  "schema_version": "localdrama.project-package-uat.v1",
+  "observed_at": "2026-08-14T22:32:58.422Z",
+  "status": "PASS",
+  "mode": "PRODUCTION_UI_READ_ONLY",
+  "production_database_mutated": false,
+  "production_files_mutated": false,
+  "screenshots_captured": false,
+  "results": [
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "visible": true,
+      "policyVisible": true,
+      "buttonHeight": 41,
+      "geometry": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "horizontalOverflow": false
+      },
+      "packageMutations": [],
+      "consoleProblems": [],
+      "pageErrors": [],
+      "failedResponses": [],
+      "publicRequests": [],
+      "originalMediaRequests": [],
+      "exportClicked": false
+    },
+    {
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "visible": true,
+      "policyVisible": true,
+      "buttonHeight": 41,
+      "geometry": {
+        "scrollWidth": 1280,
+        "clientWidth": 1280,
+        "horizontalOverflow": false
+      },
+      "packageMutations": [],
+      "consoleProblems": [],
+      "pageErrors": [],
+      "failedResponses": [],
+      "publicRequests": [],
+      "originalMediaRequests": [],
+      "exportClicked": false
+    },
+    {
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "visible": true,
+      "policyVisible": true,
+      "buttonHeight": 41,
+      "geometry": {
+        "scrollWidth": 1024,
+        "clientWidth": 1024,
+        "horizontalOverflow": false
+      },
+      "packageMutations": [],
+      "consoleProblems": [],
+      "pageErrors": [],
+      "failedResponses": [],
+      "publicRequests": [],
+      "originalMediaRequests": [],
+      "exportClicked": false
+    }
+  ]
+}

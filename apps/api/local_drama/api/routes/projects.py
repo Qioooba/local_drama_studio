@@ -4,6 +4,7 @@ from fastapi import APIRouter, Header, Request
 
 from local_drama.api.schemas.projects import (
     ProjectCreateRequest,
+    ProjectPackageDryRunRequest,
     ProjectTemplateCopyRequest,
     ProjectUpdateRequest,
     ShotCreateRequest,
@@ -11,6 +12,7 @@ from local_drama.api.schemas.projects import (
 )
 from local_drama.application.configuration import ConfigurationService
 from local_drama.application.errors import api_error_from_domain
+from local_drama.application.project_packages import ProjectPackageService
 from local_drama.application.projects import ProjectService
 from local_drama.domain.errors import DomainRuleError
 
@@ -20,6 +22,11 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 def service(request: Request) -> ProjectService:
     settings = request.app.state.settings
     return ProjectService(request.app.state.database, settings.projects_root)
+
+
+def package_service(request: Request) -> ProjectPackageService:
+    settings = request.app.state.settings
+    return ProjectPackageService(request.app.state.database, settings.projects_root)
 
 
 @router.get("", operation_id="listProjects")
@@ -115,6 +122,22 @@ async def archive_project(project_id: str, request: Request) -> dict[str, object
 async def copy_project_template(project_id: str, payload: ProjectTemplateCopyRequest, request: Request) -> dict[str, object]:
     try:
         return service(request).copy_as_template(project_id, code=payload.code, title=payload.title)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/{project_id}/packages:export", operation_id="exportProjectPackage")
+async def export_project_package(project_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"package": package_service(request).export(project_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/{project_id}/packages:dry-run", operation_id="dryRunProjectPackage")
+async def dry_run_project_package(project_id: str, payload: ProjectPackageDryRunRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"dry_run": package_service(request).dry_run(project_id, payload.rel_path)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
