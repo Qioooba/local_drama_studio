@@ -102,11 +102,12 @@
 | 节点状态/take/variant/blocker/active job | VERIFIED | canvas graph API 基于 SQLite 权威状态汇总 |
 | layout persistence 与业务依赖隔离 | VERIFIED | `canvas_layouts`、未知 node 拒绝、layout 后 edges 不变测试 |
 | run node/from/to/range preflight | VERIFIED | `canvas_execution_plans`、max node/GPU concurrency/HITL/blocker 计划 |
-| 画布性能基础、键盘/不可连接/不可删除替代约束 | PARTIAL / VERIFIED_BASELINE | lazy graph、300 node 上限、键盘节点列表、可命名画布/搜索控件；只读 G9 readiness 明确生产 1 shot/5 nodes 与 62-shot/100-node fixture 分离，正式 100—300 交互 benchmark 与完整可访问性清单待 UAT |
-| 三视图 route/selection 同步、画布搜索与上/下游聚焦 | VERIFIED BASELINE | URL 状态同步；G9 画布新增本地搜索、传递闭包聚焦上游/下游；节点/键盘选择会回写 `shot` 查询参数并可从 URL 恢复；只改变可视节点集合，不改变业务 edges；App tests + 三档 Playwright + 1024 route-sync Playwright |
+| 画布性能基础、键盘/不可连接/不可删除替代约束 | VERIFIED PRODUCTION UAT | 生产 EPISODE_001 持久化 22 个真实 SHOT、110 节点；三档浏览器 canvas-ready 1.0—1.3s、零水平溢出、零 console/page error、零失败响应；`g9-production-scale-uat-2026-08-15.json`、`g9-production-canvas-uat-2026-08-15.json` |
+| 三视图 route/selection 同步、画布搜索与上/下游聚焦 | VERIFIED PRODUCTION UAT | 三档真实生产页面验证语义画布、键盘节点列表、搜索过滤、URL shot 同步与选中态；`g9-production-accessibility-uat-2026-08-15.json`。只改变可视节点集合，不改变业务 edges |
 | automation/webhook/产能看板 | VERIFIED BASELINE | `POST /events:deliver` 仅支持显式 loopback、上限 100、2xx 后标记 outbox delivered；真实临时 loopback 服务回归、拒绝公网 URL；产能仍标记 `OBSERVED_NOT_BENCHMARKED`，不冒充 benchmark |
 | G9-09 本机队列产能观测 | VERIFIED BASELINE | `GET /capacity/snapshot`；真实 SQLite Job/Attempt 状态、GPU 并发和近 24h 完成数；`OBSERVED_NOT_BENCHMARKED`、`would_create_jobs=false`、无 runtime/network/mutation；`test_capacity_snapshot.py` |
 | G9-08 变体谱系、实验进度、相邻边界约束只读可视化 | VERIFIED BASELINE | Canvas graph read model 汇总真实 generation_variants/generation_experiments/experiment_cells/shot_transition_constraints；选中节点显示摘要，空数据不造数；`test_g9_canvas.py`、G9 validation evidence |
+| G9 readiness / ordered exit | EVIDENCE PASS / ORDERED BLOCKED | readiness 五项全部 PASS；发布审计强制 G7→G8→G9 链式顺序，因 G7 许可证证据阻塞而保持 `ORDERED_G9=false`，禁止越级宣告 |
 
 ## G6 历史进度状态（已由 2026-08-14 退出证据取代）
 

@@ -149,6 +149,11 @@ def audit() -> dict[str, Any]:
     g7 = G7ReadinessService(database).inspect(project_id)
     g8 = G8ReadinessService(database).inspect(project_id)
     g9 = G9ReadinessService(database).inspect(project_id)
+    g7_pass = g7["status"] == "PASS"
+    g8_evidence_pass = g8["status"] == "PASS"
+    g9_evidence_pass = g9["status"] == "PASS"
+    ordered_g8_pass = g7_pass and g8_evidence_pass
+    ordered_g9_pass = ordered_g8_pass and g9_evidence_pass
 
     backup_paths = sorted((ROOT / "backups").glob("*.sqlite3"), key=lambda path: path.stat().st_mtime, reverse=True)
     required_artifacts = {
@@ -174,9 +179,26 @@ def audit() -> dict[str, Any]:
         {"code": "DATABASE_INTEGRITY", "passed": _integrity(DB_PATH) == "ok", "observed": _integrity(DB_PATH)},
         {"code": "MIGRATION_HEAD", "passed": bool(migration and str(migration["version_num"]) == "0020_g7_model_license_evidence"), "observed": str(migration["version_num"]) if migration else None},
         {"code": "BACKUP_INTEGRITY", "passed": bool(backup_paths) and all(_integrity(path) == "ok" for path in backup_paths[:5]), "observed_count": min(len(backup_paths), 5)},
-        {"code": "ORDERED_G7", "passed": g7["status"] == "PASS", "observed": g7["status"], "next_required_action": g7["next_required_action"]},
-        {"code": "ORDERED_G8", "passed": g8["status"] == "PASS", "observed": g8["status"], "next_required_action": g8["next_required_action"]},
-        {"code": "ORDERED_G9", "passed": g9["status"] == "PASS", "observed": g9["status"], "next_required_action": g9["next_required_action"]},
+        {"code": "ORDERED_G7", "passed": g7_pass, "observed": g7["status"], "next_required_action": g7["next_required_action"]},
+        {
+            "code": "ORDERED_G8",
+            "passed": ordered_g8_pass,
+            "observed": g8["status"],
+            "upstream_g7": g7["status"],
+            "next_required_action": g8["next_required_action"] if g7_pass else f"WAIT_FOR_G7:{g7['next_required_action']}",
+        },
+        {
+            "code": "ORDERED_G9",
+            "passed": ordered_g9_pass,
+            "observed": g9["status"],
+            "upstream_g7": g7["status"],
+            "upstream_g8": g8["status"],
+            "next_required_action": (
+                g9["next_required_action"]
+                if ordered_g8_pass
+                else f"WAIT_FOR_ORDERED_G8:{g7['next_required_action'] if not g7_pass else g8['next_required_action']}"
+            ),
+        },
         {"code": "UPGRADE_ROLLBACK_REHEARSAL", "passed": _rehearsal_passed(rehearsal_path), "evidence": rehearsal_path.relative_to(ROOT).as_posix()},
         {"code": "SBOM_INVENTORY", "passed": sbom_inventory["valid"], "package_count": sbom_inventory["package_count"], "evidence": sbom_path.relative_to(ROOT).as_posix()},
         {"code": "LOCAL_UAT_READONLY_BASELINE", "passed": _local_uat_passed(local_uat_path), "evidence": local_uat_path.relative_to(ROOT).as_posix()},

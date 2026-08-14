@@ -1,0 +1,53 @@
+{
+  "schema_version": "g9-production-canvas-uat.v1",
+  "observed_at": "2026-08-14T19:22:54.637Z",
+  "mode": "LOCAL_ONLY",
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "episode_id": "d4db1033-9517-4bd0-958d-4228e0abead1",
+  "production_evidence": true,
+  "fixture_mode": false,
+  "status": "PASS",
+  "viewports": [
+    {
+      "viewport": "1440x900",
+      "status": "PASS",
+      "node_count": 110,
+      "expected_node_count": 110,
+      "canvas_ready_ms": 1284,
+      "horizontal_overflow_px": 0,
+      "console_errors": [],
+      "console_warnings": [],
+      "page_errors": [],
+      "failed_responses": []
+    },
+    {
+      "viewport": "1280x800",
+      "status": "PASS",
+      "node_count": 110,
+      "expected_node_count": 110,
+      "canvas_ready_ms": 1068,
+      "horizontal_overflow_px": 0,
+      "console_errors": [],
+      "console_warnings": [],
+      "page_errors": [],
+      "failed_responses": []
+    },
+    {
+      "viewport": "1024x768",
+      "status": "PASS",
+      "node_count": 110,
+      "expected_node_count": 110,
+      "canvas_ready_ms": 1038,
+      "horizontal_overflow_px": 0,
+      "console_errors": [],
+      "console_warnings": [],
+      "page_errors": [],
+      "failed_responses": []
+    }
+  ],
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "jobs_created": false,
+  "media_created": false,
+  "interpretation": "Real production API and React canvas with persisted SCALE_UAT shot entities; no mocked nodes or media outputs."
+}

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
+
 from fastapi.testclient import TestClient
 
+from local_drama.application.canvas import ProductionCanvasService
 from local_drama.application.g8_readiness import G8ReadinessService
 from local_drama.application.g9_readiness import G9ReadinessService
 from local_drama.application.projects import ProjectService
@@ -70,3 +73,58 @@ def test_g9_readiness_separates_production_facts_from_scale_fixture(workspace, d
     assert result["runtime_contacted"] is False
     assert result["network_contacted"] is False
     assert result["mutated"] is False
+
+
+def test_g9_readiness_requires_matching_three_viewport_browser_evidence(workspace, database, tmp_path) -> None:
+    service = ProjectService(database, workspace.projects_root)
+    project = service.create_project(code="g9_evidence", title="G9 evidence", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1, target_duration_ms=20_000, allow_unconfigured_capabilities=True)
+    season = service.list_seasons(str(project["id"]))[0]
+    episode = service.list_episodes(str(season["id"]))[0]
+    for number in range(1, 21):
+        service.create_shot(str(episode["id"]), f"S{number:03d}", 1000, "SCALE_UAT")
+    graph = ProductionCanvasService(database).graph("EPISODE", str(episode["id"]), cursor=0, limit=300)
+    ProductionCanvasService(database).preflight("EPISODE", str(episode["id"]), "NODE", graph["nodes"][0]["id"], None, 1)
+    evidence_root = tmp_path / "g9"
+    evidence_root.mkdir()
+    base = {
+        "status": "PASS",
+        "project_id": str(project["id"]),
+        "episode_id": str(episode["id"]),
+        "production_evidence": True,
+        "fixture_mode": False,
+        "runtime_contacted": False,
+        "network_contacted": False,
+    }
+    performance_viewports = [
+        {"viewport": viewport, "status": "PASS", "node_count": 100, "horizontal_overflow_px": 0, "console_errors": [], "page_errors": [], "failed_responses": []}
+        for viewport in ("1440x900", "1280x800", "1024x768")
+    ]
+    accessibility_viewports = [
+        {
+            "viewport": viewport,
+            "status": "PASS",
+            "semantic_canvas": True,
+            "keyboard_node_list": True,
+            "search_filter": True,
+            "route_synchronized_selection": True,
+            "selected_state": True,
+            "horizontal_overflow_px": 0,
+            "console_errors": [],
+            "page_errors": [],
+            "failed_responses": [],
+        }
+        for viewport in ("1440x900", "1280x800", "1024x768")
+    ]
+    (evidence_root / "g9-production-canvas-uat-2026-08-15.json").write_text(
+        json.dumps({**base, "viewports": performance_viewports}), encoding="utf-8"
+    )
+    (evidence_root / "g9-production-accessibility-uat-2026-08-15.json").write_text(
+        json.dumps({**base, "viewports": accessibility_viewports}), encoding="utf-8"
+    )
+
+    result = G9ReadinessService(database, evidence_root=evidence_root).inspect(str(project["id"]), str(episode["id"]))
+
+    assert result["status"] == "PASS"
+    assert result["next_required_action"] is None
+    assert result["evidence"]["performance_uat"] is not None
+    assert result["evidence"]["accessibility_route_uat"] is not None

@@ -1,5 +1,5 @@
-G9 validation status: IN_PROGRESS — implementation and automated baseline green; formal UAT/performance exit pending
-Date: 2026-08-12 (Asia/Shanghai)
+G9 validation status: PRODUCTION EVIDENCE PASS — ordered phase exit still waits for G7
+Date: 2026-08-15 (Asia/Shanghai)
 
 Migration and contracts
 - migration head: 0007_g9_production_canvas
@@ -25,8 +25,12 @@ UI evidence
 - selected-node read model includes `variant_lineage`, `experiment_progress`, and deduplicated `adjacent_constraints`; the UI labels these as read-only and reports empty real data explicitly
 - G9-08 browser smoke (local in-app browser): canvas route loaded with real SHOT_001 lineage (9 variants), selected-node detail rendered, and 1440×900 / 1280×800 / 1024×768 checks each reported canvas/detail present with `scrollWidth - clientWidth = 0`; no ComfyUI listener was present.
 - G9-09 outbox delivery: a temporary `127.0.0.1` HTTP server received real persisted project events; only 2xx responses were marked delivered, a second read returned `NO_EVENTS`, public endpoint input was rejected before mutation, and the service reported `bounded=true`, `remote_transport_allowed=false`, `runtime_contacted=false`, `network_contacted=false`.
+- production scale UAT persists 22 real SHOT rows (18 explicitly marked `SCALE_UAT`) in EPISODE_001; the actual graph returns 110/110 nodes with no mock nodes, media, jobs, runtime or network contact; preflight backup integrity is `ok`
+- production browser performance UAT: 1440×900 / 1280×800 / 1024×768 all render 110 React Flow nodes with zero horizontal overflow, console/page error or failed response; canvas-ready measurements are recorded in `g9-production-canvas-uat-2026-08-15.json`
+- production accessibility/route UAT: all three viewports verify exact semantic canvas label, keyboard node list, keyboard-focusable search, five filtered stage nodes, URL-synchronized shot selection and selected state; evidence `g9-production-accessibility-uat-2026-08-15.json`
 
 Exit decision
 - automated baseline: PASS
-- formal G9 exit: PENDING three-view route/selection UAT, 100—300 visible-node browser benchmark, accessibility checklist, screenshots and P1 automation/capacity scope audit
-- G6 remains open; this G9 evidence does not authorize declaring G0—G10 complete
+- G9 readiness evidence: PASS; all five checks are derived from production DB facts plus strict project/episode-matched browser evidence validation
+- ordered G9 phase exit: BLOCKED by upstream G7 `MODEL_LICENSE_HASH_QUANTIZATION_REPORT`; release audit intentionally reports `ORDERED_G9=false`
+- no screenshot is required for these semantic assertions; therefore no original image was loaded or stored

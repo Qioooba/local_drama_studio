@@ -1,0 +1,56 @@
+{
+  "schema_version": "g9-production-accessibility-uat.v1",
+  "observed_at": "2026-08-14T19:22:56.481Z",
+  "mode": "LOCAL_ONLY",
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "episode_id": "d4db1033-9517-4bd0-958d-4228e0abead1",
+  "production_evidence": true,
+  "fixture_mode": false,
+  "status": "PASS",
+  "viewports": [
+    {
+      "viewport": "1440x900",
+      "status": "PASS",
+      "semantic_canvas": true,
+      "keyboard_node_list": true,
+      "search_filter": true,
+      "route_synchronized_selection": true,
+      "selected_state": true,
+      "horizontal_overflow_px": 0,
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": []
+    },
+    {
+      "viewport": "1280x800",
+      "status": "PASS",
+      "semantic_canvas": true,
+      "keyboard_node_list": true,
+      "search_filter": true,
+      "route_synchronized_selection": true,
+      "selected_state": true,
+      "horizontal_overflow_px": 0,
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": []
+    },
+    {
+      "viewport": "1024x768",
+      "status": "PASS",
+      "semantic_canvas": true,
+      "keyboard_node_list": true,
+      "search_filter": true,
+      "route_synchronized_selection": true,
+      "selected_state": true,
+      "horizontal_overflow_px": 0,
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": []
+    }
+  ],
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "jobs_created": false,
+  "media_created": false,
+  "interpretation": "Real production canvas route, semantic labels, keyboard node list, search filtering and route-synchronized selection verified without visual-only assertions."
+}
