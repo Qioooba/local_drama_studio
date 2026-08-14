@@ -72,9 +72,8 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
   height: 40px;
   border-radius: 11px;
   background: var(--creative);
-  font-family: "Noto Sans SC", sans-serif;
-  font-weight: 800;
 }
+.brand-mark svg { width: 24px; height: 24px; fill: none; stroke: #fff; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .eyebrow { margin-bottom: 6px; color: var(--creative-dark); font-size: 10px; letter-spacing: .15em; font-weight: 800; text-transform: uppercase; }
 .topbar .eyebrow { margin-bottom: 2px; color: #dfb8a8; }
 .context-selectors { display: flex; align-items: end; gap: 8px; }
@@ -90,6 +89,8 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
   font-size: 11px;
 }
 .mode-badge, .status-pill { border: 1px solid #5f7971; border-radius: 999px; padding: 7px 11px; color: #c9f0e5; background: #29403a; font-size: 10px; font-weight: 800; letter-spacing: .06em; }
+.mode-badge { display: inline-flex; align-items: center; gap: 5px; }
+.mode-badge svg { width: 12px; height: 12px; flex: 0 0 12px; }
 .status-pill.neutral { border-color: #d9d2c4; color: #6f6255; background: #f3eee5; }
 
 .layout { display: flex; align-items: stretch; min-height: calc(100vh - 68px); }
@@ -367,8 +368,10 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .gate-readiness { display: grid; gap: 14px; }
 .gate-checks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
 .gate-checks li { display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center; gap: 2px 7px; min-width: 0; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-muted); }
-.gate-checks li > span { grid-row: 1 / span 2; color: var(--danger); font-weight: 900; }
-.gate-checks li.passed > span { color: var(--approved); }
+.gate-checks li > svg { grid-row: 1 / span 2; width: 18px; height: 18px; color: var(--danger); fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.gate-checks li.passed > svg { color: var(--approved); }
+.production-path { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.breadcrumb-separator { width: 16px; height: 16px; fill: none; stroke: var(--text-muted); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .gate-checks strong { font-size: 10px; line-height: 1.35; }
 .gate-checks small { color: var(--text-muted); font-size: 9px; }
 .gate-next { margin: 0; padding: 10px 12px; border-left: 3px solid var(--attention); color: var(--text-muted); background: var(--surface-muted); font-size: 11px; line-height: 1.55; }

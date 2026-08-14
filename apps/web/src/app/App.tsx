@@ -37,6 +37,7 @@ import { ProfileConfigurationPanel } from "../features/profiles/ProfileConfigura
 import { ProductionCanvasPanel } from "../features/canvas/ProductionCanvasPanel";
 import { AdapterContractsPanel, DiagnosticPanel, G8ReadinessPanel, G9ReadinessPanel, ModelCompatibilityPanel, ProjectConfigurationSnapshot, ProjectList, TimelineStatusPanel } from "../features/status/ReadinessPanels";
 import { selectedItemOrFirst } from "../features/shared/selection";
+import { BreadcrumbSeparatorIcon, ChevronRightIcon, StatusDotIcon, StudioMarkIcon } from "../components/icons";
 
 type View = "overview" | "projects" | "canvas" | "reviews" | "jobs" | "profiles" | "generation" | "diagnostics";
 const views: View[] = ["overview", "projects", "canvas", "reviews", "jobs", "profiles", "generation", "diagnostics"];
@@ -87,7 +88,7 @@ function WorkspaceErrorPanel({ failures }: { failures: Array<{ label: string; qu
 }
 
 function ViewButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return <button className={`nav-item${active ? " active" : ""}`} aria-current={active ? "page" : undefined} onClick={onClick}><span className="nav-label">{label}</span><svg aria-hidden="true" viewBox="0 0 16 16"><path d="m6 3 5 5-5 5" /></svg></button>;
+  return <button className={`nav-item${active ? " active" : ""}`} aria-current={active ? "page" : undefined} onClick={onClick}><span className="nav-label">{label}</span><ChevronRightIcon /></button>;
 }
 
 export function App() {
@@ -222,7 +223,7 @@ export function App() {
       <a className="skip-link" href="#workspace-content">跳到工作区内容</a>
       <header className="topbar">
         <div className="brand-lockup">
-          <span className="brand-mark" aria-hidden="true">剧</span>
+          <span className="brand-mark" aria-hidden="true"><StudioMarkIcon /></span>
           <div><p className="eyebrow">LOCAL PRODUCTION OS</p><h1>LocalDramaStudio</h1></div>
         </div>
         <div className="topbar-context">
@@ -230,7 +231,7 @@ export function App() {
             <label>项目<select aria-label="当前项目" value={selectedProject ?? ""} onChange={(event) => selectProject(event.target.value)} disabled={!projects.data?.items.length}><option value="">未选择项目</option>{projects.data?.items.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
             <label>分集<select aria-label="当前分集" value={selectedEpisode ?? ""} onChange={(event) => selectEpisode(event.target.value)} disabled={!episodes.data?.items.length}><option value="">未选择分集</option>{episodes.data?.items.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
           </div>
-          <div className="mode-badge" aria-label="执行模式：本地-only"><span aria-hidden="true">●</span> LOCAL_ONLY</div>
+          <div className="mode-badge" aria-label="执行模式：本地-only"><StatusDotIcon /> LOCAL_ONLY</div>
         </div>
       </header>
 
@@ -279,7 +280,7 @@ export function App() {
 
           {view === "projects" && (
             <section className="panel">
-              <div className="panel-heading"><div><p className="eyebrow">项目与生产台</p><h3>项目 → 季 → 集 → 镜头 read model</h3></div><span className="status-pill">单次生产查询</span></div>
+              <div className="panel-heading"><div><p className="eyebrow">项目与生产台</p><h3 className="production-path"><span>项目</span><BreadcrumbSeparatorIcon /><span>季</span><BreadcrumbSeparatorIcon /><span>集</span><BreadcrumbSeparatorIcon /><span>镜头 read model</span></h3></div><span className="status-pill">单次生产查询</span></div>
               <ProjectList projects={projects.data?.items ?? []} selectedProjectId={selectedProject} onSelect={selectProject} />
               {selectedProject && <div className="production-summary">
                 <p className="eyebrow">当前集</p>

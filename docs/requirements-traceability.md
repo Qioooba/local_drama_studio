@@ -189,7 +189,9 @@ G10 UI 可访问性复审已把设计系统的 12px 可见文字下限与 40px �
 
 React 可维护性拆分已把审核收件箱、任务/容量面板、Profile 契约编辑器、生产 DAG、配置/模型/timeline/gate/诊断投影与共享渐进窗口移入对应 `features/` 模块；应用壳从 558 行缩减为 289 行，仅保留路由及跨域 query 编排。分集摘要不再错误显示首集，而是与 URL 深链/生产查询共用所选记录；60 集第 47 集已覆盖。Web 19/19、production build，以及三档 typography/accessibility/canvas 共 9 项真实页面验收继续 PASS。
 
-2026-08-15 最新全量门禁回归：蓝图清单仍为 86 FR / 14 NFR / 85 TC；API 125 passed / 4 Comfy live deselected，Ruff PASS，mypy 90 files PASS，Web 18/18 与 production build PASS。该回归不改变 G7 许可证证据阻塞，也不构成最终发布签字。
+UI 图标 P1 已闭环：本地零依赖 SVG outline family 替代品牌文字标记、导航/路径箭头、状态点及 G6/G8/G9 的勾选/空心圆 glyph，统一 1.75px stroke；装饰图标不进入可访问性树。图标契约测试 2 项及三档浏览器回归通过，React 源码结构 glyph 扫描为空。
+
+2026-08-15 最新全量门禁回归：蓝图清单仍为 86 FR / 14 NFR / 85 TC；API 125 passed / 4 Comfy live deselected，Ruff PASS，mypy 90 files PASS，Web 21/21 与 production build PASS。该回归不改变 G7 许可证证据阻塞，也不构成最终发布签字。
 
 ## 更新规则
 

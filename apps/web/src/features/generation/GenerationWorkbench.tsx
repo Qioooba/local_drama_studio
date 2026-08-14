@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { createFrameAnchor, createKeyframeCandidate, type FrameAnchor, type G6Readiness, type I2VProbePlan, type Profile, type ReviewInboxItem } from "../../generated/api";
+import { GateStatusIcon } from "../../components/icons";
 
 type Shot = Record<string, unknown>;
 
@@ -89,7 +90,7 @@ export function GenerationWorkbench({ profiles, videos, h3, g6Readiness, i2vProb
     </section>
     {g6Readiness && <section className="panel gate-readiness" aria-labelledby="g6-readiness-title">
       <div className="panel-heading"><div><p className="eyebrow">G6 EXIT READINESS</p><h3 id="g6-readiness-title">真实生成闭环门禁</h3></div><span className={`status-pill${g6Readiness.status === "PASS" ? "" : " neutral"}`}>{g6Readiness.status}</span></div>
-      <ol className="gate-checks">{g6Readiness.checks.map((check) => <li className={check.passed ? "passed" : "blocked"} key={check.code}><span aria-hidden="true">{check.passed ? "✓" : "○"}</span><strong>{readinessLabels[check.code] ?? check.code}</strong>{check.count !== undefined && <small>{check.count} 项证据</small>}</li>)}</ol>
+      <ol className="gate-checks">{g6Readiness.checks.map((check) => <li className={check.passed ? "passed" : "blocked"} key={check.code}><GateStatusIcon passed={check.passed} /><strong>{readinessLabels[check.code] ?? check.code}</strong>{check.count !== undefined && <small>{check.count} 项证据</small>}</li>)}</ol>
       {g6Readiness.next_required_action && <p className="gate-next"><strong>下一项真实动作：</strong>{readinessLabels[g6Readiness.next_required_action] ?? g6Readiness.next_required_action}。系统不会自动替代人工选择或批准。</p>}
     </section>}
     {i2vProbePlan && <section className="panel probe-plan" aria-labelledby="i2v-probe-plan-title">

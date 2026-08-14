@@ -1,4 +1,5 @@
 import type { AdapterRegistry, G8Readiness, G9Readiness, ModelCompatibilitySnapshot, ProjectConfiguration, TimelineStatus } from "../../generated/api";
+import { GateStatusIcon } from "../../components/icons";
 
 export function ProjectConfigurationSnapshot({ configuration }: { configuration: ProjectConfiguration }) {
   return <section className="panel configuration-snapshot" aria-labelledby="configuration-snapshot-title">
@@ -71,7 +72,7 @@ export function G8ReadinessPanel({ readiness }: { readiness: G8Readiness }) {
   return <section className="panel gate-readiness" aria-labelledby="g8-readiness-title">
     <div className="panel-heading"><div><p className="eyebrow">G8 FORMAL EXIT READINESS</p><h3 id="g8-readiness-title">整集音频、字幕、时间线与交付门禁</h3></div><span className={`status-pill${readiness.status === "PASS" ? "" : " neutral"}`}>{readiness.status}</span></div>
     <p className="muted">只读检查蓝图 09 的正式退出条件；不会创建素材、启动 ComfyUI 或自动替代整集人工批准。当前集：{readiness.episode.code} · {readiness.episode.title}</p>
-    <ol className="gate-checks">{readiness.checks.map((check) => <li className={check.passed ? "passed" : "blocked"} key={check.code}><span aria-hidden="true">{check.passed ? "✓" : "○"}</span><strong>{g8CheckLabels[check.code] ?? check.code}</strong>{check.count !== undefined && <small>{check.count} 项真实证据</small>}<small>{check.detail}</small></li>)}</ol>
+    <ol className="gate-checks">{readiness.checks.map((check) => <li className={check.passed ? "passed" : "blocked"} key={check.code}><GateStatusIcon passed={check.passed} /><strong>{g8CheckLabels[check.code] ?? check.code}</strong>{check.count !== undefined && <small>{check.count} 项真实证据</small>}<small>{check.detail}</small></li>)}</ol>
     {readiness.next_required_action && <p className="gate-next"><strong>下一项真实动作：</strong>{g8CheckLabels[readiness.next_required_action] ?? readiness.next_required_action}。系统保持阻塞，不以空记录或机器推测冒充 PASS。</p>}
     <div className="canvas-status"><span>timeline {readiness.evidence.timeline_revision_id ? "已锁定" : "缺失"}</span><span>render {readiness.evidence.render_id ? "已记录" : "缺失"}</span><span>delivery {readiness.evidence.delivery_id ? "已记录" : "缺失"}</span><span>runtime_contacted=false</span><span>network_contacted=false</span><span>mutated=false</span></div>
   </section>;
@@ -85,7 +86,7 @@ export function G9ReadinessPanel({ readiness }: { readiness: G9Readiness }) {
   return <section className="panel gate-readiness" aria-labelledby="g9-readiness-title">
     <div className="panel-heading"><div><p className="eyebrow">G9 FORMAL EXIT READINESS</p><h3 id="g9-readiness-title">业务画布与生产效率门禁</h3></div><span className={`status-pill${readiness.status === "PASS" ? "" : " neutral"}`}>{readiness.status}</span></div>
     <p className="muted">只读区分生产图事实与规模 fixture 证据；不会创建镜头、布局、执行计划或 Job。当前集：{readiness.episode.code} · {readiness.episode.title}</p>
-    <ol className="gate-checks">{readiness.checks.map((check) => <li className={check.passed ? "passed" : "blocked"} key={check.code}><span aria-hidden="true">{check.passed ? "✓" : "○"}</span><strong>{g9CheckLabels[check.code] ?? check.code}</strong>{check.count !== undefined && <small>{check.count} 项真实观测</small>}<small>{check.detail}</small></li>)}</ol>
+    <ol className="gate-checks">{readiness.checks.map((check) => <li className={check.passed ? "passed" : "blocked"} key={check.code}><GateStatusIcon passed={check.passed} /><strong>{g9CheckLabels[check.code] ?? check.code}</strong>{check.count !== undefined && <small>{check.count} 项真实观测</small>}<small>{check.detail}</small></li>)}</ol>
     {readiness.next_required_action && <p className="gate-next"><strong>下一项真实动作：</strong>{g9CheckLabels[readiness.next_required_action] ?? readiness.next_required_action}。fixture 不会被当作生产退出证据。</p>}
     <div className="canvas-status"><span>生产镜头：{readiness.evidence.production_total_shots}</span><span>可见节点：{readiness.evidence.production_visible_nodes}</span><span>layout：{readiness.evidence.persisted_layout_count}</span><span>preflight：{readiness.evidence.persisted_preflight_count}</span><span>runtime_contacted=false</span><span>network_contacted=false</span><span>mutated=false</span></div>
   </section>;
