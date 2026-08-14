@@ -44,7 +44,7 @@
 | FR-PRV-001/003 本地 Runtime、模型 artifact、manifest-backed Profile 候选 | VERIFIED | `application/profiles.py`、`test_g3_configuration_media.py`、G3 screenshots |
 | FR-PRJ-007 项目健康/路径与本地资源诊断基础 | VERIFIED | `application/diagnostics.py`、`/diagnostics/runs` |
 | FR-PRJ-001 从版本化模板创建项目 | PARTIAL / PLAN + BLOCKER TRUTH VERIFIED | 既有 `ProjectService.create_project` 使用 partial 目录原子发布，模拟失败无目录/DB 半成品；新增 `POST /projects:plan` 真实检查 code/目录/磁盘且零写入。四步 UI 无默认规格，支持显式“稍后配置并接受阻塞”路线，三视口 UAT 只计划不创建。季数、制作分辨率、语言/字幕及创建时直接绑定路线仍未完成，不得标 VERIFIED；证据 `docs/evidence/g10/project-create-wizard-uat-2026-08-15.json` |
-| FR-PRJ-002 v2 标准项目包 | PARTIAL / CONTROLLED EXPORT + IMPORT VERIFIED | `ProjectPackageService` 与 export/stage/dry-run/commit API/UI：结构状态、项目 payload、manifest、逐文件 SHA/size、源前后复验、内容寻址 staged token；流式校验 zip-slip/duplicate/symlink/schema/hash/size/entry/展开/压缩比/磁盘/identity。副本导入重写领域身份；rebind 只恢复 identity 匹配的缺失目录且拒绝覆盖；filesystem/SQLite 模拟故障双回滚并保留 staged 包重试。隔离 9 个真实/负例测试与三视口只读入口 UAT 通过，见 `docs/evidence/g10/project-package-uat-2026-08-15.json`。媒体注册、缩略图重建及更强 crash journal/幂等 receipt 尚未完成，不得标 VERIFIED |
+| FR-PRJ-002 v2 标准项目包 | PARTIAL / CONTROLLED EXPORT + IMPORT VERIFIED | `ProjectPackageService` 与 export/stage/dry-run/commit API/UI：结构状态、项目 payload、manifest、逐文件 SHA/size、源前后复验、内容寻址 staged token；流式校验 zip-slip/duplicate/symlink/schema/hash/size/entry/展开/压缩比/磁盘/identity。副本导入重写领域身份；rebind 只恢复 identity 匹配的缺失目录且拒绝覆盖；filesystem/SQLite 模拟故障双回滚并保留 staged 包重试。`0022_project_package_import_receipts` 提供幂等结果、原 ID 重试与受双重归属证明约束的陈旧 PREPARING 恢复。隔离 10 个真实/负例测试与三视口只读入口 UAT 通过，见 `docs/evidence/g10/project-package-uat-2026-08-15.json`。媒体注册、缩略图重建尚未完成，不得标 VERIFIED |
 | FR-PRJ-003 项目列表搜索、状态筛选与安全归档 | VERIFIED PRODUCTION UAT | `ProjectService.list_projects` 支持标题/code 子串和 DRAFT/ACTIVE/PAUSED/ARCHIVED 筛选，转义 SQL wildcard 并拒绝非法状态；UI 真实转发筛选。既有归档为审计状态转换、不删目录、活动 Job 硬阻塞。API 2 项、Web 1 项与 1024×768 只读生产 UAT 通过，见 `docs/evidence/g10/project-list-filter-uat-2026-08-15.json` |
 | FR-PRJ-006 项目复制为新剧模板 | VERIFIED PRODUCTION READ-ONLY UI UAT | `ProjectService.copy_as_template` 与 `POST /projects/{id}:copy-template`；新 UUID/DRAFT，只复制结构、解冻的当前镜头字段、ProductionPlan、本地交付目标与 Published ACTIVE Profile。媒体/授权资产/BrandKit/Job/审核/交付/审计历史明确排除；文件树+数据库失败双回滚、重码/孤立目录不覆盖。API 3 项、Web 1 项与三视口只读表单 UAT 通过，见 `docs/evidence/g10/project-template-copy-uat-2026-08-15.json` |
 | FR-IMG-001/FR-MED media register、probe、hash、poster/cache、Range | VERIFIED | `application/media.py`、G3 evidence sample |
@@ -210,6 +210,8 @@ FR-PRJ-001 创建计划/向导批次后的最新全量回归：API 139 passed / 
 FR-PRJ-002 项目包基础批次后的最新全量回归：API 142 passed / 4 Comfy live deselected，Ruff PASS，mypy 93 files PASS，Web 29/29 与 production build PASS；生产三档只读入口未触发包导出，隔离环境完成真实导出/dry-run。FR-PRJ-002 仍 PARTIAL，G7 许可证证据阻塞与有序退出状态不变。
 
 FR-PRJ-002 controlled import 批次后的最新全量回归：API 152 passed / 4 Comfy live deselected，Ruff PASS，mypy 94 files PASS，Web 30/30 与 production build PASS；生产三档只读入口未触发 export/stage/commit，隔离环境完成真实副本导入、受限 rebind 与失败双回滚。FR-PRJ-002 因媒体注册/缩略图与 crash journal/receipt 仍为 PARTIAL；G7 真实模型 license evidence 阻塞不变。
+
+FR-PRJ-002 crash recovery 批次后的最新全量回归：API 153 passed / 4 Comfy live deselected，Ruff PASS，mypy 94 files PASS，Web 30/30 与 production build PASS。生产库在线备份后迁移至 `0022` 且 integrity ok；隔离环境验证成功幂等、FAILED 原 ID 重试和陈旧 PREPARING 孤儿目录恢复。FR-PRJ-002 仅因媒体注册/缩略图仍为 PARTIAL；G7 真实模型 license evidence 阻塞不变。
 
 ## 更新规则
 

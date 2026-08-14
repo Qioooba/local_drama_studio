@@ -7,7 +7,7 @@ import shutil
 import stat
 import uuid
 import zipfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -318,15 +318,67 @@ class ProjectPackageService:
             raise DomainRuleError("INVALID_PROJECT_TITLE", "项目标题必须是 1—200 个字符")
         package = self._staged_package(stage_token)
         state = self._read_state(package)
-        project_id = str(uuid.uuid4())
+        source_project = state["project"]
+        identity_mode = "IMPORT_AS_COPY_REWRITE_IDENTITY"
+        operation_key = hashlib.sha256(f"{stage_token}\0{identity_mode}\0{code}".encode()).hexdigest()
+        now = _utc_now()
+        with self.database.transaction() as connection:
+            receipt = connection.execute("SELECT * FROM project_package_imports WHERE operation_key=?", (operation_key,)).fetchone()
+            if receipt is not None and receipt["status"] == "COMPLETED":
+                result = json.loads(str(receipt["result_json"]))
+                target = connection.execute("SELECT id,code FROM projects WHERE id=?", (receipt["target_project_id"],)).fetchone()
+                if target is None or str(target["code"]) != code:
+                    raise DomainRuleError("PROJECT_PACKAGE_RECEIPT_INCONSISTENT", "项目包 receipt 与项目记录不一致")
+                result["reused"] = True
+                return result
+            if receipt is not None and receipt["status"] == "PREPARING":
+                updated_at = datetime.fromisoformat(str(receipt["updated_at"]).replace("Z", "+00:00"))
+                if datetime.now(UTC) - updated_at < timedelta(minutes=15):
+                    raise DomainRuleError("PROJECT_PACKAGE_IMPORT_IN_PROGRESS", "相同项目包导入仍在进行，请稍后重试")
+            if receipt is None:
+                project_id = str(uuid.uuid4())
+                connection.execute(
+                    """INSERT INTO project_package_imports (operation_key,stage_token,identity_mode,source_project_id,
+                    target_project_id,target_code,status,result_json,created_at,updated_at,created_by)
+                    VALUES (?,?,?,?,?,?,'PREPARING','{}',?,?,?)""",
+                    (operation_key, stage_token, identity_mode, source_project["id"], project_id, code, now, now, actor),
+                )
+                prior_status = None
+            else:
+                project_id = str(receipt["target_project_id"])
+                prior_status = str(receipt["status"])
+                connection.execute(
+                    "UPDATE project_package_imports SET status='PREPARING',last_error_code=NULL,updated_at=? WHERE operation_key=?",
+                    (now, operation_key),
+                )
+        def fail_receipt(error_code: str) -> None:
+            with self.database.transaction() as connection:
+                connection.execute(
+                    "UPDATE project_package_imports SET status='FAILED',last_error_code=?,updated_at=? WHERE operation_key=?",
+                    (error_code, _utc_now(), operation_key),
+                )
         final_root = (self.projects_root / code).resolve()
         if final_root.parent != self.projects_root:
+            fail_receipt("PROJECT_PACKAGE_IMPORT_TARGET_INVALID")
             raise DomainRuleError("PROJECT_PACKAGE_IMPORT_TARGET_INVALID", "项目导入目标目录越界")
         with self.database.connect() as connection:
-            if connection.execute("SELECT 1 FROM projects WHERE code=?", (code,)).fetchone():
+            existing_project = connection.execute("SELECT id FROM projects WHERE code=?", (code,)).fetchone()
+            if existing_project is not None:
+                fail_receipt("PROJECT_CODE_EXISTS")
                 raise DomainRuleError("PROJECT_CODE_EXISTS", "项目 code 已存在", {"code": code})
         if final_root.exists():
-            raise DomainRuleError("PROJECT_ROOT_EXISTS", "目标项目目录已存在，未覆盖", {"code": code})
+            marker = final_root / "project.json"
+            marker_data: dict[str, Any] = {}
+            try:
+                marker_data = json.loads(marker.read_text(encoding="utf-8"))
+            except (OSError, ValueError, json.JSONDecodeError):
+                pass
+            owned_recovery = (prior_status in {"FAILED", "PREPARING"} and marker_data.get("project_id") == project_id
+                              and marker_data.get("imported_from_package_sha256") == stage_token)
+            if not owned_recovery:
+                fail_receipt("PROJECT_ROOT_EXISTS")
+                raise DomainRuleError("PROJECT_ROOT_EXISTS", "目标项目目录已存在，未覆盖", {"code": code})
+            shutil.rmtree(final_root)
         temporary_root = self.projects_root / f".{code}.import-{uuid.uuid4().hex}"
         promoted = False
         counts = {"seasons": 0, "episodes": 0, "scenes": 0, "shots": 0, "profiles": 0, "profiles_skipped": 0,
@@ -343,7 +395,6 @@ class ProjectPackageService:
                 raise DomainRuleError("PROJECT_PACKAGE_STAGE_NOT_FOUND", "提交前 staged 项目包完整性失败")
             os.replace(temporary_root, final_root)
             promoted = True
-            source_project = state["project"]
             season_map = {str(item["id"]): str(uuid.uuid4()) for item in state["seasons"]}
             episode_map = {str(item["id"]): str(uuid.uuid4()) for item in state["episodes"]}
             with self.database.transaction() as connection:
@@ -444,15 +495,28 @@ class ProjectPackageService:
                 )
                 if simulate_failure:
                     raise RuntimeError("simulated project package import failure")
-        except Exception:
+                result = {"status": "IMPORTED", "identity_mode": identity_mode, "project_id": project_id,
+                          "project_code": code, "source_project_id": source_project["id"], "stage_token": stage_token,
+                          "counts": counts, "staged_package_retained": True, "runtime_contacted": False,
+                          "network_contacted": False, "reused": False}
+                connection.execute(
+                    """UPDATE project_package_imports SET status='COMPLETED',result_json=?,last_error_code=NULL,updated_at=?
+                    WHERE operation_key=?""",
+                    (json.dumps(result, ensure_ascii=False, sort_keys=True), _utc_now(), operation_key),
+                )
+        except Exception as error:
             if temporary_root.exists():
                 shutil.rmtree(temporary_root, ignore_errors=True)
             if promoted and final_root.exists():
                 shutil.rmtree(final_root, ignore_errors=True)
+            error_code = error.code if isinstance(error, DomainRuleError) else type(error).__name__
+            with self.database.transaction() as connection:
+                connection.execute(
+                    "UPDATE project_package_imports SET status='FAILED',last_error_code=?,updated_at=? WHERE operation_key=?",
+                    (error_code, _utc_now(), operation_key),
+                )
             raise
-        return {"status": "IMPORTED", "identity_mode": "IMPORT_AS_COPY_REWRITE_IDENTITY", "project_id": project_id,
-                "project_code": code, "source_project_id": state["project"]["id"], "stage_token": stage_token, "counts": counts,
-                "staged_package_retained": True, "runtime_contacted": False, "network_contacted": False}
+        return result
 
     def rebind_existing(
         self,

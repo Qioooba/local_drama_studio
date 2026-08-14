@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
+import uuid
 import zipfile
 
 import pytest
@@ -129,8 +131,10 @@ def test_staged_project_package_import_as_copy_rewrites_identity_and_retains_ret
     token = str(service.stage_from_inbox("copy.ldspkg")["stage_token"])
 
     imported = service.import_as_copy(token, code="package_copy", title="项目包副本")
+    repeated = service.import_as_copy(token, code="package_copy", title="项目包副本")
 
     assert imported["status"] == "IMPORTED"
+    assert repeated["reused"] is True and repeated["project_id"] == imported["project_id"]
     assert imported["identity_mode"] == "IMPORT_AS_COPY_REWRITE_IDENTITY"
     assert imported["project_id"] != source_project["id"]
     assert imported["counts"]["episodes"] == 2
@@ -149,6 +153,7 @@ def test_staged_project_package_import_as_copy_rewrites_identity_and_retains_ret
         audit = connection.execute(
             "SELECT action FROM audit_events WHERE subject_id=? ORDER BY rowid DESC LIMIT 1", (imported["project_id"],)
         ).fetchone()
+        assert connection.execute("SELECT COUNT(*) FROM project_package_imports WHERE status='COMPLETED'").fetchone()[0] == 1
     assert audit["action"] == "PROJECT_PACKAGE_IMPORTED"
 
 
@@ -169,7 +174,14 @@ def test_staged_project_package_import_rolls_back_database_and_filesystem_on_fai
     assert not list(workspace.projects_root.glob(".package_rollback.import-*"))
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM projects WHERE code='package_rollback'").fetchone()[0] == 0
+        receipt = connection.execute(
+            "SELECT target_project_id,status FROM project_package_imports WHERE target_code='package_rollback'"
+        ).fetchone()
+    assert receipt["status"] == "FAILED"
     assert (workspace.data_root / "imports" / "project-packages" / "staged" / f"{token}.ldspkg").is_file()
+
+    retried = service.import_as_copy(token, code="package_rollback", title="回滚后重试")
+    assert retried["project_id"] == receipt["target_project_id"] and retried["reused"] is False
 
 
 def test_rebind_existing_only_restores_a_missing_matching_project_root(workspace, database) -> None:
@@ -216,3 +228,36 @@ def test_project_package_commit_api_requires_explicit_identity_decision(workspac
     assert missing_identity.json()["error"]["code"] == "PROJECT_PACKAGE_COPY_IDENTITY_REQUIRED"
     assert committed.status_code == 201
     assert committed.json()["commit"]["project_code"] == "api_package_copy"
+
+
+def test_stale_import_journal_recovers_only_its_owned_orphan_root(workspace, database) -> None:
+    project = _project(workspace, database)
+    service = ProjectPackageService(database, workspace.projects_root, workspace.data_root)
+    exported = service.export(str(project["id"]))
+    source = workspace.projects_root / "package_source" / str(exported["rel_path"])
+    inbox = workspace.data_root / "imports" / "project-packages" / "inbox"
+    inbox.mkdir(parents=True)
+    shutil.copy2(source, inbox / "crash.ldspkg")
+    token = str(service.stage_from_inbox("crash.ldspkg")["stage_token"])
+    mode, code = "IMPORT_AS_COPY_REWRITE_IDENTITY", "crash_recovery"
+    operation_key = hashlib.sha256(f"{token}\0{mode}\0{code}".encode()).hexdigest()
+    target_project_id = str(uuid.uuid4())
+    with database.transaction() as connection:
+        connection.execute(
+            """INSERT INTO project_package_imports (operation_key,stage_token,identity_mode,source_project_id,
+            target_project_id,target_code,status,result_json,created_at,updated_at,created_by)
+            VALUES (?,?,?,?,?,?,'PREPARING','{}','2000-01-01T00:00:00Z','2000-01-01T00:00:00Z','test')""",
+            (operation_key, token, mode, project["id"], target_project_id, code),
+        )
+    orphan = workspace.projects_root / code
+    orphan.mkdir()
+    (orphan / "project.json").write_text(json.dumps({
+        "project_id": target_project_id, "project_code": code, "imported_from_package_sha256": token,
+    }), encoding="utf-8")
+    (orphan / "orphan.tmp").write_text("partial", encoding="utf-8")
+
+    recovered = service.import_as_copy(token, code=code, title="崩溃恢复")
+
+    assert recovered["project_id"] == target_project_id
+    assert not (orphan / "orphan.tmp").exists()
+    assert (orphan / "01_story" / "source_documents" / "中文 剧本.md").is_file()
