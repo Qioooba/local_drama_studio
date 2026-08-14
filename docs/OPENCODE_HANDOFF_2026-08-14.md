@@ -148,3 +148,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start.ps1 -Port 3210
 - 证据：`docs/evidence/g10/upgrade-rollback-rehearsal-2026-08-14.json`；只读发布审计新增 `UPGRADE_ROLLBACK_REHEARSAL=PASS`。
 - 生产库、API、ComfyUI、网络和任务队列均未接触；隔离副本暂留在 `temp/release-rehearsal-20260814_224333` 供审计复核。
 - 当前仍真实为：G7 `IN_PROGRESS`（下一硬阻塞 `MODEL_LICENSE_HASH_QUANTIZATION_REPORT`），G8 `IN_PROGRESS`（`THREE_REAL_SHOTS`），G9 `IN_PROGRESS`（`VISIBLE_NODE_PERFORMANCE_UAT`），G10 `IN_PROGRESS`。不得越级或把草稿发布物改为 FINAL。
+- 对 `MiniMax-H3-video_vae.safetensors` 仅读取了 64,032-byte safetensors header；`__metadata__` 为空，模型目录仍无 LICENSE/NOTICE/EULA/README。没有新的操作者许可证记录，因此 G7 许可证门禁继续保持 FAIL。
