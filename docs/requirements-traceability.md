@@ -90,6 +90,7 @@
 | FR-VAR operational retry isolation | VERIFIED | TC-VAR-003 CPU persistent queue regression；同一 Job attempt 1→2，Variant/Job/take 数不增，未使用 GPU_H3 |
 | FR-ENH capability-driven technical enhancement chain | VERIFIED | persisted recipe/run、real FFmpeg output and MediaVersion registration |
 | FR-DEL local filesystem delivery、manifest/hash verify、tamper detection、withdraw | VERIFIED | `delivery_events` migration、G8 real delivery/tamper/recovery test |
+| FR-IMG-007 分集已选媒体联系表与原文件导出 | VERIFIED PRODUCTION UAT | `ContactSheetExportService` 仅跟随 `selected_version_id` 权威指针，逐项复核源/副本 SHA 与大小，输出自包含 HTML、320px WebP 和 manifest；相同输入逐文件复验后幂等复用，篡改硬拒绝；SQLite 行数不变，runtime/network 均未接触。API 4 项、Web 2 项及三视口真实页面通过，见 `docs/evidence/g10/contact-sheet-export-uat-2026-08-15.json` |
 | G8 migration/OpenAPI/static/type/full API regression | VERIFIED | `0006_g8_timeline_audio_delivery`、generated OpenAPI、33 API tests, Ruff, mypy |
 | G8 formal screenshots/sample/UAT and G8→G9 exit approval | IN_PROGRESS | Real production evidence now passes the read-only G8 projection: 3 SHOT-owned H3/Comfy videos, 4 authorized local audio tracks, subtitles, approved VERIFIED render, VERIFIED LOCAL_FILESYSTEM delivery, and reversible tamper probe; evidence `docs/evidence/g8/g8-production-evidence-2026-08-15.json`. Ordered phase exit remains pending while G7 is blocked and browser/UAT sign-off is not yet complete |
 
@@ -191,7 +192,7 @@ React 可维护性拆分已把审核收件箱、任务/容量面板、Profile �
 
 UI 图标 P1 已闭环：本地零依赖 SVG outline family 替代品牌文字标记、导航/路径箭头、状态点及 G6/G8/G9 的勾选/空心圆 glyph，统一 1.75px stroke；装饰图标不进入可访问性树。图标契约测试 2 项及三档浏览器回归通过，React 源码结构 glyph 扫描为空。
 
-2026-08-15 最新全量门禁回归：蓝图清单仍为 86 FR / 14 NFR / 85 TC；API 125 passed / 4 Comfy live deselected，Ruff PASS，mypy 90 files PASS，Web 21/21 与 production build PASS。该回归不改变 G7 许可证证据阻塞，也不构成最终发布签字。
+2026-08-15 最新全量门禁回归：蓝图清单仍为 86 FR / 14 NFR / 85 TC；API 129 passed / 4 Comfy live deselected，Ruff PASS，mypy 91 files PASS，Web 23/23 与 production build PASS。新增 FR-IMG-007 聚焦回归覆盖 API 4 项、Web 2 项。该进展不改变 G7 许可证证据阻塞，也不构成最终发布签字。
 
 ## 更新规则
 

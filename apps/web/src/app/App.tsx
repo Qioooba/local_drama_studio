@@ -35,6 +35,7 @@ import { CapacitySnapshotPanel, JobsPanel } from "../features/jobs/JobsPanel";
 import { ReviewInboxPanel } from "../features/reviews/ReviewInboxPanel";
 import { ProfileConfigurationPanel } from "../features/profiles/ProfileConfigurationPanel";
 import { ProductionCanvasPanel } from "../features/canvas/ProductionCanvasPanel";
+import { EpisodeContactSheetAction } from "../features/production/EpisodeContactSheetAction";
 import { AdapterContractsPanel, DiagnosticPanel, G8ReadinessPanel, G9ReadinessPanel, ModelCompatibilityPanel, ProjectConfigurationSnapshot, ProjectList, TimelineStatusPanel } from "../features/status/ReadinessPanels";
 import { selectedItemOrFirst } from "../features/shared/selection";
 import { BreadcrumbSeparatorIcon, ChevronRightIcon, StatusDotIcon, StudioMarkIcon } from "../components/icons";
@@ -288,6 +289,7 @@ export function App() {
                 {production.isPending && <p className="empty-state">正在读取生产行…</p>}
                 {production.data?.items.map((shot) => <div className="shot-row" key={String(shot.id)}><strong>{String(shot.code)}</strong><span>{String(shot.status)}</span><span className="blocker-text">{Array.isArray(shot.blockers) ? `${shot.blockers.length} 个阻塞` : "读取中"}</span><span>{String(shot.next_action)}</span></div>)}
                 {production.data?.items.length === 0 && <p className="empty-state">当前集还没有镜头；请从真实 API 创建镜头。</p>}
+                <EpisodeContactSheetAction episodeId={selectedEpisode} />
                 {timelineStatus.data?.status && <TimelineStatusPanel status={timelineStatus.data.status} />}
                 {g8Readiness.data?.readiness && <G8ReadinessPanel readiness={g8Readiness.data.readiness} />}
               </div>}

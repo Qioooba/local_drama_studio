@@ -7,6 +7,7 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 
 from local_drama.api.schemas.g3 import KeyframeCandidateRequest, MediaImportRequest
+from local_drama.application.contact_sheets import ContactSheetExportService
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.media import MediaService
 from local_drama.domain.errors import DomainRuleError
@@ -16,6 +17,15 @@ router = APIRouter(tags=["media"])
 
 def service(request: Request) -> MediaService:
     return MediaService(request.app.state.database, request.app.state.settings)
+
+
+@router.post("/episodes/{episode_id}/contact-sheet:export", operation_id="exportEpisodeContactSheet")
+async def export_episode_contact_sheet(episode_id: str, request: Request) -> dict[str, object]:
+    try:
+        result = ContactSheetExportService(request.app.state.database, request.app.state.settings).export_episode(episode_id)
+        return {"export": result}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
 
 
 @router.post("/media:import", status_code=201, operation_id="importMedia")

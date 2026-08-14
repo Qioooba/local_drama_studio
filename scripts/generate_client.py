@@ -35,6 +35,7 @@ export type ReviewTemplate = { id: string; code: string; version_no: number; sub
 export type ReviewInboxItem = { media_version_id: string; media_asset_id: string; project_id: string; media_kind: string; stage: string; decision: string | null; is_stale: number | null; [key: string]: unknown };
 export type FrameAnchor = { id: string; source_media_version_id: string; source_time_us: number; source_frame_index: number; extracted_media_version_id: string; role_hint: string; sha256: string; requested_time_us: number | null; resolved_time_us: number; source_sha256: string; extraction_method: string; [key: string]: unknown };
 export type KeyframeCandidate = { id: string; media_asset_id: string; project_id: string; owner_type: 'SHOT'; owner_id: string; media_kind: 'IMAGE'; stage: 'KEYFRAME'; parent_version_id: string; duplicate: boolean; [key: string]: unknown };
+export type ContactSheetExport = { schema_version: 'localdrama.contact-sheet.v1'; status: 'EXPORTED'; rel_path: string; manifest_rel_path: string; contact_sheet_rel_path: string; export_hash: string; item_count: number; reused: boolean; database_mutated: false; runtime_contacted: false; network_contacted: false };
 export type Job = { id: string; type: string; project_id: string; state: string; channel: string; priority: number; max_attempts: number; revision: number; [key: string]: unknown };
 export type GenerationIntent = { id: string; project_id: string; owner_type: string; owner_id: string; purpose: string; creative_goal: string; [key: string]: unknown };
 export type VariantInput = { role: string; media_version_id: string; ordinal?: number };
@@ -202,6 +203,10 @@ export async function submitReview(mediaVersionId: string, payload: { template_v
 
 export async function selectMediaVersion(mediaVersionId: string, selectionType: string, baseUrl = ''): Promise<{ selection: Record<string, unknown> }> {
   return requestJson(`/api/v1/media-versions/${encodeURIComponent(mediaVersionId)}:select`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ selection_type: selectionType }) }, baseUrl);
+}
+
+export async function exportEpisodeContactSheet(episodeId: string, baseUrl = ''): Promise<{ export: ContactSheetExport }> {
+  return requestJson(`/api/v1/episodes/${encodeURIComponent(episodeId)}/contact-sheet:export`, { method: 'POST' }, baseUrl);
 }
 
 export async function createFrameAnchor(mediaVersionId: string, payload: { source_time_us?: number; source_frame_index?: number; position_mode?: 'FIRST_FRAME' | 'LAST_FRAME'; role_hint: 'FIRST_FRAME' | 'CURRENT_FRAME' | 'LAST_FRAME' }, baseUrl = ''): Promise<{ frame_anchor: FrameAnchor }> {
