@@ -30,14 +30,14 @@ Security and scope
 - delivery transport is restricted to LOCAL_FILESYSTEM
 - delivery target rejects absolute paths and `..` traversal
 - service performs project ownership checks for timeline/audio media
-- no ComfyUI task was launched by this G8 validation
+- ComfyUI was not contacted by the production evidence builder; the three imported videos are existing local H3/Comfy outputs with source hashes recorded in `g8-production-evidence-2026-08-15.json`
 
 Read-only production observation
 - `GET /api/v1/episodes/{episode_id}/timeline-status` reads persisted timeline/subtitle/audio/render/delivery rows without mutation or runtime/network contact
-- production EPISODE_001 currently has 0 timeline revisions, 0 subtitle revisions, 0 audio bindings, 0 renders and 0 delivery packages; UI shows truthful empty state
+- production EPISODE_001 now has one immutable timeline revision with three SHOT-owned VIDEO inputs, four authorized local audio bindings, one subtitle revision, one VERIFIED render and one VERIFIED local delivery package; the exact source hashes and reversible tamper probe are recorded in `g8-production-evidence-2026-08-15.json`
 - 1024×768 browser visual evidence: `docs/evidence/g8/timeline-status-visual-review-2026-08-14.json` (720px WebP only)
 
 Exit decision
 - automated implementation evidence: PASS
-- formal G8 exit: PENDING screenshots/sample/UAT checklist and phase gate audit
+- formal G8 exit: production evidence is complete and the read-only readiness projection is PASS; ordered blueprint exit remains pending until G7 is cleared and the G8 browser/UAT checklist is recorded
 - G9/G10 must not be declared complete from this file alone

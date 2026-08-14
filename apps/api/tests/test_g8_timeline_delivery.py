@@ -131,6 +131,20 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
         assert render_response.status_code == 201, render_response.text
         render = render_response.json()["render"]
         assert render["status"] == "VERIFIED"
+        templates = client.get("/api/v1/review-templates").json()["items"]
+        render_template = next(item for item in templates if item["code"] == "episode_render")
+        render_review = client.post(
+            f"/api/v1/subjects/EPISODE_RENDER_VERSION/{render['id']}/reviews",
+            json={
+                "template_version_id": render_template["id"],
+                "decision": "APPROVED",
+                "expected_subject_revision": 1,
+                "checks": [{"item_id": item["id"], "result": "PASS"} for item in render_template["items"]],
+                "comment": "本地整集渲染机器完整性与画面/音频/字幕证据已复核",
+            },
+        )
+        assert render_review.status_code == 201, render_review.text
+        assert render_review.json()["review"]["subject_type"] == "EPISODE_RENDER_VERSION"
         target = ConfigurationService(database).create_delivery_target(project_id, "g8-local", "G8 local", "LOCAL_FILESYSTEM", {"path_rel": "06_delivery/g8"})
         delivery_response = client.post("/api/v1/delivery-packages", json={"episode_render_version_id": render["id"], "target_version_id": target["version_id"]})
         assert delivery_response.status_code == 201, delivery_response.text

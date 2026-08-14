@@ -72,6 +72,18 @@ TEMPLATES: tuple[dict[str, Any], ...] = (
             {"id": "subtitle_safe_zone", "label": "字幕安全区", "required": True},
         ],
     },
+    {
+        "code": "episode_render",
+        "version_no": 1,
+        "subject_type": "EPISODE_RENDER_VERSION",
+        "items": [
+            {"id": "decode", "label": "可解码", "required": True},
+            {"id": "timeline_inputs", "label": "时间线输入完整", "required": True},
+            {"id": "audio_mix", "label": "音轨混音", "required": True},
+            {"id": "subtitles", "label": "字幕与安全区", "required": True},
+            {"id": "delivery_ready", "label": "本地交付可复核", "required": True},
+        ],
+    },
 )
 
 
@@ -176,6 +188,97 @@ class ReviewService:
                 (media_version_id,),
             ).fetchone()
         return str(row["status"]) if row else None
+
+    def submit_episode_render_review(
+        self,
+        render_id: str,
+        template_version_id: str,
+        decision: str,
+        expected_subject_revision: int,
+        checks: list[dict[str, Any]],
+        comment: str | None = None,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Submit a formal review for a verified immutable episode render.
+
+        Episode renders are not media assets and therefore cannot use the
+        MEDIA_VERSION review path.  They still use the same immutable review
+        decision/check tables so G8 can require an auditable approval without
+        mutating the render or pretending a machine check is a human decision.
+        """
+        if decision not in {"APPROVED", "REJECTED", "NEEDS_CHANGES"}:
+            raise DomainRuleError("INVALID_REVIEW_DECISION", "审核决定无效")
+        with self.database.connect() as connection:
+            render = connection.execute(
+                """SELECT erv.*, p.root_rel FROM episode_render_versions erv
+                JOIN episodes e ON e.id=erv.episode_id
+                JOIN seasons s ON s.id=e.season_id
+                JOIN projects p ON p.id=s.project_id
+                WHERE erv.id=?""",
+                (render_id,),
+            ).fetchone()
+            template = connection.execute(
+                "SELECT * FROM review_templates WHERE id=? AND subject_type='EPISODE_RENDER_VERSION'",
+                (template_version_id,),
+            ).fetchone()
+        if render is None:
+            raise DomainRuleError("EPISODE_RENDER_NOT_FOUND", "整集渲染版本不存在")
+        if template is None:
+            raise DomainRuleError("REVIEW_TEMPLATE_NOT_FOUND", "整集渲染审核模板不存在")
+        if int(render["revision"]) != expected_subject_revision:
+            raise DomainRuleError(
+                "REVIEW_STALE",
+                "审核基于旧的整集渲染 revision",
+                {"current_revision": int(render["revision"]), "submitted_revision": expected_subject_revision},
+            )
+        if str(render["integrity_status"]) != "VERIFIED":
+            raise DomainRuleError("EPISODE_RENDER_NOT_VERIFIED", "只有完整性 VERIFIED 的整集渲染可以审核")
+        if self.settings is None:
+            raise DomainRuleError("MEDIA_SERVICE_UNAVAILABLE", "本地设置未配置")
+        project_root = (self.settings.projects_root / str(render["root_rel"])).resolve()
+        render_path = (project_root / str(render["rel_path"])).resolve()
+        if not render_path.is_relative_to(project_root) or not render_path.is_file() or render_path.is_symlink():
+            raise DomainRuleError("EPISODE_RENDER_FILE_MISSING", "整集渲染文件缺失或路径越界")
+        digest = hashlib.sha256(render_path.read_bytes()).hexdigest()
+        if not hmac.compare_digest(digest, str(render["sha256"])):
+            raise DomainRuleError("EPISODE_RENDER_INTEGRITY_FAILED", "整集渲染文件 hash 与登记值不一致")
+        required = {str(item["id"]) for item in json.loads(template["items_json"]) if item.get("required", True)}
+        submitted = {str(item.get("item_id")) for item in checks}
+        missing = sorted(required - submitted)
+        if missing:
+            raise DomainRuleError("REVIEW_CHECKS_INCOMPLETE", "审核检查项不完整", {"missing": missing})
+        failures = sorted(str(item["item_id"]) for item in checks if item.get("result") != "PASS")
+        if decision == "APPROVED" and failures:
+            raise DomainRuleError("REVIEW_CHECK_FAILED", "存在未通过检查项，不能批准", {"failed": failures})
+        review_id = str(uuid.uuid4())
+        now = _utc_now()
+        with self.database.transaction() as connection:
+            connection.execute(
+                """INSERT INTO review_decisions
+                (id, subject_type, subject_id, review_template_version_id, decision, comment,
+                 subject_revision, is_stale, created_at, updated_at, created_by, revision, schema_version)
+                VALUES (?, 'EPISODE_RENDER_VERSION', ?, ?, ?, ?, ?, 0, ?, ?, ?, 1, 'v2')""",
+                (review_id, render_id, template_version_id, decision, comment, expected_subject_revision, now, now, actor),
+            )
+            for item in checks:
+                connection.execute(
+                    "INSERT INTO review_checks (id, review_decision_id, item_id, result, comment) VALUES (?, ?, ?, ?, ?)",
+                    (str(uuid.uuid4()), review_id, str(item["item_id"]), str(item["result"]), item.get("comment")),
+                )
+            connection.execute(
+                """INSERT INTO audit_events
+                (actor, role_context, action, subject_type, subject_id, before_revision, after_revision, summary, metadata_redacted_json)
+                VALUES (?, 'reviewer', 'EPISODE_RENDER_REVIEW_SUBMITTED', 'episode_render_version', ?, ?, ?, ?, ?)""",
+                (actor, render_id, expected_subject_revision, expected_subject_revision, f"整集渲染审核 {decision}", _json({"review_id": review_id, "template_version_id": template_version_id})),
+            )
+        return {
+            "id": review_id,
+            "subject_type": "EPISODE_RENDER_VERSION",
+            "subject_id": render_id,
+            "decision": decision,
+            "is_stale": False,
+            "subject_revision": expected_subject_revision,
+        }
 
     def _approval_impact(self, connection: Any, media: dict[str, Any]) -> dict[str, Any]:
         asset = connection.execute(

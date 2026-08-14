@@ -1,6 +1,6 @@
 {
   "schema_version": "g10.release_audit.read_only.v1",
-  "observed_at": "2026-08-14T16:48:34.861840+00:00",
+  "observed_at": "2026-08-14T17:03:28.348928+00:00",
   "status": "IN_PROGRESS",
   "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
   "checks": [
@@ -27,9 +27,9 @@
     },
     {
       "code": "ORDERED_G8",
-      "passed": false,
-      "observed": "IN_PROGRESS",
-      "next_required_action": "THREE_REAL_SHOTS"
+      "passed": true,
+      "observed": "PASS",
+      "next_required_action": null
     },
     {
       "code": "ORDERED_G9",

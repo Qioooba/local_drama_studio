@@ -1,0 +1,212 @@
+{
+  "schema_version": "g8-production-evidence.v1",
+  "generated_at": "2026-08-14T17:03:13.825689+00:00",
+  "mode": "LOCAL_ONLY",
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "mutated": true,
+  "project": {
+    "id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+    "code": "g2_smoke2",
+    "episode_id": "d4db1033-9517-4bd0-958d-4228e0abead1",
+    "episode_code": "EPISODE_001"
+  },
+  "backup": {
+    "path": "F:\\AI_Projects\\h3\\local_drama_studio\\backups\\g8_preflight_20260814T170311Z.sqlite3",
+    "integrity_check": "ok"
+  },
+  "video_sources": [
+    {
+      "path": "F:\\AI_Projects\\h3\\projects\\family_redfruit_series_001\\09_production\\SEASON_001\\media\\comfy_output\\scene_01__00002_.mp4",
+      "sha256": "c5a98c30953f743801ad1c0271e74fdfb743654e28451b2c0ae0b1b39db69fd5",
+      "byte_size": 500855
+    },
+    {
+      "path": "F:\\AI_Projects\\h3\\projects\\family_redfruit_series_001\\09_production\\SEASON_001\\media\\comfy_output\\scene_02__00002_.mp4",
+      "sha256": "dad06d4e2d5e2603322b27349a009aa5a82871447190ebcc624ce906e6968aa1",
+      "byte_size": 869826
+    },
+    {
+      "path": "F:\\AI_Projects\\h3\\projects\\family_redfruit_series_001\\09_production\\SEASON_001\\media\\comfy_output\\scene_03__00002_.mp4",
+      "sha256": "43a64678d1e5add4a32c62fe359cbbee6a92f347a6c7b750f3e1a150f9ae35ae",
+      "byte_size": 968665
+    }
+  ],
+  "audio_sources": {
+    "DIALOGUE": {
+      "path": "F:\\AI_Projects\\h3\\projects\\family_redfruit_series_001\\08_assets\\generated\\audio\\CUT001\\SHOT_012\\CHAR_001_dialogue_timed_v001.wav",
+      "sha256": "af5f7f658152603b770aa57b46f524ad24956533148a2933453a5fc032f08efd",
+      "byte_size": 720102
+    },
+    "ENVIRONMENT": {
+      "path": "F:\\AI_Projects\\h3\\projects\\family_redfruit_series_001\\08_assets\\generated\\audio\\CUT001\\stems_preview_v001\\CUT001_ambience_rain_continuity_preview_v001.wav",
+      "sha256": "5162c77b090125c8dd05993bf8b065c9e77f336a668de8064d9ab54082d258da",
+      "byte_size": 34560102
+    },
+    "SFX": {
+      "path": "F:\\AI_Projects\\h3\\projects\\family_redfruit_series_001\\08_assets\\generated\\audio\\CUT001\\stems_preview_v001\\CUT001_foley_engine_far_to_near_preview_v001.wav",
+      "sha256": "6cf481c1c0220fb63338721e2fc84998ae27857376fcd67706daa4a51f04cf65",
+      "byte_size": 34560102
+    },
+    "MUSIC": {
+      "path": "F:\\AI_Projects\\h3\\openclaw\\tasks\\武侠客栈15秒_20260810_2231\\audio\\mixed_48k.wav",
+      "sha256": "c0856a51fa57a479718c6acdf557c30606f1bfb664d6517b3679f6aa23ba1ecf",
+      "byte_size": 2900012
+    }
+  },
+  "shots": [
+    {
+      "id": "3b99ec1e-41aa-4d20-a820-0fb3f223bb51",
+      "code": "G8_SHOT_001"
+    },
+    {
+      "id": "86b8e810-9f54-4412-a2ca-8892b3659a67",
+      "code": "G8_SHOT_002"
+    },
+    {
+      "id": "7a67d52b-13a1-4d3c-968a-403447ea4f1c",
+      "code": "G8_SHOT_003"
+    }
+  ],
+  "media_versions": {
+    "video": [
+      "8c601a9b-2afc-49d4-ac8e-fac299f80a7b",
+      "3a17b159-ec20-4955-939b-87acd9a7d0e1",
+      "abeccb5b-206b-4c93-b805-8555f5d076a5"
+    ],
+    "audio": {
+      "DIALOGUE": "8d6c3b5c-5355-42e7-b364-f9584d64f2f6",
+      "ENVIRONMENT": "56a9cc34-e76c-458e-a7df-a1208064be48",
+      "SFX": "2255f660-27fd-48c9-b2a1-e4616c98ae0d",
+      "MUSIC": "9773143a-9221-4fe9-9921-5cdc0c936ae8"
+    }
+  },
+  "timeline": {
+    "id": "f76432ce-15e1-455f-9c90-573b360cc737",
+    "revision_no": 1,
+    "video_item_count": 3,
+    "duration_us": 15501000
+  },
+  "subtitles": {
+    "id": "94647b6e-09f3-4b0e-aad4-cd60d02f2544",
+    "cue_count": 2
+  },
+  "audio_bindings": [
+    {
+      "id": "2fa24b2e-bf34-4541-b089-7a6a1bc88e79",
+      "track_type": "DIALOGUE",
+      "source_license_status": "VERIFIED_LOCAL"
+    },
+    {
+      "id": "186be717-4e1b-4a8c-9c28-0b9112312279",
+      "track_type": "ENVIRONMENT",
+      "source_license_status": "VERIFIED_LOCAL"
+    },
+    {
+      "id": "68a0da32-0f3d-4301-86ee-c997f89cf32f",
+      "track_type": "SFX",
+      "source_license_status": "VERIFIED_LOCAL"
+    },
+    {
+      "id": "e83bf406-6c00-4674-9380-b885b41d527f",
+      "track_type": "MUSIC",
+      "source_license_status": "VERIFIED_LOCAL"
+    }
+  ],
+  "render": {
+    "id": "cf869b74-2313-43c7-8668-6e1606af6c2e",
+    "sha256": "8b38ad03df027b75831b23b908505ceb1e25a7e074ccea42ce030f46c9f1d088",
+    "integrity_status": "VERIFIED",
+    "review_id": "631e08cf-004e-4760-9a09-183786090185"
+  },
+  "delivery": {
+    "id": "eb393952-d43b-43a9-9a1c-4ce3d2215b5d",
+    "verified_before_tamper": "VERIFIED",
+    "tamper_probe": "CORRUPT",
+    "verified_after_restore": "VERIFIED"
+  },
+  "readiness": {
+    "gate": "G8",
+    "status": "PASS",
+    "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+    "episode": {
+      "id": "d4db1033-9517-4bd0-958d-4228e0abead1",
+      "code": "EPISODE_001",
+      "title": "第 1 集"
+    },
+    "checks": [
+      {
+        "code": "THREE_REAL_SHOTS",
+        "passed": true,
+        "count": 3,
+        "required": 3,
+        "detail": "已发现 3 个以上真实镜头"
+      },
+      {
+        "code": "DIALOGUE_ENVIRONMENT_SFX_MUSIC",
+        "passed": true,
+        "count": 4,
+        "required_tracks": [
+          "DIALOGUE",
+          "ENVIRONMENT",
+          "SFX",
+          "MUSIC"
+        ],
+        "observed_tracks": [
+          "DIALOGUE",
+          "ENVIRONMENT",
+          "MUSIC",
+          "SFX"
+        ],
+        "detail": "四类本地授权音轨必须真实绑定"
+      },
+      {
+        "code": "SUBTITLES",
+        "passed": true,
+        "count": 1,
+        "detail": "至少一个真实字幕 revision"
+      },
+      {
+        "code": "TIMELINE_INPUT_LOCKED",
+        "passed": true,
+        "count": 3,
+        "detail": "timeline revision 与输入媒体快照必须存在"
+      },
+      {
+        "code": "APPROVED_EPISODE_RENDER",
+        "passed": true,
+        "count": 1,
+        "detail": "整集 render 必须通过机器完整性并存在真实批准决定"
+      },
+      {
+        "code": "VERIFIED_DELIVERY",
+        "passed": true,
+        "count": 1,
+        "detail": "delivery manifest/hash verify 必须为 VERIFIED"
+      },
+      {
+        "code": "TAMPER_DETECTION",
+        "passed": true,
+        "count": 1,
+        "detail": "由已验证 delivery 进入篡改回归"
+      }
+    ],
+    "next_required_action": null,
+    "evidence": {
+      "timeline_revision_id": "f76432ce-15e1-455f-9c90-573b360cc737",
+      "render_id": "cf869b74-2313-43c7-8668-6e1606af6c2e",
+      "delivery_id": "eb393952-d43b-43a9-9a1c-4ce3d2215b5d",
+      "audio_tracks": [
+        "DIALOGUE",
+        "ENVIRONMENT",
+        "MUSIC",
+        "SFX"
+      ],
+      "subtitle_revision_count": 1
+    },
+    "observed_at": "2026-08-14T17:03:13.825689+00:00",
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "mutated": false
+  }
+}

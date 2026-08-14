@@ -91,7 +91,7 @@
 | FR-ENH capability-driven technical enhancement chain | VERIFIED | persisted recipe/run、real FFmpeg output and MediaVersion registration |
 | FR-DEL local filesystem delivery、manifest/hash verify、tamper detection、withdraw | VERIFIED | `delivery_events` migration、G8 real delivery/tamper/recovery test |
 | G8 migration/OpenAPI/static/type/full API regression | VERIFIED | `0006_g8_timeline_audio_delivery`、generated OpenAPI、33 API tests, Ruff, mypy |
-| G8 formal screenshots/sample/UAT and G8→G9 exit approval | IN_PROGRESS | Added read-only episode timeline/delivery status and formal G8 readiness projection; production EPISODE_001 still has 0 timeline SHOT-owned VIDEO / 0 authorized audio / 0 subtitle / 0 render / 0 delivery, so 3+ shot real sample, approved render, tamper verify and formal exit audit remain pending |
+| G8 formal screenshots/sample/UAT and G8→G9 exit approval | IN_PROGRESS | Real production evidence now passes the read-only G8 projection: 3 SHOT-owned H3/Comfy videos, 4 authorized local audio tracks, subtitles, approved VERIFIED render, VERIFIED LOCAL_FILESYSTEM delivery, and reversible tamper probe; evidence `docs/evidence/g8/g8-production-evidence-2026-08-15.json`. Ordered phase exit remains pending while G7 is blocked and browser/UAT sign-off is not yet complete |
 
 ## G9 验证状态（代码完成，阶段门禁待正式退出）
 

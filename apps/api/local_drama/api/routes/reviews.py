@@ -37,9 +37,20 @@ async def review_context(subject_type: str, subject_id: str, request: Request) -
 @router.post("/subjects/{subject_type}/{subject_id}/reviews", status_code=201, operation_id="submitReview")
 async def submit_review(subject_type: str, subject_id: str, payload: ReviewRequest, request: Request) -> dict[str, object]:
     try:
-        if subject_type != "MEDIA_VERSION":
-            raise DomainRuleError("UNSUPPORTED_REVIEW_SUBJECT", "G4 当前审核 subject_type 只支持 MEDIA_VERSION")
         checks = [item.model_dump() for item in payload.checks]
+        if subject_type == "EPISODE_RENDER_VERSION":
+            return {
+                "review": service(request).submit_episode_render_review(
+                    subject_id,
+                    payload.template_version_id,
+                    payload.decision,
+                    payload.expected_subject_revision,
+                    checks,
+                    payload.comment,
+                )
+            }
+        if subject_type != "MEDIA_VERSION":
+            raise DomainRuleError("UNSUPPORTED_REVIEW_SUBJECT", "审核 subject_type 只支持 MEDIA_VERSION 或 EPISODE_RENDER_VERSION")
         return {
             "review": service(request).submit_review(
                 subject_id,
