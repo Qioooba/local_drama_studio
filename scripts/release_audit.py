@@ -166,6 +166,28 @@ def _security_uat_passed(path: Path) -> bool:
     )
 
 
+def _recovery_restore_passed(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    try:
+        evidence = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return False
+    checks = {str(item.get("code")): item.get("passed") is True for item in evidence.get("checks", [])}
+    return (
+        evidence.get("status") == "PASS"
+        and checks.get("ONLINE_BACKUP_INTEGRITY") is True
+        and checks.get("RESTORED_DATABASE_INTEGRITY") is True
+        and checks.get("ONE_HUNDRED_MEDIA_HASHES") is True
+        and checks.get("RESTORED_API_READY") is True
+        and checks.get("RESTORED_PROJECT_READ") is True
+        and checks.get("RESTORED_REVIEW_ENTRY") is True
+        and evidence.get("runtime_contacted") is False
+        and evidence.get("network_contacted") is False
+        and evidence.get("production_database_contacted") is False
+    )
+
+
 def _stale_job_maintenance_passed(path: Path) -> bool:
     if not path.is_file():
         return False
@@ -224,6 +246,7 @@ def audit() -> dict[str, Any]:
     stale_job_path = ROOT / "docs" / "evidence" / "g10" / "stale-job-maintenance-2026-08-14.json"
     metadata_scale_path = ROOT / "docs" / "evidence" / "g10" / "metadata-scale-uat-2026-08-15.json"
     security_uat_path = ROOT / "docs" / "evidence" / "g10" / "security-uat-2026-08-15.json"
+    recovery_restore_path = ROOT / "docs" / "evidence" / "g10" / "recovery-restore-uat-2026-08-15.json"
     artifact_state = {
         name: {"exists": path.is_file(), "final": _is_final(path) if requires_final else path.is_file(), "path": path.relative_to(ROOT).as_posix()}
         for name, (path, requires_final) in required_artifacts.items()
@@ -258,6 +281,7 @@ def audit() -> dict[str, Any]:
         {"code": "LOCAL_UAT_READONLY_BASELINE", "passed": _local_uat_passed(local_uat_path), "evidence": local_uat_path.relative_to(ROOT).as_posix()},
         {"code": "METADATA_SCALE_UAT", "passed": _metadata_scale_passed(metadata_scale_path), "evidence": metadata_scale_path.relative_to(ROOT).as_posix()},
         {"code": "SECURITY_UAT", "passed": _security_uat_passed(security_uat_path), "evidence": security_uat_path.relative_to(ROOT).as_posix()},
+        {"code": "CLEAN_ROOT_RECOVERY_UAT", "passed": _recovery_restore_passed(recovery_restore_path), "evidence": recovery_restore_path.relative_to(ROOT).as_posix()},
         {"code": "STALE_JOB_MAINTENANCE", "passed": _stale_job_maintenance_passed(stale_job_path), "evidence": stale_job_path.relative_to(ROOT).as_posix()},
         {"code": "RELEASE_ARTIFACTS", "passed": release_artifacts_ready, "artifacts": artifact_state},
     ]

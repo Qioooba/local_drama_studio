@@ -181,6 +181,8 @@ G10 发布准备已有只读 `scripts/release_audit.py`：当前数据库与最�
 
 G10 安全 UAT 已补齐此前缺失的 instance CSRF token：每个 API 进程生成独立 token，同源客户端从无 CORS 的 bootstrap/安全 GET 获取，所有网络写请求同时验证受控 Origin 与 `X-Local-Instance-Token`。隔离真实 FastAPI 验证恶意 Origin、缺失/错误 token、路径逃逸、REMOTE Provider、未入清单自定义节点均被拒绝；socket guard 对 TEST-NET 公网目标在 connect 前阻断，OpenAPI 无远程 credential 字段。证据为 `docs/evidence/g10/security-uat-2026-08-15.json`；不替代 G7 模型许可证或最终发布签字。
 
+G10 干净新根恢复 UAT 使用 100 个真实 FFprobe PASS 的本地 WAV：online backup 后恢复数据库与完整项目树，100/100 MediaVersion SHA-256、数据库 integrity、健康/项目/审核入口全部通过；实测 RTO 0.627 秒、捕获备份后 RPO=0。该证据来自隔离环境且未接触生产库、runtime 或网络，见 `docs/evidence/g10/recovery-restore-uat-2026-08-15.json`。
+
 ## 更新规则
 
 任何新增/变更需求必须先分配 ID、写 ADR、补 migration/API/UI/test 影响；所有阶段报告、提交和缺陷引用至少一个需求或测试 ID。

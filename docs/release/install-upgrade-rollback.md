@@ -67,4 +67,13 @@ timeline/delivery 状态入口。生产 read-model p95 为 11.881ms，timeline/d
 `integrity_status` 固定为 `UNKNOWN`，不冒充可播放媒体或媒体回归证据。详见
 `docs/evidence/g10/metadata-scale-uat-2026-08-15.json`。
 
+## 干净新根恢复 UAT（2026-08-15）
+
+`scripts/recovery_restore_uat.py` 在隔离根生成并用真实 FFprobe 验证 100 个本地 WAV，
+执行 SQLite online backup 后把数据库和项目树恢复到新的干净根。恢复库 integrity=ok，
+100/100 MediaVersion 文件 SHA-256 匹配，健康、项目和 100 条审核入口均可读；实测
+RTO 0.627 秒，RPO 为捕获备份后的零记录丢失。证据见
+`docs/evidence/g10/recovery-restore-uat-2026-08-15.json`。该隔离演练不替代最终安装包
+在全新机器上的演练，也不解除 G7 许可证阻塞。
+
 在上述演练完成并留存证据前，不得把本文件的草稿状态改为 `FINAL`。
