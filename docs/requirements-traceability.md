@@ -177,7 +177,7 @@ G7 已可按蓝图 09 顺序开始，但当前不是 PASS；G8/G9 仍只记 prog
 
 G7 当前 `IN_PROGRESS`，首阻塞 `MODEL_LICENSE_HASH_QUANTIZATION_REPORT`，禁止进入 G8 退出验收或宣告 G7 PASS。
 
-G10 发布准备已有只读 `scripts/release_audit.py`：当前数据库与最近五份迁移前备份 `integrity=ok`、migration head=`0021_g10_scale_read_indexes`；`0020→0021` 隔离升级/精确恢复演练、`SBOM_INVENTORY` 与本地只读 UAT 基线已通过。隔离规模 UAT 建立 60 集、800 镜头、10,000 MediaAsset/MediaVersion，60/60 集真实 FastAPI 生产与 timeline/delivery 入口通过，read-model p95 11.881ms；合成媒体完整性明确为 `UNKNOWN`，不冒充媒体回归。SBOM 盘点包含 317 个锁定包条目，其中 73 项许可证仍为 `NOASSERTION`（主要是未安装的跨平台可选 Node 包）。G8/G9 观测证据为 PASS，但按序退出均被 G7 许可证证据阻塞；安装升级回滚、最终 SBOM 和 go/no-go 工件保持 DRAFT/NO-GO，不能宣告发布完成。
+G10 发布准备已有只读 `scripts/release_audit.py`：当前数据库与最近五份迁移前备份 `integrity=ok`、migration head=`0021_g10_scale_read_indexes`；`0020→0021` 隔离升级/精确恢复演练、`SBOM_INVENTORY` 与本地只读 UAT 基线已通过。隔离规模 UAT 建立 60 集、800 镜头、10,000 MediaAsset/MediaVersion，60/60 集真实 FastAPI 生产与 timeline/delivery 入口通过，read-model p95 11.881ms；合成媒体完整性明确为 `UNKNOWN`，不冒充媒体回归。SBOM 盘点包含 317 个锁定包条目；73 项 `NOASSERTION` 均由 lockfile `os`/`cpu` 约束证明为非 Windows x64 目标平台的未安装可选包，目标运行时 `NOASSERTION=0`。G8/G9 观测证据为 PASS，但按序退出均被 G7 许可证证据阻塞；安装升级回滚、最终 SBOM 和 go/no-go 工件保持 DRAFT/NO-GO，不能宣告发布完成。
 
 G10 安全 UAT 已补齐此前缺失的 instance CSRF token：每个 API 进程生成独立 token，同源客户端从无 CORS 的 bootstrap/安全 GET 获取，所有网络写请求同时验证受控 Origin 与 `X-Local-Instance-Token`。隔离真实 FastAPI 验证恶意 Origin、缺失/错误 token、路径逃逸、REMOTE Provider、未入清单自定义节点均被拒绝；socket guard 对 TEST-NET 公网目标在 connect 前阻断，OpenAPI 无远程 credential 字段。证据为 `docs/evidence/g10/security-uat-2026-08-15.json`；不替代 G7 模型许可证或最终发布签字。
 
@@ -188,6 +188,8 @@ G10 UI 可访问性复审已把设计系统的 12px 可见文字下限与 40px �
 审核与任务长列表现采用首屏 50 行的渐进窗口，深链接选择在窗口外时会扩展到该项，用户可显式每次再显示 50 行；离屏行启用 `content-visibility:auto`。纯函数窗口边界已覆盖 120 行/深链场景，Web 回归升至 18/18；这属于浏览器渲染保护，不替代后端分页或最终规模发布验收。
 
 React 可维护性拆分已把审核收件箱、任务/容量面板、Profile 契约编辑器、生产 DAG 与共享渐进窗口从 `App.tsx` 移入 `features/reviews`、`features/jobs`、`features/profiles`、`features/canvas`、`features/shared`；应用壳缩减为 392 行，路由及跨域 query 权威仍留在壳层，行为与接口未改。Web 18/18、production build，以及三档 typography/accessibility/canvas 共 9 项真实页面验收继续 PASS。
+
+2026-08-15 最新全量门禁回归：蓝图清单仍为 86 FR / 14 NFR / 85 TC；API 125 passed / 4 Comfy live deselected，Ruff PASS，mypy 90 files PASS，Web 18/18 与 production build PASS。该回归不改变 G7 许可证证据阻塞，也不构成最终发布签字。
 
 ## 更新规则
 

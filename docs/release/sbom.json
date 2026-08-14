@@ -7,7 +7,7 @@
   "SPDXID": "SPDXRef-DOCUMENT",
   "documentNamespace": "https://localdramastudio.local/spdx/5332196750bb20718bd1db82e21bd61f386bb59e0de9b811b2b32ca007436cf4",
   "creationInfo": {
-    "created": "2026-08-14T16:46:15.069596+00:00",
+    "created": "2026-08-14T20:43:53.674795+00:00",
     "creators": [
       "Tool: LocalDramaStudio offline SBOM generator"
     ]
@@ -20,6 +20,16 @@
   ],
   "lockfile_sha256": "5332196750bb20718bd1db82e21bd61f386bb59e0de9b811b2b32ca007436cf4",
   "package_count": 317,
+  "license_summary": {
+    "declared_or_concluded": 244,
+    "noassertion_total": 73,
+    "noassertion_lock_only_non_target_platform": 73,
+    "noassertion_target_runtime": 0,
+    "target": {
+      "os": "win32",
+      "cpu": "x64"
+    }
+  },
   "packages": [
     {
       "SPDXID": "SPDXRef-pypi-alembic-1.19.1",
@@ -637,6 +647,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -659,6 +670,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -681,6 +693,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -703,6 +716,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -725,6 +739,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -747,6 +762,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -769,6 +785,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -791,6 +808,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -813,6 +831,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -835,6 +854,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -857,6 +877,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -879,6 +900,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -901,6 +923,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -923,6 +946,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -945,6 +969,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -967,6 +992,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -989,6 +1015,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1011,6 +1038,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1033,6 +1061,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1055,6 +1084,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1077,6 +1107,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1099,6 +1130,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1121,6 +1153,7 @@
       "licenseConcluded": "MIT-0",
       "licenseDeclared": "MIT-0",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1143,6 +1176,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1165,6 +1199,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1187,6 +1222,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1209,6 +1245,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1231,6 +1268,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1238,6 +1276,7 @@
           "referenceLocator": "pkg:npm/@esbuild/aix-ppc64@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1253,6 +1292,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1260,6 +1300,7 @@
           "referenceLocator": "pkg:npm/@esbuild/aix-ppc64@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1275,6 +1316,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1282,6 +1324,7 @@
           "referenceLocator": "pkg:npm/@esbuild/android-arm64@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1297,6 +1340,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1304,6 +1348,7 @@
           "referenceLocator": "pkg:npm/@esbuild/android-arm64@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1319,6 +1364,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1326,6 +1372,7 @@
           "referenceLocator": "pkg:npm/@esbuild/android-arm@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1341,6 +1388,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1348,6 +1396,7 @@
           "referenceLocator": "pkg:npm/@esbuild/android-arm@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1363,6 +1412,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1370,6 +1420,7 @@
           "referenceLocator": "pkg:npm/@esbuild/android-x64@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1385,6 +1436,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1392,6 +1444,7 @@
           "referenceLocator": "pkg:npm/@esbuild/android-x64@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1407,6 +1460,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1414,6 +1468,7 @@
           "referenceLocator": "pkg:npm/@esbuild/darwin-arm64@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1429,6 +1484,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1436,6 +1492,7 @@
           "referenceLocator": "pkg:npm/@esbuild/darwin-arm64@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1451,6 +1508,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1458,6 +1516,7 @@
           "referenceLocator": "pkg:npm/@esbuild/darwin-x64@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1473,6 +1532,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1480,6 +1540,7 @@
           "referenceLocator": "pkg:npm/@esbuild/darwin-x64@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1495,6 +1556,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1502,6 +1564,7 @@
           "referenceLocator": "pkg:npm/@esbuild/freebsd-arm64@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1517,6 +1580,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1524,6 +1588,7 @@
           "referenceLocator": "pkg:npm/@esbuild/freebsd-arm64@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1539,6 +1604,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1546,6 +1612,7 @@
           "referenceLocator": "pkg:npm/@esbuild/freebsd-x64@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1561,6 +1628,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1568,6 +1636,7 @@
           "referenceLocator": "pkg:npm/@esbuild/freebsd-x64@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1583,6 +1652,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1590,6 +1660,7 @@
           "referenceLocator": "pkg:npm/@esbuild/linux-arm64@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1605,6 +1676,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1612,6 +1684,7 @@
           "referenceLocator": "pkg:npm/@esbuild/linux-arm64@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1627,6 +1700,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1634,6 +1708,7 @@
           "referenceLocator": "pkg:npm/@esbuild/linux-arm@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1649,6 +1724,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1656,6 +1732,7 @@
           "referenceLocator": "pkg:npm/@esbuild/linux-arm@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1671,6 +1748,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1678,6 +1756,7 @@
           "referenceLocator": "pkg:npm/@esbuild/linux-ia32@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1693,6 +1772,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1700,6 +1780,7 @@
           "referenceLocator": "pkg:npm/@esbuild/linux-ia32@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1715,6 +1796,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1722,6 +1804,7 @@
           "referenceLocator": "pkg:npm/@esbuild/linux-loong64@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1737,6 +1820,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1744,6 +1828,7 @@
           "referenceLocator": "pkg:npm/@esbuild/linux-loong64@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1759,6 +1844,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1766,6 +1852,7 @@
           "referenceLocator": "pkg:npm/@esbuild/linux-mips64el@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1781,6 +1868,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1788,6 +1876,7 @@
           "referenceLocator": "pkg:npm/@esbuild/linux-mips64el@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1803,6 +1892,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1810,6 +1900,7 @@
           "referenceLocator": "pkg:npm/@esbuild/linux-ppc64@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1825,6 +1916,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1832,6 +1924,7 @@
           "referenceLocator": "pkg:npm/@esbuild/linux-ppc64@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1847,6 +1940,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1854,6 +1948,7 @@
           "referenceLocator": "pkg:npm/@esbuild/linux-riscv64@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1869,6 +1964,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1876,6 +1972,7 @@
           "referenceLocator": "pkg:npm/@esbuild/linux-riscv64@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1891,6 +1988,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1898,6 +1996,7 @@
           "referenceLocator": "pkg:npm/@esbuild/linux-s390x@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1913,6 +2012,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1920,6 +2020,7 @@
           "referenceLocator": "pkg:npm/@esbuild/linux-s390x@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1935,6 +2036,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1942,6 +2044,7 @@
           "referenceLocator": "pkg:npm/@esbuild/linux-x64@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1957,6 +2060,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1964,6 +2068,7 @@
           "referenceLocator": "pkg:npm/@esbuild/linux-x64@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -1979,6 +2084,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -1986,6 +2092,7 @@
           "referenceLocator": "pkg:npm/@esbuild/netbsd-arm64@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2001,6 +2108,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2008,6 +2116,7 @@
           "referenceLocator": "pkg:npm/@esbuild/netbsd-x64@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2023,6 +2132,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2030,6 +2140,7 @@
           "referenceLocator": "pkg:npm/@esbuild/netbsd-x64@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2045,6 +2156,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2052,6 +2164,7 @@
           "referenceLocator": "pkg:npm/@esbuild/openbsd-arm64@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2067,6 +2180,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2074,6 +2188,7 @@
           "referenceLocator": "pkg:npm/@esbuild/openbsd-x64@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2089,6 +2204,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2096,6 +2212,7 @@
           "referenceLocator": "pkg:npm/@esbuild/openbsd-x64@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2111,6 +2228,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2118,6 +2236,7 @@
           "referenceLocator": "pkg:npm/@esbuild/openharmony-arm64@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2133,6 +2252,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2140,6 +2260,7 @@
           "referenceLocator": "pkg:npm/@esbuild/sunos-x64@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2155,6 +2276,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2162,6 +2284,7 @@
           "referenceLocator": "pkg:npm/@esbuild/sunos-x64@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2177,6 +2300,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2184,6 +2308,7 @@
           "referenceLocator": "pkg:npm/@esbuild/win32-arm64@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2199,6 +2324,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2206,6 +2332,7 @@
           "referenceLocator": "pkg:npm/@esbuild/win32-arm64@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2221,6 +2348,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2228,6 +2356,7 @@
           "referenceLocator": "pkg:npm/@esbuild/win32-ia32@0.21.5"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2243,6 +2372,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2250,6 +2380,7 @@
           "referenceLocator": "pkg:npm/@esbuild/win32-ia32@0.25.12"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2265,6 +2396,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2287,6 +2419,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2309,6 +2442,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2331,6 +2465,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2353,6 +2488,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2375,6 +2511,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2397,6 +2534,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2419,6 +2557,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2426,6 +2565,7 @@
           "referenceLocator": "pkg:npm/@napi-rs/lzma-linux-x64-gnu@1.5.1"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2441,6 +2581,7 @@
       "licenseConcluded": "Apache-2.0",
       "licenseDeclared": "Apache-2.0",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2463,6 +2604,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2485,6 +2627,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2492,6 +2635,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-android-arm-eabi@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2507,6 +2651,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2514,6 +2659,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-android-arm64@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2529,6 +2675,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2536,6 +2683,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-darwin-arm64@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2551,6 +2699,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2558,6 +2707,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-darwin-x64@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2573,6 +2723,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2580,6 +2731,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-freebsd-arm64@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2595,6 +2747,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2602,6 +2755,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-freebsd-x64@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2617,6 +2771,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2624,6 +2779,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-linux-arm-gnueabihf@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2639,6 +2795,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2646,6 +2803,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-linux-arm-musleabihf@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2661,6 +2819,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2668,6 +2827,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-linux-arm64-gnu@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2683,6 +2843,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2690,6 +2851,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-linux-arm64-musl@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2705,6 +2867,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2712,6 +2875,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-linux-loong64-gnu@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2727,6 +2891,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2734,6 +2899,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-linux-loong64-musl@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2749,6 +2915,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2756,6 +2923,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-linux-ppc64-gnu@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2771,6 +2939,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2778,6 +2947,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-linux-ppc64-musl@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2793,6 +2963,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2800,6 +2971,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-linux-riscv64-gnu@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2815,6 +2987,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2822,6 +2995,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-linux-riscv64-musl@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2837,6 +3011,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2844,6 +3019,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-linux-s390x-gnu@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2859,6 +3035,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2866,6 +3043,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-linux-x64-gnu@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2881,6 +3059,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2888,6 +3067,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-linux-x64-musl@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2903,6 +3083,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2910,6 +3091,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-openbsd-x64@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2925,6 +3107,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2932,6 +3115,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-openharmony-arm64@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2947,6 +3131,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2954,6 +3139,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-win32-arm64-msvc@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2969,6 +3155,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -2976,6 +3163,7 @@
           "referenceLocator": "pkg:npm/@rollup/rollup-win32-ia32-msvc@4.62.4"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -2991,6 +3179,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3013,6 +3202,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3035,6 +3225,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3057,6 +3248,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3079,6 +3271,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3101,6 +3294,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3123,6 +3317,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3145,6 +3340,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3167,6 +3363,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3189,6 +3386,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3211,6 +3409,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3233,6 +3432,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3255,6 +3455,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3277,6 +3478,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3299,6 +3501,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3321,6 +3524,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3343,6 +3547,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3365,6 +3570,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3387,6 +3593,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3409,6 +3616,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3431,6 +3639,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3453,6 +3662,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3475,6 +3685,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3497,6 +3708,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3519,6 +3731,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3541,6 +3754,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3563,6 +3777,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3585,6 +3800,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3607,6 +3823,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3629,6 +3846,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3651,6 +3869,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3673,6 +3892,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3695,6 +3915,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3717,6 +3938,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3739,6 +3961,7 @@
       "licenseConcluded": "Apache-2.0",
       "licenseDeclared": "Apache-2.0",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3761,6 +3984,7 @@
       "licenseConcluded": "Apache-2.0",
       "licenseDeclared": "Apache-2.0",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3783,6 +4007,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3805,6 +4030,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3827,6 +4053,7 @@
       "licenseConcluded": "Apache-2.0",
       "licenseDeclared": "Apache-2.0",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3849,6 +4076,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3871,6 +4099,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3893,6 +4122,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3915,6 +4145,7 @@
       "licenseConcluded": "CC-BY-4.0",
       "licenseDeclared": "CC-BY-4.0",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3937,6 +4168,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3959,6 +4191,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -3981,6 +4214,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4003,6 +4237,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4025,6 +4260,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4047,6 +4283,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4069,6 +4306,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4091,6 +4329,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4113,6 +4352,7 @@
       "licenseConcluded": "ISC",
       "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4135,6 +4375,7 @@
       "licenseConcluded": "ISC",
       "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4157,6 +4398,7 @@
       "licenseConcluded": "ISC",
       "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4179,6 +4421,7 @@
       "licenseConcluded": "BSD-3-Clause",
       "licenseDeclared": "BSD-3-Clause",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4201,6 +4444,7 @@
       "licenseConcluded": "ISC",
       "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4223,6 +4467,7 @@
       "licenseConcluded": "ISC",
       "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4245,6 +4490,7 @@
       "licenseConcluded": "ISC",
       "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4267,6 +4513,7 @@
       "licenseConcluded": "ISC",
       "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4289,6 +4536,7 @@
       "licenseConcluded": "ISC",
       "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4311,6 +4559,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4333,6 +4582,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4355,6 +4605,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4377,6 +4628,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4399,6 +4651,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4421,6 +4674,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4443,6 +4697,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4465,6 +4720,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4487,6 +4743,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4509,6 +4766,7 @@
       "licenseConcluded": "ISC",
       "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4531,6 +4789,7 @@
       "licenseConcluded": "BSD-2-Clause",
       "licenseDeclared": "BSD-2-Clause",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4553,6 +4812,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4575,6 +4835,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4597,6 +4858,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4619,6 +4881,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4641,6 +4904,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4663,6 +4927,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4685,6 +4950,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4707,6 +4973,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4729,6 +4996,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4751,6 +5019,7 @@
       "licenseConcluded": "Apache-2.0",
       "licenseDeclared": "Apache-2.0",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4773,6 +5042,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4795,6 +5065,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4817,6 +5088,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4824,6 +5096,7 @@
           "referenceLocator": "pkg:npm/fsevents@2.3.2"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -4839,6 +5112,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "LOCK_ONLY_NON_TARGET_PLATFORM",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4846,6 +5120,7 @@
           "referenceLocator": "pkg:npm/fsevents@2.3.3"
         }
       ],
+      "comment": "Lockfile-only optional package incompatible with the declared win32/x64 release target; not installed in the target runtime.",
       "checksums": [
         {
           "algorithm": "SHA-512",
@@ -4861,6 +5136,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4883,6 +5159,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4905,6 +5182,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4927,6 +5205,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4949,6 +5228,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4971,6 +5251,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -4993,6 +5274,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5015,6 +5297,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5037,6 +5320,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5059,6 +5343,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5081,6 +5366,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5103,6 +5389,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5125,6 +5412,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5147,6 +5435,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5169,6 +5458,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5191,6 +5481,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5213,6 +5504,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5235,6 +5527,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5257,6 +5550,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5279,6 +5573,7 @@
       "licenseConcluded": "ISC",
       "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5301,6 +5596,7 @@
       "licenseConcluded": "ISC",
       "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5323,6 +5619,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5345,6 +5642,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5367,6 +5665,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5389,6 +5688,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5411,6 +5711,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5433,6 +5734,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5455,6 +5757,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5477,6 +5780,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5499,6 +5803,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5521,6 +5826,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5543,6 +5849,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5565,6 +5872,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5587,6 +5895,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5609,6 +5918,7 @@
       "licenseConcluded": "ISC",
       "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5631,6 +5941,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5653,6 +5964,7 @@
       "licenseConcluded": "Apache-2.0",
       "licenseDeclared": "Apache-2.0",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5675,6 +5987,7 @@
       "licenseConcluded": "Apache-2.0",
       "licenseDeclared": "Apache-2.0",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5697,6 +6010,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5719,6 +6033,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5741,6 +6056,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5763,6 +6079,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5785,6 +6102,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5807,6 +6125,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5829,6 +6148,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5851,6 +6171,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5873,6 +6194,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5895,6 +6217,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5917,6 +6240,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5939,6 +6263,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5961,6 +6286,7 @@
       "licenseConcluded": "ISC",
       "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -5983,6 +6309,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6005,6 +6332,7 @@
       "licenseConcluded": "ISC",
       "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6027,6 +6355,7 @@
       "licenseConcluded": "ISC",
       "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6049,6 +6378,7 @@
       "licenseConcluded": "BSD-3-Clause",
       "licenseDeclared": "BSD-3-Clause",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6071,6 +6401,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6093,6 +6424,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6115,6 +6447,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6137,6 +6470,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6159,6 +6493,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6181,6 +6516,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6203,6 +6539,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6225,6 +6562,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6247,6 +6585,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6269,6 +6608,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6291,6 +6631,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6313,6 +6654,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6335,6 +6677,7 @@
       "licenseConcluded": "BSD-3-Clause",
       "licenseDeclared": "BSD-3-Clause",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6357,6 +6700,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6379,6 +6723,7 @@
       "licenseConcluded": "Apache-2.0",
       "licenseDeclared": "Apache-2.0",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6401,6 +6746,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6423,6 +6769,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6445,6 +6792,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6467,6 +6815,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6489,6 +6838,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6511,6 +6861,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6533,6 +6884,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6555,6 +6907,7 @@
       "licenseConcluded": "BSD-2-Clause",
       "licenseDeclared": "BSD-2-Clause",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6577,6 +6930,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6599,6 +6953,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6621,6 +6976,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6643,6 +6999,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6665,6 +7022,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6687,6 +7045,7 @@
       "licenseConcluded": "Apache-2.0",
       "licenseDeclared": "Apache-2.0",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6709,6 +7068,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6731,6 +7091,7 @@
       "licenseConcluded": "ISC",
       "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -6753,6 +7114,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
+      "localRuntimeApplicability": "TARGET_RUNTIME",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",

@@ -76,13 +76,17 @@ def _rehearsal_passed(path: Path) -> bool:
 
 def _sbom_inventory(path: Path) -> dict[str, Any]:
     if not path.is_file():
-        return {"valid": False, "package_count": 0}
+        return {"valid": False, "package_count": 0, "target_runtime_noassertion": None}
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
-        return {"valid": False, "package_count": 0}
+        return {"valid": False, "package_count": 0, "target_runtime_noassertion": None}
     packages = document.get("packages")
     package_count = document.get("package_count")
+    license_summary = document.get("license_summary")
+    target_runtime_noassertion = license_summary.get("noassertion_target_runtime") if isinstance(license_summary, dict) else None
+    total_noassertion = license_summary.get("noassertion_total") if isinstance(license_summary, dict) else None
+    observed_noassertion = sum(1 for package in packages if isinstance(package, dict) and package.get("licenseConcluded") == "NOASSERTION") if isinstance(packages, list) else -1
     valid = (
         document.get("bomFormat") == "SPDX"
         and document.get("specVersion") == "2.3"
@@ -92,8 +96,16 @@ def _sbom_inventory(path: Path) -> dict[str, Any]:
         and package_count == len(packages)
         and isinstance(document.get("lockfile_sha256"), str)
         and len(document["lockfile_sha256"]) == 64
+        and isinstance(total_noassertion, int)
+        and total_noassertion == observed_noassertion
+        and target_runtime_noassertion == 0
     )
-    return {"valid": valid, "package_count": package_count if isinstance(package_count, int) else 0}
+    return {
+        "valid": valid,
+        "package_count": package_count if isinstance(package_count, int) else 0,
+        "target_runtime_noassertion": target_runtime_noassertion,
+        "lock_only_noassertion": license_summary.get("noassertion_lock_only_non_target_platform") if isinstance(license_summary, dict) else None,
+    }
 
 
 def _local_uat_passed(path: Path) -> bool:
@@ -277,7 +289,7 @@ def audit() -> dict[str, Any]:
             ),
         },
         {"code": "UPGRADE_ROLLBACK_REHEARSAL", "passed": _rehearsal_passed(rehearsal_path), "evidence": rehearsal_path.relative_to(ROOT).as_posix()},
-        {"code": "SBOM_INVENTORY", "passed": sbom_inventory["valid"], "package_count": sbom_inventory["package_count"], "evidence": sbom_path.relative_to(ROOT).as_posix()},
+        {"code": "SBOM_INVENTORY", "passed": sbom_inventory["valid"], "package_count": sbom_inventory["package_count"], "target_runtime_noassertion": sbom_inventory["target_runtime_noassertion"], "lock_only_noassertion": sbom_inventory["lock_only_noassertion"], "evidence": sbom_path.relative_to(ROOT).as_posix()},
         {"code": "LOCAL_UAT_READONLY_BASELINE", "passed": _local_uat_passed(local_uat_path), "evidence": local_uat_path.relative_to(ROOT).as_posix()},
         {"code": "METADATA_SCALE_UAT", "passed": _metadata_scale_passed(metadata_scale_path), "evidence": metadata_scale_path.relative_to(ROOT).as_posix()},
         {"code": "SECURITY_UAT", "passed": _security_uat_passed(security_uat_path), "evidence": security_uat_path.relative_to(ROOT).as_posix()},

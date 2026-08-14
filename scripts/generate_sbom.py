@@ -26,6 +26,8 @@ PYTHON_LOCK = ROOT / "apps" / "api" / "requirements.lock"
 PNPM_LOCK = ROOT / "pnpm-lock.yaml"
 WEB_NODE_MODULES = ROOT / "apps" / "web" / "node_modules"
 NODE_MODULES = ROOT / "node_modules" / ".pnpm"
+TARGET_NODE_OS = "win32"
+TARGET_NODE_CPU = "x64"
 
 
 def _spdx_id(prefix: str, name: str, version: str) -> str:
@@ -170,6 +172,27 @@ def _node_license(name: str, version: str) -> str:
     return "NOASSERTION"
 
 
+def _constraint_allows(values: object, target: str) -> bool:
+    """Evaluate pnpm's positive/negative os or cpu package constraint."""
+    if not isinstance(values, list):
+        return True
+    normalized = [str(value).lower() for value in values]
+    if f"!{target}" in normalized:
+        return False
+    positive = [value for value in normalized if not value.startswith("!")]
+    return not positive or target in positive
+
+
+def _node_target_applicability(details: object) -> str:
+    if not isinstance(details, dict):
+        return "TARGET_RUNTIME"
+    if not _constraint_allows(details.get("os"), TARGET_NODE_OS):
+        return "LOCK_ONLY_NON_TARGET_PLATFORM"
+    if not _constraint_allows(details.get("cpu"), TARGET_NODE_CPU):
+        return "LOCK_ONLY_NON_TARGET_PLATFORM"
+    return "TARGET_RUNTIME"
+
+
 def _node_packages() -> list[dict[str, Any]]:
     lock = yaml.safe_load(PNPM_LOCK.read_text(encoding="utf-8"))
     package_entries = lock.get("packages", {}) if isinstance(lock, dict) else {}
@@ -178,6 +201,7 @@ def _node_packages() -> list[dict[str, Any]]:
         name, version = _split_pnpm_key(str(key))
         resolution = details.get("resolution", {}) if isinstance(details, dict) else {}
         integrity = resolution.get("integrity") if isinstance(resolution, dict) else None
+        applicability = _node_target_applicability(details)
         package: dict[str, Any] = {
             "SPDXID": _spdx_id("npm", name, version),
             "name": name,
@@ -186,8 +210,11 @@ def _node_packages() -> list[dict[str, Any]]:
             "licenseConcluded": _node_license(name, version),
             "licenseDeclared": _node_license(name, version),
             "sourceInfo": "pnpm-lock.yaml",
+            "localRuntimeApplicability": applicability,
             "externalRefs": [{"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": f"pkg:npm/{name}@{version}"}],
         }
+        if applicability == "LOCK_ONLY_NON_TARGET_PLATFORM":
+            package["comment"] = f"Lockfile-only optional package incompatible with the declared {TARGET_NODE_OS}/{TARGET_NODE_CPU} release target; not installed in the target runtime."
         if isinstance(integrity, str) and integrity.startswith("sha512-"):
             try:
                 checksum_hex = base64.b64decode(integrity.removeprefix("sha512-"), validate=True).hex()
@@ -202,6 +229,8 @@ def _node_packages() -> list[dict[str, Any]]:
 def generate() -> dict[str, Any]:
     lock_hash = _sha256([PYTHON_LOCK, PNPM_LOCK])
     packages = _python_packages() + _node_packages()
+    missing_license = [package for package in packages if package["licenseConcluded"] == "NOASSERTION"]
+    target_missing_license = [package for package in missing_license if package.get("localRuntimeApplicability", "TARGET_RUNTIME") == "TARGET_RUNTIME"]
     return {
         "bomFormat": "SPDX",
         "specVersion": "2.3",
@@ -216,6 +245,13 @@ def generate() -> dict[str, Any]:
         "source_lockfiles": ["apps/api/requirements.lock", "pnpm-lock.yaml"],
         "lockfile_sha256": lock_hash,
         "package_count": len(packages),
+        "license_summary": {
+            "declared_or_concluded": len(packages) - len(missing_license),
+            "noassertion_total": len(missing_license),
+            "noassertion_lock_only_non_target_platform": len(missing_license) - len(target_missing_license),
+            "noassertion_target_runtime": len(target_missing_license),
+            "target": {"os": TARGET_NODE_OS, "cpu": TARGET_NODE_CPU},
+        },
         "packages": packages,
     }
 
