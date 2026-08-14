@@ -149,3 +149,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start.ps1 -Port 3210
 - 生产库、API、ComfyUI、网络和任务队列均未接触；隔离副本暂留在 `temp/release-rehearsal-20260814_224333` 供审计复核。
 - 当前仍真实为：G7 `IN_PROGRESS`（下一硬阻塞 `MODEL_LICENSE_HASH_QUANTIZATION_REPORT`），G8 `IN_PROGRESS`（`THREE_REAL_SHOTS`），G9 `IN_PROGRESS`（`VISIBLE_NODE_PERFORMANCE_UAT`），G10 `IN_PROGRESS`。不得越级或把草稿发布物改为 FINAL。
 - 对 `MiniMax-H3-video_vae.safetensors` 仅读取了 64,032-byte safetensors header；`__metadata__` 为空，模型目录仍无 LICENSE/NOTICE/EULA/README。没有新的操作者许可证记录，因此 G7 许可证门禁继续保持 FAIL。
+- 本轮最终回归：API `120 passed, 4 deselected`、Web `11 passed`、production build、Ruff、mypy 全部通过；项目页、业务画布、模型与能力页在 1440×900 / 1280×800 / 1024×768 均无水平溢出、Application error 或 console error/warning。ComfyUI 当前仅回环监听，连接审计未见公网对端，未提交生成任务。
