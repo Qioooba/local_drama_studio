@@ -168,12 +168,14 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .project-create-wizard { margin: 12px 0; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-raised); }
 .wizard-grid { display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: 12px; align-items: end; }
 .wizard-grid label, .wizard-confirm { display: grid; gap: 6px; }
-.wizard-grid input { min-height: 40px; }
+.wizard-grid input, .wizard-grid select, .profile-binding-grid select { min-height: 40px; }
+.profile-binding-grid { display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: 10px; }
+.profile-binding-grid label { display: grid; gap: 5px; min-width: 0; }
 .wizard-grid .action-row { grid-column: 1 / -1; }
 .check-label { display: flex; gap: 10px; align-items: center; min-height: 44px; }
 .check-label input { width: 20px; height: 20px; }
 .wizard-preview li { margin: 5px 0; }
-@media (max-width: 760px) { .wizard-grid { grid-template-columns: 1fr; } .wizard-grid .action-row { grid-column: auto; } }
+@media (max-width: 760px) { .wizard-grid, .profile-binding-grid { grid-template-columns: 1fr; } .wizard-grid .action-row { grid-column: auto; } }
 .project-package-action { display: grid; grid-template-columns: 1fr auto; gap: 10px 16px; align-items: center; margin: 12px 0; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-raised); }
 .project-package-action p { margin: 4px 0; grid-column: 1 / -1; overflow-wrap: anywhere; }
 .package-import-form { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 12px; padding-top: 12px; border-top: 1px solid var(--border); }

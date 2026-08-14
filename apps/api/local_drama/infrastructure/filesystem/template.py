@@ -50,7 +50,8 @@ TEMPLATE_DIRECTORIES = (
 )
 
 
-def build_project_tree(projects_root: Path, project_id: str, code: str, title: str, episode_count: int) -> tuple[Path, Path]:
+def build_project_tree(projects_root: Path, project_id: str, code: str, title: str, episode_count: int,
+                       *, season_count: int = 1) -> tuple[Path, Path]:
     final_root = projects_root / code
     if final_root.exists():
         raise FileExistsError(f"project root already exists: {code}")
@@ -58,22 +59,29 @@ def build_project_tree(projects_root: Path, project_id: str, code: str, title: s
     try:
         for relative in TEMPLATE_DIRECTORIES:
             (temporary_root / relative).mkdir(parents=True, exist_ok=True)
-        for episode_number in range(2, episode_count + 1):
-            episode_code = f"EPISODE_{episode_number:03d}"
-            for relative in (
-                f"01_story/episodes/{episode_code}/script",
-                f"01_story/episodes/{episode_code}/storyboard",
-                f"01_story/episodes/{episode_code}/exports",
-                f"03_prompts/frozen/SEASON_001/{episode_code}",
-                f"04_media/images/episodes/SEASON_001/{episode_code}",
-                f"04_media/videos/episodes/SEASON_001/{episode_code}",
-                f"04_media/audio/dialogue/SEASON_001/{episode_code}",
-                f"04_media/subtitles/SEASON_001/{episode_code}",
-                f"05_timelines/SEASON_001/{episode_code}/revisions",
-                f"05_timelines/SEASON_001/{episode_code}/renders",
-                f"06_delivery/SEASON_001/{episode_code}",
-            ):
-                (temporary_root / relative).mkdir(parents=True, exist_ok=True)
+        total_episodes = episode_count * season_count
+        for season_number in range(1, season_count + 1):
+            season_code = f"SEASON_{season_number:03d}"
+            (temporary_root / "01_story" / "seasons" / season_code).mkdir(parents=True, exist_ok=True)
+            for episode_number in range(1, episode_count + 1):
+                global_episode_number = (season_number - 1) * episode_count + episode_number
+                episode_code = f"EPISODE_{global_episode_number:03d}"
+                if season_number == 1 and episode_number == 1:
+                    continue
+                for relative in (
+                    f"01_story/episodes/{episode_code}/script",
+                    f"01_story/episodes/{episode_code}/storyboard",
+                    f"01_story/episodes/{episode_code}/exports",
+                    f"03_prompts/frozen/{season_code}/{episode_code}",
+                    f"04_media/images/episodes/{season_code}/{episode_code}",
+                    f"04_media/videos/episodes/{season_code}/{episode_code}",
+                    f"04_media/audio/dialogue/{season_code}/{episode_code}",
+                    f"04_media/subtitles/{season_code}/{episode_code}",
+                    f"05_timelines/{season_code}/{episode_code}/revisions",
+                    f"05_timelines/{season_code}/{episode_code}/renders",
+                    f"06_delivery/{season_code}/{episode_code}",
+                ):
+                    (temporary_root / relative).mkdir(parents=True, exist_ok=True)
         project_json = {
             "schema_version": "localdrama.project.v2",
             "project_id": project_id,
@@ -82,6 +90,9 @@ def build_project_tree(projects_root: Path, project_id: str, code: str, title: s
             "created_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             "template_version": TEMPLATE_VERSION,
             "initial_season": "SEASON_001",
+            "season_count": season_count,
+            "episode_count_per_season": episode_count,
+            "total_episode_count": total_episodes,
             "legacy_refs": [],
         }
         (temporary_root / "project.json").write_text(json.dumps(project_json, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

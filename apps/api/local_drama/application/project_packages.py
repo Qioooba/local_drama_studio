@@ -89,7 +89,8 @@ class ProjectPackageService:
 
     def _state(self, project_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
-            project = connection.execute("SELECT id,code,title,template_version,aspect_ratio,fps_num,fps_den,timezone FROM projects WHERE id=?", (project_id,)).fetchone()
+            project = connection.execute("""SELECT id,code,title,template_version,aspect_ratio,fps_num,fps_den,timezone,
+                width,height,primary_language,subtitle_mode,subtitle_language FROM projects WHERE id=?""", (project_id,)).fetchone()
             if project is None:
                 raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
             seasons = [dict(row) for row in connection.execute("SELECT id,number,display_order,code,title FROM seasons WHERE project_id=? ORDER BY display_order", (project_id,))]
@@ -462,9 +463,12 @@ class ProjectPackageService:
                     raise DomainRuleError("PROJECT_CODE_EXISTS", "项目 code 已存在", {"code": code})
                 connection.execute(
                     """INSERT INTO projects (id,code,title,status,template_version,root_rel,aspect_ratio,fps_num,fps_den,timezone,
-                    created_at,updated_at,created_by) VALUES (?,?,?,'DRAFT',?,?,?,?,?,?,?,?,?)""",
+                    width,height,primary_language,subtitle_mode,subtitle_language,created_at,updated_at,created_by)
+                    VALUES (?,?,?,'DRAFT',?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (project_id, code, title, TEMPLATE_VERSION, code, source_project.get("aspect_ratio"), source_project.get("fps_num"),
-                     source_project.get("fps_den"), source_project.get("timezone") or "Asia/Shanghai", now, now, actor),
+                     source_project.get("fps_den"), source_project.get("timezone") or "Asia/Shanghai", source_project.get("width"),
+                     source_project.get("height"), source_project.get("primary_language"), source_project.get("subtitle_mode"),
+                     source_project.get("subtitle_language"), now, now, actor),
                 )
                 for season in state["seasons"]:
                     connection.execute(

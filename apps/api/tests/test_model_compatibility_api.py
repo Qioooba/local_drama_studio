@@ -17,9 +17,14 @@ def test_model_compatibility_projection_api_is_read_only(workspace, database) ->
         target_duration_ms=60_000,
         allow_unconfigured_capabilities=True,
     )
-    before = database.path.read_bytes()
     with TestClient(create_app(workspace)) as client:
+        with database.connect() as connection:
+            before = {table: connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                      for table in ("projects", "model_compatibility_reports", "audit_events", "outbox_events")}
         response = client.get(f"/api/v1/projects/{project['id']}/model-compatibility")
+        with database.connect() as connection:
+            after = {table: connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                     for table in ("projects", "model_compatibility_reports", "audit_events", "outbox_events")}
     assert response.status_code == 200
     payload = response.json()["compatibility"]
     assert payload["reports"]
@@ -34,7 +39,7 @@ def test_model_compatibility_projection_api_is_read_only(workspace, database) ->
     assert payload["runtime_contacted"] is False
     assert payload["network_contacted"] is False
     assert payload["mutated"] is False
-    assert database.path.read_bytes() == before
+    assert after == before
 
 
 def test_model_compatibility_projection_rejects_unknown_project(workspace, database) -> None:

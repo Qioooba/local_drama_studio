@@ -9241,6 +9241,12 @@
             "minimum": 1.0,
             "title": "Episode Count"
           },
+          "season_count": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Season Count",
+            "default": 1
+          },
           "target_duration_ms": {
             "type": "integer",
             "exclusiveMinimum": 0.0,
@@ -9267,6 +9273,96 @@
               }
             ]
           },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 16384.0,
+                "minimum": 64.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 16384.0,
+                "minimum": 64.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "primary_language": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32,
+                "minLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Language"
+          },
+          "subtitle_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subtitle Mode"
+          },
+          "subtitle_language": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32,
+                "minLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subtitle Language"
+          },
+          "production_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectProductionPlanRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "profile_bindings": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectProfileBindingRequest"
+            },
+            "type": "array",
+            "title": "Profile Bindings"
+          },
+          "delivery_target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectDeliveryTargetRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "allow_unconfigured_capabilities": {
             "type": "boolean",
             "title": "Allow Unconfigured Capabilities",
@@ -9283,6 +9379,35 @@
         ],
         "title": "ProjectCreateRequest"
       },
+      "ProjectDeliveryTargetRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 2,
+            "title": "Code"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "spec": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Spec"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "title",
+          "spec"
+        ],
+        "title": "ProjectDeliveryTargetRequest"
+      },
       "ProjectPackageDryRunRequest": {
         "properties": {
           "rel_path": {
@@ -9298,6 +9423,58 @@
           "rel_path"
         ],
         "title": "ProjectPackageDryRunRequest"
+      },
+      "ProjectProductionPlanRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 2,
+            "title": "Code"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "plan": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Plan"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "title",
+          "plan"
+        ],
+        "title": "ProjectProductionPlanRequest"
+      },
+      "ProjectProfileBindingRequest": {
+        "properties": {
+          "capability": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Capability"
+          },
+          "profile_version_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Profile Version Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "capability",
+          "profile_version_id"
+        ],
+        "title": "ProjectProfileBindingRequest"
       },
       "ProjectTemplateCopyRequest": {
         "properties": {

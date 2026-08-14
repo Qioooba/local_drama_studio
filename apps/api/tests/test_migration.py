@@ -19,11 +19,14 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         foreign_keys = connection.execute("PRAGMA foreign_keys").fetchone()[0]
         indexes = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
-        assert version == "0022_project_package_import_receipts"
+        assert version == "0023_project_creation_spec"
     assert "provider_random_nonce" in variant_columns
     assert {"requested_time_us", "resolved_time_us", "source_sha256", "extraction_method"} <= anchor_columns
     assert "source_artifact_id" in media_columns
     assert {"output_contract_json", "resource_policy_json"} <= profile_columns
+    with database.connect() as connection:
+        project_columns = {row[1] for row in connection.execute("PRAGMA table_info(projects)")}
+    assert {"width", "height", "primary_language", "subtitle_mode", "subtitle_language"} <= project_columns
     assert foreign_keys == 1
     assert {
         "ix_media_assets_owner",

@@ -50,13 +50,26 @@ def validate_project_code(code: str) -> None:
         raise DomainRuleError("INVALID_PROJECT_CODE", "项目 code 必须是 2—64 位小写 ASCII、数字或下划线")
 
 
-def validate_project_spec(*, episode_count: int, aspect_ratio: str | None, fps_num: int | None, fps_den: int | None, allow_unconfigured: bool) -> None:
-    if episode_count < 1:
-        raise DomainRuleError("INVALID_EPISODE_COUNT", "episode_count 必须大于 0")
+def validate_project_spec(*, episode_count: int, aspect_ratio: str | None, fps_num: int | None, fps_den: int | None,
+                          allow_unconfigured: bool, season_count: int = 1, width: int | None = None, height: int | None = None,
+                          primary_language: str | None = None, subtitle_mode: str | None = None,
+                          subtitle_language: str | None = None) -> None:
+    if episode_count < 1 or season_count < 1:
+        raise DomainRuleError("INVALID_EPISODE_COUNT", "season_count 与 episode_count 必须大于 0")
+    if episode_count * season_count > 10_000:
+        raise DomainRuleError("PROJECT_STRUCTURE_TOO_LARGE", "项目季集总数不能超过 10000")
+    if (width is None) != (height is None) or (width is not None and (width < 64 or height is None or height < 64)):
+        raise DomainRuleError("INVALID_PRODUCTION_RESOLUTION", "制作分辨率必须同时提供有效 width 与 height")
+    if subtitle_mode not in {None, "NONE", "SIDECAR", "BURN_IN", "BOTH"}:
+        raise DomainRuleError("INVALID_SUBTITLE_MODE", "subtitle_mode 必须是 NONE/SIDECAR/BURN_IN/BOTH")
+    if subtitle_mode not in {None, "NONE"} and not subtitle_language:
+        raise DomainRuleError("SUBTITLE_LANGUAGE_REQUIRED", "启用字幕时必须显式选择字幕语言")
     if not allow_unconfigured and not aspect_ratio:
         raise DomainRuleError("PRODUCTION_SPEC_REQUIRED", "必须显式选择制作画幅或明确允许稍后配置")
     if not allow_unconfigured and (not fps_num or not fps_den or fps_num <= 0 or fps_den <= 0):
         raise DomainRuleError("PRODUCTION_SPEC_REQUIRED", "必须显式选择有理数 fps 或明确允许稍后配置")
+    if not allow_unconfigured and (width is None or height is None or not primary_language or not subtitle_mode):
+        raise DomainRuleError("PRODUCTION_SPEC_REQUIRED", "必须显式选择分辨率、主语言和字幕策略或明确允许稍后配置")
 
 
 def validate_shot_ready(fields: dict[str, object]) -> None:

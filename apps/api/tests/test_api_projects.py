@@ -17,8 +17,12 @@ def test_project_api_uses_real_migration_and_returns_conflict(workspace, databas
                 "episode_count": 2,
                 "target_duration_ms": 60000,
                 "aspect_ratio": "9:16",
+                "width": 1080,
+                "height": 1920,
                 "fps": {"numerator": 24, "denominator": 1},
-                "allow_unconfigured_capabilities": False,
+                "primary_language": "zh-CN",
+                "subtitle_mode": "NONE",
+                "allow_unconfigured_capabilities": True,
             },
         )
         assert response.status_code == 201

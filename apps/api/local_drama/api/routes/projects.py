@@ -54,6 +54,15 @@ async def create_project(
             fps_den=payload.fps.denominator if payload.fps else None,
             target_duration_ms=payload.target_duration_ms,
             allow_unconfigured_capabilities=payload.allow_unconfigured_capabilities,
+            season_count=payload.season_count,
+            width=payload.width,
+            height=payload.height,
+            primary_language=payload.primary_language,
+            subtitle_mode=payload.subtitle_mode,
+            subtitle_language=payload.subtitle_language,
+            production_plan=payload.production_plan.model_dump() if payload.production_plan else None,
+            profile_bindings=[item.model_dump() for item in payload.profile_bindings],
+            delivery_target=payload.delivery_target.model_dump() if payload.delivery_target else None,
             request_id=getattr(request.state, "request_id", None),
         )
         return {"project": result, "blockers": ConfigurationService(request.app.state.database).blockers(str(result["id"]))}
@@ -73,6 +82,15 @@ async def plan_project_creation(payload: ProjectCreateRequest, request: Request)
             fps_den=payload.fps.denominator if payload.fps else None,
             target_duration_ms=payload.target_duration_ms,
             allow_unconfigured_capabilities=payload.allow_unconfigured_capabilities,
+            season_count=payload.season_count,
+            width=payload.width,
+            height=payload.height,
+            primary_language=payload.primary_language,
+            subtitle_mode=payload.subtitle_mode,
+            subtitle_language=payload.subtitle_language,
+            production_plan=payload.production_plan.model_dump() if payload.production_plan else None,
+            profile_bindings=[item.model_dump() for item in payload.profile_bindings],
+            delivery_target=payload.delivery_target.model_dump() if payload.delivery_target else None,
         )}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error

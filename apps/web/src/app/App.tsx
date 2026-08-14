@@ -280,7 +280,7 @@ export function App() {
 
           {(view === "overview" || view === "projects") && <div className="project-filters" role="search" aria-label="筛选项目"><label>搜索项目<input value={projectSearch} onChange={(event) => setProjectSearch(event.target.value)} placeholder="标题或 code" /></label><label>项目状态<select value={projectStatus} onChange={(event) => setProjectStatus(event.target.value)}><option value="">全部状态</option><option value="DRAFT">DRAFT</option><option value="ACTIVE">ACTIVE</option><option value="PAUSED">PAUSED</option><option value="ARCHIVED">ARCHIVED</option></select></label></div>}
 
-          {(view === "overview" || view === "projects") && <ProjectCreateWizard onCreated={(created) => { void queryClient.invalidateQueries({ queryKey: ["projects"] }); selectProject(created.id, "projects"); }} />}
+          {(view === "overview" || view === "projects") && <ProjectCreateWizard profiles={profiles.data?.items ?? []} onCreated={(created) => { void queryClient.invalidateQueries({ queryKey: ["projects"] }); selectProject(created.id, "projects"); }} />}
 
           {view === "overview" && (
             <section className="panel">

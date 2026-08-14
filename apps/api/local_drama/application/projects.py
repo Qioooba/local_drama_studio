@@ -4,7 +4,7 @@ import json
 import shutil
 import uuid
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from local_drama.domain.errors import DomainRuleError
@@ -46,6 +46,15 @@ class ProjectService:
         fps_den: int | None,
         target_duration_ms: int,
         allow_unconfigured_capabilities: bool,
+        season_count: int = 1,
+        width: int | None = None,
+        height: int | None = None,
+        primary_language: str | None = None,
+        subtitle_mode: str | None = None,
+        subtitle_language: str | None = None,
+        production_plan: dict[str, Any] | None = None,
+        profile_bindings: list[dict[str, str]] | None = None,
+        delivery_target: dict[str, Any] | None = None,
         actor: str = "local-user",
         request_id: str | None = None,
         simulate_failure: bool = False,
@@ -57,54 +66,92 @@ class ProjectService:
             fps_num=fps_num,
             fps_den=fps_den,
             allow_unconfigured=allow_unconfigured_capabilities,
+            season_count=season_count, width=width, height=height, primary_language=primary_language,
+            subtitle_mode=subtitle_mode, subtitle_language=subtitle_language,
         )
         if not title or len(title) > 200:
             raise DomainRuleError("INVALID_PROJECT_TITLE", "项目标题必须是 1—200 个字符")
         if target_duration_ms <= 0:
             raise DomainRuleError("INVALID_TARGET_DURATION", "target_duration_ms 必须大于 0")
+        profile_bindings = profile_bindings or []
+        self._validate_creation_bindings(production_plan, profile_bindings, delivery_target,
+                                         require_complete=not allow_unconfigured_capabilities)
         project_id = str(uuid.uuid4())
         final_root: Path | None = None
         try:
-            final_root, _ = build_project_tree(self.projects_root, project_id, code, title, episode_count)
+            final_root, _ = build_project_tree(self.projects_root, project_id, code, title, episode_count, season_count=season_count)
             now = _utc_now()
-            season_id = str(uuid.uuid4())
             with self.database.transaction() as connection:
                 existing = connection.execute("SELECT id FROM projects WHERE code = ?", (code,)).fetchone()
                 if existing:
                     raise DomainRuleError("PROJECT_CODE_EXISTS", "项目 code 已存在", {"code": code})
                 connection.execute(
                     """INSERT INTO projects (id, code, title, status, template_version, root_rel, aspect_ratio, fps_num,
-                    fps_den, created_at, updated_at, created_by) VALUES (?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (project_id, code, title, TEMPLATE_VERSION, code, aspect_ratio, fps_num, fps_den, now, now, actor),
+                    fps_den,width,height,primary_language,subtitle_mode,subtitle_language,created_at,updated_at,created_by)
+                    VALUES (?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (project_id, code, title, TEMPLATE_VERSION, code, aspect_ratio, fps_num, fps_den, width, height,
+                     primary_language, subtitle_mode, subtitle_language, now, now, actor),
                 )
-                connection.execute(
-                    """INSERT INTO seasons (id, project_id, number, code, title, display_order, created_at, updated_at, created_by)
-                    VALUES (?, ?, 1, 'SEASON_001', '第 1 季', 1, ?, ?, ?)""",
-                    (season_id, project_id, now, now, actor),
-                )
-                for episode_number in range(1, episode_count + 1):
-                    episode_code = f"EPISODE_{episode_number:03d}"
+                for season_number in range(1, season_count + 1):
+                    season_id = str(uuid.uuid4())
+                    season_code = f"SEASON_{season_number:03d}"
                     connection.execute(
-                        """INSERT INTO episodes (id, season_id, number, display_order, code, title, narrative_status,
-                        production_status, target_duration_ms, source_range_json, created_at, updated_at, created_by)
-                        VALUES (?, ?, ?, ?, ?, ?, 'OUTLINE', 'NOT_STARTED', ?, '{}', ?, ?, ?)""",
-                        (
-                            str(uuid.uuid4()),
-                            season_id,
-                            episode_number,
-                            episode_number,
-                            episode_code,
-                            f"第 {episode_number} 集",
-                            target_duration_ms,
-                            now,
-                            now,
-                            actor,
-                        ),
+                        """INSERT INTO seasons (id, project_id, number, code, title, display_order, created_at, updated_at, created_by)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (season_id, project_id, season_number, season_code, f"第 {season_number} 季", season_number, now, now, actor),
+                    )
+                    for episode_number in range(1, episode_count + 1):
+                        global_number = (season_number - 1) * episode_count + episode_number
+                        episode_code = f"EPISODE_{global_number:03d}"
+                        connection.execute(
+                            """INSERT INTO episodes (id, season_id, number, display_order, code, title, narrative_status,
+                            production_status, target_duration_ms, source_range_json, created_at, updated_at, created_by)
+                            VALUES (?, ?, ?, ?, ?, ?, 'OUTLINE', 'NOT_STARTED', ?, '{}', ?, ?, ?)""",
+                            (str(uuid.uuid4()), season_id, episode_number, episode_number, episode_code,
+                             f"第 {episode_number} 集", target_duration_ms, now, now, actor),
+                        )
+                if production_plan is not None:
+                    plan_id, plan_version_id = str(uuid.uuid4()), str(uuid.uuid4())
+                    connection.execute(
+                        "INSERT INTO production_plans (id,code,title,created_at,updated_at,created_by) VALUES (?,?,?,?,?,?)",
+                        (plan_id, production_plan["code"], production_plan["title"], now, now, actor),
+                    )
+                    connection.execute(
+                        """INSERT INTO production_plan_versions (id,production_plan_id,version_no,plan_json,status,
+                        created_at,updated_at,created_by) VALUES (?,?,1,?,'ACTIVE',?,?,?)""",
+                        (plan_version_id, plan_id, _json(production_plan["plan"]), now, now, actor),
+                    )
+                    connection.execute(
+                        "INSERT INTO project_plan_bindings (id,project_id,production_plan_version_id,created_at,updated_at,created_by) VALUES (?,?,?,?,?,?)",
+                        (str(uuid.uuid4()), project_id, plan_version_id, now, now, actor),
+                    )
+                    connection.execute("UPDATE projects SET production_plan_version_id=? WHERE id=?", (plan_version_id, project_id))
+                for binding in profile_bindings:
+                    connection.execute(
+                        """INSERT INTO project_profile_bindings (id,project_id,capability,execution_profile_version_id,status,
+                        created_at,updated_at,created_by) VALUES (?,?,?,?,'ACTIVE',?,?,?)""",
+                        (str(uuid.uuid4()), project_id, binding["capability"], binding["profile_version_id"], now, now, actor),
+                    )
+                if delivery_target is not None:
+                    target_id, target_version_id = str(uuid.uuid4()), str(uuid.uuid4())
+                    target_spec_json = _json(delivery_target["spec"])
+                    connection.execute(
+                        """INSERT INTO delivery_targets (id,project_id,code,title,transport,target_spec_json,status,
+                        created_at,updated_at,created_by) VALUES (?,?,?,?, 'LOCAL_FILESYSTEM',?,'ACTIVE',?,?,?)""",
+                        (target_id, project_id, delivery_target["code"], delivery_target["title"], target_spec_json, now, now, actor),
+                    )
+                    connection.execute(
+                        """INSERT INTO delivery_target_versions (id,delivery_target_id,version_no,target_spec_json,status,
+                        created_at,updated_at,created_by) VALUES (?,?,1,?,'ACTIVE',?,?,?)""",
+                        (target_version_id, target_id, target_spec_json, now, now, actor),
                     )
                 connection.execute(
                     """INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, request_id,
                     summary, metadata_redacted_json) VALUES (?, 'producer', 'PROJECT_CREATED', 'project', ?, ?, ?, ?)""",
-                    (actor, project_id, request_id, f"创建项目 {code}", _json({"episode_count": episode_count})),
+                    (actor, project_id, request_id, f"创建项目 {code}", _json({"season_count": season_count,
+                     "episode_count_per_season": episode_count, "total_episode_count": season_count * episode_count,
+                     "profile_binding_count": len(profile_bindings), "production_plan_bound": production_plan is not None,
+                     "delivery_target_created": delivery_target is not None})),
                 )
                 connection.execute(
                     """INSERT INTO outbox_events (type, project_id, subject_type, subject_id, payload_json)
@@ -130,28 +177,44 @@ class ProjectService:
         fps_den: int | None,
         target_duration_ms: int,
         allow_unconfigured_capabilities: bool,
+        season_count: int = 1,
+        width: int | None = None,
+        height: int | None = None,
+        primary_language: str | None = None,
+        subtitle_mode: str | None = None,
+        subtitle_language: str | None = None,
+        production_plan: dict[str, Any] | None = None,
+        profile_bindings: list[dict[str, str]] | None = None,
+        delivery_target: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Validate a project creation request without creating files or rows."""
         validate_project_code(code)
         validate_project_spec(
             episode_count=episode_count, aspect_ratio=aspect_ratio, fps_num=fps_num,
             fps_den=fps_den, allow_unconfigured=allow_unconfigured_capabilities,
+            season_count=season_count, width=width, height=height, primary_language=primary_language,
+            subtitle_mode=subtitle_mode, subtitle_language=subtitle_language,
         )
         if not title or len(title) > 200:
             raise DomainRuleError("INVALID_PROJECT_TITLE", "项目标题必须是 1—200 个字符")
         if target_duration_ms <= 0:
             raise DomainRuleError("INVALID_TARGET_DURATION", "target_duration_ms 必须大于 0")
+        profile_bindings = profile_bindings or []
+        self._validate_creation_bindings(production_plan, profile_bindings, delivery_target,
+                                         require_complete=False)
         with self.database.connect() as connection:
             code_exists = connection.execute("SELECT 1 FROM projects WHERE code=?", (code,)).fetchone() is not None
         target_root = self.projects_root / code
         disk = shutil.disk_usage(self.projects_root)
-        estimated_bytes = max(1_048_576, episode_count * 65_536)
+        estimated_bytes = max(1_048_576, episode_count * season_count * 65_536)
         checks = [
             {"code": "PROJECT_CODE_AVAILABLE", "passed": not code_exists},
             {"code": "PROJECT_ROOT_AVAILABLE", "passed": not target_root.exists()},
             {"code": "PROJECT_ROOT_SPACE", "passed": disk.free >= estimated_bytes, "free_bytes": disk.free, "required_bytes": estimated_bytes},
         ]
-        configuration_blockers = ["PROFILE_NOT_BOUND", "PRODUCTION_PLAN_NOT_BOUND", "DELIVERY_TARGET_NOT_BOUND"]
+        configuration_blockers = ([] if profile_bindings else ["PROFILE_NOT_BOUND"]) + (
+            [] if production_plan is not None else ["PRODUCTION_PLAN_NOT_BOUND"]
+        ) + ([] if delivery_target is not None else ["DELIVERY_TARGET_NOT_BOUND"])
         hard_blockers = [str(check["code"]) for check in checks if not check["passed"]]
         if configuration_blockers and not allow_unconfigured_capabilities:
             hard_blockers.extend(configuration_blockers)
@@ -163,11 +226,50 @@ class ProjectService:
             "accepted_unconfigured": allow_unconfigured_capabilities,
             "target_root_rel": code,
             "estimated_bytes": estimated_bytes,
+            "structure": {"season_count": season_count, "episode_count_per_season": episode_count,
+                          "total_episode_count": season_count * episode_count},
+            "presentation": {"aspect_ratio": aspect_ratio, "width": width, "height": height,
+                             "fps": {"numerator": fps_num, "denominator": fps_den}, "primary_language": primary_language,
+                             "subtitle_mode": subtitle_mode, "subtitle_language": subtitle_language},
             "would_create_project": True,
             "mutated": False,
             "runtime_contacted": False,
             "network_contacted": False,
         }
+
+    def _validate_creation_bindings(
+        self,
+        production_plan: dict[str, Any] | None,
+        profile_bindings: list[dict[str, str]],
+        delivery_target: dict[str, Any] | None,
+        *,
+        require_complete: bool,
+    ) -> None:
+        if require_complete and (production_plan is None or not profile_bindings or delivery_target is None):
+            raise DomainRuleError("PROJECT_CONFIGURATION_REQUIRED", "必须显式配置 ProductionPlan、至少一个 Published Profile 和交付目标")
+        capabilities = [item.get("capability", "") for item in profile_bindings]
+        if len(capabilities) != len(set(capabilities)):
+            raise DomainRuleError("DUPLICATE_PROFILE_CAPABILITY", "同一 capability 只能绑定一个 Profile")
+        if delivery_target is not None:
+            path_rel = str(delivery_target.get("spec", {}).get("path_rel", ""))
+            path = PurePosixPath(path_rel)
+            if not path_rel or path.is_absolute() or ".." in path.parts:
+                raise DomainRuleError("INVALID_DELIVERY_TARGET", "交付目标必须是项目内相对路径")
+        with self.database.connect() as connection:
+            if production_plan is not None and connection.execute(
+                "SELECT 1 FROM production_plans WHERE code=?", (production_plan.get("code"),)
+            ).fetchone():
+                raise DomainRuleError("PRODUCTION_PLAN_CODE_EXISTS", "ProductionPlan code 已存在")
+            for binding in profile_bindings:
+                profile = connection.execute(
+                    "SELECT capability,status FROM execution_profile_versions WHERE id=?", (binding.get("profile_version_id"),)
+                ).fetchone()
+                if profile is None:
+                    raise DomainRuleError("PROFILE_NOT_FOUND", "Profile 版本不存在")
+                if profile["status"] != "PUBLISHED":
+                    raise DomainRuleError("PROFILE_NOT_PUBLISHED", "创建项目只能绑定 Published Profile")
+                if str(profile["capability"]) != binding.get("capability"):
+                    raise DomainRuleError("PROFILE_CAPABILITY_MISMATCH", "Profile capability 与绑定键不一致")
 
     def get_project(self, project_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
@@ -212,8 +314,13 @@ class ProjectService:
         project_id = str(uuid.uuid4())
         final_root: Path | None = None
         try:
+            season_episode_counts: dict[str, int] = {}
+            for episode in episodes:
+                season_key = str(episode["source_season_id"])
+                season_episode_counts[season_key] = season_episode_counts.get(season_key, 0) + 1
             try:
-                final_root, _ = build_project_tree(self.projects_root, project_id, code, title, len(episodes))
+                final_root, _ = build_project_tree(self.projects_root, project_id, code, title,
+                                                   max(season_episode_counts.values()), season_count=len(season_episode_counts))
             except FileExistsError as error:
                 raise DomainRuleError("PROJECT_ROOT_EXISTS", "目标项目目录已存在，未写入或删除该目录", {"code": code}) from error
             now = _utc_now()
@@ -223,9 +330,11 @@ class ProjectService:
                     raise DomainRuleError("PROJECT_CODE_EXISTS", "项目 code 已存在", {"code": code})
                 connection.execute(
                     """INSERT INTO projects (id, code, title, status, template_version, root_rel, aspect_ratio, fps_num,
-                    fps_den, timezone, created_at, updated_at, created_by) VALUES (?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    fps_den,timezone,width,height,primary_language,subtitle_mode,subtitle_language,created_at,updated_at,created_by)
+                    VALUES (?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (project_id, code, title, TEMPLATE_VERSION, code, source["aspect_ratio"], source["fps_num"],
-                     source["fps_den"], source["timezone"], now, now, actor),
+                     source["fps_den"], source["timezone"], source["width"], source["height"], source["primary_language"],
+                     source["subtitle_mode"], source["subtitle_language"], now, now, actor),
                 )
                 season_map: dict[str, str] = {}
                 episode_map: dict[str, str] = {}

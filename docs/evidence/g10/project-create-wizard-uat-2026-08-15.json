@@ -1,10 +1,21 @@
 {
   "schema_version": "localdrama.project-create-wizard-uat.v1",
-  "observed_at": "2026-08-14T22:20:21.311Z",
+  "observed_at": "2026-08-14T23:38:10.850Z",
   "status": "PASS",
   "mode": "PRODUCTION_PLAN_ONLY",
   "database_mutated": false,
   "screenshots_captured": false,
+  "isolated_configured_creation": {
+    "test_file": "apps/api/tests/test_project_creation_plan.py",
+    "configured_creation": "PASS",
+    "season_count": 2,
+    "episode_count_per_season": 3,
+    "production_plan_bound": true,
+    "published_profile_bound": true,
+    "local_delivery_target_created": true,
+    "resulting_blockers": [],
+    "rollback_before_directory_on_invalid_profile": "PASS"
+  },
   "results": [
     {
       "viewport": {
