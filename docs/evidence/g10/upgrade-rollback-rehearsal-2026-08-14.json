@@ -1,0 +1,39 @@
+{
+  "schema_version": "g10.upgrade_rollback_rehearsal.v1",
+  "observed_at": "2026-08-14T14:44:00Z",
+  "status": "PASS",
+  "scope": "isolated copy of the latest production backup; production database and runtime were not touched",
+  "source_backup": {
+    "path": "backups/pre_migration_20260813T183851Z.sqlite3",
+    "bytes": 1490944,
+    "sha256": "5730f2b1b18aa73aad27f6689a1dd082cd140e14a653072fcf4ae767ca67ac2a",
+    "migration": "0019_g7_model_compatibility_reports",
+    "integrity": "ok"
+  },
+  "upgrade_copy": {
+    "operation": "alembic upgrade head",
+    "from_migration": "0019_g7_model_compatibility_reports",
+    "to_migration": "0020_g7_model_license_evidence",
+    "bytes": 1507328,
+    "sha256": "f5d925b75b35dd18fa1eb5c65aa7c6340e3cfc9f94095f8949d231b9af850b9d",
+    "integrity": "ok"
+  },
+  "restore_copy": {
+    "operation": "restore source backup to a separate copy",
+    "migration": "0019_g7_model_compatibility_reports",
+    "bytes": 1490944,
+    "sha256": "5730f2b1b18aa73aad27f6689a1dd082cd140e14a653072fcf4ae767ca67ac2a",
+    "integrity": "ok",
+    "matches_source_sha256": true
+  },
+  "safety": {
+    "production_database_mutated": false,
+    "api_contacted": false,
+    "comfyui_contacted": false,
+    "network_contacted": false,
+    "jobs_created": false,
+    "temporary_directory_removed_after_capture": false,
+    "temporary_directory_retained": "temp/release-rehearsal-20260814_224333"
+  },
+  "interpretation": "The isolated upgrade and restore path is verified. This does not make G10 FINAL: G7 license evidence, G8 production evidence, G9 performance/accessibility UAT, final SBOM, and go/no-go remain incomplete."
+}

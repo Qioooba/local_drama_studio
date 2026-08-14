@@ -31,4 +31,16 @@ release_status: DRAFT
 - 升级后完整 001x→head 恢复矩阵。
 - 回滚后完整本地 UAT、SBOM 和 go/no-go 签字。
 
+## 已完成的隔离演练（2026-08-14）
+
+已将 `backups/pre_migration_20260813T183851Z.sqlite3` 复制到受控临时目录，执行
+`0019_g7_model_compatibility_reports → 0020_g7_model_license_evidence` 的 Alembic
+升级，并对另一份独立副本执行恢复校验。升级副本与恢复副本均通过
+`PRAGMA integrity_check`；恢复副本 SHA-256 与源备份一致。正式生产库、API、ComfyUI、
+网络和任务队列均未接触，证据见
+`docs/evidence/g10/upgrade-rollback-rehearsal-2026-08-14.json`。
+
+该演练只证明受控副本上的升级/恢复路径，不等同于全新机器安装、完整迁移矩阵、
+回滚后本地 UAT 或最终发布签署；因此本文件仍保持 `DRAFT`。
+
 在上述演练完成并留存证据前，不得把本文件的草稿状态改为 `FINAL`。

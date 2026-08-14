@@ -51,6 +51,27 @@ def _is_final(path: Path) -> bool:
     return "release_status: FINAL" in text
 
 
+def _rehearsal_passed(path: Path) -> bool:
+    """Return true only for a captured, isolated upgrade/restore rehearsal."""
+    if not path.is_file():
+        return False
+    try:
+        evidence = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return False
+    source = evidence.get("source_backup", {})
+    restore = evidence.get("restore_copy", {})
+    safety = evidence.get("safety", {})
+    return (
+        evidence.get("status") == "PASS"
+        and source.get("integrity") == "ok"
+        and restore.get("integrity") == "ok"
+        and restore.get("matches_source_sha256") is True
+        and safety.get("production_database_mutated") is False
+        and safety.get("network_contacted") is False
+    )
+
+
 def audit() -> dict[str, Any]:
     database = Database(DB_PATH)
     with database.connect() as connection:
@@ -73,6 +94,7 @@ def audit() -> dict[str, Any]:
         "sbom": (ROOT / "docs" / "release" / "sbom.json", True),
         "go_no_go": (ROOT / "docs" / "release" / "go-no-go.md", True),
     }
+    rehearsal_path = ROOT / "docs" / "evidence" / "g10" / "upgrade-rollback-rehearsal-2026-08-14.json"
     artifact_state = {
         name: {"exists": path.is_file(), "final": _is_final(path) if requires_final else path.is_file(), "path": path.relative_to(ROOT).as_posix()}
         for name, (path, requires_final) in required_artifacts.items()
@@ -85,6 +107,7 @@ def audit() -> dict[str, Any]:
         {"code": "ORDERED_G7", "passed": g7["status"] == "PASS", "observed": g7["status"], "next_required_action": g7["next_required_action"]},
         {"code": "ORDERED_G8", "passed": g8["status"] == "PASS", "observed": g8["status"], "next_required_action": g8["next_required_action"]},
         {"code": "ORDERED_G9", "passed": g9["status"] == "PASS", "observed": g9["status"], "next_required_action": g9["next_required_action"]},
+        {"code": "UPGRADE_ROLLBACK_REHEARSAL", "passed": _rehearsal_passed(rehearsal_path), "evidence": rehearsal_path.relative_to(ROOT).as_posix()},
         {"code": "RELEASE_ARTIFACTS", "passed": release_artifacts_ready, "artifacts": artifact_state},
     ]
     return {

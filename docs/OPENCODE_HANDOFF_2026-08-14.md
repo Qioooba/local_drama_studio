@@ -141,3 +141,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start.ps1 -Port 3210
 ## 10. 完成口径
 
 持续开发一整夜不等于可以降低证据标准。遇到失败应保留失败历史、修复并回归；不得删除审计、伪造 PASS、用 Mock 替代真实能力，或因为时间耗尽把 G7/G8/G9/G10 标成完成。
+
+## 11. 2026-08-14 继续交接状态
+
+- G10 已完成一次受控隔离升级/恢复演练：从 `0019_g7_model_compatibility_reports` 升级到 `0020_g7_model_license_evidence` 的副本通过完整性检查；独立恢复副本回到 0019，SHA-256 与源备份一致。
+- 证据：`docs/evidence/g10/upgrade-rollback-rehearsal-2026-08-14.json`；只读发布审计新增 `UPGRADE_ROLLBACK_REHEARSAL=PASS`。
+- 生产库、API、ComfyUI、网络和任务队列均未接触；隔离副本暂留在 `temp/release-rehearsal-20260814_224333` 供审计复核。
+- 当前仍真实为：G7 `IN_PROGRESS`（下一硬阻塞 `MODEL_LICENSE_HASH_QUANTIZATION_REPORT`），G8 `IN_PROGRESS`（`THREE_REAL_SHOTS`），G9 `IN_PROGRESS`（`VISIBLE_NODE_PERFORMANCE_UAT`），G10 `IN_PROGRESS`。不得越级或把草稿发布物改为 FINAL。
