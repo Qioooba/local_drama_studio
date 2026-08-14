@@ -2,9 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   bindEpisodeAudio,
   buildDeliveryPackage,
+  createPostProcessRecipe,
+  createShotTransitionConstraint,
   createSubtitleRevision,
   createTimelineRevision,
+  getFrameAnchor,
+  getPostProcessRecipe,
   renderEpisode,
+  runEnhancement,
   verifyDeliveryPackage,
   withdrawDeliveryPackage,
 } from "./api";
@@ -50,6 +55,25 @@ describe("generated G8 timeline client", () => {
       "/api/v1/delivery-packages",
       "/api/v1/delivery-packages/package%2F1:verify",
       "/api/v1/delivery-packages/package%2F1:withdraw",
+    ]);
+  });
+
+  it("covers frame anchors, transition constraints, recipes, and enhancement runs", async () => {
+    await getFrameAnchor("anchor/1");
+    await createShotTransitionConstraint({
+      from_shot_id: "shot-1",
+      to_shot_id: "shot-2",
+      constraint_type: "POSE_CONTINUITY",
+    });
+    await createPostProcessRecipe({ code: "denoise", title: "Denoise", steps: [{ op: "denoise" }] });
+    await getPostProcessRecipe("recipe/1");
+    await runEnhancement({ input_media_version_id: "media/1", recipe_id: "recipe/1" });
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      "/api/v1/frame-anchors/anchor%2F1",
+      "/api/v1/shot-transitions",
+      "/api/v1/post-process-recipes",
+      "/api/v1/post-process-recipes/recipe%2F1",
+      "/api/v1/enhancement-runs",
     ]);
   });
 });
