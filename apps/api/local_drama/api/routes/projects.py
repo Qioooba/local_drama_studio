@@ -54,6 +54,23 @@ async def create_project(
         raise api_error_from_domain(error) from error
 
 
+@router.post(":plan", operation_id="planProjectCreation")
+async def plan_project_creation(payload: ProjectCreateRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"plan": service(request).plan_project_creation(
+            code=payload.code,
+            title=payload.title,
+            episode_count=payload.episode_count,
+            aspect_ratio=payload.aspect_ratio,
+            fps_num=payload.fps.numerator if payload.fps else None,
+            fps_den=payload.fps.denominator if payload.fps else None,
+            target_duration_ms=payload.target_duration_ms,
+            allow_unconfigured_capabilities=payload.allow_unconfigured_capabilities,
+        )}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.get("/{project_id}", operation_id="getProject")
 async def get_project(project_id: str, request: Request) -> dict[str, object]:
     try:

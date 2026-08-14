@@ -119,6 +119,56 @@ class ProjectService:
             raise
         return self.get_project(project_id)
 
+    def plan_project_creation(
+        self,
+        *,
+        code: str,
+        title: str,
+        episode_count: int,
+        aspect_ratio: str | None,
+        fps_num: int | None,
+        fps_den: int | None,
+        target_duration_ms: int,
+        allow_unconfigured_capabilities: bool,
+    ) -> dict[str, Any]:
+        """Validate a project creation request without creating files or rows."""
+        validate_project_code(code)
+        validate_project_spec(
+            episode_count=episode_count, aspect_ratio=aspect_ratio, fps_num=fps_num,
+            fps_den=fps_den, allow_unconfigured=allow_unconfigured_capabilities,
+        )
+        if not title or len(title) > 200:
+            raise DomainRuleError("INVALID_PROJECT_TITLE", "项目标题必须是 1—200 个字符")
+        if target_duration_ms <= 0:
+            raise DomainRuleError("INVALID_TARGET_DURATION", "target_duration_ms 必须大于 0")
+        with self.database.connect() as connection:
+            code_exists = connection.execute("SELECT 1 FROM projects WHERE code=?", (code,)).fetchone() is not None
+        target_root = self.projects_root / code
+        disk = shutil.disk_usage(self.projects_root)
+        estimated_bytes = max(1_048_576, episode_count * 65_536)
+        checks = [
+            {"code": "PROJECT_CODE_AVAILABLE", "passed": not code_exists},
+            {"code": "PROJECT_ROOT_AVAILABLE", "passed": not target_root.exists()},
+            {"code": "PROJECT_ROOT_SPACE", "passed": disk.free >= estimated_bytes, "free_bytes": disk.free, "required_bytes": estimated_bytes},
+        ]
+        configuration_blockers = ["PROFILE_NOT_BOUND", "PRODUCTION_PLAN_NOT_BOUND", "DELIVERY_TARGET_NOT_BOUND"]
+        hard_blockers = [str(check["code"]) for check in checks if not check["passed"]]
+        if configuration_blockers and not allow_unconfigured_capabilities:
+            hard_blockers.extend(configuration_blockers)
+        return {
+            "status": "READY_WITH_CONFIGURATION_BLOCKERS" if not hard_blockers and configuration_blockers else ("READY" if not hard_blockers else "BLOCKED"),
+            "checks": checks,
+            "blockers": hard_blockers,
+            "configuration_blockers": configuration_blockers,
+            "accepted_unconfigured": allow_unconfigured_capabilities,
+            "target_root_rel": code,
+            "estimated_bytes": estimated_bytes,
+            "would_create_project": True,
+            "mutated": False,
+            "runtime_contacted": False,
+            "network_contacted": False,
+        }
+
     def get_project(self, project_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
             row = connection.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()

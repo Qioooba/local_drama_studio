@@ -1,0 +1,73 @@
+{
+  "schema_version": "localdrama.project-create-wizard-uat.v1",
+  "observed_at": "2026-08-14T22:20:21.311Z",
+  "status": "PASS",
+  "mode": "PRODUCTION_PLAN_ONLY",
+  "database_mutated": false,
+  "screenshots_captured": false,
+  "results": [
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "initiallyBlank": true,
+      "preflightDisabledBeforeAcceptance": true,
+      "plannedStatus": "READY_WITH_CONFIGURATION_BLOCKERS",
+      "finalCreateClicked": false,
+      "geometry": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "horizontalOverflow": false
+      },
+      "minControlHeight": 40,
+      "consoleProblems": [],
+      "pageErrors": [],
+      "failedResponses": [],
+      "publicRequests": [],
+      "originalMediaRequests": []
+    },
+    {
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "initiallyBlank": true,
+      "preflightDisabledBeforeAcceptance": true,
+      "plannedStatus": "READY_WITH_CONFIGURATION_BLOCKERS",
+      "finalCreateClicked": false,
+      "geometry": {
+        "scrollWidth": 1280,
+        "clientWidth": 1280,
+        "horizontalOverflow": false
+      },
+      "minControlHeight": 40,
+      "consoleProblems": [],
+      "pageErrors": [],
+      "failedResponses": [],
+      "publicRequests": [],
+      "originalMediaRequests": []
+    },
+    {
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "initiallyBlank": true,
+      "preflightDisabledBeforeAcceptance": true,
+      "plannedStatus": "READY_WITH_CONFIGURATION_BLOCKERS",
+      "finalCreateClicked": false,
+      "geometry": {
+        "scrollWidth": 1024,
+        "clientWidth": 1024,
+        "horizontalOverflow": false
+      },
+      "minControlHeight": 40,
+      "consoleProblems": [],
+      "pageErrors": [],
+      "failedResponses": [],
+      "publicRequests": [],
+      "originalMediaRequests": []
+    }
+  ]
+}

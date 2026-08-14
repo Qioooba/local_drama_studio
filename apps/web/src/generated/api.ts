@@ -3,6 +3,8 @@ export type HealthCheck = { status: string; checks: Record<string, string> };
 export type LocalSession = { token: string; mode: 'LOCAL_ONLY' };
 export type SystemContract = Record<string, string>;
 export type Project = { id: string; code: string; title: string; status: string; revision: number; [key: string]: unknown };
+export type ProjectCreatePayload = { code: string; title: string; episode_count: number; target_duration_ms: number; aspect_ratio: string; fps: { numerator: number; denominator: number }; allow_unconfigured_capabilities: boolean };
+export type ProjectCreationPlan = { status: 'READY' | 'READY_WITH_CONFIGURATION_BLOCKERS' | 'BLOCKED'; checks: Array<{ code: string; passed: boolean; free_bytes?: number; required_bytes?: number }>; blockers: string[]; configuration_blockers: string[]; accepted_unconfigured: boolean; target_root_rel: string; estimated_bytes: number; would_create_project: true; mutated: false; runtime_contacted: false; network_contacted: false };
 export type Profile = { id: string; code: string; title: string; version_id: string; capability: string; status: string; [key: string]: unknown };
 export type ProfileContract = { input_contract: Record<string, unknown>; parameter_schema: Record<string, unknown>; output_contract: Record<string, unknown>; resource_policy: Record<string, unknown> };
 export type ProfileValidation = { id: string; profile_version_id?: string; contract_hash: string; status: 'PASS' | 'FAIL'; checks: Array<{ code: string; passed: boolean; label?: string }>; runtime_contacted?: false; network_contacted?: false };
@@ -136,6 +138,14 @@ export async function listProjects(filters: { search?: string; status?: string }
   if (filters.status) query.set('status', filters.status);
   const suffix = query.size ? `?${query.toString()}` : '';
   return requestJson<{ items: Project[] }>(`/api/v1/projects${suffix}`, undefined, baseUrl);
+}
+
+export async function planProjectCreation(payload: ProjectCreatePayload, baseUrl = ''): Promise<{ plan: ProjectCreationPlan }> {
+  return requestJson('/api/v1/projects:plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function createProject(payload: ProjectCreatePayload, baseUrl = ''): Promise<{ project: Project; blockers: string[] }> {
+  return requestJson('/api/v1/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
 export async function copyProjectTemplate(projectId: string, payload: { code: string; title: string }, baseUrl = ''): Promise<{ project: Project; copy_report: { source_project_id: string; copied: Record<string, number>; excluded: string[] } }> {

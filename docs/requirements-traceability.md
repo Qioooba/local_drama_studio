@@ -43,7 +43,7 @@
 |---|---|---|
 | FR-PRV-001/003 本地 Runtime、模型 artifact、manifest-backed Profile 候选 | VERIFIED | `application/profiles.py`、`test_g3_configuration_media.py`、G3 screenshots |
 | FR-PRJ-007 项目健康/路径与本地资源诊断基础 | VERIFIED | `application/diagnostics.py`、`/diagnostics/runs` |
-| FR-PRJ-001 从版本化模板创建项目 | PARTIAL / BLOCKER TRUTH VERIFIED | 既有 `ProjectService.create_project` 使用 partial 目录原子发布，模拟失败无目录/DB 半成品；`POST /projects` 现始终从真实配置绑定投影 Profile/ProductionPlan/DeliveryTarget blockers，未知项目 fail closed。完整创建向导与创建时原子绑定仍未完成，不得标 VERIFIED |
+| FR-PRJ-001 从版本化模板创建项目 | PARTIAL / PLAN + BLOCKER TRUTH VERIFIED | 既有 `ProjectService.create_project` 使用 partial 目录原子发布，模拟失败无目录/DB 半成品；新增 `POST /projects:plan` 真实检查 code/目录/磁盘且零写入。四步 UI 无默认规格，支持显式“稍后配置并接受阻塞”路线，三视口 UAT 只计划不创建。季数、制作分辨率、语言/字幕及创建时直接绑定路线仍未完成，不得标 VERIFIED；证据 `docs/evidence/g10/project-create-wizard-uat-2026-08-15.json` |
 | FR-PRJ-003 项目列表搜索、状态筛选与安全归档 | VERIFIED PRODUCTION UAT | `ProjectService.list_projects` 支持标题/code 子串和 DRAFT/ACTIVE/PAUSED/ARCHIVED 筛选，转义 SQL wildcard 并拒绝非法状态；UI 真实转发筛选。既有归档为审计状态转换、不删目录、活动 Job 硬阻塞。API 2 项、Web 1 项与 1024×768 只读生产 UAT 通过，见 `docs/evidence/g10/project-list-filter-uat-2026-08-15.json` |
 | FR-PRJ-006 项目复制为新剧模板 | VERIFIED PRODUCTION READ-ONLY UI UAT | `ProjectService.copy_as_template` 与 `POST /projects/{id}:copy-template`；新 UUID/DRAFT，只复制结构、解冻的当前镜头字段、ProductionPlan、本地交付目标与 Published ACTIVE Profile。媒体/授权资产/BrandKit/Job/审核/交付/审计历史明确排除；文件树+数据库失败双回滚、重码/孤立目录不覆盖。API 3 项、Web 1 项与三视口只读表单 UAT 通过，见 `docs/evidence/g10/project-template-copy-uat-2026-08-15.json` |
 | FR-IMG-001/FR-MED media register、probe、hash、poster/cache、Range | VERIFIED | `application/media.py`、G3 evidence sample |
@@ -203,6 +203,8 @@ FR-TML-004 完成后的最新全量门禁回归：API 132 passed / 4 Comfy live 
 FR-PRJ-003 补齐后的最新全量门禁回归：API 134 passed / 4 Comfy live deselected，Ruff PASS，mypy 92 files PASS，Web 26/26 与 production build PASS；门禁脚本以真实 0 退出。G7 许可证证据阻塞和有序退出状态不变。
 
 FR-PRJ-006 补齐后的最新全量门禁回归：API 137 passed / 4 Comfy live deselected，Ruff PASS，mypy 92 files PASS，Web 27/27 与 production build PASS；蓝图计数仍精确为 86 FR / 14 NFR / 85 TC，门禁脚本真实退出 0。生产三视口仅展开复制策略表单，未确认复制、未修改数据库。G7 许可证证据阻塞和有序退出状态不变。
+
+FR-PRJ-001 创建计划/向导批次后的最新全量回归：API 139 passed / 4 Comfy live deselected，Ruff PASS，mypy 92 files PASS，Web 28/28 与 production build PASS；三档生产 UAT 只执行只读 plan、未点击最终创建。FR-PRJ-001 仍 PARTIAL，G7 许可证证据阻塞与有序退出状态不变。
 
 ## 更新规则
 
