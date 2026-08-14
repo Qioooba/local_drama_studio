@@ -68,13 +68,14 @@ The original findings above are retained as the historical baseline. Current sta
 - Resolved: project/episode selection is visible and canonicalized into the URL; it is no longer a silent in-memory default.
 - Resolved: fixed thumbnail dimensions and bounded canvas/review projections prevent layout shifts on the production routes covered here.
 - Resolved: favicon requests no longer produce browser errors.
-- Partially resolved refactor: review inbox, jobs/capacity and shared progressive-list logic now live under `features/`; `App.tsx` still owns profiles, canvas, production and gate projections. Remaining work is maintainability debt, not an observed P0 workflow failure.
+- Partially resolved refactor: review inbox, jobs/capacity, Profile contract editing, production DAG and shared progressive-list logic now live under `features/`; `App.tsx` is reduced to 392 lines and still owns production summaries and gate projections. Remaining work is maintainability debt, not an observed P0 workflow failure.
 - Open refinement: replace remaining structural arrow/lettermark glyphs with the approved local SVG icon set.
 - Partially resolved scale refinement: review and job panels render an initial 50-row window, preserve deep-linked selections outside that window, add explicit 50-row expansion and let the browser skip off-screen row layout/paint. Episode pagination remains a later refinement; unrestricted large-list UX is not claimed.
 
 ### Verification evidence
 
 - `tests/e2e/g10_typography_accessibility.spec.ts` exercises 1440×900 generation, 1280×800 review and 1024×768 canvas using real production state.
+- After the Profile/canvas feature split, the complete 18-test Web suite, production build and all nine 1440×900 / 1280×800 / 1024×768 typography, accessibility and canvas browser checks passed again on 2026-08-15.
 - `docs/evidence/g10/typography-accessibility-uat-2026-08-15.json` records the computed typography/control floor, overflow, browser errors, failed responses and original-media request audit.
 - Web unit suite: 17/17, including structured request-ID propagation and regional retry recovery.
 - Production build and the combined G9/G10 three-viewport Playwright suite pass. No original-resolution image was loaded or captured for this re-audit.

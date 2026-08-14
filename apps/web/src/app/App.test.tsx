@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { App, focusCanvasNodeIds } from "./App";
+import { App } from "./App";
+import { focusCanvasNodeIds } from "../features/canvas/ProductionCanvasPanel";
 import { listProjects } from "../generated/api";
 import { progressiveSlice } from "../features/shared/progressive";
 
