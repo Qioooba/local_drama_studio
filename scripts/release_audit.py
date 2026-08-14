@@ -72,6 +72,28 @@ def _rehearsal_passed(path: Path) -> bool:
     )
 
 
+def _sbom_inventory(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {"valid": False, "package_count": 0}
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {"valid": False, "package_count": 0}
+    packages = document.get("packages")
+    package_count = document.get("package_count")
+    valid = (
+        document.get("bomFormat") == "SPDX"
+        and document.get("specVersion") == "2.3"
+        and document.get("release_status") == "DRAFT"
+        and isinstance(packages, list)
+        and isinstance(package_count, int)
+        and package_count == len(packages)
+        and isinstance(document.get("lockfile_sha256"), str)
+        and len(document["lockfile_sha256"]) == 64
+    )
+    return {"valid": valid, "package_count": package_count if isinstance(package_count, int) else 0}
+
+
 def audit() -> dict[str, Any]:
     database = Database(DB_PATH)
     with database.connect() as connection:
@@ -95,6 +117,8 @@ def audit() -> dict[str, Any]:
         "go_no_go": (ROOT / "docs" / "release" / "go-no-go.md", True),
     }
     rehearsal_path = ROOT / "docs" / "evidence" / "g10" / "upgrade-rollback-rehearsal-2026-08-14.json"
+    sbom_path = ROOT / "docs" / "release" / "sbom.json"
+    sbom_inventory = _sbom_inventory(sbom_path)
     artifact_state = {
         name: {"exists": path.is_file(), "final": _is_final(path) if requires_final else path.is_file(), "path": path.relative_to(ROOT).as_posix()}
         for name, (path, requires_final) in required_artifacts.items()
@@ -108,6 +132,7 @@ def audit() -> dict[str, Any]:
         {"code": "ORDERED_G8", "passed": g8["status"] == "PASS", "observed": g8["status"], "next_required_action": g8["next_required_action"]},
         {"code": "ORDERED_G9", "passed": g9["status"] == "PASS", "observed": g9["status"], "next_required_action": g9["next_required_action"]},
         {"code": "UPGRADE_ROLLBACK_REHEARSAL", "passed": _rehearsal_passed(rehearsal_path), "evidence": rehearsal_path.relative_to(ROOT).as_posix()},
+        {"code": "SBOM_INVENTORY", "passed": sbom_inventory["valid"], "package_count": sbom_inventory["package_count"], "evidence": sbom_path.relative_to(ROOT).as_posix()},
         {"code": "RELEASE_ARTIFACTS", "passed": release_artifacts_ready, "artifacts": artifact_state},
     ]
     return {

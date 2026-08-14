@@ -1,6 +1,6 @@
 {
   "schema_version": "g10.release_audit.read_only.v1",
-  "observed_at": "2026-08-14T14:52:48.604744+00:00",
+  "observed_at": "2026-08-14T15:11:50.104283+00:00",
   "status": "IN_PROGRESS",
   "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
   "checks": [
@@ -41,6 +41,12 @@
       "code": "UPGRADE_ROLLBACK_REHEARSAL",
       "passed": true,
       "evidence": "docs/evidence/g10/upgrade-rollback-rehearsal-2026-08-14.json"
+    },
+    {
+      "code": "SBOM_INVENTORY",
+      "passed": true,
+      "package_count": 317,
+      "evidence": "docs/release/sbom.json"
     },
     {
       "code": "RELEASE_ARTIFACTS",

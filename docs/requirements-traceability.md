@@ -176,7 +176,7 @@ G7 已可按蓝图 09 顺序开始，但当前不是 PASS；G8/G9 仍只记 prog
 
 G7 当前 `IN_PROGRESS`，首阻塞 `MODEL_LICENSE_HASH_QUANTIZATION_REPORT`，禁止进入 G8 退出验收或宣告 G7 PASS。
 
-G10 发布准备已有只读 `scripts/release_audit.py`：当前数据库与最近五份迁移前备份 `integrity=ok`、migration head=`0020_g7_model_license_evidence`；G7/G8/G9 顺序门禁仍 `IN_PROGRESS`，安装升级回滚、最终 SBOM 和 go/no-go 工件均保持 DRAFT/NO-GO，不能宣告发布完成。
+G10 发布准备已有只读 `scripts/release_audit.py`：当前数据库与最近五份迁移前备份 `integrity=ok`、migration head=`0020_g7_model_license_evidence`；隔离升级/恢复演练与 `SBOM_INVENTORY` 已通过，SBOM 盘点包含 317 个锁定包条目，但 304 项许可证仍为 `NOASSERTION`。G7/G8/G9 顺序门禁仍 `IN_PROGRESS`，安装升级回滚、最终 SBOM 和 go/no-go 工件均保持 DRAFT/NO-GO，不能宣告发布完成。
 
 ## 更新规则
 

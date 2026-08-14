@@ -43,4 +43,11 @@ release_status: DRAFT
 该演练只证明受控副本上的升级/恢复路径，不等同于全新机器安装、完整迁移矩阵、
 回滚后本地 UAT 或最终发布签署；因此本文件仍保持 `DRAFT`。
 
+## 离线 SBOM 盘点（2026-08-14）
+
+`scripts/generate_sbom.py` 已在无网络条件下读取两个锁文件和本地包元数据，生成
+`docs/release/sbom.json`，共 317 个锁定包条目并保留 lockfile SHA-256。当前 304 个
+条目没有可由本地元数据确认的许可证，使用 SPDX `NOASSERTION`；因此 SBOM 和本文件
+仍保持 `DRAFT`，不能替代最终许可证、来源和运行镜像复核。
+
 在上述演练完成并留存证据前，不得把本文件的草稿状态改为 `FINAL`。
