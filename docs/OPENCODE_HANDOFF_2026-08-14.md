@@ -150,4 +150,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start.ps1 -Port 3210
 - 当前仍真实为：G7 `IN_PROGRESS`（下一硬阻塞 `MODEL_LICENSE_HASH_QUANTIZATION_REPORT`），G8 `IN_PROGRESS`（`THREE_REAL_SHOTS`），G9 `IN_PROGRESS`（`VISIBLE_NODE_PERFORMANCE_UAT`），G10 `IN_PROGRESS`。不得越级或把草稿发布物改为 FINAL。
 - 对 `MiniMax-H3-video_vae.safetensors` 仅读取了 64,032-byte safetensors header；`__metadata__` 为空，模型目录仍无 LICENSE/NOTICE/EULA/README。没有新的操作者许可证记录，因此 G7 许可证门禁继续保持 FAIL。
 - 本轮最终回归：API `120 passed, 4 deselected`、Web `11 passed`、production build、Ruff、mypy 全部通过；项目页、业务画布、模型与能力页在 1440×900 / 1280×800 / 1024×768 均无水平溢出、Application error 或 console error/warning。ComfyUI 当前仅回环监听，连接审计未见公网对端，未提交生成任务。
-- G10 继续推进：离线 SBOM 生成器 `scripts/generate_sbom.py` 已从两个锁文件和本地元数据生成 317 个包条目；只读审计新增 `SBOM_INVENTORY=PASS`，但因 304 项许可证为 `NOASSERTION` 及前置 G7/G8/G9 未完成，发布工件仍保持 DRAFT/NO-GO。
+- G10 继续推进：离线 SBOM 生成器 `scripts/generate_sbom.py` 已从两个锁文件和本地元数据生成 317 个包条目；只读审计新增 `SBOM_INVENTORY=PASS`，但因 98 项许可证为 `NOASSERTION` 及前置 G7/G8/G9 未完成，发布工件仍保持 DRAFT/NO-GO。

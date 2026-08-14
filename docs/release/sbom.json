@@ -7,7 +7,7 @@
   "SPDXID": "SPDXRef-DOCUMENT",
   "documentNamespace": "https://localdramastudio.local/spdx/5332196750bb20718bd1db82e21bd61f386bb59e0de9b811b2b32ca007436cf4",
   "creationInfo": {
-    "created": "2026-08-14T15:09:39.939085+00:00",
+    "created": "2026-08-14T15:17:55.272385+00:00",
     "creators": [
       "Tool: LocalDramaStudio offline SBOM generator"
     ]
@@ -634,8 +634,8 @@
       "name": "@adobe/css-tools",
       "versionInfo": "4.5.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -656,8 +656,8 @@
       "name": "@asamuzakjp/css-color",
       "versionInfo": "3.2.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -678,8 +678,8 @@
       "name": "@babel/code-frame",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -700,8 +700,8 @@
       "name": "@babel/compat-data",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -722,8 +722,8 @@
       "name": "@babel/core",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -744,8 +744,8 @@
       "name": "@babel/generator",
       "versionInfo": "7.29.8",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -766,8 +766,8 @@
       "name": "@babel/helper-compilation-targets",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -788,8 +788,8 @@
       "name": "@babel/helper-globals",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -810,8 +810,8 @@
       "name": "@babel/helper-module-imports",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -832,8 +832,8 @@
       "name": "@babel/helper-module-transforms",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -854,8 +854,8 @@
       "name": "@babel/helper-plugin-utils",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -876,8 +876,8 @@
       "name": "@babel/helper-string-parser",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -898,8 +898,8 @@
       "name": "@babel/helper-validator-identifier",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -920,8 +920,8 @@
       "name": "@babel/helper-validator-option",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -942,8 +942,8 @@
       "name": "@babel/helpers",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -964,8 +964,8 @@
       "name": "@babel/parser",
       "versionInfo": "7.29.8",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -986,8 +986,8 @@
       "name": "@babel/plugin-transform-react-jsx-self",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -1008,8 +1008,8 @@
       "name": "@babel/plugin-transform-react-jsx-source",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -1030,8 +1030,8 @@
       "name": "@babel/runtime",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -1052,8 +1052,8 @@
       "name": "@babel/template",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -1074,8 +1074,8 @@
       "name": "@babel/traverse",
       "versionInfo": "7.29.8",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -1096,8 +1096,8 @@
       "name": "@babel/types",
       "versionInfo": "7.29.8",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -1118,8 +1118,8 @@
       "name": "@csstools/color-helpers",
       "versionInfo": "5.1.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT-0",
+      "licenseDeclared": "MIT-0",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -1140,8 +1140,8 @@
       "name": "@csstools/css-calc",
       "versionInfo": "2.1.4",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -1162,8 +1162,8 @@
       "name": "@csstools/css-color-parser",
       "versionInfo": "3.1.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -1184,8 +1184,8 @@
       "name": "@csstools/css-parser-algorithms",
       "versionInfo": "3.0.5",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -1206,8 +1206,8 @@
       "name": "@csstools/css-tokenizer",
       "versionInfo": "3.0.4",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -2262,8 +2262,8 @@
       "name": "@esbuild/win32-x64",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -2284,8 +2284,8 @@
       "name": "@esbuild/win32-x64",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -2306,8 +2306,8 @@
       "name": "@jridgewell/gen-mapping",
       "versionInfo": "0.3.13",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -2328,8 +2328,8 @@
       "name": "@jridgewell/remapping",
       "versionInfo": "2.3.5",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -2350,8 +2350,8 @@
       "name": "@jridgewell/resolve-uri",
       "versionInfo": "3.1.2",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -2372,8 +2372,8 @@
       "name": "@jridgewell/sourcemap-codec",
       "versionInfo": "1.5.5",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -2394,8 +2394,8 @@
       "name": "@jridgewell/trace-mapping",
       "versionInfo": "0.3.31",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -2438,8 +2438,8 @@
       "name": "@playwright/test",
       "versionInfo": "1.62.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -2460,8 +2460,8 @@
       "name": "@rolldown/pluginutils",
       "versionInfo": "1.0.0-beta.27",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -2988,8 +2988,8 @@
       "name": "@rollup/rollup-win32-x64-gnu",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3010,8 +3010,8 @@
       "name": "@rollup/rollup-win32-x64-msvc",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3032,8 +3032,8 @@
       "name": "@tanstack/query-core",
       "versionInfo": "5.101.4",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3054,8 +3054,8 @@
       "name": "@tanstack/react-query",
       "versionInfo": "5.101.4",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3076,8 +3076,8 @@
       "name": "@testing-library/dom",
       "versionInfo": "10.4.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3098,8 +3098,8 @@
       "name": "@testing-library/jest-dom",
       "versionInfo": "6.10.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3120,8 +3120,8 @@
       "name": "@testing-library/react",
       "versionInfo": "16.3.2",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3142,8 +3142,8 @@
       "name": "@types/aria-query",
       "versionInfo": "5.0.4",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3164,8 +3164,8 @@
       "name": "@types/babel__core",
       "versionInfo": "7.20.5",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3186,8 +3186,8 @@
       "name": "@types/babel__generator",
       "versionInfo": "7.27.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3208,8 +3208,8 @@
       "name": "@types/babel__template",
       "versionInfo": "7.4.4",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3230,8 +3230,8 @@
       "name": "@types/babel__traverse",
       "versionInfo": "7.28.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3252,8 +3252,8 @@
       "name": "@types/d3-color",
       "versionInfo": "3.1.3",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3274,8 +3274,8 @@
       "name": "@types/d3-drag",
       "versionInfo": "3.0.7",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3296,8 +3296,8 @@
       "name": "@types/d3-interpolate",
       "versionInfo": "3.0.4",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3318,8 +3318,8 @@
       "name": "@types/d3-selection",
       "versionInfo": "3.0.11",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3340,8 +3340,8 @@
       "name": "@types/d3-transition",
       "versionInfo": "3.0.9",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3362,8 +3362,8 @@
       "name": "@types/d3-zoom",
       "versionInfo": "3.0.8",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3384,8 +3384,8 @@
       "name": "@types/estree",
       "versionInfo": "1.0.9",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3406,8 +3406,8 @@
       "name": "@types/react-dom",
       "versionInfo": "19.2.4",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3428,8 +3428,8 @@
       "name": "@types/react",
       "versionInfo": "19.2.18",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3450,8 +3450,8 @@
       "name": "@vitejs/plugin-react",
       "versionInfo": "4.7.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3472,8 +3472,8 @@
       "name": "@vitest/expect",
       "versionInfo": "2.1.9",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3494,8 +3494,8 @@
       "name": "@vitest/mocker",
       "versionInfo": "2.1.9",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3516,8 +3516,8 @@
       "name": "@vitest/pretty-format",
       "versionInfo": "2.1.9",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3538,8 +3538,8 @@
       "name": "@vitest/runner",
       "versionInfo": "2.1.9",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3560,8 +3560,8 @@
       "name": "@vitest/snapshot",
       "versionInfo": "2.1.9",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3582,8 +3582,8 @@
       "name": "@vitest/spy",
       "versionInfo": "2.1.9",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3604,8 +3604,8 @@
       "name": "@vitest/utils",
       "versionInfo": "2.1.9",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3626,8 +3626,8 @@
       "name": "@xyflow/react",
       "versionInfo": "12.0.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3648,8 +3648,8 @@
       "name": "@xyflow/system",
       "versionInfo": "0.0.34",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3670,8 +3670,8 @@
       "name": "agent-base",
       "versionInfo": "7.1.4",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3692,8 +3692,8 @@
       "name": "ansi-regex",
       "versionInfo": "5.0.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3714,8 +3714,8 @@
       "name": "ansi-styles",
       "versionInfo": "5.2.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3736,8 +3736,8 @@
       "name": "aria-query",
       "versionInfo": "5.3.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3758,8 +3758,8 @@
       "name": "aria-query",
       "versionInfo": "5.3.2",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3780,8 +3780,8 @@
       "name": "assertion-error",
       "versionInfo": "2.0.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3802,8 +3802,8 @@
       "name": "asynckit",
       "versionInfo": "0.4.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3824,8 +3824,8 @@
       "name": "baseline-browser-mapping",
       "versionInfo": "2.11.13",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3846,8 +3846,8 @@
       "name": "browserslist",
       "versionInfo": "4.28.8",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3868,8 +3868,8 @@
       "name": "cac",
       "versionInfo": "6.7.14",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3890,8 +3890,8 @@
       "name": "call-bind-apply-helpers",
       "versionInfo": "1.0.2",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3912,8 +3912,8 @@
       "name": "caniuse-lite",
       "versionInfo": "1.0.30001809",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "CC-BY-4.0",
+      "licenseDeclared": "CC-BY-4.0",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3934,8 +3934,8 @@
       "name": "chai",
       "versionInfo": "5.3.3",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3956,8 +3956,8 @@
       "name": "check-error",
       "versionInfo": "2.1.3",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -3978,8 +3978,8 @@
       "name": "classcat",
       "versionInfo": "5.0.5",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4000,8 +4000,8 @@
       "name": "combined-stream",
       "versionInfo": "1.0.8",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4022,8 +4022,8 @@
       "name": "convert-source-map",
       "versionInfo": "2.0.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4044,8 +4044,8 @@
       "name": "css.escape",
       "versionInfo": "1.5.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4066,8 +4066,8 @@
       "name": "cssstyle",
       "versionInfo": "4.6.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4088,8 +4088,8 @@
       "name": "csstype",
       "versionInfo": "3.2.3",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4110,8 +4110,8 @@
       "name": "d3-color",
       "versionInfo": "3.1.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "ISC",
+      "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4132,8 +4132,8 @@
       "name": "d3-dispatch",
       "versionInfo": "3.0.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "ISC",
+      "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4154,8 +4154,8 @@
       "name": "d3-drag",
       "versionInfo": "3.0.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "ISC",
+      "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4176,8 +4176,8 @@
       "name": "d3-ease",
       "versionInfo": "3.0.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4198,8 +4198,8 @@
       "name": "d3-interpolate",
       "versionInfo": "3.0.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "ISC",
+      "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4220,8 +4220,8 @@
       "name": "d3-selection",
       "versionInfo": "3.0.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "ISC",
+      "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4242,8 +4242,8 @@
       "name": "d3-timer",
       "versionInfo": "3.0.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "ISC",
+      "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4264,8 +4264,8 @@
       "name": "d3-transition",
       "versionInfo": "3.0.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "ISC",
+      "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4286,8 +4286,8 @@
       "name": "d3-zoom",
       "versionInfo": "3.0.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "ISC",
+      "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4308,8 +4308,8 @@
       "name": "data-urls",
       "versionInfo": "5.0.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4330,8 +4330,8 @@
       "name": "debug",
       "versionInfo": "4.4.3",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4352,8 +4352,8 @@
       "name": "decimal.js",
       "versionInfo": "10.6.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4374,8 +4374,8 @@
       "name": "deep-eql",
       "versionInfo": "5.0.2",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4396,8 +4396,8 @@
       "name": "delayed-stream",
       "versionInfo": "1.0.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4418,8 +4418,8 @@
       "name": "dequal",
       "versionInfo": "2.0.3",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4440,8 +4440,8 @@
       "name": "dom-accessibility-api",
       "versionInfo": "0.5.16",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4462,8 +4462,8 @@
       "name": "dom-accessibility-api",
       "versionInfo": "0.6.3",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4484,8 +4484,8 @@
       "name": "dunder-proto",
       "versionInfo": "1.0.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4506,8 +4506,8 @@
       "name": "electron-to-chromium",
       "versionInfo": "1.5.404",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "ISC",
+      "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4528,8 +4528,8 @@
       "name": "entities",
       "versionInfo": "6.0.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "BSD-2-Clause",
+      "licenseDeclared": "BSD-2-Clause",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4550,8 +4550,8 @@
       "name": "es-define-property",
       "versionInfo": "1.0.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4572,8 +4572,8 @@
       "name": "es-errors",
       "versionInfo": "1.3.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4594,8 +4594,8 @@
       "name": "es-module-lexer",
       "versionInfo": "1.7.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4616,8 +4616,8 @@
       "name": "es-object-atoms",
       "versionInfo": "1.1.2",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4638,8 +4638,8 @@
       "name": "es-set-tostringtag",
       "versionInfo": "2.1.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4660,8 +4660,8 @@
       "name": "esbuild",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4682,8 +4682,8 @@
       "name": "esbuild",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4704,8 +4704,8 @@
       "name": "escalade",
       "versionInfo": "3.2.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4726,8 +4726,8 @@
       "name": "estree-walker",
       "versionInfo": "3.0.3",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4748,8 +4748,8 @@
       "name": "expect-type",
       "versionInfo": "1.4.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4770,8 +4770,8 @@
       "name": "fdir",
       "versionInfo": "6.5.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4792,8 +4792,8 @@
       "name": "form-data",
       "versionInfo": "4.0.6",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4858,8 +4858,8 @@
       "name": "function-bind",
       "versionInfo": "1.1.2",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4880,8 +4880,8 @@
       "name": "gensync",
       "versionInfo": "1.0.0-beta.2",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4902,8 +4902,8 @@
       "name": "get-intrinsic",
       "versionInfo": "1.3.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4924,8 +4924,8 @@
       "name": "get-proto",
       "versionInfo": "1.0.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4946,8 +4946,8 @@
       "name": "gopd",
       "versionInfo": "1.2.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4968,8 +4968,8 @@
       "name": "has-symbols",
       "versionInfo": "1.1.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -4990,8 +4990,8 @@
       "name": "has-tostringtag",
       "versionInfo": "1.0.2",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5012,8 +5012,8 @@
       "name": "hasown",
       "versionInfo": "2.0.4",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5034,8 +5034,8 @@
       "name": "html-encoding-sniffer",
       "versionInfo": "4.0.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5056,8 +5056,8 @@
       "name": "http-proxy-agent",
       "versionInfo": "7.0.2",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5078,8 +5078,8 @@
       "name": "https-proxy-agent",
       "versionInfo": "7.0.6",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5100,8 +5100,8 @@
       "name": "iconv-lite",
       "versionInfo": "0.6.3",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5122,8 +5122,8 @@
       "name": "indent-string",
       "versionInfo": "4.0.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5144,8 +5144,8 @@
       "name": "is-potential-custom-element-name",
       "versionInfo": "1.0.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5166,8 +5166,8 @@
       "name": "js-tokens",
       "versionInfo": "4.0.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5188,8 +5188,8 @@
       "name": "jsdom",
       "versionInfo": "25.0.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5210,8 +5210,8 @@
       "name": "jsesc",
       "versionInfo": "3.1.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5232,8 +5232,8 @@
       "name": "json5",
       "versionInfo": "2.2.3",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5254,8 +5254,8 @@
       "name": "loupe",
       "versionInfo": "3.2.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5276,8 +5276,8 @@
       "name": "lru-cache",
       "versionInfo": "10.4.3",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "ISC",
+      "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5298,8 +5298,8 @@
       "name": "lru-cache",
       "versionInfo": "5.1.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "ISC",
+      "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5320,8 +5320,8 @@
       "name": "lz-string",
       "versionInfo": "1.5.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5342,8 +5342,8 @@
       "name": "magic-string",
       "versionInfo": "0.30.21",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5364,8 +5364,8 @@
       "name": "math-intrinsics",
       "versionInfo": "1.1.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5386,8 +5386,8 @@
       "name": "mime-db",
       "versionInfo": "1.52.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5408,8 +5408,8 @@
       "name": "mime-types",
       "versionInfo": "2.1.35",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5430,8 +5430,8 @@
       "name": "min-indent",
       "versionInfo": "1.0.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5452,8 +5452,8 @@
       "name": "ms",
       "versionInfo": "2.1.3",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5474,8 +5474,8 @@
       "name": "nanoid",
       "versionInfo": "3.3.18",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5496,8 +5496,8 @@
       "name": "node-releases",
       "versionInfo": "2.0.53",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5518,8 +5518,8 @@
       "name": "nwsapi",
       "versionInfo": "2.2.24",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5540,8 +5540,8 @@
       "name": "parse5",
       "versionInfo": "7.3.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5562,8 +5562,8 @@
       "name": "pathe",
       "versionInfo": "1.1.2",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5584,8 +5584,8 @@
       "name": "pathval",
       "versionInfo": "2.0.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5606,8 +5606,8 @@
       "name": "picocolors",
       "versionInfo": "1.1.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "ISC",
+      "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5628,8 +5628,8 @@
       "name": "picomatch",
       "versionInfo": "4.0.5",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5650,8 +5650,8 @@
       "name": "playwright-core",
       "versionInfo": "1.62.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5672,8 +5672,8 @@
       "name": "playwright",
       "versionInfo": "1.62.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5694,8 +5694,8 @@
       "name": "postcss",
       "versionInfo": "8.5.26",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5716,8 +5716,8 @@
       "name": "pretty-format",
       "versionInfo": "27.5.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5738,8 +5738,8 @@
       "name": "punycode",
       "versionInfo": "2.3.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5760,8 +5760,8 @@
       "name": "react-dom",
       "versionInfo": "19.2.8",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5782,8 +5782,8 @@
       "name": "react-is",
       "versionInfo": "17.0.2",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5804,8 +5804,8 @@
       "name": "react-refresh",
       "versionInfo": "0.17.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5826,8 +5826,8 @@
       "name": "react",
       "versionInfo": "19.2.8",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5848,8 +5848,8 @@
       "name": "redent",
       "versionInfo": "3.0.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5870,8 +5870,8 @@
       "name": "rollup",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5892,8 +5892,8 @@
       "name": "rrweb-cssom",
       "versionInfo": "0.7.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5914,8 +5914,8 @@
       "name": "rrweb-cssom",
       "versionInfo": "0.8.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5936,8 +5936,8 @@
       "name": "safer-buffer",
       "versionInfo": "2.1.2",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5958,8 +5958,8 @@
       "name": "saxes",
       "versionInfo": "6.0.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "ISC",
+      "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -5980,8 +5980,8 @@
       "name": "scheduler",
       "versionInfo": "0.27.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6002,8 +6002,8 @@
       "name": "semver",
       "versionInfo": "6.3.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "ISC",
+      "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6024,8 +6024,8 @@
       "name": "siginfo",
       "versionInfo": "2.0.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "ISC",
+      "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6046,8 +6046,8 @@
       "name": "source-map-js",
       "versionInfo": "1.2.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6068,8 +6068,8 @@
       "name": "stackback",
       "versionInfo": "0.0.2",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6090,8 +6090,8 @@
       "name": "std-env",
       "versionInfo": "3.10.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6112,8 +6112,8 @@
       "name": "strip-indent",
       "versionInfo": "3.0.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6134,8 +6134,8 @@
       "name": "symbol-tree",
       "versionInfo": "3.2.4",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6156,8 +6156,8 @@
       "name": "tinybench",
       "versionInfo": "2.9.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6178,8 +6178,8 @@
       "name": "tinyexec",
       "versionInfo": "0.3.2",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6200,8 +6200,8 @@
       "name": "tinyglobby",
       "versionInfo": "0.2.17",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6222,8 +6222,8 @@
       "name": "tinypool",
       "versionInfo": "1.1.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6244,8 +6244,8 @@
       "name": "tinyrainbow",
       "versionInfo": "1.2.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6266,8 +6266,8 @@
       "name": "tinyspy",
       "versionInfo": "3.0.2",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6288,8 +6288,8 @@
       "name": "tldts-core",
       "versionInfo": "6.1.86",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6310,8 +6310,8 @@
       "name": "tldts",
       "versionInfo": "6.1.86",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6332,8 +6332,8 @@
       "name": "tough-cookie",
       "versionInfo": "5.1.2",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6354,8 +6354,8 @@
       "name": "tr46",
       "versionInfo": "5.1.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6376,8 +6376,8 @@
       "name": "typescript",
       "versionInfo": "5.9.3",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6398,8 +6398,8 @@
       "name": "update-browserslist-db",
       "versionInfo": "1.3.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6420,8 +6420,8 @@
       "name": "use-sync-external-store",
       "versionInfo": "1.6.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6442,8 +6442,8 @@
       "name": "vite-node",
       "versionInfo": "2.1.9",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6464,8 +6464,8 @@
       "name": "vite",
       "versionInfo": "5.4.21",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6486,8 +6486,8 @@
       "name": "vite",
       "versionInfo": "6.4.3",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6508,8 +6508,8 @@
       "name": "vitest",
       "versionInfo": "2.1.9",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6530,8 +6530,8 @@
       "name": "w3c-xmlserializer",
       "versionInfo": "5.0.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6552,8 +6552,8 @@
       "name": "webidl-conversions",
       "versionInfo": "7.0.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "BSD-2-Clause",
+      "licenseDeclared": "BSD-2-Clause",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6574,8 +6574,8 @@
       "name": "whatwg-encoding",
       "versionInfo": "3.1.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6596,8 +6596,8 @@
       "name": "whatwg-mimetype",
       "versionInfo": "4.0.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6618,8 +6618,8 @@
       "name": "whatwg-url",
       "versionInfo": "14.2.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6640,8 +6640,8 @@
       "name": "why-is-node-running",
       "versionInfo": "2.3.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6662,8 +6662,8 @@
       "name": "ws",
       "versionInfo": "8.21.3",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6684,8 +6684,8 @@
       "name": "xml-name-validator",
       "versionInfo": "5.0.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6706,8 +6706,8 @@
       "name": "xmlchars",
       "versionInfo": "2.2.0",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6728,8 +6728,8 @@
       "name": "yallist",
       "versionInfo": "3.1.1",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "ISC",
+      "licenseDeclared": "ISC",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {
@@ -6750,8 +6750,8 @@
       "name": "zustand",
       "versionInfo": "4.5.7",
       "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
       "sourceInfo": "pnpm-lock.yaml",
       "externalRefs": [
         {

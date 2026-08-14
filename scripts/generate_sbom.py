@@ -22,7 +22,8 @@ import yaml  # type: ignore[import-untyped]
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON_LOCK = ROOT / "apps" / "api" / "requirements.lock"
 PNPM_LOCK = ROOT / "pnpm-lock.yaml"
-NODE_MODULES = ROOT / "apps" / "web" / "node_modules" / ".pnpm"
+WEB_NODE_MODULES = ROOT / "apps" / "web" / "node_modules"
+NODE_MODULES = ROOT / "node_modules" / ".pnpm"
 
 
 def _sha256(paths: list[Path]) -> str:
@@ -78,6 +79,14 @@ def _split_pnpm_key(key: str) -> tuple[str, str]:
 
 
 def _node_package_json(name: str, version: str) -> dict[str, Any] | None:
+    direct = WEB_NODE_MODULES / name / "package.json"
+    if direct.is_file():
+        try:
+            package = json.loads(direct.read_text(encoding="utf-8"))
+            if str(package.get("version", version)) == version:
+                return package
+        except (OSError, json.JSONDecodeError):
+            pass
     if not NODE_MODULES.is_dir():
         return None
     pnpm_name = name.replace("/", "+")
