@@ -1,0 +1,26 @@
+{
+  "observed_at": "2026-08-14T01:00:54.3038403Z",
+  "scope": "G7-10 MODEL_LICENSE_HASH_QUANTIZATION_REPORT",
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "api": {
+    "endpoint": "/api/v1/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/model-compatibility",
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "mutated": false,
+    "summary": {"artifact_count": 10, "reported_count": 1, "pass_count": 0, "blocked_count": 1, "missing_license_evidence_count": 10}
+  },
+  "blocking_report": {
+    "artifact_id": "b91df4a8-9719-540e-8676-1f28f74bb674",
+    "code": "h3-fl2va-video-vae",
+    "path_ref": "E:\\AI\\ComfyUI-Models\\diffusers\\MiniMax-H3\\FL2VA\\vae\\video_vae\\MiniMax-H3-video_vae.safetensors",
+    "sha256": "5a624684fad53d4acd0762aa7b07de4204de0bbb90f92c479605e326ccceb148",
+    "byte_size": 5207806104,
+    "header_tensor_count": 560,
+    "header_dtypes": ["F16"],
+    "quantization_status": "HEADER_MATCHED",
+    "license_status": "UNVERIFIED_NO_LOCAL_LICENSE_EVIDENCE",
+    "report_status": "BLOCKED",
+    "blockers": ["LICENSE_EVIDENCE_MISSING", "FORMAL_IMPORT_REQUIRES_OPERATOR_LICENSE_RECORD"]
+  },
+  "decision": "Do not synthesize license evidence from plugin LICENSE/NOTICE, download URLs, or inferred model terms; G7 remains IN_PROGRESS."
+}

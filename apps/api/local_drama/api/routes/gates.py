@@ -40,6 +40,14 @@ async def get_g7_readiness(project_id: str, request: Request) -> dict[str, objec
         raise api_error_from_domain(error) from error
 
 
+@router.get("/projects/{project_id}/model-compatibility", operation_id="getModelCompatibility")
+async def get_model_compatibility(project_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"compatibility": ModelCompatibilityService(request.app.state.database).project_snapshot(project_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.post("/projects/{project_id}/gates/g7/network-e2e", status_code=201, operation_id="runG7NetworkE2E")
 async def run_g7_network_e2e(project_id: str, request: Request) -> dict[str, object]:
     try:

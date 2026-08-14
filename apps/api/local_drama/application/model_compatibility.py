@@ -208,3 +208,59 @@ class ModelCompatibilityService:
                 ORDER BY mcr.created_at DESC LIMIT 1""", (project_id,),
             ).fetchone()
         return dict(row) if row else None
+
+    def project_snapshot(self, project_id: str) -> dict[str, Any]:
+        """Return the persisted, read-only model evidence state for a project.
+
+        This projection intentionally does not hash files, contact a runtime, or
+        mutate any row.  It exists so the G7 blocker can be inspected from the
+        workbench without re-running the expensive offline report operation.
+        """
+        with self.database.connect() as connection:
+            if connection.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone() is None:
+                raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
+            rows = connection.execute(
+                """SELECT ma.id AS artifact_id, ma.code, ma.kind, ma.machine_path_ref,
+                    ma.status AS artifact_status, ma.sha256 AS artifact_sha256,
+                    mcr.id AS report_id, mcr.sha256 AS report_sha256, mcr.byte_size,
+                    mcr.quantization_json, mcr.license_status, mcr.report_status,
+                    mcr.blockers_json, mcr.created_at AS report_created_at,
+                    mle.id AS license_evidence_id, mle.path_rel AS license_path_rel
+                FROM model_artifacts ma
+                LEFT JOIN model_compatibility_reports mcr ON mcr.id=(
+                    SELECT latest.id FROM model_compatibility_reports latest
+                    WHERE latest.model_artifact_id=ma.id
+                    ORDER BY latest.created_at DESC LIMIT 1
+                )
+                LEFT JOIN model_license_evidence mle ON mle.id=(
+                    SELECT latest_evidence.id FROM model_license_evidence latest_evidence
+                    WHERE latest_evidence.project_id=? AND latest_evidence.model_artifact_id=ma.id
+                    ORDER BY latest_evidence.created_at DESC LIMIT 1
+                )
+                ORDER BY ma.kind, ma.code""",
+                (project_id,),
+            ).fetchall()
+        reports: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["quantization"] = json.loads(str(item.pop("quantization_json") or "{}"))
+            item["blockers"] = json.loads(str(item.pop("blockers_json") or "[]"))
+            item["has_report"] = item["report_id"] is not None
+            item["has_license_evidence"] = item["license_evidence_id"] is not None
+            reports.append(item)
+        passed = sum(1 for item in reports if item["report_status"] == "PASS")
+        blocked = sum(1 for item in reports if item["report_status"] == "BLOCKED")
+        missing_license = sum(1 for item in reports if not item["has_license_evidence"])
+        return {
+            "reports": reports,
+            "summary": {
+                "artifact_count": len(reports),
+                "reported_count": sum(1 for item in reports if item["has_report"]),
+                "pass_count": passed,
+                "blocked_count": blocked,
+                "missing_license_evidence_count": missing_license,
+            },
+            "runtime_contacted": False,
+            "network_contacted": False,
+            "mutated": False,
+        }

@@ -7,6 +7,7 @@ import {
   getCapacitySnapshot,
   getProductionCanvas,
   getProjectConfiguration,
+  getModelCompatibility,
   getProfileVersion,
   getEpisodeProduction,
   getEpisodeTimelineStatus,
@@ -104,6 +105,7 @@ export function App() {
   const selectedProject = projects.data?.items.some((item) => item.id === selectedProjectId) ? selectedProjectId : projects.data?.items[0]?.id ?? null;
   const capacitySnapshot = useQuery({ queryKey: ["capacity", selectedProject], queryFn: () => getCapacitySnapshot(selectedProject ?? undefined), enabled: view === "overview" || view === "jobs" });
   const projectConfiguration = useQuery({ queryKey: ["project-configuration", selectedProject], queryFn: () => getProjectConfiguration(selectedProject as string), enabled: Boolean(selectedProject) && (view === "profiles" || view === "projects") });
+  const modelCompatibility = useQuery({ queryKey: ["model-compatibility", selectedProject], queryFn: () => getModelCompatibility(selectedProject as string), enabled: Boolean(selectedProject) && (view === "profiles" || view === "diagnostics" || view === "overview") });
   const seasons = useQuery({ queryKey: ["project", selectedProject, "seasons"], queryFn: () => listSeasons(selectedProject as string), enabled: Boolean(selectedProject) });
   const selectedSeason = seasons.data?.items[0]?.id ?? null;
   const episodes = useQuery({ queryKey: ["season", selectedSeason, "episodes"], queryFn: () => listEpisodes(selectedSeason as string), enabled: Boolean(selectedSeason) });
@@ -273,11 +275,11 @@ export function App() {
 
           {view === "jobs" && <><JobsPanel jobs={jobs.data?.items ?? []} loading={jobs.isPending} /><CapacitySnapshotPanel snapshot={capacitySnapshot.data?.snapshot} /></>}
 
-          {view === "profiles" && <><ProfileConfigurationPanel profiles={profiles.data?.items ?? []} workflows={workflows.data?.items ?? []} workflowsLoading={workflows.isPending} onChanged={() => { void profiles.refetch(); }} />{projectConfiguration.data?.configuration && <ProjectConfigurationSnapshot configuration={projectConfiguration.data.configuration} />}</>}
+          {view === "profiles" && <><ProfileConfigurationPanel profiles={profiles.data?.items ?? []} workflows={workflows.data?.items ?? []} workflowsLoading={workflows.isPending} onChanged={() => { void profiles.refetch(); }} />{projectConfiguration.data?.configuration && <ProjectConfigurationSnapshot configuration={projectConfiguration.data.configuration} />}{modelCompatibility.data?.compatibility && <ModelCompatibilityPanel snapshot={modelCompatibility.data.compatibility} />}</>}
 
           {view === "generation" && <GenerationWorkbench profiles={profiles.data?.items ?? []} videos={(reviewItems.data?.items ?? []).filter((item) => item.media_kind === "VIDEO")} h3={h3Runtime.data?.runtime} g6Readiness={g6Readiness.data?.readiness} i2vProbePlan={i2vProbePlan.data?.plan} shots={production.data?.items ?? []} selectedShotId={selectedShot} onSelectShot={selectShot} onOpenProfiles={() => navigate("profiles")} onOpenReviews={(mediaVersionId) => { void queryClient.invalidateQueries({ queryKey: ["reviews", "inbox"] }); void queryClient.invalidateQueries({ queryKey: ["gates", "g6"] }); void queryClient.invalidateQueries({ queryKey: ["gates", "g6", "i2v-probe-plan"] }); if (mediaVersionId) setSelectedReviewVersionId(mediaVersionId); setView("reviews"); writeLocationState({ view: "reviews", projectId: selectedProject, episodeId: selectedEpisode, shotId: selectedShot, reviewId: mediaVersionId ?? null }); }} />}
 
-          {view === "diagnostics" && <><section className="panel"><div className="panel-heading"><div><p className="eyebrow">诊断中心</p><h3>本机环境检查</h3></div><button className="secondary" onClick={() => diagnosticMutation.mutate()} disabled={diagnosticMutation.isPending}>{diagnosticMutation.isPending ? "检查中…" : "运行诊断"}</button></div><DiagnosticPanel run={diagnostics.data?.run ?? null} /></section><AdapterContractsPanel registry={adapterContracts.data?.registry} /></>}
+          {view === "diagnostics" && <><section className="panel"><div className="panel-heading"><div><p className="eyebrow">诊断中心</p><h3>本机环境检查</h3></div><button className="secondary" onClick={() => diagnosticMutation.mutate()} disabled={diagnosticMutation.isPending}>{diagnosticMutation.isPending ? "检查中…" : "运行诊断"}</button></div><DiagnosticPanel run={diagnostics.data?.run ?? null} /></section><AdapterContractsPanel registry={adapterContracts.data?.registry} />{modelCompatibility.data?.compatibility && <ModelCompatibilityPanel snapshot={modelCompatibility.data.compatibility} />}</>}
 
           <p className="footer-note">{contract.data?.legacy_migration ?? "G11 legacy migration deferred"} · 业务状态来自真实本地后端；ComfyUI/本地 LLM 不可用时保持可解释阻塞。</p>
         </section>
@@ -319,6 +321,22 @@ function AdapterContractsPanel({ registry }: { registry?: import("../generated/a
       {(registry?.contracts ?? []).map((item) => <div className="configuration-row" role="row" key={item.code}><span>{item.title}</span><span>{item.transport}</span><span className="status-pill">{item.status}</span><span>{item.capabilities.slice(0, 3).join(" · ")}</span></div>)}
       {!registry && <p className="empty-state">正在读取本地契约…</p>}
     </div>
+  </section>;
+}
+
+function ModelCompatibilityPanel({ snapshot }: { snapshot: import("../generated/api").ModelCompatibilitySnapshot }) {
+  return <section className="panel configuration-snapshot" aria-labelledby="model-compatibility-title">
+    <div className="panel-heading"><div><p className="eyebrow">G7 MODEL EVIDENCE</p><h3 id="model-compatibility-title">离线模型兼容性与许可证证据</h3></div><span className={`status-pill${snapshot.summary.pass_count === snapshot.summary.reported_count && snapshot.summary.missing_license_evidence_count === 0 ? "" : " neutral"}`}>{snapshot.summary.pass_count}/{snapshot.summary.reported_count} PASS</span></div>
+    <div className="configuration-grid">
+      <div className="configuration-card"><small>模型 Artifact</small><strong>{snapshot.summary.artifact_count}</strong><span>只读磁盘证据索引</span></div>
+      <div className="configuration-card"><small>许可证证据</small><strong>{snapshot.summary.missing_license_evidence_count} 缺失</strong><span>仅接受项目 00_admin/licenses 内真实记录</span></div>
+      <div className="configuration-card"><small>报告状态</small><strong>{snapshot.summary.blocked_count} BLOCKED</strong><span>不自动改变 G7 门禁</span></div>
+    </div>
+    <div className="configuration-table" role="table" aria-label="模型兼容性证据">
+      <div className="configuration-row configuration-header" role="row"><strong>模型</strong><strong>Hash / 量化</strong><strong>许可证</strong><strong>状态</strong></div>
+      {snapshot.reports.slice(0, 8).map((item) => <div className="configuration-row" role="row" key={item.artifact_id}><span>{item.code}<small>{item.kind}</small></span><span>{item.report_sha256 ? `${item.report_sha256.slice(0, 12)}…` : "未报告"} · {String(item.quantization.status ?? "UNKNOWN")}</span><span>{item.has_license_evidence ? item.license_path_rel : "缺失真实证据"}</span><span className={`status-pill${item.report_status === "PASS" ? "" : " neutral"}`}>{item.report_status ?? "未报告"}</span></div>)}
+    </div>
+    <p className="muted">只读 projection：runtime_contacted=false · network_contacted=false · mutated=false。模型许可证不可由插件 LICENSE、下载 URL 或推测替代。</p>
   </section>;
 }
 

@@ -29,3 +29,28 @@ def test_model_report_rejects_missing_artifact(workspace, database) -> None:
     with raises(DomainRuleError) as raised:
         ModelCompatibilityService(database).report("missing")
     assert raised.value.code == "MODEL_ARTIFACT_NOT_FOUND"
+
+
+def test_project_model_snapshot_is_read_only_and_exposes_license_blocker(workspace, database) -> None:
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="model_snapshot", title="Model snapshot", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1,
+        target_duration_ms=60_000, allow_unconfigured_capabilities=True,
+    )
+    path = workspace.work_root / "snapshot.safetensors"
+    header = b'{"x":{"dtype":"F16","shape":[1],"data_offsets":[0,0]}}'
+    path.write_bytes(len(header).to_bytes(8, "little") + header + b"payload")
+    with database.transaction() as connection:
+        connection.execute("INSERT INTO local_runtimes (id,code,title,transport,base_url,status,details_json,created_at,updated_at,created_by,revision,schema_version) VALUES (?,?,?,?,?,?,?,?,?,?,1,'v2')", ("runtime-snapshot", "snapshot-runtime", "snapshot", "LOCAL_PROCESS", None, "AVAILABLE", "{}", "now", "now", "test"))
+        connection.execute("INSERT INTO model_artifacts (id,runtime_id,code,kind,machine_path_ref,license_note,compatibility_json,status,created_at,updated_at,created_by,revision,schema_version) VALUES (?,?,?,?,?,?,?,'CANDIDATE',?,?,?,?, 'v2')", ("model-snapshot", "runtime-snapshot", "model-snapshot", "H3 video VAE", str(path), "verify license", "{}", "now", "now", "test", 1))
+    service = ModelCompatibilityService(database)
+    service.report("model-snapshot", str(project["id"]))
+    before = database.connect().execute("SELECT COUNT(*) FROM model_license_evidence").fetchone()[0]
+    snapshot = service.project_snapshot(str(project["id"]))
+    after = database.connect().execute("SELECT COUNT(*) FROM model_license_evidence").fetchone()[0]
+    assert snapshot["summary"]["blocked_count"] == 1
+    assert snapshot["summary"]["missing_license_evidence_count"] == 1
+    assert snapshot["reports"][0]["blockers"] == ["LICENSE_EVIDENCE_MISSING", "FORMAL_IMPORT_REQUIRES_OPERATOR_LICENSE_RECORD"]
+    assert snapshot["runtime_contacted"] is False
+    assert snapshot["network_contacted"] is False
+    assert snapshot["mutated"] is False
+    assert before == after

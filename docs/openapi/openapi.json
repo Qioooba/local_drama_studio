@@ -2015,6 +2015,50 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/model-compatibility": {
+      "get": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "Get Model Compatibility",
+        "operationId": "getModelCompatibility",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Getmodelcompatibility"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/gates/g7/network-e2e": {
       "post": {
         "tags": [
