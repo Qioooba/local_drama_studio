@@ -187,6 +187,8 @@ G10 UI 可访问性复审已把设计系统的 12px 可见文字下限与 40px �
 
 审核与任务长列表现采用首屏 50 行的渐进窗口，深链接选择在窗口外时会扩展到该项，用户可显式每次再显示 50 行；离屏行启用 `content-visibility:auto`。纯函数窗口边界已覆盖 120 行/深链场景，Web 回归升至 18/18；这属于浏览器渲染保护，不替代后端分页或最终规模发布验收。
 
+React 可维护性拆分已把审核收件箱、任务/容量面板与共享渐进窗口从 `App.tsx` 移入 `features/reviews`、`features/jobs`、`features/shared`；路由/query/mutation 权威仍留在应用壳层，行为与接口未改。Web 18/18、production build、三档真实页面验收继续 PASS。
+
 ## 更新规则
 
 任何新增/变更需求必须先分配 ID、写 ADR、补 migration/API/UI/test 影响；所有阶段报告、提交和缺陷引用至少一个需求或测试 ID。

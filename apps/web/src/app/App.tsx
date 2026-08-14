@@ -47,6 +47,8 @@ import {
   type G9Readiness,
 } from "../generated/api";
 import { GenerationWorkbench } from "../features/generation/GenerationWorkbench";
+import { CapacitySnapshotPanel, JobsPanel } from "../features/jobs/JobsPanel";
+import { ReviewInboxPanel } from "../features/reviews/ReviewInboxPanel";
 
 type View = "overview" | "projects" | "canvas" | "reviews" | "jobs" | "profiles" | "generation" | "diagnostics";
 const views: View[] = ["overview", "projects", "canvas", "reviews", "jobs", "profiles", "generation", "diagnostics"];
@@ -583,34 +585,6 @@ function G9ReadinessPanel({ readiness }: { readiness: G9Readiness }) {
   </section>;
 }
 
-const INITIAL_LIST_WINDOW = 50;
-
-export function progressiveSlice<T>(items: T[], visibleCount: number, selectedIndex = -1): T[] {
-  return items.slice(0, Math.max(visibleCount, selectedIndex + 1));
-}
-
-function JobsPanel({ jobs, loading }: { jobs: Array<{ id: string; type: string; state: string; channel: string; priority: number; revision: number }>; loading: boolean }) {
-  const [visibleCount, setVisibleCount] = useState(INITIAL_LIST_WINDOW);
-  useEffect(() => { setVisibleCount(INITIAL_LIST_WINDOW); }, [jobs]);
-  const visibleJobs = progressiveSlice(jobs, visibleCount);
-  return <section className="panel"><div className="panel-heading"><div><p className="eyebrow">G5 TASKS & MACHINES</p><h3>持久任务队列与本地 worker</h3></div><span className="status-pill">SSE / OUTBOX</span></div><p className="muted">状态来自 SQLite jobs/attempts/outbox；页面关闭后队列继续运行，worker lease 过期由 reconcile 接管。</p>{loading ? <p className="empty-state">正在读取任务…</p> : jobs.length === 0 ? <p className="empty-state">当前项目没有任务。</p> : <><div className="job-list">{visibleJobs.map((job) => <div className="job-row progressive-row" key={job.id}><strong>{job.type}</strong><span>{job.channel}</span><span className={job.state === "SUCCEEDED" ? "status-pill" : "blocker-text"}>{job.state}</span><small>priority {job.priority} · rev {job.revision}</small></div>)}</div>{visibleJobs.length < jobs.length && <button className="secondary list-more" onClick={() => setVisibleCount((count) => count + INITIAL_LIST_WINDOW)}>继续显示任务（{visibleJobs.length}/{jobs.length}）</button>}</>}</section>;
-}
-
-function CapacitySnapshotPanel({ snapshot }: { snapshot?: import("../generated/api").CapacitySnapshot }) {
-  if (!snapshot) return <section className="panel"><p className="empty-state">正在读取真实队列产能快照…</p></section>;
-  return <section className="panel capacity-panel" aria-labelledby="capacity-title">
-    <div className="panel-heading"><div><p className="eyebrow">G9 CAPACITY OBSERVATION</p><h3 id="capacity-title">本机队列产能快照</h3></div><span className="status-pill neutral">只读 · 未基准测试</span></div>
-    <p className="muted">仅统计 SQLite 已持久化的真实 Job/Attempt；Webhook 仅支持显式 loopback 批量投递，默认不投递、不创建任务、不抢占 Worker。吞吐数字不是 benchmark。</p>
-    <div className="configuration-grid capacity-grid">
-      <div className="configuration-card"><small>排队</small><strong>{snapshot.queued_count}</strong><span>{snapshot.oldest_queued_age_seconds === null ? "暂无排队" : `最老 ${snapshot.oldest_queued_age_seconds}s`}</span></div>
-      <div className="configuration-card"><small>活跃 Attempt</small><strong>{snapshot.active_attempt_count}</strong><span>{snapshot.active_worker_count} 个 Worker</span></div>
-      <div className="configuration-card"><small>GPU_H3</small><strong>{snapshot.gpu_active_count}/{snapshot.gpu_concurrency_limit}</strong><span>并发上限来自本地策略</span></div>
-      <div className="configuration-card"><small>近 24h 完成</small><strong>{snapshot.completed_last_24h}</strong><span>OBSERVED_NOT_BENCHMARKED</span></div>
-    </div>
-    <div className="canvas-status"><span>Webhook：{snapshot.webhook_status}</span><span>runtime_contacted=false</span><span>network_contacted=false</span><span>mutated=false</span></div>
-  </section>;
-}
-
 function ProjectList({ projects, selectedProjectId, onSelect }: { projects: Array<{ id: string; code: string; title: string; status: string }>; selectedProjectId: string | null; onSelect: (id: string) => void }) {
   if (!projects.length) return <p className="empty-state">暂无项目。通过真实项目 API 创建后，项目会出现在这里。</p>;
   return <div className="project-list">{projects.map((project) => <button className={`project-row${selectedProjectId === project.id ? " selected" : ""}`} key={project.id} onClick={() => onSelect(project.id)}><span><strong>{project.title}</strong><small>{project.code}</small></span><span className="status-pill">{project.status}</span></button>)}</div>;
@@ -619,61 +593,4 @@ function ProjectList({ projects, selectedProjectId, onSelect }: { projects: Arra
 function DiagnosticPanel({ run }: { run: { status: string; checks: Array<{ code: string; status: string; observed: Record<string, unknown> }> } | null }) {
   if (!run) return <p className="empty-state">还没有诊断记录；点击“运行诊断”执行本机只读检查。</p>;
   return <div className="diagnostic-grid"><div className="diagnostic-status"><span>整体状态</span><strong>{run.status}</strong></div>{run.checks.map((check, index) => <div className="diagnostic-row" key={`${check.code}-${index}`}><span>{check.code}</span><strong>{check.status}</strong></div>)}</div>;
-}
-
-function ReviewInboxPanel({
-  items,
-  templates,
-  selectedVersionId,
-  context,
-  onSelect,
-  onPromote,
-  selecting,
-  onSubmit,
-  submitting,
-  submitError,
-  submitSucceeded,
-}: {
-  items: Array<{ media_version_id: string; media_asset_id: string; project_id: string; media_kind: string; stage: string; decision: string | null; is_stale: number | null }>;
-  templates: Array<{ id: string; code: string; items: Array<{ id: string; label: string; required: boolean }> }>;
-  selectedVersionId: string | null;
-  context: Awaited<ReturnType<typeof getReviewContext>> | undefined;
-  onSelect: (id: string) => void;
-  onPromote: (mediaVersionId: string, selectionType: string) => void;
-  selecting: boolean;
-  onSubmit: (mediaVersionId: string, payload: Parameters<typeof submitReview>[1]) => void;
-  submitting: boolean;
-  submitError: string | null;
-  submitSucceeded: boolean;
-}) {
-  const [checks, setChecks] = useState<Record<string, "PASS" | "FAIL">>({});
-  const [decision, setDecision] = useState<"APPROVED" | "REJECTED" | "NEEDS_CHANGES">("APPROVED");
-  const [visibleCount, setVisibleCount] = useState(INITIAL_LIST_WINDOW);
-  const selectedItem = items.find((item) => item.media_version_id === selectedVersionId);
-  const selectedIndex = items.findIndex((item) => item.media_version_id === selectedVersionId);
-  const visibleItems = progressiveSlice(items, visibleCount, selectedIndex);
-  const selectedMediaKind = selectedItem?.media_kind ?? String(context?.media_version.media_kind ?? "");
-  const selectedStage = selectedItem?.stage ?? String(context?.media_version.stage ?? "");
-  const supportsThumbnail = (mediaKind: string | undefined) => mediaKind === "IMAGE" || mediaKind === "VIDEO";
-  const selectionType = selectedStage === "FORMAL" ? "FORMAL_SELECTION" : selectedStage === "PROXY" ? "PROXY_WINNER" : "KEYFRAME";
-  const currentSelection = context?.selections.find((item) => item["media_version_id"] === selectedVersionId && item["selection_type"] === selectionType);
-  const currentApproval = context?.reviews.find((item) => item["decision"] === "APPROVED" && !item["is_stale"]);
-  useEffect(() => { setChecks({}); setDecision("APPROVED"); }, [selectedVersionId]);
-  useEffect(() => { setVisibleCount(INITIAL_LIST_WINDOW); }, [items]);
-  const requiredComplete = context?.template.items.every((item) => !item.required || Boolean(checks[item.id])) ?? false;
-  const missingRequired = currentApproval ? [] : context?.template.items.filter((item) => item.required && !checks[item.id]) ?? [];
-  const submitCurrentReview = () => {
-    if (!context || !selectedVersionId) return;
-    onSubmit(selectedVersionId, {
-      template_version_id: context.template.id,
-      decision,
-      expected_subject_revision: context.subject_revision,
-      checks: context.template.items.map((item) => ({ item_id: item.id, result: checks[item.id] })),
-    });
-  };
-  return <section className="panel"><div className="panel-heading"><div><p className="eyebrow">G4 REVIEW INBOX</p><h3>媒体版本审核与选择</h3></div><span className="status-pill">{items.length} 个待处理</span></div>
-    <p className="muted">审核模板、机器检查和选择指针均来自本地 API；selection 与 approval 分离，旧 revision 会显示 stale。</p>
-    <div className="review-layout"><div className="review-list">{items.length === 0 ? <p className="empty-state">当前项目没有待审核媒体版本。</p> : <>{visibleItems.map((item) => <button className={`project-row review-row progressive-row${item.media_version_id === selectedVersionId ? " selected" : ""}`} key={item.media_version_id} onClick={() => onSelect(item.media_version_id)}>{supportsThumbnail(item.media_kind) ? <img src={`/api/v1/media-versions/${encodeURIComponent(item.media_version_id)}/thumbnail?size=small&frame=poster`} alt="" width="80" height="45" loading="lazy" decoding="async" /> : <span className="media-kind-placeholder" aria-hidden="true">{item.media_kind}</span>}<span><strong>{item.stage} · {item.media_kind}</strong><small>{item.media_version_id.slice(0, 12)} · {item.decision ?? "未审核"}</small></span><span className={item.is_stale ? "blocker-text" : "status-pill"}>{item.is_stale ? "STALE" : "待处理"}</span></button>)}{visibleItems.length < items.length && <button className="secondary list-more" onClick={() => setVisibleCount((count) => count + INITIAL_LIST_WINDOW)}>继续显示审核项（{visibleItems.length}/{items.length}）</button>}</>}</div>
-      <div className="review-detail">{!context ? <p className="empty-state">选择一个媒体版本读取审核上下文。</p> : <><div className="review-preview">{supportsThumbnail(selectedMediaKind) ? <img src={`/api/v1/media-versions/${encodeURIComponent(selectedVersionId ?? "")}/thumbnail?size=small&frame=poster`} alt="当前审核版本缩略图" width="320" height="180" decoding="async" /> : <strong>{selectedMediaKind || "MEDIA"} 暂无视觉缩略图</strong>}<span>{supportsThumbnail(selectedMediaKind) ? "固定请求 320px small 缩略图；此处不加载原片" : "不探测或下载原始媒体"}</span></div><div className="panel-heading"><div><p className="eyebrow">{context.template.code}</p><h3>{String(context.media_version.stage)} · {String(context.media_version.mime_type)}</h3></div><button className="secondary" onClick={() => selectedVersionId && onPromote(selectedVersionId, selectionType)} disabled={!selectedVersionId || selecting || Boolean(currentSelection)}>{selecting ? "保存中…" : currentSelection ? `已选择 ${selectionType}` : `选择为 ${selectionType}`}</button></div>{currentApproval && <p className="review-success" role="status">当前版本已批准，审核记录 {String(currentApproval["id"]).slice(0, 12)}。如需改变结论，请先撤回当前审核；重复点击不会新增记录。</p>}<div className="review-checklist">{context.template.items.map((item) => <fieldset className="review-check" key={item.id} disabled={Boolean(currentApproval)}><legend>{item.label}{item.required ? " *" : ""}</legend><label><input type="radio" name={`check-${item.id}`} checked={checks[item.id] === "PASS"} onChange={() => setChecks((value) => ({ ...value, [item.id]: "PASS" }))} />通过</label><label><input type="radio" name={`check-${item.id}`} checked={checks[item.id] === "FAIL"} onChange={() => setChecks((value) => ({ ...value, [item.id]: "FAIL" }))} />不通过</label></fieldset>)}</div>{missingRequired.length > 0 && <p className="review-guidance" aria-live="polite">还需完成 {missingRequired.length} 个必填检查：{missingRequired.map((item) => item.label).join("、")}。选择“批准”不会自动提交。</p>}<div className="review-submit"><label htmlFor="review-decision">审核决定<select id="review-decision" value={decision} onChange={(event) => setDecision(event.target.value as typeof decision)} disabled={Boolean(currentApproval)}><option value="APPROVED">批准</option><option value="NEEDS_CHANGES">需要修改</option><option value="REJECTED">拒绝</option></select></label><button className="primary-action" onClick={submitCurrentReview} disabled={Boolean(currentApproval) || !requiredComplete || submitting}>{currentApproval ? "已批准" : submitting ? "提交中…" : "提交审核"}</button></div>{submitError && <p className="inline-error" role="alert">提交失败：{submitError}</p>}{submitSucceeded && context.reviews.length > 0 && <p className="review-success" role="status">审核已保存：{String(context.reviews[0]?.decision ?? decision)}。选择指针仍需通过上方独立按钮确认。</p>}<div className="review-meta"><span>机器检查：{String(context.machine_checks[0]?.status ?? "未运行")}</span><span>审核记录：{context.reviews.length}</span><span>选择指针：{currentSelection ? selectionType : "未选择"}</span><span>subject revision：{context.subject_revision}</span><span>候选模板：{templates.length}</span></div></>}</div></div>
-  </section>;
 }

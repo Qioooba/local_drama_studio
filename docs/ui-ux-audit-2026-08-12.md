@@ -68,7 +68,7 @@ The original findings above are retained as the historical baseline. Current sta
 - Resolved: project/episode selection is visible and canonicalized into the URL; it is no longer a silent in-memory default.
 - Resolved: fixed thumbnail dimensions and bounded canvas/review projections prevent layout shifts on the production routes covered here.
 - Resolved: favicon requests no longer produce browser errors.
-- Open refactor: `App.tsx` still owns too many feature panels. This is maintainability debt, not an observed P0 workflow failure.
+- Partially resolved refactor: review inbox, jobs/capacity and shared progressive-list logic now live under `features/`; `App.tsx` still owns profiles, canvas, production and gate projections. Remaining work is maintainability debt, not an observed P0 workflow failure.
 - Open refinement: replace remaining structural arrow/lettermark glyphs with the approved local SVG icon set.
 - Partially resolved scale refinement: review and job panels render an initial 50-row window, preserve deep-linked selections outside that window, add explicit 50-row expansion and let the browser skip off-screen row layout/paint. Episode pagination remains a later refinement; unrestricted large-list UX is not claimed.
 
