@@ -9,6 +9,8 @@ review verifies licenses, provenance, and the complete runtime image.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import hashlib
 import importlib.metadata
 import json
@@ -129,8 +131,13 @@ def _node_packages() -> list[dict[str, Any]]:
             "sourceInfo": "pnpm-lock.yaml",
             "externalRefs": [{"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": f"pkg:npm/{name}@{version}"}],
         }
-        if integrity:
-            package["checksums"] = [{"algorithm": "SHA-512", "checksumValue": str(integrity).removeprefix("sha512-")}]
+        if isinstance(integrity, str) and integrity.startswith("sha512-"):
+            try:
+                checksum_hex = base64.b64decode(integrity.removeprefix("sha512-"), validate=True).hex()
+            except (ValueError, binascii.Error):
+                checksum_hex = ""
+            if checksum_hex:
+                package["checksums"] = [{"algorithm": "SHA-512", "checksumValue": checksum_hex}]
         packages.append(package)
     return packages
 
