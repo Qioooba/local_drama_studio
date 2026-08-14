@@ -157,6 +157,9 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .milestones .current { color: var(--creative-dark); font-weight: 700; }
 
 .project-list, .profile-grid, .diagnostic-grid { display: grid; gap: 9px; margin-top: 20px; }
+.project-filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.project-filters label { display: grid; gap: 5px; color: var(--text-muted); font-size: 12px; }
+.project-filters input, .project-filters select { min-height: 40px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); background: var(--surface); }
 .project-row { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 16px; border: 1px solid #ded9cf; border-radius: 10px; padding: 13px 15px; color: var(--text); background: #fff; text-align: left; cursor: pointer; }
 .project-row:hover, .project-row.selected { border-color: #d48a72; background: var(--creative-subtle); }
 .project-row span:first-child { display: grid; gap: 4px; }

@@ -51,6 +51,14 @@ describe("G1 app shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "重试当前区域" }));
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
+
+  it("sends title/code search and status filters to the project API", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+    fireEvent.change(screen.getByLabelText("搜索项目"), { target: { value: "北方" } });
+    fireEvent.change(screen.getByLabelText("项目状态"), { target: { value: "ACTIVE" } });
+    await waitFor(() => expect(listProjects).toHaveBeenLastCalledWith({ search: "北方", status: "ACTIVE" }));
+  });
 });
 
 describe("G9 canvas focus", () => {

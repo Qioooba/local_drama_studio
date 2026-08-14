@@ -99,11 +99,13 @@ export function App() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(initialLocation.projectId);
   const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(initialLocation.episodeId);
   const [selectedShotId, setSelectedShotId] = useState<string | null>(initialLocation.shotId);
+  const [projectSearch, setProjectSearch] = useState("");
+  const [projectStatus, setProjectStatus] = useState("");
   const queryClient = useQueryClient();
   const live = useQuery<HealthCheck>({ queryKey: ["health", "live"], queryFn: () => healthLive() });
   const contract = useQuery<SystemContract>({ queryKey: ["system", "contract"], queryFn: () => systemContract() });
   const adapterContracts = useQuery({ queryKey: ["adapters", "contracts"], queryFn: () => getAdapterContracts(), enabled: view === "overview" || view === "diagnostics" });
-  const projects = useQuery({ queryKey: ["projects"], queryFn: () => listProjects() });
+  const projects = useQuery({ queryKey: ["projects", projectSearch, projectStatus], queryFn: () => listProjects({ search: projectSearch || undefined, status: projectStatus || undefined }) });
   const profiles = useQuery({ queryKey: ["profiles"], queryFn: () => listProfiles(), enabled: view === "profiles" || view === "generation" || view === "overview" });
   const workflows = useQuery({ queryKey: ["workflow-versions"], queryFn: () => listWorkflowVersions(), enabled: view === "profiles" });
   const diagnostics = useQuery({ queryKey: ["diagnostics", "latest"], queryFn: () => latestDiagnostics(), enabled: view === "diagnostics" || view === "overview" });
@@ -272,6 +274,8 @@ export function App() {
           </div> : <div className="system-strip" aria-label="本机系统状态"><span><i className={live.data?.status === "HEALTHY" ? "ok" : "warn"} /> API {live.data?.status ?? "读取中"}</span><span>网络 {contract.data?.mode ?? "读取中"}</span><span>SQLite WAL</span><button onClick={() => navigate("diagnostics")}>查看诊断</button></div>}
 
           <WorkspaceErrorPanel failures={queryFailures} />
+
+          {(view === "overview" || view === "projects") && <div className="project-filters" role="search" aria-label="筛选项目"><label>搜索项目<input value={projectSearch} onChange={(event) => setProjectSearch(event.target.value)} placeholder="标题或 code" /></label><label>项目状态<select value={projectStatus} onChange={(event) => setProjectStatus(event.target.value)}><option value="">全部状态</option><option value="DRAFT">DRAFT</option><option value="ACTIVE">ACTIVE</option><option value="PAUSED">PAUSED</option><option value="ARCHIVED">ARCHIVED</option></select></label></div>}
 
           {view === "overview" && (
             <section className="panel">

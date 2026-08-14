@@ -130,8 +130,12 @@ export async function systemContract(baseUrl = ''): Promise<SystemContract> {
   return requestJson<SystemContract>('/api/v1/system/contract', undefined, baseUrl);
 }
 
-export async function listProjects(baseUrl = ''): Promise<{ items: Project[] }> {
-  return requestJson<{ items: Project[] }>('/api/v1/projects', undefined, baseUrl);
+export async function listProjects(filters: { search?: string; status?: string } = {}, baseUrl = ''): Promise<{ items: Project[] }> {
+  const query = new URLSearchParams();
+  if (filters.search) query.set('search', filters.search);
+  if (filters.status) query.set('status', filters.status);
+  const suffix = query.size ? `?${query.toString()}` : '';
+  return requestJson<{ items: Project[] }>(`/api/v1/projects${suffix}`, undefined, baseUrl);
 }
 
 export async function listProfiles(baseUrl = ''): Promise<{ items: Profile[] }> {

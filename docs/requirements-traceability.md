@@ -43,6 +43,7 @@
 |---|---|---|
 | FR-PRV-001/003 本地 Runtime、模型 artifact、manifest-backed Profile 候选 | VERIFIED | `application/profiles.py`、`test_g3_configuration_media.py`、G3 screenshots |
 | FR-PRJ-007 项目健康/路径与本地资源诊断基础 | VERIFIED | `application/diagnostics.py`、`/diagnostics/runs` |
+| FR-PRJ-003 项目列表搜索、状态筛选与安全归档 | VERIFIED PRODUCTION UAT | `ProjectService.list_projects` 支持标题/code 子串和 DRAFT/ACTIVE/PAUSED/ARCHIVED 筛选，转义 SQL wildcard 并拒绝非法状态；UI 真实转发筛选。既有归档为审计状态转换、不删目录、活动 Job 硬阻塞。API 2 项、Web 1 项与 1024×768 只读生产 UAT 通过，见 `docs/evidence/g10/project-list-filter-uat-2026-08-15.json` |
 | FR-IMG-001/FR-MED media register、probe、hash、poster/cache、Range | VERIFIED | `application/media.py`、G3 evidence sample |
 | FR-ING-001 source document version、ImportSession、TXT/MD/DOCX preview | VERIFIED | `application/documents.py`、G3 import test |
 | FR-SRC-001 FTS5 global search minimum | VERIFIED | `application/read_models.py`、G3 import/search test |
@@ -196,6 +197,8 @@ UI 图标 P1 已闭环：本地零依赖 SVG outline family 替代品牌文字�
 2026-08-15 最新全量门禁回归：蓝图清单仍为 86 FR / 14 NFR / 85 TC；API 129 passed / 4 Comfy live deselected，Ruff PASS，mypy 91 files PASS，Web 23/23 与 production build PASS。新增 FR-IMG-007 聚焦回归覆盖 API 4 项、Web 2 项。该进展不改变 G7 许可证证据阻塞，也不构成最终发布签字。
 
 FR-TML-004 完成后的最新全量门禁回归：API 132 passed / 4 Comfy live deselected，Ruff PASS，mypy 92 files PASS，Web 25/25 与 production build PASS。`scripts/check.ps1` 已补每个原生命令的显式退出码检查；修复前一次 mypy 失败却最终退出 0 的门禁假绿，修复后整套命令真实以 0 完成。该进展仍不改变 G7 许可证证据阻塞和有序退出状态。
+
+FR-PRJ-003 补齐后的最新全量门禁回归：API 134 passed / 4 Comfy live deselected，Ruff PASS，mypy 92 files PASS，Web 26/26 与 production build PASS；门禁脚本以真实 0 退出。G7 许可证证据阻塞和有序退出状态不变。
 
 ## 更新规则
 

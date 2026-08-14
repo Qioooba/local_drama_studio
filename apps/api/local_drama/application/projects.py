@@ -126,10 +126,24 @@ class ProjectService:
             raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
         return dict(row)
 
-    def list_projects(self, limit: int = 50) -> list[dict[str, Any]]:
+    def list_projects(self, limit: int = 50, *, search: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
         limit = max(1, min(limit, 200))
+        if status is not None and status not in {"DRAFT", "ACTIVE", "PAUSED", "ARCHIVED"}:
+            raise DomainRuleError("PROJECT_STATUS_INVALID", "项目状态筛选值无效", {"status": status})
+        filters: list[str] = []
+        parameters: list[object] = []
+        normalized_search = search.strip() if search else ""
+        if normalized_search:
+            escaped = normalized_search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            filters.append("(title LIKE ? ESCAPE '\\' OR code LIKE ? ESCAPE '\\')")
+            parameters.extend([f"%{escaped}%", f"%{escaped}%"])
+        if status:
+            filters.append("status=?")
+            parameters.append(status)
+        where = f" WHERE {' AND '.join(filters)}" if filters else ""
+        parameters.append(limit)
         with self.database.connect() as connection:
-            rows = connection.execute("SELECT * FROM projects ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+            rows = connection.execute(f"SELECT * FROM projects{where} ORDER BY created_at DESC LIMIT ?", parameters).fetchall()
         return [dict(row) for row in rows]
 
     def update_project_title(self, project_id: str, title: str, expected_revision: int, actor: str = "local-user") -> dict[str, Any]:

@@ -21,8 +21,11 @@ def service(request: Request) -> ProjectService:
 
 
 @router.get("", operation_id="listProjects")
-async def list_projects(request: Request, limit: int = 50) -> dict[str, object]:
-    return {"items": service(request).list_projects(limit), "page": {"next_cursor": None, "has_more": False}}
+async def list_projects(request: Request, limit: int = 50, search: str | None = None, status: str | None = None) -> dict[str, object]:
+    try:
+        return {"items": service(request).list_projects(limit, search=search, status=status), "page": {"next_cursor": None, "has_more": False}}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
 
 
 @router.post("", operation_id="createProject", status_code=201)
