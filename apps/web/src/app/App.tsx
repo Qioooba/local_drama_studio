@@ -12,6 +12,7 @@ import {
   getEpisodeProduction,
   getEpisodeTimelineStatus,
   getG6Readiness,
+  getG8Readiness,
   planG6I2VProbe,
   getReviewContext,
   healthLive,
@@ -41,6 +42,7 @@ import {
   type ProfileVersionDetail,
   type WorkflowVersionSummary,
   type TimelineStatus,
+  type G8Readiness,
 } from "../generated/api";
 import { GenerationWorkbench } from "../features/generation/GenerationWorkbench";
 
@@ -112,6 +114,7 @@ export function App() {
   const selectedEpisode = episodes.data?.items.some((item) => item.id === selectedEpisodeId) ? selectedEpisodeId : episodes.data?.items[0]?.id ?? null;
   const production = useQuery({ queryKey: ["episode", selectedEpisode, "production"], queryFn: () => getEpisodeProduction(selectedEpisode as string), enabled: Boolean(selectedEpisode) });
   const timelineStatus = useQuery({ queryKey: ["episode", selectedEpisode, "timeline-status"], queryFn: () => getEpisodeTimelineStatus(selectedEpisode as string), enabled: Boolean(selectedEpisode) && view === "projects" });
+  const g8Readiness = useQuery({ queryKey: ["gates", "g8", selectedProject, selectedEpisode], queryFn: () => getG8Readiness(selectedProject as string, selectedEpisode as string), enabled: Boolean(selectedProject && selectedEpisode) && view === "projects" });
   const selectedShot = production.data?.items.some((item) => String(item.id) === selectedShotId) ? selectedShotId : production.data?.items[0] ? String(production.data.items[0].id) : null;
   const reviewItems = useQuery({ queryKey: ["reviews", "inbox", selectedProject], queryFn: () => reviewInbox(selectedProject as string), enabled: Boolean(selectedProject) && (view === "reviews" || view === "generation") });
   const g6Readiness = useQuery({ queryKey: ["gates", "g6", selectedProject], queryFn: () => getG6Readiness(selectedProject as string), enabled: Boolean(selectedProject) && view === "generation" });
@@ -264,6 +267,7 @@ export function App() {
                 {production.data?.items.map((shot) => <div className="shot-row" key={String(shot.id)}><strong>{String(shot.code)}</strong><span>{String(shot.status)}</span><span className="blocker-text">{Array.isArray(shot.blockers) ? `${shot.blockers.length} 个阻塞` : "读取中"}</span><span>{String(shot.next_action)}</span></div>)}
                 {production.data?.items.length === 0 && <p className="empty-state">当前集还没有镜头；请从真实 API 创建镜头。</p>}
                 {timelineStatus.data?.status && <TimelineStatusPanel status={timelineStatus.data.status} loading={timelineStatus.isPending} />}
+                {g8Readiness.data?.readiness && <G8ReadinessPanel readiness={g8Readiness.data.readiness} />}
               </div>}
               {projectConfiguration.data?.configuration && <ProjectConfigurationSnapshot configuration={projectConfiguration.data.configuration} />}
             </section>
@@ -508,6 +512,26 @@ function TimelineStatusPanel({ status }: { status: TimelineStatus; loading: bool
       <div className="configuration-card"><small>交付包</small><strong>{status.delivery.count}</strong><span>{latestDelivery ? String(latestDelivery.status) : "暂无真实 delivery"}</span></div>
     </div>
     <div className="canvas-status"><span>本地授权音频：{status.audio.verified_local_count}</span><span>已验证渲染：{status.renders.verified_count}</span><span>已验证交付：{status.delivery.verified_count}</span><span>runtime_contacted=false</span><span>network_contacted=false</span><span>mutated=false</span></div>
+  </section>;
+}
+
+const g8CheckLabels: Record<string, string> = {
+  THREE_REAL_SHOTS: "3+ 个真实镜头",
+  DIALOGUE_ENVIRONMENT_SFX_MUSIC: "对白 / 环境 / SFX / 音乐",
+  SUBTITLES: "字幕 revision",
+  TIMELINE_INPUT_LOCKED: "时间线输入锁定",
+  APPROVED_EPISODE_RENDER: "整集批准渲染",
+  VERIFIED_DELIVERY: "交付包校验",
+  TAMPER_DETECTION: "篡改检测",
+};
+
+function G8ReadinessPanel({ readiness }: { readiness: G8Readiness }) {
+  return <section className="panel gate-readiness" aria-labelledby="g8-readiness-title">
+    <div className="panel-heading"><div><p className="eyebrow">G8 FORMAL EXIT READINESS</p><h3 id="g8-readiness-title">整集音频、字幕、时间线与交付门禁</h3></div><span className={`status-pill${readiness.status === "PASS" ? "" : " neutral"}`}>{readiness.status}</span></div>
+    <p className="muted">只读检查蓝图 09 的正式退出条件；不会创建素材、启动 ComfyUI 或自动替代整集人工批准。当前集：{readiness.episode.code} · {readiness.episode.title}</p>
+    <ol className="gate-checks">{readiness.checks.map((check) => <li className={check.passed ? "passed" : "blocked"} key={check.code}><span aria-hidden="true">{check.passed ? "✓" : "○"}</span><strong>{g8CheckLabels[check.code] ?? check.code}</strong>{check.count !== undefined && <small>{check.count} 项真实证据</small>}<small>{check.detail}</small></li>)}</ol>
+    {readiness.next_required_action && <p className="gate-next"><strong>下一项真实动作：</strong>{g8CheckLabels[readiness.next_required_action] ?? readiness.next_required_action}。系统保持阻塞，不以空记录或机器推测冒充 PASS。</p>}
+    <div className="canvas-status"><span>timeline {readiness.evidence.timeline_revision_id ? "已锁定" : "缺失"}</span><span>render {readiness.evidence.render_id ? "已记录" : "缺失"}</span><span>delivery {readiness.evidence.delivery_id ? "已记录" : "缺失"}</span><span>runtime_contacted=false</span><span>network_contacted=false</span><span>mutated=false</span></div>
   </section>;
 }
 

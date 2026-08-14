@@ -7,6 +7,7 @@ from local_drama.api.schemas.g7_model import ModelCompatibilityRequest, ModelLic
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.g6_readiness import G6ReadinessService
 from local_drama.application.g7_readiness import G7ReadinessService
+from local_drama.application.g8_readiness import G8ReadinessService
 from local_drama.application.i2v_probe import I2VProbePlanService
 from local_drama.application.model_compatibility import ModelCompatibilityService
 from local_drama.application.network_e2e import NetworkE2EService
@@ -36,6 +37,14 @@ async def plan_g6_i2v_probe(project_id: str, request: Request) -> dict[str, obje
 async def get_g7_readiness(project_id: str, request: Request) -> dict[str, object]:
     try:
         return {"readiness": G7ReadinessService(request.app.state.database).inspect(project_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/projects/{project_id}/gates/g8", operation_id="getG8Readiness")
+async def get_g8_readiness(project_id: str, request: Request, episode_id: str | None = None) -> dict[str, object]:
+    try:
+        return {"readiness": G8ReadinessService(request.app.state.database).inspect(project_id, episode_id)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

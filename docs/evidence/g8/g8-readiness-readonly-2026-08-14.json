@@ -1,0 +1,34 @@
+{
+  "schema_version": "g8.readiness.read_only.v1",
+  "observed_at": "2026-08-14T09:20:13+08:00",
+  "scope": "production project e5eaa01d-d39a-4a63-acbf-026da30b46e7 / EPISODE_001",
+  "endpoint": "/api/v1/projects/{project_id}/gates/g8?episode_id={episode_id}",
+  "status": "IN_PROGRESS",
+  "next_required_action": "THREE_REAL_SHOTS",
+  "checks": {
+    "THREE_REAL_SHOTS": {"passed": false, "observed": 0, "required": 3},
+    "DIALOGUE_ENVIRONMENT_SFX_MUSIC": {"passed": false, "observed_authorized_tracks": 0, "required_tracks": ["DIALOGUE", "ENVIRONMENT", "SFX", "MUSIC"]},
+    "SUBTITLES": {"passed": false, "observed_revisions": 0},
+    "TIMELINE_INPUT_LOCKED": {"passed": false, "timeline_revision_id": null},
+    "APPROVED_EPISODE_RENDER": {"passed": false, "render_id": null, "approval_id": null},
+    "VERIFIED_DELIVERY": {"passed": false, "delivery_id": null},
+    "TAMPER_DETECTION": {"passed": false, "reason": "No real production delivery package exists to mutate and verify"}
+  },
+  "browser_acceptance": {
+    "view": "projects",
+    "viewports": ["1440x900", "1280x800", "1024x768"],
+    "horizontal_overflow": false,
+    "console_errors": 0,
+    "console_warnings": 0,
+    "g8_panel_visible": true,
+    "thumbnail_policy": "No image was loaded or displayed for this read-only gate review"
+  },
+  "safety": {
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "mutated": false,
+    "does_not_create_media_or_jobs": true,
+    "does_not_replace_human_episode_approval": true
+  },
+  "exit_decision": "formal G8 exit remains pending; this evidence must not be treated as PASS"
+}
