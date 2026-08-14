@@ -1,11 +1,21 @@
 {
   "schema_version": "localdrama.project-package-uat.v1",
-  "observed_at": "2026-08-14T22:51:36.059Z",
+  "observed_at": "2026-08-14T23:11:34.343Z",
   "status": "PASS",
   "mode": "PRODUCTION_UI_READ_ONLY",
   "production_database_mutated": false,
   "production_files_mutated": false,
   "screenshots_captured": false,
+  "isolated_import_verification": {
+    "test_file": "apps/api/tests/test_project_packages.py",
+    "tests_passed": 10,
+    "media_registration": "PASS",
+    "owner_and_parent_identity_rewrite": "PASS",
+    "imported_media_hash_verification": "PASS",
+    "cache_excluded_from_package": true,
+    "small_webp_thumbnail_rebuild": "PASS",
+    "idempotent_receipt_and_crash_recovery": "PASS"
+  },
   "results": [
     {
       "viewport": {

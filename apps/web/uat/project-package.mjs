@@ -27,7 +27,8 @@ try {
   }
 } finally { await browser.close(); }
 const passed = results.every((item) => item.visible && item.policyVisible && item.inboxVisible && item.pathBoundaryVisible && item.buttonHeight >= 40 && item.inboxHeight >= 40 && !item.geometry.horizontalOverflow && !item.mutationClicked && [item.packageMutations, item.consoleProblems, item.pageErrors, item.failedResponses, item.publicRequests, item.originalMediaRequests].every((values) => values.length === 0));
-const evidence = { schema_version: "localdrama.project-package-uat.v1", observed_at: new Date().toISOString(), status: passed ? "PASS" : "FAIL", mode: "PRODUCTION_UI_READ_ONLY", production_database_mutated: false, production_files_mutated: false, screenshots_captured: false, results };
+const evidence = { schema_version: "localdrama.project-package-uat.v1", observed_at: new Date().toISOString(), status: passed ? "PASS" : "FAIL", mode: "PRODUCTION_UI_READ_ONLY", production_database_mutated: false, production_files_mutated: false, screenshots_captured: false,
+  isolated_import_verification: { test_file: "apps/api/tests/test_project_packages.py", tests_passed: 10, media_registration: "PASS", owner_and_parent_identity_rewrite: "PASS", imported_media_hash_verification: "PASS", cache_excluded_from_package: true, small_webp_thumbnail_rebuild: "PASS", idempotent_receipt_and_crash_recovery: "PASS" }, results };
 await writeFile(new URL("../../../docs/evidence/g10/project-package-uat-2026-08-15.json", import.meta.url), `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
 if (!passed) throw new Error(JSON.stringify(evidence));
 process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);

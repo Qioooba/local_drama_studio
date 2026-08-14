@@ -50,6 +50,7 @@ export function ProjectPackageAction({ projectId, onImported }: { projectId: str
       </div>}
     </form>
     {error && <p role="alert">{error.message}</p>}
-    {commit.data && <p role="status"><strong>{commit.data.commit.status}</strong> · {commit.data.commit.project_code} · staged 包保留，可核验追溯</p>}
+    {commit.data && <p role="status"><strong>{commit.data.commit.status}</strong> · {commit.data.commit.project_code}
+      {commit.data.commit.counts && <> · 媒体 {commit.data.commit.counts.media_versions ?? 0} · 待按需重建缩略图 {commit.data.commit.counts.thumbnails_pending ?? 0}</>} · staged 包保留，可核验追溯</p>}
   </section>;
 }

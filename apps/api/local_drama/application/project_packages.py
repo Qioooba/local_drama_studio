@@ -105,11 +105,22 @@ class ProjectPackageService:
                 FROM project_profile_bindings ppb JOIN execution_profile_versions epv ON epv.id=ppb.execution_profile_version_id WHERE ppb.project_id=? ORDER BY ppb.capability""", (project_id,))]
             targets = [dict(row) for row in connection.execute("""SELECT dt.code,dt.title,dt.transport,dt.status,dtv.version_no,dtv.target_spec_json,dtv.status AS version_status
                 FROM delivery_targets dt JOIN delivery_target_versions dtv ON dtv.delivery_target_id=dt.id WHERE dt.project_id=? ORDER BY dt.code,dtv.version_no""", (project_id,))]
+            media_assets = [dict(row) for row in connection.execute("""SELECT id,owner_type,owner_id,purpose,media_kind,version_counter,metadata_json
+                FROM media_assets WHERE project_id=? ORDER BY created_at,id""", (project_id,))]
+            media_versions = [dict(row) for row in connection.execute("""SELECT mv.id,mv.media_asset_id,mv.version_no,mv.take_no,mv.stage,mv.rel_path,mv.mime_type,
+                mv.byte_size,mv.sha256,mv.duration_ms,mv.fps_num,mv.fps_den,mv.parent_version_id,mv.integrity_status,mv.source_name,
+                mv.import_source,mv.probe_json FROM media_versions mv JOIN media_assets ma ON ma.id=mv.media_asset_id
+                WHERE ma.project_id=? ORDER BY ma.created_at,mv.version_no,mv.id""", (project_id,))]
         for shot in shots:
             shot["fields"] = json.loads(str(shot.pop("fields_json") or "{}"))
+        for asset in media_assets:
+            asset["metadata"] = json.loads(str(asset.pop("metadata_json") or "{}"))
+        for version in media_versions:
+            version["probe"] = json.loads(str(version.pop("probe_json") or "{}"))
         return {"schema_version": STATE_SCHEMA, "project": dict(project), "seasons": seasons, "episodes": episodes, "scenes": scenes,
                 "shots": shots, "production_plan": dict(plan) if plan else None, "profile_bindings": profiles, "delivery_targets": targets,
-                "excluded_domains": ["jobs", "attempts", "reviews", "audit_events", "outbox", "cache", "work"]}
+                "media_assets": media_assets, "media_versions": media_versions, "media_selection_state_excluded": True,
+                "excluded_domains": ["jobs", "attempts", "reviews", "selections", "audit_events", "outbox", "cache", "work"]}
 
     def _source_files(self, root: Path) -> list[Path]:
         files: list[Path] = []
@@ -193,10 +204,32 @@ class ProjectPackageService:
                 expected = {str(item["path"]): item for item in manifest.get("entries", [])}
                 if set(expected) != set(names) - {"package-manifest.json"}:
                     raise DomainRuleError("PROJECT_PACKAGE_MANIFEST_MISMATCH", "manifest 文件清单与压缩包不一致")
+                if int(manifest.get("entry_count", -1)) != len(expected) or int(manifest.get("expanded_bytes", -1)) != sum(
+                    int(item["byte_size"]) for item in expected.values()
+                ):
+                    raise DomainRuleError("PROJECT_PACKAGE_MANIFEST_MISMATCH", "manifest 汇总计数与文件清单不一致")
                 for name, item in expected.items():
                     size, digest = _zip_digest(archive, name)
                     if size != int(item["byte_size"]) or digest != item["sha256"]:
                         raise DomainRuleError("PROJECT_PACKAGE_HASH_MISMATCH", "项目包文件 hash/size 不匹配", {"path": name})
+                media_assets = state.get("media_assets", [])
+                media_versions = state.get("media_versions", [])
+                if not isinstance(media_assets, list) or not isinstance(media_versions, list):
+                    raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包媒体状态格式无效")
+                asset_ids = {str(item.get("id")) for item in media_assets}
+                version_ids = {str(item.get("id")) for item in media_versions}
+                if len(asset_ids) != len(media_assets) or len(version_ids) != len(media_versions):
+                    raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包包含重复媒体 ID")
+                for version in media_versions:
+                    if str(version.get("media_asset_id")) not in asset_ids:
+                        raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "媒体版本引用了未知资产")
+                    parent = version.get("parent_version_id")
+                    if parent is not None and str(parent) not in version_ids:
+                        raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "媒体版本引用了未知 parent")
+                    media_path = f"payload/{_safe_member(str(version.get('rel_path') or '')).as_posix()}"
+                    entry = expected.get(media_path)
+                    if entry is None or int(entry["byte_size"]) != int(version.get("byte_size", -1)) or entry["sha256"] != version.get("sha256"):
+                        raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "媒体版本与 manifest 文件不一致", {"path": media_path})
         except (OSError, zipfile.BadZipFile, KeyError, ValueError, json.JSONDecodeError) as error:
             raise DomainRuleError("PROJECT_PACKAGE_INVALID", "项目包无法安全读取") from error
         project_id, project_code = str(manifest["project_id"]), str(manifest["project_code"])
@@ -283,7 +316,30 @@ class ProjectPackageService:
             raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包分集引用了未知季")
         if any(str(item.get("episode_id")) not in episode_ids for item in state["shots"]):
             raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包镜头引用了未知分集")
+        state.setdefault("media_assets", [])
+        state.setdefault("media_versions", [])
+        if not isinstance(state["media_assets"], list) or not isinstance(state["media_versions"], list):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包媒体状态格式无效")
+        media_asset_ids = {str(item.get("id")) for item in state["media_assets"]}
+        media_version_ids = {str(item.get("id")) for item in state["media_versions"]}
+        if len(media_asset_ids) != len(state["media_assets"]) or len(media_version_ids) != len(state["media_versions"]):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包包含重复媒体 ID")
+        manifest_paths = {str(item.get("path")) for item in self._manifest_entries(package)}
+        for version in state["media_versions"]:
+            if str(version.get("media_asset_id")) not in media_asset_ids:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "媒体版本引用了未知资产")
+            parent = version.get("parent_version_id")
+            if parent is not None and str(parent) not in media_version_ids:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "媒体版本引用了未知 parent")
+            relative = _safe_member(str(version.get("rel_path") or ""))
+            if f"payload/{relative.as_posix()}" not in manifest_paths:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "媒体版本文件未登记在 manifest", {"rel_path": str(relative)})
         return state
+
+    def _manifest_entries(self, package: Path) -> list[dict[str, Any]]:
+        with zipfile.ZipFile(package) as archive:
+            manifest = json.loads(archive.read("package-manifest.json"))
+        return list(manifest.get("entries", []))
 
     def _extract_payload(self, package: Path, temporary_root: Path) -> None:
         temporary_root.mkdir(parents=True, exist_ok=False)
@@ -382,7 +438,7 @@ class ProjectPackageService:
         temporary_root = self.projects_root / f".{code}.import-{uuid.uuid4().hex}"
         promoted = False
         counts = {"seasons": 0, "episodes": 0, "scenes": 0, "shots": 0, "profiles": 0, "profiles_skipped": 0,
-                  "delivery_targets": 0, "payload_files": 0}
+                  "delivery_targets": 0, "media_assets": 0, "media_versions": 0, "thumbnails_pending": 0, "payload_files": 0}
         try:
             self._extract_payload(package, temporary_root)
             counts["payload_files"] = sum(1 for item in temporary_root.rglob("*") if item.is_file())
@@ -397,6 +453,10 @@ class ProjectPackageService:
             promoted = True
             season_map = {str(item["id"]): str(uuid.uuid4()) for item in state["seasons"]}
             episode_map = {str(item["id"]): str(uuid.uuid4()) for item in state["episodes"]}
+            shot_map = {str(item["id"]): str(uuid.uuid4()) for item in state["shots"]}
+            media_asset_map = {str(item["id"]): str(uuid.uuid4()) for item in state["media_assets"]}
+            media_version_map = {str(item["id"]): str(uuid.uuid4()) for item in state["media_versions"]}
+            media_kind_by_asset = {str(item["id"]): str(item["media_kind"]) for item in state["media_assets"]}
             with self.database.transaction() as connection:
                 if connection.execute("SELECT 1 FROM projects WHERE code=?", (code,)).fetchone():
                     raise DomainRuleError("PROJECT_CODE_EXISTS", "项目 code 已存在", {"code": code})
@@ -429,7 +489,7 @@ class ProjectPackageService:
                     )
                     counts["scenes"] += 1
                 for shot in state["shots"]:
-                    shot_id, revision_id = str(uuid.uuid4()), str(uuid.uuid4())
+                    shot_id, revision_id = shot_map[str(shot["id"])], str(uuid.uuid4())
                     connection.execute(
                         """INSERT INTO shots (id,episode_id,code,order_key,target_duration_ms,shot_type,status,current_revision_id,
                         created_at,updated_at,created_by) VALUES (?,?,?,?,?,?,'DRAFT',?,?,?,?)""",
@@ -441,6 +501,51 @@ class ProjectPackageService:
                         (revision_id, shot_id, json.dumps(shot.get("fields") or {}, ensure_ascii=False), now, now, actor),
                     )
                     counts["shots"] += 1
+                for asset in state["media_assets"]:
+                    owner_type = str(asset["owner_type"])
+                    source_owner_id = str(asset["owner_id"])
+                    owner_id: str | None
+                    if owner_type == "PROJECT":
+                        owner_id = project_id
+                    elif owner_type == "EPISODE":
+                        owner_id = episode_map.get(source_owner_id)
+                    elif owner_type == "SHOT":
+                        owner_id = shot_map.get(source_owner_id)
+                    else:
+                        owner_id = None
+                    if owner_id is None:
+                        raise DomainRuleError("PROJECT_PACKAGE_MEDIA_OWNER_UNSUPPORTED", "媒体 owner 无法安全重写",
+                                              {"owner_type": owner_type, "owner_id": source_owner_id})
+                    connection.execute(
+                        """INSERT INTO media_assets (id,project_id,owner_type,owner_id,purpose,media_kind,selected_version_id,
+                        approved_version_id,version_counter,metadata_json,created_at,updated_at,created_by,revision,schema_version)
+                        VALUES (?,?,?,?,?,?,NULL,NULL,?,?,?, ?,?,1,'v2')""",
+                        (media_asset_map[str(asset["id"])], project_id, owner_type, owner_id, asset["purpose"], asset["media_kind"],
+                         asset["version_counter"], json.dumps(asset.get("metadata") or {}, ensure_ascii=False), now, now, actor),
+                    )
+                    counts["media_assets"] += 1
+                for version in state["media_versions"]:
+                    relative = _safe_member(str(version["rel_path"]))
+                    media_path = (final_root / Path(*relative.parts)).resolve()
+                    if final_root not in media_path.parents or not media_path.is_file() or _is_reparse(media_path):
+                        raise DomainRuleError("PROJECT_PACKAGE_MEDIA_FILE_MISSING", "导入媒体文件缺失或越界", {"rel_path": str(relative)})
+                    if media_path.stat().st_size != int(version["byte_size"]) or _sha256(media_path) != str(version["sha256"]):
+                        raise DomainRuleError("PROJECT_PACKAGE_MEDIA_HASH_MISMATCH", "导入媒体文件 hash/size 不匹配", {"rel_path": str(relative)})
+                    parent = version.get("parent_version_id")
+                    connection.execute(
+                        """INSERT INTO media_versions (id,media_asset_id,version_no,take_no,stage,rel_path,mime_type,byte_size,
+                        sha256,duration_ms,fps_num,fps_den,parent_version_id,source_job_attempt_id,integrity_status,source_name,
+                        import_source,probe_json,source_artifact_id,created_at,updated_at,created_by,revision,schema_version)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,?,?,?,?,NULL,?,?,?,1,'v2')""",
+                        (media_version_map[str(version["id"])], media_asset_map[str(version["media_asset_id"])], version["version_no"],
+                         version.get("take_no") or 1, version["stage"], relative.as_posix(), version["mime_type"], version["byte_size"],
+                         version["sha256"], version.get("duration_ms"), version.get("fps_num"), version.get("fps_den"),
+                         media_version_map.get(str(parent)) if parent else None, "VERIFIED", version.get("source_name"),
+                         "PROJECT_PACKAGE", json.dumps(version.get("probe") or {}, ensure_ascii=False), now, now, actor),
+                    )
+                    counts["media_versions"] += 1
+                    if media_kind_by_asset[str(version["media_asset_id"])] in {"IMAGE", "VIDEO"}:
+                        counts["thumbnails_pending"] += 1
                 plan = state.get("production_plan")
                 if isinstance(plan, dict):
                     plan_id, version_id = str(uuid.uuid4()), str(uuid.uuid4())
