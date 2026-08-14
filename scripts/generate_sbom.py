@@ -28,6 +28,11 @@ WEB_NODE_MODULES = ROOT / "apps" / "web" / "node_modules"
 NODE_MODULES = ROOT / "node_modules" / ".pnpm"
 
 
+def _spdx_id(prefix: str, name: str, version: str) -> str:
+    value = re.sub(r"[^A-Za-z0-9.-]+", "-", f"{prefix}-{name}-{version}").strip("-")
+    return f"SPDXRef-{value}"
+
+
 def _sha256(paths: list[Path]) -> str:
     digest = hashlib.sha256()
     for path in paths:
@@ -59,7 +64,7 @@ def _python_packages() -> list[dict[str, Any]]:
             continue
         packages.append(
             {
-                "SPDXID": f"SPDXRef-pypi-{name.lower().replace('-', '_')}",
+                "SPDXID": _spdx_id("pypi", name.lower(), version),
                 "name": name,
                 "versionInfo": version,
                 "downloadLocation": "NOASSERTION",
@@ -122,7 +127,7 @@ def _node_packages() -> list[dict[str, Any]]:
         resolution = details.get("resolution", {}) if isinstance(details, dict) else {}
         integrity = resolution.get("integrity") if isinstance(resolution, dict) else None
         package: dict[str, Any] = {
-            "SPDXID": f"SPDXRef-npm-{name.replace('/', '_').replace('@', '')}-{version.replace('.', '_')}",
+            "SPDXID": _spdx_id("npm", name, version),
             "name": name,
             "versionInfo": version,
             "downloadLocation": "NOASSERTION",

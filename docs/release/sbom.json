@@ -7,7 +7,7 @@
   "SPDXID": "SPDXRef-DOCUMENT",
   "documentNamespace": "https://localdramastudio.local/spdx/5332196750bb20718bd1db82e21bd61f386bb59e0de9b811b2b32ca007436cf4",
   "creationInfo": {
-    "created": "2026-08-14T15:20:39.516597+00:00",
+    "created": "2026-08-14T15:41:34.720158+00:00",
     "creators": [
       "Tool: LocalDramaStudio offline SBOM generator"
     ]
@@ -22,7 +22,7 @@
   "package_count": 317,
   "packages": [
     {
-      "SPDXID": "SPDXRef-pypi-alembic",
+      "SPDXID": "SPDXRef-pypi-alembic-1.19.1",
       "name": "alembic",
       "versionInfo": "1.19.1",
       "downloadLocation": "NOASSERTION",
@@ -38,7 +38,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-annotated_doc",
+      "SPDXID": "SPDXRef-pypi-annotated-doc-0.0.5",
       "name": "annotated-doc",
       "versionInfo": "0.0.5",
       "downloadLocation": "NOASSERTION",
@@ -54,7 +54,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-annotated_types",
+      "SPDXID": "SPDXRef-pypi-annotated-types-0.8.0",
       "name": "annotated-types",
       "versionInfo": "0.8.0",
       "downloadLocation": "NOASSERTION",
@@ -70,7 +70,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-anyio",
+      "SPDXID": "SPDXRef-pypi-anyio-4.14.2",
       "name": "anyio",
       "versionInfo": "4.14.2",
       "downloadLocation": "NOASSERTION",
@@ -86,7 +86,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-certifi",
+      "SPDXID": "SPDXRef-pypi-certifi-2026.7.22",
       "name": "certifi",
       "versionInfo": "2026.7.22",
       "downloadLocation": "NOASSERTION",
@@ -102,7 +102,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-click",
+      "SPDXID": "SPDXRef-pypi-click-8.4.2",
       "name": "click",
       "versionInfo": "8.4.2",
       "downloadLocation": "NOASSERTION",
@@ -118,7 +118,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-colorama",
+      "SPDXID": "SPDXRef-pypi-colorama-0.4.6",
       "name": "colorama",
       "versionInfo": "0.4.6",
       "downloadLocation": "NOASSERTION",
@@ -134,7 +134,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-fastapi",
+      "SPDXID": "SPDXRef-pypi-fastapi-0.141.1",
       "name": "fastapi",
       "versionInfo": "0.141.1",
       "downloadLocation": "NOASSERTION",
@@ -150,7 +150,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-greenlet",
+      "SPDXID": "SPDXRef-pypi-greenlet-3.5.5",
       "name": "greenlet",
       "versionInfo": "3.5.5",
       "downloadLocation": "NOASSERTION",
@@ -166,7 +166,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-h11",
+      "SPDXID": "SPDXRef-pypi-h11-0.16.0",
       "name": "h11",
       "versionInfo": "0.16.0",
       "downloadLocation": "NOASSERTION",
@@ -182,7 +182,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-httpcore",
+      "SPDXID": "SPDXRef-pypi-httpcore-1.0.9",
       "name": "httpcore",
       "versionInfo": "1.0.9",
       "downloadLocation": "NOASSERTION",
@@ -198,7 +198,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-httptools",
+      "SPDXID": "SPDXRef-pypi-httptools-0.8.0",
       "name": "httptools",
       "versionInfo": "0.8.0",
       "downloadLocation": "NOASSERTION",
@@ -214,7 +214,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-httpx",
+      "SPDXID": "SPDXRef-pypi-httpx-0.28.1",
       "name": "httpx",
       "versionInfo": "0.28.1",
       "downloadLocation": "NOASSERTION",
@@ -230,7 +230,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-idna",
+      "SPDXID": "SPDXRef-pypi-idna-3.18",
       "name": "idna",
       "versionInfo": "3.18",
       "downloadLocation": "NOASSERTION",
@@ -246,7 +246,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-iniconfig",
+      "SPDXID": "SPDXRef-pypi-iniconfig-2.3.0",
       "name": "iniconfig",
       "versionInfo": "2.3.0",
       "downloadLocation": "NOASSERTION",
@@ -262,7 +262,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-librt",
+      "SPDXID": "SPDXRef-pypi-librt-0.15.0",
       "name": "librt",
       "versionInfo": "0.15.0",
       "downloadLocation": "NOASSERTION",
@@ -278,7 +278,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-mako",
+      "SPDXID": "SPDXRef-pypi-mako-1.4.1",
       "name": "Mako",
       "versionInfo": "1.4.1",
       "downloadLocation": "NOASSERTION",
@@ -294,7 +294,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-markupsafe",
+      "SPDXID": "SPDXRef-pypi-markupsafe-3.0.3",
       "name": "MarkupSafe",
       "versionInfo": "3.0.3",
       "downloadLocation": "NOASSERTION",
@@ -310,7 +310,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-mypy",
+      "SPDXID": "SPDXRef-pypi-mypy-1.20.2",
       "name": "mypy",
       "versionInfo": "1.20.2",
       "downloadLocation": "NOASSERTION",
@@ -326,7 +326,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-mypy_extensions",
+      "SPDXID": "SPDXRef-pypi-mypy-extensions-1.1.0",
       "name": "mypy_extensions",
       "versionInfo": "1.1.0",
       "downloadLocation": "NOASSERTION",
@@ -342,7 +342,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-packaging",
+      "SPDXID": "SPDXRef-pypi-packaging-26.3",
       "name": "packaging",
       "versionInfo": "26.3",
       "downloadLocation": "NOASSERTION",
@@ -358,7 +358,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-pathspec",
+      "SPDXID": "SPDXRef-pypi-pathspec-1.1.1",
       "name": "pathspec",
       "versionInfo": "1.1.1",
       "downloadLocation": "NOASSERTION",
@@ -374,7 +374,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-pluggy",
+      "SPDXID": "SPDXRef-pypi-pluggy-1.6.0",
       "name": "pluggy",
       "versionInfo": "1.6.0",
       "downloadLocation": "NOASSERTION",
@@ -390,7 +390,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-pydantic",
+      "SPDXID": "SPDXRef-pypi-pydantic-2.13.4",
       "name": "pydantic",
       "versionInfo": "2.13.4",
       "downloadLocation": "NOASSERTION",
@@ -406,7 +406,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-pydantic_core",
+      "SPDXID": "SPDXRef-pypi-pydantic-core-2.46.4",
       "name": "pydantic_core",
       "versionInfo": "2.46.4",
       "downloadLocation": "NOASSERTION",
@@ -422,7 +422,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-pygments",
+      "SPDXID": "SPDXRef-pypi-pygments-2.20.0",
       "name": "Pygments",
       "versionInfo": "2.20.0",
       "downloadLocation": "NOASSERTION",
@@ -438,7 +438,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-pytest",
+      "SPDXID": "SPDXRef-pypi-pytest-8.4.2",
       "name": "pytest",
       "versionInfo": "8.4.2",
       "downloadLocation": "NOASSERTION",
@@ -454,7 +454,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-pytest_asyncio",
+      "SPDXID": "SPDXRef-pypi-pytest-asyncio-0.26.0",
       "name": "pytest-asyncio",
       "versionInfo": "0.26.0",
       "downloadLocation": "NOASSERTION",
@@ -470,7 +470,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-python_dotenv",
+      "SPDXID": "SPDXRef-pypi-python-dotenv-1.2.2",
       "name": "python-dotenv",
       "versionInfo": "1.2.2",
       "downloadLocation": "NOASSERTION",
@@ -486,7 +486,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-pyyaml",
+      "SPDXID": "SPDXRef-pypi-pyyaml-6.0.3",
       "name": "PyYAML",
       "versionInfo": "6.0.3",
       "downloadLocation": "NOASSERTION",
@@ -502,7 +502,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-ruff",
+      "SPDXID": "SPDXRef-pypi-ruff-0.16.2",
       "name": "ruff",
       "versionInfo": "0.16.2",
       "downloadLocation": "NOASSERTION",
@@ -518,7 +518,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-sqlalchemy",
+      "SPDXID": "SPDXRef-pypi-sqlalchemy-2.0.51",
       "name": "SQLAlchemy",
       "versionInfo": "2.0.51",
       "downloadLocation": "NOASSERTION",
@@ -534,7 +534,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-starlette",
+      "SPDXID": "SPDXRef-pypi-starlette-1.6.0",
       "name": "starlette",
       "versionInfo": "1.6.0",
       "downloadLocation": "NOASSERTION",
@@ -550,7 +550,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-typing_inspection",
+      "SPDXID": "SPDXRef-pypi-typing-inspection-0.4.3",
       "name": "typing-inspection",
       "versionInfo": "0.4.3",
       "downloadLocation": "NOASSERTION",
@@ -566,7 +566,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-typing_extensions",
+      "SPDXID": "SPDXRef-pypi-typing-extensions-4.16.0",
       "name": "typing_extensions",
       "versionInfo": "4.16.0",
       "downloadLocation": "NOASSERTION",
@@ -582,7 +582,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-uvicorn",
+      "SPDXID": "SPDXRef-pypi-uvicorn-0.52.1",
       "name": "uvicorn",
       "versionInfo": "0.52.1",
       "downloadLocation": "NOASSERTION",
@@ -598,7 +598,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-watchfiles",
+      "SPDXID": "SPDXRef-pypi-watchfiles-1.2.0",
       "name": "watchfiles",
       "versionInfo": "1.2.0",
       "downloadLocation": "NOASSERTION",
@@ -614,7 +614,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-pypi-websockets",
+      "SPDXID": "SPDXRef-pypi-websockets-17.0.1",
       "name": "websockets",
       "versionInfo": "17.0.1",
       "downloadLocation": "NOASSERTION",
@@ -630,7 +630,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-adobe_css-tools-4_5_0",
+      "SPDXID": "SPDXRef-npm--adobe-css-tools-4.5.0",
       "name": "@adobe/css-tools",
       "versionInfo": "4.5.0",
       "downloadLocation": "NOASSERTION",
@@ -652,7 +652,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-asamuzakjp_css-color-3_2_0",
+      "SPDXID": "SPDXRef-npm--asamuzakjp-css-color-3.2.0",
       "name": "@asamuzakjp/css-color",
       "versionInfo": "3.2.0",
       "downloadLocation": "NOASSERTION",
@@ -674,7 +674,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-babel_code-frame-7_29_7",
+      "SPDXID": "SPDXRef-npm--babel-code-frame-7.29.7",
       "name": "@babel/code-frame",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
@@ -696,7 +696,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-babel_compat-data-7_29_7",
+      "SPDXID": "SPDXRef-npm--babel-compat-data-7.29.7",
       "name": "@babel/compat-data",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
@@ -718,7 +718,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-babel_core-7_29_7",
+      "SPDXID": "SPDXRef-npm--babel-core-7.29.7",
       "name": "@babel/core",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
@@ -740,7 +740,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-babel_generator-7_29_8",
+      "SPDXID": "SPDXRef-npm--babel-generator-7.29.8",
       "name": "@babel/generator",
       "versionInfo": "7.29.8",
       "downloadLocation": "NOASSERTION",
@@ -762,7 +762,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-babel_helper-compilation-targets-7_29_7",
+      "SPDXID": "SPDXRef-npm--babel-helper-compilation-targets-7.29.7",
       "name": "@babel/helper-compilation-targets",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
@@ -784,7 +784,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-babel_helper-globals-7_29_7",
+      "SPDXID": "SPDXRef-npm--babel-helper-globals-7.29.7",
       "name": "@babel/helper-globals",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
@@ -806,7 +806,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-babel_helper-module-imports-7_29_7",
+      "SPDXID": "SPDXRef-npm--babel-helper-module-imports-7.29.7",
       "name": "@babel/helper-module-imports",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
@@ -828,7 +828,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-babel_helper-module-transforms-7_29_7",
+      "SPDXID": "SPDXRef-npm--babel-helper-module-transforms-7.29.7",
       "name": "@babel/helper-module-transforms",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
@@ -850,7 +850,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-babel_helper-plugin-utils-7_29_7",
+      "SPDXID": "SPDXRef-npm--babel-helper-plugin-utils-7.29.7",
       "name": "@babel/helper-plugin-utils",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
@@ -872,7 +872,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-babel_helper-string-parser-7_29_7",
+      "SPDXID": "SPDXRef-npm--babel-helper-string-parser-7.29.7",
       "name": "@babel/helper-string-parser",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
@@ -894,7 +894,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-babel_helper-validator-identifier-7_29_7",
+      "SPDXID": "SPDXRef-npm--babel-helper-validator-identifier-7.29.7",
       "name": "@babel/helper-validator-identifier",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
@@ -916,7 +916,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-babel_helper-validator-option-7_29_7",
+      "SPDXID": "SPDXRef-npm--babel-helper-validator-option-7.29.7",
       "name": "@babel/helper-validator-option",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
@@ -938,7 +938,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-babel_helpers-7_29_7",
+      "SPDXID": "SPDXRef-npm--babel-helpers-7.29.7",
       "name": "@babel/helpers",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
@@ -960,7 +960,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-babel_parser-7_29_8",
+      "SPDXID": "SPDXRef-npm--babel-parser-7.29.8",
       "name": "@babel/parser",
       "versionInfo": "7.29.8",
       "downloadLocation": "NOASSERTION",
@@ -982,7 +982,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-babel_plugin-transform-react-jsx-self-7_29_7",
+      "SPDXID": "SPDXRef-npm--babel-plugin-transform-react-jsx-self-7.29.7",
       "name": "@babel/plugin-transform-react-jsx-self",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
@@ -1004,7 +1004,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-babel_plugin-transform-react-jsx-source-7_29_7",
+      "SPDXID": "SPDXRef-npm--babel-plugin-transform-react-jsx-source-7.29.7",
       "name": "@babel/plugin-transform-react-jsx-source",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
@@ -1026,7 +1026,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-babel_runtime-7_29_7",
+      "SPDXID": "SPDXRef-npm--babel-runtime-7.29.7",
       "name": "@babel/runtime",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
@@ -1048,7 +1048,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-babel_template-7_29_7",
+      "SPDXID": "SPDXRef-npm--babel-template-7.29.7",
       "name": "@babel/template",
       "versionInfo": "7.29.7",
       "downloadLocation": "NOASSERTION",
@@ -1070,7 +1070,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-babel_traverse-7_29_8",
+      "SPDXID": "SPDXRef-npm--babel-traverse-7.29.8",
       "name": "@babel/traverse",
       "versionInfo": "7.29.8",
       "downloadLocation": "NOASSERTION",
@@ -1092,7 +1092,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-babel_types-7_29_8",
+      "SPDXID": "SPDXRef-npm--babel-types-7.29.8",
       "name": "@babel/types",
       "versionInfo": "7.29.8",
       "downloadLocation": "NOASSERTION",
@@ -1114,7 +1114,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-csstools_color-helpers-5_1_0",
+      "SPDXID": "SPDXRef-npm--csstools-color-helpers-5.1.0",
       "name": "@csstools/color-helpers",
       "versionInfo": "5.1.0",
       "downloadLocation": "NOASSERTION",
@@ -1136,7 +1136,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-csstools_css-calc-2_1_4",
+      "SPDXID": "SPDXRef-npm--csstools-css-calc-2.1.4",
       "name": "@csstools/css-calc",
       "versionInfo": "2.1.4",
       "downloadLocation": "NOASSERTION",
@@ -1158,7 +1158,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-csstools_css-color-parser-3_1_0",
+      "SPDXID": "SPDXRef-npm--csstools-css-color-parser-3.1.0",
       "name": "@csstools/css-color-parser",
       "versionInfo": "3.1.0",
       "downloadLocation": "NOASSERTION",
@@ -1180,7 +1180,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-csstools_css-parser-algorithms-3_0_5",
+      "SPDXID": "SPDXRef-npm--csstools-css-parser-algorithms-3.0.5",
       "name": "@csstools/css-parser-algorithms",
       "versionInfo": "3.0.5",
       "downloadLocation": "NOASSERTION",
@@ -1202,7 +1202,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-csstools_css-tokenizer-3_0_4",
+      "SPDXID": "SPDXRef-npm--csstools-css-tokenizer-3.0.4",
       "name": "@csstools/css-tokenizer",
       "versionInfo": "3.0.4",
       "downloadLocation": "NOASSERTION",
@@ -1224,7 +1224,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_aix-ppc64-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-aix-ppc64-0.21.5",
       "name": "@esbuild/aix-ppc64",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -1246,7 +1246,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_aix-ppc64-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-aix-ppc64-0.25.12",
       "name": "@esbuild/aix-ppc64",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -1268,7 +1268,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_android-arm64-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-android-arm64-0.21.5",
       "name": "@esbuild/android-arm64",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -1290,7 +1290,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_android-arm64-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-android-arm64-0.25.12",
       "name": "@esbuild/android-arm64",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -1312,7 +1312,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_android-arm-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-android-arm-0.21.5",
       "name": "@esbuild/android-arm",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -1334,7 +1334,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_android-arm-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-android-arm-0.25.12",
       "name": "@esbuild/android-arm",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -1356,7 +1356,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_android-x64-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-android-x64-0.21.5",
       "name": "@esbuild/android-x64",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -1378,7 +1378,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_android-x64-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-android-x64-0.25.12",
       "name": "@esbuild/android-x64",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -1400,7 +1400,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_darwin-arm64-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-darwin-arm64-0.21.5",
       "name": "@esbuild/darwin-arm64",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -1422,7 +1422,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_darwin-arm64-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-darwin-arm64-0.25.12",
       "name": "@esbuild/darwin-arm64",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -1444,7 +1444,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_darwin-x64-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-darwin-x64-0.21.5",
       "name": "@esbuild/darwin-x64",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -1466,7 +1466,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_darwin-x64-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-darwin-x64-0.25.12",
       "name": "@esbuild/darwin-x64",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -1488,7 +1488,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_freebsd-arm64-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-freebsd-arm64-0.21.5",
       "name": "@esbuild/freebsd-arm64",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -1510,7 +1510,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_freebsd-arm64-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-freebsd-arm64-0.25.12",
       "name": "@esbuild/freebsd-arm64",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -1532,7 +1532,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_freebsd-x64-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-freebsd-x64-0.21.5",
       "name": "@esbuild/freebsd-x64",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -1554,7 +1554,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_freebsd-x64-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-freebsd-x64-0.25.12",
       "name": "@esbuild/freebsd-x64",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -1576,7 +1576,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_linux-arm64-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-linux-arm64-0.21.5",
       "name": "@esbuild/linux-arm64",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -1598,7 +1598,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_linux-arm64-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-linux-arm64-0.25.12",
       "name": "@esbuild/linux-arm64",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -1620,7 +1620,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_linux-arm-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-linux-arm-0.21.5",
       "name": "@esbuild/linux-arm",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -1642,7 +1642,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_linux-arm-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-linux-arm-0.25.12",
       "name": "@esbuild/linux-arm",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -1664,7 +1664,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_linux-ia32-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-linux-ia32-0.21.5",
       "name": "@esbuild/linux-ia32",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -1686,7 +1686,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_linux-ia32-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-linux-ia32-0.25.12",
       "name": "@esbuild/linux-ia32",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -1708,7 +1708,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_linux-loong64-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-linux-loong64-0.21.5",
       "name": "@esbuild/linux-loong64",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -1730,7 +1730,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_linux-loong64-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-linux-loong64-0.25.12",
       "name": "@esbuild/linux-loong64",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -1752,7 +1752,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_linux-mips64el-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-linux-mips64el-0.21.5",
       "name": "@esbuild/linux-mips64el",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -1774,7 +1774,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_linux-mips64el-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-linux-mips64el-0.25.12",
       "name": "@esbuild/linux-mips64el",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -1796,7 +1796,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_linux-ppc64-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-linux-ppc64-0.21.5",
       "name": "@esbuild/linux-ppc64",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -1818,7 +1818,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_linux-ppc64-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-linux-ppc64-0.25.12",
       "name": "@esbuild/linux-ppc64",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -1840,7 +1840,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_linux-riscv64-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-linux-riscv64-0.21.5",
       "name": "@esbuild/linux-riscv64",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -1862,7 +1862,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_linux-riscv64-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-linux-riscv64-0.25.12",
       "name": "@esbuild/linux-riscv64",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -1884,7 +1884,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_linux-s390x-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-linux-s390x-0.21.5",
       "name": "@esbuild/linux-s390x",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -1906,7 +1906,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_linux-s390x-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-linux-s390x-0.25.12",
       "name": "@esbuild/linux-s390x",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -1928,7 +1928,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_linux-x64-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-linux-x64-0.21.5",
       "name": "@esbuild/linux-x64",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -1950,7 +1950,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_linux-x64-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-linux-x64-0.25.12",
       "name": "@esbuild/linux-x64",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -1972,7 +1972,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_netbsd-arm64-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-netbsd-arm64-0.25.12",
       "name": "@esbuild/netbsd-arm64",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -1994,7 +1994,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_netbsd-x64-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-netbsd-x64-0.21.5",
       "name": "@esbuild/netbsd-x64",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -2016,7 +2016,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_netbsd-x64-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-netbsd-x64-0.25.12",
       "name": "@esbuild/netbsd-x64",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -2038,7 +2038,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_openbsd-arm64-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-openbsd-arm64-0.25.12",
       "name": "@esbuild/openbsd-arm64",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -2060,7 +2060,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_openbsd-x64-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-openbsd-x64-0.21.5",
       "name": "@esbuild/openbsd-x64",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -2082,7 +2082,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_openbsd-x64-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-openbsd-x64-0.25.12",
       "name": "@esbuild/openbsd-x64",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -2104,7 +2104,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_openharmony-arm64-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-openharmony-arm64-0.25.12",
       "name": "@esbuild/openharmony-arm64",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -2126,7 +2126,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_sunos-x64-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-sunos-x64-0.21.5",
       "name": "@esbuild/sunos-x64",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -2148,7 +2148,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_sunos-x64-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-sunos-x64-0.25.12",
       "name": "@esbuild/sunos-x64",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -2170,7 +2170,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_win32-arm64-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-win32-arm64-0.21.5",
       "name": "@esbuild/win32-arm64",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -2192,7 +2192,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_win32-arm64-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-win32-arm64-0.25.12",
       "name": "@esbuild/win32-arm64",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -2214,7 +2214,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_win32-ia32-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-win32-ia32-0.21.5",
       "name": "@esbuild/win32-ia32",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -2236,7 +2236,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_win32-ia32-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-win32-ia32-0.25.12",
       "name": "@esbuild/win32-ia32",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -2258,7 +2258,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_win32-x64-0_21_5",
+      "SPDXID": "SPDXRef-npm--esbuild-win32-x64-0.21.5",
       "name": "@esbuild/win32-x64",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -2280,7 +2280,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild_win32-x64-0_25_12",
+      "SPDXID": "SPDXRef-npm--esbuild-win32-x64-0.25.12",
       "name": "@esbuild/win32-x64",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -2302,7 +2302,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-jridgewell_gen-mapping-0_3_13",
+      "SPDXID": "SPDXRef-npm--jridgewell-gen-mapping-0.3.13",
       "name": "@jridgewell/gen-mapping",
       "versionInfo": "0.3.13",
       "downloadLocation": "NOASSERTION",
@@ -2324,7 +2324,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-jridgewell_remapping-2_3_5",
+      "SPDXID": "SPDXRef-npm--jridgewell-remapping-2.3.5",
       "name": "@jridgewell/remapping",
       "versionInfo": "2.3.5",
       "downloadLocation": "NOASSERTION",
@@ -2346,7 +2346,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-jridgewell_resolve-uri-3_1_2",
+      "SPDXID": "SPDXRef-npm--jridgewell-resolve-uri-3.1.2",
       "name": "@jridgewell/resolve-uri",
       "versionInfo": "3.1.2",
       "downloadLocation": "NOASSERTION",
@@ -2368,7 +2368,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-jridgewell_sourcemap-codec-1_5_5",
+      "SPDXID": "SPDXRef-npm--jridgewell-sourcemap-codec-1.5.5",
       "name": "@jridgewell/sourcemap-codec",
       "versionInfo": "1.5.5",
       "downloadLocation": "NOASSERTION",
@@ -2390,7 +2390,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-jridgewell_trace-mapping-0_3_31",
+      "SPDXID": "SPDXRef-npm--jridgewell-trace-mapping-0.3.31",
       "name": "@jridgewell/trace-mapping",
       "versionInfo": "0.3.31",
       "downloadLocation": "NOASSERTION",
@@ -2412,7 +2412,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-napi-rs_lzma-linux-x64-gnu-1_5_1",
+      "SPDXID": "SPDXRef-npm--napi-rs-lzma-linux-x64-gnu-1.5.1",
       "name": "@napi-rs/lzma-linux-x64-gnu",
       "versionInfo": "1.5.1",
       "downloadLocation": "NOASSERTION",
@@ -2434,7 +2434,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-playwright_test-1_62_1",
+      "SPDXID": "SPDXRef-npm--playwright-test-1.62.1",
       "name": "@playwright/test",
       "versionInfo": "1.62.1",
       "downloadLocation": "NOASSERTION",
@@ -2456,7 +2456,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rolldown_pluginutils-1_0_0-beta_27",
+      "SPDXID": "SPDXRef-npm--rolldown-pluginutils-1.0.0-beta.27",
       "name": "@rolldown/pluginutils",
       "versionInfo": "1.0.0-beta.27",
       "downloadLocation": "NOASSERTION",
@@ -2478,7 +2478,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-android-arm-eabi-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-android-arm-eabi-4.62.4",
       "name": "@rollup/rollup-android-arm-eabi",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2500,7 +2500,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-android-arm64-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-android-arm64-4.62.4",
       "name": "@rollup/rollup-android-arm64",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2522,7 +2522,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-darwin-arm64-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-darwin-arm64-4.62.4",
       "name": "@rollup/rollup-darwin-arm64",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2544,7 +2544,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-darwin-x64-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-darwin-x64-4.62.4",
       "name": "@rollup/rollup-darwin-x64",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2566,7 +2566,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-freebsd-arm64-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-freebsd-arm64-4.62.4",
       "name": "@rollup/rollup-freebsd-arm64",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2588,7 +2588,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-freebsd-x64-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-freebsd-x64-4.62.4",
       "name": "@rollup/rollup-freebsd-x64",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2610,7 +2610,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-linux-arm-gnueabihf-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-linux-arm-gnueabihf-4.62.4",
       "name": "@rollup/rollup-linux-arm-gnueabihf",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2632,7 +2632,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-linux-arm-musleabihf-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-linux-arm-musleabihf-4.62.4",
       "name": "@rollup/rollup-linux-arm-musleabihf",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2654,7 +2654,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-linux-arm64-gnu-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-linux-arm64-gnu-4.62.4",
       "name": "@rollup/rollup-linux-arm64-gnu",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2676,7 +2676,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-linux-arm64-musl-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-linux-arm64-musl-4.62.4",
       "name": "@rollup/rollup-linux-arm64-musl",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2698,7 +2698,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-linux-loong64-gnu-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-linux-loong64-gnu-4.62.4",
       "name": "@rollup/rollup-linux-loong64-gnu",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2720,7 +2720,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-linux-loong64-musl-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-linux-loong64-musl-4.62.4",
       "name": "@rollup/rollup-linux-loong64-musl",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2742,7 +2742,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-linux-ppc64-gnu-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-linux-ppc64-gnu-4.62.4",
       "name": "@rollup/rollup-linux-ppc64-gnu",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2764,7 +2764,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-linux-ppc64-musl-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-linux-ppc64-musl-4.62.4",
       "name": "@rollup/rollup-linux-ppc64-musl",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2786,7 +2786,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-linux-riscv64-gnu-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-linux-riscv64-gnu-4.62.4",
       "name": "@rollup/rollup-linux-riscv64-gnu",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2808,7 +2808,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-linux-riscv64-musl-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-linux-riscv64-musl-4.62.4",
       "name": "@rollup/rollup-linux-riscv64-musl",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2830,7 +2830,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-linux-s390x-gnu-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-linux-s390x-gnu-4.62.4",
       "name": "@rollup/rollup-linux-s390x-gnu",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2852,7 +2852,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-linux-x64-gnu-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-linux-x64-gnu-4.62.4",
       "name": "@rollup/rollup-linux-x64-gnu",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2874,7 +2874,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-linux-x64-musl-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-linux-x64-musl-4.62.4",
       "name": "@rollup/rollup-linux-x64-musl",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2896,7 +2896,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-openbsd-x64-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-openbsd-x64-4.62.4",
       "name": "@rollup/rollup-openbsd-x64",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2918,7 +2918,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-openharmony-arm64-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-openharmony-arm64-4.62.4",
       "name": "@rollup/rollup-openharmony-arm64",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2940,7 +2940,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-win32-arm64-msvc-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-win32-arm64-msvc-4.62.4",
       "name": "@rollup/rollup-win32-arm64-msvc",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2962,7 +2962,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-win32-ia32-msvc-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-win32-ia32-msvc-4.62.4",
       "name": "@rollup/rollup-win32-ia32-msvc",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -2984,7 +2984,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-win32-x64-gnu-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-win32-x64-gnu-4.62.4",
       "name": "@rollup/rollup-win32-x64-gnu",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -3006,7 +3006,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup_rollup-win32-x64-msvc-4_62_4",
+      "SPDXID": "SPDXRef-npm--rollup-rollup-win32-x64-msvc-4.62.4",
       "name": "@rollup/rollup-win32-x64-msvc",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -3028,7 +3028,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-tanstack_query-core-5_101_4",
+      "SPDXID": "SPDXRef-npm--tanstack-query-core-5.101.4",
       "name": "@tanstack/query-core",
       "versionInfo": "5.101.4",
       "downloadLocation": "NOASSERTION",
@@ -3050,7 +3050,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-tanstack_react-query-5_101_4",
+      "SPDXID": "SPDXRef-npm--tanstack-react-query-5.101.4",
       "name": "@tanstack/react-query",
       "versionInfo": "5.101.4",
       "downloadLocation": "NOASSERTION",
@@ -3072,7 +3072,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-testing-library_dom-10_4_1",
+      "SPDXID": "SPDXRef-npm--testing-library-dom-10.4.1",
       "name": "@testing-library/dom",
       "versionInfo": "10.4.1",
       "downloadLocation": "NOASSERTION",
@@ -3094,7 +3094,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-testing-library_jest-dom-6_10_0",
+      "SPDXID": "SPDXRef-npm--testing-library-jest-dom-6.10.0",
       "name": "@testing-library/jest-dom",
       "versionInfo": "6.10.0",
       "downloadLocation": "NOASSERTION",
@@ -3116,7 +3116,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-testing-library_react-16_3_2",
+      "SPDXID": "SPDXRef-npm--testing-library-react-16.3.2",
       "name": "@testing-library/react",
       "versionInfo": "16.3.2",
       "downloadLocation": "NOASSERTION",
@@ -3138,7 +3138,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-types_aria-query-5_0_4",
+      "SPDXID": "SPDXRef-npm--types-aria-query-5.0.4",
       "name": "@types/aria-query",
       "versionInfo": "5.0.4",
       "downloadLocation": "NOASSERTION",
@@ -3160,7 +3160,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-types_babel__core-7_20_5",
+      "SPDXID": "SPDXRef-npm--types-babel-core-7.20.5",
       "name": "@types/babel__core",
       "versionInfo": "7.20.5",
       "downloadLocation": "NOASSERTION",
@@ -3182,7 +3182,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-types_babel__generator-7_27_0",
+      "SPDXID": "SPDXRef-npm--types-babel-generator-7.27.0",
       "name": "@types/babel__generator",
       "versionInfo": "7.27.0",
       "downloadLocation": "NOASSERTION",
@@ -3204,7 +3204,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-types_babel__template-7_4_4",
+      "SPDXID": "SPDXRef-npm--types-babel-template-7.4.4",
       "name": "@types/babel__template",
       "versionInfo": "7.4.4",
       "downloadLocation": "NOASSERTION",
@@ -3226,7 +3226,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-types_babel__traverse-7_28_0",
+      "SPDXID": "SPDXRef-npm--types-babel-traverse-7.28.0",
       "name": "@types/babel__traverse",
       "versionInfo": "7.28.0",
       "downloadLocation": "NOASSERTION",
@@ -3248,7 +3248,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-types_d3-color-3_1_3",
+      "SPDXID": "SPDXRef-npm--types-d3-color-3.1.3",
       "name": "@types/d3-color",
       "versionInfo": "3.1.3",
       "downloadLocation": "NOASSERTION",
@@ -3270,7 +3270,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-types_d3-drag-3_0_7",
+      "SPDXID": "SPDXRef-npm--types-d3-drag-3.0.7",
       "name": "@types/d3-drag",
       "versionInfo": "3.0.7",
       "downloadLocation": "NOASSERTION",
@@ -3292,7 +3292,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-types_d3-interpolate-3_0_4",
+      "SPDXID": "SPDXRef-npm--types-d3-interpolate-3.0.4",
       "name": "@types/d3-interpolate",
       "versionInfo": "3.0.4",
       "downloadLocation": "NOASSERTION",
@@ -3314,7 +3314,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-types_d3-selection-3_0_11",
+      "SPDXID": "SPDXRef-npm--types-d3-selection-3.0.11",
       "name": "@types/d3-selection",
       "versionInfo": "3.0.11",
       "downloadLocation": "NOASSERTION",
@@ -3336,7 +3336,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-types_d3-transition-3_0_9",
+      "SPDXID": "SPDXRef-npm--types-d3-transition-3.0.9",
       "name": "@types/d3-transition",
       "versionInfo": "3.0.9",
       "downloadLocation": "NOASSERTION",
@@ -3358,7 +3358,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-types_d3-zoom-3_0_8",
+      "SPDXID": "SPDXRef-npm--types-d3-zoom-3.0.8",
       "name": "@types/d3-zoom",
       "versionInfo": "3.0.8",
       "downloadLocation": "NOASSERTION",
@@ -3380,7 +3380,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-types_estree-1_0_9",
+      "SPDXID": "SPDXRef-npm--types-estree-1.0.9",
       "name": "@types/estree",
       "versionInfo": "1.0.9",
       "downloadLocation": "NOASSERTION",
@@ -3402,7 +3402,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-types_react-dom-19_2_4",
+      "SPDXID": "SPDXRef-npm--types-react-dom-19.2.4",
       "name": "@types/react-dom",
       "versionInfo": "19.2.4",
       "downloadLocation": "NOASSERTION",
@@ -3424,7 +3424,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-types_react-19_2_18",
+      "SPDXID": "SPDXRef-npm--types-react-19.2.18",
       "name": "@types/react",
       "versionInfo": "19.2.18",
       "downloadLocation": "NOASSERTION",
@@ -3446,7 +3446,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-vitejs_plugin-react-4_7_0",
+      "SPDXID": "SPDXRef-npm--vitejs-plugin-react-4.7.0",
       "name": "@vitejs/plugin-react",
       "versionInfo": "4.7.0",
       "downloadLocation": "NOASSERTION",
@@ -3468,7 +3468,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-vitest_expect-2_1_9",
+      "SPDXID": "SPDXRef-npm--vitest-expect-2.1.9",
       "name": "@vitest/expect",
       "versionInfo": "2.1.9",
       "downloadLocation": "NOASSERTION",
@@ -3490,7 +3490,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-vitest_mocker-2_1_9",
+      "SPDXID": "SPDXRef-npm--vitest-mocker-2.1.9",
       "name": "@vitest/mocker",
       "versionInfo": "2.1.9",
       "downloadLocation": "NOASSERTION",
@@ -3512,7 +3512,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-vitest_pretty-format-2_1_9",
+      "SPDXID": "SPDXRef-npm--vitest-pretty-format-2.1.9",
       "name": "@vitest/pretty-format",
       "versionInfo": "2.1.9",
       "downloadLocation": "NOASSERTION",
@@ -3534,7 +3534,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-vitest_runner-2_1_9",
+      "SPDXID": "SPDXRef-npm--vitest-runner-2.1.9",
       "name": "@vitest/runner",
       "versionInfo": "2.1.9",
       "downloadLocation": "NOASSERTION",
@@ -3556,7 +3556,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-vitest_snapshot-2_1_9",
+      "SPDXID": "SPDXRef-npm--vitest-snapshot-2.1.9",
       "name": "@vitest/snapshot",
       "versionInfo": "2.1.9",
       "downloadLocation": "NOASSERTION",
@@ -3578,7 +3578,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-vitest_spy-2_1_9",
+      "SPDXID": "SPDXRef-npm--vitest-spy-2.1.9",
       "name": "@vitest/spy",
       "versionInfo": "2.1.9",
       "downloadLocation": "NOASSERTION",
@@ -3600,7 +3600,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-vitest_utils-2_1_9",
+      "SPDXID": "SPDXRef-npm--vitest-utils-2.1.9",
       "name": "@vitest/utils",
       "versionInfo": "2.1.9",
       "downloadLocation": "NOASSERTION",
@@ -3622,7 +3622,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-xyflow_react-12_0_0",
+      "SPDXID": "SPDXRef-npm--xyflow-react-12.0.0",
       "name": "@xyflow/react",
       "versionInfo": "12.0.0",
       "downloadLocation": "NOASSERTION",
@@ -3644,7 +3644,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-xyflow_system-0_0_34",
+      "SPDXID": "SPDXRef-npm--xyflow-system-0.0.34",
       "name": "@xyflow/system",
       "versionInfo": "0.0.34",
       "downloadLocation": "NOASSERTION",
@@ -3666,7 +3666,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-agent-base-7_1_4",
+      "SPDXID": "SPDXRef-npm-agent-base-7.1.4",
       "name": "agent-base",
       "versionInfo": "7.1.4",
       "downloadLocation": "NOASSERTION",
@@ -3688,7 +3688,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-ansi-regex-5_0_1",
+      "SPDXID": "SPDXRef-npm-ansi-regex-5.0.1",
       "name": "ansi-regex",
       "versionInfo": "5.0.1",
       "downloadLocation": "NOASSERTION",
@@ -3710,7 +3710,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-ansi-styles-5_2_0",
+      "SPDXID": "SPDXRef-npm-ansi-styles-5.2.0",
       "name": "ansi-styles",
       "versionInfo": "5.2.0",
       "downloadLocation": "NOASSERTION",
@@ -3732,7 +3732,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-aria-query-5_3_0",
+      "SPDXID": "SPDXRef-npm-aria-query-5.3.0",
       "name": "aria-query",
       "versionInfo": "5.3.0",
       "downloadLocation": "NOASSERTION",
@@ -3754,7 +3754,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-aria-query-5_3_2",
+      "SPDXID": "SPDXRef-npm-aria-query-5.3.2",
       "name": "aria-query",
       "versionInfo": "5.3.2",
       "downloadLocation": "NOASSERTION",
@@ -3776,7 +3776,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-assertion-error-2_0_1",
+      "SPDXID": "SPDXRef-npm-assertion-error-2.0.1",
       "name": "assertion-error",
       "versionInfo": "2.0.1",
       "downloadLocation": "NOASSERTION",
@@ -3798,7 +3798,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-asynckit-0_4_0",
+      "SPDXID": "SPDXRef-npm-asynckit-0.4.0",
       "name": "asynckit",
       "versionInfo": "0.4.0",
       "downloadLocation": "NOASSERTION",
@@ -3820,7 +3820,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-baseline-browser-mapping-2_11_13",
+      "SPDXID": "SPDXRef-npm-baseline-browser-mapping-2.11.13",
       "name": "baseline-browser-mapping",
       "versionInfo": "2.11.13",
       "downloadLocation": "NOASSERTION",
@@ -3842,7 +3842,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-browserslist-4_28_8",
+      "SPDXID": "SPDXRef-npm-browserslist-4.28.8",
       "name": "browserslist",
       "versionInfo": "4.28.8",
       "downloadLocation": "NOASSERTION",
@@ -3864,7 +3864,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-cac-6_7_14",
+      "SPDXID": "SPDXRef-npm-cac-6.7.14",
       "name": "cac",
       "versionInfo": "6.7.14",
       "downloadLocation": "NOASSERTION",
@@ -3886,7 +3886,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-call-bind-apply-helpers-1_0_2",
+      "SPDXID": "SPDXRef-npm-call-bind-apply-helpers-1.0.2",
       "name": "call-bind-apply-helpers",
       "versionInfo": "1.0.2",
       "downloadLocation": "NOASSERTION",
@@ -3908,7 +3908,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-caniuse-lite-1_0_30001809",
+      "SPDXID": "SPDXRef-npm-caniuse-lite-1.0.30001809",
       "name": "caniuse-lite",
       "versionInfo": "1.0.30001809",
       "downloadLocation": "NOASSERTION",
@@ -3930,7 +3930,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-chai-5_3_3",
+      "SPDXID": "SPDXRef-npm-chai-5.3.3",
       "name": "chai",
       "versionInfo": "5.3.3",
       "downloadLocation": "NOASSERTION",
@@ -3952,7 +3952,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-check-error-2_1_3",
+      "SPDXID": "SPDXRef-npm-check-error-2.1.3",
       "name": "check-error",
       "versionInfo": "2.1.3",
       "downloadLocation": "NOASSERTION",
@@ -3974,7 +3974,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-classcat-5_0_5",
+      "SPDXID": "SPDXRef-npm-classcat-5.0.5",
       "name": "classcat",
       "versionInfo": "5.0.5",
       "downloadLocation": "NOASSERTION",
@@ -3996,7 +3996,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-combined-stream-1_0_8",
+      "SPDXID": "SPDXRef-npm-combined-stream-1.0.8",
       "name": "combined-stream",
       "versionInfo": "1.0.8",
       "downloadLocation": "NOASSERTION",
@@ -4018,7 +4018,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-convert-source-map-2_0_0",
+      "SPDXID": "SPDXRef-npm-convert-source-map-2.0.0",
       "name": "convert-source-map",
       "versionInfo": "2.0.0",
       "downloadLocation": "NOASSERTION",
@@ -4040,7 +4040,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-css.escape-1_5_1",
+      "SPDXID": "SPDXRef-npm-css.escape-1.5.1",
       "name": "css.escape",
       "versionInfo": "1.5.1",
       "downloadLocation": "NOASSERTION",
@@ -4062,7 +4062,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-cssstyle-4_6_0",
+      "SPDXID": "SPDXRef-npm-cssstyle-4.6.0",
       "name": "cssstyle",
       "versionInfo": "4.6.0",
       "downloadLocation": "NOASSERTION",
@@ -4084,7 +4084,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-csstype-3_2_3",
+      "SPDXID": "SPDXRef-npm-csstype-3.2.3",
       "name": "csstype",
       "versionInfo": "3.2.3",
       "downloadLocation": "NOASSERTION",
@@ -4106,7 +4106,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-d3-color-3_1_0",
+      "SPDXID": "SPDXRef-npm-d3-color-3.1.0",
       "name": "d3-color",
       "versionInfo": "3.1.0",
       "downloadLocation": "NOASSERTION",
@@ -4128,7 +4128,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-d3-dispatch-3_0_1",
+      "SPDXID": "SPDXRef-npm-d3-dispatch-3.0.1",
       "name": "d3-dispatch",
       "versionInfo": "3.0.1",
       "downloadLocation": "NOASSERTION",
@@ -4150,7 +4150,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-d3-drag-3_0_0",
+      "SPDXID": "SPDXRef-npm-d3-drag-3.0.0",
       "name": "d3-drag",
       "versionInfo": "3.0.0",
       "downloadLocation": "NOASSERTION",
@@ -4172,7 +4172,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-d3-ease-3_0_1",
+      "SPDXID": "SPDXRef-npm-d3-ease-3.0.1",
       "name": "d3-ease",
       "versionInfo": "3.0.1",
       "downloadLocation": "NOASSERTION",
@@ -4194,7 +4194,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-d3-interpolate-3_0_1",
+      "SPDXID": "SPDXRef-npm-d3-interpolate-3.0.1",
       "name": "d3-interpolate",
       "versionInfo": "3.0.1",
       "downloadLocation": "NOASSERTION",
@@ -4216,7 +4216,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-d3-selection-3_0_0",
+      "SPDXID": "SPDXRef-npm-d3-selection-3.0.0",
       "name": "d3-selection",
       "versionInfo": "3.0.0",
       "downloadLocation": "NOASSERTION",
@@ -4238,7 +4238,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-d3-timer-3_0_1",
+      "SPDXID": "SPDXRef-npm-d3-timer-3.0.1",
       "name": "d3-timer",
       "versionInfo": "3.0.1",
       "downloadLocation": "NOASSERTION",
@@ -4260,7 +4260,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-d3-transition-3_0_1",
+      "SPDXID": "SPDXRef-npm-d3-transition-3.0.1",
       "name": "d3-transition",
       "versionInfo": "3.0.1",
       "downloadLocation": "NOASSERTION",
@@ -4282,7 +4282,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-d3-zoom-3_0_0",
+      "SPDXID": "SPDXRef-npm-d3-zoom-3.0.0",
       "name": "d3-zoom",
       "versionInfo": "3.0.0",
       "downloadLocation": "NOASSERTION",
@@ -4304,7 +4304,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-data-urls-5_0_0",
+      "SPDXID": "SPDXRef-npm-data-urls-5.0.0",
       "name": "data-urls",
       "versionInfo": "5.0.0",
       "downloadLocation": "NOASSERTION",
@@ -4326,7 +4326,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-debug-4_4_3",
+      "SPDXID": "SPDXRef-npm-debug-4.4.3",
       "name": "debug",
       "versionInfo": "4.4.3",
       "downloadLocation": "NOASSERTION",
@@ -4348,7 +4348,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-decimal.js-10_6_0",
+      "SPDXID": "SPDXRef-npm-decimal.js-10.6.0",
       "name": "decimal.js",
       "versionInfo": "10.6.0",
       "downloadLocation": "NOASSERTION",
@@ -4370,7 +4370,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-deep-eql-5_0_2",
+      "SPDXID": "SPDXRef-npm-deep-eql-5.0.2",
       "name": "deep-eql",
       "versionInfo": "5.0.2",
       "downloadLocation": "NOASSERTION",
@@ -4392,7 +4392,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-delayed-stream-1_0_0",
+      "SPDXID": "SPDXRef-npm-delayed-stream-1.0.0",
       "name": "delayed-stream",
       "versionInfo": "1.0.0",
       "downloadLocation": "NOASSERTION",
@@ -4414,7 +4414,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-dequal-2_0_3",
+      "SPDXID": "SPDXRef-npm-dequal-2.0.3",
       "name": "dequal",
       "versionInfo": "2.0.3",
       "downloadLocation": "NOASSERTION",
@@ -4436,7 +4436,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-dom-accessibility-api-0_5_16",
+      "SPDXID": "SPDXRef-npm-dom-accessibility-api-0.5.16",
       "name": "dom-accessibility-api",
       "versionInfo": "0.5.16",
       "downloadLocation": "NOASSERTION",
@@ -4458,7 +4458,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-dom-accessibility-api-0_6_3",
+      "SPDXID": "SPDXRef-npm-dom-accessibility-api-0.6.3",
       "name": "dom-accessibility-api",
       "versionInfo": "0.6.3",
       "downloadLocation": "NOASSERTION",
@@ -4480,7 +4480,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-dunder-proto-1_0_1",
+      "SPDXID": "SPDXRef-npm-dunder-proto-1.0.1",
       "name": "dunder-proto",
       "versionInfo": "1.0.1",
       "downloadLocation": "NOASSERTION",
@@ -4502,7 +4502,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-electron-to-chromium-1_5_404",
+      "SPDXID": "SPDXRef-npm-electron-to-chromium-1.5.404",
       "name": "electron-to-chromium",
       "versionInfo": "1.5.404",
       "downloadLocation": "NOASSERTION",
@@ -4524,7 +4524,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-entities-6_0_1",
+      "SPDXID": "SPDXRef-npm-entities-6.0.1",
       "name": "entities",
       "versionInfo": "6.0.1",
       "downloadLocation": "NOASSERTION",
@@ -4546,7 +4546,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-es-define-property-1_0_1",
+      "SPDXID": "SPDXRef-npm-es-define-property-1.0.1",
       "name": "es-define-property",
       "versionInfo": "1.0.1",
       "downloadLocation": "NOASSERTION",
@@ -4568,7 +4568,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-es-errors-1_3_0",
+      "SPDXID": "SPDXRef-npm-es-errors-1.3.0",
       "name": "es-errors",
       "versionInfo": "1.3.0",
       "downloadLocation": "NOASSERTION",
@@ -4590,7 +4590,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-es-module-lexer-1_7_0",
+      "SPDXID": "SPDXRef-npm-es-module-lexer-1.7.0",
       "name": "es-module-lexer",
       "versionInfo": "1.7.0",
       "downloadLocation": "NOASSERTION",
@@ -4612,7 +4612,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-es-object-atoms-1_1_2",
+      "SPDXID": "SPDXRef-npm-es-object-atoms-1.1.2",
       "name": "es-object-atoms",
       "versionInfo": "1.1.2",
       "downloadLocation": "NOASSERTION",
@@ -4634,7 +4634,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-es-set-tostringtag-2_1_0",
+      "SPDXID": "SPDXRef-npm-es-set-tostringtag-2.1.0",
       "name": "es-set-tostringtag",
       "versionInfo": "2.1.0",
       "downloadLocation": "NOASSERTION",
@@ -4656,7 +4656,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild-0_21_5",
+      "SPDXID": "SPDXRef-npm-esbuild-0.21.5",
       "name": "esbuild",
       "versionInfo": "0.21.5",
       "downloadLocation": "NOASSERTION",
@@ -4678,7 +4678,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-esbuild-0_25_12",
+      "SPDXID": "SPDXRef-npm-esbuild-0.25.12",
       "name": "esbuild",
       "versionInfo": "0.25.12",
       "downloadLocation": "NOASSERTION",
@@ -4700,7 +4700,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-escalade-3_2_0",
+      "SPDXID": "SPDXRef-npm-escalade-3.2.0",
       "name": "escalade",
       "versionInfo": "3.2.0",
       "downloadLocation": "NOASSERTION",
@@ -4722,7 +4722,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-estree-walker-3_0_3",
+      "SPDXID": "SPDXRef-npm-estree-walker-3.0.3",
       "name": "estree-walker",
       "versionInfo": "3.0.3",
       "downloadLocation": "NOASSERTION",
@@ -4744,7 +4744,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-expect-type-1_4_0",
+      "SPDXID": "SPDXRef-npm-expect-type-1.4.0",
       "name": "expect-type",
       "versionInfo": "1.4.0",
       "downloadLocation": "NOASSERTION",
@@ -4766,7 +4766,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-fdir-6_5_0",
+      "SPDXID": "SPDXRef-npm-fdir-6.5.0",
       "name": "fdir",
       "versionInfo": "6.5.0",
       "downloadLocation": "NOASSERTION",
@@ -4788,7 +4788,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-form-data-4_0_6",
+      "SPDXID": "SPDXRef-npm-form-data-4.0.6",
       "name": "form-data",
       "versionInfo": "4.0.6",
       "downloadLocation": "NOASSERTION",
@@ -4810,7 +4810,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-fsevents-2_3_2",
+      "SPDXID": "SPDXRef-npm-fsevents-2.3.2",
       "name": "fsevents",
       "versionInfo": "2.3.2",
       "downloadLocation": "NOASSERTION",
@@ -4832,7 +4832,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-fsevents-2_3_3",
+      "SPDXID": "SPDXRef-npm-fsevents-2.3.3",
       "name": "fsevents",
       "versionInfo": "2.3.3",
       "downloadLocation": "NOASSERTION",
@@ -4854,7 +4854,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-function-bind-1_1_2",
+      "SPDXID": "SPDXRef-npm-function-bind-1.1.2",
       "name": "function-bind",
       "versionInfo": "1.1.2",
       "downloadLocation": "NOASSERTION",
@@ -4876,7 +4876,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-gensync-1_0_0-beta_2",
+      "SPDXID": "SPDXRef-npm-gensync-1.0.0-beta.2",
       "name": "gensync",
       "versionInfo": "1.0.0-beta.2",
       "downloadLocation": "NOASSERTION",
@@ -4898,7 +4898,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-get-intrinsic-1_3_0",
+      "SPDXID": "SPDXRef-npm-get-intrinsic-1.3.0",
       "name": "get-intrinsic",
       "versionInfo": "1.3.0",
       "downloadLocation": "NOASSERTION",
@@ -4920,7 +4920,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-get-proto-1_0_1",
+      "SPDXID": "SPDXRef-npm-get-proto-1.0.1",
       "name": "get-proto",
       "versionInfo": "1.0.1",
       "downloadLocation": "NOASSERTION",
@@ -4942,7 +4942,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-gopd-1_2_0",
+      "SPDXID": "SPDXRef-npm-gopd-1.2.0",
       "name": "gopd",
       "versionInfo": "1.2.0",
       "downloadLocation": "NOASSERTION",
@@ -4964,7 +4964,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-has-symbols-1_1_0",
+      "SPDXID": "SPDXRef-npm-has-symbols-1.1.0",
       "name": "has-symbols",
       "versionInfo": "1.1.0",
       "downloadLocation": "NOASSERTION",
@@ -4986,7 +4986,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-has-tostringtag-1_0_2",
+      "SPDXID": "SPDXRef-npm-has-tostringtag-1.0.2",
       "name": "has-tostringtag",
       "versionInfo": "1.0.2",
       "downloadLocation": "NOASSERTION",
@@ -5008,7 +5008,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-hasown-2_0_4",
+      "SPDXID": "SPDXRef-npm-hasown-2.0.4",
       "name": "hasown",
       "versionInfo": "2.0.4",
       "downloadLocation": "NOASSERTION",
@@ -5030,7 +5030,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-html-encoding-sniffer-4_0_0",
+      "SPDXID": "SPDXRef-npm-html-encoding-sniffer-4.0.0",
       "name": "html-encoding-sniffer",
       "versionInfo": "4.0.0",
       "downloadLocation": "NOASSERTION",
@@ -5052,7 +5052,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-http-proxy-agent-7_0_2",
+      "SPDXID": "SPDXRef-npm-http-proxy-agent-7.0.2",
       "name": "http-proxy-agent",
       "versionInfo": "7.0.2",
       "downloadLocation": "NOASSERTION",
@@ -5074,7 +5074,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-https-proxy-agent-7_0_6",
+      "SPDXID": "SPDXRef-npm-https-proxy-agent-7.0.6",
       "name": "https-proxy-agent",
       "versionInfo": "7.0.6",
       "downloadLocation": "NOASSERTION",
@@ -5096,7 +5096,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-iconv-lite-0_6_3",
+      "SPDXID": "SPDXRef-npm-iconv-lite-0.6.3",
       "name": "iconv-lite",
       "versionInfo": "0.6.3",
       "downloadLocation": "NOASSERTION",
@@ -5118,7 +5118,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-indent-string-4_0_0",
+      "SPDXID": "SPDXRef-npm-indent-string-4.0.0",
       "name": "indent-string",
       "versionInfo": "4.0.0",
       "downloadLocation": "NOASSERTION",
@@ -5140,7 +5140,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-is-potential-custom-element-name-1_0_1",
+      "SPDXID": "SPDXRef-npm-is-potential-custom-element-name-1.0.1",
       "name": "is-potential-custom-element-name",
       "versionInfo": "1.0.1",
       "downloadLocation": "NOASSERTION",
@@ -5162,7 +5162,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-js-tokens-4_0_0",
+      "SPDXID": "SPDXRef-npm-js-tokens-4.0.0",
       "name": "js-tokens",
       "versionInfo": "4.0.0",
       "downloadLocation": "NOASSERTION",
@@ -5184,7 +5184,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-jsdom-25_0_1",
+      "SPDXID": "SPDXRef-npm-jsdom-25.0.1",
       "name": "jsdom",
       "versionInfo": "25.0.1",
       "downloadLocation": "NOASSERTION",
@@ -5206,7 +5206,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-jsesc-3_1_0",
+      "SPDXID": "SPDXRef-npm-jsesc-3.1.0",
       "name": "jsesc",
       "versionInfo": "3.1.0",
       "downloadLocation": "NOASSERTION",
@@ -5228,7 +5228,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-json5-2_2_3",
+      "SPDXID": "SPDXRef-npm-json5-2.2.3",
       "name": "json5",
       "versionInfo": "2.2.3",
       "downloadLocation": "NOASSERTION",
@@ -5250,7 +5250,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-loupe-3_2_1",
+      "SPDXID": "SPDXRef-npm-loupe-3.2.1",
       "name": "loupe",
       "versionInfo": "3.2.1",
       "downloadLocation": "NOASSERTION",
@@ -5272,7 +5272,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-lru-cache-10_4_3",
+      "SPDXID": "SPDXRef-npm-lru-cache-10.4.3",
       "name": "lru-cache",
       "versionInfo": "10.4.3",
       "downloadLocation": "NOASSERTION",
@@ -5294,7 +5294,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-lru-cache-5_1_1",
+      "SPDXID": "SPDXRef-npm-lru-cache-5.1.1",
       "name": "lru-cache",
       "versionInfo": "5.1.1",
       "downloadLocation": "NOASSERTION",
@@ -5316,7 +5316,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-lz-string-1_5_0",
+      "SPDXID": "SPDXRef-npm-lz-string-1.5.0",
       "name": "lz-string",
       "versionInfo": "1.5.0",
       "downloadLocation": "NOASSERTION",
@@ -5338,7 +5338,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-magic-string-0_30_21",
+      "SPDXID": "SPDXRef-npm-magic-string-0.30.21",
       "name": "magic-string",
       "versionInfo": "0.30.21",
       "downloadLocation": "NOASSERTION",
@@ -5360,7 +5360,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-math-intrinsics-1_1_0",
+      "SPDXID": "SPDXRef-npm-math-intrinsics-1.1.0",
       "name": "math-intrinsics",
       "versionInfo": "1.1.0",
       "downloadLocation": "NOASSERTION",
@@ -5382,7 +5382,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-mime-db-1_52_0",
+      "SPDXID": "SPDXRef-npm-mime-db-1.52.0",
       "name": "mime-db",
       "versionInfo": "1.52.0",
       "downloadLocation": "NOASSERTION",
@@ -5404,7 +5404,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-mime-types-2_1_35",
+      "SPDXID": "SPDXRef-npm-mime-types-2.1.35",
       "name": "mime-types",
       "versionInfo": "2.1.35",
       "downloadLocation": "NOASSERTION",
@@ -5426,7 +5426,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-min-indent-1_0_1",
+      "SPDXID": "SPDXRef-npm-min-indent-1.0.1",
       "name": "min-indent",
       "versionInfo": "1.0.1",
       "downloadLocation": "NOASSERTION",
@@ -5448,7 +5448,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-ms-2_1_3",
+      "SPDXID": "SPDXRef-npm-ms-2.1.3",
       "name": "ms",
       "versionInfo": "2.1.3",
       "downloadLocation": "NOASSERTION",
@@ -5470,7 +5470,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-nanoid-3_3_18",
+      "SPDXID": "SPDXRef-npm-nanoid-3.3.18",
       "name": "nanoid",
       "versionInfo": "3.3.18",
       "downloadLocation": "NOASSERTION",
@@ -5492,7 +5492,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-node-releases-2_0_53",
+      "SPDXID": "SPDXRef-npm-node-releases-2.0.53",
       "name": "node-releases",
       "versionInfo": "2.0.53",
       "downloadLocation": "NOASSERTION",
@@ -5514,7 +5514,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-nwsapi-2_2_24",
+      "SPDXID": "SPDXRef-npm-nwsapi-2.2.24",
       "name": "nwsapi",
       "versionInfo": "2.2.24",
       "downloadLocation": "NOASSERTION",
@@ -5536,7 +5536,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-parse5-7_3_0",
+      "SPDXID": "SPDXRef-npm-parse5-7.3.0",
       "name": "parse5",
       "versionInfo": "7.3.0",
       "downloadLocation": "NOASSERTION",
@@ -5558,7 +5558,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-pathe-1_1_2",
+      "SPDXID": "SPDXRef-npm-pathe-1.1.2",
       "name": "pathe",
       "versionInfo": "1.1.2",
       "downloadLocation": "NOASSERTION",
@@ -5580,7 +5580,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-pathval-2_0_1",
+      "SPDXID": "SPDXRef-npm-pathval-2.0.1",
       "name": "pathval",
       "versionInfo": "2.0.1",
       "downloadLocation": "NOASSERTION",
@@ -5602,7 +5602,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-picocolors-1_1_1",
+      "SPDXID": "SPDXRef-npm-picocolors-1.1.1",
       "name": "picocolors",
       "versionInfo": "1.1.1",
       "downloadLocation": "NOASSERTION",
@@ -5624,7 +5624,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-picomatch-4_0_5",
+      "SPDXID": "SPDXRef-npm-picomatch-4.0.5",
       "name": "picomatch",
       "versionInfo": "4.0.5",
       "downloadLocation": "NOASSERTION",
@@ -5646,7 +5646,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-playwright-core-1_62_1",
+      "SPDXID": "SPDXRef-npm-playwright-core-1.62.1",
       "name": "playwright-core",
       "versionInfo": "1.62.1",
       "downloadLocation": "NOASSERTION",
@@ -5668,7 +5668,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-playwright-1_62_1",
+      "SPDXID": "SPDXRef-npm-playwright-1.62.1",
       "name": "playwright",
       "versionInfo": "1.62.1",
       "downloadLocation": "NOASSERTION",
@@ -5690,7 +5690,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-postcss-8_5_26",
+      "SPDXID": "SPDXRef-npm-postcss-8.5.26",
       "name": "postcss",
       "versionInfo": "8.5.26",
       "downloadLocation": "NOASSERTION",
@@ -5712,7 +5712,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-pretty-format-27_5_1",
+      "SPDXID": "SPDXRef-npm-pretty-format-27.5.1",
       "name": "pretty-format",
       "versionInfo": "27.5.1",
       "downloadLocation": "NOASSERTION",
@@ -5734,7 +5734,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-punycode-2_3_1",
+      "SPDXID": "SPDXRef-npm-punycode-2.3.1",
       "name": "punycode",
       "versionInfo": "2.3.1",
       "downloadLocation": "NOASSERTION",
@@ -5756,7 +5756,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-react-dom-19_2_8",
+      "SPDXID": "SPDXRef-npm-react-dom-19.2.8",
       "name": "react-dom",
       "versionInfo": "19.2.8",
       "downloadLocation": "NOASSERTION",
@@ -5778,7 +5778,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-react-is-17_0_2",
+      "SPDXID": "SPDXRef-npm-react-is-17.0.2",
       "name": "react-is",
       "versionInfo": "17.0.2",
       "downloadLocation": "NOASSERTION",
@@ -5800,7 +5800,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-react-refresh-0_17_0",
+      "SPDXID": "SPDXRef-npm-react-refresh-0.17.0",
       "name": "react-refresh",
       "versionInfo": "0.17.0",
       "downloadLocation": "NOASSERTION",
@@ -5822,7 +5822,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-react-19_2_8",
+      "SPDXID": "SPDXRef-npm-react-19.2.8",
       "name": "react",
       "versionInfo": "19.2.8",
       "downloadLocation": "NOASSERTION",
@@ -5844,7 +5844,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-redent-3_0_0",
+      "SPDXID": "SPDXRef-npm-redent-3.0.0",
       "name": "redent",
       "versionInfo": "3.0.0",
       "downloadLocation": "NOASSERTION",
@@ -5866,7 +5866,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rollup-4_62_4",
+      "SPDXID": "SPDXRef-npm-rollup-4.62.4",
       "name": "rollup",
       "versionInfo": "4.62.4",
       "downloadLocation": "NOASSERTION",
@@ -5888,7 +5888,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rrweb-cssom-0_7_1",
+      "SPDXID": "SPDXRef-npm-rrweb-cssom-0.7.1",
       "name": "rrweb-cssom",
       "versionInfo": "0.7.1",
       "downloadLocation": "NOASSERTION",
@@ -5910,7 +5910,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-rrweb-cssom-0_8_0",
+      "SPDXID": "SPDXRef-npm-rrweb-cssom-0.8.0",
       "name": "rrweb-cssom",
       "versionInfo": "0.8.0",
       "downloadLocation": "NOASSERTION",
@@ -5932,7 +5932,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-safer-buffer-2_1_2",
+      "SPDXID": "SPDXRef-npm-safer-buffer-2.1.2",
       "name": "safer-buffer",
       "versionInfo": "2.1.2",
       "downloadLocation": "NOASSERTION",
@@ -5954,7 +5954,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-saxes-6_0_0",
+      "SPDXID": "SPDXRef-npm-saxes-6.0.0",
       "name": "saxes",
       "versionInfo": "6.0.0",
       "downloadLocation": "NOASSERTION",
@@ -5976,7 +5976,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-scheduler-0_27_0",
+      "SPDXID": "SPDXRef-npm-scheduler-0.27.0",
       "name": "scheduler",
       "versionInfo": "0.27.0",
       "downloadLocation": "NOASSERTION",
@@ -5998,7 +5998,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-semver-6_3_1",
+      "SPDXID": "SPDXRef-npm-semver-6.3.1",
       "name": "semver",
       "versionInfo": "6.3.1",
       "downloadLocation": "NOASSERTION",
@@ -6020,7 +6020,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-siginfo-2_0_0",
+      "SPDXID": "SPDXRef-npm-siginfo-2.0.0",
       "name": "siginfo",
       "versionInfo": "2.0.0",
       "downloadLocation": "NOASSERTION",
@@ -6042,7 +6042,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-source-map-js-1_2_1",
+      "SPDXID": "SPDXRef-npm-source-map-js-1.2.1",
       "name": "source-map-js",
       "versionInfo": "1.2.1",
       "downloadLocation": "NOASSERTION",
@@ -6064,7 +6064,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-stackback-0_0_2",
+      "SPDXID": "SPDXRef-npm-stackback-0.0.2",
       "name": "stackback",
       "versionInfo": "0.0.2",
       "downloadLocation": "NOASSERTION",
@@ -6086,7 +6086,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-std-env-3_10_0",
+      "SPDXID": "SPDXRef-npm-std-env-3.10.0",
       "name": "std-env",
       "versionInfo": "3.10.0",
       "downloadLocation": "NOASSERTION",
@@ -6108,7 +6108,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-strip-indent-3_0_0",
+      "SPDXID": "SPDXRef-npm-strip-indent-3.0.0",
       "name": "strip-indent",
       "versionInfo": "3.0.0",
       "downloadLocation": "NOASSERTION",
@@ -6130,7 +6130,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-symbol-tree-3_2_4",
+      "SPDXID": "SPDXRef-npm-symbol-tree-3.2.4",
       "name": "symbol-tree",
       "versionInfo": "3.2.4",
       "downloadLocation": "NOASSERTION",
@@ -6152,7 +6152,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-tinybench-2_9_0",
+      "SPDXID": "SPDXRef-npm-tinybench-2.9.0",
       "name": "tinybench",
       "versionInfo": "2.9.0",
       "downloadLocation": "NOASSERTION",
@@ -6174,7 +6174,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-tinyexec-0_3_2",
+      "SPDXID": "SPDXRef-npm-tinyexec-0.3.2",
       "name": "tinyexec",
       "versionInfo": "0.3.2",
       "downloadLocation": "NOASSERTION",
@@ -6196,7 +6196,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-tinyglobby-0_2_17",
+      "SPDXID": "SPDXRef-npm-tinyglobby-0.2.17",
       "name": "tinyglobby",
       "versionInfo": "0.2.17",
       "downloadLocation": "NOASSERTION",
@@ -6218,7 +6218,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-tinypool-1_1_1",
+      "SPDXID": "SPDXRef-npm-tinypool-1.1.1",
       "name": "tinypool",
       "versionInfo": "1.1.1",
       "downloadLocation": "NOASSERTION",
@@ -6240,7 +6240,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-tinyrainbow-1_2_0",
+      "SPDXID": "SPDXRef-npm-tinyrainbow-1.2.0",
       "name": "tinyrainbow",
       "versionInfo": "1.2.0",
       "downloadLocation": "NOASSERTION",
@@ -6262,7 +6262,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-tinyspy-3_0_2",
+      "SPDXID": "SPDXRef-npm-tinyspy-3.0.2",
       "name": "tinyspy",
       "versionInfo": "3.0.2",
       "downloadLocation": "NOASSERTION",
@@ -6284,7 +6284,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-tldts-core-6_1_86",
+      "SPDXID": "SPDXRef-npm-tldts-core-6.1.86",
       "name": "tldts-core",
       "versionInfo": "6.1.86",
       "downloadLocation": "NOASSERTION",
@@ -6306,7 +6306,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-tldts-6_1_86",
+      "SPDXID": "SPDXRef-npm-tldts-6.1.86",
       "name": "tldts",
       "versionInfo": "6.1.86",
       "downloadLocation": "NOASSERTION",
@@ -6328,7 +6328,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-tough-cookie-5_1_2",
+      "SPDXID": "SPDXRef-npm-tough-cookie-5.1.2",
       "name": "tough-cookie",
       "versionInfo": "5.1.2",
       "downloadLocation": "NOASSERTION",
@@ -6350,7 +6350,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-tr46-5_1_1",
+      "SPDXID": "SPDXRef-npm-tr46-5.1.1",
       "name": "tr46",
       "versionInfo": "5.1.1",
       "downloadLocation": "NOASSERTION",
@@ -6372,7 +6372,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-typescript-5_9_3",
+      "SPDXID": "SPDXRef-npm-typescript-5.9.3",
       "name": "typescript",
       "versionInfo": "5.9.3",
       "downloadLocation": "NOASSERTION",
@@ -6394,7 +6394,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-update-browserslist-db-1_3_1",
+      "SPDXID": "SPDXRef-npm-update-browserslist-db-1.3.1",
       "name": "update-browserslist-db",
       "versionInfo": "1.3.1",
       "downloadLocation": "NOASSERTION",
@@ -6416,7 +6416,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-use-sync-external-store-1_6_0",
+      "SPDXID": "SPDXRef-npm-use-sync-external-store-1.6.0",
       "name": "use-sync-external-store",
       "versionInfo": "1.6.0",
       "downloadLocation": "NOASSERTION",
@@ -6438,7 +6438,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-vite-node-2_1_9",
+      "SPDXID": "SPDXRef-npm-vite-node-2.1.9",
       "name": "vite-node",
       "versionInfo": "2.1.9",
       "downloadLocation": "NOASSERTION",
@@ -6460,7 +6460,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-vite-5_4_21",
+      "SPDXID": "SPDXRef-npm-vite-5.4.21",
       "name": "vite",
       "versionInfo": "5.4.21",
       "downloadLocation": "NOASSERTION",
@@ -6482,7 +6482,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-vite-6_4_3",
+      "SPDXID": "SPDXRef-npm-vite-6.4.3",
       "name": "vite",
       "versionInfo": "6.4.3",
       "downloadLocation": "NOASSERTION",
@@ -6504,7 +6504,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-vitest-2_1_9",
+      "SPDXID": "SPDXRef-npm-vitest-2.1.9",
       "name": "vitest",
       "versionInfo": "2.1.9",
       "downloadLocation": "NOASSERTION",
@@ -6526,7 +6526,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-w3c-xmlserializer-5_0_0",
+      "SPDXID": "SPDXRef-npm-w3c-xmlserializer-5.0.0",
       "name": "w3c-xmlserializer",
       "versionInfo": "5.0.0",
       "downloadLocation": "NOASSERTION",
@@ -6548,7 +6548,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-webidl-conversions-7_0_0",
+      "SPDXID": "SPDXRef-npm-webidl-conversions-7.0.0",
       "name": "webidl-conversions",
       "versionInfo": "7.0.0",
       "downloadLocation": "NOASSERTION",
@@ -6570,7 +6570,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-whatwg-encoding-3_1_1",
+      "SPDXID": "SPDXRef-npm-whatwg-encoding-3.1.1",
       "name": "whatwg-encoding",
       "versionInfo": "3.1.1",
       "downloadLocation": "NOASSERTION",
@@ -6592,7 +6592,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-whatwg-mimetype-4_0_0",
+      "SPDXID": "SPDXRef-npm-whatwg-mimetype-4.0.0",
       "name": "whatwg-mimetype",
       "versionInfo": "4.0.0",
       "downloadLocation": "NOASSERTION",
@@ -6614,7 +6614,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-whatwg-url-14_2_0",
+      "SPDXID": "SPDXRef-npm-whatwg-url-14.2.0",
       "name": "whatwg-url",
       "versionInfo": "14.2.0",
       "downloadLocation": "NOASSERTION",
@@ -6636,7 +6636,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-why-is-node-running-2_3_0",
+      "SPDXID": "SPDXRef-npm-why-is-node-running-2.3.0",
       "name": "why-is-node-running",
       "versionInfo": "2.3.0",
       "downloadLocation": "NOASSERTION",
@@ -6658,7 +6658,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-ws-8_21_3",
+      "SPDXID": "SPDXRef-npm-ws-8.21.3",
       "name": "ws",
       "versionInfo": "8.21.3",
       "downloadLocation": "NOASSERTION",
@@ -6680,7 +6680,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-xml-name-validator-5_0_0",
+      "SPDXID": "SPDXRef-npm-xml-name-validator-5.0.0",
       "name": "xml-name-validator",
       "versionInfo": "5.0.0",
       "downloadLocation": "NOASSERTION",
@@ -6702,7 +6702,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-xmlchars-2_2_0",
+      "SPDXID": "SPDXRef-npm-xmlchars-2.2.0",
       "name": "xmlchars",
       "versionInfo": "2.2.0",
       "downloadLocation": "NOASSERTION",
@@ -6724,7 +6724,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-yallist-3_1_1",
+      "SPDXID": "SPDXRef-npm-yallist-3.1.1",
       "name": "yallist",
       "versionInfo": "3.1.1",
       "downloadLocation": "NOASSERTION",
@@ -6746,7 +6746,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-npm-zustand-4_5_7",
+      "SPDXID": "SPDXRef-npm-zustand-4.5.7",
       "name": "zustand",
       "versionInfo": "4.5.7",
       "downloadLocation": "NOASSERTION",
