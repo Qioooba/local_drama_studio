@@ -12,6 +12,7 @@
 - capability-driven 增强 recipe；不支持的 step 显式拒绝，支持的 step 使用本地 FFmpeg 并注册派生 MediaVersion。
 - FFmpeg 整集渲染、LOCAL_FILESYSTEM 交付、manifest/hash 校验、篡改检测和撤回事件。
 - OpenAPI、TypeScript client、Ruff、mypy、33 个 API 测试和真实媒体闭环测试。
+- 2026-08-15 续跑：生成客户端补齐 G8 时间线 revision、字幕 revision、音频绑定、渲染、delivery build/verify/withdraw 操作，并加入 3 个 URL/body 契约测试；这些操作仍需真实输入和显式用户动作，不会自动写入生产集。
 
 自动化证据：
 
