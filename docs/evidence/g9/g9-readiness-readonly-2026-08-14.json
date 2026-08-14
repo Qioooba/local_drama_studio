@@ -1,0 +1,45 @@
+{
+  "schema_version": "g9.readiness.read_only.v1",
+  "observed_at": "2026-08-14T09:32:48+08:00",
+  "scope": "production project e5eaa01d-d39a-4a63-acbf-026da30b46e7 / EPISODE_001",
+  "endpoint": "/api/v1/projects/{project_id}/gates/g9?episode_id={episode_id}",
+  "status": "IN_PROGRESS",
+  "next_required_action": "VISIBLE_NODE_PERFORMANCE_UAT",
+  "production_observation": {
+    "total_shots": 1,
+    "visible_nodes": 5,
+    "persisted_layout_count": 0,
+    "persisted_preflight_count": 1,
+    "max_visible_nodes": 300
+  },
+  "checks": {
+    "LAZY_GRAPH_READ_MODEL": {"passed": true, "observed_visible_nodes": 5, "max_visible_nodes": 300},
+    "LAYOUT_DEPENDENCY_ISOLATION": {"passed": true, "observed_layout_count": 0},
+    "PREFLIGHT_PERSISTENCE": {"passed": true, "observed_preflight_count": 1},
+    "VISIBLE_NODE_PERFORMANCE_UAT": {"passed": false, "reason": "Production has one shot; formal 100-300 browser benchmark remains pending"},
+    "ACCESSIBILITY_ROUTE_UAT": {"passed": false, "reason": "Baseline exists, full three-view checklist remains pending"}
+  },
+  "automated_fixture": {
+    "source": "apps/api/tests/test_g9_canvas.py",
+    "observed": "62-shot fixture, 20-shot page, 100 returned nodes",
+    "production_exit_substitution_forbidden": true
+  },
+  "browser_acceptance": {
+    "fresh_tab": true,
+    "view": "canvas",
+    "viewports": ["1440x900", "1280x800", "1024x768"],
+    "canvas_visible": true,
+    "g9_panel_visible": true,
+    "horizontal_overflow": false,
+    "console_errors": 0,
+    "console_warnings": 0,
+    "thumbnail_policy": "No image was loaded or displayed for this read-only gate review"
+  },
+  "safety": {
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "mutated": false,
+    "does_not_create_fixtures_or_jobs": true
+  },
+  "exit_decision": "formal G9 exit remains pending; this evidence must not be treated as PASS"
+}
