@@ -114,6 +114,30 @@ def _local_uat_passed(path: Path) -> bool:
     )
 
 
+def _stale_job_maintenance_passed(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    try:
+        evidence = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return False
+    before = evidence.get("before", {})
+    after = evidence.get("after", {})
+    capacity = evidence.get("post_action_capacity", {})
+    safety = evidence.get("safety", {})
+    return (
+        evidence.get("status") == "PASS"
+        and before.get("state") == "QUEUED"
+        and before.get("active_attempts") == 0
+        and after.get("state") == "CANCELLED"
+        and capacity.get("queued_count") == 0
+        and capacity.get("active_attempt_count") == 0
+        and safety.get("comfyui_job_submitted") is False
+        and safety.get("comfyui_job_polled") is False
+        and safety.get("production_media_changed") is False
+    )
+
+
 def audit() -> dict[str, Any]:
     database = Database(DB_PATH)
     with database.connect() as connection:
@@ -140,6 +164,7 @@ def audit() -> dict[str, Any]:
     sbom_path = ROOT / "docs" / "release" / "sbom.json"
     sbom_inventory = _sbom_inventory(sbom_path)
     local_uat_path = ROOT / "docs" / "evidence" / "g10" / "local-uat-readonly-2026-08-14.json"
+    stale_job_path = ROOT / "docs" / "evidence" / "g10" / "stale-job-maintenance-2026-08-14.json"
     artifact_state = {
         name: {"exists": path.is_file(), "final": _is_final(path) if requires_final else path.is_file(), "path": path.relative_to(ROOT).as_posix()}
         for name, (path, requires_final) in required_artifacts.items()
@@ -155,6 +180,7 @@ def audit() -> dict[str, Any]:
         {"code": "UPGRADE_ROLLBACK_REHEARSAL", "passed": _rehearsal_passed(rehearsal_path), "evidence": rehearsal_path.relative_to(ROOT).as_posix()},
         {"code": "SBOM_INVENTORY", "passed": sbom_inventory["valid"], "package_count": sbom_inventory["package_count"], "evidence": sbom_path.relative_to(ROOT).as_posix()},
         {"code": "LOCAL_UAT_READONLY_BASELINE", "passed": _local_uat_passed(local_uat_path), "evidence": local_uat_path.relative_to(ROOT).as_posix()},
+        {"code": "STALE_JOB_MAINTENANCE", "passed": _stale_job_maintenance_passed(stale_job_path), "evidence": stale_job_path.relative_to(ROOT).as_posix()},
         {"code": "RELEASE_ARTIFACTS", "passed": release_artifacts_ready, "artifacts": artifact_state},
     ]
     return {

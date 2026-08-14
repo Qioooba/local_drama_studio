@@ -1,6 +1,6 @@
 {
   "schema_version": "g10.local_uat_readonly.v1",
-  "observed_at": "2026-08-14T15:44:00.011665+00:00",
+  "observed_at": "2026-08-14T15:53:11.796671+00:00",
   "status": "PASS",
   "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
   "episode_id": "d4db1033-9517-4bd0-958d-4228e0abead1",
@@ -136,20 +136,19 @@
           "scope": {
             "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7"
           },
-          "observed_at": "2026-08-14T15:43:59.912437+00:00",
+          "observed_at": "2026-08-14T15:53:11.669727+00:00",
           "jobs_by_state": {
-            "CANCELLED": 4,
+            "CANCELLED": 5,
             "FAILED": 3,
             "NEEDS_ATTENTION": 5,
-            "QUEUED": 1,
             "SUCCEEDED": 14
           },
           "jobs_by_channel": {
-            "GPU_H3": 25,
-            "CPU": 2
+            "CPU": 2,
+            "GPU_H3": 25
           },
-          "queued_count": 1,
-          "oldest_queued_age_seconds": 242077,
+          "queued_count": 0,
+          "oldest_queued_age_seconds": null,
           "active_attempt_count": 0,
           "active_worker_count": 0,
           "gpu_active_count": 0,
@@ -339,7 +338,7 @@
             "audio_tracks": [],
             "subtitle_revision_count": 0
           },
-          "observed_at": "2026-08-14T15:43:59.973508+00:00",
+          "observed_at": "2026-08-14T15:53:11.720441+00:00",
           "runtime_contacted": false,
           "network_contacted": false,
           "mutated": false
@@ -403,7 +402,7 @@
             "persisted_preflight_count": 1,
             "automated_fixture": "apps/api/tests/test_g9_canvas.py creates 62 shots and asserts 100-node page; fixture is not production evidence"
           },
-          "observed_at": "2026-08-14T15:44:00.002236+00:00",
+          "observed_at": "2026-08-14T15:53:11.772499+00:00",
           "runtime_contacted": false,
           "network_contacted": false,
           "mutated": false
