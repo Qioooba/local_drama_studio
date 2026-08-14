@@ -237,6 +237,8 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .job-row { display: grid; grid-template-columns: 1.3fr .6fr .8fr 1fr; gap: 12px; align-items: center; padding: 13px 15px; border: 1px solid #ded9cf; border-radius: 9px; background: #fff; color: #646a64; font-size: 12px; }
 .job-row strong { color: var(--text); }
 .job-row small { color: #79756e; }
+.progressive-row { content-visibility: auto; contain-intrinsic-size: auto 58px; }
+.list-more { width: 100%; margin-top: 10px; }
 .review-row { display: grid; grid-template-columns: 80px minmax(0, 1fr) auto; }
 .review-row img { width: 80px; height: 45px; border-radius: 6px; object-fit: cover; background: #e8e3da; }
 .media-kind-placeholder { display: grid !important; place-items: center; width: 80px; height: 45px; border-radius: 6px; color: #77736d; background: #e8e3da; font-size: 9px; font-weight: 800; letter-spacing: .08em; }

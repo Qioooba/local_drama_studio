@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { App, focusCanvasNodeIds } from "./App";
+import { App, focusCanvasNodeIds, progressiveSlice } from "./App";
 import { listProjects } from "../generated/api";
 
 vi.mock("../generated/api", () => ({
@@ -63,4 +63,13 @@ describe("G9 canvas focus", () => {
     expect(focusCanvasNodeIds("b", edges, "ALL").size).toBe(0);
   });
 
+});
+
+describe("bounded production lists", () => {
+  it("renders an initial window while retaining a deep-linked selection", () => {
+    const items = Array.from({ length: 120 }, (_, index) => index);
+    expect(progressiveSlice(items, 50)).toEqual(items.slice(0, 50));
+    expect(progressiveSlice(items, 50, 74)).toEqual(items.slice(0, 75));
+    expect(progressiveSlice(items, 100, 74)).toEqual(items.slice(0, 100));
+  });
 });

@@ -70,7 +70,7 @@ The original findings above are retained as the historical baseline. Current sta
 - Resolved: favicon requests no longer produce browser errors.
 - Open refactor: `App.tsx` still owns too many feature panels. This is maintainability debt, not an observed P0 workflow failure.
 - Open refinement: replace remaining structural arrow/lettermark glyphs with the approved local SVG icon set.
-- Open scale refinement: episode/job list virtualization is still required before claiming unrestricted large-list UX; current backend reads and displayed lists remain bounded.
+- Partially resolved scale refinement: review and job panels render an initial 50-row window, preserve deep-linked selections outside that window, add explicit 50-row expansion and let the browser skip off-screen row layout/paint. Episode pagination remains a later refinement; unrestricted large-list UX is not claimed.
 
 ### Verification evidence
 
