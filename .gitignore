@@ -20,6 +20,7 @@ temp/
 projects/
 output/
 apps/web/output/
+apps/web/test-results/
 runtime/*.json
 runtime/*.log
 runtime/*.pid

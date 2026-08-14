@@ -1,0 +1,52 @@
+{
+  "schema_version": "g9.browser_performance_uat.v1",
+  "observed_at": "2026-08-14T16:26:21.953Z",
+  "status": "PASS",
+  "scope": "isolated local API and real React Flow browser fixture",
+  "fixture": {
+    "project_code": "g9_browser_fixture",
+    "episode_count": 1,
+    "shot_count": 62,
+    "returned_shots": 60,
+    "visible_nodes": 300,
+    "api_port": 3221,
+    "production_database_touched": false
+  },
+  "browser": {
+    "executable": "system Microsoft Edge",
+    "viewports": [
+      {
+        "viewport": "1440x900",
+        "status": "passed",
+        "duration_ms": 2227
+      },
+      {
+        "viewport": "1280x800",
+        "status": "passed",
+        "duration_ms": 2054
+      },
+      {
+        "viewport": "1024x768",
+        "status": "passed",
+        "duration_ms": 2070
+      }
+    ],
+    "assertions": [
+      "300 .react-flow__node elements rendered",
+      "document horizontal overflow = 0",
+      "console errors and warnings = 0",
+      "page errors = 0",
+      "failed responses = 0"
+    ]
+  },
+  "safety": {
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "mutated": false,
+    "jobs_created": false,
+    "comfyui_contacted": false
+  },
+  "formal_gate_effect": "NONE",
+  "production_evidence": false,
+  "interpretation": "This is a repeatable isolated browser performance baseline. It does not substitute for production 100-300-node UAT or authorize G9 PASS."
+}

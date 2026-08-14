@@ -12,6 +12,7 @@
 - G9-07 键盘替代操作：画布提供独立键盘节点按钮列表；Enter/Space 可选中节点并驱动聚焦/预检，不编辑业务边或布局；1024×768 验收 10 个键盘按钮、零错误、零溢出。
 - G9-06 route/selection 同步：画布节点和键盘按钮选择会写入现有 `shot` URL 参数，刷新后由同一 read model 恢复选中 shot；1024×768 真实验收无错误/失败响应；证据 `docs/evidence/g9/canvas-route-sync-visual-review-2026-08-14.json`。
 - G9 accessibility baseline：1024×768 读取 `业务画布`、`键盘节点列表`、搜索输入的可访问名称；可见 focusable 控件 28 个，节点按钮与选中状态可见，零 console/page error、零失败响应、零水平溢出；证据 `docs/evidence/g9/canvas-accessibility-visual-review-2026-08-14.json`。这不是完整可访问性清单或性能退出。
+- 2026-08-15 续跑：新增隔离真实 API + React Flow 浏览器基准，使用 62 镜头、300 可见节点，在 1440×900、1280×800、1024×768 三档均通过零错误/零失败响应/零水平溢出；证据 `docs/evidence/g9/g9-browser-performance-2026-08-15.json` 明确标记 `production_evidence=false`、`formal_gate_effect=NONE`，不替代生产集正式退出。
 - episode/shot lazy graph read model；节点汇总 take、variant、blocker、active/failed job 和连续性约束。
 - G9-08 只读节点细节：画布节点从 SQLite 汇总 variant lineage（含 stale/branch reason）、experiment cell 成功/失败进度及相邻 transition constraint；选中节点展示真实摘要，空数据明确显示暂无，不创建 variant/job、不连接 runtime。
 - 视觉布局独立持久化，乐观并发；布局提交不能增加、删除或改变业务 edges。
