@@ -5,6 +5,7 @@ import { App } from "./App";
 import { focusCanvasNodeIds } from "../features/canvas/ProductionCanvasPanel";
 import { listProjects } from "../generated/api";
 import { progressiveSlice } from "../features/shared/progressive";
+import { selectedItemOrFirst } from "../features/shared/selection";
 
 vi.mock("../generated/api", () => ({
   healthLive: vi.fn().mockResolvedValue({ status: "HEALTHY", checks: { mode: "LOCAL_ONLY" } }),
@@ -73,5 +74,15 @@ describe("bounded production lists", () => {
     expect(progressiveSlice(items, 50)).toEqual(items.slice(0, 50));
     expect(progressiveSlice(items, 50, 74)).toEqual(items.slice(0, 75));
     expect(progressiveSlice(items, 100, 74)).toEqual(items.slice(0, 100));
+  });
+});
+
+describe("deep-linked bounded selections", () => {
+  const episodes = Array.from({ length: 60 }, (_, index) => ({ id: `episode-${index + 1}`, title: `第 ${index + 1} 集` }));
+
+  it("keeps the selected episode record instead of displaying the first episode", () => {
+    expect(selectedItemOrFirst(episodes, "episode-47")?.title).toBe("第 47 集");
+    expect(selectedItemOrFirst(episodes, "missing")?.title).toBe("第 1 集");
+    expect(selectedItemOrFirst([], "episode-1")).toBeNull();
   });
 });

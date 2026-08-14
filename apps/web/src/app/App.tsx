@@ -36,6 +36,7 @@ import { ReviewInboxPanel } from "../features/reviews/ReviewInboxPanel";
 import { ProfileConfigurationPanel } from "../features/profiles/ProfileConfigurationPanel";
 import { ProductionCanvasPanel } from "../features/canvas/ProductionCanvasPanel";
 import { AdapterContractsPanel, DiagnosticPanel, G8ReadinessPanel, G9ReadinessPanel, ModelCompatibilityPanel, ProjectConfigurationSnapshot, ProjectList, TimelineStatusPanel } from "../features/status/ReadinessPanels";
+import { selectedItemOrFirst } from "../features/shared/selection";
 
 type View = "overview" | "projects" | "canvas" | "reviews" | "jobs" | "profiles" | "generation" | "diagnostics";
 const views: View[] = ["overview", "projects", "canvas", "reviews", "jobs", "profiles", "generation", "diagnostics"];
@@ -105,14 +106,16 @@ export function App() {
   const diagnostics = useQuery({ queryKey: ["diagnostics", "latest"], queryFn: () => latestDiagnostics(), enabled: view === "diagnostics" || view === "overview" });
   const h3Runtime = useQuery({ queryKey: ["h3", "candidate-runtime"], queryFn: () => h3CandidateRuntime(), enabled: view === "generation" || view === "overview" });
   const reviewTemplates = useQuery({ queryKey: ["reviews", "templates"], queryFn: () => listReviewTemplates(), enabled: view === "reviews" });
-  const selectedProject = projects.data?.items.some((item) => item.id === selectedProjectId) ? selectedProjectId : projects.data?.items[0]?.id ?? null;
+  const selectedProjectRecord = selectedItemOrFirst(projects.data?.items, selectedProjectId);
+  const selectedProject = selectedProjectRecord?.id ?? null;
   const capacitySnapshot = useQuery({ queryKey: ["capacity", selectedProject], queryFn: () => getCapacitySnapshot(selectedProject ?? undefined), enabled: view === "overview" || view === "jobs" });
   const projectConfiguration = useQuery({ queryKey: ["project-configuration", selectedProject], queryFn: () => getProjectConfiguration(selectedProject as string), enabled: Boolean(selectedProject) && (view === "profiles" || view === "projects") });
   const modelCompatibility = useQuery({ queryKey: ["model-compatibility", selectedProject], queryFn: () => getModelCompatibility(selectedProject as string), enabled: Boolean(selectedProject) && (view === "profiles" || view === "diagnostics" || view === "overview") });
   const seasons = useQuery({ queryKey: ["project", selectedProject, "seasons"], queryFn: () => listSeasons(selectedProject as string), enabled: Boolean(selectedProject) });
   const selectedSeason = seasons.data?.items[0]?.id ?? null;
   const episodes = useQuery({ queryKey: ["season", selectedSeason, "episodes"], queryFn: () => listEpisodes(selectedSeason as string), enabled: Boolean(selectedSeason) });
-  const selectedEpisode = episodes.data?.items.some((item) => item.id === selectedEpisodeId) ? selectedEpisodeId : episodes.data?.items[0]?.id ?? null;
+  const selectedEpisodeRecord = selectedItemOrFirst(episodes.data?.items, selectedEpisodeId);
+  const selectedEpisode = selectedEpisodeRecord?.id ?? null;
   const production = useQuery({ queryKey: ["episode", selectedEpisode, "production"], queryFn: () => getEpisodeProduction(selectedEpisode as string), enabled: Boolean(selectedEpisode) });
   const timelineStatus = useQuery({ queryKey: ["episode", selectedEpisode, "timeline-status"], queryFn: () => getEpisodeTimelineStatus(selectedEpisode as string), enabled: Boolean(selectedEpisode) && view === "projects" });
   const g8Readiness = useQuery({ queryKey: ["gates", "g8", selectedProject, selectedEpisode], queryFn: () => getG8Readiness(selectedProject as string, selectedEpisode as string), enabled: Boolean(selectedProject && selectedEpisode) && view === "projects" });
@@ -280,7 +283,7 @@ export function App() {
               <ProjectList projects={projects.data?.items ?? []} selectedProjectId={selectedProject} onSelect={selectProject} />
               {selectedProject && <div className="production-summary">
                 <p className="eyebrow">当前集</p>
-                <p className="muted">{seasons.data?.items[0]?.title ?? "季数据加载中…"} · {episodes.data?.items[0]?.title ?? "集数据加载中…"}</p>
+                <p className="muted">{seasons.data?.items[0]?.title ?? "季数据加载中…"} · {selectedEpisodeRecord?.title ?? "集数据加载中…"}</p>
                 {production.isPending && <p className="empty-state">正在读取生产行…</p>}
                 {production.data?.items.map((shot) => <div className="shot-row" key={String(shot.id)}><strong>{String(shot.code)}</strong><span>{String(shot.status)}</span><span className="blocker-text">{Array.isArray(shot.blockers) ? `${shot.blockers.length} 个阻塞` : "读取中"}</span><span>{String(shot.next_action)}</span></div>)}
                 {production.data?.items.length === 0 && <p className="empty-state">当前集还没有镜头；请从真实 API 创建镜头。</p>}
