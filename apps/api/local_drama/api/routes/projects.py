@@ -26,7 +26,7 @@ def service(request: Request) -> ProjectService:
 
 def package_service(request: Request) -> ProjectPackageService:
     settings = request.app.state.settings
-    return ProjectPackageService(request.app.state.database, settings.projects_root)
+    return ProjectPackageService(request.app.state.database, settings.projects_root, settings.data_root)
 
 
 @router.get("", operation_id="listProjects")

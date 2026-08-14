@@ -21,6 +21,7 @@ from .api.routes.llm import router as llm_router
 from .api.routes.media import router as media_router
 from .api.routes.production import router as production_router
 from .api.routes.profiles import router as profiles_router
+from .api.routes.project_packages import router as project_packages_router
 from .api.routes.projects import router as project_router
 from .api.routes.prompts import router as prompts_router
 from .api.routes.reviews import router as reviews_router
@@ -79,6 +80,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(capacity_router, prefix="/api/v1")
     app.include_router(adapters_router, prefix="/api/v1")
     app.include_router(project_router, prefix="/api/v1")
+    app.include_router(project_packages_router, prefix="/api/v1")
     app.include_router(configuration_router, prefix="/api/v1")
     app.include_router(diagnostics_router, prefix="/api/v1")
     app.include_router(experiments_router, prefix="/api/v1")

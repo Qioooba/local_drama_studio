@@ -7,11 +7,14 @@ import shutil
 import stat
 import uuid
 import zipfile
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.policies import validate_project_code
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.infrastructure.filesystem.template import TEMPLATE_DIRECTORIES, TEMPLATE_VERSION
 
 PACKAGE_SCHEMA = "localdrama.project-package.v2"
 STATE_SCHEMA = "localdrama.project-state.v2"
@@ -61,10 +64,15 @@ def _is_reparse(path: Path) -> bool:
     return path.is_symlink() or bool(attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
 
 
+def _utc_now() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
 class ProjectPackageService:
-    def __init__(self, database: Database, projects_root: Path) -> None:
+    def __init__(self, database: Database, projects_root: Path, data_root: Path | None = None) -> None:
         self.database = database
         self.projects_root = projects_root.resolve()
+        self.staging_root = (data_root or projects_root.parent / "data") / "imports" / "project-packages"
 
     def _project(self, project_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
@@ -170,6 +178,8 @@ class ProjectPackageService:
                     raise DomainRuleError("PROJECT_PACKAGE_DUPLICATE_PATH", "项目包包含重复路径")
                 for name in names:
                     _safe_member(name)
+                if any(stat.S_ISLNK(info.external_attr >> 16) for info in infos):
+                    raise DomainRuleError("PROJECT_PACKAGE_REPARSE_POINT", "项目包不接受 symlink 条目")
                 if "package-manifest.json" not in names or "project-state.json" not in names:
                     raise DomainRuleError("PROJECT_PACKAGE_REQUIRED_FILE_MISSING", "项目包缺少 manifest 或 state")
                 expanded = sum(info.file_size for info in infos)
@@ -209,3 +219,294 @@ class ProjectPackageService:
         if allowed not in candidate.parents or not candidate.is_file() or _is_reparse(candidate):
             raise DomainRuleError("PROJECT_PACKAGE_PATH_NOT_ALLOWED", "只能预检项目已导出的注册项目包")
         return self.inspect_path(candidate)
+
+    def stage_from_inbox(self, inbox_name: str) -> dict[str, Any]:
+        if Path(inbox_name).name != inbox_name or not inbox_name.lower().endswith(".ldspkg"):
+            raise DomainRuleError("PROJECT_PACKAGE_INBOX_NAME_INVALID", "inbox 只接受单个 .ldspkg 文件名")
+        inbox = (self.staging_root / "inbox").resolve()
+        staged = (self.staging_root / "staged").resolve()
+        inbox.mkdir(parents=True, exist_ok=True)
+        staged.mkdir(parents=True, exist_ok=True)
+        source = (inbox / inbox_name).resolve()
+        if source.parent != inbox or not source.is_file() or _is_reparse(source):
+            raise DomainRuleError("PROJECT_PACKAGE_INBOX_FILE_NOT_FOUND", "inbox 项目包不存在或不是普通文件")
+        before_size, before_sha = source.stat().st_size, _sha256(source)
+        destination = staged / f"{before_sha}.ldspkg"
+        partial = staged / f".partial-{uuid.uuid4().hex}.ldspkg"
+        try:
+            if destination.exists():
+                if _sha256(destination) != before_sha or destination.stat().st_size != before_size:
+                    raise DomainRuleError("PROJECT_PACKAGE_STAGING_CONFLICT", "staging 中同 hash 文件内容异常")
+                reused = True
+            else:
+                shutil.copyfile(source, partial)
+                if _sha256(partial) != before_sha or partial.stat().st_size != before_size or _sha256(source) != before_sha:
+                    raise DomainRuleError("PROJECT_PACKAGE_STAGE_COPY_MISMATCH", "staging 复制前后 hash/size 不一致")
+                self.inspect_path(partial)
+                os.replace(partial, destination)
+                reused = False
+            dry_run = self.inspect_path(destination)
+        except Exception:
+            partial.unlink(missing_ok=True)
+            raise
+        return {"status": "STAGED", "stage_token": before_sha, "source_name": inbox_name, "byte_size": before_size, "sha256": before_sha,
+                "reused": reused, "source_retained": True, "dry_run": dry_run, "database_mutated": False, "runtime_contacted": False, "network_contacted": False}
+
+    def dry_run_staged(self, stage_token: str) -> dict[str, Any]:
+        if len(stage_token) != 64 or any(character not in "0123456789abcdef" for character in stage_token):
+            raise DomainRuleError("PROJECT_PACKAGE_STAGE_TOKEN_INVALID", "stage token 必须是小写 SHA-256")
+        package = (self.staging_root / "staged" / f"{stage_token}.ldspkg").resolve()
+        allowed = (self.staging_root / "staged").resolve()
+        if package.parent != allowed or not package.is_file() or _is_reparse(package) or _sha256(package) != stage_token:
+            raise DomainRuleError("PROJECT_PACKAGE_STAGE_NOT_FOUND", "staged 项目包不存在或完整性失败")
+        return self.inspect_path(package)
+
+    def _staged_package(self, stage_token: str) -> Path:
+        self.dry_run_staged(stage_token)
+        return (self.staging_root / "staged" / f"{stage_token}.ldspkg").resolve()
+
+    def _read_state(self, package: Path) -> dict[str, Any]:
+        self.inspect_path(package)
+        with zipfile.ZipFile(package) as archive:
+            state = json.loads(archive.read("project-state.json"))
+        required_lists = ("seasons", "episodes", "scenes", "shots", "profile_bindings", "delivery_targets")
+        if not isinstance(state.get("project"), dict) or any(not isinstance(state.get(key), list) for key in required_lists):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包结构状态不完整")
+        project = state["project"]
+        if not all(project.get(key) for key in ("id", "code", "title")):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包项目身份不完整")
+        season_ids = {str(item.get("id")) for item in state["seasons"]}
+        episode_ids = {str(item.get("id")) for item in state["episodes"]}
+        if len(season_ids) != len(state["seasons"]) or len(episode_ids) != len(state["episodes"]):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包包含重复季或集 ID")
+        if any(str(item.get("season_id")) not in season_ids for item in state["episodes"]):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包分集引用了未知季")
+        if any(str(item.get("episode_id")) not in episode_ids for item in state["shots"]):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包镜头引用了未知分集")
+        return state
+
+    def _extract_payload(self, package: Path, temporary_root: Path) -> None:
+        temporary_root.mkdir(parents=True, exist_ok=False)
+        for relative in TEMPLATE_DIRECTORIES:
+            (temporary_root / relative).mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(package) as archive:
+            for info in archive.infolist():
+                if not info.filename.startswith("payload/"):
+                    continue
+                payload_relative = _safe_member(info.filename).relative_to("payload")
+                if not payload_relative.parts:
+                    continue
+                destination = (temporary_root / Path(*payload_relative.parts)).resolve()
+                if temporary_root.resolve() not in destination.parents:
+                    raise DomainRuleError("PROJECT_PACKAGE_PATH_INVALID", "项目包 payload 展开越界")
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(info) as source, destination.open("xb") as target:
+                    shutil.copyfileobj(source, target, length=1024 * 1024)
+
+    def import_as_copy(
+        self,
+        stage_token: str,
+        *,
+        code: str,
+        title: str,
+        actor: str = "local-user",
+        request_id: str | None = None,
+        simulate_failure: bool = False,
+    ) -> dict[str, Any]:
+        validate_project_code(code)
+        if not title or len(title) > 200:
+            raise DomainRuleError("INVALID_PROJECT_TITLE", "项目标题必须是 1—200 个字符")
+        package = self._staged_package(stage_token)
+        state = self._read_state(package)
+        project_id = str(uuid.uuid4())
+        final_root = (self.projects_root / code).resolve()
+        if final_root.parent != self.projects_root:
+            raise DomainRuleError("PROJECT_PACKAGE_IMPORT_TARGET_INVALID", "项目导入目标目录越界")
+        with self.database.connect() as connection:
+            if connection.execute("SELECT 1 FROM projects WHERE code=?", (code,)).fetchone():
+                raise DomainRuleError("PROJECT_CODE_EXISTS", "项目 code 已存在", {"code": code})
+        if final_root.exists():
+            raise DomainRuleError("PROJECT_ROOT_EXISTS", "目标项目目录已存在，未覆盖", {"code": code})
+        temporary_root = self.projects_root / f".{code}.import-{uuid.uuid4().hex}"
+        promoted = False
+        counts = {"seasons": 0, "episodes": 0, "scenes": 0, "shots": 0, "profiles": 0, "profiles_skipped": 0,
+                  "delivery_targets": 0, "payload_files": 0}
+        try:
+            self._extract_payload(package, temporary_root)
+            counts["payload_files"] = sum(1 for item in temporary_root.rglob("*") if item.is_file())
+            now = _utc_now()
+            project_json = {"schema_version": "localdrama.project.v2", "project_id": project_id, "project_code": code,
+                            "title": title, "created_at": now, "template_version": TEMPLATE_VERSION,
+                            "initial_season": "SEASON_001", "legacy_refs": [], "imported_from_package_sha256": stage_token}
+            (temporary_root / "project.json").write_text(json.dumps(project_json, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            if _sha256(package) != stage_token:
+                raise DomainRuleError("PROJECT_PACKAGE_STAGE_NOT_FOUND", "提交前 staged 项目包完整性失败")
+            os.replace(temporary_root, final_root)
+            promoted = True
+            source_project = state["project"]
+            season_map = {str(item["id"]): str(uuid.uuid4()) for item in state["seasons"]}
+            episode_map = {str(item["id"]): str(uuid.uuid4()) for item in state["episodes"]}
+            with self.database.transaction() as connection:
+                if connection.execute("SELECT 1 FROM projects WHERE code=?", (code,)).fetchone():
+                    raise DomainRuleError("PROJECT_CODE_EXISTS", "项目 code 已存在", {"code": code})
+                connection.execute(
+                    """INSERT INTO projects (id,code,title,status,template_version,root_rel,aspect_ratio,fps_num,fps_den,timezone,
+                    created_at,updated_at,created_by) VALUES (?,?,?,'DRAFT',?,?,?,?,?,?,?,?,?)""",
+                    (project_id, code, title, TEMPLATE_VERSION, code, source_project.get("aspect_ratio"), source_project.get("fps_num"),
+                     source_project.get("fps_den"), source_project.get("timezone") or "Asia/Shanghai", now, now, actor),
+                )
+                for season in state["seasons"]:
+                    connection.execute(
+                        "INSERT INTO seasons (id,project_id,number,code,title,display_order,created_at,updated_at,created_by) VALUES (?,?,?,?,?,?,?,?,?)",
+                        (season_map[str(season["id"])], project_id, season["number"], season["code"], season["title"],
+                         season["display_order"], now, now, actor),
+                    )
+                    counts["seasons"] += 1
+                for episode in state["episodes"]:
+                    connection.execute(
+                        """INSERT INTO episodes (id,season_id,number,display_order,code,title,narrative_status,production_status,
+                        target_duration_ms,source_range_json,created_at,updated_at,created_by)
+                        VALUES (?,?,?,?,?,?,'OUTLINE','NOT_STARTED',?,'{}',?,?,?)""",
+                        (episode_map[str(episode["id"])], season_map[str(episode["season_id"])], episode["number"],
+                         episode["display_order"], episode["code"], episode["title"], episode["target_duration_ms"], now, now, actor),
+                    )
+                    counts["episodes"] += 1
+                for scene in state["scenes"]:
+                    connection.execute(
+                        "INSERT INTO scenes (id,project_id,code,title,location,time_of_day,created_at,updated_at,created_by) VALUES (?,?,?,?,?,?,?,?,?)",
+                        (str(uuid.uuid4()), project_id, scene["code"], scene["title"], scene.get("location"), scene.get("time_of_day"), now, now, actor),
+                    )
+                    counts["scenes"] += 1
+                for shot in state["shots"]:
+                    shot_id, revision_id = str(uuid.uuid4()), str(uuid.uuid4())
+                    connection.execute(
+                        """INSERT INTO shots (id,episode_id,code,order_key,target_duration_ms,shot_type,status,current_revision_id,
+                        created_at,updated_at,created_by) VALUES (?,?,?,?,?,?,'DRAFT',?,?,?,?)""",
+                        (shot_id, episode_map[str(shot["episode_id"])], shot["code"], shot["order_key"], shot["target_duration_ms"],
+                         shot.get("shot_type") or "OTHER", revision_id, now, now, actor),
+                    )
+                    connection.execute(
+                        "INSERT INTO shot_revisions (id,shot_id,revision_no,fields_json,is_frozen,created_at,updated_at,created_by) VALUES (?,?,1,?,0,?,?,?)",
+                        (revision_id, shot_id, json.dumps(shot.get("fields") or {}, ensure_ascii=False), now, now, actor),
+                    )
+                    counts["shots"] += 1
+                plan = state.get("production_plan")
+                if isinstance(plan, dict):
+                    plan_id, version_id = str(uuid.uuid4()), str(uuid.uuid4())
+                    plan_code = f"{code[:70]}_import_{project_id[:8]}"
+                    connection.execute("INSERT INTO production_plans (id,code,title,created_at,updated_at,created_by) VALUES (?,?,?,?,?,?)",
+                                       (plan_id, plan_code, plan.get("title") or "Imported plan", now, now, actor))
+                    connection.execute(
+                        "INSERT INTO production_plan_versions (id,production_plan_id,version_no,plan_json,status,created_at,updated_at,created_by) VALUES (?,?,1,?,'ACTIVE',?,?,?)",
+                        (version_id, plan_id, plan.get("plan_json") or "{}", now, now, actor),
+                    )
+                    connection.execute("INSERT INTO project_plan_bindings (id,project_id,production_plan_version_id,created_at,updated_at,created_by) VALUES (?,?,?,?,?,?)",
+                                       (str(uuid.uuid4()), project_id, version_id, now, now, actor))
+                    connection.execute("UPDATE projects SET production_plan_version_id=? WHERE id=?", (version_id, project_id))
+                for profile in state["profile_bindings"]:
+                    profile_version_id = str(profile.get("execution_profile_version_id") or "")
+                    exists = connection.execute(
+                        "SELECT 1 FROM execution_profile_versions WHERE id=? AND status='PUBLISHED'", (profile_version_id,)
+                    ).fetchone()
+                    if not exists:
+                        counts["profiles_skipped"] += 1
+                        continue
+                    connection.execute(
+                        """INSERT INTO project_profile_bindings (id,project_id,capability,execution_profile_version_id,status,
+                        created_at,updated_at,created_by) VALUES (?,?,?,?,'ACTIVE',?,?,?)""",
+                        (str(uuid.uuid4()), project_id, profile["capability"], profile_version_id, now, now, actor),
+                    )
+                    counts["profiles"] += 1
+                for target in state["delivery_targets"]:
+                    target_id, target_version_id = str(uuid.uuid4()), str(uuid.uuid4())
+                    spec = target.get("target_spec_json") or "{}"
+                    connection.execute(
+                        """INSERT INTO delivery_targets (id,project_id,code,title,transport,target_spec_json,status,created_at,updated_at,created_by)
+                        VALUES (?,?,?,?,?,?,'ACTIVE',?,?,?)""",
+                        (target_id, project_id, target["code"], target["title"], target.get("transport") or "LOCAL_FILESYSTEM", spec, now, now, actor),
+                    )
+                    connection.execute(
+                        """INSERT INTO delivery_target_versions (id,delivery_target_id,version_no,target_spec_json,status,created_at,updated_at,created_by)
+                        VALUES (?,?,1,?,'ACTIVE',?,?,?)""",
+                        (target_version_id, target_id, spec, now, now, actor),
+                    )
+                    counts["delivery_targets"] += 1
+                metadata = {"stage_token": stage_token, "source_project_id": source_project["id"], "identity_mode": "IMPORT_AS_COPY_REWRITE_IDENTITY",
+                            "counts": counts, "excluded_domains": state.get("excluded_domains", [])}
+                connection.execute(
+                    """INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,request_id,summary,metadata_redacted_json)
+                    VALUES (?,'producer','PROJECT_PACKAGE_IMPORTED','project',?,?,?,?)""",
+                    (actor, project_id, request_id, f"从项目包导入 {code}", json.dumps(metadata, ensure_ascii=False, sort_keys=True)),
+                )
+                connection.execute(
+                    "INSERT INTO outbox_events (type,project_id,subject_type,subject_id,payload_json) VALUES ('project.changed',?,'project',?,?)",
+                    (project_id, project_id, json.dumps({"status": "DRAFT", "revision": 1}, sort_keys=True)),
+                )
+                if simulate_failure:
+                    raise RuntimeError("simulated project package import failure")
+        except Exception:
+            if temporary_root.exists():
+                shutil.rmtree(temporary_root, ignore_errors=True)
+            if promoted and final_root.exists():
+                shutil.rmtree(final_root, ignore_errors=True)
+            raise
+        return {"status": "IMPORTED", "identity_mode": "IMPORT_AS_COPY_REWRITE_IDENTITY", "project_id": project_id,
+                "project_code": code, "source_project_id": state["project"]["id"], "stage_token": stage_token, "counts": counts,
+                "staged_package_retained": True, "runtime_contacted": False, "network_contacted": False}
+
+    def rebind_existing(
+        self,
+        stage_token: str,
+        *,
+        actor: str = "local-user",
+        request_id: str | None = None,
+        simulate_failure: bool = False,
+    ) -> dict[str, Any]:
+        package = self._staged_package(stage_token)
+        state = self._read_state(package)
+        package_project = state["project"]
+        project_id, project_code = str(package_project["id"]), str(package_project["code"])
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT id,code,title,root_rel FROM projects WHERE id=?", (project_id,)).fetchone()
+            code_row = connection.execute("SELECT id FROM projects WHERE code=?", (project_code,)).fetchone()
+        if row is None or str(row["code"]) != project_code or code_row is None or str(code_row["id"]) != project_id:
+            raise DomainRuleError("PROJECT_PACKAGE_REBIND_IDENTITY_MISMATCH", "rebind 要求本地项目 ID 与 code 同时匹配")
+        final_root = (self.projects_root / str(row["root_rel"])).resolve()
+        if final_root.parent != self.projects_root:
+            raise DomainRuleError("PROJECT_ROOT_INVALID", "项目根目录配置越界")
+        if final_root.exists():
+            raise DomainRuleError("PROJECT_PACKAGE_REBIND_ROOT_EXISTS", "项目目录仍存在；rebind 不允许覆盖现有目录")
+        temporary_root = self.projects_root / f".{project_code}.rebind-{uuid.uuid4().hex}"
+        promoted = False
+        try:
+            self._extract_payload(package, temporary_root)
+            now = _utc_now()
+            project_json = {"schema_version": "localdrama.project.v2", "project_id": project_id, "project_code": project_code,
+                            "title": row["title"], "created_at": now, "template_version": TEMPLATE_VERSION,
+                            "initial_season": "SEASON_001", "legacy_refs": [], "rebound_from_package_sha256": stage_token}
+            (temporary_root / "project.json").write_text(json.dumps(project_json, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            if _sha256(package) != stage_token:
+                raise DomainRuleError("PROJECT_PACKAGE_STAGE_NOT_FOUND", "提交前 staged 项目包完整性失败")
+            os.replace(temporary_root, final_root)
+            promoted = True
+            with self.database.transaction() as connection:
+                current = connection.execute("SELECT id,code FROM projects WHERE id=?", (project_id,)).fetchone()
+                if current is None or str(current["code"]) != project_code:
+                    raise DomainRuleError("PROJECT_PACKAGE_REBIND_IDENTITY_MISMATCH", "提交期间项目身份发生变化")
+                metadata = {"stage_token": stage_token, "identity_mode": "REBIND_EXISTING", "database_structure_changed": False}
+                connection.execute(
+                    """INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,request_id,summary,metadata_redacted_json)
+                    VALUES (?,'producer','PROJECT_PACKAGE_REBOUND','project',?,?,?,?)""",
+                    (actor, project_id, request_id, f"从项目包恢复目录 {project_code}", json.dumps(metadata, sort_keys=True)),
+                )
+                if simulate_failure:
+                    raise RuntimeError("simulated project package rebind failure")
+        except Exception:
+            if temporary_root.exists():
+                shutil.rmtree(temporary_root, ignore_errors=True)
+            if promoted and final_root.exists():
+                shutil.rmtree(final_root, ignore_errors=True)
+            raise
+        return {"status": "REBOUND", "identity_mode": "REBIND_EXISTING", "project_id": project_id,
+                "project_code": project_code, "stage_token": stage_token, "database_structure_changed": False,
+                "staged_package_retained": True, "runtime_contacted": False, "network_contacted": False}

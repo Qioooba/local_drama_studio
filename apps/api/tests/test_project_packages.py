@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import shutil
 import zipfile
 
 import pytest
@@ -75,3 +77,142 @@ def test_project_package_api_exports_and_dry_runs_only_registered_package(worksp
         inspected = client.post(f"/api/v1/projects/{project['id']}/packages:dry-run", json={"rel_path": package["rel_path"]})
     assert inspected.status_code == 200
     assert inspected.json()["dry_run"]["status"] == "READY_REBIND_EXISTING"
+
+
+def test_external_package_staging_uses_fixed_inbox_and_content_addressed_token(workspace, database) -> None:
+    project = _project(workspace, database)
+    service = ProjectPackageService(database, workspace.projects_root, workspace.data_root)
+    exported = service.export(str(project["id"]))
+    source = workspace.projects_root / "package_source" / str(exported["rel_path"])
+    inbox = workspace.data_root / "imports" / "project-packages" / "inbox"
+    inbox.mkdir(parents=True)
+    shutil.copy2(source, inbox / "外部 项目.ldspkg")
+    staged = service.stage_from_inbox("外部 项目.ldspkg")
+    repeated = service.stage_from_inbox("外部 项目.ldspkg")
+    assert staged["status"] == "STAGED" and staged["source_retained"] is True
+    assert staged["stage_token"] == exported["sha256"] and repeated["reused"] is True
+    assert service.dry_run_staged(str(staged["stage_token"]))["status"] == "READY_REBIND_EXISTING"
+    assert (inbox / "外部 项目.ldspkg").is_file()
+    assert not list((workspace.data_root / "imports" / "project-packages" / "staged").glob(".partial-*"))
+    with pytest.raises(DomainRuleError) as traversal:
+        service.stage_from_inbox("../外部 项目.ldspkg")
+    assert traversal.value.code == "PROJECT_PACKAGE_INBOX_NAME_INVALID"
+
+
+def test_external_package_staging_api_never_accepts_arbitrary_paths(workspace, database) -> None:
+    project = _project(workspace, database)
+    service = ProjectPackageService(database, workspace.projects_root, workspace.data_root)
+    exported = service.export(str(project["id"]))
+    source = workspace.projects_root / "package_source" / str(exported["rel_path"])
+    inbox = workspace.data_root / "imports" / "project-packages" / "inbox"
+    inbox.mkdir(parents=True)
+    shutil.copy2(source, inbox / "api.ldspkg")
+    with TestClient(create_app(workspace)) as client:
+        staged = client.post("/api/v1/project-packages:stage", json={"inbox_name": "api.ldspkg"})
+        assert staged.status_code == 200
+        token = staged.json()["staging"]["stage_token"]
+        dry_run = client.post(f"/api/v1/project-packages/{token}:dry-run")
+        rejected = client.post("/api/v1/project-packages:stage", json={"inbox_name": str(source)})
+    assert dry_run.status_code == 200 and dry_run.json()["dry_run"]["would_import"] is False
+    assert rejected.status_code == 422
+    assert rejected.json()["error"]["code"] == "PROJECT_PACKAGE_INBOX_NAME_INVALID"
+
+
+def test_staged_project_package_import_as_copy_rewrites_identity_and_retains_retry_source(workspace, database) -> None:
+    source_project = _project(workspace, database)
+    service = ProjectPackageService(database, workspace.projects_root, workspace.data_root)
+    exported = service.export(str(source_project["id"]))
+    source = workspace.projects_root / "package_source" / str(exported["rel_path"])
+    inbox = workspace.data_root / "imports" / "project-packages" / "inbox"
+    inbox.mkdir(parents=True)
+    shutil.copy2(source, inbox / "copy.ldspkg")
+    token = str(service.stage_from_inbox("copy.ldspkg")["stage_token"])
+
+    imported = service.import_as_copy(token, code="package_copy", title="项目包副本")
+
+    assert imported["status"] == "IMPORTED"
+    assert imported["identity_mode"] == "IMPORT_AS_COPY_REWRITE_IDENTITY"
+    assert imported["project_id"] != source_project["id"]
+    assert imported["counts"]["episodes"] == 2
+    assert imported["counts"]["shots"] == 1
+    assert (workspace.data_root / "imports" / "project-packages" / "staged" / f"{token}.ldspkg").is_file()
+    copied_root = workspace.projects_root / "package_copy"
+    assert (copied_root / "01_story" / "source_documents" / "中文 剧本.md").read_text(encoding="utf-8") == "# 本地项目包\n"
+    project_json = json.loads((copied_root / "project.json").read_text(encoding="utf-8"))
+    assert project_json["project_id"] == imported["project_id"]
+    assert project_json["project_code"] == "package_copy"
+    with database.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM projects WHERE id=?", (imported["project_id"],)).fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT COUNT(*) FROM episodes e JOIN seasons s ON s.id=e.season_id WHERE s.project_id=?", (imported["project_id"],)
+        ).fetchone()[0] == 2
+        audit = connection.execute(
+            "SELECT action FROM audit_events WHERE subject_id=? ORDER BY rowid DESC LIMIT 1", (imported["project_id"],)
+        ).fetchone()
+    assert audit["action"] == "PROJECT_PACKAGE_IMPORTED"
+
+
+def test_staged_project_package_import_rolls_back_database_and_filesystem_on_failure(workspace, database) -> None:
+    project = _project(workspace, database)
+    service = ProjectPackageService(database, workspace.projects_root, workspace.data_root)
+    exported = service.export(str(project["id"]))
+    source = workspace.projects_root / "package_source" / str(exported["rel_path"])
+    inbox = workspace.data_root / "imports" / "project-packages" / "inbox"
+    inbox.mkdir(parents=True)
+    shutil.copy2(source, inbox / "rollback.ldspkg")
+    token = str(service.stage_from_inbox("rollback.ldspkg")["stage_token"])
+
+    with pytest.raises(RuntimeError, match="simulated"):
+        service.import_as_copy(token, code="package_rollback", title="回滚", simulate_failure=True)
+
+    assert not (workspace.projects_root / "package_rollback").exists()
+    assert not list(workspace.projects_root.glob(".package_rollback.import-*"))
+    with database.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM projects WHERE code='package_rollback'").fetchone()[0] == 0
+    assert (workspace.data_root / "imports" / "project-packages" / "staged" / f"{token}.ldspkg").is_file()
+
+
+def test_rebind_existing_only_restores_a_missing_matching_project_root(workspace, database) -> None:
+    project = _project(workspace, database)
+    service = ProjectPackageService(database, workspace.projects_root, workspace.data_root)
+    exported = service.export(str(project["id"]))
+    source = workspace.projects_root / "package_source" / str(exported["rel_path"])
+    inbox = workspace.data_root / "imports" / "project-packages" / "inbox"
+    inbox.mkdir(parents=True)
+    shutil.copy2(source, inbox / "rebind.ldspkg")
+    token = str(service.stage_from_inbox("rebind.ldspkg")["stage_token"])
+
+    with pytest.raises(DomainRuleError) as overwrite:
+        service.rebind_existing(token)
+    assert overwrite.value.code == "PROJECT_PACKAGE_REBIND_ROOT_EXISTS"
+
+    shutil.rmtree(workspace.projects_root / "package_source")
+    rebound = service.rebind_existing(token)
+    assert rebound["status"] == "REBOUND" and rebound["database_structure_changed"] is False
+    root = workspace.projects_root / "package_source"
+    assert (root / "01_story" / "source_documents" / "中文 剧本.md").is_file()
+    assert json.loads((root / "project.json").read_text(encoding="utf-8"))["project_id"] == project["id"]
+
+
+def test_project_package_commit_api_requires_explicit_identity_decision(workspace, database) -> None:
+    project = _project(workspace, database)
+    service = ProjectPackageService(database, workspace.projects_root, workspace.data_root)
+    exported = service.export(str(project["id"]))
+    source = workspace.projects_root / "package_source" / str(exported["rel_path"])
+    inbox = workspace.data_root / "imports" / "project-packages" / "inbox"
+    inbox.mkdir(parents=True)
+    shutil.copy2(source, inbox / "commit.ldspkg")
+    token = str(service.stage_from_inbox("commit.ldspkg")["stage_token"])
+    with TestClient(create_app(workspace)) as client:
+        missing_identity = client.post(
+            f"/api/v1/project-packages/{token}:commit",
+            json={"identity_mode": "IMPORT_AS_COPY_REWRITE_IDENTITY"},
+        )
+        committed = client.post(
+            f"/api/v1/project-packages/{token}:commit",
+            json={"identity_mode": "IMPORT_AS_COPY_REWRITE_IDENTITY", "code": "api_package_copy", "title": "API 项目包副本"},
+        )
+    assert missing_identity.status_code == 422
+    assert missing_identity.json()["error"]["code"] == "PROJECT_PACKAGE_COPY_IDENTITY_REQUIRED"
+    assert committed.status_code == 201
+    assert committed.json()["commit"]["project_code"] == "api_package_copy"

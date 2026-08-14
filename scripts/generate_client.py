@@ -30,6 +30,8 @@ export type ProjectCreatePayload = { code: string; title: string; episode_count:
 export type ProjectCreationPlan = { status: 'READY' | 'READY_WITH_CONFIGURATION_BLOCKERS' | 'BLOCKED'; checks: Array<{ code: string; passed: boolean; free_bytes?: number; required_bytes?: number }>; blockers: string[]; configuration_blockers: string[]; accepted_unconfigured: boolean; target_root_rel: string; estimated_bytes: number; would_create_project: true; mutated: false; runtime_contacted: false; network_contacted: false };
 export type ProjectPackageExport = { status: 'EXPORTED'; project_id: string; rel_path: string; byte_size: number; sha256: string; entry_count: number; expanded_bytes: number; reused: boolean; database_mutated: false; runtime_contacted: false; network_contacted: false };
 export type ProjectPackageDryRun = { status: 'READY_REBIND_EXISTING' | 'IDENTITY_CONFLICT' | 'READY_IMPORT' | 'BLOCKED'; project_id: string; project_code: string; entry_count: number; expanded_bytes: number; free_bytes: number; blockers: string[]; conflict_options: string[]; would_import: false; mutated: false; runtime_contacted: false; network_contacted: false };
+export type ProjectPackageStaging = { status: 'STAGED'; stage_token: string; source_name: string; byte_size: number; sha256: string; reused: boolean; source_retained: true; dry_run: ProjectPackageDryRun; database_mutated: false; runtime_contacted: false; network_contacted: false };
+export type ProjectPackageCommit = { status: 'IMPORTED' | 'REBOUND'; identity_mode: 'REBIND_EXISTING' | 'IMPORT_AS_COPY_REWRITE_IDENTITY'; project_id: string; project_code: string; stage_token: string; staged_package_retained: true; runtime_contacted: false; network_contacted: false; counts?: Record<string, number>; database_structure_changed?: false };
 export type Profile = { id: string; code: string; title: string; version_id: string; capability: string; status: string; [key: string]: unknown };
 export type ProfileContract = { input_contract: Record<string, unknown>; parameter_schema: Record<string, unknown>; output_contract: Record<string, unknown>; resource_policy: Record<string, unknown> };
 export type ProfileValidation = { id: string; profile_version_id?: string; contract_hash: string; status: 'PASS' | 'FAIL'; checks: Array<{ code: string; passed: boolean; label?: string }>; runtime_contacted?: false; network_contacted?: false };
@@ -183,6 +185,18 @@ export async function exportProjectPackage(projectId: string, baseUrl = ''): Pro
 
 export async function dryRunProjectPackage(projectId: string, relPath: string, baseUrl = ''): Promise<{ dry_run: ProjectPackageDryRun }> {
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/packages:dry-run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rel_path: relPath }) }, baseUrl);
+}
+
+export async function stageProjectPackage(inboxName: string, baseUrl = ''): Promise<{ staging: ProjectPackageStaging }> {
+  return requestJson('/api/v1/project-packages:stage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ inbox_name: inboxName }) }, baseUrl);
+}
+
+export async function dryRunStagedProjectPackage(stageToken: string, baseUrl = ''): Promise<{ dry_run: ProjectPackageDryRun }> {
+  return requestJson(`/api/v1/project-packages/${encodeURIComponent(stageToken)}:dry-run`, { method: 'POST' }, baseUrl);
+}
+
+export async function commitStagedProjectPackage(stageToken: string, payload: { identity_mode: 'REBIND_EXISTING' | 'IMPORT_AS_COPY_REWRITE_IDENTITY'; code?: string; title?: string }, baseUrl = ''): Promise<{ commit: ProjectPackageCommit }> {
+  return requestJson(`/api/v1/project-packages/${encodeURIComponent(stageToken)}:commit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
 export async function listProfiles(baseUrl = ''): Promise<{ items: Profile[] }> {

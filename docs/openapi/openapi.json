@@ -1475,6 +1475,147 @@
         }
       }
     },
+    "/api/v1/project-packages:stage": {
+      "post": {
+        "tags": [
+          "project-packages"
+        ],
+        "summary": "Stage Project Package",
+        "operationId": "stageProjectPackage",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StageProjectPackageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Stageprojectpackage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/project-packages/{stage_token}:dry-run": {
+      "post": {
+        "tags": [
+          "project-packages"
+        ],
+        "summary": "Dry Run Staged Project Package",
+        "operationId": "dryRunStagedProjectPackage",
+        "parameters": [
+          {
+            "name": "stage_token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Stage Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Dryrunstagedprojectpackage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/project-packages/{stage_token}:commit": {
+      "post": {
+        "tags": [
+          "project-packages"
+        ],
+        "summary": "Commit Staged Project Package",
+        "operationId": "commitStagedProjectPackage",
+        "parameters": [
+          {
+            "name": "stage_token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Stage Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommitProjectPackageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Commitstagedprojectpackage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/configuration": {
       "get": {
         "tags": [
@@ -8035,6 +8176,50 @@
         ],
         "title": "ComfyWorkerRequest"
       },
+      "CommitProjectPackageRequest": {
+        "properties": {
+          "identity_mode": {
+            "type": "string",
+            "enum": [
+              "REBIND_EXISTING",
+              "IMPORT_AS_COPY_REWRITE_IDENTITY"
+            ],
+            "title": "Identity Mode"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80,
+                "minLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "identity_mode"
+        ],
+        "title": "CommitProjectPackageRequest"
+      },
       "DeliveryBuildRequest": {
         "properties": {
           "episode_render_version_id": {
@@ -9411,6 +9596,22 @@
           "fields"
         ],
         "title": "ShotRevisionRequest"
+      },
+      "StageProjectPackageRequest": {
+        "properties": {
+          "inbox_name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Inbox Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "inbox_name"
+        ],
+        "title": "StageProjectPackageRequest"
       },
       "SubtitleCueRequest": {
         "properties": {
