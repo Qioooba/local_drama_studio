@@ -50,7 +50,59 @@ def _python_license(name: str) -> str:
     if license_name and license_name.lower() not in {"unknown", "n/a"}:
         return license_name
     classifiers = [value for value in metadata.get_all("Classifier") or [] if value.startswith("License ::")]
-    return classifiers[0].removeprefix("License :: ").strip() if classifiers else "NOASSERTION"
+    if classifiers:
+        return classifiers[0].removeprefix("License :: ").strip()
+    return _python_license_file_evidence(name)
+
+
+def _detect_license_text(text: str) -> str:
+    """Return an SPDX expression only for unambiguous standard license text."""
+    sample = text[:200_000]
+    patterns = (
+        (r"Apache License\s*\n?\s*Version 2\.0", "Apache-2.0"),
+        (r"Mozilla Public License\s*Version 2\.0", "MPL-2.0"),
+        (r"PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2", "Python-2.0"),
+        (r"Permission is hereby granted, free of charge.*?THE SOFTWARE IS PROVIDED", "MIT"),
+        (r"Redistribution and use in source and binary forms.*?Neither the name", "BSD-3-Clause"),
+        (r"Redistribution and use in source and binary forms.*?THIS SOFTWARE IS PROVIDED", "BSD-2-Clause"),
+        (r"BSD 3-Clause License", "BSD-3-Clause"),
+        (r"BSD 2-Clause License", "BSD-2-Clause"),
+        (r"The MIT License|MIT License", "MIT"),
+        (r"ISC License", "ISC"),
+        (r"The Unlicense", "Unlicense"),
+        (r"zlib License", "Zlib"),
+        (r"Eclipse Public License.*2\.0", "EPL-2.0"),
+        (r"GNU LESSER GENERAL PUBLIC LICENSE.*2\.1", "LGPL-2.1-only"),
+    )
+    for pattern, license_id in patterns:
+        if re.search(pattern, sample, flags=re.IGNORECASE | re.DOTALL):
+            return license_id
+    return "NOASSERTION"
+
+
+def _python_license_file_evidence(name: str) -> str:
+    try:
+        distribution = importlib.metadata.distribution(name)
+    except importlib.metadata.PackageNotFoundError:
+        return "NOASSERTION"
+    candidates = [
+        file
+        for file in distribution.files or []
+        if file.name.upper().startswith(("LICENSE", "COPYING"))
+    ]
+    observed: list[str] = []
+    for file in sorted(candidates, key=lambda value: (value.name.upper() != "LICENSE", str(value))):
+        try:
+            text = Path(str(distribution.locate_file(file))).read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        detected = _detect_license_text(text)
+        if detected != "NOASSERTION":
+            observed.append(detected)
+            if file.name.upper() == "LICENSE" or len(set(observed)) == 1:
+                return detected
+    unique = set(observed)
+    return next(iter(unique)) if len(unique) == 1 else "NOASSERTION"
 
 
 def _python_packages() -> list[dict[str, Any]]:

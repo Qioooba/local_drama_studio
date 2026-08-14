@@ -46,8 +46,8 @@ release_status: DRAFT
 ## 离线 SBOM 盘点（2026-08-14）
 
 `scripts/generate_sbom.py` 已在无网络条件下读取两个锁文件和本地包元数据，生成
-`docs/release/sbom.json`，共 317 个锁定包条目并保留 lockfile SHA-256。当前 98 个
-条目没有可由本地元数据确认的许可证，使用 SPDX `NOASSERTION`；因此 SBOM 和本文件
+`docs/release/sbom.json`，共 317 个锁定包条目并保留 lockfile SHA-256。当前 73 个
+条目没有可由本地元数据确认的许可证（主要是未安装的跨平台可选 Node 包），使用 SPDX `NOASSERTION`；因此 SBOM 和本文件
 仍保持 `DRAFT`，不能替代最终许可证、来源和运行镜像复核。
 
 ## 本地只读 UAT 基线（2026-08-14）
