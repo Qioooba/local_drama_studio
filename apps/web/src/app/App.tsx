@@ -37,6 +37,7 @@ import { ProfileConfigurationPanel } from "../features/profiles/ProfileConfigura
 import { ProductionCanvasPanel } from "../features/canvas/ProductionCanvasPanel";
 import { EpisodeContactSheetAction } from "../features/production/EpisodeContactSheetAction";
 import { TimelineExportAction } from "../features/production/TimelineExportAction";
+import { ProjectTemplateCopyAction } from "../features/projects/ProjectTemplateCopyAction";
 import { AdapterContractsPanel, DiagnosticPanel, G8ReadinessPanel, G9ReadinessPanel, ModelCompatibilityPanel, ProjectConfigurationSnapshot, ProjectList, TimelineStatusPanel } from "../features/status/ReadinessPanels";
 import { selectedItemOrFirst } from "../features/shared/selection";
 import { BreadcrumbSeparatorIcon, ChevronRightIcon, StatusDotIcon, StudioMarkIcon } from "../components/icons";
@@ -288,6 +289,7 @@ export function App() {
             <section className="panel">
               <div className="panel-heading"><div><p className="eyebrow">项目与生产台</p><h3 className="production-path"><span>项目</span><BreadcrumbSeparatorIcon /><span>季</span><BreadcrumbSeparatorIcon /><span>集</span><BreadcrumbSeparatorIcon /><span>镜头 read model</span></h3></div><span className="status-pill">单次生产查询</span></div>
               <ProjectList projects={projects.data?.items ?? []} selectedProjectId={selectedProject} onSelect={selectProject} />
+              {selectedProjectRecord && <ProjectTemplateCopyAction project={selectedProjectRecord} onCopied={(copied) => { void queryClient.invalidateQueries({ queryKey: ["projects"] }); selectProject(copied.id, "projects"); }} />}
               {selectedProject && <div className="production-summary">
                 <p className="eyebrow">当前集</p>
                 <p className="muted">{seasons.data?.items[0]?.title ?? "季数据加载中…"} · {selectedEpisodeRecord?.title ?? "集数据加载中…"}</p>

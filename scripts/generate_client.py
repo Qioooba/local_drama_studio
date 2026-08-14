@@ -161,6 +161,10 @@ export async function listProjects(filters: { search?: string; status?: string }
   return requestJson<{ items: Project[] }>(`/api/v1/projects${suffix}`, undefined, baseUrl);
 }
 
+export async function copyProjectTemplate(projectId: string, payload: { code: string; title: string }, baseUrl = ''): Promise<{ project: Project; copy_report: { source_project_id: string; copied: Record<string, number>; excluded: string[] } }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}:copy-template`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
 export async function listProfiles(baseUrl = ''): Promise<{ items: Profile[] }> {
   return requestJson<{ items: Profile[] }>('/api/v1/profiles', undefined, baseUrl);
 }

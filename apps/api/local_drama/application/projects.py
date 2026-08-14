@@ -126,6 +126,185 @@ class ProjectService:
             raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
         return dict(row)
 
+    def copy_as_template(
+        self,
+        source_project_id: str,
+        *,
+        code: str,
+        title: str,
+        actor: str = "local-user",
+        request_id: str | None = None,
+        simulate_failure: bool = False,
+    ) -> dict[str, Any]:
+        """Create a clean project from reusable structure and configuration only."""
+        validate_project_code(code)
+        if not title or len(title) > 200:
+            raise DomainRuleError("INVALID_PROJECT_TITLE", "项目标题必须是 1—200 个字符")
+        with self.database.connect() as connection:
+            source = connection.execute("SELECT * FROM projects WHERE id=?", (source_project_id,)).fetchone()
+            if source is None:
+                raise DomainRuleError("PROJECT_NOT_FOUND", "源项目不存在", {"project_id": source_project_id})
+            if connection.execute("SELECT 1 FROM projects WHERE code=?", (code,)).fetchone():
+                raise DomainRuleError("PROJECT_CODE_EXISTS", "项目 code 已存在", {"code": code})
+            episodes = connection.execute(
+                """SELECT e.*, s.id AS source_season_id, s.number AS season_number,
+                s.display_order AS season_display_order, s.code AS season_code, s.title AS season_title
+                FROM episodes e JOIN seasons s ON s.id=e.season_id
+                WHERE s.project_id=? ORDER BY s.display_order, e.display_order""",
+                (source_project_id,),
+            ).fetchall()
+        if not episodes:
+            raise DomainRuleError("PROJECT_TEMPLATE_EMPTY", "源项目没有可复制的分集结构")
+        validate_project_spec(
+            episode_count=len(episodes), aspect_ratio=source["aspect_ratio"], fps_num=source["fps_num"],
+            fps_den=source["fps_den"], allow_unconfigured=True,
+        )
+        project_id = str(uuid.uuid4())
+        final_root: Path | None = None
+        try:
+            try:
+                final_root, _ = build_project_tree(self.projects_root, project_id, code, title, len(episodes))
+            except FileExistsError as error:
+                raise DomainRuleError("PROJECT_ROOT_EXISTS", "目标项目目录已存在，未写入或删除该目录", {"code": code}) from error
+            now = _utc_now()
+            counts = {"seasons": 0, "episodes": 0, "scenes": 0, "shots": 0, "profiles": 0, "delivery_targets": 0}
+            with self.database.transaction() as connection:
+                if connection.execute("SELECT 1 FROM projects WHERE code=?", (code,)).fetchone():
+                    raise DomainRuleError("PROJECT_CODE_EXISTS", "项目 code 已存在", {"code": code})
+                connection.execute(
+                    """INSERT INTO projects (id, code, title, status, template_version, root_rel, aspect_ratio, fps_num,
+                    fps_den, timezone, created_at, updated_at, created_by) VALUES (?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (project_id, code, title, TEMPLATE_VERSION, code, source["aspect_ratio"], source["fps_num"],
+                     source["fps_den"], source["timezone"], now, now, actor),
+                )
+                season_map: dict[str, str] = {}
+                episode_map: dict[str, str] = {}
+                for episode in episodes:
+                    source_season_id = str(episode["source_season_id"])
+                    if source_season_id not in season_map:
+                        season_id = str(uuid.uuid4())
+                        season_map[source_season_id] = season_id
+                        connection.execute(
+                            """INSERT INTO seasons (id, project_id, number, code, title, display_order, created_at, updated_at, created_by)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                            (season_id, project_id, episode["season_number"], episode["season_code"], episode["season_title"],
+                             episode["season_display_order"], now, now, actor),
+                        )
+                        counts["seasons"] += 1
+                    episode_id = str(uuid.uuid4())
+                    episode_map[str(episode["id"])] = episode_id
+                    connection.execute(
+                        """INSERT INTO episodes (id, season_id, number, display_order, code, title, narrative_status,
+                        production_status, target_duration_ms, source_range_json, created_at, updated_at, created_by)
+                        VALUES (?, ?, ?, ?, ?, ?, 'OUTLINE', 'NOT_STARTED', ?, '{}', ?, ?, ?)""",
+                        (episode_id, season_map[source_season_id], episode["number"], episode["display_order"], episode["code"],
+                         episode["title"], episode["target_duration_ms"], now, now, actor),
+                    )
+                    counts["episodes"] += 1
+                for scene in connection.execute("SELECT * FROM scenes WHERE project_id=? ORDER BY code", (source_project_id,)).fetchall():
+                    connection.execute(
+                        """INSERT INTO scenes (id, project_id, code, title, location, time_of_day, created_at, updated_at, created_by)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (str(uuid.uuid4()), project_id, scene["code"], scene["title"], scene["location"], scene["time_of_day"], now, now, actor),
+                    )
+                    counts["scenes"] += 1
+                shots = connection.execute(
+                    """SELECT sh.*, sr.fields_json FROM shots sh LEFT JOIN shot_revisions sr ON sr.id=sh.current_revision_id
+                    JOIN episodes e ON e.id=sh.episode_id JOIN seasons s ON s.id=e.season_id
+                    WHERE s.project_id=? ORDER BY e.display_order, CAST(sh.order_key AS REAL), sh.code""",
+                    (source_project_id,),
+                ).fetchall()
+                for shot in shots:
+                    shot_id, revision_id = str(uuid.uuid4()), str(uuid.uuid4())
+                    connection.execute(
+                        """INSERT INTO shots (id, episode_id, code, order_key, target_duration_ms, shot_type, status,
+                        current_revision_id, created_at, updated_at, created_by) VALUES (?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?)""",
+                        (shot_id, episode_map[str(shot["episode_id"])], shot["code"], shot["order_key"], shot["target_duration_ms"],
+                         shot["shot_type"], revision_id, now, now, actor),
+                    )
+                    connection.execute(
+                        """INSERT INTO shot_revisions (id, shot_id, revision_no, fields_json, is_frozen, created_at, updated_at, created_by)
+                        VALUES (?, ?, 1, ?, 0, ?, ?, ?)""",
+                        (revision_id, shot_id, shot["fields_json"] or "{}", now, now, actor),
+                    )
+                    counts["shots"] += 1
+                plan = connection.execute(
+                    """SELECT pp.code, pp.title, ppv.plan_json FROM project_plan_bindings ppb
+                    JOIN production_plan_versions ppv ON ppv.id=ppb.production_plan_version_id
+                    JOIN production_plans pp ON pp.id=ppv.production_plan_id WHERE ppb.project_id=?""",
+                    (source_project_id,),
+                ).fetchone()
+                if plan:
+                    plan_id, plan_version_id = str(uuid.uuid4()), str(uuid.uuid4())
+                    plan_code = f"{code[:80]}_template_{project_id[:8]}"
+                    connection.execute(
+                        "INSERT INTO production_plans (id, code, title, created_at, updated_at, created_by) VALUES (?, ?, ?, ?, ?, ?)",
+                        (plan_id, plan_code, plan["title"], now, now, actor),
+                    )
+                    connection.execute(
+                        """INSERT INTO production_plan_versions (id, production_plan_id, version_no, plan_json, status, created_at, updated_at, created_by)
+                        VALUES (?, ?, 1, ?, 'ACTIVE', ?, ?, ?)""",
+                        (plan_version_id, plan_id, plan["plan_json"], now, now, actor),
+                    )
+                    connection.execute(
+                        "INSERT INTO project_plan_bindings (id, project_id, production_plan_version_id, created_at, updated_at, created_by) VALUES (?, ?, ?, ?, ?, ?)",
+                        (str(uuid.uuid4()), project_id, plan_version_id, now, now, actor),
+                    )
+                    connection.execute("UPDATE projects SET production_plan_version_id=? WHERE id=?", (plan_version_id, project_id))
+                profiles = connection.execute(
+                    """SELECT ppb.capability, ppb.execution_profile_version_id FROM project_profile_bindings ppb
+                    JOIN execution_profile_versions epv ON epv.id=ppb.execution_profile_version_id
+                    WHERE ppb.project_id=? AND ppb.status='ACTIVE' AND epv.status='PUBLISHED'""",
+                    (source_project_id,),
+                ).fetchall()
+                for profile in profiles:
+                    connection.execute(
+                        """INSERT INTO project_profile_bindings (id, project_id, capability, execution_profile_version_id, status,
+                        created_at, updated_at, created_by) VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?, ?)""",
+                        (str(uuid.uuid4()), project_id, profile["capability"], profile["execution_profile_version_id"], now, now, actor),
+                    )
+                    counts["profiles"] += 1
+                targets = connection.execute(
+                    "SELECT * FROM delivery_targets WHERE project_id=? AND status='ACTIVE' AND transport='LOCAL_FILESYSTEM'",
+                    (source_project_id,),
+                ).fetchall()
+                for target in targets:
+                    target_id, target_version_id = str(uuid.uuid4()), str(uuid.uuid4())
+                    connection.execute(
+                        """INSERT INTO delivery_targets (id, project_id, code, title, transport, target_spec_json, status,
+                        created_at, updated_at, created_by) VALUES (?, ?, ?, ?, 'LOCAL_FILESYSTEM', ?, 'ACTIVE', ?, ?, ?)""",
+                        (target_id, project_id, target["code"], target["title"], target["target_spec_json"], now, now, actor),
+                    )
+                    latest = connection.execute(
+                        "SELECT target_spec_json FROM delivery_target_versions WHERE delivery_target_id=? ORDER BY version_no DESC LIMIT 1",
+                        (target["id"],),
+                    ).fetchone()
+                    connection.execute(
+                        """INSERT INTO delivery_target_versions (id, delivery_target_id, version_no, target_spec_json, status,
+                        created_at, updated_at, created_by) VALUES (?, ?, 1, ?, 'ACTIVE', ?, ?, ?)""",
+                        (target_version_id, target_id, latest["target_spec_json"] if latest else target["target_spec_json"], now, now, actor),
+                    )
+                    counts["delivery_targets"] += 1
+                metadata = {"source_project_id": source_project_id, "copied": counts,
+                            "excluded": ["media", "workspace_asset_authorizations", "brand_kits", "jobs", "reviews", "deliveries", "audit_history"]}
+                connection.execute(
+                    """INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, request_id, summary, metadata_redacted_json)
+                    VALUES (?, 'producer', 'PROJECT_TEMPLATE_COPIED', 'project', ?, ?, ?, ?)""",
+                    (actor, project_id, request_id, f"从 {source['code']} 复制为新剧模板", _json(metadata)),
+                )
+                connection.execute(
+                    "INSERT INTO outbox_events (type, project_id, subject_type, subject_id, payload_json) VALUES ('project.changed', ?, 'project', ?, ?)",
+                    (project_id, project_id, _json({"status": "DRAFT", "revision": 1, "source_project_id": source_project_id})),
+                )
+                if simulate_failure:
+                    raise RuntimeError("simulated project template copy failure")
+        except Exception:
+            if final_root and final_root.exists():
+                shutil.rmtree(final_root, ignore_errors=True)
+            raise
+        return {"project": self.get_project(project_id), "copy_report": {"source_project_id": source_project_id, "copied": counts,
+                "excluded": ["media", "workspace_asset_authorizations", "brand_kits", "jobs", "reviews", "deliveries", "audit_history"]}}
+
     def list_projects(self, limit: int = 50, *, search: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
         limit = max(1, min(limit, 200))
         if status is not None and status not in {"DRAFT", "ACTIVE", "PAUSED", "ARCHIVED"}:

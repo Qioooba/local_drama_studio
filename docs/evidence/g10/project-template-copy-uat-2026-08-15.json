@@ -1,0 +1,95 @@
+{
+  "schema_version": "localdrama.project-template-copy-uat.v1",
+  "observed_at": "2026-08-14T22:03:54.054Z",
+  "status": "PASS",
+  "mode": "PRODUCTION_READ_ONLY_FORM_DISCLOSURE",
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "database_mutated": false,
+  "screenshots_captured": false,
+  "results": [
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "policyVisible": true,
+      "geometry": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "horizontalOverflow": false
+      },
+      "fields": [
+        {
+          "label": "新项目 code",
+          "height": 40
+        },
+        {
+          "label": "新项目标题",
+          "height": 40
+        }
+      ],
+      "consoleProblems": [],
+      "pageErrors": [],
+      "failedResponses": [],
+      "publicRequests": [],
+      "originalMediaRequests": [],
+      "confirmedCopy": false
+    },
+    {
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "policyVisible": true,
+      "geometry": {
+        "scrollWidth": 1280,
+        "clientWidth": 1280,
+        "horizontalOverflow": false
+      },
+      "fields": [
+        {
+          "label": "新项目 code",
+          "height": 40
+        },
+        {
+          "label": "新项目标题",
+          "height": 40
+        }
+      ],
+      "consoleProblems": [],
+      "pageErrors": [],
+      "failedResponses": [],
+      "publicRequests": [],
+      "originalMediaRequests": [],
+      "confirmedCopy": false
+    },
+    {
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "policyVisible": true,
+      "geometry": {
+        "scrollWidth": 1024,
+        "clientWidth": 1024,
+        "horizontalOverflow": false
+      },
+      "fields": [
+        {
+          "label": "新项目 code",
+          "height": 40
+        },
+        {
+          "label": "新项目标题",
+          "height": 40
+        }
+      ],
+      "consoleProblems": [],
+      "pageErrors": [],
+      "failedResponses": [],
+      "publicRequests": [],
+      "originalMediaRequests": [],
+      "confirmedCopy": false
+    }
+  ]
+}

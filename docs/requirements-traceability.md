@@ -44,6 +44,7 @@
 | FR-PRV-001/003 本地 Runtime、模型 artifact、manifest-backed Profile 候选 | VERIFIED | `application/profiles.py`、`test_g3_configuration_media.py`、G3 screenshots |
 | FR-PRJ-007 项目健康/路径与本地资源诊断基础 | VERIFIED | `application/diagnostics.py`、`/diagnostics/runs` |
 | FR-PRJ-003 项目列表搜索、状态筛选与安全归档 | VERIFIED PRODUCTION UAT | `ProjectService.list_projects` 支持标题/code 子串和 DRAFT/ACTIVE/PAUSED/ARCHIVED 筛选，转义 SQL wildcard 并拒绝非法状态；UI 真实转发筛选。既有归档为审计状态转换、不删目录、活动 Job 硬阻塞。API 2 项、Web 1 项与 1024×768 只读生产 UAT 通过，见 `docs/evidence/g10/project-list-filter-uat-2026-08-15.json` |
+| FR-PRJ-006 项目复制为新剧模板 | VERIFIED PRODUCTION READ-ONLY UI UAT | `ProjectService.copy_as_template` 与 `POST /projects/{id}:copy-template`；新 UUID/DRAFT，只复制结构、解冻的当前镜头字段、ProductionPlan、本地交付目标与 Published ACTIVE Profile。媒体/授权资产/BrandKit/Job/审核/交付/审计历史明确排除；文件树+数据库失败双回滚、重码/孤立目录不覆盖。API 3 项、Web 1 项与三视口只读表单 UAT 通过，见 `docs/evidence/g10/project-template-copy-uat-2026-08-15.json` |
 | FR-IMG-001/FR-MED media register、probe、hash、poster/cache、Range | VERIFIED | `application/media.py`、G3 evidence sample |
 | FR-ING-001 source document version、ImportSession、TXT/MD/DOCX preview | VERIFIED | `application/documents.py`、G3 import test |
 | FR-SRC-001 FTS5 global search minimum | VERIFIED | `application/read_models.py`、G3 import/search test |
@@ -199,6 +200,8 @@ UI 图标 P1 已闭环：本地零依赖 SVG outline family 替代品牌文字�
 FR-TML-004 完成后的最新全量门禁回归：API 132 passed / 4 Comfy live deselected，Ruff PASS，mypy 92 files PASS，Web 25/25 与 production build PASS。`scripts/check.ps1` 已补每个原生命令的显式退出码检查；修复前一次 mypy 失败却最终退出 0 的门禁假绿，修复后整套命令真实以 0 完成。该进展仍不改变 G7 许可证证据阻塞和有序退出状态。
 
 FR-PRJ-003 补齐后的最新全量门禁回归：API 134 passed / 4 Comfy live deselected，Ruff PASS，mypy 92 files PASS，Web 26/26 与 production build PASS；门禁脚本以真实 0 退出。G7 许可证证据阻塞和有序退出状态不变。
+
+FR-PRJ-006 补齐后的最新全量门禁回归：API 137 passed / 4 Comfy live deselected，Ruff PASS，mypy 92 files PASS，Web 27/27 与 production build PASS；蓝图计数仍精确为 86 FR / 14 NFR / 85 TC，门禁脚本真实退出 0。生产三视口仅展开复制策略表单，未确认复制、未修改数据库。G7 许可证证据阻塞和有序退出状态不变。
 
 ## 更新规则
 

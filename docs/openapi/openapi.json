@@ -758,6 +758,60 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}:copy-template": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Copy Project Template",
+        "operationId": "copyProjectTemplate",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectTemplateCopyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Copyprojecttemplate"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}:restore": {
       "post": {
         "tags": [
@@ -8902,6 +8956,27 @@
           "target_duration_ms"
         ],
         "title": "ProjectCreateRequest"
+      },
+      "ProjectTemplateCopyRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "title"
+        ],
+        "title": "ProjectTemplateCopyRequest"
       },
       "ProjectUpdateRequest": {
         "properties": {

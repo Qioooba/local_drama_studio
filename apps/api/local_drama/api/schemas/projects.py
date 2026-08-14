@@ -29,6 +29,13 @@ class ProjectUpdateRequest(BaseModel):
     expected_revision: int = Field(ge=1)
 
 
+class ProjectTemplateCopyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    title: str = Field(min_length=1, max_length=200)
+
+
 class ShotCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

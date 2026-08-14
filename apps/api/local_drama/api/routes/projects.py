@@ -4,6 +4,7 @@ from fastapi import APIRouter, Header, Request
 
 from local_drama.api.schemas.projects import (
     ProjectCreateRequest,
+    ProjectTemplateCopyRequest,
     ProjectUpdateRequest,
     ShotCreateRequest,
     ShotRevisionRequest,
@@ -88,6 +89,14 @@ async def pause_project(project_id: str, request: Request) -> dict[str, object]:
 async def archive_project(project_id: str, request: Request) -> dict[str, object]:
     try:
         return {"project": service(request).transition_project(project_id, "ARCHIVED")}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/{project_id}:copy-template", operation_id="copyProjectTemplate", status_code=201)
+async def copy_project_template(project_id: str, payload: ProjectTemplateCopyRequest, request: Request) -> dict[str, object]:
+    try:
+        return service(request).copy_as_template(project_id, code=payload.code, title=payload.title)
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
