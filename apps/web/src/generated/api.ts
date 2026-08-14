@@ -54,11 +54,46 @@ export type CanvasGraph = { scope: Record<string, unknown>; nodes: CanvasNode[];
 
 const instanceTokens = new Map<string, string>();
 
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code: string,
+    readonly requestId: string | null,
+    readonly retryable: boolean,
+    readonly suggestedAction: string | null,
+  ) {
+    super(message);
+    this.name = 'ApiRequestError';
+  }
+}
+
+async function apiRequestError(response: Response, path: string): Promise<ApiRequestError> {
+  let body: { error?: { code?: string; message?: string; request_id?: string | null; retryable?: boolean; suggested_action?: string | null } } = {};
+  try {
+    body = await response.json() as typeof body;
+  } catch {
+    // Non-JSON failures still retain the response header request ID.
+  }
+  const details = body.error;
+  const code = details?.code ?? 'HTTP_ERROR';
+  const requestId = details?.request_id ?? response.headers?.get?.('X-Request-Id') ?? null;
+  const requestSuffix = requestId ? ` · 请求 ID ${requestId}` : '';
+  return new ApiRequestError(
+    `${details?.message ?? `${path} 请求失败（HTTP ${response.status}）`}${requestSuffix}`,
+    response.status,
+    code,
+    requestId,
+    details?.retryable ?? false,
+    details?.suggested_action ?? null,
+  );
+}
+
 async function instanceToken(baseUrl: string): Promise<string> {
   const cached = instanceTokens.get(baseUrl);
   if (cached) return cached;
   const response = await fetch(`${baseUrl}/api/v1/session/bootstrap`);
-  if (!response.ok) throw new Error(`/api/v1/session/bootstrap failed: ${response.status}`);
+  if (!response.ok) throw await apiRequestError(response, '/api/v1/session/bootstrap');
   const session = await response.json() as LocalSession;
   instanceTokens.set(baseUrl, session.token);
   return session.token;
@@ -74,7 +109,7 @@ async function requestJson<T>(path: string, init?: RequestInit, baseUrl = ''): P
     securedInit = { ...init, headers };
   }
   const response = await fetch(`${baseUrl}${path}`, securedInit);
-  if (!response.ok) throw new Error(`${path} failed: ${response.status}`);
+  if (!response.ok) throw await apiRequestError(response, path);
   const advertisedToken = response.headers?.get?.('X-Local-Instance-Token');
   if (advertisedToken) instanceTokens.set(baseUrl, advertisedToken);
   return response.json() as Promise<T>;

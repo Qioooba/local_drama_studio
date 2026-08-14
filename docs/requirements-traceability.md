@@ -183,6 +183,8 @@ G10 安全 UAT 已补齐此前缺失的 instance CSRF token：每个 API 进程�
 
 G10 干净新根恢复 UAT 使用 100 个真实 FFprobe PASS 的本地 WAV：online backup 后恢复数据库与完整项目树，100/100 MediaVersion SHA-256、数据库 integrity、健康/项目/审核入口全部通过；实测 RTO 0.627 秒、捕获备份后 RPO=0。该证据来自隔离环境且未接触生产库、runtime 或网络，见 `docs/evidence/g10/recovery-restore-uat-2026-08-15.json`。
 
+G10 UI 可访问性复审已把设计系统的 12px 可见文字下限与 40px 可用控件下限落到真实计算样式；1440×900 生成、1280×800 审核、1024×768 画布均无水平溢出、console/page error、失败响应或原片请求。生成客户端现保留结构化错误 code/status/retry guidance/request ID，工作区活动查询提供区域级错误与显式重试。证据见 `docs/evidence/g10/typography-accessibility-uat-2026-08-15.json`；Web 17/17。此项不改变 G7 的许可证证据阻塞，也不宣告最终 G10 发布退出。
+
 ## 更新规则
 
 任何新增/变更需求必须先分配 ID、写 ADR、补 migration/API/UI/test 影响；所有阶段报告、提交和缺陷引用至少一个需求或测试 ID。

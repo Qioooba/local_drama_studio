@@ -224,6 +224,11 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .review-submit select { min-width: 150px; padding: 9px; border: 1px solid #d5cfc3; border-radius: 7px; background: #fff; }
 .review-submit .primary-action { width: auto; }
 .inline-error { margin-top: 10px; padding: 10px; border: 1px solid #dda99a; border-radius: 7px; color: #8f341f; background: #fff1ec; font-size: 11px; }
+.workspace-error { display: flex; align-items: start; justify-content: space-between; gap: 18px; margin: 14px 0; padding: 14px 16px; border: 1px solid #dda99a; border-radius: 9px; color: #742d1d; background: #fff1ec; }
+.workspace-error > div { display: grid; gap: 6px; min-width: 0; }
+.workspace-error p { color: #8f341f; overflow-wrap: anywhere; }
+.workspace-error p span { font-weight: 800; }
+.workspace-error button { flex: 0 0 auto; }
 .review-guidance, .review-success { margin: 12px 0 0; padding: 10px 12px; border-radius: 7px; font-size: 11px; line-height: 1.5; }
 .review-guidance { border: 1px solid #dfc58e; color: #76520f; background: #fff8e7; }
 .review-success { border: 1px solid #9bc8b9; color: #245e53; background: #edf9f4; }
@@ -373,6 +378,84 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .probe-plan-hash { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: center; margin: 0; font-size: 10px; }
 .probe-plan-hash code { overflow: hidden; color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; }
 .probe-plan-safety { margin: 0; padding: 9px 11px; border: 1px solid color-mix(in srgb, var(--approved) 42%, var(--border)); border-radius: 8px; color: var(--text-muted); background: color-mix(in srgb, var(--approved) 7%, var(--surface)); font-size: 10px; }
+
+/* Design-system accessibility floor: production metadata may be dense, but
+   no readable label/helper/status text is allowed below 12px. */
+#root .shell small,
+#root .shell .eyebrow,
+#root .shell .context-selectors label,
+#root .shell .context-selectors select,
+#root .shell .mode-badge,
+#root .shell .status-pill,
+#root .shell .nav-title,
+#root .shell .sidebar-foot,
+#root .shell .status-label,
+#root .shell .milestones,
+#root .shell .configuration-card span,
+#root .shell .configuration-row,
+#root .shell .configuration-header,
+#root .shell .profile-contract-fields label,
+#root .shell .profile-validation,
+#root .shell .workflow-version code,
+#root .shell .workflow-safety,
+#root .shell .review-check label,
+#root .shell .review-submit label,
+#root .shell .inline-error,
+#root .shell .review-guidance,
+#root .shell .review-success,
+#root .shell .canvas-filterbar label,
+#root .shell .canvas-focus-actions button,
+#root .shell .canvas-node-list button,
+#root .shell .canvas-node,
+#root .shell .workflow-step,
+#root .shell .workflow-step span,
+#root .shell .section-title small,
+#root .shell .media-slot small,
+#root .shell .prompt-field label,
+#root .shell .capability-panel label,
+#root .shell .prompt-tools span,
+#root .shell .chip,
+#root .shell .variant-strip strong,
+#root .shell .frame-source-row label,
+#root .shell .frame-actions label,
+#root .shell .frame-feedback,
+#root .shell .capability-truth span,
+#root .shell .capability-truth small,
+#root .shell .resource-summary div,
+#root .shell .candidate-card-body code,
+#root .shell .candidate-state,
+#root .shell .system-strip,
+#root .shell .system-strip button,
+#root .shell .shot-context label,
+#root .shell .shot-context small,
+#root .shell .gate-checks strong,
+#root .shell .gate-next,
+#root .shell .probe-plan-grid dd,
+#root .shell .probe-plan-hash,
+#root .shell .probe-plan-safety,
+#root .shell .probe-plan-grid dt,
+#root .shell .selected-mark,
+#root .shell .preflight-summary span,
+#root .shell .candidate-poster span,
+#root .shell .review-preview > span,
+#root .shell .media-kind-placeholder {
+  font-size: 12px !important;
+  line-height: 1.5;
+}
+
+#root .shell input,
+#root .shell .context-selectors select,
+#root .shell button.chip,
+#root .shell .canvas-focus-actions button,
+#root .shell .canvas-node-list button,
+#root .shell .system-strip button,
+#root .shell .react-flow__controls button {
+  min-height: 40px;
+}
+
+#root .shell .react-flow__controls button {
+  min-width: 40px;
+}
 
 @media (max-width: 1240px) {
   .content { padding: 28px 26px 44px; }

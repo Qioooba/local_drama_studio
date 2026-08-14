@@ -1,0 +1,47 @@
+{
+  "schema_version": "g10-typography-accessibility-uat.v1",
+  "observed_at": "2026-08-14T20:16:01.389Z",
+  "mode": "LOCAL_ONLY",
+  "status": "PASS",
+  "minimum_visible_font_px": 12,
+  "minimum_enabled_control_height_px": 40,
+  "original_media_requested": false,
+  "viewports": [
+    {
+      "viewport": "1440x900",
+      "view": "generation",
+      "status": "PASS",
+      "visible_text_below_12px": [],
+      "enabled_controls_below_40px": [],
+      "horizontal_overflow_px": 0,
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "original_media_requests": []
+    },
+    {
+      "viewport": "1280x800",
+      "view": "reviews",
+      "status": "PASS",
+      "visible_text_below_12px": [],
+      "enabled_controls_below_40px": [],
+      "horizontal_overflow_px": 0,
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "original_media_requests": []
+    },
+    {
+      "viewport": "1024x768",
+      "view": "canvas",
+      "status": "PASS",
+      "visible_text_below_12px": [],
+      "enabled_controls_below_40px": [],
+      "horizontal_overflow_px": 0,
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "original_media_requests": []
+    }
+  ]
+}

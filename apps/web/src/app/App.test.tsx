@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App, focusCanvasNodeIds } from "./App";
+import { listProjects } from "../generated/api";
 
 vi.mock("../generated/api", () => ({
   healthLive: vi.fn().mockResolvedValue({ status: "HEALTHY", checks: { mode: "LOCAL_ONLY" } }),
@@ -37,6 +38,15 @@ describe("G1 app shell", () => {
     render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
     expect(await screen.findByRole("heading", { name: /先锁定镜头/ })).toBeTruthy();
     expect(new URLSearchParams(window.location.search).get("view")).toBe("generation");
+  });
+
+  it("shows a regional retry with the traceable API request ID", async () => {
+    vi.mocked(listProjects).mockRejectedValueOnce(new Error("项目读取失败 · 请求 ID req-ui-123"));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+    expect((await screen.findByRole("alert")).textContent).toContain("请求 ID req-ui-123");
+    fireEvent.click(screen.getByRole("button", { name: "重试当前区域" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 });
 

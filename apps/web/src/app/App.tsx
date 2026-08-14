@@ -86,6 +86,17 @@ function StatusCard({ label, value, detail }: { label: string; value: string; de
   );
 }
 
+type RecoverableQuery = { error: Error | null; isFetching: boolean; refetch: () => Promise<unknown> };
+
+function WorkspaceErrorPanel({ failures }: { failures: Array<{ label: string; query: RecoverableQuery }> }) {
+  if (failures.length === 0) return null;
+  const retry = () => { void Promise.all(failures.map(({ query }) => query.refetch())); };
+  return <section className="workspace-error" role="alert" aria-labelledby="workspace-error-title">
+    <div><strong id="workspace-error-title">当前区域有 {failures.length} 项数据读取失败</strong>{failures.map(({ label, query }) => <p key={label}><span>{label}</span>：{query.error?.message ?? String(query.error)}</p>)}</div>
+    <button className="secondary" onClick={retry} disabled={failures.some(({ query }) => query.isFetching)}>{failures.some(({ query }) => query.isFetching) ? "重试中…" : "重试当前区域"}</button>
+  </section>;
+}
+
 function ViewButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return <button className={`nav-item${active ? " active" : ""}`} aria-current={active ? "page" : undefined} onClick={onClick}><span className="nav-label">{label}</span><svg aria-hidden="true" viewBox="0 0 16 16"><path d="m6 3 5 5-5 5" /></svg></button>;
 }
@@ -126,6 +137,20 @@ export function App() {
   const selectedReviewVersion = selectedReviewVersionId ?? reviewItems.data?.items[0]?.media_version_id ?? null;
   const reviewContext = useQuery({ queryKey: ["reviews", "context", selectedReviewVersion], queryFn: () => getReviewContext(selectedReviewVersion as string), enabled: Boolean(selectedReviewVersion) && view === "reviews" });
   const jobs = useQuery({ queryKey: ["jobs", selectedProject], queryFn: () => listJobs(selectedProject ?? undefined), enabled: view === "jobs" });
+  const activeQueries: Array<{ label: string; query: RecoverableQuery }> = [
+    { label: "API 状态", query: live },
+    { label: "本地系统契约", query: contract },
+    { label: "项目列表", query: projects },
+  ];
+  if (view === "overview") activeQueries.push({ label: "本地能力", query: profiles }, { label: "诊断摘要", query: diagnostics }, { label: "适配器契约", query: adapterContracts }, { label: "容量摘要", query: capacitySnapshot }, { label: "模型证据", query: modelCompatibility });
+  if (view === "projects") activeQueries.push({ label: "季数据", query: seasons }, { label: "分集数据", query: episodes }, { label: "生产状态", query: production }, { label: "时间线状态", query: timelineStatus }, { label: "G8 门禁", query: g8Readiness }, { label: "项目配置", query: projectConfiguration });
+  if (view === "canvas") activeQueries.push({ label: "季数据", query: seasons }, { label: "分集数据", query: episodes }, { label: "生产状态", query: production }, { label: "G9 门禁", query: g9Readiness });
+  if (view === "reviews") activeQueries.push({ label: "审核收件箱", query: reviewItems }, { label: "审核模板", query: reviewTemplates }, { label: "审核上下文", query: reviewContext });
+  if (view === "jobs") activeQueries.push({ label: "任务列表", query: jobs }, { label: "容量摘要", query: capacitySnapshot });
+  if (view === "profiles") activeQueries.push({ label: "能力版本", query: profiles }, { label: "工作流版本", query: workflows }, { label: "项目配置", query: projectConfiguration }, { label: "模型证据", query: modelCompatibility });
+  if (view === "generation") activeQueries.push({ label: "能力版本", query: profiles }, { label: "H3 本机状态", query: h3Runtime }, { label: "媒体候选", query: reviewItems }, { label: "生产上下文", query: production }, { label: "G6 门禁", query: g6Readiness }, { label: "I2V 探针计划", query: i2vProbePlan });
+  if (view === "diagnostics") activeQueries.push({ label: "诊断详情", query: diagnostics }, { label: "适配器契约", query: adapterContracts }, { label: "模型证据", query: modelCompatibility });
+  const queryFailures = activeQueries.filter(({ query }) => Boolean(query.error));
   const diagnosticMutation = useMutation({
     mutationFn: () => runDiagnostics(),
     onSuccess: (data) => queryClient.setQueryData(["diagnostics", "latest"], data),
@@ -251,6 +276,8 @@ export function App() {
             <StatusCard label="数据库" value={contract.data?.database_authority ?? "SQLite"} detail="SQLite WAL 是业务状态权威" />
             <StatusCard label="本机 Profile" value={profiles.data?.items.length === undefined ? "读取中…" : String(profiles.data.items.length)} detail="候选版本需显式发布" />
           </div> : <div className="system-strip" aria-label="本机系统状态"><span><i className={live.data?.status === "HEALTHY" ? "ok" : "warn"} /> API {live.data?.status ?? "读取中"}</span><span>网络 {contract.data?.mode ?? "读取中"}</span><span>SQLite WAL</span><button onClick={() => navigate("diagnostics")}>查看诊断</button></div>}
+
+          <WorkspaceErrorPanel failures={queryFailures} />
 
           {view === "overview" && (
             <section className="panel">
@@ -488,7 +515,7 @@ function ProductionCanvasPanel({ episodeId, selectedShotId, onSelectShot }: { ep
   });
   if (!episodeId) return <section className="panel"><p className="empty-state">请先选择一个包含集的项目。</p></section>;
   if (graphQuery.isPending) return <section className="panel"><p className="empty-state">正在懒加载业务 DAG…</p></section>;
-  if (!graph) return <section className="panel"><p className="empty-state">业务画布读取失败。</p></section>;
+  if (!graph) return <section className="panel"><div className="workspace-error" role="alert"><div><strong>业务画布读取失败</strong><p>{graphQuery.error?.message ?? String(graphQuery.error)}</p></div><button className="secondary" onClick={() => { void graphQuery.refetch(); }} disabled={graphQuery.isFetching}>{graphQuery.isFetching ? "重试中…" : "重试业务画布"}</button></div></section>;
   return <section className="panel canvas-panel">
     <div className="panel-heading"><div><p className="eyebrow">G9 PRODUCTION CANVAS</p><h3>业务依赖 DAG · 拖动只保存布局</h3></div><div className="canvas-actions"><button className="secondary" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>{saveMutation.isPending ? "保存中…" : "保存布局"}</button><button className="secondary" onClick={() => planMutation.mutate()} disabled={!selectedNodeId || planMutation.isPending}>{planMutation.isPending ? "预检中…" : "运行节点预检"}</button></div></div>
     <p className="muted">节点显示状态、take、variant 和阻塞；edges 来自后端业务依赖，布局接口无法修改它们。当前页 {graph.page.returned_shots}/{graph.page.total_shots} 个镜头，最多显示 {graph.invariants.max_visible_nodes} 个节点。</p>

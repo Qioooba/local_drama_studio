@@ -47,3 +47,34 @@ The generic UI database classified the product as Video Streaming/OTT and propos
 - No horizontal document overflow at 1024 (`scrollWidth == innerWidth == 1024`).
 - One console error: missing `/favicon.ico`; tracked for immediate repair.
 
+## 2026-08-15 re-audit
+
+The original findings above are retained as the historical baseline. Current status was re-checked against the real production database and the generated React client.
+
+### P0 disposition
+
+- Resolved: view/project/episode/shot/review state is URL-backed, restored on refresh and synchronized on browser history navigation.
+- Resolved: project, episode and shot selectors are visible in the shell/workbench; real FrameAnchor, keyframe candidate, immutable input and review flows are API-backed.
+- Truthful blocker retained: text-to-image still has no matching Published local Profile. The UI routes to capability configuration and does not expose a fake submit path.
+- Resolved: system KPIs are confined to overview; other views use a compact status strip.
+- Resolved: navigation is separated into production and resource/system groups; the 1024px layout collapses to a horizontal navigation strip.
+- Resolved: review uses fixed 320px small thumbnails, structured checks, independent selection/review actions and keyboard-operable native controls.
+- Resolved: generated client errors now preserve structured code/status/retry guidance and show the API/body or response-header request ID. Active workspace queries render a regional alert with explicit retry; canvas and mutation errors remain local to their owning region.
+
+### P1 disposition
+
+- Resolved: every visible text sample on generation, review and canvas production routes computes to at least 12px; every enabled button/select/input/textarea computes to at least 40px high.
+- Resolved: three production viewports have zero document-level horizontal overflow, console/page errors, failed responses and original-media requests.
+- Resolved: project/episode selection is visible and canonicalized into the URL; it is no longer a silent in-memory default.
+- Resolved: fixed thumbnail dimensions and bounded canvas/review projections prevent layout shifts on the production routes covered here.
+- Resolved: favicon requests no longer produce browser errors.
+- Open refactor: `App.tsx` still owns too many feature panels. This is maintainability debt, not an observed P0 workflow failure.
+- Open refinement: replace remaining structural arrow/lettermark glyphs with the approved local SVG icon set.
+- Open scale refinement: episode/job list virtualization is still required before claiming unrestricted large-list UX; current backend reads and displayed lists remain bounded.
+
+### Verification evidence
+
+- `tests/e2e/g10_typography_accessibility.spec.ts` exercises 1440×900 generation, 1280×800 review and 1024×768 canvas using real production state.
+- `docs/evidence/g10/typography-accessibility-uat-2026-08-15.json` records the computed typography/control floor, overflow, browser errors, failed responses and original-media request audit.
+- Web unit suite: 17/17, including structured request-ID propagation and regional retry recovery.
+- Production build and the combined G9/G10 three-viewport Playwright suite pass. No original-resolution image was loaded or captured for this re-audit.

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  ApiRequestError,
   bindEpisodeAudio,
   buildDeliveryPackage,
   createPostProcessRecipe,
@@ -82,5 +83,33 @@ describe("generated G8 timeline client", () => {
       "/api/v1/post-process-recipes/recipe%2F1",
       "/api/v1/enhancement-runs",
     ]);
+  });
+
+  it("surfaces structured API failures with a traceable request ID", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 409,
+      headers: { get: (name: string) => name === "X-Request-Id" ? "req-header-fallback" : null },
+      json: async () => ({
+        error: {
+          code: "REVISION_CONFLICT",
+          message: "版本已变化",
+          request_id: "req-body-123",
+          retryable: true,
+          suggested_action: "刷新后重试",
+        },
+      }),
+    });
+
+    const error = await getFrameAnchor("stale-anchor").catch((reason: unknown) => reason);
+    expect(error).toBeInstanceOf(ApiRequestError);
+    expect(error).toMatchObject({
+      status: 409,
+      code: "REVISION_CONFLICT",
+      requestId: "req-body-123",
+      retryable: true,
+      suggestedAction: "刷新后重试",
+    });
+    expect(String(error)).toContain("请求 ID req-body-123");
   });
 });
