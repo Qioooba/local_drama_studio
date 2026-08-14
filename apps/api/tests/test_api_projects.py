@@ -23,6 +23,7 @@ def test_project_api_uses_real_migration_and_returns_conflict(workspace, databas
         )
         assert response.status_code == 201
         project = response.json()["project"]
+        assert response.json()["blockers"] == ["PROFILE_NOT_BOUND", "PRODUCTION_PLAN_NOT_BOUND", "DELIVERY_TARGET_NOT_BOUND"]
         assert client.get(f"/api/v1/projects/{project['id']}").status_code == 200
         first_update = client.patch(
             f"/api/v1/projects/{project['id']}",

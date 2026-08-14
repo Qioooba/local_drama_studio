@@ -9,6 +9,7 @@ from local_drama.api.schemas.projects import (
     ShotCreateRequest,
     ShotRevisionRequest,
 )
+from local_drama.application.configuration import ConfigurationService
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.projects import ProjectService
 from local_drama.domain.errors import DomainRuleError
@@ -48,7 +49,7 @@ async def create_project(
             allow_unconfigured_capabilities=payload.allow_unconfigured_capabilities,
             request_id=getattr(request.state, "request_id", None),
         )
-        return {"project": result, "blockers": [] if payload.allow_unconfigured_capabilities is False else ["PROFILE_NOT_CONFIGURED"]}
+        return {"project": result, "blockers": ConfigurationService(request.app.state.database).blockers(str(result["id"]))}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

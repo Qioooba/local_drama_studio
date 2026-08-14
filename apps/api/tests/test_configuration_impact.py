@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from local_drama.application.configuration import ConfigurationService
 from local_drama.application.projects import ProjectService
+from local_drama.domain.errors import DomainRuleError
 from local_drama.main import create_app
 
 
@@ -32,6 +34,9 @@ def test_project_configuration_snapshot_is_read_only_and_exposes_local_switch_im
 
 
 def test_project_configuration_snapshot_rejects_unknown_project(workspace, database) -> None:
+    with pytest.raises(DomainRuleError) as error:
+        ConfigurationService(database).blockers("missing")
+    assert error.value.code == "PROJECT_NOT_FOUND"
     with TestClient(create_app(workspace)) as client:
         response = client.get("/api/v1/projects/missing/configuration")
     assert response.status_code == 404

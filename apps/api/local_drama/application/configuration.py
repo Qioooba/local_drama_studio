@@ -135,12 +135,13 @@ class ConfigurationService:
     def blockers(self, project_id: str) -> list[str]:
         with self.database.connect() as connection:
             row = connection.execute(
-                """SELECT EXISTS(SELECT 1 FROM project_profile_bindings WHERE project_id=? AND status IN ('ACTIVE', 'SELECTED_CANDIDATE')) AS profile_bound,
+                """SELECT EXISTS(SELECT 1 FROM projects WHERE id=?) AS project_exists,
+                EXISTS(SELECT 1 FROM project_profile_bindings WHERE project_id=? AND status IN ('ACTIVE', 'SELECTED_CANDIDATE')) AS profile_bound,
                 EXISTS(SELECT 1 FROM project_plan_bindings WHERE project_id=?) AS plan_bound,
                 EXISTS(SELECT 1 FROM delivery_targets WHERE project_id=? AND status='ACTIVE') AS delivery_bound""",
-                (project_id, project_id, project_id),
+                (project_id, project_id, project_id, project_id),
             ).fetchone()
-        if row is None:
+        if row is None or not row["project_exists"]:
             raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
         blockers: list[str] = []
         if not row["profile_bound"]:
