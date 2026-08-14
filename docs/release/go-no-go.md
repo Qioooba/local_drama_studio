@@ -11,6 +11,9 @@ release_status: DRAFT
 - G9 生产 100—300 节点性能与三视图可访问性证据已 PASS，但按序退出仍等待 G7→G8。
 - 安装/升级/回滚仍只有草稿流程；最终 SBOM 与完整本地 UAT 尚未完成。
 
+已通过但不足以单独放行：instance CSRF token、恶意 Origin、路径逃逸、REMOTE 禁用、
+自定义节点可信清单和零公网隔离安全 UAT 均已 PASS。
+
 ## 通过条件
 
 只有 G0→G10 顺序门禁、86/86 FR、14/14 NFR、85 主干测试、完整本地 UAT、P0/P1 清零、release evidence、安装/升级/回滚、最终 SBOM 和评审签字全部具备，才可把本文件改为 `FINAL` 并记录 GO。

@@ -18,7 +18,11 @@ describe("generated G8 timeline client", () => {
   const fetchMock = vi.fn();
 
   beforeEach(() => {
-    fetchMock.mockResolvedValue({ ok: true, json: async () => ({}) });
+    fetchMock.mockImplementation(async (path: string) => ({
+      ok: true,
+      headers: { get: () => null },
+      json: async () => path.endsWith("/session/bootstrap") ? { token: "test-token", mode: "LOCAL_ONLY" } : {},
+    }));
     vi.stubGlobal("fetch", fetchMock);
   });
 
@@ -36,13 +40,16 @@ describe("generated G8 timeline client", () => {
       "/api/v1/episodes/episode%2F1/timeline-revisions",
       expect.objectContaining({ method: "POST", body: JSON.stringify({ items: [{ track_type: "VIDEO", media_version_id: "media-1", start_us: 0, end_us: 1_000_000 }], input_snapshot: { source_revision: 3 } }) }),
     );
+    const mutation = fetchMock.mock.calls.find(([path]) => path === "/api/v1/episodes/episode%2F1/timeline-revisions");
+    expect(new Headers(mutation?.[1]?.headers).get("X-Local-Instance-Token")).toBe("test-token");
   });
 
   it("posts subtitle and authorized audio bindings through encoded episode paths", async () => {
     await createSubtitleRevision("episode/1", { cues: [{ start_us: 0, end_us: 500_000, text: "local" }], format: "SRT" });
     await bindEpisodeAudio("episode/1", { media_version_id: "audio/1", track_type: "DIALOGUE", start_us: 0, end_us: 500_000, source_license_status: "USER_OWNED" });
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/episodes/episode%2F1/subtitle-revisions");
-    expect(fetchMock.mock.calls[1][0]).toBe("/api/v1/episodes/episode%2F1/audio-bindings");
+    const calls = fetchMock.mock.calls.filter(([path]) => !String(path).endsWith("/session/bootstrap"));
+    expect(calls[0][0]).toBe("/api/v1/episodes/episode%2F1/subtitle-revisions");
+    expect(calls[1][0]).toBe("/api/v1/episodes/episode%2F1/audio-bindings");
   });
 
   it("uses explicit render and delivery endpoints without hidden requests", async () => {
@@ -50,7 +57,7 @@ describe("generated G8 timeline client", () => {
     await buildDeliveryPackage({ episode_render_version_id: "render/1", target_version_id: "target/1" });
     await verifyDeliveryPackage("package/1");
     await withdrawDeliveryPackage("package/1", "integrity review");
-    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+    expect(fetchMock.mock.calls.map(([path]) => path).filter((path) => !String(path).endsWith("/session/bootstrap"))).toEqual([
       "/api/v1/timeline-revisions/timeline%2F1:render",
       "/api/v1/delivery-packages",
       "/api/v1/delivery-packages/package%2F1:verify",
@@ -68,7 +75,7 @@ describe("generated G8 timeline client", () => {
     await createPostProcessRecipe({ code: "denoise", title: "Denoise", steps: [{ op: "denoise" }] });
     await getPostProcessRecipe("recipe/1");
     await runEnhancement({ input_media_version_id: "media/1", recipe_id: "recipe/1" });
-    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+    expect(fetchMock.mock.calls.map(([path]) => path).filter((path) => !String(path).endsWith("/session/bootstrap"))).toEqual([
       "/api/v1/frame-anchors/anchor%2F1",
       "/api/v1/shot-transitions",
       "/api/v1/post-process-recipes",

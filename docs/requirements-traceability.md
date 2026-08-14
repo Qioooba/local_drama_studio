@@ -179,6 +179,8 @@ G7 当前 `IN_PROGRESS`，首阻塞 `MODEL_LICENSE_HASH_QUANTIZATION_REPORT`，�
 
 G10 发布准备已有只读 `scripts/release_audit.py`：当前数据库与最近五份迁移前备份 `integrity=ok`、migration head=`0021_g10_scale_read_indexes`；`0020→0021` 隔离升级/精确恢复演练、`SBOM_INVENTORY` 与本地只读 UAT 基线已通过。隔离规模 UAT 建立 60 集、800 镜头、10,000 MediaAsset/MediaVersion，60/60 集真实 FastAPI 生产与 timeline/delivery 入口通过，read-model p95 11.881ms；合成媒体完整性明确为 `UNKNOWN`，不冒充媒体回归。SBOM 盘点包含 317 个锁定包条目，其中 73 项许可证仍为 `NOASSERTION`（主要是未安装的跨平台可选 Node 包）。G8/G9 观测证据为 PASS，但按序退出均被 G7 许可证证据阻塞；安装升级回滚、最终 SBOM 和 go/no-go 工件保持 DRAFT/NO-GO，不能宣告发布完成。
 
+G10 安全 UAT 已补齐此前缺失的 instance CSRF token：每个 API 进程生成独立 token，同源客户端从无 CORS 的 bootstrap/安全 GET 获取，所有网络写请求同时验证受控 Origin 与 `X-Local-Instance-Token`。隔离真实 FastAPI 验证恶意 Origin、缺失/错误 token、路径逃逸、REMOTE Provider、未入清单自定义节点均被拒绝；socket guard 对 TEST-NET 公网目标在 connect 前阻断，OpenAPI 无远程 credential 字段。证据为 `docs/evidence/g10/security-uat-2026-08-15.json`；不替代 G7 模型许可证或最终发布签字。
+
 ## 更新规则
 
 任何新增/变更需求必须先分配 ID、写 ADR、补 migration/API/UI/test 影响；所有阶段报告、提交和缺陷引用至少一个需求或测试 ID。

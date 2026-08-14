@@ -16,6 +16,9 @@ from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.comfy import ComfyClient
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.infrastructure.manifest import load_manifest
+
+TRUSTED_COMFY_BUILTINS = {"CreateVideo", "LoadImage", "SaveImage", "SaveVideo"}
 
 
 def _now() -> str:
@@ -57,6 +60,34 @@ class WorkflowService:
             raise
         return relative.as_posix()
 
+    def _validate_node_supply_chain(self, workflow: dict[str, Any]) -> dict[str, Any]:
+        manifest = load_manifest(self.settings.manifest_path)
+        nodes = manifest.data.get("nodes", {})
+        trusted_custom = {str(item) for item in nodes.get("class_mappings", [])}
+        plugin_init_sha = str(nodes.get("plugin_init_sha256", ""))
+        mapping_sha = str(nodes.get("node_mapping_sha256", ""))
+        required = {
+            str(node.get("class_type"))
+            for node in workflow.values()
+            if isinstance(node, dict) and node.get("class_type")
+        }
+        untrusted = sorted(required - TRUSTED_COMFY_BUILTINS - trusted_custom)
+        hashes_valid = all(len(value) == 64 and all(char in "0123456789abcdefABCDEF" for char in value) for value in (plugin_init_sha, mapping_sha))
+        if untrusted or not hashes_valid:
+            raise DomainRuleError(
+                "WORKFLOW_NODE_SUPPLY_CHAIN_UNTRUSTED",
+                "workflow 引用了未进入可信清单的节点，或自定义节点 hash 清单无效",
+                {"untrusted_nodes": untrusted, "manifest_sha256": manifest.sha256},
+            )
+        return {
+            "required_nodes": sorted(required),
+            "trusted_custom_nodes": sorted(required & trusted_custom),
+            "trusted_builtin_nodes": sorted(required & TRUSTED_COMFY_BUILTINS),
+            "plugin_init_sha256": plugin_init_sha.lower(),
+            "node_mapping_sha256": mapping_sha.lower(),
+            "manifest_sha256": manifest.sha256,
+        }
+
     def register_package(
         self,
         code: str,
@@ -69,6 +100,7 @@ class WorkflowService:
         self._validate_code(code)
         if not workflow or not isinstance(workflow, dict):
             raise DomainRuleError("WORKFLOW_REQUIRED", "workflow package content 不能为空")
+        supply_chain = self._validate_node_supply_chain(workflow)
         if any(
             isinstance(value, str) and (value.startswith("\\") or ":\\" in value or value.startswith("/"))
             for node in workflow.values()
@@ -108,6 +140,7 @@ class WorkflowService:
                     "contract": contract,
                     "node_bindings": node_bindings,
                     "runtime_contract": runtime_contract or {},
+                    "node_supply_chain": supply_chain,
                 },
             )
             connection.execute(
@@ -185,6 +218,7 @@ class WorkflowService:
 
     def validate_against_comfy(self, version_id: str, client: ComfyClient) -> dict[str, Any]:
         version = self.get_version(version_id)
+        supply_chain = self._validate_node_supply_chain(version["workflow"])
         object_info = client.object_info()
         available = set(object_info)
         required = {str(node.get("class_type")) for node in version["workflow"].values() if isinstance(node, dict) and node.get("class_type")}
@@ -203,6 +237,7 @@ class WorkflowService:
             "missing_nodes": missing,
             "comfy_url": client.base_url,
             "runtime_layout": runtime_layout,
+            "node_supply_chain": supply_chain,
         }
 
         validation_id = str(uuid.uuid4())

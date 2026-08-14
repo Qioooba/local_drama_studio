@@ -1,6 +1,6 @@
 {
   "schema_version": "g10.release_audit.read_only.v1",
-  "observed_at": "2026-08-14T19:32:16.503872+00:00",
+  "observed_at": "2026-08-14T19:52:17.363958+00:00",
   "status": "IN_PROGRESS",
   "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
   "checks": [
@@ -60,6 +60,11 @@
       "code": "METADATA_SCALE_UAT",
       "passed": true,
       "evidence": "docs/evidence/g10/metadata-scale-uat-2026-08-15.json"
+    },
+    {
+      "code": "SECURITY_UAT",
+      "passed": true,
+      "evidence": "docs/evidence/g10/security-uat-2026-08-15.json"
     },
     {
       "code": "STALE_JOB_MAINTENANCE",

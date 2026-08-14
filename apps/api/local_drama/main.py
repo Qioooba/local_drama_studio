@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 import sqlite3
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -69,6 +70,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = resolved
     app.state.database = Database(resolved.database_path)
+    app.state.instance_session_token = secrets.token_urlsafe(32)
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(LocalOriginMiddleware, allowed_origins=resolved.allowed_origins)
     app.add_exception_handler(ApiError, api_error_handler)

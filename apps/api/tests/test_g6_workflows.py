@@ -53,6 +53,21 @@ def test_real_loopback_comfy_workflow_capture_compile_and_publish(workspace, dat
         service.compile_semantic_inputs(str(version["id"]), {"NODE_ID": "2"})
 
 
+def test_workflow_registration_rejects_untrusted_custom_node(workspace, database) -> None:
+    service = WorkflowService(database, workspace)
+    with pytest.raises(DomainRuleError) as raised:
+        service.register_package(
+            "untrusted_custom_node",
+            "Untrusted custom node",
+            {"1": {"class_type": "ArbitraryInternetDownloaderNode", "inputs": {}}},
+            {"output": "VIDEO"},
+            {},
+        )
+    assert raised.value.code == "WORKFLOW_NODE_SUPPLY_CHAIN_UNTRUSTED"
+    with database.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM workflows WHERE code='untrusted_custom_node'").fetchone()[0] == 0
+
+
 @pytest.mark.comfyui
 def test_workflow_rejects_absolute_path_and_api_reads_real_comfy_stats(workspace, database) -> None:
     service = WorkflowService(database)

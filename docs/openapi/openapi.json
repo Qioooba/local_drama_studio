@@ -27,6 +27,32 @@
         }
       }
     },
+    "/api/v1/session/bootstrap": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Bootstrap Local Session",
+        "description": "Return the per-process token to a same-origin local client.\n\nNo CORS allow header is emitted, so an unrelated webpage cannot read this\nresponse even though it may attempt a simple cross-origin GET.",
+        "operationId": "bootstrapLocalSession",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Bootstraplocalsession"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/health/ready": {
       "get": {
         "tags": [

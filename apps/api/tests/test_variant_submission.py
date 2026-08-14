@@ -27,7 +27,7 @@ def test_confirmed_variant_and_gpu_job_are_atomic(workspace, database) -> None:
     else:
         project_value = str(project_id[0])
     workflow = {
-        "1": {"class_type": "TestNode", "inputs": {"prompt": "", "seed": 0}}
+        "1": {"class_type": "LoadImage", "inputs": {"prompt": "", "seed": 0}}
     }
     from local_drama.application.workflows import WorkflowService
 

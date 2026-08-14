@@ -32,6 +32,16 @@ async def live() -> HealthCheck:
     return HealthCheck(status="HEALTHY", checks={"process": "ok", "mode": "LOCAL_ONLY"})
 
 
+@router.get("/session/bootstrap", operation_id="bootstrapLocalSession")
+async def bootstrap_local_session(request: Request) -> dict[str, str]:
+    """Return the per-process token to a same-origin local client.
+
+    No CORS allow header is emitted, so an unrelated webpage cannot read this
+    response even though it may attempt a simple cross-origin GET.
+    """
+    return {"token": str(request.app.state.instance_session_token), "mode": "LOCAL_ONLY"}
+
+
 @router.get("/health/ready", response_model=HealthCheck, operation_id="healthReady")
 async def ready(request: Request) -> HealthCheck:
     settings = request.app.state.settings
