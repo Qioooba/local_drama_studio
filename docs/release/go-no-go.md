@@ -7,8 +7,8 @@ release_status: DRAFT
 ## 阻塞项
 
 - G7 `MODEL_LICENSE_HASH_QUANTIZATION_REPORT` 缺少真实本地许可证证据。
-- G8 生产 Episode 1 没有 3+ 个真实镜头、对白/环境/SFX/音乐、字幕、整集批准 render 或 delivery。
-- G9 正式 100—300 节点性能 UAT 与完整三视图可访问性 checklist 尚未完成。
+- G8 生产证据已 PASS，但按序退出仍等待 G7。
+- G9 生产 100—300 节点性能与三视图可访问性证据已 PASS，但按序退出仍等待 G7→G8。
 - 安装/升级/回滚仍只有草稿流程；最终 SBOM 与完整本地 UAT 尚未完成。
 
 ## 通过条件

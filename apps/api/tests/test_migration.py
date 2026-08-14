@@ -18,12 +18,25 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         profile_columns = {row[1] for row in connection.execute("PRAGMA table_info(execution_profile_versions)")}
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         foreign_keys = connection.execute("PRAGMA foreign_keys").fetchone()[0]
-        assert version == "0020_g7_model_license_evidence"
+        indexes = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
+        assert version == "0021_g10_scale_read_indexes"
     assert "provider_random_nonce" in variant_columns
     assert {"requested_time_us", "resolved_time_us", "source_sha256", "extraction_method"} <= anchor_columns
     assert "source_artifact_id" in media_columns
     assert {"output_contract_json", "resource_policy_json"} <= profile_columns
     assert foreign_keys == 1
+    assert {
+        "ix_media_assets_owner",
+        "ix_media_versions_asset_version",
+        "ix_generation_intents_owner",
+        "ix_jobs_subject_state",
+        "ix_selections_asset_type",
+        "ix_review_decisions_subject_created",
+        "ix_timeline_revisions_episode_revision",
+        "ix_subtitle_revisions_episode_revision",
+        "ix_episode_renders_episode_created",
+        "ix_delivery_packages_render_created",
+    } <= indexes
     expected = {
         "projects",
         "shots",

@@ -67,6 +67,8 @@ def _rehearsal_passed(path: Path) -> bool:
         and source.get("integrity") == "ok"
         and restore.get("integrity") == "ok"
         and restore.get("matches_source_sha256") is True
+        and source.get("migration") == "0020_g7_model_license_evidence"
+        and evidence.get("upgrade_copy", {}).get("to_migration") == "0021_g10_scale_read_indexes"
         and safety.get("production_database_mutated") is False
         and safety.get("network_contacted") is False
     )
@@ -111,6 +113,27 @@ def _local_uat_passed(path: Path) -> bool:
         and safety.get("network_contacted") is False
         and safety.get("mutated") is False
         and safety.get("jobs_created") is False
+    )
+
+
+def _metadata_scale_passed(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    try:
+        evidence = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return False
+    fixture = evidence.get("fixture", {})
+    return (
+        evidence.get("status") == "PASS"
+        and fixture.get("episodes") == 60
+        and fixture.get("shots") == 800
+        and fixture.get("media_assets") == 10_000
+        and fixture.get("media_versions") == 10_000
+        and fixture.get("playable_media_claimed") is False
+        and evidence.get("runtime_contacted") is False
+        and evidence.get("network_contacted") is False
+        and evidence.get("production_database_contacted") is False
     )
 
 
@@ -165,11 +188,12 @@ def audit() -> dict[str, Any]:
         "sbom": (ROOT / "docs" / "release" / "sbom.json", True),
         "go_no_go": (ROOT / "docs" / "release" / "go-no-go.md", True),
     }
-    rehearsal_path = ROOT / "docs" / "evidence" / "g10" / "upgrade-rollback-rehearsal-2026-08-14.json"
+    rehearsal_path = ROOT / "docs" / "evidence" / "g10" / "upgrade-rollback-rehearsal-2026-08-15.json"
     sbom_path = ROOT / "docs" / "release" / "sbom.json"
     sbom_inventory = _sbom_inventory(sbom_path)
     local_uat_path = ROOT / "docs" / "evidence" / "g10" / "local-uat-readonly-2026-08-14.json"
     stale_job_path = ROOT / "docs" / "evidence" / "g10" / "stale-job-maintenance-2026-08-14.json"
+    metadata_scale_path = ROOT / "docs" / "evidence" / "g10" / "metadata-scale-uat-2026-08-15.json"
     artifact_state = {
         name: {"exists": path.is_file(), "final": _is_final(path) if requires_final else path.is_file(), "path": path.relative_to(ROOT).as_posix()}
         for name, (path, requires_final) in required_artifacts.items()
@@ -177,7 +201,7 @@ def audit() -> dict[str, Any]:
     release_artifacts_ready = all(item["final"] for item in artifact_state.values())
     checks = [
         {"code": "DATABASE_INTEGRITY", "passed": _integrity(DB_PATH) == "ok", "observed": _integrity(DB_PATH)},
-        {"code": "MIGRATION_HEAD", "passed": bool(migration and str(migration["version_num"]) == "0020_g7_model_license_evidence"), "observed": str(migration["version_num"]) if migration else None},
+        {"code": "MIGRATION_HEAD", "passed": bool(migration and str(migration["version_num"]) == "0021_g10_scale_read_indexes"), "observed": str(migration["version_num"]) if migration else None},
         {"code": "BACKUP_INTEGRITY", "passed": bool(backup_paths) and all(_integrity(path) == "ok" for path in backup_paths[:5]), "observed_count": min(len(backup_paths), 5)},
         {"code": "ORDERED_G7", "passed": g7_pass, "observed": g7["status"], "next_required_action": g7["next_required_action"]},
         {
@@ -202,6 +226,7 @@ def audit() -> dict[str, Any]:
         {"code": "UPGRADE_ROLLBACK_REHEARSAL", "passed": _rehearsal_passed(rehearsal_path), "evidence": rehearsal_path.relative_to(ROOT).as_posix()},
         {"code": "SBOM_INVENTORY", "passed": sbom_inventory["valid"], "package_count": sbom_inventory["package_count"], "evidence": sbom_path.relative_to(ROOT).as_posix()},
         {"code": "LOCAL_UAT_READONLY_BASELINE", "passed": _local_uat_passed(local_uat_path), "evidence": local_uat_path.relative_to(ROOT).as_posix()},
+        {"code": "METADATA_SCALE_UAT", "passed": _metadata_scale_passed(metadata_scale_path), "evidence": metadata_scale_path.relative_to(ROOT).as_posix()},
         {"code": "STALE_JOB_MAINTENANCE", "passed": _stale_job_maintenance_passed(stale_job_path), "evidence": stale_job_path.relative_to(ROOT).as_posix()},
         {"code": "RELEASE_ARTIFACTS", "passed": release_artifacts_ready, "artifacts": artifact_state},
     ]

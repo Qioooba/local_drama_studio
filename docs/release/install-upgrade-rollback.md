@@ -31,14 +31,14 @@ release_status: DRAFT
 - 升级后完整 001x→head 恢复矩阵。
 - 回滚后完整本地 UAT、SBOM 和 go/no-go 签字。
 
-## 已完成的隔离演练（2026-08-14）
+## 已完成的隔离演练（2026-08-15）
 
-已将 `backups/pre_migration_20260813T183851Z.sqlite3` 复制到受控临时目录，执行
-`0019_g7_model_compatibility_reports → 0020_g7_model_license_evidence` 的 Alembic
+已将 `backups/pre_migration_20260814T193026Z.sqlite3` 复制到受控临时目录，执行
+`0020_g7_model_license_evidence → 0021_g10_scale_read_indexes` 的 Alembic
 升级，并对另一份独立副本执行恢复校验。升级副本与恢复副本均通过
 `PRAGMA integrity_check`；恢复副本 SHA-256 与源备份一致。正式生产库、API、ComfyUI、
 网络和任务队列均未接触，证据见
-`docs/evidence/g10/upgrade-rollback-rehearsal-2026-08-14.json`。
+`docs/evidence/g10/upgrade-rollback-rehearsal-2026-08-15.json`。
 
 该演练只证明受控副本上的升级/恢复路径，不等同于全新机器安装、完整迁移矩阵、
 回滚后本地 UAT 或最终发布签署；因此本文件仍保持 `DRAFT`。
@@ -57,5 +57,14 @@ G7/G8/G9 readiness 和模型兼容性执行 8 个 GET 请求；8/8 成功，6 �
 未接触 runtime、网络或任务队列。证据见
 `docs/evidence/g10/local-uat-readonly-2026-08-14.json`。该基线不替代完整本地一条龙
 UAT、真实生成、性能/可访问性验收或最终发布评审。
+
+## 隔离元数据规模 UAT（2026-08-15）
+
+`scripts/g10_scale_uat.py` 在独立迁移库建立 60 集、800 镜头、10,000 MediaAsset 与
+10,000 MediaVersion，并通过真实 FastAPI read path 验证 60/60 集的生产入口和
+timeline/delivery 状态入口。生产 read-model p95 为 11.881ms，timeline/delivery p95
+为 14.461ms，review inbox 为 156.986ms，数据库完整性为 `ok`。这些媒体行的
+`integrity_status` 固定为 `UNKNOWN`，不冒充可播放媒体或媒体回归证据。详见
+`docs/evidence/g10/metadata-scale-uat-2026-08-15.json`。
 
 在上述演练完成并留存证据前，不得把本文件的草稿状态改为 `FINAL`。
