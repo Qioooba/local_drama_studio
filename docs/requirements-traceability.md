@@ -187,7 +187,7 @@ G10 UI 可访问性复审已把设计系统的 12px 可见文字下限与 40px �
 
 审核与任务长列表现采用首屏 50 行的渐进窗口，深链接选择在窗口外时会扩展到该项，用户可显式每次再显示 50 行；离屏行启用 `content-visibility:auto`。纯函数窗口边界已覆盖 120 行/深链场景，Web 回归升至 18/18；这属于浏览器渲染保护，不替代后端分页或最终规模发布验收。
 
-React 可维护性拆分已把审核收件箱、任务/容量面板、Profile 契约编辑器、生产 DAG 与共享渐进窗口从 `App.tsx` 移入 `features/reviews`、`features/jobs`、`features/profiles`、`features/canvas`、`features/shared`；应用壳缩减为 392 行，路由及跨域 query 权威仍留在壳层，行为与接口未改。Web 18/18、production build，以及三档 typography/accessibility/canvas 共 9 项真实页面验收继续 PASS。
+React 可维护性拆分已把审核收件箱、任务/容量面板、Profile 契约编辑器、生产 DAG、配置/模型/timeline/gate/诊断投影与共享渐进窗口移入对应 `features/` 模块；应用壳从 558 行缩减为 289 行，仅保留路由及跨域 query 编排，行为与接口未改。Web 18/18、production build，以及三档 typography/accessibility/canvas 共 9 项真实页面验收继续 PASS。
 
 2026-08-15 最新全量门禁回归：蓝图清单仍为 86 FR / 14 NFR / 85 TC；API 125 passed / 4 Comfy live deselected，Ruff PASS，mypy 90 files PASS，Web 18/18 与 production build PASS。该回归不改变 G7 许可证证据阻塞，也不构成最终发布签字。
 
