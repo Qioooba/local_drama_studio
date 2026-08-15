@@ -37,6 +37,7 @@ export type FrameAnchor = { id: string; source_media_version_id: string; source_
 export type KeyframeCandidate = { id: string; media_asset_id: string; project_id: string; owner_type: 'SHOT'; owner_id: string; media_kind: 'IMAGE'; stage: 'KEYFRAME'; parent_version_id: string; duplicate: boolean; [key: string]: unknown };
 export type ContactSheetExport = { schema_version: 'localdrama.contact-sheet.v1'; status: 'EXPORTED'; rel_path: string; manifest_rel_path: string; contact_sheet_rel_path: string; export_hash: string; item_count: number; reused: boolean; database_mutated: false; runtime_contacted: false; network_contacted: false };
 export type TimelineExport = { schema_version: 'localdrama.timeline-export.v1'; status: 'EXPORTED'; rel_path: string; manifest_rel_path: string; files: Array<{ rel_path: string; byte_size: number; sha256: string }>; export_hash: string; reused: boolean; database_mutated: false; runtime_contacted: false; network_contacted: false };
+export type JobArtifact = { id: string; job_attempt_id: string; kind: string; sandbox_rel_path: string; sha256: string; status: string; byte_size?: number; [key: string]: unknown };
 export type Job = { id: string; type: string; project_id: string; state: string; channel: string; priority: number; max_attempts: number; revision: number; [key: string]: unknown };
 export type GenerationIntent = { id: string; project_id: string; owner_type: string; owner_id: string; purpose: string; creative_goal: string; [key: string]: unknown };
 export type VariantInput = { role: string; media_version_id: string; ordinal?: number };
@@ -309,6 +310,10 @@ export async function listJobs(projectId?: string, baseUrl = ''): Promise<{ item
   return requestJson<{ items: Job[] }>(`/api/v1/jobs${query}`, undefined, baseUrl);
 }
 
+export async function getJob(jobId: string, baseUrl = ''): Promise<{ job: Job & { attempts: Array<Record<string, unknown> & { artifacts?: JobArtifact[] }>; depends_on_job_ids: string[] } }> {
+  return requestJson(`/api/v1/jobs/${encodeURIComponent(jobId)}`, undefined, baseUrl);
+}
+
 export async function cancelJob(jobId: string, baseUrl = ''): Promise<{ job: Job }> {
   return requestJson(`/api/v1/jobs/${encodeURIComponent(jobId)}:cancel`, { method: 'POST' }, baseUrl);
 }
@@ -319,6 +324,10 @@ export async function retryJob(jobId: string, baseUrl = ''): Promise<{ job: Job 
 
 export async function cloneJob(jobId: string, inputOverrides: Record<string, unknown> = {}, baseUrl = ''): Promise<{ job: Job }> {
   return requestJson(`/api/v1/jobs/${encodeURIComponent(jobId)}:clone`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ input_overrides: inputOverrides }) }, baseUrl);
+}
+
+export async function promoteJobArtifactToMedia(artifactId: string, payload: { purpose?: string; media_kind?: 'IMAGE' | 'VIDEO' | 'AUDIO'; stage?: 'KEYFRAME' | 'PROXY' | 'FORMAL' | 'TIMELINE' }, baseUrl = ''): Promise<{ media: Record<string, unknown> }> {
+  return requestJson(`/api/v1/artifacts/${encodeURIComponent(artifactId)}:promote-media`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
 export async function createGenerationIntent(payload: { project_id: string; owner_type: string; owner_id: string; purpose: string; creative_goal: string }, baseUrl = ''): Promise<{ intent: GenerationIntent }> {

@@ -211,9 +211,14 @@ class JobService:
                 raise DomainRuleError("JOB_NOT_FOUND", "Job 不存在", {"job_id": job_id})
             attempts = connection.execute("SELECT * FROM job_attempts WHERE job_id=? ORDER BY attempt_no", (job_id,)).fetchall()
             dependencies = connection.execute("SELECT depends_on_job_id FROM job_dependencies WHERE job_id=?", (job_id,)).fetchall()
+            artifacts = connection.execute("SELECT * FROM artifacts WHERE job_attempt_id IN (SELECT id FROM job_attempts WHERE job_id=?) ORDER BY created_at", (job_id,)).fetchall()
+        artifacts_by_attempt: dict[str, list[dict[str, Any]]] = {}
+        for artifact in artifacts:
+            artifacts_by_attempt.setdefault(str(artifact["job_attempt_id"]), []).append(dict(artifact))
+        attempt_items = [{**dict(attempt), "artifacts": artifacts_by_attempt.get(str(attempt["id"]), [])} for attempt in attempts]
         return {
             **self._job_response(row),
-            "attempts": [dict(item) for item in attempts],
+            "attempts": attempt_items,
             "depends_on_job_ids": [item["depends_on_job_id"] for item in dependencies],
         }
 
