@@ -257,6 +257,8 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .review-submit label { display: grid; gap: 5px; color: var(--text-muted); font-size: 10px; font-weight: 800; }
 .review-submit select { min-width: 150px; padding: 9px; border: 1px solid #d5cfc3; border-radius: 7px; background: #fff; }
 .review-submit .primary-action { width: auto; }
+.episode-review-video { display: block; width: min(100%, 900px); max-height: 480px; margin-top: 16px; background: #0b0d12; border-radius: 8px; }
+.episode-review-panel .muted { max-width: 900px; }
 .inline-error { margin-top: 10px; padding: 10px; border: 1px solid #dda99a; border-radius: 7px; color: #8f341f; background: #fff1ec; font-size: 11px; }
 .workspace-error { display: flex; align-items: start; justify-content: space-between; gap: 18px; margin: 14px 0; padding: 14px 16px; border: 1px solid #dda99a; border-radius: 9px; color: #742d1d; background: #fff1ec; }
 .workspace-error > div { display: grid; gap: 6px; min-width: 0; }

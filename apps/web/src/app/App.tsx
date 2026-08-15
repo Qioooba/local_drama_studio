@@ -44,6 +44,7 @@ import { FormalSelectionPanel } from "../features/reviews/FormalSelectionPanel";
 import { ProfileConfigurationPanel } from "../features/profiles/ProfileConfigurationPanel";
 import { ProductionCanvasPanel } from "../features/canvas/ProductionCanvasPanel";
 import { EpisodeContactSheetAction } from "../features/production/EpisodeContactSheetAction";
+import { EpisodeReviewPanel } from "../features/production/EpisodeReviewPanel";
 import { TimelineExportAction } from "../features/production/TimelineExportAction";
 import { SubtitleRevisionPanel } from "../features/production/SubtitleRevisionPanel";
 import { TimelineRevisionPanel } from "../features/production/TimelineRevisionPanel";
@@ -139,7 +140,7 @@ export function App() {
   const workflows = useQuery({ queryKey: ["workflow-versions"], queryFn: () => listWorkflowVersions(), enabled: view === "profiles" });
   const diagnostics = useQuery({ queryKey: ["diagnostics", "latest"], queryFn: () => latestDiagnostics(), enabled: view === "diagnostics" || view === "overview" });
   const h3Runtime = useQuery({ queryKey: ["h3", "candidate-runtime"], queryFn: () => h3CandidateRuntime(), enabled: view === "generation" || view === "overview" });
-  const reviewTemplates = useQuery({ queryKey: ["reviews", "templates"], queryFn: () => listReviewTemplates(), enabled: view === "reviews" });
+  const reviewTemplates = useQuery({ queryKey: ["reviews", "templates"], queryFn: () => listReviewTemplates(), enabled: view === "reviews" || view === "projects" });
   const selectedProjectRecord = selectedItemOrFirst(projects.data?.items, selectedProjectId);
   const selectedProject = selectedProjectRecord?.id ?? null;
   const formalCandidates = useQuery({ queryKey: ["reviews", "formal-selection", selectedProject], queryFn: () => listFormalSelectionCandidates(selectedProject as string), enabled: Boolean(selectedProject) && view === "reviews" });
@@ -173,7 +174,7 @@ export function App() {
     { label: "项目列表", query: projects },
   ];
   if (view === "overview") activeQueries.push({ label: "本地能力", query: profiles }, { label: "诊断摘要", query: diagnostics }, { label: "适配器契约", query: adapterContracts }, { label: "容量摘要", query: capacitySnapshot }, { label: "模型证据", query: modelCompatibility });
-  if (view === "projects") activeQueries.push({ label: "季数据", query: seasons }, { label: "分集数据", query: episodes }, { label: "生产状态", query: production }, { label: "时间线状态", query: timelineStatus }, { label: "G8 门禁", query: g8Readiness }, { label: "项目配置", query: projectConfiguration });
+  if (view === "projects") activeQueries.push({ label: "季数据", query: seasons }, { label: "分集数据", query: episodes }, { label: "生产状态", query: production }, { label: "时间线状态", query: timelineStatus }, { label: "G8 门禁", query: g8Readiness }, { label: "审核模板", query: reviewTemplates }, { label: "项目配置", query: projectConfiguration });
   if (view === "canvas") activeQueries.push({ label: "季数据", query: seasons }, { label: "分集数据", query: episodes }, { label: "生产状态", query: production }, { label: "G9 门禁", query: g9Readiness });
   if (view === "reviews") activeQueries.push({ label: "审核收件箱", query: reviewItems }, { label: "正式交付候选", query: formalCandidates }, { label: "审核模板", query: reviewTemplates }, { label: "审核上下文", query: reviewContext });
   if (view === "jobs") activeQueries.push({ label: "任务列表", query: jobs }, { label: "容量摘要", query: capacitySnapshot });
@@ -347,6 +348,7 @@ export function App() {
                 {selectedEpisode && <TimelineRevisionPanel episodeId={selectedEpisode} onCreated={() => { void timelineStatus.refetch(); void g8Readiness.refetch(); }} />}
                 <EpisodeContactSheetAction episodeId={selectedEpisode} />
                 {timelineStatus.data?.status && <TimelineStatusPanel status={timelineStatus.data.status} />}
+                {selectedEpisode && <EpisodeReviewPanel render={timelineStatus.data?.status.renders.latest ?? null} templates={reviewTemplates.data?.items ?? []} onChanged={() => { void timelineStatus.refetch(); void g8Readiness.refetch(); }} />}
                 <TimelineExportAction timelineRevisionId={timelineStatus.data?.status.timeline.latest?.id ? String(timelineStatus.data.status.timeline.latest.id) : null} />
                 {selectedEpisode && <DeliveryWorkflowPanel episodeId={selectedEpisode} timelineRevisionId={timelineStatus.data?.status.timeline.latest?.id ? String(timelineStatus.data.status.timeline.latest.id) : null} renderId={timelineStatus.data?.status.renders.latest?.id ? String(timelineStatus.data.status.renders.latest.id) : null} targetVersionId={projectConfiguration.data?.configuration.selected_delivery_target_version_id ? String(projectConfiguration.data.configuration.selected_delivery_target_version_id) : null} deliveryId={timelineStatus.data?.status.delivery.latest?.id ? String(timelineStatus.data.status.delivery.latest.id) : null} onChanged={() => { void timelineStatus.refetch(); void g8Readiness.refetch(); }} />}
                 {g8Readiness.data?.readiness && <G8ReadinessPanel readiness={g8Readiness.data.readiness} />}

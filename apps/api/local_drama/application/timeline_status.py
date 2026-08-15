@@ -44,7 +44,7 @@ class TimelineStatusService:
                 "SELECT source_license_status,license_evidence_json FROM audio_bindings WHERE episode_id=?", (episode_id,)
             ).fetchall()
             render = connection.execute(
-                """SELECT erv.id, erv.integrity_status AS status, erv.duration_ms, erv.mime_type, erv.sha256, erv.created_at
+                """SELECT erv.id, erv.revision, erv.integrity_status AS status, erv.duration_ms, erv.mime_type, erv.sha256, erv.created_at
                 FROM episode_render_versions erv WHERE erv.episode_id=? ORDER BY erv.created_at DESC LIMIT 1""", (episode_id,)
             ).fetchone()
             render_count = int(connection.execute("SELECT COUNT(*) FROM episode_render_versions WHERE episode_id=?", (episode_id,)).fetchone()[0])

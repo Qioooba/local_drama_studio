@@ -287,6 +287,10 @@ export async function submitReview(mediaVersionId: string, payload: { template_v
   return requestJson(`/api/v1/subjects/MEDIA_VERSION/${encodeURIComponent(mediaVersionId)}/reviews`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
+export async function submitEpisodeRenderReview(renderId: string, payload: { template_version_id: string; decision: 'APPROVED' | 'REJECTED' | 'NEEDS_CHANGES'; expected_subject_revision: number; checks: Array<{ item_id: string; result: 'PASS' | 'FAIL'; comment?: string }>; comment?: string }, baseUrl = ''): Promise<{ review: Record<string, unknown> }> {
+  return requestJson(`/api/v1/subjects/EPISODE_RENDER_VERSION/${encodeURIComponent(renderId)}/reviews`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
 export async function preflightReviewBatch(projectId: string, items: Array<{ media_version_id: string; template_version_id: string }>, baseUrl = ''): Promise<{ plan: ReviewBatchPlan }> {
   return requestJson('/api/v1/reviews/batch:preflight', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ project_id: projectId, items }) }, baseUrl);
 }

@@ -1,7 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from collections.abc import Iterator
+from pathlib import Path
 
+from fastapi import APIRouter, Request, Response
+from fastapi.responses import StreamingResponse
+
+from local_drama.api.routes.media import _range_headers
 from local_drama.api.schemas.g8 import (
     AudioBindingRequest,
     DeliveryBuildRequest,
@@ -34,6 +39,46 @@ async def get_episode_timeline_status(episode_id: str, request: Request) -> dict
 
 def service(request: Request) -> TimelineService:
     return TimelineService(request.app.state.database, request.app.state.settings)
+
+
+def _stream(path: Path, start: int, end: int) -> Iterator[bytes]:
+    with path.open("rb") as source:
+        source.seek(start)
+        remaining = end - start + 1
+        while remaining:
+            chunk = source.read(min(1024 * 1024, remaining))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+            yield chunk
+
+
+async def _render_content(render_id: str, request: Request, head: bool = False) -> Response:
+    try:
+        item, path = service(request).render_content_path(render_id)
+        selected = _range_headers(request, path)
+        if isinstance(selected, Response):
+            return selected
+        start, end, status = selected
+        mime = str(item["mime_type"] or "video/mp4")
+        headers = {"Accept-Ranges": "bytes", "Content-Length": str(end - start + 1), "Content-Type": mime}
+        if status == 206:
+            headers["Content-Range"] = f"bytes {start}-{end}/{path.stat().st_size}"
+        if head:
+            return Response(status_code=status, headers=headers)
+        return StreamingResponse(_stream(path, start, end), status_code=status, headers=headers, media_type=mime)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/episode-renders/{render_id}/content", operation_id="getEpisodeRenderContent")
+async def get_episode_render_content(render_id: str, request: Request) -> Response:
+    return await _render_content(render_id, request)
+
+
+@router.head("/episode-renders/{render_id}/content", operation_id="headEpisodeRenderContent")
+async def head_episode_render_content(render_id: str, request: Request) -> Response:
+    return await _render_content(render_id, request, head=True)
 
 
 @router.post("/episodes/{episode_id}/timeline-revisions", status_code=201, operation_id="createTimelineRevision")

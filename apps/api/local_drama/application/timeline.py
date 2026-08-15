@@ -957,6 +957,38 @@ class TimelineService:
             )
         return {"id": render_id, "episode_id": episode["id"], "timeline_revision_id": timeline_revision_id, "rel_path": render_path.relative_to(project_root).as_posix(), "sha256": digest, "byte_size": size, "probe": probe, "status": "VERIFIED"}
 
+    def render_content_path(self, episode_render_version_id: str) -> tuple[dict[str, Any], Path]:
+        """Resolve a registered episode render through the local project root.
+
+        The browser is never allowed to turn a database path into an arbitrary
+        filesystem read.  We resolve the project root and render path, reject
+        symlinks/escapes, and verify the immutable render hash before serving.
+        """
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """SELECT erv.*, e.code AS episode_code, s.project_id, p.root_rel
+                FROM episode_render_versions erv
+                JOIN episodes e ON e.id=erv.episode_id
+                JOIN seasons s ON s.id=e.season_id
+                JOIN projects p ON p.id=s.project_id
+                WHERE erv.id=?""",
+                (episode_render_version_id,),
+            ).fetchone()
+        if row is None:
+            raise DomainRuleError("EPISODE_RENDER_NOT_FOUND", "整集渲染版本不存在")
+        project_root = (self.settings.projects_root / str(row["root_rel"])).resolve()
+        projects_root = self.settings.projects_root.resolve()
+        if project_root.is_symlink() or not project_root.is_dir() or not project_root.is_relative_to(projects_root):
+            raise DomainRuleError("EPISODE_RENDER_FILE_INVALID", "整集渲染项目目录不存在或路径越界")
+        candidate = project_root / str(row["rel_path"])
+        render_path = candidate.resolve()
+        if candidate.is_symlink() or not render_path.is_file() or not render_path.is_relative_to(project_root):
+            raise DomainRuleError("EPISODE_RENDER_FILE_MISSING", "整集渲染文件缺失或路径越界")
+        digest, _ = _hash_file(render_path)
+        if not hmac.compare_digest(digest, str(row["sha256"])):
+            raise DomainRuleError("EPISODE_RENDER_INTEGRITY_FAILED", "整集渲染文件 hash 与登记值不一致")
+        return dict(row), render_path
+
     def build_delivery(self, episode_render_version_id: str, target_version_id: str, *, actor: str = "local-user") -> dict[str, Any]:
         with self.database.connect() as connection:
             render = connection.execute("SELECT erv.*, e.code AS episode_code, e.id AS episode_id, s.project_id, p.root_rel FROM episode_render_versions erv JOIN episodes e ON e.id=erv.episode_id JOIN seasons s ON s.id=e.season_id JOIN projects p ON p.id=s.project_id WHERE erv.id=?", (episode_render_version_id,)).fetchone()
