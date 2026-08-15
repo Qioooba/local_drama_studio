@@ -110,6 +110,14 @@
 
 SAPI 批次已提交为 `ec48a61 feat: run real local sapi tts jobs`。源代码、测试、生成客户端、OpenAPI、证据和追踪文档均已提交；仅剩未跟踪的 `test-results/` Playwright 临时输出，不要提交。
 
+## 本轮续跑（2026-08-15）
+
+- `5dd68e9`：新增 migration `0032_episode_render_execution_evidence`，整集渲染冻结 timeline/input/media SHA 快照、FFmpeg executable/args/returncode 与脱敏执行日志；`POST :render` 和分集只读状态均可读取证据。隔离升级 `0031→0032` 与 G8 渲染回归通过。
+- `f3beb2b` / `7500741`：项目包副本导入与 rebind 后自动重建 IMAGE/VIDEO small poster 缩略图；新增项目级 `POST /projects/{id}/media-thumbnails:rebuild`、项目页重建按钮和失败计数。源文件仍只读/hash 校验，失败不回滚有效导入。
+- `504f915`：thumbnail/filmstrip/waveform 每次读取前重新验证源 MediaVersion SHA，已存在的旧缓存也不能绕过篡改检测。
+- `c0c7368`：生成工作台增加 `Provider random 重提` 分支入口，明确显示 `NON_REPRODUCIBLE`。
+- 发布演练脚本已对齐当前 migration head `0032_episode_render_execution_evidence`，隔离证据 `docs/evidence/g10/upgrade-rollback-rehearsal-0032-2026-08-15.json` 为 PASS；总需求 closure 仍是 IN_PROGRESS/NO-GO，不能提前宣告完成。
+
 ## 下一步精确顺序
 
 1. FR-AUD-001 仍不能标 VERIFIED，直到正式项目存在真实授权音色、Published TTS Profile、真实 Job/MediaVersion/candidate、试听、QC、审核与选择闭环。
