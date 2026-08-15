@@ -91,6 +91,21 @@ def test_limits_and_declarative_validation(workspace, database) -> None:
     limited = service.step_run(str(run["id"]), produced_bytes=5)
     assert limited["status"] == "LIMIT_REACHED"
     assert limited["disk_bytes"] == 6
+    iteration_limited = _definition(project_id)
+    iteration_limited["code"] = "iteration-limited"
+    iteration_limited["nodes"] = [{"id": "render", "type": "LOCAL_TASK"}]
+    iteration_limited["conditions"] = []
+    iteration_limited["human_gate"] = "NONE"
+    iteration_limited["max_iterations"] = 1
+    iteration_limited["max_tasks"] = 10
+    iteration_limited["max_disk_bytes"] = 100
+    iteration_limited["repeat_batch"] = True
+    bounded_workflow = service.create_workflow(**iteration_limited)
+    bounded_plan = service.plan_workflow(str(bounded_workflow["id"]))
+    bounded_run = service.start_run(str(bounded_workflow["id"]), plan_hash=str(bounded_plan["plan_hash"]), idempotency_key="run-iteration")
+    bounded_step = service.step_run(str(bounded_run["id"]))
+    assert bounded_step["status"] == "LIMIT_REACHED"
+    assert bounded_step["iteration_count"] == 1
 
 
 def test_workflow_api_uses_same_service_boundary(workspace, database) -> None:
