@@ -1,0 +1,57 @@
+{
+  "evidence_id": "fr-gen-001-004-generation-replay-2026-08-16",
+  "scope": ["FR-GEN-001", "FR-GEN-002", "FR-GEN-003", "FR-GEN-004"],
+  "status": "IMPLEMENTATION_EVIDENCE",
+  "observed_at": "2026-08-16T00:00:00Z",
+  "local_only": true,
+  "network_contacted": false,
+  "remote_provider_used": false,
+  "claims": {
+    "FR-GEN-001": {
+      "implemented": true,
+      "fault_retry": "JobService.retry transitions the existing Job to QUEUED; the next worker claim creates attempt_no + 1 and does not create a Variant or replace a take.",
+      "creative_reroll": "GenerationService.derive_variant_plan plus submit_confirmed_variant creates a child GenerationVariant and an independent Job.",
+      "ui_entry": "JobsPanel labels the operation as 故障重试（同一 Job） and routes GENERATION_VARIANT creative rerolls to Variant Composer."
+    },
+    "FR-GEN-002": {
+      "implemented": true,
+      "same_input_scope": "RESAMPLE_NEW_SEED preserves prompt revision, profile version, parameter set and media bindings; only explicit_seed (and semantic SEED when declared) changes.",
+      "provider_random_scope": "RESUBMIT_PROVIDER_RANDOM freezes a new UUID nonce and reports NON_REPRODUCIBLE when the Profile allows provider random.",
+      "ui_entry": "GenerationWorkbench exposes same-image/same-prompt seed batch, new seed, fixed-seed exact replay, and Provider random actions with a reproducibility note."
+    },
+    "FR-GEN-003": {
+      "implemented": true,
+      "snapshot": "Submitted Jobs now freeze profile revision, runtime version, workflow version/content hash, local model bundle/hash and manifest hash in input_snapshot.execution_snapshot.",
+      "replay_scope": "EXACT_REPLAY rejects seed/input/parameter overrides and reports an empty changed_fields diff; it does not claim pixel identity for non-deterministic runtimes."
+    },
+    "FR-GEN-004": {
+      "implemented": true,
+      "scope": "PROMPT_BRANCH changes only prompt_revision_id; source bindings, Profile, parameters and seed remain preserved.",
+      "lineage": "Child Variant stores parent_variant_id and lineage endpoint returns parent-to-child order.",
+      "diff": "Derivation plan returns changed_fields, before, after and preserved_fields before any Variant or Job is persisted."
+    }
+  },
+  "verification": {
+    "api_tests": [
+      "apps/api/tests/test_generation_variants.py::test_failed_generation_job_retry_adds_attempt_not_variant_or_take",
+      "apps/api/tests/test_generation_variants.py::test_variant_derive_plan_proves_resample_and_exact_replay_semantics",
+      "apps/api/tests/test_generation_variants.py::test_prompt_and_source_derive_plan_api_enforces_scope_before_creation",
+      "apps/api/tests/test_generation_variants.py::test_submitted_variant_freezes_workflow_and_local_model_execution_snapshot"
+    ],
+    "web_tests": [
+      "apps/web/src/features/generation/GenerationWorkbench.test.tsx"
+    ],
+    "command": ".venv/Scripts/python.exe -m pytest apps/api/tests/test_generation_variants.py::test_submitted_variant_freezes_workflow_and_local_model_execution_snapshot -q",
+    "result": "PASS",
+    "test_count": 1,
+    "note": "The focused execution snapshot test passed locally; the pre-existing GEN-001..004 contract tests are retained in the same module. Full release/UAT gates remain owned by the root task."
+  },
+  "artifacts": {
+    "generation_service": "apps/api/local_drama/application/generation.py",
+    "jobs_service": "apps/api/local_drama/application/jobs.py",
+    "variant_api": "apps/api/local_drama/api/routes/variants.py",
+    "generation_ui": "apps/web/src/features/generation/GenerationWorkbench.tsx",
+    "job_ui": "apps/web/src/features/jobs/JobsPanel.tsx",
+    "test_file": "apps/api/tests/test_generation_variants.py"
+  }
+}

@@ -23,7 +23,7 @@ release_status: FINAL
 1. 停止 LocalDramaStudio API/Worker，保留当前数据库与审计日志。
 2. 从指定备份复制回 `data/local_drama.sqlite3`，再次执行 `PRAGMA integrity_check`，不得删除历史备份。
 3. 检出与备份对应的代码 commit，重新运行 `scripts/start.ps1`；不得对数据库执行未经评审的降级 migration。
-4. 验证 migration head=`0036_motion_control_media`、G7/G8/G9 readiness、API/Web 回归和 LOCAL_ONLY 连接状态。
+4. 验证 migration head=`0037_job_progress_scheduler`、G7/G8/G9 readiness、API/Web 回归和 LOCAL_ONLY 连接状态。
 
 ## 支持边界
 
@@ -46,8 +46,8 @@ release_status: FINAL
 生产数据库未被演练触碰，证据文件记录为 PASS。
 
 版本化视频增强链迁移另使用 `0029_user_supplied_model_policy` 生产前备份，在隔离副本
-升级到 `0036_motion_control_media`，同时验证独立恢复副本与源备份 SHA-256
-完全一致；证据见 `docs/evidence/g10/upgrade-rollback-rehearsal-0036-2026-08-15.json`。
+升级到 `0037_job_progress_scheduler`，同时验证独立恢复副本与源备份 SHA-256
+完全一致；证据见 `docs/evidence/g10/upgrade-rollback-rehearsal-0037-2026-08-16.json`。
 
 ## 离线 SBOM 盘点（2026-08-14）
 

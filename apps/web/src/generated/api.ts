@@ -50,7 +50,9 @@ export type MotionControl = { id: string; source_media_version_id: string; contr
 export type ContactSheetExport = { schema_version: 'localdrama.contact-sheet.v1'; status: 'EXPORTED'; rel_path: string; manifest_rel_path: string; contact_sheet_rel_path: string; export_hash: string; item_count: number; reused: boolean; database_mutated: false; runtime_contacted: false; network_contacted: false };
 export type TimelineExport = { schema_version: 'localdrama.timeline-export.v1'; status: 'EXPORTED'; rel_path: string; manifest_rel_path: string; files: Array<{ rel_path: string; byte_size: number; sha256: string }>; export_hash: string; reused: boolean; database_mutated: false; runtime_contacted: false; network_contacted: false };
 export type JobArtifact = { id: string; job_attempt_id: string; kind: string; sandbox_rel_path: string; sha256: string; status: string; byte_size?: number; [key: string]: unknown };
-export type Job = { id: string; type: string; project_id: string; state: string; channel: string; priority: number; max_attempts: number; revision: number; [key: string]: unknown };
+export type JobProgress = { phase?: string; node?: string; percent?: number; eta_seconds?: number; [key: string]: unknown };
+export type JobAttempt = { id: string; job_id: string; attempt_no: number; state: string; worker_id?: string | null; lease_token?: string | null; lease_expires_at?: string | null; heartbeat_at?: string | null; provider_job_id?: string | null; error_code?: string | null; error_detail_redacted?: string | null; progress: JobProgress; artifacts?: JobArtifact[]; [key: string]: unknown };
+export type Job = { id: string; type: string; project_id: string; state: string; channel: string; priority: number; max_attempts: number; revision: number; progress?: JobProgress; progress_updated_at?: string | null; started_at?: string | null; finished_at?: string | null; last_error_code?: string | null; last_error_detail_redacted?: string | null; [key: string]: unknown };
 export type GenerationIntent = { id: string; project_id: string; owner_type: string; owner_id: string; purpose: string; creative_goal: string; [key: string]: unknown };
 export type VariantInput = { role: string; media_version_id: string; ordinal?: number; weight?: number | null };
 export type GenerationVariantDraft = { intent_id: string; variant_type: string; parent_variant_id?: string | null; branch_reason: string; prompt_revision_id?: string | null; profile_version_id: string; parameter_set?: Record<string, unknown>; seed_policy: string; explicit_seed?: number | null; provider_random_nonce?: string | null; bindings?: VariantInput[] };
@@ -401,8 +403,17 @@ export async function listJobsPage(projectId: string | undefined, cursor = 0, li
   return requestJson(`/api/v1/jobs?${query.toString()}`, undefined, baseUrl);
 }
 
-export async function getJob(jobId: string, baseUrl = ''): Promise<{ job: Job & { attempts: Array<Record<string, unknown> & { artifacts?: JobArtifact[] }>; depends_on_job_ids: string[] } }> {
+export async function getJob(jobId: string, baseUrl = ''): Promise<{ job: Job & { attempts: JobAttempt[]; depends_on_job_ids: string[] } }> {
   return requestJson(`/api/v1/jobs/${encodeURIComponent(jobId)}`, undefined, baseUrl);
+}
+
+export async function listJobAttempts(jobId: string, baseUrl = ''): Promise<{ items: JobAttempt[] }> {
+  return requestJson(`/api/v1/jobs/${encodeURIComponent(jobId)}/attempts`, undefined, baseUrl);
+}
+
+export async function listJobAttemptLogs(attemptId: string, cursor = 0, limit = 100, baseUrl = ''): Promise<{ items: Array<Record<string, unknown>>; cursor: number; next_cursor: number | null; limit: number }> {
+  const query = new URLSearchParams({ cursor: String(cursor), limit: String(limit) });
+  return requestJson(`/api/v1/job-attempts/${encodeURIComponent(attemptId)}/logs?${query.toString()}`, undefined, baseUrl);
 }
 
 export async function cancelJob(jobId: string, baseUrl = ''): Promise<{ job: Job }> {

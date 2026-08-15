@@ -45,6 +45,22 @@ def _parse_json(value: str) -> Any:
     return json.loads(value) if value else {}
 
 
+def _resource_key(channel: str, worker_id: str | None = None) -> str:
+    """Return the scheduler resource gate for a channel.
+
+    GPU_H3 is deliberately a single heavy resource. Other channels have
+    independent gates so CPU/text/audio work does not block a GPU slot (or
+    each other). The key is persisted with every attempt for audit/recovery.
+    """
+    normalized = channel.strip().upper()
+    if normalized in {"GPU_H3", "GPU", "VIDEO_GPU"}:
+        return "GPU_H3_HEAVY"
+    # Non-GPU channels are independent. A worker is still prevented from
+    # claiming two jobs on the same channel, while separate workers may run
+    # CPU/text/audio work concurrently.
+    return f"CHANNEL:{normalized}:{worker_id or 'scheduler'}"
+
+
 class JobService:
     def __init__(self, database: Database, settings: Settings | None = None) -> None:
         self.database = database
@@ -58,6 +74,7 @@ class JobService:
         return int(cursor.lastrowid)
 
     def _job_response(self, row: Any, *, replay: bool = False) -> dict[str, Any]:
+        progress = _parse_json(str(row["progress_json"] or "{}")) if "progress_json" in row.keys() else {}
         return {
             "id": row["id"],
             "type": row["type"],
@@ -72,6 +89,12 @@ class JobService:
             "priority": row["priority"],
             "max_attempts": row["max_attempts"],
             "revision": row["revision"],
+            "progress": progress,
+            "progress_updated_at": row["progress_updated_at"] if "progress_updated_at" in row.keys() else None,
+            "started_at": row["started_at"] if "started_at" in row.keys() else None,
+            "finished_at": row["finished_at"] if "finished_at" in row.keys() else None,
+            "last_error_code": row["last_error_code"] if "last_error_code" in row.keys() else None,
+            "last_error_detail_redacted": row["last_error_detail_redacted"] if "last_error_detail_redacted" in row.keys() else None,
             "idempotent_replay": replay,
         }
 
@@ -215,7 +238,14 @@ class JobService:
         artifacts_by_attempt: dict[str, list[dict[str, Any]]] = {}
         for artifact in artifacts:
             artifacts_by_attempt.setdefault(str(artifact["job_attempt_id"]), []).append(dict(artifact))
-        attempt_items = [{**dict(attempt), "artifacts": artifacts_by_attempt.get(str(attempt["id"]), [])} for attempt in attempts]
+        attempt_items = [
+            {
+                **dict(attempt),
+                "progress": _parse_json(str(attempt["progress_json"] or "{}")) if "progress_json" in attempt.keys() else {},
+                "artifacts": artifacts_by_attempt.get(str(attempt["id"]), []),
+            }
+            for attempt in attempts
+        ]
         return {
             **self._job_response(row),
             "attempts": attempt_items,
@@ -257,6 +287,37 @@ class JobService:
         items = [self._job_response(row) for row in rows[:normalized_limit]]
         return {"items": items, "next_cursor": normalized_cursor + normalized_limit if has_more else None, "cursor": normalized_cursor, "limit": normalized_limit}
 
+    def list_attempts(self, job_id: str) -> list[dict[str, Any]]:
+        with self.database.connect() as connection:
+            job = connection.execute("SELECT id FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if job is None:
+                raise DomainRuleError("JOB_NOT_FOUND", "Job 不存在", {"job_id": job_id})
+            rows = connection.execute("SELECT * FROM job_attempts WHERE job_id=? ORDER BY attempt_no", (job_id,)).fetchall()
+        return [
+            {
+                **dict(row),
+                "progress": _parse_json(str(row["progress_json"] or "{}")) if "progress_json" in row.keys() else {},
+                # Lease tokens are credentials and never belong in a read API.
+                "lease_token": None,
+            }
+            for row in rows
+        ]
+
+    def attempt_events(self, attempt_id: str, *, cursor: int = 0, limit: int = 100) -> dict[str, Any]:
+        normalized_limit = max(1, min(int(limit), 200))
+        with self.database.connect() as connection:
+            exists = connection.execute("SELECT id FROM job_attempts WHERE id=?", (attempt_id,)).fetchone()
+            if exists is None:
+                raise DomainRuleError("ATTEMPT_NOT_FOUND", "JobAttempt 不存在")
+            rows = connection.execute(
+                "SELECT * FROM outbox_events WHERE subject_id=? AND event_id>? ORDER BY event_id LIMIT ?",
+                (attempt_id, max(0, int(cursor)), normalized_limit + 1),
+            ).fetchall()
+        has_more = len(rows) > normalized_limit
+        items = [{**dict(row), "payload": _parse_json(row["payload_json"])} for row in rows[:normalized_limit]]
+        next_cursor = int(items[-1]["event_id"]) if has_more and items else None
+        return {"items": items, "cursor": max(0, int(cursor)), "next_cursor": next_cursor, "limit": normalized_limit}
+
     def claim(self, worker_id: str, channels: list[str] | None = None, lease_seconds: int = 60, actor: str = "worker") -> dict[str, Any] | None:
         if not worker_id:
             raise DomainRuleError("WORKER_ID_REQUIRED", "claim 必须提供 worker_id")
@@ -265,6 +326,10 @@ class JobService:
         now = _utc_now()
         now_iso = _iso(now)
         expires = _iso(now + timedelta(seconds=lease_seconds))
+        # A worker/API restart has no in-memory queue to restore. Reconcile
+        # expired leases before selecting the next durable QUEUED item so an
+        # orphaned attempt cannot strand the queue until a manual endpoint call.
+        self.reconcile(now=now, actor="scheduler-restart")
         with self.database.transaction() as connection:
             params: list[Any] = [now_iso]
             channel_clause = ""
@@ -275,8 +340,15 @@ class JobService:
             row = connection.execute(
                 f"""SELECT j.* FROM jobs j
                 WHERE j.state='QUEUED' AND (j.next_run_at IS NULL OR j.next_run_at<=?) {channel_clause}
-                AND NOT EXISTS (SELECT 1 FROM job_attempts active WHERE active.worker_id=? AND active.state IN ('CLAIMED','RUNNING'))
-                AND NOT (j.channel='GPU_H3' AND EXISTS (SELECT 1 FROM jobs gpu_active WHERE gpu_active.channel='GPU_H3' AND gpu_active.state IN ('CLAIMED','RUNNING')))
+                AND NOT EXISTS (SELECT 1 FROM job_attempts active JOIN jobs aj ON aj.id=active.job_id
+                                WHERE active.worker_id=? AND active.state IN ('CLAIMED','RUNNING') AND aj.channel=j.channel)
+                AND NOT (j.channel IN ('GPU_H3','GPU','VIDEO_GPU') AND EXISTS (
+                    SELECT 1 FROM jobs gpu_active
+                    WHERE gpu_active.channel IN ('GPU_H3','GPU','VIDEO_GPU') AND gpu_active.state IN ('CLAIMED','RUNNING')
+                ))
+                AND NOT (j.channel IN ('GPU_H3','GPU','VIDEO_GPU') AND EXISTS (
+                    SELECT 1 FROM job_resource_leases rl WHERE rl.resource_key='GPU_H3_HEAVY' AND rl.released_at IS NULL
+                ))
                 AND NOT EXISTS (SELECT 1 FROM job_dependencies d JOIN jobs dependency ON dependency.id=d.depends_on_job_id WHERE d.job_id=j.id AND dependency.state!='SUCCEEDED')
                 ORDER BY j.priority ASC, j.created_at ASC LIMIT 1""",
                 params,
@@ -288,13 +360,18 @@ class JobService:
             token = secrets_token()
             attempt_id = str(uuid.uuid4())
             connection.execute(
-                "UPDATE jobs SET state='CLAIMED', next_run_at=NULL, updated_at=?, revision=revision+1 WHERE id=? AND state='QUEUED'", (now_iso, row["id"])
+                "UPDATE jobs SET state='CLAIMED', next_run_at=NULL, started_at=COALESCE(started_at, ?), updated_at=?, revision=revision+1 WHERE id=? AND state='QUEUED'",
+                (now_iso, now_iso, row["id"]),
             )
             connection.execute(
                 """INSERT INTO job_attempts
-                (id, job_id, attempt_no, state, worker_id, lease_token, lease_expires_at, heartbeat_at, created_at, updated_at, created_by, revision, schema_version)
-                VALUES (?, ?, ?, 'CLAIMED', ?, ?, ?, ?, ?, ?, ?, 1, 'v2')""",
-                (attempt_id, row["id"], attempt_no, worker_id, token, expires, now_iso, now_iso, now_iso, actor),
+                (id, job_id, attempt_no, state, worker_id, lease_token, lease_expires_at, heartbeat_at, started_at, created_at, updated_at, created_by, revision, schema_version)
+                VALUES (?, ?, ?, 'CLAIMED', ?, ?, ?, ?, ?, ?, ?, ?, 1, 'v2')""",
+                (attempt_id, row["id"], attempt_no, worker_id, token, expires, now_iso, now_iso, now_iso, now_iso, actor),
+            )
+            connection.execute(
+                "INSERT INTO job_resource_leases (id, job_id, attempt_id, channel, resource_key, acquired_at, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (str(uuid.uuid4()), row["id"], attempt_id, row["channel"], _resource_key(str(row["channel"]), worker_id), now_iso, now_iso, actor),
             )
             self._emit(
                 connection, "JOB_CLAIMED", row["project_id"], "JOB_ATTEMPT", attempt_id, {"job_id": row["id"], "attempt_no": attempt_no, "worker_id": worker_id}
@@ -330,24 +407,38 @@ class JobService:
     def heartbeat(
         self, attempt_id: str, lease_token: str, worker_id: str, *, progress: dict[str, Any] | None = None, lease_seconds: int = 60
     ) -> dict[str, Any]:
+        progress = progress or {}
+        if not isinstance(progress, dict):
+            raise DomainRuleError("INVALID_JOB_PROGRESS", "progress 必须是对象")
+        percent = progress.get("percent")
+        if percent is not None:
+            try:
+                if float(percent) < 0 or float(percent) > 100:
+                    raise ValueError
+            except (TypeError, ValueError) as error:
+                raise DomainRuleError("INVALID_JOB_PROGRESS", "progress.percent 必须在 0—100 之间") from error
         now = _utc_now()
         now_iso = _iso(now)
         expires = _iso(now + timedelta(seconds=lease_seconds))
         with self.database.transaction() as connection:
             row = self._leased_attempt(connection, attempt_id, lease_token, worker_id)
+            progress_payload = progress
             connection.execute(
-                "UPDATE job_attempts SET state='RUNNING', heartbeat_at=?, lease_expires_at=?, updated_at=?, revision=revision+1 WHERE id=?",
-                (now_iso, expires, now_iso, attempt_id),
+                "UPDATE job_attempts SET state='RUNNING', heartbeat_at=?, lease_expires_at=?, progress_json=?, updated_at=?, revision=revision+1 WHERE id=?",
+                (now_iso, expires, _json(progress_payload), now_iso, attempt_id),
             )
-            connection.execute("UPDATE jobs SET state='RUNNING', updated_at=?, revision=revision+1 WHERE id=?", (now_iso, row["job_id"]))
-            self._emit(connection, "JOB_HEARTBEAT", row["project_id"], "JOB_ATTEMPT", attempt_id, {"job_id": row["job_id"], "progress": progress or {}})
+            connection.execute(
+                "UPDATE jobs SET state='RUNNING', progress_json=?, progress_updated_at=?, updated_at=?, revision=revision+1 WHERE id=?",
+                (_json(progress_payload), now_iso, now_iso, row["job_id"]),
+            )
+            self._emit(connection, "JOB_HEARTBEAT", row["project_id"], "JOB_ATTEMPT", attempt_id, {"job_id": row["job_id"], "progress": progress_payload})
         return {
             "attempt_id": attempt_id,
             "job_id": row["job_id"],
             "state": RUNNING,
             "heartbeat_at": now_iso,
             "lease_expires_at": expires,
-            "progress": progress or {},
+            "progress": progress_payload,
         }
 
     def attach_provider(
@@ -412,13 +503,14 @@ class JobService:
                 job_state = FAILED
                 next_run_at = None
             connection.execute(
-                "UPDATE job_attempts SET state=?, provider_job_id=?, error_code=?, error_detail_redacted=?, lease_token=NULL, lease_expires_at=NULL, updated_at=?, revision=revision+1 WHERE id=?",
-                (attempt_state, provider_job_id, error_code, error_detail_redacted, now, attempt_id),
+                "UPDATE job_attempts SET state=?, provider_job_id=?, error_code=?, error_detail_redacted=?, lease_token=NULL, lease_expires_at=NULL, finished_at=?, updated_at=?, revision=revision+1 WHERE id=?",
+                (attempt_state, provider_job_id, error_code, error_detail_redacted, now, now, attempt_id),
             )
             connection.execute(
-                "UPDATE jobs SET state=?, next_run_at=?, last_error_code=?, updated_at=?, revision=revision+1 WHERE id=?",
-                (job_state, next_run_at, error_code, now, row["job_id"]),
+                "UPDATE jobs SET state=?, next_run_at=?, last_error_code=?, last_error_detail_redacted=?, finished_at=?, updated_at=?, revision=revision+1 WHERE id=?",
+                (job_state, next_run_at, error_code, error_detail_redacted, now if job_state in {SUCCEEDED, FAILED, CANCELLED} else None, now, row["job_id"]),
             )
+            connection.execute("UPDATE job_resource_leases SET released_at=? WHERE attempt_id=? AND released_at IS NULL", (now, attempt_id))
             self._emit(
                 connection,
                 "JOB_FINISHED",
@@ -443,12 +535,13 @@ class JobService:
             if str(row["provider_job_id"] or "") != provider_job_id:
                 raise DomainRuleError("PROVIDER_JOB_MISMATCH", "provider_job_id 与 Attempt 记录不一致")
             connection.execute(
-                "UPDATE job_attempts SET state='SUCCEEDED', lease_token=NULL, lease_expires_at=NULL, error_code=NULL, updated_at=?, revision=revision+1 WHERE id=?",
-                (now, attempt_id),
+                "UPDATE job_attempts SET state='SUCCEEDED', lease_token=NULL, lease_expires_at=NULL, error_code=NULL, finished_at=?, updated_at=?, revision=revision+1 WHERE id=?",
+                (now, now, attempt_id),
             )
             connection.execute(
-                "UPDATE jobs SET state='SUCCEEDED', next_run_at=NULL, last_error_code=NULL, updated_at=?, revision=revision+1 WHERE id=?", (now, row["job_id"])
+                "UPDATE jobs SET state='SUCCEEDED', next_run_at=NULL, last_error_code=NULL, last_error_detail_redacted=NULL, finished_at=?, updated_at=?, revision=revision+1 WHERE id=?", (now, now, row["job_id"])
             )
+            connection.execute("UPDATE job_resource_leases SET released_at=? WHERE attempt_id=? AND released_at IS NULL", (now, attempt_id))
             self._emit(connection, "JOB_RECOVERED", row["project_id"], "JOB_ATTEMPT", attempt_id, {"job_id": row["job_id"], "provider_job_id": provider_job_id})
             return {"job_id": row["job_id"], "attempt_id": attempt_id, "attempt_state": SUCCEEDED, "job_state": SUCCEEDED, "recovered": True, "actor": actor}
 
@@ -475,7 +568,7 @@ class JobService:
             if row["state"] not in {FAILED, NEEDS_ATTENTION, ORPHANED}:
                 raise DomainRuleError("JOB_NOT_RETRYABLE", "只有失败、孤儿或需人工关注的 Job 可以 retry")
             connection.execute(
-                "UPDATE jobs SET state='QUEUED', next_run_at=?, cancel_requested_at=NULL, updated_at=?, revision=revision+1 WHERE id=?", (now, now, job_id)
+                "UPDATE jobs SET state='QUEUED', next_run_at=?, cancel_requested_at=NULL, progress_json='{}', progress_updated_at=NULL, last_error_code=NULL, last_error_detail_redacted=NULL, finished_at=NULL, updated_at=?, revision=revision+1 WHERE id=?", (now, now, job_id)
             )
             self._emit(connection, "JOB_REQUEUED", row["project_id"], "JOB", job_id, {"reason": "explicit_retry"})
             updated = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
@@ -518,6 +611,7 @@ class JobService:
                     "UPDATE jobs SET state=?, next_run_at=?, last_error_code='WORKER_LEASE_EXPIRED', updated_at=?, revision=revision+1 WHERE id=?",
                     (next_job_state, current_iso if next_job_state == QUEUED else None, current_iso, row["job_id"]),
                 )
+                connection.execute("UPDATE job_resource_leases SET released_at=? WHERE attempt_id=? AND released_at IS NULL", (current_iso, row["id"]))
                 self._emit(
                     connection,
                     "JOB_RECONCILED",

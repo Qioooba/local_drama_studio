@@ -53,6 +53,22 @@ async def get_job(job_id: str, request: Request) -> dict[str, object]:
         raise api_error_from_domain(error) from error
 
 
+@router.get("/jobs/{job_id}/attempts", operation_id="listJobAttempts")
+async def list_attempts(job_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"items": service(request).list_attempts(job_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/job-attempts/{attempt_id}/logs", operation_id="listJobAttemptLogs")
+async def list_attempt_logs(attempt_id: str, request: Request, cursor: int = 0, limit: int = 100) -> dict[str, object]:
+    try:
+        return service(request).attempt_events(attempt_id, cursor=cursor, limit=limit)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.post("/jobs:claim", operation_id="claimJob")
 async def claim_job(payload: JobClaimRequest, request: Request) -> dict[str, object]:
     try:

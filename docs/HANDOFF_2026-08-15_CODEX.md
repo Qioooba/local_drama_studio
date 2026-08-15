@@ -133,7 +133,11 @@ SAPI 批次已提交为 `ec48a61 feat: run real local sapi tts jobs`。源代码
 
 本轮并行开发已新增 `0035_declarative_automation_workflows` 与 `0036_motion_control_media`。FR-AUT-001 提供声明式有限批次、结构化条件、持久化迭代/任务/磁盘上限、机器失败转人工闸门、HUMAN_APPROVED/HUMAN_REJECTED 恢复、审计事件；禁止脚本、命令、URL、远程 Provider 与 AI 自动批准。FR-CTL-002 提供不可变 MOTION_MASK/VECTOR/KEYFRAME 控制媒体、已发布 Profile capability gate、源媒体不覆盖及项目归属校验。两项均已补 API、生成客户端、UI 组件、定向测试与 PARTIAL 证据，但真实生产三视口 UAT 尚未完成，不能标记最终 PASS。
 
-审核收件箱已补 project/episode/media/age/priority/blocking 筛选、稳定 cursor/read-model 字段与 API/UI 回归。当前迁移 head 为 `0036_motion_control_media`，需使用 `upgrade-rollback-rehearsal-0036-2026-08-15.json`；总体 closure 仍为 `IN_PROGRESS / NO-GO`。
+审核收件箱已补 project/episode/media/age/priority/blocking 筛选、稳定 cursor/read-model 字段与 API/UI 回归。随后新增 `0037_job_progress_scheduler`，当前代码迁移 head 为 `0037_job_progress_scheduler`，隔离演练证据为 `upgrade-rollback-rehearsal-0037-2026-08-16.json`；总体 closure 仍为 `IN_PROGRESS / NO-GO`。
+
+## 当前接手增量（0037 与生成/资产/任务收口，2026-08-16）
+
+FR-AST-001 已把跨项目源媒体授权接入 Generation preflight：ACTIVE grant、授权 revision/hash/size 和源 MediaVersion 快照必须一致，撤回或篡改硬拒绝；证据保持 PARTIAL。FR-GEN-001..004 已冻结提交 Job 的 Profile/runtime/Workflow/model bundle/manifest 执行快照，EXACT_REPLAY 在快照变化时拒绝静默换源，并在工作台区分故障重试与创作重抽。FR-JOB-001..005 已持久化进度/阶段/节点/ETA/失败详情，新增 GPU_H3_HEAVY 独占资源租约、重启自动恢复、Attempt 列表与脱敏日志 API；生成客户端/OpenAPI 与迁移/发布脚本同步到 0037。三组证据均为实现或定向回归，Windows 三视口、实际用户模型/资产和最终发布签字仍待补齐。
 
 1. FR-AUD-001 仍不能标 VERIFIED，直到正式项目存在真实授权音色、Published TTS Profile、真实 Job/MediaVersion/candidate、试听、QC、审核与选择闭环。
 2. G7 模型许可证首阻塞仍优先；真实证据未出现时可以继续其他实现，但禁止越级宣布 G7/G8/G9 PASS。

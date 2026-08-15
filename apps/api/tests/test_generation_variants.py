@@ -540,6 +540,42 @@ def test_failed_generation_job_retry_adds_attempt_not_variant_or_take(workspace,
         assert connection.execute("SELECT COUNT(*) FROM media_versions WHERE media_asset_id=?", (source_asset_id,)).fetchone()[0] == 1
 
 
+def test_submitted_variant_freezes_workflow_and_local_model_execution_snapshot(workspace, database) -> None:
+    """GEN-003: exact replay has an auditable local execution authority."""
+    project = _project(workspace, database, "variant_execution_snapshot")
+    project_id = str(project["id"])
+    media_version_id = _image(workspace, database, project_id, "execution-snapshot.png")
+    profile_version_id = _published_profile(workspace, database)
+    generation = GenerationService(database, workspace)
+    intent = generation.create_intent(project_id, "SHOT", project_id, "I2V", "freeze execution authority")
+    plan = _plan(profile_version_id, media_version_id)
+    preflight = generation.preflight_variant(str(intent["id"]), plan)
+    submitted = generation.submit_confirmed_variant(
+        str(intent["id"]), plan, str(preflight["plan_hash"]), "execution-snapshot-submit"
+    )
+
+    snapshot = submitted["job"]["input_snapshot"]["execution_snapshot"]
+    assert snapshot["workflow_version_id"] == preflight["dependencies"]["workflow_version_id"]
+    assert snapshot["workflow_content_hash"] == preflight["dependencies"]["workflow_content_hash"]
+    assert snapshot["model_bundle_hash"] == preflight["dependencies"]["model_bundle_hash"]
+    assert snapshot["snapshot_hash"] == preflight["dependencies"]["profile_execution_snapshot_hash"]
+    assert snapshot["manifest_sha256"] == preflight["dependencies"]["profile_manifest_sha256"]
+    assert snapshot["model_bundle"].get("artifact_ids") is not None
+
+    replay = generation.derive_variant_plan(str(submitted["variant"]["id"]), "EXACT_REPLAY", branch_reason="GEN-003 exact replay")
+    assert replay["diff"]["changed_fields"] == []
+    assert replay["dependencies"]["profile_execution_snapshot_hash"] == snapshot["snapshot_hash"]
+
+    with database.transaction() as connection:
+        connection.execute(
+            "UPDATE execution_profile_versions SET model_bundle_json=? WHERE id=?",
+            (json.dumps({"artifact_ids": ["changed-local-model"]}), profile_version_id),
+        )
+    with pytest.raises(DomainRuleError) as changed:
+        generation.derive_variant_plan(str(submitted["variant"]["id"]), "EXACT_REPLAY", branch_reason="must reject changed model")
+    assert changed.value.code == "EXACT_REPLAY_EXECUTION_SNAPSHOT_MISMATCH"
+
+
 def test_variant_binding_requires_registered_media_from_intent_project(workspace, database) -> None:
     first_project = _project(workspace, database, "variant_media_first")
     second_project = _project(workspace, database, "variant_media_second")

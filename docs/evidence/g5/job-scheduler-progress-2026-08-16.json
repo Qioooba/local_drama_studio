@@ -1,0 +1,34 @@
+{
+  "schema_version": "g5.job_scheduler_progress.v1",
+  "captured_at": "2026-08-16T00:00:00+08:00",
+  "scope": [
+    "FR-JOB-001",
+    "FR-JOB-002",
+    "FR-JOB-003",
+    "FR-JOB-004",
+    "FR-JOB-005"
+  ],
+  "local_only": true,
+  "implementation": {
+    "migration": "0037_job_progress_scheduler",
+    "durable_progress": ["phase", "node", "percent", "eta_seconds"],
+    "restart_recovery": "claim reconciles expired leases before selecting queued work",
+    "resource_policy": "GPU_H3_HEAVY is exclusive; CPU/text/audio channels are independent",
+    "credential_policy": "attempt list API redacts lease_token"
+  },
+  "verification": {
+    "command": "python -m pytest apps/api/tests/test_job_scheduler_progress.py apps/api/tests/test_g5_jobs.py -q",
+    "result": "PASS",
+    "assertions": [
+      "heartbeat progress survives JobService recreation",
+      "attempt log cursor returns persisted outbox events",
+      "GPU heavy resource admits one active claim while CPU proceeds",
+      "expired lease is reconciled automatically by a fresh claim",
+      "retry preserves attempts and clone creates a new id with overrides",
+      "cancel remains cooperative and terminal completion releases resource",
+      "same idempotency key is replay-safe and invalid percent is rejected"
+    ]
+  },
+  "acceptance_status": "IMPLEMENTED_TESTED_UAT_PENDING",
+  "notes": "No external provider, upload, telemetry, or public-network dependency is used. Full release gate and manual Windows restart/UAT remain required."
+}

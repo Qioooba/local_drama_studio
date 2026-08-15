@@ -231,6 +231,16 @@ class GenerationService:
             workflow_content = json.loads(workflow["content_json"] or "{}")
             if not isinstance(workflow_content, dict):
                 raise DomainRuleError("WORKFLOW_BINDING_INVALID", "Workflow content 契约无效")
+            # Keep the exact execution authority in the immutable plan/job
+            # snapshot.  A profile id alone is not enough for replay: the
+            # local model bundle, runtime and workflow bytes must be
+            # auditable even if a newer profile is later published.
+            try:
+                model_bundle = json.loads(profile["model_bundle_json"] or "{}")
+            except (TypeError, json.JSONDecodeError) as error:
+                raise DomainRuleError("PROFILE_MODEL_BUNDLE_INVALID", "Profile model bundle 快照无效") from error
+            if not isinstance(model_bundle, dict):
+                raise DomainRuleError("PROFILE_MODEL_BUNDLE_INVALID", "Profile model bundle 必须是对象")
             if plan.seed_policy == "EXPLICIT" and "SEED" in workflow_bindings:
                 semantic_seed = plan.parameter_set.get("SEED")
                 if semantic_seed != plan.explicit_seed:
@@ -703,6 +713,21 @@ class GenerationService:
             "workflow_version_id": profile["workflow_version_id"],
             "workflow_content_hash": workflow["content_hash"],
             "workflow_revision": workflow["revision"],
+            "model_bundle": model_bundle,
+            "model_bundle_hash": _digest(model_bundle),
+            "runtime_version_id": profile["runtime_version_id"],
+            "profile_manifest_sha256": profile["manifest_sha256"],
+            "profile_execution_snapshot_hash": _digest(
+                {
+                    "profile_version_id": plan.profile_version_id,
+                    "profile_revision": profile["revision"],
+                    "runtime_version_id": profile["runtime_version_id"],
+                    "workflow_version_id": profile["workflow_version_id"],
+                    "workflow_content_hash": workflow["content_hash"],
+                    "model_bundle": model_bundle,
+                    "manifest_sha256": profile["manifest_sha256"],
+                }
+            ),
             "parent_recipe_hash": parent["recipe_hash"] if parent is not None else None,
             "prompt_revision_hash": prompt_revision["content_hash"] if prompt_revision is not None else None,
             "media": sorted(media_dependencies, key=lambda item: str(item["id"])),
@@ -869,6 +894,30 @@ class GenerationService:
             provider_random_nonce=str(uuid.uuid4()) if operation == "RESUBMIT_PROVIDER_RANDOM" else parent.get("provider_random_nonce"),
         )
         preflight = self.preflight_variant(str(parent["intent_id"]), plan)
+        if operation == "EXACT_REPLAY":
+            # A submitted parent carries the authority snapshot in its Job.
+            # Refuse to silently replay against changed local model/workflow
+            # bytes; callers must publish a new Profile and make an explicit
+            # creative branch instead.
+            with self.database.connect() as connection:
+                job_snapshot = connection.execute(
+                    "SELECT input_snapshot_json FROM jobs WHERE subject_type='GENERATION_VARIANT' AND subject_id=? ORDER BY created_at, id LIMIT 1",
+                    (parent_variant_id,),
+                ).fetchone()
+            if job_snapshot is not None:
+                try:
+                    snapshot = json.loads(str(job_snapshot["input_snapshot_json"] or "{}"))
+                    frozen_hash = snapshot.get("execution_snapshot", {}).get("snapshot_hash")
+                except (TypeError, json.JSONDecodeError):
+                    frozen_hash = None
+                current_hash = preflight["dependencies"].get("profile_execution_snapshot_hash")
+                if frozen_hash and frozen_hash != current_hash:
+                    raise DomainRuleError(
+                        "EXACT_REPLAY_EXECUTION_SNAPSHOT_MISMATCH",
+                        "Exact replay 的 workflow/model 快照已变化，不能复用旧 Variant 的执行权威",
+                        {"frozen_snapshot_hash": frozen_hash, "current_snapshot_hash": current_hash},
+                        suggested_action="重新发布匹配的本地 Profile/Workflow，或选择新的 Profile branch",
+                    )
         draft = self._recipe(plan)
         draft["intent_id"] = str(parent["intent_id"])
         changed_fields = {
@@ -1033,6 +1082,17 @@ class GenerationService:
                 {
                     "variant_id": variant_id,
                     "workflow_version_id": workflow_version_id,
+                    "execution_snapshot": {
+                        "profile_version_id": plan.profile_version_id,
+                        "profile_revision": dependencies["profile_revision"],
+                        "runtime_version_id": dependencies["runtime_version_id"],
+                        "workflow_version_id": workflow_version_id,
+                        "workflow_content_hash": dependencies["workflow_content_hash"],
+                        "model_bundle": dependencies["model_bundle"],
+                        "model_bundle_hash": dependencies["model_bundle_hash"],
+                        "manifest_sha256": dependencies["profile_manifest_sha256"],
+                        "snapshot_hash": dependencies["profile_execution_snapshot_hash"],
+                    },
                     "semantic_inputs": semantic_inputs,
                     "media_bindings": media_bindings_snapshot,
                     "recipe_hash": recipe_hash,

@@ -195,7 +195,7 @@ G7 已可按蓝图 09 顺序开始，但当前不是 PASS；G8/G9 仍只记 prog
 
 G7 当前已按“用户自带本机模型、平台只引用管理、不捆绑权重”的正式范围 PASS；G8、G9 亦已按顺序 PASS。
 
-历史 G10 局部门禁证据曾为 PASS，但总设计复核后总体发布状态已撤回为 `IN_PROGRESS / NO-GO`。当前数据库与最近五份迁移前备份 `integrity=ok`，migration head=`0036_motion_control_media`；`0031→0036` 隔离升级与精确恢复演练证据需随本批更新。规模、安全、干净新根恢复、本地只读 UAT、G7→G8→G9 有序退出、SBOM 和运行手册仍是有效局部证据，但不能替代 84 个 P0/P1 FR、15 个 NFR 与 85 个命名 TC 的总账闭环。正式范围保持 Windows x64 LOCAL_ONLY 本地源码发行版，不捆绑用户模型或媒体。
+历史 G10 局部门禁证据曾为 PASS，但总设计复核后总体发布状态已撤回为 `IN_PROGRESS / NO-GO`。当前数据库与最近五份迁移前备份 `integrity=ok`，代码 migration head=`0037_job_progress_scheduler`；`0031→0037` 隔离升级与精确恢复演练已通过，但生产库仍需按发布步骤执行迁移后再签字。规模、安全、干净新根恢复、本地只读 UAT、G7→G8→G9 有序退出、SBOM 和运行手册仍是有效局部证据，但不能替代 84 个 P0/P1 FR、15 个 NFR 与 85 个命名 TC 的总账闭环。正式范围保持 Windows x64 LOCAL_ONLY 本地源码发行版，不捆绑用户模型或媒体。
 
 2026-08-15 用户自带模型策略闭环：新增本机模型引用 API 与页面原生文件选择器，返回绝对路径且 `copied=false/uploaded=false`；兼容报告将用户许可证缺失降级为可见风险，不改变 hash、量化、路径和 symlink 硬校验。生产数据库在线备份后迁移至 0029，G7/G8/G9 依次 PASS；完整门禁 API 178 passed / 4 live deselected、Web 60/60（以最终实际回归输出为准更新），三档模型路径 UI 3/3 PASS。G10 发布审计 PASS，GO 范围不包含模型权重、音色、媒体或 REMOTE Provider。
 
@@ -290,6 +290,12 @@ FR-REV-001 实现增量：审核收件箱 read model 现在在筛选前稳定投
 FR-AUDT-001 实现增量：新增只读 `GET /api/v1/audit-events` 与 `AuditService`，按项目、时间、动作、actor、subject 类型/ID 筛选，先过滤后以不可变 `event_id DESC` 游标分页，项目范围由 subject 关系和经 JSON 校验的 project hint 解析。响应递归脱敏 token/secret/password/credential 与本机路径，明确 `metadata_redacted=true`、`local_only=true`、`network_contacted=false`、`mutated=false`；诊断页新增 AuditHistoryPanel，展示 loading/error/empty、筛选、旧事件翻页与脱敏详情。API/Web 回归和构建通过；正式 Windows 三视口 UAT、深链接恢复、链式 hash 导出仍待补齐，证据 `docs/evidence/g10/fr-audt-001-audit-history-2026-08-15.json` 保持 `PARTIAL`。
 
 FR-DEL-001..004 交付链增量（2026-08-16）：创建候选前强制最新、未过期的 `EPISODE_RENDER_VERSION` 人工批准；输出目录使用唯一版本路径与 `.partial-*` 原子发布，后续构建不会覆盖旧包。`delivery-manifest.v3` 冻结源 render/timeline SHA、目标版本/spec、编码 probe、字幕 revision、音频授权证据、控制版本和每个文件 SHA/size；verify 可重复执行并检查路径越界、symlink、字节数、文件 hash 与 canonical manifest hash，篡改指出具体文件。新增 package/files/history/download 只读 API，POST/GET verify 兼容，withdraw 仅标记状态并保留文件，完整性复验不会把 `WITHDRAWN` 复活；DeliveryTargetVersion create/select API 版本化且只允许 `LOCAL_FILESYSTEM`。真实隔离 FFmpeg/API 回归、未批准负例、双构建不覆盖、manifest/history/download/撤回复验均通过；正式 Windows x64 三视口生产 UAT、实际项目多版本选择与发布签字仍待补齐，证据 `docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json` 保持 `PARTIAL`。
+
+FR-AST-001 资产授权与跨项目生成门禁增量（2026-08-16）：WorkspaceAssetService 只接受项目内 VERIFIED、路径/symlink、SHA-256 与字节数一致的源媒体；READ_ONLY/DERIVED grant 冻结源项目、授权 revision、source revision/hash/size 与 access mode，撤回只产生不可变 impact/audit，不删除源记录。Generation preflight 对跨项目媒体要求 ACTIVE grant 与授权快照完全匹配，撤回或源篡改硬拒绝；UI 提供显式授权面板。API 4 项、Web 2 项定向测试通过，证据 `docs/evidence/g10/fr-ast-001-workspace-asset-grants-2026-08-16.json` 为 `PARTIAL`，Windows 三视口和完整正式 lineage UAT 仍待补齐。
+
+FR-GEN-001..004 可复现生成增量（2026-08-16）：故障重试只把同一 Job 重新排队并增加 Attempt，创作重抽必须由 Variant Composer 产生子 Variant + 新 Job；固定 seed、provider random、EXACT_REPLAY 与 prompt/source branch 的 changed/preserved 字段均在提交前展示。提交 Job 冻结 Profile revision、runtime、Workflow/content hash、本地 model bundle/hash 与 manifest hash；EXACT_REPLAY 检测冻结快照变化并拒绝静默改用新模型/Workflow。GenerationWorkbench 增加固定 seed/精确重放入口，定向 API 与 Web 回归通过；证据 `docs/evidence/g10/fr-gen-001-004-generation-replay-2026-08-16.json` 为 `PARTIAL`，真实 Windows 本地模型 bundle、非确定 runtime 和三视口 UAT 仍待补齐。
+
+FR-JOB-001..005 调度增量（2026-08-16）：migration `0037_job_progress_scheduler` 为 jobs/attempts 持久化 phase/node/percent/ETA、开始/结束时间和脱敏失败详情，并新增 `job_resource_leases`；worker/API 重启 claim 前自动 reconcile 过期租约，GPU_H3_HEAVY 独占而 CPU/text/audio 通道独立。新增 Attempt 列表与分页日志 API，lease token 永不返回；取消、重试、克隆、幂等与产物防重复保持。9 项 G5/调度测试、迁移、Ruff/mypy 与 Web build 通过，证据 `docs/evidence/g5/job-scheduler-progress-2026-08-16.json` 为 `PARTIAL`，真实 Windows 重启/多 worker/三视口 UAT 仍待补齐。
 
 ## 更新规则
 
