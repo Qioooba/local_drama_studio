@@ -52,6 +52,7 @@ import { EpisodeSceneRanges } from "../features/projects/EpisodeSceneRanges";
 import { ProjectPackageAction } from "../features/projects/ProjectPackageAction";
 import { CreativeLibrary } from "../features/projects/CreativeLibrary";
 import { AIDraftReviewPanel } from "../features/projects/AIDraftReviewPanel";
+import { ScriptImportPanel } from "../features/projects/ScriptImportPanel";
 import { DialogueTTSPanel } from "../features/status/DialogueTTSPanel";
 import { AudioTrackPanel } from "../features/status/AudioTrackPanel";
 import { AdapterContractsPanel, DiagnosticPanel, G8ReadinessPanel, G9ReadinessPanel, ModelCompatibilityPanel, ProjectConfigurationSnapshot, ProjectList, TimelineStatusPanel } from "../features/status/ReadinessPanels";
@@ -322,6 +323,7 @@ export function App() {
                 {production.data?.items.length === 0 && <p className="empty-state">当前集还没有镜头；请从真实 API 创建镜头。</p>}
                 {selectedProject && selectedEpisode && <EpisodeSceneRanges projectId={selectedProject} episodeId={selectedEpisode} />}
                 {selectedProject && <CreativeLibrary projectId={selectedProject} />}
+                {selectedProject && <ScriptImportPanel projectId={selectedProject} />}
                 {selectedProject && <AIDraftReviewPanel projectId={selectedProject} />}
                 {selectedProject && selectedEpisode && <DialogueTTSPanel lines={dialogueLines.data?.items ?? []} voices={voiceProfiles.data?.items ?? []} projectId={selectedProject} episodeId={selectedEpisode} onChanged={() => { void dialogueLines.refetch(); void voiceProfiles.refetch(); void queryClient.invalidateQueries({ queryKey: ["jobs"] }); }} />}
                 {selectedProject && selectedEpisode && <AudioTrackPanel bindings={audioBindings.data?.items ?? []} projectId={selectedProject} episodeId={selectedEpisode} onBound={() => { void audioBindings.refetch(); void timelineStatus.refetch(); void g8Readiness.refetch(); }} />}

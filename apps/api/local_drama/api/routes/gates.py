@@ -10,7 +10,7 @@ from local_drama.application.g7_readiness import G7ReadinessService
 from local_drama.application.g8_readiness import G8ReadinessService
 from local_drama.application.g9_readiness import G9ReadinessService
 from local_drama.application.i2v_probe import I2VProbePlanService
-from local_drama.application.local_picker import pick_local_model_file
+from local_drama.application.local_picker import pick_local_document_file, pick_local_model_file
 from local_drama.application.model_compatibility import ModelCompatibilityService
 from local_drama.application.network_e2e import NetworkE2EService
 from local_drama.application.workspace_assets import WorkspaceAssetService
@@ -23,6 +23,14 @@ router = APIRouter(tags=["phase-gates"])
 async def pick_model_file() -> dict[str, object]:
     try:
         return {"selection": pick_local_model_file()}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/system/dialogs:document-file", operation_id="pickLocalDocumentFile")
+async def pick_document_file() -> dict[str, object]:
+    try:
+        return {"selection": pick_local_document_file()}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

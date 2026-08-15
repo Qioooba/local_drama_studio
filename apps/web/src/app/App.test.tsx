@@ -27,6 +27,9 @@ vi.mock("../generated/api", () => ({
   h3CandidateRuntime: vi.fn().mockResolvedValue({ runtime: { status: "BLOCKED" } }),
   reviewInbox: vi.fn().mockResolvedValue({ items: [] }),
   createFrameAnchor: vi.fn(),
+  pickLocalDocumentFile: vi.fn(),
+  importScriptDocument: vi.fn(),
+  commitImportSession: vi.fn(),
 }));
 
 describe("G1 app shell", () => {

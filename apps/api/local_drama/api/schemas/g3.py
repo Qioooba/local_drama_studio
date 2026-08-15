@@ -28,6 +28,10 @@ class DocumentImportRequest(BaseModel):
     source_path: str = Field(min_length=1)
 
 
+class DocumentImportCommitRequest(BaseModel):
+    expected_preview_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+
+
 class BreakdownRequest(BaseModel):
     profile_version_id: str | None = None
 

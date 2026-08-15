@@ -3312,6 +3312,29 @@
         }
       }
     },
+    "/api/v1/system/dialogs:document-file": {
+      "post": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "Pick Document File",
+        "operationId": "pickLocalDocumentFile",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Picklocaldocumentfile"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/gates/g6": {
       "get": {
         "tags": [
@@ -4003,6 +4026,104 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Getimportsession"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/import-sessions/{session_id}/issues": {
+      "get": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Get Import Session Issues",
+        "operationId": "getImportSessionIssues",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Getimportsessionissues"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/import-sessions/{session_id}:commit": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Commit Import Session",
+        "operationId": "commitImportSession",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentImportCommitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Commitimportsession"
                 }
               }
             }
@@ -10077,6 +10198,22 @@
           "text"
         ],
         "title": "DialogueTextRevisionRequest"
+      },
+      "DocumentImportCommitRequest": {
+        "properties": {
+          "expected_preview_hash": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Preview Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expected_preview_hash"
+        ],
+        "title": "DocumentImportCommitRequest"
       },
       "DocumentImportRequest": {
         "properties": {

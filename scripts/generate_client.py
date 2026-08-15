@@ -33,6 +33,8 @@ export type ContinuityContext = { episode_id: string; selected_shot_id: string; 
 export type CreativeEntry = { id: string; project_id: string; kind: string; code: string; title: string; current_revision_id: string; revision_no: number; content_hash: string; change_note: string; content: Record<string, unknown>; revision: number };
 export type CreativeEntryRevision = { id: string; entry_id: string; revision_no: number; parent_revision_id: string | null; restored_from_revision_id: string | null; content_hash: string; change_note: string; content: Record<string, unknown>; created_at: string };
 export type ScriptBreakdownDraft = { id: string; project_id: string; source_document_version_id: string; import_session_id: string; status: string; source_document_code: string; source_document_title: string; draft: { scenes?: Array<Record<string, unknown>> }; confidence: { profile_version_id?: string; model?: string; confidence?: { overall?: number; notes?: string[] }; questions?: string[]; source_passages?: Array<{ scene_no: number; quote: string; source_start: number; source_end: number }> }; profile_version_id: string | null; evidence_status: 'COMPLETE' | 'LEGACY_INCOMPLETE'; application_status: 'NOT_APPLIED'; automatic_apply: false; requires_human_action: true; created_at: string };
+export type DocumentImport = { source_document_id: string; source_document_version_id: string; import_session_id: string; media_version_id: string; status: 'PREVIEW_READY' | 'COMMITTED'; preview_hash: string; reused?: boolean; preview: { character_count: number; paragraph_count: number; paragraphs: string[]; requires_llm_confirmation: true } };
+export type ImportSession = { id: string; project_id: string; source_document_version_id: string; status: 'PREVIEW_READY' | 'COMMITTED'; revision: number; preview_hash: string; preview: { character_count: number; paragraph_count: number; paragraphs: string[]; requires_llm_confirmation: true }; validation: { valid: boolean; issue_count: number }; items: Array<Record<string, unknown>>; source_document_version: Record<string, unknown> };
 export type ProjectCreatePayload = { code: string; title: string; season_count: number; episode_count: number; target_duration_ms: number; aspect_ratio: string; width: number; height: number; fps: { numerator: number; denominator: number }; primary_language: string; subtitle_mode: 'NONE' | 'SIDECAR' | 'BURN_IN' | 'BOTH'; subtitle_language?: string; allow_unconfigured_capabilities: boolean; production_plan?: { code: string; title: string; plan: Record<string, unknown> }; profile_bindings?: Array<{ capability: string; profile_version_id: string }>; delivery_target?: { code: string; title: string; spec: Record<string, unknown> } };
 export type ProjectCreationPlan = { status: 'READY' | 'READY_WITH_CONFIGURATION_BLOCKERS' | 'BLOCKED'; checks: Array<{ code: string; passed: boolean; free_bytes?: number; required_bytes?: number }>; blockers: string[]; configuration_blockers: string[]; accepted_unconfigured: boolean; target_root_rel: string; estimated_bytes: number; structure: { season_count: number; episode_count_per_season: number; total_episode_count: number }; presentation: Record<string, unknown>; would_create_project: true; mutated: false; runtime_contacted: false; network_contacted: false };
 export type ProjectPackageExport = { status: 'EXPORTED'; project_id: string; rel_path: string; byte_size: number; sha256: string; entry_count: number; expanded_bytes: number; reused: boolean; database_mutated: false; runtime_contacted: false; network_contacted: false };
@@ -365,6 +367,18 @@ export async function listScriptBreakdownDrafts(projectId: string, baseUrl = '')
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/script-breakdown-drafts`, undefined, baseUrl);
 }
 
+export async function importScriptDocument(projectId: string, sourcePath: string, baseUrl = ''): Promise<{ import: DocumentImport }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/imports`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source_path: sourcePath }) }, baseUrl);
+}
+
+export async function getImportSession(sessionId: string, baseUrl = ''): Promise<{ session: ImportSession }> {
+  return requestJson(`/api/v1/import-sessions/${encodeURIComponent(sessionId)}`, undefined, baseUrl);
+}
+
+export async function commitImportSession(sessionId: string, expectedPreviewHash: string, baseUrl = ''): Promise<{ commit: ImportSession & { idempotent: boolean; source_preserved: true } }> {
+  return requestJson(`/api/v1/import-sessions/${encodeURIComponent(sessionId)}:commit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expected_preview_hash: expectedPreviewHash }) }, baseUrl);
+}
+
 export async function branchPromptRevision(revisionId: string, payload: { content_text: string; structured?: Record<string, unknown> }, baseUrl = ''): Promise<{ revision: PromptRevision }> {
   return requestJson(`/api/v1/prompt-revisions/${encodeURIComponent(revisionId)}:branch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
@@ -632,6 +646,10 @@ export async function registerLocalModelReference(projectId: string, payload: { 
 
 export async function pickLocalModelFile(baseUrl = ''): Promise<{ selection: { selected: boolean; path: string | null; uploaded: false; copied: false } }> {
   return requestJson('/api/v1/system/dialogs:model-file', { method: 'POST' }, baseUrl);
+}
+
+export async function pickLocalDocumentFile(baseUrl = ''): Promise<{ selection: { selected: boolean; path: string | null; uploaded: false; copied: false } }> {
+  return requestJson('/api/v1/system/dialogs:document-file', { method: 'POST' }, baseUrl);
 }
 
 export async function getAdapterContracts(baseUrl = ''): Promise<{ registry: AdapterRegistry }> {

@@ -1,6 +1,6 @@
 {
   "schema_version": "g10.release_audit.read_only.v1",
-  "observed_at": "2026-08-15T07:31:59.051630+00:00",
+  "observed_at": "2026-08-15T08:11:57.286200+00:00",
   "status": "IN_PROGRESS",
   "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
   "checks": [
@@ -84,11 +84,11 @@
       "observed": {
         "valid": false,
         "status": "IN_PROGRESS",
-        "verified_fr": 12,
+        "verified_fr": 13,
         "required_fr": 84,
         "verified_nfr": 0,
         "required_nfr": 15,
-        "passed_tc": 7,
+        "passed_tc": 8,
         "required_tc": 85,
         "mapping_valid": true,
         "ledger_consistent": true,
@@ -118,7 +118,6 @@
           "NFR-REL-002"
         ],
         "next_missing_tc": [
-          "TC-CAP-001",
           "TC-CAP-003",
           "TC-CAP-004",
           "TC-CAP-005",
@@ -127,7 +126,8 @@
           "TC-CAP-008",
           "TC-CAP-010",
           "TC-CAP-011",
-          "TC-CAP-012"
+          "TC-CAP-012",
+          "TC-CAP-013"
         ]
       },
       "evidence": "docs/evidence/g10/master-requirements-closure.json"

@@ -1,0 +1,56 @@
+{
+  "schema_version": "uat.fr-ing-001.v1",
+  "observed_at": "2026-08-15T08:02:04.255346+00:00",
+  "status": "PASS",
+  "requirements": ["FR-ING-001", "TC-CAP-001"],
+  "scope": "Local TXT, Markdown, and DOCX script import with immutable preview and explicit idempotent commit",
+  "production_run": {
+    "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+    "source_path": "F:\\AI_Projects\\h3\\local_drama_studio\\docs\\evidence\\g6\\g6_script_source.txt",
+    "source_name": "g6_script_source.txt",
+    "source_document_version_id": "6bdf1995-bbc2-4df8-a776-0779a4edfa19",
+    "import_session_id": "0d923d81-8057-498a-a7f2-d5fd969a4684",
+    "status": "COMMITTED",
+    "revision": 2,
+    "source_sha256": "cd516fc32abc86943ff515b5b19d455865b5d43ba4ecbd8435cd2958c82dbf61",
+    "text_sha256": "cd516fc32abc86943ff515b5b19d455865b5d43ba4ecbd8435cd2958c82dbf61",
+    "preview_hash": "baa8db20c2f38ef653c20eb4a77e3325ff55d86850437593ef46b2f8fb9f957b",
+    "paragraph_count": 7,
+    "character_count": 204,
+    "audit_event_id": 259,
+    "commit_audit_event_count": 1,
+    "source_preserved": true
+  },
+  "browser_uat": {
+    "viewport": "1280x720",
+    "native_document_picker_available": true,
+    "manual_absolute_path_fallback": true,
+    "explicit_preview": true,
+    "explicit_commit": true,
+    "committed_state_visible": true,
+    "document_horizontal_overflow": false,
+    "panel_horizontal_overflow": false,
+    "controls_under_36px": 0,
+    "visible_alerts": []
+  },
+  "automated_evidence": {
+    "formats": ["TXT", "MARKDOWN", "DOCX"],
+    "stale_preview_hash_rejected": true,
+    "duplicate_commit_idempotent": true,
+    "duplicate_source_reused": true,
+    "unsupported_extension_has_no_side_effect": true,
+    "api_full_suite": "PASS",
+    "web_suite": "68/68 PASS",
+    "web_production_build": "PASS",
+    "ruff": "PASS",
+    "mypy": "PASS"
+  },
+  "safety": {
+    "transport": "LOCAL_PROCESS",
+    "network_allowed": false,
+    "source_overwritten": false,
+    "source_symlink_allowed": false,
+    "model_or_media_bundled": false,
+    "copied_into_installer": false
+  }
+}

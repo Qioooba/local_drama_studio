@@ -419,6 +419,12 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .bypass-compare figure { min-width: 0; margin: 0; padding: 10px; border: 1px solid #d8d1c5; border-radius: 10px; background: #171717; color: #fff; }
 .bypass-compare figcaption { margin-bottom: 8px; font-weight: 700; }
 .bypass-compare video { display: block; width: 100%; max-height: 360px; background: #000; }
+.script-import-panel { margin-top: 16px; }
+.script-import-panel .inline-control { display: flex; gap: 8px; align-items: stretch; }
+.script-import-panel .inline-control input { min-width: 0; flex: 1; }
+.import-preview { margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: rgba(255,255,255,.35); }
+.import-preview ol { margin: 8px 0; padding-left: 24px; max-height: 220px; overflow: auto; }
+.import-preview li { margin: 5px 0; white-space: pre-wrap; }
 .director-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 14px; }
 .director-actions .checkbox-row { min-height: 40px; margin-right: auto; display: flex; align-items: center; gap: 8px; }
 @media (max-width: 1100px) { .director-grid, .camera-plan-editor, .generation-submit-fields { grid-template-columns: 1fr 1fr; } }

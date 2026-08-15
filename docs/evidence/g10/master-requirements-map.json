@@ -69,6 +69,12 @@
       "automated_tests": ["apps/api/tests/test_ai_breakdown_drafts.py", "apps/web/src/features/projects/AIDraftReviewPanel.test.tsx"]
     },
     {
+      "id": "FR-ING-001",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/fr-ing-001-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_document_import_commit.py", "apps/web/src/features/projects/ScriptImportPanel.test.tsx"]
+    },
+    {
       "id": "FR-PST-001",
       "status": "PASS",
       "evidence": ["docs/evidence/g10/fr-pst-001-uat-2026-08-15.json"],
@@ -85,6 +91,12 @@
         "apps/api/tests/test_g8_timeline_delivery.py",
         "apps/web/src/features/generation/PostProcessPanel.test.tsx"
       ]
+    },
+    {
+      "id": "TC-CAP-001",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/fr-ing-001-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_document_import_commit.py", "apps/web/src/features/projects/ScriptImportPanel.test.tsx"]
     },
     {
       "id": "TC-DOM-001",

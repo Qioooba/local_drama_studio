@@ -209,6 +209,8 @@ FR-PST-001 / TC-CAP-009 已闭环：PostProcessRecipe 采用逻辑 key + 不可�
 
 总账现由 `scripts/master_requirements_audit.py` 与 `docs/evidence/g10/master-requirements-map.json` 逐项校验，不能再靠手填计数放行；PASS 项必须引用现存的 PASS JSON 证据和自动化测试文件，未知 ID、重复 ID、缺证据或缺测试路径都会使 mapping 失效。对既有证据重新审计后，当前为 12/84 FR、0/15 NFR、7/85 TC，mapping 与 closure 计数一致；整体仍为 NO-GO。
 
+FR-ING-001 / TC-CAP-001 已闭环：用户可从页面调用 Windows 原生选择器或填写绝对路径导入本机 TXT、Markdown、DOCX；平台先注册不可变源文档、解析并生成带 hash 的预览，只有用户显式提交且预览 hash 未变化时才进入 COMMITTED。重复导入/提交幂等复用，源文件与已提取文本均不覆盖，symlink、不支持扩展名、过期预览及 hash 篡改硬拒绝。正式项目 1280×720 页面完成真实预览和提交，唯一提交审计事件及源/文本 SHA-256 已固化于 `docs/evidence/g10/fr-ing-001-uat-2026-08-15.json`。总账更新为 13/84 FR、0/15 NFR、8/85 TC，整体仍为 NO-GO。
+
 G10 安全 UAT 已补齐此前缺失的 instance CSRF token：每个 API 进程生成独立 token，同源客户端从无 CORS 的 bootstrap/安全 GET 获取，所有网络写请求同时验证受控 Origin 与 `X-Local-Instance-Token`。隔离真实 FastAPI 验证恶意 Origin、缺失/错误 token、路径逃逸、REMOTE Provider、未入清单自定义节点均被拒绝；socket guard 对 TEST-NET 公网目标在 connect 前阻断，OpenAPI 无远程 credential 字段。证据为 `docs/evidence/g10/security-uat-2026-08-15.json`；不替代 G7 模型许可证或最终发布签字。
 
 G10 干净新根恢复 UAT 使用 100 个真实 FFprobe PASS 的本地 WAV：online backup 后恢复数据库与完整项目树，100/100 MediaVersion SHA-256、数据库 integrity、健康/项目/审核入口全部通过；实测 RTO 0.627 秒、捕获备份后 RPO=0。该证据来自隔离环境且未接触生产库、runtime 或网络，见 `docs/evidence/g10/recovery-restore-uat-2026-08-15.json`。
