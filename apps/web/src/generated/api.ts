@@ -32,6 +32,8 @@ export type ProfileVersionDetail = { id: string; execution_profile_id: string; c
 export type CameraPlan = { mode: 'NATIVE' | 'PROMPT_FALLBACK' | 'UNSUPPORTED'; shot_type: string; movement: string; prompt_text: string; direction: string; intensity: number; curve: string; profile_version_id: string | null };
 export type CameraPlanResolution = { camera_plan: CameraPlan; submission_allowed: boolean; support: string; profile: { id: string; code: string; version_no: number }; runtime_contacted: false; network_contacted: false; mutated: false };
 export type DiagnosticRun = { id: string; status: string; checks: Array<{ code: string; category: string; status: string; observed: Record<string, unknown> }> };
+export type AuditEvent = { event_id: number; actor: string; role_context: string; action: string; subject_type: string; subject_id: string; project_id: string | null; before_revision: number | null; after_revision: number | null; request_id: string | null; job_id: string | null; occurred_at: string; summary: string; metadata: Record<string, unknown>; metadata_redacted: true; local_only: true; network_contacted: false; mutated: false };
+export type AuditEventFilters = { project_id?: string; occurred_after?: string; occurred_before?: string; action?: string; actor?: string; subject_type?: string; subject_id?: string; cursor?: number; limit?: number };
 export type ReviewTemplate = { id: string; code: string; version_no: number; subject_type: string; items: Array<{ id: string; label: string; required: boolean }> };
 export type ReviewInboxItem = { media_version_id: string; media_asset_id: string; project_id: string; project_code?: string; project_title?: string; episode_id?: string | null; episode_code?: string | null; episode_number?: number | null; shot_id?: string | null; shot_code?: string | null; media_kind: string; stage: string; decision: string | null; is_stale: number | null; inbox_at?: string; age_hours?: number; age_days?: number; priority?: 'HIGH' | 'NORMAL' | 'LOW'; is_blocked?: number; blocking?: 'BLOCKED' | 'READY'; machine_status?: string; integrity_status?: string; [key: string]: unknown };
 export type ReviewInboxFilters = { episode_id?: string; media_kind?: string; age?: 'ALL' | 'NEW' | 'AGING' | 'OLD'; priority?: 'ALL' | 'HIGH' | 'NORMAL' | 'LOW'; blocking?: 'ALL' | 'BLOCKED' | 'READY'; min_age_days?: number; max_age_days?: number };
@@ -50,7 +52,7 @@ export type TimelineExport = { schema_version: 'localdrama.timeline-export.v1'; 
 export type JobArtifact = { id: string; job_attempt_id: string; kind: string; sandbox_rel_path: string; sha256: string; status: string; byte_size?: number; [key: string]: unknown };
 export type Job = { id: string; type: string; project_id: string; state: string; channel: string; priority: number; max_attempts: number; revision: number; [key: string]: unknown };
 export type GenerationIntent = { id: string; project_id: string; owner_type: string; owner_id: string; purpose: string; creative_goal: string; [key: string]: unknown };
-export type VariantInput = { role: string; media_version_id: string; ordinal?: number };
+export type VariantInput = { role: string; media_version_id: string; ordinal?: number; weight?: number | null };
 export type GenerationVariantDraft = { intent_id: string; variant_type: string; parent_variant_id?: string | null; branch_reason: string; prompt_revision_id?: string | null; profile_version_id: string; parameter_set?: Record<string, unknown>; seed_policy: string; explicit_seed?: number | null; provider_random_nonce?: string | null; bindings?: VariantInput[] };
 export type GenerationVariant = { id: string; intent_id: string; variant_no: number; variant_type: string; parent_variant_id: string | null; recipe_hash: string; status: string; bindings: Array<Record<string, unknown>>; [key: string]: unknown };
 export type GenerationVariantPlan = { intent_id: string; status: 'READY'; plan_hash: string; recipe_hash: string; dependencies: Record<string, unknown>; would_persist_variant: false; would_create_job: false };
@@ -99,7 +101,9 @@ export type AudioBinding = { id: string; episode_id: string; media_version_id: s
 export type MediaImportRequest = { project_id: string; source_path: string; purpose: string; owner_type?: string; owner_id?: string; media_kind: 'AUDIO' };
 export type ImportedMedia = { media_version_id: string; media_asset_id: string; sha256: string; rel_path: string; duplicate?: boolean; [key: string]: unknown };
 export type EpisodeRender = { id: string; episode_id: string; timeline_revision_id: string; integrity_status: string; [key: string]: unknown };
-export type DeliveryPackage = { id: string; episode_render_version_id: string; target_version_id: string; status: string; [key: string]: unknown };
+export type DeliveryPackage = { id: string; episode_render_version_id: string; target_version_id: string; status: string; rel_path?: string; manifest_sha256?: string; withdrawn_reason?: string | null; files?: Array<Record<string, unknown>>; events?: Array<Record<string, unknown>>; target?: Record<string, unknown>; [key: string]: unknown };
+export type DeliveryPackageFile = { id: string; delivery_package_id: string; rel_path: string; sha256: string; byte_size: number };
+export type DeliveryTargetVersion = { id: string; version_id: string; project_id: string; code: string; title: string; transport: 'LOCAL_FILESYSTEM'; spec: Record<string, unknown>; version_no: number; status: string };
 export type TransitionConstraint = { id: string; from_shot_id: string; to_shot_id: string; constraint_type: string; enforcement: string; compatibility_status?: string; [key: string]: unknown };
 export type PostProcessRecipe = { id: string; code: string; recipe_key: string; title: string; version_no: number; parent_recipe_id: string | null; recipe_hash: string; status: 'DRAFT' | 'ACTIVE' | 'RETIRED'; steps: Array<Record<string, unknown>>; capability_contract: Record<string, unknown>; [key: string]: unknown };
 export type EnhancementPlan = { status: 'READY'; plan_hash: string; snapshot: Record<string, unknown>; command_preview: Record<string, unknown>; would_create_run: false; would_overwrite_input: false; runtime_contacted: false; network_contacted: false; mutated: false };
@@ -272,6 +276,17 @@ export async function latestDiagnostics(baseUrl = ''): Promise<{ run: Diagnostic
 
 export async function runDiagnostics(baseUrl = ''): Promise<{ run: DiagnosticRun }> {
   return requestJson<{ run: DiagnosticRun }>('/api/v1/diagnostics/runs', { method: 'POST' }, baseUrl);
+}
+
+export async function listAuditEvents(filters: AuditEventFilters = {}, baseUrl = ''): Promise<{ items: AuditEvent[]; next_cursor: number | null; cursor: number; limit: number; filters: AuditEventFilters; local_only: true; network_contacted: false; mutated: false }> {
+  const params = new URLSearchParams();
+  for (const key of ['project_id', 'occurred_after', 'occurred_before', 'action', 'actor', 'subject_type', 'subject_id'] as const) {
+    const value = filters[key];
+    if (value) params.set(key, value);
+  }
+  params.set('cursor', String(filters.cursor ?? 0));
+  params.set('limit', String(filters.limit ?? 50));
+  return requestJson(`/api/v1/audit-events?${params.toString()}`, undefined, baseUrl);
 }
 
 export async function listReviewTemplates(baseUrl = ''): Promise<{ items: ReviewTemplate[] }> {
@@ -681,8 +696,24 @@ export async function buildDeliveryPackage(payload: { episode_render_version_id:
   return requestJson('/api/v1/delivery-packages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
+export async function listEpisodeDeliveryPackages(episodeId: string, baseUrl = ''): Promise<{ items: DeliveryPackage[]; runtime_contacted: false; network_contacted: false }> {
+  return requestJson(`/api/v1/episodes/${encodeURIComponent(episodeId)}/delivery-packages`, undefined, baseUrl);
+}
+
+export async function getDeliveryPackage(packageId: string, baseUrl = ''): Promise<{ delivery: DeliveryPackage }> {
+  return requestJson(`/api/v1/delivery-packages/${encodeURIComponent(packageId)}`, undefined, baseUrl);
+}
+
+export async function listDeliveryPackageFiles(packageId: string, baseUrl = ''): Promise<{ items: DeliveryPackageFile[] }> {
+  return requestJson(`/api/v1/delivery-packages/${encodeURIComponent(packageId)}/files`, undefined, baseUrl);
+}
+
 export async function verifyDeliveryPackage(packageId: string, baseUrl = ''): Promise<{ delivery: DeliveryPackage }> {
   return requestJson(`/api/v1/delivery-packages/${encodeURIComponent(packageId)}:verify`, undefined, baseUrl);
+}
+
+export async function verifyDeliveryPackagePost(packageId: string, baseUrl = ''): Promise<{ delivery: DeliveryPackage }> {
+  return requestJson(`/api/v1/delivery-packages/${encodeURIComponent(packageId)}:verify`, { method: 'POST' }, baseUrl);
 }
 
 export async function withdrawDeliveryPackage(packageId: string, reason: string, baseUrl = ''): Promise<{ delivery: DeliveryPackage }> {
@@ -765,6 +796,14 @@ export async function getProjectConfiguration(projectId: string, baseUrl = ''): 
 
 export async function createDeliveryTarget(projectId: string, payload: { code: string; title: string; transport: string; spec: Record<string, unknown> }, baseUrl = ''): Promise<{ target: Record<string, unknown> }> {
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/delivery-targets`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function createDeliveryTargetVersion(projectId: string, targetId: string, payload: { title?: string; transport?: 'LOCAL_FILESYSTEM'; spec: Record<string, unknown> }, baseUrl = ''): Promise<{ target: DeliveryTargetVersion }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/delivery-targets/${encodeURIComponent(targetId)}/versions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function selectDeliveryTargetVersion(projectId: string, versionId: string, baseUrl = ''): Promise<{ target: DeliveryTargetVersion }> {
+  return requestJson(`/api/v1/delivery-target-versions/${encodeURIComponent(versionId)}:select?project_id=${encodeURIComponent(projectId)}`, { method: 'POST' }, baseUrl);
 }
 
 export async function getModelCompatibility(projectId: string, baseUrl = ''): Promise<{ compatibility: ModelCompatibilitySnapshot }> {

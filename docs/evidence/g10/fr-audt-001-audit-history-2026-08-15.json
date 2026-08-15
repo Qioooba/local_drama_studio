@@ -1,0 +1,32 @@
+{
+  "schema_version": "g10.fr-audt-001-audit-history.v1",
+  "status": "PARTIAL",
+  "requirement": "FR-AUDT-001",
+  "observed_at": "2026-08-15T00:00:00Z",
+  "implementation": {
+    "status": "IMPLEMENTED",
+    "source": "append-only audit_events",
+    "read_route": "GET /api/v1/audit-events",
+    "filters": ["project_id", "occurred_after", "occurred_before", "action", "actor", "subject_type", "subject_id"],
+    "project_scope": "immutable subject graph plus validated metadata project hint",
+    "pagination": "bounded limit (1..100), event_id descending cursor; filter-before-pagination",
+    "redaction": "recursive metadata key and bearer/token text redaction; local path references masked",
+    "ui": "AuditHistoryPanel in diagnostics with explicit filters, loading/error/empty states and older-event cursor",
+    "mutation": false,
+    "network_contacted": false,
+    "remote_provider_contacted": false
+  },
+  "automated_tests": [
+    "apps/api/tests/test_audit_history.py",
+    "apps/web/src/features/shared/AuditHistoryPanel.test.tsx",
+    "pnpm --dir apps/web build"
+  ],
+  "production_uat": {
+    "status": "PENDING",
+    "reason": "正式 Windows x64 项目三视口审计历史 UAT、深链接恢复和最终 release evidence 尚未执行；不把自动化回归冒充最终 PASS。"
+  },
+  "remaining_limits": [
+    "历史事件缺少独立 project_id 列，项目过滤依赖 subject 关系解析；未归属项目的全局 Runtime/Profile 事件仅在全局视图展示。",
+    "首版审计事件未提供链式 hash 防篡改证明；备份/导出链仍需正式发布证据。"
+  ]
+}

@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from .api.routes.adapters import router as adapters_router
+from .api.routes.audit import router as audit_router
 from .api.routes.automation import router as automation_router
 from .api.routes.automation_workflows import router as automation_workflows_router
 from .api.routes.canvas import router as canvas_router
@@ -83,6 +84,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(canvas_router, prefix="/api/v1")
     app.include_router(capacity_router, prefix="/api/v1")
     app.include_router(adapters_router, prefix="/api/v1")
+    app.include_router(audit_router, prefix="/api/v1")
     app.include_router(automation_router, prefix="/api/v1")
     app.include_router(automation_workflows_router, prefix="/api/v1")
     app.include_router(project_router, prefix="/api/v1")

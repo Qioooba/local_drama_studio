@@ -70,3 +70,15 @@ class DeliveryTargetRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     transport: str
     spec: dict[str, Any] = Field(default_factory=dict)
+
+
+class DeliveryTargetVersionRequest(BaseModel):
+    """Create a new immutable version for an existing delivery target.
+
+    The target id/code remains stable while the complete delivery specification
+    is captured in a new version.  No server-side preset is silently applied.
+    """
+
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    transport: str = "LOCAL_FILESYSTEM"
+    spec: dict[str, Any] = Field(default_factory=dict)

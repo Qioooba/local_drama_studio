@@ -7,6 +7,11 @@ import {
   createShotTransitionConstraint,
   createSubtitleRevision,
   createTimelineRevision,
+  createDeliveryTargetVersion,
+  getDeliveryPackage,
+  listDeliveryPackageFiles,
+  listEpisodeDeliveryPackages,
+  selectDeliveryTargetVersion,
   getFrameAnchor,
   getEnhancementRun,
   getPostProcessRecipe,
@@ -75,6 +80,21 @@ describe("generated G8 timeline client", () => {
       "/api/v1/delivery-packages",
       "/api/v1/delivery-packages/package%2F1:verify",
       "/api/v1/delivery-packages/package%2F1:withdraw",
+    ]);
+  });
+
+  it("exposes delivery history, immutable target versions, and file verification paths", async () => {
+    await listEpisodeDeliveryPackages("episode/1");
+    await getDeliveryPackage("package/1");
+    await listDeliveryPackageFiles("package/1");
+    await createDeliveryTargetVersion("project/1", "target/1", { spec: { path_rel: "06_delivery/v2", width: 640, height: 360, fps: 30 } });
+    await selectDeliveryTargetVersion("project/1", "version/2");
+    expect(fetchMock.mock.calls.map(([path]) => path).filter((path) => !String(path).endsWith("/session/bootstrap"))).toEqual([
+      "/api/v1/episodes/episode%2F1/delivery-packages",
+      "/api/v1/delivery-packages/package%2F1",
+      "/api/v1/delivery-packages/package%2F1/files",
+      "/api/v1/projects/project%2F1/delivery-targets/target%2F1/versions",
+      "/api/v1/delivery-target-versions/version%2F2:select?project_id=project%2F1",
     ]);
   });
 

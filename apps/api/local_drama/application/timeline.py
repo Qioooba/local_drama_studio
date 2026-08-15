@@ -1124,7 +1124,7 @@ class TimelineService:
     def build_delivery(self, episode_render_version_id: str, target_version_id: str, brand_kit_id: str | None = None, watermark_profile_id: str | None = None, compliance_policy_id: str | None = None, *, actor: str = "local-user") -> dict[str, Any]:
         with self.database.connect() as connection:
             render = connection.execute("SELECT erv.*, e.code AS episode_code, e.id AS episode_id, s.project_id, p.root_rel FROM episode_render_versions erv JOIN episodes e ON e.id=erv.episode_id JOIN seasons s ON s.id=e.season_id JOIN projects p ON p.id=s.project_id WHERE erv.id=?", (episode_render_version_id,)).fetchone()
-            target = connection.execute("SELECT dtv.*, dt.project_id, dt.transport, dt.code AS target_code FROM delivery_target_versions dtv JOIN delivery_targets dt ON dt.id=dtv.delivery_target_id WHERE dtv.id=?", (target_version_id,)).fetchone()
+            target = connection.execute("SELECT dtv.*, dt.project_id, dt.transport, dt.code AS target_code, dt.title AS target_title FROM delivery_target_versions dtv JOIN delivery_targets dt ON dt.id=dtv.delivery_target_id WHERE dtv.id=?", (target_version_id,)).fetchone()
         if render is None:
             raise DomainRuleError("EPISODE_RENDER_NOT_FOUND", "整集渲染版本不存在")
         if target is None:
@@ -1134,6 +1134,16 @@ class TimelineService:
         if target["transport"] != "LOCAL_FILESYSTEM":
             raise DomainRuleError("REMOTE_TRANSPORT_DISABLED", "LOCAL_ONLY 首版只允许本地文件交付")
         project_id = str(render["project_id"])
+        # A machine-verified render is not an episode approval.  Delivery is a
+        # separate irreversible hand-off and therefore requires the latest
+        # non-stale human approval before any output path is touched.
+        with self.database.connect() as connection:
+            approval = connection.execute(
+                """SELECT decision, is_stale, subject_revision FROM review_decisions
+                WHERE subject_type='EPISODE_RENDER_VERSION' AND subject_id=?
+                ORDER BY created_at DESC, id DESC LIMIT 1""",
+                (episode_render_version_id,),
+            ).fetchone()
         with self.database.connect() as connection:
             brand = connection.execute("SELECT * FROM brand_kits WHERE id=? AND project_id=? AND status='ACTIVE'", (brand_kit_id, project_id)).fetchone() if brand_kit_id else connection.execute("SELECT * FROM brand_kits WHERE project_id=? AND status='ACTIVE' ORDER BY updated_at DESC LIMIT 1", (project_id,)).fetchone()
             watermark = connection.execute("SELECT * FROM watermark_profiles WHERE id=? AND project_id=? AND status='ACTIVE'", (watermark_profile_id, project_id)).fetchone() if watermark_profile_id else connection.execute("SELECT * FROM watermark_profiles WHERE project_id=? AND status='ACTIVE' ORDER BY updated_at DESC LIMIT 1", (project_id,)).fetchone()
@@ -1161,8 +1171,17 @@ class TimelineService:
         machine_preflight: dict[str, object] = {"status": "FAIL" if findings else "PASS", "findings": findings, "checked_render_sha256": str(render["sha256"]), "responsibility": {"machine": "本地规则预检与文件完整性", "human": "内容/版权/平台最终审核，不由机器结果替代"}}
         if findings:
             raise DomainRuleError("COMPLIANCE_PREFLIGHT_FAILED", "本地合规机器预检未通过", machine_preflight)
+        if approval is None or str(approval["decision"]) != "APPROVED" or int(approval["is_stale"] or 0) != 0:
+            raise DomainRuleError("EPISODE_RENDER_APPROVAL_REQUIRED", "只有最新、未过期的整集批准版本才能创建交付候选")
+        if int(approval["subject_revision"]) != int(render["revision"]):
+            raise DomainRuleError("EPISODE_RENDER_APPROVAL_STALE", "整集批准基于旧 revision，不能创建交付候选")
         spec = json.loads(target["target_spec_json"])
-        path_rel = str(spec.get("path_rel", "06_delivery"))
+        path_value = spec.get("path_rel")
+        if not isinstance(path_value, str) or not path_value.strip():
+            raise DomainRuleError("DELIVERY_TARGET_SPEC_INCOMPLETE", "交付目标必须显式指定项目内 path_rel")
+        path_rel = path_value.strip()
+        if str(target["status"]) != "ACTIVE":
+            raise DomainRuleError("DELIVERY_TARGET_VERSION_INACTIVE", "只能使用当前 ACTIVE 的交付目标版本创建新候选")
         if Path(path_rel).is_absolute() or ".." in Path(path_rel).parts:
             raise DomainRuleError("INVALID_DELIVERY_TARGET", "交付目标路径越界")
         project_root = (self.settings.projects_root / render["root_rel"]).resolve()
@@ -1172,13 +1191,29 @@ class TimelineService:
         source_hash, _ = _hash_file(source)
         if source_hash != str(render["sha256"]):
             raise DomainRuleError("EPISODE_RENDER_INTEGRITY_FAILED", "整集渲染文件 hash 与登记值不一致")
-        destination_dir = (project_root / path_rel / str(render["episode_code"])).resolve()
-        if not destination_dir.is_relative_to(project_root):
+        package_id = str(uuid.uuid4())
+        delivery_parent = (project_root / path_rel).resolve()
+        destination_base = (delivery_parent / str(render["episode_code"])).resolve()
+        if not delivery_parent.is_relative_to(project_root) or not destination_base.is_relative_to(project_root):
             raise DomainRuleError("PATH_ESCAPE", "交付目标目录越界")
-        destination_dir.mkdir(parents=True, exist_ok=True)
+        base_rel = destination_base.relative_to(project_root).as_posix()
+        with self.database.connect() as connection:
+            base_package = connection.execute("SELECT COUNT(*) AS count FROM delivery_packages WHERE rel_path=?", (base_rel,)).fetchone()
+        # Preserve the original first-package layout for existing projects, but
+        # every subsequent build gets a unique immutable directory.  A stale
+        # directory with no package row is never overwritten.
+        if int(base_package["count"] or 0) == 0:
+            destination_dir = destination_base
+        else:
+            destination_dir = (delivery_parent / str(render["episode_code"]) / f"delivery-{package_id}").resolve()
+        if destination_dir.exists():
+            raise DomainRuleError("DELIVERY_DESTINATION_OCCUPIED", "交付目标目录已存在，系统不会覆盖既有文件")
+        partial_dir = destination_dir.with_name(f".{destination_dir.name}.partial-{package_id}")
+        destination_dir.parent.mkdir(parents=True, exist_ok=True)
+        partial_dir.mkdir(parents=True, exist_ok=False)
         destination = destination_dir / f"{render['episode_code']}.mp4"
-        partial = destination.with_name(f".partial-{destination.name}")
-        watermark_text_path = destination_dir / f".partial-{destination.name}.watermark.txt"
+        partial_output = partial_dir / f"{render['episode_code']}.mp4"
+        watermark_text_path = partial_dir / f"{render['episode_code']}.watermark.txt"
         try:
             if watermark_config:
                 watermark_text_path.write_text(str(watermark_config["text"]), encoding="utf-8")
@@ -1192,19 +1227,51 @@ class TimelineService:
                     raise DomainRuleError("WATERMARK_FONT_UNAVAILABLE", "本机缺少可用的 Windows 水印字体")
                 fontfile = font_path.as_posix().replace(":", "\\:")
                 drawtext = f"drawtext=fontfile='{fontfile}':textfile='{textfile}':x={coordinates[0]}:y={coordinates[1]}:fontcolor={watermark_config['color']}@{float(watermark_config['opacity']):.3f}:fontsize={int(watermark_config['font_size'])}"
-                self._run_ffmpeg(["-i", str(source), "-map", "0:v:0", "-map", "0:a?", "-vf", drawtext, "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "aac", "-movflags", "+faststart", "-y", str(partial)], timeout=900)
+                self._run_ffmpeg(["-i", str(source), "-map", "0:v:0", "-map", "0:a?", "-vf", drawtext, "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "aac", "-movflags", "+faststart", "-y", str(partial_output)], timeout=900)
             else:
-                shutil.copyfile(source, partial)
-            os.replace(partial, destination)
+                shutil.copyfile(source, partial_output)
+            # The directory itself is published atomically only after the
+            # render has been copied/transcoded successfully.
+            os.replace(partial_dir, destination_dir)
         finally:
-            partial.unlink(missing_ok=True)
+            partial_output.unlink(missing_ok=True)
             watermark_text_path.unlink(missing_ok=True)
+            if partial_dir.exists():
+                shutil.rmtree(partial_dir, ignore_errors=True)
         file_hash, byte_size = _hash_file(destination)
-        manifest = {"schema_version": "delivery-manifest.v2", "episode_id": render["episode_id"], "timeline_revision_id": render["timeline_revision_id"], "target_version_id": target_version_id, "controls": {"brand_kit": brand_snapshot, "watermark_profile": watermark_snapshot, "compliance_policy": compliance_snapshot, "machine_preflight": machine_preflight}, "review_responsibility": {"machine_preflight": "PASS", "human_review": "PENDING", "platform_review": "PENDING"}, "files": [{"rel_path": destination.relative_to(project_root).as_posix(), "sha256": file_hash, "byte_size": byte_size}]}
+        timeline_input = json.loads(str(render["input_snapshot_json"] or "{}"))
+        with self.database.connect() as connection:
+            subtitle = connection.execute(
+                "SELECT id, revision_no, format, content_hash, status FROM subtitle_revisions WHERE episode_id=? ORDER BY revision_no DESC LIMIT 1",
+                (render["episode_id"],),
+            ).fetchone()
+            audio_rows = connection.execute(
+                """SELECT ab.id, ab.media_version_id, ab.track_type, ab.start_us, ab.end_us,
+                ab.source_license_status, ab.license_evidence_json, mv.sha256, mv.byte_size
+                FROM audio_bindings ab JOIN media_versions mv ON mv.id=ab.media_version_id
+                WHERE ab.episode_id=? ORDER BY ab.start_us, ab.id""",
+                (render["episode_id"],),
+            ).fetchall()
+        subtitle_snapshot = ({"id": str(subtitle["id"]), "revision_no": int(subtitle["revision_no"]), "format": str(subtitle["format"]), "content_hash": str(subtitle["content_hash"]), "status": str(subtitle["status"])} if subtitle else None)
+        audio_snapshot = [{"id": str(row["id"]), "media_version_id": str(row["media_version_id"]), "track_type": str(row["track_type"]), "start_us": int(row["start_us"]), "end_us": int(row["end_us"]), "source_license_status": str(row["source_license_status"]), "license_evidence": json.loads(str(row["license_evidence_json"] or "{}")), "sha256": str(row["sha256"]), "byte_size": int(row["byte_size"])} for row in audio_rows]
+        target_spec = json.loads(str(target["target_spec_json"] or "{}"))
+        manifest = {
+            "schema_version": "delivery-manifest.v3",
+            "package_id": package_id,
+            "episode_id": str(render["episode_id"]),
+            "source": {"episode_render_version_id": episode_render_version_id, "sha256": str(render["sha256"]), "byte_size": int(source.stat().st_size), "timeline_revision_id": str(render["timeline_revision_id"]), "timeline_revision_hash": str(timeline_input.get("timeline_revision_hash") or ""), "input_snapshot": timeline_input},
+            "target": {"target_version_id": target_version_id, "target_code": str(target["target_code"]), "target_title": str(target["target_title"]), "version_no": int(target["version_no"]), "transport": str(target["transport"]), "spec": target_spec},
+            "encoding": {"render_mime_type": str(render["mime_type"] or "video/mp4"), "probe": probe, "target": {key: target_spec.get(key) for key in ("width", "height", "fps", "bitrate", "video_codec", "audio_codec") if key in target_spec}},
+            "subtitles": subtitle_snapshot,
+            "cover": {"status": "NOT_SELECTED", "media_version_id": None},
+            "licenses": {"audio": [{"media_version_id": item["media_version_id"], "status": item["source_license_status"], "evidence": item["license_evidence"]} for item in audio_snapshot], "model": "USER_SUPPLIED_LOCAL_REFERENCE_ONLY"},
+            "controls": {"brand_kit": brand_snapshot, "watermark_profile": watermark_snapshot, "compliance_policy": compliance_snapshot, "machine_preflight": machine_preflight},
+            "review_responsibility": {"machine_preflight": "PASS", "human_review": "PENDING", "platform_review": "PENDING"},
+            "files": [{"rel_path": destination.relative_to(project_root).as_posix(), "sha256": file_hash, "byte_size": byte_size}],
+        }
         manifest_hash = _hash(manifest)
         manifest_path = destination_dir / "manifest.json"
         manifest_path.write_text(json.dumps({**manifest, "manifest_sha256": manifest_hash}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        package_id = str(uuid.uuid4())
         now = _now()
         with self.database.transaction() as connection:
             connection.execute("INSERT INTO delivery_packages (id, episode_render_version_id, target_version_id, rel_path, status, manifest_sha256, brand_kit_id, watermark_profile_id, compliance_policy_id, machine_preflight_status, machine_preflight_json, human_review_status, platform_review_status, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, ?, 'VERIFIED', ?, ?, ?, ?, 'PASS', ?, 'PENDING', 'PENDING', ?, ?, ?, 1, 'v3')", (package_id, episode_render_version_id, target_version_id, destination_dir.relative_to(project_root).as_posix(), manifest_hash, brand["id"] if brand else None, watermark["id"] if watermark else None, compliance["id"] if compliance else None, _json(machine_preflight), now, now, actor))
@@ -1213,6 +1280,98 @@ class TimelineService:
             connection.execute("INSERT INTO delivery_events (id, delivery_package_id, action, manifest_sha256, note, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, 'BUILT', ?, ?, ?, ?, ?, 1, 'v3')", (str(uuid.uuid4()), package_id, manifest_hash, "local filesystem delivery built; machine preflight PASS; human/platform review remains separate", now, now, actor))
         return {"id": package_id, "status": "VERIFIED", "rel_path": destination_dir.relative_to(project_root).as_posix(), "manifest_sha256": manifest_hash, "files": manifest["files"], "controls": manifest["controls"], "machine_preflight": machine_preflight, "human_review_status": "PENDING", "platform_review_status": "PENDING"}
 
+    def _delivery_package_row(self, package_id: str) -> Any:
+        with self.database.connect() as connection:
+            return connection.execute(
+                """SELECT dp.*, e.id AS episode_id, e.code AS episode_code,
+                erv.timeline_revision_id, erv.sha256 AS render_sha256,
+                p.id AS project_id, p.root_rel,
+                dt.code AS target_code, dt.title AS target_title, dt.transport,
+                dtv.version_no, dtv.target_spec_json
+                FROM delivery_packages dp
+                JOIN episode_render_versions erv ON erv.id=dp.episode_render_version_id
+                JOIN episodes e ON e.id=erv.episode_id
+                JOIN seasons s ON s.id=e.season_id
+                JOIN projects p ON p.id=s.project_id
+                JOIN delivery_target_versions dtv ON dtv.id=dp.target_version_id
+                JOIN delivery_targets dt ON dt.id=dtv.delivery_target_id
+                WHERE dp.id=?""",
+                (package_id,),
+            ).fetchone()
+
+    @staticmethod
+    def _delivery_file_dict(row: Any) -> dict[str, Any]:
+        return {"id": str(row["id"]), "delivery_package_id": str(row["delivery_package_id"]), "rel_path": str(row["rel_path"]), "sha256": str(row["sha256"]), "byte_size": int(row["byte_size"])}
+
+    def get_delivery_package(self, package_id: str) -> dict[str, Any]:
+        package = self._delivery_package_row(package_id)
+        if package is None:
+            raise DomainRuleError("DELIVERY_PACKAGE_NOT_FOUND", "交付包不存在")
+        with self.database.connect() as connection:
+            files = connection.execute("SELECT * FROM delivery_files WHERE delivery_package_id=? ORDER BY rel_path", (package_id,)).fetchall()
+            events = connection.execute("SELECT id, action, manifest_sha256, note, created_at, created_by FROM delivery_events WHERE delivery_package_id=? ORDER BY created_at, id", (package_id,)).fetchall()
+        return {
+            "id": str(package["id"]),
+            "episode_id": str(package["episode_id"]),
+            "episode_render_version_id": str(package["episode_render_version_id"]),
+            "timeline_revision_id": str(package["timeline_revision_id"]),
+            "target_version_id": str(package["target_version_id"]),
+            "target": {"code": str(package["target_code"]), "title": str(package["target_title"]), "transport": str(package["transport"]), "version_no": int(package["version_no"]), "spec": json.loads(str(package["target_spec_json"] or "{}"))},
+            "status": str(package["status"]),
+            "rel_path": str(package["rel_path"]),
+            "manifest_sha256": str(package["manifest_sha256"] or ""),
+            "withdrawn_reason": package["withdrawn_reason"],
+            "machine_preflight_status": str(package["machine_preflight_status"]),
+            "machine_preflight": json.loads(str(package["machine_preflight_json"] or "{}")),
+            "human_review_status": str(package["human_review_status"]),
+            "platform_review_status": str(package["platform_review_status"]),
+            "created_at": str(package["created_at"]),
+            "updated_at": str(package["updated_at"]),
+            "revision": int(package["revision"]),
+            "files": [self._delivery_file_dict(row) for row in files],
+            "events": [{"id": str(row["id"]), "action": str(row["action"]), "manifest_sha256": row["manifest_sha256"], "note": row["note"], "created_at": str(row["created_at"]), "created_by": str(row["created_by"])} for row in events],
+            "runtime_contacted": False,
+            "network_contacted": False,
+        }
+
+    def list_delivery_files(self, package_id: str) -> list[dict[str, Any]]:
+        if self._delivery_package_row(package_id) is None:
+            raise DomainRuleError("DELIVERY_PACKAGE_NOT_FOUND", "交付包不存在")
+        with self.database.connect() as connection:
+            rows = connection.execute("SELECT * FROM delivery_files WHERE delivery_package_id=? ORDER BY rel_path", (package_id,)).fetchall()
+        return [self._delivery_file_dict(row) for row in rows]
+
+    def list_episode_deliveries(self, episode_id: str) -> list[dict[str, Any]]:
+        with self.database.connect() as connection:
+            if connection.execute("SELECT id FROM episodes WHERE id=?", (episode_id,)).fetchone() is None:
+                raise DomainRuleError("EPISODE_NOT_FOUND", "分集不存在")
+            rows = connection.execute(
+                """SELECT dp.id FROM delivery_packages dp
+                JOIN episode_render_versions erv ON erv.id=dp.episode_render_version_id
+                WHERE erv.episode_id=? ORDER BY dp.created_at DESC, dp.id DESC""",
+                (episode_id,),
+            ).fetchall()
+        return [self.get_delivery_package(str(row["id"])) for row in rows]
+
+    def delivery_download_path(self, package_id: str) -> tuple[Path, str]:
+        package = self._delivery_package_row(package_id)
+        if package is None:
+            raise DomainRuleError("DELIVERY_PACKAGE_NOT_FOUND", "交付包不存在")
+        if str(package["status"]) not in {"VERIFIED", "WITHDRAWN"}:
+            raise DomainRuleError("DELIVERY_NOT_VERIFIED", "只有 manifest verify 通过的交付包可以下载")
+        root = (self.settings.projects_root / str(package["root_rel"])).resolve()
+        if not root.is_dir() or root.is_symlink() or not root.is_relative_to(self.settings.projects_root.resolve()):
+            raise DomainRuleError("DELIVERY_PATH_INVALID", "交付项目目录不存在或越界")
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT rel_path FROM delivery_files WHERE delivery_package_id=? AND lower(rel_path) LIKE '%.mp4' ORDER BY rel_path LIMIT 1", (package_id,)).fetchone()
+        if row is None:
+            raise DomainRuleError("DELIVERY_VIDEO_NOT_FOUND", "交付包不包含可下载的视频文件")
+        rel = Path(str(row["rel_path"]))
+        path = (root / rel).resolve()
+        if rel.is_absolute() or ".." in rel.parts or path.is_symlink() or not path.is_file() or not path.is_relative_to(root):
+            raise DomainRuleError("DELIVERY_FILE_INVALID", "交付文件缺失或路径越界")
+        return path, f"{package['episode_code']}-{package_id[:8]}.mp4"
+
     def verify_delivery(self, package_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
             package = connection.execute("SELECT dp.*, e.code AS episode_code, p.root_rel FROM delivery_packages dp JOIN episode_render_versions erv ON erv.id=dp.episode_render_version_id JOIN episodes e ON e.id=erv.episode_id JOIN seasons s ON s.id=e.season_id JOIN projects p ON p.id=s.project_id WHERE dp.id=?", (package_id,)).fetchone()
@@ -1220,27 +1379,59 @@ class TimelineService:
         if package is None:
             raise DomainRuleError("DELIVERY_PACKAGE_NOT_FOUND", "交付包不存在")
         root = (self.settings.projects_root / package["root_rel"]).resolve()
-        checks = []
+        checks: list[dict[str, Any]] = []
+        root_valid = root.is_dir() and not root.is_symlink() and root.is_relative_to(self.settings.projects_root.resolve())
+        manifest_payload: dict[str, Any] | None = None
+        manifest_path: Path | None = None
         for file in files:
-            path = (root / file["rel_path"]).resolve()
-            actual = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
-            checks.append({"rel_path": file["rel_path"], "expected_sha256": file["sha256"], "actual_sha256": actual, "ok": actual == file["sha256"]})
-        ok = all(item["ok"] for item in checks)
+            rel_path = Path(str(file["rel_path"]))
+            safe_rel = not rel_path.is_absolute() and ".." not in rel_path.parts
+            path = (root / rel_path).resolve() if root_valid and safe_rel else root / "__invalid_delivery_path__"
+            safe_file = safe_rel and root_valid and path.is_relative_to(root) and not path.is_symlink() and path.is_file()
+            actual = hashlib.sha256(path.read_bytes()).hexdigest() if safe_file else None
+            actual_size = path.stat().st_size if safe_file else None
+            item = {"rel_path": str(file["rel_path"]), "expected_sha256": str(file["sha256"]), "actual_sha256": actual, "expected_byte_size": int(file["byte_size"]), "actual_byte_size": actual_size, "ok": bool(safe_file and actual == str(file["sha256"]) and actual_size == int(file["byte_size"]))}
+            checks.append(item)
+            if str(file["rel_path"]).lower().endswith("manifest.json") and safe_file:
+                manifest_path = path
+                try:
+                    parsed = json.loads(path.read_text(encoding="utf-8"))
+                    if isinstance(parsed, dict):
+                        manifest_payload = parsed
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                    manifest_payload = None
+        manifest_ok = False
+        manifest_actual_hash: str | None = None
+        if manifest_payload is not None and manifest_path is not None:
+            embedded = manifest_payload.get("manifest_sha256")
+            canonical = dict(manifest_payload)
+            canonical.pop("manifest_sha256", None)
+            manifest_actual_hash = _hash(canonical)
+            manifest_ok = hmac.compare_digest(manifest_actual_hash, str(package["manifest_sha256"] or "")) and hmac.compare_digest(manifest_actual_hash, str(embedded or ""))
+        ok = bool(checks) and all(item["ok"] for item in checks) and manifest_ok
+        prior_status = str(package["status"])
+        next_status = ("WITHDRAWN" if prior_status == "WITHDRAWN" else "VERIFIED") if ok else "CORRUPT"
+        now = _now()
         with self.database.transaction() as connection:
-            connection.execute("UPDATE delivery_packages SET status=?, updated_at=?, revision=revision+1 WHERE id=?", ("VERIFIED" if ok else "CORRUPT", _now(), package_id))
-        return {"id": package_id, "status": "VERIFIED" if ok else "CORRUPT", "checks": checks, "machine_preflight_status": package["machine_preflight_status"], "human_review_status": package["human_review_status"], "platform_review_status": package["platform_review_status"]}
+            connection.execute("UPDATE delivery_packages SET status=?, updated_at=?, revision=revision+1 WHERE id=?", (next_status, now, package_id))
+            connection.execute("INSERT INTO delivery_events (id, delivery_package_id, action, manifest_sha256, note, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, 'VERIFY', ?, ?, ?, ?, ?, 1, 'v3')", (str(uuid.uuid4()), package_id, str(package["manifest_sha256"] or ""), _json({"ok": ok, "previous_status": prior_status, "manifest_hash": manifest_actual_hash}), now, now, "local-user"))
+        return {"id": package_id, "status": next_status, "checks": checks, "manifest_check": {"ok": manifest_ok, "expected_sha256": package["manifest_sha256"], "actual_sha256": manifest_actual_hash}, "machine_preflight_status": package["machine_preflight_status"], "human_review_status": package["human_review_status"], "platform_review_status": package["platform_review_status"], "withdrawn_reason": package["withdrawn_reason"]}
 
     def withdraw_delivery(self, package_id: str, reason: str, actor: str = "local-user") -> dict[str, Any]:
         if not reason.strip():
             raise DomainRuleError("DELIVERY_WITHDRAW_REASON_REQUIRED", "撤回交付必须记录原因")
         now = _now()
         with self.database.transaction() as connection:
-            row = connection.execute("SELECT id FROM delivery_packages WHERE id=?", (package_id,)).fetchone()
+            row = connection.execute("SELECT id, status FROM delivery_packages WHERE id=?", (package_id,)).fetchone()
             if row is None:
                 raise DomainRuleError("DELIVERY_PACKAGE_NOT_FOUND", "交付包不存在")
+            if str(row["status"]) == "WITHDRAWN":
+                # Idempotent withdrawal keeps the original file set and audit
+                # history intact while returning the already withdrawn state.
+                return {"id": package_id, "status": "WITHDRAWN", "reason": reason.strip(), "idempotent": True}
             connection.execute("UPDATE delivery_packages SET status='WITHDRAWN', withdrawn_reason=?, updated_at=?, revision=revision+1 WHERE id=?", (reason, now, package_id))
             connection.execute("INSERT INTO delivery_events (id, delivery_package_id, action, note, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, 'WITHDRAWN', ?, ?, ?, ?, 1, 'v2')", (str(uuid.uuid4()), package_id, reason, now, now, actor))
-        return {"id": package_id, "status": "WITHDRAWN", "reason": reason}
+        return {"id": package_id, "status": "WITHDRAWN", "reason": reason.strip(), "idempotent": False}
 
     def review_delivery(self, package_id: str, reviewer_type: str, decision: str, note: str, actor: str = "local-user") -> dict[str, Any]:
         if reviewer_type not in {"HUMAN", "PLATFORM"}:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from local_drama.api.schemas.g3 import DeliveryTargetRequest, ProductionPlanRequest
+from local_drama.api.schemas.g3 import DeliveryTargetRequest, DeliveryTargetVersionRequest, ProductionPlanRequest
 from local_drama.application.configuration import ConfigurationService
 from local_drama.application.errors import api_error_from_domain
 from local_drama.domain.errors import DomainRuleError
@@ -34,5 +34,29 @@ async def create_delivery_target(project_id: str, payload: DeliveryTargetRequest
                 project_id, payload.code, payload.title, payload.transport, payload.spec
             )
         }
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/projects/{project_id}/delivery-targets/{target_id}/versions", status_code=201, operation_id="createDeliveryTargetVersion")
+async def create_delivery_target_version(project_id: str, target_id: str, payload: DeliveryTargetVersionRequest, request: Request) -> dict[str, object]:
+    try:
+        return {
+            "target": ConfigurationService(request.app.state.database).create_delivery_target_version(
+                project_id,
+                target_id,
+                payload.spec,
+                transport=payload.transport,
+                title=payload.title,
+            )
+        }
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/delivery-target-versions/{version_id}:select", operation_id="selectDeliveryTargetVersion")
+async def select_delivery_target_version(version_id: str, project_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"target": ConfigurationService(request.app.state.database).select_delivery_target_version(project_id, version_id)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error

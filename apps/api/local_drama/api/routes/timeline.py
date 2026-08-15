@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from local_drama.api.routes.media import _range_headers
 from local_drama.api.schemas.g8 import (
@@ -249,10 +249,43 @@ async def build_delivery(payload: DeliveryBuildRequest, request: Request) -> dic
         raise api_error_from_domain(error) from error
 
 
+@router.get("/episodes/{episode_id}/delivery-packages", operation_id="listEpisodeDeliveryPackages")
+async def list_episode_delivery_packages(episode_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"items": service(request).list_episode_deliveries(episode_id), "runtime_contacted": False, "network_contacted": False}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.get("/delivery-packages/{package_id}:verify", operation_id="verifyDeliveryPackage")
 async def verify_delivery(package_id: str, request: Request) -> dict[str, object]:
     try:
         return {"delivery": service(request).verify_delivery(package_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/delivery-packages/{package_id}:verify", operation_id="verifyDeliveryPackagePost")
+async def verify_delivery_post(package_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"delivery": service(request).verify_delivery(package_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/delivery-packages/{package_id}/download", operation_id="downloadDeliveryPackage")
+async def download_delivery(package_id: str, request: Request) -> FileResponse:
+    try:
+        path, filename = service(request).delivery_download_path(package_id)
+        return FileResponse(path, media_type="application/octet-stream", filename=filename)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/delivery-packages/{package_id}/files", operation_id="listDeliveryPackageFiles")
+async def list_delivery_package_files(package_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"items": service(request).list_delivery_files(package_id)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -269,5 +302,13 @@ async def withdraw_delivery(package_id: str, payload: DeliveryWithdrawRequest, r
 async def review_delivery(package_id: str, payload: DeliveryReviewRequest, request: Request) -> dict[str, object]:
     try:
         return {"delivery": service(request).review_delivery(package_id, payload.reviewer_type, payload.decision, payload.note)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/delivery-packages/{package_id}", operation_id="getDeliveryPackage")
+async def get_delivery_package(package_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"delivery": service(request).get_delivery_package(package_id)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error

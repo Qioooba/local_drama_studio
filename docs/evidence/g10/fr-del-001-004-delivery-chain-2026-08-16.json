@@ -1,0 +1,30 @@
+{
+  "schema_version": "localdrama.requirement.evidence.v1",
+  "requirement_ids": ["FR-DEL-001", "FR-DEL-002", "FR-DEL-003", "FR-DEL-004"],
+  "status": "PARTIAL",
+  "observed_at": "2026-08-16T00:00:00+08:00",
+  "scope": "LOCAL_ONLY delivery candidate, immutable target versions, manifest/hash verification, history and withdrawal",
+  "implementation": {
+    "approval_gate": "build_delivery requires latest non-stale APPROVED EPISODE_RENDER_VERSION review",
+    "immutable_output": "each subsequent build uses a unique local delivery directory; first legacy-compatible path is never overwritten; partial directory is atomically renamed",
+    "manifest": "delivery-manifest.v3 records render/timeline source hashes, target version/spec, encoding probe, subtitle revision, audio/license evidence, controls and file SHA-256/size",
+    "verify": "repeatable file path/symlink/size/hash checks plus canonical manifest hash; tamper identifies the file and marks CORRUPT",
+    "target_versioning": "DeliveryTargetVersion create/select API retires prior active version without modifying packages",
+    "history_withdraw": "episode history, package/files read APIs, local download, immutable delivery events, and idempotent WITHDRAWN marker; verify preserves WITHDRAWN when files remain intact",
+    "transport": "only LOCAL_FILESYSTEM; absolute, traversal and remote targets are rejected"
+  },
+  "automated_tests": [
+    "apps/api/tests/test_g8_timeline_delivery.py::test_delivery_candidate_requires_approved_render_and_target_versions_are_explicit",
+    "apps/api/tests/test_g8_timeline_delivery.py::test_delivery_manifest_history_verify_and_withdraw_preserve_files",
+    "apps/api/tests/test_g8_timeline_delivery.py::test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery",
+    "apps/web/src/generated/api.test.ts"
+  ],
+  "production_uat": {
+    "status": "PENDING",
+    "required": ["Windows x64 three viewport UAT", "real approved episode render", "real local target version selection", "tamper and withdrawn history screenshot evidence"]
+  },
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "remote_transport_allowed": false,
+  "notes": "Automated local fixture proves the implementation and negative paths; formal production UAT and release evidence remain outstanding."
+}

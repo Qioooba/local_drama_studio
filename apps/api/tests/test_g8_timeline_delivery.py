@@ -438,6 +438,20 @@ def test_brand_watermark_and_compliance_versions_bind_delivery_without_auto_revi
         assert timeline.status_code == 201, timeline.text
         render = client.post(f"/api/v1/timeline-revisions/{timeline.json()['timeline']['id']}:render")
         assert render.status_code == 201, render.text
+        # FR-DEL-001 requires an explicit, latest human approval for the
+        # immutable episode render before a delivery candidate may be built.
+        render_template = next(item for item in client.get("/api/v1/review-templates").json()["items"] if item["code"] == "episode_render")
+        render_review = client.post(
+            f"/api/v1/subjects/EPISODE_RENDER_VERSION/{render.json()['render']['id']}/reviews",
+            json={
+                "template_version_id": render_template["id"],
+                "decision": "APPROVED",
+                "expected_subject_revision": 1,
+                "checks": [{"item_id": item["id"], "result": "PASS"} for item in render_template["items"]],
+                "comment": "整集渲染版本已完成正式审核",
+            },
+        )
+        assert render_review.status_code == 201, render_review.text
         target = ConfigurationService(database).create_delivery_target(project_id, "brand-local", "Brand local", "LOCAL_FILESYSTEM", {"path_rel": "06_delivery/brand"})
         brand = client.post(f"/api/v1/projects/{project_id}/brand-kits", json={"code": "series", "title": "Series v1", "tokens": {"colors": {"primary": "#223344"}}})
         assert brand.status_code == 201, brand.text
@@ -471,3 +485,76 @@ def test_brand_watermark_and_compliance_versions_bind_delivery_without_auto_revi
         platform_review = client.post(f"/api/v1/delivery-packages/{item['id']}:review", json={"reviewer_type": "PLATFORM", "decision": "APPROVED", "note": "平台规则人工确认"})
         assert platform_review.status_code == 200, platform_review.text
         assert platform_review.json()["delivery"]["platform_review_status"] == "APPROVED"
+
+
+def _delivery_render_fixture(workspace, database, client, *, approve: bool) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
+    project = _project(workspace, database)
+    project_id = str(project["id"])
+    project_service = ProjectService(database, workspace.projects_root)
+    season = project_service.list_seasons(project_id)[0]
+    episode = project_service.list_episodes(str(season["id"]))[0]
+    shot = project_service.create_shot(str(episode["id"]), "DEL-001", 1000)
+    source = MediaService(database, workspace).import_file(project_id, _video(workspace), purpose="SHOT_VIDEO", owner_id=str(shot["id"]), media_kind="VIDEO")
+    timeline = client.post(f"/api/v1/episodes/{episode['id']}/timeline-revisions", json={"items": [{"track_type": "VIDEO", "media_version_id": source["media_version_id"], "start_us": 0, "end_us": 1_000_000, "parameters": {}}], "input_snapshot": {"source": "delivery-requirements"}}).json()["timeline"]
+    render = client.post(f"/api/v1/timeline-revisions/{timeline['id']}:render").json()["render"]
+    if approve:
+        template = next(item for item in client.get("/api/v1/review-templates").json()["items"] if item["code"] == "episode_render")
+        response = client.post(f"/api/v1/subjects/EPISODE_RENDER_VERSION/{render['id']}/reviews", json={"template_version_id": template["id"], "decision": "APPROVED", "expected_subject_revision": 1, "checks": [{"item_id": item["id"], "result": "PASS"} for item in template["items"]], "comment": "交付需求测试批准"})
+        assert response.status_code == 201, response.text
+    target = ConfigurationService(database).create_delivery_target(project_id, "delivery-requirements", "Delivery requirements", "LOCAL_FILESYSTEM", {"path_rel": "06_delivery/delivery-requirements", "width": 320, "height": 180, "fps": 24, "bitrate": "1M", "audio_codec": "AAC", "subtitles": "SIDECAR"})
+    return project, render, target
+
+
+def test_delivery_candidate_requires_approved_render_and_target_versions_are_explicit(workspace, database) -> None:
+    with TestClient(create_app(workspace)) as client:
+        project, render, target = _delivery_render_fixture(workspace, database, client, approve=False)
+        blocked = client.post("/api/v1/delivery-packages", json={"episode_render_version_id": render["id"], "target_version_id": target["version_id"]})
+        assert blocked.status_code == 422
+        assert blocked.json()["error"]["code"] == "EPISODE_RENDER_APPROVAL_REQUIRED"
+        version = client.post(f"/api/v1/projects/{project['id']}/delivery-targets/{target['id']}/versions", json={"transport": "LOCAL_FILESYSTEM", "spec": {"path_rel": "06_delivery/delivery-requirements-v2", "width": 640, "height": 360, "fps": 30, "bitrate": "2M", "audio_codec": "AAC", "subtitles": "BURN_IN"}})
+        assert version.status_code == 201, version.text
+        target_v2 = version.json()["target"]
+        assert target_v2["version_no"] == 2
+        assert target_v2["version_id"] != target["version_id"]
+        selected = client.post(f"/api/v1/delivery-target-versions/{target_v2['version_id']}:select?project_id={project['id']}")
+        assert selected.status_code == 200, selected.text
+        config = client.get(f"/api/v1/projects/{project['id']}/configuration").json()["configuration"]
+        assert config["selected_delivery_target_version_id"] == target_v2["version_id"]
+
+
+def test_delivery_manifest_history_verify_and_withdraw_preserve_files(workspace, database) -> None:
+    with TestClient(create_app(workspace)) as client:
+        project, render, target = _delivery_render_fixture(workspace, database, client, approve=True)
+        first_response = client.post("/api/v1/delivery-packages", json={"episode_render_version_id": render["id"], "target_version_id": target["version_id"]})
+        assert first_response.status_code == 201, first_response.text
+        first = first_response.json()["delivery"]
+        assert first["manifest_sha256"]
+        assert first["rel_path"].endswith("EPISODE_001")
+        manifest = workspace.projects_root / str(project["root_rel"]) / str(first["rel_path"]) / "manifest.json"
+        manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+        assert manifest_payload["schema_version"] == "delivery-manifest.v3"
+        assert manifest_payload["source"]["episode_render_version_id"] == render["id"]
+        assert manifest_payload["target"]["target_version_id"] == target["version_id"]
+        assert "encoding" in manifest_payload and "subtitles" in manifest_payload and "licenses" in manifest_payload
+        assert client.get(f"/api/v1/delivery-packages/{first['id']}:verify").json()["delivery"]["status"] == "VERIFIED"
+        details = client.get(f"/api/v1/delivery-packages/{first['id']}")
+        assert details.status_code == 200, details.text
+        assert len(details.json()["delivery"]["files"]) == 2
+        files = client.get(f"/api/v1/delivery-packages/{first['id']}/files")
+        assert files.status_code == 200 and len(files.json()["items"]) == 2
+        download = client.get(f"/api/v1/delivery-packages/{first['id']}/download")
+        assert download.status_code == 200 and len(download.content) > 0
+        second_response = client.post("/api/v1/delivery-packages", json={"episode_render_version_id": render["id"], "target_version_id": target["version_id"]})
+        assert second_response.status_code == 201, second_response.text
+        second = second_response.json()["delivery"]
+        assert second["rel_path"] != first["rel_path"]
+        first_bytes = (workspace.projects_root / str(project["root_rel"]) / str(first["rel_path"]) / "EPISODE_001.mp4").read_bytes()
+        assert first_bytes
+        withdrawn = client.post(f"/api/v1/delivery-packages/{first['id']}:withdraw", json={"reason": "发布版本替换"})
+        assert withdrawn.status_code == 200 and withdrawn.json()["delivery"]["status"] == "WITHDRAWN"
+        verified_withdrawn = client.post(f"/api/v1/delivery-packages/{first['id']}:verify")
+        assert verified_withdrawn.status_code == 200 and verified_withdrawn.json()["delivery"]["status"] == "WITHDRAWN"
+        history = client.get(f"/api/v1/episodes/{render['episode_id']}/delivery-packages")
+        assert history.status_code == 200
+        history_items = history.json()["items"]
+        assert {item["id"] for item in history_items} >= {first["id"], second["id"]}

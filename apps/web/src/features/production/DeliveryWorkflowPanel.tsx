@@ -1,10 +1,15 @@
-import { useState } from "react";
-import { buildDeliveryPackage, renderEpisode, reviewDeliveryPackage, verifyDeliveryPackage, withdrawDeliveryPackage } from "../../generated/api";
+import { useEffect, useState } from "react";
+import { buildDeliveryPackage, listEpisodeDeliveryPackages, renderEpisode, reviewDeliveryPackage, verifyDeliveryPackage, withdrawDeliveryPackage, type DeliveryPackage } from "../../generated/api";
 
 export function DeliveryWorkflowPanel({ episodeId, timelineRevisionId, renderId, targetVersionId, deliveryId, onChanged }: { episodeId: string; timelineRevisionId: string | null; renderId: string | null; targetVersionId: string | null; deliveryId: string | null; onChanged?: () => void }) {
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [history, setHistory] = useState<DeliveryPackage[]>([]);
+  const refreshHistory = async () => {
+    try { setHistory((await listEpisodeDeliveryPackages(episodeId)).items); } catch (caught) { setError(`读取交付历史失败：${String(caught)}`); }
+  };
+  useEffect(() => { void refreshHistory(); }, [episodeId]);
   const review = async (reviewerType: "HUMAN" | "PLATFORM") => {
     if (!deliveryId) { setError("请先创建交付候选"); return; }
     const note = window.prompt(`${reviewerType === "HUMAN" ? "人工" : "平台"}审核说明（不会由机器结果自动代填）`, "已完成本地复核")?.trim();
@@ -14,6 +19,7 @@ export function DeliveryWorkflowPanel({ episodeId, timelineRevisionId, renderId,
       const result = await reviewDeliveryPackage(deliveryId, { reviewer_type: reviewerType, decision: "APPROVED", note });
       setSuccess(`${reviewerType === "HUMAN" ? "人工" : "平台"}审核已记录：${String(result.delivery[reviewerType === "HUMAN" ? "human_review_status" : "platform_review_status"] ?? "APPROVED")}`);
       onChanged?.();
+      void refreshHistory();
     } catch (caught) { setError(`审核记录失败：${String(caught)}`); }
     finally { setPending(null); }
   };
@@ -40,6 +46,7 @@ export function DeliveryWorkflowPanel({ episodeId, timelineRevisionId, renderId,
         setSuccess(`交付包已撤回：${result.delivery.status} · ${reason}`);
       }
       onChanged?.();
+      void refreshHistory();
     } catch (caught) { setError(`操作失败：${String(caught)}`); }
     finally { setPending(null); }
   };
@@ -47,7 +54,8 @@ export function DeliveryWorkflowPanel({ episodeId, timelineRevisionId, renderId,
     <div className="panel-heading"><div><p className="eyebrow">FR-TML-002/DEL-001/002</p><h3 id="delivery-workflow-title">整集渲染与本地交付候选</h3></div><span className="status-pill neutral">NO OVERWRITE</span></div>
     <p className="muted">只读取冻结时间线和项目显式 DeliveryTarget；渲染、manifest、hash、verify 都保留独立版本，不覆盖输入。</p>
     <div className="action-row"><button className="secondary" onClick={() => void run("render")} disabled={pending !== null || !timelineRevisionId}>{pending === "render" ? "渲染登记中…" : "登记整集渲染"}</button><button className="secondary" onClick={() => void run("build")} disabled={pending !== null || !renderId || !targetVersionId}>{pending === "build" ? "创建交付中…" : "创建交付候选"}</button><button className="primary-action" onClick={() => void run("verify")} disabled={pending !== null || !deliveryId}>{pending === "verify" ? "校验中…" : "验证 manifest / SHA"}</button><button className="secondary" onClick={() => void review("HUMAN")} disabled={pending !== null || !deliveryId}>{pending === "HUMAN" ? "记录人工审核中…" : "记录人工批准"}</button><button className="secondary" onClick={() => void review("PLATFORM")} disabled={pending !== null || !deliveryId}>{pending === "PLATFORM" ? "记录平台审核中…" : "记录平台批准"}</button><button className="secondary" onClick={() => void run("withdraw")} disabled={pending !== null || !deliveryId}>{pending === "withdraw" ? "撤回中…" : "撤回交付包"}</button></div>
-    <div className="review-meta"><span>episode：{episodeId.slice(0, 12)}</span><span>timeline：{timelineRevisionId?.slice(0, 12) ?? "缺失"}</span><span>render：{renderId?.slice(0, 12) ?? "缺失"}</span><span>target：{targetVersionId?.slice(0, 12) ?? "缺失"}</span><span>delivery：{deliveryId?.slice(0, 12) ?? "缺失"}</span><span>机器 PASS ≠ 人工/平台批准</span></div>
+    <div className="review-meta"><span>episode：{episodeId.slice(0, 12)}</span><span>timeline：{timelineRevisionId?.slice(0, 12) ?? "缺失"}</span><span>render：{renderId?.slice(0, 12) ?? "缺失"}</span><span>target：{targetVersionId?.slice(0, 12) ?? "缺失"}</span><span>delivery：{deliveryId?.slice(0, 12) ?? "缺失"}</span><span>机器 PASS ≠ 人工/平台批准</span><button className="secondary" type="button" onClick={() => void refreshHistory()} disabled={pending !== null}>刷新交付历史</button></div>
+    {history.length > 0 && <div className="table-wrap"><table><caption className="sr-only">交付包历史</caption><thead><tr><th>状态</th><th>目标版本</th><th>manifest SHA</th><th>路径</th><th>撤回原因</th></tr></thead><tbody>{history.map((item) => <tr key={item.id}><td>{item.status}</td><td>{String(item.target_version_id).slice(0, 12)}</td><td><code>{String(item.manifest_sha256 ?? "").slice(0, 16)}…</code></td><td><code>{String(item.rel_path ?? "")}</code></td><td>{String(item.withdrawn_reason ?? "—")}</td></tr>)}</tbody></table></div>}
     {error && <p className="inline-error" role="alert">{error}</p>}{success && <p className="review-success" role="status">{success}</p>}
   </section>;
 }

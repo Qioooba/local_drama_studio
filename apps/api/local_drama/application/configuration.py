@@ -101,6 +101,136 @@ class ConfigurationService:
             "status": "ACTIVE",
         }
 
+    def create_delivery_target_version(
+        self,
+        project_id: str,
+        target_id: str,
+        spec: dict[str, Any],
+        *,
+        transport: str = "LOCAL_FILESYSTEM",
+        title: str | None = None,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Create a new immutable DeliveryTargetVersion without overwriting history.
+
+        A target's stable identity is useful in project configuration while each
+        delivery package points at an immutable version.  The previous active
+        version is retired, but existing delivery packages continue to resolve
+        their original target snapshot.
+        """
+
+        if transport != "LOCAL_FILESYSTEM":
+            raise DomainRuleError("REMOTE_TRANSPORT_DISABLED", "LOCAL_ONLY 首版只允许 LOCAL_FILESYSTEM 交付")
+        _validate_local_target(spec)
+        now = _utc_now()
+        version_id = str(uuid.uuid4())
+        with self.database.transaction() as connection:
+            target = connection.execute(
+                "SELECT * FROM delivery_targets WHERE id=? AND project_id=?",
+                (target_id, project_id),
+            ).fetchone()
+            if target is None:
+                raise DomainRuleError("DELIVERY_TARGET_NOT_FOUND", "交付目标不存在或不属于当前项目")
+            if str(target["transport"]) != transport:
+                raise DomainRuleError("DELIVERY_TARGET_TRANSPORT_IMMUTABLE", "交付目标 transport 不可跨版本改变")
+            latest = connection.execute(
+                "SELECT COALESCE(MAX(version_no), 0) AS version_no FROM delivery_target_versions WHERE delivery_target_id=?",
+                (target_id,),
+            ).fetchone()
+            next_version = int(latest["version_no"] or 0) + 1
+            connection.execute(
+                "UPDATE delivery_target_versions SET status='RETIRED', updated_at=?, revision=revision+1 WHERE delivery_target_id=? AND status='ACTIVE'",
+                (now, target_id),
+            )
+            connection.execute(
+                """INSERT INTO delivery_target_versions
+                (id, delivery_target_id, version_no, target_spec_json, status,
+                 created_at, updated_at, created_by, revision, schema_version)
+                VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?, ?, 1, 'v2')""",
+                (version_id, target_id, next_version, _json(spec), now, now, actor),
+            )
+            if title is not None:
+                connection.execute(
+                    "UPDATE delivery_targets SET title=?, target_spec_json=?, updated_at=?, revision=revision+1 WHERE id=?",
+                    (title.strip(), _json(spec), now, target_id),
+                )
+            connection.execute(
+                """INSERT INTO audit_events
+                (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json)
+                VALUES (?, 'producer', 'DELIVERY_TARGET_VERSION_CREATED', 'delivery_target_version', ?, ?, ?)""",
+                (actor, version_id, "创建本地交付目标新版本", _json({"project_id": project_id, "target_id": target_id, "version_no": next_version, "transport": transport})),
+            )
+        return {
+            "id": target_id,
+            "version_id": version_id,
+            "project_id": project_id,
+            "code": str(target["code"]),
+            "title": title.strip() if title is not None else str(target["title"]),
+            "transport": transport,
+            "spec": spec,
+            "version_no": next_version,
+            "status": "ACTIVE",
+        }
+
+    def select_delivery_target_version(self, project_id: str, version_id: str, actor: str = "local-user") -> dict[str, Any]:
+        """Explicitly activate one version of a project delivery target."""
+
+        now = _utc_now()
+        with self.database.transaction() as connection:
+            row = connection.execute(
+                """SELECT dt.id AS target_id, dt.project_id AS project_id, dt.code AS target_code,
+                dt.title AS target_title, dt.transport AS target_transport,
+                dtv.id AS version_id, dtv.version_no AS target_version_no,
+                dtv.target_spec_json AS version_spec_json, dtv.status AS version_status
+                FROM delivery_target_versions dtv JOIN delivery_targets dt ON dt.id=dtv.delivery_target_id
+                WHERE dtv.id=? AND dt.project_id=?""",
+                (version_id, project_id),
+            ).fetchone()
+            if row is None:
+                raise DomainRuleError("DELIVERY_TARGET_VERSION_NOT_FOUND", "交付目标版本不存在或不属于当前项目")
+            # Every selected column has an explicit alias.  Use those aliases
+            # rather than relying on positional offsets, because SQLite schema
+            # extensions can change the physical table order without changing
+            # this read contract.
+            target_id = str(row["target_id"])
+            target_project_id = str(row["project_id"])
+            target_code = str(row["target_code"])
+            target_title = str(row["target_title"])
+            target_transport = str(row["target_transport"])
+            target_version_no = int(row["target_version_no"])
+            version_spec_json = str(row["version_spec_json"] or "{}")
+            if target_transport != "LOCAL_FILESYSTEM":
+                raise DomainRuleError("REMOTE_TRANSPORT_DISABLED", "LOCAL_ONLY 首版只允许 LOCAL_FILESYSTEM 交付")
+            connection.execute(
+                "UPDATE delivery_target_versions SET status='RETIRED', updated_at=?, revision=revision+1 WHERE delivery_target_id=? AND status='ACTIVE'",
+                (now, target_id),
+            )
+            connection.execute(
+                "UPDATE delivery_target_versions SET status='ACTIVE', updated_at=?, revision=revision+1 WHERE id=?",
+                (now, version_id),
+            )
+            connection.execute(
+                "UPDATE delivery_targets SET status='ACTIVE', updated_at=?, revision=revision+1 WHERE id=?",
+                (now, target_id),
+            )
+            connection.execute(
+                """INSERT INTO audit_events
+                (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json)
+                VALUES (?, 'producer', 'DELIVERY_TARGET_VERSION_SELECTED', 'delivery_target_version', ?, ?, ?)""",
+                (actor, version_id, "显式选择本地交付目标版本", _json({"project_id": target_project_id, "target_id": target_id, "version_no": target_version_no})),
+            )
+        return {
+            "id": target_id,
+            "version_id": version_id,
+            "project_id": project_id,
+            "code": target_code,
+            "title": target_title,
+            "transport": target_transport,
+            "spec": json.loads(version_spec_json),
+            "version_no": target_version_no,
+            "status": "ACTIVE",
+        }
+
     def bind_profile(
         self, project_id: str, capability: str, profile_version_id: str, confirm_candidate: bool = False, actor: str = "local-user"
     ) -> dict[str, Any]:

@@ -244,6 +244,13 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .diagnostic-status { display: grid; gap: 8px; }
 .diagnostic-status strong { color: var(--approved); }
 .diagnostic-row { display: flex; justify-content: space-between; }
+.audit-filters { display: grid; grid-template-columns: repeat(6, minmax(130px, 1fr)); gap: 10px; align-items: end; margin: 16px 0; }
+.audit-history-table table { min-width: 920px; }
+.audit-history-table td { vertical-align: top; }
+.audit-history-table td small { display: block; color: var(--text-muted); margin-top: 4px; }
+.audit-history-table details summary { cursor: pointer; color: var(--accent); }
+.audit-history-table pre { max-width: 360px; max-height: 180px; overflow: auto; white-space: pre-wrap; font-size: 11px; }
+.audit-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 12px; }
 .empty-state { margin-top: 20px; padding: 18px; border: 1px dashed #cfc9bc; border-radius: 10px; color: #706c65; background: #faf7f1; }
 
 .review-layout { display: grid; grid-template-columns: minmax(260px, .85fr) minmax(0, 1.3fr); gap: 18px; margin-top: 20px; }
@@ -687,7 +694,7 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
   .content { padding-inline: 16px; }
   .hero { display: grid; gap: 18px; }
   .hero .secondary { justify-self: start; }
-  .card-grid, .diagnostic-grid, .review-checklist { grid-template-columns: 1fr; }
+  .card-grid, .diagnostic-grid, .review-checklist, .audit-filters { grid-template-columns: 1fr; }
   .workflow-step { justify-content: center; padding-inline: 8px; }
   .workflow-step strong { display: none; }
   .mode-grid { grid-template-columns: 1fr; }

@@ -159,6 +159,18 @@
       "automated_tests": ["apps/api/tests/test_automation_workflows.py"]
     },
     {
+      "id": "FR-CTL-003",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-ctl-003-004-multimodal-contracts-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_ctl_multimodal_contracts.py", "apps/web/src/features/generation/GenerationControlPanel.test.tsx"]
+    },
+    {
+      "id": "FR-CTL-004",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-ctl-003-004-multimodal-contracts-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_ctl_multimodal_contracts.py", "apps/web/src/features/generation/GenerationControlPanel.test.tsx"]
+    },
+    {
       "id": "FR-CTL-002",
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/fr-ctl-002-motion-controls-2026-08-15.json"],
@@ -169,6 +181,66 @@
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/fr-rev-001-review-inbox-filters-2026-08-15.json"],
       "automated_tests": ["apps/api/tests/test_g4_reviews.py", "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"]
+    },
+    {
+      "id": "FR-AUDT-001",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-audt-001-audit-history-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_audit_history.py", "apps/web/src/features/shared/AuditHistoryPanel.test.tsx"]
+    },
+    {
+      "id": "FR-DEL-001",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/generated/api.test.ts"]
+    },
+    {
+      "id": "FR-DEL-002",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/generated/api.test.ts"]
+    },
+    {
+      "id": "FR-DEL-003",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/generated/api.test.ts"]
+    },
+    {
+      "id": "FR-DEL-004",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/generated/api.test.ts"]
+    },
+    {
+      "id": "TC-DEL-001",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py"]
+    },
+    {
+      "id": "TC-DEL-002",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py"]
+    },
+    {
+      "id": "TC-DEL-003",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py"]
+    },
+    {
+      "id": "TC-DEL-004",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py"]
+    },
+    {
+      "id": "TC-DEL-005",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py"]
     }
   ]
 }

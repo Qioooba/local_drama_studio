@@ -16,6 +16,7 @@ vi.mock("../generated/api", () => ({
   listProfiles: vi.fn().mockResolvedValue({ items: [] }),
   listPostProcessRecipes: vi.fn().mockResolvedValue({ items: [] }),
   latestDiagnostics: vi.fn().mockResolvedValue({ run: null }),
+  listAuditEvents: vi.fn().mockResolvedValue({ items: [], next_cursor: null, cursor: 0, limit: 50, filters: {}, local_only: true, network_contacted: false, mutated: false }),
   runDiagnostics: vi.fn().mockResolvedValue({ run: { status: "HEALTHY", checks: [] } }),
   listSeasons: vi.fn().mockResolvedValue({ items: [] }),
   listEpisodes: vi.fn().mockResolvedValue({ items: [] }),
