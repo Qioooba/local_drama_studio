@@ -805,6 +805,9 @@ class ReviewService:
         return result
 
     def inbox(self, project_id: str | None = None, media_kind: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        return self.inbox_page(project_id, media_kind, cursor=0, limit=limit)["items"]
+
+    def inbox_page(self, project_id: str | None = None, media_kind: str | None = None, cursor: int = 0, limit: int = 100) -> dict[str, Any]:
         params: list[Any] = []
         where: list[str] = []
         if project_id:
@@ -813,8 +816,11 @@ class ReviewService:
         if media_kind:
             where.append("ma.media_kind=?")
             params.append(media_kind)
+        where.append("(rd.id IS NULL OR rd.decision != 'APPROVED' OR rd.is_stale=1)")
         clause = f"WHERE {' AND '.join(where)}" if where else ""
-        params.append(max(1, min(limit, 500)))
+        normalized_cursor = max(0, int(cursor))
+        normalized_limit = max(1, min(int(limit), 100))
+        params.extend([normalized_limit + 1, normalized_cursor])
         with self.database.connect() as connection:
             rows = connection.execute(
                 f"""SELECT mv.id AS media_version_id, mv.media_asset_id, mv.version_no, mv.stage, mv.rel_path, mv.mime_type,
@@ -822,11 +828,12 @@ class ReviewService:
                 rd.id AS review_id, rd.decision, rd.is_stale, rd.created_at AS reviewed_at
                 FROM media_versions mv JOIN media_assets ma ON ma.id=mv.media_asset_id
                 LEFT JOIN review_decisions rd ON rd.id=(SELECT r2.id FROM review_decisions r2 WHERE r2.subject_type='MEDIA_VERSION' AND r2.subject_id=mv.id ORDER BY r2.created_at DESC LIMIT 1)
-                {clause} AND (rd.id IS NULL OR rd.decision != 'APPROVED' OR rd.is_stale=1)
-                ORDER BY COALESCE(rd.created_at, mv.created_at), mv.created_at LIMIT ?""",
+                {clause}
+                ORDER BY COALESCE(rd.created_at, mv.created_at), mv.created_at, mv.id LIMIT ? OFFSET ?""",
                 params,
             ).fetchall()
-        return [dict(row) for row in rows]
+        has_more = len(rows) > normalized_limit
+        return {"items": [dict(row) for row in rows[:normalized_limit]], "next_cursor": normalized_cursor + normalized_limit if has_more else None, "cursor": normalized_cursor, "limit": normalized_limit}
 
     def mark_stale_for_owner(self, owner_id: str, reason: str, actor: str = "system") -> int:
         now = _utc_now()

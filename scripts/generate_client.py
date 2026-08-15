@@ -284,9 +284,18 @@ export async function listReviewTemplates(baseUrl = ''): Promise<{ items: Review
   return requestJson<{ items: ReviewTemplate[] }>('/api/v1/review-templates', undefined, baseUrl);
 }
 
-export async function reviewInbox(projectId?: string, baseUrl = ''): Promise<{ items: ReviewInboxItem[] }> {
+export async function reviewInbox(projectId?: string, baseUrl = ''): Promise<{ items: ReviewInboxItem[]; next_cursor?: number | null; cursor?: number; limit?: number }> {
   const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
   return requestJson<{ items: ReviewInboxItem[] }>(`/api/v1/reviews/inbox${query}`, undefined, baseUrl);
+}
+
+export async function reviewInboxPage(projectId: string | undefined, cursor = 0, limit = 100, mediaKind?: string, baseUrl = ''): Promise<{ items: ReviewInboxItem[]; next_cursor: number | null; cursor: number; limit: number }> {
+  const query = new URLSearchParams();
+  if (projectId) query.set('project_id', projectId);
+  if (mediaKind) query.set('media_kind', mediaKind);
+  query.set('cursor', String(cursor));
+  query.set('limit', String(limit));
+  return requestJson(`/api/v1/reviews/inbox?${query.toString()}`, undefined, baseUrl);
 }
 
 export async function listFormalSelectionCandidates(projectId: string, baseUrl = ''): Promise<{ items: FormalSelectionCandidate[] }> {

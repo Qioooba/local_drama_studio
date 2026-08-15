@@ -29,8 +29,8 @@ async def list_templates(request: Request) -> dict[str, object]:
 
 
 @router.get("/reviews/inbox", operation_id="getReviewInbox")
-async def review_inbox(request: Request, project_id: str | None = None, media_kind: str | None = None, limit: int = 100) -> dict[str, object]:
-    return {"items": service(request).inbox(project_id, media_kind, limit)}
+async def review_inbox(request: Request, project_id: str | None = None, media_kind: str | None = None, cursor: int = 0, limit: int = 100) -> dict[str, object]:
+    return service(request).inbox_page(project_id, media_kind, cursor, limit)
 
 
 @router.get("/reviews/formal-selection-candidates", operation_id="listFormalSelectionCandidates")
