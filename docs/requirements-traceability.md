@@ -190,12 +190,14 @@ G7 已可按蓝图 09 顺序开始，但当前不是 PASS；G8/G9 仍只记 prog
 | Capability compatibility | VERIFIED | 0016；Published v12 `f63b3ac7...` + PASS attestation `da5d5f66...`，涵盖 input/seed/extend/V2V/reference/motion |
 | Zero-public-network full-chain | VERIFIED | 0017；真实 loopback Comfy/LLM/diagnostics harness，socket 层拒绝 `203.0.113.1`；attestation `51b05922-fce9-496e-bb9e-a627ba346f77` |
 | Workspace asset authorization / BrandKit | VERIFIED | 0018；KEYFRAME 重新 hash/size 后授权 `853fd791-0bc8-4cf5-bf12-fc54c3542caa`，BrandKit ACTIVE v1 `5a0d3a95...` |
-| Offline model license/hash/quantization report | IN_PROGRESS / BLOCKED_BY_LICENSE_EVIDENCE | 0019 + 0020；H3 video VAE SHA-256 `5a624684...ceb148`、5,207,806,104 bytes、560 tensors/F16；项目内 license evidence API 与 Profiles/Diagnostics 显式导入 UI 均强制 JSON、完整模型 SHA、许可证名称、symlink/path 边界校验，通过后才冻结证据并重算报告。磁盘仍无真实许可证记录，报告 `d586967e...` 保持 BLOCKED；三档无写入 UI 证据 `docs/evidence/g7/model-license-import-ui-2026-08-15.json` |
+| User-supplied local model path/hash/quantization report | VERIFIED | 0019 + 0020 + 0029；平台只引用用户选择的电脑绝对路径，不复制、上传或随安装包分发权重。页面提供 Windows 原生文件选择器、手工路径回退、hash/格式/量化兼容检查；路径缺失、symlink 或 header 无法验证仍硬拒绝。许可证记录改为用户可选的风险追溯字段，缺失时显示 `USER_RESPONSIBILITY_UNKNOWN`，不阻塞平台发布。三档只读 UI 证据 `docs/evidence/g7/model-license-import-ui-2026-08-15.json` |
 | G7 regression | PASS (current scope) | 安全 API 108 passed / 4 live deselected；Web 9/9、production build、Ruff、mypy 83 source files；三档 Playwright 全绿且视觉只读 720px WebP |
 
-G7 当前 `IN_PROGRESS`，首阻塞 `MODEL_LICENSE_HASH_QUANTIZATION_REPORT`，禁止进入 G8 退出验收或宣告 G7 PASS。
+G7 当前已按“用户自带本机模型、平台只引用管理、不捆绑权重”的正式范围 PASS；G8、G9 亦已按顺序 PASS。
 
-G10 发布准备已有只读 `scripts/release_audit.py`：当前数据库与最近五份迁移前备份 `integrity=ok`、migration head=`0021_g10_scale_read_indexes`；`0020→0021` 隔离升级/精确恢复演练、`SBOM_INVENTORY` 与本地只读 UAT 基线已通过。隔离规模 UAT 建立 60 集、800 镜头、10,000 MediaAsset/MediaVersion，60/60 集真实 FastAPI 生产与 timeline/delivery 入口通过，read-model p95 11.881ms；合成媒体完整性明确为 `UNKNOWN`，不冒充媒体回归。SBOM 盘点包含 317 个锁定包条目；73 项 `NOASSERTION` 均由 lockfile `os`/`cpu` 约束证明为非 Windows x64 目标平台的未安装可选包，目标运行时 `NOASSERTION=0`。G8/G9 观测证据为 PASS，但按序退出均被 G7 许可证证据阻塞；安装升级回滚、最终 SBOM 和 go/no-go 工件保持 DRAFT/NO-GO，不能宣告发布完成。
+G10 最终发布审计已 PASS：当前数据库与最近五份迁移前备份 `integrity=ok`，migration head=`0029_user_supplied_model_policy`；`0028→0029` 隔离升级与精确恢复演练 PASS。60 集、800 镜头、10,000 MediaAsset/MediaVersion 规模 UAT、安全、干净新根恢复、本地只读 UAT、G7→G8→G9 有序退出和发布工件全部通过。最终 SBOM 包含 317 个锁定条目，目标 Windows x64 运行时 `NOASSERTION=0`；73 项仅属于非目标平台锁文件可选包。安装/升级/回滚手册、SBOM 与 go/no-go 均为 FINAL，正式范围为 Windows x64 LOCAL_ONLY 本地源码发行版，不捆绑用户模型或媒体。
+
+2026-08-15 用户自带模型策略闭环：新增本机模型引用 API 与页面原生文件选择器，返回绝对路径且 `copied=false/uploaded=false`；兼容报告将用户许可证缺失降级为可见风险，不改变 hash、量化、路径和 symlink 硬校验。生产数据库在线备份后迁移至 0029，G7/G8/G9 依次 PASS；完整门禁 API 178 passed / 4 live deselected、Web 60/60（以最终实际回归输出为准更新），三档模型路径 UI 3/3 PASS。G10 发布审计 PASS，GO 范围不包含模型权重、音色、媒体或 REMOTE Provider。
 
 G10 安全 UAT 已补齐此前缺失的 instance CSRF token：每个 API 进程生成独立 token，同源客户端从无 CORS 的 bootstrap/安全 GET 获取，所有网络写请求同时验证受控 Origin 与 `X-Local-Instance-Token`。隔离真实 FastAPI 验证恶意 Origin、缺失/错误 token、路径逃逸、REMOTE Provider、未入清单自定义节点均被拒绝；socket guard 对 TEST-NET 公网目标在 connect 前阻断，OpenAPI 无远程 credential 字段。证据为 `docs/evidence/g10/security-uat-2026-08-15.json`；不替代 G7 模型许可证或最终发布签字。
 

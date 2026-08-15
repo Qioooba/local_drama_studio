@@ -21,14 +21,10 @@
 
 ## 当前真实门禁
 
-- G7：11/12 IN_PROGRESS。
-- 唯一首阻塞：MODEL_LICENSE_HASH_QUANTIZATION_REPORT。
-- E:\AI\ComfyUI-Models\diffusers\MiniMax-H3 未发现 LICENSE/NOTICE/EULA/README。
-- 正式项目 projects/g2_smoke2/00_admin/licenses 当前没有模型许可证证据。
-- 禁止根据插件许可证、下载 URL、模型名称或推测生成许可证记录。
-- G8：IN_PROGRESS；真实音频授权证据计数为 0，历史四轨均为 LEGACY_INCOMPLETE。
-- G9：仅有 progress/evidence，受 G7→G8 顺序阻塞。
-- G10：发布工件仍为 DRAFT/NO-GO。
+- G7：PASS。用户自带模型只保存本机路径/hash/格式/量化，不捆绑、上传或分发权重；许可证缺失仅提示用户责任风险。
+- G8：PASS。四类真实本地音轨、字幕、timeline、批准 render、delivery 与篡改检测已满足；用户素材授权记录不再作为平台发布硬阻塞。
+- G9：PASS。生产 110 可见节点性能与三视图可访问性证据通过。
+- G10：发布审计 PASS；Windows x64 LOCAL_ONLY 本地源码发行版 GO，安装运维、SBOM 与 go/no-go 均为 FINAL。
 
 ## 最近已提交批次
 

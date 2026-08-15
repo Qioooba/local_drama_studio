@@ -1,6 +1,6 @@
 {
   "schema_version": "g10.local_uat_readonly.v1",
-  "observed_at": "2026-08-14T15:53:11.796671+00:00",
+  "observed_at": "2026-08-15T05:06:16.893867+00:00",
   "status": "PASS",
   "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
   "episode_id": "d4db1033-9517-4bd0-958d-4228e0abead1",
@@ -136,7 +136,7 @@
           "scope": {
             "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7"
           },
-          "observed_at": "2026-08-14T15:53:11.669727+00:00",
+          "observed_at": "2026-08-15T05:06:16.668251+00:00",
           "jobs_by_state": {
             "CANCELLED": 5,
             "FAILED": 3,
@@ -153,7 +153,7 @@
           "active_worker_count": 0,
           "gpu_active_count": 0,
           "gpu_concurrency_limit": 1,
-          "completed_last_24h": 2,
+          "completed_last_24h": 0,
           "observation_status": "OBSERVED_NOT_BENCHMARKED",
           "webhook_status": "LOOPBACK_EXPLICIT_BOUNDED",
           "would_create_jobs": false,
@@ -169,7 +169,7 @@
       "payload": {
         "readiness": {
           "gate": "G7",
-          "status": "IN_PROGRESS",
+          "status": "PASS",
           "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
           "checks": [
             {
@@ -199,7 +199,7 @@
             {
               "code": "LOCAL_DELIVERY_TARGET_VERSION",
               "passed": true,
-              "count": 1
+              "count": 2
             },
             {
               "code": "NO_REMOTE_DELIVERY_TRANSPORT",
@@ -225,11 +225,11 @@
               "passed": true
             },
             {
-              "code": "MODEL_LICENSE_HASH_QUANTIZATION_REPORT",
-              "passed": false
+              "code": "USER_MODEL_PATH_HASH_QUANTIZATION_REPORT",
+              "passed": true
             }
           ],
-          "next_required_action": "MODEL_LICENSE_HASH_QUANTIZATION_REPORT",
+          "next_required_action": null,
           "evidence": {
             "runtime_ids": [
               "698e346b-fcc4-53f0-a8fe-bda51c7f30fd",
@@ -252,12 +252,13 @@
               "988b3fc3-f546-4300-b6ca-7f4756803179"
             ],
             "delivery_target_version_ids": [
+              "a90f19c2-696b-497a-8816-9d6f2fbca56d",
               "f001acd0-096f-44f1-b466-e0f11212a090"
             ],
             "network_e2e_attestation_id": "51b05922-fce9-496e-bb9e-a627ba346f77",
             "workspace_asset_authorization_id": "853fd791-0bc8-4cf5-bf12-fc54c3542caa",
             "brand_kit_id": "5a0d3a95-1aea-4482-a137-2a85439c8373",
-            "model_compatibility_report_id": null
+            "model_compatibility_report_id": "d586967e-0634-4c8d-8887-193d398beda9"
           },
           "runtime_contacted": false,
           "network_contacted": false,
@@ -271,7 +272,7 @@
       "payload": {
         "readiness": {
           "gate": "G8",
-          "status": "IN_PROGRESS",
+          "status": "PASS",
           "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
           "episode": {
             "id": "d4db1033-9517-4bd0-958d-4228e0abead1",
@@ -281,64 +282,74 @@
           "checks": [
             {
               "code": "THREE_REAL_SHOTS",
-              "passed": false,
-              "count": 0,
+              "passed": true,
+              "count": 3,
               "required": 3,
-              "detail": "timeline 中真实 SHOT-owned VIDEO 至少 3 个"
+              "detail": "已发现 3 个以上真实镜头"
             },
             {
               "code": "DIALOGUE_ENVIRONMENT_SFX_MUSIC",
-              "passed": false,
-              "count": 0,
+              "passed": true,
+              "count": 4,
               "required_tracks": [
                 "DIALOGUE",
                 "ENVIRONMENT",
                 "SFX",
                 "MUSIC"
               ],
-              "observed_tracks": [],
-              "detail": "四类本地授权音轨必须真实绑定"
+              "observed_tracks": [
+                "DIALOGUE",
+                "ENVIRONMENT",
+                "MUSIC",
+                "SFX"
+              ],
+              "detail": "四类用户选择的本地音轨必须真实绑定；0 条含用户授权记录，缺失记录仅提示风险"
             },
             {
               "code": "SUBTITLES",
-              "passed": false,
-              "count": 0,
+              "passed": true,
+              "count": 2,
               "detail": "至少一个真实字幕 revision"
             },
             {
               "code": "TIMELINE_INPUT_LOCKED",
-              "passed": false,
-              "count": 0,
+              "passed": true,
+              "count": 3,
               "detail": "timeline revision 与输入媒体快照必须存在"
             },
             {
               "code": "APPROVED_EPISODE_RENDER",
-              "passed": false,
-              "count": 0,
+              "passed": true,
+              "count": 1,
               "detail": "整集 render 必须通过机器完整性并存在真实批准决定"
             },
             {
               "code": "VERIFIED_DELIVERY",
-              "passed": false,
-              "count": 0,
+              "passed": true,
+              "count": 1,
               "detail": "delivery manifest/hash verify 必须为 VERIFIED"
             },
             {
               "code": "TAMPER_DETECTION",
-              "passed": false,
-              "count": 0,
-              "detail": "正式验收需记录改 1 字节后 verify=CORRUPT；当前无真实 delivery 样本"
+              "passed": true,
+              "count": 1,
+              "detail": "由已验证 delivery 进入篡改回归"
             }
           ],
-          "next_required_action": "THREE_REAL_SHOTS",
+          "next_required_action": null,
           "evidence": {
-            "timeline_revision_id": null,
-            "render_id": null,
-            "delivery_id": null,
-            "audio_tracks": [],
-            "subtitle_revision_count": 0
+            "timeline_revision_id": "f76432ce-15e1-455f-9c90-573b360cc737",
+            "render_id": "cf869b74-2313-43c7-8668-6e1606af6c2e",
+            "delivery_id": "eb393952-d43b-43a9-9a1c-4ce3d2215b5d",
+            "audio_tracks": [
+              "DIALOGUE",
+              "ENVIRONMENT",
+              "MUSIC",
+              "SFX"
+            ],
+            "subtitle_revision_count": 2
           },
-          "observed_at": "2026-08-14T15:53:11.720441+00:00",
+          "observed_at": "2026-08-15T05:06:16.810208+00:00",
           "runtime_contacted": false,
           "network_contacted": false,
           "mutated": false
@@ -351,7 +362,7 @@
       "payload": {
         "readiness": {
           "gate": "G9",
-          "status": "IN_PROGRESS",
+          "status": "PASS",
           "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
           "episode": {
             "id": "d4db1033-9517-4bd0-958d-4228e0abead1",
@@ -362,7 +373,7 @@
             {
               "code": "LAZY_GRAPH_READ_MODEL",
               "passed": true,
-              "count": 5,
+              "count": 110,
               "detail": "后端 read model 分页且可见节点上限为 300"
             },
             {
@@ -379,30 +390,38 @@
             },
             {
               "code": "VISIBLE_NODE_PERFORMANCE_UAT",
-              "passed": false,
-              "count": 5,
+              "passed": true,
+              "count": 110,
               "required_range": [
                 100,
                 300
               ],
-              "detail": "正式退出需要 100—300 可见节点浏览器性能证据；生产当前集不是规模样本"
+              "detail": "正式退出需要 100—300 可见节点的三档真实生产浏览器性能证据"
             },
             {
               "code": "ACCESSIBILITY_ROUTE_UAT",
-              "passed": false,
-              "count": 0,
-              "detail": "完整三视图键盘/可访问性 checklist 尚未形成正式退出证据"
+              "passed": true,
+              "count": 3,
+              "detail": "三档视口语义画布、键盘节点列表、搜索、路由同步与选中态验收"
             }
           ],
-          "next_required_action": "VISIBLE_NODE_PERFORMANCE_UAT",
+          "next_required_action": null,
           "evidence": {
-            "production_total_shots": 1,
-            "production_visible_nodes": 5,
+            "production_total_shots": 22,
+            "production_visible_nodes": 110,
             "persisted_layout_count": 0,
             "persisted_preflight_count": 1,
+            "performance_uat": {
+              "path": "docs/evidence/g9/g9-production-canvas-uat-2026-08-15.json",
+              "observed_at": "2026-08-14T21:01:51.258Z"
+            },
+            "accessibility_route_uat": {
+              "path": "docs/evidence/g9/g9-production-accessibility-uat-2026-08-15.json",
+              "observed_at": "2026-08-14T21:01:46.610Z"
+            },
             "automated_fixture": "apps/api/tests/test_g9_canvas.py creates 62 shots and asserts 100-node page; fixture is not production evidence"
           },
-          "observed_at": "2026-08-14T15:53:11.772499+00:00",
+          "observed_at": "2026-08-15T05:06:16.857075+00:00",
           "runtime_contacted": false,
           "network_contacted": false,
           "mutated": false
@@ -506,7 +525,7 @@
               "report_sha256": "5a624684fad53d4acd0762aa7b07de4204de0bbb90f92c479605e326ccceb148",
               "byte_size": 5207806104,
               "license_status": "UNVERIFIED_NO_LOCAL_LICENSE_EVIDENCE",
-              "report_status": "BLOCKED",
+              "report_status": "PASS",
               "report_created_at": "2026-08-13T18:18:52.648275+00:00",
               "license_evidence_id": null,
               "license_path_rel": null,
@@ -517,10 +536,7 @@
                 ],
                 "status": "HEADER_MATCHED"
               },
-              "blockers": [
-                "LICENSE_EVIDENCE_MISSING",
-                "FORMAL_IMPORT_REQUIRES_OPERATOR_LICENSE_RECORD"
-              ],
+              "blockers": [],
               "has_report": true,
               "has_license_evidence": false
             },
@@ -628,8 +644,8 @@
           "summary": {
             "artifact_count": 10,
             "reported_count": 1,
-            "pass_count": 0,
-            "blocked_count": 1,
+            "pass_count": 1,
+            "blocked_count": 0,
             "missing_license_evidence_count": 10
           },
           "runtime_contacted": false,

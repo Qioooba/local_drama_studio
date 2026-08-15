@@ -1,30 +1,30 @@
 {
   "schema_version": "g10.upgrade_rollback_rehearsal.v3",
-  "observed_at": "2026-08-15T01:06:15.991385+00:00",
+  "observed_at": "2026-08-15T05:01:30.145405+00:00",
   "status": "PASS",
   "scope": "isolated copy of a production pre-migration backup",
   "source_backup": {
-    "path": "backups/pre_migration_20260815T012600Z_0025.sqlite3",
-    "migration": "0025_episode_scene_ranges",
+    "path": "backups/pre_migration_20260815T045746Z.sqlite3",
+    "migration": "0028_audio_binding_authority",
     "integrity": "ok",
-    "bytes": 1699840,
-    "sha256": "7e4d6ae5d288c709481280802832d99663b1653f7e2b20ee5c87f6a926247f9f"
+    "bytes": 1822720,
+    "sha256": "bdb139795ec775beeb98c7ffba25b3aa74dce1b1ace111119f659820b15abe20"
   },
   "upgrade_copy": {
     "operation": "alembic upgrade head on isolated copy",
-    "from_migration": "0025_episode_scene_ranges",
-    "to_migration": "0026_creative_entry_revisions",
-    "migration": "0026_creative_entry_revisions",
+    "from_migration": "0028_audio_binding_authority",
+    "to_migration": "0029_user_supplied_model_policy",
+    "migration": "0029_user_supplied_model_policy",
     "integrity": "ok",
-    "bytes": 1736704,
-    "sha256": "6358b549d72dfee7a3ff43f35bc2f0c292bce5ad75fa27a3c532b236ea3742c4"
+    "bytes": 1822720,
+    "sha256": "eef54f5a840d2d4d92f84161a94f05225503881a65e86bcdfe9de0b9da1e1e34"
   },
   "restore_copy": {
     "operation": "restore source backup to a separate copy",
-    "migration": "0025_episode_scene_ranges",
+    "migration": "0028_audio_binding_authority",
     "integrity": "ok",
-    "bytes": 1699840,
-    "sha256": "7e4d6ae5d288c709481280802832d99663b1653f7e2b20ee5c87f6a926247f9f",
+    "bytes": 1822720,
+    "sha256": "bdb139795ec775beeb98c7ffba25b3aa74dce1b1ace111119f659820b15abe20",
     "matches_source_sha256": true
   },
   "safety": {
@@ -33,7 +33,7 @@
     "comfyui_contacted": false,
     "network_contacted": false,
     "jobs_created": false,
-    "temporary_directory_retained": "temp/release-rehearsal-0025-to-0026-20260815-r2"
+    "temporary_directory_retained": "temp/release-rehearsal-20260815T050129Z"
   },
   "interpretation": "Current migration upgrade and exact backup restore are verified on isolated copies; this does not authorize final release."
 }

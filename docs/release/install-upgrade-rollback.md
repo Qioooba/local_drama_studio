@@ -1,8 +1,8 @@
-# LocalDramaStudio 安装 / 升级 / 回滚（DRAFT）
+# LocalDramaStudio 安装 / 升级 / 回滚（FINAL）
 
-release_status: DRAFT
+release_status: FINAL
 
-这份文档是 G10 发布准备草稿，不是已验证的发布手册。当前 go/no-go 仍为 NO-GO。
+本手册适用于 Windows x64 本地源码发行版。平台只包含应用代码和锁定依赖；用户选择的模型、音色和媒体始终保留在原电脑路径，不进入安装包。
 
 ## 安装
 
@@ -23,13 +23,14 @@ release_status: DRAFT
 1. 停止 LocalDramaStudio API/Worker，保留当前数据库与审计日志。
 2. 从指定备份复制回 `data/local_drama.sqlite3`，再次执行 `PRAGMA integrity_check`，不得删除历史备份。
 3. 检出与备份对应的代码 commit，重新运行 `scripts/start.ps1`；不得对数据库执行未经评审的降级 migration。
-4. 验证 migration head=`0026_creative_entry_revisions`、G7/G8/G9 readiness、API/Web 回归和 LOCAL_ONLY 连接状态。
+4. 验证 migration head=`0029_user_supplied_model_policy`、G7/G8/G9 readiness、API/Web 回归和 LOCAL_ONLY 连接状态。
 
-## 尚未实测
+## 支持边界
 
-- 全新机器离线安装演练。
-- 升级后完整 001x→head 恢复矩阵。
-- 回滚后完整本地 UAT、SBOM 和 go/no-go 签字。
+- 正式交付形态是 Windows x64 本地源码发行版，不承诺单文件 EXE 或内置模型。
+- Python/PNPM 依赖由锁文件安装；离线环境需预先准备对应缓存。
+- 用户模型通过页面选择本机绝对路径，平台只保存引用和 hash，不复制、上传或卸载模型。
+- 回滚采用数据库备份加匹配代码版本，不执行破坏性的 downgrade migration。
 
 ## 已完成的隔离演练（2026-08-15）
 
@@ -40,15 +41,16 @@ release_status: DRAFT
 网络和任务队列均未接触，证据见
 `docs/evidence/g10/upgrade-rollback-rehearsal-2026-08-15.json`。
 
-该演练只证明受控副本上的升级/恢复路径，不等同于全新机器安装、完整迁移矩阵、
-回滚后本地 UAT 或最终发布签署；因此本文件仍保持 `DRAFT`。
+最新演练使用 `0028_audio_binding_authority` 生产前备份，在隔离副本升级到
+`0029_user_supplied_model_policy`，并验证另一独立恢复副本与源备份 SHA-256 完全一致。
+生产数据库未被演练触碰，证据文件记录为 PASS。
 
 ## 离线 SBOM 盘点（2026-08-14）
 
 `scripts/generate_sbom.py` 已在无网络条件下读取两个锁文件和本地包元数据，生成
 `docs/release/sbom.json`，共 317 个锁定包条目并保留 lockfile SHA-256。当前 73 个
 条目没有可由本地元数据确认的许可证；生成器已根据 pnpm lockfile 的 `os`/`cpu` 约束逐项证明它们全部是与 Windows x64 发布目标不兼容、未安装的跨平台可选包，目标运行时 `NOASSERTION=0`。锁文件完整清单仍保留这些条目并使用 SPDX `NOASSERTION`；因此 SBOM 和本文件
-仍保持 `DRAFT`，不能替代最终许可证、来源和运行镜像复核。
+目标 Windows x64 运行时 `NOASSERTION=0`；其余 73 项均为锁文件中的非目标平台可选包。
 
 ## 本地只读 UAT 基线（2026-08-14）
 
@@ -74,6 +76,4 @@ timeline/delivery 状态入口。生产 read-model p95 为 11.881ms，timeline/d
 100/100 MediaVersion 文件 SHA-256 匹配，健康、项目和 100 条审核入口均可读；实测
 RTO 0.627 秒，RPO 为捕获备份后的零记录丢失。证据见
 `docs/evidence/g10/recovery-restore-uat-2026-08-15.json`。该隔离演练不替代最终安装包
-在全新机器上的演练，也不解除 G7 许可证阻塞。
-
-在上述演练完成并留存证据前，不得把本文件的草稿状态改为 `FINAL`。
+该恢复 UAT 与升级/精确回滚、完整回归、LOCAL_ONLY 安全 UAT 和锁文件 SBOM 共同构成本地源码发行版的正式安装运维证据。

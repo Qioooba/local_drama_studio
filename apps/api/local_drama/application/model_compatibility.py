@@ -56,6 +56,58 @@ class ModelCompatibilityService:
     def __init__(self, database: Database) -> None:
         self.database = database
 
+    def register_local_reference(
+        self,
+        project_id: str,
+        code: str,
+        kind: str,
+        machine_path_ref: str,
+        license_note: str | None = None,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Register an external local model by path without copying or loading it."""
+        path = Path(machine_path_ref).expanduser()
+        if not path.is_absolute():
+            raise DomainRuleError("MODEL_ARTIFACT_PATH_ABSOLUTE_REQUIRED", "模型必须使用电脑上的绝对路径")
+        resolved = path.resolve()
+        if not resolved.is_file() or resolved.is_symlink():
+            raise DomainRuleError("MODEL_ARTIFACT_PATH_INVALID", "模型路径缺失、不是文件或为 symlink")
+        now = _utc_now()
+        artifact_id = str(uuid.uuid4())
+        with self.database.transaction() as connection:
+            if connection.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone() is None:
+                raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
+            existing = connection.execute("SELECT * FROM model_artifacts WHERE code=?", (code.strip(),)).fetchone()
+            if existing is not None:
+                if Path(str(existing["machine_path_ref"])).resolve() == resolved:
+                    result = dict(existing)
+                    result["idempotent_replay"] = True
+                    return result
+                raise DomainRuleError("MODEL_ARTIFACT_CODE_CONFLICT", "模型代码已绑定到另一个本机路径")
+            connection.execute(
+                """INSERT INTO model_artifacts
+                (id,runtime_id,code,kind,machine_path_ref,license_note,compatibility_json,status,
+                 created_at,updated_at,created_by,revision,schema_version)
+                VALUES (?,NULL,?,?,?,?,?,'CANDIDATE',?,?,?,1,'v2')""",
+                (artifact_id, code.strip(), kind.strip(), str(resolved), (license_note or "USER_SUPPLIED_LOCAL_MODEL").strip(), _json({"distribution_scope": "REFERENCE_ONLY_NOT_BUNDLED", "project_context_id": project_id}), now, now, actor),
+            )
+            connection.execute(
+                """INSERT INTO audit_events
+                (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
+                VALUES (?,'operator','LOCAL_MODEL_REFERENCE_REGISTERED','model_artifact',?,?,?)""",
+                (actor, artifact_id, "登记用户自带本机模型路径（未复制权重）", _json({"project_id": project_id, "code": code.strip(), "kind": kind.strip()})),
+            )
+        return {
+            "id": artifact_id,
+            "code": code.strip(),
+            "kind": kind.strip(),
+            "machine_path_ref": str(resolved),
+            "status": "CANDIDATE",
+            "distribution_scope": "REFERENCE_ONLY_NOT_BUNDLED",
+            "copied": False,
+            "uploaded": False,
+        }
+
     def _license_evidence(self, project_id: str | None, artifact_id: str, sha256: str) -> dict[str, Any] | None:
         if not project_id:
             return None
@@ -94,11 +146,9 @@ class ModelCompatibilityService:
         evidence = self._license_evidence(project_id, artifact_id, sha256)
         license_status = str(evidence["license_status"]) if evidence else "UNVERIFIED_NO_LOCAL_LICENSE_EVIDENCE"
         blockers = []
-        if not evidence:
-            blockers.extend(["LICENSE_EVIDENCE_MISSING", "FORMAL_IMPORT_REQUIRES_OPERATOR_LICENSE_RECORD"])
         if quantization_status != "HEADER_MATCHED":
             blockers.append("QUANTIZATION_HEADER_UNVERIFIED")
-        report_status = "PASS" if evidence and quantization_status == "HEADER_MATCHED" else "BLOCKED"
+        report_status = "PASS" if quantization_status == "HEADER_MATCHED" else "BLOCKED"
         now = _utc_now()
         report_id = str(uuid.uuid4())
         quantization = {"declared": declared_quantization, "header_dtypes": sorted(header_dtypes), "status": quantization_status}
@@ -123,6 +173,8 @@ class ModelCompatibilityService:
         return {"id": report_id, "model_artifact_id": artifact_id, "path_ref": str(path), "sha256": sha256, "byte_size": byte_size,
                 "header": header, "quantization": quantization, "license_status": license_status, "report_status": report_status, "blockers": blockers,
                 "license_evidence_id": str(evidence["id"]) if evidence else None,
+                "license_risk": "RECORDED" if evidence else "USER_RESPONSIBILITY_UNKNOWN",
+                "distribution_scope": "REFERENCE_ONLY_NOT_BUNDLED",
                 "runtime_contacted": False, "network_contacted": False}
 
     def import_license_evidence(

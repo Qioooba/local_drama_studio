@@ -17,7 +17,7 @@ describe("ModelLicenseEvidenceForm", () => {
     vi.mocked(api.importModelLicenseEvidence).mockResolvedValue({ evidence: { id: "evidence-1" }, report: { id: "report-2", model_artifact_id: "artifact-1", path_ref: "E:/model.safetensors", sha256: "a".repeat(64), byte_size: 10, header: {}, quantization: {}, license_status: "USER_OWNED", report_status: "PASS", blockers: [], runtime_contacted: false, network_contacted: false } });
     const changed = vi.fn();
     render(<ModelLicenseEvidenceForm projectId="project-1" reports={reports} onImported={changed} />);
-    fireEvent.click(screen.getByRole("button", { name: "导入真实许可证证据" }));
+    fireEvent.click(screen.getByRole("button", { name: "可选：记录用户授权信息" }));
     fireEvent.change(screen.getByRole("combobox", { name: /模型 Artifact/ }), { target: { value: "artifact-1" } });
     fireEvent.change(screen.getByRole("textbox", { name: "项目内 JSON 证据路径" }), { target: { value: "00_admin/licenses/h3.json" } });
     fireEvent.change(screen.getByRole("textbox", { name: "许可证名称" }), { target: { value: "Commercial License" } });
@@ -30,7 +30,7 @@ describe("ModelLicenseEvidenceForm", () => {
 
   it("does not import when explicit choices are missing", () => {
     render(<ModelLicenseEvidenceForm projectId="project-1" reports={reports} onImported={() => undefined} />);
-    fireEvent.click(screen.getByRole("button", { name: "导入真实许可证证据" }));
+    fireEvent.click(screen.getByRole("button", { name: "可选：记录用户授权信息" }));
     fireEvent.submit(screen.getByRole("button", { name: "校验并冻结证据" }).closest("form")!);
     expect(api.importModelLicenseEvidence).not.toHaveBeenCalled();
     expect(screen.getByRole("alert").textContent).toContain("显式选择");

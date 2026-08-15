@@ -1,6 +1,7 @@
 import type { AdapterRegistry, G8Readiness, G9Readiness, ModelCompatibilitySnapshot, ProjectConfiguration, TimelineStatus } from "../../generated/api";
 import { GateStatusIcon } from "../../components/icons";
 import { ModelLicenseEvidenceForm } from "./ModelLicenseEvidenceForm";
+import { LocalModelReferenceForm } from "./LocalModelReferenceForm";
 
 export function ProjectConfigurationSnapshot({ configuration }: { configuration: ProjectConfiguration }) {
   return <section className="panel configuration-snapshot" aria-labelledby="configuration-snapshot-title">
@@ -33,18 +34,18 @@ export function AdapterContractsPanel({ registry }: { registry?: AdapterRegistry
 
 export function ModelCompatibilityPanel({ snapshot, projectId, onEvidenceImported }: { snapshot: ModelCompatibilitySnapshot; projectId?: string; onEvidenceImported?: () => void }) {
   return <section className="panel configuration-snapshot" aria-labelledby="model-compatibility-title">
-    <div className="panel-heading"><div><p className="eyebrow">G7 MODEL EVIDENCE</p><h3 id="model-compatibility-title">离线模型兼容性与许可证证据</h3></div><span className={`status-pill${snapshot.summary.pass_count === snapshot.summary.reported_count && snapshot.summary.missing_license_evidence_count === 0 ? "" : " neutral"}`}>{snapshot.summary.pass_count}/{snapshot.summary.reported_count} PASS</span></div>
+    <div className="panel-heading"><div><p className="eyebrow">G7 LOCAL MODEL REFERENCES</p><h3 id="model-compatibility-title">用户自带模型路径与兼容性</h3></div><span className={`status-pill${snapshot.summary.pass_count === snapshot.summary.reported_count ? "" : " neutral"}`}>{snapshot.summary.pass_count}/{snapshot.summary.reported_count} COMPATIBLE</span></div>
     <div className="configuration-grid">
-      <div className="configuration-card"><small>模型 Artifact</small><strong>{snapshot.summary.artifact_count}</strong><span>只读磁盘证据索引</span></div>
-      <div className="configuration-card"><small>许可证证据</small><strong>{snapshot.summary.missing_license_evidence_count} 缺失</strong><span>仅接受项目 00_admin/licenses 内真实记录</span></div>
-      <div className="configuration-card"><small>报告状态</small><strong>{snapshot.summary.blocked_count} BLOCKED</strong><span>不自动改变 G7 门禁</span></div>
+      <div className="configuration-card"><small>模型 Artifact</small><strong>{snapshot.summary.artifact_count}</strong><span>仅引用电脑里的路径，不复制权重</span></div>
+      <div className="configuration-card"><small>用户授权记录</small><strong>{snapshot.summary.missing_license_evidence_count} 未填写</strong><span>风险提示，不阻塞平台验证</span></div>
+      <div className="configuration-card"><small>兼容性报告</small><strong>{snapshot.summary.blocked_count} BLOCKED</strong><span>仅格式、hash 或量化异常会阻塞</span></div>
     </div>
     <div className="configuration-table" role="table" aria-label="模型兼容性证据">
       <div className="configuration-row configuration-header" role="row"><strong>模型</strong><strong>Hash / 量化</strong><strong>许可证</strong><strong>状态</strong></div>
-      {snapshot.reports.slice(0, 8).map((item) => <div className="configuration-row" role="row" key={item.artifact_id}><span>{item.code}<small>{item.kind}</small></span><span>{item.report_sha256 ? `${item.report_sha256.slice(0, 12)}…` : "未报告"} · {String(item.quantization.status ?? "UNKNOWN")}</span><span>{item.has_license_evidence ? item.license_path_rel : "缺失真实证据"}</span><span className={`status-pill${item.report_status === "PASS" ? "" : " neutral"}`}>{item.report_status ?? "未报告"}</span></div>)}
+      {snapshot.reports.slice(0, 8).map((item) => <div className="configuration-row" role="row" key={item.artifact_id}><span>{item.code}<small>{item.kind}</small></span><span>{item.report_sha256 ? `${item.report_sha256.slice(0, 12)}…` : "未报告"} · {String(item.quantization.status ?? "UNKNOWN")}</span><span>{item.has_license_evidence ? item.license_path_rel : "用户未声明 · 自行负责"}</span><span className={`status-pill${item.report_status === "PASS" ? "" : " neutral"}`}>{item.report_status ?? "未报告"}</span></div>)}
     </div>
-    <p className="muted">只读 projection：runtime_contacted=false · network_contacted=false · mutated=false。模型许可证不可由插件 LICENSE、下载 URL 或推测替代。</p>
-    {projectId && onEvidenceImported && <ModelLicenseEvidenceForm projectId={projectId} reports={snapshot.reports} onImported={onEvidenceImported} />}
+    <p className="muted">平台只保存本机绝对路径、hash 和兼容性，不捆绑、上传或重新分发模型。授权信息由用户按实际情况自愿记录；未填写时明确提示风险，但不阻塞平台功能验证。</p>
+    {projectId && onEvidenceImported && <><LocalModelReferenceForm projectId={projectId} onRegistered={onEvidenceImported} /><ModelLicenseEvidenceForm projectId={projectId} reports={snapshot.reports} onImported={onEvidenceImported} /></>}
   </section>;
 }
 
@@ -62,7 +63,7 @@ export function TimelineStatusPanel({ status }: { status: TimelineStatus }) {
       <div className="configuration-card"><small>整集渲染</small><strong>{status.renders.count}</strong><span>{latestRender ? String(latestRender.status) : "暂无真实 render"}</span></div>
       <div className="configuration-card"><small>交付包</small><strong>{status.delivery.count}</strong><span>{latestDelivery ? String(latestDelivery.status) : "暂无真实 delivery"}</span></div>
     </div>
-    <div className="canvas-status"><span>本地授权音频：{status.audio.verified_local_count}</span><span>字幕文本权威：{latestSubtitle?.authority_status === "VERIFIED_SCRIPT" ? "SCRIPT" : "未验证"}</span><span>ASR：{latestSubtitle?.asr_alignment_only ? "仅时间对齐" : "未参与"}</span><span>已验证渲染：{status.renders.verified_count}</span><span>已验证交付：{status.delivery.verified_count}</span><span>runtime_contacted=false</span><span>network_contacted=false</span><span>mutated=false</span></div>
+    <div className="canvas-status"><span>含用户授权记录：{status.audio.verified_local_count}</span><span>字幕文本权威：{latestSubtitle?.authority_status === "VERIFIED_SCRIPT" ? "SCRIPT" : "未验证"}</span><span>ASR：{latestSubtitle?.asr_alignment_only ? "仅时间对齐" : "未参与"}</span><span>已验证渲染：{status.renders.verified_count}</span><span>已验证交付：{status.delivery.verified_count}</span><span>runtime_contacted=false</span><span>network_contacted=false</span><span>mutated=false</span></div>
   </section>;
 }
 

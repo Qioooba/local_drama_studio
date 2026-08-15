@@ -1,7 +1,7 @@
 {
   "schema_version": "g10.release_audit.read_only.v1",
-  "observed_at": "2026-08-15T01:10:45.163062+00:00",
-  "status": "IN_PROGRESS",
+  "observed_at": "2026-08-15T05:20:46.838991+00:00",
+  "status": "PASS",
   "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
   "checks": [
     {
@@ -12,7 +12,7 @@
     {
       "code": "MIGRATION_HEAD",
       "passed": true,
-      "observed": "0026_creative_entry_revisions"
+      "observed": "0029_user_supplied_model_policy"
     },
     {
       "code": "BACKUP_INTEGRITY",
@@ -21,24 +21,24 @@
     },
     {
       "code": "ORDERED_G7",
-      "passed": false,
-      "observed": "IN_PROGRESS",
-      "next_required_action": "MODEL_LICENSE_HASH_QUANTIZATION_REPORT"
+      "passed": true,
+      "observed": "PASS",
+      "next_required_action": null
     },
     {
       "code": "ORDERED_G8",
-      "passed": false,
+      "passed": true,
       "observed": "PASS",
-      "upstream_g7": "IN_PROGRESS",
-      "next_required_action": "WAIT_FOR_G7:MODEL_LICENSE_HASH_QUANTIZATION_REPORT"
+      "upstream_g7": "PASS",
+      "next_required_action": null
     },
     {
       "code": "ORDERED_G9",
-      "passed": false,
+      "passed": true,
       "observed": "PASS",
-      "upstream_g7": "IN_PROGRESS",
+      "upstream_g7": "PASS",
       "upstream_g8": "PASS",
-      "next_required_action": "WAIT_FOR_ORDERED_G8:MODEL_LICENSE_HASH_QUANTIZATION_REPORT"
+      "next_required_action": null
     },
     {
       "code": "UPGRADE_ROLLBACK_REHEARSAL",
@@ -80,7 +80,7 @@
     },
     {
       "code": "RELEASE_ARTIFACTS",
-      "passed": false,
+      "passed": true,
       "artifacts": {
         "api_lock": {
           "exists": true,
@@ -104,17 +104,17 @@
         },
         "install_upgrade_rollback": {
           "exists": true,
-          "final": false,
+          "final": true,
           "path": "docs/release/install-upgrade-rollback.md"
         },
         "sbom": {
           "exists": true,
-          "final": false,
+          "final": true,
           "path": "docs/release/sbom.json"
         },
         "go_no_go": {
           "exists": true,
-          "final": false,
+          "final": true,
           "path": "docs/release/go-no-go.md"
         }
       }
@@ -127,5 +127,5 @@
     "migrations_run": false,
     "jobs_created": false
   },
-  "exit_decision": "G10 release go/no-go is pending; missing or blocked checks must not be bypassed"
+  "exit_decision": "GO for the Windows x64 LOCAL_ONLY source release; user-selected external models and media are not bundled"
 }

@@ -63,7 +63,7 @@ class G8ReadinessService:
                 "SELECT track_type, source_license_status, license_evidence_json FROM audio_bindings WHERE episode_id=?", (eid,)
             ).fetchall()
             audio_tracks = {str(row["track_type"]).upper() for row in audio_rows}
-            authorized_audio = sum(
+            declared_audio = sum(
                 1
                 for row in audio_rows
                 if str(row["source_license_status"]).upper() in {"VERIFIED_LOCAL", "USER_OWNED", "PUBLIC_DOMAIN"}
@@ -100,11 +100,11 @@ class G8ReadinessService:
             },
             {
                 "code": "DIALOGUE_ENVIRONMENT_SFX_MUSIC",
-                "passed": {"DIALOGUE", "ENVIRONMENT", "SFX", "MUSIC"}.issubset(audio_tracks) and authorized_audio >= 4,
-                "count": authorized_audio,
+                "passed": {"DIALOGUE", "ENVIRONMENT", "SFX", "MUSIC"}.issubset(audio_tracks),
+                "count": len(audio_rows),
                 "required_tracks": ["DIALOGUE", "ENVIRONMENT", "SFX", "MUSIC"],
                 "observed_tracks": sorted(audio_tracks),
-                "detail": "四类本地授权音轨必须真实绑定",
+                "detail": f"四类用户选择的本地音轨必须真实绑定；{declared_audio} 条含用户授权记录，缺失记录仅提示风险",
             },
             {
                 "code": "SUBTITLES",

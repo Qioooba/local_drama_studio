@@ -15,8 +15,8 @@ from alembic import command
 from alembic.config import Config
 
 ROOT = Path(__file__).resolve().parents[1]
-HEAD_MIGRATION = "0026_creative_entry_revisions"
-SOURCE_MIGRATION = "0025_episode_scene_ranges"
+HEAD_MIGRATION = "0029_user_supplied_model_policy"
+SOURCE_MIGRATION = "0028_audio_binding_authority"
 
 
 def _sha256(path: Path) -> str:

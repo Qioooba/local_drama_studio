@@ -3289,6 +3289,29 @@
         }
       }
     },
+    "/api/v1/system/dialogs:model-file": {
+      "post": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "Pick Model File",
+        "operationId": "pickLocalModelFile",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Picklocalmodelfile"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/gates/g6": {
       "get": {
         "tags": [
@@ -3568,6 +3591,60 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Getmodelcompatibility"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/model-artifacts": {
+      "post": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "Register Local Model Reference",
+        "operationId": "registerLocalModelReference",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocalModelReferenceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Registerlocalmodelreference"
                 }
               }
             }
@@ -10418,6 +10495,48 @@
         },
         "type": "object",
         "title": "LLMProfileSyncRequest"
+      },
+      "LocalModelReferenceRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$",
+            "title": "Code"
+          },
+          "kind": {
+            "type": "string",
+            "maxLength": 48,
+            "minLength": 1,
+            "title": "Kind"
+          },
+          "machine_path_ref": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 3,
+            "title": "Machine Path Ref"
+          },
+          "license_note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "License Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "kind",
+          "machine_path_ref"
+        ],
+        "title": "LocalModelReferenceRequest"
       },
       "MachineCheckRequest": {
         "properties": {

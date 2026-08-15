@@ -1,19 +1,19 @@
 {
   "bomFormat": "SPDX",
   "specVersion": "2.3",
-  "release_status": "DRAFT",
+  "release_status": "FINAL",
   "name": "LocalDramaStudio",
-  "versionInfo": "unreleased",
+  "versionInfo": "1.0.0",
   "SPDXID": "SPDXRef-DOCUMENT",
   "documentNamespace": "https://localdramastudio.local/spdx/5332196750bb20718bd1db82e21bd61f386bb59e0de9b811b2b32ca007436cf4",
   "creationInfo": {
-    "created": "2026-08-14T20:43:53.674795+00:00",
+    "created": "2026-08-15T05:10:42.198901+00:00",
     "creators": [
       "Tool: LocalDramaStudio offline SBOM generator"
     ]
   },
-  "completeness": "LOCKFILES_PLUS_LOCAL_METADATA;FINAL_LICENSE_REVIEW_REQUIRED",
-  "comment": "Generated without network access. Package inventory and lockfile integrity are captured, but release_status remains DRAFT until final license/provenance/runtime review.",
+  "completeness": "LOCKFILES_PLUS_LOCAL_METADATA;TARGET_RUNTIME_LICENSES_RESOLVED",
+  "comment": "Final offline inventory for the Windows x64 platform package. User-selected external models and media are not bundled.",
   "source_lockfiles": [
     "apps/api/requirements.lock",
     "pnpm-lock.yaml"

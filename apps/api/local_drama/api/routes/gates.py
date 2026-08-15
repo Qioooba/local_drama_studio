@@ -3,19 +3,28 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 from local_drama.api.schemas.g7 import BrandKitRequest, WorkspaceAssetAuthorizationRequest
-from local_drama.api.schemas.g7_model import ModelCompatibilityRequest, ModelLicenseEvidenceRequest
+from local_drama.api.schemas.g7_model import LocalModelReferenceRequest, ModelCompatibilityRequest, ModelLicenseEvidenceRequest
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.g6_readiness import G6ReadinessService
 from local_drama.application.g7_readiness import G7ReadinessService
 from local_drama.application.g8_readiness import G8ReadinessService
 from local_drama.application.g9_readiness import G9ReadinessService
 from local_drama.application.i2v_probe import I2VProbePlanService
+from local_drama.application.local_picker import pick_local_model_file
 from local_drama.application.model_compatibility import ModelCompatibilityService
 from local_drama.application.network_e2e import NetworkE2EService
 from local_drama.application.workspace_assets import WorkspaceAssetService
 from local_drama.domain.errors import DomainRuleError
 
 router = APIRouter(tags=["phase-gates"])
+
+
+@router.post("/system/dialogs:model-file", operation_id="pickLocalModelFile")
+async def pick_model_file() -> dict[str, object]:
+    try:
+        return {"selection": pick_local_model_file()}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
 
 
 @router.get("/projects/{project_id}/gates/g6", operation_id="getG6Readiness")
@@ -62,6 +71,21 @@ async def get_g9_readiness(project_id: str, request: Request, episode_id: str | 
 async def get_model_compatibility(project_id: str, request: Request) -> dict[str, object]:
     try:
         return {"compatibility": ModelCompatibilityService(request.app.state.database).project_snapshot(project_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/projects/{project_id}/model-artifacts", status_code=201, operation_id="registerLocalModelReference")
+async def register_local_model_reference(project_id: str, payload: LocalModelReferenceRequest, request: Request) -> dict[str, object]:
+    try:
+        artifact = ModelCompatibilityService(request.app.state.database).register_local_reference(
+            project_id,
+            payload.code,
+            payload.kind,
+            payload.machine_path_ref,
+            payload.license_note,
+        )
+        return {"artifact": artifact}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

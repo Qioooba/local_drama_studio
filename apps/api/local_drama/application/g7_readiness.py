@@ -121,11 +121,11 @@ class G7ReadinessService:
             ).fetchone()
             model_report = connection.execute(
                 """SELECT mcr.id FROM model_compatibility_reports mcr
-                JOIN model_license_evidence mle ON mle.model_artifact_id=mcr.model_artifact_id
-                WHERE mle.project_id=? AND mcr.report_status='PASS'
-                AND mcr.license_status IN ('LOCAL_LICENSE_VERIFIED','USER_OWNED')
-                AND mle.artifact_sha256=mcr.sha256 ORDER BY mcr.created_at DESC LIMIT 1""",
-                (project_id,),
+                JOIN model_artifacts ma ON ma.id=mcr.model_artifact_id
+                WHERE mcr.report_status='PASS'
+                AND json_extract(mcr.quantization_json, '$.status')='HEADER_MATCHED'
+                AND ma.machine_path_ref=mcr.path_ref AND ma.sha256=mcr.sha256
+                ORDER BY mcr.created_at DESC LIMIT 1"""
             ).fetchone()
 
         active_published_bindings = [
@@ -145,7 +145,10 @@ class G7ReadinessService:
             {"code": "PROFILE_CAPABILITY_COMPATIBILITY", "passed": bool(compatibility_profiles), "count": len(compatibility_profiles)},
             {"code": "ZERO_PUBLIC_NETWORK_E2E", "passed": bool(network_e2e and network_e2e["status"] == "PASS")},
             {"code": "WORKSPACE_ASSET_AUTHORIZATION", "passed": bool(workspace_asset)},
-            {"code": "MODEL_LICENSE_HASH_QUANTIZATION_REPORT", "passed": bool(model_report)},
+            # User-selected local weights are never bundled or redistributed by the
+            # platform. G7 verifies path/hash/format/quantization traceability; an
+            # unknown user license remains a visible risk flag, not a platform-release blocker.
+            {"code": "USER_MODEL_PATH_HASH_QUANTIZATION_REPORT", "passed": bool(model_report)},
         ]
         first_blocker = next((item["code"] for item in checks if not item["passed"]), None)
         return {

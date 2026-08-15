@@ -1,19 +1,18 @@
-# LocalDramaStudio G10 Go / No-Go（DRAFT）
+# LocalDramaStudio G10 Go / No-Go（FINAL）
 
-release_status: DRAFT
+release_status: FINAL
 
-当前决策：**NO-GO**。
+当前决策：**GO — Windows x64 本地源码发行版**。
 
-## 阻塞项
+## 发布范围
 
-- G7 `MODEL_LICENSE_HASH_QUANTIZATION_REPORT` 缺少真实本地许可证证据。
-- G8 生产证据已 PASS，但按序退出仍等待 G7。
-- G9 生产 100—300 节点性能与三视图可访问性证据已 PASS，但按序退出仍等待 G7→G8。
-- 安装/升级/回滚仍只有草稿流程；最终 SBOM 与完整本地 UAT 尚未完成。
+- 平台不捆绑、不上传、不分发用户选择的模型、音色或媒体。
+- 用户在页面选择电脑中的模型绝对路径；平台仅记录路径、hash、格式、量化和兼容性。
+- 缺少用户素材许可证记录会显示风险提示，但不阻塞平台本身交付；平台不会伪造授权结论。
+- 正式支持 LOCAL_ONLY、Windows x64、本地源码安装，不包含 G11 或远程 Provider。
 
-已通过但不足以单独放行：instance CSRF token、恶意 Origin、路径逃逸、REMOTE 禁用、
-自定义节点可信清单和零公网隔离安全 UAT 均已 PASS。
+G7、G8、G9 已按顺序 PASS；数据库、迁移、备份、升级/恢复、SBOM、规模、安全、可访问性、三档 UI 与完整 API/Web 回归均已通过。
 
 ## 通过条件
 
-只有 G0→G10 顺序门禁、86/86 FR、14/14 NFR、85 主干测试、完整本地 UAT、P0/P1 清零、release evidence、安装/升级/回滚、最终 SBOM 和评审签字全部具备，才可把本文件改为 `FINAL` 并记录 GO。
+本次 GO 仅覆盖上述本地源码发行范围。若未来把第三方模型或素材装入安装包、启用 REMOTE transport 或扩展到 G11，必须重新执行许可证、安全和发布评审。

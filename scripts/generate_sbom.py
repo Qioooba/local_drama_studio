@@ -226,22 +226,24 @@ def _node_packages() -> list[dict[str, Any]]:
     return packages
 
 
-def generate() -> dict[str, Any]:
+def generate(final: bool = False) -> dict[str, Any]:
     lock_hash = _sha256([PYTHON_LOCK, PNPM_LOCK])
     packages = _python_packages() + _node_packages()
     missing_license = [package for package in packages if package["licenseConcluded"] == "NOASSERTION"]
     target_missing_license = [package for package in missing_license if package.get("localRuntimeApplicability", "TARGET_RUNTIME") == "TARGET_RUNTIME"]
+    if final and target_missing_license:
+        raise RuntimeError("cannot finalize SBOM while target-runtime packages have NOASSERTION licenses")
     return {
         "bomFormat": "SPDX",
         "specVersion": "2.3",
-        "release_status": "DRAFT",
+        "release_status": "FINAL" if final else "DRAFT",
         "name": "LocalDramaStudio",
-        "versionInfo": "unreleased",
+        "versionInfo": "1.0.0" if final else "unreleased",
         "SPDXID": "SPDXRef-DOCUMENT",
         "documentNamespace": f"https://localdramastudio.local/spdx/{lock_hash}",
         "creationInfo": {"created": datetime.now(UTC).isoformat(), "creators": ["Tool: LocalDramaStudio offline SBOM generator"]},
-        "completeness": "LOCKFILES_PLUS_LOCAL_METADATA;FINAL_LICENSE_REVIEW_REQUIRED",
-        "comment": "Generated without network access. Package inventory and lockfile integrity are captured, but release_status remains DRAFT until final license/provenance/runtime review.",
+        "completeness": "LOCKFILES_PLUS_LOCAL_METADATA;TARGET_RUNTIME_LICENSES_RESOLVED" if final else "LOCKFILES_PLUS_LOCAL_METADATA;FINAL_LICENSE_REVIEW_REQUIRED",
+        "comment": "Final offline inventory for the Windows x64 platform package. User-selected external models and media are not bundled." if final else "Generated without network access. Package inventory and lockfile integrity are captured, but release_status remains DRAFT until final license/provenance/runtime review.",
         "source_lockfiles": ["apps/api/requirements.lock", "pnpm-lock.yaml"],
         "lockfile_sha256": lock_hash,
         "package_count": len(packages),
@@ -259,8 +261,9 @@ def generate() -> dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=ROOT / "docs" / "release" / "sbom.json")
+    parser.add_argument("--final", action="store_true", help="Finalize only when every target-runtime package has a resolved license")
     args = parser.parse_args()
-    result = generate()
+    result = generate(final=args.final)
     output = args.output if args.output.is_absolute() else ROOT / args.output
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
