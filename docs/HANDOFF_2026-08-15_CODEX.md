@@ -112,29 +112,12 @@
 
 ## 当前工作树
 
-未提交文件：
-
-- M apps/api/local_drama/api/routes/dialogue.py
-- M apps/api/local_drama/api/schemas/dialogue.py
-- M apps/api/local_drama/application/dialogue.py
-- M apps/api/local_drama/application/worker.py
-- M apps/web/src/app/App.tsx
-- M apps/web/src/features/status/DialogueGovernanceActions.test.tsx
-- M apps/web/src/features/status/DialogueGovernanceActions.tsx
-- M apps/web/src/generated/api.ts
-- M docs/openapi/openapi.json
-- M scripts/generate_client.py
-- ?? apps/api/tests/test_local_sapi_tts.py
-- ?? test-results/
-
-test-results/ 是 Playwright 临时输出，不要提交。
+SAPI 批次已提交为 `ec48a61 feat: run real local sapi tts jobs`。源代码、测试、生成客户端、OpenAPI、证据和追踪文档均已提交；仅剩未跟踪的 `test-results/` Playwright 临时输出，不要提交。
 
 ## 下一步精确顺序
 
-1. 执行 `git diff --check` 并审查 SAPI/API/UI/测试/证据的最终 diff，排除 `test-results/`。
-2. 提交本批次，建议提交信息：`feat: run real local sapi tts jobs`。
-3. FR-AUD-001 仍不能标 VERIFIED，直到正式项目存在真实授权音色、Published TTS Profile、真实 Job/MediaVersion/candidate、试听、QC、审核与选择闭环。
-4. G7 模型许可证首阻塞仍优先；真实证据未出现时可以继续其他实现，但禁止越级宣布 G7/G8/G9 PASS。
+1. FR-AUD-001 仍不能标 VERIFIED，直到正式项目存在真实授权音色、Published TTS Profile、真实 Job/MediaVersion/candidate、试听、QC、审核与选择闭环。
+2. G7 模型许可证首阻塞仍优先；真实证据未出现时可以继续其他实现，但禁止越级宣布 G7/G8/G9 PASS。
 
 ## 当前本地进程
 
@@ -159,4 +142,4 @@ design-system\localdramastudio\figma-state.json
 docs\ui-ux-audit-2026-08-12.md
 docs\requirements-traceability.md
 
-当前有未提交的真实 Windows SAPI TTS Job 后端、worker、路由、客户端、UI、测试和证据改造；完整门禁 API 175 passed / 4 deselected、Web 58/58、build/Ruff/mypy 全绿，三档只读 Playwright 3/3 PASS。先按新交接“下一步精确顺序”审查并提交。严格保持 LOCAL_ONLY、零公网、不实施 G11、不用 Mock 冒充真实能力。G7 仍 11/12，唯一首阻塞是真实 H3 模型许可证证据；G8/G9 只算 progress，禁止越级宣告。不要提交 test-results/。
+真实 Windows SAPI TTS Job 后端、worker、路由、客户端、UI、测试和证据已提交为 `ec48a61`；完整门禁 API 175 passed / 4 deselected、Web 58/58、build/Ruff/mypy 全绿，三档只读 Playwright 3/3 PASS。严格保持 LOCAL_ONLY、零公网、不实施 G11、不用 Mock 冒充真实能力。G7 仍 11/12，唯一首阻塞是真实 H3 模型许可证证据；G8/G9 只算 progress，禁止越级宣告。不要提交 test-results/。
