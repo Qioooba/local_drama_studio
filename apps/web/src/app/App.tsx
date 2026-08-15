@@ -6,6 +6,7 @@ import {
   getProjectConfiguration,
   getModelCompatibility,
   getEpisodeProduction,
+  getShotContinuityContext,
   getEpisodeTimelineStatus,
   getG6Readiness,
   getG8Readiness,
@@ -37,6 +38,7 @@ import { ProfileConfigurationPanel } from "../features/profiles/ProfileConfigura
 import { ProductionCanvasPanel } from "../features/canvas/ProductionCanvasPanel";
 import { EpisodeContactSheetAction } from "../features/production/EpisodeContactSheetAction";
 import { TimelineExportAction } from "../features/production/TimelineExportAction";
+import { ContinuityPanel } from "../features/production/ContinuityPanel";
 import { ProjectTemplateCopyAction } from "../features/projects/ProjectTemplateCopyAction";
 import { ProjectCreateWizard } from "../features/projects/ProjectCreateWizard";
 import { EpisodeSceneRanges } from "../features/projects/EpisodeSceneRanges";
@@ -130,6 +132,7 @@ export function App() {
   const g8Readiness = useQuery({ queryKey: ["gates", "g8", selectedProject, selectedEpisode], queryFn: () => getG8Readiness(selectedProject as string, selectedEpisode as string), enabled: Boolean(selectedProject && selectedEpisode) && view === "projects" });
   const g9Readiness = useQuery({ queryKey: ["gates", "g9", selectedProject, selectedEpisode], queryFn: () => getG9Readiness(selectedProject as string, selectedEpisode as string), enabled: Boolean(selectedProject && selectedEpisode) && view === "canvas" });
   const selectedShot = production.data?.items.some((item) => String(item.id) === selectedShotId) ? selectedShotId : production.data?.items[0] ? String(production.data.items[0].id) : null;
+  const continuity = useQuery({ queryKey: ["shot", selectedShot, "continuity"], queryFn: () => getShotContinuityContext(selectedShot as string), enabled: Boolean(selectedShot) && view === "generation" });
   const reviewItems = useQuery({ queryKey: ["reviews", "inbox", selectedProject], queryFn: () => reviewInbox(selectedProject as string), enabled: Boolean(selectedProject) && (view === "reviews" || view === "generation") });
   const g6Readiness = useQuery({ queryKey: ["gates", "g6", selectedProject], queryFn: () => getG6Readiness(selectedProject as string), enabled: Boolean(selectedProject) && view === "generation" });
   const i2vProbePlan = useQuery({ queryKey: ["gates", "g6", "i2v-probe-plan", selectedProject], queryFn: () => planG6I2VProbe(selectedProject as string), enabled: Boolean(selectedProject) && view === "generation" });
@@ -148,7 +151,7 @@ export function App() {
   if (view === "reviews") activeQueries.push({ label: "审核收件箱", query: reviewItems }, { label: "审核模板", query: reviewTemplates }, { label: "审核上下文", query: reviewContext });
   if (view === "jobs") activeQueries.push({ label: "任务列表", query: jobs }, { label: "容量摘要", query: capacitySnapshot });
   if (view === "profiles") activeQueries.push({ label: "能力版本", query: profiles }, { label: "工作流版本", query: workflows }, { label: "项目配置", query: projectConfiguration }, { label: "模型证据", query: modelCompatibility });
-  if (view === "generation") activeQueries.push({ label: "能力版本", query: profiles }, { label: "H3 本机状态", query: h3Runtime }, { label: "媒体候选", query: reviewItems }, { label: "生产上下文", query: production }, { label: "G6 门禁", query: g6Readiness }, { label: "I2V 探针计划", query: i2vProbePlan });
+  if (view === "generation") activeQueries.push({ label: "能力版本", query: profiles }, { label: "H3 本机状态", query: h3Runtime }, { label: "媒体候选", query: reviewItems }, { label: "生产上下文", query: production }, { label: "连续性上下文", query: continuity }, { label: "G6 门禁", query: g6Readiness }, { label: "I2V 探针计划", query: i2vProbePlan });
   if (view === "diagnostics") activeQueries.push({ label: "诊断详情", query: diagnostics }, { label: "适配器契约", query: adapterContracts }, { label: "模型证据", query: modelCompatibility });
   const queryFailures = activeQueries.filter(({ query }) => Boolean(query.error));
   const diagnosticMutation = useMutation({
@@ -320,7 +323,7 @@ export function App() {
 
           {view === "profiles" && <><ProfileConfigurationPanel profiles={profiles.data?.items ?? []} workflows={workflows.data?.items ?? []} workflowsLoading={workflows.isPending} onChanged={() => { void profiles.refetch(); }} />{projectConfiguration.data?.configuration && <ProjectConfigurationSnapshot configuration={projectConfiguration.data.configuration} />}{modelCompatibility.data?.compatibility && <ModelCompatibilityPanel snapshot={modelCompatibility.data.compatibility} />}</>}
 
-          {view === "generation" && <GenerationWorkbench profiles={profiles.data?.items ?? []} videos={(reviewItems.data?.items ?? []).filter((item) => item.media_kind === "VIDEO")} h3={h3Runtime.data?.runtime} g6Readiness={g6Readiness.data?.readiness} i2vProbePlan={i2vProbePlan.data?.plan} shots={production.data?.items ?? []} selectedShotId={selectedShot} onSelectShot={selectShot} onOpenProfiles={() => navigate("profiles")} onOpenReviews={(mediaVersionId) => { void queryClient.invalidateQueries({ queryKey: ["reviews", "inbox"] }); void queryClient.invalidateQueries({ queryKey: ["gates", "g6"] }); void queryClient.invalidateQueries({ queryKey: ["gates", "g6", "i2v-probe-plan"] }); if (mediaVersionId) setSelectedReviewVersionId(mediaVersionId); setView("reviews"); writeLocationState({ view: "reviews", projectId: selectedProject, episodeId: selectedEpisode, shotId: selectedShot, reviewId: mediaVersionId ?? null }); }} />}
+          {view === "generation" && <><GenerationWorkbench profiles={profiles.data?.items ?? []} videos={(reviewItems.data?.items ?? []).filter((item) => item.media_kind === "VIDEO")} h3={h3Runtime.data?.runtime} g6Readiness={g6Readiness.data?.readiness} i2vProbePlan={i2vProbePlan.data?.plan} shots={production.data?.items ?? []} selectedShotId={selectedShot} onSelectShot={selectShot} onOpenProfiles={() => navigate("profiles")} onOpenReviews={(mediaVersionId) => { void queryClient.invalidateQueries({ queryKey: ["reviews", "inbox"] }); void queryClient.invalidateQueries({ queryKey: ["gates", "g6"] }); void queryClient.invalidateQueries({ queryKey: ["gates", "g6", "i2v-probe-plan"] }); if (mediaVersionId) setSelectedReviewVersionId(mediaVersionId); setView("reviews"); writeLocationState({ view: "reviews", projectId: selectedProject, episodeId: selectedEpisode, shotId: selectedShot, reviewId: mediaVersionId ?? null }); }} /><ContinuityPanel context={continuity.data?.continuity} /></>}
 
           {view === "diagnostics" && <><section className="panel"><div className="panel-heading"><div><p className="eyebrow">诊断中心</p><h3>本机环境检查</h3></div><button className="secondary" onClick={() => diagnosticMutation.mutate()} disabled={diagnosticMutation.isPending}>{diagnosticMutation.isPending ? "检查中…" : "运行诊断"}</button></div><DiagnosticPanel run={diagnostics.data?.run ?? null} /></section><AdapterContractsPanel registry={adapterContracts.data?.registry} />{modelCompatibility.data?.compatibility && <ModelCompatibilityPanel snapshot={modelCompatibility.data.compatibility} />}</>}
 

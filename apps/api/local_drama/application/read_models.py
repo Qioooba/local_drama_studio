@@ -118,6 +118,98 @@ class ProductionReadModelService:
         item["next_action"] = "进入审核" if not item["blockers"] else "补全镜头字段并标记 production-ready"
         return item
 
+    def continuity_context(self, shot_id: str) -> dict[str, Any]:
+        """Return adjacent immutable shot revisions and safe reference metadata."""
+        facet_aliases = {
+            "appearance": ("appearance", "character_appearance"),
+            "costume": ("costume", "wardrobe"),
+            "props": ("props", "prop"),
+            "lighting": ("lighting", "light"),
+            "spatial_direction": ("spatial_direction", "screen_direction"),
+            "continuity": ("continuity", "continuity_refs"),
+        }
+        with self.database.connect() as connection:
+            current = connection.execute(
+                """SELECT s.id,s.episode_id FROM shots s WHERE s.id=?""", (shot_id,)
+            ).fetchone()
+            if current is None:
+                raise DomainRuleError("SHOT_NOT_FOUND", "镜头不存在", {"shot_id": shot_id})
+            rows = connection.execute(
+                """SELECT s.id,s.code,s.order_key,s.status,s.target_duration_ms,s.current_revision_id,
+                sr.revision_no,sr.is_frozen,sr.fields_json
+                FROM shots s LEFT JOIN shot_revisions sr ON sr.id=s.current_revision_id
+                WHERE s.episode_id=? ORDER BY CAST(s.order_key AS REAL),s.code""",
+                (current["episode_id"],),
+            ).fetchall()
+            current_index = next(index for index, row in enumerate(rows) if row["id"] == shot_id)
+            adjacent = [
+                rows[index]
+                for index in (current_index - 1, current_index, current_index + 1)
+                if 0 <= index < len(rows)
+            ]
+            adjacent_ids = [str(row["id"]) for row in adjacent]
+            placeholders = ",".join("?" for _ in adjacent_ids)
+            media_rows = connection.execute(
+                f"""SELECT ma.owner_id,ma.id AS media_asset_id,ma.purpose,ma.media_kind,
+                CASE WHEN ma.approved_version_id IS NOT NULL THEN 'APPROVED' ELSE 'SELECTED' END AS selection_state,
+                COALESCE(ma.approved_version_id,ma.selected_version_id) AS media_version_id,
+                mv.version_no,mv.stage,mv.integrity_status
+                FROM media_assets ma JOIN media_versions mv
+                  ON mv.id=COALESCE(ma.approved_version_id,ma.selected_version_id)
+                WHERE ma.owner_type='SHOT' AND ma.owner_id IN ({placeholders})
+                ORDER BY ma.owner_id,ma.purpose,ma.id""",
+                adjacent_ids,
+            ).fetchall()
+            boundary_ids = adjacent_ids
+            transition_rows = connection.execute(
+                f"""SELECT id,from_shot_id,to_shot_id,constraint_type,enforcement,
+                compatibility_status,is_stale,stale_reason,from_anchor_id,to_anchor_id,boundary_revision
+                FROM shot_transition_constraints
+                WHERE from_shot_id IN ({placeholders}) AND to_shot_id IN ({placeholders})
+                ORDER BY from_shot_id,to_shot_id,id""",
+                [*boundary_ids, *boundary_ids],
+            ).fetchall()
+
+        media_by_shot: dict[str, list[dict[str, Any]]] = {item: [] for item in adjacent_ids}
+        for media in media_rows:
+            item = dict(media)
+            media_by_shot[str(item.pop("owner_id"))].append(item)
+
+        def project_shot(row: Any, position: str) -> dict[str, Any]:
+            fields = json.loads(row["fields_json"] or "{}")
+            facets: dict[str, object | None] = {}
+            for facet, aliases in facet_aliases.items():
+                facets[facet] = next((fields[key] for key in aliases if fields.get(key) not in (None, "", [])), None)
+            return {
+                "position": position,
+                "id": row["id"],
+                "code": row["code"],
+                "order_key": row["order_key"],
+                "status": row["status"],
+                "target_duration_ms": row["target_duration_ms"],
+                "revision": {"id": row["current_revision_id"], "revision_no": row["revision_no"], "is_frozen": bool(row["is_frozen"])},
+                "facets": facets,
+                "missing_facets": [key for key, value in facets.items() if value is None],
+                "references": media_by_shot[str(row["id"])],
+            }
+
+        positions: dict[str, dict[str, Any] | None] = {"previous": None, "current": None, "next": None}
+        if current_index > 0:
+            positions["previous"] = project_shot(rows[current_index - 1], "previous")
+        positions["current"] = project_shot(rows[current_index], "current")
+        if current_index + 1 < len(rows):
+            positions["next"] = project_shot(rows[current_index + 1], "next")
+        return {
+            "episode_id": current["episode_id"],
+            "selected_shot_id": shot_id,
+            "shots": positions,
+            "transitions": [dict(row) for row in transition_rows],
+            "read_only": True,
+            "runtime_contacted": False,
+            "network_contacted": False,
+            "mutated": False,
+        }
+
 
 class SearchService:
     def __init__(self, database: Database) -> None:

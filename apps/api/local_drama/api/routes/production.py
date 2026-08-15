@@ -35,3 +35,11 @@ async def shot_detail(shot_id: str, request: Request) -> dict[str, object]:
         return {"shot": service(request).shot_detail(shot_id)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
+
+
+@router.get("/shots/{shot_id}/continuity-context", operation_id="getShotContinuityContext")
+async def continuity_context(shot_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"continuity": service(request).continuity_context(shot_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error

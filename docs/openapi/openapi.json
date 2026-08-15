@@ -4770,6 +4770,50 @@
         }
       }
     },
+    "/api/v1/shots/{shot_id}/continuity-context": {
+      "get": {
+        "tags": [
+          "production-read-model"
+        ],
+        "summary": "Continuity Context",
+        "operationId": "getShotContinuityContext",
+        "parameters": [
+          {
+            "name": "shot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Shot Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Getshotcontinuitycontext"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/profiles/manifest": {
       "get": {
         "tags": [
