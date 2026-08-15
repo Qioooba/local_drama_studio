@@ -203,6 +203,19 @@ def test_staged_project_package_import_as_copy_rewrites_identity_and_retains_ret
     assert "small" in thumbnail.parts
 
 
+def test_project_thumbnail_rebuild_endpoint_retries_registered_image_cache(workspace, database) -> None:
+    project = _project(workspace, database)
+    _registered_image(workspace, database, str(project["id"]))
+    with TestClient(create_app(workspace)) as client:
+        response = client.post(f"/api/v1/projects/{project['id']}/media-thumbnails:rebuild")
+    assert response.status_code == 200, response.text
+    rebuild = response.json()["rebuild"]
+    assert rebuild["requested"] == 1
+    assert rebuild["created"] == 1
+    assert rebuild["pending"] == 0
+    assert rebuild["runtime_contacted"] is False and rebuild["network_contacted"] is False
+
+
 def test_staged_project_package_import_rolls_back_database_and_filesystem_on_failure(workspace, database) -> None:
     project = _project(workspace, database)
     service = ProjectPackageService(database, workspace.projects_root, workspace.data_root)
