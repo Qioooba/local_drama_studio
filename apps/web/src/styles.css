@@ -291,8 +291,12 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .annotation-form textarea { min-height: 72px; resize: vertical; }
 .annotation-list { display: grid; gap: 8px; margin-top: 14px; }
 .annotation-list article { padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--surface); }
+.annotation-jump { padding: 0; border: 0; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.annotation-jump:hover, .annotation-jump:focus-visible { color: var(--accent); text-decoration: underline; }
+.annotation-jump:disabled { cursor: default; color: var(--text); text-decoration: none; }
 .annotation-list p { margin: 4px 0; }
 .annotation-list small { color: var(--text-muted); }
+.video-frame-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 0; }
 .scene-range-panel { margin-top: 18px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-subtle); }
 .scene-range-list { display: grid; gap: 8px; margin: 12px 0; }
 .scene-range-list article { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; background: var(--surface); border-left: 3px solid var(--creative); }

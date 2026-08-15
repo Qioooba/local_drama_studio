@@ -183,6 +183,24 @@
       "automated_tests": ["apps/api/tests/test_g4_reviews.py", "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"]
     },
     {
+      "id": "FR-REV-002",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-rev-002-004-review-governance-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_review_versions.py", "apps/api/tests/test_g4_reviews.py", "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"]
+    },
+    {
+      "id": "FR-REV-003",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-rev-002-004-review-governance-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_review_versions.py", "apps/api/tests/test_g4_reviews.py", "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"]
+    },
+    {
+      "id": "FR-REV-004",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-rev-002-004-review-governance-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_review_versions.py", "apps/api/tests/test_g4_reviews.py", "apps/web/src/features/reviews/FormalSelectionPanel.tsx"]
+    },
+    {
       "id": "FR-AUDT-001",
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/fr-audt-001-audit-history-2026-08-15.json"],
@@ -419,6 +437,40 @@
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_profile_contract_editor.py", "apps/api/tests/test_profile_compatibility.py"]
+    },
+    {
+      "id": "FR-CTL-001",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-ctl-001-camera-capability-contracts-2026-08-16.json"],
+      "automated_tests": [
+        "apps/api/tests/test_camera_plan_contracts.py",
+        "apps/api/tests/test_generation_variants.py",
+        "apps/web/src/features/production/DirectorShotEditor.test.tsx"
+      ]
+    },
+    {
+      "id": "FR-VID-002",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-vid-002-008-frame-review-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g3_configuration_media.py", "apps/web/src/features/reviews/VideoAnnotations.test.tsx"]
+    },
+    {
+      "id": "FR-VID-003",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-vid-002-008-frame-review-2026-08-16.json"],
+      "automated_tests": ["apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"]
+    },
+    {
+      "id": "FR-VID-004",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-vid-002-008-frame-review-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g4_reviews.py"]
+    },
+    {
+      "id": "FR-VID-008",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-vid-002-008-frame-review-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_video_review_annotations.py", "apps/web/src/features/reviews/VideoAnnotations.test.tsx"]
     }
   ]
 }

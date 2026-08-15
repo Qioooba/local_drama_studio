@@ -9,6 +9,7 @@ from local_drama.api.schemas.reviews import (
     FormalSelectionPreflightRequest,
     MachineCheckRequest,
     ReviewRequest,
+    ReviewTemplateVersionRequest,
     SelectionRequest,
     VideoAnnotationRequest,
 )
@@ -26,6 +27,20 @@ def service(request: Request) -> ReviewService:
 @router.get("/review-templates", operation_id="listReviewTemplates")
 async def list_templates(request: Request) -> dict[str, object]:
     return {"items": service(request).templates()}
+
+
+@router.post("/review-templates", status_code=201, operation_id="createReviewTemplateVersion")
+async def create_template_version(payload: ReviewTemplateVersionRequest, request: Request) -> dict[str, object]:
+    """Append a versioned template; existing versions remain immutable."""
+    try:
+        template = service(request).create_template_version(
+            payload.code,
+            payload.subject_type,
+            [item.model_dump() for item in payload.items],
+        )
+        return {"template": template}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
 
 
 @router.get("/reviews/inbox", operation_id="getReviewInbox")

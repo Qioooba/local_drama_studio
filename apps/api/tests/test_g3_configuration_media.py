@@ -153,6 +153,50 @@ def test_real_media_probe_range_thumbnail_and_production_read_model(workspace, d
     assert shot["code"] == "S001"
 
 
+def test_video_thumbnail_frame_parameter_resolves_distinct_local_frames(workspace, database) -> None:
+    project = _project(workspace, database, "g3_thumbnail_frames")
+    source = workspace.work_root / "g3-thumbnail-frames.mp4"
+    subprocess.run(
+        [
+            workspace.ffmpeg_path,
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=red:s=160x90:d=1",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=green:s=160x90:d=1",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=blue:s=160x90:d=1",
+            "-filter_complex",
+            "[0:v][1:v][2:v]concat=n=3:v=1:a=0,fps=24,format=yuv420p",
+            "-an",
+            "-y",
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    media = MediaService(database, workspace).import_file(str(project["id"]), source, media_kind="VIDEO")
+    version_id = str(media["media_version_id"])
+    with TestClient(create_app(workspace)) as client:
+        first = client.get(f"/api/v1/media-versions/{version_id}/thumbnail?size=small&frame=first")
+        poster = client.get(f"/api/v1/media-versions/{version_id}/thumbnail?size=small&frame=poster")
+        middle = client.get(f"/api/v1/media-versions/{version_id}/thumbnail?size=small&frame=middle")
+        last = client.get(f"/api/v1/media-versions/{version_id}/thumbnail?size=small&frame=last")
+    assert all(response.status_code == 200 for response in (first, poster, middle, last))
+    assert first.content == poster.content
+    assert len({first.content, middle.content, last.content}) == 3
+
+    with TestClient(create_app(workspace)) as client:
+        invalid = client.get(f"/api/v1/media-versions/{version_id}/thumbnail?frame=quarter")
+    assert invalid.status_code == 422
+    assert invalid.json()["error"]["code"] == "THUMBNAIL_FRAME_UNSUPPORTED"
+
+
 def test_script_import_preview_search_and_no_fake_llm_result(workspace, database) -> None:
     project = _project(workspace, database, "g3_script")
     source = workspace.work_root / "episode.md"

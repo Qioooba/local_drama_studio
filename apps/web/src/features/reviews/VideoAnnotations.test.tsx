@@ -41,4 +41,18 @@ describe("VideoAnnotations", () => {
     expect(screen.getByText("动作断裂")).toBeTruthy();
     expect(screen.getByText(/返工 job-1/)).toBeTruthy();
   });
+
+  it("can copy the current player time into a marker and seek to existing markers", async () => {
+    const onSeek = vi.fn();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    vi.mocked(listVideoAnnotations).mockResolvedValueOnce({ items: [{
+      id: "annotation-2", media_version_id: "video-1", timecode_ms: 125, category: "MOTION", comment: "动作断裂",
+      snapshot_media_version_id: null, rework_job_id: null, created_at: "now", created_by: "tester", schema_version: "v2",
+    }] });
+    render(<QueryClientProvider client={client}><VideoAnnotations mediaVersionId="video-1" durationMs={1_000} currentTimeMs={638} onSeek={onSeek} /></QueryClientProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "使用播放器当前时间" }));
+    expect(screen.getByLabelText("时间码（毫秒）")).toHaveProperty("value", "638");
+    fireEvent.click(await screen.findByRole("button", { name: "00:00.125 · MOTION" }));
+    expect(onSeek).toHaveBeenCalledWith(125);
+  });
 });

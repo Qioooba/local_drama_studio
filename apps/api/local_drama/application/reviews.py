@@ -109,14 +109,94 @@ class ReviewService:
         with self.database.transaction() as connection:
             for template in TEMPLATES:
                 template_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"local-drama:review-template:{template['code']}:{template['version_no']}"))
-                connection.execute(
-                    """INSERT INTO review_templates (id, code, version_no, subject_type, items_json, created_at, updated_at, created_by, revision, schema_version)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'v2')
-                    ON CONFLICT(code, version_no) DO UPDATE SET items_json=excluded.items_json, updated_at=excluded.updated_at,
-                    revision=review_templates.revision+1""",
-                    (template_id, template["code"], template["version_no"], template["subject_type"], _json(template["items"]), now, now, actor),
-                )
+                # Startup is idempotent, but a historical template version is
+                # immutable.  Never update ``items_json`` in place: old
+                # review_decisions must remain explainable against the exact
+                # template they referenced.  A changed built-in definition is
+                # registered as a new version by ``create_template_version``.
+                # Built-in version 1 is seeded once.  User-created versions
+                # are appended explicitly through create_template_version;
+                # startup must never append a duplicate on every boot.
+                existing = connection.execute(
+                    "SELECT id FROM review_templates WHERE code=? AND version_no=?",
+                    (template["code"], template["version_no"]),
+                ).fetchone()
+                if existing is None:
+                    connection.execute(
+                        """INSERT INTO review_templates (id, code, version_no, subject_type, items_json, created_at, updated_at, created_by, revision, schema_version)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'v2')""",
+                        (template_id, template["code"], template["version_no"], template["subject_type"], _json(template["items"]), now, now, actor),
+                    )
         return len(TEMPLATES)
+
+    def create_template_version(
+        self,
+        code: str,
+        subject_type: str,
+        items: list[dict[str, Any]],
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Append a review-template version without mutating prior versions.
+
+        The returned id is the immutable value stored in each review decision.
+        Re-submitting an identical definition is idempotent and returns the
+        existing latest version; a changed definition gets the next version
+        number.  This keeps template evolution explicit while preserving old
+        review history.
+        """
+        normalized_code = code.strip()
+        normalized_subject = subject_type.strip().upper()
+        if not normalized_code or not normalized_subject:
+            raise DomainRuleError("INVALID_REVIEW_TEMPLATE", "审核模板 code 与 subject_type 不能为空")
+        if not items:
+            raise DomainRuleError("INVALID_REVIEW_TEMPLATE", "审核模板至少需要一个检查项")
+        normalized_items: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for raw in items:
+            item_id = str(raw.get("id", "")).strip()
+            label = str(raw.get("label", "")).strip()
+            if not item_id or not label:
+                raise DomainRuleError("INVALID_REVIEW_TEMPLATE", "审核模板检查项必须包含 id 与 label")
+            if item_id in seen:
+                raise DomainRuleError("INVALID_REVIEW_TEMPLATE", "审核模板检查项 id 不能重复", {"item_id": item_id})
+            seen.add(item_id)
+            normalized_items.append({"id": item_id, "label": label, "required": bool(raw.get("required", True))})
+        definition_json = _json(normalized_items)
+        now = _utc_now()
+        with self.database.transaction() as connection:
+            latest = connection.execute(
+                "SELECT * FROM review_templates WHERE code=? ORDER BY version_no DESC LIMIT 1",
+                (normalized_code,),
+            ).fetchone()
+            if latest is not None and str(latest["subject_type"]) != normalized_subject:
+                raise DomainRuleError(
+                    "REVIEW_TEMPLATE_SUBJECT_TYPE_IMMUTABLE",
+                    "同一审核模板 code 的 subject_type 不可改变，请使用新的 code",
+                )
+            if latest is not None and str(latest["items_json"]) == definition_json:
+                return {**dict(latest), "items": normalized_items, "duplicate": True, "immutable": True}
+            next_version = int(latest["version_no"]) + 1 if latest is not None else 1
+            template_id = str(uuid.uuid4())
+            connection.execute(
+                """INSERT INTO review_templates
+                (id, code, version_no, subject_type, items_json, created_at, updated_at, created_by, revision, schema_version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'v2')""",
+                (template_id, normalized_code, next_version, normalized_subject, definition_json, now, now, actor),
+            )
+        return {
+            "id": template_id,
+            "code": normalized_code,
+            "version_no": next_version,
+            "subject_type": normalized_subject,
+            "items": normalized_items,
+            "created_at": now,
+            "updated_at": now,
+            "created_by": actor,
+            "revision": 1,
+            "schema_version": "v2",
+            "duplicate": False,
+            "immutable": True,
+        }
 
     def templates(self) -> list[dict[str, Any]]:
         with self.database.connect() as connection:
@@ -139,7 +219,10 @@ class ReviewService:
             else "image_asset"
         )
         with self.database.connect() as connection:
-            row = connection.execute("SELECT * FROM review_templates WHERE code=? AND version_no=1", (code,)).fetchone()
+            row = connection.execute(
+                "SELECT * FROM review_templates WHERE code=? ORDER BY version_no DESC LIMIT 1",
+                (code,),
+            ).fetchone()
         if row is None:
             raise DomainRuleError("REVIEW_TEMPLATE_NOT_FOUND", "审核模板尚未初始化", {"code": code})
         return {**dict(row), "items": json.loads(row["items_json"])}
@@ -588,6 +671,13 @@ class ReviewService:
             template = connection.execute("SELECT * FROM review_templates WHERE id=?", (template_version_id,)).fetchone()
         if template is None:
             raise DomainRuleError("REVIEW_TEMPLATE_NOT_FOUND", "审核模板版本不存在")
+        expected_template = self._template_for_media(media)
+        if str(template["subject_type"]) != "MEDIA_VERSION" or str(template["code"]) != str(expected_template["code"]):
+            raise DomainRuleError(
+                "REVIEW_TEMPLATE_MISMATCH",
+                "审核模板必须匹配媒体类型与阶段",
+                {"expected_template_version_id": expected_template["id"], "submitted_template_version_id": template_version_id},
+            )
         required = {str(item["id"]) for item in json.loads(template["items_json"]) if item.get("required", True)}
         submitted = {str(item.get("item_id")) for item in checks}
         missing = sorted(required - submitted)
@@ -781,12 +871,28 @@ class ReviewService:
                     "SELECT item_id,result,details_json FROM machine_check_results WHERE run_id=? ORDER BY item_id", (run["id"],)
                 ).fetchall()
                 machine.append({**dict(run), "results": [{**dict(item), "details": json.loads(item["details_json"])} for item in results]})
+            review_rows: list[dict[str, Any]] = []
+            for review in reviews:
+                review_item = dict(review)
+                template_row = connection.execute(
+                    "SELECT id, code, version_no, subject_type, items_json FROM review_templates WHERE id=?",
+                    (review["review_template_version_id"],),
+                ).fetchone()
+                if template_row is not None:
+                    review_item["template"] = {
+                        "id": template_row["id"],
+                        "code": template_row["code"],
+                        "version_no": template_row["version_no"],
+                        "subject_type": template_row["subject_type"],
+                        "items": json.loads(template_row["items_json"]),
+                    }
+                review_rows.append(review_item)
         return {
             "media_version": media,
             "subject_revision": self._subject_revision(media),
             "template": template,
             "selections": [dict(row) for row in selections],
-            "reviews": [dict(row) for row in reviews],
+            "reviews": review_rows,
             "machine_checks": machine,
         }
 
@@ -803,7 +909,20 @@ class ReviewService:
                 annotations = connection.execute(
                     "SELECT time_us, annotation_type, note, frame_rel FROM review_annotations WHERE review_decision_id=? ORDER BY created_at", (decision["id"],)
                 ).fetchall()
-                result.append({**dict(decision), "checks": [dict(item) for item in checks], "annotations": [dict(item) for item in annotations]})
+                review_item: dict[str, Any] = {**dict(decision), "checks": [dict(item) for item in checks], "annotations": [dict(item) for item in annotations]}
+                template_row = connection.execute(
+                    "SELECT id, code, version_no, subject_type, items_json FROM review_templates WHERE id=?",
+                    (decision["review_template_version_id"],),
+                ).fetchone()
+                if template_row is not None:
+                    review_item["template"] = {
+                        "id": template_row["id"],
+                        "code": template_row["code"],
+                        "version_no": template_row["version_no"],
+                        "subject_type": template_row["subject_type"],
+                        "items": json.loads(template_row["items_json"]),
+                    }
+                result.append(review_item)
         return result
 
     def inbox(

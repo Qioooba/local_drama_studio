@@ -7,6 +7,18 @@ class SelectionRequest(BaseModel):
     selection_type: str = Field(min_length=1)
 
 
+class ReviewTemplateItemRequest(BaseModel):
+    id: str = Field(min_length=1, max_length=80)
+    label: str = Field(min_length=1, max_length=200)
+    required: bool = True
+
+
+class ReviewTemplateVersionRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=80)
+    subject_type: str = Field(min_length=1, max_length=40)
+    items: list[ReviewTemplateItemRequest] = Field(min_length=1)
+
+
 class ReviewCheckRequest(BaseModel):
     item_id: str = Field(min_length=1)
     result: str = Field(min_length=1)

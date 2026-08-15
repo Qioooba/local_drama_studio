@@ -1,0 +1,28 @@
+{
+  "schema_version": "localdrama.requirement.evidence.v1",
+  "requirement_ids": ["FR-VID-002", "FR-VID-003", "FR-VID-004", "FR-VID-008"],
+  "status": "PARTIAL",
+  "observed_at": "2026-08-16T01:45:00+08:00",
+  "scope": "LOCAL_ONLY video review preview, synchronized comparison, selection history and timecode annotation",
+  "implementation": {
+    "thumbnail_frames": "thumbnail frame first/middle/last (poster alias) now resolves distinct local video frames and isolates cache entries by normalized frame",
+    "preview": "Range-backed browser video preview keeps loop, mute, playback-rate and short-step controls; reviewer adds probe-fps frame stepping",
+    "sync_compare": "review inbox supports explicit 2-4 candidate synchronization with shared play/pause and short-step controls",
+    "selection": "proxy winner selection remains separate from approval and preserves selection history",
+    "annotations": "timecode markers support structured category/comment, optional derived screenshot MediaVersion, same-project rework Job, current-player-time capture and marker seek"
+  },
+  "automated_tests": [
+    "apps/api/tests/test_g3_configuration_media.py::test_video_thumbnail_frame_parameter_resolves_distinct_local_frames",
+    "apps/api/tests/test_video_review_annotations.py",
+    "apps/web/src/features/reviews/VideoAnnotations.test.tsx",
+    "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"
+  ],
+  "production_uat": {
+    "status": "PENDING",
+    "required": ["Windows x64 three viewport review UAT", "real candidate sync drift check", "real annotation screenshot capture"]
+  },
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "remote_transport_allowed": false,
+  "notes": "Automated tests use local fixture media only; formal production UAT remains outstanding."
+}

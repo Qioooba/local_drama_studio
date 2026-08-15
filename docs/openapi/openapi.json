@@ -8868,6 +8868,48 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "reviews"
+        ],
+        "summary": "Create Template Version",
+        "description": "Append a versioned template; existing versions remain immutable.",
+        "operationId": "createReviewTemplateVersion",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewTemplateVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Createreviewtemplateversion"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/reviews/inbox": {
@@ -15286,6 +15328,64 @@
           "checks"
         ],
         "title": "ReviewRequest"
+      },
+      "ReviewTemplateItemRequest": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "ReviewTemplateItemRequest"
+      },
+      "ReviewTemplateVersionRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "subject_type": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Subject Type"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewTemplateItemRequest"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "subject_type",
+          "items"
+        ],
+        "title": "ReviewTemplateVersionRequest"
       },
       "SceneCreateRequest": {
         "properties": {

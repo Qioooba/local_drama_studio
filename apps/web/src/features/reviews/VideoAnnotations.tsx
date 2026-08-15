@@ -4,7 +4,7 @@ import { createVideoAnnotation, listVideoAnnotations } from "../../generated/api
 
 const CATEGORIES = ["IDENTITY", "MOTION", "ARTIFACT", "FLICKER", "AUDIO_SYNC", "SUBTITLE", "CONTINUITY", "OTHER"];
 
-export function VideoAnnotations({ mediaVersionId, durationMs }: { mediaVersionId: string; durationMs: number }) {
+export function VideoAnnotations({ mediaVersionId, durationMs, currentTimeMs, getCurrentTimeMs, onSeek }: { mediaVersionId: string; durationMs: number; currentTimeMs?: number; getCurrentTimeMs?: () => number; onSeek?: (timecodeMs: number) => void }) {
   const queryClient = useQueryClient();
   const [timecodeMs, setTimecodeMs] = useState(0);
   const [category, setCategory] = useState("ARTIFACT");
@@ -31,6 +31,7 @@ export function VideoAnnotations({ mediaVersionId, durationMs }: { mediaVersionI
     <p className="muted">标记不可变；截图必须是当前视频真实派生帧，返工任务必须属于同一项目。</p>
     <div className="annotation-form">
       <label>时间码（毫秒）<input aria-label="时间码（毫秒）" type="number" min={0} max={Math.max(0, durationMs - 1)} value={timecodeMs} onChange={(event) => setTimecodeMs(Number(event.target.value))} /></label>
+      <button className="secondary" type="button" onClick={() => setTimecodeMs(Math.min(Math.max(0, Math.round(getCurrentTimeMs?.() ?? currentTimeMs ?? 0)), Math.max(0, durationMs - 1)))} disabled={currentTimeMs === undefined && !getCurrentTimeMs}>使用播放器当前时间</button>
       <label>问题分类<select aria-label="问题分类" value={category} onChange={(event) => setCategory(event.target.value)}>{CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select></label>
       <label className="annotation-comment">备注<textarea aria-label="问题备注" value={comment} maxLength={4000} onChange={(event) => setComment(event.target.value)} placeholder="描述可复核的问题" /></label>
       <label>截图 MediaVersion（可选）<input aria-label="截图 MediaVersion（可选）" value={snapshotId} onChange={(event) => setSnapshotId(event.target.value)} /></label>
@@ -39,6 +40,6 @@ export function VideoAnnotations({ mediaVersionId, durationMs }: { mediaVersionI
     </div>
     {create.error && <p className="inline-error" role="alert">标记失败：{String(create.error)}</p>}
     {annotations.error && <p className="inline-error" role="alert">读取标记失败：{String(annotations.error)}</p>}
-    <div className="annotation-list">{annotations.data?.items.map((item) => <article key={item.id}><strong>{formatTimecode(item.timecode_ms)} · {item.category}</strong><p>{item.comment}</p><small>{item.snapshot_media_version_id ? `截图 ${item.snapshot_media_version_id.slice(0, 12)}` : "无截图"} · {item.rework_job_id ? `返工 ${item.rework_job_id.slice(0, 12)}` : "未关联返工"}</small></article>)}</div>
+    <div className="annotation-list">{annotations.data?.items.map((item) => <article key={item.id}><button type="button" className="annotation-jump" onClick={() => onSeek?.(item.timecode_ms)} disabled={!onSeek}><strong>{formatTimecode(item.timecode_ms)} · {item.category}</strong></button><p>{item.comment}</p><small>{item.snapshot_media_version_id ? `截图 ${item.snapshot_media_version_id.slice(0, 12)}` : "无截图"} · {item.rework_job_id ? `返工 ${item.rework_job_id.slice(0, 12)}` : "未关联返工"}</small></article>)}</div>
   </section>;
 }

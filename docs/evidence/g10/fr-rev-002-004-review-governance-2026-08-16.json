@@ -1,0 +1,53 @@
+{
+  "schema_version": "g10.fr-rev-002-004-review-governance.v1",
+  "status": "PARTIAL",
+  "requirements": ["FR-REV-002", "FR-REV-003", "FR-REV-004"],
+  "observed_at": "2026-08-16T00:00:00Z",
+  "implementation": {
+    "template_versions": {
+      "append_only": true,
+      "startup_idempotent": true,
+      "historical_decisions_keep_template_id": true,
+      "historical_context_includes_template_definition": true,
+      "latest_template_selected_for_new_reviews": true,
+      "wrong_media_template_blocked": true,
+      "api": "POST /api/v1/review-templates"
+    },
+    "machine_human_separation": {
+      "machine_qc_persists_machine_check_runs_and_results": true,
+      "machine_pass_does_not_create_review_decision": true,
+      "human_decision_requires_structured_checks": true,
+      "formal_and_audio_approval_require_latest_machine_pass": true,
+      "review_decision_is_a_separate_audit_event": true
+    },
+    "batch_protection": {
+      "explicit_selection": true,
+      "project_and_template_homogeneous": true,
+      "revision_preflight_and_stale_block": true,
+      "no_partial_commit_on_preflight_failure": true,
+      "per_item_results": true,
+      "rejection_requires_comment": true,
+      "formal_selection_uses_hash_bound_atomic_plan": true
+    },
+    "network_contacted": false,
+    "runtime_contacted": false
+  },
+  "automated_tests": [
+    "apps/api/tests/test_review_versions.py::test_review_template_versions_are_immutable_and_history_explainable",
+    "apps/api/tests/test_review_versions.py::test_machine_qc_does_not_create_human_approval_and_batch_errors_are_explicit",
+    "apps/api/tests/test_review_versions.py::test_review_rejects_template_for_wrong_media_stage",
+    "apps/api/tests/test_review_versions.py::test_review_template_version_api_exposes_append_only_contract",
+    "apps/api/tests/test_g4_reviews.py::test_review_selection_machine_qc_stale_and_batch_invariants",
+    "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx",
+    "apps/web/src/features/reviews/FormalSelectionPanel.tsx"
+  ],
+  "production_uat": {
+    "status": "PENDING",
+    "reason": "正式项目三视口审核、模板更新历史解释、人工批准与异常恢复 UAT 尚未执行；自动化回归不冒充最终 PASS。"
+  },
+  "remaining_limits": [
+    "模板管理 API 尚无专用编辑器与权限角色，当前由本地操作者显式提交新版本。",
+    "批量 commit 的逐项结果在成功响应中返回；若预检阻塞则整体拒绝并返回阻塞项，未做跨项目并行 UI UAT。",
+    "机器异常重试与真实 Windows FFmpeg 运行证据仍需正式 UAT。"
+  ]
+}

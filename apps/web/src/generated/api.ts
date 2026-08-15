@@ -36,6 +36,7 @@ export type ModelRegistryScan = { root_path: string; items: Array<{ path: string
 export type AuditEvent = { event_id: number; actor: string; role_context: string; action: string; subject_type: string; subject_id: string; project_id: string | null; before_revision: number | null; after_revision: number | null; request_id: string | null; job_id: string | null; occurred_at: string; summary: string; metadata: Record<string, unknown>; metadata_redacted: true; local_only: true; network_contacted: false; mutated: false };
 export type AuditEventFilters = { project_id?: string; occurred_after?: string; occurred_before?: string; action?: string; actor?: string; subject_type?: string; subject_id?: string; cursor?: number; limit?: number };
 export type ReviewTemplate = { id: string; code: string; version_no: number; subject_type: string; items: Array<{ id: string; label: string; required: boolean }> };
+export type ReviewTemplateVersionPayload = { code: string; subject_type: string; items: Array<{ id: string; label: string; required?: boolean }> };
 export type ReviewInboxItem = { media_version_id: string; media_asset_id: string; project_id: string; project_code?: string; project_title?: string; episode_id?: string | null; episode_code?: string | null; episode_number?: number | null; shot_id?: string | null; shot_code?: string | null; media_kind: string; stage: string; decision: string | null; is_stale: number | null; inbox_at?: string; age_hours?: number; age_days?: number; priority?: 'HIGH' | 'NORMAL' | 'LOW'; is_blocked?: number; blocking?: 'BLOCKED' | 'READY'; machine_status?: string; integrity_status?: string; [key: string]: unknown };
 export type ReviewInboxFilters = { episode_id?: string; media_kind?: string; age?: 'ALL' | 'NEW' | 'AGING' | 'OLD'; priority?: 'ALL' | 'HIGH' | 'NORMAL' | 'LOW'; blocking?: 'ALL' | 'BLOCKED' | 'READY'; min_age_days?: number; max_age_days?: number };
 export type FormalSelectionCandidate = { media_version_id: string; media_asset_id: string; project_id: string; media_kind: 'VIDEO'; stage: 'FORMAL'; sha256: string; integrity_status: string; approved_version_id: string | null; decision: string | null; is_stale: number | null; [key: string]: unknown };
@@ -302,6 +303,10 @@ export async function listAuditEvents(filters: AuditEventFilters = {}, baseUrl =
 
 export async function listReviewTemplates(baseUrl = ''): Promise<{ items: ReviewTemplate[] }> {
   return requestJson<{ items: ReviewTemplate[] }>('/api/v1/review-templates', undefined, baseUrl);
+}
+
+export async function createReviewTemplateVersion(payload: ReviewTemplateVersionPayload, baseUrl = ''): Promise<{ template: ReviewTemplate & { duplicate?: boolean; immutable?: boolean } }> {
+  return requestJson('/api/v1/review-templates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
 export async function reviewInbox(projectId?: string, baseUrl = '', filters?: ReviewInboxFilters): Promise<{ items: ReviewInboxItem[]; next_cursor?: number | null; cursor?: number; limit?: number }> {

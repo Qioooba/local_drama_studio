@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { ReviewInboxPanel } from "./ReviewInboxPanel";
 
@@ -14,6 +15,15 @@ const items = [
   { media_version_id: "fresh", media_asset_id: "asset-fresh", project_id: "p2", project_code: "beta", episode_id: "e2", episode_code: "E02", media_kind: "VIDEO", stage: "PROXY", decision: null, is_stale: 0, age_hours: 2, priority: "NORMAL", is_blocked: 0 },
   { media_version_id: "stale", media_asset_id: "asset-stale", project_id: "p2", project_code: "beta", episode_id: "e2", episode_code: "E02", media_kind: "AUDIO", stage: "IMPORTED", decision: "REJECTED", is_stale: 1, age_hours: 48, priority: "HIGH", is_blocked: 1 },
 ] as never[];
+
+const videoContext = {
+  media_version: { id: "fresh", media_kind: "VIDEO", stage: "PROXY", duration_ms: 1_000, fps_num: 25, fps_den: 1, sha256: "hash" },
+  subject_revision: 1,
+  template: { id: "template", code: "proxy_video", version_no: 1, items: [] },
+  selections: [],
+  reviews: [],
+  machine_checks: [],
+} as never;
 
 function renderPanel() {
   return render(<ReviewInboxPanel items={items} templates={[]} selectedVersionId={null} context={undefined} onSelect={vi.fn()} onPromote={vi.fn()} selecting={false} onMachineCheck={vi.fn()} machineChecking={false} machineCheckError={null} onSubmit={vi.fn()} submitting={false} submitError={null} submitSucceeded={false} />);
@@ -42,5 +52,15 @@ describe("ReviewInboxPanel filters", () => {
     fireEvent.change(screen.getByLabelText("优先级筛选"), { target: { value: "HIGH" } });
     expect(countText()).toContain("显示 1/3");
     expect(screen.getByRole("button", { name: /IMPORTED · AUDIO/ })).toBeTruthy();
+  });
+
+  it("exposes probe-fps frame stepping for the selected video", () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={client}><ReviewInboxPanel items={items} templates={[]} selectedVersionId="fresh" context={videoContext} onSelect={vi.fn()} onPromote={vi.fn()} selecting={false} onMachineCheck={vi.fn()} machineChecking={false} machineCheckError={null} onSubmit={vi.fn()} submitting={false} submitError={null} submitSucceeded={false} /></QueryClientProvider>);
+    expect(screen.getByText(/按 probe fps 25\.000/)).toBeTruthy();
+    const video = document.querySelector("video") as HTMLVideoElement;
+    Object.defineProperty(video, "duration", { configurable: true, value: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "逐帧进" }));
+    expect(screen.getByRole("button", { name: "逐帧退" })).toBeTruthy();
   });
 });

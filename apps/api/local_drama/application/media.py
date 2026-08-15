@@ -583,8 +583,19 @@ class MediaService:
         item, source = self.content_path(media_version_id)
         if item["media_kind"] not in {"IMAGE", "VIDEO"}:
             raise DomainRuleError("THUMBNAIL_UNSUPPORTED", "该媒体类型不支持缩略图")
+        normalized_frame = str(frame or "poster").strip().lower()
+        frame_aliases = {"poster": "first", "start": "first", "first_frame": "first", "middle_frame": "middle", "end": "last", "last_frame": "last"}
+        normalized_frame = frame_aliases.get(normalized_frame, normalized_frame)
+        if normalized_frame not in {"first", "middle", "last"}:
+            raise DomainRuleError(
+                "THUMBNAIL_FRAME_UNSUPPORTED",
+                "缩略图 frame 仅支持 first、middle、last（poster 等价于 first）",
+                {"frame": frame},
+            )
+        if item["media_kind"] == "IMAGE" and normalized_frame != "first":
+            raise DomainRuleError("THUMBNAIL_FRAME_UNSUPPORTED", "图片只有 first/poster 缩略图")
         self.verify_content_integrity(media_version_id)
-        preset = f"thumbnail-v1:{size}:{frame}"
+        preset = f"thumbnail-v2:{size}:{normalized_frame}"
         preset_hash = hashlib.sha256(preset.encode()).hexdigest()
         extension = ".webp"
         relative = Path("thumbnails") / media_version_id / size / f"{item['sha256']}_{preset_hash[:16]}{extension}"
@@ -593,7 +604,13 @@ class MediaService:
         if not destination.exists():
             partial = destination.with_suffix(".partial.webp")
             scale = "320:-1" if size == "small" else "960:-1"
-            seek = [] if item["media_kind"] == "IMAGE" else ["-ss", "0"]
+            seek: list[str] = []
+            if item["media_kind"] == "VIDEO":
+                duration_ms = int(item.get("duration_ms") or 0)
+                if normalized_frame != "first" and duration_ms <= 0:
+                    raise DomainRuleError("THUMBNAIL_FRAME_UNRESOLVED", "视频缺少有效 duration，无法定位缩略图帧")
+                offset_ms = {"first": 0, "middle": duration_ms // 2, "last": max(0, duration_ms - 1)}[normalized_frame]
+                seek = ["-ss", f"{offset_ms / 1000:.3f}"]
             self._run_ffmpeg([*seek, "-i", str(source), "-frames:v", "1", "-vf", f"scale={scale}", "-c:v", "libwebp", "-y", str(partial)])
             os.replace(partial, destination)
             self._cache_entry(media_version_id, "THUMBNAIL", relative.as_posix(), item["sha256"], preset_hash)
