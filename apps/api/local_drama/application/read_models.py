@@ -64,6 +64,7 @@ class ProductionReadModelService:
                 blockers.append("DELIVERY_TARGET_NOT_BOUND")
             if item["status"] != "READY":
                 blockers.append("SHOT_NOT_PRODUCTION_READY")
+            readiness_state = "PRODUCTION_READY" if item["status"] in {"READY", "GENERATING", "REVIEW", "APPROVED"} else "DIRECTED" if item["status"] in {"DIRECTED", "BLOCKED"} else "OUTLINE"
             if item["running_job_count"]:
                 next_action = "查看运行中任务"
             elif blockers:
@@ -78,6 +79,7 @@ class ProductionReadModelService:
                     "prompt_snapshot": fields.get("prompt_snapshot"),
                     "current_revision": fields,
                     "missing_director_fields": missing_director_fields,
+                    "production_readiness": {"state": readiness_state, "missing_fields": missing_director_fields, "blockers": blockers},
                     "blockers": blockers,
                     "next_action": next_action,
                 }

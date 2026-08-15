@@ -32,6 +32,7 @@ for (const viewport of viewports) {
     await page.goto(`/?${params.toString()}`, { waitUntil: "networkidle" });
     const panel = page.locator(".director-editor");
     await expect(panel.getByRole("heading", { name: "导演分镜字段" })).toBeVisible();
+    await expect(panel.getByText("SHOT_001 · PRODUCTION_READY", { exact: true })).toBeVisible();
     await expect(panel.getByLabel("景别")).toHaveValue("CLOSEUP");
     await expect(panel.getByLabel("构图")).toHaveValue("center");
     await expect(panel.getByLabel("时长")).toHaveValue("4000");

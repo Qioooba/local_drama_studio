@@ -9,6 +9,7 @@ export function DirectorShotEditor({ shot, onChanged }: { shot: Record<string, u
   const current = shot?.current_revision && typeof shot.current_revision === "object" ? shot.current_revision as Record<string, unknown> : {};
   const [fields, setFields] = useState<Record<string, string>>({});
   const [freeze, setFreeze] = useState(true);
+  const readiness = shot?.production_readiness && typeof shot.production_readiness === "object" ? shot.production_readiness as { state?: string; blockers?: string[] } : undefined;
   useEffect(() => {
     setFields(Object.fromEntries(Object.keys(labels).map((key) => [key, current[key] === undefined || current[key] === null ? "" : String(current[key])])))
   }, [shot?.id, shot?.current_revision_id]);
@@ -18,7 +19,7 @@ export function DirectorShotEditor({ shot, onChanged }: { shot: Record<string, u
   const ready = useMutation({ mutationFn: () => markShotProductionReady(String(shot?.id)), onSuccess: onChanged });
   if (!shot) return <section className="panel director-editor"><p className="empty-state">选择镜头后编辑导演分镜。</p></section>;
   return <section className="panel director-editor" aria-labelledby="director-editor-title">
-    <div className="panel-heading"><div><p className="eyebrow">FR-WRT-003 · 不可变 revision</p><h3 id="director-editor-title">导演分镜字段</h3></div><span className="status-pill">{String(shot.code)} · {String(shot.status)}</span></div>
+    <div className="panel-heading"><div><p className="eyebrow">FR-WRT-003/005 · 不可变 revision</p><h3 id="director-editor-title">导演分镜字段</h3></div><span className="status-pill">{String(shot.code)} · {readiness?.state ?? String(shot.status)}</span></div>
     <div className="director-grid">
       <label>{labels.shot_type}<select value={fields.shot_type ?? ""} onChange={(event) => update("shot_type", event.target.value)}><option value="">请选择</option>{["ESTABLISHING", "WIDE", "MEDIUM", "CLOSEUP", "INSERT", "POV", "OTHER"].map((value) => <option key={value}>{value}</option>)}</select></label>
       <label>{labels.composition}<input value={fields.composition ?? ""} onChange={(event) => update("composition", event.target.value)} /></label>
@@ -31,7 +32,8 @@ export function DirectorShotEditor({ shot, onChanged }: { shot: Record<string, u
       <label>{labels.creative_intent}<textarea value={fields.creative_intent ?? ""} onChange={(event) => update("creative_intent", event.target.value)} /></label>
     </div>
     <div className="director-actions"><label className="checkbox-row"><input type="checkbox" checked={freeze} onChange={(event) => setFreeze(event.target.checked)} />保存时冻结 revision</label><button className="secondary" disabled={save.isPending} onClick={() => save.mutate()}>{save.isPending ? "保存中…" : "保存新 revision"}</button><button className="primary-action" disabled={ready.isPending || missing.length > 0 || shot.status !== "DIRECTED"} onClick={() => ready.mutate()}>{ready.isPending ? "校验中…" : "标记 Production Ready"}</button></div>
-    <p className={missing.length ? "review-guidance" : "review-success"} role="status">{missing.length ? `还缺 ${missing.length} 项：${missing.map((key) => labels[key]).join("、")}` : shot.status === "DIRECTED" ? "九项字段完整，可显式标记 Production Ready。" : `九项字段完整；当前状态 ${String(shot.status)}。`}</p>
+    <p className={missing.length ? "review-guidance" : "review-success"} role="status">{missing.length ? `还缺 ${missing.length} 项：${missing.map((key) => labels[key]).join("、")}` : shot.status === "DIRECTED" ? "九项字段完整，可显式标记 Production Ready。" : `九项字段完整；当前状态 ${readiness?.state ?? String(shot.status)}。`}</p>
+    {readiness?.blockers && readiness.blockers.length > 0 && <p className="muted">服务端阻塞：{readiness.blockers.join("、")}</p>}
     {(save.error || ready.error) && <p className="inline-error" role="alert">{String(save.error ?? ready.error)}</p>}
   </section>;
 }

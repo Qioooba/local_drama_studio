@@ -33,7 +33,7 @@ describe("DirectorShotEditor", () => {
 
   it("enables Production Ready only for a complete directed revision", async () => {
     const fields = { shot_type: "CLOSEUP", composition: "center", subject_action: "turn", camera_plan: "STATIC", target_duration_ms: 4000, dialogue: "", environment: "", continuity: "same", creative_intent: "focus" };
-    renderEditor({ id: "shot-1", code: "S001", status: "DIRECTED", current_revision_id: "revision-2", current_revision: fields });
+    renderEditor({ id: "shot-1", code: "S001", status: "DIRECTED", current_revision_id: "revision-2", current_revision: fields, production_readiness: { state: "DIRECTED", blockers: [] } });
     const button = screen.getByRole("button", { name: "标记 Production Ready" }) as HTMLButtonElement;
     await waitFor(() => expect(button.disabled).toBe(false));
     fireEvent.click(button);

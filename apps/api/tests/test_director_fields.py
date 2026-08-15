@@ -17,6 +17,9 @@ def test_production_read_model_lists_exact_missing_director_fields(workspace, da
 
     item = ProductionReadModelService(database).episode(str(episode["id"]))["items"][0]
     assert item["missing_director_fields"] == ["subject_action", "camera_plan", "target_duration_ms", "continuity", "creative_intent"]
+    assert item["production_readiness"]["state"] == "DIRECTED"
+    assert item["production_readiness"]["missing_fields"] == item["missing_director_fields"]
+    assert "SHOT_NOT_PRODUCTION_READY" in item["production_readiness"]["blockers"]
 
 
 def test_ready_transition_preserves_specific_missing_fields_then_accepts_complete_revision(workspace, database) -> None:
@@ -33,3 +36,5 @@ def test_ready_transition_preserves_specific_missing_fields_then_accepts_complet
     complete = {field: "" if field in {"dialogue", "environment"} else 4_000 if field == "target_duration_ms" else field for field in REQUIRED_SHOT_FIELDS}
     projects.create_shot_revision(str(shot["id"]), complete, freeze=True)
     assert projects.mark_shot_production_ready(str(shot["id"]))["status"] == "READY"
+    ready_item = ProductionReadModelService(database).episode(str(episode["id"]))["items"][0]
+    assert ready_item["production_readiness"] == {"state": "PRODUCTION_READY", "missing_fields": [], "blockers": ["PROFILE_NOT_BOUND", "PRODUCTION_PLAN_NOT_BOUND", "DELIVERY_TARGET_NOT_BOUND"]}
