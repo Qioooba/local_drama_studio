@@ -3,6 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { createFrameAnchor, createGenerationIntent, createKeyframeCandidate, createPrompt, deriveGenerationVariantPlan, deriveGenerationVariantSeedBatch, planGenerationVariant, submitGenerationVariant, type CameraPlan, type FrameAnchor, type G6Readiness, type GenerationVariantDraft, type GenerationVariantPlan, type I2VProbePlan, type Job, type Profile, type ReviewInboxItem } from "../../generated/api";
 import { GateStatusIcon } from "../../components/icons";
 import { GenerationExperimentPanel } from "./GenerationExperimentPanel";
+import { GenerationControlPanel } from "./GenerationControlPanel";
 
 type Shot = Record<string, unknown>;
 
@@ -29,6 +30,13 @@ const modes = [
 ] as const;
 
 type FrameAction = "FIRST_FRAME" | "CURRENT_FRAME" | "LAST_FRAME";
+
+function parseControlList(value: string, label: string): Array<Record<string, unknown>> {
+  let parsed: unknown;
+  try { parsed = JSON.parse(value); } catch { throw new Error(`${label} 必须是有效 JSON 数组`); }
+  if (!Array.isArray(parsed) || parsed.some((item) => !item || typeof item !== "object" || Array.isArray(item))) throw new Error(`${label} 必须是对象数组`);
+  return parsed as Array<Record<string, unknown>>;
+}
 
 const frameActionLabels: Record<FrameAction, string> = {
   FIRST_FRAME: "首帧",
@@ -62,6 +70,9 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
   const [draftAnchor, setDraftAnchor] = useState<FrameAnchor | null>(null);
   const [frameAction, setFrameAction] = useState<FrameAction | null>(null);
   const [promptText, setPromptText] = useState("");
+  const [timedDirectionsText, setTimedDirectionsText] = useState("[]");
+  const [performanceBindingsText, setPerformanceBindingsText] = useState("[]");
+  const [motionMasksText, setMotionMasksText] = useState("[]");
   const [seedText, setSeedText] = useState("42");
   const [takeCountText, setTakeCountText] = useState("1");
   const [approvedKeyframeId, setApprovedKeyframeId] = useState("");
@@ -81,7 +92,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
   useEffect(() => {
     if (!approvedKeyframeIds.includes(approvedKeyframeId)) setApprovedKeyframeId(approvedKeyframeIds[0] ?? "");
   }, [approvedKeyframeId, approvedKeyframeIds]);
-  useEffect(() => { setPrepared(null); setSubmitted(null); setSubmittedCount(0); setSubmittedVariantId(null); setSeedBatchPlan(null); setBranchPlan(null); }, [mode, profileVersionId, selectedShotId, promptText, seedText, approvedKeyframeId, takeCountText]);
+  useEffect(() => { setPrepared(null); setSubmitted(null); setSubmittedCount(0); setSubmittedVariantId(null); setSeedBatchPlan(null); setBranchPlan(null); }, [mode, profileVersionId, selectedShotId, promptText, timedDirectionsText, performanceBindingsText, motionMasksText, seedText, approvedKeyframeId, takeCountText]);
   const selected = eligibleProfiles.find((profile) => profile.version_id === profileVersionId);
   const selectedShot = shots.find((shot) => String(shot.id) === selectedShotId);
   const revision = selectedShot?.current_revision && typeof selectedShot.current_revision === "object" ? selectedShot.current_revision as Record<string, unknown> : {};
@@ -131,7 +142,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
         branch_reason: "UI_BASE_GENERATION",
         prompt_revision_id: prompt.revision.id,
         profile_version_id: selected.version_id,
-        parameter_set: { PROMPT: promptText.trim(), SEED: seed, ...(cameraPlan ? { camera_plan: cameraPlan } : {}) },
+        parameter_set: { PROMPT: promptText.trim(), SEED: seed, ...(cameraPlan ? { camera_plan: cameraPlan } : {}), timed_directions: parseControlList(timedDirectionsText, "TimedDirection"), performance_bindings: parseControlList(performanceBindingsText, "PerformanceBinding"), motion_masks: parseControlList(motionMasksText, "MotionMask") },
         seed_policy: "EXPLICIT",
         explicit_seed: seed,
         bindings: mode === "I2V" ? [{ role: "FIRST_FRAME", media_version_id: approvedKeyframeId, ordinal: 0 }] : [],
@@ -232,6 +243,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
             <div className={`media-slot${draftAnchor ? " filled" : ""}`} aria-describedby="media-slot-help">{extractedThumbnail ? <img src={extractedThumbnail} alt={`当前未提交输入：视频${draftRoleLabel}缩略图`} width="220" height="124" decoding="async" /> : <span aria-hidden="true">+</span>}<strong>{draftAnchor ? `${draftRoleLabel}已填入当前草稿` : mode === "R2V" ? "选择参考图片" : "选择视频帧"}</strong><small id="media-slot-help">{mode === "T2V" || mode === "T2I" ? "当前方式不需要图片输入；已提取帧仅保留在未提交草稿。" : draftAnchor ? "FrameAnchor 已真实注册；创建 Variant 前仍可替换。" : "从下方已注册视频提取真实帧，不上传或读取原片。"}</small></div>
             <div className="prompt-field"><label htmlFor="generation-prompt">镜头 Prompt</label><textarea id="generation-prompt" value={promptText} onChange={(event) => setPromptText(event.target.value)} placeholder="描述主体动作、镜头运动、节奏与环境变化…" /><div className="prompt-tools"><span>结构化运镜</span><span>负向约束</span><span>版本化保存</span></div></div>
           </div>
+          <GenerationControlPanel timedDirections={timedDirectionsText} performanceBindings={performanceBindingsText} motionMasks={motionMasksText} onTimedDirectionsChange={setTimedDirectionsText} onPerformanceBindingsChange={setPerformanceBindingsText} onMotionMasksChange={setMotionMasksText} />
           <section className="generation-submit-panel" aria-labelledby="generation-submit-title">
             <div className="section-title"><span id="generation-submit-title">计划 → 确认 → 提交真实任务</span><small>两阶段提交，不自动运行</small></div>
             <div className="generation-submit-fields">

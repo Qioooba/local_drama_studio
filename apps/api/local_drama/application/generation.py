@@ -10,7 +10,7 @@ from typing import Any
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.generation import VariantPlan
-from local_drama.domain.generation_contracts import CameraPlan, resolve_camera_plan
+from local_drama.domain.generation_contracts import CameraPlan, MotionMask, PerformanceBinding, TimedDirection, resolve_camera_plan
 from local_drama.domain.policies import VariantInput
 from local_drama.infrastructure.database.sqlite import Database
 
@@ -116,6 +116,33 @@ class GenerationService:
             seed_contract = parameter_schema.get("seed", {}) if isinstance(parameter_schema, dict) else {}
             if not isinstance(seed_contract, dict):
                 raise DomainRuleError("PROFILE_SEED_CONTRACT_INVALID", "Profile seed 契约无效")
+            capabilities = parameter_schema.get("capabilities", {}) if isinstance(parameter_schema, dict) else {}
+            if not isinstance(capabilities, dict):
+                raise DomainRuleError("PROFILE_CAPABILITY_CONTRACT_INVALID", "Profile capabilities 契约无效")
+            controls = (
+                ("timed_directions", TimedDirection, "timed_direction"),
+                ("performance_bindings", PerformanceBinding, "performance_binding"),
+                ("motion_masks", MotionMask, "motion_mask"),
+            )
+            for field_name, contract_type, capability_name in controls:
+                values = plan.parameter_set.get(field_name, [])
+                if values in (None, []):
+                    continue
+                if not isinstance(values, list):
+                    raise DomainRuleError("GENERATION_CONTROL_INVALID", f"{field_name} 必须是数组")
+                contract = capabilities.get(capability_name, {})
+                if not isinstance(contract, dict) or contract.get("enabled") is not True:
+                    raise DomainRuleError("PROFILE_CONTROL_UNSUPPORTED", f"当前 Profile 未声明 {capability_name} 能力")
+                for index, value in enumerate(values):
+                    if not isinstance(value, dict):
+                        raise DomainRuleError("GENERATION_CONTROL_INVALID", f"{field_name}[{index}] 必须是对象")
+                    try:
+                        item = contract_type(**value)
+                        item.validate()
+                    except (TypeError, ValueError, DomainRuleError) as error:
+                        if isinstance(error, DomainRuleError):
+                            raise
+                        raise DomainRuleError("GENERATION_CONTROL_INVALID", f"{field_name}[{index}] 结构无效") from error
             camera_payload = plan.parameter_set.get("camera_plan")
             if camera_payload is not None:
                 camera_plan = CameraPlan.from_payload(camera_payload)
@@ -125,7 +152,6 @@ class GenerationService:
                         "CameraPlan 必须由当前 GenerationVariant 的同一 ProfileVersion 裁决",
                         {"camera_profile_version_id": camera_plan.profile_version_id, "variant_profile_version_id": plan.profile_version_id},
                     )
-                capabilities = parameter_schema.get("capabilities", {}) if isinstance(parameter_schema, dict) else {}
                 camera_contract = capabilities.get("camera", {}) if isinstance(capabilities, dict) else {}
                 support = str(camera_contract.get("support", "UNSUPPORTED")) if isinstance(camera_contract, dict) else "UNSUPPORTED"
                 if support not in {"NATIVE", "PROMPT_FALLBACK", "UNSUPPORTED"}:
