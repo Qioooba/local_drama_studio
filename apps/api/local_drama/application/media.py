@@ -583,6 +583,7 @@ class MediaService:
         item, source = self.content_path(media_version_id)
         if item["media_kind"] not in {"IMAGE", "VIDEO"}:
             raise DomainRuleError("THUMBNAIL_UNSUPPORTED", "该媒体类型不支持缩略图")
+        self.verify_content_integrity(media_version_id)
         preset = f"thumbnail-v1:{size}:{frame}"
         preset_hash = hashlib.sha256(preset.encode()).hexdigest()
         extension = ".webp"
@@ -602,6 +603,7 @@ class MediaService:
         item, source = self.content_path(media_version_id)
         if item["media_kind"] != "VIDEO":
             raise DomainRuleError("FILMSTRIP_UNSUPPORTED", "只有视频支持 filmstrip")
+        self.verify_content_integrity(media_version_id)
         preset = "filmstrip-v1:5x1:320"
         preset_hash = hashlib.sha256(preset.encode()).hexdigest()
         relative = Path("filmstrips") / media_version_id / f"{item['sha256']}_{preset_hash[:16]}.webp"
@@ -618,6 +620,7 @@ class MediaService:
         item, source = self.content_path(media_version_id)
         if item["media_kind"] not in {"AUDIO", "VIDEO"}:
             raise DomainRuleError("WAVEFORM_UNSUPPORTED", "该媒体类型不支持波形")
+        self.verify_content_integrity(media_version_id)
         preset = "waveform-v2:640x128"
         preset_hash = hashlib.sha256(preset.encode()).hexdigest()
         relative = Path("waveforms") / media_version_id / f"{item['sha256']}_{preset_hash[:16]}.png"

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -36,13 +38,19 @@ def test_image_content_endpoint_requires_derived_thumbnail(workspace, database) 
         target_duration_ms=60_000, allow_unconfigured_capabilities=True,
     )
     source = workspace.work_root / "reference.png"
-    source.write_bytes(bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360f8cfc000000301010018dd8db00000000049454e44ae426082"))
+    subprocess.run([workspace.ffmpeg_path, "-f", "lavfi", "-i", "color=c=red:s=16x16:d=1", "-frames:v", "1", "-y", str(source)], check=True, capture_output=True)
     from local_drama.application.media import MediaService
     media = MediaService(database, workspace).import_file(str(project["id"]), source, media_kind="IMAGE")
     with TestClient(create_app(workspace)) as client:
         response = client.get(f"/api/v1/media-versions/{media['media_version_id']}/content")
+        poster = client.get(f"/api/v1/media-versions/{media['media_version_id']}/thumbnail")
+        assert poster.status_code == 200
+        MediaService(database, workspace).content_path(str(media["media_version_id"]))[1].write_bytes(b"tampered-image")
+        tampered_poster = client.get(f"/api/v1/media-versions/{media['media_version_id']}/thumbnail")
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "IMAGE_CONTENT_REQUIRES_THUMBNAIL"
+    assert tampered_poster.status_code == 422
+    assert tampered_poster.json()["error"]["code"] == "SOURCE_INTEGRITY_FAILED"
 
 
 def test_workspace_asset_authorization_rejects_cross_project_and_tamper(workspace, database) -> None:
