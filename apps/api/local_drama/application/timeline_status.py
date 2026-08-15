@@ -40,10 +40,9 @@ class TimelineStatusService:
                 FROM subtitle_revisions sr WHERE sr.episode_id=? ORDER BY sr.revision_no DESC LIMIT 1""", (episode_id,)
             ).fetchone()
             subtitle_count = int(connection.execute("SELECT COUNT(*) FROM subtitle_revisions WHERE episode_id=?", (episode_id,)).fetchone()[0])
-            audio = connection.execute(
-                """SELECT COUNT(*) AS total, SUM(CASE WHEN source_license_status IN ('VERIFIED_LOCAL', 'USER_OWNED') THEN 1 ELSE 0 END) AS verified
-                FROM audio_bindings WHERE episode_id=?""", (episode_id,)
-            ).fetchone()
+            audio_rows = connection.execute(
+                "SELECT source_license_status,license_evidence_json FROM audio_bindings WHERE episode_id=?", (episode_id,)
+            ).fetchall()
             render = connection.execute(
                 """SELECT erv.id, erv.integrity_status AS status, erv.duration_ms, erv.mime_type, erv.sha256, erv.created_at
                 FROM episode_render_versions erv WHERE erv.episode_id=? ORDER BY erv.created_at DESC LIMIT 1""", (episode_id,)
@@ -71,7 +70,15 @@ class TimelineStatusService:
             "episode": {"id": str(episode["id"]), "code": str(episode["code"]), "title": str(episode["title"]), "project_id": str(episode["project_id"])},
             "timeline": {"revision_count": timeline_count, "latest": dict(timeline) if timeline else None},
             "subtitles": {"revision_count": subtitle_count, "latest": latest_subtitle},
-            "audio": {"binding_count": int(audio["total"] or 0), "verified_local_count": int(audio["verified"] or 0)},
+            "audio": {
+                "binding_count": len(audio_rows),
+                "verified_local_count": sum(
+                    1
+                    for row in audio_rows
+                    if str(row["source_license_status"]) in {"VERIFIED_LOCAL", "USER_OWNED", "PUBLIC_DOMAIN"}
+                    and json.loads(str(row["license_evidence_json"])).get("schema_version") == "localdrama.audio-license-evidence.v1"
+                ),
+            },
             "renders": {"count": render_count, "verified_count": render_verified_count, "latest": dict(render) if render else None},
             "delivery": {"count": delivery_count, "verified_count": delivery_verified, "latest": dict(delivery) if delivery else None},
             "observed_at": _now(), "read_only": True, "runtime_contacted": False, "network_contacted": False, "mutated": False,

@@ -194,8 +194,9 @@ def build() -> dict[str, Any]:
                 track_type,
                 0,
                 cursor_us,
-                source_license_status="VERIFIED_LOCAL",
-                actor="g8-evidence-builder",
+            source_license_status="VERIFIED_LOCAL",
+            license_evidence_path_rel=f"00_admin/licenses/{track_type.lower()}.json",
+            actor="g8-evidence-builder",
             )
         )
 

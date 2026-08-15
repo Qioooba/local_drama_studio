@@ -46,6 +46,10 @@ class AudioBindingRequest(BaseModel):
     end_us: int = Field(gt=0)
     gain_db: float = 0.0
     source_license_status: str = Field(default="VERIFIED_LOCAL", min_length=1, max_length=24)
+    license_evidence_path_rel: str = Field(min_length=1)
+    loop_enabled: bool = False
+    fade_in_us: int = Field(default=0, ge=0)
+    fade_out_us: int = Field(default=0, ge=0)
 
 
 class FrameAnchorRequest(BaseModel):

@@ -60,6 +60,8 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
     script_path.write_text("你好，世界\n\na b\n\n这是一个超过字符速度限制的字幕", encoding="utf-8")
     script = DocumentImportService(database, workspace).import_document(project_id, script_path)
     authority = {"text_authority": "SCRIPT", "source_document_version_id": script["source_document_version_id"]}
+    license_path = workspace.projects_root / str(project["root_rel"]) / "00_admin" / "audio-license.json"
+    license_path.write_text('{"owner":"test-operator","scope":"g8 audio fixture"}\n', encoding="utf-8", newline="")
 
     with TestClient(create_app(workspace)) as client:
         timeline_response = client.post(
@@ -170,10 +172,13 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
 
         audio_response = client.post(
             f"/api/v1/episodes/{episode['id']}/audio-bindings",
-            json={"media_version_id": audio["media_version_id"], "track_type": "MUSIC", "start_us": 0, "end_us": 1_000_000, "source_license_status": "VERIFIED_LOCAL"},
+            json={"media_version_id": audio["media_version_id"], "track_type": "MUSIC", "start_us": 0, "end_us": 1_000_000, "source_license_status": "VERIFIED_LOCAL", "license_evidence_path_rel": "00_admin/audio-license.json", "loop_enabled": True, "fade_in_us": 50_000, "fade_out_us": 50_000},
         )
         assert audio_response.status_code == 201, audio_response.text
-        assert len(client.get(f"/api/v1/episodes/{episode['id']}/audio-bindings").json()["items"]) == 1
+        audio_items = client.get(f"/api/v1/episodes/{episode['id']}/audio-bindings").json()["items"]
+        assert len(audio_items) == 1
+        assert audio_items[0]["authorization_status"] == "VERIFIED_EVIDENCE"
+        assert audio_items[0]["loop_enabled"] is True
 
         anchor_response = client.post(
             f"/api/v1/media-versions/{video_id}:create-frame-anchor",

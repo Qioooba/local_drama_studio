@@ -9100,13 +9100,36 @@
             "minLength": 1,
             "title": "Source License Status",
             "default": "VERIFIED_LOCAL"
+          },
+          "license_evidence_path_rel": {
+            "type": "string",
+            "minLength": 1,
+            "title": "License Evidence Path Rel"
+          },
+          "loop_enabled": {
+            "type": "boolean",
+            "title": "Loop Enabled",
+            "default": false
+          },
+          "fade_in_us": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Fade In Us",
+            "default": 0
+          },
+          "fade_out_us": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Fade Out Us",
+            "default": 0
           }
         },
         "type": "object",
         "required": [
           "media_version_id",
           "start_us",
-          "end_us"
+          "end_us",
+          "license_evidence_path_rel"
         ],
         "title": "AudioBindingRequest"
       },

@@ -8,6 +8,7 @@ sample or substituting a machine PASS for an approval decision.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any
 
@@ -59,10 +60,15 @@ class G8ReadinessService:
             )
             subtitle_count = int(connection.execute("SELECT COUNT(*) FROM subtitle_revisions WHERE episode_id=?", (eid,)).fetchone()[0])
             audio_rows = connection.execute(
-                "SELECT track_type, source_license_status FROM audio_bindings WHERE episode_id=?", (eid,)
+                "SELECT track_type, source_license_status, license_evidence_json FROM audio_bindings WHERE episode_id=?", (eid,)
             ).fetchall()
             audio_tracks = {str(row["track_type"]).upper() for row in audio_rows}
-            authorized_audio = sum(1 for row in audio_rows if str(row["source_license_status"]).upper() in {"VERIFIED_LOCAL", "USER_OWNED"})
+            authorized_audio = sum(
+                1
+                for row in audio_rows
+                if str(row["source_license_status"]).upper() in {"VERIFIED_LOCAL", "USER_OWNED", "PUBLIC_DOMAIN"}
+                and json.loads(str(row["license_evidence_json"])).get("schema_version") == "localdrama.audio-license-evidence.v1"
+            )
             render = connection.execute(
                 """SELECT erv.id, erv.integrity_status, erv.timeline_revision_id
                    FROM episode_render_versions erv WHERE erv.episode_id=? ORDER BY erv.created_at DESC LIMIT 1""",

@@ -1,0 +1,55 @@
+{
+  "schema_version": "fr-aud-002-license-readonly-uat.v1",
+  "observed_at": "2026-08-15T03:01:33.148Z",
+  "mode": "LOCAL_ONLY",
+  "status": "PASS",
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "episode_id": "d4db1033-9517-4bd0-958d-4228e0abead1",
+  "legacy_binding_count": 4,
+  "verified_evidence_count": 0,
+  "screenshots_created": false,
+  "viewports": [
+    {
+      "viewport": "1440x900",
+      "status": "PASS",
+      "legacy_binding_count": 4,
+      "verified_evidence_count": 0,
+      "g8_audio_check": "FAIL",
+      "horizontal_overflow_px": 0,
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "public_requests": [],
+      "write_requests": [],
+      "original_media_requests": []
+    },
+    {
+      "viewport": "1280x800",
+      "status": "PASS",
+      "legacy_binding_count": 4,
+      "verified_evidence_count": 0,
+      "g8_audio_check": "FAIL",
+      "horizontal_overflow_px": 0,
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "public_requests": [],
+      "write_requests": [],
+      "original_media_requests": []
+    },
+    {
+      "viewport": "1024x768",
+      "status": "PASS",
+      "legacy_binding_count": 4,
+      "verified_evidence_count": 0,
+      "g8_audio_check": "FAIL",
+      "horizontal_overflow_px": 0,
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "public_requests": [],
+      "write_requests": [],
+      "original_media_requests": []
+    }
+  ]
+}

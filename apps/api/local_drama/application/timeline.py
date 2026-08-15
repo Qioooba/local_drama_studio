@@ -376,22 +376,53 @@ class TimelineService:
         *,
         gain_db: float = 0.0,
         source_license_status: str = "VERIFIED_LOCAL",
+        license_evidence_path_rel: str,
+        loop_enabled: bool = False,
+        fade_in_us: int = 0,
+        fade_out_us: int = 0,
         actor: str = "local-user",
     ) -> dict[str, Any]:
-        self._media_for_episode(episode_id, media_version_id)
+        media = self.media.verify_content_integrity(media_version_id)
+        episode = self._episode(episode_id)
+        if media["project_id"] != episode["project_id"] or media["media_kind"] != "AUDIO":
+            raise DomainRuleError("AUDIO_BINDING_MEDIA_INVALID", "音频绑定必须引用同项目已验证 AUDIO MediaVersion")
+        if track_type not in {"DIALOGUE", "ENVIRONMENT", "SFX", "MUSIC"}:
+            raise DomainRuleError("AUDIO_TRACK_TYPE_INVALID", "音频轨道必须是 DIALOGUE、ENVIRONMENT、SFX 或 MUSIC")
         if end_us <= start_us or start_us < 0:
             raise DomainRuleError("AUDIO_BINDING_RANGE_INVALID", "音频绑定时间范围无效")
         if source_license_status not in {"VERIFIED_LOCAL", "PUBLIC_DOMAIN", "USER_OWNED"}:
             raise DomainRuleError("AUDIO_LICENSE_REQUIRED", "音频必须具有可证明的本地授权状态")
+        duration_us = int(media.get("duration_ms") or 0) * 1000
+        if not loop_enabled and duration_us > 0 and end_us - start_us > duration_us:
+            raise DomainRuleError("AUDIO_BINDING_EXCEEDS_SOURCE", "未启用 loop 时绑定时长不能超过源音频")
+        if fade_in_us + fade_out_us > end_us - start_us:
+            raise DomainRuleError("AUDIO_FADE_RANGE_INVALID", "淡入与淡出总时长不能超过绑定范围")
+        root = (self.settings.projects_root / str(episode["root_rel"])).resolve()
+        evidence_candidate = root / license_evidence_path_rel
+        evidence_path = evidence_candidate.resolve()
+        if evidence_candidate.is_symlink() or not evidence_path.is_relative_to(root) or not evidence_path.is_file():
+            raise DomainRuleError("AUDIO_LICENSE_EVIDENCE_INVALID", "音频授权证据必须是项目内普通文件")
+        evidence_sha256, evidence_size = _hash_file(evidence_path)
+        license_evidence = {
+            "schema_version": "localdrama.audio-license-evidence.v1",
+            "path_rel": evidence_path.relative_to(root).as_posix(),
+            "sha256": evidence_sha256,
+            "byte_size": evidence_size,
+        }
         binding_id = str(uuid.uuid4())
         now = _now()
         with self.database.transaction() as connection:
             connection.execute(
                 """INSERT INTO audio_bindings
                 (id, episode_id, media_version_id, track_type, start_us, end_us, gain_db, source_license_status,
-                 status, snapshot_json, created_at, updated_at, created_by, revision, schema_version)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, 1, 'v2')""",
-                (binding_id, episode_id, media_version_id, track_type, start_us, end_us, gain_db, source_license_status, _json({"media_version_id": media_version_id, "gain_db": gain_db}), now, now, actor),
+                 status, snapshot_json, loop_enabled, fade_in_us, fade_out_us, license_evidence_json,
+                 created_at, updated_at, created_by, revision, schema_version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?, ?, ?, ?, 1, 'v2')""",
+                (
+                    binding_id, episode_id, media_version_id, track_type, start_us, end_us, gain_db, source_license_status,
+                    _json({"schema_version": "localdrama.audio-binding.v1", "media_version_id": media_version_id, "media_sha256": media["sha256"], "gain_db": gain_db, "loop_enabled": loop_enabled, "fade_in_us": fade_in_us, "fade_out_us": fade_out_us}),
+                    int(loop_enabled), fade_in_us, fade_out_us, _json(license_evidence), now, now, actor,
+                ),
             )
             connection.execute(
                 "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'producer', 'AUDIO_BINDING_CREATED', 'audio_binding', ?, ?, ?)",
@@ -404,13 +435,28 @@ class TimelineService:
             row = connection.execute("SELECT * FROM audio_bindings WHERE id=?", (binding_id,)).fetchone()
         if row is None:
             raise DomainRuleError("AUDIO_BINDING_NOT_FOUND", "音频绑定不存在")
-        return {**dict(row), "snapshot": json.loads(row["snapshot_json"])}
+        result = dict(row)
+        result["snapshot"] = json.loads(result.pop("snapshot_json"))
+        evidence = json.loads(result.pop("license_evidence_json"))
+        result["license_evidence"] = evidence
+        result["authorization_status"] = "VERIFIED_EVIDENCE" if evidence.get("schema_version") == "localdrama.audio-license-evidence.v1" else "LEGACY_INCOMPLETE"
+        result["loop_enabled"] = bool(result["loop_enabled"])
+        return result
 
     def list_audio_bindings(self, episode_id: str) -> list[dict[str, Any]]:
         self._episode(episode_id)
         with self.database.connect() as connection:
             rows = connection.execute("SELECT * FROM audio_bindings WHERE episode_id=? ORDER BY start_us, id", (episode_id,)).fetchall()
-        return [{**dict(row), "snapshot": json.loads(row["snapshot_json"])} for row in rows]
+        items = []
+        for row in rows:
+            item = dict(row)
+            item["snapshot"] = json.loads(item.pop("snapshot_json"))
+            evidence = json.loads(item.pop("license_evidence_json"))
+            item["license_evidence"] = evidence
+            item["authorization_status"] = "VERIFIED_EVIDENCE" if evidence.get("schema_version") == "localdrama.audio-license-evidence.v1" else "LEGACY_INCOMPLETE"
+            item["loop_enabled"] = bool(item["loop_enabled"])
+            items.append(item)
+        return items
 
     def create_frame_anchor(
         self,
