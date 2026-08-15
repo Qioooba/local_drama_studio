@@ -55,7 +55,7 @@
 | FR-WRT-006 连续性面板 | VERIFIED PRODUCTION READ-ONLY UAT | `ProductionReadModelService.continuity_context` 与生成工作台三列对照；上一/当前/下一镜的 revision、人物外观、服装、道具、光线、空间方向、连续性、已选/已批 MediaVersion 和边界约束均来自真实本地数据，缺项不推断。API 2 项、Web 2 项与三视口 UAT 通过；只请求 small 缩略图，证据 `docs/evidence/g10/continuity-panel-uat-2026-08-15.json` |
 | FR-WRT-007 AI 辅助提取先进入草稿且不覆盖人工内容 | VERIFIED PRODUCTION READ-ONLY UAT | 既有真实 `LocalLLMService.breakdown` 只保存 `DRAFT_READY`；新增项目级只读查询与 `AIDraftReviewPanel`，明确投影 `NOT_APPLIED`、`automatic_apply=false`、`requires_human_action=true`，无应用按钮。API 2 项证明查询不改变 Scene/Shot/CreativeEntry，Web 2 项覆盖真实草稿和无 mock 空态；正式项目三视口展示 1 份真实本地 LLM 草稿且零写入，证据 `docs/evidence/g10/ai-draft-review-uat-2026-08-15.json` |
 | FR-IMG-001 媒体版本注册、probe、hash、缩略图缓存 | VERIFIED | `MediaService.import_file/verify_content_integrity/thumbnail`；不可变 MediaAsset/MediaVersion、源文件 hash/size 与篡改阻断，`apps/api/tests/test_keyframe_candidate.py` |
-| FR-IMG-002 图片候选批量生成 | PARTIAL / REAL-RUNTIME UAT PENDING | `GenerationWorkbench` 显式 1—8 take 提交为独立 Variant/Job，seed batch 1—24 只读规划；真实用户 Profile/Runtime 批量生成仍待 UAT，统一证据 `docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json` |
+| FR-IMG-002 图片候选批量生成 | PARTIAL / REAL-RUNTIME UAT PENDING | `GenerationWorkbench` 显式 1—8 take 提交为独立 Variant/Job，seed batch 1—24 只读规划；服务端 preflight 返回仅来自 Published Profile `resource_policy` 的 bounded per-take 时长/显存/磁盘估算，未声明字段保持 unknown，UI 在确认前显示并仍受 preflight/镜头/Profile/输入 blocker 约束；真实用户 Profile/Runtime 批量生成仍待 UAT，证据 `docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json`、`docs/evidence/g10/fr-img-002-resource-estimate-2026-08-16.json` |
 | FR-IMG-003 图片网格与比较 | PARTIAL / UAT PENDING | `ReviewInboxPanel` 使用 small 派生缩略图、A/B、参考图置顶与键盘切换；原图接口对 IMAGE 硬拒绝，真实用户图片网格三视口 UAT 待补，见 `fr-img-001-006-image-candidate-review-2026-08-16.json` |
 | FR-IMG-004 图片结构化审核清单 | VERIFIED AUTOMATED / UAT PENDING | `ReviewService` 的 `image_asset` 模板包含身份、服装、人体/手、场景、构图、光线、连续性、可视频化 8 项必填检查；`apps/api/tests/test_g4_reviews.py` |
 | FR-IMG-005 图片批准与拒绝 | VERIFIED AUTOMATED / UAT PENDING | required fail 阻断批准，拒绝必须原因，reviewer/time/template 规则及 stale 保留；selection 与 approval 分离，见 `application/reviews.py`、`test_g4_reviews.py` |
@@ -351,6 +351,10 @@ Unicode/空格/长路径、I2V→T2V 不匹配硬阻断、I2V 匹配、完整模
 ## NFR-PERF-001/002 有界性能与列表分页增量（2026-08-16）
 
 项目列表新增稳定的 `cursor/limit` 页面契约；集生产 read model 新增服务端 `cursor/limit/next_cursor`，默认调用保持兼容；审核收件箱继续在筛选后按稳定 cursor 返回上限页面。新增 `scripts/nfr_perf_benchmark.py`，在隔离迁移 SQLite 的 60 集/800 镜头/10k 媒体 fixture 上通过真实 FastAPI read paths 观测收件箱首/深 cursor、每集生产页和项目页，同时记录缩略图 `loading="lazy"`/不批量读取原片的源级约束。API 测试覆盖 project cursor 与 production page；证据 `docs/evidence/g10/nfr-perf-bounded-observation-2026-08-16.json` 标记 `PARTIAL` / `OBSERVED_NOT_BENCHMARKED`。该证据不宣称 10k p95<500ms、Windows x64 浏览器 p95<2s、虚拟滚动、冷缓存或真实硬件容量；正式浏览器网络 trace 与 release 性能基线仍待 UAT。
+
+## FR-AUT-001 声明式任务 Job 谱系增量（2026-08-16）
+
+声明式 automation run 的每个实际 task 现在在同一 SQLite 事务内创建持久 `AUTOMATION_WORKFLOW_TASK` Job，并将 workflow/run/task ID、plan hash、机器状态、`approval_required`、`approval_status` 与 `local_only/network_contacted` 快照固化；后续任务通过 `job_dependencies` 串成有限 Job DAG，Job 被 claim 后继续沿用现有 Attempt、lease、progress、outbox 和重启 reconcile。HITL 任务不会因 AI 分数自动批准，Job 快照保留 `approval_required=true`/`PENDING`，人工 resume 仍是 workflow 状态机唯一批准入口。新增 migration `0039_automation_task_jobs`、任务 read model 的 `job_id/job_state` 和回归 `test_each_automation_task_has_durable_job_lineage_and_bounded_dependency`；证据 `docs/evidence/g10/fr-aut-001-automation-workflows-2026-08-15.json` 保持 `PARTIAL`，真实 worker 在 HITL 前后、重启/磁盘压力和 Windows 三视口 UAT 仍待执行。
 
 ## 更新规则
 

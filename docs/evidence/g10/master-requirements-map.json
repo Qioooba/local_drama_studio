@@ -281,7 +281,7 @@
     {
       "id": "FR-IMG-002",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json"],
+      "evidence": ["docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json", "docs/evidence/g10/fr-img-002-resource-estimate-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx"]
     },
     {

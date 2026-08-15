@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import math
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -31,6 +32,67 @@ def _digest(value: object) -> str:
 
 
 class GenerationService:
+    _RESOURCE_ESTIMATE_FIELDS: dict[str, tuple[str, ...]] = {
+        # Resource estimates are intentionally opt-in profile declarations.
+        # Never derive these values from a model name, a fixed default, or the
+        # host's current capacity: those would be misleading before execution.
+        "duration_seconds": (
+            "estimated_duration_seconds_per_take",
+            "duration_seconds_per_take",
+            "estimated_time_seconds_per_take",
+            "time_seconds_per_take",
+        ),
+        "vram_bytes": (
+            "estimated_vram_bytes_per_take",
+            "vram_bytes_per_take",
+            "estimated_gpu_memory_bytes_per_take",
+            "gpu_memory_bytes_per_take",
+        ),
+        "disk_bytes": (
+            "estimated_disk_bytes_per_take",
+            "disk_bytes_per_take",
+            "estimated_output_bytes_per_take",
+            "output_bytes_per_take",
+        ),
+    }
+
+    @classmethod
+    def _resource_estimate(cls, resource_policy: dict[str, Any]) -> dict[str, Any]:
+        """Return only explicitly declared, per-take resource estimates.
+
+        The profile is the sole authority for these numbers.  Unknown values
+        stay ``None`` and are surfaced as unknown to the client rather than
+        being guessed from a static model/runtime default.
+        """
+
+        per_take: dict[str, float | int | None] = {}
+        policy_keys: dict[str, str | None] = {}
+        unknown: list[str] = []
+        for field, aliases in cls._RESOURCE_ESTIMATE_FIELDS.items():
+            value: float | int | None = None
+            source_key: str | None = None
+            for key in aliases:
+                candidate = resource_policy.get(key)
+                # bool is an int subclass but is not a meaningful estimate.
+                if isinstance(candidate, (int, float)) and not isinstance(candidate, bool) and math.isfinite(float(candidate)) and float(candidate) >= 0:
+                    value = candidate
+                    source_key = key
+                    break
+            per_take[field] = value
+            policy_keys[field] = source_key
+            if value is None:
+                unknown.append(field)
+        status = "DECLARED" if not unknown else "PARTIAL" if len(unknown) < len(per_take) else "UNKNOWN"
+        return {
+            "status": status,
+            "source": "PROFILE_RESOURCE_POLICY",
+            "per_take": per_take,
+            "policy_keys": policy_keys,
+            "unknown": unknown,
+            "take_count": 1,
+            "bounded": True,
+        }
+
     def __init__(self, database: Database, settings: Settings) -> None:
         self.database = database
         self.media = MediaService(database, settings)
@@ -305,6 +367,13 @@ class GenerationService:
                     )
             input_contract = json.loads(profile["input_contract_json"] or "{}")
             parameter_schema = json.loads(profile["parameter_schema_json"] or "{}")
+            try:
+                resource_policy = json.loads(profile["resource_policy_json"] or "{}")
+            except (TypeError, json.JSONDecodeError) as error:
+                raise DomainRuleError("PROFILE_RESOURCE_POLICY_INVALID", "Profile resource policy 快照无效") from error
+            if not isinstance(resource_policy, dict):
+                raise DomainRuleError("PROFILE_RESOURCE_POLICY_INVALID", "Profile resource policy 必须是对象")
+            resource_estimate = self._resource_estimate(resource_policy)
             input_slots = self._input_slots(input_contract)
             seed_contract = parameter_schema.get("seed", {}) if isinstance(parameter_schema, dict) else {}
             if not isinstance(seed_contract, dict):
@@ -832,6 +901,7 @@ class GenerationService:
                     "manifest_sha256": profile["manifest_sha256"],
                 }
             ),
+            "resource_estimate": resource_estimate,
             "parent_recipe_hash": parent["recipe_hash"] if parent is not None else None,
             "prompt_revision_hash": prompt_revision["content_hash"] if prompt_revision is not None else None,
             "media": sorted(media_dependencies, key=lambda item: str(item["id"])),
@@ -891,6 +961,7 @@ class GenerationService:
             "plan_hash": _digest({"intent_id": intent_id, "recipe": recipe, "dependencies": dependencies}),
             "recipe_hash": _digest(evidence_recipe),
             "dependencies": dependencies,
+            "resource_estimate": dependencies["resource_estimate"],
             "would_persist_variant": False,
             "would_create_job": False,
             "reproducibility": {

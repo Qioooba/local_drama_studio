@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { createFrameAnchor, createGenerationIntent, createKeyframeCandidate, createPrompt, deriveGenerationVariantPlan, deriveGenerationVariantSeedBatch, planGenerationVariant, submitGenerationVariant, type CameraPlan, type FrameAnchor, type G6Readiness, type GenerationVariantDraft, type GenerationVariantPlan, type I2VProbePlan, type Job, type Profile, type ReviewInboxItem } from "../../generated/api";
+import { createFrameAnchor, createGenerationIntent, createKeyframeCandidate, createPrompt, deriveGenerationVariantPlan, deriveGenerationVariantSeedBatch, planGenerationVariant, submitGenerationVariant, type CameraPlan, type FrameAnchor, type G6Readiness, type GenerationResourceEstimate, type GenerationVariantDraft, type GenerationVariantPlan, type I2VProbePlan, type Job, type Profile, type ReviewInboxItem } from "../../generated/api";
 import { GateStatusIcon } from "../../components/icons";
 import { GenerationExperimentPanel } from "./GenerationExperimentPanel";
 import { GenerationControlPanel } from "./GenerationControlPanel";
@@ -53,9 +53,15 @@ function profileResourcePolicy(profile: Profile | undefined): Record<string, unk
   return {};
 }
 
-function estimateValue(policy: Record<string, unknown>, keys: string[], count: number): string {
+function policyEstimate(policy: Record<string, unknown>, keys: string[]): number | null {
   const value = keys.map((key) => policy[key]).find((candidate) => typeof candidate === "number");
-  return typeof value === "number" && Number.isFinite(value) ? String(Math.round(value * count * 100) / 100) : "未声明";
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function formatEstimate(value: number | null, count: number, unit = ""): string {
+  if (value === null) return "未声明";
+  const total = Math.round(value * count * 100) / 100;
+  return `${total}${unit}`;
 }
 
 const frameActionLabels: Record<FrameAction, string> = {
@@ -98,6 +104,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
   const [takeCountText, setTakeCountText] = useState("1");
   const [approvedKeyframeId, setApprovedKeyframeId] = useState("");
   const [prepared, setPrepared] = useState<{ draft: GenerationVariantDraft; plan: GenerationVariantPlan; idempotencyKey: string } | null>(null);
+  const [preflightResourceEstimate, setPreflightResourceEstimate] = useState<GenerationResourceEstimate | null>(null);
   const [submitted, setSubmitted] = useState<Job | null>(null);
   const [submittedCount, setSubmittedCount] = useState(0);
   const [submittedVariantId, setSubmittedVariantId] = useState<string | null>(null);
@@ -113,7 +120,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
   useEffect(() => {
     if (!approvedKeyframeIds.includes(approvedKeyframeId)) setApprovedKeyframeId(approvedKeyframeIds[0] ?? "");
   }, [approvedKeyframeId, approvedKeyframeIds]);
-  useEffect(() => { setPrepared(null); setSubmitted(null); setSubmittedCount(0); setSubmittedVariantId(null); setSeedBatchPlan(null); setBranchPlan(null); }, [mode, profileVersionId, selectedShotId, promptText, timedDirectionsText, performanceBindingsText, referenceBindingsText, motionMasksText, seedText, approvedKeyframeId, takeCountText]);
+  useEffect(() => { setPrepared(null); setPreflightResourceEstimate(null); setSubmitted(null); setSubmittedCount(0); setSubmittedVariantId(null); setSeedBatchPlan(null); setBranchPlan(null); }, [mode, profileVersionId, selectedShotId, promptText, timedDirectionsText, performanceBindingsText, referenceBindingsText, motionMasksText, seedText, approvedKeyframeId, takeCountText]);
   const selected = eligibleProfiles.find((profile) => profile.version_id === profileVersionId);
   const resourcePolicy = profileResourcePolicy(selected);
   const selectedShot = shots.find((shot) => String(shot.id) === selectedShotId);
@@ -174,7 +181,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
       const planned = await planGenerationVariant(draft);
       return { draft, plan: planned.plan, idempotencyKey: crypto.randomUUID() };
     },
-    onSuccess: setPrepared,
+    onSuccess: (result) => { setPreflightResourceEstimate(result.plan.resource_estimate ?? null); setPrepared(result); },
   });
   const submitMutation = useMutation({
     mutationFn: async () => {
@@ -225,6 +232,13 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
   });
   const extractedThumbnail = draftAnchor ? `/api/v1/media-versions/${encodeURIComponent(draftAnchor.extracted_media_version_id)}/thumbnail?size=small` : null;
   const draftRoleLabel = draftAnchor ? frameActionLabels[draftAnchor.role_hint as FrameAction] ?? "提取帧" : null;
+  const policyPerTake = {
+    duration_seconds: policyEstimate(resourcePolicy, ["estimated_duration_seconds_per_take", "duration_seconds_per_take", "estimated_time_seconds_per_take", "time_seconds_per_take"]),
+    vram_bytes: policyEstimate(resourcePolicy, ["estimated_vram_bytes_per_take", "vram_bytes_per_take", "estimated_gpu_memory_bytes_per_take", "gpu_memory_bytes_per_take"]),
+    disk_bytes: policyEstimate(resourcePolicy, ["estimated_disk_bytes_per_take", "disk_bytes_per_take", "estimated_output_bytes_per_take", "output_bytes_per_take"]),
+  };
+  const visiblePerTake = preflightResourceEstimate?.per_take ?? policyPerTake;
+  const resourceStatus = preflightResourceEstimate?.status ?? (Object.values(policyPerTake).every((value) => value === null) ? "UNKNOWN" : Object.values(policyPerTake).some((value) => value === null) ? "PARTIAL" : "DECLARED");
 
   return <div className="creation-workbench" role="region" aria-labelledby="generation-workbench-title">
     <h2 id="generation-workbench-title" className="sr-only">生成工作台</h2>
@@ -279,7 +293,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
               {mode === "I2V" && <label htmlFor="generation-keyframe">已批准关键帧<select id="generation-keyframe" value={approvedKeyframeId} onChange={(event) => setApprovedKeyframeId(event.target.value)}><option value="">请选择</option>{approvedKeyframeIds.map((mediaVersionId) => <option key={mediaVersionId} value={mediaVersionId}>APPROVED KEYFRAME · {mediaVersionId.slice(0, 12)}</option>)}</select></label>}
               <div className={`capability-truth ${cameraReady ? "ready" : "blocked"}`}><strong>CameraPlan</strong><small>{!requiresCamera ? "图片任务不要求运镜。" : cameraPlan ? `${cameraPlan.mode} · ${cameraPlan.movement} · ${cameraPlan.profile_version_id === profileVersionId ? "Profile 一致" : "需用当前 Profile 重新裁决"}` : "当前镜头没有结构化 CameraPlan；请在下方导演分镜中配置。"}</small></div>
             </div>
-            <div className="generation-batch-estimate" aria-label="批量资源估算"><strong>提交前资源估算</strong><span>Profile：{selected?.code ?? "未选择"}</span><span>本地 Runtime：{h3?.status ?? "未读取"}</span><span>预计 CPU：{estimateValue(resourcePolicy, ["estimated_cpu_seconds_per_take", "cpu_seconds_per_take"], takeCount)} 秒</span><span>预计显存：{estimateValue(resourcePolicy, ["estimated_vram_bytes_per_take", "vram_bytes_per_take"], takeCount)} bytes</span><span>预计磁盘：{estimateValue(resourcePolicy, ["estimated_disk_bytes_per_take", "disk_bytes_per_take"], takeCount)} bytes</span><small>只读估算；未声明的 Profile 字段显示“未声明”，不会伪造模型性能。</small></div>
+            <div className="generation-batch-estimate" aria-label="批量资源估算"><strong>提交前资源估算</strong><span>Profile：{selected?.code ?? "未选择"}</span><span>本地 Runtime：{h3?.status ?? "未读取"}</span><span>资源声明：{resourceStatus} · {preflightResourceEstimate ? "已由服务端预检冻结" : "等待服务端预检"}</span><span>预计时长：{formatEstimate(visiblePerTake.duration_seconds, takeCount, " 秒")}</span><span>预计显存：{formatEstimate(visiblePerTake.vram_bytes, takeCount, " bytes")}</span><span>预计磁盘：{formatEstimate(visiblePerTake.disk_bytes, takeCount, " bytes")}</span><span>预计 CPU：{formatEstimate(policyEstimate(resourcePolicy, ["estimated_cpu_seconds_per_take", "cpu_seconds_per_take"]), takeCount, " 秒")}</span><small>只读取显式 Profile resource_policy；未声明字段显示“未声明”，不以模型名、Runtime 或静态默认值伪造性能。资源未知不会绕过镜头/Profile/输入 blocker，提交仍必须先完成服务端预检。</small></div>
             <div className="generation-submit-actions"><button type="button" className="secondary" disabled={!runnable || preflightMutation.isPending} onClick={() => preflightMutation.mutate()}>{preflightMutation.isPending ? "正在建立意图并预检…" : "建立意图并执行只读生成预检"}</button><button type="button" className="primary-action" disabled={!prepared || submitMutation.isPending || Boolean(submitted)} onClick={() => submitMutation.mutate()}>{submitMutation.isPending ? "提交中…" : "确认创建 Variant 与 Job"}</button></div>
             {prepared && !submitted && <p className="frame-feedback success" role="status"><strong>预检 READY，尚未创建 Job。</strong> Plan hash <code>{prepared.plan.plan_hash.slice(0, 16)}</code> · recipe <code>{prepared.plan.recipe_hash.slice(0, 16)}</code></p>}
             {submitted && <p className="frame-feedback success" role="status"><strong>{submittedCount > 1 ? `${submittedCount} 个代理 take 已创建；最近任务 ${submitted.state}` : `真实任务已持久化：${submitted.state}`}</strong> Job <code>{submitted.id}</code>；关闭浏览器不会丢失，历史不会覆盖。</p>}

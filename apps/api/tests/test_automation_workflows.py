@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from local_drama.application.automation_workflows import AutomationWorkflowService
+from local_drama.application.jobs import JobService
 from local_drama.application.projects import ProjectService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.main import create_app
@@ -130,3 +131,40 @@ def test_workflow_api_uses_same_service_boundary(workspace, database) -> None:
         resumed = client.post(f"/api/v1/automation-runs/{run_id}:resume", json={"decision": "HUMAN_APPROVED", "note": "人工确认"})
         assert resumed.status_code == 200
         assert resumed.json()["run"]["status"] == "RUNNING"
+
+
+def test_each_automation_task_has_durable_job_lineage_and_bounded_dependency(workspace, database) -> None:
+    project_id = _project(workspace, database)
+    service = AutomationWorkflowService(database)
+    definition = _definition(project_id)
+    definition["nodes"] = [{"id": "render", "type": "LOCAL_TASK"}]
+    definition["human_gate"] = "NONE"
+    definition["max_iterations"] = 3
+    definition["max_tasks"] = 3
+    workflow = service.create_workflow(**definition)
+    plan = service.plan_workflow(str(workflow["id"]))
+    run = service.start_run(str(workflow["id"]), plan_hash=str(plan["plan_hash"]), idempotency_key="job-bridge-run")
+    first = service.step_run(str(run["id"]), machine_context={"status": "PASS"})
+    second = service.step_run(str(run["id"]), machine_context={"status": "PASS"})
+    assert first["tasks"][0]["job_id"]
+    assert first["tasks"][0]["job_state"] == "QUEUED"
+    assert second["tasks"][1]["job_id"]
+    jobs = JobService(database)
+    first_job = jobs.get_job(first["tasks"][0]["job_id"])
+    second_job = jobs.get_job(second["tasks"][1]["job_id"])
+    assert first_job["subject_type"] == "AUTOMATION_WORKFLOW_TASK"
+    assert first_job["input_snapshot"]["automation_run_id"] == run["id"]
+    assert first_job["input_snapshot"]["local_only"] is True
+    assert first_job["input_snapshot"]["network_contacted"] is False
+    assert second_job["input_snapshot"]["automation_task_id"] == second["tasks"][1]["id"]
+    with database.connect() as connection:
+        dependency = connection.execute(
+            "SELECT depends_on_job_id FROM job_dependencies WHERE job_id=?",
+            (second_job["id"],),
+        ).fetchone()
+        event = connection.execute(
+            "SELECT event_json FROM automation_workflow_run_events WHERE run_id=? AND event_type='STEP_COMPLETED' ORDER BY created_at DESC LIMIT 1",
+            (run["id"],),
+        ).fetchone()
+    assert dependency is not None and dependency["depends_on_job_id"] == first_job["id"]
+    assert second_job["id"] in str(event["event_json"])

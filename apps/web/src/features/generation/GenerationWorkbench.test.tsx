@@ -42,6 +42,8 @@ describe("GenerationWorkbench FrameAnchor actions", () => {
     vi.mocked(submitGenerationVariant).mockResolvedValue({ variant: { id: "variant-1", intent_id: "intent-1", variant_no: 1, variant_type: "BASE", parent_variant_id: null, recipe_hash: "b".repeat(64), status: "QUEUED", bindings: [] }, job: { id: "job-1", type: "GENERATION_VARIANT", project_id: "project-1", state: "QUEUED", channel: "GPU_H3", priority: 100, max_attempts: 1, revision: 1 } });
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     render(<QueryClientProvider client={client}><GenerationWorkbench projectId="project-1" profiles={[profile]} candidates={[video, keyframe]} shots={[{ id: "shot-1", code: "SH-001", status: "READY", current_revision: { camera_plan: cameraPlan } }]} selectedShotId="shot-1" onSelectShot={vi.fn()} onOpenProfiles={vi.fn()} /></QueryClientProvider>);
+    expect(screen.getByText(/预计时长：未声明/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "确认创建 Variant 与 Job" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("镜头 Prompt"), { target: { value: "slow turn" } });
     fireEvent.click(screen.getByRole("button", { name: "建立意图并执行只读生成预检" }));
     await screen.findByText(/预检 READY，尚未创建 Job/);

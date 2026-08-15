@@ -19,6 +19,8 @@ from typing import Any, cast
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
 
+from .jobs import JobService
+
 MODES = frozenset({"MANUAL", "ASSISTED", "BATCH_AUTOMATED"})
 GATE_MODES = frozenset({"NONE", "BEFORE_RUN", "EACH_ITERATION", "ON_CONDITION"})
 CONDITION_FIELDS = frozenset(
@@ -78,6 +80,7 @@ class AutomationWorkflowService:
 
     def __init__(self, database: Database) -> None:
         self.database = database
+        self.jobs = JobService(database)
 
     @staticmethod
     def _normalize_definition(
@@ -338,6 +341,8 @@ class AutomationWorkflowService:
                     "produced_bytes": int(item["produced_bytes"]),
                     "machine_context": _decode(item["machine_context_json"], {}),
                     "review_status": str(item["review_status"]),
+                    "job_id": str(item["job_id"]) if item["job_id"] else None,
+                    "job_state": str(item["job_state"]) if item["job_state"] else None,
                     "created_at": item["created_at"],
                     "updated_at": item["updated_at"],
                 }
@@ -357,7 +362,7 @@ class AutomationWorkflowService:
             row = connection.execute("SELECT * FROM automation_workflow_runs WHERE id=?", (run_id,)).fetchone()
             if row is None:
                 raise DomainRuleError("AUTOMATION_RUN_NOT_FOUND", "workflow run 不存在", {"run_id": run_id})
-            tasks = connection.execute("SELECT * FROM automation_workflow_run_tasks WHERE run_id=? ORDER BY ordinal", (run_id,)).fetchall()
+            tasks = connection.execute("SELECT t.*, j.state AS job_state FROM automation_workflow_run_tasks t LEFT JOIN jobs j ON j.id=t.job_id WHERE t.run_id=? ORDER BY t.ordinal", (run_id,)).fetchall()
             events = connection.execute("SELECT * FROM automation_workflow_run_events WHERE run_id=? ORDER BY created_at,id", (run_id,)).fetchall()
         return self._run_view(row, tasks, events)
 
@@ -371,7 +376,7 @@ class AutomationWorkflowService:
                 rows = connection.execute("SELECT * FROM automation_workflow_runs WHERE project_id=? ORDER BY created_at DESC LIMIT ?", (project_id, limit)).fetchall()
             views = []
             for row in rows:
-                tasks = connection.execute("SELECT * FROM automation_workflow_run_tasks WHERE run_id=? ORDER BY ordinal", (row["id"],)).fetchall()
+                tasks = connection.execute("SELECT t.*, j.state AS job_state FROM automation_workflow_run_tasks t LEFT JOIN jobs j ON j.id=t.job_id WHERE t.run_id=? ORDER BY t.ordinal", (row["id"],)).fetchall()
                 events = connection.execute("SELECT * FROM automation_workflow_run_events WHERE run_id=? ORDER BY created_at,id", (row["id"],)).fetchall()
                 views.append(self._run_view(row, tasks, events))
         return {"items": views, "limit": limit, "local_only": True, "network_contacted": False}
@@ -520,15 +525,61 @@ class AutomationWorkflowService:
                     task_id = str(uuid.uuid4())
                     task_key = f"{iteration}:{item['key']}"
                     now = _now()
+                    # Keep the workflow's bounded state machine authoritative:
+                    # the durable Job is an audit/execution hand-off and
+                    # carries the explicit HITL gate in its immutable snapshot.
+                    # A worker can therefore not infer approval from an AI
+                    # score or from the queue state alone.
+                    previous_job = connection.execute(
+                        "SELECT job_id FROM automation_workflow_run_tasks WHERE run_id=? AND job_id IS NOT NULL ORDER BY ordinal DESC LIMIT 1",
+                        (run_id,),
+                    ).fetchone()
+                    dependencies = [str(previous_job["job_id"])] if previous_job else []
+                    job = self.jobs.create_job_in_transaction(
+                        connection,
+                        str(row["project_id"]),
+                        "AUTOMATION_WORKFLOW_TASK",
+                        "AUTOMATION_WORKFLOW_TASK",
+                        task_id,
+                        "CPU",
+                        {
+                            "schema_version": "localdrama.automation-task.v1",
+                            "automation_workflow_id": str(row["workflow_id"]),
+                            "automation_run_id": run_id,
+                            "automation_task_id": task_id,
+                            "ordinal": task_count + 1,
+                            "item_key": str(item["key"]),
+                            "plan_hash": str(row["plan_hash"]),
+                            "approval_required": next_status == "PAUSED_HITL",
+                            "approval_status": "PENDING" if next_status == "PAUSED_HITL" else "NOT_REQUIRED",
+                            "machine_status": machine_status,
+                            "local_only": True,
+                            "network_contacted": False,
+                        },
+                        f"automation-task:{task_id}",
+                        max_attempts=1,
+                        depends_on_job_ids=dependencies,
+                        actor=actor,
+                    )
+                    if next_status == "PAUSED_HITL":
+                        # QUEUED is claimable by a worker.  Keep a gated task
+                        # in NEEDS_ATTENTION until the explicit human resume
+                        # transition below, so a scheduler cannot bypass the
+                        # workflow's HITL boundary.
+                        connection.execute(
+                            "UPDATE jobs SET state='NEEDS_ATTENTION',last_error_code='AUTOMATION_HITL_REQUIRED',last_error_detail_redacted='awaiting explicit human workflow decision',updated_at=?,revision=revision+1 WHERE id=? AND state='QUEUED'",
+                            (now, job["id"]),
+                        )
+                        self.jobs._emit(connection, "JOB_BLOCKED_HITL", str(row["project_id"]), "JOB", str(job["id"]), {"state": "NEEDS_ATTENTION", "run_id": run_id, "task_id": task_id})
                     connection.execute(
-                        "INSERT INTO automation_workflow_run_tasks (id,run_id,ordinal,item_key,item_json,status,produced_bytes,machine_context_json,review_status,created_at,updated_at,revision) VALUES (?,?,?,?,?,?,?,?,?,?,?,1)",
-                        (task_id, run_id, task_count + 1, task_key, _json(item), task_status, produced_bytes, _json(machine), "PENDING" if next_status == "PAUSED_HITL" else "NOT_REQUIRED", now, now),
+                        "INSERT INTO automation_workflow_run_tasks (id,run_id,ordinal,item_key,item_json,status,produced_bytes,machine_context_json,review_status,job_id,created_at,updated_at,revision) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)",
+                        (task_id, run_id, task_count + 1, task_key, _json(item), task_status, produced_bytes, _json(machine), "PENDING" if next_status == "PAUSED_HITL" else "NOT_REQUIRED", job["id"], now, now),
                     )
                     connection.execute(
                         """UPDATE automation_workflow_runs SET status=?,iteration_count=?,task_count=?,disk_bytes=?,pending_gate_json=?,machine_context_json=?,ai_scores_json=?,human_approval_status=?,completed_at=?,updated_at=?,revision=revision+1 WHERE id=?""",
                         (next_status, iteration, task_count + 1, disk_bytes + produced_bytes, _json(pending_gate), _json(machine), _json(scores), "PENDING" if next_status == "PAUSED_HITL" else str(row["human_approval_status"]), _now() if next_status in {"SUCCEEDED", "STOPPED", "LIMIT_REACHED"} else None, now, run_id),
                     )
-                    self._event(connection, run_id, "STEP_COMPLETED", {"task_id": task_id, "task_key": task_key, "status": next_status, "machine_status": machine_status, "ai_score_ignored": True, "produced_bytes": produced_bytes}, actor)
+                    self._event(connection, run_id, "STEP_COMPLETED", {"task_id": task_id, "task_key": task_key, "job_id": job["id"], "job_dependency_ids": dependencies, "status": next_status, "machine_status": machine_status, "ai_score_ignored": True, "produced_bytes": produced_bytes}, actor)
                     if next_status == "PAUSED_HITL":
                         self._event(connection, run_id, "HITL_REQUIRED", pending_gate, actor)
         return self.get_run(run_id)
@@ -546,10 +597,26 @@ class AutomationWorkflowService:
             if row["status"] != "PAUSED_HITL":
                 raise DomainRuleError("AUTOMATION_HITL_NOT_PENDING", "workflow run 当前没有等待人工决定", {"status": row["status"]})
             now = _now()
+            gated_jobs = connection.execute(
+                "SELECT j.id,j.project_id FROM automation_workflow_run_tasks t JOIN jobs j ON j.id=t.job_id WHERE t.run_id=? AND j.state='NEEDS_ATTENTION' AND j.last_error_code='AUTOMATION_HITL_REQUIRED'",
+                (run_id,),
+            ).fetchall()
             if normalized == "HUMAN_APPROVED":
+                for job in gated_jobs:
+                    connection.execute(
+                        "UPDATE jobs SET state='QUEUED',next_run_at=?,last_error_code=NULL,last_error_detail_redacted=NULL,updated_at=?,revision=revision+1 WHERE id=?",
+                        (now, now, job["id"]),
+                    )
+                    self.jobs._emit(connection, "JOB_HITL_APPROVED", str(job["project_id"]), "JOB", str(job["id"]), {"state": "QUEUED", "run_id": run_id, "decision": normalized})
                 connection.execute("UPDATE automation_workflow_runs SET status='RUNNING',pending_gate_json='{}',human_approval_status='APPROVED',updated_at=?,revision=revision+1 WHERE id=?", (now, run_id))
                 self._event(connection, run_id, "HITL_APPROVED", {"decision": normalized, "note": note, "ai_score_ignored": True}, actor)
             else:
+                for job in gated_jobs:
+                    connection.execute(
+                        "UPDATE jobs SET state='CANCELLED',cancel_requested_at=?,last_error_code='AUTOMATION_HITL_REJECTED',last_error_detail_redacted='human rejected workflow task',finished_at=?,updated_at=?,revision=revision+1 WHERE id=?",
+                        (now, now, now, job["id"]),
+                    )
+                    self.jobs._emit(connection, "JOB_HITL_REJECTED", str(job["project_id"]), "JOB", str(job["id"]), {"state": "CANCELLED", "run_id": run_id, "decision": normalized})
                 connection.execute("UPDATE automation_workflow_runs SET status='FAILED',pending_gate_json='{}',human_approval_status='REJECTED',completed_at=?,updated_at=?,revision=revision+1 WHERE id=?", (now, now, run_id))
                 self._event(connection, run_id, "HITL_REJECTED", {"decision": normalized, "note": note, "ai_score_ignored": True}, actor)
         return self.get_run(run_id)

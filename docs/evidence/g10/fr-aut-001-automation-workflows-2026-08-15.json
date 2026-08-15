@@ -16,6 +16,7 @@
   },
   "artifacts": [
     "apps/api/alembic/versions/0035_declarative_automation_workflows.py",
+    "apps/api/alembic/versions/0039_automation_task_jobs.py",
     "apps/api/local_drama/application/automation_workflows.py",
     "apps/api/local_drama/api/schemas/automation_workflows.py",
     "apps/api/local_drama/api/routes/automation_workflows.py",
@@ -23,14 +24,17 @@
     "apps/web/src/features/shared/AutomationWorkflowPanel.tsx"
   ],
   "verified": {
-    "command": ".venv/Scripts/python.exe -m pytest apps/api/tests/test_automation_workflows.py -q",
-    "result": "3 passed",
+    "command": ".venv/Scripts/python.exe -m pytest apps/api/tests/test_automation_workflows.py apps/api/tests/test_migration.py -q",
+    "result": "6 passed",
     "checks": [
       "machine FAIL creates PAUSED_HITL rather than approval",
       "HUMAN_APPROVED/HUMAN_REJECTED are the only resume decisions",
       "AI scores are persisted for evidence but have no approval capability",
       "disk limit stops a run without creating an over-budget task",
-      "API route uses the same service command boundary as the UI"
+      "API route uses the same service command boundary as the UI",
+      "Every created task persists a Job link with an immutable local-only snapshot",
+      "Successive task Jobs form a bounded dependency chain through job_dependencies",
+      "HITL-required tasks freeze approval_required=true and approval_status=PENDING in the Job snapshot"
     ]
   },
   "production_uat": {
@@ -38,9 +42,9 @@
     "reason": "Windows x64 three-viewport production UAT, crash/restart reconciliation and long-running batch evidence remain outstanding"
   },
   "remaining": [
-    "Connect each declarative task node to the existing persistent Job DAG without bypassing job-level approval gates",
+    "Run a real worker/restart UAT proving the queued Job cannot execute a HITL task before human resume",
     "Run production Windows x64 UAT and attach restart/disk-pressure evidence",
     "Add full Playwright acceptance evidence for the panel"
   ],
-  "observed_at": "2026-08-15"
+  "observed_at": "2026-08-16"
 }

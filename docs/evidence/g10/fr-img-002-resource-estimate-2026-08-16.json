@@ -1,0 +1,40 @@
+{
+  "evidence_id": "fr-img-002-resource-estimate-2026-08-16",
+  "schema_version": "localdrama.requirement.evidence.v1",
+  "requirement_ids": ["FR-IMG-002"],
+  "status": "IMPLEMENTATION_EVIDENCE",
+  "observed_at": "2026-08-16T04:05:00+08:00",
+  "scope": "LOCAL_ONLY bounded preflight resource estimate for image/video candidate generation",
+  "claims": {
+    "profile_policy_authority": {
+      "implemented": true,
+      "details": "Generation preflight returns a bounded per-take estimate sourced only from explicit Published Profile resource_policy fields. Duration, VRAM and disk values remain null/unknown when the policy does not declare them; no model-name, Runtime or static default is used."
+    },
+    "submission_gate": {
+      "implemented": true,
+      "details": "GenerationWorkbench shows duration, VRAM, disk and CPU estimates before confirmation, keeps unknown fields visibly undeclared, and still requires the existing server preflight plan before the Variant/Job confirmation button can run."
+    },
+    "local_model_boundary": {
+      "implemented": true,
+      "details": "The estimate contains no model bytes or paths and does not upload/copy user-selected local model references; execution remains bound to the local Published Profile and loopback Runtime contract."
+    }
+  },
+  "automated_tests": [
+    "apps/api/tests/test_generation_variants.py::test_resource_estimate_only_uses_explicit_profile_policy_values",
+    "apps/api/tests/test_generation_variants.py::test_formal_i2v_freezes_current_keyframe_approval_in_binding_and_job_snapshot",
+    "apps/web/src/features/generation/GenerationWorkbench.test.tsx::persists intent and prompt, then requires a second confirmation for Variant plus Job"
+  ],
+  "commands": [
+    ".venv/Scripts/python.exe -m pytest apps/api/tests/test_generation_variants.py -q",
+    "npm test -- --run src/features/generation/GenerationWorkbench.test.tsx"
+  ],
+  "result": "PASS",
+  "local_only": true,
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "production_uat": {
+    "status": "PENDING",
+    "required": ["real user-selected Published Profile with declared resource policy", "Windows x64 three-viewport preflight screenshot/sign-off", "real Runtime run comparing declared estimate with observed telemetry"]
+  },
+  "notes": "This is implementation and negative-path evidence only; FR-IMG-002 remains PARTIAL until real local Runtime UAT is recorded."
+}

@@ -175,6 +175,27 @@ def _publish_profile_contract(database, profile_version_id: str) -> None:
         )
 
 
+def test_resource_estimate_only_uses_explicit_profile_policy_values() -> None:
+    declared = GenerationService._resource_estimate(
+        {
+            "estimated_duration_seconds_per_take": 4.5,
+            "estimated_vram_bytes_per_take": 8 * 1024**3,
+            "estimated_disk_bytes_per_take": 12 * 1024**2,
+        }
+    )
+    assert declared["status"] == "DECLARED"
+    assert declared["source"] == "PROFILE_RESOURCE_POLICY"
+    assert declared["per_take"] == {
+        "duration_seconds": 4.5,
+        "vram_bytes": 8 * 1024**3,
+        "disk_bytes": 12 * 1024**2,
+    }
+    unknown = GenerationService._resource_estimate({"gpu_heavy_concurrency": 1})
+    assert unknown["status"] == "UNKNOWN"
+    assert unknown["unknown"] == ["duration_seconds", "vram_bytes", "disk_bytes"]
+    assert unknown["per_take"] == {"duration_seconds": None, "vram_bytes": None, "disk_bytes": None}
+
+
 def _copy_profile_version(database, source_version_id: str, *, status: str = "PUBLISHED") -> str:
     profile_id = str(uuid.uuid4())
     version_id = str(uuid.uuid4())
@@ -226,6 +247,9 @@ def test_formal_i2v_freezes_current_keyframe_approval_in_binding_and_job_snapsho
         [{"item_id": str(item["id"]), "result": "PASS"} for item in template["items"]],
     )
     preflight = generation.preflight_variant(str(intent["id"]), plan)
+    assert preflight["resource_estimate"]["status"] == "UNKNOWN"
+    assert preflight["resource_estimate"]["source"] == "PROFILE_RESOURCE_POLICY"
+    assert preflight["resource_estimate"]["per_take"] == {"duration_seconds": None, "vram_bytes": None, "disk_bytes": None}
     assert preflight["dependencies"]["approvals"] == [
         {"role": "FIRST_FRAME", "ordinal": 0, "source_approval_id": approval["id"]}
     ]
