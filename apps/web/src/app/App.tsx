@@ -52,6 +52,7 @@ import { GlobalSearchPanel } from "../features/shared/GlobalSearchPanel";
 import { ProjectHealthPanel } from "../features/shared/ProjectHealthPanel";
 import { WorkspaceAssetAuthorizationPanel } from "../features/shared/WorkspaceAssetAuthorizationPanel";
 import { OutboxDeliveryPanel } from "../features/shared/OutboxDeliveryPanel";
+import { BrandKitPanel } from "../features/shared/BrandKitPanel";
 import { ContinuityPanel } from "../features/production/ContinuityPanel";
 import { DirectorShotEditor } from "../features/production/DirectorShotEditor";
 import { PromptTemplatePanel } from "../features/production/PromptTemplatePanel";
@@ -351,6 +352,7 @@ export function App() {
                 {g8Readiness.data?.readiness && <G8ReadinessPanel readiness={g8Readiness.data.readiness} />}
               </div>}
               {projectConfiguration.data?.configuration && <ProjectConfigurationSnapshot configuration={projectConfiguration.data.configuration} projectId={selectedProject ?? undefined} onChanged={() => { void projectConfiguration.refetch(); void timelineStatus.refetch(); }} />}
+              {selectedProject && <BrandKitPanel projectId={selectedProject} />}
             </section>
           )}
 
@@ -360,7 +362,7 @@ export function App() {
 
           {view === "jobs" && <><JobsPanel jobs={jobs.data?.items ?? []} loading={jobs.isPending} onChanged={() => { void jobs.refetch(); void capacitySnapshot.refetch(); }} /><CapacitySnapshotPanel snapshot={capacitySnapshot.data?.snapshot} /></>}
 
-          {view === "profiles" && <><ProfileConfigurationPanel profiles={profiles.data?.items ?? []} workflows={workflows.data?.items ?? []} workflowsLoading={workflows.isPending} onChanged={() => { void profiles.refetch(); }} />{projectConfiguration.data?.configuration && <ProjectConfigurationSnapshot configuration={projectConfiguration.data.configuration} projectId={selectedProject ?? undefined} onChanged={() => { void projectConfiguration.refetch(); }} />}{modelCompatibility.data?.compatibility && <ModelCompatibilityPanel snapshot={modelCompatibility.data.compatibility} projectId={selectedProject ?? undefined} onEvidenceImported={() => { void modelCompatibility.refetch(); }} />}</>}
+          {view === "profiles" && <><ProfileConfigurationPanel profiles={profiles.data?.items ?? []} workflows={workflows.data?.items ?? []} workflowsLoading={workflows.isPending} onChanged={() => { void profiles.refetch(); }} />{projectConfiguration.data?.configuration && <ProjectConfigurationSnapshot configuration={projectConfiguration.data.configuration} projectId={selectedProject ?? undefined} onChanged={() => { void projectConfiguration.refetch(); }} />}{selectedProject && <BrandKitPanel projectId={selectedProject} />}{modelCompatibility.data?.compatibility && <ModelCompatibilityPanel snapshot={modelCompatibility.data.compatibility} projectId={selectedProject ?? undefined} onEvidenceImported={() => { void modelCompatibility.refetch(); }} />}</>}
 
           {view === "generation" && <><GenerationWorkbench projectId={selectedProject} profiles={profiles.data?.items ?? []} candidates={reviewItems.data?.items ?? []} h3={h3Runtime.data?.runtime} g6Readiness={g6Readiness.data?.readiness} i2vProbePlan={i2vProbePlan.data?.plan} shots={production.data?.items ?? []} selectedShotId={selectedShot} onSelectShot={selectShot} onOpenProfiles={() => navigate("profiles")} onSubmitted={() => { void jobs.refetch(); void production.refetch(); }} onOpenReviews={(mediaVersionId) => { void queryClient.invalidateQueries({ queryKey: ["reviews", "inbox"] }); void queryClient.invalidateQueries({ queryKey: ["gates", "g6"] }); void queryClient.invalidateQueries({ queryKey: ["gates", "g6", "i2v-probe-plan"] }); if (mediaVersionId) setSelectedReviewVersionId(mediaVersionId); setView("reviews"); writeLocationState({ view: "reviews", projectId: selectedProject, episodeId: selectedEpisode, shotId: selectedShot, reviewId: mediaVersionId ?? null }); }} /><WorkspaceAssetAuthorizationPanel projectId={selectedProject ?? ""} items={reviewItems.data?.items ?? []} onChanged={() => { void reviewItems.refetch(); void g6Readiness.refetch(); }} /><PostProcessPanel videos={(reviewItems.data?.items ?? []).filter((item) => item.media_kind === "VIDEO")} /><DirectorShotEditor shot={production.data?.items.find((item) => String(item.id) === selectedShot)} profiles={profiles.data?.items ?? []} onChanged={() => { void production.refetch(); void continuity.refetch(); }} /><PromptTemplatePanel projectId={selectedProject} shot={production.data?.items.find((item) => String(item.id) === selectedShot)} profiles={profiles.data?.items ?? []} /><ContinuityPanel context={continuity.data?.continuity} /></>}
 
