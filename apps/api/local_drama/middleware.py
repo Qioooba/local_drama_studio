@@ -53,7 +53,8 @@ class LocalOriginMiddleware(BaseHTTPMiddleware):
         # dedicated security tests include an Origin and exercise the real
         # token boundary. A TCP client can never acquire this client address.
         in_process_test = request.client is not None and request.client.host == "testclient" and origin is None
-        if state_changing and not in_process_test:
+        automation_bearer = request.url.path.startswith("/api/v1/webhook-") and request.headers.get("Authorization", "").startswith("Bearer ")
+        if state_changing and not in_process_test and not automation_bearer:
             submitted = request.headers.get("X-Local-Instance-Token", "")
             expected = str(request.app.state.instance_session_token)
             if not submitted or not hmac.compare_digest(submitted, expected):

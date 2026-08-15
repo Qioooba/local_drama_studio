@@ -1,0 +1,32 @@
+{
+  "schema_version": "g10.fr-aut-002-implementation.v1",
+  "status": "PASS_AUTOMATED",
+  "requirement": "FR-AUT-002",
+  "observed_at": "2026-08-15T00:00:00Z",
+  "implementation": {
+    "migration_head": "0034_local_automation_webhooks",
+    "client_token_storage": "SHA256_HASH_ONLY",
+    "token_returned_once": true,
+    "scopes": ["read", "plan", "submit", "review", "delivery"],
+    "webhook_target": "LOOPBACK_ONLY",
+    "signature": "HMAC_SHA256",
+    "idempotency": "COMMAND_IDEMPOTENCIES_WITH_PAYLOAD_HASH",
+    "retry": {"strategy": "EXPONENTIAL_BACKOFF", "max_attempts": 5, "dead_letter": true},
+    "audit": true,
+    "ui_and_api_share_command": true
+  },
+  "automated_tests": [
+    "apps/api/tests/test_automation_webhooks.py",
+    "apps/api/tests/test_migration.py"
+  ],
+  "safety": {
+    "public_network_contacted": false,
+    "runtime_contacted": false,
+    "remote_provider_contacted": false,
+    "user_model_or_media_bundled": false
+  },
+  "production_uat": {
+    "status": "PENDING",
+    "reason": "正式项目三视口 UAT 与最终 release evidence 尚未执行；不把自动化回归冒充生产签字。"
+  }
+}

@@ -122,7 +122,7 @@
 | run node/from/to/range preflight | VERIFIED | `canvas_execution_plans`、max node/GPU concurrency/HITL/blocker 计划 |
 | 画布性能基础、键盘/不可连接/不可删除替代约束 | VERIFIED PRODUCTION UAT | 生产 EPISODE_001 持久化 22 个真实 SHOT、110 节点；三档浏览器 canvas-ready 1.0—1.3s、零水平溢出、零 console/page error、零失败响应；`g9-production-scale-uat-2026-08-15.json`、`g9-production-canvas-uat-2026-08-15.json` |
 | 三视图 route/selection 同步、画布搜索与上/下游聚焦 | VERIFIED PRODUCTION UAT | 三档真实生产页面验证语义画布、键盘节点列表、搜索过滤、URL shot 同步与选中态；`g9-production-accessibility-uat-2026-08-15.json`。只改变可视节点集合，不改变业务 edges |
-| automation/webhook/产能看板 | VERIFIED BASELINE | `POST /events:deliver` 仅支持显式 loopback、上限 100、2xx 后标记 outbox delivered；真实临时 loopback 服务回归、拒绝公网 URL；产能仍标记 `OBSERVED_NOT_BENCHMARKED`，不冒充 benchmark |
+| automation/webhook/产能看板 | IMPLEMENTED / UAT PENDING | 旧 `POST /events:deliver` 继续兼容；新增 `POST /automation-clients`、`POST/GET /webhook-subscriptions`、`POST/GET /webhook-deliveries` 和 `:retry`。client token 只显示一次并存 hash，scope 为 read/plan/submit/review/delivery；回调仅 loopback、HMAC 签名、指数退避（最多 5 次）、死信和审计；UI `AutomationPanel` 使用同一 command。真实隔离服务回归为 `apps/api/tests/test_automation_webhooks.py`；正式三视口 UAT 与总账 PASS 证据仍待完成。产能仍标记 `OBSERVED_NOT_BENCHMARKED`。|
 | G9-09 本机队列产能观测 | VERIFIED BASELINE | `GET /capacity/snapshot`；真实 SQLite Job/Attempt 状态、GPU 并发和近 24h 完成数；`OBSERVED_NOT_BENCHMARKED`、`would_create_jobs=false`、无 runtime/network/mutation；`test_capacity_snapshot.py` |
 | G9-08 变体谱系、实验进度、相邻边界约束只读可视化 | VERIFIED BASELINE | Canvas graph read model 汇总真实 generation_variants/generation_experiments/experiment_cells/shot_transition_constraints；选中节点显示摘要，空数据不造数；`test_g9_canvas.py`、G9 validation evidence |
 | G9 readiness / ordered exit | EVIDENCE PASS / ORDERED BLOCKED | readiness 五项全部 PASS；发布审计强制 G7→G8→G9 链式顺序，因 G7 许可证证据阻塞而保持 `ORDERED_G9=false`，禁止越级宣告 |
@@ -195,7 +195,7 @@ G7 已可按蓝图 09 顺序开始，但当前不是 PASS；G8/G9 仍只记 prog
 
 G7 当前已按“用户自带本机模型、平台只引用管理、不捆绑权重”的正式范围 PASS；G8、G9 亦已按顺序 PASS。
 
-历史 G10 局部门禁证据曾为 PASS，但总设计复核后总体发布状态已撤回为 `IN_PROGRESS / NO-GO`。当前数据库与最近五份迁移前备份 `integrity=ok`，migration head=`0033_brand_watermark_compliance_versions`；`0031→0033` 隔离升级与精确恢复演练证据需随本批更新。规模、安全、干净新根恢复、本地只读 UAT、G7→G8→G9 有序退出、SBOM 和运行手册仍是有效局部证据，但不能替代 84 个 P0/P1 FR、15 个 NFR 与 85 个命名 TC 的总账闭环。正式范围保持 Windows x64 LOCAL_ONLY 本地源码发行版，不捆绑用户模型或媒体。
+历史 G10 局部门禁证据曾为 PASS，但总设计复核后总体发布状态已撤回为 `IN_PROGRESS / NO-GO`。当前数据库与最近五份迁移前备份 `integrity=ok`，migration head=`0034_local_automation_webhooks`；`0031→0034` 隔离升级与精确恢复演练证据需随本批更新。规模、安全、干净新根恢复、本地只读 UAT、G7→G8→G9 有序退出、SBOM 和运行手册仍是有效局部证据，但不能替代 84 个 P0/P1 FR、15 个 NFR 与 85 个命名 TC 的总账闭环。正式范围保持 Windows x64 LOCAL_ONLY 本地源码发行版，不捆绑用户模型或媒体。
 
 2026-08-15 用户自带模型策略闭环：新增本机模型引用 API 与页面原生文件选择器，返回绝对路径且 `copied=false/uploaded=false`；兼容报告将用户许可证缺失降级为可见风险，不改变 hash、量化、路径和 symlink 硬校验。生产数据库在线备份后迁移至 0029，G7/G8/G9 依次 PASS；完整门禁 API 178 passed / 4 live deselected、Web 60/60（以最终实际回归输出为准更新），三档模型路径 UI 3/3 PASS。G10 发布审计 PASS，GO 范围不包含模型权重、音色、媒体或 REMOTE Provider。
 
@@ -207,7 +207,7 @@ FR-CTL-001 提交链增量：生成工作台现按 `Intent + frozen PromptRevisi
 
 FR-PST-001 / TC-CAP-009 已闭环：PostProcessRecipe 采用逻辑 key + 不可变版本 + 显式 DRAFT 发布；运行必须先生成只读 plan hash，再由用户二次确认。真实本地执行按 `SCALE(FFV1 中间件) → TECHNICAL_QC(FFprobe) → ENCODE(H264)` 分步记录 executor、配置 profile、输入/输出 SHA-256 与结果，只有 QC 通过才注册带 `parent_version_id` 的新 ENHANCED MediaVersion，输入永不覆盖。1280×720 真实页面已完成创建、发布、预检、执行及双视频旁路比较，QC=true、无横向溢出或可见错误。证据见 `docs/evidence/g10/fr-pst-001-uat-2026-08-15.json`。
 
-总账现由 `scripts/master_requirements_audit.py` 与 `docs/evidence/g10/master-requirements-map.json` 逐项校验，不能再靠手填计数放行；PASS 项必须引用现存的 PASS JSON 证据和自动化测试文件，未知 ID、重复 ID、缺证据或缺测试路径都会使 mapping 失效。对既有证据重新审计后，当前为 12/84 FR、0/15 NFR、7/85 TC，mapping 与 closure 计数一致；整体仍为 NO-GO。
+总账现由 `scripts/master_requirements_audit.py` 与 `docs/evidence/g10/master-requirements-map.json` 逐项校验，不能再靠手填计数放行；PASS 项必须引用现存的 PASS JSON 证据和自动化测试文件，未知 ID、重复 ID、缺证据或缺测试路径都会使 mapping 失效。当前自动审计为 14/84 FR、0/15 NFR、9/85 TC；FR-AUT-002 已有自动化实现证据但映射保持 `PARTIAL`，不计入正式 PASS，整体仍为 NO-GO。
 
 FR-ING-001 / TC-CAP-001 已闭环：用户可从页面调用 Windows 原生选择器或填写绝对路径导入本机 TXT、Markdown、DOCX；平台先注册不可变源文档、解析并生成带 hash 的预览，只有用户显式提交且预览 hash 未变化时才进入 COMMITTED。重复导入/提交幂等复用，源文件与已提取文本均不覆盖，symlink、不支持扩展名、过期预览及 hash 篡改硬拒绝。正式项目 1280×720 页面完成真实预览和提交，唯一提交审计事件及源/文本 SHA-256 已固化于 `docs/evidence/g10/fr-ing-001-uat-2026-08-15.json`。总账更新为 13/84 FR、0/15 NFR、8/85 TC，整体仍为 NO-GO。
 

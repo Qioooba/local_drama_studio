@@ -116,14 +116,18 @@ SAPI 批次已提交为 `ec48a61 feat: run real local sapi tts jobs`。源代码
 - `f3beb2b` / `7500741`：项目包副本导入与 rebind 后自动重建 IMAGE/VIDEO small poster 缩略图；新增项目级 `POST /projects/{id}/media-thumbnails:rebuild`、项目页重建按钮和失败计数。源文件仍只读/hash 校验，失败不回滚有效导入。
 - `504f915`：thumbnail/filmstrip/waveform 每次读取前重新验证源 MediaVersion SHA，已存在的旧缓存也不能绕过篡改检测。
 - `c0c7368`：生成工作台增加 `Provider random 重提` 分支入口，明确显示 `NON_REPRODUCIBLE`。
-- 发布演练脚本已在本批对齐当前 migration head `0033_brand_watermark_compliance_versions`；旧 `0032` 演练证据保留为历史，新的 `0033` 隔离证据需生成后才可作为当前 release audit 输入。总需求 closure 仍是 IN_PROGRESS/NO-GO，不能提前宣告完成。
+- （历史记录）当时发布演练脚本对齐 migration head `0033_brand_watermark_compliance_versions`；该记录随后由 `0034_local_automation_webhooks` 批次推进，当前证据以 0034 文件为准。总需求 closure 仍是 IN_PROGRESS/NO-GO，不能提前宣告完成。
 - 本轮新增 `GET /api/v1/tts/voices:discover`：在 Windows 上只读扫描本机 System.Speech/SAPI 音色元数据，页面可显式选择并填入 `sapi:` 引用；不复制、上传或写入项目。未安装 PowerShell/System.Speech 时返回 `UNAVAILABLE`，扫描结果包含 `runtime_contacted=true`、`network_contacted=false`、`mutated=false`。隔离 API 回归、Web 7 项对白治理测试、build、Ruff 与 mypy 101 files 通过。
 - 本轮继续实现 FR-PST-002：PostProcessRecipe 在核心 `SCALE → TECHNICAL_QC → ENCODE` 之间支持 `FRAME_INTERPOLATION`、`DENOISE`、`STABILIZE`、项目内 `.cube LUT_3D`；recipe capability_contract 必须显式声明可选步骤。每步独立生成 FFmpeg 中间文件、冻结输入/输出 hash，目标 FPS/尺寸进入 QC，失败不会注册输出或覆盖输入。真实 FFmpeg 可选链、失败回滚 API 回归与 Web 73 项全量测试通过；FR-PST-002 三视口生产 UAT、FR-PST-003 和总账证据仍未完成。
 - 本轮继续实现 FR-PST-003：新增 migration `0033_brand_watermark_compliance_versions`，WatermarkProfile/CompliancePolicy 独立版本化，BrandKit 继续不可变版本化；交付可显式绑定或自动读取项目 ACTIVE 控制版本。水印由本机 FFmpeg + Windows 字体生成新交付文件，合规规则在写包前做机器预检，manifest/DB 同时冻结三个控制版本、机器责任边界和人工/平台 PENDING 状态；机器失败不生成交付包、不覆盖整集渲染。真实整集渲染/水印/manifest/SHA/篡改校验、合规失败路径已加入 API 回归，Web Brand/Watermark/Compliance 面板和生成客户端已更新。FR-PST-003 三视口生产 UAT、人工/平台审核真实记录、总账证据仍待补齐，不能标最终 VERIFIED。
-- 本批将 migration head 同步更新为 `0033_brand_watermark_compliance_versions`：迁移健康测试、release rehearsal/audit 脚本、安装升级手册与追踪文档均不再把 `0032` 误当当前 head；历史 `0032` 证据仍保留为历史记录，新增 `0033` 隔离升级/恢复证据后才可进入 release audit。
+- （历史记录）本批曾将 migration head 同步到 `0033_brand_watermark_compliance_versions`；当前迁移健康测试、release rehearsal/audit 脚本、安装升级手册与追踪文档已继续更新到 `0034_local_automation_webhooks`，0033 证据保留为历史记录。
 - FR-PST-003 又补上交付审核命令：`POST /delivery-packages/{id}:review` 只能显式记录 HUMAN/PLATFORM 两类批准或拒绝，必须填写 note，撤回包禁止再审；DeliveryWorkflowPanel 已提供两类批准入口，状态仍与 machine preflight 分开。真实水印交付回归现覆盖机器 PASS→人工批准→平台批准全链路；三视口生产 UAT、正式证据与总账 closure 仍未完成。
 
 ## 下一步精确顺序
+
+本轮新增 FR-AUT-002 本机自动化基础实现：migration `0034_local_automation_webhooks` 持久化 scoped automation client、loopback webhook subscription 和每事件 delivery 状态；token/签名 secret 只在创建响应返回，token 存 hash，回调使用 HMAC `X-Local-Drama-Signature`，失败按 5 次上限指数退避，之后进入 `DEAD_LETTER`，`POST :retry` 必须显式重置并审计。新增 API/UI/生成客户端与隔离真实 loopback 测试，旧 `/events:deliver` 保持兼容。正式三视口 UAT、外部自动化脚本实际接入和总账 PASS 仍未完成，因此 FR-AUT-002 仅记 `IMPLEMENTED / UAT PENDING`，总体仍 `IN_PROGRESS / NO-GO`。
+
+当前 migration head 已推进到 `0034_local_automation_webhooks`；release audit/rehearsal、安装升级手册、迁移健康测试同步更新，需用 `upgrade-rollback-rehearsal-0034-2026-08-15.json` 作为当前隔离演练证据。
 
 1. FR-AUD-001 仍不能标 VERIFIED，直到正式项目存在真实授权音色、Published TTS Profile、真实 Job/MediaVersion/candidate、试听、QC、审核与选择闭环。
 2. G7 模型许可证首阻塞仍优先；真实证据未出现时可以继续其他实现，但禁止越级宣布 G7/G8/G9 PASS。

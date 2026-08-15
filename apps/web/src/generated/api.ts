@@ -66,6 +66,10 @@ export type AdapterContract = { code: string; title: string; kind: string; trans
 export type AdapterRegistry = { mode: 'LOCAL_ONLY'; contracts: AdapterContract[]; remote_transport_allowed: false; runtime_contacted: false; network_contacted: false; mutated: false };
 export type CapacitySnapshot = { scope: { project_id: string | null }; observed_at: string; jobs_by_state: Record<string, number>; jobs_by_channel: Record<string, number>; queued_count: number; oldest_queued_age_seconds: number | null; active_attempt_count: number; active_worker_count: number; gpu_active_count: number; gpu_concurrency_limit: number; completed_last_24h: number; observation_status: 'OBSERVED_NOT_BENCHMARKED'; webhook_status: 'LOOPBACK_EXPLICIT_BOUNDED'; would_create_jobs: false; runtime_contacted: false; network_contacted: false; mutated: false };
 export type OutboxDelivery = { endpoint_url: string; scope: { project_id: string | null }; status: 'DELIVERED' | 'PARTIAL' | 'NO_EVENTS'; delivered_event_ids: number[]; delivered_count: number; failed: Array<Record<string, unknown>>; bounded: true; max_batch_size: number; remote_transport_allowed: false; runtime_contacted: false; network_contacted: false; mutated: boolean };
+export type AutomationClient = { id: string; project_id: string | null; code: string; title: string; scopes: string[]; status: 'ACTIVE' | 'REVOKED'; token?: string | null; token_returned_once: boolean; loopback_only: true; network_contacted: false; idempotent_replay?: boolean };
+export type WebhookSubscription = { id: string; automation_client_id: string; project_id: string | null; endpoint_url: string; event_types: string[]; status: 'ACTIVE' | 'REVOKED'; signing_secret?: string | null; secret_returned_once?: boolean; loopback_only: true; idempotent_replay?: boolean };
+export type WebhookDelivery = { id: string; subscription_id: string; event_id: number; status: 'PENDING' | 'RETRYING' | 'DELIVERED' | 'DEAD_LETTER'; attempt_count: number; next_attempt_at: string | null; last_error: string | null; last_response_status: number | null; created_at: string; updated_at: string; delivered_at: string | null };
+export type WebhookDeliveryResult = { status: 'DELIVERED' | 'RETRYING' | 'DEAD_LETTER' | 'NO_EVENTS'; client_id: string; delivered_delivery_ids: string[]; delivered_count: number; failed: Array<Record<string, unknown>>; dead_letter_delivery_ids: string[]; max_attempts: number; max_batch_size: number; retry_backoff_seconds: { base: number; max: number }; bounded: true; loopback_only: true; remote_transport_allowed: false; runtime_contacted: false; network_contacted: false; mutated: boolean };
 export type TimelineStatus = { episode: { id: string; code: string; title: string; project_id: string }; timeline: { revision_count: number; latest: Record<string, unknown> | null }; subtitles: { revision_count: number; latest: Record<string, unknown> | null }; audio: { binding_count: number; verified_local_count: number }; renders: { count: number; verified_count: number; latest: Record<string, unknown> | null }; delivery: { count: number; verified_count: number; latest: Record<string, unknown> | null }; observed_at: string; read_only: true; runtime_contacted: false; network_contacted: false; mutated: false };
 export type TimelineItemRequest = { track_type?: string; media_version_id?: string | null; start_us: number; end_us: number; parameters?: Record<string, unknown> };
 export type TimelineRevision = { id: string; episode_id: string; revision_no: number; status: string; input_snapshot: Record<string, unknown>; items: Array<Record<string, unknown>>; [key: string]: unknown };
@@ -761,6 +765,35 @@ export async function getCapacitySnapshot(projectId?: string, baseUrl = ''): Pro
 
 export async function deliverOutboxEvents(payload: { endpoint_url: string; project_id?: string; after_event_id?: number; limit?: number }, baseUrl = ''): Promise<{ delivery: OutboxDelivery }> {
   return requestJson('/api/v1/events:deliver', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function createAutomationClient(payload: { code: string; title: string; project_id?: string; scopes: Array<'read' | 'plan' | 'submit' | 'review' | 'delivery'> }, idempotencyKey = crypto.randomUUID(), baseUrl = ''): Promise<{ client: AutomationClient }> {
+  return requestJson('/api/v1/automation-clients', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function createWebhookSubscription(token: string, payload: { endpoint_url: string; project_id?: string; event_types?: string[] }, idempotencyKey = crypto.randomUUID(), baseUrl = ''): Promise<{ subscription: WebhookSubscription }> {
+  return requestJson('/api/v1/webhook-subscriptions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function listWebhookSubscriptions(token: string, baseUrl = ''): Promise<{ items: WebhookSubscription[]; loopback_only: true; network_contacted: false }> {
+  return requestJson('/api/v1/webhook-subscriptions', { headers: { Authorization: `Bearer ${token}` } }, baseUrl);
+}
+
+export async function deliverWebhookEvents(token: string, payload: { subscription_id?: string; project_id?: string; after_event_id?: number; limit?: number } = {}, baseUrl = ''): Promise<{ delivery: WebhookDeliveryResult }> {
+  return requestJson('/api/v1/webhook-deliveries:deliver', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function listWebhookDeliveries(token: string, filters: { subscription_id?: string; status?: string; limit?: number } = {}, baseUrl = ''): Promise<{ items: WebhookDelivery[]; bounded: true; max_batch_size: number; network_contacted: false }> {
+  const query = new URLSearchParams();
+  if (filters.subscription_id) query.set('subscription_id', filters.subscription_id);
+  if (filters.status) query.set('status', filters.status);
+  if (filters.limit) query.set('limit', String(filters.limit));
+  const suffix = query.size ? `?${query.toString()}` : '';
+  return requestJson(`/api/v1/webhook-deliveries${suffix}`, { headers: { Authorization: `Bearer ${token}` } }, baseUrl);
+}
+
+export async function retryWebhookDelivery(token: string, deliveryId: string, baseUrl = ''): Promise<{ delivery: WebhookDeliveryResult }> {
+  return requestJson(`/api/v1/webhook-deliveries/${encodeURIComponent(deliveryId)}:retry`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: '{}' }, baseUrl);
 }
 
 export async function runG7NetworkE2E(projectId: string, baseUrl = ''): Promise<{ attestation: Record<string, unknown> }> {

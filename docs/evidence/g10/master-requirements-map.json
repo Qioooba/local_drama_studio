@@ -145,6 +145,12 @@
       "status": "PASS",
       "evidence": ["docs/evidence/g7/local-llm-structured-breakdown-2026-08-15.json", "docs/evidence/g10/ai-draft-review-uat-2026-08-15.json"],
       "automated_tests": ["apps/api/tests/test_ai_breakdown_drafts.py"]
+    },
+    {
+      "id": "FR-AUT-002",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-aut-002-automation-implementation-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_automation_webhooks.py", "apps/api/tests/test_migration.py"]
     }
   ]
 }

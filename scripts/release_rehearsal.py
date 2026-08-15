@@ -15,7 +15,7 @@ from alembic import command
 from alembic.config import Config
 
 ROOT = Path(__file__).resolve().parents[1]
-HEAD_MIGRATION = "0033_brand_watermark_compliance_versions"
+HEAD_MIGRATION = "0034_local_automation_webhooks"
 SOURCE_MIGRATION = "0031_project_asset_grants"
 
 
@@ -103,7 +103,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path)
     parser.add_argument("--root", type=Path, default=ROOT / "temp" / f"release-rehearsal-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}")
-    parser.add_argument("--output", type=Path, default=ROOT / "docs" / "evidence" / "g10" / "upgrade-rollback-rehearsal-0033-2026-08-15.json")
+    parser.add_argument("--output", type=Path, default=ROOT / "docs" / "evidence" / "g10" / "upgrade-rollback-rehearsal-0034-2026-08-15.json")
     args = parser.parse_args()
     source = args.source or max((ROOT / "backups").glob("pre_migration_*.sqlite3"), key=lambda path: path.stat().st_mtime)
     result = rehearse(source.resolve(), args.root.resolve())

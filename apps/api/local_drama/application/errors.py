@@ -5,7 +5,9 @@ from local_drama.errors import ApiError
 
 
 def api_error_from_domain(error: DomainRuleError) -> ApiError:
-    if error.code.endswith("_NOT_FOUND") or error.code in {"PROJECT_NOT_FOUND", "SHOT_NOT_FOUND"}:
+    if error.code in {"AUTOMATION_TOKEN_REQUIRED", "AUTOMATION_TOKEN_INVALID", "AUTOMATION_SCOPE_FORBIDDEN", "AUTOMATION_PROJECT_FORBIDDEN"}:
+        status = 403
+    elif error.code.endswith("_NOT_FOUND") or error.code in {"PROJECT_NOT_FOUND", "SHOT_NOT_FOUND"}:
         status = 404
     elif error.code in {
         "REVISION_CONFLICT",
