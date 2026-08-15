@@ -44,6 +44,7 @@ import { ProductionCanvasPanel } from "../features/canvas/ProductionCanvasPanel"
 import { EpisodeContactSheetAction } from "../features/production/EpisodeContactSheetAction";
 import { TimelineExportAction } from "../features/production/TimelineExportAction";
 import { SubtitleRevisionPanel } from "../features/production/SubtitleRevisionPanel";
+import { TimelineRevisionPanel } from "../features/production/TimelineRevisionPanel";
 import { ContinuityPanel } from "../features/production/ContinuityPanel";
 import { DirectorShotEditor } from "../features/production/DirectorShotEditor";
 import { PromptTemplatePanel } from "../features/production/PromptTemplatePanel";
@@ -331,6 +332,7 @@ export function App() {
                 {selectedProject && selectedEpisode && <DialogueTTSPanel lines={dialogueLines.data?.items ?? []} voices={voiceProfiles.data?.items ?? []} projectId={selectedProject} episodeId={selectedEpisode} onChanged={() => { void dialogueLines.refetch(); void voiceProfiles.refetch(); void queryClient.invalidateQueries({ queryKey: ["jobs"] }); }} />}
                 {selectedProject && selectedEpisode && <AudioTrackPanel bindings={audioBindings.data?.items ?? []} projectId={selectedProject} episodeId={selectedEpisode} onBound={() => { void audioBindings.refetch(); void timelineStatus.refetch(); void g8Readiness.refetch(); }} />}
                 {selectedEpisode && <SubtitleRevisionPanel episodeId={selectedEpisode} defaultSourceDocumentVersionId={String(timelineStatus.data?.status.subtitles.latest?.source_document_version_id ?? "")} onCreated={() => { void timelineStatus.refetch(); void g8Readiness.refetch(); }} />}
+                {selectedEpisode && <TimelineRevisionPanel episodeId={selectedEpisode} onCreated={() => { void timelineStatus.refetch(); void g8Readiness.refetch(); }} />}
                 <EpisodeContactSheetAction episodeId={selectedEpisode} />
                 {timelineStatus.data?.status && <TimelineStatusPanel status={timelineStatus.data.status} />}
                 <TimelineExportAction timelineRevisionId={timelineStatus.data?.status.timeline.latest?.id ? String(timelineStatus.data.status.timeline.latest.id) : null} />
