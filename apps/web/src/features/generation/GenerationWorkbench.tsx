@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { createFrameAnchor, createGenerationIntent, createKeyframeCandidate, createPrompt, deriveGenerationVariantSeedBatch, planGenerationVariant, submitGenerationVariant, type CameraPlan, type FrameAnchor, type G6Readiness, type GenerationVariantDraft, type GenerationVariantPlan, type I2VProbePlan, type Job, type Profile, type ReviewInboxItem } from "../../generated/api";
+import { createFrameAnchor, createGenerationIntent, createKeyframeCandidate, createPrompt, deriveGenerationVariantPlan, deriveGenerationVariantSeedBatch, planGenerationVariant, submitGenerationVariant, type CameraPlan, type FrameAnchor, type G6Readiness, type GenerationVariantDraft, type GenerationVariantPlan, type I2VProbePlan, type Job, type Profile, type ReviewInboxItem } from "../../generated/api";
 import { GateStatusIcon } from "../../components/icons";
 
 type Shot = Record<string, unknown>;
@@ -70,6 +70,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
   const [submittedVariantId, setSubmittedVariantId] = useState<string | null>(null);
   const [seedBatchText, setSeedBatchText] = useState("43,44,45,46");
   const [seedBatchPlan, setSeedBatchPlan] = useState<Awaited<ReturnType<typeof deriveGenerationVariantSeedBatch>>["batch"] | null>(null);
+  const [branchPlan, setBranchPlan] = useState<Awaited<ReturnType<typeof deriveGenerationVariantPlan>>["plan"] | null>(null);
   useEffect(() => {
     setProfileVersionId(eligibleProfiles.find((item) => item.status === "PUBLISHED")?.version_id ?? eligibleProfiles[0]?.version_id ?? "");
   }, [eligibleProfiles]);
@@ -79,7 +80,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
   useEffect(() => {
     if (!approvedKeyframeIds.includes(approvedKeyframeId)) setApprovedKeyframeId(approvedKeyframeIds[0] ?? "");
   }, [approvedKeyframeId, approvedKeyframeIds]);
-  useEffect(() => { setPrepared(null); setSubmitted(null); setSubmittedCount(0); setSubmittedVariantId(null); setSeedBatchPlan(null); }, [mode, profileVersionId, selectedShotId, promptText, seedText, approvedKeyframeId, takeCountText]);
+  useEffect(() => { setPrepared(null); setSubmitted(null); setSubmittedCount(0); setSubmittedVariantId(null); setSeedBatchPlan(null); setBranchPlan(null); }, [mode, profileVersionId, selectedShotId, promptText, seedText, approvedKeyframeId, takeCountText]);
   const selected = eligibleProfiles.find((profile) => profile.version_id === profileVersionId);
   const selectedShot = shots.find((shot) => String(shot.id) === selectedShotId);
   const revision = selectedShot?.current_revision && typeof selectedShot.current_revision === "object" ? selectedShot.current_revision as Record<string, unknown> : {};
@@ -163,6 +164,27 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
     },
     onSuccess: ({ batch }) => setSeedBatchPlan(batch),
   });
+  const branchMutation = useMutation({
+    mutationFn: async (operation: "RESAMPLE_NEW_SEED" | "PROMPT_BRANCH" | "SOURCE_IMAGE_BRANCH") => {
+      if (!submittedVariantId) throw new Error("请先提交一个基础 Variant");
+      if (operation === "RESAMPLE_NEW_SEED") return deriveGenerationVariantPlan(submittedVariantId, { operation, explicit_seed: seed + 1, branch_reason: "UI_RESAMPLE_NEW_SEED" });
+      if (operation === "SOURCE_IMAGE_BRANCH") {
+        if (!approvedKeyframeId) throw new Error("换图分支需要选择已批准关键帧");
+        return deriveGenerationVariantPlan(submittedVariantId, { operation, first_frame_media_version_id: approvedKeyframeId, branch_reason: "UI_SOURCE_IMAGE_BRANCH" });
+      }
+      if (!projectId || !selectedShotId || !promptText.trim()) throw new Error("改 Prompt 分支需要项目、镜头和非空 Prompt");
+      const prompt = await createPrompt({ project_id: projectId, owner_type: "SHOT", owner_id: selectedShotId, purpose: "PROMPT_BRANCH", title: `${String(selectedShot?.code ?? selectedShotId)} Prompt branch`, content_text: promptText.trim(), structured: { branch_from_variant_id: submittedVariantId } });
+      return deriveGenerationVariantPlan(submittedVariantId, { operation, prompt_revision_id: prompt.revision.id, branch_reason: "UI_PROMPT_BRANCH" });
+    },
+    onSuccess: ({ plan }) => setBranchPlan(plan),
+  });
+  const branchSubmitMutation = useMutation({
+    mutationFn: async () => {
+      if (!branchPlan) throw new Error("请先生成分支计划");
+      return submitGenerationVariant({ ...branchPlan.draft, plan_hash: branchPlan.plan_hash, idempotency_key: crypto.randomUUID() });
+    },
+    onSuccess: ({ job }) => { setSubmitted(job); setBranchPlan(null); onSubmitted?.(); },
+  });
   const extractedThumbnail = draftAnchor ? `/api/v1/media-versions/${encodeURIComponent(draftAnchor.extracted_media_version_id)}/thumbnail?size=small` : null;
   const draftRoleLabel = draftAnchor ? frameActionLabels[draftAnchor.role_hint as FrameAction] ?? "提取帧" : null;
 
@@ -245,7 +267,9 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
               {keyframeMutation.error && <p className="inline-error" role="alert">创建关键帧候选失败：{keyframeMutation.error.message}</p>}
             </> : <p className="empty-state">当前项目没有待处理的已注册 VIDEO 版本；不会用示例或 Mock 媒体替代。</p>}
           </section>
-          <div className="variant-strip"><strong>创作分支</strong><button className="chip active">基础生成</button><button className="chip">同图同词 · 新 seed</button><button className="chip">改 Prompt</button><button className="chip">换图</button><button className="chip" disabled>首尾帧 · 待能力发布</button></div>
+          <div className="variant-strip"><strong>创作分支</strong><button className="chip active">基础生成</button><button className="chip" disabled={!submittedVariantId || branchMutation.isPending} onClick={() => branchMutation.mutate("RESAMPLE_NEW_SEED")}>同图同词 · 新 seed</button><button className="chip" disabled={!submittedVariantId || branchMutation.isPending} onClick={() => branchMutation.mutate("PROMPT_BRANCH")}>改 Prompt</button><button className="chip" disabled={!submittedVariantId || branchMutation.isPending} onClick={() => branchMutation.mutate("SOURCE_IMAGE_BRANCH")}>换图</button><button className="chip" disabled>首尾帧 · 待能力发布</button></div>
+          {branchPlan && <section className="branch-plan-panel" aria-label="生成分支计划"><strong>分支计划 READY</strong><span>只改变：{Array.isArray(branchPlan.diff["changed_fields"]) ? branchPlan.diff["changed_fields"].map(String).join("、") : "已声明字段"}</span><code>{branchPlan.plan_hash.slice(0, 16)}</code><button className="secondary" onClick={() => branchSubmitMutation.mutate()} disabled={branchSubmitMutation.isPending}>{branchSubmitMutation.isPending ? "提交分支中…" : "确认创建分支 Job"}</button></section>}
+          {branchMutation.error && <p className="inline-error" role="alert">分支规划失败：{branchMutation.error.message}</p>}{branchSubmitMutation.error && <p className="inline-error" role="alert">分支提交失败：{branchSubmitMutation.error.message}</p>}
         </div>
 
         <aside className="capability-panel">
