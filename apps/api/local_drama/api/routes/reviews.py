@@ -5,6 +5,8 @@ from fastapi import APIRouter, Request
 from local_drama.api.schemas.reviews import (
     BatchCommitRequest,
     BatchPreflightRequest,
+    FormalSelectionCommitRequest,
+    FormalSelectionPreflightRequest,
     MachineCheckRequest,
     ReviewRequest,
     SelectionRequest,
@@ -29,6 +31,11 @@ async def list_templates(request: Request) -> dict[str, object]:
 @router.get("/reviews/inbox", operation_id="getReviewInbox")
 async def review_inbox(request: Request, project_id: str | None = None, media_kind: str | None = None, limit: int = 100) -> dict[str, object]:
     return {"items": service(request).inbox(project_id, media_kind, limit)}
+
+
+@router.get("/reviews/formal-selection-candidates", operation_id="listFormalSelectionCandidates")
+async def formal_selection_candidates(request: Request, project_id: str) -> dict[str, object]:
+    return {"items": service(request).formal_selection_candidates(project_id)}
 
 
 @router.get("/subjects/{subject_type}/{subject_id}/review-context", operation_id="getReviewContext")
@@ -116,6 +123,22 @@ async def batch_preflight(payload: BatchPreflightRequest, request: Request) -> d
 async def batch_commit(payload: BatchCommitRequest, request: Request) -> dict[str, object]:
     try:
         return {"result": service(request).batch_commit(payload.plan_token, payload.decision, [item.model_dump() for item in payload.checks], payload.comment)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/reviews/formal-selection:preflight", operation_id="preflightFormalSelection")
+async def formal_selection_preflight(payload: FormalSelectionPreflightRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"plan": service(request).formal_selection_preflight(payload.project_id, payload.media_version_ids)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/reviews/formal-selection:commit", operation_id="commitFormalSelection")
+async def formal_selection_commit(payload: FormalSelectionCommitRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"result": service(request).commit_formal_selection(payload.project_id, payload.media_version_ids, payload.plan_hash)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

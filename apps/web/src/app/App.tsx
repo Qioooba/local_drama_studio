@@ -16,6 +16,7 @@ import {
   healthLive,
   h3CandidateRuntime,
   listReviewTemplates,
+  listFormalSelectionCandidates,
   latestDiagnostics,
   listEpisodes,
   listDialogueLines,
@@ -39,6 +40,7 @@ import { GenerationWorkbench } from "../features/generation/GenerationWorkbench"
 import { PostProcessPanel } from "../features/generation/PostProcessPanel";
 import { CapacitySnapshotPanel, JobsPanel } from "../features/jobs/JobsPanel";
 import { ReviewInboxPanel } from "../features/reviews/ReviewInboxPanel";
+import { FormalSelectionPanel } from "../features/reviews/FormalSelectionPanel";
 import { ProfileConfigurationPanel } from "../features/profiles/ProfileConfigurationPanel";
 import { ProductionCanvasPanel } from "../features/canvas/ProductionCanvasPanel";
 import { EpisodeContactSheetAction } from "../features/production/EpisodeContactSheetAction";
@@ -139,6 +141,7 @@ export function App() {
   const reviewTemplates = useQuery({ queryKey: ["reviews", "templates"], queryFn: () => listReviewTemplates(), enabled: view === "reviews" });
   const selectedProjectRecord = selectedItemOrFirst(projects.data?.items, selectedProjectId);
   const selectedProject = selectedProjectRecord?.id ?? null;
+  const formalCandidates = useQuery({ queryKey: ["reviews", "formal-selection", selectedProject], queryFn: () => listFormalSelectionCandidates(selectedProject as string), enabled: Boolean(selectedProject) && view === "reviews" });
   const capacitySnapshot = useQuery({ queryKey: ["capacity", selectedProject], queryFn: () => getCapacitySnapshot(selectedProject ?? undefined), enabled: view === "overview" || view === "jobs" });
   const projectConfiguration = useQuery({ queryKey: ["project-configuration", selectedProject], queryFn: () => getProjectConfiguration(selectedProject as string), enabled: Boolean(selectedProject) && (view === "profiles" || view === "projects") });
   const modelCompatibility = useQuery({ queryKey: ["model-compatibility", selectedProject], queryFn: () => getModelCompatibility(selectedProject as string), enabled: Boolean(selectedProject) && (view === "profiles" || view === "diagnostics" || view === "overview") });
@@ -171,7 +174,7 @@ export function App() {
   if (view === "overview") activeQueries.push({ label: "本地能力", query: profiles }, { label: "诊断摘要", query: diagnostics }, { label: "适配器契约", query: adapterContracts }, { label: "容量摘要", query: capacitySnapshot }, { label: "模型证据", query: modelCompatibility });
   if (view === "projects") activeQueries.push({ label: "季数据", query: seasons }, { label: "分集数据", query: episodes }, { label: "生产状态", query: production }, { label: "时间线状态", query: timelineStatus }, { label: "G8 门禁", query: g8Readiness }, { label: "项目配置", query: projectConfiguration });
   if (view === "canvas") activeQueries.push({ label: "季数据", query: seasons }, { label: "分集数据", query: episodes }, { label: "生产状态", query: production }, { label: "G9 门禁", query: g9Readiness });
-  if (view === "reviews") activeQueries.push({ label: "审核收件箱", query: reviewItems }, { label: "审核模板", query: reviewTemplates }, { label: "审核上下文", query: reviewContext });
+  if (view === "reviews") activeQueries.push({ label: "审核收件箱", query: reviewItems }, { label: "正式交付候选", query: formalCandidates }, { label: "审核模板", query: reviewTemplates }, { label: "审核上下文", query: reviewContext });
   if (view === "jobs") activeQueries.push({ label: "任务列表", query: jobs }, { label: "容量摘要", query: capacitySnapshot });
   if (view === "profiles") activeQueries.push({ label: "能力版本", query: profiles }, { label: "工作流版本", query: workflows }, { label: "项目配置", query: projectConfiguration }, { label: "模型证据", query: modelCompatibility });
   if (view === "generation") activeQueries.push({ label: "能力版本", query: profiles }, { label: "H3 本机状态", query: h3Runtime }, { label: "媒体候选", query: reviewItems }, { label: "生产上下文", query: production }, { label: "连续性上下文", query: continuity }, { label: "G6 门禁", query: g6Readiness }, { label: "I2V 探针计划", query: i2vProbePlan });
@@ -353,7 +356,7 @@ export function App() {
 
           {view === "canvas" && <><ProductionCanvasPanel episodeId={selectedEpisode} selectedShotId={selectedShot} onSelectShot={selectShot} />{g9Readiness.data?.readiness && <G9ReadinessPanel readiness={g9Readiness.data.readiness} />}</>}
 
-          {view === "reviews" && <ReviewInboxPanel items={reviewItems.data?.items ?? []} templates={reviewTemplates.data?.items ?? []} selectedVersionId={selectedReviewVersion} context={reviewContext.data} onSelect={(id) => { setSelectedReviewVersionId(id); writeLocationState({ view: "reviews", projectId: selectedProject, episodeId: selectedEpisode, shotId: selectedShot, reviewId: id }, true); }} onPromote={(mediaVersionId, selectionType) => selectMutation.mutate({ mediaVersionId, selectionType })} selecting={selectMutation.isPending} onMachineCheck={(mediaVersionId) => machineCheckMutation.mutate(mediaVersionId)} machineChecking={machineCheckMutation.isPending} machineCheckError={machineCheckMutation.error ? String(machineCheckMutation.error) : null} onSubmit={(mediaVersionId, payload) => reviewMutation.mutate({ mediaVersionId, payload })} submitting={reviewMutation.isPending} submitError={reviewMutation.error ? String(reviewMutation.error) : null} submitSucceeded={reviewMutation.isSuccess} />}
+          {view === "reviews" && <>{selectedProject && <FormalSelectionPanel projectId={selectedProject} candidates={formalCandidates.data?.items ?? []} onChanged={() => { void formalCandidates.refetch(); void reviewItems.refetch(); }} />}<ReviewInboxPanel items={reviewItems.data?.items ?? []} templates={reviewTemplates.data?.items ?? []} selectedVersionId={selectedReviewVersion} context={reviewContext.data} onSelect={(id) => { setSelectedReviewVersionId(id); writeLocationState({ view: "reviews", projectId: selectedProject, episodeId: selectedEpisode, shotId: selectedShot, reviewId: id }, true); }} onPromote={(mediaVersionId, selectionType) => selectMutation.mutate({ mediaVersionId, selectionType })} selecting={selectMutation.isPending} onMachineCheck={(mediaVersionId) => machineCheckMutation.mutate(mediaVersionId)} machineChecking={machineCheckMutation.isPending} machineCheckError={machineCheckMutation.error ? String(machineCheckMutation.error) : null} onSubmit={(mediaVersionId, payload) => reviewMutation.mutate({ mediaVersionId, payload })} submitting={reviewMutation.isPending} submitError={reviewMutation.error ? String(reviewMutation.error) : null} submitSucceeded={reviewMutation.isSuccess} /></>}
 
           {view === "jobs" && <><JobsPanel jobs={jobs.data?.items ?? []} loading={jobs.isPending} onChanged={() => { void jobs.refetch(); void capacitySnapshot.refetch(); }} /><CapacitySnapshotPanel snapshot={capacitySnapshot.data?.snapshot} /></>}
 

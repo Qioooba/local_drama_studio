@@ -49,3 +49,14 @@ class BatchCommitRequest(BaseModel):
     decision: str
     checks: list[ReviewCheckRequest]
     comment: str | None = None
+
+
+class FormalSelectionPreflightRequest(BaseModel):
+    project_id: str = Field(min_length=1)
+    media_version_ids: list[str] = Field(min_length=1)
+
+
+class FormalSelectionCommitRequest(BaseModel):
+    project_id: str = Field(min_length=1)
+    media_version_ids: list[str] = Field(min_length=1)
+    plan_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")

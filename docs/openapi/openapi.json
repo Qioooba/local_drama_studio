@@ -6848,6 +6848,50 @@
         }
       }
     },
+    "/api/v1/reviews/formal-selection-candidates": {
+      "get": {
+        "tags": [
+          "reviews"
+        ],
+        "summary": "Formal Selection Candidates",
+        "operationId": "listFormalSelectionCandidates",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listformalselectioncandidates"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/subjects/{subject_type}/{subject_id}/review-context": {
       "get": {
         "tags": [
@@ -7235,6 +7279,92 @@
                   "additionalProperties": true,
                   "type": "object",
                   "title": "Response Commitreviewbatch"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reviews/formal-selection:preflight": {
+      "post": {
+        "tags": [
+          "reviews"
+        ],
+        "summary": "Formal Selection Preflight",
+        "operationId": "preflightFormalSelection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FormalSelectionPreflightRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Preflightformalselection"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reviews/formal-selection:commit": {
+      "post": {
+        "tags": [
+          "reviews"
+        ],
+        "summary": "Formal Selection Commit",
+        "operationId": "commitFormalSelection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FormalSelectionCommitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Commitformalselection"
                 }
               }
             }
@@ -10567,6 +10697,60 @@
           "axes"
         ],
         "title": "ExperimentPlanRequest"
+      },
+      "FormalSelectionCommitRequest": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Project Id"
+          },
+          "media_version_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Media Version Ids"
+          },
+          "plan_hash": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Plan Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "media_version_ids",
+          "plan_hash"
+        ],
+        "title": "FormalSelectionCommitRequest"
+      },
+      "FormalSelectionPreflightRequest": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Project Id"
+          },
+          "media_version_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Media Version Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "media_version_ids"
+        ],
+        "title": "FormalSelectionPreflightRequest"
       },
       "FrameAnchorRequest": {
         "properties": {

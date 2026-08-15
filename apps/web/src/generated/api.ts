@@ -31,6 +31,8 @@ export type CameraPlanResolution = { camera_plan: CameraPlan; submission_allowed
 export type DiagnosticRun = { id: string; status: string; checks: Array<{ code: string; category: string; status: string; observed: Record<string, unknown> }> };
 export type ReviewTemplate = { id: string; code: string; version_no: number; subject_type: string; items: Array<{ id: string; label: string; required: boolean }> };
 export type ReviewInboxItem = { media_version_id: string; media_asset_id: string; project_id: string; media_kind: string; stage: string; decision: string | null; is_stale: number | null; [key: string]: unknown };
+export type FormalSelectionCandidate = { media_version_id: string; media_asset_id: string; project_id: string; media_kind: 'VIDEO'; stage: 'FORMAL'; sha256: string; integrity_status: string; approved_version_id: string | null; decision: string | null; is_stale: number | null; [key: string]: unknown };
+export type FormalSelectionPlan = { project_id: string; status: 'READY' | 'BLOCKED'; plan_hash: string; items: Array<{ media_version_id: string; media_asset_id?: string; source_revision?: number; status: 'READY' | 'BLOCKED'; blockers: string[] }>; would_mutate: false };
 export type ReviewBatchPlan = { plan_id: string; plan_token: string; expires_at: string; status: 'READY'; items: Array<{ media_version_id: string; template_version_id: string; expected_subject_revision: number }> };
 export type VideoAnnotation = { id: string; media_version_id: string; timecode_ms: number; category: string; comment: string; snapshot_media_version_id: string | null; rework_job_id: string | null; created_at: string; created_by: string; schema_version: 'v2' };
 export type FrameAnchor = { id: string; source_media_version_id: string; source_time_us: number; source_frame_index: number; extracted_media_version_id: string; role_hint: string; sha256: string; requested_time_us: number | null; resolved_time_us: number; source_sha256: string; extraction_method: string; [key: string]: unknown };
@@ -259,6 +261,18 @@ export async function listReviewTemplates(baseUrl = ''): Promise<{ items: Review
 export async function reviewInbox(projectId?: string, baseUrl = ''): Promise<{ items: ReviewInboxItem[] }> {
   const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
   return requestJson<{ items: ReviewInboxItem[] }>(`/api/v1/reviews/inbox${query}`, undefined, baseUrl);
+}
+
+export async function listFormalSelectionCandidates(projectId: string, baseUrl = ''): Promise<{ items: FormalSelectionCandidate[] }> {
+  return requestJson(`/api/v1/reviews/formal-selection-candidates?project_id=${encodeURIComponent(projectId)}`, undefined, baseUrl);
+}
+
+export async function preflightFormalSelection(projectId: string, mediaVersionIds: string[], baseUrl = ''): Promise<{ plan: FormalSelectionPlan }> {
+  return requestJson('/api/v1/reviews/formal-selection:preflight', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ project_id: projectId, media_version_ids: mediaVersionIds }) }, baseUrl);
+}
+
+export async function commitFormalSelection(projectId: string, mediaVersionIds: string[], planHash: string, baseUrl = ''): Promise<{ result: { project_id: string; status: 'COMMITTED'; items: Array<Record<string, unknown>> } }> {
+  return requestJson('/api/v1/reviews/formal-selection:commit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ project_id: projectId, media_version_ids: mediaVersionIds, plan_hash: planHash }) }, baseUrl);
 }
 
 export async function getReviewContext(mediaVersionId: string, baseUrl = ''): Promise<{ media_version: Record<string, unknown>; subject_revision: number; template: ReviewTemplate; selections: Array<Record<string, unknown>>; reviews: Array<Record<string, unknown>>; machine_checks: Array<Record<string, unknown>> }> {
