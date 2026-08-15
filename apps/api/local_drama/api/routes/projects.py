@@ -3,10 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Header, Request
 
 from local_drama.api.schemas.projects import (
+    EpisodeSceneRangeRequest,
     ProjectCreateRequest,
     ProjectPackageDryRunRequest,
     ProjectTemplateCopyRequest,
     ProjectUpdateRequest,
+    SceneCreateRequest,
     ShotCreateRequest,
     ShotRevisionRequest,
 )
@@ -183,6 +185,19 @@ async def list_seasons(project_id: str, request: Request) -> dict[str, object]:
     return {"items": service(request).list_seasons(project_id)}
 
 
+@router.get("/{project_id}/scenes", operation_id="listProjectScenes")
+async def list_project_scenes(project_id: str, request: Request) -> dict[str, object]:
+    return {"items": service(request).list_scenes(project_id)}
+
+
+@router.post("/{project_id}/scenes", operation_id="createProjectScene", status_code=201)
+async def create_project_scene(project_id: str, payload: SceneCreateRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"scene": service(request).create_scene(project_id, payload.code, payload.title, payload.location, payload.time_of_day)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.get("/seasons/{season_id}/episodes", operation_id="listEpisodes")
 async def list_episodes(season_id: str, request: Request) -> dict[str, object]:
     return {"items": service(request).list_episodes(season_id)}
@@ -192,6 +207,22 @@ async def list_episodes(season_id: str, request: Request) -> dict[str, object]:
 async def get_episode(episode_id: str, request: Request) -> dict[str, object]:
     try:
         return {"episode": service(request).get_episode(episode_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/episodes/{episode_id}/scene-ranges", operation_id="listEpisodeSceneRanges")
+async def list_episode_scene_ranges(episode_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"items": service(request).list_episode_scene_ranges(episode_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/episodes/{episode_id}/scene-ranges", operation_id="bindEpisodeSceneRange", status_code=201)
+async def bind_episode_scene_range(episode_id: str, payload: EpisodeSceneRangeRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"range": service(request).bind_episode_scene_range(episode_id, payload.scene_id, payload.ordinal, payload.source_start, payload.source_end, payload.source_label)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

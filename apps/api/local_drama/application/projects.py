@@ -570,6 +570,106 @@ class ProjectService:
             rows = connection.execute("SELECT * FROM seasons WHERE project_id = ? ORDER BY display_order", (project_id,)).fetchall()
         return [dict(row) for row in rows]
 
+    def create_scene(
+        self,
+        project_id: str,
+        code: str,
+        title: str,
+        location: str | None = None,
+        time_of_day: str | None = None,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        normalized_code = code.strip()
+        normalized_title = title.strip()
+        if not normalized_code or not normalized_title:
+            raise DomainRuleError("SCENE_FIELDS_REQUIRED", "母本场次 code 和 title 必填")
+        scene_id = str(uuid.uuid4())
+        now = _utc_now()
+        with self.database.transaction() as connection:
+            if connection.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone() is None:
+                raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
+            if connection.execute("SELECT 1 FROM scenes WHERE project_id=? AND code=?", (project_id, normalized_code)).fetchone():
+                raise DomainRuleError("SCENE_CODE_CONFLICT", "同一项目的母本场次 code 必须唯一")
+            connection.execute(
+                """INSERT INTO scenes (id,project_id,code,title,location,time_of_day,created_at,updated_at,created_by,revision,schema_version)
+                VALUES (?,?,?,?,?,?,?,?,?,1,'v2')""",
+                (scene_id, project_id, normalized_code, normalized_title, location, time_of_day, now, now, actor),
+            )
+            connection.execute(
+                """INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
+                VALUES (?,'writer','MASTER_SCENE_CREATED','scene',?,'创建项目级母本场次',?)""",
+                (actor, scene_id, _json({"project_id": project_id, "code": normalized_code})),
+            )
+        return self.get_scene(scene_id)
+
+    def get_scene(self, scene_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT * FROM scenes WHERE id=?", (scene_id,)).fetchone()
+        if row is None:
+            raise DomainRuleError("SCENE_NOT_FOUND", "母本场次不存在", {"scene_id": scene_id})
+        return dict(row)
+
+    def list_scenes(self, project_id: str) -> list[dict[str, Any]]:
+        with self.database.connect() as connection:
+            if connection.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone() is None:
+                raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
+            rows = connection.execute("SELECT * FROM scenes WHERE project_id=? ORDER BY code,id", (project_id,)).fetchall()
+        return [dict(row) for row in rows]
+
+    def bind_episode_scene_range(
+        self,
+        episode_id: str,
+        scene_id: str,
+        ordinal: int,
+        source_start: int,
+        source_end: int,
+        source_label: str | None = None,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        if ordinal < 1 or source_start < 0 or source_end <= source_start:
+            raise DomainRuleError("SCENE_RANGE_INVALID", "场次顺序及来源起止范围无效")
+        range_id = str(uuid.uuid4())
+        now = _utc_now()
+        with self.database.transaction() as connection:
+            episode = connection.execute(
+                "SELECT e.id,s.project_id FROM episodes e JOIN seasons s ON s.id=e.season_id WHERE e.id=?", (episode_id,)
+            ).fetchone()
+            scene = connection.execute("SELECT id,project_id FROM scenes WHERE id=?", (scene_id,)).fetchone()
+            if episode is None:
+                raise DomainRuleError("EPISODE_NOT_FOUND", "集不存在", {"episode_id": episode_id})
+            if scene is None:
+                raise DomainRuleError("SCENE_NOT_FOUND", "母本场次不存在", {"scene_id": scene_id})
+            if str(episode["project_id"]) != str(scene["project_id"]):
+                raise DomainRuleError("SCENE_EPISODE_PROJECT_MISMATCH", "母本场次与分集必须属于同一项目")
+            if connection.execute("SELECT 1 FROM episode_scene_ranges WHERE episode_id=? AND scene_id=?", (episode_id, scene_id)).fetchone():
+                raise DomainRuleError("SCENE_ALREADY_MAPPED_TO_EPISODE", "该母本场次已关联当前分集")
+            if connection.execute("SELECT 1 FROM episode_scene_ranges WHERE episode_id=? AND ordinal=?", (episode_id, ordinal)).fetchone():
+                raise DomainRuleError("SCENE_RANGE_ORDINAL_CONFLICT", "当前分集的场次顺序已被占用")
+            connection.execute(
+                """INSERT INTO episode_scene_ranges
+                (id,episode_id,scene_id,ordinal,source_start,source_end,source_label,created_at,updated_at,created_by,revision,schema_version)
+                VALUES (?,?,?,?,?,?,?,?,?,?,1,'v2')""",
+                (range_id, episode_id, scene_id, ordinal, source_start, source_end, source_label, now, now, actor),
+            )
+            connection.execute(
+                """INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
+                VALUES (?,'writer','EPISODE_SCENE_RANGE_BOUND','episode_scene_range',?,'关联分集与项目级母本场次',?)""",
+                (actor, range_id, _json({"episode_id": episode_id, "scene_id": scene_id, "ordinal": ordinal, "source_start": source_start, "source_end": source_end})),
+            )
+        return next(item for item in self.list_episode_scene_ranges(episode_id) if item["id"] == range_id)
+
+    def list_episode_scene_ranges(self, episode_id: str) -> list[dict[str, Any]]:
+        with self.database.connect() as connection:
+            if connection.execute("SELECT 1 FROM episodes WHERE id=?", (episode_id,)).fetchone() is None:
+                raise DomainRuleError("EPISODE_NOT_FOUND", "集不存在", {"episode_id": episode_id})
+            rows = connection.execute(
+                """SELECT esr.*,sc.code AS scene_code,sc.title AS scene_title,sc.location,sc.time_of_day
+                FROM episode_scene_ranges esr JOIN scenes sc ON sc.id=esr.scene_id
+                WHERE esr.episode_id=? ORDER BY esr.ordinal,esr.id""",
+                (episode_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def list_episodes(self, season_id: str) -> list[dict[str, Any]]:
         with self.database.connect() as connection:
             rows = connection.execute("SELECT * FROM episodes WHERE season_id = ? ORDER BY display_order", (season_id,)).fetchall()

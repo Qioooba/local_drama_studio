@@ -39,6 +39,7 @@ import { EpisodeContactSheetAction } from "../features/production/EpisodeContact
 import { TimelineExportAction } from "../features/production/TimelineExportAction";
 import { ProjectTemplateCopyAction } from "../features/projects/ProjectTemplateCopyAction";
 import { ProjectCreateWizard } from "../features/projects/ProjectCreateWizard";
+import { EpisodeSceneRanges } from "../features/projects/EpisodeSceneRanges";
 import { ProjectPackageAction } from "../features/projects/ProjectPackageAction";
 import { AdapterContractsPanel, DiagnosticPanel, G8ReadinessPanel, G9ReadinessPanel, ModelCompatibilityPanel, ProjectConfigurationSnapshot, ProjectList, TimelineStatusPanel } from "../features/status/ReadinessPanels";
 import { selectedItemOrFirst } from "../features/shared/selection";
@@ -301,6 +302,7 @@ export function App() {
                 {production.isPending && <p className="empty-state">正在读取生产行…</p>}
                 {production.data?.items.map((shot) => <div className="shot-row" key={String(shot.id)}><strong>{String(shot.code)}</strong><span>{String(shot.status)}</span><span className="blocker-text">{Array.isArray(shot.blockers) ? `${shot.blockers.length} 个阻塞` : "读取中"}</span><span>{String(shot.next_action)}</span></div>)}
                 {production.data?.items.length === 0 && <p className="empty-state">当前集还没有镜头；请从真实 API 创建镜头。</p>}
+                {selectedProject && selectedEpisode && <EpisodeSceneRanges projectId={selectedProject} episodeId={selectedEpisode} />}
                 <EpisodeContactSheetAction episodeId={selectedEpisode} />
                 {timelineStatus.data?.status && <TimelineStatusPanel status={timelineStatus.data.status} />}
                 <TimelineExportAction timelineRevisionId={timelineStatus.data?.status.timeline.latest?.id ? String(timelineStatus.data.status.timeline.latest.id) : null} />

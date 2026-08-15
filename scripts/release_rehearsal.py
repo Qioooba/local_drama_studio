@@ -15,7 +15,7 @@ from alembic import command
 from alembic.config import Config
 
 ROOT = Path(__file__).resolve().parents[1]
-HEAD_MIGRATION = "0024_video_review_annotations"
+HEAD_MIGRATION = "0025_episode_scene_ranges"
 
 
 def _sha256(path: Path) -> str:
@@ -64,7 +64,7 @@ def rehearse(source: Path, rehearsal_root: Path) -> dict[str, object]:
     status = "PASS" if (
         source_state["integrity"] == "ok"
         and upgrade_state["integrity"] == "ok"
-        and source_state["migration"] == "0023_project_creation_spec"
+        and source_state["migration"] == "0024_video_review_annotations"
         and upgrade_state["migration"] == HEAD_MIGRATION
         and restore_state["integrity"] == "ok"
         and restore_state["sha256"] == source_state["sha256"]

@@ -276,6 +276,14 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .annotation-list article { padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--surface); }
 .annotation-list p { margin: 4px 0; }
 .annotation-list small { color: var(--text-muted); }
+.scene-range-panel { margin-top: 18px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-subtle); }
+.scene-range-list { display: grid; gap: 8px; margin: 12px 0; }
+.scene-range-list article { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; background: var(--surface); border-left: 3px solid var(--creative); }
+.scene-range-list span { color: var(--text-muted); }
+.scene-range-panel summary { min-height: 40px; cursor: pointer; font-weight: 800; }
+.scene-range-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: end; }
+.scene-range-form label { display: grid; gap: 6px; color: var(--text-muted); font-size: 12px; font-weight: 700; }
+.scene-range-form input, .scene-range-form select { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); }
 .job-list { display: grid; gap: 8px; margin-top: 20px; }
 .job-row { display: grid; grid-template-columns: 1.3fr .6fr .8fr 1fr; gap: 12px; align-items: center; padding: 13px 15px; border: 1px solid #ded9cf; border-radius: 9px; background: #fff; color: #646a64; font-size: 12px; }
 .job-row strong { color: var(--text); }
@@ -563,6 +571,8 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
   .gate-checks { grid-template-columns: 1fr; }
   .probe-plan-grid { grid-template-columns: 1fr; }
   .annotation-form { grid-template-columns: 1fr; }
+  .scene-range-form { grid-template-columns: 1fr; }
+  .scene-range-list article { display: grid; }
 }
 
 @media (prefers-reduced-motion: reduce) {

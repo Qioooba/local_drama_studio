@@ -26,6 +26,8 @@ export type HealthCheck = { status: string; checks: Record<string, string> };
 export type LocalSession = { token: string; mode: 'LOCAL_ONLY' };
 export type SystemContract = Record<string, string>;
 export type Project = { id: string; code: string; title: string; status: string; revision: number; [key: string]: unknown };
+export type MasterScene = { id: string; project_id: string; code: string; title: string; location: string | null; time_of_day: string | null; revision: number };
+export type EpisodeSceneRange = { id: string; episode_id: string; scene_id: string; ordinal: number; source_start: number; source_end: number; source_label: string | null; scene_code: string; scene_title: string; location: string | null; time_of_day: string | null };
 export type ProjectCreatePayload = { code: string; title: string; season_count: number; episode_count: number; target_duration_ms: number; aspect_ratio: string; width: number; height: number; fps: { numerator: number; denominator: number }; primary_language: string; subtitle_mode: 'NONE' | 'SIDECAR' | 'BURN_IN' | 'BOTH'; subtitle_language?: string; allow_unconfigured_capabilities: boolean; production_plan?: { code: string; title: string; plan: Record<string, unknown> }; profile_bindings?: Array<{ capability: string; profile_version_id: string }>; delivery_target?: { code: string; title: string; spec: Record<string, unknown> } };
 export type ProjectCreationPlan = { status: 'READY' | 'READY_WITH_CONFIGURATION_BLOCKERS' | 'BLOCKED'; checks: Array<{ code: string; passed: boolean; free_bytes?: number; required_bytes?: number }>; blockers: string[]; configuration_blockers: string[]; accepted_unconfigured: boolean; target_root_rel: string; estimated_bytes: number; structure: { season_count: number; episode_count_per_season: number; total_episode_count: number }; presentation: Record<string, unknown>; would_create_project: true; mutated: false; runtime_contacted: false; network_contacted: false };
 export type ProjectPackageExport = { status: 'EXPORTED'; project_id: string; rel_path: string; byte_size: number; sha256: string; entry_count: number; expanded_bytes: number; reused: boolean; database_mutated: false; runtime_contacted: false; network_contacted: false };
@@ -357,6 +359,22 @@ export async function listSeasons(projectId: string, baseUrl = ''): Promise<{ it
 
 export async function listEpisodes(seasonId: string, baseUrl = ''): Promise<{ items: Array<{ id: string; code: string; title: string; production_status: string }> }> {
   return requestJson(`/api/v1/projects/seasons/${encodeURIComponent(seasonId)}/episodes`, undefined, baseUrl);
+}
+
+export async function listProjectScenes(projectId: string, baseUrl = ''): Promise<{ items: MasterScene[] }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/scenes`, undefined, baseUrl);
+}
+
+export async function createProjectScene(projectId: string, payload: { code: string; title: string; location?: string; time_of_day?: string }, baseUrl = ''): Promise<{ scene: MasterScene }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/scenes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function listEpisodeSceneRanges(episodeId: string, baseUrl = ''): Promise<{ items: EpisodeSceneRange[] }> {
+  return requestJson(`/api/v1/projects/episodes/${encodeURIComponent(episodeId)}/scene-ranges`, undefined, baseUrl);
+}
+
+export async function bindEpisodeSceneRange(episodeId: string, payload: { scene_id: string; ordinal: number; source_start: number; source_end: number; source_label?: string }, baseUrl = ''): Promise<{ range: EpisodeSceneRange }> {
+  return requestJson(`/api/v1/projects/episodes/${encodeURIComponent(episodeId)}/scene-ranges`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
 export async function getEpisodeProduction(episodeId: string, baseUrl = ''): Promise<{ episode: Record<string, unknown>; items: Array<Record<string, unknown>> }> {

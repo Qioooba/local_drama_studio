@@ -79,6 +79,25 @@ class ShotCreateRequest(BaseModel):
     shot_type: str = "OTHER"
 
 
+class SceneCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(min_length=1, max_length=64)
+    title: str = Field(min_length=1, max_length=200)
+    location: str | None = Field(default=None, max_length=500)
+    time_of_day: str | None = Field(default=None, max_length=120)
+
+
+class EpisodeSceneRangeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scene_id: str = Field(min_length=1, max_length=64)
+    ordinal: int = Field(ge=1)
+    source_start: int = Field(ge=0)
+    source_end: int = Field(gt=0)
+    source_label: str | None = Field(default=None, max_length=500)
+
+
 class ShotRevisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
