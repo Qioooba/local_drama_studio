@@ -9,6 +9,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.generation_contracts import CameraPlan, resolve_camera_plan
 from local_drama.domain.policies import (
     VALID_PROJECT_TRANSITIONS,
     VALID_SHOT_TRANSITIONS,
@@ -842,9 +843,12 @@ class ProjectService:
 
     def create_shot_revision(self, shot_id: str, fields: dict[str, object], freeze: bool = False) -> dict[str, Any]:
         if "camera_plan" in fields:
-            from local_drama.domain.generation_contracts import CameraPlan
-
-            CameraPlan.from_payload(fields["camera_plan"])
+            camera_plan = CameraPlan.from_payload(fields["camera_plan"])
+            # An unresolved plan may be saved as a truthful draft so the
+            # director can see the blocker, but any executable mode must be
+            # re-resolved against the current Published Profile server-side.
+            if camera_plan.mode != "UNSUPPORTED":
+                self._assert_camera_profile_resolution(camera_plan)
         now = _utc_now()
         revision_id = str(uuid.uuid4())
         with self.database.transaction() as connection:
@@ -865,6 +869,62 @@ class ProjectService:
         ReviewService(self.database).mark_stale_for_owner(shot_id, "shot_revision_changed")
         return {"id": revision_id, "shot_id": shot_id, "revision_no": revision_no, "fields": fields, "is_frozen": freeze}
 
+    def _assert_camera_profile_resolution(self, camera_plan: CameraPlan) -> None:
+        """Re-resolve executable CameraPlans against the immutable Published Profile.
+
+        The browser uses the profile resolver before saving, but the API must
+        not trust a client-provided ``mode`` or profile id.  This check is
+        deliberately local/read-only and mirrors GenerationService's later
+        preflight gate so ShotRevision and Variant snapshots share one truth.
+        """
+        profile_version_id = camera_plan.profile_version_id
+        if not profile_version_id:
+            raise DomainRuleError("CAMERA_PROFILE_REQUIRED", "可执行 CameraPlan 必须绑定 Published ProfileVersion")
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT status, parameter_schema_json FROM execution_profile_versions WHERE id=?",
+                (profile_version_id,),
+            ).fetchone()
+        if row is None:
+            raise DomainRuleError("PROFILE_VERSION_NOT_FOUND", "CameraPlan 绑定的 ProfileVersion 不存在", {"profile_version_id": profile_version_id})
+        if str(row["status"]) != "PUBLISHED":
+            raise DomainRuleError("PROFILE_NOT_PUBLISHED", "只有已发布 Profile 才能保存可执行 CameraPlan", {"profile_version_id": profile_version_id})
+        try:
+            schema = json.loads(str(row["parameter_schema_json"] or "{}"))
+        except json.JSONDecodeError as error:
+            raise DomainRuleError("PROFILE_CAMERA_CONTRACT_INVALID", "Profile parameter schema 不是有效 JSON") from error
+        capabilities = schema.get("capabilities", {}) if isinstance(schema, dict) else {}
+        camera_contract = capabilities.get("camera", {}) if isinstance(capabilities, dict) else {}
+        support = str(camera_contract.get("support", "UNSUPPORTED")) if isinstance(camera_contract, dict) else "UNSUPPORTED"
+        if support not in {"NATIVE", "PROMPT_FALLBACK", "UNSUPPORTED"}:
+            raise DomainRuleError("PROFILE_CAMERA_CONTRACT_INVALID", "Profile camera capability support 无效")
+        fallback = support == "PROMPT_FALLBACK" and camera_contract.get("prompt_fallback") is True
+        if support == "PROMPT_FALLBACK" and not fallback:
+            raise DomainRuleError("PROFILE_CAMERA_FALLBACK_INVALID", "Camera prompt fallback 必须由 Profile 显式声明")
+        resolved = resolve_camera_plan(
+            native_supported=support == "NATIVE",
+            prompt_fallback_supported=fallback,
+            shot_type=camera_plan.shot_type,
+            movement=camera_plan.movement,
+            prompt_text=camera_plan.prompt_text,
+            direction=camera_plan.direction,
+            intensity=camera_plan.intensity,
+            curve=camera_plan.curve,
+            profile_version_id=profile_version_id,
+        )
+        if resolved.mode == "UNSUPPORTED":
+            raise DomainRuleError(
+                "CAMERA_PLAN_UNSUPPORTED",
+                "当前 Published Profile 不支持该结构化运镜，不能保存可执行 revision",
+                {"profile_version_id": profile_version_id, "movement": camera_plan.movement},
+            )
+        if resolved.to_dict() != camera_plan.to_dict():
+            raise DomainRuleError(
+                "CAMERA_PLAN_RESOLUTION_STALE",
+                "CameraPlan 与当前 Published Profile capability contract 不一致，请重新裁决",
+                {"profile_version_id": profile_version_id},
+            )
+
     def mark_shot_production_ready(self, shot_id: str) -> dict[str, Any]:
         with self.database.transaction() as connection:
             shot = connection.execute("SELECT * FROM shots WHERE id = ?", (shot_id,)).fetchone()
@@ -873,6 +933,7 @@ class ProjectService:
             revision = connection.execute("SELECT fields_json FROM shot_revisions WHERE id = ?", (shot["current_revision_id"],)).fetchone()
             fields = json.loads(revision["fields_json"]) if revision else {}
             validate_shot_ready(fields)
+            self._assert_camera_profile_resolution(CameraPlan.from_payload(fields["camera_plan"]))
             require_transition(VALID_SHOT_TRANSITIONS, shot["status"], "READY", "Shot")
             connection.execute("UPDATE shots SET status = 'READY', updated_at = ?, revision = revision + 1 WHERE id = ?", (_utc_now(), shot_id))
         return self.get_shot(shot_id)

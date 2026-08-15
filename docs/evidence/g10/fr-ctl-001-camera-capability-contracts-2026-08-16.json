@@ -6,12 +6,13 @@
     "Published Profile camera capability contracts resolve only to NATIVE, PROMPT_FALLBACK, or UNSUPPORTED",
     "PROMPT_FALLBACK requires an explicit prompt_fallback declaration and exposes the expanded prompt",
     "missing or UNSUPPORTED camera capability remains truthful and cannot authorize submission",
+    "ShotRevision create and Production Ready transitions re-resolve executable plans against the current Published Profile and reject forged or stale modes",
     "resolution is read-only and reports runtime_contacted=false, network_contacted=false, and mutated=false",
     "DirectorShotEditor keeps Production Ready disabled for UNSUPPORTED and renders the explicit fallback state"
   ],
   "verification": {
     "api_tests": {
-      "command": "pytest apps/api/tests/test_camera_plan_contracts.py apps/api/tests/test_generation_variants.py::test_camera_plan_must_match_profile_and_is_frozen_in_job_snapshot",
+      "command": "pytest apps/api/tests/test_camera_plan_contracts.py apps/api/tests/test_director_fields.py apps/api/tests/test_generation_variants.py::test_camera_plan_must_match_profile_and_is_frozen_in_job_snapshot",
       "result": "PASS",
       "coverage": [
         "NATIVE positive resolution",
@@ -19,6 +20,7 @@
         "UNSUPPORTED and missing capability negative resolution",
         "invalid fallback declaration rejection",
         "HTTP route positive/negative contract",
+        "ShotRevision forged executable mode rejection and stale Profile recheck at Production Ready",
         "Variant plan re-resolution and Job semantic_inputs camera snapshot"
       ]
     },
