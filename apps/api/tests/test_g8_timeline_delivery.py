@@ -550,6 +550,13 @@ def test_delivery_manifest_history_verify_and_withdraw_preserve_files(workspace,
         assert files.status_code == 200 and len(files.json()["items"]) == 2
         download = client.get(f"/api/v1/delivery-packages/{first['id']}/download")
         assert download.status_code == 200 and len(download.content) > 0
+        download_events = client.get(f"/api/v1/delivery-packages/{first['id']}").json()["delivery"]["events"]
+        download_event = next(event for event in download_events if event["action"] == "DOWNLOAD")
+        download_note = json.loads(download_event["note"])
+        assert download_event["manifest_sha256"] == first["manifest_sha256"]
+        assert set(download_note) == {"file_byte_size", "file_rel_path", "file_sha256", "transport"}
+        assert download_note["file_rel_path"].endswith(".mp4")
+        assert download_note["file_byte_size"] == len(download.content)
         second_response = client.post("/api/v1/delivery-packages", json={"episode_render_version_id": render["id"], "target_version_id": target["version_id"]})
         assert second_response.status_code == 201, second_response.text
         second = second_response.json()["delivery"]

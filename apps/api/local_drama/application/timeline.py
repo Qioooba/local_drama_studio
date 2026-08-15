@@ -1393,13 +1393,35 @@ class TimelineService:
         if not root.is_dir() or root.is_symlink() or not root.is_relative_to(self.settings.projects_root.resolve()):
             raise DomainRuleError("DELIVERY_PATH_INVALID", "交付项目目录不存在或越界")
         with self.database.connect() as connection:
-            row = connection.execute("SELECT rel_path FROM delivery_files WHERE delivery_package_id=? AND lower(rel_path) LIKE '%.mp4' ORDER BY rel_path LIMIT 1", (package_id,)).fetchone()
+            row = connection.execute(
+                "SELECT rel_path, sha256, byte_size FROM delivery_files WHERE delivery_package_id=? AND lower(rel_path) LIKE '%.mp4' ORDER BY rel_path LIMIT 1",
+                (package_id,),
+            ).fetchone()
         if row is None:
             raise DomainRuleError("DELIVERY_VIDEO_NOT_FOUND", "交付包不包含可下载的视频文件")
         rel = Path(str(row["rel_path"]))
         path = (root / rel).resolve()
         if rel.is_absolute() or ".." in rel.parts or path.is_symlink() or not path.is_file() or not path.is_relative_to(root):
             raise DomainRuleError("DELIVERY_FILE_INVALID", "交付文件缺失或路径越界")
+        # Downloads are a material hand-off even though the file itself is
+        # immutable.  Persist a bounded audit event with only the package
+        # manifest/file fingerprints (never a path outside the project or
+        # request data), so delivery history can answer who/when a package
+        # was downloaded without treating this as a new build or review.
+        now = _now()
+        note = _json(
+            {
+                "file_rel_path": str(row["rel_path"]),
+                "file_sha256": str(row["sha256"]),
+                "file_byte_size": int(row["byte_size"]),
+                "transport": "LOCAL_FILESYSTEM",
+            }
+        )
+        with self.database.transaction() as connection:
+            connection.execute(
+                "INSERT INTO delivery_events (id, delivery_package_id, action, manifest_sha256, note, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, 'DOWNLOAD', ?, ?, ?, ?, ?, 1, 'v3')",
+                (str(uuid.uuid4()), package_id, str(package["manifest_sha256"] or ""), note, now, now, "local-user"),
+            )
         return path, f"{package['episode_code']}-{package_id[:8]}.mp4"
 
     def verify_delivery(self, package_id: str) -> dict[str, Any]:

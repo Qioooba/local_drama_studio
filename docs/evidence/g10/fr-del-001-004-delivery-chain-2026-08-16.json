@@ -11,13 +11,15 @@
     "verify": "repeatable file path/symlink/size/hash checks plus canonical manifest hash; tamper identifies the file and marks CORRUPT",
     "target_versioning": "DeliveryTargetVersion create/select API retires prior active version without modifying packages",
     "history_withdraw": "episode history, package/files read APIs, local download, immutable delivery events, and idempotent WITHDRAWN marker; verify preserves WITHDRAWN when files remain intact",
+    "download_audit": "each successful local MP4 download appends a bounded DOWNLOAD event carrying only manifest SHA, file relative path, file SHA/size, and LOCAL_FILESYSTEM transport; no request/path data is persisted",
     "transport": "only LOCAL_FILESYSTEM; absolute, traversal and remote targets are rejected"
   },
   "automated_tests": [
     "apps/api/tests/test_g8_timeline_delivery.py::test_delivery_candidate_requires_approved_render_and_target_versions_are_explicit",
-    "apps/api/tests/test_g8_timeline_delivery.py::test_delivery_manifest_history_verify_and_withdraw_preserve_files",
+    "apps/api/tests/test_g8_timeline_delivery.py::test_delivery_manifest_history_verify_and_withdraw_preserve_files (including DOWNLOAD audit event)",
     "apps/api/tests/test_g8_timeline_delivery.py::test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery",
-    "apps/web/src/generated/api.test.ts"
+    "apps/web/src/generated/api.test.ts",
+    "apps/web/src/features/production/DeliveryWorkflowPanel.test.tsx"
   ],
   "production_uat": {
     "status": "PENDING",
