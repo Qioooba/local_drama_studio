@@ -1,0 +1,51 @@
+{
+  "schema_version": "localdrama.fr-ast-001.automated-evidence.v1",
+  "observed_at": "2026-08-16T00:30:00+08:00",
+  "requirement_id": "FR-AST-001",
+  "mode": "LOCAL_ONLY",
+  "status": "PARTIAL",
+  "implementation": {
+    "source_authorization": "Only project-owned VERIFIED MediaVersion files are authorized after path, symlink, SHA-256 and byte-size checks",
+    "grant_modes": ["READ_ONLY", "DERIVED"],
+    "frozen_fields": ["source_project_id", "source_authorization_id", "source_revision", "source_sha256", "source_byte_size", "access_mode"],
+    "withdrawal": "Source authorization or target grant withdrawal is immutable, reasoned, audited and reported as impact without deleting the record",
+    "generation_gate": "Generation preflight accepts a cross-project MediaVersion only through an ACTIVE grant whose authorization revision/hash/size still match; revoked or changed sources are blocked",
+    "source_overwrite": false,
+    "remote_provider": false
+  },
+  "artifacts": [
+    "apps/api/local_drama/application/workspace_assets.py",
+    "apps/api/local_drama/api/routes/gates.py",
+    "apps/api/local_drama/application/generation.py",
+    "apps/api/tests/test_project_asset_grants.py",
+    "apps/api/tests/test_generation_variants.py",
+    "apps/web/src/features/projects/ProjectAssetGrantPanel.tsx",
+    "apps/web/src/features/projects/ProjectAssetGrantPanel.test.tsx",
+    "docs/decisions/ADR-0012-project-asset-grants.md"
+  ],
+  "automated_evidence": {
+    "api_tests": [
+      "test_cross_project_asset_grant_freezes_source_and_reports_withdrawal",
+      "test_workspace_asset_authorization_rehashes_media_and_publishes_brand_kit",
+      "test_workspace_asset_authorization_rejects_cross_project_and_tamper",
+      "test_generation_accepts_active_cross_project_grant_and_blocks_withdrawn_source"
+    ],
+    "api_result": "4 targeted tests passed",
+    "web_tests": "apps/web/src/features/projects/ProjectAssetGrantPanel.test.tsx",
+    "web_result": "2 passed",
+    "negative_cases": [
+      "cross-project authorization rejected",
+      "tampered source hash/size rejected",
+      "revoked source authorization reported as grant impact",
+      "generation preflight blocked after source withdrawal"
+    ],
+    "positive_case": "Active source authorization creates an immutable READ_ONLY/DERIVED grant and generation preflight freezes the grant identity and source project"
+  },
+  "production_uat": {
+    "status": "PENDING",
+    "reason": "Windows x64 three-viewport UAT with user-selected local source assets and a complete production lineage remains outstanding"
+  },
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "production_mutated": false
+}
