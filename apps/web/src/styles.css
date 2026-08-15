@@ -299,8 +299,15 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .model-license-import label { display: grid; gap: 6px; min-width: 0; color: var(--text-muted); font-size: 12px; font-weight: 700; }
 .model-license-import input, .model-license-import select { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); }
 .model-license-import .primary-action { width: auto; min-width: 190px; margin-top: 12px; }
+.dialogue-governance-actions { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.dialogue-governance-actions form { display: grid; gap: 12px; margin-top: 12px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-subtle); }
+.dialogue-governance-actions .field-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: end; }
+.dialogue-governance-actions label { display: grid; gap: 6px; min-width: 0; color: var(--text-muted); font-size: 12px; font-weight: 700; }
+.dialogue-governance-actions input, .dialogue-governance-actions select { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); }
+.dialogue-governance-actions .primary-action { width: auto; min-width: 220px; }
 @media (max-width: 1180px) { .audio-import-binding .field-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 760px) { .audio-import-binding .field-grid, .model-license-import .field-grid { grid-template-columns: 1fr; } }
+@media (max-width: 1180px) { .dialogue-governance-actions .field-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .audio-import-binding .field-grid, .model-license-import .field-grid, .dialogue-governance-actions .field-grid { grid-template-columns: 1fr; } }
 .job-list { display: grid; gap: 8px; margin-top: 20px; }
 .job-row { display: grid; grid-template-columns: 1.3fr .6fr .8fr 1fr; gap: 12px; align-items: center; padding: 13px 15px; border: 1px solid #ded9cf; border-radius: 9px; background: #fff; color: #646a64; font-size: 12px; }
 .job-row strong { color: var(--text); }

@@ -34,10 +34,19 @@ for (const viewport of viewports) {
     await expect(panel.getByRole("heading", { name: "对白候选与音色授权" })).toBeVisible();
     await expect(panel.getByText("TTS PROFILE MISSING")).toBeVisible();
     await expect(panel.getByText("当前集没有对白文本 revision；未创建 Mock 候选。")).toBeVisible();
+    await panel.getByRole("button", { name: "新增对白、音色或候选" }).click();
+    await expect(panel.getByRole("button", { name: "收起对白治理操作" })).toHaveAttribute("aria-expanded", "true");
+    const mode = panel.getByLabel("操作类型");
+    await expect(mode).toHaveValue("");
+    await mode.selectOption("LINE");
+    await expect(panel.getByLabel("对白编号")).toBeVisible();
+    await expect(panel.getByLabel("说话人")).toBeVisible();
+    await expect(panel.getByLabel("剧本文本")).toBeVisible();
+    const undersizedControls = await panel.locator(".dialogue-governance-actions button, .dialogue-governance-actions input, .dialogue-governance-actions select").evaluateAll((nodes) => nodes.filter((node) => node.getBoundingClientRect().height < 40).map((node) => ({ tag: node.tagName, height: node.getBoundingClientRect().height })));
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     const panelOverflow = await panel.evaluate((element) => element.scrollWidth - element.clientWidth);
-    const passed = overflow === 0 && panelOverflow === 0 && consoleErrors.length === 0 && pageErrors.length === 0 && failedResponses.length === 0 && publicRequests.length === 0 && writes.length === 0 && originalMedia.length === 0;
-    results.push({ viewport: viewport.name, status: passed ? "PASS" : "FAIL", dialogue_line_count: 0, voice_profile_count: 0, tts_candidate_count: 0, published_tts_profile_count: 0, horizontal_overflow_px: overflow, panel_overflow_px: panelOverflow, console_errors: consoleErrors, page_errors: pageErrors, failed_responses: failedResponses, public_requests: publicRequests, write_requests: writes, original_media_requests: originalMedia });
+    const passed = overflow === 0 && panelOverflow === 0 && undersizedControls.length === 0 && consoleErrors.length === 0 && pageErrors.length === 0 && failedResponses.length === 0 && publicRequests.length === 0 && writes.length === 0 && originalMedia.length === 0;
+    results.push({ viewport: viewport.name, status: passed ? "PASS" : "FAIL", dialogue_line_count: 0, voice_profile_count: 0, tts_candidate_count: 0, published_tts_profile_count: 0, explicit_governance_actions: true, undersized_controls: undersizedControls, horizontal_overflow_px: overflow, panel_overflow_px: panelOverflow, console_errors: consoleErrors, page_errors: pageErrors, failed_responses: failedResponses, public_requests: publicRequests, write_requests: writes, original_media_requests: originalMedia });
     expect(passed).toBe(true);
   });
 }
