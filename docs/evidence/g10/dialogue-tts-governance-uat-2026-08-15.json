@@ -1,11 +1,12 @@
 {
   "schema_version": "fr-aud-001-governance-readonly-uat.v1",
-  "observed_at": "2026-08-15T03:50:57.716Z",
+  "observed_at": "2026-08-15T04:00:48.058Z",
   "mode": "LOCAL_ONLY",
   "status": "PASS",
   "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
   "episode_id": "d4db1033-9517-4bd0-958d-4228e0abead1",
   "truthful_capability_status": "BLOCKED_NO_PUBLISHED_TTS_PROFILE",
+  "preview_duration_contract": "SERVER_ENFORCED_3000_10000_MS",
   "production_mutated": false,
   "screenshots_created": false,
   "viewports": [

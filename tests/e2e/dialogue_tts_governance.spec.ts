@@ -12,7 +12,7 @@ test.afterAll(() => {
   const root = path.basename(process.cwd()).toLowerCase() === "web" ? path.resolve(process.cwd(), "../..") : process.cwd();
   const output = path.join(root, "docs", "evidence", "g10", "dialogue-tts-governance-uat-2026-08-15.json");
   fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify({ schema_version: "fr-aud-001-governance-readonly-uat.v1", observed_at: new Date().toISOString(), mode: "LOCAL_ONLY", status: results.length === 3 && results.every((item) => item.status === "PASS") ? "PASS" : "IN_PROGRESS", project_id: projectId, episode_id: episodeId, truthful_capability_status: "BLOCKED_NO_PUBLISHED_TTS_PROFILE", production_mutated: false, screenshots_created: false, viewports: results }, null, 2)}\n`, "utf8");
+  fs.writeFileSync(output, `${JSON.stringify({ schema_version: "fr-aud-001-governance-readonly-uat.v1", observed_at: new Date().toISOString(), mode: "LOCAL_ONLY", status: results.length === 3 && results.every((item) => item.status === "PASS") ? "PASS" : "IN_PROGRESS", project_id: projectId, episode_id: episodeId, truthful_capability_status: "BLOCKED_NO_PUBLISHED_TTS_PROFILE", preview_duration_contract: "SERVER_ENFORCED_3000_10000_MS", production_mutated: false, screenshots_created: false, viewports: results }, null, 2)}\n`, "utf8");
 });
 
 for (const viewport of viewports) {

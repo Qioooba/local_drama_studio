@@ -209,6 +209,13 @@ class DialogueService:
         media = self.media.verify_content_integrity(media_version_id)
         if media["project_id"] != text_revision["project_id"] or media["media_kind"] != "AUDIO" or media["integrity_status"] != "VERIFIED":
             raise DomainRuleError("TTS_CANDIDATE_MEDIA_INVALID", "TTS 候选必须是同项目已验证 AUDIO MediaVersion")
+        duration_ms = media.get("duration_ms")
+        if candidate_kind == "PREVIEW" and (duration_ms is None or not 3_000 <= int(duration_ms) <= 10_000):
+            raise DomainRuleError(
+                "TTS_PREVIEW_DURATION_INVALID",
+                "TTS 试听候选必须是已探测的 3—10 秒音频",
+                {"duration_ms": duration_ms, "minimum_ms": 3_000, "maximum_ms": 10_000},
+            )
         candidate_id, now = str(uuid.uuid4()), _now()
         provenance = {
             "schema_version": "localdrama.tts-candidate.v1",
@@ -219,6 +226,7 @@ class DialogueService:
             "voice_license_evidence": json.loads(str(voice["license_evidence_json"])),
             "provider_profile_version_id": voice["provider_profile_version_id"],
             "media_sha256": media["sha256"],
+            "media_duration_ms": int(duration_ms) if duration_ms is not None else None,
             "emotion": emotion.strip(),
             "speech_rate": speech_rate,
             "seed": seed,

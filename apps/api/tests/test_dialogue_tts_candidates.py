@@ -33,6 +33,13 @@ def test_traceable_imported_tts_candidate_selection_and_stale_text_gate(workspac
         capture_output=True,
     )
     media = MediaService(database, workspace).import_file(project_id, audio_path, purpose="DIALOGUE_TTS", media_kind="AUDIO")
+    short_audio_path = workspace.work_root / "tts-candidate-too-short.wav"
+    subprocess.run(
+        [workspace.ffmpeg_path, "-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-y", str(short_audio_path)],
+        check=True,
+        capture_output=True,
+    )
+    short_media = MediaService(database, workspace).import_file(project_id, short_audio_path, purpose="DIALOGUE_TTS", media_kind="AUDIO")
 
     with TestClient(create_app(workspace)) as client:
         line_response = client.post(
@@ -63,6 +70,19 @@ def test_traceable_imported_tts_candidate_selection_and_stale_text_gate(workspac
         assert voice_response.status_code == 201, voice_response.text
         voice = voice_response.json()["voice_profile"]
         assert len(voice["license_evidence"]["sha256"]) == 64
+        short_preview = client.post(
+            f"/api/v1/dialogue-text-revisions/{text_revision['id']}/tts-candidates",
+            json={
+                "voice_profile_version_id": voice["id"],
+                "media_version_id": short_media["media_version_id"],
+                "emotion": "neutral",
+                "speech_rate": 1.0,
+                "model_ref": "IMPORTED_LOCAL_AUDIO",
+                "candidate_kind": "PREVIEW",
+            },
+        )
+        assert short_preview.status_code == 422
+        assert short_preview.json()["error"]["code"] == "TTS_PREVIEW_DURATION_INVALID"
 
         candidate_response = client.post(
             f"/api/v1/dialogue-text-revisions/{text_revision['id']}/tts-candidates",
@@ -83,6 +103,7 @@ def test_traceable_imported_tts_candidate_selection_and_stale_text_gate(workspac
         assert candidate["provenance"]["emotion"] == "警觉"
         assert candidate["provenance"]["speech_rate"] == 0.95
         assert candidate["provenance"]["seed"] == 42
+        assert candidate["provenance"]["media_duration_ms"] == 4000
         formal_without_profile = client.post(
             f"/api/v1/dialogue-text-revisions/{text_revision['id']}/tts-candidates",
             json={
