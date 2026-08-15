@@ -42,6 +42,7 @@
 | 需求/验证范围 | 状态 | 证据 |
 |---|---|---|
 | FR-PRV-001/003 本地 Runtime、模型 artifact、manifest-backed Profile 候选 | VERIFIED | `application/profiles.py`、`test_g3_configuration_media.py`、G3 screenshots |
+| FR-WRT-001 故事圣经与创作资料版本化 | VERIFIED PRODUCTION READ-ONLY UAT | migration `0026_creative_entry_revisions`、`CreativeEntryService` 与 `CreativeLibrary`；七类资料每次保存新增不可变 revision，字段级比较只读，回退从历史内容派生新 revision 并保留 restored_from，历史无删除 API。API 3 项、Web 2 项、0025→0026 升级/精确恢复及三视口生产只读 UAT 通过，证据 `docs/evidence/g10/creative-library-uat-2026-08-15.json` |
 | FR-PRJ-007 项目健康/路径与本地资源诊断基础 | VERIFIED | `application/diagnostics.py`、`/diagnostics/runs` |
 | FR-PRJ-001 从版本化模板创建项目 | VERIFIED PRODUCTION UAT | `ProjectService.create_project/plan_project_creation` 使用 partial 目录原子发布，模拟失败无目录/DB 半成品；`0023_project_creation_spec` 持久化分辨率/语言/字幕，多季×每季集数生成 DB 与目录。请求可 inline 创建 ProductionPlan、按 capability 绑定 Published Profile、创建项目内 LOCAL_FILESYSTEM DeliveryTarget，全部预检后在项目事务内绑定；完整路线零 blocker，稍后配置路线保留三项真实 blocker。六步 UI 所有字段无默认值，先只读存储预检再配置/最终预检；API 真实配置创建与三视口生产 plan-only UAT 通过，证据 `docs/evidence/g10/project-create-wizard-uat-2026-08-15.json` |
 | FR-PRJ-002 v2 标准项目包 | VERIFIED PRODUCTION UAT | `ProjectPackageService` 与 export/stage/dry-run/commit API/UI：结构/媒体状态、payload、manifest、逐文件 SHA/size、源前后复验、内容寻址 staged token；流式校验 zip-slip/duplicate/symlink/schema/hash/size/entry/展开/压缩比/磁盘/identity。副本导入重写 Project/Season/Episode/Shot/MediaAsset/MediaVersion 及 owner/parent identity，rebind 只恢复 identity 匹配的缺失目录且拒绝覆盖；filesystem/SQLite 双回滚。`0022_project_package_import_receipts` 提供幂等结果、原 ID 重试与受双重归属证明约束的陈旧 PREPARING 恢复。媒体文件再次复验后注册 VERIFIED，selection/review/job/artifact/cache 明确排除；隔离 UAT 真实完成 small WebP 缩略图重建。10 个服务/API 测试与三视口生产只读 UAT 通过，证据 `docs/evidence/g10/project-package-uat-2026-08-15.json` |
@@ -234,6 +235,8 @@ FR-WRT-003 closure 批次：导演分镜九字段具备前端编辑、不可变/
 FR-WRT-005 closure 批次：生产 read model 和导演编辑器明确区分 OUTLINE/DIRECTED/PRODUCTION_READY，并同时保留字段与配置 blocker；字段完整不替代 Profile/Plan/DeliveryTarget 就绪。三档生产只读 UAT 显示真实 PRODUCTION_READY 状态且全程零写；全量门禁仍为 API 161 / Web 39/39 / build / Ruff / mypy 94 PASS。G7 与后续有序门禁状态不变。
 
 FR-WRT-004 closure 批次：结构化提示词模板冻结原始字段、模板、展开结果、负向词、语言与 model Profile version，内容不一致或缺项拒绝；owner 范围查询只投影最新 revision 且保留全部历史。三档生产只读 UAT 零写入、公网、原片、错误、短控件或溢出；完整门禁 API 163 passed / 4 live deselected、Web 41/41、build/Ruff/mypy 94 PASS。G7 与有序门禁状态不变。
+
+FR-WRT-001 closure 批次：migration `0026_creative_entry_revisions` 为故事圣经、人物、场景、道具、服装、风格、声音建立统一不可变 revision；比较只读，回退派生新 revision，历史永不覆盖/删除。0025→0026 隔离升级/精确恢复与生产迁移 integrity ok；三档生产只读 UAT 零写入、公网、原片、错误、短控件或溢出。完整门禁 API 166 passed / 4 live deselected、Web 43/43、build/Ruff/mypy 97 PASS。G7 license blocker 与后续有序门禁不变。
 
 ## 更新规则
 

@@ -30,6 +30,8 @@ export type MasterScene = { id: string; project_id: string; code: string; title:
 export type EpisodeSceneRange = { id: string; episode_id: string; scene_id: string; ordinal: number; source_start: number; source_end: number; source_label: string | null; scene_code: string; scene_title: string; location: string | null; time_of_day: string | null };
 export type ContinuityShot = { position: 'previous' | 'current' | 'next'; id: string; code: string; order_key: string; status: string; target_duration_ms: number; revision: { id: string | null; revision_no: number | null; is_frozen: boolean }; facets: Record<string, unknown | null>; missing_facets: string[]; references: Array<{ media_asset_id: string; media_version_id: string; purpose: string; media_kind: string; selection_state: 'APPROVED' | 'SELECTED'; version_no: number; stage: string; integrity_status: string }> };
 export type ContinuityContext = { episode_id: string; selected_shot_id: string; shots: { previous: ContinuityShot | null; current: ContinuityShot; next: ContinuityShot | null }; transitions: Array<Record<string, unknown>>; read_only: true; runtime_contacted: false; network_contacted: false; mutated: false };
+export type CreativeEntry = { id: string; project_id: string; kind: string; code: string; title: string; current_revision_id: string; revision_no: number; content_hash: string; change_note: string; content: Record<string, unknown>; revision: number };
+export type CreativeEntryRevision = { id: string; entry_id: string; revision_no: number; parent_revision_id: string | null; restored_from_revision_id: string | null; content_hash: string; change_note: string; content: Record<string, unknown>; created_at: string };
 export type ProjectCreatePayload = { code: string; title: string; season_count: number; episode_count: number; target_duration_ms: number; aspect_ratio: string; width: number; height: number; fps: { numerator: number; denominator: number }; primary_language: string; subtitle_mode: 'NONE' | 'SIDECAR' | 'BURN_IN' | 'BOTH'; subtitle_language?: string; allow_unconfigured_capabilities: boolean; production_plan?: { code: string; title: string; plan: Record<string, unknown> }; profile_bindings?: Array<{ capability: string; profile_version_id: string }>; delivery_target?: { code: string; title: string; spec: Record<string, unknown> } };
 export type ProjectCreationPlan = { status: 'READY' | 'READY_WITH_CONFIGURATION_BLOCKERS' | 'BLOCKED'; checks: Array<{ code: string; passed: boolean; free_bytes?: number; required_bytes?: number }>; blockers: string[]; configuration_blockers: string[]; accepted_unconfigured: boolean; target_root_rel: string; estimated_bytes: number; structure: { season_count: number; episode_count_per_season: number; total_episode_count: number }; presentation: Record<string, unknown>; would_create_project: true; mutated: false; runtime_contacted: false; network_contacted: false };
 export type ProjectPackageExport = { status: 'EXPORTED'; project_id: string; rel_path: string; byte_size: number; sha256: string; entry_count: number; expanded_bytes: number; reused: boolean; database_mutated: false; runtime_contacted: false; network_contacted: false };
@@ -388,6 +390,33 @@ export async function bindEpisodeSceneRange(episodeId: string, payload: { scene_
 
 export async function getEpisodeProduction(episodeId: string, baseUrl = ''): Promise<{ episode: Record<string, unknown>; items: Array<Record<string, unknown>> }> {
   return requestJson(`/api/v1/episodes/${encodeURIComponent(episodeId)}/production`, undefined, baseUrl);
+}
+
+export async function listCreativeEntries(projectId: string, kind?: string, baseUrl = ''): Promise<{ items: CreativeEntry[] }> {
+  const query = new URLSearchParams({ project_id: projectId });
+  if (kind) query.set('kind', kind);
+  return requestJson(`/api/v1/creative-entries?${query.toString()}`, undefined, baseUrl);
+}
+
+export async function getCreativeEntry(entryId: string, baseUrl = ''): Promise<{ entry: CreativeEntry; revisions: CreativeEntryRevision[] }> {
+  return requestJson(`/api/v1/creative-entries/${encodeURIComponent(entryId)}`, undefined, baseUrl);
+}
+
+export async function createCreativeEntry(payload: { project_id: string; kind: string; code: string; title: string; content: Record<string, unknown>; change_note: string }, baseUrl = ''): Promise<{ entry: CreativeEntry }> {
+  return requestJson('/api/v1/creative-entries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function createCreativeEntryRevision(entryId: string, payload: { content: Record<string, unknown>; change_note: string }, baseUrl = ''): Promise<{ revision: CreativeEntryRevision }> {
+  return requestJson(`/api/v1/creative-entries/${encodeURIComponent(entryId)}/revisions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function compareCreativeEntryRevisions(entryId: string, leftRevisionId: string, rightRevisionId: string, baseUrl = ''): Promise<{ comparison: { entry_id: string; left: CreativeEntryRevision; right: CreativeEntryRevision; changes: Array<{ field: string; before: unknown; after: unknown }>; read_only: true } }> {
+  const query = new URLSearchParams({ left_revision_id: leftRevisionId, right_revision_id: rightRevisionId });
+  return requestJson(`/api/v1/creative-entries/${encodeURIComponent(entryId)}/compare?${query.toString()}`, undefined, baseUrl);
+}
+
+export async function restoreCreativeEntryRevision(entryId: string, revisionId: string, changeNote: string, baseUrl = ''): Promise<{ revision: CreativeEntryRevision }> {
+  return requestJson(`/api/v1/creative-entries/${encodeURIComponent(entryId)}:restore`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision_id: revisionId, change_note: changeNote }) }, baseUrl);
 }
 
 export async function getShotContinuityContext(shotId: string, baseUrl = ''): Promise<{ continuity: ContinuityContext }> {

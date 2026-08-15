@@ -67,8 +67,8 @@ def _rehearsal_passed(path: Path) -> bool:
         and source.get("integrity") == "ok"
         and restore.get("integrity") == "ok"
         and restore.get("matches_source_sha256") is True
-        and source.get("migration") == "0024_video_review_annotations"
-        and evidence.get("upgrade_copy", {}).get("to_migration") == "0025_episode_scene_ranges"
+        and source.get("migration") == "0025_episode_scene_ranges"
+        and evidence.get("upgrade_copy", {}).get("to_migration") == "0026_creative_entry_revisions"
         and safety.get("production_database_mutated") is False
         and safety.get("network_contacted") is False
     )
@@ -266,7 +266,7 @@ def audit() -> dict[str, Any]:
     release_artifacts_ready = all(item["final"] for item in artifact_state.values())
     checks = [
         {"code": "DATABASE_INTEGRITY", "passed": _integrity(DB_PATH) == "ok", "observed": _integrity(DB_PATH)},
-        {"code": "MIGRATION_HEAD", "passed": bool(migration and str(migration["version_num"]) == "0025_episode_scene_ranges"), "observed": str(migration["version_num"]) if migration else None},
+        {"code": "MIGRATION_HEAD", "passed": bool(migration and str(migration["version_num"]) == "0026_creative_entry_revisions"), "observed": str(migration["version_num"]) if migration else None},
         {"code": "BACKUP_INTEGRITY", "passed": bool(backup_paths) and all(_integrity(path) == "ok" for path in backup_paths[:5]), "observed_count": min(len(backup_paths), 5)},
         {"code": "ORDERED_G7", "passed": g7_pass, "observed": g7["status"], "next_required_action": g7["next_required_action"]},
         {
