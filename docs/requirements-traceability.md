@@ -195,7 +195,7 @@ G7 已可按蓝图 09 顺序开始，但当前不是 PASS；G8/G9 仍只记 prog
 
 G7 当前已按“用户自带本机模型、平台只引用管理、不捆绑权重”的正式范围 PASS；G8、G9 亦已按顺序 PASS。
 
-历史 G10 局部门禁证据曾为 PASS，但总设计复核后总体发布状态已撤回为 `IN_PROGRESS / NO-GO`。当前数据库与最近五份迁移前备份 `integrity=ok`，migration head=`0032_episode_render_execution_evidence`；`0031→0032` 隔离升级与精确恢复演练 PASS。规模、安全、干净新根恢复、本地只读 UAT、G7→G8→G9 有序退出、SBOM 和运行手册仍是有效局部证据，但不能替代 84 个 P0/P1 FR、15 个 NFR 与 85 个命名 TC 的总账闭环。正式范围保持 Windows x64 LOCAL_ONLY 本地源码发行版，不捆绑用户模型或媒体。
+历史 G10 局部门禁证据曾为 PASS，但总设计复核后总体发布状态已撤回为 `IN_PROGRESS / NO-GO`。当前数据库与最近五份迁移前备份 `integrity=ok`，migration head=`0033_brand_watermark_compliance_versions`；`0031→0033` 隔离升级与精确恢复演练证据需随本批更新。规模、安全、干净新根恢复、本地只读 UAT、G7→G8→G9 有序退出、SBOM 和运行手册仍是有效局部证据，但不能替代 84 个 P0/P1 FR、15 个 NFR 与 85 个命名 TC 的总账闭环。正式范围保持 Windows x64 LOCAL_ONLY 本地源码发行版，不捆绑用户模型或媒体。
 
 2026-08-15 用户自带模型策略闭环：新增本机模型引用 API 与页面原生文件选择器，返回绝对路径且 `copied=false/uploaded=false`；兼容报告将用户许可证缺失降级为可见风险，不改变 hash、量化、路径和 symlink 硬校验。生产数据库在线备份后迁移至 0029，G7/G8/G9 依次 PASS；完整门禁 API 178 passed / 4 live deselected、Web 60/60（以最终实际回归输出为准更新），三档模型路径 UI 3/3 PASS。G10 发布审计 PASS，GO 范围不包含模型权重、音色、媒体或 REMOTE Provider。
 
@@ -276,6 +276,10 @@ FR-AUD-002 authorization correction：新增 migration `0028_audio_binding_autho
 FR-AUD-001 SAPI 选择入口增量：新增 `GET /api/v1/tts/voices:discover`，Windows 本机只读调用 System.Speech 列出已安装音色名称、区域与 `sapi:` 引用；未找到 runtime 时明确返回 `UNAVAILABLE`，扫描不复制/上传/写入项目。对白治理 UI 需用户显式点击扫描并选择，之后仍必须填写项目内授权证据、绑定 Published TTS Profile、执行真实 Job、QC、人工审核与选择；本入口不改变 FR-AUD-001 的 `PARTIAL` 状态。
 
 FR-PST-002 实现增量：版本化后处理 recipe 在核心 `SCALE → TECHNICAL_QC → ENCODE` 之间支持能力驱动的 `FRAME_INTERPOLATION`、`DENOISE`、`STABILIZE` 和项目内 `.cube LUT_3D`。每个步骤独立运行本地 FFmpeg 中间文件并冻结输入/输出 SHA；目标帧率与分辨率写入技术 QC，任一步失败只将 enhancement run 标记失败并清理临时输出，源 MediaVersion 与先前成功版本不变。API 真实 FFmpeg 回归与 Web 选项测试通过；FR-PST-002 的三视口生产 UAT 与正式总账证据仍待补齐，当前不标最终 VERIFIED。
+
+FR-PST-003 实现增量：新增不可变版本化 `WatermarkProfile` 与 `CompliancePolicy`，并扩展 BrandKit 为项目视觉 token 版本；新版本发布会 RETIRE 同 code 的旧 ACTIVE 版本。整集本地交付自动读取或显式绑定当前 ACTIVE 控制版本，水印使用本机 Windows 字体由 FFmpeg 生成新文件，不覆盖整集渲染；合规机器预检记录规则、render SHA、发现项与责任边界，失败不产生交付包。交付 manifest 与 `delivery_packages` 冻结 BrandKit/Watermark/Compliance 版本、machine preflight=PASS、human/platform review=PENDING，后续 verify 只校验文件完整性，不把机器结果冒充人工/平台批准。真实 FFmpeg/API 回归、版本轮换与失败预检测试通过，Web 面板提供显式发布入口；三视口生产 UAT、正式证据与总账 closure 仍待补齐，当前不标最终 VERIFIED。
+
+FR-PST-003 责任分离增量：新增 `POST /delivery-packages/{id}:review`，审核者必须显式选择 `HUMAN` 或 `PLATFORM` 并填写说明，审核结果分别写入不可覆盖的 delivery package 状态与 delivery event；撤回包不能再审核。交付面板提供人工批准/平台批准按钮，并持续显示“机器 PASS ≠ 人工/平台批准”。真实 API 回归覆盖机器 PASS 后两类批准、说明留痕与状态分离；生产三视口 UAT 与正式总账证据仍待补齐。
 
 ## 更新规则
 

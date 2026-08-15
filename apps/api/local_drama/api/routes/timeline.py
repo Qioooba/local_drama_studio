@@ -10,6 +10,7 @@ from local_drama.api.routes.media import _range_headers
 from local_drama.api.schemas.g8 import (
     AudioBindingRequest,
     DeliveryBuildRequest,
+    DeliveryReviewRequest,
     DeliveryWithdrawRequest,
     EnhancementPlanRequest,
     EnhancementRunRequest,
@@ -260,5 +261,13 @@ async def verify_delivery(package_id: str, request: Request) -> dict[str, object
 async def withdraw_delivery(package_id: str, payload: DeliveryWithdrawRequest, request: Request) -> dict[str, object]:
     try:
         return {"delivery": service(request).withdraw_delivery(package_id, payload.reason)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/delivery-packages/{package_id}:review", operation_id="reviewDeliveryPackage")
+async def review_delivery(package_id: str, payload: DeliveryReviewRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"delivery": service(request).review_delivery(package_id, payload.reviewer_type, payload.decision, payload.note)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error

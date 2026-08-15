@@ -1121,7 +1121,7 @@ class TimelineService:
             raise DomainRuleError("EPISODE_RENDER_INTEGRITY_FAILED", "整集渲染文件 hash 与登记值不一致")
         return dict(row), render_path
 
-    def build_delivery(self, episode_render_version_id: str, target_version_id: str, *, actor: str = "local-user") -> dict[str, Any]:
+    def build_delivery(self, episode_render_version_id: str, target_version_id: str, brand_kit_id: str | None = None, watermark_profile_id: str | None = None, compliance_policy_id: str | None = None, *, actor: str = "local-user") -> dict[str, Any]:
         with self.database.connect() as connection:
             render = connection.execute("SELECT erv.*, e.code AS episode_code, e.id AS episode_id, s.project_id, p.root_rel FROM episode_render_versions erv JOIN episodes e ON e.id=erv.episode_id JOIN seasons s ON s.id=e.season_id JOIN projects p ON p.id=s.project_id WHERE erv.id=?", (episode_render_version_id,)).fetchone()
             target = connection.execute("SELECT dtv.*, dt.project_id, dt.transport, dt.code AS target_code FROM delivery_target_versions dtv JOIN delivery_targets dt ON dt.id=dtv.delivery_target_id WHERE dtv.id=?", (target_version_id,)).fetchone()
@@ -1133,33 +1133,85 @@ class TimelineService:
             raise DomainRuleError("DELIVERY_PROJECT_MISMATCH", "交付目标必须属于同一项目")
         if target["transport"] != "LOCAL_FILESYSTEM":
             raise DomainRuleError("REMOTE_TRANSPORT_DISABLED", "LOCAL_ONLY 首版只允许本地文件交付")
+        project_id = str(render["project_id"])
+        with self.database.connect() as connection:
+            brand = connection.execute("SELECT * FROM brand_kits WHERE id=? AND project_id=? AND status='ACTIVE'", (brand_kit_id, project_id)).fetchone() if brand_kit_id else connection.execute("SELECT * FROM brand_kits WHERE project_id=? AND status='ACTIVE' ORDER BY updated_at DESC LIMIT 1", (project_id,)).fetchone()
+            watermark = connection.execute("SELECT * FROM watermark_profiles WHERE id=? AND project_id=? AND status='ACTIVE'", (watermark_profile_id, project_id)).fetchone() if watermark_profile_id else connection.execute("SELECT * FROM watermark_profiles WHERE project_id=? AND status='ACTIVE' ORDER BY updated_at DESC LIMIT 1", (project_id,)).fetchone()
+            compliance = connection.execute("SELECT * FROM compliance_policies WHERE id=? AND project_id=? AND status='ACTIVE'", (compliance_policy_id, project_id)).fetchone() if compliance_policy_id else connection.execute("SELECT * FROM compliance_policies WHERE project_id=? AND status='ACTIVE' ORDER BY updated_at DESC LIMIT 1", (project_id,)).fetchone()
+        if brand_kit_id and brand is None:
+            raise DomainRuleError("BRAND_KIT_NOT_ACTIVE", "BrandKit 不存在、项目不匹配或已 RETIRED")
+        if watermark_profile_id and watermark is None:
+            raise DomainRuleError("WATERMARK_PROFILE_NOT_ACTIVE", "水印版本不存在、项目不匹配或已 RETIRED")
+        if compliance_policy_id and compliance is None:
+            raise DomainRuleError("COMPLIANCE_POLICY_NOT_ACTIVE", "合规策略不存在、项目不匹配或已 RETIRED")
+        brand_snapshot = {"id": str(brand["id"]), "code": str(brand["code"]), "version_no": int(brand["version_no"])} if brand else None
+        watermark_config = json.loads(str(watermark["config_json"])) if watermark else None
+        watermark_snapshot = {"id": str(watermark["id"]), "code": str(watermark["code"]), "version_no": int(watermark["version_no"]), "config": watermark_config} if watermark else None
+        compliance_rules = json.loads(str(compliance["rules_json"])) if compliance else None
+        compliance_snapshot = {"id": str(compliance["id"]), "code": str(compliance["code"]), "version_no": int(compliance["version_no"]), "rules": compliance_rules} if compliance else None
+        probe = json.loads(str(render["probe_json"]))
+        duration_ms = int(render["duration_ms"] or probe.get("duration_ms") or 0)
+        findings: list[dict[str, Any]] = []
+        if compliance_rules:
+            if compliance_rules.get("require_watermark") and not watermark:
+                findings.append({"code": "WATERMARK_REQUIRED", "severity": "ERROR", "message": "当前合规策略要求水印，但没有 ACTIVE 水印版本"})
+            max_duration_ms = compliance_rules.get("max_duration_ms")
+            if max_duration_ms is not None and duration_ms > int(max_duration_ms):
+                findings.append({"code": "DURATION_EXCEEDED", "severity": "ERROR", "message": "整集时长超过当前本地合规策略上限", "observed": duration_ms, "limit": int(max_duration_ms)})
+        machine_preflight: dict[str, object] = {"status": "FAIL" if findings else "PASS", "findings": findings, "checked_render_sha256": str(render["sha256"]), "responsibility": {"machine": "本地规则预检与文件完整性", "human": "内容/版权/平台最终审核，不由机器结果替代"}}
+        if findings:
+            raise DomainRuleError("COMPLIANCE_PREFLIGHT_FAILED", "本地合规机器预检未通过", machine_preflight)
         spec = json.loads(target["target_spec_json"])
         path_rel = str(spec.get("path_rel", "06_delivery"))
         if Path(path_rel).is_absolute() or ".." in Path(path_rel).parts:
             raise DomainRuleError("INVALID_DELIVERY_TARGET", "交付目标路径越界")
         project_root = (self.settings.projects_root / render["root_rel"]).resolve()
         source = (project_root / render["rel_path"]).resolve()
+        if not source.is_file() or not source.is_relative_to(project_root) or source.is_symlink():
+            raise DomainRuleError("EPISODE_RENDER_FILE_MISSING", "整集渲染文件缺失、为 symlink 或路径越界")
+        source_hash, _ = _hash_file(source)
+        if source_hash != str(render["sha256"]):
+            raise DomainRuleError("EPISODE_RENDER_INTEGRITY_FAILED", "整集渲染文件 hash 与登记值不一致")
         destination_dir = (project_root / path_rel / str(render["episode_code"])).resolve()
         if not destination_dir.is_relative_to(project_root):
             raise DomainRuleError("PATH_ESCAPE", "交付目标目录越界")
         destination_dir.mkdir(parents=True, exist_ok=True)
         destination = destination_dir / f"{render['episode_code']}.mp4"
         partial = destination.with_name(f".partial-{destination.name}")
-        shutil.copyfile(source, partial)
-        os.replace(partial, destination)
+        watermark_text_path = destination_dir / f".partial-{destination.name}.watermark.txt"
+        try:
+            if watermark_config:
+                watermark_text_path.write_text(str(watermark_config["text"]), encoding="utf-8")
+                margin = int(watermark_config["margin"])
+                position = str(watermark_config["position"])
+                coordinates = {"TOP_LEFT": (str(margin), str(margin)), "TOP_RIGHT": (f"w-text_w-{margin}", str(margin)), "BOTTOM_LEFT": (str(margin), f"h-text_h-{margin}"), "BOTTOM_RIGHT": (f"w-text_w-{margin}", f"h-text_h-{margin}"), "CENTER": ("(w-text_w)/2", "(h-text_h)/2")}[position]
+                textfile = watermark_text_path.as_posix().replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
+                font_candidates = (Path("C:/Windows/Fonts/arial.ttf"), Path("C:/Windows/Fonts/segoeui.ttf"))
+                font_path = next((candidate for candidate in font_candidates if candidate.is_file()), None)
+                if font_path is None:
+                    raise DomainRuleError("WATERMARK_FONT_UNAVAILABLE", "本机缺少可用的 Windows 水印字体")
+                fontfile = font_path.as_posix().replace(":", "\\:")
+                drawtext = f"drawtext=fontfile='{fontfile}':textfile='{textfile}':x={coordinates[0]}:y={coordinates[1]}:fontcolor={watermark_config['color']}@{float(watermark_config['opacity']):.3f}:fontsize={int(watermark_config['font_size'])}"
+                self._run_ffmpeg(["-i", str(source), "-map", "0:v:0", "-map", "0:a?", "-vf", drawtext, "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "aac", "-movflags", "+faststart", "-y", str(partial)], timeout=900)
+            else:
+                shutil.copyfile(source, partial)
+            os.replace(partial, destination)
+        finally:
+            partial.unlink(missing_ok=True)
+            watermark_text_path.unlink(missing_ok=True)
         file_hash, byte_size = _hash_file(destination)
-        manifest = {"schema_version": "delivery-manifest.v1", "episode_id": render["episode_id"], "timeline_revision_id": render["timeline_revision_id"], "target_version_id": target_version_id, "files": [{"rel_path": destination.relative_to(project_root).as_posix(), "sha256": file_hash, "byte_size": byte_size}]}
+        manifest = {"schema_version": "delivery-manifest.v2", "episode_id": render["episode_id"], "timeline_revision_id": render["timeline_revision_id"], "target_version_id": target_version_id, "controls": {"brand_kit": brand_snapshot, "watermark_profile": watermark_snapshot, "compliance_policy": compliance_snapshot, "machine_preflight": machine_preflight}, "review_responsibility": {"machine_preflight": "PASS", "human_review": "PENDING", "platform_review": "PENDING"}, "files": [{"rel_path": destination.relative_to(project_root).as_posix(), "sha256": file_hash, "byte_size": byte_size}]}
         manifest_hash = _hash(manifest)
         manifest_path = destination_dir / "manifest.json"
         manifest_path.write_text(json.dumps({**manifest, "manifest_sha256": manifest_hash}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         package_id = str(uuid.uuid4())
         now = _now()
         with self.database.transaction() as connection:
-            connection.execute("INSERT INTO delivery_packages (id, episode_render_version_id, target_version_id, rel_path, status, manifest_sha256, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, ?, 'VERIFIED', ?, ?, ?, ?, 1, 'v2')", (package_id, episode_render_version_id, target_version_id, destination_dir.relative_to(project_root).as_posix(), manifest_hash, now, now, actor))
+            connection.execute("INSERT INTO delivery_packages (id, episode_render_version_id, target_version_id, rel_path, status, manifest_sha256, brand_kit_id, watermark_profile_id, compliance_policy_id, machine_preflight_status, machine_preflight_json, human_review_status, platform_review_status, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, ?, 'VERIFIED', ?, ?, ?, ?, 'PASS', ?, 'PENDING', 'PENDING', ?, ?, ?, 1, 'v3')", (package_id, episode_render_version_id, target_version_id, destination_dir.relative_to(project_root).as_posix(), manifest_hash, brand["id"] if brand else None, watermark["id"] if watermark else None, compliance["id"] if compliance else None, _json(machine_preflight), now, now, actor))
             connection.execute("INSERT INTO delivery_files (id, delivery_package_id, rel_path, sha256, byte_size) VALUES (?, ?, ?, ?, ?)", (str(uuid.uuid4()), package_id, destination.relative_to(project_root).as_posix(), file_hash, byte_size))
             connection.execute("INSERT INTO delivery_files (id, delivery_package_id, rel_path, sha256, byte_size) VALUES (?, ?, ?, ?, ?)", (str(uuid.uuid4()), package_id, manifest_path.relative_to(project_root).as_posix(), hashlib.sha256(manifest_path.read_bytes()).hexdigest(), manifest_path.stat().st_size))
-            connection.execute("INSERT INTO delivery_events (id, delivery_package_id, action, manifest_sha256, note, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, 'BUILT', ?, ?, ?, ?, ?, 1, 'v2')", (str(uuid.uuid4()), package_id, manifest_hash, "local filesystem delivery built and verified", now, now, actor))
-        return {"id": package_id, "status": "VERIFIED", "rel_path": destination_dir.relative_to(project_root).as_posix(), "manifest_sha256": manifest_hash, "files": manifest["files"]}
+            connection.execute("INSERT INTO delivery_events (id, delivery_package_id, action, manifest_sha256, note, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, 'BUILT', ?, ?, ?, ?, ?, 1, 'v3')", (str(uuid.uuid4()), package_id, manifest_hash, "local filesystem delivery built; machine preflight PASS; human/platform review remains separate", now, now, actor))
+        return {"id": package_id, "status": "VERIFIED", "rel_path": destination_dir.relative_to(project_root).as_posix(), "manifest_sha256": manifest_hash, "files": manifest["files"], "controls": manifest["controls"], "machine_preflight": machine_preflight, "human_review_status": "PENDING", "platform_review_status": "PENDING"}
 
     def verify_delivery(self, package_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
@@ -1176,7 +1228,7 @@ class TimelineService:
         ok = all(item["ok"] for item in checks)
         with self.database.transaction() as connection:
             connection.execute("UPDATE delivery_packages SET status=?, updated_at=?, revision=revision+1 WHERE id=?", ("VERIFIED" if ok else "CORRUPT", _now(), package_id))
-        return {"id": package_id, "status": "VERIFIED" if ok else "CORRUPT", "checks": checks}
+        return {"id": package_id, "status": "VERIFIED" if ok else "CORRUPT", "checks": checks, "machine_preflight_status": package["machine_preflight_status"], "human_review_status": package["human_review_status"], "platform_review_status": package["platform_review_status"]}
 
     def withdraw_delivery(self, package_id: str, reason: str, actor: str = "local-user") -> dict[str, Any]:
         if not reason.strip():
@@ -1189,6 +1241,24 @@ class TimelineService:
             connection.execute("UPDATE delivery_packages SET status='WITHDRAWN', withdrawn_reason=?, updated_at=?, revision=revision+1 WHERE id=?", (reason, now, package_id))
             connection.execute("INSERT INTO delivery_events (id, delivery_package_id, action, note, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, 'WITHDRAWN', ?, ?, ?, ?, 1, 'v2')", (str(uuid.uuid4()), package_id, reason, now, now, actor))
         return {"id": package_id, "status": "WITHDRAWN", "reason": reason}
+
+    def review_delivery(self, package_id: str, reviewer_type: str, decision: str, note: str, actor: str = "local-user") -> dict[str, Any]:
+        if reviewer_type not in {"HUMAN", "PLATFORM"}:
+            raise DomainRuleError("DELIVERY_REVIEWER_TYPE_INVALID", "交付审核责任方必须是 HUMAN 或 PLATFORM")
+        if decision not in {"APPROVED", "REJECTED"} or not note.strip():
+            raise DomainRuleError("DELIVERY_REVIEW_INVALID", "交付审核必须包含 APPROVED/REJECTED 与说明")
+        now = _now()
+        column = "human_review_status" if reviewer_type == "HUMAN" else "platform_review_status"
+        with self.database.transaction() as connection:
+            row = connection.execute("SELECT * FROM delivery_packages WHERE id=?", (package_id,)).fetchone()
+            if row is None:
+                raise DomainRuleError("DELIVERY_PACKAGE_NOT_FOUND", "交付包不存在")
+            if str(row["status"]) == "WITHDRAWN":
+                raise DomainRuleError("DELIVERY_WITHDRAWN", "已撤回交付不能继续审核")
+            connection.execute(f"UPDATE delivery_packages SET {column}=?, updated_at=?, revision=revision+1 WHERE id=?", (decision, now, package_id))
+            connection.execute("INSERT INTO delivery_events (id, delivery_package_id, action, note, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'v3')", (str(uuid.uuid4()), package_id, f"{reviewer_type}_REVIEW_{decision}", note.strip(), now, now, actor))
+            updated = connection.execute("SELECT * FROM delivery_packages WHERE id=?", (package_id,)).fetchone()
+        return {"id": package_id, "status": str(updated["status"]), "machine_preflight_status": str(updated["machine_preflight_status"]), "human_review_status": str(updated["human_review_status"]), "platform_review_status": str(updated["platform_review_status"]), "reviewer_type": reviewer_type, "decision": decision, "note": note.strip()}
 
     def _run_ffmpeg(self, args: list[str], *, timeout: int) -> dict[str, Any]:
         ffmpeg = self.settings.ffmpeg_path

@@ -22,3 +22,15 @@ class BrandKitRequest(BaseModel):
     code: str = Field(min_length=1, max_length=120)
     title: str = Field(min_length=1, max_length=200)
     tokens: dict[str, Any] = Field(min_length=1)
+
+
+class WatermarkProfileRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=120)
+    title: str = Field(min_length=1, max_length=200)
+    config: dict[str, Any] = Field(min_length=1)
+
+
+class CompliancePolicyRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=120)
+    title: str = Field(min_length=1, max_length=200)
+    rules: dict[str, Any] = Field(min_length=1)

@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from local_drama.api.schemas.g7 import BrandKitRequest, ProjectAssetGrantRequest, ProjectAssetGrantRevokeRequest, WorkspaceAssetAuthorizationRequest
+from local_drama.api.schemas.g7 import (
+    BrandKitRequest,
+    CompliancePolicyRequest,
+    ProjectAssetGrantRequest,
+    ProjectAssetGrantRevokeRequest,
+    WatermarkProfileRequest,
+    WorkspaceAssetAuthorizationRequest,
+)
 from local_drama.api.schemas.g7_model import LocalModelReferenceRequest, ModelCompatibilityRequest, ModelLicenseEvidenceRequest
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.g6_readiness import G6ReadinessService
@@ -166,6 +173,31 @@ async def revoke_project_asset_grant(grant_id: str, payload: ProjectAssetGrantRe
 async def create_brand_kit(project_id: str, payload: BrandKitRequest, request: Request) -> dict[str, object]:
     try:
         return {"brand_kit": WorkspaceAssetService(request.app.state.database, request.app.state.settings).create_brand_kit(project_id, payload.code, payload.title, payload.tokens)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/projects/{project_id}/brand-controls", operation_id="listBrandControls")
+async def list_brand_controls(project_id: str, request: Request) -> dict[str, object]:
+    try:
+        controls = WorkspaceAssetService(request.app.state.database, request.app.state.settings).list_brand_controls(project_id)
+        return {"brand_kits": controls["brand_kits"], "watermark_profiles": controls["watermark_profiles"], "compliance_policies": controls["compliance_policies"]}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/projects/{project_id}/watermark-profiles", status_code=201, operation_id="createWatermarkProfile")
+async def create_watermark_profile(project_id: str, payload: WatermarkProfileRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"watermark_profile": WorkspaceAssetService(request.app.state.database, request.app.state.settings).create_watermark_profile(project_id, payload.code, payload.title, payload.config)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/projects/{project_id}/compliance-policies", status_code=201, operation_id="createCompliancePolicy")
+async def create_compliance_policy(project_id: str, payload: CompliancePolicyRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"compliance_policy": WorkspaceAssetService(request.app.state.database, request.app.state.settings).create_compliance_policy(project_id, payload.code, payload.title, payload.rules)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

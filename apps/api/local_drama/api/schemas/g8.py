@@ -97,7 +97,16 @@ class RenderEpisodeRequest(BaseModel):
 class DeliveryBuildRequest(BaseModel):
     episode_render_version_id: str = Field(min_length=1)
     target_version_id: str = Field(min_length=1)
+    brand_kit_id: str | None = Field(default=None, min_length=1)
+    watermark_profile_id: str | None = Field(default=None, min_length=1)
+    compliance_policy_id: str | None = Field(default=None, min_length=1)
 
 
 class DeliveryWithdrawRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=2000)
+
+
+class DeliveryReviewRequest(BaseModel):
+    reviewer_type: Literal["HUMAN", "PLATFORM"]
+    decision: Literal["APPROVED", "REJECTED"]
+    note: str = Field(min_length=1, max_length=2000)

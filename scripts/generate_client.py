@@ -667,7 +667,7 @@ export async function renderEpisode(timelineRevisionId: string, baseUrl = ''): P
   return requestJson(`/api/v1/timeline-revisions/${encodeURIComponent(timelineRevisionId)}:render`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ timeline_revision_id: timelineRevisionId }) }, baseUrl);
 }
 
-export async function buildDeliveryPackage(payload: { episode_render_version_id: string; target_version_id: string }, baseUrl = ''): Promise<{ delivery: DeliveryPackage }> {
+export async function buildDeliveryPackage(payload: { episode_render_version_id: string; target_version_id: string; brand_kit_id?: string; watermark_profile_id?: string; compliance_policy_id?: string }, baseUrl = ''): Promise<{ delivery: DeliveryPackage }> {
   return requestJson('/api/v1/delivery-packages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
@@ -677,6 +677,10 @@ export async function verifyDeliveryPackage(packageId: string, baseUrl = ''): Pr
 
 export async function withdrawDeliveryPackage(packageId: string, reason: string, baseUrl = ''): Promise<{ delivery: DeliveryPackage }> {
   return requestJson(`/api/v1/delivery-packages/${encodeURIComponent(packageId)}:withdraw`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }) }, baseUrl);
+}
+
+export async function reviewDeliveryPackage(packageId: string, payload: { reviewer_type: 'HUMAN' | 'PLATFORM'; decision: 'APPROVED' | 'REJECTED'; note: string }, baseUrl = ''): Promise<{ delivery: DeliveryPackage }> {
+  return requestJson(`/api/v1/delivery-packages/${encodeURIComponent(packageId)}:review`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
 export async function getFrameAnchor(anchorId: string, baseUrl = ''): Promise<{ frame_anchor: FrameAnchor }> {
@@ -816,6 +820,18 @@ export async function revokeProjectAssetGrant(grantId: string, reason: string, b
 
 export async function createBrandKit(projectId: string, payload: { code: string; title: string; tokens: Record<string, unknown> }, baseUrl = ''): Promise<{ brand_kit: Record<string, unknown> }> {
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/brand-kits`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function listBrandControls(projectId: string, baseUrl = ''): Promise<{ brand_kits: Array<Record<string, unknown>>; watermark_profiles: Array<Record<string, unknown>>; compliance_policies: Array<Record<string, unknown>> }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/brand-controls`, undefined, baseUrl);
+}
+
+export async function createWatermarkProfile(projectId: string, payload: { code: string; title: string; config: Record<string, unknown> }, baseUrl = ''): Promise<{ watermark_profile: Record<string, unknown> }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/watermark-profiles`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function createCompliancePolicy(projectId: string, payload: { code: string; title: string; rules: Record<string, unknown> }, baseUrl = ''): Promise<{ compliance_policy: Record<string, unknown> }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/compliance-policies`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
 export async function createModelCompatibilityReport(projectId: string, modelArtifactId: string, baseUrl = ''): Promise<{ report: ModelCompatibilityReport }> {

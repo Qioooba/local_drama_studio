@@ -423,3 +423,51 @@ def test_optional_post_process_failure_does_not_register_or_overwrite_input(work
         assert run["status"] == "FAILED" and run["output_media_version_id"] is None
         assert int(connection.execute("SELECT COUNT(*) FROM media_versions WHERE parent_version_id=?", (video_id,)).fetchone()[0]) == 0
     assert MediaService(database, workspace).verify_content_integrity(video_id)["sha256"] == original_sha
+
+
+def test_brand_watermark_and_compliance_versions_bind_delivery_without_auto_review(workspace, database) -> None:
+    project = _project(workspace, database)
+    project_id = str(project["id"])
+    project_service = ProjectService(database, workspace.projects_root)
+    season = project_service.list_seasons(project_id)[0]
+    episode = project_service.list_episodes(str(season["id"]))[0]
+    shot = project_service.create_shot(str(episode["id"]), "S001", 1000)
+    source = MediaService(database, workspace).import_file(project_id, _video(workspace), purpose="SHOT_VIDEO", owner_id=str(shot["id"]), media_kind="VIDEO")
+    with TestClient(create_app(workspace)) as client:
+        timeline = client.post(f"/api/v1/episodes/{episode['id']}/timeline-revisions", json={"items": [{"track_type": "VIDEO", "media_version_id": source["media_version_id"], "start_us": 0, "end_us": 1_000_000, "parameters": {}}], "input_snapshot": {"source": "brand-control-test"}})
+        assert timeline.status_code == 201, timeline.text
+        render = client.post(f"/api/v1/timeline-revisions/{timeline.json()['timeline']['id']}:render")
+        assert render.status_code == 201, render.text
+        target = ConfigurationService(database).create_delivery_target(project_id, "brand-local", "Brand local", "LOCAL_FILESYSTEM", {"path_rel": "06_delivery/brand"})
+        brand = client.post(f"/api/v1/projects/{project_id}/brand-kits", json={"code": "series", "title": "Series v1", "tokens": {"colors": {"primary": "#223344"}}})
+        assert brand.status_code == 201, brand.text
+        watermark = client.post(f"/api/v1/projects/{project_id}/watermark-profiles", json={"code": "corner", "title": "右下角水印", "config": {"text": "LOCAL STUDY", "position": "BOTTOM_RIGHT", "opacity": 0.8, "font_size": 18, "margin": 8, "color": "white"}})
+        assert watermark.status_code == 201, watermark.text
+        failing_policy = client.post(f"/api/v1/projects/{project_id}/compliance-policies", json={"code": "duration", "title": "时长上限", "rules": {"require_watermark": True, "max_duration_ms": 500}})
+        assert failing_policy.status_code == 201, failing_policy.text
+        blocked = client.post("/api/v1/delivery-packages", json={"episode_render_version_id": render.json()["render"]["id"], "target_version_id": target["version_id"], "watermark_profile_id": watermark.json()["watermark_profile"]["id"], "compliance_policy_id": failing_policy.json()["compliance_policy"]["id"]})
+        assert blocked.status_code == 422
+        assert blocked.json()["error"]["code"] == "COMPLIANCE_PREFLIGHT_FAILED"
+        passing_policy = client.post(f"/api/v1/projects/{project_id}/compliance-policies", json={"code": "duration", "title": "时长上限 v2", "rules": {"require_watermark": True, "max_duration_ms": 1500, "require_human_review": True, "require_platform_review": True}})
+        assert passing_policy.status_code == 201, passing_policy.text
+        delivery = client.post("/api/v1/delivery-packages", json={"episode_render_version_id": render.json()["render"]["id"], "target_version_id": target["version_id"], "brand_kit_id": brand.json()["brand_kit"]["id"], "watermark_profile_id": watermark.json()["watermark_profile"]["id"], "compliance_policy_id": passing_policy.json()["compliance_policy"]["id"]})
+        assert delivery.status_code == 201, delivery.text
+        item = delivery.json()["delivery"]
+        assert item["machine_preflight"]["status"] == "PASS"
+        assert item["human_review_status"] == "PENDING" and item["platform_review_status"] == "PENDING"
+        assert item["controls"]["brand_kit"]["version_no"] == 1
+        assert item["controls"]["watermark_profile"]["version_no"] == 1
+        assert item["controls"]["compliance_policy"]["version_no"] == 2
+        controls = client.get(f"/api/v1/projects/{project_id}/brand-controls")
+        assert controls.status_code == 200
+        assert controls.json()["watermark_profiles"][0]["status"] == "ACTIVE"
+        assert controls.json()["compliance_policies"][0]["status"] == "ACTIVE"
+        verified = client.get(f"/api/v1/delivery-packages/{item['id']}:verify")
+        assert verified.status_code == 200
+        assert verified.json()["delivery"]["human_review_status"] == "PENDING"
+        human_review = client.post(f"/api/v1/delivery-packages/{item['id']}:review", json={"reviewer_type": "HUMAN", "decision": "APPROVED", "note": "人工复核画面与本地授权范围"})
+        assert human_review.status_code == 200, human_review.text
+        assert human_review.json()["delivery"]["human_review_status"] == "APPROVED"
+        platform_review = client.post(f"/api/v1/delivery-packages/{item['id']}:review", json={"reviewer_type": "PLATFORM", "decision": "APPROVED", "note": "平台规则人工确认"})
+        assert platform_review.status_code == 200, platform_review.text
+        assert platform_review.json()["delivery"]["platform_review_status"] == "APPROVED"

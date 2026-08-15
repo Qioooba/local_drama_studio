@@ -4358,6 +4358,158 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/brand-controls": {
+      "get": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "List Brand Controls",
+        "operationId": "listBrandControls",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listbrandcontrols"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/watermark-profiles": {
+      "post": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "Create Watermark Profile",
+        "operationId": "createWatermarkProfile",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WatermarkProfileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Createwatermarkprofile"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/compliance-policies": {
+      "post": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "Create Compliance Policy",
+        "operationId": "createCompliancePolicy",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompliancePolicyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Createcompliancepolicy"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/model-compatibility-report": {
       "post": {
         "tags": [
@@ -9909,6 +10061,61 @@
         }
       }
     },
+    "/api/v1/delivery-packages/{package_id}:review": {
+      "post": {
+        "tags": [
+          "timeline",
+          "delivery"
+        ],
+        "summary": "Review Delivery",
+        "operationId": "reviewDeliveryPackage",
+        "parameters": [
+          {
+            "name": "package_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Package Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeliveryReviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Reviewdeliverypackage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/generation-variants/{variant_id}:derive-plan": {
       "post": {
         "tags": [
@@ -10721,6 +10928,35 @@
         ],
         "title": "CommitProjectPackageRequest"
       },
+      "CompliancePolicyRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "rules": {
+            "additionalProperties": true,
+            "type": "object",
+            "minProperties": 1,
+            "title": "Rules"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "title",
+          "rules"
+        ],
+        "title": "CompliancePolicyRequest"
+      },
       "CreativeEntryCreateRequest": {
         "properties": {
           "project_id": {
@@ -10825,6 +11061,42 @@
             "type": "string",
             "minLength": 1,
             "title": "Target Version Id"
+          },
+          "brand_kit_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Kit Id"
+          },
+          "watermark_profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Watermark Profile Id"
+          },
+          "compliance_policy_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compliance Policy Id"
           }
         },
         "type": "object",
@@ -10833,6 +11105,39 @@
           "target_version_id"
         ],
         "title": "DeliveryBuildRequest"
+      },
+      "DeliveryReviewRequest": {
+        "properties": {
+          "reviewer_type": {
+            "type": "string",
+            "enum": [
+              "HUMAN",
+              "PLATFORM"
+            ],
+            "title": "Reviewer Type"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "REJECTED"
+            ],
+            "title": "Decision"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reviewer_type",
+          "decision",
+          "note"
+        ],
+        "title": "DeliveryReviewRequest"
       },
       "DeliveryTargetRequest": {
         "properties": {
@@ -13804,6 +14109,35 @@
           "license_evidence_path_rel"
         ],
         "title": "VoiceProfileRequest"
+      },
+      "WatermarkProfileRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "minProperties": 1,
+            "title": "Config"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "title",
+          "config"
+        ],
+        "title": "WatermarkProfileRequest"
       },
       "WorkflowCompileRequest": {
         "properties": {

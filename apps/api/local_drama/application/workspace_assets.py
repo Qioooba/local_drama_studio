@@ -264,7 +264,7 @@ class WorkspaceAssetService:
     def create_brand_kit(self, project_id: str, code: str, title: str, tokens: dict[str, Any], actor: str = "local-user") -> dict[str, Any]:
         if not code.strip() or not title.strip() or not isinstance(tokens, dict) or not tokens:
             raise DomainRuleError("INVALID_BRAND_KIT", "BrandKit 必须包含 code、title 和非空 tokens")
-        allowed = {"colors", "typography", "spacing", "radii", "motion", "iconography"}
+        allowed = {"colors", "typography", "spacing", "radii", "motion", "iconography", "logo", "subtitle", "delivery"}
         if not set(tokens).issubset(allowed):
             raise DomainRuleError("INVALID_BRAND_KIT", "BrandKit tokens 含未支持的分区")
         now = _utc_now()
@@ -285,3 +285,84 @@ class WorkspaceAssetService:
                 (actor, kit_id, "发布项目 BrandKit 版本", _json({"project_id": project_id, "version_no": int(version)})),
             )
         return {"id": kit_id, "project_id": project_id, "code": code, "title": title, "version_no": int(version), "tokens": tokens, "status": "ACTIVE"}
+
+    @staticmethod
+    def _validate_watermark_config(config: dict[str, Any]) -> dict[str, Any]:
+        allowed = {"text", "position", "opacity", "font_size", "margin", "color"}
+        if not set(config).issubset(allowed) or not str(config.get("text", "")).strip():
+            raise DomainRuleError("INVALID_WATERMARK_PROFILE", "水印配置必须包含 text，且只能使用受支持字段")
+        position = str(config.get("position", "BOTTOM_RIGHT"))
+        if position not in {"TOP_LEFT", "TOP_RIGHT", "BOTTOM_LEFT", "BOTTOM_RIGHT", "CENTER"}:
+            raise DomainRuleError("WATERMARK_POSITION_INVALID", "水印位置不受支持")
+        try:
+            opacity = float(config.get("opacity", 0.75))
+            font_size = int(config.get("font_size", 24))
+            margin = int(config.get("margin", 24))
+        except (TypeError, ValueError) as error:
+            raise DomainRuleError("WATERMARK_CONFIG_INVALID", "水印数值配置无效") from error
+        if not 0.05 <= opacity <= 1 or not 8 <= font_size <= 256 or not 0 <= margin <= 500:
+            raise DomainRuleError("WATERMARK_CONFIG_INVALID", "水印 opacity/font_size/margin 超出范围")
+        color = str(config.get("color", "white"))
+        if not color.strip():
+            raise DomainRuleError("WATERMARK_CONFIG_INVALID", "水印颜色不能为空")
+        return {"text": str(config["text"]).strip(), "position": position, "opacity": opacity, "font_size": font_size, "margin": margin, "color": color}
+
+    @staticmethod
+    def _validate_compliance_rules(rules: dict[str, Any]) -> dict[str, Any]:
+        allowed = {"require_watermark", "max_duration_ms", "require_human_review", "require_platform_review"}
+        if not set(rules).issubset(allowed):
+            raise DomainRuleError("INVALID_COMPLIANCE_POLICY", "合规规则含未支持字段")
+        try:
+            max_duration = rules.get("max_duration_ms")
+            max_duration_int = int(max_duration) if max_duration is not None else None
+        except (TypeError, ValueError) as error:
+            raise DomainRuleError("COMPLIANCE_RULE_INVALID", "max_duration_ms 必须是正整数") from error
+        if max_duration_int is not None and max_duration_int <= 0:
+            raise DomainRuleError("COMPLIANCE_RULE_INVALID", "max_duration_ms 必须大于 0")
+        return {
+            "require_watermark": bool(rules.get("require_watermark", False)),
+            "max_duration_ms": max_duration_int,
+            "require_human_review": bool(rules.get("require_human_review", True)),
+            "require_platform_review": bool(rules.get("require_platform_review", True)),
+        }
+
+    def _create_versioned_policy(self, *, project_id: str, code: str, title: str, payload: dict[str, Any], kind: str, actor: str) -> dict[str, Any]:
+        if not code.strip() or not title.strip() or not isinstance(payload, dict) or not payload:
+            raise DomainRuleError(f"INVALID_{kind}", "版本配置必须包含 code、title 和非空配置")
+        now = _utc_now()
+        item_id = str(uuid.uuid4())
+        table = "watermark_profiles" if kind == "WATERMARK_PROFILE" else "compliance_policies"
+        json_column = "config_json" if kind == "WATERMARK_PROFILE" else "rules_json"
+        normalized = self._validate_watermark_config(payload) if kind == "WATERMARK_PROFILE" else self._validate_compliance_rules(payload)
+        with self.database.transaction() as connection:
+            if connection.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone() is None:
+                raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
+            version = connection.execute(f"SELECT COALESCE(MAX(version_no),0)+1 FROM {table} WHERE project_id=? AND code=?", (project_id, code)).fetchone()[0]
+            connection.execute(f"UPDATE {table} SET status='RETIRED', updated_at=? WHERE project_id=? AND code=? AND status='ACTIVE'", (now, project_id, code))
+            connection.execute(
+                f"INSERT INTO {table} (id, project_id, code, title, version_no, {json_column}, status, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, 1, 'v1')",
+                (item_id, project_id, code.strip(), title.strip(), int(version), _json(normalized), now, now, actor),
+            )
+            connection.execute(
+                "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'producer', ?, ?, ?, ?, ?)",
+                (actor, f"{kind}_PUBLISHED", kind.lower(), item_id, f"发布本地 {kind} 版本", _json({"project_id": project_id, "version_no": int(version)})),
+            )
+        return {"id": item_id, "project_id": project_id, "code": code.strip(), "title": title.strip(), "version_no": int(version), "status": "ACTIVE", "config" if kind == "WATERMARK_PROFILE" else "rules": normalized}
+
+    def create_watermark_profile(self, project_id: str, code: str, title: str, config: dict[str, Any], actor: str = "local-user") -> dict[str, Any]:
+        return self._create_versioned_policy(project_id=project_id, code=code, title=title, payload=config, kind="WATERMARK_PROFILE", actor=actor)
+
+    def create_compliance_policy(self, project_id: str, code: str, title: str, rules: dict[str, Any], actor: str = "local-user") -> dict[str, Any]:
+        return self._create_versioned_policy(project_id=project_id, code=code, title=title, payload=rules, kind="COMPLIANCE_POLICY", actor=actor)
+
+    def list_brand_controls(self, project_id: str) -> dict[str, list[dict[str, Any]]]:
+        with self.database.connect() as connection:
+            if connection.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone() is None:
+                raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
+            brand_rows = connection.execute("SELECT * FROM brand_kits WHERE project_id=? ORDER BY code, version_no DESC", (project_id,)).fetchall()
+            watermark_rows = connection.execute("SELECT * FROM watermark_profiles WHERE project_id=? ORDER BY code, version_no DESC", (project_id,)).fetchall()
+            compliance_rows = connection.execute("SELECT * FROM compliance_policies WHERE project_id=? ORDER BY code, version_no DESC", (project_id,)).fetchall()
+        brand = [{**dict(row), "tokens": json.loads(str(row["tokens_json"]))} for row in brand_rows]
+        watermark = [{**dict(row), "config": json.loads(str(row["config_json"]))} for row in watermark_rows]
+        compliance = [{**dict(row), "rules": json.loads(str(row["rules_json"]))} for row in compliance_rows]
+        return {"brand_kits": brand, "watermark_profiles": watermark, "compliance_policies": compliance}
