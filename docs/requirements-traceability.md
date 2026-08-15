@@ -56,7 +56,7 @@
 | FR-WRT-007 AI 辅助提取先进入草稿且不覆盖人工内容 | VERIFIED PRODUCTION READ-ONLY UAT | 既有真实 `LocalLLMService.breakdown` 只保存 `DRAFT_READY`；新增项目级只读查询与 `AIDraftReviewPanel`，明确投影 `NOT_APPLIED`、`automatic_apply=false`、`requires_human_action=true`，无应用按钮。API 2 项证明查询不改变 Scene/Shot/CreativeEntry，Web 2 项覆盖真实草稿和无 mock 空态；正式项目三视口展示 1 份真实本地 LLM 草稿且零写入，证据 `docs/evidence/g10/ai-draft-review-uat-2026-08-15.json` |
 | FR-IMG-001 媒体版本注册、probe、hash、缩略图缓存 | VERIFIED | `MediaService.import_file/verify_content_integrity/thumbnail`；不可变 MediaAsset/MediaVersion、源文件 hash/size 与篡改阻断，`apps/api/tests/test_keyframe_candidate.py` |
 | FR-IMG-002 图片候选批量生成 | PARTIAL / REAL-RUNTIME UAT PENDING | `GenerationWorkbench` 显式 1—8 take 提交为独立 Variant/Job，seed batch 1—24 只读规划；服务端 preflight 返回仅来自 Published Profile `resource_policy` 的 bounded per-take 时长/显存/磁盘估算，未声明字段保持 unknown，UI 在确认前显示并仍受 preflight/镜头/Profile/输入 blocker 约束；真实用户 Profile/Runtime 批量生成仍待 UAT，证据 `docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json`、`docs/evidence/g10/fr-img-002-resource-estimate-2026-08-16.json` |
-| FR-IMG-003 图片网格与比较 | PARTIAL / UAT PENDING | `ReviewInboxPanel` 使用 small 派生缩略图、A/B、参考图置顶与键盘切换；原图接口对 IMAGE 硬拒绝，真实用户图片网格三视口 UAT 待补，见 `fr-img-001-006-image-candidate-review-2026-08-16.json` |
+| FR-IMG-003 图片网格与比较 | PARTIAL / UAT PENDING | `ImageCandidateGrid` 与 `ReviewInboxPanel` 均只使用 320px small 派生缩略图；网格新增 roving tabindex、ArrowLeft/ArrowRight/Home/End 键切换，详情保留 A/B、参考图置顶与 metadata；GET/HEAD 原图接口均硬拒绝并给出 thumbnail 路径，真实用户图片网格三视口 UAT 待补，见 `fr-img-001-006-image-candidate-review-2026-08-16.json` |
 | FR-IMG-004 图片结构化审核清单 | VERIFIED AUTOMATED / UAT PENDING | `ReviewService` 的 `image_asset` 模板包含身份、服装、人体/手、场景、构图、光线、连续性、可视频化 8 项必填检查；`apps/api/tests/test_g4_reviews.py` |
 | FR-IMG-005 图片批准与拒绝 | VERIFIED AUTOMATED / UAT PENDING | required fail 阻断批准，拒绝必须原因，reviewer/time/template 规则及 stale 保留；selection 与 approval 分离，见 `application/reviews.py`、`test_g4_reviews.py` |
 | FR-IMG-006 关键帧选择与派生 | VERIFIED AUTOMATED / UAT PENDING | `create_keyframe_candidate` 生成 SHOT-owned immutable KEYFRAME 并冻结 `parent_version_id`；`select_version` 与人工 approval 分离，approval impact 事务传播 stale；`test_keyframe_candidate.py`、`test_generation_variants.py` |
@@ -234,7 +234,7 @@ UI 图标 P1 已闭环：本地零依赖 SVG outline family 替代品牌文字�
 
 2026-08-15 最新全量门禁回归：蓝图清单仍为 86 FR / 14 NFR / 85 TC；API 129 passed / 4 Comfy live deselected，Ruff PASS，mypy 91 files PASS，Web 23/23 与 production build PASS。新增 FR-IMG-007 聚焦回归覆盖 API 4 项、Web 2 项。该进展不改变 G7 许可证证据阻塞，也不构成最终发布签字。
 
-2026-08-16 图片候选/审核收口回归：FR-IMG-001—006 统一登记到 G10 master map。媒体版本、关键帧派生、结构化 image_asset 审核、批准/拒绝与 selection/approval 分离均通过定向 API 回归；生成工作台的多 take 与受限 seed batch 规划保持本地、显式确认和不可变谱系。当前证据 `docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json` 标记 `IMPLEMENTATION_EVIDENCE`，原因是使用用户本地模型/图片的真实批量生成与 Windows 三视口 image grid/A-B UAT 尚未签字；FR-IMG-007 已有独立 production UAT VERIFIED 证据。
+2026-08-16 图片候选/审核收口回归：FR-IMG-001—006 统一登记到 G10 master map。媒体版本、关键帧派生、结构化 image_asset 审核、批准/拒绝与 selection/approval 分离均通过定向 API 回归；生成工作台的多 take 与受限 seed batch 规划保持本地、显式确认和不可变谱系。新增图片网格 roving tabindex 键盘路径与 GET/HEAD 原图读取拒绝断言，继续保证所有读图链路为 small 派生缩略图。当前证据 `docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json` 标记 `IMPLEMENTATION_EVIDENCE`，原因是使用用户本地模型/图片的真实批量生成与 Windows 三视口 image grid/A-B UAT 尚未签字；FR-IMG-007 已有独立 production UAT VERIFIED 证据。
 
 FR-TML-004 完成后的最新全量门禁回归：API 132 passed / 4 Comfy live deselected，Ruff PASS，mypy 92 files PASS，Web 25/25 与 production build PASS。`scripts/check.ps1` 已补每个原生命令的显式退出码检查；修复前一次 mypy 失败却最终退出 0 的门禁假绿，修复后整套命令真实以 0 完成。该进展仍不改变 G7 许可证证据阻塞和有序退出状态。
 
@@ -304,7 +304,7 @@ FR-VID-002/003/004/008 视频审核增量（2026-08-16）：视频缩略图 `fra
 
 FR-VID-001/005/006/007 视频生成与正式审核增量（2026-08-16）：生成工作台对代理 take 数量（1—8）、显式 seed 和 I2V 已批准关键帧执行两阶段预检；每个 take 生成独立不可变 Variant/Job，seed 批量仍为只读计划。提交快照冻结 Published Profile revision、workflow/content hash、本地 model bundle/manifest、seed、媒体 approval/hash，精确重放拒绝快照漂移，成功产物登记为新 MediaVersion。正式视频机器 QC 新增本地 ffprobe 驱动的 decode、dimensions、fps、duration、codec 结果（`g6_formal_video_qc_v1`），人工 `formal_video` 模板保留动作、身份、闪烁、字幕安全区独立检查；正式批量交付预检逐项返回批准/过期/完整性冲突并以 plan hash 原子提交。API 回归 `test_formal_video_qc.py`、generation/review tests 与 Web generation/generated-client tests 通过；证据 `docs/evidence/g10/fr-vid-001-005-007-006-formal-video-2026-08-16.json` 为 `PARTIAL`，真实 Windows 本地模型正式产物、三视口人工 QC 与多项交付漂移 UAT 仍待补齐。
 
-FR-AUDT-001 实现增量：新增只读 `GET /api/v1/audit-events` 与 `AuditService`，按项目、时间、动作、actor、subject 类型/ID 筛选，先过滤后以不可变 `event_id DESC` 游标分页，项目范围由 subject 关系和经 JSON 校验的 project hint 解析。响应递归脱敏 token/secret/password/credential 与本机路径，明确 `metadata_redacted=true`、`local_only=true`、`network_contacted=false`、`mutated=false`；诊断页新增 AuditHistoryPanel，展示 loading/error/empty、筛选、旧事件翻页与脱敏详情。API/Web 回归和构建通过；正式 Windows 三视口 UAT、深链接恢复、链式 hash 导出仍待补齐，证据 `docs/evidence/g10/fr-audt-001-audit-history-2026-08-15.json` 保持 `PARTIAL`。
+FR-AUDT-001 实现增量：新增只读 `GET /api/v1/audit-events` 与 `AuditService`，按项目、时间、动作、actor、subject 类型/ID 筛选，先过滤后以不可变 `event_id DESC` 游标分页，项目范围由 subject 关系和经 JSON 校验的 project hint 解析。响应递归脱敏 token/secret/password/credential 与本机路径，明确 `metadata_redacted=true`、`local_only=true`、`network_contacted=false`、`mutated=false`；新增只读 `GET /api/v1/audit-events/proof`，以相同筛选和稳定游标语义对最多 1000 条脱敏导出投影计算 `SHA-256-chain-v1`，不返回原始秘密或本机路径；诊断页新增 AuditHistoryPanel，展示 loading/error/empty、筛选、旧事件翻页、脱敏详情和有界导出哈希证明。API/Web 回归和构建通过；正式 Windows 三视口 UAT、深链接恢复、备份介质/跨机恢复与正式发布签字仍待补齐，证据 `docs/evidence/g10/fr-audt-001-audit-history-2026-08-15.json` 保持 `PARTIAL`。
 
 FR-DEL-001..004 交付链增量（2026-08-16）：创建候选前强制最新、未过期的 `EPISODE_RENDER_VERSION` 人工批准；输出目录使用唯一版本路径与 `.partial-*` 原子发布，后续构建不会覆盖旧包。`delivery-manifest.v3` 冻结源 render/timeline SHA、目标版本/spec、编码 probe、字幕 revision、音频授权证据、控制版本和每个文件 SHA/size；verify 可重复执行并检查路径越界、symlink、字节数、文件 hash 与 canonical manifest hash，篡改指出具体文件。新增 package/files/history/download 只读 API，POST/GET verify 兼容，withdraw 仅标记状态并保留文件，完整性复验不会把 `WITHDRAWN` 复活；成功下载额外记录 bounded `DOWNLOAD` event（manifest/file SHA、size、项目相对文件与 `LOCAL_FILESYSTEM` transport），不记录请求或绝对路径；DeliveryTargetVersion create/select API 版本化且只允许 `LOCAL_FILESYSTEM`。真实隔离 FFmpeg/API 回归、未批准负例、双构建不覆盖、manifest/history/download/撤回复验均通过；正式 Windows x64 三视口生产 UAT、实际项目多版本选择与发布签字仍待补齐，证据 `docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json` 保持 `PARTIAL`。
 
@@ -325,6 +325,12 @@ FR-WFL-004 ComfyUI Lab control-plane 增量（2026-08-16）：新增 Designer �
 ## NFR-OBS-001 可观测性增量（2026-08-16）
 
 `RequestContextMiddleware` 现在在每个 API 请求结束、异常或安全早拒绝时输出结构化 JSON access/failure log，带 timestamp/level/service/event、`trace_id`、`request_id`、`project_id`、`episode_id`、`shot_id`、`job_id`、`attempt_id`、`worker_id`、`provider`、HTTP method/path、状态和耗时；标识符有长度/字符边界，body、query string、Authorization 和异常文本不进入日志。响应回显 `X-Trace-Id`，便于本机排障；既有持久任务日志 API 仍由 Jobs 域提供。本轮 API 自动测试验证成功/404/安全拒绝请求上下文提取、trace header 和 secret 不泄漏，Ruff/mypy 通过。证据 `docs/evidence/g10/nfr-obs-001-structured-logs-2026-08-16.json` 为 `PARTIAL`：正式 Windows 日志轮转/保留、以及任务日志 UI 的三视口验收尚未执行，不能据此宣称 NFR PASS。
+
+## NFR-SEC-001/002 本机监听、CSRF 与路径边界增量（2026-08-16）
+
+`Settings.host` 现在在配置解析阶段只接受 literal `127.0.0.1`、`localhost` 或 `::1`；任何 `0.0.0.0`、LAN 地址或其它 DNS 值都会在 API 启动前 fail-closed，首版不存在未认证的远程监听开关。写请求继续要求受控 local Origin 与每进程 `X-Local-Instance-Token`，跨源/缺失 token 的拒绝响应统一 `no-store`，不回显攻击者提供的 Origin，并保留 `nosniff`、CSP 与 referrer policy。
+
+媒体项目根在解析前拒绝绝对路径、`..` traversal 和 symlink root，再校验解析结果仍位于 `projects_root`；媒体内容仍只由持久化 `media_version_id` 间接定位，不接受任意文件路径。定向回归见 `apps/api/tests/test_health.py`、`apps/api/tests/test_security_boundary.py`，证据 `docs/evidence/g10/nfr-sec-001-002-local-boundary-2026-08-16.json` 保持 `PARTIAL`：正式 Windows x64 三视口 UAT、生产包级 egress capture 与完整全接口路径审计仍待执行，不能提前宣称 NFR VERIFIED。
 
 ## NFR-MEDIA-001 Range / 首帧播放增量（2026-08-16）
 

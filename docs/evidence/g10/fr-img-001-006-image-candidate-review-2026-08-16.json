@@ -16,7 +16,7 @@
     },
     "FR-IMG-003": {
       "implemented": true,
-      "details": "Reviews view now exposes ImageCandidateGrid for bounded candidate overview plus ReviewInboxPanel A/B compare, reference pinning and keyboard navigation; all image surfaces use derived small thumbnails and never expose original image content."
+      "details": "Reviews view now exposes ImageCandidateGrid for bounded candidate overview plus ReviewInboxPanel A/B compare, reference pinning and keyboard navigation. The grid uses roving tabindex with ArrowLeft/ArrowRight/Home/End selection and keeps focus on the selected candidate; all image surfaces use derived small thumbnails and never expose original image content."
     },
     "FR-IMG-004": {
       "implemented": true,
@@ -39,6 +39,7 @@
     "apps/api/tests/test_generation_variants.py::test_submitted_variant_freezes_workflow_and_local_model_execution_snapshot",
     "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx",
     "apps/web/src/features/reviews/ImageCandidateGrid.test.tsx",
+    "apps/api/tests/test_workspace_assets.py::test_image_content_endpoint_requires_derived_thumbnail",
     "apps/web/src/features/generation/GenerationWorkbench.test.tsx"
   ],
   "command": ".venv/Scripts/python.exe -m pytest apps/api/tests/test_keyframe_candidate.py apps/api/tests/test_g4_reviews.py apps/api/tests/test_contact_sheet_export.py apps/api/tests/test_generation_variants.py -q",

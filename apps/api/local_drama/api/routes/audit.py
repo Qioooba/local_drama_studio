@@ -9,6 +9,30 @@ from local_drama.application.audit import AuditService
 router = APIRouter(prefix="/audit-events", tags=["audit"])
 
 
+@router.get("/proof", operation_id="exportAuditProof")
+async def export_audit_proof(
+    request: Request,
+    project_id: str | None = None,
+    occurred_after: datetime | None = None,
+    occurred_before: datetime | None = None,
+    action: str | None = None,
+    actor: str | None = None,
+    subject_type: str | None = None,
+    subject_id: str | None = None,
+    max_events: int = Query(default=1000, ge=1, le=1000),
+) -> dict[str, object]:
+    return AuditService(request.app.state.database).export_proof(
+        project_id=project_id,
+        occurred_after=occurred_after,
+        occurred_before=occurred_before,
+        action=action,
+        actor=actor,
+        subject_type=subject_type,
+        subject_id=subject_id,
+        max_events=max_events,
+    )
+
+
 @router.get("", operation_id="listAuditEvents")
 async def list_audit_events(
     request: Request,

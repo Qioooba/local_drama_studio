@@ -4,9 +4,10 @@ import os
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+_LOCAL_BIND_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
 class Settings(BaseModel):
@@ -33,6 +34,16 @@ class Settings(BaseModel):
         "http://127.0.0.1:5173",
         "http://localhost:5173",
     )
+
+    @field_validator("host")
+    @classmethod
+    def validate_local_bind_host(cls, value: str) -> str:
+        """Fail closed instead of allowing a LOCAL_ONLY API on a LAN/public bind."""
+
+        normalized = value.strip().casefold()
+        if normalized not in _LOCAL_BIND_HOSTS:
+            raise ValueError("LOCAL_ONLY API host must be a literal loopback address")
+        return normalized
 
     @property
     def workspace_root(self) -> Path:

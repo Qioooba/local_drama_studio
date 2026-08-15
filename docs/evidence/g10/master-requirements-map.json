@@ -216,7 +216,7 @@
       "id": "FR-AUDT-001",
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/fr-audt-001-audit-history-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_audit_history.py", "apps/web/src/features/shared/AuditHistoryPanel.test.tsx"]
+      "automated_tests": ["apps/api/tests/test_audit_history.py", "apps/web/src/features/shared/AuditHistoryPanel.test.tsx", "apps/web/src/generated/api.test.ts"]
     },
     {
       "id": "FR-DEL-001",
@@ -288,7 +288,7 @@
       "id": "FR-IMG-003",
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json"],
-      "automated_tests": ["apps/web/src/features/reviews/ImageCandidateGrid.test.tsx", "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"]
+      "automated_tests": ["apps/web/src/features/reviews/ImageCandidateGrid.test.tsx", "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx", "apps/api/tests/test_workspace_assets.py::test_image_content_endpoint_requires_derived_thumbnail"]
     },
     {
       "id": "FR-IMG-004",
@@ -579,6 +579,18 @@
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/fr-prv-003-nfr-comp-001-model-boundary-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_model_compatibility.py", "apps/api/tests/test_model_license_evidence.py", "apps/web/src/features/status/LocalModelReferenceForm.test.tsx"]
+    },
+    {
+      "id": "NFR-SEC-001",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/nfr-sec-001-002-local-boundary-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_health.py", "apps/api/tests/test_security_boundary.py"]
+    },
+    {
+      "id": "NFR-SEC-002",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/nfr-sec-001-002-local-boundary-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_security_boundary.py", "scripts/security_uat.py"]
     },
     {
       "id": "NFR-SEC-003",

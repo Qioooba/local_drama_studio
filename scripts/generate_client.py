@@ -58,6 +58,7 @@ export type DiagnosticRun = { id: string; status: string; checks: Array<{ code: 
 export type ModelRegistryScan = { root_path: string; items: Array<{ path: string; relative_path: string; extension: string; byte_size: number; sha256: string; quantization_hint: string; distribution_scope: 'REFERENCE_ONLY_NOT_BUNDLED'; copied: false; uploaded: false }>; scanned_count: number; candidate_count: number; truncated: boolean; max_files: number; read_only: true; runtime_contacted: false; network_contacted: false; mutated: false };
 export type AuditEvent = { event_id: number; actor: string; role_context: string; action: string; subject_type: string; subject_id: string; project_id: string | null; before_revision: number | null; after_revision: number | null; request_id: string | null; job_id: string | null; occurred_at: string; summary: string; metadata: Record<string, unknown>; metadata_redacted: true; local_only: true; network_contacted: false; mutated: false };
 export type AuditEventFilters = { project_id?: string; occurred_after?: string; occurred_before?: string; action?: string; actor?: string; subject_type?: string; subject_id?: string; cursor?: number; limit?: number };
+export type AuditProof = { algorithm: string; scope: string; event_count: number; first_event_id: number | null; last_event_id: number | null; chain_sha256: string; truncated: boolean; max_events: number; filters: Record<string, unknown>; metadata_redacted: true; local_only: true; network_contacted: false; mutated: false };
 export type ReviewTemplate = { id: string; code: string; version_no: number; subject_type: string; items: Array<{ id: string; label: string; required: boolean }> };
 export type ReviewTemplateVersionPayload = { code: string; subject_type: string; items: Array<{ id: string; label: string; required?: boolean }> };
 export type ReviewInboxItem = { media_version_id: string; media_asset_id: string; project_id: string; project_code?: string; project_title?: string; episode_id?: string | null; episode_code?: string | null; episode_number?: number | null; shot_id?: string | null; shot_code?: string | null; media_kind: string; stage: string; decision: string | null; is_stale: number | null; inbox_at?: string; age_hours?: number; age_days?: number; priority?: 'HIGH' | 'NORMAL' | 'LOW'; is_blocked?: number; blocking?: 'BLOCKED' | 'READY'; machine_status?: string; integrity_status?: string; [key: string]: unknown };
@@ -329,6 +330,16 @@ export async function listAuditEvents(filters: AuditEventFilters = {}, baseUrl =
   params.set('cursor', String(filters.cursor ?? 0));
   params.set('limit', String(filters.limit ?? 50));
   return requestJson(`/api/v1/audit-events?${params.toString()}`, undefined, baseUrl);
+}
+
+export async function getAuditProof(filters: AuditEventFilters = {}, maxEvents = 1000, baseUrl = ''): Promise<AuditProof> {
+  const params = new URLSearchParams();
+  for (const key of ['project_id', 'occurred_after', 'occurred_before', 'action', 'actor', 'subject_type', 'subject_id'] as const) {
+    const value = filters[key];
+    if (value) params.set(key, value);
+  }
+  params.set('max_events', String(maxEvents));
+  return requestJson(`/api/v1/audit-events/proof?${params.toString()}`, undefined, baseUrl);
 }
 
 export async function listReviewTemplates(baseUrl = ''): Promise<{ items: ReviewTemplate[] }> {

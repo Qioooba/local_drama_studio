@@ -2,7 +2,7 @@
   "schema_version": "g10.fr-audt-001-audit-history.v1",
   "status": "PARTIAL",
   "requirement": "FR-AUDT-001",
-  "observed_at": "2026-08-15T00:00:00Z",
+  "observed_at": "2026-08-16T00:00:00Z",
   "implementation": {
     "status": "IMPLEMENTED",
     "source": "append-only audit_events",
@@ -11,6 +11,7 @@
     "project_scope": "immutable subject graph plus validated metadata project hint",
     "pagination": "bounded limit (1..100), event_id descending cursor; filter-before-pagination",
     "redaction": "recursive metadata key and bearer/token text redaction; local path references masked",
+    "export_proof": "read-only GET /api/v1/audit-events/proof computes a bounded SHA-256 chain over the redacted export projection, using the same filters and stable event-id cursor semantics; max_events is clamped to 1000",
     "ui": "AuditHistoryPanel in diagnostics with explicit filters, loading/error/empty states and older-event cursor",
     "mutation": false,
     "network_contacted": false,
@@ -27,6 +28,6 @@
   },
   "remaining_limits": [
     "历史事件缺少独立 project_id 列，项目过滤依赖 subject 关系解析；未归属项目的全局 Runtime/Profile 事件仅在全局视图展示。",
-    "首版审计事件未提供链式 hash 防篡改证明；备份/导出链仍需正式发布证据。"
+    "链式证明是有界、只读的脱敏导出投影证明，不是数据库级持久化防篡改链；备份介质、跨机恢复和正式发布签字仍需 UAT/发布证据。"
   ]
 }

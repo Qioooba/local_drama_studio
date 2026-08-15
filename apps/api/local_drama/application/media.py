@@ -89,8 +89,19 @@ class MediaService:
             row = connection.execute("SELECT root_rel FROM projects WHERE id = ?", (project_id,)).fetchone()
         if row is None:
             raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
-        root = (self.settings.projects_root / str(row["root_rel"])).resolve()
-        if not root.is_relative_to(self.settings.projects_root.resolve()):
+        raw_root_rel = Path(str(row["root_rel"]))
+        projects_root = self.settings.projects_root.resolve()
+        # Project roots are persisted as project-relative IDs.  Reject
+        # absolute paths and traversal segments before Path joining so an
+        # absolute value that happens to point back inside projects_root cannot
+        # turn into an arbitrary file-root selector.
+        if raw_root_rel.is_absolute() or ".." in raw_root_rel.parts:
+            raise DomainRuleError("PATH_ESCAPE", "项目目录必须是受控 projects_root 下的相对路径")
+        candidate = projects_root / raw_root_rel
+        if candidate.is_symlink():
+            raise DomainRuleError("PATH_ESCAPE", "项目目录不能是 symlink")
+        root = candidate.resolve()
+        if not root.is_relative_to(projects_root):
             raise DomainRuleError("PATH_ESCAPE", "项目目录超出受控 projects_root")
         return root
 

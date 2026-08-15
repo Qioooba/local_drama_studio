@@ -5,8 +5,8 @@
     "NFR-TEST-001"
   ],
   "status": "PARTIAL",
-  "observed_at": "2026-08-15T20:14:11.612930+00:00",
-  "git_revision": "2f9a153d26fe707e366d43cd7423b9ebed4a5957",
+  "observed_at": "2026-08-15T23:04:19.135736+00:00",
+  "git_revision": "979177e993b73fc9ebf85db8b5847150bd5bb710",
   "deterministic_contracts_passed": true,
   "hard_failures": [],
   "dependencies": {
@@ -280,7 +280,7 @@
       },
       {
         "path": "apps/web/src/features/generation/PostProcessPanel.tsx",
-        "lines": 118,
+        "lines": 123,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       },
@@ -303,8 +303,8 @@
         "warning_limit_exceeded": false
       },
       {
-        "path": "apps/web/src/features/production/DirectorShotEditor.tsx",
-        "lines": 70,
+        "path": "apps/web/src/features/reviews/ImageCandidateGrid.tsx",
+        "lines": 78,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       }
@@ -323,8 +323,8 @@
     ],
     "domain_modules_without_direct_test_import": [],
     "domain_rule_coverage_floor_passed": true,
-    "api_test_file_count": 69,
-    "api_test_function_count": 260,
+    "api_test_file_count": 70,
+    "api_test_function_count": 266,
     "web_test_file_count": 36,
     "coverage_method": "static import inventory; full pytest/Vitest and Playwright remain separate gates"
   },

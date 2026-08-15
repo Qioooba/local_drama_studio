@@ -10,6 +10,7 @@ present).  No network or runtime is contacted.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import UTC, datetime
@@ -212,6 +213,88 @@ class AuditService:
                 "subject_type": subject_type,
                 "subject_id": subject_id,
             },
+            "local_only": True,
+            "network_contacted": False,
+            "mutated": False,
+        }
+
+    def export_proof(
+        self,
+        *,
+        project_id: str | None = None,
+        occurred_after: datetime | str | None = None,
+        occurred_before: datetime | str | None = None,
+        action: str | None = None,
+        actor: str | None = None,
+        subject_type: str | None = None,
+        subject_id: str | None = None,
+        max_events: int = 1000,
+    ) -> dict[str, Any]:
+        """Return a bounded, read-only proof for the visible audit export.
+
+        The proof deliberately hashes the same redacted projection returned by
+        ``list_page``.  It therefore never exposes raw secrets or local paths,
+        while giving an operator a deterministic digest for a bounded export.
+        Stable event-id cursors make the pages safe to concatenate before the
+        ascending hash chain is calculated.
+        """
+
+        bounded_max = max(1, min(int(max_events), 1000))
+        cursor = 0
+        items: list[dict[str, Any]] = []
+        truncated = False
+        while len(items) < bounded_max:
+            page = self.list_page(
+                project_id=project_id,
+                occurred_after=occurred_after,
+                occurred_before=occurred_before,
+                action=action,
+                actor=actor,
+                subject_type=subject_type,
+                subject_id=subject_id,
+                cursor=cursor,
+                limit=min(100, bounded_max - len(items)),
+            )
+            page_items = list(page["items"])
+            items.extend(page_items)
+            next_cursor = page.get("next_cursor")
+            if not next_cursor:
+                break
+            if len(items) >= bounded_max:
+                truncated = True
+                break
+            cursor = int(next_cursor)
+
+        chain = "0" * 64
+        canonical_keys = (
+            "event_id", "actor", "role_context", "action", "subject_type",
+            "subject_id", "project_id", "before_revision", "after_revision",
+            "request_id", "job_id", "occurred_at", "summary", "metadata",
+        )
+        for item in reversed(items):
+            canonical = {key: item.get(key) for key in canonical_keys}
+            encoded = json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            chain = hashlib.sha256(f"{chain}\n{encoded}".encode("utf-8")).hexdigest()
+        ids = [int(item["event_id"]) for item in items]
+        return {
+            "algorithm": "SHA-256-chain-v1",
+            "scope": "filtered-redacted-audit-export",
+            "event_count": len(items),
+            "first_event_id": min(ids) if ids else None,
+            "last_event_id": max(ids) if ids else None,
+            "chain_sha256": chain,
+            "truncated": truncated,
+            "max_events": bounded_max,
+            "filters": {
+                "project_id": project_id,
+                "occurred_after": _time_value(occurred_after),
+                "occurred_before": _time_value(occurred_before),
+                "action": action,
+                "actor": actor,
+                "subject_type": subject_type,
+                "subject_id": subject_id,
+            },
+            "metadata_redacted": True,
             "local_only": True,
             "network_contacted": False,
             "mutated": False,

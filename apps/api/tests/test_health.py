@@ -1,9 +1,24 @@
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from local_drama.config import Settings
 from local_drama.main import create_app
+
+
+def test_local_only_settings_reject_non_loopback_bind_host() -> None:
+    with pytest.raises(ValidationError, match="literal loopback"):
+        Settings(host="0.0.0.0")
+    with pytest.raises(ValidationError, match="literal loopback"):
+        Settings(host="192.168.1.42")
+
+
+def test_local_only_settings_accept_literal_loopback_bind_hosts() -> None:
+    assert Settings(host="127.0.0.1").host == "127.0.0.1"
+    assert Settings(host="LOCALHOST").host == "localhost"
+    assert Settings(host="::1").host == "::1"
 
 
 def test_live_is_local_only(tmp_path: Path) -> None:
@@ -49,6 +64,9 @@ def test_untrusted_origin_is_rejected_for_writes(tmp_path: Path) -> None:
         response = client.post("/api/v1/system/contract", headers={"Origin": "https://evil.example"})
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "ORIGIN_NOT_ALLOWED"
+    assert response.json()["error"]["details"] == {}
+    assert "evil.example" not in response.text
+    assert response.headers["Cache-Control"] == "no-store"
 
 
 def test_trusted_origin_requires_valid_instance_token_for_writes(tmp_path: Path) -> None:
@@ -77,6 +95,7 @@ def test_trusted_origin_requires_valid_instance_token_for_writes(tmp_path: Path)
     assert missing.json()["error"]["code"] == "CSRF_TOKEN_REQUIRED"
     assert missing.headers["X-Content-Type-Options"] == "nosniff"
     assert missing.headers["Content-Security-Policy"] == "default-src 'self'; frame-ancestors 'self'"
+    assert missing.headers["Cache-Control"] == "no-store"
     # The route is GET-only, so reaching routing after middleware proves the
     # valid token crossed the CSRF boundary without mutating any state.
     assert accepted_boundary.status_code == 405

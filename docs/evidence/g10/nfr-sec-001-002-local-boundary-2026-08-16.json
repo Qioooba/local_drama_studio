@@ -1,0 +1,46 @@
+{
+  "schema_version": "g10.nfr-sec-001-002-local-boundary.v1",
+  "status": "PARTIAL",
+  "scope": [
+    "NFR-SEC-001",
+    "NFR-SEC-002"
+  ],
+  "observed_at": "2026-08-16",
+  "controls": {
+    "api_bind_host": "Settings.host accepts only literal 127.0.0.1, localhost, or ::1 and rejects 0.0.0.0/LAN values before app startup",
+    "csrf_origin": "state-changing requests enforce the allowed local Origin plus per-process X-Local-Instance-Token; rejected responses are no-store and do not reflect Origin",
+    "security_headers": "security rejection and normal responses include nosniff, no-referrer, CSP frame-ancestors self",
+    "project_root": "media project roots reject absolute paths, traversal segments and symlink roots before path resolution/open",
+    "path_model": "media APIs resolve project-relative IDs below the configured projects_root; arbitrary absolute path selectors are not accepted"
+  },
+  "automated_checks": [
+    {
+      "test": "apps/api/tests/test_health.py::test_local_only_settings_reject_non_loopback_bind_host",
+      "result": "PASS",
+      "observed": "0.0.0.0 and 192.168.1.42 fail validation with a literal-loopback error"
+    },
+    {
+      "test": "apps/api/tests/test_health.py::test_untrusted_origin_is_rejected_for_writes",
+      "result": "PASS",
+      "observed": "cross-origin write returns ORIGIN_NOT_ALLOWED, details remain empty, Origin is not reflected, Cache-Control=no-store"
+    },
+    {
+      "test": "apps/api/tests/test_health.py::test_trusted_origin_requires_valid_instance_token_for_writes",
+      "result": "PASS",
+      "observed": "missing/invalid per-process token returns CSRF_TOKEN_REQUIRED with no-store security response"
+    },
+    {
+      "test": "apps/api/tests/test_security_boundary.py",
+      "result": "PASS",
+      "observed": "project root traversal, absolute path and symlink root are rejected as PATH_ESCAPE before media access"
+    }
+  ],
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "public_network_contacted": false,
+  "production_database_contacted": false,
+  "limitations": [
+    "Formal Windows x64 three-viewport UAT and packet-level production egress capture remain pending",
+    "The bounded tests do not claim remote access is supported; LOCAL_ONLY remains the only accepted mode"
+  ]
+}

@@ -79,3 +79,38 @@ def test_audit_history_route_supports_time_and_subject_filters(workspace, databa
     assert payload["items"][0]["project_id"] == project_id
     assert payload["local_only"] is True
     assert payload["mutated"] is False
+
+
+def test_audit_history_export_proof_is_bounded_and_deterministic(workspace, database) -> None:
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="audit_proof", title="Audit proof", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1,
+        target_duration_ms=60_000, allow_unconfigured_capabilities=True,
+    )
+    project_id = str(project["id"])
+    for index in range(3):
+        _event(
+            database,
+            actor="proof-user",
+            action="PROOF_EVENT",
+            subject_type="project",
+            subject_id=project_id,
+            metadata={"index": index, "token": "must-not-appear"},
+            occurred_at=f"2026-08-15 12:0{index}:00",
+        )
+    service = AuditService(database)
+    proof = service.export_proof(project_id=project_id, action="PROOF_EVENT", max_events=2)
+    assert proof["algorithm"] == "SHA-256-chain-v1"
+    assert proof["scope"] == "filtered-redacted-audit-export"
+    assert proof["event_count"] == 2
+    assert proof["truncated"] is True
+    assert proof["first_event_id"] < proof["last_event_id"]
+    assert len(str(proof["chain_sha256"])) == 64
+    assert proof["metadata_redacted"] is True
+    assert proof["network_contacted"] is False
+    assert proof == service.export_proof(project_id=project_id, action="PROOF_EVENT", max_events=2)
+
+    with TestClient(create_app(workspace)) as client:
+        response = client.get("/api/v1/audit-events/proof", params={"project_id": project_id, "action": "PROOF_EVENT", "max_events": 2})
+    assert response.status_code == 200
+    assert response.json()["chain_sha256"] == proof["chain_sha256"]
+    assert "must-not-appear" not in response.text

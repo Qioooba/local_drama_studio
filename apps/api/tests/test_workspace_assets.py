@@ -43,12 +43,15 @@ def test_image_content_endpoint_requires_derived_thumbnail(workspace, database) 
     media = MediaService(database, workspace).import_file(str(project["id"]), source, media_kind="IMAGE")
     with TestClient(create_app(workspace)) as client:
         response = client.get(f"/api/v1/media-versions/{media['media_version_id']}/content")
+        head_response = client.head(f"/api/v1/media-versions/{media['media_version_id']}/content")
         poster = client.get(f"/api/v1/media-versions/{media['media_version_id']}/thumbnail")
         assert poster.status_code == 200
         MediaService(database, workspace).content_path(str(media["media_version_id"]))[1].write_bytes(b"tampered-image")
         tampered_poster = client.get(f"/api/v1/media-versions/{media['media_version_id']}/thumbnail")
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "IMAGE_CONTENT_REQUIRES_THUMBNAIL"
+    assert head_response.status_code == 409
+    assert response.json()["error"]["details"]["thumbnail_path"].endswith("/thumbnail?size=small&frame=poster")
     assert tampered_poster.status_code == 422
     assert tampered_poster.json()["error"]["code"] == "SOURCE_INTEGRITY_FAILED"
 

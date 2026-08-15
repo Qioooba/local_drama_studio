@@ -19,6 +19,11 @@ SECURITY_HEADERS = {
     "Referrer-Policy": "no-referrer",
     "Content-Security-Policy": "default-src 'self'; frame-ancestors 'self'",
 }
+SECURITY_REJECTION_HEADERS = {
+    **SECURITY_HEADERS,
+    "Cache-Control": "no-store",
+    "Pragma": "no-cache",
+}
 
 _OBSERVABILITY_LOG = logging.getLogger("local_drama.observability")
 _OBSERVABILITY_LOG.setLevel(logging.INFO)
@@ -166,7 +171,7 @@ class LocalOriginMiddleware(BaseHTTPMiddleware):
                         "suggested_action": "从本机 LocalDramaStudio 实例发起自动化请求",
                     }
                 },
-                headers={"X-Request-Id": request_id, **SECURITY_HEADERS},
+                headers={"X-Request-Id": request_id, **SECURITY_REJECTION_HEADERS},
             )
         if state_changing and origin and origin not in self.allowed_origins:
             request_id, _trace_id = _ensure_request_context(request)
@@ -178,12 +183,15 @@ class LocalOriginMiddleware(BaseHTTPMiddleware):
                         "code": "ORIGIN_NOT_ALLOWED",
                         "message": "写请求来源不在本机应用允许列表中",
                         "request_id": request_id,
-                        "details": {"origin": origin},
+                        # Do not reflect an attacker-controlled Origin into a
+                        # response body; the stable code is sufficient for the
+                        # local UI and avoids leaking untrusted request data.
+                        "details": {},
                         "retryable": False,
                         "suggested_action": "从 LocalDramaStudio 页面发起请求或配置受控本机 origin",
                     }
                 },
-                headers={"X-Request-Id": request_id, **SECURITY_HEADERS},
+                headers={"X-Request-Id": request_id, **SECURITY_REJECTION_HEADERS},
             )
         # Starlette's in-process TestClient uses the non-network host
         # ``testclient``. Functional tests may keep issuing direct commands;
@@ -209,7 +217,7 @@ class LocalOriginMiddleware(BaseHTTPMiddleware):
                             "suggested_action": "先读取 session bootstrap，再由同源客户端提交写请求",
                         }
                     },
-                    headers={"X-Request-Id": request_id, **SECURITY_HEADERS},
+                    headers={"X-Request-Id": request_id, **SECURITY_REJECTION_HEADERS},
                 )
         response = await call_next(request)
         if not state_changing:

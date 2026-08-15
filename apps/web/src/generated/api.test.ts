@@ -14,6 +14,7 @@ import {
   selectDeliveryTargetVersion,
   getFrameAnchor,
   getEnhancementRun,
+  getAuditProof,
   getDiagnostics,
   dryRunDiagnosticFix,
   scanLocalModelRegistry,
@@ -189,5 +190,12 @@ describe("generated G8 timeline client", () => {
       "/api/v1/model-registry:scan",
     ]);
     expect(fetchMock.mock.calls.at(-1)?.[1]?.body).toBe(JSON.stringify({ root_path: "C:/models selected", max_files: 12 }));
+  });
+
+  it("requests the bounded redacted audit export proof with stable filters", async () => {
+    await getAuditProof({ project_id: "project/1", action: "REVIEW_SUBMITTED", cursor: 42, limit: 50 }, 25);
+    expect(fetchMock.mock.calls.map(([path]) => path).filter((path) => !String(path).endsWith("/session/bootstrap"))).toEqual([
+      "/api/v1/audit-events/proof?project_id=project%2F1&action=REVIEW_SUBMITTED&max_events=25",
+    ]);
   });
 });
