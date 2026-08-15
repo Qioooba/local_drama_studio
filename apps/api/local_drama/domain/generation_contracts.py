@@ -85,10 +85,24 @@ class PerformanceBinding:
     action: str
     start_us: int
     end_us: int
+    binding_type: str = "CHARACTER_DRIVING"
+    source_role: str | None = None
 
     def validate(self) -> None:
         if not self.actor_id.strip() or not self.action.strip() or self.start_us < 0 or self.end_us <= self.start_us:
             raise DomainRuleError("PERFORMANCE_BINDING_INVALID", "PerformanceBinding actor/action/time range 无效")
+        if self.binding_type not in {
+            "CHARACTER_DRIVING",
+            "POSE",
+            "ACTION",
+            "LIP_SYNC",
+            "FACE_DRIVING",
+            "DRIVING_VIDEO",
+            "AUDIO_GUIDE",
+        }:
+            raise DomainRuleError("PERFORMANCE_BINDING_TYPE_INVALID", "PerformanceBinding binding_type 无效")
+        if self.source_role is not None and not self.source_role.strip():
+            raise DomainRuleError("PERFORMANCE_BINDING_SOURCE_ROLE_INVALID", "PerformanceBinding source_role 不能为空")
 
 
 def resolve_camera_plan(*, native_supported: bool, prompt_fallback_supported: bool, shot_type: str, movement: str,

@@ -12,6 +12,7 @@ class VariantInputRequest(BaseModel):
     role: str = Field(min_length=1, max_length=40)
     media_version_id: str = Field(min_length=1)
     ordinal: int = Field(default=0, ge=0, le=1000)
+    weight: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 class VariantPlanRequest(BaseModel):
@@ -37,7 +38,7 @@ class VariantPlanRequest(BaseModel):
             parameter_set=self.parameter_set,
             seed_policy=self.seed_policy,
             explicit_seed=self.explicit_seed,
-            bindings=tuple(VariantInput(item.role, item.media_version_id, item.ordinal) for item in self.bindings),
+            bindings=tuple(VariantInput(item.role, item.media_version_id, item.ordinal, item.weight) for item in self.bindings),
             provider_random_nonce=self.provider_random_nonce,
         )
 

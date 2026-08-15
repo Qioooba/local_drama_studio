@@ -43,6 +43,8 @@ class VariantPlan:
             raise DomainRuleError("INVALID_VARIANT_TYPE", "GenerationVariant 类型不受支持")
         validate_variant_lineage(self.parent_variant_id, variant_id, ancestors)
         validate_binding_roles(list(self.bindings), allowed_roles)
+        for binding in self.bindings:
+            binding.validate()
         binding_keys = [(binding.role, binding.ordinal) for binding in self.bindings]
         if len(binding_keys) != len(set(binding_keys)):
             raise DomainRuleError("DUPLICATE_INPUT_BINDING", "同一语义角色和 ordinal 只能绑定一个输入")

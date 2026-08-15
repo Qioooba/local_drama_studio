@@ -35,6 +35,137 @@ class GenerationService:
         self.database = database
         self.media = MediaService(database, settings)
 
+    # These roles are deliberately semantic.  A local Profile may bind them to
+    # any workflow node, but a Variant can never silently turn a driving input
+    # into an arbitrary ``images[]``/``audio`` parameter.
+    _DRIVING_ROLE_CAPABILITIES: dict[str, tuple[str, ...]] = {
+        "DRIVING_VIDEO": ("driving_video", "performance", "character_driving"),
+        "POSE_SEQUENCE": ("pose", "pose_driving", "performance"),
+        "POSE_REFERENCE": ("pose", "pose_driving", "performance"),
+        "AUDIO_GUIDE": ("audio_guide", "lip_sync", "performance"),
+        "FACE_REFERENCE": ("face_reference", "face", "performance"),
+        "CHARACTER_REFERENCE": ("character_reference", "reference", "performance"),
+        "CHARACTER_DRIVING": ("character_driving", "performance"),
+    }
+
+    @staticmethod
+    def _input_slots(input_contract: object) -> dict[str, Any]:
+        """Return the frozen semantic input-slot contract.
+
+        The blueprint has used both the current ``{"input_slots": {...}}``
+        envelope and the older direct-slot form in fixtures.  Supporting both
+        here keeps old local Profiles readable while still validating every
+        slot instead of dropping an unknown shape.
+        """
+        if not isinstance(input_contract, dict):
+            raise DomainRuleError("PROFILE_INPUT_CONTRACT_INVALID", "Profile input contract 必须是对象")
+        slots = input_contract.get("input_slots")
+        if slots is None:
+            slots = {
+                str(key): value
+                for key, value in input_contract.items()
+                if str(key) not in {"transport", "local_only", "requires_explicit_validation"}
+            }
+        if not isinstance(slots, dict):
+            raise DomainRuleError("PROFILE_INPUT_CONTRACT_INVALID", "Profile input_slots 契约无效")
+        for role, spec in slots.items():
+            if not isinstance(role, str) or not role.strip() or not isinstance(spec, dict):
+                raise DomainRuleError("PROFILE_INPUT_CONTRACT_INVALID", "Profile input slot 必须是带约束的对象", {"role": str(role)})
+            minimum = spec.get("min", 0)
+            maximum = spec.get("max", minimum if minimum else 1)
+            if not isinstance(minimum, int) or not isinstance(maximum, int) or minimum < 0 or maximum < minimum:
+                raise DomainRuleError(
+                    "PROFILE_INPUT_CONTRACT_INVALID",
+                    "Profile input slot min/max 无效",
+                    {"role": role, "min": minimum, "max": maximum},
+                )
+        return {str(role): value for role, value in slots.items()}
+
+    @staticmethod
+    def _slot_media_kinds(spec: dict[str, Any]) -> set[str]:
+        raw = spec.get("media_kinds", spec.get("allowed_media_kinds", spec.get("media_kind")))
+        if raw is None:
+            raw = spec.get("media")
+        if isinstance(raw, str):
+            raw = [raw]
+        if not isinstance(raw, list):
+            return set()
+        kinds: set[str] = set()
+        for item in raw:
+            token = str(item).upper()
+            if token.startswith("IMAGE/"):
+                token = "IMAGE"
+            elif token.startswith("VIDEO/"):
+                token = "VIDEO"
+            elif token.startswith("AUDIO/"):
+                token = "AUDIO"
+            if token in {"IMAGE", "VIDEO", "AUDIO", "DOCUMENT", "OTHER"}:
+                kinds.add(token)
+        return kinds
+
+    @staticmethod
+    def _validate_slot_weight(role: str, spec: dict[str, Any], weight: float | None) -> None:
+        weight_rule = spec.get("weight")
+        supports_weight = bool(
+            spec.get("supports_weight")
+            or spec.get("weight_required")
+            or spec.get("weights_required")
+            or isinstance(weight_rule, dict)
+            or "weight_min" in spec
+            or "weight_max" in spec
+        )
+        required = bool(spec.get("weight_required") or spec.get("weights_required"))
+        minimum = 0.0
+        maximum = 1.0
+        if isinstance(weight_rule, dict):
+            required = required or bool(weight_rule.get("required"))
+            minimum = float(weight_rule.get("min", minimum))
+            maximum = float(weight_rule.get("max", maximum))
+        elif weight_rule is not None and not isinstance(weight_rule, bool):
+            raise DomainRuleError("PROFILE_INPUT_CONTRACT_INVALID", "Profile weight 约束必须是对象", {"role": role})
+        if "weight_min" in spec:
+            minimum = float(spec["weight_min"])
+        if "weight_max" in spec:
+            maximum = float(spec["weight_max"])
+        if minimum < 0 or maximum > 1 or minimum > maximum:
+            raise DomainRuleError("PROFILE_INPUT_CONTRACT_INVALID", "Profile weight 范围无效", {"role": role})
+        if weight is None:
+            if required:
+                raise DomainRuleError("PROFILE_INPUT_WEIGHT_REQUIRED", "该 Profile input slot 要求每个参考输入显式 weight", {"role": role})
+            return
+        if not supports_weight:
+            raise DomainRuleError("PROFILE_INPUT_WEIGHT_UNSUPPORTED", "当前 Profile input slot 未声明 weight，不能提交权重", {"role": role})
+        if not minimum <= weight <= maximum:
+            raise DomainRuleError(
+                "PROFILE_INPUT_WEIGHT_INVALID",
+                "Variant 输入 weight 超出 Profile input contract 范围",
+                {"role": role, "weight": weight, "min": minimum, "max": maximum},
+            )
+
+    @classmethod
+    def _validate_driving_capability(cls, role: str, capabilities: dict[str, Any]) -> None:
+        names = cls._DRIVING_ROLE_CAPABILITIES.get(role)
+        if not names:
+            return
+        matched = None
+        for name in names:
+            candidate = capabilities.get(name)
+            if isinstance(candidate, dict):
+                matched = candidate
+                break
+        if not isinstance(matched, dict):
+            raise DomainRuleError(
+                "PROFILE_DRIVING_UNSUPPORTED",
+                f"当前 Profile 未声明 {role} 的本地 driving 能力",
+                {"role": role, "required_capabilities": list(names)},
+            )
+        if matched.get("enabled") is False or str(matched.get("support", "NATIVE")).upper() == "UNSUPPORTED":
+            raise DomainRuleError(
+                "PROFILE_DRIVING_UNSUPPORTED",
+                f"当前 Profile 不支持 {role} driving",
+                {"role": role, "capability": next(name for name in names if capabilities.get(name) is matched)},
+            )
+
     def create_intent(self, project_id: str, owner_type: str, owner_id: str, purpose: str, creative_goal: str) -> dict[str, Any]:
         intent_id = str(uuid.uuid4())
         now = _now()
@@ -110,9 +241,7 @@ class GenerationService:
                     )
             input_contract = json.loads(profile["input_contract_json"] or "{}")
             parameter_schema = json.loads(profile["parameter_schema_json"] or "{}")
-            input_slots = input_contract.get("input_slots", {})
-            if not isinstance(input_slots, dict):
-                raise DomainRuleError("PROFILE_INPUT_CONTRACT_INVALID", "Profile input_slots 契约无效")
+            input_slots = self._input_slots(input_contract)
             seed_contract = parameter_schema.get("seed", {}) if isinstance(parameter_schema, dict) else {}
             if not isinstance(seed_contract, dict):
                 raise DomainRuleError("PROFILE_SEED_CONTRACT_INVALID", "Profile seed 契约无效")
@@ -130,14 +259,34 @@ class GenerationService:
                     continue
                 if not isinstance(values, list):
                     raise DomainRuleError("GENERATION_CONTROL_INVALID", f"{field_name} 必须是数组")
-                contract = capabilities.get(capability_name, {})
+                aliases = {
+                    "timed_direction": ("timed_direction", "timed", "camera_timed"),
+                    "performance_binding": ("performance_binding", "performance", "character_driving"),
+                    "motion_mask": ("motion_mask", "motion", "motion_control"),
+                }.get(capability_name, (capability_name,))
+                contract: dict[str, Any] = {}
+                for alias in aliases:
+                    candidate_contract = capabilities.get(alias)
+                    if isinstance(candidate_contract, dict):
+                        contract = candidate_contract
+                        break
                 if not isinstance(contract, dict) or contract.get("enabled") is not True:
                     raise DomainRuleError("PROFILE_CONTROL_UNSUPPORTED", f"当前 Profile 未声明 {capability_name} 能力")
                 for index, value in enumerate(values):
                     if not isinstance(value, dict):
                         raise DomainRuleError("GENERATION_CONTROL_INVALID", f"{field_name}[{index}] 必须是对象")
                     try:
-                        item = contract_type(**value)
+                        normalized_value = dict(value)
+                        # Keep the wire contract tolerant of the common
+                        # ``kind``/``type`` aliases while preserving a strict
+                        # semantic snapshot in the frozen Variant.
+                        if contract_type is PerformanceBinding:
+                            if "binding_type" not in normalized_value:
+                                for alias in ("binding_kind", "kind", "type"):
+                                    if alias in normalized_value:
+                                        normalized_value["binding_type"] = normalized_value.pop(alias)
+                                        break
+                        item = contract_type(**normalized_value)
                         item.validate()
                     except (TypeError, ValueError, DomainRuleError) as error:
                         if isinstance(error, DomainRuleError):
@@ -214,6 +363,69 @@ class GenerationService:
             media_dependencies: list[dict[str, Any]] = []
             approval_dependencies: dict[tuple[str, int], str] = {}
             visual_dimensions: dict[tuple[str, int], tuple[int, int]] = {}
+            bindings_by_role: dict[str, list[VariantInput]] = {}
+            for binding in plan.bindings:
+                bindings_by_role.setdefault(binding.role, []).append(binding)
+                slot = input_slots.get(binding.role)
+                if not isinstance(slot, dict):
+                    # This is normally caught by unsupported_roles above, but
+                    # retaining a slot-level error makes malformed contracts
+                    # diagnosable when the same role is mutated concurrently.
+                    raise DomainRuleError("PROFILE_INPUT_ROLE_UNSUPPORTED", "Profile 未声明该语义输入槽", {"role": binding.role})
+                self._validate_driving_capability(binding.role, capabilities)
+                self._validate_slot_weight(binding.role, slot, binding.weight)
+            for role, role_bindings in bindings_by_role.items():
+                ordinals = [item.ordinal for item in role_bindings]
+                if len(set(ordinals)) != len(ordinals) or sorted(ordinals) != list(range(len(ordinals))):
+                    raise DomainRuleError(
+                        "PROFILE_INPUT_ORDER_INVALID",
+                        "同一 Profile input slot 的 ordinal 必须从 0 连续递增，不能跳号或重复",
+                        {"role": role, "ordinals": ordinals},
+                    )
+                slot = input_slots[role]
+                allowed_ordinals = slot.get("allowed_ordinals")
+                if allowed_ordinals is not None:
+                    if not isinstance(allowed_ordinals, list) or any(not isinstance(item, int) for item in allowed_ordinals):
+                        raise DomainRuleError("PROFILE_INPUT_CONTRACT_INVALID", "Profile allowed_ordinals 契约无效", {"role": role})
+                    if any(item.ordinal not in allowed_ordinals for item in role_bindings):
+                        raise DomainRuleError(
+                            "PROFILE_INPUT_ORDER_INVALID",
+                            "Variant 输入顺序不符合 Profile allowed_ordinals",
+                            {"role": role, "allowed_ordinals": allowed_ordinals, "ordinals": ordinals},
+                        )
+            performance_values = plan.parameter_set.get("performance_bindings", [])
+            if performance_values:
+                if not isinstance(performance_values, list):
+                    raise DomainRuleError("GENERATION_CONTROL_INVALID", "performance_bindings 必须是数组")
+                driving_roles = set(self._DRIVING_ROLE_CAPABILITIES)
+                if not driving_roles.intersection(bindings_by_role):
+                    raise DomainRuleError(
+                        "PERFORMANCE_MEDIA_REQUIRED",
+                        "PerformanceBinding 必须绑定项目内 driving video、pose、audio 或角色参考 MediaVersion",
+                        {"required_roles": sorted(driving_roles)},
+                    )
+                source_aliases = {
+                    "DRIVING_VIDEO": {"DRIVING_VIDEO"},
+                    "POSE": {"POSE_SEQUENCE", "POSE_REFERENCE"},
+                    "ACTION": {"DRIVING_VIDEO", "POSE_SEQUENCE", "POSE_REFERENCE"},
+                    "LIP_SYNC": {"AUDIO_GUIDE", "FACE_REFERENCE"},
+                    "FACE_DRIVING": {"FACE_REFERENCE", "CHARACTER_REFERENCE"},
+                    "AUDIO_GUIDE": {"AUDIO_GUIDE"},
+                    "CHARACTER_DRIVING": {"CHARACTER_REFERENCE", "DRIVING_VIDEO"},
+                }
+                for index, value in enumerate(performance_values):
+                    if not isinstance(value, dict):
+                        continue
+                    source_role: object = value.get("source_role")
+                    if source_role:
+                        binding_type: object = value.get("binding_type", value.get("binding_kind", value.get("kind", value.get("type", "CHARACTER_DRIVING"))))
+                        allowed_source_roles = source_aliases.get(str(binding_type), driving_roles)
+                        if str(source_role) not in allowed_source_roles or str(source_role) not in bindings_by_role:
+                            raise DomainRuleError(
+                                "PERFORMANCE_SOURCE_ROLE_INVALID",
+                                "PerformanceBinding source_role 必须指向同一 Variant 的兼容 driving input role",
+                                {"index": index, "source_role": source_role, "allowed_roles": sorted(allowed_source_roles)},
+                            )
             for binding in plan.bindings:
                 counts[binding.role] = counts.get(binding.role, 0) + 1
                 media = connection.execute(
@@ -227,6 +439,14 @@ class GenerationService:
                     raise DomainRuleError("VARIANT_INPUT_PROJECT_MISMATCH", "Variant 输入必须属于 GenerationIntent 所在项目")
                 if media["integrity_status"] != "VERIFIED":
                     raise DomainRuleError("SOURCE_INTEGRITY_FAILED", "Variant 输入完整性未通过")
+                slot = input_slots[binding.role]
+                allowed_media_kinds = self._slot_media_kinds(slot)
+                if allowed_media_kinds and str(media["media_kind"]).upper() not in allowed_media_kinds:
+                    raise DomainRuleError(
+                        "PROFILE_INPUT_MEDIA_KIND_INVALID",
+                        "Variant 输入媒体类型不符合 Profile input contract",
+                        {"role": binding.role, "media_kind": media["media_kind"], "allowed_media_kinds": sorted(allowed_media_kinds)},
+                    )
                 verified_media = self.media.verify_content_integrity(binding.media_version_id)
                 stale_anchor = connection.execute(
                     "SELECT id, stale_reason FROM frame_anchors WHERE extracted_media_version_id=? AND is_stale=1 ORDER BY id LIMIT 1",
@@ -337,7 +557,7 @@ class GenerationService:
             parent_bindings = []
             if parent is not None:
                 parent_bindings = connection.execute(
-                    "SELECT role, media_version_id, ordinal FROM variant_input_bindings WHERE variant_id=? ORDER BY role, ordinal, id",
+                    "SELECT role, media_version_id, ordinal, weight FROM variant_input_bindings WHERE variant_id=? ORDER BY role, ordinal, id",
                     (parent["id"],),
                 ).fetchall()
             if plan.variant_type == "EXACT_REPLAY" and parent is not None:
@@ -348,7 +568,7 @@ class GenerationService:
                     "seed_policy": plan.seed_policy,
                     "explicit_seed": plan.explicit_seed,
                     "provider_random_nonce": plan.provider_random_nonce,
-                    "bindings": sorted((binding.role, binding.media_version_id, binding.ordinal) for binding in plan.bindings),
+                    "bindings": sorted((binding.role, binding.media_version_id, binding.ordinal, binding.weight) for binding in plan.bindings),
                 }
                 parent_snapshot: dict[str, object] = {
                     "prompt_revision_id": parent["prompt_revision_id"],
@@ -357,7 +577,7 @@ class GenerationService:
                     "seed_policy": parent["seed_policy"],
                     "explicit_seed": parent["explicit_seed"],
                     "provider_random_nonce": parent["provider_random_nonce"],
-                    "bindings": sorted((row["role"], row["media_version_id"], row["ordinal"]) for row in parent_bindings),
+                    "bindings": sorted((row["role"], row["media_version_id"], row["ordinal"], row["weight"]) for row in parent_bindings),
                 }
                 if replay_snapshot != parent_snapshot:
                     raise DomainRuleError("EXACT_REPLAY_SNAPSHOT_MISMATCH", "Exact replay 必须保持 Prompt、Profile、参数、seed 和输入完全一致")
@@ -372,7 +592,7 @@ class GenerationService:
                     "seed_policy": parent["seed_policy"],
                     "explicit_seed": parent["explicit_seed"],
                     "provider_random_nonce": parent["provider_random_nonce"],
-                    "bindings": sorted((row["role"], row["media_version_id"], row["ordinal"]) for row in parent_bindings),
+                    "bindings": sorted((row["role"], row["media_version_id"], row["ordinal"], row["weight"]) for row in parent_bindings),
                 }
                 branch_execution = {
                     "profile_version_id": plan.profile_version_id,
@@ -380,7 +600,7 @@ class GenerationService:
                     "seed_policy": plan.seed_policy,
                     "explicit_seed": plan.explicit_seed,
                     "provider_random_nonce": plan.provider_random_nonce,
-                    "bindings": sorted((item.role, item.media_version_id, item.ordinal) for item in plan.bindings),
+                    "bindings": sorted((item.role, item.media_version_id, item.ordinal, item.weight) for item in plan.bindings),
                 }
                 if branch_execution != parent_execution:
                     raise DomainRuleError("PROMPT_BRANCH_SCOPE_INVALID", "Prompt branch 只能改变 PromptRevision")
@@ -414,7 +634,7 @@ class GenerationService:
                     "parameter_set_without_seed": parent_parameters,
                     "seed_policy": parent["seed_policy"],
                     "provider_random_nonce": parent["provider_random_nonce"],
-                    "bindings": sorted((row["role"], row["media_version_id"], row["ordinal"]) for row in parent_bindings),
+                    "bindings": sorted((row["role"], row["media_version_id"], row["ordinal"], row["weight"]) for row in parent_bindings),
                 }
                 branch_snapshot: dict[str, object] = {
                     "prompt_revision_id": plan.prompt_revision_id,
@@ -422,7 +642,7 @@ class GenerationService:
                     "parameter_set_without_seed": branch_parameters,
                     "seed_policy": plan.seed_policy,
                     "provider_random_nonce": plan.provider_random_nonce,
-                    "bindings": sorted((item.role, item.media_version_id, item.ordinal) for item in plan.bindings),
+                    "bindings": sorted((item.role, item.media_version_id, item.ordinal, item.weight) for item in plan.bindings),
                 }
                 if parent_snapshot != branch_snapshot:
                     raise DomainRuleError("RESAMPLE_SCOPE_INVALID", "换 seed 重抽必须且只能改变 explicit seed")
@@ -439,7 +659,7 @@ class GenerationService:
                     "seed_policy": parent["seed_policy"],
                     "explicit_seed": parent["explicit_seed"],
                     "provider_random_nonce": parent["provider_random_nonce"],
-                    "bindings": sorted((row["role"], row["media_version_id"], row["ordinal"]) for row in parent_bindings),
+                    "bindings": sorted((row["role"], row["media_version_id"], row["ordinal"], row["weight"]) for row in parent_bindings),
                 }
                 branch_snapshot = {
                     "prompt_revision_id": plan.prompt_revision_id,
@@ -447,7 +667,7 @@ class GenerationService:
                     "seed_policy": plan.seed_policy,
                     "explicit_seed": plan.explicit_seed,
                     "provider_random_nonce": plan.provider_random_nonce,
-                    "bindings": sorted((item.role, item.media_version_id, item.ordinal) for item in plan.bindings),
+                    "bindings": sorted((item.role, item.media_version_id, item.ordinal, item.weight) for item in plan.bindings),
                 }
                 if parent_snapshot != branch_snapshot:
                     raise DomainRuleError("PROFILE_BRANCH_SCOPE_INVALID", "Profile branch 必须且只能改变 ProfileVersion")
@@ -460,13 +680,13 @@ class GenerationService:
                     "prompt_revision_id": parent["prompt_revision_id"],
                     "profile_version_id": parent["capability_profile_version_id"],
                     "parameter_set": json.loads(parent["parameter_set_json"]),
-                    "bindings": sorted((row["role"], row["media_version_id"], row["ordinal"]) for row in parent_bindings),
+                    "bindings": sorted((row["role"], row["media_version_id"], row["ordinal"], row["weight"]) for row in parent_bindings),
                 }
                 branch_snapshot = {
                     "prompt_revision_id": plan.prompt_revision_id,
                     "profile_version_id": plan.profile_version_id,
                     "parameter_set": plan.parameter_set,
-                    "bindings": sorted((item.role, item.media_version_id, item.ordinal) for item in plan.bindings),
+                    "bindings": sorted((item.role, item.media_version_id, item.ordinal, item.weight) for item in plan.bindings),
                 }
                 if branch_snapshot != parent_snapshot:
                     raise DomainRuleError("PROVIDER_RANDOM_SCOPE_INVALID", "Provider random 重提只能改变 seed policy 与随机 nonce")
@@ -494,6 +714,17 @@ class GenerationService:
         return ancestors, allowed_roles, dependencies
 
     @staticmethod
+    def _binding_dict(binding: VariantInput) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "role": binding.role,
+            "media_version_id": binding.media_version_id,
+            "ordinal": binding.ordinal,
+        }
+        if binding.weight is not None:
+            result["weight"] = binding.weight
+        return result
+
+    @staticmethod
     def _recipe(plan: VariantPlan) -> dict[str, Any]:
         return {
             "variant_type": plan.variant_type,
@@ -505,7 +736,7 @@ class GenerationService:
             "seed_policy": plan.seed_policy,
             "explicit_seed": plan.explicit_seed,
             "provider_random_nonce": plan.provider_random_nonce,
-            "bindings": [binding.__dict__ for binding in plan.bindings],
+            "bindings": [GenerationService._binding_dict(binding) for binding in plan.bindings],
         }
 
     @staticmethod
@@ -517,7 +748,7 @@ class GenerationService:
             "seed_policy": plan.seed_policy,
             "explicit_seed": plan.explicit_seed,
             "provider_random_nonce": plan.provider_random_nonce,
-            "bindings": [binding.__dict__ for binding in plan.bindings],
+            "bindings": [GenerationService._binding_dict(binding) for binding in plan.bindings],
         }
 
     def preflight_variant(self, intent_id: str, plan: VariantPlan) -> dict[str, Any]:
@@ -584,7 +815,7 @@ class GenerationService:
                 raise DomainRuleError("VARIANT_DERIVATION_SCOPE_INVALID", "分支操作不能覆盖 seed")
             target_seed = int(parent_seed) if parent_seed is not None else None
         parent_bindings = tuple(
-            VariantInput(str(item["role"]), str(item["media_version_id"]), int(item["ordinal"]))
+            VariantInput(str(item["role"]), str(item["media_version_id"]), int(item["ordinal"]), float(item["weight"]) if item.get("weight") is not None else None)
             for item in parent["bindings"]
         )
         target_prompt_revision_id = str(parent["prompt_revision_id"]) if parent.get("prompt_revision_id") else None
@@ -605,7 +836,7 @@ class GenerationService:
             if not any(item.role == "FIRST_FRAME" and item.ordinal == 0 for item in parent_bindings):
                 raise DomainRuleError("SOURCE_BRANCH_FIRST_FRAME_REQUIRED", "父 Variant 没有 FIRST_FRAME ordinal 0")
             bindings = tuple(
-                VariantInput(item.role, first_frame_media_version_id, item.ordinal)
+                VariantInput(item.role, first_frame_media_version_id, item.ordinal, item.weight)
                 if item.role == "FIRST_FRAME" and item.ordinal == 0
                 else item
                 for item in parent_bindings
@@ -756,7 +987,7 @@ class GenerationService:
             for item in dependencies.get("approvals", [])
         }
         media_bindings_snapshot = [
-            {**binding.__dict__, "source_approval_id": approval_by_slot.get((binding.role, binding.ordinal))}
+            {**self._binding_dict(binding), "source_approval_id": approval_by_slot.get((binding.role, binding.ordinal))}
             for binding in plan.bindings
         ]
         recipe_hash = _digest({"execution": recipe, "approvals": dependencies.get("approvals", [])})
@@ -785,11 +1016,11 @@ class GenerationService:
             for binding in plan.bindings:
                 connection.execute(
                     """INSERT INTO variant_input_bindings
-                    (id, variant_id, role, media_version_id, ordinal, source_approval_id)
-                    VALUES (?, ?, ?, ?, ?, ?)""",
+                    (id, variant_id, role, media_version_id, ordinal, weight, source_approval_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
                     (
                         str(uuid.uuid4()), variant_id, binding.role, binding.media_version_id, binding.ordinal,
-                        approval_by_slot.get((binding.role, binding.ordinal)),
+                        binding.weight, approval_by_slot.get((binding.role, binding.ordinal)),
                     ),
                 )
             job = JobService(self.database).create_job_in_transaction(
@@ -829,7 +1060,7 @@ class GenerationService:
         now = _now()
         execution_recipe = self._execution_recipe(plan)
         binding_snapshots = [
-            {**binding.__dict__, "source_approval_id": approval_by_slot.get((binding.role, binding.ordinal))}
+            {**self._binding_dict(binding), "source_approval_id": approval_by_slot.get((binding.role, binding.ordinal))}
             for binding in plan.bindings
         ]
         recipe_hash = _digest({"execution": execution_recipe, "approvals": dependencies.get("approvals", [])})
@@ -875,7 +1106,7 @@ class GenerationService:
                         binding.role,
                         binding.media_version_id,
                         binding.ordinal,
-                        None,
+                        binding.weight,
                         None,
                         approval_by_slot.get((binding.role, binding.ordinal)),
                     ),

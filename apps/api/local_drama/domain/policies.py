@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from .errors import DomainRuleError
@@ -143,6 +144,15 @@ class VariantInput:
     role: str
     media_version_id: str
     ordinal: int = 0
+    weight: float | None = None
+
+    def validate(self) -> None:
+        if not self.role.strip() or not self.media_version_id.strip():
+            raise DomainRuleError("VARIANT_INPUT_REQUIRED", "Variant 输入必须包含语义 role 和 MediaVersion")
+        if self.ordinal < 0:
+            raise DomainRuleError("VARIANT_INPUT_ORDINAL_INVALID", "Variant 输入 ordinal 必须是非负整数")
+        if self.weight is not None and (not math.isfinite(self.weight) or not 0.0 <= self.weight <= 1.0):
+            raise DomainRuleError("VARIANT_INPUT_WEIGHT_INVALID", "Variant 输入 weight 必须是 0—1 之间的有限数")
 
 
 def validate_variant_lineage(parent_id: str | None, variant_id: str, ancestors: set[str]) -> None:

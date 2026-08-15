@@ -1,0 +1,65 @@
+{
+  "schema_version": "fr-ctl-003-004-multimodal-contracts.v1",
+  "observed_at": "2026-08-15T23:59:00+08:00",
+  "requirements": ["FR-CTL-003", "FR-CTL-004"],
+  "mode": "LOCAL_ONLY",
+  "status": "PARTIAL",
+  "implementation": {
+    "immutable_variant_semantics": true,
+    "driving_roles": [
+      "DRIVING_VIDEO",
+      "POSE_SEQUENCE",
+      "POSE_REFERENCE",
+      "AUDIO_GUIDE",
+      "FACE_REFERENCE",
+      "CHARACTER_REFERENCE",
+      "CHARACTER_DRIVING"
+    ],
+    "performance_binding": "typed actor/action/time-range with binding_type and source_role",
+    "input_contract": [
+      "min/max cardinality",
+      "contiguous ordinal order and allowed_ordinals",
+      "media_kinds/mime-derived media type",
+      "optional or required weight and bounded weight range"
+    ],
+    "ownership": "every input is a VERIFIED MediaVersion belonging to the GenerationIntent project",
+    "source_overwrite": false,
+    "remote_provider": false
+  },
+  "artifacts": [
+    "apps/api/local_drama/domain/generation_contracts.py",
+    "apps/api/local_drama/domain/policies.py",
+    "apps/api/local_drama/application/generation.py",
+    "apps/api/local_drama/api/schemas/variants.py",
+    "apps/web/src/features/generation/GenerationControlPanel.tsx",
+    "apps/web/src/features/generation/GenerationWorkbench.tsx",
+    "apps/web/src/features/generation/GenerationControlPanel.test.tsx",
+    "scripts/generate_client.py",
+    "docs/openapi/openapi.json"
+  ],
+  "automated_evidence": {
+    "api_tests": "apps/api/tests/test_ctl_multimodal_contracts.py",
+    "api_result": "3 passed",
+    "web_tests": "apps/web/src/features/generation/GenerationControlPanel.test.tsx",
+    "web_result": "1 passed",
+    "negative_cases": [
+      "wrong media kind",
+      "ordinal gap",
+      "out-of-range required weight",
+      "missing declared local driving capability"
+    ],
+    "positive_case": "PERFORMANCE_DRIVEN variant preflight and immutable create persist weighted local bindings"
+  },
+  "production_uat": {
+    "status": "PENDING",
+    "reason": "Windows x64 three-viewport UAT with real user-selected driving video/pose/audio/face/character sources, generated output and independent identity/action/lip-sync review remains outstanding"
+  },
+  "remaining": [
+    "Run real local Profile/Workflow driving media through the worker and verify output lineage",
+    "Capture independent human identity, action and audio/video sync review evidence",
+    "Exercise multi-reference ordering/weights in the production UI at three viewports"
+  ],
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "production_mutated": false
+}
