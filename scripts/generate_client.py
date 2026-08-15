@@ -85,6 +85,8 @@ export type DialogueLine = { id: string; episode_id: string; shot_id: string | n
 export type VoiceProfileVersion = { id: string; project_id: string; code: string; version_no: number; title: string; voice_ref: string; license_status: string; license_evidence: { path_rel: string; sha256: string }; provider_profile_version_id: string | null; status: string; [key: string]: unknown };
 export type AudioBindingRequest = { media_version_id: string; track_type?: string; start_us: number; end_us: number; gain_db?: number; source_license_status?: 'VERIFIED_LOCAL' | 'USER_OWNED' | 'PUBLIC_DOMAIN'; license_evidence_path_rel: string; loop_enabled?: boolean; fade_in_us?: number; fade_out_us?: number };
 export type AudioBinding = { id: string; episode_id: string; media_version_id: string; track_type: string; start_us: number; end_us: number; gain_db: number; source_license_status: string; authorization_status: 'VERIFIED_EVIDENCE' | 'LEGACY_INCOMPLETE'; license_evidence: Record<string, unknown>; loop_enabled: boolean; fade_in_us: number; fade_out_us: number; [key: string]: unknown };
+export type MediaImportRequest = { project_id: string; source_path: string; purpose: string; owner_type?: string; owner_id?: string; media_kind: 'AUDIO' };
+export type ImportedMedia = { media_version_id: string; media_asset_id: string; sha256: string; rel_path: string; duplicate?: boolean; [key: string]: unknown };
 export type EpisodeRender = { id: string; episode_id: string; timeline_revision_id: string; integrity_status: string; [key: string]: unknown };
 export type DeliveryPackage = { id: string; episode_render_version_id: string; target_version_id: string; status: string; [key: string]: unknown };
 export type TransitionConstraint = { id: string; from_shot_id: string; to_shot_id: string; constraint_type: string; enforcement: string; compatibility_status?: string; [key: string]: unknown };
@@ -479,6 +481,10 @@ export async function listVoiceProfileVersions(projectId: string, baseUrl = ''):
 
 export async function bindEpisodeAudio(episodeId: string, payload: AudioBindingRequest, baseUrl = ''): Promise<{ audio_binding: AudioBinding }> {
   return requestJson(`/api/v1/episodes/${encodeURIComponent(episodeId)}/audio-bindings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function importMedia(payload: MediaImportRequest, baseUrl = ''): Promise<{ media: ImportedMedia }> {
+  return requestJson('/api/v1/media:import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
 export async function listEpisodeAudioBindings(episodeId: string, baseUrl = ''): Promise<{ items: AudioBinding[] }> {

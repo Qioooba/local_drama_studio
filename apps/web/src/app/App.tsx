@@ -323,7 +323,7 @@ export function App() {
                 {selectedProject && <CreativeLibrary projectId={selectedProject} />}
                 {selectedProject && <AIDraftReviewPanel projectId={selectedProject} />}
                 <DialogueTTSPanel lines={dialogueLines.data?.items ?? []} voices={voiceProfiles.data?.items ?? []} />
-                <AudioTrackPanel bindings={audioBindings.data?.items ?? []} />
+                {selectedProject && selectedEpisode && <AudioTrackPanel bindings={audioBindings.data?.items ?? []} projectId={selectedProject} episodeId={selectedEpisode} onBound={() => { void audioBindings.refetch(); void timelineStatus.refetch(); void g8Readiness.refetch(); }} />}
                 <EpisodeContactSheetAction episodeId={selectedEpisode} />
                 {timelineStatus.data?.status && <TimelineStatusPanel status={timelineStatus.data.status} />}
                 <TimelineExportAction timelineRevisionId={timelineStatus.data?.status.timeline.latest?.id ? String(timelineStatus.data.status.timeline.latest.id) : null} />

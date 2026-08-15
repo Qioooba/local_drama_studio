@@ -1,8 +1,9 @@
 import type { AudioBinding } from "../../generated/api";
+import { AudioImportBindingForm } from "./AudioImportBindingForm";
 
 const trackLabels: Record<string, string> = { DIALOGUE: "对白", ENVIRONMENT: "环境", SFX: "音效", MUSIC: "音乐" };
 
-export function AudioTrackPanel({ bindings }: { bindings: AudioBinding[] }) {
+export function AudioTrackPanel({ bindings, projectId, episodeId, onBound }: { bindings: AudioBinding[]; projectId: string; episodeId: string; onBound: () => void }) {
   return <section className="panel audio-track-panel" aria-labelledby="audio-track-title">
     <div className="panel-heading"><div><p className="eyebrow">FR-AUD-002 · AUDIO TRACKS</p><h3 id="audio-track-title">音效、环境与音乐绑定</h3></div><span className="status-pill neutral">按需试听</span></div>
     <p className="muted">播放器默认不预加载；只有用户明确播放时才读取本地音频。loop、淡入淡出、gain、范围与授权证据均来自持久化绑定。</p>
@@ -15,5 +16,6 @@ export function AudioTrackPanel({ bindings }: { bindings: AudioBinding[] }) {
         <span className={binding.authorization_status === "VERIFIED_EVIDENCE" ? "status-pill" : "status-pill neutral"}>{binding.authorization_status === "VERIFIED_EVIDENCE" ? "授权证据已验证" : "遗留授权证据不完整"}</span>
       </div>)}
     </div>}
+    <AudioImportBindingForm projectId={projectId} episodeId={episodeId} onBound={onBound} />
   </section>;
 }
