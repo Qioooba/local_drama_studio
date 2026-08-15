@@ -44,7 +44,8 @@ class TimelineStatusService:
                 "SELECT source_license_status,license_evidence_json FROM audio_bindings WHERE episode_id=?", (episode_id,)
             ).fetchall()
             render = connection.execute(
-                """SELECT erv.id, erv.revision, erv.integrity_status AS status, erv.duration_ms, erv.mime_type, erv.sha256, erv.created_at
+                """SELECT erv.id, erv.timeline_revision_id, erv.revision, erv.integrity_status AS status, erv.duration_ms, erv.mime_type, erv.sha256,
+                erv.input_snapshot_json, erv.ffmpeg_command_json, erv.execution_log_text, erv.created_at
                 FROM episode_render_versions erv WHERE erv.episode_id=? ORDER BY erv.created_at DESC LIMIT 1""", (episode_id,)
             ).fetchone()
             render_count = int(connection.execute("SELECT COUNT(*) FROM episode_render_versions WHERE episode_id=?", (episode_id,)).fetchone()[0])
@@ -66,6 +67,24 @@ class TimelineStatusService:
             )
             latest_subtitle["source_document_version_id"] = snapshot.get("source_document_version_id")
             latest_subtitle["asr_alignment_only"] = bool(snapshot.get("asr_alignment")) and snapshot.get("asr_text_authority") is False
+        latest_render = dict(render) if render else None
+        if latest_render is not None:
+            input_snapshot = json.loads(str(latest_render.pop("input_snapshot_json") or "{}"))
+            ffmpeg_command = json.loads(str(latest_render.pop("ffmpeg_command_json") or "{}"))
+            execution_log_text = str(latest_render.pop("execution_log_text") or "")
+            try:
+                execution_log = json.loads(execution_log_text) if execution_log_text else {}
+            except json.JSONDecodeError:
+                execution_log = {"raw": execution_log_text}
+            latest_render["input_snapshot"] = input_snapshot
+            latest_render["ffmpeg_command"] = ffmpeg_command
+            latest_render["execution_log"] = execution_log
+            latest_render["evidence_status"] = (
+                "VERIFIED"
+                if input_snapshot.get("schema_version") == "localdrama.episode-render-input.v1"
+                and ffmpeg_command.get("executor") == "builtin:ffmpeg"
+                else "LEGACY_INCOMPLETE"
+            )
         return {
             "episode": {"id": str(episode["id"]), "code": str(episode["code"]), "title": str(episode["title"]), "project_id": str(episode["project_id"])},
             "timeline": {"revision_count": timeline_count, "latest": dict(timeline) if timeline else None},
@@ -79,7 +98,7 @@ class TimelineStatusService:
                     and json.loads(str(row["license_evidence_json"])).get("schema_version") == "localdrama.audio-license-evidence.v1"
                 ),
             },
-            "renders": {"count": render_count, "verified_count": render_verified_count, "latest": dict(render) if render else None},
+            "renders": {"count": render_count, "verified_count": render_verified_count, "latest": latest_render},
             "delivery": {"count": delivery_count, "verified_count": delivery_verified, "latest": dict(delivery) if delivery else None},
             "observed_at": _now(), "read_only": True, "runtime_contacted": False, "network_contacted": False, "mutated": False,
         }

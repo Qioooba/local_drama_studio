@@ -303,6 +303,9 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
         assert status["audio"] == {"binding_count": 1, "verified_local_count": 1}
         assert status["renders"]["count"] == 1
         assert status["renders"]["verified_count"] == 1
+        assert status["renders"]["latest"]["evidence_status"] == "VERIFIED"
+        assert status["renders"]["latest"]["input_snapshot"]["timeline_revision_id"] == timeline["id"]
+        assert status["renders"]["latest"]["ffmpeg_command"]["returncode"] == 0
         assert status["delivery"]["count"] == 1
         assert status["delivery"]["verified_count"] == 1
         assert status["read_only"] is True
