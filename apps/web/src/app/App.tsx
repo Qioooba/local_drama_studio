@@ -45,6 +45,7 @@ import { EpisodeContactSheetAction } from "../features/production/EpisodeContact
 import { TimelineExportAction } from "../features/production/TimelineExportAction";
 import { SubtitleRevisionPanel } from "../features/production/SubtitleRevisionPanel";
 import { TimelineRevisionPanel } from "../features/production/TimelineRevisionPanel";
+import { DeliveryWorkflowPanel } from "../features/production/DeliveryWorkflowPanel";
 import { ContinuityPanel } from "../features/production/ContinuityPanel";
 import { DirectorShotEditor } from "../features/production/DirectorShotEditor";
 import { PromptTemplatePanel } from "../features/production/PromptTemplatePanel";
@@ -336,6 +337,7 @@ export function App() {
                 <EpisodeContactSheetAction episodeId={selectedEpisode} />
                 {timelineStatus.data?.status && <TimelineStatusPanel status={timelineStatus.data.status} />}
                 <TimelineExportAction timelineRevisionId={timelineStatus.data?.status.timeline.latest?.id ? String(timelineStatus.data.status.timeline.latest.id) : null} />
+                {selectedEpisode && <DeliveryWorkflowPanel episodeId={selectedEpisode} timelineRevisionId={timelineStatus.data?.status.timeline.latest?.id ? String(timelineStatus.data.status.timeline.latest.id) : null} renderId={timelineStatus.data?.status.renders.latest?.id ? String(timelineStatus.data.status.renders.latest.id) : null} targetVersionId={projectConfiguration.data?.configuration.selected_delivery_target_version_id ? String(projectConfiguration.data.configuration.selected_delivery_target_version_id) : null} deliveryId={timelineStatus.data?.status.delivery.latest?.id ? String(timelineStatus.data.status.delivery.latest.id) : null} onChanged={() => { void timelineStatus.refetch(); void g8Readiness.refetch(); }} />}
                 {g8Readiness.data?.readiness && <G8ReadinessPanel readiness={g8Readiness.data.readiness} />}
               </div>}
               {projectConfiguration.data?.configuration && <ProjectConfigurationSnapshot configuration={projectConfiguration.data.configuration} />}
