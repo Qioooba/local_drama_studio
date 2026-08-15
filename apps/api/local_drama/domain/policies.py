@@ -72,7 +72,7 @@ def validate_project_spec(*, episode_count: int, aspect_ratio: str | None, fps_n
         raise DomainRuleError("PRODUCTION_SPEC_REQUIRED", "必须显式选择分辨率、主语言和字幕策略或明确允许稍后配置")
 
 
-def validate_shot_ready(fields: dict[str, object]) -> None:
+def missing_shot_fields(fields: dict[str, object]) -> list[str]:
     missing: list[str] = []
     for field in REQUIRED_SHOT_FIELDS:
         value = fields.get(field)
@@ -80,6 +80,11 @@ def validate_shot_ready(fields: dict[str, object]) -> None:
             missing.append(field)
         elif isinstance(value, str) and not value.strip() and field not in {"dialogue", "environment"}:
             missing.append(field)
+    return missing
+
+
+def validate_shot_ready(fields: dict[str, object]) -> None:
+    missing = missing_shot_fields(fields)
     if missing:
         raise DomainRuleError(
             "SHOT_NOT_PRODUCTION_READY",

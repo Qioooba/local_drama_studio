@@ -387,6 +387,14 @@ export async function getShotContinuityContext(shotId: string, baseUrl = ''): Pr
   return requestJson(`/api/v1/shots/${encodeURIComponent(shotId)}/continuity-context`, undefined, baseUrl);
 }
 
+export async function createShotRevision(shotId: string, fields: Record<string, unknown>, freeze: boolean, baseUrl = ''): Promise<{ shot_revision: Record<string, unknown> }> {
+  return requestJson(`/api/v1/projects/shots/${encodeURIComponent(shotId)}/revisions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields, freeze }) }, baseUrl);
+}
+
+export async function markShotProductionReady(shotId: string, baseUrl = ''): Promise<{ shot: Record<string, unknown> }> {
+  return requestJson(`/api/v1/projects/shots/${encodeURIComponent(shotId)}:mark-production-ready`, { method: 'POST' }, baseUrl);
+}
+
 export async function getEpisodeTimelineStatus(episodeId: string, baseUrl = ''): Promise<{ status: TimelineStatus }> {
   return requestJson(`/api/v1/episodes/${encodeURIComponent(episodeId)}/timeline-status`, undefined, baseUrl);
 }

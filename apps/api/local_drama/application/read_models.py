@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.policies import missing_shot_fields
 from local_drama.infrastructure.database.sqlite import Database
 
 
@@ -53,6 +54,7 @@ class ProductionReadModelService:
         for row in rows:
             item = dict(row)
             fields = json.loads(item.pop("fields_json") or "{}")
+            missing_director_fields = missing_shot_fields(fields)
             blockers: list[str] = []
             if not binding["profile_bound"]:
                 blockers.append("PROFILE_NOT_BOUND")
@@ -75,6 +77,7 @@ class ProductionReadModelService:
                     "keywords": fields.get("keywords", []),
                     "prompt_snapshot": fields.get("prompt_snapshot"),
                     "current_revision": fields,
+                    "missing_director_fields": missing_director_fields,
                     "blockers": blockers,
                     "next_action": next_action,
                 }

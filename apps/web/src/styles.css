@@ -366,6 +366,16 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .continuity-reference small { overflow-wrap: anywhere; }
 .continuity-footer { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 12px; color: #625d55; font-size: 12px; }
 @media (max-width: 1100px) { .continuity-grid { grid-template-columns: 1fr; } }
+
+.director-editor { margin-top: 16px; }
+.director-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.director-grid label { display: grid; gap: 6px; min-width: 0; color: #625d55; font-size: 12px; }
+.director-grid input, .director-grid select, .director-grid textarea { width: 100%; min-height: 40px; }
+.director-grid textarea { min-height: 76px; resize: vertical; }
+.director-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+.director-actions .checkbox-row { min-height: 40px; margin-right: auto; display: flex; align-items: center; gap: 8px; }
+@media (max-width: 1100px) { .director-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 720px) { .director-grid { grid-template-columns: 1fr; } }
 .media-slot.filled { border-style: solid; border-color: #a7c9c1; background: #eef8f5; }
 .media-slot img { display: block; width: 100%; height: auto; max-height: 124px; object-fit: cover; }
 .media-slot span { color: var(--creative); font-size: 24px; }

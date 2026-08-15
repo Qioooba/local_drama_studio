@@ -48,6 +48,7 @@
 | FR-PRJ-003 项目列表搜索、状态筛选与安全归档 | VERIFIED PRODUCTION UAT | `ProjectService.list_projects` 支持标题/code 子串和 DRAFT/ACTIVE/PAUSED/ARCHIVED 筛选，转义 SQL wildcard 并拒绝非法状态；UI 真实转发筛选。既有归档为审计状态转换、不删目录、活动 Job 硬阻塞。API 2 项、Web 1 项与 1024×768 只读生产 UAT 通过，见 `docs/evidence/g10/project-list-filter-uat-2026-08-15.json` |
 | FR-PRJ-006 项目复制为新剧模板 | VERIFIED PRODUCTION READ-ONLY UI UAT | `ProjectService.copy_as_template` 与 `POST /projects/{id}:copy-template`；新 UUID/DRAFT，只复制结构、解冻的当前镜头字段、ProductionPlan、本地交付目标与 Published ACTIVE Profile。媒体/授权资产/BrandKit/Job/审核/交付/审计历史明确排除；文件树+数据库失败双回滚、重码/孤立目录不覆盖。API 3 项、Web 1 项与三视口只读表单 UAT 通过，见 `docs/evidence/g10/project-template-copy-uat-2026-08-15.json` |
 | FR-WRT-002 Master Scene 与分集 source range 映射 | VERIFIED PRODUCTION READ-ONLY UI UAT | migration `0025_episode_scene_ranges`、`ProjectService.create_scene/bind_episode_scene_range` 与项目页管理面板；项目级 Scene 可跨集复用且不复制实体，集内 scene/ordinal 唯一，显式起止位置及同项目归属由服务端校验。API 3 项、Web 2 项、`0024→0025` 升级/精确恢复和三视口生产只读 UAT 通过，证据 `docs/evidence/g10/episode-scene-ranges-uat-2026-08-15.json` |
+| FR-WRT-003 导演分镜字段完整性 | VERIFIED PRODUCTION READ-ONLY UAT | `missing_shot_fields`/`validate_shot_ready`、生产 read model 与 `DirectorShotEditor`；九项字段可编辑，保存创建不可变 ShotRevision，可显式冻结，READY 只能从字段完整的 DIRECTED revision 进入且返回具体缺项。API 2 项、Web 2 项与三视口生产只读 UAT 通过，证据 `docs/evidence/g10/director-shot-editor-uat-2026-08-15.json` |
 | FR-WRT-006 连续性面板 | VERIFIED PRODUCTION READ-ONLY UAT | `ProductionReadModelService.continuity_context` 与生成工作台三列对照；上一/当前/下一镜的 revision、人物外观、服装、道具、光线、空间方向、连续性、已选/已批 MediaVersion 和边界约束均来自真实本地数据，缺项不推断。API 2 项、Web 2 项与三视口 UAT 通过；只请求 small 缩略图，证据 `docs/evidence/g10/continuity-panel-uat-2026-08-15.json` |
 | FR-IMG-001/FR-MED media register、probe、hash、poster/cache、Range | VERIFIED | `application/media.py`、G3 evidence sample |
 | FR-ING-001 source document version、ImportSession、TXT/MD/DOCX preview | VERIFIED | `application/documents.py`、G3 import test |
@@ -225,6 +226,8 @@ FR-VID-008 closure 批次：migration `0024_video_review_annotations` 已完成 
 FR-WRT-002 closure 批次：migration `0025_episode_scene_ranges` 已完成 0024→0025 隔离升级/精确恢复演练、生产在线备份迁移与 integrity_check。项目级 Master Scene 可由不同 Episode 通过显式 source range 复用，集内 scene/ordinal 唯一且同项目/位置约束硬校验；React 提供禁用态安全的创建与绑定入口。完整门禁 API 157 passed / 4 Comfy live deselected、Web 35/35、production build、Ruff、mypy 94 files PASS；三档生产只读 UAT 零写入、公网、原片、截图、错误、溢出或短控件。G7 真实模型 license evidence 阻塞及后续有序退出状态不变。
 
 FR-WRT-006 closure 批次：只读 continuity read model 和 React 三列面板并排投影前/当前/后镜不可变 revision、六类连续性字段、MediaVersion 参考和 TransitionConstraint，字段缺失保持显式，API 不泄露 rel_path。生产三档 UAT 仅请求 small 缩略图且零写入、公网、原片、错误或溢出；完整门禁 API 159 passed / 4 Comfy live deselected、Web 37/37、production build、Ruff、mypy 94 files PASS。G7 模型 license 真实证据阻塞和有序门禁状态不变。
+
+FR-WRT-003 closure 批次：导演分镜九字段具备前端编辑、不可变/可冻结 ShotRevision 保存、服务端逐项缺失投影与显式 Production Ready 状态转换。生产三档只读 UAT 验证真实回填和安全按钮状态，零写入、公网、原片、错误、短控件或溢出；完整门禁 API 161 passed / 4 Comfy live deselected、Web 39/39、production build、Ruff、mypy 94 files PASS。G7 模型 license 真实证据阻塞和有序退出状态不变。
 
 ## 更新规则
 
