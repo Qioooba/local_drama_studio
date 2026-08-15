@@ -54,6 +54,7 @@ export type CameraPlanResolution = { camera_plan: CameraPlan; submission_allowed
 export type DiagnosticRun = { id: string; status: string; checks: Array<{ code: string; category: string; status: string; observed: Record<string, unknown> }> };
 export type ReviewTemplate = { id: string; code: string; version_no: number; subject_type: string; items: Array<{ id: string; label: string; required: boolean }> };
 export type ReviewInboxItem = { media_version_id: string; media_asset_id: string; project_id: string; media_kind: string; stage: string; decision: string | null; is_stale: number | null; [key: string]: unknown };
+export type ReviewBatchPlan = { plan_id: string; plan_token: string; expires_at: string; status: 'READY'; items: Array<{ media_version_id: string; template_version_id: string; expected_subject_revision: number }> };
 export type VideoAnnotation = { id: string; media_version_id: string; timecode_ms: number; category: string; comment: string; snapshot_media_version_id: string | null; rework_job_id: string | null; created_at: string; created_by: string; schema_version: 'v2' };
 export type FrameAnchor = { id: string; source_media_version_id: string; source_time_us: number; source_frame_index: number; extracted_media_version_id: string; role_hint: string; sha256: string; requested_time_us: number | null; resolved_time_us: number; source_sha256: string; extraction_method: string; [key: string]: unknown };
 export type KeyframeCandidate = { id: string; media_asset_id: string; project_id: string; owner_type: 'SHOT'; owner_id: string; media_kind: 'IMAGE'; stage: 'KEYFRAME'; parent_version_id: string; duplicate: boolean; [key: string]: unknown };
@@ -280,6 +281,14 @@ export async function runMachineCheck(mediaVersionId: string, baseUrl = ''): Pro
 
 export async function submitReview(mediaVersionId: string, payload: { template_version_id: string; decision: 'APPROVED' | 'REJECTED' | 'NEEDS_CHANGES'; expected_subject_revision: number; checks: Array<{ item_id: string; result: 'PASS' | 'FAIL'; comment?: string }>; comment?: string }, baseUrl = ''): Promise<{ review: Record<string, unknown> }> {
   return requestJson(`/api/v1/subjects/MEDIA_VERSION/${encodeURIComponent(mediaVersionId)}/reviews`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function preflightReviewBatch(projectId: string, items: Array<{ media_version_id: string; template_version_id: string }>, baseUrl = ''): Promise<{ plan: ReviewBatchPlan }> {
+  return requestJson('/api/v1/reviews/batch:preflight', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ project_id: projectId, items }) }, baseUrl);
+}
+
+export async function commitReviewBatch(planToken: string, payload: { decision: 'APPROVED' | 'REJECTED' | 'NEEDS_CHANGES'; checks: Array<{ item_id: string; result: 'PASS' | 'FAIL'; comment?: string }>; comment?: string }, baseUrl = ''): Promise<{ result: { plan_id: string; status: 'COMMITTED'; items: Array<Record<string, unknown>> } }> {
+  return requestJson('/api/v1/reviews/batch:commit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan_token: planToken, ...payload }) }, baseUrl);
 }
 
 export async function listVideoAnnotations(mediaVersionId: string, baseUrl = ''): Promise<{ items: VideoAnnotation[] }> {

@@ -318,6 +318,8 @@ class ReviewService:
         """
         if decision not in {"APPROVED", "REJECTED", "NEEDS_CHANGES"}:
             raise DomainRuleError("INVALID_REVIEW_DECISION", "审核决定无效")
+        if decision == "REJECTED" and not str(comment or "").strip():
+            raise DomainRuleError("REVIEW_COMMENT_REQUIRED", "拒绝审核必须填写原因")
         with self.database.connect() as connection:
             render = connection.execute(
                 """SELECT erv.*, p.root_rel FROM episode_render_versions erv
@@ -802,10 +804,33 @@ class ReviewService:
         if not items:
             raise DomainRuleError("EMPTY_REVIEW_BATCH", "批量审核不能为空")
         plan_items: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        template_ids: set[str] = set()
         for item in items:
             media = self._media(str(item["media_version_id"]))
+            media_id = str(media["id"])
+            if media_id in seen:
+                raise DomainRuleError("DUPLICATE_REVIEW_BATCH_ITEM", "批量审核不能重复选择同一媒体版本", {"media_version_id": media_id})
+            seen.add(media_id)
+            if str(media.get("project_id")) != project_id:
+                raise DomainRuleError(
+                    "REVIEW_BATCH_PROJECT_MISMATCH",
+                    "批量审核项必须属于当前项目",
+                    {"media_version_id": media_id, "project_id": media.get("project_id"), "expected_project_id": project_id},
+                )
+            expected_template = self._template_for_media(media)
+            template_version_id = str(item["template_version_id"])
+            if template_version_id != str(expected_template["id"]):
+                raise DomainRuleError(
+                    "REVIEW_BATCH_TEMPLATE_MISMATCH",
+                    "批量审核项的模板必须匹配媒体类型和阶段",
+                    {"media_version_id": media_id, "expected_template_version_id": expected_template["id"], "submitted_template_version_id": template_version_id},
+                )
+            template_ids.add(template_version_id)
             current = self._subject_revision(media)
-            plan_items.append({"media_version_id": media["id"], "template_version_id": item["template_version_id"], "expected_subject_revision": current})
+            plan_items.append({"media_version_id": media_id, "template_version_id": template_version_id, "expected_subject_revision": current})
+        if len(template_ids) > 1:
+            raise DomainRuleError("MIXED_REVIEW_BATCH_TEMPLATES", "批量审核一次只能处理同一审核模板的媒体版本", {"template_version_ids": sorted(template_ids)})
         token = secrets.token_urlsafe(32)
         token_hash = _token_hash(token)
         plan_id = str(uuid.uuid4())
@@ -819,14 +844,27 @@ class ReviewService:
         return {"plan_id": plan_id, "plan_token": token, "expires_at": expires, "items": plan_items, "status": "READY"}
 
     def batch_commit(self, token: str, decision: str, checks: list[dict[str, Any]], comment: str | None = None, actor: str = "local-user") -> dict[str, Any]:
+        if decision not in {"APPROVED", "REJECTED", "NEEDS_CHANGES"}:
+            raise DomainRuleError("INVALID_REVIEW_DECISION", "审核决定无效")
+        if decision == "REJECTED" and not str(comment or "").strip():
+            raise DomainRuleError("REVIEW_COMMENT_REQUIRED", "拒绝批量审核必须填写原因")
         with self.database.connect() as connection:
             plan = connection.execute("SELECT * FROM review_batch_plans WHERE token_hash=?", (_token_hash(token),)).fetchone()
         if plan is None or plan["status"] != "READY" or datetime.fromisoformat(plan["expires_at"]) <= datetime.now(UTC):
             raise DomainRuleError("REVIEW_BATCH_TOKEN_INVALID", "批量审核 plan_token 无效、过期或已使用")
         plan_items = json.loads(plan["plan_json"])
         stale: list[dict[str, Any]] = []
+        # Validate every item before writing any review.  The subsequent writes
+        # preserve the existing review/audit path, while this preflight prevents
+        # deterministic partial batches caused by a missing check or QC gate.
+        if not checks:
+            raise DomainRuleError("REVIEW_CHECKS_INCOMPLETE", "批量审核至少需要一个结构化检查项")
         for item in plan_items:
-            current = self._subject_revision(self._media(item["media_version_id"]))
+            media = self._media(item["media_version_id"])
+            expected_template = self._template_for_media(media)
+            if str(expected_template["id"]) != str(item["template_version_id"]):
+                raise DomainRuleError("REVIEW_BATCH_TEMPLATE_MISMATCH", "审核模板已不再匹配媒体类型，请重新预检")
+            current = self._subject_revision(media)
             if current != item["expected_subject_revision"]:
                 stale.append(
                     {
@@ -838,6 +876,20 @@ class ReviewService:
                 )
         if stale:
             raise DomainRuleError("REVIEW_BATCH_STALE", "批量预检后对象发生变化，不能继续批准", {"items": stale})
+        required = {str(item["id"]) for item in expected_template["items"] if item.get("required", True)}
+        submitted = {str(item.get("item_id")) for item in checks}
+        missing = sorted(required - submitted)
+        if missing:
+            raise DomainRuleError("REVIEW_CHECKS_INCOMPLETE", "审核检查项不完整", {"missing": missing})
+        failures = sorted(str(item["item_id"]) for item in checks if item.get("result") != "PASS")
+        if decision == "APPROVED" and failures:
+            raise DomainRuleError("REVIEW_CHECK_FAILED", "存在未通过检查项，不能批准", {"failed": failures})
+        for item in plan_items:
+            media = self._media(item["media_version_id"])
+            if decision == "APPROVED" and media["media_kind"] == "AUDIO" and self._latest_machine_status(item["media_version_id"]) != "PASS":
+                raise DomainRuleError("AUDIO_QC_REQUIRED", "音频必须先通过 LUFS、True Peak、峰值与削波机器检查", {"media_version_id": item["media_version_id"]})
+            if decision == "APPROVED" and media["stage"] == "FORMAL" and self._latest_machine_status(item["media_version_id"]) != "PASS":
+                raise DomainRuleError("MACHINE_QC_REQUIRED", "正式媒体必须先通过机器 QC", {"media_version_id": item["media_version_id"]})
         results = []
         for item in plan_items:
             results.append(
