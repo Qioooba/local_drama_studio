@@ -88,4 +88,11 @@ describe("DirectorShotEditor", () => {
     expect(await screen.findByText(/显式 Prompt 降级/)).toBeTruthy();
     expect((screen.getByLabelText("Prompt 降级文本") as HTMLTextAreaElement).value).toBe("camera: PUSH_IN");
   });
+
+  it("offers the blueprint camera vocabulary including zoom", () => {
+    renderEditor({ id: "shot-1", code: "S001", status: "DRAFT", current_revision_id: "revision-1", current_revision: {} });
+    expect(screen.getByRole("option", { name: "ZOOM" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "ORBIT" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "ROLL" })).toBeTruthy();
+  });
 });
