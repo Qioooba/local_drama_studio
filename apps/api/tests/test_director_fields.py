@@ -34,7 +34,30 @@ def test_ready_transition_preserves_specific_missing_fields_then_accepts_complet
     assert error.value.details["missing_fields"] == list(REQUIRED_SHOT_FIELDS[1:])
 
     complete = {field: "" if field in {"dialogue", "environment"} else 4_000 if field == "target_duration_ms" else field for field in REQUIRED_SHOT_FIELDS}
+    complete["camera_plan"] = {
+        "mode": "NATIVE", "shot_type": "CLOSEUP", "movement": "PUSH_IN", "prompt_text": "",
+        "direction": "FORWARD", "intensity": 0.5, "curve": "EASE_IN_OUT", "profile_version_id": "profile-v1",
+    }
     projects.create_shot_revision(str(shot["id"]), complete, freeze=True)
     assert projects.mark_shot_production_ready(str(shot["id"]))["status"] == "READY"
     ready_item = ProductionReadModelService(database).episode(str(episode["id"]))["items"][0]
     assert ready_item["production_readiness"] == {"state": "PRODUCTION_READY", "missing_fields": [], "blockers": ["PROFILE_NOT_BOUND", "PRODUCTION_PLAN_NOT_BOUND", "DELIVERY_TARGET_NOT_BOUND"]}
+
+
+def test_ready_rejects_legacy_or_unsupported_camera_plan(workspace, database) -> None:
+    projects = ProjectService(database, workspace.projects_root)
+    project = projects.create_project(code="camera_structured", title="Camera structured", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1, target_duration_ms=60_000, allow_unconfigured_capabilities=True)
+    episode = projects.list_episodes(str(projects.list_seasons(str(project["id"]))[0]["id"]))[0]
+    shot = projects.create_shot(str(episode["id"]), "S001", 4_000)
+    complete = {field: "" if field in {"dialogue", "environment"} else 4_000 if field == "target_duration_ms" else field for field in REQUIRED_SHOT_FIELDS}
+    with pytest.raises(DomainRuleError) as legacy:
+        projects.create_shot_revision(str(shot["id"]), complete, freeze=True)
+    assert legacy.value.code == "CAMERA_PLAN_STRUCTURED_REQUIRED"
+    complete["camera_plan"] = {
+        "mode": "UNSUPPORTED", "shot_type": "CLOSEUP", "movement": "ORBIT", "prompt_text": "",
+        "direction": "CLOCKWISE", "intensity": 0.7, "curve": "LINEAR", "profile_version_id": "profile-v1",
+    }
+    projects.create_shot_revision(str(shot["id"]), complete, freeze=True)
+    with pytest.raises(DomainRuleError) as unsupported:
+        projects.mark_shot_production_ready(str(shot["id"]))
+    assert unsupported.value.code == "CAMERA_PLAN_UNSUPPORTED"

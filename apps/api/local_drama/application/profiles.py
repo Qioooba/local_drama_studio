@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.generation_contracts import resolve_camera_plan
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.manifest import ManifestSnapshot, load_manifest
 
@@ -267,6 +268,50 @@ class ProfileService:
             "capability_contract": json.loads(str(row["capability_json"] or "{}")),
             "contract_hash": self._contract_hash(payload),
             "validation": ({**dict(validation), "checks": json.loads(str(validation["checks_json"]))} if validation else None),
+        }
+
+    def resolve_camera_plan(
+        self,
+        profile_version_id: str,
+        *,
+        shot_type: str,
+        movement: str,
+        direction: str,
+        intensity: float,
+        curve: str,
+        prompt_text: str = "",
+    ) -> dict[str, Any]:
+        profile = self.get_version(profile_version_id)
+        if profile["status"] != "PUBLISHED":
+            raise DomainRuleError("PROFILE_NOT_PUBLISHED", "只有已发布 Profile 才能裁决正式 CameraPlan")
+        parameter_schema = profile["parameter_schema"]
+        capabilities = parameter_schema.get("capabilities", {}) if isinstance(parameter_schema, dict) else {}
+        camera = capabilities.get("camera", {}) if isinstance(capabilities, dict) else {}
+        support = str(camera.get("support", "UNSUPPORTED")) if isinstance(camera, dict) else "UNSUPPORTED"
+        if support not in {"NATIVE", "PROMPT_FALLBACK", "UNSUPPORTED"}:
+            raise DomainRuleError("PROFILE_CAMERA_CONTRACT_INVALID", "Profile camera capability support 无效")
+        fallback = support == "PROMPT_FALLBACK" and camera.get("prompt_fallback") is True
+        if support == "PROMPT_FALLBACK" and not fallback:
+            raise DomainRuleError("PROFILE_CAMERA_FALLBACK_INVALID", "Camera prompt fallback 必须由 Profile 显式声明")
+        plan = resolve_camera_plan(
+            native_supported=support == "NATIVE",
+            prompt_fallback_supported=fallback,
+            shot_type=shot_type,
+            movement=movement,
+            prompt_text=prompt_text,
+            direction=direction,
+            intensity=intensity,
+            curve=curve,
+            profile_version_id=profile_version_id,
+        )
+        return {
+            "camera_plan": plan.to_dict(),
+            "submission_allowed": plan.mode != "UNSUPPORTED",
+            "support": support,
+            "profile": {"id": profile_version_id, "code": profile["code"], "version_no": profile["version_no"]},
+            "runtime_contacted": False,
+            "network_contacted": False,
+            "mutated": False,
         }
 
     def derive_contract_version(

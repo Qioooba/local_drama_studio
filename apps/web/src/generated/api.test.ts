@@ -10,6 +10,7 @@ import {
   getFrameAnchor,
   getPostProcessRecipe,
   renderEpisode,
+  resolveProfileCameraPlan,
   runEnhancement,
   verifyDeliveryPackage,
   withdrawDeliveryPackage,
@@ -86,6 +87,13 @@ describe("generated G8 timeline client", () => {
       "/api/v1/post-process-recipes",
       "/api/v1/post-process-recipes/recipe%2F1",
       "/api/v1/enhancement-runs",
+    ]);
+  });
+
+  it("resolves CameraPlan against one explicit local Profile without runtime contact", async () => {
+    await resolveProfileCameraPlan("profile/1", { shot_type: "CLOSEUP", movement: "PUSH_IN", direction: "FORWARD", intensity: 0.5, curve: "LINEAR" });
+    expect(fetchMock.mock.calls.map(([path]) => path).filter((path) => !String(path).endsWith("/session/bootstrap"))).toEqual([
+      "/api/v1/profile-versions/profile%2F1:resolve-camera-plan",
     ]);
   });
 

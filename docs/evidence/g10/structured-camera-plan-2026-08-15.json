@@ -1,0 +1,24 @@
+{
+  "schema_version": "localdrama.fr-ctl-001.automated-evidence.v1",
+  "status": "PASS_AUTOMATED",
+  "requirement_id": "FR-CTL-001",
+  "scope": [
+    "CameraPlan direction, intensity and curve are structured and immutable inside ShotRevision fields",
+    "one explicit Published Profile resolves support as NATIVE, PROMPT_FALLBACK or UNSUPPORTED",
+    "missing capability is truthfully UNSUPPORTED and cannot mark a shot Production Ready",
+    "resolution is read-only and records runtime_contacted=false, network_contacted=false and mutated=false",
+    "the UI exposes the structured editor and disables production readiness until a runnable resolution exists"
+  ],
+  "verification": {
+    "api_regression": "180 passed, 4 deselected",
+    "web_regression": "62 passed",
+    "web_production_build": "PASS",
+    "ruff": "PASS",
+    "mypy": "PASS (101 source files)"
+  },
+  "remaining": [
+    "Capture a real browser UAT against a user-selected Published Profile whose camera capability is explicitly declared",
+    "Bind the resolved CameraPlan into the formal GenerationVariant submission snapshot during the generation-workbench closure batch"
+  ],
+  "release_claim": "This closes the structured editor and authoritative capability-resolution layer; it does not by itself close the full master requirements ledger."
+}

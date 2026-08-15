@@ -701,6 +701,10 @@ class ProjectService:
         return self.get_episode(episode_id)
 
     def create_shot_revision(self, shot_id: str, fields: dict[str, object], freeze: bool = False) -> dict[str, Any]:
+        if "camera_plan" in fields:
+            from local_drama.domain.generation_contracts import CameraPlan
+
+            CameraPlan.from_payload(fields["camera_plan"])
         now = _utc_now()
         revision_id = str(uuid.uuid4())
         with self.database.transaction() as connection:

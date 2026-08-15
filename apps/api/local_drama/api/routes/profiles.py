@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from local_drama.api.schemas.g3 import ProfileBindingRequest, ProfileContractDraftRequest, ProfileEvidencePublishRequest
+from local_drama.api.schemas.g3 import CameraPlanResolveRequest, ProfileBindingRequest, ProfileContractDraftRequest, ProfileEvidencePublishRequest
 from local_drama.application.configuration import ConfigurationService
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.profiles import ProfileService
@@ -37,6 +37,16 @@ async def list_profiles(request: Request) -> dict[str, object]:
 async def get_profile_version(profile_version_id: str, request: Request) -> dict[str, object]:
     try:
         return {"profile_version": service(request).get_version(profile_version_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/profile-versions/{profile_version_id}:resolve-camera-plan", operation_id="resolveProfileCameraPlan")
+async def resolve_profile_camera_plan(
+    profile_version_id: str, payload: CameraPlanResolveRequest, request: Request
+) -> dict[str, object]:
+    try:
+        return {"resolution": service(request).resolve_camera_plan(profile_version_id, **payload.model_dump())}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

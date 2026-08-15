@@ -5,6 +5,15 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+class CameraPlanResolveRequest(BaseModel):
+    shot_type: str = Field(min_length=1, max_length=80)
+    movement: str = Field(min_length=1, max_length=200)
+    direction: str = Field(min_length=1, max_length=80)
+    intensity: float = Field(ge=0, le=1)
+    curve: str = Field(min_length=1, max_length=80)
+    prompt_text: str = Field(default="", max_length=2000)
+
+
 class MediaImportRequest(BaseModel):
     project_id: str = Field(min_length=1)
     source_path: str = Field(min_length=1)

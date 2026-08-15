@@ -31,7 +31,7 @@ def resolve_docs() -> list[Path]:
 
 def requirement_ids(text: str, prefix: str) -> set[str]:
     return set(
-        re.findall(rf"^\|\s*({re.escape(prefix)}[A-Z]+-\d{{3}})\b", text, re.MULTILINE)
+        re.findall(rf"^\|\s*({re.escape(prefix)}[A-Z0-9]+-\d{{3}})\b", text, re.MULTILINE)
     )
 
 
@@ -47,9 +47,16 @@ def main() -> None:
     print(
         f"document_11_present={int((BLUEPRINT / '11_老屋灯火迁移_试运行与上线.md').exists())}"
     )
-    print(f"fr_count={len(requirement_ids(requirements, 'FR-'))}")
-    print(f"nfr_count={len(requirement_ids(requirements, 'NFR-'))}")
-    print(f"tc_count={len(set(re.findall(r'\bTC-[A-Z]+-\d{3}\b', tests)))}")
+    fr_count = len(requirement_ids(requirements, "FR-"))
+    nfr_count = len(requirement_ids(requirements, "NFR-"))
+    tc_count = len(set(re.findall(r"\bTC-[A-Z]+-\d{3}\b", tests)))
+    if (fr_count, nfr_count, tc_count) != (86, 15, 85):
+        raise RuntimeError(
+            f"master inventory drift: expected FR/NFR/TC=86/15/85, observed {fr_count}/{nfr_count}/{tc_count}"
+        )
+    print(f"fr_count={fr_count}")
+    print(f"nfr_count={nfr_count}")
+    print(f"tc_count={tc_count}")
     authoritative = manifest["authoritative_current_state"]
     route_status = authoritative["route_status"]
     print(f"manifest_version={manifest['manifest_version']}")

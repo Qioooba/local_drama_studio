@@ -5845,6 +5845,60 @@
         }
       }
     },
+    "/api/v1/profile-versions/{profile_version_id}:resolve-camera-plan": {
+      "post": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "Resolve Profile Camera Plan",
+        "operationId": "resolveProfileCameraPlan",
+        "parameters": [
+          {
+            "name": "profile_version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Version Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CameraPlanResolveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Resolveprofilecameraplan"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/profile-versions/{profile_version_id}:derive-contract": {
       "post": {
         "tags": [
@@ -9444,6 +9498,55 @@
         },
         "type": "object",
         "title": "BreakdownRequest"
+      },
+      "CameraPlanResolveRequest": {
+        "properties": {
+          "shot_type": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Shot Type"
+          },
+          "movement": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Movement"
+          },
+          "direction": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Direction"
+          },
+          "intensity": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Intensity"
+          },
+          "curve": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Curve"
+          },
+          "prompt_text": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Prompt Text",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "shot_type",
+          "movement",
+          "direction",
+          "intensity",
+          "curve"
+        ],
+        "title": "CameraPlanResolveRequest"
       },
       "CanvasLayoutRequest": {
         "properties": {

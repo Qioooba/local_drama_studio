@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .errors import DomainRuleError
+from .generation_contracts import CameraPlan
 
 REQUIRED_SHOT_FIELDS = (
     "shot_type",
@@ -76,7 +77,12 @@ def missing_shot_fields(fields: dict[str, object]) -> list[str]:
     missing: list[str] = []
     for field in REQUIRED_SHOT_FIELDS:
         value = fields.get(field)
-        if value is None:
+        if field == "camera_plan":
+            try:
+                CameraPlan.from_payload(value)
+            except DomainRuleError:
+                missing.append(field)
+        elif value is None:
             missing.append(field)
         elif isinstance(value, str) and not value.strip() and field not in {"dialogue", "environment"}:
             missing.append(field)
@@ -90,6 +96,13 @@ def validate_shot_ready(fields: dict[str, object]) -> None:
             "SHOT_NOT_PRODUCTION_READY",
             "镜头缺少生产必填字段",
             {"missing_fields": missing},
+        )
+    camera_plan = CameraPlan.from_payload(fields["camera_plan"])
+    if camera_plan.mode == "UNSUPPORTED":
+        raise DomainRuleError(
+            "CAMERA_PLAN_UNSUPPORTED",
+            "当前已发布 Profile 不支持该结构化运镜，不能标记为 Production Ready",
+            {"profile_version_id": camera_plan.profile_version_id, "movement": camera_plan.movement},
         )
 
 

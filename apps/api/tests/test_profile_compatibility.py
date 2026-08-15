@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from local_drama.application.profiles import ProfileService
@@ -55,6 +57,31 @@ def test_capability_compatibility_rejects_missing_reference_input_and_bad_fallba
     assert result["status"] == "FAIL"
     failed = {item["code"] for item in result["checks"] if not item["passed"]}
     assert {"CAPABILITY_EXTEND", "CAPABILITY_REFERENCE"} <= failed
+
+
+def test_camera_plan_resolution_is_profile_declared_and_read_only(workspace, database) -> None:
+    service = ProfileService(database, workspace.manifest_path)
+    source = service.sync_manifest()["profiles"][0]
+    with database.transaction() as connection:
+        schema = {"seed": {"determinism": "EXPLICIT"}, "capabilities": {"camera": {"support": "NATIVE"}}}
+        connection.execute(
+            "UPDATE execution_profile_versions SET status='PUBLISHED', parameter_schema_json=? WHERE id=?",
+            (json.dumps(schema), source["version_id"]),
+        )
+    before = database.path.read_bytes()
+    result = service.resolve_camera_plan(
+        str(source["version_id"]), shot_type="CLOSEUP", movement="PUSH_IN", direction="FORWARD",
+        intensity=0.6, curve="EASE_IN_OUT",
+    )
+    after = database.path.read_bytes()
+    assert result["camera_plan"] == {
+        "mode": "NATIVE", "shot_type": "CLOSEUP", "movement": "PUSH_IN", "prompt_text": "",
+        "direction": "FORWARD", "intensity": 0.6, "curve": "EASE_IN_OUT", "profile_version_id": source["version_id"],
+    }
+    assert result["submission_allowed"] is True
+    assert result["runtime_contacted"] is False
+    assert result["network_contacted"] is False
+    assert before == after
 
 
 def test_retire_rejects_bound_or_job_referenced_version(workspace, database) -> None:

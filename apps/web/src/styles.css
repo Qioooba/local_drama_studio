@@ -396,10 +396,16 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .director-grid label { display: grid; gap: 6px; min-width: 0; color: #625d55; font-size: 12px; }
 .director-grid input, .director-grid select, .director-grid textarea { width: 100%; min-height: 40px; }
 .director-grid textarea { min-height: 76px; resize: vertical; }
+.camera-plan-editor { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; min-width: 0; padding: 14px; border: 1px solid #d8d1c5; border-radius: 12px; }
+.camera-plan-editor legend { padding: 0 6px; color: #312f2b; font-weight: 700; }
+.camera-plan-editor button { align-self: end; }
+.camera-resolution { display: flex; align-items: center; gap: 8px; min-height: 40px; margin: 0; padding: 8px 10px; border-radius: 8px; }
+.camera-resolution.ready { color: #215c43; background: #e8f4ed; }
+.camera-resolution.blocked { color: #8b3d2e; background: #faece8; }
 .director-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 14px; }
 .director-actions .checkbox-row { min-height: 40px; margin-right: auto; display: flex; align-items: center; gap: 8px; }
-@media (max-width: 1100px) { .director-grid { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 720px) { .director-grid { grid-template-columns: 1fr; } }
+@media (max-width: 1100px) { .director-grid, .camera-plan-editor { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 720px) { .director-grid, .camera-plan-editor { grid-template-columns: 1fr; } }
 
 .prompt-template-panel { margin-top: 16px; }
 .prompt-template-panel summary { min-height: 40px; display: flex; align-items: center; cursor: pointer; }

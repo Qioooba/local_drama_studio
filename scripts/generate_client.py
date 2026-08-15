@@ -43,6 +43,8 @@ export type Profile = { id: string; code: string; title: string; version_id: str
 export type ProfileContract = { input_contract: Record<string, unknown>; parameter_schema: Record<string, unknown>; output_contract: Record<string, unknown>; resource_policy: Record<string, unknown> };
 export type ProfileValidation = { id: string; profile_version_id?: string; contract_hash: string; status: 'PASS' | 'FAIL'; checks: Array<{ code: string; passed: boolean; label?: string }>; runtime_contacted?: false; network_contacted?: false };
 export type ProfileVersionDetail = { id: string; execution_profile_id: string; code: string; title: string; version_no: number; capability: string; status: string; revision: number; input_contract: Record<string, unknown>; parameter_schema: Record<string, unknown>; output_contract: Record<string, unknown>; resource_policy: Record<string, unknown>; capability_contract?: Record<string, unknown>; contract_hash: string; validation: ProfileValidation | null };
+export type CameraPlan = { mode: 'NATIVE' | 'PROMPT_FALLBACK' | 'UNSUPPORTED'; shot_type: string; movement: string; prompt_text: string; direction: string; intensity: number; curve: string; profile_version_id: string | null };
+export type CameraPlanResolution = { camera_plan: CameraPlan; submission_allowed: boolean; support: string; profile: { id: string; code: string; version_no: number }; runtime_contacted: false; network_contacted: false; mutated: false };
 export type DiagnosticRun = { id: string; status: string; checks: Array<{ code: string; category: string; status: string; observed: Record<string, unknown> }> };
 export type ReviewTemplate = { id: string; code: string; version_no: number; subject_type: string; items: Array<{ id: string; label: string; required: boolean }> };
 export type ReviewInboxItem = { media_version_id: string; media_asset_id: string; project_id: string; media_kind: string; stage: string; decision: string | null; is_stale: number | null; [key: string]: unknown };
@@ -226,6 +228,10 @@ export async function listProfiles(baseUrl = ''): Promise<{ items: Profile[] }> 
 
 export async function getProfileVersion(profileVersionId: string, baseUrl = ''): Promise<{ profile_version: ProfileVersionDetail }> {
   return requestJson(`/api/v1/profile-versions/${encodeURIComponent(profileVersionId)}`, undefined, baseUrl);
+}
+
+export async function resolveProfileCameraPlan(profileVersionId: string, payload: { shot_type: string; movement: string; direction: string; intensity: number; curve: string; prompt_text?: string }, baseUrl = ''): Promise<{ resolution: CameraPlanResolution }> {
+  return requestJson(`/api/v1/profile-versions/${encodeURIComponent(profileVersionId)}:resolve-camera-plan`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
 export async function deriveProfileContractVersion(profileVersionId: string, payload: { expected_source_revision: number; input_contract: Record<string, unknown>; parameter_schema: Record<string, unknown>; output_contract: Record<string, unknown>; resource_policy: Record<string, unknown> }, baseUrl = ''): Promise<{ profile_version: ProfileVersionDetail }> {
