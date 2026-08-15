@@ -2717,6 +2717,115 @@
         }
       }
     },
+    "/api/v1/dialogue-text-revisions/{text_revision_id}/tts-jobs": {
+      "post": {
+        "tags": [
+          "dialogue",
+          "tts"
+        ],
+        "summary": "Submit Tts Job",
+        "operationId": "submitTTSJob",
+        "parameters": [
+          {
+            "name": "text_revision_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Text Revision Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TTSJobRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Submitttsjob"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tts-jobs/{job_id}:finalize": {
+      "post": {
+        "tags": [
+          "dialogue",
+          "tts"
+        ],
+        "summary": "Finalize Tts Job",
+        "operationId": "finalizeTTSJob",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Finalizettsjob"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/generation-intents": {
       "post": {
         "tags": [
@@ -11389,6 +11498,34 @@
           "candidate_kind"
         ],
         "title": "TTSCandidateRequest"
+      },
+      "TTSJobRequest": {
+        "properties": {
+          "voice_profile_version_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Voice Profile Version Id"
+          },
+          "emotion": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Emotion"
+          },
+          "speech_rate": {
+            "type": "number",
+            "maximum": 2.0,
+            "minimum": 0.5,
+            "title": "Speech Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "voice_profile_version_id",
+          "emotion",
+          "speech_rate"
+        ],
+        "title": "TTSJobRequest"
       },
       "TimelineItemRequest": {
         "properties": {

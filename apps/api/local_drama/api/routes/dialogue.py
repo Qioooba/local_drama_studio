@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Header, Request
 
-from local_drama.api.schemas.dialogue import DialogueLineRequest, DialogueTextRevisionRequest, TTSCandidateRequest, VoiceProfileRequest
+from local_drama.api.schemas.dialogue import DialogueLineRequest, DialogueTextRevisionRequest, TTSCandidateRequest, TTSJobRequest, VoiceProfileRequest
 from local_drama.application.dialogue import DialogueService
 from local_drama.application.errors import api_error_from_domain
 from local_drama.domain.errors import DomainRuleError
@@ -74,5 +74,26 @@ async def register_tts_candidate(text_revision_id: str, payload: TTSCandidateReq
 async def select_tts_candidate(candidate_id: str, request: Request) -> dict[str, object]:
     try:
         return {"selection": service(request).select_candidate(candidate_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/dialogue-text-revisions/{text_revision_id}/tts-jobs", status_code=201, operation_id="submitTTSJob")
+async def submit_tts_job(
+    text_revision_id: str,
+    payload: TTSJobRequest,
+    request: Request,
+    idempotency_key: str = Header(..., alias="Idempotency-Key"),
+) -> dict[str, object]:
+    try:
+        return {"job": service(request).submit_tts_job(text_revision_id, idempotency_key=idempotency_key, **payload.model_dump())}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/tts-jobs/{job_id}:finalize", status_code=201, operation_id="finalizeTTSJob")
+async def finalize_tts_job(job_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"result": service(request).finalize_tts_job(job_id)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error

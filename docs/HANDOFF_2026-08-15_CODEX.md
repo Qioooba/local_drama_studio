@@ -54,7 +54,7 @@
 - Dialogue/TTS 三档 Playwright：1440×900、1280×800、1024×768，3/3 PASS
 - 三档证据：零写入、零公网、零自动原音频、零浏览器错误、零短控件、零横向溢出
 
-## 当前未提交的在途改造
+## 当前未提交的在途改造（2026-08-15 最新）
 
 目标：为 FR-AUD-001 建立真实 Windows SAPI 本地 TTS Job，不把直接导入音频冒充生成。
 
@@ -79,9 +79,26 @@
 - apps/api/tests/test_local_sapi_tts.py
   - 隔离工作区建立 Published SAPI Profile、音色授权、对白和 Job。
   - 真实调用 Microsoft Huihui Desktop 生成 WAV。
-  - 验证 Job 幂等、artifact、晋升、FORMAL candidate 和 finalize 幂等。
+  - 验证缺少 Idempotency-Key、Job 幂等、未完成时 finalize 拒绝、真实 worker/artifact、晋升、FORMAL candidate 和 finalize 幂等。
+  - 验证非 sapi: voice ref 拒绝、stale 文本拒绝、Job 快照 hash 被篡改后 worker 以 TTS_JOB_SNAPSHOT_INVALID 失败。
+- scripts/generate_client.py、apps/web/src/generated/api.ts、docs/openapi/openapi.json
+  - 已重新生成 TTSJobRequest、submitTTSJob 和 finalizeTTSJob。
+- apps/web/src/features/status/DialogueGovernanceActions.tsx
+  - 已新增 TTS_JOB 和 FINALIZE_TTS_JOB 两种显式操作模式。
+  - TTS Job 只允许选择带 provider profile 的音色，显式提交情绪/语速，并生成稳定 Idempotency-Key；成功后只报告“已排队”，不伪装 worker 已完成。
+  - finalize 必须显式输入真实 TTS Job ID。
+- apps/web/src/features/status/DialogueGovernanceActions.test.tsx
+  - 已增加 provider-bound TTS Job 提交和显式 finalize 交互测试。
+- apps/web/src/app/App.tsx
+  - 对白治理变更后同步失效 jobs 查询。
 
-最新聚焦结果：pytest apps/api/tests/test_local_sapi_tts.py -q → 1 passed。
+最新聚焦结果：
+
+- pytest apps/api/tests/test_local_sapi_tts.py -q → 1 passed（包含真实 Windows System.Speech/PCM WAV）。
+- Web Vitest → 58/58 passed。
+- Web production build → PASS。
+- 完整 `scripts/check.ps1` 已通过：API 175 passed / 4 Comfy live deselected、Web 58/58、production build、Ruff、mypy 100 source files 全绿。
+- TTS_JOB/FINALIZE_TTS_JOB 三档只读 Playwright 已通过：1440×900、1280×800、1024×768，3/3 PASS；零写入、公网、原音频、浏览器错误、短控件或横向溢出。
 
 本机只读探测到的可用音色：
 
@@ -101,6 +118,12 @@
 - M apps/api/local_drama/api/schemas/dialogue.py
 - M apps/api/local_drama/application/dialogue.py
 - M apps/api/local_drama/application/worker.py
+- M apps/web/src/app/App.tsx
+- M apps/web/src/features/status/DialogueGovernanceActions.test.tsx
+- M apps/web/src/features/status/DialogueGovernanceActions.tsx
+- M apps/web/src/generated/api.ts
+- M docs/openapi/openapi.json
+- M scripts/generate_client.py
 - ?? apps/api/tests/test_local_sapi_tts.py
 - ?? test-results/
 
@@ -108,31 +131,10 @@ test-results/ 是 Playwright 临时输出，不要提交。
 
 ## 下一步精确顺序
 
-1. 审核当前 SAPI diff并补安全负例：
-   - stale 文本拒绝；
-   - 无 Published TTS Profile 拒绝；
-   - 非 sapi: voice ref 拒绝；
-   - Job 快照或数据库 hash 篡改时 worker 失败；
-   - finalize 在未成功或无 artifact 时拒绝。
-2. 用 FastAPI TestClient 覆盖两个新路由、Idempotency-Key 和错误码。
-3. 更新 scripts/generate_client.py 并重新生成 submitTTSJob 和 finalizeTTSJob。
-4. 在 DialogueGovernanceActions 增加“提交正式 TTS Job”模式：
-   - 显式选择最新文本 revision和绑定 Published Profile 的音色；
-   - 显式填写情绪和语速；
-   - 生成 Idempotency-Key；
-   - 不自动启动 worker，不伪装同步成功。
-5. 为 worker/finalize 提供清晰的本地操作或安全 UI；正式候选选择仍必须经过音频机器 QC PASS +人工 APPROVED。
-6. 运行完整门禁：
-   - & .\scripts\check.ps1
-   - Set-Location apps\web
-   - pnpm exec playwright test dialogue_tts_governance.spec.ts --reporter=line
-7. 更新以下证据：
-   - docs/evidence/g10/dialogue-tts-governance-uat-2026-08-15.json
-   - docs/requirements-traceability.md
-   - docs/HANDOFF_2026-08-13.md
-8. 只有完整门禁通过后才提交该批次。
-9. FR-AUD-001 仍不能标 VERIFIED，直到正式项目存在真实授权音色、Published TTS Profile、真实 Job/MediaVersion/candidate、试听、QC、审核与选择闭环。
-10. G7 模型许可证首阻塞仍优先；真实证据未出现时可以继续其他实现，但禁止越级宣布 G7/G8/G9 PASS。
+1. 执行 `git diff --check` 并审查 SAPI/API/UI/测试/证据的最终 diff，排除 `test-results/`。
+2. 提交本批次，建议提交信息：`feat: run real local sapi tts jobs`。
+3. FR-AUD-001 仍不能标 VERIFIED，直到正式项目存在真实授权音色、Published TTS Profile、真实 Job/MediaVersion/candidate、试听、QC、审核与选择闭环。
+4. G7 模型许可证首阻塞仍优先；真实证据未出现时可以继续其他实现，但禁止越级宣布 G7/G8/G9 PASS。
 
 ## 当前本地进程
 
@@ -157,4 +159,4 @@ design-system\localdramastudio\figma-state.json
 docs\ui-ux-audit-2026-08-12.md
 docs\requirements-traceability.md
 
-当前有未提交的真实 Windows SAPI TTS Job 改造，聚焦测试 1 passed。先按新交接“下一步精确顺序”补安全/API/UI 测试，跑完整 check.ps1 和三档 Playwright，通过后提交。严格保持 LOCAL_ONLY、零公网、不实施 G11、不用 Mock 冒充真实能力。G7 仍 11/12，唯一首阻塞是真实 H3 模型许可证证据；G8/G9 只算 progress，禁止越级宣告。不要提交 test-results/。
+当前有未提交的真实 Windows SAPI TTS Job 后端、worker、路由、客户端、UI、测试和证据改造；完整门禁 API 175 passed / 4 deselected、Web 58/58、build/Ruff/mypy 全绿，三档只读 Playwright 3/3 PASS。先按新交接“下一步精确顺序”审查并提交。严格保持 LOCAL_ONLY、零公网、不实施 G11、不用 Mock 冒充真实能力。G7 仍 11/12，唯一首阻塞是真实 H3 模型许可证证据；G8/G9 只算 progress，禁止越级宣告。不要提交 test-results/。

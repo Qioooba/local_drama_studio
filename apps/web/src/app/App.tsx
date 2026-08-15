@@ -322,7 +322,7 @@ export function App() {
                 {selectedProject && selectedEpisode && <EpisodeSceneRanges projectId={selectedProject} episodeId={selectedEpisode} />}
                 {selectedProject && <CreativeLibrary projectId={selectedProject} />}
                 {selectedProject && <AIDraftReviewPanel projectId={selectedProject} />}
-                {selectedProject && selectedEpisode && <DialogueTTSPanel lines={dialogueLines.data?.items ?? []} voices={voiceProfiles.data?.items ?? []} projectId={selectedProject} episodeId={selectedEpisode} onChanged={() => { void dialogueLines.refetch(); void voiceProfiles.refetch(); }} />}
+                {selectedProject && selectedEpisode && <DialogueTTSPanel lines={dialogueLines.data?.items ?? []} voices={voiceProfiles.data?.items ?? []} projectId={selectedProject} episodeId={selectedEpisode} onChanged={() => { void dialogueLines.refetch(); void voiceProfiles.refetch(); void queryClient.invalidateQueries({ queryKey: ["jobs"] }); }} />}
                 {selectedProject && selectedEpisode && <AudioTrackPanel bindings={audioBindings.data?.items ?? []} projectId={selectedProject} episodeId={selectedEpisode} onBound={() => { void audioBindings.refetch(); void timelineStatus.refetch(); void g8Readiness.refetch(); }} />}
                 <EpisodeContactSheetAction episodeId={selectedEpisode} />
                 {timelineStatus.data?.status && <TimelineStatusPanel status={timelineStatus.data.status} />}

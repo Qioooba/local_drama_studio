@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from local_drama.application.jobs import JobService
 from local_drama.application.media import MediaService
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
@@ -244,6 +245,114 @@ class DialogueService:
                 (candidate_id, text_revision_id, voice_profile_version_id, media_version_id, provenance["emotion"], speech_rate, seed, provenance["model_ref"], candidate_kind, _json(provenance), now, now, actor),
             )
         return self.get_candidate(candidate_id)
+
+    def submit_tts_job(
+        self,
+        text_revision_id: str,
+        *,
+        voice_profile_version_id: str,
+        emotion: str,
+        speech_rate: float,
+        idempotency_key: str,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        emotion = emotion.strip()
+        if not emotion or not 0.5 <= speech_rate <= 2.0:
+            raise DomainRuleError("TTS_JOB_PARAMETERS_INVALID", "TTS Job 必须提供情绪，语速必须在 0.5—2.0")
+        with self.database.connect() as connection:
+            text_revision = connection.execute(
+                """SELECT dtr.*,dl.id AS dialogue_line_id,s.project_id FROM dialogue_text_revisions dtr
+                JOIN dialogue_lines dl ON dl.id=dtr.dialogue_line_id JOIN episodes e ON e.id=dl.episode_id
+                JOIN seasons s ON s.id=e.season_id WHERE dtr.id=?""",
+                (text_revision_id,),
+            ).fetchone()
+            latest = connection.execute(
+                "SELECT id FROM dialogue_text_revisions WHERE dialogue_line_id=(SELECT dialogue_line_id FROM dialogue_text_revisions WHERE id=?) ORDER BY revision_no DESC LIMIT 1",
+                (text_revision_id,),
+            ).fetchone()
+            voice = connection.execute("SELECT * FROM voice_profile_versions WHERE id=?", (voice_profile_version_id,)).fetchone()
+            profile = (
+                connection.execute("SELECT * FROM execution_profile_versions WHERE id=?", (voice["provider_profile_version_id"],)).fetchone()
+                if voice is not None and voice["provider_profile_version_id"]
+                else None
+            )
+        if text_revision is None or latest is None:
+            raise DomainRuleError("DIALOGUE_TEXT_REVISION_NOT_FOUND", "对白文本 revision 不存在")
+        if str(latest["id"]) != text_revision_id:
+            raise DomainRuleError("TTS_JOB_TEXT_STALE", "正式 TTS Job 只能使用最新对白文本 revision")
+        if voice is None or voice["status"] != "ACTIVE" or str(voice["project_id"]) != str(text_revision["project_id"]):
+            raise DomainRuleError("VOICE_PROFILE_NOT_ACTIVE", "TTS Job 音色必须是同项目 ACTIVE 版本")
+        if (
+            profile is None
+            or profile["status"] != "PUBLISHED"
+            or "TTS" not in str(profile["capability"]).upper()
+            or not str(voice["voice_ref"]).startswith("sapi:")
+        ):
+            raise DomainRuleError("TTS_PUBLISHED_LOCAL_PROFILE_REQUIRED", "正式 TTS Job 必须绑定 Published 本地 SAPI TTS Profile")
+        snapshot = {
+            "schema_version": "localdrama.tts-job.v1",
+            "text_revision_id": text_revision_id,
+            "text_hash": str(text_revision["text_hash"]),
+            "text": str(text_revision["text"]),
+            "voice_profile_version_id": voice_profile_version_id,
+            "voice_ref": str(voice["voice_ref"]),
+            "voice_license_status": str(voice["license_status"]),
+            "voice_license_evidence": json.loads(str(voice["license_evidence_json"])),
+            "emotion": emotion,
+            "speech_rate": speech_rate,
+            "provider_profile_version_id": str(profile["id"]),
+            "provider_kind": "WINDOWS_SAPI_LOCAL",
+            "network_allowed": False,
+        }
+        return JobService(self.database, self.settings).create_job(
+            str(text_revision["project_id"]),
+            "TTS_GENERATION",
+            "DIALOGUE_TEXT_REVISION",
+            text_revision_id,
+            "CPU",
+            snapshot,
+            idempotency_key,
+            execution_profile_version_id=str(profile["id"]),
+            max_attempts=1,
+            actor=actor,
+        )
+
+    def finalize_tts_job(self, job_id: str, actor: str = "local-user") -> dict[str, Any]:
+        with self.database.connect() as connection:
+            job = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+            artifact = connection.execute(
+                """SELECT a.id FROM artifacts a JOIN job_attempts ja ON ja.id=a.job_attempt_id
+                WHERE ja.job_id=? AND ja.state='SUCCEEDED' AND a.status='VERIFIED' AND a.kind='TTS_AUDIO'
+                ORDER BY a.created_at DESC LIMIT 1""",
+                (job_id,),
+            ).fetchone()
+        if job is None or job["type"] != "TTS_GENERATION" or job["state"] != "SUCCEEDED" or artifact is None:
+            raise DomainRuleError("TTS_JOB_NOT_FINALIZABLE", "只有成功且具有 VERIFIED TTS_AUDIO artifact 的 Job 可以结束登记")
+        snapshot = json.loads(str(job["input_snapshot_json"]))
+        promoted = self.media.promote_job_artifact(str(artifact["id"]), purpose="DIALOGUE_TTS", media_kind="AUDIO", stage="FORMAL", actor=actor)
+        media_version_id = str(promoted.get("media_version_id") or promoted["id"])
+        media = self.media.get_version(media_version_id)
+        with self.database.connect() as connection:
+            existing = connection.execute(
+                "SELECT id FROM tts_candidates WHERE dialogue_text_revision_id=? AND media_version_id=? ORDER BY created_at LIMIT 1",
+                (snapshot["text_revision_id"], media_version_id),
+            ).fetchone()
+        candidate = (
+            self.get_candidate(str(existing["id"]))
+            if existing is not None
+            else self.register_candidate(
+                str(snapshot["text_revision_id"]),
+                voice_profile_version_id=str(snapshot["voice_profile_version_id"]),
+                media_version_id=media_version_id,
+                emotion=str(snapshot["emotion"]),
+                speech_rate=float(snapshot["speech_rate"]),
+                seed=None,
+                model_ref="WINDOWS_SAPI_LOCAL",
+                candidate_kind="FORMAL",
+                actor=actor,
+            )
+        )
+        return {"job_id": job_id, "artifact_id": str(artifact["id"]), "media": media, "candidate": candidate, "idempotent_replay": existing is not None}
 
     def select_candidate(self, candidate_id: str, actor: str = "local-user") -> dict[str, Any]:
         candidate = self.get_candidate(candidate_id)

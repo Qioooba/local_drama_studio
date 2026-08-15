@@ -36,3 +36,9 @@ class TTSCandidateRequest(BaseModel):
     seed: int | None = None
     model_ref: str = Field(min_length=1)
     candidate_kind: Literal["PREVIEW", "FORMAL"]
+
+
+class TTSJobRequest(BaseModel):
+    voice_profile_version_id: str = Field(min_length=1)
+    emotion: str = Field(min_length=1, max_length=80)
+    speech_rate: float = Field(ge=0.5, le=2.0)

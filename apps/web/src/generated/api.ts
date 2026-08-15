@@ -64,6 +64,7 @@ export type DialogueLineRequest = { code: string; speaker: string; text: string;
 export type DialogueTextRevisionRequest = { expected_revision_no: number; text: string; pronunciation?: Record<string, unknown> };
 export type VoiceProfileRequest = { code: string; title: string; voice_ref: string; license_status: 'USER_OWNED' | 'VERIFIED_LOCAL'; license_evidence_path_rel: string; provider_profile_version_id?: string | null };
 export type TTSCandidateRequest = { voice_profile_version_id: string; media_version_id: string; emotion: string; speech_rate: number; seed?: number | null; model_ref: string; candidate_kind: 'PREVIEW' | 'FORMAL' };
+export type TTSJobRequest = { voice_profile_version_id: string; emotion: string; speech_rate: number };
 export type AudioBindingRequest = { media_version_id: string; track_type?: string; start_us: number; end_us: number; gain_db?: number; source_license_status?: 'VERIFIED_LOCAL' | 'USER_OWNED' | 'PUBLIC_DOMAIN'; license_evidence_path_rel: string; loop_enabled?: boolean; fade_in_us?: number; fade_out_us?: number };
 export type AudioBinding = { id: string; episode_id: string; media_version_id: string; track_type: string; start_us: number; end_us: number; gain_db: number; source_license_status: string; authorization_status: 'VERIFIED_EVIDENCE' | 'LEGACY_INCOMPLETE'; license_evidence: Record<string, unknown>; loop_enabled: boolean; fade_in_us: number; fade_out_us: number; [key: string]: unknown };
 export type MediaImportRequest = { project_id: string; source_path: string; purpose: string; owner_type?: string; owner_id?: string; media_kind: 'AUDIO' };
@@ -474,6 +475,14 @@ export async function registerTTSCandidate(textRevisionId: string, payload: TTSC
 
 export async function selectTTSCandidate(candidateId: string, baseUrl = ''): Promise<{ selection: Record<string, unknown> }> {
   return requestJson(`/api/v1/tts-candidates/${encodeURIComponent(candidateId)}:select`, { method: 'POST' }, baseUrl);
+}
+
+export async function submitTTSJob(textRevisionId: string, payload: TTSJobRequest, idempotencyKey: string, baseUrl = ''): Promise<{ job: Job }> {
+  return requestJson(`/api/v1/dialogue-text-revisions/${encodeURIComponent(textRevisionId)}/tts-jobs`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function finalizeTTSJob(jobId: string, baseUrl = ''): Promise<{ result: { job_id: string; artifact_id: string; media: Record<string, unknown>; candidate: TTSCandidate; idempotent_replay: boolean } }> {
+  return requestJson(`/api/v1/tts-jobs/${encodeURIComponent(jobId)}:finalize`, { method: 'POST' }, baseUrl);
 }
 
 export async function listVoiceProfileVersions(projectId: string, baseUrl = ''): Promise<{ items: VoiceProfileVersion[] }> {

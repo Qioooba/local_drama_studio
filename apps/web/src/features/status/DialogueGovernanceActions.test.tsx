@@ -5,7 +5,7 @@ import { DialogueGovernanceActions } from "./DialogueGovernanceActions";
 
 vi.mock("../../generated/api", async () => {
   const actual = await vi.importActual<typeof import("../../generated/api")>("../../generated/api");
-  return { ...actual, createDialogueLine: vi.fn(), createDialogueTextRevision: vi.fn(), createVoiceProfileVersion: vi.fn(), registerTTSCandidate: vi.fn(), selectTTSCandidate: vi.fn() };
+  return { ...actual, createDialogueLine: vi.fn(), createDialogueTextRevision: vi.fn(), createVoiceProfileVersion: vi.fn(), registerTTSCandidate: vi.fn(), selectTTSCandidate: vi.fn(), submitTTSJob: vi.fn(), finalizeTTSJob: vi.fn() };
 });
 
 const lines: api.DialogueLine[] = [{ id: "line-1", episode_id: "episode-1", shot_id: null, code: "DLG-001", speaker: "A", text_revisions: [{ id: "text-1", revision_no: 1, text: "你好", text_hash: "hash", pronunciation: {} }], candidates: [], selection: null }];
@@ -62,5 +62,32 @@ describe("DialogueGovernanceActions", () => {
     fireEvent.click(screen.getByRole("button", { name: "新增对白、音色或候选" }));
     expect((screen.getByRole("button", { name: "校验并创建不可变记录" }) as HTMLButtonElement).disabled).toBe(true);
     expect(api.createDialogueLine).not.toHaveBeenCalled();
+  });
+
+  it("queues a formal local TTS Job only through a provider-bound voice", async () => {
+    const providerVoice = { ...voices[0], provider_profile_version_id: "sapi-profile-v1" };
+    vi.mocked(api.submitTTSJob).mockResolvedValue({ job: { id: "job-1", type: "TTS_GENERATION", project_id: "project-1", state: "QUEUED", channel: "CPU", priority: 100, max_attempts: 1, revision: 1 } });
+    render(<DialogueGovernanceActions projectId="project-1" episodeId="episode-1" lines={lines} voices={[providerVoice]} onChanged={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "新增对白、音色或候选" }));
+    fireEvent.change(screen.getByLabelText("操作类型"), { target: { value: "TTS_JOB" } });
+    fireEvent.change(screen.getByLabelText("最新文本 revision"), { target: { value: "text-1" } });
+    fireEvent.change(screen.getByLabelText("Published TTS 音色"), { target: { value: "voice-1" } });
+    fireEvent.change(screen.getByLabelText("情绪"), { target: { value: "neutral" } });
+    fireEvent.change(screen.getByLabelText("语速"), { target: { value: "1.1" } });
+    fireEvent.click(screen.getByRole("button", { name: "校验并创建不可变记录" }));
+    await waitFor(() => expect(api.submitTTSJob).toHaveBeenCalled());
+    expect(vi.mocked(api.submitTTSJob).mock.calls[0][0]).toBe("text-1");
+    expect(vi.mocked(api.submitTTSJob).mock.calls[0][1]).toEqual({ voice_profile_version_id: "voice-1", emotion: "neutral", speech_rate: 1.1 });
+    expect(vi.mocked(api.submitTTSJob).mock.calls[0][2]).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it("finalizes only an explicitly supplied successful TTS Job", async () => {
+    vi.mocked(api.finalizeTTSJob).mockResolvedValue({ result: { job_id: "job-1", artifact_id: "artifact-1", media: { id: "media-1" }, candidate: { id: "candidate-1", dialogue_text_revision_id: "text-1", voice_profile_version_id: "voice-1", media_version_id: "media-1", emotion: "neutral", speech_rate: 1, seed: null, model_ref: "WINDOWS_SAPI_LOCAL", candidate_kind: "FORMAL", status: "READY", provenance: {} }, idempotent_replay: false } });
+    render(<DialogueGovernanceActions projectId="project-1" episodeId="episode-1" lines={lines} voices={voices} onChanged={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "新增对白、音色或候选" }));
+    fireEvent.change(screen.getByLabelText("操作类型"), { target: { value: "FINALIZE_TTS_JOB" } });
+    fireEvent.change(screen.getByLabelText("TTS Job ID"), { target: { value: "job-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "校验并创建不可变记录" }));
+    await waitFor(() => expect(api.finalizeTTSJob).toHaveBeenCalledWith("job-1"));
   });
 });

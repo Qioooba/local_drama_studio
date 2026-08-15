@@ -46,6 +46,13 @@ for (const viewport of viewports) {
     await expect(panel.getByLabel("已有对白")).toHaveValue("");
     await expect(panel.getByLabel("新文本")).toBeVisible();
     await expect(panel.getByLabel("发音映射 JSON（可空）")).toBeVisible();
+    await mode.selectOption("TTS_JOB");
+    await expect(panel.getByLabel("最新文本 revision")).toHaveValue("");
+    await expect(panel.getByLabel("Published TTS 音色")).toHaveValue("");
+    await expect(panel.getByLabel("情绪")).toBeVisible();
+    await expect(panel.getByLabel("语速")).toBeVisible();
+    await mode.selectOption("FINALIZE_TTS_JOB");
+    await expect(panel.getByLabel("TTS Job ID")).toBeVisible();
     const undersizedControls = await panel.locator(".dialogue-governance-actions button, .dialogue-governance-actions input, .dialogue-governance-actions select").evaluateAll((nodes) => nodes.filter((node) => node.getBoundingClientRect().height < 40).map((node) => ({ tag: node.tagName, height: node.getBoundingClientRect().height })));
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     const panelOverflow = await panel.evaluate((element) => element.scrollWidth - element.clientWidth);
