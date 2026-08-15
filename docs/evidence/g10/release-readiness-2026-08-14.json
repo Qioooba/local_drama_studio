@@ -1,6 +1,6 @@
 {
   "schema_version": "g10.release_audit.read_only.v1",
-  "observed_at": "2026-08-15T07:16:20.431606+00:00",
+  "observed_at": "2026-08-15T07:31:59.051630+00:00",
   "status": "IN_PROGRESS",
   "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
   "checks": [
@@ -84,12 +84,51 @@
       "observed": {
         "valid": false,
         "status": "IN_PROGRESS",
-        "verified_fr": 1,
+        "verified_fr": 12,
         "required_fr": 84,
         "verified_nfr": 0,
         "required_nfr": 15,
-        "passed_tc": 1,
-        "required_tc": 85
+        "passed_tc": 7,
+        "required_tc": 85,
+        "mapping_valid": true,
+        "ledger_consistent": true,
+        "mapping_problems": [],
+        "next_missing_fr": [
+          "FR-AST-001",
+          "FR-AUD-001",
+          "FR-AUDT-001",
+          "FR-AUT-001",
+          "FR-AUT-002",
+          "FR-CTL-001",
+          "FR-CTL-002",
+          "FR-CTL-003",
+          "FR-CTL-004",
+          "FR-DEL-001"
+        ],
+        "next_missing_nfr": [
+          "NFR-A11Y-001",
+          "NFR-COMP-001",
+          "NFR-MAINT-001",
+          "NFR-MEDIA-001",
+          "NFR-OBS-001",
+          "NFR-PERF-001",
+          "NFR-PERF-002",
+          "NFR-PRIV-001",
+          "NFR-REL-001",
+          "NFR-REL-002"
+        ],
+        "next_missing_tc": [
+          "TC-CAP-001",
+          "TC-CAP-003",
+          "TC-CAP-004",
+          "TC-CAP-005",
+          "TC-CAP-006",
+          "TC-CAP-007",
+          "TC-CAP-008",
+          "TC-CAP-010",
+          "TC-CAP-011",
+          "TC-CAP-012"
+        ]
       },
       "evidence": "docs/evidence/g10/master-requirements-closure.json"
     },

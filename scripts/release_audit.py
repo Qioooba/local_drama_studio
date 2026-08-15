@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sqlite3
 import sys
 from datetime import UTC, datetime
@@ -224,6 +225,87 @@ def _stale_job_maintenance_passed(path: Path) -> bool:
     )
 
 
+def _master_inventory() -> dict[str, set[str]]:
+    requirements = (ROOT.parent / "LocalDramaStudio_Blueprint_v2" / "01_产品需求与验收范围.md").read_text(encoding="utf-8")
+    tests = (ROOT.parent / "LocalDramaStudio_Blueprint_v2" / "10_测试策略_用例矩阵与发布检查.md").read_text(encoding="utf-8")
+    fr_rows = re.findall(r"^\|\s*(FR-[A-Z]+-\d{3})\s*\|\s*(P[012])\s*\|", requirements, re.MULTILINE)
+    nfr_rows = re.findall(r"^\|\s*(NFR-[A-Z0-9]+-\d{3})\s*\|\s*(P[012])\s*\|", requirements, re.MULTILINE)
+    return {
+        "release_fr": {item_id for item_id, priority in fr_rows if priority in {"P0", "P1"}},
+        "nfr": {item_id for item_id, priority in nfr_rows if priority in {"P0", "P1"}},
+        "tc": set(re.findall(r"\bTC-[A-Z]+-\d{3}\b", tests)),
+    }
+
+
+def _requirements_mapping_summary(path: Path) -> dict[str, Any]:
+    inventory = _master_inventory()
+    all_known = set().union(*inventory.values())
+    empty = {"valid": False, "passed_fr": set(), "passed_nfr": set(), "passed_tc": set(), "problems": ["mapping missing"]}
+    if not path.is_file():
+        return empty
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {**empty, "problems": ["mapping invalid JSON"]}
+    entries = document.get("entries")
+    if document.get("schema_version") != "master.requirements.map.v1" or not isinstance(entries, list):
+        return {**empty, "problems": ["mapping schema invalid"]}
+    seen: set[str] = set()
+    passed: dict[str, set[str]] = {"release_fr": set(), "nfr": set(), "tc": set()}
+    problems: list[str] = []
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
+            problems.append("mapping entry missing id")
+            continue
+        item_id = entry["id"]
+        if item_id in seen:
+            problems.append(f"duplicate mapping: {item_id}")
+            continue
+        seen.add(item_id)
+        if item_id not in all_known:
+            problems.append(f"unknown mapping: {item_id}")
+            continue
+        if entry.get("status") != "PASS":
+            continue
+        evidence = entry.get("evidence")
+        evidence_valid = False
+        if isinstance(evidence, list) and evidence:
+            evidence_valid = True
+            for value in evidence:
+                evidence_path = ROOT / value if isinstance(value, str) else Path()
+                if not isinstance(value, str) or not evidence_path.is_file():
+                    evidence_valid = False
+                    break
+                if evidence_path.suffix.lower() == ".json":
+                    try:
+                        evidence_status = json.loads(evidence_path.read_text(encoding="utf-8")).get("status")
+                    except json.JSONDecodeError:
+                        evidence_valid = False
+                        break
+                    if not isinstance(evidence_status, str) or not evidence_status.startswith("PASS"):
+                        evidence_valid = False
+                        break
+        if not evidence_valid:
+            problems.append(f"missing evidence: {item_id}")
+            continue
+        automated = entry.get("automated_tests", [])
+        if not isinstance(automated, list) or not automated or not all(isinstance(value, str) and (ROOT / value).is_file() for value in automated):
+            problems.append(f"missing automated test path: {item_id}")
+            continue
+        bucket = "release_fr" if item_id.startswith("FR-") else "nfr" if item_id.startswith("NFR-") else "tc"
+        passed[bucket].add(item_id)
+    return {
+        "valid": not problems,
+        "passed_fr": passed["release_fr"],
+        "passed_nfr": passed["nfr"],
+        "passed_tc": passed["tc"],
+        "missing_fr": inventory["release_fr"] - passed["release_fr"],
+        "missing_nfr": inventory["nfr"] - passed["nfr"],
+        "missing_tc": inventory["tc"] - passed["tc"],
+        "problems": problems,
+    }
+
+
 def _master_requirements_closure(path: Path) -> dict[str, Any]:
     """Validate the formal-release closure ledger against the master blueprint.
 
@@ -250,9 +332,14 @@ def _master_requirements_closure(path: Path) -> dict[str, Any]:
 
     inventory = document.get("inventory", {})
     closure = document.get("closure", {})
+    mapping = _requirements_mapping_summary(path.with_name("master-requirements-map.json"))
     verified_fr = closure.get("verified_release_fr", 0)
     verified_nfr = closure.get("verified_release_nfr", 0)
     passed_tc = closure.get("passed_tc", 0)
+    mapped_fr = len(mapping["passed_fr"])
+    mapped_nfr = len(mapping["passed_nfr"])
+    mapped_tc = len(mapping["passed_tc"])
+    ledger_consistent = (verified_fr, verified_nfr, passed_tc) == (mapped_fr, mapped_nfr, mapped_tc)
     exact_inventory = (
         inventory.get("fr_total") == 86
         and inventory.get("fr_p0") == 63
@@ -273,16 +360,27 @@ def _master_requirements_closure(path: Path) -> dict[str, Any]:
         and closure.get("open_p0_defects") == 0
         and closure.get("open_p1_defects") == 0
         and closure.get("full_chain_local_uat") == "PASS"
+        and mapping["valid"]
+        and ledger_consistent
+        and mapped_fr == 84
+        and mapped_nfr == 15
+        and mapped_tc == 85
     )
     return {
         "valid": passed,
         "status": document.get("status", "INVALID"),
-        "verified_fr": verified_fr,
+        "verified_fr": mapped_fr,
         "required_fr": 84,
-        "verified_nfr": verified_nfr,
+        "verified_nfr": mapped_nfr,
         "required_nfr": 15,
-        "passed_tc": passed_tc,
+        "passed_tc": mapped_tc,
         "required_tc": 85,
+        "mapping_valid": mapping["valid"],
+        "ledger_consistent": ledger_consistent,
+        "mapping_problems": mapping["problems"],
+        "next_missing_fr": sorted(mapping.get("missing_fr", set()))[:10],
+        "next_missing_nfr": sorted(mapping.get("missing_nfr", set()))[:10],
+        "next_missing_tc": sorted(mapping.get("missing_tc", set()))[:10],
     }
 
 

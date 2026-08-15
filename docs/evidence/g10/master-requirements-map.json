@@ -1,0 +1,126 @@
+{
+  "schema_version": "master.requirements.map.v1",
+  "status": "IN_PROGRESS",
+  "entries": [
+    {
+      "id": "FR-PRJ-001",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/project-create-wizard-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_project_creation_plan.py", "apps/web/src/features/projects/ProjectCreateWizard.test.tsx"]
+    },
+    {
+      "id": "FR-PRJ-003",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/project-list-filter-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_project_listing.py", "apps/api/tests/test_api_projects.py"]
+    },
+    {
+      "id": "FR-WRT-001",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/creative-library-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_creative_entries.py", "apps/web/src/features/projects/CreativeLibrary.test.tsx"]
+    },
+    {
+      "id": "FR-WRT-002",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/episode-scene-ranges-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_episode_scene_ranges.py", "apps/web/src/features/projects/EpisodeSceneRanges.test.tsx"]
+    },
+    {
+      "id": "FR-WRT-003",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/director-shot-editor-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_director_fields.py", "apps/web/src/features/production/DirectorShotEditor.test.tsx"]
+    },
+    {
+      "id": "FR-WRT-004",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/prompt-template-panel-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_prompt_templates.py", "apps/web/src/features/production/PromptTemplatePanel.test.tsx"]
+    },
+    {
+      "id": "FR-WRT-005",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/director-shot-editor-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_director_fields.py", "apps/web/src/features/production/DirectorShotEditor.test.tsx"]
+    },
+    {
+      "id": "FR-AUD-002",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/audio-license-authority-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/features/status/AudioImportBindingForm.test.tsx"]
+    },
+    {
+      "id": "FR-AUD-003",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/audio-qc-review-uat-2026-08-15.json", "docs/evidence/g8/audio-qc-production-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_audio_qc.py", "apps/web/src/features/status/AudioTrackPanel.test.tsx"]
+    },
+    {
+      "id": "FR-AUD-004",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/subtitle-authority-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py"]
+    },
+    {
+      "id": "FR-ING-002",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g7/local-llm-structured-breakdown-2026-08-15.json", "docs/evidence/g10/ai-draft-review-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_ai_breakdown_drafts.py", "apps/web/src/features/projects/AIDraftReviewPanel.test.tsx"]
+    },
+    {
+      "id": "FR-PST-001",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/fr-pst-001-uat-2026-08-15.json"],
+      "automated_tests": [
+        "apps/api/tests/test_g8_timeline_delivery.py",
+        "apps/web/src/features/generation/PostProcessPanel.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-CAP-009",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/fr-pst-001-uat-2026-08-15.json"],
+      "automated_tests": [
+        "apps/api/tests/test_g8_timeline_delivery.py",
+        "apps/web/src/features/generation/PostProcessPanel.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-DOM-001",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/project-create-wizard-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_project_creation_plan.py"]
+    },
+    {
+      "id": "TC-DOM-002",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/project-create-wizard-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_project_creation_plan.py"]
+    },
+    {
+      "id": "TC-DOM-005",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/director-shot-editor-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_director_fields.py"]
+    },
+    {
+      "id": "TC-DOM-006",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/creative-library-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_creative_entries.py"]
+    },
+    {
+      "id": "TC-TML-004",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/subtitle-authority-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py"]
+    },
+    {
+      "id": "TC-CAP-002",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g7/local-llm-structured-breakdown-2026-08-15.json", "docs/evidence/g10/ai-draft-review-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_ai_breakdown_drafts.py"]
+    }
+  ]
+}

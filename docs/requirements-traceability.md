@@ -205,7 +205,9 @@ FR-CTL-001 结构化运镜批次：ShotRevision 的 CameraPlan 现保存景别�
 
 FR-CTL-001 提交链增量：生成工作台现按 `Intent + frozen PromptRevision → read-only Variant plan → 二次显式确认 → Variant + Job 原子提交` 执行；CameraPlan 由服务端用同一 ProfileVersion 重新裁决并冻结到 Job `semantic_inputs`，不接受客户端伪造或过期映射。已批准关键帧同时来自审核候选与权威 G6 I2V 探针，避免已处理批准项从收件箱消失后无法选择。API 181 passed / 4 deselected、Web 64/64、build/Ruff/mypy PASS。1280px 真实页面无横向溢出、无短于 40px 控件和 console error；当前生产 Profile 未显式声明 camera capability，页面按设计显示 `UNSUPPORTED` 并禁用预检。待配置一个显式 camera contract 的用户本地 Published Profile 后再完成成功路径 UAT，故仍不提前标最终 VERIFIED。
 
-FR-PST-001 / TC-CAP-009 已闭环：PostProcessRecipe 采用逻辑 key + 不可变版本 + 显式 DRAFT 发布；运行必须先生成只读 plan hash，再由用户二次确认。真实本地执行按 `SCALE(FFV1 中间件) → TECHNICAL_QC(FFprobe) → ENCODE(H264)` 分步记录 executor、配置 profile、输入/输出 SHA-256 与结果，只有 QC 通过才注册带 `parent_version_id` 的新 ENHANCED MediaVersion，输入永不覆盖。1280×720 真实页面已完成创建、发布、预检、执行及双视频旁路比较，QC=true、无横向溢出或可见错误。证据见 `docs/evidence/g10/fr-pst-001-uat-2026-08-15.json`；总账现为 1/84 FR、0/15 NFR、1/85 TC，整体仍为 NO-GO。
+FR-PST-001 / TC-CAP-009 已闭环：PostProcessRecipe 采用逻辑 key + 不可变版本 + 显式 DRAFT 发布；运行必须先生成只读 plan hash，再由用户二次确认。真实本地执行按 `SCALE(FFV1 中间件) → TECHNICAL_QC(FFprobe) → ENCODE(H264)` 分步记录 executor、配置 profile、输入/输出 SHA-256 与结果，只有 QC 通过才注册带 `parent_version_id` 的新 ENHANCED MediaVersion，输入永不覆盖。1280×720 真实页面已完成创建、发布、预检、执行及双视频旁路比较，QC=true、无横向溢出或可见错误。证据见 `docs/evidence/g10/fr-pst-001-uat-2026-08-15.json`。
+
+总账现由 `scripts/master_requirements_audit.py` 与 `docs/evidence/g10/master-requirements-map.json` 逐项校验，不能再靠手填计数放行；PASS 项必须引用现存的 PASS JSON 证据和自动化测试文件，未知 ID、重复 ID、缺证据或缺测试路径都会使 mapping 失效。对既有证据重新审计后，当前为 12/84 FR、0/15 NFR、7/85 TC，mapping 与 closure 计数一致；整体仍为 NO-GO。
 
 G10 安全 UAT 已补齐此前缺失的 instance CSRF token：每个 API 进程生成独立 token，同源客户端从无 CORS 的 bootstrap/安全 GET 获取，所有网络写请求同时验证受控 Origin 与 `X-Local-Instance-Token`。隔离真实 FastAPI 验证恶意 Origin、缺失/错误 token、路径逃逸、REMOTE Provider、未入清单自定义节点均被拒绝；socket guard 对 TEST-NET 公网目标在 connect 前阻断，OpenAPI 无远程 credential 字段。证据为 `docs/evidence/g10/security-uat-2026-08-15.json`；不替代 G7 模型许可证或最终发布签字。
 
