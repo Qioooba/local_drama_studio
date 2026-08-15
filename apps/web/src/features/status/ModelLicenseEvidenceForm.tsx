@@ -1,0 +1,53 @@
+import { useState } from "react";
+import { importModelLicenseEvidence, type ModelCompatibilitySnapshot } from "../../generated/api";
+
+export function ModelLicenseEvidenceForm({ projectId, reports, onImported }: { projectId: string; reports: ModelCompatibilitySnapshot["reports"]; onImported: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const [artifactId, setArtifactId] = useState("");
+  const [evidencePath, setEvidencePath] = useState("");
+  const [licenseName, setLicenseName] = useState("");
+  const [licenseStatus, setLicenseStatus] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (!artifactId || !evidencePath.trim() || !licenseName.trim() || !licenseStatus) {
+      setError("请显式选择模型和授权状态，并填写项目内证据路径与许可证名称。");
+      return;
+    }
+    setPending(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await importModelLicenseEvidence(projectId, {
+        model_artifact_id: artifactId,
+        evidence_path: evidencePath.trim(),
+        license_name: licenseName.trim(),
+        license_status: licenseStatus as "LOCAL_LICENSE_VERIFIED" | "USER_OWNED",
+      });
+      setSuccess(`证据已冻结；离线 hash/量化报告：${result.report.report_status}`);
+      onImported();
+    } catch (caught) {
+      setError(`导入失败：${String(caught)}。未通过路径、SHA 或许可证声明校验的记录不会写入。`);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return <div className="model-license-import">
+    <button className="secondary" type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>{expanded ? "收起许可证证据导入" : "导入真实许可证证据"}</button>
+    {expanded && <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+      <div className="field-grid">
+        <label>模型 Artifact<select value={artifactId} onChange={(event) => setArtifactId(event.target.value)} required><option value="">显式选择</option>{reports.map((item) => <option key={item.artifact_id} value={item.artifact_id}>{item.code} · {item.kind}</option>)}</select></label>
+        <label>项目内 JSON 证据路径<input value={evidencePath} onChange={(event) => setEvidencePath(event.target.value)} placeholder="00_admin/licenses/h3-video-vae.json" required /></label>
+        <label>许可证名称<input value={licenseName} onChange={(event) => setLicenseName(event.target.value)} placeholder="以真实许可证文件为准" required /></label>
+        <label>授权状态<select value={licenseStatus} onChange={(event) => setLicenseStatus(event.target.value)} required><option value="">显式选择</option><option value="LOCAL_LICENSE_VERIFIED">本地许可证已核验</option><option value="USER_OWNED">用户拥有授权</option></select></label>
+      </div>
+      <p className="muted">仅接受项目 00_admin/licenses 内的 UTF-8 JSON；内容必须声明当前模型完整 SHA-256 和同名许可证。提交会本地读取并哈希所选模型，可能耗时，不会联网或加载模型。</p>
+      <button className="primary-action" type="submit" disabled={pending}>{pending ? "正在校验完整模型…" : "校验并冻结证据"}</button>
+      {error && <p className="inline-error" role="alert">{error}</p>}
+      {success && <p className="review-success" role="status">{success}</p>}
+    </form>}
+  </div>;
+}

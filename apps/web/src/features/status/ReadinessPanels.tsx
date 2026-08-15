@@ -1,5 +1,6 @@
 import type { AdapterRegistry, G8Readiness, G9Readiness, ModelCompatibilitySnapshot, ProjectConfiguration, TimelineStatus } from "../../generated/api";
 import { GateStatusIcon } from "../../components/icons";
+import { ModelLicenseEvidenceForm } from "./ModelLicenseEvidenceForm";
 
 export function ProjectConfigurationSnapshot({ configuration }: { configuration: ProjectConfiguration }) {
   return <section className="panel configuration-snapshot" aria-labelledby="configuration-snapshot-title">
@@ -30,7 +31,7 @@ export function AdapterContractsPanel({ registry }: { registry?: AdapterRegistry
   </section>;
 }
 
-export function ModelCompatibilityPanel({ snapshot }: { snapshot: ModelCompatibilitySnapshot }) {
+export function ModelCompatibilityPanel({ snapshot, projectId, onEvidenceImported }: { snapshot: ModelCompatibilitySnapshot; projectId?: string; onEvidenceImported?: () => void }) {
   return <section className="panel configuration-snapshot" aria-labelledby="model-compatibility-title">
     <div className="panel-heading"><div><p className="eyebrow">G7 MODEL EVIDENCE</p><h3 id="model-compatibility-title">离线模型兼容性与许可证证据</h3></div><span className={`status-pill${snapshot.summary.pass_count === snapshot.summary.reported_count && snapshot.summary.missing_license_evidence_count === 0 ? "" : " neutral"}`}>{snapshot.summary.pass_count}/{snapshot.summary.reported_count} PASS</span></div>
     <div className="configuration-grid">
@@ -43,6 +44,7 @@ export function ModelCompatibilityPanel({ snapshot }: { snapshot: ModelCompatibi
       {snapshot.reports.slice(0, 8).map((item) => <div className="configuration-row" role="row" key={item.artifact_id}><span>{item.code}<small>{item.kind}</small></span><span>{item.report_sha256 ? `${item.report_sha256.slice(0, 12)}…` : "未报告"} · {String(item.quantization.status ?? "UNKNOWN")}</span><span>{item.has_license_evidence ? item.license_path_rel : "缺失真实证据"}</span><span className={`status-pill${item.report_status === "PASS" ? "" : " neutral"}`}>{item.report_status ?? "未报告"}</span></div>)}
     </div>
     <p className="muted">只读 projection：runtime_contacted=false · network_contacted=false · mutated=false。模型许可证不可由插件 LICENSE、下载 URL 或推测替代。</p>
+    {projectId && onEvidenceImported && <ModelLicenseEvidenceForm projectId={projectId} reports={snapshot.reports} onImported={onEvidenceImported} />}
   </section>;
 }
 

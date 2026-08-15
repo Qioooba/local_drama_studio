@@ -1,0 +1,55 @@
+{
+  "schema_version": "g7.model-license-import-ui.v1",
+  "observed_at": "2026-08-15T03:36:36.324Z",
+  "mode": "LOCAL_ONLY",
+  "status": "PASS",
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "production_mutated": false,
+  "screenshots_created": false,
+  "gate_status": "IN_PROGRESS",
+  "next_required_action": "OPERATOR_SUPPLIED_REAL_MODEL_LICENSE_EVIDENCE",
+  "viewports": [
+    {
+      "viewport": "1440x900",
+      "status": "PASS",
+      "missing_license_evidence_count": 10,
+      "explicit_empty_choices": true,
+      "undersized_controls": [],
+      "horizontal_overflow_px": 0,
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "public_requests": [],
+      "write_requests": [],
+      "original_model_requests": []
+    },
+    {
+      "viewport": "1280x800",
+      "status": "PASS",
+      "missing_license_evidence_count": 10,
+      "explicit_empty_choices": true,
+      "undersized_controls": [],
+      "horizontal_overflow_px": 0,
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "public_requests": [],
+      "write_requests": [],
+      "original_model_requests": []
+    },
+    {
+      "viewport": "1024x768",
+      "status": "PASS",
+      "missing_license_evidence_count": 10,
+      "explicit_empty_choices": true,
+      "undersized_controls": [],
+      "horizontal_overflow_px": 0,
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "public_requests": [],
+      "write_requests": [],
+      "original_model_requests": []
+    }
+  ]
+}
