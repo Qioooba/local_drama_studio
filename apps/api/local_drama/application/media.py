@@ -618,14 +618,50 @@ class MediaService:
         item, source = self.content_path(media_version_id)
         if item["media_kind"] not in {"AUDIO", "VIDEO"}:
             raise DomainRuleError("WAVEFORM_UNSUPPORTED", "该媒体类型不支持波形")
-        preset = "waveform-v1:1200x240"
+        preset = "waveform-v2:640x128"
         preset_hash = hashlib.sha256(preset.encode()).hexdigest()
         relative = Path("waveforms") / media_version_id / f"{item['sha256']}_{preset_hash[:16]}.png"
         destination = self.settings.cache_root / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         if not destination.exists():
             partial = destination.with_suffix(".partial.png")
-            self._run_ffmpeg(["-i", str(source), "-filter_complex", "showwavespic=s=1200x240:colors=0x2dd4bf", "-frames:v", "1", "-y", str(partial)])
+            self._run_ffmpeg(["-i", str(source), "-filter_complex", "showwavespic=s=640x128:colors=0x2dd4bf", "-frames:v", "1", "-y", str(partial)])
             os.replace(partial, destination)
             self._cache_entry(media_version_id, "WAVEFORM", relative.as_posix(), item["sha256"], preset_hash)
         return destination, "image/png"
+
+    def audio_qc_metrics(self, media_version_id: str) -> dict[str, float | bool | str]:
+        item, source = self.content_path(media_version_id)
+        if item["media_kind"] != "AUDIO":
+            raise DomainRuleError("AUDIO_QC_REQUIRES_AUDIO", "响度与削波检查只支持 AUDIO MediaVersion")
+        ffmpeg = self.settings.ffmpeg_path
+        if not ffmpeg or not Path(ffmpeg).is_file():
+            raise DomainRuleError("FFMPEG_UNAVAILABLE", "本机 FFmpeg 不可用")
+        try:
+            result = subprocess.run(
+                [ffmpeg, "-hide_banner", "-nostats", "-i", str(source), "-filter_complex", "ebur128=peak=true,astats=metadata=1:reset=0", "-f", "null", "-"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise DomainRuleError("AUDIO_QC_FAILED", "音频技术检查执行失败", {"reason": type(error).__name__}) from error
+        if result.returncode != 0:
+            raise DomainRuleError("AUDIO_QC_FAILED", "FFmpeg 音频技术检查失败", {"stderr_redacted": result.stderr[-500:]})
+        summary = result.stderr.rsplit("Summary:", 1)[-1]
+        lufs_match = re.search(r"Integrated loudness:[\s\S]*?I:\s*(-?\d+(?:\.\d+)?)\s+LUFS", summary)
+        true_peak_match = re.search(r"True peak:[\s\S]*?Peak:\s*(-?\d+(?:\.\d+)?)\s+dBFS", summary)
+        peak_matches = re.findall(r"Peak level dB:\s*(-?\d+(?:\.\d+)?)", result.stderr)
+        if not lufs_match or not true_peak_match or not peak_matches:
+            raise DomainRuleError("AUDIO_QC_PARSE_FAILED", "无法从本机 FFmpeg 输出解析响度或峰值")
+        integrated_lufs = float(lufs_match.group(1))
+        true_peak_dbfs = float(true_peak_match.group(1))
+        peak_dbfs = float(peak_matches[-1])
+        return {
+            "policy_version": "g8_audio_qc_v1",
+            "integrated_lufs": integrated_lufs,
+            "true_peak_dbfs": true_peak_dbfs,
+            "peak_dbfs": peak_dbfs,
+            "clipping_detected": peak_dbfs >= -0.1,
+        }

@@ -25,6 +25,7 @@ import {
   listWorkflowVersions,
   runDiagnostics,
   reviewInbox,
+  runMachineCheck,
   selectMediaVersion,
   systemContract,
   submitReview,
@@ -176,6 +177,7 @@ export function App() {
       void queryClient.invalidateQueries({ queryKey: ["reviews", "context"] });
     },
   });
+  const machineCheckMutation = useMutation({ mutationFn: (mediaVersionId: string) => runMachineCheck(mediaVersionId), onSuccess: () => { void reviewContext.refetch(); } });
   const navigate = useCallback((nextView: View) => {
     setView(nextView);
     writeLocationState({ view: nextView, projectId: selectedProject, episodeId: selectedEpisode, shotId: selectedShot });
@@ -323,7 +325,7 @@ export function App() {
 
           {view === "canvas" && <><ProductionCanvasPanel episodeId={selectedEpisode} selectedShotId={selectedShot} onSelectShot={selectShot} />{g9Readiness.data?.readiness && <G9ReadinessPanel readiness={g9Readiness.data.readiness} />}</>}
 
-          {view === "reviews" && <ReviewInboxPanel items={reviewItems.data?.items ?? []} templates={reviewTemplates.data?.items ?? []} selectedVersionId={selectedReviewVersion} context={reviewContext.data} onSelect={(id) => { setSelectedReviewVersionId(id); writeLocationState({ view: "reviews", projectId: selectedProject, episodeId: selectedEpisode, shotId: selectedShot, reviewId: id }, true); }} onPromote={(mediaVersionId, selectionType) => selectMutation.mutate({ mediaVersionId, selectionType })} selecting={selectMutation.isPending} onSubmit={(mediaVersionId, payload) => reviewMutation.mutate({ mediaVersionId, payload })} submitting={reviewMutation.isPending} submitError={reviewMutation.error ? String(reviewMutation.error) : null} submitSucceeded={reviewMutation.isSuccess} />}
+          {view === "reviews" && <ReviewInboxPanel items={reviewItems.data?.items ?? []} templates={reviewTemplates.data?.items ?? []} selectedVersionId={selectedReviewVersion} context={reviewContext.data} onSelect={(id) => { setSelectedReviewVersionId(id); writeLocationState({ view: "reviews", projectId: selectedProject, episodeId: selectedEpisode, shotId: selectedShot, reviewId: id }, true); }} onPromote={(mediaVersionId, selectionType) => selectMutation.mutate({ mediaVersionId, selectionType })} selecting={selectMutation.isPending} onMachineCheck={(mediaVersionId) => machineCheckMutation.mutate(mediaVersionId)} machineChecking={machineCheckMutation.isPending} machineCheckError={machineCheckMutation.error ? String(machineCheckMutation.error) : null} onSubmit={(mediaVersionId, payload) => reviewMutation.mutate({ mediaVersionId, payload })} submitting={reviewMutation.isPending} submitError={reviewMutation.error ? String(reviewMutation.error) : null} submitSucceeded={reviewMutation.isSuccess} />}
 
           {view === "jobs" && <><JobsPanel jobs={jobs.data?.items ?? []} loading={jobs.isPending} /><CapacitySnapshotPanel snapshot={capacitySnapshot.data?.snapshot} /></>}
 

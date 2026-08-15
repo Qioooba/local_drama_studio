@@ -1,0 +1,24 @@
+{
+  "schema_version": "fr-aud-003.real-ffmpeg-audio-qc.v1",
+  "observed_at": "2026-08-15T01:51:00+00:00",
+  "status": "PASS_WITH_EXPECTED_MEDIA_FAILURES",
+  "mode": "LOCAL_ONLY",
+  "policy_version": "g8_audio_qc_v1",
+  "thresholds": { "integrated_lufs_min": -30, "integrated_lufs_max": -14, "true_peak_dbfs_max": -1, "peak_dbfs_max_exclusive": -0.1 },
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "results": [
+    { "media_version_id": "8d6c3b5c-5355-42e7-b364-f9584d64f2f6", "run_id": "124859f6-fb92-4b2b-ba19-85aeedabbf9d", "status": "PASS", "integrated_lufs": -27.3, "true_peak_dbfs": -5.8, "peak_dbfs": -5.765442, "clipping_detected": false },
+    { "media_version_id": "56a9cc34-e76c-458e-a7df-a1208064be48", "run_id": "b75379fe-eae0-496a-8ff1-3d14854f8316", "status": "FAIL", "integrated_lufs": -44.2, "true_peak_dbfs": -35.8, "peak_dbfs": -35.7742, "clipping_detected": false, "failed_check": "integrated_loudness" },
+    { "media_version_id": "2255f660-27fd-48c9-b2a1-e4616c98ae0d", "run_id": "bd2f0c3b-2699-49e3-836c-07c67eee2638", "status": "FAIL", "integrated_lufs": -35.4, "true_peak_dbfs": -29.6, "peak_dbfs": -29.557419, "clipping_detected": false, "failed_check": "integrated_loudness" },
+    { "media_version_id": "9773143a-9221-4fe9-9921-5cdc0c936ae8", "run_id": "56c80cf8-ae78-467a-9ff1-dc473026937d", "status": "PASS", "integrated_lufs": -16.8, "true_peak_dbfs": -3.4, "peak_dbfs": -3.485454, "clipping_detected": false }
+  ],
+  "pass_count": 2,
+  "fail_count": 2,
+  "failures_preserved": true,
+  "automatic_approval": false,
+  "approval_gate": "latest machine_check_runs status must be PASS for AUDIO",
+  "waveform": { "kind": "derived_cache", "width": 640, "height": 128, "original_audio_loaded_by_ui": false },
+  "public_network_contacted": false,
+  "comfyui_contacted": false,
+  "browser_uat": "docs/evidence/g10/audio-qc-review-uat-2026-08-15.json"
+}

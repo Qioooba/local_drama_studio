@@ -225,6 +225,10 @@ export async function getReviewContext(mediaVersionId: string, baseUrl = ''): Pr
   return requestJson(`/api/v1/subjects/MEDIA_VERSION/${encodeURIComponent(mediaVersionId)}/review-context`, undefined, baseUrl);
 }
 
+export async function runMachineCheck(mediaVersionId: string, baseUrl = ''): Promise<{ machine_check: Record<string, unknown> }> {
+  return requestJson(`/api/v1/subjects/MEDIA_VERSION/${encodeURIComponent(mediaVersionId)}/machine-checks`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ policy_version: 'g8_audio_qc_v1' }) }, baseUrl);
+}
+
 export async function submitReview(mediaVersionId: string, payload: { template_version_id: string; decision: 'APPROVED' | 'REJECTED' | 'NEEDS_CHANGES'; expected_subject_revision: number; checks: Array<{ item_id: string; result: 'PASS' | 'FAIL'; comment?: string }>; comment?: string }, baseUrl = ''): Promise<{ review: Record<string, unknown> }> {
   return requestJson(`/api/v1/subjects/MEDIA_VERSION/${encodeURIComponent(mediaVersionId)}/reviews`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }

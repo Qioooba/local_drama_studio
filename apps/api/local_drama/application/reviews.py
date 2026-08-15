@@ -73,6 +73,17 @@ TEMPLATES: tuple[dict[str, Any], ...] = (
         ],
     },
     {
+        "code": "audio_mix",
+        "version_no": 1,
+        "subject_type": "MEDIA_VERSION",
+        "items": [
+            {"id": "waveform", "label": "波形可复核", "required": True},
+            {"id": "integrated_loudness", "label": "综合响度", "required": True},
+            {"id": "true_peak", "label": "True Peak", "required": True},
+            {"id": "clipping", "label": "削波", "required": True},
+        ],
+    },
+    {
         "code": "episode_render",
         "version_no": 1,
         "subject_type": "EPISODE_RENDER_VERSION",
@@ -119,7 +130,9 @@ class ReviewService:
 
     def _template_for_media(self, media: dict[str, Any]) -> dict[str, Any]:
         code = (
-            "formal_video"
+            "audio_mix"
+            if media["media_kind"] == "AUDIO"
+            else "formal_video"
             if media["stage"] == "FORMAL" and media["media_kind"] == "VIDEO"
             else "proxy_video"
             if media["media_kind"] == "VIDEO"
@@ -520,6 +533,8 @@ class ReviewService:
         failures = sorted(str(item["item_id"]) for item in checks if item.get("result") != "PASS")
         if decision == "APPROVED" and failures:
             raise DomainRuleError("REVIEW_CHECK_FAILED", "存在未通过检查项，不能批准", {"failed": failures})
+        if decision == "APPROVED" and media["media_kind"] == "AUDIO" and self._latest_machine_status(media_version_id) != "PASS":
+            raise DomainRuleError("AUDIO_QC_REQUIRED", "音频必须先通过 LUFS、True Peak、峰值与削波机器检查")
         if decision == "APPROVED" and media["stage"] == "FORMAL" and self._latest_machine_status(media_version_id) != "PASS":
             raise DomainRuleError("MACHINE_QC_REQUIRED", "正式媒体必须先通过机器 QC")
         review_id = str(uuid.uuid4())
@@ -650,6 +665,20 @@ class ReviewService:
         probe = media["probe"]
         probe_ok = media["media_kind"] in {"DOCUMENT"} or probe.get("probe_status") == "PASS"
         results.append({"item_id": "decode", "result": "PASS" if probe_ok else "FAIL", "details": {"probe_status": probe.get("probe_status")}})
+        if media["media_kind"] == "AUDIO":
+            metrics = self.media.audio_qc_metrics(media_version_id)
+            integrated_lufs = float(metrics["integrated_lufs"])
+            true_peak_dbfs = float(metrics["true_peak_dbfs"])
+            peak_dbfs = float(metrics["peak_dbfs"])
+            results.extend(
+                [
+                    {"item_id": "integrated_loudness", "result": "PASS" if -30 <= integrated_lufs <= -14 else "FAIL", "details": {"value_lufs": integrated_lufs, "minimum_lufs": -30, "maximum_lufs": -14}},
+                    {"item_id": "true_peak", "result": "PASS" if true_peak_dbfs <= -1 else "FAIL", "details": {"value_dbfs": true_peak_dbfs, "maximum_dbfs": -1}},
+                    {"item_id": "peak", "result": "PASS" if peak_dbfs < -0.1 else "FAIL", "details": {"value_dbfs": peak_dbfs, "maximum_dbfs_exclusive": -0.1}},
+                    {"item_id": "clipping", "result": "FAIL" if metrics["clipping_detected"] else "PASS", "details": {"detected": metrics["clipping_detected"]}},
+                ]
+            )
+            policy_version = "g8_audio_qc_v1"
         status = "PASS" if all(item["result"] == "PASS" for item in results) else "FAIL"
         run_id = str(uuid.uuid4())
         now = _utc_now()
@@ -680,16 +709,22 @@ class ReviewService:
             reviews = connection.execute(
                 "SELECT * FROM review_decisions WHERE subject_type='MEDIA_VERSION' AND subject_id=? ORDER BY created_at DESC", (media_version_id,)
             ).fetchall()
-            machine = connection.execute(
+            machine_rows = connection.execute(
                 "SELECT * FROM machine_check_runs WHERE subject_type='MEDIA_VERSION' AND subject_id=? ORDER BY created_at DESC", (media_version_id,)
             ).fetchall()
+            machine = []
+            for run in machine_rows:
+                results = connection.execute(
+                    "SELECT item_id,result,details_json FROM machine_check_results WHERE run_id=? ORDER BY item_id", (run["id"],)
+                ).fetchall()
+                machine.append({**dict(run), "results": [{**dict(item), "details": json.loads(item["details_json"])} for item in results]})
         return {
             "media_version": media,
             "subject_revision": self._subject_revision(media),
             "template": template,
             "selections": [dict(row) for row in selections],
             "reviews": [dict(row) for row in reviews],
-            "machine_checks": [dict(row) for row in machine],
+            "machine_checks": machine,
         }
 
     def list_reviews(self, subject_type: str, subject_id: str) -> list[dict[str, Any]]:

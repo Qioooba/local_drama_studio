@@ -93,6 +93,7 @@
 |---|---|---|
 | FR-TML immutable timeline revision、track item、project/media ownership | VERIFIED | `application/timeline.py`、`test_g8_timeline_delivery.py` |
 | FR-AUD local audio binding、license status、range validation | VERIFIED | `audio_bindings` migration、G8 real API test |
+| FR-AUD-003 波形、响度与削波检查 | VERIFIED PRODUCTION READ-ONLY UAT | `MediaService.audio_qc_metrics` 用本机 FFmpeg ebur128/astats 真实解析 LUFS/true peak/peak/clipping，写入不可变 machine check；audio_mix 模板及 `ReviewService.submit_review` 强制 AUDIO 最新 QC PASS，人工清单不可绕过。正式 4 轨为 2 PASS/2 低响度 FAIL；UI 仅加载 640×128 派生波形，三视口通过。证据 `docs/evidence/g8/audio-qc-production-2026-08-15.json`、`docs/evidence/g10/audio-qc-review-uat-2026-08-15.json` |
 | FR-SUB SRT/VTT/ASS rendering、overlap/CPS gate、immutable subtitle revision | VERIFIED | `subtitle_revisions`/`subtitle_cues` migration、G8 real API test |
 | FR-CON FrameAnchor extraction、transition constraint persistence | VERIFIED | real FFmpeg frame extraction、`frame_anchors`/`shot_transition_constraints`；`0009_g6_continuity_stale`/`0010_g6_frame_anchor_stale` 测试覆盖批准影响预览、下游首帧与上游 winner 的事务化 stale 传播及实验选择隔离 |
 | FR-MED/FR-CON live source integrity before generation/anchor | VERIFIED | `MediaService.verify_content_integrity`、TC-VAR-015 tamper tests；创建前 mismatch 零 Variant/Job/Anchor/派生媒体，既有 Anchor 的 source/extracted 后置篡改使 Transition `BLOCKED` 并标记 `CORRUPT` |
@@ -242,6 +243,8 @@ FR-WRT-001 closure 批次：migration `0026_creative_entry_revisions` 为故事�
 FR-WRT-007 closure 批次：真实 Local LLM breakdown 结果保持 `DRAFT_READY/NOT_APPLIED`，新增查询与 UI 只做审阅，没有自动或显式应用路径，不改变人工维护的 Scene/Shot/CreativeEntry。正式项目 1 份持久草稿的三档只读 UAT 零写入、公网、原片、截图、错误或溢出；完整门禁 API 168 passed / 4 live deselected、Web 45/45、build/Ruff/mypy 97 PASS。release audit 仍因 G7 模型 license 证据和未冻结最终工件保持 IN_PROGRESS。
 
 FR-ING-002 closure 批次：真实启动本机 Ollama，Published `deepseek-r1:14b` Profile load test PASS 后生成 evidence v1 草稿；confidence=0.8、2 个待确认问题、2 条逐字原文引用均固化 Profile/model/source range。新增草稿前后正式 Scene 0、Shot 23、CreativeEntry 0，证明人工确认前不应用。三档只读 UAT 3/3 PASS；完整门禁 API 169 passed / 4 live deselected、Web 45/45、build/Ruff/mypy 97 PASS。G7 总门禁仍被 H3 模型 license 证据阻塞。
+
+FR-AUD-003 closure 批次：真实 FFmpeg ebur128/astats 为正式项目 4 条音频写入 LUFS/true peak/peak/clipping 机器结果，2 PASS、2 个低响度 FAIL 均原样保留；AUDIO 批准强制最新 QC PASS，削波负例无法由人工清单绕过。审核页只读显示 640×128 派生波形和指标，三档 UAT 零写入、公网、原音频、截图、错误或溢出。完整门禁 API 172 passed / 4 live deselected、Web 45/45、build/Ruff/mypy 97 PASS；G7 与有序退出状态不变。
 
 ## 更新规则
 

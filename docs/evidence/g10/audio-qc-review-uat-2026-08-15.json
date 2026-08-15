@@ -1,0 +1,75 @@
+{
+  "schema_version": "fr-aud-003-production-readonly-uat.v1",
+  "observed_at": "2026-08-15T01:54:44.146Z",
+  "mode": "LOCAL_ONLY",
+  "status": "PASS",
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "media_version_id": "9773143a-9221-4fe9-9921-5cdc0c936ae8",
+  "production_mutated": false,
+  "screenshots_created": false,
+  "viewports": [
+    {
+      "viewport": "1440x900",
+      "status": "PASS",
+      "waveform_dimensions": {
+        "width": 640,
+        "height": 128
+      },
+      "latest_qc_status": "PASS",
+      "integrated_lufs": -16.8,
+      "true_peak_dbfs": -3.4,
+      "peak_dbfs": -3.485454,
+      "clipping_detected": false,
+      "horizontal_overflow_px": 0,
+      "controls_below_40px": [],
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "public_requests": [],
+      "write_requests": [],
+      "original_media_requests": []
+    },
+    {
+      "viewport": "1280x800",
+      "status": "PASS",
+      "waveform_dimensions": {
+        "width": 640,
+        "height": 128
+      },
+      "latest_qc_status": "PASS",
+      "integrated_lufs": -16.8,
+      "true_peak_dbfs": -3.4,
+      "peak_dbfs": -3.485454,
+      "clipping_detected": false,
+      "horizontal_overflow_px": 0,
+      "controls_below_40px": [],
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "public_requests": [],
+      "write_requests": [],
+      "original_media_requests": []
+    },
+    {
+      "viewport": "1024x768",
+      "status": "PASS",
+      "waveform_dimensions": {
+        "width": 640,
+        "height": 128
+      },
+      "latest_qc_status": "PASS",
+      "integrated_lufs": -16.8,
+      "true_peak_dbfs": -3.4,
+      "peak_dbfs": -3.485454,
+      "clipping_detected": false,
+      "horizontal_overflow_px": 0,
+      "controls_below_40px": [],
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "public_requests": [],
+      "write_requests": [],
+      "original_media_requests": []
+    }
+  ]
+}
