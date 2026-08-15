@@ -56,4 +56,36 @@ describe("DirectorShotEditor", () => {
     await waitFor(() => expect(resolveProfileCameraPlan).toHaveBeenCalledWith("profile-v1", expect.objectContaining({ shot_type: "CLOSEUP", movement: "PUSH_IN" })));
     expect(await screen.findByText(/原生参数映射/)).toBeTruthy();
   });
+
+  it("keeps Production Ready blocked when the published Profile does not support camera", async () => {
+    vi.mocked(resolveProfileCameraPlan).mockResolvedValue({ resolution: {
+      camera_plan: { mode: "UNSUPPORTED", shot_type: "CLOSEUP", movement: "ORBIT", prompt_text: "", direction: "CLOCKWISE", intensity: 0.5, curve: "LINEAR", profile_version_id: "profile-v1" },
+      submission_allowed: false, support: "UNSUPPORTED", profile: { id: "profile-v1", code: "local-i2v", version_no: 1 }, runtime_contacted: false, network_contacted: false, mutated: false,
+    } });
+    renderEditor(
+      { id: "shot-1", code: "S001", status: "DIRECTED", current_revision_id: "revision-1", current_revision: {
+        shot_type: "CLOSEUP", composition: "center", subject_action: "turn", target_duration_ms: 4000, dialogue: "", environment: "", continuity: "same", creative_intent: "focus",
+      } },
+      [{ id: "profile", code: "local-i2v", title: "本地 I2V", version_id: "profile-v1", capability: "I2V", status: "PUBLISHED" }],
+    );
+    fireEvent.change(screen.getByLabelText("运动"), { target: { value: "ORBIT" } });
+    fireEvent.click(screen.getByRole("button", { name: "按 Profile 裁决运镜能力" }));
+    expect(await screen.findByText(/当前未裁决或 Profile 不支持/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "标记 Production Ready" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("renders the explicit prompt when the Profile only supports prompt fallback", async () => {
+    vi.mocked(resolveProfileCameraPlan).mockResolvedValue({ resolution: {
+      camera_plan: { mode: "PROMPT_FALLBACK", shot_type: "CLOSEUP", movement: "PUSH_IN", prompt_text: "camera: PUSH_IN", direction: "FORWARD", intensity: 0.5, curve: "LINEAR", profile_version_id: "profile-v1" },
+      submission_allowed: true, support: "PROMPT_FALLBACK", profile: { id: "profile-v1", code: "local-i2v", version_no: 1 }, runtime_contacted: false, network_contacted: false, mutated: false,
+    } });
+    renderEditor(
+      { id: "shot-1", code: "S001", status: "DIRECTED", current_revision_id: "revision-1", current_revision: { shot_type: "CLOSEUP" } },
+      [{ id: "profile", code: "local-i2v", title: "本地 I2V", version_id: "profile-v1", capability: "I2V", status: "PUBLISHED" }],
+    );
+    fireEvent.change(screen.getByLabelText("运动"), { target: { value: "PUSH_IN" } });
+    fireEvent.click(screen.getByRole("button", { name: "按 Profile 裁决运镜能力" }));
+    expect(await screen.findByText(/显式 Prompt 降级/)).toBeTruthy();
+    expect((screen.getByLabelText("Prompt 降级文本") as HTMLTextAreaElement).value).toBe("camera: PUSH_IN");
+  });
 });

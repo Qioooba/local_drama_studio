@@ -1,0 +1,39 @@
+{
+  "schema_version": "localdrama.fr-ctl-001.capability-contract-evidence.v1",
+  "status": "PARTIAL",
+  "requirement_id": "FR-CTL-001",
+  "scope": [
+    "Published Profile camera capability contracts resolve only to NATIVE, PROMPT_FALLBACK, or UNSUPPORTED",
+    "PROMPT_FALLBACK requires an explicit prompt_fallback declaration and exposes the expanded prompt",
+    "missing or UNSUPPORTED camera capability remains truthful and cannot authorize submission",
+    "resolution is read-only and reports runtime_contacted=false, network_contacted=false, and mutated=false",
+    "DirectorShotEditor keeps Production Ready disabled for UNSUPPORTED and renders the explicit fallback state"
+  ],
+  "verification": {
+    "api_tests": {
+      "command": "pytest apps/api/tests/test_camera_plan_contracts.py apps/api/tests/test_generation_variants.py::test_camera_plan_must_match_profile_and_is_frozen_in_job_snapshot",
+      "result": "PASS",
+      "coverage": [
+        "NATIVE positive resolution",
+        "PROMPT_FALLBACK positive resolution",
+        "UNSUPPORTED and missing capability negative resolution",
+        "invalid fallback declaration rejection",
+        "HTTP route positive/negative contract",
+        "Variant plan re-resolution and Job semantic_inputs camera snapshot"
+      ]
+    },
+    "web_tests": {
+      "command": "pnpm --dir apps/web exec vitest run src/features/production/DirectorShotEditor.test.tsx",
+      "result": "PASS (5 tests)",
+      "coverage": ["NATIVE UI resolution", "UNSUPPORTED UI block", "PROMPT_FALLBACK prompt visibility"]
+    },
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "user_model_executed": false
+  },
+  "remaining": [
+    "Capture a real user-local Published Profile success-path browser UAT for NATIVE and PROMPT_FALLBACK without executing the user's model",
+    "Keep this item PARTIAL until the release operator supplies real local capability evidence and completes the production read-only UAT"
+  ],
+  "release_claim": "The capability contract and snapshot regression is automated and truthful; no Runtime/UAT success is claimed."
+}
