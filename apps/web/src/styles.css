@@ -715,3 +715,4 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .timeline-revision-panel{margin-top:14px}.timeline-revision-panel textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;min-height:150px}
 .delivery-workflow-panel{margin-top:14px}.delivery-workflow-panel .action-row{align-items:center}
 .job-actions{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}.job-actions button{min-height:32px;padding:5px 9px}
+.global-search-panel{margin:14px 0}.global-search-panel>label{display:grid;gap:6px}.search-results{display:grid;gap:8px;margin-top:12px}.search-result{display:grid;grid-template-columns:160px 150px 1fr;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:8px}.search-result span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

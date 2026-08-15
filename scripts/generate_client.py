@@ -113,6 +113,7 @@ export type WorkflowVersionSummary = { id: string; workflow_id: string; code: st
 export type CanvasNode = { id: string; type: string; shot_id: string; shot_code: string; label: string; state: string; blockers: string[]; take_count: number; variant_count: number; active_job_count: number; thumbnail_media_version_id: string | null; position: { x: number; y: number } | null; variant_lineage: Array<{ id: string; variant_no: number; variant_type: string; parent_variant_id: string | null; status: string; is_stale: boolean; branch_reason: string }>; experiment_progress: Array<{ id: string; title: string; status: string; cell_count: number; expanded_count: number; succeeded_count: number; failed_count: number }>; adjacent_constraints: Array<{ id: string; from_shot_id: string; to_shot_id: string; constraint_type: string; compatibility_status: string; enforcement: string; is_stale: boolean }> };
 export type CanvasEdge = { id: string; source: string; target: string; kind: string; status?: string; mutable_by_layout: false };
 export type CanvasGraph = { scope: Record<string, unknown>; nodes: CanvasNode[]; edges: CanvasEdge[]; layout: { positions: Record<string, { x: number; y: number }>; groups: Array<Record<string, unknown>>; viewport: Record<string, number>; revision: number; layout_hash: string | null }; page: { cursor: number; limit: number; returned_shots: number; total_shots: number; next_cursor: number | null }; invariants: { layout_changes_business_dependencies: false; max_visible_nodes: number; lazy: true } };
+export type SearchResult = { project_id: string; subject_type: string; subject_id: string; snippet: string };
 
 const instanceTokens = new Map<string, string>();
 
@@ -196,6 +197,12 @@ export async function listProjects(filters: { search?: string; status?: string }
   if (filters.status) query.set('status', filters.status);
   const suffix = query.size ? `?${query.toString()}` : '';
   return requestJson<{ items: Project[] }>(`/api/v1/projects${suffix}`, undefined, baseUrl);
+}
+
+export async function searchAll(query: string, projectId?: string, limit = 50, baseUrl = ''): Promise<{ items: SearchResult[] }> {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+  if (projectId) params.set('project_id', projectId);
+  return requestJson(`/api/v1/search?${params.toString()}`, undefined, baseUrl);
 }
 
 export async function planProjectCreation(payload: ProjectCreatePayload, baseUrl = ''): Promise<{ plan: ProjectCreationPlan }> {
