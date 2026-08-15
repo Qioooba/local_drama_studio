@@ -58,7 +58,7 @@
 | FR-ING-001 source document version、ImportSession、TXT/MD/DOCX preview | VERIFIED | `application/documents.py`、G3 import test |
 | FR-SRC-001 FTS5 global search minimum | VERIFIED | `application/read_models.py`、G3 import/search test |
 | G3 production read model / no N+1 page query | VERIFIED | `ProductionReadModelService`、browser production screenshot |
-| FR-ING-002 local LLM breakdown | BLOCKED_BY_EXPLICIT_PROFILE | Refuses without published local LLM; no fake result; G6/G7 |
+| FR-ING-002 local LLM breakdown | VERIFIED REAL LOCAL UAT | 显式 Published Profile 才可执行；强制结构化 scenes/置信度/问题/来源段落，quote 必须逐字存在且每场覆盖，写库前失败；真实 `deepseek-r1:14b` load test 与正式 DRAFT 通过，未创建正式 Scene/Shot，证据 `docs/evidence/g7/local-llm-structured-breakdown-2026-08-15.json` |
 | FR-REV review/selection | VERIFIED | `application/reviews.py`、`test_g4_reviews.py`、`docs/evidence/g4/g4_validation.txt`；selection/approval 分离、机器 QC、stale 与 batch preflight 已验证 |
 | FR-JOB queue/recovery, real generation | NOT_STARTED | G5/G6 |
 
@@ -129,7 +129,7 @@
 |---|---|---|
 | FR-WFL workflow package、semantic slots、local node validation、publish/rollback | VERIFIED | `application/workflows.py`、`0005_g6_comfy_workflows`、`test_g6_workflows.py` |
 | FR-WFL Comfy loopback client、history/output collect、artifact hash/register | VERIFIED | `infrastructure/comfy.py`、`application/comfy_jobs.py`、真实 prompt evidence |
-| FR-ING-002 real local LLM adapter/profile/load gate | PARTIAL | `deepseek-r1:14b` 已发布、真实 load test PASS 且历史 `DRAFT_READY` breakdown 存在；`qwen3:8b` 文件可见但真实 load test BLOCKED，保持候选不发布，禁止伪造结果 |
+| FR-ING-002 real local LLM adapter/profile/load gate | VERIFIED REAL LOCAL UAT | `deepseek-r1:14b` Published Profile 真实 load test PASS；正式 ImportSession 生成 evidence v1 `DRAFT_READY`，固化 Profile/model/confidence/questions/source ranges，所有 quote 逐字匹配原文；Scene/Shot 权威表未改变。`qwen3:8b` 仍只是未发布候选，不影响显式选定 Profile 的验收 |
 | FR-PRV H3 candidate capability truthfulness | PARTIAL / BLOCKED | `/api/v1/h3/candidate-runtime`；真实 FL2VA sidecar layout缺失，Comfy execution_error |
 | FR-VAR CameraPlan/MotionMask/TimedDirection/PerformanceBinding contracts | VERIFIED | `domain/generation_contracts.py`、G6 tests |
 | TC-VAR-013 Profile A/B branch isolation | PARTIAL | `PROFILE_BRANCH` derive-plan 仅改变 Published ProfileVersion，Candidate/混合 scope/零持久化已验证；真实双 Profile Job、artifact、隔离 review 未完成 |
@@ -240,6 +240,8 @@ FR-WRT-004 closure 批次：结构化提示词模板冻结原始字段、模板�
 FR-WRT-001 closure 批次：migration `0026_creative_entry_revisions` 为故事圣经、人物、场景、道具、服装、风格、声音建立统一不可变 revision；比较只读，回退派生新 revision，历史永不覆盖/删除。0025→0026 隔离升级/精确恢复与生产迁移 integrity ok；三档生产只读 UAT 零写入、公网、原片、错误、短控件或溢出。完整门禁 API 166 passed / 4 live deselected、Web 43/43、build/Ruff/mypy 97 PASS。G7 license blocker 与后续有序门禁不变。
 
 FR-WRT-007 closure 批次：真实 Local LLM breakdown 结果保持 `DRAFT_READY/NOT_APPLIED`，新增查询与 UI 只做审阅，没有自动或显式应用路径，不改变人工维护的 Scene/Shot/CreativeEntry。正式项目 1 份持久草稿的三档只读 UAT 零写入、公网、原片、截图、错误或溢出；完整门禁 API 168 passed / 4 live deselected、Web 45/45、build/Ruff/mypy 97 PASS。release audit 仍因 G7 模型 license 证据和未冻结最终工件保持 IN_PROGRESS。
+
+FR-ING-002 closure 批次：真实启动本机 Ollama，Published `deepseek-r1:14b` Profile load test PASS 后生成 evidence v1 草稿；confidence=0.8、2 个待确认问题、2 条逐字原文引用均固化 Profile/model/source range。新增草稿前后正式 Scene 0、Shot 23、CreativeEntry 0，证明人工确认前不应用。三档只读 UAT 3/3 PASS；完整门禁 API 169 passed / 4 live deselected、Web 45/45、build/Ruff/mypy 97 PASS。G7 总门禁仍被 H3 模型 license 证据阻塞。
 
 ## 更新规则
 

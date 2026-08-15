@@ -11,7 +11,9 @@ export function AIDraftReviewPanel({ projectId }: { projectId: string }) {
     <div className="ai-draft-list">{drafts.data?.items.map((item) => {
       const scenes = Array.isArray(item.draft.scenes) ? item.draft.scenes : [];
       const shots = scenes.reduce((count, scene) => count + (Array.isArray(scene.shots) ? scene.shots.length : 0), 0);
-      return <article key={item.id}><div><strong>{item.source_document_title}</strong><span>{item.status} · NOT_APPLIED</span></div><p>{scenes.length} 个建议场次 · {shots} 个建议镜头</p><small>{item.source_document_code} · requires_human_action=true · automatic_apply=false</small></article>;
+      const questions = item.confidence.questions ?? [];
+      const passages = item.confidence.source_passages ?? [];
+      return <article key={item.id}><div><strong>{item.source_document_title}</strong><span>{item.status} · NOT_APPLIED</span></div><p>{scenes.length} 个建议场次 · {shots} 个建议镜头</p><p className="draft-evidence">{item.evidence_status === "COMPLETE" ? `证据完整 · 置信度 ${Math.round((item.confidence.confidence?.overall ?? 0) * 100)}% · ${questions.length} 个待确认问题 · ${passages.length} 条原文引用` : "历史草稿 · 未记录完整 Profile/置信度/问题/原文引用，不补造证据"}</p><small>{item.source_document_code} · Profile {item.profile_version_id ?? "legacy 未记录"} · requires_human_action=true · automatic_apply=false</small></article>;
     })}</div>
     {drafts.data?.items.length === 0 && <p className="empty-state">当前没有真实本地 LLM 拆解草稿；不会显示模拟建议。</p>}
   </section>;

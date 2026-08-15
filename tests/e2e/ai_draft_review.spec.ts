@@ -55,6 +55,8 @@ for (const viewport of viewports) {
     await expect(panel.getByRole("heading", { name: "AI 辅助提取草稿" })).toBeVisible();
     await expect(panel.getByText(/不会自动创建或覆盖母本场次、镜头或创作资料/)).toBeVisible();
     await expect(panel.getByText("DRAFT_READY · NOT_APPLIED", { exact: true }).first()).toBeVisible();
+    await expect(panel.getByText(/证据完整 · 置信度/)).toBeVisible();
+    await expect(panel.getByText(/Profile 08789ef4-9449-56d2-8c88-6b06fc274465/)).toBeVisible();
     await expect(panel.locator("button")).toHaveCount(0);
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -68,6 +70,7 @@ for (const viewport of viewports) {
       viewport: viewport.name,
       status: passed ? "PASS" : "FAIL",
       persisted_draft_visible: true,
+      structured_evidence_visible: true,
       application_status: "NOT_APPLIED",
       apply_controls: 0,
       horizontal_overflow_px: overflow,

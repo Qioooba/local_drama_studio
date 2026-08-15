@@ -4,11 +4,13 @@ import json
 import uuid
 from datetime import UTC, datetime
 
+import pytest
 from fastapi.testclient import TestClient
 
 from local_drama.application.documents import DocumentImportService
-from local_drama.application.local_llm import LocalLLMService
+from local_drama.application.local_llm import LocalLLMService, _validate_breakdown_output
 from local_drama.application.projects import ProjectService
+from local_drama.domain.errors import DomainRuleError
 from local_drama.main import create_app
 
 
@@ -41,6 +43,8 @@ def test_breakdown_draft_projection_never_applies_or_overwrites_authority(worksp
     assert items[0]["application_status"] == "NOT_APPLIED"
     assert items[0]["automatic_apply"] is False
     assert items[0]["requires_human_action"] is True
+    assert items[0]["profile_version_id"] is None
+    assert items[0]["evidence_status"] == "LEGACY_INCOMPLETE"
 
 
 def test_breakdown_draft_api_is_read_only_and_explicit(workspace, database) -> None:
@@ -51,3 +55,26 @@ def test_breakdown_draft_api_is_read_only_and_explicit(workspace, database) -> N
     assert response.json()["automatic_apply"] is False
     assert response.json()["requires_human_action"] is True
     assert len(response.json()["items"]) == 1
+
+
+def test_structured_breakdown_evidence_requires_exact_source_quotes() -> None:
+    source = "第一场。母亲打开信件。\n第二场。孩子走进房间。"
+    output = {
+        "scenes": [
+            {"scene_no": 1, "title": "读信", "summary": "母亲读信", "characters": ["母亲"], "shots": [{"shot_no": 1, "visual": "近景", "action": "打开信件", "dialogue": "", "duration_seconds": 4}]},
+            {"scene_no": 2, "title": "进门", "summary": "孩子进门", "characters": ["孩子"], "shots": [{"shot_no": 1, "visual": "全景", "action": "走进房间", "dialogue": "", "duration_seconds": 3}]},
+        ],
+        "confidence": {"overall": 0.82, "notes": ["第二场人物关系待确认"]},
+        "questions": ["孩子与母亲是什么关系？"],
+        "source_passages": [{"scene_no": 1, "quote": "母亲打开信件。"}, {"scene_no": 2, "quote": "孩子走进房间。"}],
+    }
+    draft, evidence = _validate_breakdown_output(output, source)
+    assert len(draft["scenes"]) == 2
+    assert evidence["confidence"]["overall"] == 0.82
+    assert evidence["source_passages"][0]["source_start"] == source.index("母亲打开信件。")
+    assert evidence["source_passages"][1]["source_end"] == len(source)
+
+    output["source_passages"][1]["quote"] = "原文中不存在的动作。"
+    with pytest.raises(DomainRuleError) as caught:
+        _validate_breakdown_output(output, source)
+    assert caught.value.code == "LOCAL_LLM_SOURCE_QUOTE_INVALID"

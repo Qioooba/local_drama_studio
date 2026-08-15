@@ -1,0 +1,36 @@
+{
+  "schema_version": "fr-ing-002.real-local-llm-breakdown.v1",
+  "observed_at": "2026-08-15T01:39:21.772431+00:00",
+  "status": "PASS",
+  "mode": "LOCAL_ONLY",
+  "runtime": {
+    "base_url": "http://127.0.0.1:11434",
+    "model": "deepseek-r1:14b",
+    "model_present": true,
+    "load_test": true,
+    "load_test_response": true,
+    "stopped_after_test": true
+  },
+  "profile_version_id": "08789ef4-9449-56d2-8c88-6b06fc274465",
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "source_document_version_id": "6bdf1995-bbc2-4df8-a776-0779a4edfa19",
+  "import_session_id": "143200e0-db17-40b2-85eb-6a6738e447c6",
+  "draft_id": "8a763c7c-94d6-4bca-9aa6-31a512c2ecd5",
+  "draft_status": "DRAFT_READY",
+  "evidence_schema": "localdrama.script-breakdown-evidence.v1",
+  "confidence_overall": 0.8,
+  "question_count": 2,
+  "source_passages": [
+    { "scene_no": 1, "source_start": 14, "source_end": 65, "exact_source_match": true },
+    { "scene_no": 2, "source_start": 133, "source_end": 179, "exact_source_match": true }
+  ],
+  "authority_counts_before": { "script_breakdown_drafts": 1, "scenes": 0, "shots": 23, "creative_entries": 0 },
+  "authority_counts_after": { "script_breakdown_drafts": 2, "scenes": 0, "shots": 23, "creative_entries": 0 },
+  "automatic_apply": false,
+  "requires_human_action": true,
+  "public_network_contacted": false,
+  "comfyui_contacted": false,
+  "source_quotes_included_in_evidence_file": false,
+  "database_integrity": "ok",
+  "browser_uat": "docs/evidence/g10/ai-draft-review-uat-2026-08-15.json"
+}

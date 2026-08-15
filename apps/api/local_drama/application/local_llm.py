@@ -31,6 +31,56 @@ def _slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")[:100] or "model"
 
 
+def _validate_breakdown_output(value: dict[str, Any], source_text: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    required_top_level = {"scenes", "confidence", "questions", "source_passages"}
+    if not required_top_level.issubset(value):
+        raise DomainRuleError("LOCAL_LLM_OUTPUT_INVALID", "剧本拆解缺少 scenes/confidence/questions/source_passages")
+    confidence = value["confidence"]
+    questions = value["questions"]
+    passages = value["source_passages"]
+    if not isinstance(confidence, dict) or not isinstance(confidence.get("overall"), (int, float)):
+        raise DomainRuleError("LOCAL_LLM_OUTPUT_INVALID", "剧本拆解 confidence.overall 必须是 0 到 1 的数字")
+    overall = float(confidence["overall"])
+    notes = confidence.get("notes", [])
+    if not 0 <= overall <= 1 or not isinstance(notes, list) or any(not isinstance(item, str) for item in notes):
+        raise DomainRuleError("LOCAL_LLM_OUTPUT_INVALID", "剧本拆解 confidence 不符合结构化契约")
+    if not isinstance(questions, list) or any(not isinstance(item, str) or not item.strip() for item in questions):
+        raise DomainRuleError("LOCAL_LLM_OUTPUT_INVALID", "剧本拆解 questions 必须是非空字符串数组")
+    if not isinstance(passages, list) or not passages:
+        raise DomainRuleError("LOCAL_LLM_OUTPUT_INVALID", "剧本拆解必须包含来源段落")
+    scenes = value["scenes"]
+    if not isinstance(scenes, list) or not scenes:
+        raise DomainRuleError("LOCAL_LLM_OUTPUT_INVALID", "剧本拆解必须包含非空 scenes 数组")
+    scene_fields = {"scene_no", "title", "summary", "characters", "shots"}
+    shot_fields = {"shot_no", "visual", "action", "dialogue", "duration_seconds"}
+    scene_numbers: set[int] = set()
+    for scene_index, scene in enumerate(scenes, start=1):
+        if not isinstance(scene, dict) or not scene_fields.issubset(scene) or not isinstance(scene.get("characters"), list) or not isinstance(scene.get("shots"), list):
+            raise DomainRuleError("LOCAL_LLM_OUTPUT_INVALID", "本地 LLM scene 不符合拆镜 schema", {"scene_index": scene_index})
+        if not isinstance(scene["scene_no"], int) or scene["scene_no"] in scene_numbers:
+            raise DomainRuleError("LOCAL_LLM_OUTPUT_INVALID", "scene_no 必须是唯一整数", {"scene_index": scene_index})
+        scene_numbers.add(scene["scene_no"])
+        if not scene["shots"]:
+            raise DomainRuleError("LOCAL_LLM_OUTPUT_INVALID", "本地 LLM scene 必须包含至少一个 shot", {"scene_index": scene_index})
+        for shot_index, shot in enumerate(scene["shots"], start=1):
+            if not isinstance(shot, dict) or not shot_fields.issubset(shot):
+                raise DomainRuleError("LOCAL_LLM_OUTPUT_INVALID", "本地 LLM shot 不符合拆镜 schema", {"scene_index": scene_index, "shot_index": shot_index})
+    normalized_passages: list[dict[str, Any]] = []
+    covered: set[int] = set()
+    for passage_index, passage in enumerate(passages, start=1):
+        if not isinstance(passage, dict) or not isinstance(passage.get("scene_no"), int) or not isinstance(passage.get("quote"), str):
+            raise DomainRuleError("LOCAL_LLM_OUTPUT_INVALID", "来源段落必须包含 scene_no 和 quote", {"passage_index": passage_index})
+        quote = passage["quote"].strip()
+        start = source_text.find(quote)
+        if passage["scene_no"] not in scene_numbers or not quote or start < 0:
+            raise DomainRuleError("LOCAL_LLM_SOURCE_QUOTE_INVALID", "来源段落必须逐字存在于导入文本并关联有效场次", {"passage_index": passage_index})
+        covered.add(passage["scene_no"])
+        normalized_passages.append({"scene_no": passage["scene_no"], "quote": quote, "source_start": start, "source_end": start + len(quote)})
+    if covered != scene_numbers:
+        raise DomainRuleError("LOCAL_LLM_SOURCE_QUOTE_INVALID", "每个建议场次都必须至少有一个来源段落")
+    return {"scenes": scenes}, {"confidence": {"overall": overall, "notes": notes}, "questions": questions, "source_passages": normalized_passages}
+
+
 class LocalLLMService:
     def __init__(self, database: Database, settings: Settings) -> None:
         self.database = database
@@ -173,28 +223,12 @@ class LocalLLMService:
         if not text_path.is_relative_to(project_root) or not text_path.is_file():
             raise DomainRuleError("SOURCE_TEXT_NOT_FOUND", "剧本提取文本不在项目目录或不存在")
         source_text = text_path.read_text(encoding="utf-8")
-        draft = self.client(str(model)).chat_json(
-            "你是本地剧本拆解器。最终答案只输出 JSON 对象。顶层必须且只能有 scenes 数组；每个 scene 必须包含 scene_no、title、summary、characters、shots；shots 必须是数组，每个 shot 必须包含 shot_no、visual、action、dialogue、duration_seconds。不得省略字段，不得臆造原文不存在的关键事实。",
+        output = self.client(str(model)).chat_json(
+            "你是本地剧本拆解器。最终答案只输出 JSON 对象，顶层必须包含 scenes、confidence、questions、source_passages。每个 scene 必须包含 scene_no、title、summary、characters、shots；每个 shot 必须包含 shot_no、visual、action、dialogue、duration_seconds。confidence 必须是 {overall:0到1,notes:字符串数组}；questions 是待人工确认的字符串数组；source_passages 是 {scene_no,quote} 数组，每个场次至少一条且 quote 必须逐字复制原文。不得臆造原文不存在的关键事实。",
             source_text,
         )
-        if not isinstance(draft.get("scenes"), list):
-            raise DomainRuleError("LOCAL_LLM_OUTPUT_INVALID", "剧本拆解必须包含 scenes 数组")
-        if not draft["scenes"]:
-            raise DomainRuleError("LOCAL_LLM_OUTPUT_INVALID", "剧本拆解 scenes 不能为空")
-        scene_fields = {"scene_no", "title", "summary", "characters", "shots"}
-        shot_fields = {"shot_no", "visual", "action", "dialogue", "duration_seconds"}
-        for scene_index, scene in enumerate(draft["scenes"], start=1):
-            if not isinstance(scene, dict) or not scene_fields.issubset(scene) or not isinstance(scene.get("characters"), list) or not isinstance(scene.get("shots"), list):
-                raise DomainRuleError("LOCAL_LLM_OUTPUT_INVALID", "本地 LLM scene 不符合拆镜 schema", {"scene_index": scene_index})
-            if not scene["shots"]:
-                raise DomainRuleError("LOCAL_LLM_OUTPUT_INVALID", "本地 LLM scene 必须包含至少一个 shot", {"scene_index": scene_index})
-            for shot_index, shot in enumerate(scene["shots"], start=1):
-                if not isinstance(shot, dict) or not shot_fields.issubset(shot):
-                    raise DomainRuleError(
-                        "LOCAL_LLM_OUTPUT_INVALID",
-                        "本地 LLM shot 不符合拆镜 schema",
-                        {"scene_index": scene_index, "shot_index": shot_index},
-                    )
+        draft, evidence = _validate_breakdown_output(output, source_text)
+        evidence.update({"schema_version": "localdrama.script-breakdown-evidence.v1", "source": "model_output", "model": model, "profile_version_id": profile_version_id})
         draft_id = str(uuid.uuid4())
         now = _now()
         with self.database.transaction() as connection:
@@ -206,7 +240,7 @@ class LocalLLMService:
                     row["source_document_version_id"],
                     session_id,
                     _json(draft),
-                    _json({"source": "model_output", "model": model}),
+                    _json(evidence),
                     now,
                     now,
                 ),
@@ -235,7 +269,8 @@ class LocalLLMService:
             item = dict(row)
             item["draft"] = json.loads(item.pop("draft_json"))
             item["confidence"] = json.loads(item.pop("confidence_json"))
-            item.update({"application_status": "NOT_APPLIED", "automatic_apply": False, "requires_human_action": True})
+            complete = all(key in item["confidence"] for key in ("profile_version_id", "confidence", "questions", "source_passages"))
+            item.update({"profile_version_id": item["confidence"].get("profile_version_id"), "evidence_status": "COMPLETE" if complete else "LEGACY_INCOMPLETE", "application_status": "NOT_APPLIED", "automatic_apply": False, "requires_human_action": True})
             items.append(item)
         return items
 
