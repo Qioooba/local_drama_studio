@@ -23,6 +23,10 @@ for (const viewport of viewports) test(`does not count legacy license labels at 
   await page.goto(`/?${new URLSearchParams({ view: "projects", project: projectId, episode: episodeId, shot: shotId })}`, { waitUntil: "networkidle" });
   const timeline = page.locator(".timeline-status-panel");
   await expect(timeline.getByText("本地授权音频：0")).toBeVisible();
+  const tracks = page.locator(".audio-track-panel");
+  await expect(tracks.getByRole("heading", { name: "音效、环境与音乐绑定" })).toBeVisible();
+  await expect(tracks.getByText("遗留授权证据不完整")).toHaveCount(4);
+  await expect(tracks.locator("audio[preload='none']")).toHaveCount(4);
   const gate = page.locator(".gate-readiness");
   await expect(gate.getByText("IN_PROGRESS")).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
