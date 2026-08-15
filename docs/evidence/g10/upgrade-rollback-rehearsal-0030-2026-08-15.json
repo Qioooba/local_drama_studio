@@ -1,0 +1,39 @@
+{
+  "schema_version": "g10.upgrade_rollback_rehearsal.v3",
+  "observed_at": "2026-08-15T07:03:20.177528+00:00",
+  "status": "PASS",
+  "scope": "isolated copy of a production pre-migration backup",
+  "source_backup": {
+    "path": "backups/pre_migration_20260815T070225Z.sqlite3",
+    "migration": "0029_user_supplied_model_policy",
+    "integrity": "ok",
+    "bytes": 1826816,
+    "sha256": "f04ea4a3cf70929f1a47f5137f44141e8e4e5b6bac24d22a772cf9dfc7756afd"
+  },
+  "upgrade_copy": {
+    "operation": "alembic upgrade head on isolated copy",
+    "from_migration": "0029_user_supplied_model_policy",
+    "to_migration": "0030_versioned_post_process_chain",
+    "migration": "0030_versioned_post_process_chain",
+    "integrity": "ok",
+    "bytes": 1839104,
+    "sha256": "a69eb05bddbaa0a20e8e068161b31543223a8c6889c427cc78ef568aca58b060"
+  },
+  "restore_copy": {
+    "operation": "restore source backup to a separate copy",
+    "migration": "0029_user_supplied_model_policy",
+    "integrity": "ok",
+    "bytes": 1826816,
+    "sha256": "f04ea4a3cf70929f1a47f5137f44141e8e4e5b6bac24d22a772cf9dfc7756afd",
+    "matches_source_sha256": true
+  },
+  "safety": {
+    "production_database_mutated": false,
+    "api_contacted": false,
+    "comfyui_contacted": false,
+    "network_contacted": false,
+    "jobs_created": false,
+    "temporary_directory_retained": "temp/release-rehearsal-20260815T070319Z"
+  },
+  "interpretation": "Current migration upgrade and exact backup restore are verified on isolated copies; this does not authorize final release."
+}

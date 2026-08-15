@@ -8,6 +8,7 @@ produce a registered MediaVersion before the timeline can consume it.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -699,60 +700,224 @@ class TimelineService:
             )
         return {"constraint_id": constraint_id, "status": status, "blockers": blockers, "warnings": warnings}
 
-    def create_recipe(self, code: str, title: str, steps: list[dict[str, Any]], capability_contract: dict[str, Any], actor: str = "local-user") -> dict[str, Any]:
-        if not code.strip() or not steps:
-            raise DomainRuleError("POST_PROCESS_RECIPE_INVALID", "增强 recipe 需要 code 和至少一个 step")
+    @staticmethod
+    def _validated_enhancement_steps(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not steps:
+            raise DomainRuleError("POST_PROCESS_RECIPE_INVALID", "增强 recipe 至少需要 SCALE、TECHNICAL_QC 和 ENCODE")
+        normalized: list[dict[str, Any]] = []
+        supported = {"SCALE", "TECHNICAL_QC", "ENCODE"}
+        for ordinal, raw in enumerate(steps):
+            if not isinstance(raw, dict) or str(raw.get("kind")) not in supported:
+                raise DomainRuleError("CAPABILITY_UNSUPPORTED", "增强 recipe 包含未支持步骤", {"ordinal": ordinal, "kind": raw.get("kind") if isinstance(raw, dict) else None})
+            step = dict(raw)
+            step["kind"] = str(step["kind"])
+            executor_ref = str(step.get("executor_ref", ""))
+            expected_executor = "builtin:ffprobe" if step["kind"] == "TECHNICAL_QC" else "builtin:ffmpeg"
+            if executor_ref != expected_executor:
+                raise DomainRuleError("POST_PROCESS_EXECUTOR_REQUIRED", "每个增强步骤必须显式绑定受支持的本地 executor", {"ordinal": ordinal, "expected": expected_executor})
+            if step["kind"] == "SCALE":
+                width, height = step.get("width"), step.get("height")
+                if not isinstance(width, int) or not isinstance(height, int) or not 64 <= width <= 8192 or not 64 <= height <= 8192 or width % 2 or height % 2:
+                    raise DomainRuleError("POST_PROCESS_SCALE_INVALID", "SCALE 必须显式给出 64—8192 的偶数 width/height")
+                step["fit"] = str(step.get("fit", "CONTAIN"))
+                if step["fit"] not in {"CONTAIN", "STRETCH"}:
+                    raise DomainRuleError("POST_PROCESS_SCALE_INVALID", "SCALE fit 仅支持 CONTAIN/STRETCH")
+            elif step["kind"] == "ENCODE":
+                step["codec"] = str(step.get("codec", "H264"))
+                step["preset"] = str(step.get("preset", "veryfast"))
+                step["crf"] = int(step.get("crf", 18))
+                if step["codec"] != "H264" or step["preset"] not in {"ultrafast", "veryfast", "medium", "slow"} or not 0 <= step["crf"] <= 51:
+                    raise DomainRuleError("POST_PROCESS_ENCODE_INVALID", "ENCODE 当前只支持本地 H264、受控 preset 和 0—51 CRF")
+            normalized.append(step)
+        kinds = [str(step["kind"]) for step in normalized]
+        if kinds != ["SCALE", "TECHNICAL_QC", "ENCODE"]:
+            raise DomainRuleError("POST_PROCESS_REQUIRED_STEPS_MISSING", "正式增强链必须按 SCALE → TECHNICAL_QC → ENCODE 且每步仅一次", {"observed": kinds})
+        return normalized
+
+    def create_recipe(self, code: str, title: str, steps: list[dict[str, Any]], capability_contract: dict[str, Any], parent_recipe_id: str | None = None, actor: str = "local-user") -> dict[str, Any]:
+        recipe_key = code.strip()
+        if not recipe_key or not title.strip():
+            raise DomainRuleError("POST_PROCESS_RECIPE_INVALID", "增强 recipe 需要 code 和 title")
+        normalized_steps = self._validated_enhancement_steps(steps)
+        if capability_contract.get("transport") != "LOCAL_PROCESS" or capability_contract.get("network_allowed") is not False:
+            raise DomainRuleError("POST_PROCESS_LOCAL_CONTRACT_REQUIRED", "增强 recipe 必须显式声明 LOCAL_PROCESS 且 network_allowed=false")
         recipe_id = str(uuid.uuid4())
         now = _now()
         with self.database.transaction() as connection:
+            parent = None
+            if parent_recipe_id:
+                parent = connection.execute("SELECT * FROM post_process_recipes WHERE id=?", (parent_recipe_id,)).fetchone()
+                if parent is None:
+                    raise DomainRuleError("POST_PROCESS_RECIPE_NOT_FOUND", "父增强 recipe 不存在")
+                recipe_key = str(parent["recipe_key"] or parent["code"])
+            next_version = int(connection.execute("SELECT COALESCE(MAX(version_no),0)+1 FROM post_process_recipes WHERE recipe_key=?", (recipe_key,)).fetchone()[0])
+            physical_code = recipe_key if next_version == 1 else f"{recipe_key}@v{next_version}"
+            recipe_hash = _hash({"recipe_key": recipe_key, "version_no": next_version, "steps": normalized_steps, "capability_contract": capability_contract})
             connection.execute(
-                "INSERT INTO post_process_recipes (id, code, title, steps_json, capability_contract_json, status, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, 1, 'v2')",
-                (recipe_id, code, title, _json(steps), _json(capability_contract), now, now, actor),
+                """INSERT INTO post_process_recipes
+                (id, code, title, steps_json, capability_contract_json, status, created_at, updated_at, created_by,
+                 revision, schema_version, recipe_key, version_no, parent_recipe_id, recipe_hash)
+                VALUES (?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, 1, 'v2', ?, ?, ?, ?)""",
+                (recipe_id, physical_code, title, _json(normalized_steps), _json(capability_contract), now, now, actor, recipe_key, next_version, parent_recipe_id, recipe_hash),
             )
         return self.get_recipe(recipe_id)
+
+    def list_recipes(self) -> list[dict[str, Any]]:
+        with self.database.connect() as connection:
+            rows = connection.execute("SELECT id FROM post_process_recipes ORDER BY recipe_key, version_no DESC, created_at DESC").fetchall()
+        return [self.get_recipe(str(row["id"])) for row in rows]
 
     def get_recipe(self, recipe_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
             row = connection.execute("SELECT * FROM post_process_recipes WHERE id=?", (recipe_id,)).fetchone()
         if row is None:
             raise DomainRuleError("POST_PROCESS_RECIPE_NOT_FOUND", "增强 recipe 不存在")
-        return {**dict(row), "steps": json.loads(row["steps_json"]), "capability_contract": json.loads(row["capability_contract_json"])}
+        item = {**dict(row), "steps": json.loads(row["steps_json"]), "capability_contract": json.loads(row["capability_contract_json"])}
+        if not item.get("recipe_hash"):
+            item["recipe_hash"] = _hash({"recipe_key": item.get("recipe_key") or item["code"], "version_no": item.get("version_no") or 1, "steps": item["steps"], "capability_contract": item["capability_contract"]})
+        return item
 
-    def run_enhancement(self, input_media_version_id: str, recipe_id: str, parameters: dict[str, Any] | None = None, actor: str = "local-user") -> dict[str, Any]:
+    def publish_recipe(self, recipe_id: str, actor: str = "local-user") -> dict[str, Any]:
         recipe = self.get_recipe(recipe_id)
-        if recipe["status"] not in {"DRAFT", "ACTIVE"}:
-            raise DomainRuleError("POST_PROCESS_RECIPE_DISABLED", "增强 recipe 不可用")
-        unsupported = [step.get("kind") for step in recipe["steps"] if step.get("kind") not in {"TECHNICAL_QC", "SCALE", "WATERMARK"}]
-        if unsupported:
-            raise DomainRuleError("CAPABILITY_UNSUPPORTED", "当前本地 Worker 未声明支持增强能力", {"unsupported": unsupported})
+        if recipe["status"] != "DRAFT":
+            raise DomainRuleError("POST_PROCESS_RECIPE_NOT_DRAFT", "只有 DRAFT recipe 可发布")
+        self._validated_enhancement_steps(recipe["steps"])
+        now = _now()
+        recipe_key = str(recipe.get("recipe_key") or recipe["code"])
+        with self.database.transaction() as connection:
+            connection.execute("UPDATE post_process_recipes SET status='RETIRED', updated_at=?, revision=revision+1 WHERE recipe_key=? AND status='ACTIVE'", (now, recipe_key))
+            connection.execute("UPDATE post_process_recipes SET status='ACTIVE', published_at=?, updated_at=?, revision=revision+1 WHERE id=?", (now, now, recipe_id))
+            connection.execute("INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'operator', 'POST_PROCESS_RECIPE_PUBLISHED', 'post_process_recipe', ?, ?, ?)", (actor, recipe_id, "发布本地增强 recipe", _json({"recipe_key": recipe_key, "version_no": recipe["version_no"], "recipe_hash": recipe["recipe_hash"]})))
+        return self.get_recipe(recipe_id)
+
+    def plan_enhancement(self, input_media_version_id: str, recipe_id: str, parameters: dict[str, Any] | None = None) -> dict[str, Any]:
+        recipe = self.get_recipe(recipe_id)
+        if recipe["status"] != "ACTIVE":
+            raise DomainRuleError("POST_PROCESS_RECIPE_NOT_ACTIVE", "只有已发布 ACTIVE recipe 可执行")
+        steps = self._validated_enhancement_steps(recipe["steps"])
+        source = self.media.get_version(input_media_version_id)
+        if source["media_kind"] != "VIDEO":
+            raise DomainRuleError("ENHANCEMENT_VIDEO_REQUIRED", "FR-PST-001 增强链当前只接受 VERIFIED VIDEO MediaVersion")
+        verified = self.media.verify_content_integrity(input_media_version_id)
+        snapshot = {
+            "input_media_version_id": input_media_version_id,
+            "input_sha256": verified["sha256"],
+            "recipe_id": recipe_id,
+            "recipe_hash": recipe["recipe_hash"],
+            "steps": steps,
+            "parameters": parameters or {},
+        }
+        return {
+            "status": "READY",
+            "plan_hash": _hash(snapshot),
+            "snapshot": snapshot,
+            "command_preview": {"executor": "builtin:ffmpeg", "input": "REGISTERED_MEDIA_VERSION", "output": "NEW_IMMUTABLE_MEDIA_VERSION", "steps": [step["kind"] for step in steps]},
+            "would_create_run": False,
+            "would_overwrite_input": False,
+            "runtime_contacted": False,
+            "network_contacted": False,
+            "mutated": False,
+        }
+
+    def run_enhancement(self, input_media_version_id: str, recipe_id: str, plan_hash: str, parameters: dict[str, Any] | None = None, actor: str = "local-user") -> dict[str, Any]:
+        plan = self.plan_enhancement(input_media_version_id, recipe_id, parameters)
+        if not hmac.compare_digest(str(plan["plan_hash"]), plan_hash):
+            raise DomainRuleError("ENHANCEMENT_PLAN_STALE", "增强计划已变化，请重新预检")
+        recipe = self.get_recipe(recipe_id)
         source_item, source_path = self.media.content_path(input_media_version_id)
-        project_root = (self.settings.projects_root / source_item["root_rel"]).resolve()
-        out_dir = project_root / "04_media" / "enhanced"
+        out_dir = self.settings.work_root / "enhancement_runs"
         out_dir.mkdir(parents=True, exist_ok=True)
-        output = out_dir / f"enhanced-{uuid.uuid4().hex}{Path(source_item['rel_path']).suffix or '.mp4'}"
+        scaled_output = out_dir / f"scaled-{uuid.uuid4().hex}.mkv"
+        output = out_dir / f"enhanced-{uuid.uuid4().hex}.mp4"
         run_id = str(uuid.uuid4())
         now = _now()
+        steps = recipe["steps"]
+        scale = next(step for step in steps if step["kind"] == "SCALE")
+        encode = next(step for step in steps if step["kind"] == "ENCODE")
+        width, height = int(scale["width"]), int(scale["height"])
+        video_filter = f"scale={width}:{height}" if scale["fit"] == "STRETCH" else f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"
+        execution_snapshot = {**plan["snapshot"], "ffmpeg": {"video_filter": video_filter, "codec": "libx264", "preset": encode["preset"], "crf": encode["crf"], "audio_codec": "aac"}}
         with self.database.transaction() as connection:
             connection.execute(
-                "INSERT INTO enhancement_runs (id, input_media_version_id, recipe_id, parameters_json, status, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, ?, 'RUNNING', ?, ?, ?, 1, 'v2')",
-                (run_id, input_media_version_id, recipe_id, _json(parameters or {}), now, now, actor),
+                """INSERT INTO enhancement_runs
+                (id, input_media_version_id, recipe_id, parameters_json, status, created_at, updated_at, created_by,
+                 revision, schema_version, plan_hash, input_sha256, execution_snapshot_json)
+                VALUES (?, ?, ?, ?, 'RUNNING', ?, ?, ?, 1, 'v2', ?, ?, ?)""",
+                (run_id, input_media_version_id, recipe_id, _json(parameters or {}), now, now, actor, plan_hash, plan["snapshot"]["input_sha256"], _json(execution_snapshot)),
             )
         try:
-            if source_item["media_kind"] == "VIDEO":
-                args = ["-i", str(source_path), "-map", "0", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-y", str(output)]
-            elif source_item["media_kind"] == "AUDIO":
-                args = ["-i", str(source_path), "-c:a", "aac", "-y", str(output)]
-            else:
-                args = ["-i", str(source_path), "-frames:v", "1", "-c:v", "png", "-y", str(output)]
-            self._run_ffmpeg(args, timeout=300)
+            before_qc = self._probe(source_path)
+            self._run_ffmpeg(["-i", str(source_path), "-map", "0:v:0", "-map", "0:a?", "-vf", video_filter, "-c:v", "ffv1", "-level", "3", "-c:a", "pcm_s16le", "-y", str(scaled_output)], timeout=300)
+            scaled_hash, _ = _hash_file(scaled_output)
+            scaled_qc = self._probe(scaled_output)
+            self._run_ffmpeg(["-i", str(scaled_output), "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", str(encode["preset"]), "-crf", str(encode["crf"]), "-c:a", "aac", "-movflags", "+faststart", "-y", str(output)], timeout=300)
+            output_hash, _ = _hash_file(output)
+            after_qc = self._probe(output)
+            preserved_source = self.media.verify_content_integrity(input_media_version_id)
+            if preserved_source["actual_sha256"] != plan["snapshot"]["input_sha256"]:
+                raise DomainRuleError("ENHANCEMENT_INPUT_CHANGED", "增强期间输入媒体发生变化，输出未注册")
+            qc = {
+                "before": self._technical_qc_summary(before_qc),
+                "scaled": self._technical_qc_summary(scaled_qc),
+                "after": self._technical_qc_summary(after_qc),
+                "expected_dimensions": {"width": width, "height": height},
+                "passed": all(any(int(stream.get("width", 0)) == width and int(stream.get("height", 0)) == height for stream in probe.get("streams", [])) for probe in (scaled_qc, after_qc)),
+            }
+            if not qc["passed"]:
+                raise DomainRuleError("ENHANCEMENT_QC_FAILED", "增强输出尺寸未通过技术 QC")
+            execution_snapshot["step_trace"] = [
+                {"ordinal": 0, "kind": "SCALE", "executor_ref": "builtin:ffmpeg", "profile": scale, "input_sha256": plan["snapshot"]["input_sha256"], "output_sha256": scaled_hash, "status": "SUCCEEDED"},
+                {"ordinal": 1, "kind": "TECHNICAL_QC", "executor_ref": "builtin:ffprobe", "profile": next(step for step in steps if step["kind"] == "TECHNICAL_QC"), "input_sha256": scaled_hash, "output_sha256": scaled_hash, "status": "PASSED", "result": {"dimensions_match": True}},
+                {"ordinal": 2, "kind": "ENCODE", "executor_ref": "builtin:ffmpeg", "profile": encode, "input_sha256": scaled_hash, "output_sha256": output_hash, "status": "SUCCEEDED"},
+            ]
             imported = self.media.import_file(source_item["project_id"], output, purpose="ENHANCEMENT", owner_type="MEDIA_VERSION", owner_id=input_media_version_id, media_kind=source_item["media_kind"], stage="ENHANCED", actor=actor)
+            if imported.get("duplicate"):
+                raise DomainRuleError("ENHANCEMENT_OUTPUT_DUPLICATE", "增强输出与现有媒体 hash 相同，未注册伪新版本")
             with self.database.transaction() as connection:
-                connection.execute("UPDATE enhancement_runs SET output_media_version_id=?, status='SUCCEEDED', updated_at=?, revision=revision+1 WHERE id=?", (imported["media_version_id"], _now(), run_id))
-            return {"id": run_id, "status": "SUCCEEDED", "output_media_version_id": imported["media_version_id"], "recipe_id": recipe_id}
+                connection.execute("UPDATE media_versions SET parent_version_id=? WHERE id=?", (input_media_version_id, imported["media_version_id"]))
+                connection.execute("UPDATE enhancement_runs SET output_media_version_id=?, output_sha256=?, execution_snapshot_json=?, qc_json=?, status='SUCCEEDED', updated_at=?, revision=revision+1 WHERE id=?", (imported["media_version_id"], imported["sha256"], _json(execution_snapshot), _json(qc), _now(), run_id))
+            return self.get_enhancement_run(run_id)
         except DomainRuleError as error:
             with self.database.transaction() as connection:
                 connection.execute("UPDATE enhancement_runs SET status='FAILED', error_detail=?, updated_at=?, revision=revision+1 WHERE id=?", (error.code, _now(), run_id))
             raise
+        except Exception as error:
+            with self.database.transaction() as connection:
+                connection.execute("UPDATE enhancement_runs SET status='FAILED', error_detail='UNEXPECTED_LOCAL_FAILURE', updated_at=?, revision=revision+1 WHERE id=?", (_now(), run_id))
+            raise DomainRuleError("ENHANCEMENT_EXECUTION_FAILED", "本地增强执行失败", {"reason": type(error).__name__}) from error
+        finally:
+            scaled_output.unlink(missing_ok=True)
+            output.unlink(missing_ok=True)
+
+    def get_enhancement_run(self, run_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT * FROM enhancement_runs WHERE id=?", (run_id,)).fetchone()
+        if row is None:
+            raise DomainRuleError("ENHANCEMENT_RUN_NOT_FOUND", "增强运行不存在")
+        item = dict(row)
+        item["parameters"] = json.loads(item.pop("parameters_json") or "{}")
+        item["execution_snapshot"] = json.loads(item.pop("execution_snapshot_json") or "{}")
+        item["qc"] = json.loads(item.pop("qc_json") or "{}")
+        item["bypass_comparison"] = {"input_media_version_id": item["input_media_version_id"], "output_media_version_id": item["output_media_version_id"], "input_preserved": True}
+        return item
+
+    @staticmethod
+    def _technical_qc_summary(probe: dict[str, Any]) -> dict[str, Any]:
+        """Keep durable QC evidence without persisting source paths or container metadata."""
+        streams = probe.get("streams", [])
+        return {
+            "duration_ms": probe.get("duration_ms"),
+            "video": [
+                {key: stream.get(key) for key in ("codec_name", "width", "height", "pix_fmt", "avg_frame_rate")}
+                for stream in streams
+                if stream.get("codec_type") == "video"
+            ],
+            "audio": [
+                {key: stream.get(key) for key in ("codec_name", "sample_rate", "channels", "channel_layout")}
+                for stream in streams
+                if stream.get("codec_type") == "audio"
+            ],
+        }
 
     def render_episode(self, timeline_revision_id: str, *, actor: str = "local-user") -> dict[str, Any]:
         timeline = self.get_timeline(timeline_revision_id)
@@ -876,7 +1041,10 @@ class TimelineService:
         ffprobe = self.settings.ffprobe_path
         if not ffprobe or not Path(ffprobe).is_file():
             raise DomainRuleError("FFPROBE_UNAVAILABLE", "本机 FFprobe 不可用")
-        result = subprocess.run([ffprobe, "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)], capture_output=True, text=True, timeout=60, check=False)
+        try:
+            result = subprocess.run([ffprobe, "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)], capture_output=True, text=True, timeout=60, check=False)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise DomainRuleError("FFPROBE_FAILED", "本地 FFprobe 检查失败", {"reason": type(error).__name__}) from error
         if result.returncode != 0:
             raise DomainRuleError("FFPROBE_FAILED", "本地 FFprobe 检查失败")
         try:

@@ -8,7 +8,11 @@ import {
   createSubtitleRevision,
   createTimelineRevision,
   getFrameAnchor,
+  getEnhancementRun,
   getPostProcessRecipe,
+  listPostProcessRecipes,
+  planEnhancementRun,
+  publishPostProcessRecipe,
   renderEpisode,
   resolveProfileCameraPlan,
   runEnhancement,
@@ -79,15 +83,23 @@ describe("generated G8 timeline client", () => {
       to_shot_id: "shot-2",
       constraint_type: "POSE_CONTINUITY",
     });
-    await createPostProcessRecipe({ code: "denoise", title: "Denoise", steps: [{ op: "denoise" }] });
+    await createPostProcessRecipe({ code: "scale", title: "Scale", steps: [{ kind: "SCALE" }] });
+    await listPostProcessRecipes();
     await getPostProcessRecipe("recipe/1");
-    await runEnhancement({ input_media_version_id: "media/1", recipe_id: "recipe/1" });
+    await publishPostProcessRecipe("recipe/1");
+    await planEnhancementRun({ input_media_version_id: "media/1", recipe_id: "recipe/1" });
+    await runEnhancement({ input_media_version_id: "media/1", recipe_id: "recipe/1", plan_hash: "a".repeat(64) });
+    await getEnhancementRun("run/1");
     expect(fetchMock.mock.calls.map(([path]) => path).filter((path) => !String(path).endsWith("/session/bootstrap"))).toEqual([
       "/api/v1/frame-anchors/anchor%2F1",
       "/api/v1/shot-transitions",
       "/api/v1/post-process-recipes",
+      "/api/v1/post-process-recipes",
       "/api/v1/post-process-recipes/recipe%2F1",
+      "/api/v1/post-process-recipes/recipe%2F1:publish",
+      "/api/v1/enhancement-runs:plan",
       "/api/v1/enhancement-runs",
+      "/api/v1/enhancement-runs/run%2F1",
     ]);
   });
 

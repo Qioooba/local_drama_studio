@@ -8543,6 +8543,28 @@
       }
     },
     "/api/v1/post-process-recipes": {
+      "get": {
+        "tags": [
+          "timeline",
+          "delivery"
+        ],
+        "summary": "List Post Process Recipes",
+        "operationId": "listPostProcessRecipes",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Listpostprocessrecipes"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "tags": [
           "timeline",
@@ -8631,6 +8653,95 @@
         }
       }
     },
+    "/api/v1/post-process-recipes/{recipe_id}:publish": {
+      "post": {
+        "tags": [
+          "timeline",
+          "delivery"
+        ],
+        "summary": "Publish Post Process Recipe",
+        "operationId": "publishPostProcessRecipe",
+        "parameters": [
+          {
+            "name": "recipe_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Recipe Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Publishpostprocessrecipe"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/enhancement-runs:plan": {
+      "post": {
+        "tags": [
+          "timeline",
+          "delivery"
+        ],
+        "summary": "Plan Enhancement",
+        "operationId": "planEnhancementRun",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnhancementPlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Planenhancementrun"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/enhancement-runs": {
       "post": {
         "tags": [
@@ -8658,6 +8769,51 @@
                   "additionalProperties": true,
                   "type": "object",
                   "title": "Response Runenhancement"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/enhancement-runs/{run_id}": {
+      "get": {
+        "tags": [
+          "timeline",
+          "delivery"
+        ],
+        "summary": "Get Enhancement Run",
+        "operationId": "getEnhancementRun",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Getenhancementrun"
                 }
               }
             }
@@ -9936,7 +10092,7 @@
         ],
         "title": "DocumentImportRequest"
       },
-      "EnhancementRunRequest": {
+      "EnhancementPlanRequest": {
         "properties": {
           "input_media_version_id": {
             "type": "string",
@@ -9958,6 +10114,39 @@
         "required": [
           "input_media_version_id",
           "recipe_id"
+        ],
+        "title": "EnhancementPlanRequest"
+      },
+      "EnhancementRunRequest": {
+        "properties": {
+          "input_media_version_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Input Media Version Id"
+          },
+          "recipe_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Recipe Id"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Parameters"
+          },
+          "plan_hash": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Plan Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "input_media_version_id",
+          "recipe_id",
+          "plan_hash"
         ],
         "title": "EnhancementRunRequest"
       },
@@ -10826,6 +11015,17 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Capability Contract"
+          },
+          "parent_recipe_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Recipe Id"
           }
         },
         "type": "object",

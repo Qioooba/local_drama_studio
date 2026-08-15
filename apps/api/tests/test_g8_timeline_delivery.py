@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -202,15 +203,67 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
 
         recipe = client.post(
             "/api/v1/post-process-recipes",
-            json={"code": "g8-technical-qc", "title": "G8 technical QC", "steps": [{"kind": "TECHNICAL_QC"}], "capability_contract": {"local": True}},
+            json={
+                "code": "g8-enhance", "title": "G8 versioned enhancement",
+                "steps": [
+                    {"kind": "SCALE", "width": 320, "height": 180, "fit": "CONTAIN", "executor_ref": "builtin:ffmpeg"},
+                    {"kind": "TECHNICAL_QC", "executor_ref": "builtin:ffprobe"},
+                    {"kind": "ENCODE", "codec": "H264", "preset": "ultrafast", "crf": 24, "executor_ref": "builtin:ffmpeg"},
+                ],
+                "capability_contract": {"transport": "LOCAL_PROCESS", "network_allowed": False},
+            },
         )
         assert recipe.status_code == 201, recipe.text
+        draft_plan = client.post(
+            "/api/v1/enhancement-runs:plan",
+            json={"input_media_version_id": video_id, "recipe_id": recipe.json()["recipe"]["id"]},
+        )
+        assert draft_plan.status_code == 422
+        assert draft_plan.json()["error"]["code"] == "POST_PROCESS_RECIPE_NOT_ACTIVE"
+        published_recipe = client.post(f"/api/v1/post-process-recipes/{recipe.json()['recipe']['id']}:publish")
+        assert published_recipe.status_code == 200, published_recipe.text
+        enhancement_plan = client.post(
+            "/api/v1/enhancement-runs:plan",
+            json={"input_media_version_id": video_id, "recipe_id": recipe.json()["recipe"]["id"], "parameters": {"purpose": "local-fixture"}},
+        )
+        assert enhancement_plan.status_code == 200, enhancement_plan.text
+        assert enhancement_plan.json()["plan"]["would_create_run"] is False
+        stale_plan = client.post(
+            "/api/v1/enhancement-runs",
+            json={"input_media_version_id": video_id, "recipe_id": recipe.json()["recipe"]["id"], "plan_hash": "0" * 64},
+        )
+        assert stale_plan.status_code == 422
+        assert stale_plan.json()["error"]["code"] == "ENHANCEMENT_PLAN_STALE"
         enhancement = client.post(
             "/api/v1/enhancement-runs",
-            json={"input_media_version_id": video_id, "recipe_id": recipe.json()["recipe"]["id"], "parameters": {"preset": "local"}},
+            json={"input_media_version_id": video_id, "recipe_id": recipe.json()["recipe"]["id"], "parameters": {"purpose": "local-fixture"}, "plan_hash": enhancement_plan.json()["plan"]["plan_hash"]},
         )
         assert enhancement.status_code == 201, enhancement.text
         assert enhancement.json()["enhancement"]["status"] == "SUCCEEDED"
+        assert enhancement.json()["enhancement"]["qc"]["passed"] is True
+        assert set(enhancement.json()["enhancement"]["qc"]["before"]) == {"duration_ms", "video", "audio"}
+        assert "filename" not in json.dumps(enhancement.json()["enhancement"]["qc"])
+        assert enhancement.json()["enhancement"]["bypass_comparison"]["input_preserved"] is True
+        trace = enhancement.json()["enhancement"]["execution_snapshot"]["step_trace"]
+        assert [step["kind"] for step in trace] == ["SCALE", "TECHNICAL_QC", "ENCODE"]
+        assert trace[0]["input_sha256"] == enhancement.json()["enhancement"]["input_sha256"]
+        assert trace[0]["output_sha256"] == trace[1]["input_sha256"] == trace[1]["output_sha256"] == trace[2]["input_sha256"]
+        assert trace[2]["output_sha256"] == enhancement.json()["enhancement"]["output_sha256"]
+
+        derived = client.post(
+            "/api/v1/post-process-recipes",
+            json={
+                "code": "ignored-when-parent-is-set",
+                "title": "G8 versioned enhancement v2",
+                "parent_recipe_id": recipe.json()["recipe"]["id"],
+                "steps": recipe.json()["recipe"]["steps"],
+                "capability_contract": recipe.json()["recipe"]["capability_contract"],
+            },
+        )
+        assert derived.status_code == 201
+        assert derived.json()["recipe"]["version_no"] == 2
+        assert derived.json()["recipe"]["parent_recipe_id"] == recipe.json()["recipe"]["id"]
+        assert derived.json()["recipe"]["status"] == "DRAFT"
 
         render_response = client.post(f"/api/v1/timeline-revisions/{timeline['id']}:render")
         assert render_response.status_code == 201, render_response.text

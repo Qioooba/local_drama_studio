@@ -1,6 +1,6 @@
 {
   "schema_version": "g10.release_audit.read_only.v1",
-  "observed_at": "2026-08-15T05:36:38.776018+00:00",
+  "observed_at": "2026-08-15T07:16:20.431606+00:00",
   "status": "IN_PROGRESS",
   "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
   "checks": [
@@ -12,7 +12,7 @@
     {
       "code": "MIGRATION_HEAD",
       "passed": true,
-      "observed": "0029_user_supplied_model_policy"
+      "observed": "0030_versioned_post_process_chain"
     },
     {
       "code": "BACKUP_INTEGRITY",
@@ -43,7 +43,7 @@
     {
       "code": "UPGRADE_ROLLBACK_REHEARSAL",
       "passed": true,
-      "evidence": "docs/evidence/g10/upgrade-rollback-rehearsal-2026-08-15.json"
+      "evidence": "docs/evidence/g10/upgrade-rollback-rehearsal-0030-2026-08-15.json"
     },
     {
       "code": "SBOM_INVENTORY",
@@ -84,11 +84,11 @@
       "observed": {
         "valid": false,
         "status": "IN_PROGRESS",
-        "verified_fr": 0,
+        "verified_fr": 1,
         "required_fr": 84,
         "verified_nfr": 0,
         "required_nfr": 15,
-        "passed_tc": 0,
+        "passed_tc": 1,
         "required_tc": 85
       },
       "evidence": "docs/evidence/g10/master-requirements-closure.json"

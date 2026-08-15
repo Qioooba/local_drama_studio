@@ -16,13 +16,21 @@
     "tc_total": 85
   },
   "closure": {
-    "verified_release_fr": 0,
-    "verified_nfr": 0,
-    "passed_tc": 0,
+    "verified_release_fr": 1,
+    "verified_release_nfr": 0,
+    "passed_tc": 1,
     "open_p0_defects": null,
     "open_p1_defects": null,
     "full_chain_local_uat": "NOT_RUN"
   },
+  "verified_items": [
+    {
+      "requirement_id": "FR-PST-001",
+      "test_case_id": "TC-CAP-009",
+      "status": "PASS",
+      "evidence": "docs/evidence/g10/fr-pst-001-uat-2026-08-15.json"
+    }
+  ],
   "notes": [
     "This ledger is deliberately conservative until every P0/P1 requirement and named test case is mapped to current automated or captured local evidence.",
     "The two P2 FRs are inventoried but do not block the first formal release.",

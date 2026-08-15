@@ -14,6 +14,7 @@ vi.mock("../generated/api", () => ({
   getCapacitySnapshot: vi.fn().mockResolvedValue({ snapshot: { scope: { project_id: null }, observed_at: "2026-08-14T00:00:00Z", jobs_by_state: {}, jobs_by_channel: {}, queued_count: 0, oldest_queued_age_seconds: null, active_attempt_count: 0, active_worker_count: 0, gpu_active_count: 0, gpu_concurrency_limit: 1, completed_last_24h: 0, observation_status: "OBSERVED_NOT_BENCHMARKED", webhook_status: "LOOPBACK_EXPLICIT_BOUNDED", would_create_jobs: false, runtime_contacted: false, network_contacted: false, mutated: false } }),
   listProjects: vi.fn().mockResolvedValue({ items: [] }),
   listProfiles: vi.fn().mockResolvedValue({ items: [] }),
+  listPostProcessRecipes: vi.fn().mockResolvedValue({ items: [] }),
   latestDiagnostics: vi.fn().mockResolvedValue({ run: null }),
   runDiagnostics: vi.fn().mockResolvedValue({ run: { status: "HEALTHY", checks: [] } }),
   listSeasons: vi.fn().mockResolvedValue({ items: [] }),

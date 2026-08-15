@@ -98,8 +98,9 @@ export type ImportedMedia = { media_version_id: string; media_asset_id: string; 
 export type EpisodeRender = { id: string; episode_id: string; timeline_revision_id: string; integrity_status: string; [key: string]: unknown };
 export type DeliveryPackage = { id: string; episode_render_version_id: string; target_version_id: string; status: string; [key: string]: unknown };
 export type TransitionConstraint = { id: string; from_shot_id: string; to_shot_id: string; constraint_type: string; enforcement: string; compatibility_status?: string; [key: string]: unknown };
-export type PostProcessRecipe = { id: string; code: string; title: string; steps: Array<Record<string, unknown>>; capability_contract: Record<string, unknown>; [key: string]: unknown };
-export type EnhancementRun = { id: string; input_media_version_id: string; recipe_id: string; status: string; [key: string]: unknown };
+export type PostProcessRecipe = { id: string; code: string; recipe_key: string; title: string; version_no: number; parent_recipe_id: string | null; recipe_hash: string; status: 'DRAFT' | 'ACTIVE' | 'RETIRED'; steps: Array<Record<string, unknown>>; capability_contract: Record<string, unknown>; [key: string]: unknown };
+export type EnhancementPlan = { status: 'READY'; plan_hash: string; snapshot: Record<string, unknown>; command_preview: Record<string, unknown>; would_create_run: false; would_overwrite_input: false; runtime_contacted: false; network_contacted: false; mutated: false };
+export type EnhancementRun = { id: string; input_media_version_id: string; recipe_id: string; output_media_version_id: string | null; status: string; plan_hash: string; input_sha256: string; output_sha256: string | null; execution_snapshot: Record<string, unknown>; qc: Record<string, unknown>; bypass_comparison: { input_media_version_id: string; output_media_version_id: string | null; input_preserved: true }; [key: string]: unknown };
 export type I2VProbePlan = { status: 'READY' | 'BLOCKED'; blockers: string[]; snapshot: { project_id: string; purpose: string; approved_keyframe: { media_version_id: string; shot_id: string; approval_id: string; approved_at: string; sha256: string; byte_size: number } | null; workflow: { id: string; content_hash: string; revision: number } | null; candidate_profile: { id: string; capability: string; status: string; manifest_sha256: string; revision: number } | null; semantic_inputs: Record<string, unknown>; resource_policy: Record<string, unknown> }; plan_hash: string; would_create_job: false; would_contact_comfyui: false; confirmation_required: true };
 export type WorkflowVersionSummary = { id: string; workflow_id: string; code: string; title: string; version_no: number; content_hash: string; status: string; contract: Record<string, unknown>; package_rel_path: string | null; published_at: string | null; created_at: string; updated_at: string; revision: number };
 export type CanvasNode = { id: string; type: string; shot_id: string; shot_code: string; label: string; state: string; blockers: string[]; take_count: number; variant_count: number; active_job_count: number; thumbnail_media_version_id: string | null; position: { x: number; y: number } | null; variant_lineage: Array<{ id: string; variant_no: number; variant_type: string; parent_variant_id: string | null; status: string; is_stale: boolean; branch_reason: string }>; experiment_progress: Array<{ id: string; title: string; status: string; cell_count: number; expanded_count: number; succeeded_count: number; failed_count: number }>; adjacent_constraints: Array<{ id: string; from_shot_id: string; to_shot_id: string; constraint_type: string; compatibility_status: string; enforcement: string; is_stale: boolean }> };
@@ -559,16 +560,32 @@ export async function createShotTransitionConstraint(payload: { from_shot_id: st
   return requestJson('/api/v1/shot-transitions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
-export async function createPostProcessRecipe(payload: { code: string; title: string; steps: Array<Record<string, unknown>>; capability_contract?: Record<string, unknown> }, baseUrl = ''): Promise<{ recipe: PostProcessRecipe }> {
+export async function createPostProcessRecipe(payload: { code: string; title: string; steps: Array<Record<string, unknown>>; capability_contract?: Record<string, unknown>; parent_recipe_id?: string }, baseUrl = ''): Promise<{ recipe: PostProcessRecipe }> {
   return requestJson('/api/v1/post-process-recipes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function listPostProcessRecipes(baseUrl = ''): Promise<{ items: PostProcessRecipe[] }> {
+  return requestJson('/api/v1/post-process-recipes', undefined, baseUrl);
 }
 
 export async function getPostProcessRecipe(recipeId: string, baseUrl = ''): Promise<{ recipe: PostProcessRecipe }> {
   return requestJson(`/api/v1/post-process-recipes/${encodeURIComponent(recipeId)}`, undefined, baseUrl);
 }
 
-export async function runEnhancement(payload: { input_media_version_id: string; recipe_id: string; parameters?: Record<string, unknown> }, baseUrl = ''): Promise<{ enhancement: EnhancementRun }> {
+export async function publishPostProcessRecipe(recipeId: string, baseUrl = ''): Promise<{ recipe: PostProcessRecipe }> {
+  return requestJson(`/api/v1/post-process-recipes/${encodeURIComponent(recipeId)}:publish`, { method: 'POST' }, baseUrl);
+}
+
+export async function planEnhancementRun(payload: { input_media_version_id: string; recipe_id: string; parameters?: Record<string, unknown> }, baseUrl = ''): Promise<{ plan: EnhancementPlan }> {
+  return requestJson('/api/v1/enhancement-runs:plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function runEnhancement(payload: { input_media_version_id: string; recipe_id: string; parameters?: Record<string, unknown>; plan_hash: string }, baseUrl = ''): Promise<{ enhancement: EnhancementRun }> {
   return requestJson('/api/v1/enhancement-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function getEnhancementRun(runId: string, baseUrl = ''): Promise<{ enhancement: EnhancementRun }> {
+  return requestJson(`/api/v1/enhancement-runs/${encodeURIComponent(runId)}`, undefined, baseUrl);
 }
 
 export async function getG8Readiness(projectId: string, episodeId?: string, baseUrl = ''): Promise<{ readiness: G8Readiness }> {

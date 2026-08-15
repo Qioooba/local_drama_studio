@@ -74,12 +74,20 @@ class PostProcessRecipeRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     steps: list[dict[str, Any]] = Field(min_length=1)
     capability_contract: dict[str, Any] = Field(default_factory=dict)
+    parent_recipe_id: str | None = None
+
+
+class EnhancementPlanRequest(BaseModel):
+    input_media_version_id: str = Field(min_length=1)
+    recipe_id: str = Field(min_length=1)
+    parameters: dict[str, Any] = Field(default_factory=dict)
 
 
 class EnhancementRunRequest(BaseModel):
     input_media_version_id: str = Field(min_length=1)
     recipe_id: str = Field(min_length=1)
     parameters: dict[str, Any] = Field(default_factory=dict)
+    plan_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
 
 
 class RenderEpisodeRequest(BaseModel):

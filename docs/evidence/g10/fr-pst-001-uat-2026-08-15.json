@@ -1,0 +1,62 @@
+{
+  "schema_version": "uat.fr-pst-001.v1",
+  "observed_at": "2026-08-15T07:08:38.881207+00:00",
+  "status": "PASS",
+  "requirements": ["FR-PST-001", "TC-CAP-009"],
+  "scope": "Versioned local video SCALE -> TECHNICAL_QC -> ENCODE chain with explicit plan and confirmation",
+  "production_run": {
+    "recipe_id": "a73df3f8-12f0-4a2a-8506-f3115fe5b233",
+    "recipe_key": "uat-video-enhance-20260815",
+    "recipe_version": 1,
+    "recipe_status": "ACTIVE",
+    "recipe_hash": "ed7c43ef7ac1d8a6131bd726b1231e4f5ff641176d8852ee486a6f6d8ae2f658",
+    "run_id": "26557b07-9869-4b48-a3cc-c546001ae5c4",
+    "plan_hash": "a706f85c046b2477f738e872f66dabd93d6b8b38a660de8458f6d43861fcd257",
+    "input_media_version_id": "46f63d95-a36f-46a7-a831-a023bc26c289",
+    "input_sha256": "417e7f7d55cfc3db58599fe0e128ebb9ac44c32900d4a5da50ccba07a5e3d7ac",
+    "output_media_version_id": "e4e97b30-cd21-4786-b5c7-7b611c12a41b",
+    "output_sha256": "757183deb25716aa02cb72325edc0dbb0c362d283648d5867e766e89b8cf9d8c",
+    "output_stage": "ENHANCED",
+    "output_integrity": "VERIFIED",
+    "parent_version_id": "46f63d95-a36f-46a7-a831-a023bc26c289",
+    "qc_passed": true,
+    "expected_dimensions": {"width": 320, "height": 180},
+    "step_trace": [
+      {"ordinal": 0, "kind": "SCALE", "executor_ref": "builtin:ffmpeg", "input_sha256": "417e7f7d55cfc3db58599fe0e128ebb9ac44c32900d4a5da50ccba07a5e3d7ac", "output_sha256": "db1ca697b28290b62a1e930e475d6eeda0f99c88659955477f0b01660a1fc447", "status": "SUCCEEDED"},
+      {"ordinal": 1, "kind": "TECHNICAL_QC", "executor_ref": "builtin:ffprobe", "input_sha256": "db1ca697b28290b62a1e930e475d6eeda0f99c88659955477f0b01660a1fc447", "output_sha256": "db1ca697b28290b62a1e930e475d6eeda0f99c88659955477f0b01660a1fc447", "status": "PASSED"},
+      {"ordinal": 2, "kind": "ENCODE", "executor_ref": "builtin:ffmpeg", "input_sha256": "db1ca697b28290b62a1e930e475d6eeda0f99c88659955477f0b01660a1fc447", "output_sha256": "757183deb25716aa02cb72325edc0dbb0c362d283648d5867e766e89b8cf9d8c", "status": "SUCCEEDED"}
+    ]
+  },
+  "browser_uat": {
+    "viewport": "1280x720",
+    "draft_created": true,
+    "explicit_publish": true,
+    "read_only_plan_before_run": true,
+    "explicit_run_confirmation": true,
+    "side_by_side_video_count": 2,
+    "input_preserved_label_visible": true,
+    "native_controls_on_both_videos": true,
+    "document_horizontal_overflow": false,
+    "controls_under_36px": 0,
+    "visible_alerts": []
+  },
+  "automated_evidence": {
+    "api_full_suite": "PASS",
+    "web_suite": "66/66 PASS",
+    "web_production_build": "PASS",
+    "ruff": "PASS",
+    "mypy": "PASS"
+  },
+  "safety": {
+    "transport": "LOCAL_PROCESS",
+    "network_allowed": false,
+    "input_overwritten": false,
+    "runtime_contacted_during_plan": false,
+    "network_contacted_during_plan": false
+  },
+  "migration": {
+    "head": "0030_versioned_post_process_chain",
+    "production_integrity": "ok",
+    "isolated_upgrade_restore_evidence": "docs/evidence/g10/upgrade-rollback-rehearsal-0030-2026-08-15.json"
+  }
+}

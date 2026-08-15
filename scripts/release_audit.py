@@ -67,8 +67,8 @@ def _rehearsal_passed(path: Path) -> bool:
         and source.get("integrity") == "ok"
         and restore.get("integrity") == "ok"
         and restore.get("matches_source_sha256") is True
-        and source.get("migration") == "0028_audio_binding_authority"
-        and evidence.get("upgrade_copy", {}).get("to_migration") == "0029_user_supplied_model_policy"
+        and source.get("migration") == "0029_user_supplied_model_policy"
+        and evidence.get("upgrade_copy", {}).get("to_migration") == "0030_versioned_post_process_chain"
         and safety.get("production_database_mutated") is False
         and safety.get("network_contacted") is False
     )
@@ -313,7 +313,7 @@ def audit() -> dict[str, Any]:
         "sbom": (ROOT / "docs" / "release" / "sbom.json", True),
         "go_no_go": (ROOT / "docs" / "release" / "go-no-go.md", True),
     }
-    rehearsal_path = ROOT / "docs" / "evidence" / "g10" / "upgrade-rollback-rehearsal-2026-08-15.json"
+    rehearsal_path = ROOT / "docs" / "evidence" / "g10" / "upgrade-rollback-rehearsal-0030-2026-08-15.json"
     sbom_path = ROOT / "docs" / "release" / "sbom.json"
     sbom_inventory = _sbom_inventory(sbom_path)
     local_uat_path = ROOT / "docs" / "evidence" / "g10" / "local-uat-readonly-2026-08-14.json"
@@ -330,7 +330,7 @@ def audit() -> dict[str, Any]:
     release_artifacts_ready = all(item["final"] for item in artifact_state.values())
     checks = [
         {"code": "DATABASE_INTEGRITY", "passed": _integrity(DB_PATH) == "ok", "observed": _integrity(DB_PATH)},
-        {"code": "MIGRATION_HEAD", "passed": bool(migration and str(migration["version_num"]) == "0029_user_supplied_model_policy"), "observed": str(migration["version_num"]) if migration else None},
+        {"code": "MIGRATION_HEAD", "passed": bool(migration and str(migration["version_num"]) == "0030_versioned_post_process_chain"), "observed": str(migration["version_num"]) if migration else None},
         {"code": "BACKUP_INTEGRITY", "passed": bool(backup_paths) and all(_integrity(path) == "ok" for path in backup_paths[:5]), "observed_count": min(len(backup_paths), 5)},
         {"code": "ORDERED_G7", "passed": g7_pass, "observed": g7["status"], "next_required_action": g7["next_required_action"]},
         {

@@ -6,6 +6,7 @@ from local_drama.api.schemas.g8 import (
     AudioBindingRequest,
     DeliveryBuildRequest,
     DeliveryWithdrawRequest,
+    EnhancementPlanRequest,
     EnhancementRunRequest,
     FrameAnchorRequest,
     PostProcessRecipeRequest,
@@ -138,6 +139,11 @@ async def create_post_process_recipe(payload: PostProcessRecipeRequest, request:
         raise api_error_from_domain(error) from error
 
 
+@router.get("/post-process-recipes", operation_id="listPostProcessRecipes")
+async def list_post_process_recipes(request: Request) -> dict[str, object]:
+    return {"items": service(request).list_recipes()}
+
+
 @router.get("/post-process-recipes/{recipe_id}", operation_id="getPostProcessRecipe")
 async def get_post_process_recipe(recipe_id: str, request: Request) -> dict[str, object]:
     try:
@@ -146,10 +152,34 @@ async def get_post_process_recipe(recipe_id: str, request: Request) -> dict[str,
         raise api_error_from_domain(error) from error
 
 
+@router.post("/post-process-recipes/{recipe_id}:publish", operation_id="publishPostProcessRecipe")
+async def publish_post_process_recipe(recipe_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"recipe": service(request).publish_recipe(recipe_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/enhancement-runs:plan", operation_id="planEnhancementRun")
+async def plan_enhancement(payload: EnhancementPlanRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"plan": service(request).plan_enhancement(**payload.model_dump())}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.post("/enhancement-runs", status_code=201, operation_id="runEnhancement")
 async def run_enhancement(payload: EnhancementRunRequest, request: Request) -> dict[str, object]:
     try:
         return {"enhancement": service(request).run_enhancement(**payload.model_dump())}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/enhancement-runs/{run_id}", operation_id="getEnhancementRun")
+async def get_enhancement_run(run_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"enhancement": service(request).get_enhancement_run(run_id)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
