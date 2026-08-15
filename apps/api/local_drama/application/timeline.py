@@ -926,12 +926,14 @@ class TimelineService:
         if not video_items:
             raise DomainRuleError("TIMELINE_VIDEO_REQUIRED", "整集渲染至少需要一个 VIDEO item")
         paths: list[Path] = []
+        input_snapshot_items: list[dict[str, Any]] = []
         for item in video_items:
             media = self._media_for_episode(str(timeline["episode_id"]), str(item["media_version_id"]))
             _, path = self.media.content_path(str(item["media_version_id"]))
             if media["media_kind"] != "VIDEO":
                 raise DomainRuleError("TIMELINE_MEDIA_KIND_INVALID", "VIDEO track 只能绑定视频媒体")
             paths.append(path)
+            input_snapshot_items.append({"media_version_id": str(media["id"]), "sha256": str(media["sha256"]), "byte_size": int(media["byte_size"]), "start_us": int(item["start_us"]), "end_us": int(item["end_us"]), "track_type": str(item["track_type"]), "parameters": item["parameters"]})
         project_root = (self.settings.projects_root / episode["root_rel"]).resolve()
         render_dir = project_root / "05_timelines" / "renders"
         render_dir.mkdir(parents=True, exist_ok=True)
@@ -940,22 +942,27 @@ class TimelineService:
         escaped_paths = [path.as_posix().replace("'", "'\\''") for path in paths]
         concat_list.write_text("\n".join(f"file '{path}'" for path in escaped_paths) + "\n", encoding="utf-8")
         try:
-            self._run_ffmpeg(["-f", "concat", "-safe", "0", "-i", str(concat_list), "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", "-movflags", "+faststart", "-y", str(render_path)], timeout=900)
+            ffmpeg_args = ["-f", "concat", "-safe", "0", "-i", str(concat_list), "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", "-movflags", "+faststart", "-y", str(render_path)]
+            execution = self._run_ffmpeg(ffmpeg_args, timeout=900)
         finally:
             concat_list.unlink(missing_ok=True)
         digest, size = _hash_file(render_path)
         probe = self._probe(render_path)
+        input_snapshot = {"schema_version": "localdrama.episode-render-input.v1", "timeline_revision_id": timeline_revision_id, "timeline_revision_hash": timeline["revision_hash"], "timeline_input_snapshot": timeline["input_snapshot"], "items": input_snapshot_items}
+        ffmpeg_command = {"executor": "builtin:ffmpeg", "executable": execution["executable"], "args": execution["args"], "returncode": execution["returncode"]}
+        execution_log = json.dumps({"stdout_tail": execution["stdout_tail"], "stderr_tail": execution["stderr_tail"]}, ensure_ascii=False, sort_keys=True)
         render_id = str(uuid.uuid4())
         now = _now()
         with self.database.transaction() as connection:
             connection.execute(
                 """INSERT INTO episode_render_versions
                 (id, episode_id, timeline_revision_id, rel_path, sha256, probe_json, integrity_status, duration_ms, mime_type,
+                 input_snapshot_json, ffmpeg_command_json, execution_log_text,
                  created_at, updated_at, created_by, revision, schema_version)
-                VALUES (?, ?, ?, ?, ?, ?, 'VERIFIED', ?, 'video/mp4', ?, ?, ?, 1, 'v2')""",
-                (render_id, episode["id"], timeline_revision_id, render_path.relative_to(project_root).as_posix(), digest, _json(probe), probe.get("duration_ms"), now, now, actor),
+                VALUES (?, ?, ?, ?, ?, ?, 'VERIFIED', ?, 'video/mp4', ?, ?, ?, ?, ?, ?, 1, 'v2')""",
+                (render_id, episode["id"], timeline_revision_id, render_path.relative_to(project_root).as_posix(), digest, _json(probe), probe.get("duration_ms"), _json(input_snapshot), _json(ffmpeg_command), execution_log, now, now, actor),
             )
-        return {"id": render_id, "episode_id": episode["id"], "timeline_revision_id": timeline_revision_id, "rel_path": render_path.relative_to(project_root).as_posix(), "sha256": digest, "byte_size": size, "probe": probe, "status": "VERIFIED"}
+        return {"id": render_id, "episode_id": episode["id"], "timeline_revision_id": timeline_revision_id, "rel_path": render_path.relative_to(project_root).as_posix(), "sha256": digest, "byte_size": size, "probe": probe, "input_snapshot": input_snapshot, "ffmpeg_command": ffmpeg_command, "execution_log": execution_log, "status": "VERIFIED"}
 
     def render_content_path(self, episode_render_version_id: str) -> tuple[dict[str, Any], Path]:
         """Resolve a registered episode render through the local project root.
@@ -1058,7 +1065,7 @@ class TimelineService:
             connection.execute("INSERT INTO delivery_events (id, delivery_package_id, action, note, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, 'WITHDRAWN', ?, ?, ?, ?, 1, 'v2')", (str(uuid.uuid4()), package_id, reason, now, now, actor))
         return {"id": package_id, "status": "WITHDRAWN", "reason": reason}
 
-    def _run_ffmpeg(self, args: list[str], *, timeout: int) -> None:
+    def _run_ffmpeg(self, args: list[str], *, timeout: int) -> dict[str, Any]:
         ffmpeg = self.settings.ffmpeg_path
         if not ffmpeg or not Path(ffmpeg).is_file():
             raise DomainRuleError("FFMPEG_UNAVAILABLE", "本机 FFmpeg 不可用")
@@ -1068,6 +1075,7 @@ class TimelineService:
             raise DomainRuleError("FFMPEG_EXECUTION_FAILED", "本地 FFmpeg 执行失败", {"reason": type(error).__name__}) from error
         if result.returncode != 0:
             raise DomainRuleError("FFMPEG_EXECUTION_FAILED", "本地 FFmpeg 执行失败", {"stderr_redacted": result.stderr[-500:]})
+        return {"executable": str(ffmpeg), "args": args, "returncode": result.returncode, "stdout_tail": result.stdout[-2000:], "stderr_tail": result.stderr[-4000:]}
 
     def _probe(self, path: Path) -> dict[str, Any]:
         ffprobe = self.settings.ffprobe_path

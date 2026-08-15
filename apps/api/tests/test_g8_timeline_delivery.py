@@ -269,6 +269,12 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
         assert render_response.status_code == 201, render_response.text
         render = render_response.json()["render"]
         assert render["status"] == "VERIFIED"
+        assert render["input_snapshot"]["schema_version"] == "localdrama.episode-render-input.v1"
+        assert render["input_snapshot"]["timeline_revision_id"] == timeline["id"]
+        assert render["input_snapshot"]["items"]
+        assert render["ffmpeg_command"]["executor"] == "builtin:ffmpeg"
+        assert render["ffmpeg_command"]["returncode"] == 0
+        assert '"stderr_tail"' in render["execution_log"]
         templates = client.get("/api/v1/review-templates").json()["items"]
         render_template = next(item for item in templates if item["code"] == "episode_render")
         render_review = client.post(

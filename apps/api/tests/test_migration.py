@@ -16,14 +16,16 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         anchor_columns = {row[1] for row in connection.execute("PRAGMA table_info(frame_anchors)")}
         media_columns = {row[1] for row in connection.execute("PRAGMA table_info(media_versions)")}
         profile_columns = {row[1] for row in connection.execute("PRAGMA table_info(execution_profile_versions)")}
+        render_columns = {row[1] for row in connection.execute("PRAGMA table_info(episode_render_versions)")}
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         foreign_keys = connection.execute("PRAGMA foreign_keys").fetchone()[0]
         indexes = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
-        assert version == "0031_project_asset_grants"
+        assert version == "0032_episode_render_execution_evidence"
     assert "provider_random_nonce" in variant_columns
     assert {"requested_time_us", "resolved_time_us", "source_sha256", "extraction_method"} <= anchor_columns
     assert "source_artifact_id" in media_columns
     assert {"output_contract_json", "resource_policy_json"} <= profile_columns
+    assert {"input_snapshot_json", "ffmpeg_command_json", "execution_log_text"} <= render_columns
     with database.connect() as connection:
         project_columns = {row[1] for row in connection.execute("PRAGMA table_info(projects)")}
     assert {"width", "height", "primary_language", "subtitle_mode", "subtitle_language"} <= project_columns
