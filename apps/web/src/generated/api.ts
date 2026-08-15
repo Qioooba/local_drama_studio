@@ -3,6 +3,8 @@ export type HealthCheck = { status: string; checks: Record<string, string> };
 export type LocalSession = { token: string; mode: 'LOCAL_ONLY' };
 export type SystemContract = Record<string, string>;
 export type Project = { id: string; code: string; title: string; status: string; revision: number; [key: string]: unknown };
+export type ProjectAssetGrantCandidate = { authorization_id: string; source_project_id: string; source_project_code: string; source_project_title: string; media_version_id: string; asset_kind: string; path_rel: string; authorization_sha256: string; authorization_byte_size: number; authorization_status: string; license_status: string; authorization_revision: number; version_no: number; stage: string; integrity_status: string; media_sha256: string; media_byte_size: number; already_granted: boolean | number; grantable: boolean; impact: string[] };
+export type ProjectAssetGrant = { id: string; source_project_id: string; target_project_id: string; source_authorization_id: string; media_version_id: string; source_revision: number; source_sha256: string; source_byte_size: number; access_mode: 'READ_ONLY' | 'DERIVED'; status: 'ACTIVE' | 'REVOKED'; withdrawal_reason?: string | null; source_project_code?: string; source_project_title?: string; authorization_status?: string; integrity_status?: string; impact?: string[]; usable?: boolean; duplicate?: boolean; [key: string]: unknown };
 export type MasterScene = { id: string; project_id: string; code: string; title: string; location: string | null; time_of_day: string | null; revision: number };
 export type EpisodeSceneRange = { id: string; episode_id: string; scene_id: string; ordinal: number; source_start: number; source_end: number; source_label: string | null; scene_code: string; scene_title: string; location: string | null; time_of_day: string | null };
 export type ContinuityShot = { position: 'previous' | 'current' | 'next'; id: string; code: string; order_key: string; status: string; target_duration_ms: number; revision: { id: string | null; revision_no: number | null; is_frozen: boolean }; facets: Record<string, unknown | null>; missing_facets: string[]; references: Array<{ media_asset_id: string; media_version_id: string; purpose: string; media_kind: string; selection_state: 'APPROVED' | 'SELECTED'; version_no: number; stage: string; integrity_status: string }> };
@@ -736,6 +738,26 @@ export async function runG7NetworkE2E(projectId: string, baseUrl = ''): Promise<
 
 export async function authorizeWorkspaceAsset(projectId: string, mediaVersionId: string, baseUrl = ''): Promise<{ authorization: Record<string, unknown> }> {
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/workspace-assets/authorize`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ media_version_id: mediaVersionId }) }, baseUrl);
+}
+
+export async function revokeWorkspaceAssetAuthorization(projectId: string, mediaVersionId: string, reason: string, baseUrl = ''): Promise<{ authorization: Record<string, unknown> }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/workspace-assets/${encodeURIComponent(mediaVersionId)}:revoke`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }) }, baseUrl);
+}
+
+export async function listProjectAssetGrantCandidates(projectId: string, baseUrl = ''): Promise<{ items: ProjectAssetGrantCandidate[] }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/asset-grant-candidates`, undefined, baseUrl);
+}
+
+export async function listProjectAssetGrants(projectId: string, baseUrl = ''): Promise<{ items: ProjectAssetGrant[] }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/asset-grants`, undefined, baseUrl);
+}
+
+export async function createProjectAssetGrant(projectId: string, payload: { authorization_id: string; access_mode: 'READ_ONLY' | 'DERIVED' }, baseUrl = ''): Promise<{ grant: ProjectAssetGrant }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/asset-grants`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function revokeProjectAssetGrant(grantId: string, reason: string, baseUrl = ''): Promise<{ grant: ProjectAssetGrant }> {
+  return requestJson(`/api/v1/asset-grants/${encodeURIComponent(grantId)}:revoke`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }) }, baseUrl);
 }
 
 export async function createBrandKit(projectId: string, payload: { code: string; title: string; tokens: Record<string, unknown> }, baseUrl = ''): Promise<{ brand_kit: Record<string, unknown> }> {

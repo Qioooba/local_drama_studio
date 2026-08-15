@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from local_drama.api.schemas.g7 import BrandKitRequest, WorkspaceAssetAuthorizationRequest
+from local_drama.api.schemas.g7 import BrandKitRequest, ProjectAssetGrantRequest, ProjectAssetGrantRevokeRequest, WorkspaceAssetAuthorizationRequest
 from local_drama.api.schemas.g7_model import LocalModelReferenceRequest, ModelCompatibilityRequest, ModelLicenseEvidenceRequest
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.g6_readiness import G6ReadinessService
@@ -110,6 +110,46 @@ async def run_g7_network_e2e(project_id: str, request: Request) -> dict[str, obj
 async def authorize_workspace_asset(project_id: str, payload: WorkspaceAssetAuthorizationRequest, request: Request) -> dict[str, object]:
     try:
         return {"authorization": WorkspaceAssetService(request.app.state.database, request.app.state.settings).authorize_media_version(project_id, payload.media_version_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/projects/{project_id}/asset-grant-candidates", operation_id="listProjectAssetGrantCandidates")
+async def list_project_asset_grant_candidates(project_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"items": WorkspaceAssetService(request.app.state.database, request.app.state.settings).list_grant_candidates(project_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/projects/{project_id}/workspace-assets/{media_version_id}:revoke", operation_id="revokeWorkspaceAssetAuthorization")
+async def revoke_workspace_asset_authorization(project_id: str, media_version_id: str, payload: ProjectAssetGrantRevokeRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"authorization": WorkspaceAssetService(request.app.state.database, request.app.state.settings).revoke_authorization(project_id, media_version_id, payload.reason)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/projects/{project_id}/asset-grants", operation_id="listProjectAssetGrants")
+async def list_project_asset_grants(project_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"items": WorkspaceAssetService(request.app.state.database, request.app.state.settings).list_grants(project_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/projects/{project_id}/asset-grants", status_code=201, operation_id="createProjectAssetGrant")
+async def create_project_asset_grant(project_id: str, payload: ProjectAssetGrantRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"grant": WorkspaceAssetService(request.app.state.database, request.app.state.settings).create_grant(project_id, payload.authorization_id, payload.access_mode)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/asset-grants/{grant_id}:revoke", operation_id="revokeProjectAssetGrant")
+async def revoke_project_asset_grant(grant_id: str, payload: ProjectAssetGrantRevokeRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"grant": WorkspaceAssetService(request.app.state.database, request.app.state.settings).revoke_grant(grant_id, payload.reason)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

@@ -22,6 +22,8 @@ import {
   listDialogueLines,
   listEpisodeAudioBindings,
   listJobs,
+  listProjectAssetGrantCandidates,
+  listProjectAssetGrants,
   listProfiles,
   listProjects,
   listVoiceProfileVersions,
@@ -61,6 +63,7 @@ import { ProjectTemplateCopyAction } from "../features/projects/ProjectTemplateC
 import { ProjectCreateWizard } from "../features/projects/ProjectCreateWizard";
 import { EpisodeSceneRanges } from "../features/projects/EpisodeSceneRanges";
 import { ProjectPackageAction } from "../features/projects/ProjectPackageAction";
+import { ProjectAssetGrantPanel } from "../features/projects/ProjectAssetGrantPanel";
 import { CreativeLibrary } from "../features/projects/CreativeLibrary";
 import { AIDraftReviewPanel } from "../features/projects/AIDraftReviewPanel";
 import { ScriptImportPanel } from "../features/projects/ScriptImportPanel";
@@ -146,6 +149,8 @@ export function App() {
   const formalCandidates = useQuery({ queryKey: ["reviews", "formal-selection", selectedProject], queryFn: () => listFormalSelectionCandidates(selectedProject as string), enabled: Boolean(selectedProject) && view === "reviews" });
   const capacitySnapshot = useQuery({ queryKey: ["capacity", selectedProject], queryFn: () => getCapacitySnapshot(selectedProject ?? undefined), enabled: view === "overview" || view === "jobs" });
   const projectConfiguration = useQuery({ queryKey: ["project-configuration", selectedProject], queryFn: () => getProjectConfiguration(selectedProject as string), enabled: Boolean(selectedProject) && (view === "profiles" || view === "projects") });
+  const assetGrantCandidates = useQuery({ queryKey: ["asset-grant-candidates", selectedProject], queryFn: () => listProjectAssetGrantCandidates(selectedProject as string), enabled: Boolean(selectedProject) && view === "projects" });
+  const assetGrants = useQuery({ queryKey: ["asset-grants", selectedProject], queryFn: () => listProjectAssetGrants(selectedProject as string), enabled: Boolean(selectedProject) && view === "projects" });
   const modelCompatibility = useQuery({ queryKey: ["model-compatibility", selectedProject], queryFn: () => getModelCompatibility(selectedProject as string), enabled: Boolean(selectedProject) && (view === "profiles" || view === "diagnostics" || view === "overview") });
   const seasons = useQuery({ queryKey: ["project", selectedProject, "seasons"], queryFn: () => listSeasons(selectedProject as string), enabled: Boolean(selectedProject) });
   const selectedSeason = seasons.data?.items[0]?.id ?? null;
@@ -174,7 +179,7 @@ export function App() {
     { label: "项目列表", query: projects },
   ];
   if (view === "overview") activeQueries.push({ label: "本地能力", query: profiles }, { label: "诊断摘要", query: diagnostics }, { label: "适配器契约", query: adapterContracts }, { label: "容量摘要", query: capacitySnapshot }, { label: "模型证据", query: modelCompatibility });
-  if (view === "projects") activeQueries.push({ label: "季数据", query: seasons }, { label: "分集数据", query: episodes }, { label: "生产状态", query: production }, { label: "时间线状态", query: timelineStatus }, { label: "G8 门禁", query: g8Readiness }, { label: "审核模板", query: reviewTemplates }, { label: "项目配置", query: projectConfiguration });
+  if (view === "projects") activeQueries.push({ label: "季数据", query: seasons }, { label: "分集数据", query: episodes }, { label: "生产状态", query: production }, { label: "时间线状态", query: timelineStatus }, { label: "G8 门禁", query: g8Readiness }, { label: "审核模板", query: reviewTemplates }, { label: "资产授权候选", query: assetGrantCandidates }, { label: "资产 Grant", query: assetGrants }, { label: "项目配置", query: projectConfiguration });
   if (view === "canvas") activeQueries.push({ label: "季数据", query: seasons }, { label: "分集数据", query: episodes }, { label: "生产状态", query: production }, { label: "G9 门禁", query: g9Readiness });
   if (view === "reviews") activeQueries.push({ label: "审核收件箱", query: reviewItems }, { label: "正式交付候选", query: formalCandidates }, { label: "审核模板", query: reviewTemplates }, { label: "审核上下文", query: reviewContext });
   if (view === "jobs") activeQueries.push({ label: "任务列表", query: jobs }, { label: "容量摘要", query: capacitySnapshot });
@@ -315,6 +320,7 @@ export function App() {
 
           {(view === "overview" || view === "projects") && <GlobalSearchPanel projectId={selectedProject} />}
           {view === "projects" && selectedProject && <ProjectHealthPanel projectId={selectedProject} />}
+          {view === "projects" && selectedProject && <ProjectAssetGrantPanel projectId={selectedProject} />}
 
           {(view === "overview" || view === "projects") && <ProjectCreateWizard profiles={profiles.data?.items ?? []} onCreated={(created) => { void queryClient.invalidateQueries({ queryKey: ["projects"] }); selectProject(created.id, "projects"); }} />}
 

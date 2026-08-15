@@ -19,7 +19,7 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         foreign_keys = connection.execute("PRAGMA foreign_keys").fetchone()[0]
         indexes = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
-        assert version == "0030_versioned_post_process_chain"
+        assert version == "0031_project_asset_grants"
     assert "provider_random_nonce" in variant_columns
     assert {"requested_time_us", "resolved_time_us", "source_sha256", "extraction_method"} <= anchor_columns
     assert "source_artifact_id" in media_columns
@@ -45,6 +45,8 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         "ix_episode_scene_ranges_scene",
         "ix_creative_entries_project_kind",
         "ix_creative_entry_revisions_entry",
+        "ix_project_asset_grants_target_status",
+        "ix_project_asset_grants_source_media",
     } <= indexes
     expected = {
         "projects",
@@ -83,6 +85,7 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         "canvas_execution_plans",
         "prompts",
         "prompt_revisions",
+        "project_asset_grants",
     }
     assert expected <= tables
 

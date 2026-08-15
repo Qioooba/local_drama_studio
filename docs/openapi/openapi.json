@@ -3935,6 +3935,263 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/asset-grant-candidates": {
+      "get": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "List Project Asset Grant Candidates",
+        "operationId": "listProjectAssetGrantCandidates",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listprojectassetgrantcandidates"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/workspace-assets/{media_version_id}:revoke": {
+      "post": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "Revoke Workspace Asset Authorization",
+        "operationId": "revokeWorkspaceAssetAuthorization",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "media_version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Media Version Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectAssetGrantRevokeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Revokeworkspaceassetauthorization"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/asset-grants": {
+      "get": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "List Project Asset Grants",
+        "operationId": "listProjectAssetGrants",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listprojectassetgrants"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "Create Project Asset Grant",
+        "operationId": "createProjectAssetGrant",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectAssetGrantRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Createprojectassetgrant"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/asset-grants/{grant_id}:revoke": {
+      "post": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "Revoke Project Asset Grant",
+        "operationId": "revokeProjectAssetGrant",
+        "parameters": [
+          {
+            "name": "grant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Grant Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectAssetGrantRevokeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Revokeprojectassetgrant"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/brand-kits": {
       "post": {
         "tags": [
@@ -11699,6 +11956,44 @@
           "workflow_version_id"
         ],
         "title": "ProfileEvidencePublishRequest"
+      },
+      "ProjectAssetGrantRequest": {
+        "properties": {
+          "authorization_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Authorization Id"
+          },
+          "access_mode": {
+            "type": "string",
+            "enum": [
+              "READ_ONLY",
+              "DERIVED"
+            ],
+            "title": "Access Mode"
+          }
+        },
+        "type": "object",
+        "required": [
+          "authorization_id",
+          "access_mode"
+        ],
+        "title": "ProjectAssetGrantRequest"
+      },
+      "ProjectAssetGrantRevokeRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "ProjectAssetGrantRevokeRequest"
       },
       "ProjectCreateRequest": {
         "properties": {
