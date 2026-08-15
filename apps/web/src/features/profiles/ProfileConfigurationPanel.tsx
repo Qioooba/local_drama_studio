@@ -5,9 +5,13 @@ import {
   getProfileVersion,
   publishProfileContractVersion,
   validateProfileContractVersion,
+  publishWorkflowVersion,
+  revokeWorkflowVersion,
+  validateWorkflowLocal,
   type Profile,
   type ProfileVersionDetail,
   type WorkflowVersionSummary,
+  type WorkflowValidation,
 } from "../../generated/api";
 
 function parseObject(value: string, label: string): Record<string, unknown> {
@@ -29,6 +33,8 @@ export function ProfileConfigurationPanel({ profiles, workflows, workflowsLoadin
   const [outputJson, setOutputJson] = useState("{}");
   const [resourceJson, setResourceJson] = useState("{}");
   const [feedback, setFeedback] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+  const [workflowValidations, setWorkflowValidations] = useState<Record<string, WorkflowValidation>>({});
+  const [workflowBusy, setWorkflowBusy] = useState<string | null>(null);
   useEffect(() => {
     if (!current) return;
     setInputJson(JSON.stringify(current.input_contract, null, 2));
@@ -55,6 +61,26 @@ export function ProfileConfigurationPanel({ profiles, workflows, workflowsLoadin
     onError: (error) => setFeedback({ kind: "error", message: `${String(error)} 执行指纹变化时必须转入真实媒体证据发布。` }),
   });
   const isDraft = current?.status === "DRAFT";
+  const validateWorkflow = async (workflow: WorkflowVersionSummary) => {
+    setWorkflowBusy(`validate:${workflow.id}`); setFeedback(null);
+    try { const result = await validateWorkflowLocal(workflow.id); setWorkflowValidations((current) => ({ ...current, [workflow.id]: result.validation })); setFeedback({ kind: result.validation.status === "PASS" ? "success" : "error", message: `${workflow.code} v${workflow.version_no} 本地工作流验证：${result.validation.status}` }); }
+    catch (error) { setFeedback({ kind: "error", message: `工作流验证失败：${String(error)}` }); }
+    finally { setWorkflowBusy(null); }
+  };
+  const publishWorkflow = async (workflow: WorkflowVersionSummary) => {
+    const validation = workflowValidations[workflow.id];
+    if (!validation || validation.status !== "PASS") return;
+    setWorkflowBusy(`publish:${workflow.id}`); setFeedback(null);
+    try { await publishWorkflowVersion(workflow.id, validation.id); setFeedback({ kind: "success", message: `${workflow.code} v${workflow.version_no} 已发布` }); onChanged(); }
+    catch (error) { setFeedback({ kind: "error", message: `工作流发布失败：${String(error)}` }); }
+    finally { setWorkflowBusy(null); }
+  };
+  const revokeWorkflow = async (workflow: WorkflowVersionSummary) => {
+    setWorkflowBusy(`revoke:${workflow.id}`); setFeedback(null);
+    try { await revokeWorkflowVersion(workflow.id); setFeedback({ kind: "success", message: `${workflow.code} v${workflow.version_no} 已撤销` }); onChanged(); }
+    catch (error) { setFeedback({ kind: "error", message: `工作流撤销失败：${String(error)}` }); }
+    finally { setWorkflowBusy(null); }
+  };
   return <section className="panel">
     <div className="panel-heading"><div><p className="eyebrow">G7 PROFILE CONFIGURATION</p><h3>本地能力契约与不可变版本</h3></div><span className="status-pill">LOCAL_ONLY</span></div>
     <p className="muted">编辑只会派生新 DRAFT；本地验证不会连接 ComfyUI。执行指纹有变化时，发布必须提供真实成功媒体证据。</p>
@@ -84,6 +110,6 @@ export function ProfileConfigurationPanel({ profiles, workflows, workflowsLoadin
       </div>
     </div>
     <div className="workflow-history-heading"><div><p className="eyebrow">WORKFLOW HISTORY</p><h3>工作流发布证据</h3></div><span className="status-pill neutral">只读 · 未连接 ComfyUI</span></div>
-    {workflowsLoading ? <p className="empty-state">正在读取本地工作流版本…</p> : <div className="workflow-history">{workflows.map((workflow) => <article className="workflow-version" key={workflow.id}><div><strong>{workflow.code}</strong><small>v{workflow.version_no} · {String(workflow.contract.capability ?? "未声明 capability")}</small></div><span className={`status-pill${workflow.status === "PUBLISHED" ? "" : " neutral"}`}>{workflow.status}</span><code>{workflow.content_hash.slice(0, 12)}</code><small>{workflow.published_at ? `发布于 ${new Date(workflow.published_at).toLocaleString()}` : "尚未发布；验证、发布与回滚均需显式操作。"}</small></article>)}</div>}
+    {workflowsLoading ? <p className="empty-state">正在读取本地工作流版本…</p> : <div className="workflow-history">{workflows.map((workflow) => { const validation = workflowValidations[workflow.id]; return <article className="workflow-version" key={workflow.id}><div><strong>{workflow.code}</strong><small>v{workflow.version_no} · {String(workflow.contract.capability ?? "未声明 capability")}</small></div><span className={`status-pill${workflow.status === "PUBLISHED" ? "" : " neutral"}`}>{workflow.status}</span><code>{workflow.content_hash.slice(0, 12)}</code><small>{workflow.published_at ? `发布于 ${new Date(workflow.published_at).toLocaleString()}` : "尚未发布；验证、发布与回滚均需显式操作。"}</small><div className="workflow-actions"><button className="secondary" onClick={() => void validateWorkflow(workflow)} disabled={workflowBusy !== null}>{workflowBusy === `validate:${workflow.id}` ? "验证中…" : "本地验证"}</button>{validation?.status === "PASS" && workflow.status !== "PUBLISHED" && <button className="primary-action" onClick={() => void publishWorkflow(workflow)} disabled={workflowBusy !== null}>{workflowBusy === `publish:${workflow.id}` ? "发布中…" : "发布"}</button>}{workflow.status === "PUBLISHED" && <button className="secondary" onClick={() => void revokeWorkflow(workflow)} disabled={workflowBusy !== null}>{workflowBusy === `revoke:${workflow.id}` ? "撤销中…" : "撤销"}</button>}</div>{validation && <small className={validation.status === "PASS" ? "ok-text" : "blocker-text"}>最近验证：{validation.status} · {validation.id.slice(0, 12)}</small>}</article>; })}</div>}
   </section>;
 }

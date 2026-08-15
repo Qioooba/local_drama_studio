@@ -110,6 +110,7 @@ export type EnhancementPlan = { status: 'READY'; plan_hash: string; snapshot: Re
 export type EnhancementRun = { id: string; input_media_version_id: string; recipe_id: string; output_media_version_id: string | null; status: string; plan_hash: string; input_sha256: string; output_sha256: string | null; execution_snapshot: Record<string, unknown>; qc: Record<string, unknown>; bypass_comparison: { input_media_version_id: string; output_media_version_id: string | null; input_preserved: true }; [key: string]: unknown };
 export type I2VProbePlan = { status: 'READY' | 'BLOCKED'; blockers: string[]; snapshot: { project_id: string; purpose: string; approved_keyframe: { media_version_id: string; shot_id: string; approval_id: string; approved_at: string; sha256: string; byte_size: number } | null; workflow: { id: string; content_hash: string; revision: number } | null; candidate_profile: { id: string; capability: string; status: string; manifest_sha256: string; revision: number } | null; semantic_inputs: Record<string, unknown>; resource_policy: Record<string, unknown> }; plan_hash: string; would_create_job: false; would_contact_comfyui: false; confirmation_required: true };
 export type WorkflowVersionSummary = { id: string; workflow_id: string; code: string; title: string; version_no: number; content_hash: string; status: string; contract: Record<string, unknown>; package_rel_path: string | null; published_at: string | null; created_at: string; updated_at: string; revision: number };
+export type WorkflowValidation = { id: string; workflow_version_id: string; status: 'PASS' | 'FAIL'; checks: Array<Record<string, unknown>>; [key: string]: unknown };
 export type CanvasNode = { id: string; type: string; shot_id: string; shot_code: string; label: string; state: string; blockers: string[]; take_count: number; variant_count: number; active_job_count: number; thumbnail_media_version_id: string | null; position: { x: number; y: number } | null; variant_lineage: Array<{ id: string; variant_no: number; variant_type: string; parent_variant_id: string | null; status: string; is_stale: boolean; branch_reason: string }>; experiment_progress: Array<{ id: string; title: string; status: string; cell_count: number; expanded_count: number; succeeded_count: number; failed_count: number }>; adjacent_constraints: Array<{ id: string; from_shot_id: string; to_shot_id: string; constraint_type: string; compatibility_status: string; enforcement: string; is_stale: boolean }> };
 export type CanvasEdge = { id: string; source: string; target: string; kind: string; status?: string; mutable_by_layout: false };
 export type CanvasGraph = { scope: Record<string, unknown>; nodes: CanvasNode[]; edges: CanvasEdge[]; layout: { positions: Record<string, { x: number; y: number }>; groups: Array<Record<string, unknown>>; viewport: Record<string, number>; revision: number; layout_hash: string | null }; page: { cursor: number; limit: number; returned_shots: number; total_shots: number; next_cursor: number | null }; invariants: { layout_changes_business_dependencies: false; max_visible_nodes: number; lazy: true } };
@@ -731,6 +732,18 @@ export async function importModelLicenseEvidence(projectId: string, payload: { m
 
 export async function listWorkflowVersions(baseUrl = ''): Promise<{ items: WorkflowVersionSummary[]; runtime_contacted: false }> {
   return requestJson('/api/v1/workflow-versions', undefined, baseUrl);
+}
+
+export async function validateWorkflowLocal(versionId: string, baseUrl = ''): Promise<{ validation: WorkflowValidation }> {
+  return requestJson(`/api/v1/workflow-versions/${encodeURIComponent(versionId)}:validate-local`, { method: 'POST' }, baseUrl);
+}
+
+export async function publishWorkflowVersion(versionId: string, validationId: string, baseUrl = ''): Promise<{ workflow_version: WorkflowVersionSummary }> {
+  return requestJson(`/api/v1/workflow-versions/${encodeURIComponent(versionId)}:publish`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ validation_id: validationId }) }, baseUrl);
+}
+
+export async function revokeWorkflowVersion(versionId: string, baseUrl = ''): Promise<{ workflow_version: WorkflowVersionSummary }> {
+  return requestJson(`/api/v1/workflow-versions/${encodeURIComponent(versionId)}:revoke`, { method: 'POST' }, baseUrl);
 }
 
 export async function getProductionCanvas(scopeType: 'EPISODE' | 'SHOT', scopeId: string, cursor = 0, limit = 100, baseUrl = ''): Promise<{ graph: CanvasGraph }> {
