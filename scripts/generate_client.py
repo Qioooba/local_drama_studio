@@ -432,6 +432,10 @@ export async function createGenerationExperiment(payload: { intent_id: string; t
   return requestJson('/api/v1/generation-experiments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
+export async function getGenerationExperiment(experimentId: string, baseUrl = ''): Promise<{ experiment: GenerationExperiment }> {
+  return requestJson(`/api/v1/generation-experiments/${encodeURIComponent(experimentId)}`, undefined, baseUrl);
+}
+
 export async function estimateGenerationExperiment(experimentId: string, baseUrl = ''): Promise<{ estimate: GenerationExperimentEstimate }> {
   return requestJson(`/api/v1/generation-experiments/${encodeURIComponent(experimentId)}/estimate`, undefined, baseUrl);
 }
