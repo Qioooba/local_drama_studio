@@ -599,6 +599,37 @@ def test_variant_api_preflight_is_non_persistent_and_hash_gates_creation(workspa
         assert len(client.get(f"/api/v1/generation-intents/{intent['id']}/variants").json()["items"]) == 1
 
 
+def test_camera_plan_must_match_profile_and_is_frozen_in_job_snapshot(workspace, database) -> None:
+    project = _project(workspace, database, "camera_variant_snapshot")
+    project_id = str(project["id"])
+    media_version_id = _image(workspace, database, project_id, "camera-input.png")
+    profile_version_id = _published_profile(workspace, database)
+    with database.transaction() as connection:
+        row = connection.execute("SELECT parameter_schema_json FROM execution_profile_versions WHERE id=?", (profile_version_id,)).fetchone()
+        schema = json.loads(row["parameter_schema_json"] or "{}")
+        schema.setdefault("capabilities", {})["camera"] = {"support": "NATIVE"}
+        connection.execute("UPDATE execution_profile_versions SET parameter_schema_json=?, revision=revision+1 WHERE id=?", (json.dumps(schema), profile_version_id))
+    generation = GenerationService(database, workspace)
+    intent = generation.create_intent(project_id, "SHOT", project_id, "I2V", "camera snapshot")
+    camera = {
+        "mode": "NATIVE", "shot_type": "CLOSEUP", "movement": "PUSH_IN", "prompt_text": "",
+        "direction": "FORWARD", "intensity": 0.5, "curve": "LINEAR", "profile_version_id": profile_version_id,
+    }
+    base = _plan(profile_version_id, media_version_id)
+    plan = VariantPlan(**{**base.__dict__, "parameter_set": {**base.parameter_set, "camera_plan": camera}})
+    preflight = generation.preflight_variant(str(intent["id"]), plan)
+    submitted = generation.submit_confirmed_variant(str(intent["id"]), plan, str(preflight["plan_hash"]), "camera-variant-submit")
+    with database.connect() as connection:
+        snapshot = json.loads(connection.execute("SELECT input_snapshot_json FROM jobs WHERE id=?", (submitted["job"]["id"],)).fetchone()[0])
+    assert snapshot["semantic_inputs"]["camera_plan"] == camera
+
+    stale_camera = {**camera, "mode": "PROMPT_FALLBACK", "prompt_text": "camera: push in"}
+    stale = VariantPlan(**{**base.__dict__, "parameter_set": {**base.parameter_set, "camera_plan": stale_camera}})
+    with pytest.raises(DomainRuleError) as error:
+        generation.preflight_variant(str(intent["id"]), stale)
+    assert error.value.code == "CAMERA_PLAN_RESOLUTION_STALE"
+
+
 def test_tampered_variant_input_is_blocked_before_variant_or_job_creation(workspace, database) -> None:
     project = _project(workspace, database, "tampered_variant_input")
     project_id = str(project["id"])

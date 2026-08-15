@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { createFrameAnchor, createKeyframeCandidate, type FrameAnchor, type G6Readiness, type I2VProbePlan, type Profile, type ReviewInboxItem } from "../../generated/api";
+import { createFrameAnchor, createGenerationIntent, createKeyframeCandidate, createPrompt, planGenerationVariant, submitGenerationVariant, type CameraPlan, type FrameAnchor, type G6Readiness, type GenerationVariantDraft, type GenerationVariantPlan, type I2VProbePlan, type Job, type Profile, type ReviewInboxItem } from "../../generated/api";
 import { GateStatusIcon } from "../../components/icons";
 
 type Shot = Record<string, unknown>;
 
 type GenerationWorkbenchProps = {
+  projectId: string | null;
   profiles: Profile[];
-  videos: ReviewInboxItem[];
+  candidates: ReviewInboxItem[];
   h3?: { status: string; release_root?: string; missing_sidecars?: string[] };
   g6Readiness?: G6Readiness;
   i2vProbePlan?: I2VProbePlan;
@@ -16,6 +17,7 @@ type GenerationWorkbenchProps = {
   onSelectShot: (id: string) => void;
   onOpenProfiles: () => void;
   onOpenReviews?: (mediaVersionId?: string) => void;
+  onSubmitted?: () => void;
 };
 
 const modes = [
@@ -43,22 +45,45 @@ const readinessLabels: Record<string, string> = {
   FORMAL_HUMAN_APPROVAL: "由人工完成正式审核批准",
 };
 
-export function GenerationWorkbench({ profiles, videos, h3, g6Readiness, i2vProbePlan, shots, selectedShotId, onSelectShot, onOpenProfiles, onOpenReviews }: GenerationWorkbenchProps) {
+export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Readiness, i2vProbePlan, shots, selectedShotId, onSelectShot, onOpenProfiles, onOpenReviews, onSubmitted }: GenerationWorkbenchProps) {
   const [mode, setMode] = useState<(typeof modes)[number]["id"]>("I2V");
+  const videos = useMemo(() => candidates.filter((item) => item.media_kind === "VIDEO"), [candidates]);
+  const approvedKeyframeIds = useMemo(() => {
+    const ids = candidates.filter((item) => item.media_kind === "IMAGE" && item.stage === "KEYFRAME" && item.decision === "APPROVED" && !item.is_stale).map((item) => item.media_version_id);
+    const gateApproved = i2vProbePlan?.snapshot.approved_keyframe?.media_version_id;
+    if (gateApproved) ids.push(gateApproved);
+    return [...new Set(ids)];
+  }, [candidates, i2vProbePlan]);
   const eligibleProfiles = useMemo(() => profiles.filter((profile) => profile.capability === mode), [mode, profiles]);
   const [profileVersionId, setProfileVersionId] = useState("");
   const [sourceVideoId, setSourceVideoId] = useState("");
   const [currentTimeSeconds, setCurrentTimeSeconds] = useState("0");
   const [draftAnchor, setDraftAnchor] = useState<FrameAnchor | null>(null);
   const [frameAction, setFrameAction] = useState<FrameAction | null>(null);
+  const [promptText, setPromptText] = useState("");
+  const [seedText, setSeedText] = useState("42");
+  const [approvedKeyframeId, setApprovedKeyframeId] = useState("");
+  const [prepared, setPrepared] = useState<{ draft: GenerationVariantDraft; plan: GenerationVariantPlan; idempotencyKey: string } | null>(null);
+  const [submitted, setSubmitted] = useState<Job | null>(null);
   useEffect(() => {
     setProfileVersionId(eligibleProfiles.find((item) => item.status === "PUBLISHED")?.version_id ?? eligibleProfiles[0]?.version_id ?? "");
   }, [eligibleProfiles]);
   useEffect(() => {
     if (!videos.some((item) => item.media_version_id === sourceVideoId)) setSourceVideoId(videos[0]?.media_version_id ?? "");
   }, [sourceVideoId, videos]);
+  useEffect(() => {
+    if (!approvedKeyframeIds.includes(approvedKeyframeId)) setApprovedKeyframeId(approvedKeyframeIds[0] ?? "");
+  }, [approvedKeyframeId, approvedKeyframeIds]);
+  useEffect(() => { setPrepared(null); setSubmitted(null); }, [mode, profileVersionId, selectedShotId, promptText, seedText, approvedKeyframeId]);
   const selected = eligibleProfiles.find((profile) => profile.version_id === profileVersionId);
-  const runnable = selected?.status === "PUBLISHED" && Boolean(selectedShotId);
+  const selectedShot = shots.find((shot) => String(shot.id) === selectedShotId);
+  const revision = selectedShot?.current_revision && typeof selectedShot.current_revision === "object" ? selectedShot.current_revision as Record<string, unknown> : {};
+  const cameraPlan = revision.camera_plan && typeof revision.camera_plan === "object" ? revision.camera_plan as CameraPlan : null;
+  const requiresCamera = mode !== "T2I";
+  const cameraReady = !requiresCamera || Boolean(cameraPlan && cameraPlan.mode !== "UNSUPPORTED" && cameraPlan.profile_version_id === profileVersionId);
+  const sourceReady = mode !== "I2V" || Boolean(approvedKeyframeId);
+  const seed = Number(seedText);
+  const runnable = selected?.status === "PUBLISHED" && Boolean(projectId && selectedShotId && promptText.trim() && Number.isInteger(seed) && cameraReady && sourceReady);
   const selectedVideo = videos.find((item) => item.media_version_id === sourceVideoId);
   const anchorMutation = useMutation({
     mutationFn: async (action: FrameAction) => {
@@ -80,6 +105,39 @@ export function GenerationWorkbench({ profiles, videos, h3, g6Readiness, i2vProb
       return createKeyframeCandidate(draftAnchor.extracted_media_version_id, selectedShotId);
     },
     onSuccess: ({ media }) => onOpenReviews?.(media.id),
+  });
+  const preflightMutation = useMutation({
+    mutationFn: async () => {
+      if (!projectId || !selectedShotId || !selected) throw new Error("必须先选择项目、镜头和已发布 Profile");
+      if (!promptText.trim()) throw new Error("Prompt 不能为空");
+      if (!Number.isInteger(seed)) throw new Error("Seed 必须是整数");
+      if (requiresCamera && !cameraReady) throw new Error("结构化运镜必须由当前同一 Profile 裁决为可执行");
+      if (mode === "I2V" && !approvedKeyframeId) throw new Error("I2V 代理必须选择当前已批准关键帧");
+      const intent = await createGenerationIntent({ project_id: projectId, owner_type: "SHOT", owner_id: selectedShotId, purpose: mode === "I2V" ? "I2V_PROXY" : mode, creative_goal: promptText.trim() });
+      const prompt = await createPrompt({ project_id: projectId, owner_type: "SHOT", owner_id: selectedShotId, purpose: mode, title: `${String(selectedShot?.code ?? selectedShotId)} ${mode}`, content_text: promptText.trim(), structured: { camera_plan: cameraPlan } });
+      const draft: GenerationVariantDraft = {
+        intent_id: intent.intent.id,
+        variant_type: "BASE",
+        parent_variant_id: null,
+        branch_reason: "UI_BASE_GENERATION",
+        prompt_revision_id: prompt.revision.id,
+        profile_version_id: selected.version_id,
+        parameter_set: { PROMPT: promptText.trim(), SEED: seed, ...(cameraPlan ? { camera_plan: cameraPlan } : {}) },
+        seed_policy: "EXPLICIT",
+        explicit_seed: seed,
+        bindings: mode === "I2V" ? [{ role: "FIRST_FRAME", media_version_id: approvedKeyframeId, ordinal: 0 }] : [],
+      };
+      const planned = await planGenerationVariant(draft);
+      return { draft, plan: planned.plan, idempotencyKey: crypto.randomUUID() };
+    },
+    onSuccess: setPrepared,
+  });
+  const submitMutation = useMutation({
+    mutationFn: async () => {
+      if (!prepared) throw new Error("必须先完成当前输入的资源预检");
+      return submitGenerationVariant({ ...prepared.draft, plan_hash: prepared.plan.plan_hash, idempotency_key: prepared.idempotencyKey });
+    },
+    onSuccess: ({ job }) => { setSubmitted(job); onSubmitted?.(); },
   });
   const extractedThumbnail = draftAnchor ? `/api/v1/media-versions/${encodeURIComponent(draftAnchor.extracted_media_version_id)}/thumbnail?size=small` : null;
   const draftRoleLabel = draftAnchor ? frameActionLabels[draftAnchor.role_hint as FrameAction] ?? "提取帧" : null;
@@ -125,8 +183,20 @@ export function GenerationWorkbench({ profiles, videos, h3, g6Readiness, i2vProb
           <div className="section-title"><span>输入与创作意图</span><small>所有输入将冻结到 GenerationVariant</small></div>
           <div className="input-slot-row">
             <div className={`media-slot${draftAnchor ? " filled" : ""}`} aria-describedby="media-slot-help">{extractedThumbnail ? <img src={extractedThumbnail} alt={`当前未提交输入：视频${draftRoleLabel}缩略图`} width="220" height="124" decoding="async" /> : <span aria-hidden="true">+</span>}<strong>{draftAnchor ? `${draftRoleLabel}已填入当前草稿` : mode === "R2V" ? "选择参考图片" : "选择视频帧"}</strong><small id="media-slot-help">{mode === "T2V" || mode === "T2I" ? "当前方式不需要图片输入；已提取帧仅保留在未提交草稿。" : draftAnchor ? "FrameAnchor 已真实注册；创建 Variant 前仍可替换。" : "从下方已注册视频提取真实帧，不上传或读取原片。"}</small></div>
-            <div className="prompt-field"><label htmlFor="generation-prompt">镜头 Prompt</label><textarea id="generation-prompt" placeholder="描述主体动作、镜头运动、节奏与环境变化…" /><div className="prompt-tools"><span>结构化运镜</span><span>负向约束</span><span>版本化保存</span></div></div>
+            <div className="prompt-field"><label htmlFor="generation-prompt">镜头 Prompt</label><textarea id="generation-prompt" value={promptText} onChange={(event) => setPromptText(event.target.value)} placeholder="描述主体动作、镜头运动、节奏与环境变化…" /><div className="prompt-tools"><span>结构化运镜</span><span>负向约束</span><span>版本化保存</span></div></div>
           </div>
+          <section className="generation-submit-panel" aria-labelledby="generation-submit-title">
+            <div className="section-title"><span id="generation-submit-title">计划 → 确认 → 提交真实任务</span><small>两阶段提交，不自动运行</small></div>
+            <div className="generation-submit-fields">
+              <label htmlFor="generation-seed">显式 Seed<input id="generation-seed" type="number" step="1" value={seedText} onChange={(event) => setSeedText(event.target.value)} /></label>
+              {mode === "I2V" && <label htmlFor="generation-keyframe">已批准关键帧<select id="generation-keyframe" value={approvedKeyframeId} onChange={(event) => setApprovedKeyframeId(event.target.value)}><option value="">请选择</option>{approvedKeyframeIds.map((mediaVersionId) => <option key={mediaVersionId} value={mediaVersionId}>APPROVED KEYFRAME · {mediaVersionId.slice(0, 12)}</option>)}</select></label>}
+              <div className={`capability-truth ${cameraReady ? "ready" : "blocked"}`}><strong>CameraPlan</strong><small>{!requiresCamera ? "图片任务不要求运镜。" : cameraPlan ? `${cameraPlan.mode} · ${cameraPlan.movement} · ${cameraPlan.profile_version_id === profileVersionId ? "Profile 一致" : "需用当前 Profile 重新裁决"}` : "当前镜头没有结构化 CameraPlan；请在下方导演分镜中配置。"}</small></div>
+            </div>
+            <div className="generation-submit-actions"><button type="button" className="secondary" disabled={!runnable || preflightMutation.isPending} onClick={() => preflightMutation.mutate()}>{preflightMutation.isPending ? "正在建立意图并预检…" : "建立意图并执行只读生成预检"}</button><button type="button" className="primary-action" disabled={!prepared || submitMutation.isPending || Boolean(submitted)} onClick={() => submitMutation.mutate()}>{submitMutation.isPending ? "提交中…" : "确认创建 Variant 与 Job"}</button></div>
+            {prepared && !submitted && <p className="frame-feedback success" role="status"><strong>预检 READY，尚未创建 Job。</strong> Plan hash <code>{prepared.plan.plan_hash.slice(0, 16)}</code> · recipe <code>{prepared.plan.recipe_hash.slice(0, 16)}</code></p>}
+            {submitted && <p className="frame-feedback success" role="status"><strong>真实任务已持久化：{submitted.state}</strong> Job <code>{submitted.id}</code>；关闭浏览器不会丢失。</p>}
+            {(preflightMutation.error || submitMutation.error) && <p className="inline-error" role="alert">{(preflightMutation.error ?? submitMutation.error)?.message}</p>}
+          </section>
           <section className="frame-anchor-panel" aria-labelledby="frame-anchor-title">
             <div className="section-title"><span id="frame-anchor-title">从视频取帧并用作输入</span><small>真实 PTS 解析 · 只加载 small 缩略图</small></div>
             {videos.length ? <>

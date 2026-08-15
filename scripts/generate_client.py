@@ -325,6 +325,10 @@ export async function createGenerationVariant(payload: GenerationVariantDraft & 
   return requestJson('/api/v1/generation-variants', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
+export async function submitGenerationVariant(payload: GenerationVariantDraft & { plan_hash: string; idempotency_key: string }, baseUrl = ''): Promise<{ variant: GenerationVariant; job: Job }> {
+  return requestJson('/api/v1/generation-variants:submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
 export async function listGenerationVariants(intentId: string, baseUrl = ''): Promise<{ items: GenerationVariant[] }> {
   return requestJson(`/api/v1/generation-intents/${encodeURIComponent(intentId)}/variants`, undefined, baseUrl);
 }

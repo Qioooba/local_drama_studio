@@ -203,6 +203,8 @@ G10 最终发布审计已 PASS：当前数据库与最近五份迁移前备份 `
 
 FR-CTL-001 结构化运镜批次：ShotRevision 的 CameraPlan 现保存景别、运动、方向、强度、曲线、显式 Prompt 降级文本和 ProfileVersion；服务端只按一个已发布 Profile 的 capability contract 裁决 `NATIVE` / `PROMPT_FALLBACK` / `UNSUPPORTED`，缺声明即不支持，不接触 Runtime 或网络。遗留自由文本和不支持的计划不能标记 Production Ready。API 180 passed / 4 deselected、Web 62/62、build/Ruff/mypy 101 files PASS。自动证据见 `docs/evidence/g10/structured-camera-plan-2026-08-15.json`；正式 Variant 快照绑定和真实浏览器 UAT 仍待下一批闭环，因此总账不宣告 FR-CTL-001 最终 VERIFIED。
 
+FR-CTL-001 提交链增量：生成工作台现按 `Intent + frozen PromptRevision → read-only Variant plan → 二次显式确认 → Variant + Job 原子提交` 执行；CameraPlan 由服务端用同一 ProfileVersion 重新裁决并冻结到 Job `semantic_inputs`，不接受客户端伪造或过期映射。已批准关键帧同时来自审核候选与权威 G6 I2V 探针，避免已处理批准项从收件箱消失后无法选择。API 181 passed / 4 deselected、Web 64/64、build/Ruff/mypy PASS。1280px 真实页面无横向溢出、无短于 40px 控件和 console error；当前生产 Profile 未显式声明 camera capability，页面按设计显示 `UNSUPPORTED` 并禁用预检。待配置一个显式 camera contract 的用户本地 Published Profile 后再完成成功路径 UAT，故仍不提前标最终 VERIFIED。
+
 G10 安全 UAT 已补齐此前缺失的 instance CSRF token：每个 API 进程生成独立 token，同源客户端从无 CORS 的 bootstrap/安全 GET 获取，所有网络写请求同时验证受控 Origin 与 `X-Local-Instance-Token`。隔离真实 FastAPI 验证恶意 Origin、缺失/错误 token、路径逃逸、REMOTE Provider、未入清单自定义节点均被拒绝；socket guard 对 TEST-NET 公网目标在 connect 前阻断，OpenAPI 无远程 credential 字段。证据为 `docs/evidence/g10/security-uat-2026-08-15.json`；不替代 G7 模型许可证或最终发布签字。
 
 G10 干净新根恢复 UAT 使用 100 个真实 FFprobe PASS 的本地 WAV：online backup 后恢复数据库与完整项目树，100/100 MediaVersion SHA-256、数据库 integrity、健康/项目/审核入口全部通过；实测 RTO 0.627 秒、捕获备份后 RPO=0。该证据来自隔离环境且未接触生产库、runtime 或网络，见 `docs/evidence/g10/recovery-restore-uat-2026-08-15.json`。

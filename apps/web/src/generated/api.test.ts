@@ -12,6 +12,7 @@ import {
   renderEpisode,
   resolveProfileCameraPlan,
   runEnhancement,
+  submitGenerationVariant,
   verifyDeliveryPackage,
   withdrawDeliveryPackage,
 } from "./api";
@@ -94,6 +95,13 @@ describe("generated G8 timeline client", () => {
     await resolveProfileCameraPlan("profile/1", { shot_type: "CLOSEUP", movement: "PUSH_IN", direction: "FORWARD", intensity: 0.5, curve: "LINEAR" });
     expect(fetchMock.mock.calls.map(([path]) => path).filter((path) => !String(path).endsWith("/session/bootstrap"))).toEqual([
       "/api/v1/profile-versions/profile%2F1:resolve-camera-plan",
+    ]);
+  });
+
+  it("submits a confirmed immutable Variant plan through the atomic Job endpoint", async () => {
+    await submitGenerationVariant({ intent_id: "intent-1", variant_type: "BASE", branch_reason: "ui", profile_version_id: "profile-1", seed_policy: "EXPLICIT", explicit_seed: 42, plan_hash: "a".repeat(64), idempotency_key: "variant-submit-1" });
+    expect(fetchMock.mock.calls.map(([path]) => path).filter((path) => !String(path).endsWith("/session/bootstrap"))).toEqual([
+      "/api/v1/generation-variants:submit",
     ]);
   });
 

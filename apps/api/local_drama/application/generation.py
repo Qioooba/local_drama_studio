@@ -10,6 +10,7 @@ from typing import Any
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.generation import VariantPlan
+from local_drama.domain.generation_contracts import CameraPlan, resolve_camera_plan
 from local_drama.domain.policies import VariantInput
 from local_drama.infrastructure.database.sqlite import Database
 
@@ -115,6 +116,38 @@ class GenerationService:
             seed_contract = parameter_schema.get("seed", {}) if isinstance(parameter_schema, dict) else {}
             if not isinstance(seed_contract, dict):
                 raise DomainRuleError("PROFILE_SEED_CONTRACT_INVALID", "Profile seed 契约无效")
+            camera_payload = plan.parameter_set.get("camera_plan")
+            if camera_payload is not None:
+                camera_plan = CameraPlan.from_payload(camera_payload)
+                if camera_plan.profile_version_id != plan.profile_version_id:
+                    raise DomainRuleError(
+                        "CAMERA_PLAN_PROFILE_MISMATCH",
+                        "CameraPlan 必须由当前 GenerationVariant 的同一 ProfileVersion 裁决",
+                        {"camera_profile_version_id": camera_plan.profile_version_id, "variant_profile_version_id": plan.profile_version_id},
+                    )
+                capabilities = parameter_schema.get("capabilities", {}) if isinstance(parameter_schema, dict) else {}
+                camera_contract = capabilities.get("camera", {}) if isinstance(capabilities, dict) else {}
+                support = str(camera_contract.get("support", "UNSUPPORTED")) if isinstance(camera_contract, dict) else "UNSUPPORTED"
+                if support not in {"NATIVE", "PROMPT_FALLBACK", "UNSUPPORTED"}:
+                    raise DomainRuleError("PROFILE_CAMERA_CONTRACT_INVALID", "Profile camera capability support 无效")
+                fallback = support == "PROMPT_FALLBACK" and camera_contract.get("prompt_fallback") is True
+                if support == "PROMPT_FALLBACK" and not fallback:
+                    raise DomainRuleError("PROFILE_CAMERA_FALLBACK_INVALID", "Camera prompt fallback 必须由 Profile 显式声明")
+                resolved_camera = resolve_camera_plan(
+                    native_supported=support == "NATIVE",
+                    prompt_fallback_supported=fallback,
+                    shot_type=camera_plan.shot_type,
+                    movement=camera_plan.movement,
+                    prompt_text=camera_plan.prompt_text,
+                    direction=camera_plan.direction,
+                    intensity=camera_plan.intensity,
+                    curve=camera_plan.curve,
+                    profile_version_id=plan.profile_version_id,
+                )
+                if resolved_camera.to_dict() != camera_plan.to_dict():
+                    raise DomainRuleError("CAMERA_PLAN_RESOLUTION_STALE", "CameraPlan 与当前 Profile capability contract 不一致，请重新裁决")
+                if resolved_camera.mode == "UNSUPPORTED":
+                    raise DomainRuleError("CAMERA_PLAN_UNSUPPORTED", "当前 Profile 不支持该结构化运镜，禁止提交 GenerationVariant")
             seed_support = str(seed_contract.get("support") or ("REQUIRED" if seed_contract.get("required") else "OPTIONAL"))
             determinism = str(seed_contract.get("determinism") or "UNDECLARED")
             if plan.seed_policy == "PROVIDER_RANDOM" and seed_support not in {"NONE", "OPTIONAL"}:

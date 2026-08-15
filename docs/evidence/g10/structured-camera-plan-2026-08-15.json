@@ -10,15 +10,23 @@
     "the UI exposes the structured editor and disables production readiness until a runnable resolution exists"
   ],
   "verification": {
-    "api_regression": "180 passed, 4 deselected",
-    "web_regression": "62 passed",
+    "api_regression": "181 passed, 4 deselected",
+    "web_regression": "64 passed",
     "web_production_build": "PASS",
     "ruff": "PASS",
-    "mypy": "PASS (101 source files)"
+    "mypy": "PASS (101 source files)",
+    "browser_uat_1280": {
+      "status": "PASS_EXPECTED_BLOCK",
+      "approved_keyframe_source": "G6 I2V probe approved keyframe 0d389e44-0fc...",
+      "camera_resolution": "UNSUPPORTED because the selected production Profile has no explicit camera capability contract",
+      "preflight_enabled": false,
+      "console_errors": 0,
+      "horizontal_overflow": false,
+      "controls_below_40px": 0
+    }
   },
   "remaining": [
-    "Capture a real browser UAT against a user-selected Published Profile whose camera capability is explicitly declared",
-    "Bind the resolved CameraPlan into the formal GenerationVariant submission snapshot during the generation-workbench closure batch"
+    "Publish or select a user-local Profile whose camera capability is explicitly declared, then capture the successful NATIVE/PROMPT_FALLBACK browser path without running the user's model"
   ],
-  "release_claim": "This closes the structured editor and authoritative capability-resolution layer; it does not by itself close the full master requirements ledger."
+  "release_claim": "This closes the structured editor, authoritative capability resolution, and plan-to-atomic-submit snapshot path. The production browser correctly blocks because its currently selected Profile has no explicit camera capability; this does not by itself close the full master requirements ledger."
 }
