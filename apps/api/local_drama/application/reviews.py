@@ -213,7 +213,7 @@ class ReviewService:
             blockers: list[str] = []
             if row is None:
                 blockers.append("FORMAL_VIDEO_NOT_FOUND_OR_PROJECT_MISMATCH")
-                item = {"media_version_id": media_version_id, "status": "BLOCKED", "blockers": blockers}
+                item: dict[str, Any] = {"media_version_id": media_version_id, "status": "BLOCKED", "blockers": blockers}
             else:
                 if str(row["approved_version_id"] or "") != media_version_id:
                     blockers.append("FORMAL_APPROVAL_REQUIRED")
