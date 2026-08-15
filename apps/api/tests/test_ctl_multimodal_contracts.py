@@ -161,6 +161,26 @@ def test_ctl003_driving_variant_is_local_immutable_and_persists_weighted_binding
     assert bindings["CHARACTER_REFERENCE"]["weight"] == 0.3
     assert created["variant_type"] == "PERFORMANCE_DRIVEN"
 
+    # The confirmed submit path creates the queued Variant and GPU_H3 Job in
+    # one transaction; its input rows must retain the same immutable weight
+    # and the semantic source_role snapshot (not just the planned Variant).
+    submitted = generation.submit_confirmed_variant(
+        str(intent["id"]), plan, str(preflight["plan_hash"]), "ctl-multimodal-submit",
+    )
+    submitted_bindings = {item["role"]: item for item in submitted["variant"]["bindings"]}
+    assert submitted_bindings["DRIVING_VIDEO"]["weight"] == 0.7
+    assert submitted_bindings["CHARACTER_REFERENCE"]["weight"] == 0.3
+    with database.connect() as connection:
+        row = connection.execute(
+            "SELECT weight FROM variant_input_bindings WHERE variant_id=? AND role='DRIVING_VIDEO'",
+            (submitted["variant"]["id"],),
+        ).fetchone()
+        job = connection.execute("SELECT input_snapshot_json FROM jobs WHERE id=?", (submitted["job"]["id"],)).fetchone()
+    assert row["weight"] == 0.7
+    snapshot = json.loads(job["input_snapshot_json"])
+    assert snapshot["semantic_inputs"]["performance_bindings"][0]["source_role"] == "DRIVING_VIDEO"
+    assert snapshot["media_bindings"][0]["weight"] == 0.7
+
 
 def test_ctl004_rejects_wrong_kind_order_and_weight_contract(workspace, database) -> None:
     project = _project(workspace, database, "ctl_contract_rejections")
