@@ -53,6 +53,7 @@
 | FR-WRT-004 关键词和提示词模板 | VERIFIED PRODUCTION READ-ONLY UAT | `PromptService` 对 `GENERATION_TEMPLATE` 强制冻结 source_fields/template/expanded/negative/language/model profile，展开结果与 content_text 必须一致；创建/branch 均为 immutable FROZEN hash，owner 列表只读返回最新 revision 且历史保留。Web 2 项、API 2 项及三视口 UAT 通过，证据 `docs/evidence/g10/prompt-template-panel-uat-2026-08-15.json` |
 | FR-WRT-005 生产就绪判断 | VERIFIED PRODUCTION READ-ONLY UAT | 生产 read model 明确投影 `OUTLINE/DIRECTED/PRODUCTION_READY`，并逐项返回导演字段与 Profile/ProductionPlan/DeliveryTarget/镜头状态 blocker；UI 显示服务端状态且只有完整 DIRECTED revision 可进入 READY。三视口真实 `SHOT_001 · PRODUCTION_READY` UAT 通过，证据 `docs/evidence/g10/director-shot-editor-uat-2026-08-15.json` |
 | FR-WRT-006 连续性面板 | VERIFIED PRODUCTION READ-ONLY UAT | `ProductionReadModelService.continuity_context` 与生成工作台三列对照；上一/当前/下一镜的 revision、人物外观、服装、道具、光线、空间方向、连续性、已选/已批 MediaVersion 和边界约束均来自真实本地数据，缺项不推断。API 2 项、Web 2 项与三视口 UAT 通过；只请求 small 缩略图，证据 `docs/evidence/g10/continuity-panel-uat-2026-08-15.json` |
+| FR-WRT-007 AI 辅助提取先进入草稿且不覆盖人工内容 | VERIFIED PRODUCTION READ-ONLY UAT | 既有真实 `LocalLLMService.breakdown` 只保存 `DRAFT_READY`；新增项目级只读查询与 `AIDraftReviewPanel`，明确投影 `NOT_APPLIED`、`automatic_apply=false`、`requires_human_action=true`，无应用按钮。API 2 项证明查询不改变 Scene/Shot/CreativeEntry，Web 2 项覆盖真实草稿和无 mock 空态；正式项目三视口展示 1 份真实本地 LLM 草稿且零写入，证据 `docs/evidence/g10/ai-draft-review-uat-2026-08-15.json` |
 | FR-IMG-001/FR-MED media register、probe、hash、poster/cache、Range | VERIFIED | `application/media.py`、G3 evidence sample |
 | FR-ING-001 source document version、ImportSession、TXT/MD/DOCX preview | VERIFIED | `application/documents.py`、G3 import test |
 | FR-SRC-001 FTS5 global search minimum | VERIFIED | `application/read_models.py`、G3 import/search test |
@@ -237,6 +238,8 @@ FR-WRT-005 closure 批次：生产 read model 和导演编辑器明确区分 OUT
 FR-WRT-004 closure 批次：结构化提示词模板冻结原始字段、模板、展开结果、负向词、语言与 model Profile version，内容不一致或缺项拒绝；owner 范围查询只投影最新 revision 且保留全部历史。三档生产只读 UAT 零写入、公网、原片、错误、短控件或溢出；完整门禁 API 163 passed / 4 live deselected、Web 41/41、build/Ruff/mypy 94 PASS。G7 与有序门禁状态不变。
 
 FR-WRT-001 closure 批次：migration `0026_creative_entry_revisions` 为故事圣经、人物、场景、道具、服装、风格、声音建立统一不可变 revision；比较只读，回退派生新 revision，历史永不覆盖/删除。0025→0026 隔离升级/精确恢复与生产迁移 integrity ok；三档生产只读 UAT 零写入、公网、原片、错误、短控件或溢出。完整门禁 API 166 passed / 4 live deselected、Web 43/43、build/Ruff/mypy 97 PASS。G7 license blocker 与后续有序门禁不变。
+
+FR-WRT-007 closure 批次：真实 Local LLM breakdown 结果保持 `DRAFT_READY/NOT_APPLIED`，新增查询与 UI 只做审阅，没有自动或显式应用路径，不改变人工维护的 Scene/Shot/CreativeEntry。正式项目 1 份持久草稿的三档只读 UAT 零写入、公网、原片、截图、错误或溢出；完整门禁 API 168 passed / 4 live deselected、Web 45/45、build/Ruff/mypy 97 PASS。release audit 仍因 G7 模型 license 证据和未冻结最终工件保持 IN_PROGRESS。
 
 ## 更新规则
 

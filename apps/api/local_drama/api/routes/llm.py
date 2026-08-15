@@ -47,3 +47,11 @@ async def breakdown(session_id: str, payload: BreakdownRequest, request: Request
         return {"draft": service(request).breakdown(session_id, payload.profile_version_id)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
+
+
+@router.get("/projects/{project_id}/script-breakdown-drafts", operation_id="listScriptBreakdownDrafts")
+async def list_breakdown_drafts(project_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"items": service(request).list_breakdown_drafts(project_id), "automatic_apply": False, "requires_human_action": True}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error

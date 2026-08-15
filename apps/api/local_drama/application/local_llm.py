@@ -218,6 +218,27 @@ class LocalLLMService:
             )
         return {"id": draft_id, "status": "DRAFT_READY", "profile_version_id": profile_version_id, "draft": draft}
 
+    def list_breakdown_drafts(self, project_id: str) -> list[dict[str, Any]]:
+        with self.database.connect() as connection:
+            if connection.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone() is None:
+                raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
+            rows = connection.execute(
+                """SELECT d.*,sd.code AS source_document_code,sd.title AS source_document_title
+                FROM script_breakdown_drafts d
+                JOIN source_document_versions sdv ON sdv.id=d.source_document_version_id
+                JOIN source_documents sd ON sd.id=sdv.source_document_id
+                WHERE d.project_id=? ORDER BY d.created_at DESC,d.id""",
+                (project_id,),
+            ).fetchall()
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["draft"] = json.loads(item.pop("draft_json"))
+            item["confidence"] = json.loads(item.pop("confidence_json"))
+            item.update({"application_status": "NOT_APPLIED", "automatic_apply": False, "requires_human_action": True})
+            items.append(item)
+        return items
+
     def _project_code(self, project_id: str) -> str:
         with self.database.connect() as connection:
             row = connection.execute("SELECT code FROM projects WHERE id=?", (project_id,)).fetchone()

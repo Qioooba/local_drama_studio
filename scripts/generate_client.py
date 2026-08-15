@@ -32,6 +32,7 @@ export type ContinuityShot = { position: 'previous' | 'current' | 'next'; id: st
 export type ContinuityContext = { episode_id: string; selected_shot_id: string; shots: { previous: ContinuityShot | null; current: ContinuityShot; next: ContinuityShot | null }; transitions: Array<Record<string, unknown>>; read_only: true; runtime_contacted: false; network_contacted: false; mutated: false };
 export type CreativeEntry = { id: string; project_id: string; kind: string; code: string; title: string; current_revision_id: string; revision_no: number; content_hash: string; change_note: string; content: Record<string, unknown>; revision: number };
 export type CreativeEntryRevision = { id: string; entry_id: string; revision_no: number; parent_revision_id: string | null; restored_from_revision_id: string | null; content_hash: string; change_note: string; content: Record<string, unknown>; created_at: string };
+export type ScriptBreakdownDraft = { id: string; project_id: string; source_document_version_id: string; import_session_id: string; status: string; source_document_code: string; source_document_title: string; draft: { scenes?: Array<Record<string, unknown>> }; confidence: Record<string, unknown>; application_status: 'NOT_APPLIED'; automatic_apply: false; requires_human_action: true; created_at: string };
 export type ProjectCreatePayload = { code: string; title: string; season_count: number; episode_count: number; target_duration_ms: number; aspect_ratio: string; width: number; height: number; fps: { numerator: number; denominator: number }; primary_language: string; subtitle_mode: 'NONE' | 'SIDECAR' | 'BURN_IN' | 'BOTH'; subtitle_language?: string; allow_unconfigured_capabilities: boolean; production_plan?: { code: string; title: string; plan: Record<string, unknown> }; profile_bindings?: Array<{ capability: string; profile_version_id: string }>; delivery_target?: { code: string; title: string; spec: Record<string, unknown> } };
 export type ProjectCreationPlan = { status: 'READY' | 'READY_WITH_CONFIGURATION_BLOCKERS' | 'BLOCKED'; checks: Array<{ code: string; passed: boolean; free_bytes?: number; required_bytes?: number }>; blockers: string[]; configuration_blockers: string[]; accepted_unconfigured: boolean; target_root_rel: string; estimated_bytes: number; structure: { season_count: number; episode_count_per_season: number; total_episode_count: number }; presentation: Record<string, unknown>; would_create_project: true; mutated: false; runtime_contacted: false; network_contacted: false };
 export type ProjectPackageExport = { status: 'EXPORTED'; project_id: string; rel_path: string; byte_size: number; sha256: string; entry_count: number; expanded_bytes: number; reused: boolean; database_mutated: false; runtime_contacted: false; network_contacted: false };
@@ -330,6 +331,10 @@ export async function listPrompts(projectId: string, ownerType?: string, ownerId
   if (ownerType) query.set('owner_type', ownerType);
   if (ownerId) query.set('owner_id', ownerId);
   return requestJson(`/api/v1/prompts?${query.toString()}`, undefined, baseUrl);
+}
+
+export async function listScriptBreakdownDrafts(projectId: string, baseUrl = ''): Promise<{ items: ScriptBreakdownDraft[]; automatic_apply: false; requires_human_action: true }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/script-breakdown-drafts`, undefined, baseUrl);
 }
 
 export async function branchPromptRevision(revisionId: string, payload: { content_text: string; structured?: Record<string, unknown> }, baseUrl = ''): Promise<{ revision: PromptRevision }> {

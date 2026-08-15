@@ -46,6 +46,7 @@ import { ProjectCreateWizard } from "../features/projects/ProjectCreateWizard";
 import { EpisodeSceneRanges } from "../features/projects/EpisodeSceneRanges";
 import { ProjectPackageAction } from "../features/projects/ProjectPackageAction";
 import { CreativeLibrary } from "../features/projects/CreativeLibrary";
+import { AIDraftReviewPanel } from "../features/projects/AIDraftReviewPanel";
 import { AdapterContractsPanel, DiagnosticPanel, G8ReadinessPanel, G9ReadinessPanel, ModelCompatibilityPanel, ProjectConfigurationSnapshot, ProjectList, TimelineStatusPanel } from "../features/status/ReadinessPanels";
 import { selectedItemOrFirst } from "../features/shared/selection";
 import { BreadcrumbSeparatorIcon, ChevronRightIcon, StatusDotIcon, StudioMarkIcon } from "../components/icons";
@@ -310,6 +311,7 @@ export function App() {
                 {production.data?.items.length === 0 && <p className="empty-state">当前集还没有镜头；请从真实 API 创建镜头。</p>}
                 {selectedProject && selectedEpisode && <EpisodeSceneRanges projectId={selectedProject} episodeId={selectedEpisode} />}
                 {selectedProject && <CreativeLibrary projectId={selectedProject} />}
+                {selectedProject && <AIDraftReviewPanel projectId={selectedProject} />}
                 <EpisodeContactSheetAction episodeId={selectedEpisode} />
                 {timelineStatus.data?.status && <TimelineStatusPanel status={timelineStatus.data.status} />}
                 <TimelineExportAction timelineRevisionId={timelineStatus.data?.status.timeline.latest?.id ? String(timelineStatus.data.status.timeline.latest.id) : null} />
