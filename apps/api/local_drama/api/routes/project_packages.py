@@ -26,7 +26,7 @@ class CommitProjectPackageRequest(BaseModel):
 
 def service(request: Request) -> ProjectPackageService:
     settings = request.app.state.settings
-    return ProjectPackageService(request.app.state.database, settings.projects_root, settings.data_root)
+    return ProjectPackageService(request.app.state.database, settings.projects_root, settings.data_root, settings=settings)
 
 
 @router.post(":stage", operation_id="stageProjectPackage")

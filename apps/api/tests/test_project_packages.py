@@ -168,7 +168,8 @@ def test_staged_project_package_import_as_copy_rewrites_identity_and_retains_ret
     assert imported["counts"]["shots"] == 1
     assert imported["counts"]["media_assets"] == 1
     assert imported["counts"]["media_versions"] == 1
-    assert imported["counts"]["thumbnails_pending"] == 1
+    assert imported["counts"]["thumbnails_pending"] == 0
+    assert imported["counts"]["thumbnails_created"] == 1
     assert (workspace.data_root / "imports" / "project-packages" / "staged" / f"{token}.ldspkg").is_file()
     copied_root = workspace.projects_root / "package_copy"
     assert (copied_root / "01_story" / "source_documents" / "中文 剧本.md").read_text(encoding="utf-8") == "# 本地项目包\n"
@@ -190,7 +191,7 @@ def test_staged_project_package_import_as_copy_rewrites_identity_and_retains_ret
         assert connection.execute(
             "SELECT COUNT(*) FROM media_cache_entries mce JOIN media_versions mv ON mv.id=mce.media_version_id WHERE mv.id IN (SELECT mv2.id FROM media_versions mv2 JOIN media_assets ma ON ma.id=mv2.media_asset_id WHERE ma.project_id=?)",
             (imported["project_id"],),
-        ).fetchone()[0] == 0
+        ).fetchone()[0] == 1
         audit = connection.execute(
             "SELECT action FROM audit_events WHERE subject_id=? ORDER BY rowid DESC LIMIT 1", (imported["project_id"],)
         ).fetchone()

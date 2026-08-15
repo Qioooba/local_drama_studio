@@ -11,6 +11,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
+from local_drama.application.media import MediaService
+from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.policies import validate_project_code
 from local_drama.infrastructure.database.sqlite import Database
@@ -69,10 +71,35 @@ def _utc_now() -> str:
 
 
 class ProjectPackageService:
-    def __init__(self, database: Database, projects_root: Path, data_root: Path | None = None) -> None:
+    def __init__(self, database: Database, projects_root: Path, data_root: Path | None = None, settings: Settings | None = None) -> None:
         self.database = database
         self.projects_root = projects_root.resolve()
-        self.staging_root = (data_root or projects_root.parent / "data") / "imports" / "project-packages"
+        resolved_data_root = (data_root or projects_root.parent / "data").resolve()
+        self.staging_root = resolved_data_root / "imports" / "project-packages"
+        self.settings = settings or Settings(
+            data_root=resolved_data_root,
+            projects_root=self.projects_root,
+            cache_root=self.projects_root.parent / "cache",
+            work_root=self.projects_root.parent / "work",
+            logs_root=self.projects_root.parent / "logs",
+            backups_root=self.projects_root.parent / "backups",
+        )
+
+    def _rebuild_thumbnails(self, media_version_ids: list[str]) -> dict[str, Any]:
+        """Materialize small derived thumbnails for imported IMAGE/VIDEO versions."""
+        created: list[str] = []
+        failed: list[dict[str, str]] = []
+        media_service = MediaService(self.database, self.settings)
+        for media_version_id in media_version_ids:
+            try:
+                media_service.thumbnail(media_version_id, "small", "poster")
+            except DomainRuleError as error:
+                failed.append({"media_version_id": media_version_id, "code": error.code})
+            except (OSError, RuntimeError) as error:
+                failed.append({"media_version_id": media_version_id, "code": type(error).__name__})
+            else:
+                created.append(media_version_id)
+        return {"requested": len(media_version_ids), "created": len(created), "failed": len(failed), "created_media_version_ids": created, "failures": failed}
 
     def _project(self, project_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
@@ -439,7 +466,9 @@ class ProjectPackageService:
         temporary_root = self.projects_root / f".{code}.import-{uuid.uuid4().hex}"
         promoted = False
         counts = {"seasons": 0, "episodes": 0, "scenes": 0, "shots": 0, "profiles": 0, "profiles_skipped": 0,
-                  "delivery_targets": 0, "media_assets": 0, "media_versions": 0, "thumbnails_pending": 0, "payload_files": 0}
+                  "delivery_targets": 0, "media_assets": 0, "media_versions": 0, "thumbnails_pending": 0, "thumbnails_created": 0,
+                  "thumbnails_failed": 0, "payload_files": 0}
+        thumbnail_media_version_ids: list[str] = []
         try:
             self._extract_payload(package, temporary_root)
             counts["payload_files"] = sum(1 for item in temporary_root.rglob("*") if item.is_file())
@@ -549,6 +578,7 @@ class ProjectPackageService:
                     )
                     counts["media_versions"] += 1
                     if media_kind_by_asset[str(version["media_asset_id"])] in {"IMAGE", "VIDEO"}:
+                        thumbnail_media_version_ids.append(media_version_map[str(version["id"])])
                         counts["thumbnails_pending"] += 1
                 plan = state.get("production_plan")
                 if isinstance(plan, dict):
@@ -613,6 +643,17 @@ class ProjectPackageService:
                     WHERE operation_key=?""",
                     (json.dumps(result, ensure_ascii=False, sort_keys=True), _utc_now(), operation_key),
                 )
+            thumbnail_result = self._rebuild_thumbnails(thumbnail_media_version_ids)
+            counts["thumbnails_created"] = int(thumbnail_result["created"])
+            counts["thumbnails_failed"] = int(thumbnail_result["failed"])
+            counts["thumbnails_pending"] = max(0, len(thumbnail_media_version_ids) - counts["thumbnails_created"] - counts["thumbnails_failed"])
+            result["counts"] = counts
+            result["thumbnail_rebuild"] = thumbnail_result
+            with self.database.transaction() as connection:
+                connection.execute(
+                    "UPDATE project_package_imports SET result_json=?,updated_at=? WHERE operation_key=?",
+                    (json.dumps(result, ensure_ascii=False, sort_keys=True), _utc_now(), operation_key),
+                )
         except Exception as error:
             if temporary_root.exists():
                 shutil.rmtree(temporary_root, ignore_errors=True)
@@ -651,6 +692,12 @@ class ProjectPackageService:
             raise DomainRuleError("PROJECT_PACKAGE_REBIND_ROOT_EXISTS", "项目目录仍存在；rebind 不允许覆盖现有目录")
         temporary_root = self.projects_root / f".{project_code}.rebind-{uuid.uuid4().hex}"
         promoted = False
+        media_kind_by_asset = {str(asset["id"]): str(asset["media_kind"]) for asset in state.get("media_assets", [])}
+        thumbnail_media_version_ids = [
+            str(version["id"])
+            for version in state.get("media_versions", [])
+            if media_kind_by_asset.get(str(version.get("media_asset_id"))) in {"IMAGE", "VIDEO"}
+        ]
         try:
             self._extract_payload(package, temporary_root)
             now = _utc_now()
@@ -680,6 +727,8 @@ class ProjectPackageService:
             if promoted and final_root.exists():
                 shutil.rmtree(final_root, ignore_errors=True)
             raise
+        thumbnail_result = self._rebuild_thumbnails(thumbnail_media_version_ids)
         return {"status": "REBOUND", "identity_mode": "REBIND_EXISTING", "project_id": project_id,
                 "project_code": project_code, "stage_token": stage_token, "database_structure_changed": False,
-                "staged_package_retained": True, "runtime_contacted": False, "network_contacted": False}
+                "staged_package_retained": True, "thumbnail_rebuild": thumbnail_result,
+                "runtime_contacted": False, "network_contacted": False}
