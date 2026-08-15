@@ -77,6 +77,9 @@ class DocumentImportService:
             text = _read_text(source.resolve(strict=True))
         except OSError as error:
             raise DomainRuleError("SOURCE_NOT_FOUND", "导入源文件不存在或无法读取") from error
+        # Freeze a platform-independent logical script representation. Without
+        # this, Windows newline translation can desynchronize the authority hash.
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
         media = self.media.import_file(project_id, source, purpose="SCRIPT_SOURCE", owner_type="PROJECT", actor=actor)
         digest = media["sha256"]
         source_document_id = str(uuid.uuid4())
@@ -87,7 +90,7 @@ class DocumentImportService:
         text_rel = Path("00_admin") / "imports" / f"{digest}.extracted.txt"
         text_path = root / text_rel
         partial = text_path.with_suffix(".partial.txt")
-        partial.write_text(text, encoding="utf-8")
+        partial.write_text(text, encoding="utf-8", newline="")
         partial.replace(text_path)
         text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
         paragraphs = [paragraph.strip() for paragraph in re.split(r"\n\s*\n", text) if paragraph.strip()]

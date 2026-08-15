@@ -62,7 +62,14 @@ async def export_timeline_revision(timeline_revision_id: str, request: Request) 
 @router.post("/episodes/{episode_id}/subtitle-revisions", status_code=201, operation_id="createSubtitleRevision")
 async def create_subtitle_revision(episode_id: str, payload: SubtitleRevisionRequest, request: Request) -> dict[str, object]:
     try:
-        return {"subtitle": service(request).create_subtitle_revision(episode_id, [cue.model_dump() for cue in payload.cues], format=payload.format, input_snapshot=payload.input_snapshot)}
+        return {
+            "subtitle": service(request).create_subtitle_revision(
+                episode_id,
+                [cue.model_dump() for cue in payload.cues],
+                format=payload.format,
+                authority=payload.authority.model_dump(),
+            )
+        }
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

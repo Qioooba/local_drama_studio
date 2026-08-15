@@ -77,7 +77,8 @@ export type TimelineStatus = { episode: { id: string; code: string; title: strin
 export type TimelineItemRequest = { track_type?: string; media_version_id?: string | null; start_us: number; end_us: number; parameters?: Record<string, unknown> };
 export type TimelineRevision = { id: string; episode_id: string; revision_no: number; status: string; input_snapshot: Record<string, unknown>; items: Array<Record<string, unknown>>; [key: string]: unknown };
 export type SubtitleCueRequest = { start_us: number; end_us: number; text: string; style?: Record<string, unknown> };
-export type SubtitleRevision = { id: string; episode_id: string; revision_no: number; format: string; content: string; cues: Array<Record<string, unknown>>; [key: string]: unknown };
+export type SubtitleAuthorityRequest = { text_authority: 'SCRIPT'; source_document_version_id: string; asr_alignment_media_version_id?: string; asr_profile_version_id?: string };
+export type SubtitleRevision = { id: string; episode_id: string; revision_no: number; format: string; content_text: string; input_snapshot: Record<string, unknown>; authority_status: 'VERIFIED_SCRIPT' | 'LEGACY_INCOMPLETE'; cues: Array<Record<string, unknown>>; [key: string]: unknown };
 export type AudioBindingRequest = { media_version_id: string; track_type?: string; start_us: number; end_us: number; gain_db?: number; source_license_status?: 'VERIFIED_LOCAL' | 'USER_OWNED' };
 export type AudioBinding = { id: string; episode_id: string; media_version_id: string; track_type: string; start_us: number; end_us: number; gain_db: number; source_license_status: string; [key: string]: unknown };
 export type EpisodeRender = { id: string; episode_id: string; timeline_revision_id: string; integrity_status: string; [key: string]: unknown };
@@ -456,7 +457,7 @@ export async function exportTimelineRevision(timelineRevisionId: string, baseUrl
   return requestJson(`/api/v1/timeline-revisions/${encodeURIComponent(timelineRevisionId)}:export`, { method: 'POST' }, baseUrl);
 }
 
-export async function createSubtitleRevision(episodeId: string, payload: { cues: SubtitleCueRequest[]; format?: string; input_snapshot?: Record<string, unknown> }, baseUrl = ''): Promise<{ subtitle: SubtitleRevision }> {
+export async function createSubtitleRevision(episodeId: string, payload: { cues: SubtitleCueRequest[]; authority: SubtitleAuthorityRequest; format?: string }, baseUrl = ''): Promise<{ subtitle: SubtitleRevision }> {
   return requestJson(`/api/v1/episodes/${encodeURIComponent(episodeId)}/subtitle-revisions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 

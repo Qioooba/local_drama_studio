@@ -1,0 +1,39 @@
+{
+  "schema_version": "localdrama.subtitle-authority-evidence.v1",
+  "observed_at": "2026-08-15T02:13:56.345753+00:00",
+  "episode_id": "d4db1033-9517-4bd0-958d-4228e0abead1",
+  "subtitle_revision_id": "fe39d0e0-87da-42d6-8220-ca527444bdbc",
+  "revision_no": 2,
+  "format": "SRT",
+  "cue_count": 2,
+  "content_hash": "27c550795a42d73de7907cea3a9ff2d6c950cbef018eae1ee477da44fefc7083",
+  "authority_status": "VERIFIED_SCRIPT",
+  "input_snapshot": {
+    "asr_alignment": null,
+    "asr_text_authority": false,
+    "schema_version": "localdrama.subtitle-authority.v1",
+    "source_document_version_id": "6bdf1995-bbc2-4df8-a776-0779a4edfa19",
+    "source_passages": [
+      {
+        "cue_no": 1,
+        "source_end": 76,
+        "source_quote_sha256": "7194762e2d96a3c8c9bd4e073bcb004ad03ada84a2322b2a94a9a60d24d3d84b",
+        "source_start": 71
+      },
+      {
+        "cue_no": 2,
+        "source_end": 203,
+        "source_quote_sha256": "3f0557519d4d7e525970e7aa3b501b1d85dd5dcee443034a691fa5179f52f2c3",
+        "source_start": 185
+      }
+    ],
+    "source_text_sha256": "cd516fc32abc86943ff515b5b19d455865b5d43ba4ecbd8435cd2958c82dbf61",
+    "text_authority": "SCRIPT"
+  },
+  "backup": {
+    "path": "F:\\AI_Projects\\h3\\local_drama_studio\\backups\\subtitle_authority_preflight_20260815T021356Z.sqlite3",
+    "integrity": "ok"
+  },
+  "runtime_contacted": false,
+  "network_contacted": false
+}

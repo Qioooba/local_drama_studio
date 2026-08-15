@@ -31,6 +31,7 @@ from local_drama.infrastructure.database.sqlite import Database
 
 PROJECT_ID = "e5eaa01d-d39a-4a63-acbf-026da30b46e7"
 EPISODE_ID = "d4db1033-9517-4bd0-958d-4228e0abead1"
+SOURCE_DOCUMENT_VERSION_ID = "6bdf1995-bbc2-4df8-a776-0779a4edfa19"
 VIDEO_SOURCES = (
     ROOT.parent / "projects/family_redfruit_series_001/09_production/SEASON_001/media/comfy_output/scene_01__00002_.mp4",
     ROOT.parent / "projects/family_redfruit_series_001/09_production/SEASON_001/media/comfy_output/scene_02__00002_.mp4",
@@ -166,7 +167,7 @@ def build() -> dict[str, Any]:
             {"start_us": 0, "end_us": 3_000_000, "text": "谁在里面？"},
             {"start_us": 5_000_000, "end_us": 9_000_000, "text": "先喝口热水，天亮以前我们一起想办法。"},
         ],
-        input_snapshot={"source_document": "g6_script_source.txt", "episode_id": EPISODE_ID},
+        authority={"text_authority": "SCRIPT", "source_document_version_id": SOURCE_DOCUMENT_VERSION_ID},
         actor="g8-evidence-builder",
     )
 

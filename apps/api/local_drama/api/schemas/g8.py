@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -26,10 +26,17 @@ class SubtitleCueRequest(BaseModel):
     style: dict[str, Any] = Field(default_factory=dict)
 
 
+class SubtitleAuthorityRequest(BaseModel):
+    text_authority: Literal["SCRIPT"]
+    source_document_version_id: str = Field(min_length=1)
+    asr_alignment_media_version_id: str | None = None
+    asr_profile_version_id: str | None = None
+
+
 class SubtitleRevisionRequest(BaseModel):
     cues: list[SubtitleCueRequest] = Field(min_length=1)
     format: str = Field(default="SRT", min_length=3, max_length=16)
-    input_snapshot: dict[str, Any] = Field(default_factory=dict)
+    authority: SubtitleAuthorityRequest
 
 
 class AudioBindingRequest(BaseModel):

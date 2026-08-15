@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from local_drama.application.configuration import ConfigurationService
+from local_drama.application.documents import DocumentImportService
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
 from local_drama.main import create_app
@@ -55,6 +56,10 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
     video = MediaService(database, workspace).import_file(project_id, _video(workspace), purpose="SHOT_VIDEO", owner_id=str(first_shot["id"]), media_kind="VIDEO")
     audio = MediaService(database, workspace).import_file(project_id, _audio(workspace), purpose="AUDIO", media_kind="AUDIO")
     video_id = str(video["media_version_id"])
+    script_path = workspace.work_root / "g8-script.txt"
+    script_path.write_text("你好，世界\n\na b\n\n这是一个超过字符速度限制的字幕", encoding="utf-8")
+    script = DocumentImportService(database, workspace).import_document(project_id, script_path)
+    authority = {"text_authority": "SCRIPT", "source_document_version_id": script["source_document_version_id"]}
 
     with TestClient(create_app(workspace)) as client:
         timeline_response = client.post(
@@ -71,19 +76,94 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
 
         subtitle_response = client.post(
             f"/api/v1/episodes/{episode['id']}/subtitle-revisions",
-            json={"format": "SRT", "cues": [{"start_us": 0, "end_us": 1_000_000, "text": "你好，世界"}]},
+            json={"format": "SRT", "authority": authority, "cues": [{"start_us": 0, "end_us": 1_000_000, "text": "你好，世界"}]},
         )
         assert subtitle_response.status_code == 201, subtitle_response.text
         assert "00:00:00,000 --> 00:00:01,000" in subtitle_response.json()["subtitle"]["content_text"]
+        assert subtitle_response.json()["subtitle"]["authority_status"] == "VERIFIED_SCRIPT"
+        snapshot = subtitle_response.json()["subtitle"]["input_snapshot"]
+        assert snapshot["asr_text_authority"] is False
+        assert snapshot["source_passages"][0]["source_start"] == 0
+        missing_authority = client.post(
+            f"/api/v1/episodes/{episode['id']}/subtitle-revisions",
+            json={"cues": [{"start_us": 0, "end_us": 1_000_000, "text": "你好，世界"}]},
+        )
+        assert missing_authority.status_code == 422
+        mismatched_text = client.post(
+            f"/api/v1/episodes/{episode['id']}/subtitle-revisions",
+            json={"authority": authority, "cues": [{"start_us": 0, "end_us": 1_000_000, "text": "ASR 猜测文本"}]},
+        )
+        assert mismatched_text.status_code == 422
+        assert mismatched_text.json()["error"]["code"] == "SUBTITLE_SCRIPT_AUTHORITY_MISMATCH"
+        with database.connect() as connection:
+            assert connection.execute("SELECT COUNT(*) FROM subtitle_revisions WHERE episode_id=?", (episode["id"],)).fetchone()[0] == 1
+
+        other_project = ProjectService(database, workspace.projects_root).create_project(
+            code="g8_subtitle_cross_project",
+            title="G8 subtitle cross project",
+            episode_count=1,
+            aspect_ratio="16:9",
+            fps_num=24,
+            fps_den=1,
+            target_duration_ms=1000,
+            allow_unconfigured_capabilities=True,
+        )
+        other_script_path = workspace.work_root / "other-script.txt"
+        other_script_path.write_text("你好，世界", encoding="utf-8")
+        other_script = DocumentImportService(database, workspace).import_document(str(other_project["id"]), other_script_path)
+        cross_project = client.post(
+            f"/api/v1/episodes/{episode['id']}/subtitle-revisions",
+            json={
+                "authority": {"text_authority": "SCRIPT", "source_document_version_id": other_script["source_document_version_id"]},
+                "cues": [{"start_us": 0, "end_us": 1_000_000, "text": "你好，世界"}],
+            },
+        )
+        assert cross_project.status_code == 422
+        assert cross_project.json()["error"]["code"] == "SUBTITLE_SOURCE_PROJECT_MISMATCH"
+
+        with database.transaction() as connection:
+            connection.execute("INSERT INTO execution_profiles (id,code,title) VALUES ('asr-profile','g8-asr','G8 ASR')")
+            connection.execute(
+                """INSERT INTO execution_profile_versions
+                (id,execution_profile_id,version_no,capability,model_bundle_json,input_contract_json,
+                 parameter_schema_json,status,capability_json,output_contract_json,resource_policy_json)
+                VALUES ('asr-profile-v1','asr-profile',1,'AUDIO_ASR','{}','{}','{}','PUBLISHED','{}','{}','{}')"""
+            )
+        aligned = client.post(
+            f"/api/v1/episodes/{episode['id']}/subtitle-revisions",
+            json={
+                "format": "VTT",
+                "authority": {
+                    **authority,
+                    "asr_alignment_media_version_id": audio["media_version_id"],
+                    "asr_profile_version_id": "asr-profile-v1",
+                },
+                "cues": [{"start_us": 100_000, "end_us": 1_000_000, "text": "你好，世界"}],
+            },
+        )
+        assert aligned.status_code == 201, aligned.text
+        assert aligned.json()["subtitle"]["input_snapshot"]["asr_alignment"]["purpose"] == "TIMING_ALIGNMENT_ONLY"
+        assert aligned.json()["subtitle"]["input_snapshot"]["asr_alignment"]["text_authority"] is False
+        ass = client.post(
+            f"/api/v1/episodes/{episode['id']}/subtitle-revisions",
+            json={
+                "format": "ASS",
+                "authority": authority,
+                "cues": [{"start_us": 0, "end_us": 1_000_000, "text": "你好，世界"}],
+            },
+        )
+        assert ass.status_code == 201, ass.text
+        assert "[Events]" in ass.json()["subtitle"]["content_text"]
+        assert "Dialogue: 0,0:00:00.00,0:00:01.00,你好，世界" in ass.json()["subtitle"]["content_text"]
         overlap = client.post(
             f"/api/v1/episodes/{episode['id']}/subtitle-revisions",
-            json={"cues": [{"start_us": 0, "end_us": 800_000, "text": "a"}, {"start_us": 700_000, "end_us": 1_000_000, "text": "b"}]},
+            json={"authority": authority, "cues": [{"start_us": 0, "end_us": 800_000, "text": "a"}, {"start_us": 700_000, "end_us": 1_000_000, "text": "b"}]},
         )
         assert overlap.status_code == 422
         assert overlap.json()["error"]["code"] == "SUBTITLE_OVERLAP"
         cps = client.post(
             f"/api/v1/episodes/{episode['id']}/subtitle-revisions",
-            json={"cues": [{"start_us": 0, "end_us": 100_000, "text": "这是一个超过字符速度限制的字幕"}]},
+            json={"authority": authority, "cues": [{"start_us": 0, "end_us": 100_000, "text": "这是一个超过字符速度限制的字幕"}]},
         )
         assert cps.status_code == 422
         assert cps.json()["error"]["code"] == "SUBTITLE_CPS_EXCEEDED"
@@ -155,7 +235,7 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
         assert observed.status_code == 200, observed.text
         status = observed.json()["status"]
         assert status["timeline"]["revision_count"] == 1
-        assert status["subtitles"]["revision_count"] == 1
+        assert status["subtitles"]["revision_count"] == 3
         assert status["audio"] == {"binding_count": 1, "verified_local_count": 1}
         assert status["renders"]["count"] == 1
         assert status["renders"]["verified_count"] == 1

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any
 
@@ -34,7 +35,7 @@ class TimelineStatusService:
             ).fetchone()
             timeline_count = int(connection.execute("SELECT COUNT(*) FROM timeline_revisions WHERE episode_id=?", (episode_id,)).fetchone()[0])
             subtitle = connection.execute(
-                """SELECT sr.id, sr.revision_no, sr.format, sr.status, sr.created_at,
+                """SELECT sr.id, sr.revision_no, sr.format, sr.status, sr.created_at, sr.input_snapshot_json,
                 (SELECT COUNT(*) FROM subtitle_cues sc WHERE sc.subtitle_revision_id=sr.id) AS cue_count
                 FROM subtitle_revisions sr WHERE sr.episode_id=? ORDER BY sr.revision_no DESC LIMIT 1""", (episode_id,)
             ).fetchone()
@@ -56,10 +57,20 @@ class TimelineStatusService:
             ).fetchone()
             delivery_count = int(connection.execute("SELECT COUNT(*) FROM delivery_packages dp JOIN episode_render_versions erv ON erv.id=dp.episode_render_version_id WHERE erv.episode_id=?", (episode_id,)).fetchone()[0])
             delivery_verified = int(connection.execute("SELECT COUNT(*) FROM delivery_packages dp JOIN episode_render_versions erv ON erv.id=dp.episode_render_version_id WHERE erv.episode_id=? AND dp.status='VERIFIED'", (episode_id,)).fetchone()[0])
+        latest_subtitle = dict(subtitle) if subtitle else None
+        if latest_subtitle is not None:
+            snapshot = json.loads(str(latest_subtitle.pop("input_snapshot_json")))
+            latest_subtitle["authority_status"] = (
+                "VERIFIED_SCRIPT"
+                if snapshot.get("schema_version") == "localdrama.subtitle-authority.v1"
+                else "LEGACY_INCOMPLETE"
+            )
+            latest_subtitle["source_document_version_id"] = snapshot.get("source_document_version_id")
+            latest_subtitle["asr_alignment_only"] = bool(snapshot.get("asr_alignment")) and snapshot.get("asr_text_authority") is False
         return {
             "episode": {"id": str(episode["id"]), "code": str(episode["code"]), "title": str(episode["title"]), "project_id": str(episode["project_id"])},
             "timeline": {"revision_count": timeline_count, "latest": dict(timeline) if timeline else None},
-            "subtitles": {"revision_count": subtitle_count, "latest": dict(subtitle) if subtitle else None},
+            "subtitles": {"revision_count": subtitle_count, "latest": latest_subtitle},
             "audio": {"binding_count": int(audio["total"] or 0), "verified_local_count": int(audio["verified"] or 0)},
             "renders": {"count": render_count, "verified_count": render_verified_count, "latest": dict(render) if render else None},
             "delivery": {"count": delivery_count, "verified_count": delivery_verified, "latest": dict(delivery) if delivery else None},

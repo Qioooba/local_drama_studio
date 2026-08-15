@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import uuid
@@ -34,6 +35,27 @@ def _json(value: Any) -> str:
 
 def _hash(value: Any) -> str:
     return hashlib.sha256(_json(value).encode("utf-8")).hexdigest()
+
+
+def _normalized_text_with_offsets(value: str) -> tuple[str, list[int]]:
+    """Collapse whitespace while retaining a map back to the authoritative text."""
+    normalized: list[str] = []
+    offsets: list[int] = []
+    in_whitespace = False
+    for offset, character in enumerate(value):
+        if character.isspace():
+            if normalized and not in_whitespace:
+                normalized.append(" ")
+                offsets.append(offset)
+            in_whitespace = True
+            continue
+        normalized.append(character)
+        offsets.append(offset)
+        in_whitespace = False
+    if normalized and normalized[-1] == " ":
+        normalized.pop()
+        offsets.pop()
+    return "".join(normalized), offsets
 
 
 def _timestamp_us(value: int) -> str:
@@ -169,10 +191,12 @@ class TimelineService:
         cues: list[dict[str, Any]],
         *,
         format: str = "SRT",
-        input_snapshot: dict[str, Any] | None = None,
+        authority: dict[str, Any],
         actor: str = "local-user",
     ) -> dict[str, Any]:
-        self._episode(episode_id)
+        episode = self._episode(episode_id)
+        source_text, authority_snapshot = self._subtitle_authority(episode, authority)
+        normalized_source, source_offsets = _normalized_text_with_offsets(source_text)
         normalized_format = format.upper()
         if normalized_format not in {"SRT", "VTT", "ASS"}:
             raise DomainRuleError("SUBTITLE_FORMAT_UNSUPPORTED", "只支持 SRT、VTT、ASS")
@@ -180,6 +204,8 @@ class TimelineService:
             raise DomainRuleError("SUBTITLE_CUES_REQUIRED", "字幕至少需要一个 cue")
         normalized: list[dict[str, Any]] = []
         previous_end = -1
+        source_cursor = 0
+        source_passages: list[dict[str, Any]] = []
         for index, raw in enumerate(cues, start=1):
             try:
                 start_us = int(raw["start_us"])
@@ -195,8 +221,29 @@ class TimelineService:
             cps = len(text) / duration_seconds
             if cps > 25:
                 raise DomainRuleError("SUBTITLE_CPS_EXCEEDED", "字幕字符速度超过 25 CPS", {"cue_no": index, "cps": round(cps, 2)})
+            normalized_cue, _ = _normalized_text_with_offsets(text)
+            match_start = normalized_source.find(normalized_cue, source_cursor)
+            if match_start < 0:
+                raise DomainRuleError(
+                    "SUBTITLE_SCRIPT_AUTHORITY_MISMATCH",
+                    "字幕文本必须按剧本原文顺序逐字派生；ASR 只能辅助时间对齐",
+                    {"cue_no": index},
+                )
+            match_end = match_start + len(normalized_cue)
+            original_start = source_offsets[match_start]
+            original_end = source_offsets[match_end - 1] + 1
+            source_passages.append(
+                {
+                    "cue_no": index,
+                    "source_start": original_start,
+                    "source_end": original_end,
+                    "source_quote_sha256": hashlib.sha256(source_text[original_start:original_end].encode("utf-8")).hexdigest(),
+                }
+            )
+            source_cursor = match_end
             normalized.append({"cue_no": index, "start_us": start_us, "end_us": end_us, "text": text, "style": raw.get("style", {})})
             previous_end = end_us
+        authority_snapshot["source_passages"] = source_passages
         content = self._render_subtitles(normalized, normalized_format)
         revision_id = str(uuid.uuid4())
         now = _now()
@@ -207,7 +254,7 @@ class TimelineService:
                 (id, episode_id, revision_no, format, content_text, content_hash, input_snapshot_json, status,
                  created_at, updated_at, created_by, revision, schema_version)
                 VALUES (?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, 1, 'v2')""",
-                (revision_id, episode_id, next_no, normalized_format, content, hashlib.sha256(content.encode()).hexdigest(), _json(input_snapshot or {}), now, now, actor),
+                (revision_id, episode_id, next_no, normalized_format, content, hashlib.sha256(content.encode()).hexdigest(), _json(authority_snapshot), now, now, actor),
             )
             for cue in normalized:
                 connection.execute(
@@ -219,6 +266,68 @@ class TimelineService:
                 (actor, revision_id, "创建字幕 revision", _json({"episode_id": episode_id, "format": normalized_format})),
             )
         return self.get_subtitles(revision_id)
+
+    def _subtitle_authority(self, episode: dict[str, Any], authority: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        if authority.get("text_authority") != "SCRIPT":
+            raise DomainRuleError("SUBTITLE_SCRIPT_AUTHORITY_REQUIRED", "字幕文本权威必须明确设置为 SCRIPT")
+        version_id = str(authority.get("source_document_version_id") or "")
+        with self.database.connect() as connection:
+            version = connection.execute(
+                """SELECT sdv.*, sd.project_id, sd.source_kind
+                FROM source_document_versions sdv JOIN source_documents sd ON sd.id=sdv.source_document_id
+                WHERE sdv.id=?""",
+                (version_id,),
+            ).fetchone()
+        if version is None:
+            raise DomainRuleError("SOURCE_DOCUMENT_VERSION_NOT_FOUND", "剧本文档版本不存在")
+        if str(version["project_id"]) != str(episode["project_id"]):
+            raise DomainRuleError("SUBTITLE_SOURCE_PROJECT_MISMATCH", "字幕权威剧本必须属于同一项目")
+        if version["source_kind"] != "SCRIPT" or version["parse_status"] != "PARSED" or not version["extracted_text_rel"]:
+            raise DomainRuleError("SUBTITLE_SCRIPT_SOURCE_INVALID", "字幕权威来源必须是已解析的剧本文档版本")
+        project_root = (self.settings.projects_root / str(episode["root_rel"])).resolve()
+        source_candidate = project_root / str(version["extracted_text_rel"])
+        source_path = source_candidate.resolve()
+        if source_candidate.is_symlink() or not source_path.is_relative_to(project_root) or not source_path.is_file():
+            raise DomainRuleError("SUBTITLE_SCRIPT_SOURCE_INVALID", "剧本提取文本不存在或路径不安全")
+        source_text = source_path.read_text(encoding="utf-8")
+        text_sha256 = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
+        if text_sha256 != version["text_sha256"]:
+            raise DomainRuleError("SUBTITLE_SCRIPT_INTEGRITY_FAILED", "剧本提取文本哈希校验失败")
+
+        asr_media_id = authority.get("asr_alignment_media_version_id")
+        asr_profile_id = authority.get("asr_profile_version_id")
+        if bool(asr_media_id) != bool(asr_profile_id):
+            raise DomainRuleError("SUBTITLE_ASR_ALIGNMENT_INCOMPLETE", "ASR 对齐媒体与已发布 Profile 必须同时提供")
+        asr_snapshot: dict[str, Any] | None = None
+        if asr_media_id and asr_profile_id:
+            media = self._media_for_episode(str(episode["id"]), str(asr_media_id))
+            if media["media_kind"] not in {"AUDIO", "VIDEO"} or media["integrity_status"] != "VERIFIED":
+                raise DomainRuleError("SUBTITLE_ASR_MEDIA_INVALID", "ASR 对齐媒体必须是已验证的本地音频或视频")
+            with self.database.connect() as connection:
+                profile = connection.execute(
+                    "SELECT capability, status FROM execution_profile_versions WHERE id=?",
+                    (str(asr_profile_id),),
+                ).fetchone()
+            if profile is None or profile["status"] != "PUBLISHED":
+                raise DomainRuleError("SUBTITLE_ASR_PROFILE_INVALID", "ASR 对齐必须使用已发布 Profile")
+            capability_text = str(profile["capability"]).upper()
+            if not re.search(r"(^|[^A-Z])ASR([^A-Z]|$)|SPEECH[_ -]?TO[_ -]?TEXT", capability_text):
+                raise DomainRuleError("SUBTITLE_ASR_CAPABILITY_REQUIRED", "所选 Profile 未声明 ASR 能力")
+            asr_snapshot = {
+                "media_version_id": str(asr_media_id),
+                "media_sha256": media["sha256"],
+                "profile_version_id": str(asr_profile_id),
+                "text_authority": False,
+                "purpose": "TIMING_ALIGNMENT_ONLY",
+            }
+        return source_text, {
+            "schema_version": "localdrama.subtitle-authority.v1",
+            "text_authority": "SCRIPT",
+            "source_document_version_id": version_id,
+            "source_text_sha256": text_sha256,
+            "asr_alignment": asr_snapshot,
+            "asr_text_authority": False,
+        }
 
     def _render_subtitles(self, cues: list[dict[str, Any]], format: str) -> str:
         if format == "VTT":
@@ -248,7 +357,14 @@ class TimelineService:
             if row is None:
                 raise DomainRuleError("SUBTITLE_REVISION_NOT_FOUND", "字幕 revision 不存在")
             cues = connection.execute("SELECT * FROM subtitle_cues WHERE subtitle_revision_id=? ORDER BY cue_no", (subtitle_revision_id,)).fetchall()
-        return {**dict(row), "cues": [{**dict(cue), "style": json.loads(cue["style_json"])} for cue in cues]}
+        result = dict(row)
+        snapshot = json.loads(result.pop("input_snapshot_json"))
+        result["input_snapshot"] = snapshot
+        result["authority_status"] = (
+            "VERIFIED_SCRIPT" if snapshot.get("schema_version") == "localdrama.subtitle-authority.v1" else "LEGACY_INCOMPLETE"
+        )
+        result["cues"] = [{**dict(cue), "style": json.loads(cue["style_json"])} for cue in cues]
+        return result
 
     def bind_audio(
         self,

@@ -10741,6 +10741,48 @@
         ],
         "title": "StageProjectPackageRequest"
       },
+      "SubtitleAuthorityRequest": {
+        "properties": {
+          "text_authority": {
+            "type": "string",
+            "const": "SCRIPT",
+            "title": "Text Authority"
+          },
+          "source_document_version_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Source Document Version Id"
+          },
+          "asr_alignment_media_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asr Alignment Media Version Id"
+          },
+          "asr_profile_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asr Profile Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text_authority",
+          "source_document_version_id"
+        ],
+        "title": "SubtitleAuthorityRequest"
+      },
       "SubtitleCueRequest": {
         "properties": {
           "start_us": {
@@ -10789,15 +10831,14 @@
             "title": "Format",
             "default": "SRT"
           },
-          "input_snapshot": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Input Snapshot"
+          "authority": {
+            "$ref": "#/components/schemas/SubtitleAuthorityRequest"
           }
         },
         "type": "object",
         "required": [
-          "cues"
+          "cues",
+          "authority"
         ],
         "title": "SubtitleRevisionRequest"
       },

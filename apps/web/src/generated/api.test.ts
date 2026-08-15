@@ -46,7 +46,11 @@ describe("generated G8 timeline client", () => {
   });
 
   it("posts subtitle and authorized audio bindings through encoded episode paths", async () => {
-    await createSubtitleRevision("episode/1", { cues: [{ start_us: 0, end_us: 500_000, text: "local" }], format: "SRT" });
+    await createSubtitleRevision("episode/1", {
+      cues: [{ start_us: 0, end_us: 500_000, text: "local" }],
+      authority: { text_authority: "SCRIPT", source_document_version_id: "script-v1" },
+      format: "SRT",
+    });
     await bindEpisodeAudio("episode/1", { media_version_id: "audio/1", track_type: "DIALOGUE", start_us: 0, end_us: 500_000, source_license_status: "USER_OWNED" });
     const calls = fetchMock.mock.calls.filter(([path]) => !String(path).endsWith("/session/bootstrap"));
     expect(calls[0][0]).toBe("/api/v1/episodes/episode%2F1/subtitle-revisions");

@@ -56,11 +56,11 @@ export function TimelineStatusPanel({ status }: { status: TimelineStatus }) {
     <p className="muted">仅汇总当前集已持久化的 timeline、字幕、音频、渲染和交付记录；没有真实记录就明确显示为空，不会自动生成样片或交付包。</p>
     <div className="configuration-grid capacity-grid">
       <div className="configuration-card"><small>Timeline revision</small><strong>{status.timeline.revision_count}</strong><span>{latestTimeline ? `最新 v${String(latestTimeline.revision_no)}` : "暂无真实 revision"}</span></div>
-      <div className="configuration-card"><small>字幕 / 音频</small><strong>{status.subtitles.revision_count} / {status.audio.binding_count}</strong><span>{latestSubtitle ? `${String(latestSubtitle.format)} · ${String(latestSubtitle.cue_count)} cues` : "暂无字幕；音频授权记录按实际汇总"}</span></div>
+      <div className="configuration-card"><small>字幕 / 音频</small><strong>{status.subtitles.revision_count} / {status.audio.binding_count}</strong><span>{latestSubtitle ? `${String(latestSubtitle.format)} · ${String(latestSubtitle.cue_count)} cues · ${latestSubtitle.authority_status === "VERIFIED_SCRIPT" ? "剧本权威已验证" : "遗留证据不完整"}` : "暂无字幕；音频授权记录按实际汇总"}</span></div>
       <div className="configuration-card"><small>整集渲染</small><strong>{status.renders.count}</strong><span>{latestRender ? String(latestRender.status) : "暂无真实 render"}</span></div>
       <div className="configuration-card"><small>交付包</small><strong>{status.delivery.count}</strong><span>{latestDelivery ? String(latestDelivery.status) : "暂无真实 delivery"}</span></div>
     </div>
-    <div className="canvas-status"><span>本地授权音频：{status.audio.verified_local_count}</span><span>已验证渲染：{status.renders.verified_count}</span><span>已验证交付：{status.delivery.verified_count}</span><span>runtime_contacted=false</span><span>network_contacted=false</span><span>mutated=false</span></div>
+    <div className="canvas-status"><span>本地授权音频：{status.audio.verified_local_count}</span><span>字幕文本权威：{latestSubtitle?.authority_status === "VERIFIED_SCRIPT" ? "SCRIPT" : "未验证"}</span><span>ASR：{latestSubtitle?.asr_alignment_only ? "仅时间对齐" : "未参与"}</span><span>已验证渲染：{status.renders.verified_count}</span><span>已验证交付：{status.delivery.verified_count}</span><span>runtime_contacted=false</span><span>network_contacted=false</span><span>mutated=false</span></div>
   </section>;
 }
 
