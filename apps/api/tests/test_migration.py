@@ -20,7 +20,7 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         foreign_keys = connection.execute("PRAGMA foreign_keys").fetchone()[0]
         indexes = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
-        assert version == "0034_local_automation_webhooks"
+        assert version == "0036_motion_control_media"
     assert "provider_random_nonce" in variant_columns
     assert {"requested_time_us", "resolved_time_us", "source_sha256", "extraction_method"} <= anchor_columns
     assert "source_artifact_id" in media_columns
@@ -91,6 +91,11 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         "automation_clients",
         "webhook_subscriptions",
         "webhook_deliveries",
+        "automation_workflows",
+        "automation_workflow_runs",
+        "automation_workflow_run_tasks",
+        "automation_workflow_run_events",
+        "motion_controls",
     }
     assert expected <= tables
 

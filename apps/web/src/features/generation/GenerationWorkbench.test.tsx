@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFrameAnchor, createGenerationIntent, createKeyframeCandidate, createPrompt, planGenerationVariant, submitGenerationVariant } from "../../generated/api";
 import { GenerationWorkbench } from "./GenerationWorkbench";
 
-vi.mock("../../generated/api", () => ({ createFrameAnchor: vi.fn(), createGenerationIntent: vi.fn(), createKeyframeCandidate: vi.fn(), createPrompt: vi.fn(), planGenerationVariant: vi.fn(), submitGenerationVariant: vi.fn() }));
+vi.mock("../../generated/api", () => ({ createFrameAnchor: vi.fn(), createGenerationIntent: vi.fn(), createKeyframeCandidate: vi.fn(), createPrompt: vi.fn(), planGenerationVariant: vi.fn(), submitGenerationVariant: vi.fn(), listMotionControls: vi.fn().mockResolvedValue({ items: [] }), createMotionControl: vi.fn() }));
 
 const video = { media_version_id: "video-123456789", media_asset_id: "asset-1", project_id: "project-1", media_kind: "VIDEO", stage: "PROXY", decision: null, is_stale: null };
 

@@ -15,6 +15,8 @@ import {
   publishPostProcessRecipe,
   renderEpisode,
   resolveProfileCameraPlan,
+  reviewInbox,
+  reviewInboxPage,
   runEnhancement,
   submitGenerationVariant,
   verifyDeliveryPackage,
@@ -143,5 +145,14 @@ describe("generated G8 timeline client", () => {
       suggestedAction: "刷新后重试",
     });
     expect(String(error)).toContain("请求 ID req-body-123");
+  });
+
+  it("encodes cross-project review inbox filters before requesting a page", async () => {
+    await reviewInbox("project/1", "", { media_kind: "VIDEO", episode_id: "episode/2", age: "OLD", priority: "HIGH", blocking: "BLOCKED", min_age_days: 7, max_age_days: 30 });
+    await reviewInboxPage("project/1", 20, 10, "VIDEO", "OLD", "HIGH", "BLOCKED", "episode/2");
+    expect(fetchMock.mock.calls.map(([path]) => path).filter((path) => !String(path).endsWith("/session/bootstrap"))).toEqual([
+      "/api/v1/reviews/inbox?project_id=project%2F1&media_kind=VIDEO&episode_id=episode%2F2&age=OLD&priority=HIGH&blocking=BLOCKED&min_age_days=7&max_age_days=30",
+      "/api/v1/reviews/inbox?project_id=project%2F1&media_kind=VIDEO&age=OLD&priority=HIGH&blocking=BLOCKED&episode_id=episode%2F2&cursor=20&limit=10",
+    ]);
   });
 });

@@ -28,6 +28,7 @@
     "This ledger is deliberately conservative until every P0/P1 requirement and named test case is mapped to current automated or captured local evidence.",
     "The two P2 FRs are inventoried but do not block the first formal release.",
     "G7-G10 evidence is necessary but cannot by itself set this ledger to PASS.",
-    "FR-AUT-002 has implementation-level loopback client/webhook evidence, but remains PARTIAL until formal three-viewport production UAT and release evidence are captured."
+    "FR-AUT-002 has implementation-level loopback client/webhook evidence, but remains PARTIAL until formal three-viewport production UAT and release evidence are captured.",
+    "FR-AUT-001, FR-CTL-002 and FR-REV-001 now have implementation-level API/UI evidence and remain PARTIAL until formal three-viewport production UAT is captured."
   ]
 }

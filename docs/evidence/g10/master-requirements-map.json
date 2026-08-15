@@ -151,6 +151,24 @@
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/fr-aut-002-automation-implementation-2026-08-15.json"],
       "automated_tests": ["apps/api/tests/test_automation_webhooks.py", "apps/api/tests/test_migration.py"]
+    },
+    {
+      "id": "FR-AUT-001",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-aut-001-automation-workflows-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_automation_workflows.py"]
+    },
+    {
+      "id": "FR-CTL-002",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-ctl-002-motion-controls-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_motion_controls.py", "apps/web/src/features/generation/MotionControlPanel.test.tsx"]
+    },
+    {
+      "id": "FR-REV-001",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-rev-001-review-inbox-filters-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_g4_reviews.py", "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"]
     }
   ]
 }

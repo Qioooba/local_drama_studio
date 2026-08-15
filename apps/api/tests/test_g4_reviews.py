@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -157,3 +158,80 @@ def test_review_api_exposes_real_templates_inbox_context_and_selection(workspace
         selected = client.post(f"/api/v1/media-versions/{version_id}:select", json={"selection_type": "PROXY_WINNER"})
         assert selected.status_code == 200
         assert selected.json()["selection"]["media_version_id"] == version_id
+
+
+def test_review_inbox_cross_project_filters_age_priority_blocking_episode_and_stable_cursor(workspace, database) -> None:
+    """FR-REV-001 read model filters before pagination without mutating review state."""
+    first = _project(workspace, database, "g4_inbox_first")
+    second = _project(workspace, database, "g4_inbox_second")
+    projects = ProjectService(database, workspace.projects_root)
+    first_episode = projects.list_episodes(str(projects.list_seasons(str(first["id"]))[0]["id"]))[0]
+    second_episode = projects.list_episodes(str(projects.list_seasons(str(second["id"]))[0]["id"]))[0]
+    media_service = MediaService(database, workspace)
+    old = media_service.import_file(
+        str(first["id"]),
+        _video(workspace, "g4-inbox-old.mp4", "red"),
+        owner_type="EPISODE",
+        owner_id=str(first_episode["id"]),
+        stage="PROXY",
+    )
+    fresh = media_service.import_file(
+        str(second["id"]),
+        _video(workspace, "g4-inbox-fresh.mp4", "yellow"),
+        owner_type="EPISODE",
+        owner_id=str(second_episode["id"]),
+        stage="PROXY",
+    )
+    formal = media_service.import_file(
+        str(second["id"]),
+        _video(workspace, "g4-inbox-formal.mp4", "green"),
+        owner_type="EPISODE",
+        owner_id=str(second_episode["id"]),
+        stage="FORMAL",
+    )
+    old_id = str(old["media_version_id"])
+    fresh_id = str(fresh["media_version_id"])
+    formal_id = str(formal["media_version_id"])
+    old_timestamp = (datetime.now(UTC) - timedelta(days=10)).isoformat()
+    with database.transaction() as connection:
+        connection.execute("UPDATE media_versions SET created_at=?, updated_at=? WHERE id=?", (old_timestamp, old_timestamp, old_id))
+
+    with TestClient(create_app(workspace)) as client:
+        all_items = client.get("/api/v1/reviews/inbox?limit=100").json()["items"]
+        all_ids = [item["media_version_id"] for item in all_items]
+        assert old_id in all_ids and fresh_id in all_ids and formal_id in all_ids
+        assert {item["project_id"] for item in all_items} == {str(first["id"]), str(second["id"])}
+
+        old_items = client.get("/api/v1/reviews/inbox?age=OLD").json()["items"]
+        assert [item["media_version_id"] for item in old_items] == [old_id]
+        assert old_items[0]["age_hours"] > 24 * 7
+        assert old_items[0]["episode_id"] == str(first_episode["id"])
+        assert old_items[0]["episode_code"] == first_episode["code"]
+
+        fresh_items = client.get(f"/api/v1/reviews/inbox?project_id={second['id']}&age=NEW&episode_id={second_episode['id']}").json()["items"]
+        assert {item["media_version_id"] for item in fresh_items} == {fresh_id, formal_id}
+        assert all(item["project_id"] == str(second["id"]) for item in fresh_items)
+
+        high_items = client.get("/api/v1/reviews/inbox?priority=HIGH").json()["items"]
+        assert formal_id in {item["media_version_id"] for item in high_items}
+        assert all(item["priority"] == "HIGH" for item in high_items)
+        normal_items = client.get("/api/v1/reviews/inbox?priority=NORMAL").json()["items"]
+        assert fresh_id in {item["media_version_id"] for item in normal_items}
+        assert all(item["priority"] == "NORMAL" for item in normal_items)
+
+        blocked_items = client.get("/api/v1/reviews/inbox?blocking=BLOCKED").json()["items"]
+        assert formal_id in {item["media_version_id"] for item in blocked_items}
+        assert all(item["is_blocked"] == 1 for item in blocked_items)
+        ready_items = client.get("/api/v1/reviews/inbox?blocking=READY").json()["items"]
+        assert fresh_id in {item["media_version_id"] for item in ready_items}
+        assert all(item["is_blocked"] == 0 for item in ready_items)
+
+        first_page = client.get("/api/v1/reviews/inbox?limit=1").json()
+        assert first_page["next_cursor"] == 1
+        second_page = client.get(f"/api/v1/reviews/inbox?limit=1&cursor={first_page['next_cursor']}").json()
+        assert second_page["items"]
+        assert first_page["items"][0]["media_version_id"] != second_page["items"][0]["media_version_id"]
+        assert first_page["items"][0]["inbox_at"] <= second_page["items"][0]["inbox_at"]
+
+        invalid = client.get("/api/v1/reviews/inbox?blocking=UNKNOWN")
+        assert invalid.status_code == 422

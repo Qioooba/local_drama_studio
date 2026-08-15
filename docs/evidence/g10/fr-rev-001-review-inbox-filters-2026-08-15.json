@@ -1,0 +1,42 @@
+{
+  "schema_version": "g10.fr-rev-001-review-inbox.v1",
+  "status": "PARTIAL",
+  "requirement": "FR-REV-001",
+  "observed_at": "2026-08-15T00:00:00Z",
+  "implementation": {
+    "status": "IMPLEMENTED",
+    "read_model": "cross_project_review_inbox",
+    "filters": [
+      "project_id",
+      "episode_id",
+      "media_kind",
+      "age",
+      "min_age_days",
+      "max_age_days",
+      "priority",
+      "blocking"
+    ],
+    "age_buckets": {
+      "NEW": "<= 1 day",
+      "AGING": "> 1 and <= 7 days",
+      "OLD": "> 7 days"
+    },
+    "stable_pagination": "filter-before-pagination; inbox_at then media_version_id immutable tie-break",
+    "review_mutation": false,
+    "auto_approval": false,
+    "network_contacted": false
+  },
+  "automated_tests": [
+    "apps/api/tests/test_g4_reviews.py::test_review_inbox_cross_project_filters_age_priority_blocking_episode_and_stable_cursor",
+    "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx",
+    "apps/web/src/generated/api.test.ts"
+  ],
+  "production_uat": {
+    "status": "PENDING",
+    "reason": "正式项目三视口 UAT、返回位置恢复和最终 Windows release evidence 尚未执行；不把自动化回归冒充最终 PASS。"
+  },
+  "remaining_limits": [
+    "当前 App 仍按选中项目请求收件箱；跨项目 UI 需要在正式三视口 UAT 中接入全局 query。",
+    "priority/blocking 是只读派生字段，尚无用户可配置 priority policy 版本。"
+  ]
+}

@@ -4,6 +4,7 @@ import { createFrameAnchor, createGenerationIntent, createKeyframeCandidate, cre
 import { GateStatusIcon } from "../../components/icons";
 import { GenerationExperimentPanel } from "./GenerationExperimentPanel";
 import { GenerationControlPanel } from "./GenerationControlPanel";
+import { MotionControlPanel } from "./MotionControlPanel";
 
 type Shot = Record<string, unknown>;
 
@@ -245,6 +246,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
             <div className="prompt-field"><label htmlFor="generation-prompt">镜头 Prompt</label><textarea id="generation-prompt" value={promptText} onChange={(event) => setPromptText(event.target.value)} placeholder="描述主体动作、镜头运动、节奏与环境变化…" /><div className="prompt-tools"><span>结构化运镜</span><span>负向约束</span><span>版本化保存</span></div></div>
           </div>
           <GenerationControlPanel timedDirections={timedDirectionsText} performanceBindings={performanceBindingsText} motionMasks={motionMasksText} onTimedDirectionsChange={setTimedDirectionsText} onPerformanceBindingsChange={setPerformanceBindingsText} onMotionMasksChange={setMotionMasksText} />
+          {approvedKeyframeId && profileVersionId && <MotionControlPanel sourceMediaVersionId={approvedKeyframeId} profileVersionId={profileVersionId} />}
           <section className="generation-submit-panel" aria-labelledby="generation-submit-title">
             <div className="section-title"><span id="generation-submit-title">计划 → 确认 → 提交真实任务</span><small>两阶段提交，不自动运行</small></div>
             <div className="generation-submit-fields">

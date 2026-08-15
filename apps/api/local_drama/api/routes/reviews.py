@@ -29,8 +29,34 @@ async def list_templates(request: Request) -> dict[str, object]:
 
 
 @router.get("/reviews/inbox", operation_id="getReviewInbox")
-async def review_inbox(request: Request, project_id: str | None = None, media_kind: str | None = None, cursor: int = 0, limit: int = 100) -> dict[str, object]:
-    return service(request).inbox_page(project_id, media_kind, cursor, limit)
+async def review_inbox(
+    request: Request,
+    project_id: str | None = None,
+    media_kind: str | None = None,
+    episode_id: str | None = None,
+    age: str | None = None,
+    priority: str | None = None,
+    blocking: str | None = None,
+    min_age_days: float | None = None,
+    max_age_days: float | None = None,
+    cursor: int = 0,
+    limit: int = 100,
+) -> dict[str, object]:
+    try:
+        return service(request).inbox_page(
+            project_id,
+            media_kind,
+            cursor,
+            limit,
+            episode_id=episode_id,
+            age=age,
+            priority=priority,
+            blocking=blocking,
+            min_age_days=min_age_days,
+            max_age_days=max_age_days,
+        )
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
 
 
 @router.get("/reviews/formal-selection-candidates", operation_id="listFormalSelectionCandidates")

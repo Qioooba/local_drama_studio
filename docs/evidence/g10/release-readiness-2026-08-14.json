@@ -1,6 +1,6 @@
 {
   "schema_version": "g10.release_audit.read_only.v1",
-  "observed_at": "2026-08-15T14:42:33.784826+00:00",
+  "observed_at": "2026-08-15T15:20:51.447347+00:00",
   "status": "IN_PROGRESS",
   "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
   "checks": [
@@ -12,7 +12,7 @@
     {
       "code": "MIGRATION_HEAD",
       "passed": true,
-      "observed": "0034_local_automation_webhooks"
+      "observed": "0036_motion_control_media"
     },
     {
       "code": "BACKUP_INTEGRITY",
@@ -43,7 +43,7 @@
     {
       "code": "UPGRADE_ROLLBACK_REHEARSAL",
       "passed": true,
-      "evidence": "docs/evidence/g10/upgrade-rollback-rehearsal-0034-2026-08-15.json"
+      "evidence": "docs/evidence/g10/upgrade-rollback-rehearsal-0036-2026-08-15.json"
     },
     {
       "code": "SBOM_INVENTORY",

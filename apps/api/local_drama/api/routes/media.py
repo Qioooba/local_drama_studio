@@ -7,9 +7,11 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 
 from local_drama.api.schemas.g3 import KeyframeCandidateRequest, MediaImportRequest
+from local_drama.api.schemas.motion_controls import MotionControlRequest
 from local_drama.application.contact_sheets import ContactSheetExportService
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.media import MediaService
+from local_drama.application.motion_controls import MotionControlService
 from local_drama.domain.errors import DomainRuleError
 
 router = APIRouter(tags=["media"])
@@ -60,6 +62,34 @@ async def create_keyframe_candidate(
 ) -> dict[str, object]:
     try:
         return {"media": service(request).create_keyframe_candidate(media_version_id, payload.shot_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/media-versions/{source_media_version_id}/motion-masks", status_code=201, operation_id="createMotionControl")
+async def create_motion_control(
+    source_media_version_id: str, payload: MotionControlRequest, request: Request
+) -> dict[str, object]:
+    """Persist a motion brush/mask/vector/keyframe without modifying source media."""
+    try:
+        return {
+            "motion_control": MotionControlService(request.app.state.database, request.app.state.settings).create(
+                source_media_version_id,
+                payload.model_dump(mode="json"),
+            )
+        }
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/media-versions/{source_media_version_id}/motion-masks", operation_id="listMotionControls")
+async def list_motion_controls(source_media_version_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {
+            "items": MotionControlService(request.app.state.database, request.app.state.settings).list_for_source(
+                source_media_version_id
+            )
+        }
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

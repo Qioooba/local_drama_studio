@@ -195,7 +195,7 @@ G7 已可按蓝图 09 顺序开始，但当前不是 PASS；G8/G9 仍只记 prog
 
 G7 当前已按“用户自带本机模型、平台只引用管理、不捆绑权重”的正式范围 PASS；G8、G9 亦已按顺序 PASS。
 
-历史 G10 局部门禁证据曾为 PASS，但总设计复核后总体发布状态已撤回为 `IN_PROGRESS / NO-GO`。当前数据库与最近五份迁移前备份 `integrity=ok`，migration head=`0034_local_automation_webhooks`；`0031→0034` 隔离升级与精确恢复演练证据需随本批更新。规模、安全、干净新根恢复、本地只读 UAT、G7→G8→G9 有序退出、SBOM 和运行手册仍是有效局部证据，但不能替代 84 个 P0/P1 FR、15 个 NFR 与 85 个命名 TC 的总账闭环。正式范围保持 Windows x64 LOCAL_ONLY 本地源码发行版，不捆绑用户模型或媒体。
+历史 G10 局部门禁证据曾为 PASS，但总设计复核后总体发布状态已撤回为 `IN_PROGRESS / NO-GO`。当前数据库与最近五份迁移前备份 `integrity=ok`，migration head=`0036_motion_control_media`；`0031→0036` 隔离升级与精确恢复演练证据需随本批更新。规模、安全、干净新根恢复、本地只读 UAT、G7→G8→G9 有序退出、SBOM 和运行手册仍是有效局部证据，但不能替代 84 个 P0/P1 FR、15 个 NFR 与 85 个命名 TC 的总账闭环。正式范围保持 Windows x64 LOCAL_ONLY 本地源码发行版，不捆绑用户模型或媒体。
 
 2026-08-15 用户自带模型策略闭环：新增本机模型引用 API 与页面原生文件选择器，返回绝对路径且 `copied=false/uploaded=false`；兼容报告将用户许可证缺失降级为可见风险，不改变 hash、量化、路径和 symlink 硬校验。生产数据库在线备份后迁移至 0029，G7/G8/G9 依次 PASS；完整门禁 API 178 passed / 4 live deselected、Web 60/60（以最终实际回归输出为准更新），三档模型路径 UI 3/3 PASS。G10 发布审计 PASS，GO 范围不包含模型权重、音色、媒体或 REMOTE Provider。
 
@@ -280,6 +280,10 @@ FR-PST-002 实现增量：版本化后处理 recipe 在核心 `SCALE → TECHNIC
 FR-PST-003 实现增量：新增不可变版本化 `WatermarkProfile` 与 `CompliancePolicy`，并扩展 BrandKit 为项目视觉 token 版本；新版本发布会 RETIRE 同 code 的旧 ACTIVE 版本。整集本地交付自动读取或显式绑定当前 ACTIVE 控制版本，水印使用本机 Windows 字体由 FFmpeg 生成新文件，不覆盖整集渲染；合规机器预检记录规则、render SHA、发现项与责任边界，失败不产生交付包。交付 manifest 与 `delivery_packages` 冻结 BrandKit/Watermark/Compliance 版本、machine preflight=PASS、human/platform review=PENDING，后续 verify 只校验文件完整性，不把机器结果冒充人工/平台批准。真实 FFmpeg/API 回归、版本轮换与失败预检测试通过，Web 面板提供显式发布入口；三视口生产 UAT、正式证据与总账 closure 仍待补齐，当前不标最终 VERIFIED。
 
 FR-PST-003 责任分离增量：新增 `POST /delivery-packages/{id}:review`，审核者必须显式选择 `HUMAN` 或 `PLATFORM` 并填写说明，审核结果分别写入不可覆盖的 delivery package 状态与 delivery event；撤回包不能再审核。交付面板提供人工批准/平台批准按钮，并持续显示“机器 PASS ≠ 人工/平台批准”。真实 API 回归覆盖机器 PASS 后两类批准、说明留痕与状态分离；生产三视口 UAT 与正式总账证据仍待补齐。
+
+FR-CTL-002 实现增量：新增 migration `0036_motion_control_media` 与 `motion_controls` 不可变绑定表；`POST/GET /media-versions/{source_media_version_id}/motion-masks` 支持 `MOTION_MASK`、`VECTOR`、`KEYFRAME` 以及 `MOTION_BRUSH`、`INPAINT`、`OUTPAINT`。Raster mask/keyframe 只能引用同项目已验证 MediaVersion，运动笔刷/vector/keyframe JSON 会在项目目录注册为新的 `OTHER` MediaVersion；服务端要求已发布 Profile 的 capability contract 明确 `enabled=true`，源媒体 hash/path 永不覆盖。API 3 项测试与 Web MotionControlPanel 1 项测试通过，生成客户端/OpenAPI 已更新；当前控制版本需用户显式绑定到既有 MotionMask 生成输入，不自动改写草稿；正式生产画布三视口 UAT、真实栅格笔刷审阅与总账最终证据仍待补齐，证据 `docs/evidence/g10/fr-ctl-002-motion-controls-2026-08-15.json` 保持 `PARTIAL`。
+
+FR-REV-001 实现增量：审核收件箱 read model 现在在筛选前稳定投影跨项目、项目、集、媒体类型、年龄（NEW/AGING/OLD 及数值范围）、优先级和阻塞状态；项目/集来自真实 owner 关系，阻塞/优先级为只读派生字段，不自动审核。分页先过滤后以 `inbox_at, media_version_id` 固定排序，响应包含 age、machine、integrity、project/episode/shot 上下文；ReviewInboxPanel 提供对应显式筛选，生成客户端与 OpenAPI 已更新。隔离 API 回归覆盖跨项目、集、年龄、优先级、阻塞和稳定 cursor，Web 面板测试覆盖筛选组合；正式三视口 UAT、深链接返回位置恢复和总账最终证据仍待补齐，证据 `docs/evidence/g10/fr-rev-001-review-inbox-filters-2026-08-15.json` 保持 `PARTIAL`。
 
 ## 更新规则
 

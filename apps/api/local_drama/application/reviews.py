@@ -804,11 +804,60 @@ class ReviewService:
                 result.append({**dict(decision), "checks": [dict(item) for item in checks], "annotations": [dict(item) for item in annotations]})
         return result
 
-    def inbox(self, project_id: str | None = None, media_kind: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
-        page = self.inbox_page(project_id, media_kind, cursor=0, limit=limit)
+    def inbox(
+        self,
+        project_id: str | None = None,
+        media_kind: str | None = None,
+        limit: int = 100,
+        *,
+        episode_id: str | None = None,
+        age: str | None = None,
+        priority: str | None = None,
+        blocking: str | None = None,
+        min_age_days: float | None = None,
+        max_age_days: float | None = None,
+    ) -> list[dict[str, Any]]:
+        page = self.inbox_page(
+            project_id,
+            media_kind,
+            cursor=0,
+            limit=limit,
+            episode_id=episode_id,
+            age=age,
+            priority=priority,
+            blocking=blocking,
+            min_age_days=min_age_days,
+            max_age_days=max_age_days,
+        )
         return cast(list[dict[str, Any]], page["items"])
 
-    def inbox_page(self, project_id: str | None = None, media_kind: str | None = None, cursor: int = 0, limit: int = 100) -> dict[str, Any]:
+    def inbox_page(
+        self,
+        project_id: str | None = None,
+        media_kind: str | None = None,
+        cursor: int = 0,
+        limit: int = 100,
+        *,
+        episode_id: str | None = None,
+        age: str | None = None,
+        priority: str | None = None,
+        blocking: str | None = None,
+        min_age_days: float | None = None,
+        max_age_days: float | None = None,
+    ) -> dict[str, Any]:
+        """Return the immutable review-inbox read model.
+
+        The inbox is intentionally a cross-project read model when ``project_id``
+        is omitted.  Filtering is done before pagination, and the final sort has
+        an immutable id tie-breaker so cursors remain deterministic when several
+        media versions were created in the same timestamp tick.
+
+        ``age`` is a small, explicit set of user-facing buckets (NEW <= 1 day,
+        AGING > 1 and <= 7 days, OLD > 7 days).  Numeric min/max day bounds are
+        also accepted for automation and are intersected with the bucket.
+        ``priority`` and ``blocking`` are derived read-model fields; they never
+        mutate review decisions or auto-approve anything.
+        """
         params: list[Any] = []
         where: list[str] = []
         if project_id:
@@ -817,22 +866,104 @@ class ReviewService:
         if media_kind:
             where.append("ma.media_kind=?")
             params.append(media_kind)
+        if episode_id:
+            where.append("e.id=?")
+            params.append(episode_id)
         where.append("(rd.id IS NULL OR rd.decision != 'APPROVED' OR rd.is_stale=1)")
+
+        normalized_age = (age or "ALL").strip().upper()
+        if normalized_age not in {"ALL", "NEW", "AGING", "OLD", "0-1D", "1-7D", "7D+"}:
+            raise DomainRuleError("INVALID_REVIEW_AGE_FILTER", "审核收件箱年龄筛选必须是 ALL、NEW、AGING 或 OLD")
+        normalized_priority = (priority or "ALL").strip().upper()
+        if normalized_priority not in {"ALL", "HIGH", "NORMAL", "LOW", "P0", "P1"}:
+            raise DomainRuleError("INVALID_REVIEW_PRIORITY_FILTER", "审核收件箱优先级筛选必须是 ALL、HIGH、NORMAL 或 LOW")
+        normalized_blocking = (blocking or "ALL").strip().upper()
+        if normalized_blocking not in {"ALL", "BLOCKED", "READY", "TRUE", "FALSE", "1", "0"}:
+            raise DomainRuleError("INVALID_REVIEW_BLOCKING_FILTER", "审核收件箱阻塞筛选必须是 ALL、BLOCKED 或 READY")
+        if min_age_days is not None and min_age_days < 0:
+            raise DomainRuleError("INVALID_REVIEW_AGE_FILTER", "最小审核年龄不能为负数")
+        if max_age_days is not None and max_age_days < 0:
+            raise DomainRuleError("INVALID_REVIEW_AGE_FILTER", "最大审核年龄不能为负数")
+        if min_age_days is not None and max_age_days is not None and min_age_days > max_age_days:
+            raise DomainRuleError("INVALID_REVIEW_AGE_FILTER", "最小审核年龄不能大于最大审核年龄")
         clause = f"WHERE {' AND '.join(where)}" if where else ""
         normalized_cursor = max(0, int(cursor))
         normalized_limit = max(1, min(int(limit), 100))
-        params.extend([normalized_limit + 1, normalized_cursor])
-        with self.database.connect() as connection:
-            rows = connection.execute(
-                f"""SELECT mv.id AS media_version_id, mv.media_asset_id, mv.version_no, mv.stage, mv.rel_path, mv.mime_type,
+        # A derived table lets SQLite filter on read-model aliases while
+        # preserving one stable ordering for all callers.
+        inbox_at_expr = "COALESCE(rd.created_at, mv.created_at)"
+        age_hours_expr = f"MAX(0.0, (julianday('now') - julianday({inbox_at_expr})) * 24.0)"
+        machine_status_expr = "COALESCE(mc.status, 'NOT_RUN')"
+        blocked_condition = (
+            "COALESCE(rd.is_stale, 0)=1 "
+            "OR mv.integrity_status <> 'VERIFIED' "
+            f"OR {machine_status_expr}='FAIL' "
+            f"OR ((mv.stage='FORMAL' OR ma.media_kind='AUDIO') AND {machine_status_expr}<>'PASS'"
+            ")"
+        )
+        blocked_expr = f"CASE WHEN {blocked_condition} THEN 1 ELSE 0 END"
+        priority_expr = f"CASE WHEN ({blocked_condition} OR {age_hours_expr}>168 OR mv.stage='FORMAL') THEN 'HIGH' ELSE 'NORMAL' END"
+        derived_where: list[str] = []
+        derived_params: list[Any] = []
+        age_bounds = {
+            "NEW": (None, 1.0),
+            "0-1D": (None, 1.0),
+            "AGING": (1.0, 7.0),
+            "1-7D": (1.0, 7.0),
+            "OLD": (7.0, None),
+            "7D+": (7.0, None),
+        }.get(normalized_age)
+        lower_age = min_age_days
+        upper_age = max_age_days
+        if age_bounds:
+            bucket_lower, bucket_upper = age_bounds
+            lower_age = max(lower_age or 0.0, bucket_lower or 0.0) if bucket_lower is not None or lower_age is not None else None
+            upper_age = min(upper_age, bucket_upper) if upper_age is not None and bucket_upper is not None else upper_age if bucket_upper is None else bucket_upper
+        if lower_age is not None:
+            # Bucket lower bounds are exclusive (AGING is older than one day,
+            # OLD is older than seven days); explicit numeric bounds remain
+            # inclusive for automation callers.
+            lower_operator = ">" if age_bounds and (age_bounds[0] is not None) else ">="
+            derived_where.append(f"age_hours {lower_operator} ?")
+            derived_params.append(float(lower_age) * 24.0)
+        if upper_age is not None:
+            derived_where.append("age_hours <= ?")
+            derived_params.append(float(upper_age) * 24.0)
+        if normalized_priority in {"HIGH", "P0"}:
+            derived_where.append("priority IN ('HIGH')")
+        elif normalized_priority in {"NORMAL", "P1"}:
+            derived_where.append("priority='NORMAL'")
+        elif normalized_priority == "LOW":
+            # LOW is a valid filter even though the current policy does not
+            # assign it; keeping it explicit avoids silently broadening a query.
+            derived_where.append("priority='LOW'")
+        if normalized_blocking in {"BLOCKED", "TRUE", "1"}:
+            derived_where.append("is_blocked=1")
+        elif normalized_blocking in {"READY", "FALSE", "0"}:
+            derived_where.append("is_blocked=0")
+        derived_clause = f"WHERE {' AND '.join(derived_where)}" if derived_where else ""
+        base_sql = f"""SELECT mv.id AS media_version_id, mv.media_asset_id, mv.version_no, mv.stage, mv.rel_path, mv.mime_type,
                 mv.sha256, ma.project_id, ma.media_kind, ma.selected_version_id, ma.approved_version_id,
-                rd.id AS review_id, rd.decision, rd.is_stale, rd.created_at AS reviewed_at
+                mv.integrity_status, mv.created_at, mv.duration_ms, mv.fps_num, mv.fps_den,
+                p.code AS project_code, p.title AS project_title,
+                s.id AS shot_id, s.code AS shot_code, e.id AS episode_id, e.code AS episode_code,
+                e.number AS episode_number, se.id AS season_id, se.code AS season_code,
+                rd.id AS review_id, rd.decision, rd.is_stale, rd.created_at AS reviewed_at,
+                {inbox_at_expr} AS inbox_at, {age_hours_expr} AS age_hours, ({age_hours_expr}/24.0) AS age_days,
+                {machine_status_expr} AS machine_status, {blocked_expr} AS is_blocked,
+                CASE WHEN {blocked_expr}=1 THEN 'BLOCKED' ELSE 'READY' END AS blocking,
+                {priority_expr} AS priority
                 FROM media_versions mv JOIN media_assets ma ON ma.id=mv.media_asset_id
+                JOIN projects p ON p.id=ma.project_id
+                LEFT JOIN shots s ON ma.owner_type='SHOT' AND ma.owner_id=s.id
+                LEFT JOIN episodes e ON e.id=s.episode_id OR (ma.owner_type='EPISODE' AND ma.owner_id=e.id)
+                LEFT JOIN seasons se ON se.id=e.season_id
                 LEFT JOIN review_decisions rd ON rd.id=(SELECT r2.id FROM review_decisions r2 WHERE r2.subject_type='MEDIA_VERSION' AND r2.subject_id=mv.id ORDER BY r2.created_at DESC LIMIT 1)
-                {clause}
-                ORDER BY COALESCE(rd.created_at, mv.created_at), mv.created_at, mv.id LIMIT ? OFFSET ?""",
-                params,
-            ).fetchall()
+                LEFT JOIN machine_check_runs mc ON mc.id=(SELECT m2.id FROM machine_check_runs m2 WHERE m2.subject_type='MEDIA_VERSION' AND m2.subject_id=mv.id ORDER BY m2.created_at DESC LIMIT 1)
+                {clause}"""
+        query = f"WITH inbox_rows AS ({base_sql}) SELECT * FROM inbox_rows {derived_clause} ORDER BY inbox_at ASC, media_version_id ASC LIMIT ? OFFSET ?"
+        with self.database.connect() as connection:
+            rows = connection.execute(query, [*params, *derived_params, normalized_limit + 1, normalized_cursor]).fetchall()
         has_more = len(rows) > normalized_limit
         return {"items": [dict(row) for row in rows[:normalized_limit]], "next_cursor": normalized_cursor + normalized_limit if has_more else None, "cursor": normalized_cursor, "limit": normalized_limit}
 

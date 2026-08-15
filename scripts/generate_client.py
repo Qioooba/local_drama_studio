@@ -56,7 +56,7 @@ export type CameraPlan = { mode: 'NATIVE' | 'PROMPT_FALLBACK' | 'UNSUPPORTED'; s
 export type CameraPlanResolution = { camera_plan: CameraPlan; submission_allowed: boolean; support: string; profile: { id: string; code: string; version_no: number }; runtime_contacted: false; network_contacted: false; mutated: false };
 export type DiagnosticRun = { id: string; status: string; checks: Array<{ code: string; category: string; status: string; observed: Record<string, unknown> }> };
 export type ReviewTemplate = { id: string; code: string; version_no: number; subject_type: string; items: Array<{ id: string; label: string; required: boolean }> };
-export type ReviewInboxItem = { media_version_id: string; media_asset_id: string; project_id: string; project_code?: string; project_title?: string; episode_id?: string | null; episode_code?: string | null; episode_number?: number | null; shot_id?: string | null; shot_code?: string | null; media_kind: string; stage: string; decision: string | null; is_stale: number | null; inbox_at?: string; age_hours?: number; priority?: 'HIGH' | 'NORMAL' | 'LOW'; is_blocked?: number; machine_status?: string; integrity_status?: string; [key: string]: unknown };
+export type ReviewInboxItem = { media_version_id: string; media_asset_id: string; project_id: string; project_code?: string; project_title?: string; episode_id?: string | null; episode_code?: string | null; episode_number?: number | null; shot_id?: string | null; shot_code?: string | null; media_kind: string; stage: string; decision: string | null; is_stale: number | null; inbox_at?: string; age_hours?: number; age_days?: number; priority?: 'HIGH' | 'NORMAL' | 'LOW'; is_blocked?: number; blocking?: 'BLOCKED' | 'READY'; machine_status?: string; integrity_status?: string; [key: string]: unknown };
 export type ReviewInboxFilters = { episode_id?: string; media_kind?: string; age?: 'ALL' | 'NEW' | 'AGING' | 'OLD'; priority?: 'ALL' | 'HIGH' | 'NORMAL' | 'LOW'; blocking?: 'ALL' | 'BLOCKED' | 'READY'; min_age_days?: number; max_age_days?: number };
 export type FormalSelectionCandidate = { media_version_id: string; media_asset_id: string; project_id: string; media_kind: 'VIDEO'; stage: 'FORMAL'; sha256: string; integrity_status: string; approved_version_id: string | null; decision: string | null; is_stale: number | null; [key: string]: unknown };
 export type FormalSelectionPlan = { project_id: string; status: 'READY' | 'BLOCKED'; plan_hash: string; items: Array<{ media_version_id: string; media_asset_id?: string; source_revision?: number; status: 'READY' | 'BLOCKED'; blockers: string[] }>; would_mutate: false };
@@ -388,7 +388,7 @@ export async function createKeyframeCandidate(mediaVersionId: string, shotId: st
   return requestJson(`/api/v1/media-versions/${encodeURIComponent(mediaVersionId)}:create-keyframe-candidate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shot_id: shotId }) }, baseUrl);
 }
 
-export async function createMotionControl(mediaVersionId: string, payload: MotionControlRequest, baseUrl = ''): Promise<{ motion_control: { duplicate: boolean; motion_control: MotionControl } }> {
+export async function createMotionControl(mediaVersionId: string, payload: MotionControlRequest, baseUrl = ''): Promise<{ motion_control: MotionControl & { duplicate: boolean } }> {
   return requestJson(`/api/v1/media-versions/${encodeURIComponent(mediaVersionId)}/motion-masks`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 

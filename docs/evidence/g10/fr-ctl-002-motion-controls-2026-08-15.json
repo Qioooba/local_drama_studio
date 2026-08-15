@@ -1,0 +1,33 @@
+{
+  "schema_version": "fr-ctl-002-motion-controls.v1",
+  "observed_at": "2026-08-15T23:05:00+08:00",
+  "requirement": "FR-CTL-002",
+  "mode": "LOCAL_ONLY",
+  "status": "PARTIAL",
+  "implementation": {
+    "migration": "0036_motion_control_media",
+    "table": "motion_controls",
+    "api": [
+      "POST /api/v1/media-versions/{source_media_version_id}/motion-masks",
+      "GET /api/v1/media-versions/{source_media_version_id}/motion-masks"
+    ],
+    "control_kinds": ["MOTION_MASK", "VECTOR", "KEYFRAME"],
+    "operations": ["MOTION_BRUSH", "INPAINT", "OUTPAINT"],
+    "profile_capability_gate": "published parameter_schema_json capabilities enabled=true",
+    "source_media_overwrite": false,
+    "path_policy": "only registered MediaVersion IDs; generated vector payload is copied into project-local media"
+  },
+  "automated_evidence": {
+    "api_tests": "apps/api/tests/test_motion_controls.py",
+    "ui_tests": "apps/web/src/features/generation/MotionControlPanel.test.tsx",
+    "result": "3 API tests passed; 1 UI test passed"
+  },
+  "remaining": [
+    "The saved control is an explicit immutable input; generation submission still requires the user to bind its control MediaVersion in the existing MotionMask input rather than auto-mutating a draft.",
+    "Integrate the panel into the production canvas route and exercise it against a real three-viewport production project.",
+    "Capture real brush raster/mask and keyframe review/UAT evidence; this record is not a final PASS."
+  ],
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "production_mutated": false
+}

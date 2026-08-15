@@ -781,6 +781,583 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/automation-workflows": {
+      "post": {
+        "tags": [
+          "automation-workflows"
+        ],
+        "summary": "Create Workflow",
+        "operationId": "createAutomationWorkflow",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutomationWorkflowRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Createautomationworkflow"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "automation-workflows"
+        ],
+        "summary": "List Workflows",
+        "operationId": "listAutomationWorkflows",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "include_archived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Archived"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listautomationworkflows"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation-workflows/{workflow_id}": {
+      "get": {
+        "tags": [
+          "automation-workflows"
+        ],
+        "summary": "Get Workflow",
+        "operationId": "getAutomationWorkflow",
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workflow Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Getautomationworkflow"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation-workflows/{workflow_id}:plan": {
+      "post": {
+        "tags": [
+          "automation-workflows"
+        ],
+        "summary": "Plan Workflow",
+        "operationId": "planAutomationWorkflow",
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workflow Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Planautomationworkflow"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation-workflows/{workflow_id}/runs": {
+      "post": {
+        "tags": [
+          "automation-workflows"
+        ],
+        "summary": "Start Run",
+        "operationId": "startAutomationWorkflowRun",
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workflow Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutomationWorkflowRunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Startautomationworkflowrun"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/automation-runs": {
+      "get": {
+        "tags": [
+          "automation-workflows"
+        ],
+        "summary": "List Runs",
+        "operationId": "listAutomationWorkflowRuns",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listautomationworkflowruns"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation-runs/{run_id}": {
+      "get": {
+        "tags": [
+          "automation-workflows"
+        ],
+        "summary": "Get Run",
+        "operationId": "getAutomationWorkflowRun",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Getautomationworkflowrun"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation-runs/{run_id}:step": {
+      "post": {
+        "tags": [
+          "automation-workflows"
+        ],
+        "summary": "Step Run",
+        "operationId": "stepAutomationWorkflowRun",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutomationWorkflowStepRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Stepautomationworkflowrun"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation-runs/{run_id}:resume": {
+      "post": {
+        "tags": [
+          "automation-workflows"
+        ],
+        "summary": "Resume Run",
+        "operationId": "resumeAutomationWorkflowRun",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutomationWorkflowResumeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Resumeautomationworkflowrun"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation-runs/{run_id}:pause": {
+      "post": {
+        "tags": [
+          "automation-workflows"
+        ],
+        "summary": "Pause Run",
+        "operationId": "pauseAutomationWorkflowRun",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutomationWorkflowPauseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Pauseautomationworkflowrun"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation-runs/{run_id}:cancel": {
+      "post": {
+        "tags": [
+          "automation-workflows"
+        ],
+        "summary": "Cancel Run",
+        "operationId": "cancelAutomationWorkflowRun",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Cancelautomationworkflowrun"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects": {
       "get": {
         "tags": [
@@ -6394,6 +6971,103 @@
         }
       }
     },
+    "/api/v1/media-versions/{source_media_version_id}/motion-masks": {
+      "post": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Create Motion Control",
+        "description": "Persist a motion brush/mask/vector/keyframe without modifying source media.",
+        "operationId": "createMotionControl",
+        "parameters": [
+          {
+            "name": "source_media_version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Source Media Version Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MotionControlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Createmotioncontrol"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "media"
+        ],
+        "summary": "List Motion Controls",
+        "operationId": "listMotionControls",
+        "parameters": [
+          {
+            "name": "source_media_version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Source Media Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listmotioncontrols"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/media-assets/{media_asset_id}": {
       "get": {
         "tags": [
@@ -7727,6 +8401,102 @@
                 }
               ],
               "title": "Media Kind"
+            }
+          },
+          {
+            "name": "episode_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "age",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Age"
+            }
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Priority"
+            }
+          },
+          {
+            "name": "blocking",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Blocking"
+            }
+          },
+          {
+            "name": "min_age_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Age Days"
+            }
+          },
+          {
+            "name": "max_age_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Age Days"
             }
           },
           {
@@ -11045,6 +11815,182 @@
         ],
         "title": "AutomationClientRequest"
       },
+      "AutomationWorkflowPauseRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "default": "MANUAL_PAUSE"
+          }
+        },
+        "type": "object",
+        "title": "AutomationWorkflowPauseRequest"
+      },
+      "AutomationWorkflowRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "MANUAL",
+              "ASSISTED",
+              "BATCH_AUTOMATED"
+            ],
+            "title": "Mode",
+            "default": "ASSISTED"
+          },
+          "nodes": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Nodes"
+          },
+          "batch_items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "maxItems": 10000,
+            "minItems": 1,
+            "title": "Batch Items"
+          },
+          "conditions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "title": "Conditions"
+          },
+          "max_iterations": {
+            "type": "integer",
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Max Iterations",
+            "default": 1
+          },
+          "max_tasks": {
+            "type": "integer",
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Max Tasks",
+            "default": 100
+          },
+          "max_disk_bytes": {
+            "type": "integer",
+            "maximum": 1125899906842624.0,
+            "minimum": 1.0,
+            "title": "Max Disk Bytes",
+            "default": 10737418240
+          },
+          "human_gate": {
+            "type": "string",
+            "enum": [
+              "NONE",
+              "BEFORE_RUN",
+              "EACH_ITERATION",
+              "ON_CONDITION"
+            ],
+            "title": "Human Gate",
+            "default": "ON_CONDITION"
+          },
+          "repeat_batch": {
+            "type": "boolean",
+            "title": "Repeat Batch",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "title",
+          "nodes",
+          "batch_items"
+        ],
+        "title": "AutomationWorkflowRequest"
+      },
+      "AutomationWorkflowResumeRequest": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "HUMAN_APPROVED",
+              "HUMAN_REJECTED"
+            ],
+            "title": "Decision"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "decision",
+          "note"
+        ],
+        "title": "AutomationWorkflowResumeRequest"
+      },
+      "AutomationWorkflowRunRequest": {
+        "properties": {
+          "plan_hash": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Plan Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan_hash"
+        ],
+        "title": "AutomationWorkflowRunRequest"
+      },
+      "AutomationWorkflowStepRequest": {
+        "properties": {
+          "machine_context": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Machine Context"
+          },
+          "ai_scores": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Ai Scores"
+          },
+          "produced_bytes": {
+            "type": "integer",
+            "maximum": 1125899906842624.0,
+            "minimum": 0.0,
+            "title": "Produced Bytes",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "AutomationWorkflowStepRequest"
+      },
       "BatchCommitRequest": {
         "properties": {
           "plan_token": {
@@ -12632,6 +13578,210 @@
           "license_status"
         ],
         "title": "ModelLicenseEvidenceRequest"
+      },
+      "MotionControlKeyframe": {
+        "properties": {
+          "time_us": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Time Us"
+          },
+          "x": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1000000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X"
+          },
+          "y": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1000000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y"
+          },
+          "scale": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 20.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scale"
+          },
+          "rotation_degrees": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 3600.0,
+                "minimum": -3600.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rotation Degrees"
+          }
+        },
+        "type": "object",
+        "required": [
+          "time_us"
+        ],
+        "title": "MotionControlKeyframe"
+      },
+      "MotionControlPoint": {
+        "properties": {
+          "x": {
+            "type": "number",
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "X"
+          },
+          "y": {
+            "type": "number",
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Y"
+          },
+          "pressure": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Pressure",
+            "default": 1
+          },
+          "time_us": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Us"
+          }
+        },
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "title": "MotionControlPoint",
+        "description": "A normalized point from the local motion brush/vector canvas."
+      },
+      "MotionControlRequest": {
+        "properties": {
+          "control_kind": {
+            "type": "string",
+            "enum": [
+              "MOTION_MASK",
+              "VECTOR",
+              "KEYFRAME"
+            ],
+            "title": "Control Kind"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "MOTION_BRUSH",
+              "INPAINT",
+              "OUTPAINT"
+            ],
+            "title": "Operation"
+          },
+          "subject_role": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Subject Role"
+          },
+          "profile_version_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Profile Version Id"
+          },
+          "mask_media_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mask Media Version Id"
+          },
+          "keyframe_media_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keyframe Media Version Id"
+          },
+          "vector_path": {
+            "items": {
+              "$ref": "#/components/schemas/MotionControlPoint"
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "title": "Vector Path"
+          },
+          "keyframes": {
+            "items": {
+              "$ref": "#/components/schemas/MotionControlKeyframe"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Keyframes"
+          },
+          "coordinate_space": {
+            "type": "string",
+            "enum": [
+              "NORMALIZED",
+              "PIXELS"
+            ],
+            "title": "Coordinate Space",
+            "default": "NORMALIZED"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Note",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "control_kind",
+          "operation",
+          "subject_role",
+          "profile_version_id"
+        ],
+        "title": "MotionControlRequest"
       },
       "OutboxDeliveryRequest": {
         "properties": {
