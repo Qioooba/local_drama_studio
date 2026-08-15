@@ -62,9 +62,11 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
   const [frameAction, setFrameAction] = useState<FrameAction | null>(null);
   const [promptText, setPromptText] = useState("");
   const [seedText, setSeedText] = useState("42");
+  const [takeCountText, setTakeCountText] = useState("1");
   const [approvedKeyframeId, setApprovedKeyframeId] = useState("");
   const [prepared, setPrepared] = useState<{ draft: GenerationVariantDraft; plan: GenerationVariantPlan; idempotencyKey: string } | null>(null);
   const [submitted, setSubmitted] = useState<Job | null>(null);
+  const [submittedCount, setSubmittedCount] = useState(0);
   const [submittedVariantId, setSubmittedVariantId] = useState<string | null>(null);
   const [seedBatchText, setSeedBatchText] = useState("43,44,45,46");
   const [seedBatchPlan, setSeedBatchPlan] = useState<Awaited<ReturnType<typeof deriveGenerationVariantSeedBatch>>["batch"] | null>(null);
@@ -77,7 +79,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
   useEffect(() => {
     if (!approvedKeyframeIds.includes(approvedKeyframeId)) setApprovedKeyframeId(approvedKeyframeIds[0] ?? "");
   }, [approvedKeyframeId, approvedKeyframeIds]);
-  useEffect(() => { setPrepared(null); setSubmitted(null); setSubmittedVariantId(null); setSeedBatchPlan(null); }, [mode, profileVersionId, selectedShotId, promptText, seedText, approvedKeyframeId]);
+  useEffect(() => { setPrepared(null); setSubmitted(null); setSubmittedCount(0); setSubmittedVariantId(null); setSeedBatchPlan(null); }, [mode, profileVersionId, selectedShotId, promptText, seedText, approvedKeyframeId, takeCountText]);
   const selected = eligibleProfiles.find((profile) => profile.version_id === profileVersionId);
   const selectedShot = shots.find((shot) => String(shot.id) === selectedShotId);
   const revision = selectedShot?.current_revision && typeof selectedShot.current_revision === "object" ? selectedShot.current_revision as Record<string, unknown> : {};
@@ -86,7 +88,8 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
   const cameraReady = !requiresCamera || Boolean(cameraPlan && cameraPlan.mode !== "UNSUPPORTED" && cameraPlan.profile_version_id === profileVersionId);
   const sourceReady = mode !== "I2V" || Boolean(approvedKeyframeId);
   const seed = Number(seedText);
-  const runnable = selected?.status === "PUBLISHED" && Boolean(projectId && selectedShotId && promptText.trim() && Number.isInteger(seed) && cameraReady && sourceReady);
+  const takeCount = Number(takeCountText);
+  const runnable = selected?.status === "PUBLISHED" && Boolean(projectId && selectedShotId && promptText.trim() && Number.isInteger(seed) && Number.isInteger(takeCount) && takeCount >= 1 && takeCount <= 8 && cameraReady && sourceReady);
   const selectedVideo = videos.find((item) => item.media_version_id === sourceVideoId);
   const anchorMutation = useMutation({
     mutationFn: async (action: FrameAction) => {
@@ -114,6 +117,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
       if (!projectId || !selectedShotId || !selected) throw new Error("必须先选择项目、镜头和已发布 Profile");
       if (!promptText.trim()) throw new Error("Prompt 不能为空");
       if (!Number.isInteger(seed)) throw new Error("Seed 必须是整数");
+      if (!Number.isInteger(takeCount) || takeCount < 1 || takeCount > 8) throw new Error("代理 take 数量必须是 1—8");
       if (requiresCamera && !cameraReady) throw new Error("结构化运镜必须由当前同一 Profile 裁决为可执行");
       if (mode === "I2V" && !approvedKeyframeId) throw new Error("I2V 代理必须选择当前已批准关键帧");
       const intent = await createGenerationIntent({ project_id: projectId, owner_type: "SHOT", owner_id: selectedShotId, purpose: mode === "I2V" ? "I2V_PROXY" : mode, creative_goal: promptText.trim() });
@@ -138,9 +142,17 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
   const submitMutation = useMutation({
     mutationFn: async () => {
       if (!prepared) throw new Error("必须先完成当前输入的资源预检");
-      return submitGenerationVariant({ ...prepared.draft, plan_hash: prepared.plan.plan_hash, idempotency_key: prepared.idempotencyKey });
+      let last: Awaited<ReturnType<typeof submitGenerationVariant>> | null = null;
+      for (let index = 0; index < takeCount; index += 1) {
+        const currentSeed = seed + index;
+        const draft = index === 0 ? prepared.draft : { ...prepared.draft, explicit_seed: currentSeed, parameter_set: { ...prepared.draft.parameter_set, SEED: currentSeed }, branch_reason: "UI_MULTI_TAKE_GENERATION" };
+        const plan = index === 0 ? prepared.plan : (await planGenerationVariant(draft)).plan;
+        last = await submitGenerationVariant({ ...draft, plan_hash: plan.plan_hash, idempotency_key: index === 0 ? prepared.idempotencyKey : crypto.randomUUID() });
+      }
+      if (!last) throw new Error("没有可提交的代理 take");
+      return { ...last, takeCount };
     },
-    onSuccess: ({ job, variant }) => { setSubmitted(job); setSubmittedVariantId(variant.id); onSubmitted?.(); },
+    onSuccess: ({ job, variant, takeCount: committedTakeCount }) => { setSubmitted(job); setSubmittedVariantId(variant.id); setSubmittedCount(committedTakeCount); onSubmitted?.(); },
   });
   const seedBatchMutation = useMutation({
     mutationFn: async () => {
@@ -200,13 +212,13 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
           <section className="generation-submit-panel" aria-labelledby="generation-submit-title">
             <div className="section-title"><span id="generation-submit-title">计划 → 确认 → 提交真实任务</span><small>两阶段提交，不自动运行</small></div>
             <div className="generation-submit-fields">
-              <label htmlFor="generation-seed">显式 Seed<input id="generation-seed" type="number" step="1" value={seedText} onChange={(event) => setSeedText(event.target.value)} /></label>
+              <label htmlFor="generation-seed">首个显式 Seed<input id="generation-seed" type="number" step="1" value={seedText} onChange={(event) => setSeedText(event.target.value)} /></label><label htmlFor="generation-take-count">代理 take 数量<input id="generation-take-count" type="number" min="1" max="8" step="1" value={takeCountText} onChange={(event) => setTakeCountText(event.target.value)} /></label>
               {mode === "I2V" && <label htmlFor="generation-keyframe">已批准关键帧<select id="generation-keyframe" value={approvedKeyframeId} onChange={(event) => setApprovedKeyframeId(event.target.value)}><option value="">请选择</option>{approvedKeyframeIds.map((mediaVersionId) => <option key={mediaVersionId} value={mediaVersionId}>APPROVED KEYFRAME · {mediaVersionId.slice(0, 12)}</option>)}</select></label>}
               <div className={`capability-truth ${cameraReady ? "ready" : "blocked"}`}><strong>CameraPlan</strong><small>{!requiresCamera ? "图片任务不要求运镜。" : cameraPlan ? `${cameraPlan.mode} · ${cameraPlan.movement} · ${cameraPlan.profile_version_id === profileVersionId ? "Profile 一致" : "需用当前 Profile 重新裁决"}` : "当前镜头没有结构化 CameraPlan；请在下方导演分镜中配置。"}</small></div>
             </div>
             <div className="generation-submit-actions"><button type="button" className="secondary" disabled={!runnable || preflightMutation.isPending} onClick={() => preflightMutation.mutate()}>{preflightMutation.isPending ? "正在建立意图并预检…" : "建立意图并执行只读生成预检"}</button><button type="button" className="primary-action" disabled={!prepared || submitMutation.isPending || Boolean(submitted)} onClick={() => submitMutation.mutate()}>{submitMutation.isPending ? "提交中…" : "确认创建 Variant 与 Job"}</button></div>
             {prepared && !submitted && <p className="frame-feedback success" role="status"><strong>预检 READY，尚未创建 Job。</strong> Plan hash <code>{prepared.plan.plan_hash.slice(0, 16)}</code> · recipe <code>{prepared.plan.recipe_hash.slice(0, 16)}</code></p>}
-            {submitted && <p className="frame-feedback success" role="status"><strong>真实任务已持久化：{submitted.state}</strong> Job <code>{submitted.id}</code>；关闭浏览器不会丢失。</p>}
+            {submitted && <p className="frame-feedback success" role="status"><strong>{submittedCount > 1 ? `${submittedCount} 个代理 take 已创建；最近任务 ${submitted.state}` : `真实任务已持久化：${submitted.state}`}</strong> Job <code>{submitted.id}</code>；关闭浏览器不会丢失，历史不会覆盖。</p>}
             {(preflightMutation.error || submitMutation.error) && <p className="inline-error" role="alert">{(preflightMutation.error ?? submitMutation.error)?.message}</p>}
             {submittedVariantId && <section className="seed-batch-panel" aria-label="Seed 批量实验"><div className="section-title"><span>同图同词 · Seed 批量实验</span><small>仅生成受限规划，不自动创建 Variant 或 Job</small></div><label htmlFor="seed-batch-input">Seed 列表（逗号分隔）<input id="seed-batch-input" value={seedBatchText} onChange={(event) => setSeedBatchText(event.target.value)} /></label><button type="button" className="secondary" onClick={() => seedBatchMutation.mutate()} disabled={seedBatchMutation.isPending}>{seedBatchMutation.isPending ? "规划中…" : "生成批量实验矩阵"}</button>{seedBatchPlan && <div className="seed-batch-result"><strong>{seedBatchPlan.count} 个独立分支计划</strong><span>父 Variant <code>{seedBatchPlan.parent_variant_id.slice(0, 12)}</code></span><span>每格只改变 explicit_seed</span><span>可复现声明：沿用 Profile determinism</span></div>}{seedBatchMutation.error && <p className="inline-error" role="alert">Seed 批量规划失败：{seedBatchMutation.error.message}</p>}</section>}
           </section>
