@@ -119,7 +119,7 @@ export type ComfyLabStatus = { status: 'RUNNING' | 'STARTING' | 'STOPPED'; pid: 
 export type ComfyLabSession = { session: ComfyLabStatus; designer: { role: 'WORKFLOW_DESIGNER'; production_isolation: true; capture_target: 'COMFY_LAB_SANDBOX_ONLY'; formal_project_write: false }; runtime_contacted: false; network_contacted: false; mutated: false };
 export type ComfyLabCapture = { status: 'CAPTURED'; capture_id: string; content_hash: string; sandbox_rel_path: string; formal_project_write: false; runtime_contacted: false; network_contacted: false };
 export type ComfyLabTestRun = { status: 'READY' | 'BLOCKED' | 'QUEUED'; blockers?: string[]; prompt_id?: string; plan: { content_hash: string; sandbox_root: string; designer_endpoint: string | null; formal_project_write: false; local_only: true }; would_contact_comfyui: boolean; network_contacted: false };
-export type CanvasNode = { id: string; type: string; shot_id: string; shot_code: string; label: string; state: string; blockers: string[]; take_count: number; variant_count: number; active_job_count: number; thumbnail_media_version_id: string | null; position: { x: number; y: number } | null; variant_lineage: Array<{ id: string; variant_no: number; variant_type: string; parent_variant_id: string | null; status: string; is_stale: boolean; branch_reason: string }>; experiment_progress: Array<{ id: string; title: string; status: string; cell_count: number; expanded_count: number; succeeded_count: number; failed_count: number }>; adjacent_constraints: Array<{ id: string; from_shot_id: string; to_shot_id: string; constraint_type: string; compatibility_status: string; enforcement: string; is_stale: boolean }> };
+export type CanvasNode = { id: string; type: string; shot_id: string; shot_code: string; label: string; state: string; blockers: string[]; take_count: number; variant_count: number; active_job_count: number; thumbnail_media_version_id: string | null; thumbnail_url?: string | null; log_count: number; logs: Array<{ event_id: number; type: string; subject_type: string; subject_id: string; occurred_at: string; payload: Record<string, unknown> }>; position: { x: number; y: number } | null; variant_lineage: Array<{ id: string; variant_no: number; variant_type: string; parent_variant_id: string | null; status: string; is_stale: boolean; branch_reason: string }>; experiment_progress: Array<{ id: string; title: string; status: string; cell_count: number; expanded_count: number; succeeded_count: number; failed_count: number }>; adjacent_constraints: Array<{ id: string; from_shot_id: string; to_shot_id: string; constraint_type: string; compatibility_status: string; enforcement: string; is_stale: boolean }> };
 export type CanvasEdge = { id: string; source: string; target: string; kind: string; status?: string; mutable_by_layout: false };
 export type CanvasGraph = { scope: Record<string, unknown>; nodes: CanvasNode[]; edges: CanvasEdge[]; layout: { positions: Record<string, { x: number; y: number }>; groups: Array<Record<string, unknown>>; viewport: Record<string, number>; revision: number; layout_hash: string | null }; page: { cursor: number; limit: number; returned_shots: number; total_shots: number; next_cursor: number | null }; invariants: { layout_changes_business_dependencies: false; max_visible_nodes: number; lazy: true } };
 export type SearchResult = { project_id: string; subject_type: string; subject_id: string; snippet: string };
@@ -200,12 +200,14 @@ export async function systemContract(baseUrl = ''): Promise<SystemContract> {
   return requestJson<SystemContract>('/api/v1/system/contract', undefined, baseUrl);
 }
 
-export async function listProjects(filters: { search?: string; status?: string } = {}, baseUrl = ''): Promise<{ items: Project[] }> {
+export async function listProjects(filters: { search?: string; status?: string; cursor?: number; limit?: number } = {}, baseUrl = ''): Promise<{ items: Project[]; page?: { cursor: number; limit: number; next_cursor: number | null; has_more: boolean } }> {
   const query = new URLSearchParams();
   if (filters.search) query.set('search', filters.search);
   if (filters.status) query.set('status', filters.status);
+  if (filters.cursor !== undefined) query.set('cursor', String(filters.cursor));
+  if (filters.limit !== undefined) query.set('limit', String(filters.limit));
   const suffix = query.size ? `?${query.toString()}` : '';
-  return requestJson<{ items: Project[] }>(`/api/v1/projects${suffix}`, undefined, baseUrl);
+  return requestJson<{ items: Project[]; page?: { cursor: number; limit: number; next_cursor: number | null; has_more: boolean } }>(`/api/v1/projects${suffix}`, undefined, baseUrl);
 }
 
 export async function getProjectHealth(projectId: string, baseUrl = ''): Promise<{ project_id: string; status: string; root_exists: boolean; database_integrity: string; media: { referenced_count: number; missing: string[]; size_mismatch: string[]; hash_mismatch: string[] }; orphan_files: string[]; orphan_count: number; disk: { free_bytes: number; total_bytes: number }; blockers: string[]; runtime_contacted: false; network_contacted: false; mutated: false }> {
@@ -598,8 +600,9 @@ export async function bindEpisodeSceneRange(episodeId: string, payload: { scene_
   return requestJson(`/api/v1/projects/episodes/${encodeURIComponent(episodeId)}/scene-ranges`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
-export async function getEpisodeProduction(episodeId: string, baseUrl = ''): Promise<{ episode: Record<string, unknown>; items: Array<Record<string, unknown>> }> {
-  return requestJson(`/api/v1/episodes/${encodeURIComponent(episodeId)}/production`, undefined, baseUrl);
+export async function getEpisodeProduction(episodeId: string, cursor = 0, limit = 200, baseUrl = ''): Promise<{ episode: Record<string, unknown>; items: Array<Record<string, unknown>>; page?: { cursor: number; limit: number; next_cursor: number | null; has_more: boolean } }> {
+  const query = new URLSearchParams({ cursor: String(cursor), limit: String(limit) });
+  return requestJson(`/api/v1/episodes/${encodeURIComponent(episodeId)}/production?${query.toString()}`, undefined, baseUrl);
 }
 
 export async function listCreativeEntries(projectId: string, kind?: string, baseUrl = ''): Promise<{ items: CreativeEntry[] }> {

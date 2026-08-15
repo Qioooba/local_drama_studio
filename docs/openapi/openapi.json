@@ -1750,6 +1750,16 @@
             }
           },
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Cursor"
+            }
+          },
+          {
             "name": "search",
             "in": "query",
             "required": false,
@@ -8167,6 +8177,16 @@
               "type": "integer",
               "default": 200,
               "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Cursor"
             }
           }
         ],

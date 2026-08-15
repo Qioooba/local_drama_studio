@@ -330,6 +330,14 @@ FR-WFL-004 ComfyUI Lab control-plane 增量（2026-08-16）：新增 Designer �
 
 媒体 content 端点继续只接受 `media_version_id`，并使用 seek-based、1 MiB 上限的流式迭代器，不将整片读入内存；Range 现在覆盖首段、尾段/suffix、HEAD、无效范围 416，以及强 ETag/日期 `If-Range` 不匹配时回退完整 200。响应带 `Accept-Ranges`、`Content-Range`、ETag 和 `Last-Modified`，注册项目目录越界在打开前拒绝。视频 `first/poster` 缩略图仍按本地首帧 seek 生成并以源 SHA + normalized preset 隔离 cache；定向测试包含本地首帧 <2s smoke assertion、流式 chunk 上限和路径逃逸负例。证据 `docs/evidence/g10/nfr-media-001-range-first-frame-2026-08-16.json` 保持 `PARTIAL`：真实 Windows x64 代理冷/热缓存首帧计时、四路并发播放和代表性编解码器 benchmark 尚未执行，不能据此宣称 NFR PASS。
 
+## NFR-REL-001/002 持久化与重启恢复增量（2026-08-16）
+
+Job 创建、幂等记录、`JOB_QUEUED` outbox 和 audit row 在同一 SQLite transaction 内提交；`jobs`、`job_attempts`、progress、lease、resource lease 与 outbox 均由新建 `Database/JobService` 实例重新读取。新增独立子进程演练：子进程完成 create/claim/heartbeat 后使用 `os._exit(17)` 模拟非正常退出，父进程验证任务状态、phase/node/percent、Attempt 历史、outbox cursor 与脱敏 lease token 均持久存在，再将调度时钟前移 61 秒执行 reconcile，断言 Attempt→`ORPHANED`、可重试 Job→`QUEUED`、资源 lease 已释放并追加 `JOB_RECONCILED`。证据 `docs/evidence/g10/nfr-rel-001-002-persistence-restart-2026-08-16.json` 为 `PARTIAL`：测试不接触公网或 Comfy，也不修改生产库；真实 Windows API/Worker kill matrix、物理断电窗口、60 秒内可见状态和多 worker 竞争 UAT 仍待执行，不能据此宣称 NFR PASS。
+
 ## 更新规则
+
+## NFR-PERF-001/002 有界性能与列表分页增量（2026-08-16）
+
+项目列表新增稳定的 `cursor/limit` 页面契约；集生产 read model 新增服务端 `cursor/limit/next_cursor`，默认调用保持兼容；审核收件箱继续在筛选后按稳定 cursor 返回上限页面。新增 `scripts/nfr_perf_benchmark.py`，在隔离迁移 SQLite 的 60 集/800 镜头/10k 媒体 fixture 上通过真实 FastAPI read paths 观测收件箱首/深 cursor、每集生产页和项目页，同时记录缩略图 `loading="lazy"`/不批量读取原片的源级约束。API 测试覆盖 project cursor 与 production page；证据 `docs/evidence/g10/nfr-perf-bounded-observation-2026-08-16.json` 标记 `PARTIAL` / `OBSERVED_NOT_BENCHMARKED`。该证据不宣称 10k p95<500ms、Windows x64 浏览器 p95<2s、虚拟滚动、冷缓存或真实硬件容量；正式浏览器网络 trace 与 release 性能基线仍待 UAT。
 
 任何新增/变更需求必须先分配 ID、写 ADR、补 migration/API/UI/test 影响；所有阶段报告、提交和缺陷引用至少一个需求或测试 ID。

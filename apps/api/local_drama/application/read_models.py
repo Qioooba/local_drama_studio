@@ -14,8 +14,9 @@ class ProductionReadModelService:
     def __init__(self, database: Database) -> None:
         self.database = database
 
-    def episode(self, episode_id: str, query: str | None = None, limit: int = 200) -> dict[str, Any]:
+    def episode(self, episode_id: str, query: str | None = None, limit: int = 200, cursor: int = 0) -> dict[str, Any]:
         bounded_limit = max(1, min(limit, 1000))
+        bounded_cursor = max(0, int(cursor))
         with self.database.connect() as connection:
             episode = connection.execute(
                 """SELECT e.*, se.project_id, se.code AS season_code, p.code AS project_code,
@@ -30,7 +31,7 @@ class ProductionReadModelService:
             if query:
                 filter_sql = " AND (s.code LIKE ? OR sr.fields_json LIKE ?)"
                 params.extend([f"%{query}%", f"%{query}%"])
-            params.append(bounded_limit)
+            params.extend([bounded_limit + 1, bounded_cursor])
             rows = connection.execute(
                 f"""SELECT s.id, s.code, s.order_key, s.target_duration_ms, s.shot_type, s.status,
                 s.current_revision_id, s.revision, sr.revision_no, sr.fields_json,
@@ -40,7 +41,7 @@ class ProductionReadModelService:
                 (SELECT COUNT(*) FROM jobs j WHERE j.subject_id=s.id AND j.state IN ('QUEUED','CLAIMED','RUNNING','CANCEL_REQUESTED')) AS running_job_count,
                 (SELECT COUNT(*) FROM selections se JOIN media_assets ma ON ma.id=se.media_asset_id WHERE ma.owner_id=s.id) AS selected_media_count
                 FROM shots s LEFT JOIN shot_revisions sr ON sr.id=s.current_revision_id
-                WHERE s.episode_id=? {filter_sql} ORDER BY CAST(s.order_key AS REAL), s.code LIMIT ?""",
+                WHERE s.episode_id=? {filter_sql} ORDER BY CAST(s.order_key AS REAL), s.code LIMIT ? OFFSET ?""",
                 params,
             ).fetchall()
             binding = connection.execute(
@@ -50,8 +51,9 @@ class ProductionReadModelService:
                 EXISTS(SELECT 1 FROM delivery_targets dt WHERE dt.project_id=? AND dt.status='ACTIVE') AS delivery_bound""",
                 (episode["project_id"], episode["project_id"], episode["project_id"]),
             ).fetchone()
+        has_more = len(rows) > bounded_limit
         items: list[dict[str, Any]] = []
-        for row in rows:
+        for row in rows[:bounded_limit]:
             item = dict(row)
             fields = json.loads(item.pop("fields_json") or "{}")
             missing_director_fields = missing_shot_fields(fields)
@@ -88,8 +90,8 @@ class ProductionReadModelService:
         return {
             "episode": dict(episode),
             "items": items,
-            "page": {"next_cursor": None, "has_more": False},
-            "request_shape": "single_query_read_model",
+            "page": {"cursor": bounded_cursor, "limit": bounded_limit, "next_cursor": bounded_cursor + bounded_limit if has_more else None, "has_more": has_more},
+            "request_shape": "bounded_cursor_read_model",
         }
 
     def summary(self, episode_id: str) -> dict[str, Any]:

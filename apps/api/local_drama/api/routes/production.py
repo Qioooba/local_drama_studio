@@ -14,9 +14,9 @@ def service(request: Request) -> ProductionReadModelService:
 
 
 @router.get("/episodes/{episode_id}/production", operation_id="getEpisodeProduction")
-async def episode_production(episode_id: str, request: Request, q: str | None = None, limit: int = 200) -> dict[str, object]:
+async def episode_production(episode_id: str, request: Request, q: str | None = None, limit: int = 200, cursor: int = 0) -> dict[str, object]:
     try:
-        return service(request).episode(episode_id, q, limit)
+        return service(request).episode(episode_id, q, limit, cursor)
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

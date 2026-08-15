@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from local_drama.application.generation import GenerationService
+from local_drama.application.jobs import JobService
 from local_drama.application.projects import ProjectService
 from local_drama.main import create_app
 
@@ -100,3 +101,34 @@ def test_g9_canvas_node_detail_aggregates_real_lineage_experiment_and_constraint
     direct = next(node for node in graph["nodes"] if node["shot_id"] == str(first["id"]) and node["type"] == "DIRECT")
     assert direct["experiment_progress"] == [{"id": "exp-g9-detail", "title": "canvas experiment", "status": "CONFIRMED", "cell_count": 2, "expanded_count": 1, "succeeded_count": 1, "failed_count": 0}]
     assert direct["adjacent_constraints"][0]["constraint_type"] == "POSE_CONTINUITY"
+
+
+def test_g9_canvas_node_exposes_derived_thumbnail_and_durable_job_logs(workspace, database) -> None:
+    projects = ProjectService(database, workspace.projects_root)
+    project = projects.create_project(code="g9_thumbnail_logs", title="G9 thumbnail logs", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1, target_duration_ms=60_000, allow_unconfigured_capabilities=True)
+    season = projects.list_seasons(str(project["id"]))[0]
+    episode = projects.list_episodes(str(season["id"]))[0]
+    shot = projects.create_shot(str(episode["id"]), "S001", 1000)
+    asset_id = "canvas-asset-g9"
+    version_id = "canvas-version-g9"
+    now = "2026-08-16T00:00:00Z"
+    with database.transaction() as connection:
+        connection.execute(
+            """INSERT INTO media_assets (id, project_id, owner_type, owner_id, purpose, media_kind, selected_version_id, version_counter, metadata_json, created_at, updated_at, created_by, revision, schema_version)
+            VALUES (?, ?, 'SHOT', ?, 'GENERATED_OUTPUT', 'IMAGE', ?, 1, '{}', ?, ?, 'test', 1, 'v2')""",
+            (asset_id, str(project["id"]), str(shot["id"]), version_id, now, now),
+        )
+        connection.execute(
+            """INSERT INTO media_versions (id, media_asset_id, version_no, take_no, stage, rel_path, mime_type, byte_size, sha256, integrity_status, created_at, updated_at, created_by, revision, schema_version)
+            VALUES (?, ?, 1, 1, 'KEYFRAME', 'media/canvas-preview.png', 'image/png', 0, ?, 'VERIFIED', ?, ?, 'test', 1, 'v2')""",
+            (version_id, asset_id, "0" * 64, now, now),
+        )
+    JobService(database, workspace).create_job(str(project["id"]), "CANVAS_LOG", "SHOT", str(shot["id"]), "CPU", {"source": "canvas-test"}, "canvas-log-g9")
+    from local_drama.application.canvas import ProductionCanvasService
+
+    graph = ProductionCanvasService(database).graph("EPISODE", str(episode["id"]))
+    keyframe = next(node for node in graph["nodes"] if node["shot_id"] == str(shot["id"]) and node["type"] == "KEYFRAME")
+    assert keyframe["thumbnail_media_version_id"] == version_id
+    assert keyframe["thumbnail_url"] == f"/api/v1/media-versions/{version_id}/thumbnail?size=small&frame=poster"
+    assert keyframe["log_count"] >= 1
+    assert keyframe["logs"][0]["type"] == "JOB_QUEUED"

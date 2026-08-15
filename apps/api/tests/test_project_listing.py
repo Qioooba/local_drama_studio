@@ -37,5 +37,19 @@ def test_project_list_http_filters(workspace, database) -> None:
         invalid = client.get("/api/v1/projects", params={"status": "DELETED"})
     assert response.status_code == 200
     assert [item["id"] for item in response.json()["items"]] == [project["id"]]
+    paged = client.get("/api/v1/projects", params={"cursor": 0, "limit": 1})
+    assert paged.status_code == 200
+    assert paged.json()["page"] == {"cursor": 0, "limit": 1, "next_cursor": None, "has_more": False}
     assert invalid.status_code == 422
     assert invalid.json()["error"]["code"] == "PROJECT_STATUS_INVALID"
+
+
+def test_project_list_cursor_is_bounded_and_stable(workspace, database) -> None:
+    service = ProjectService(database, workspace.projects_root)
+    for number in range(5):
+        _project(workspace, database, f"cursor_{number}", f"Cursor {number}")
+    first = service.list_projects_page(limit=2, cursor=0)
+    second = service.list_projects_page(limit=2, cursor=int(first["page"]["next_cursor"]))
+    assert len(first["items"]) == 2
+    assert first["page"] == {"cursor": 0, "limit": 2, "next_cursor": 2, "has_more": True}
+    assert set(item["id"] for item in first["items"]).isdisjoint(item["id"] for item in second["items"])

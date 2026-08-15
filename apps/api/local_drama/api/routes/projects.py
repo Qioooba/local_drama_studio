@@ -38,9 +38,9 @@ def package_service(request: Request) -> ProjectPackageService:
 
 
 @router.get("", operation_id="listProjects")
-async def list_projects(request: Request, limit: int = 50, search: str | None = None, status: str | None = None) -> dict[str, object]:
+async def list_projects(request: Request, limit: int = 50, cursor: int = 0, search: str | None = None, status: str | None = None) -> dict[str, object]:
     try:
-        return {"items": service(request).list_projects(limit, search=search, status=status), "page": {"next_cursor": None, "has_more": False}}
+        return service(request).list_projects_page(limit, cursor=cursor, search=search, status=status)
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

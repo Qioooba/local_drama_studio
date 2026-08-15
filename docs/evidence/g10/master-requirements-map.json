@@ -531,6 +531,30 @@
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/nfr-media-001-range-first-frame-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_g3_configuration_media.py"]
+    },
+    {
+      "id": "NFR-REL-001",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/nfr-rel-001-002-persistence-restart-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_nfr_reliability.py", "apps/api/tests/test_g5_jobs.py"]
+    },
+    {
+      "id": "NFR-REL-002",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/nfr-rel-001-002-persistence-restart-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_nfr_reliability.py", "apps/api/tests/test_g5_jobs.py"]
+    },
+    {
+      "id": "NFR-PERF-001",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/nfr-perf-bounded-observation-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_project_listing.py", "apps/api/tests/test_g3_configuration_media.py", "scripts/nfr_perf_benchmark.py"]
+    },
+    {
+      "id": "NFR-PERF-002",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/nfr-perf-bounded-observation-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_project_listing.py", "apps/api/tests/test_g3_configuration_media.py", "apps/web/src/features/shared/thumbnailPolicy.test.ts", "scripts/nfr_perf_benchmark.py"]
     }
   ]
 }

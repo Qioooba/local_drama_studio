@@ -70,7 +70,10 @@ class ProductionCanvasService:
                     (episode_id, limit, cursor),
                 ).fetchall()
             shot_ids = [str(row["id"]) for row in shots]
-            data: dict[str, dict[str, Any]] = {shot_id: {"media": [], "jobs": [], "variants": [], "experiments": [], "constraints": []} for shot_id in shot_ids}
+            data: dict[str, dict[str, Any]] = {
+                shot_id: {"media": [], "jobs": [], "logs": [], "variants": [], "experiments": [], "constraints": []}
+                for shot_id in shot_ids
+            }
             if shot_ids:
                 placeholders = ",".join("?" for _ in shot_ids)
                 media = connection.execute(
@@ -88,6 +91,38 @@ class ProductionCanvasService:
                 ).fetchall()
                 for item in jobs:
                     data[str(item["subject_id"])]["jobs"].append(dict(item))
+                # Job/outbox events are the durable, redacted execution log for
+                # a shot. Keep them read-only and bounded so this remains a lazy
+                # graph projection rather than a second job-details API.
+                job_ids = [str(item["id"]) for item in jobs]
+                if job_ids:
+                    job_placeholders = ",".join("?" for _ in job_ids)
+                    events = connection.execute(
+                        f"""SELECT e.event_id, e.type, e.subject_type, e.subject_id, e.payload_json, e.occurred_at,
+                        COALESCE(j.id, ja.job_id) AS job_id
+                        FROM outbox_events e
+                        LEFT JOIN jobs j ON e.subject_type='JOB' AND e.subject_id=j.id
+                        LEFT JOIN job_attempts ja ON e.subject_type='JOB_ATTEMPT' AND e.subject_id=ja.id
+                        WHERE (e.subject_type='JOB' AND e.subject_id IN ({job_placeholders}))
+                           OR (e.subject_type='JOB_ATTEMPT' AND ja.job_id IN ({job_placeholders}))
+                        ORDER BY e.event_id DESC LIMIT 400""",
+                        [*job_ids, *job_ids],
+                    ).fetchall()
+                    shot_by_job = {str(item["id"]): str(item["subject_id"]) for item in jobs}
+                    for event in events:
+                        shot_id = shot_by_job.get(str(event["job_id"]))
+                        if shot_id is None:
+                            continue
+                        data[shot_id]["logs"].append(
+                            {
+                                "event_id": int(event["event_id"]),
+                                "type": str(event["type"]),
+                                "subject_type": str(event["subject_type"]),
+                                "subject_id": str(event["subject_id"]),
+                                "occurred_at": str(event["occurred_at"]),
+                                "payload": json.loads(str(event["payload_json"] or "{}")),
+                            }
+                        )
                 variants = connection.execute(
                     f"""SELECT gi.owner_id AS shot_id, gv.* FROM generation_intents gi
                     JOIN generation_variants gv ON gv.intent_id=gi.id
@@ -155,6 +190,30 @@ class ProductionCanvasService:
         media = [item for item in facts["media"] if self._stage_for_media(item) == stage]
         jobs = facts["jobs"]
         variants = facts["variants"]
+        # Prefer a user-selected/approved revision for the visual cue, then
+        # fall back to the newest revision in this stage.  The URL is always a
+        # derived small thumbnail endpoint; the canvas never exposes source
+        # media paths or loads original bytes.
+        thumbnail_version_id = next(
+            (
+                str(item["selected_version_id"])
+                for item in reversed(media)
+                if item.get("selected_version_id")
+            ),
+            next(
+                (
+                    str(item["approved_version_id"])
+                    for item in reversed(media)
+                    if item.get("approved_version_id")
+                ),
+                str(media[-1]["media_version_id"]) if media else None,
+            ),
+        )
+        thumbnail_url = (
+            f"/api/v1/media-versions/{thumbnail_version_id}/thumbnail?size=small&frame=poster"
+            if thumbnail_version_id
+            else None
+        )
         active = [item for item in jobs if item["state"] in {"QUEUED", "CLAIMED", "RUNNING", "CANCEL_REQUESTED"}]
         failed = [item for item in jobs if item["state"] in {"FAILED", "NEEDS_ATTENTION"}]
         blockers: list[str] = []
@@ -178,7 +237,10 @@ class ProductionCanvasService:
             "take_count": len(media),
             "variant_count": len(variants),
             "active_job_count": len(active),
-            "thumbnail_media_version_id": media[-1]["media_version_id"] if media else None,
+            "thumbnail_media_version_id": thumbnail_version_id,
+            "thumbnail_url": thumbnail_url,
+            "log_count": len(facts["logs"]),
+            "logs": facts["logs"][:8],
             "variant_lineage": [
                 {
                     "id": str(item["id"]),

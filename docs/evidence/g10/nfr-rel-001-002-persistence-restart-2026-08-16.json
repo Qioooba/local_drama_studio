@@ -1,0 +1,32 @@
+{
+  "schema_version": "localdrama.requirement.evidence.v1",
+  "scope": ["NFR-REL-001", "NFR-REL-002"],
+  "status": "PARTIAL",
+  "local_only": true,
+  "observed_at": "2026-08-16",
+  "implementation": {
+    "transaction_boundary": "Job creation, idempotency record, JOB_QUEUED outbox event and audit row are committed in one SQLite transaction; failures roll back the whole command.",
+    "durable_state": "jobs, job_attempts, progress_json, lease timestamps, resource leases and outbox_events are read from SQLite by a newly constructed Database/JobService instance.",
+    "restart_reconciliation": "A fresh claim runs reconciliation before selecting work; explicit reconciliation marks expired CLAIMED/RUNNING attempts ORPHANED, requeues retryable jobs and releases resource leases.",
+    "crash_rehearsal": "A subprocess commits create/claim/heartbeat and exits via os._exit(17). The parent then verifies persisted job progress, attempt history, outbox events, redacted lease_token and resource-lease release after the simulated clock advances 61 seconds."
+  },
+  "automated_tests": [
+    "apps/api/tests/test_nfr_reliability.py::test_nfr_rel_persistence_and_restart_reconciliation",
+    "apps/api/tests/test_g5_jobs.py::test_worker_process_kill_is_reconciled_without_duplicate_attempt",
+    "apps/api/tests/test_job_scheduler_progress.py"
+  ],
+  "verification": {
+    "pytest": "targeted reliability test passed",
+    "ruff": "pending full gate",
+    "mypy": "pending full gate",
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "production_database_mutated": false,
+    "power_loss": false,
+    "windows_60_second_uat": false
+  },
+  "remaining": [
+    "Real Windows x64 API/Worker termination matrix, including non-graceful process termination and visible reconciliation status within 60 seconds, remains pending.",
+    "A physical power-loss/SQLite durability rehearsal and multi-worker contention pass remain pending; this deterministic subprocess evidence intentionally remains PARTIAL."
+  ]
+}

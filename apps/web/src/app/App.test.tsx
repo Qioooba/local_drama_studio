@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App";
-import { focusCanvasNodeIds } from "../features/canvas/ProductionCanvasPanel";
+import { canvasThumbnailUrl, focusCanvasNodeIds } from "../features/canvas/ProductionCanvasPanel";
 import { listProjects } from "../generated/api";
 import { progressiveSlice } from "../features/shared/progressive";
 import { selectedItemOrFirst } from "../features/shared/selection";
@@ -83,6 +83,11 @@ describe("G9 canvas focus", () => {
   it("returns an empty filter for all or no selection", () => {
     expect(focusCanvasNodeIds(null, edges, "UPSTREAM").size).toBe(0);
     expect(focusCanvasNodeIds("b", edges, "ALL").size).toBe(0);
+  });
+
+  it("resolves canvas previews only to derived small thumbnails", () => {
+    expect(canvasThumbnailUrl("media/preview 1")).toBe("/api/v1/media-versions/media%2Fpreview%201/thumbnail?size=small&frame=poster");
+    expect(canvasThumbnailUrl(null)).toBeNull();
   });
 
 });

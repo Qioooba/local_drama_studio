@@ -6,7 +6,7 @@ import shutil
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, cast
 
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.generation_contracts import CameraPlan, resolve_camera_plan
@@ -467,7 +467,11 @@ class ProjectService:
                 "excluded": ["media", "workspace_asset_authorizations", "brand_kits", "jobs", "reviews", "deliveries", "audit_history"]}}
 
     def list_projects(self, limit: int = 50, *, search: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
+        return cast(list[dict[str, Any]], self.list_projects_page(limit, search=search, status=status)["items"])
+
+    def list_projects_page(self, limit: int = 50, *, cursor: int = 0, search: str | None = None, status: str | None = None) -> dict[str, Any]:
         limit = max(1, min(limit, 200))
+        cursor = max(0, int(cursor))
         if status is not None and status not in {"DRAFT", "ACTIVE", "PAUSED", "ARCHIVED"}:
             raise DomainRuleError("PROJECT_STATUS_INVALID", "项目状态筛选值无效", {"status": status})
         filters: list[str] = []
@@ -481,10 +485,11 @@ class ProjectService:
             filters.append("status=?")
             parameters.append(status)
         where = f" WHERE {' AND '.join(filters)}" if filters else ""
-        parameters.append(limit)
+        parameters.extend([limit + 1, cursor])
         with self.database.connect() as connection:
-            rows = connection.execute(f"SELECT * FROM projects{where} ORDER BY created_at DESC LIMIT ?", parameters).fetchall()
-        return [dict(row) for row in rows]
+            rows = connection.execute(f"SELECT * FROM projects{where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?", parameters).fetchall()
+        has_more = len(rows) > limit
+        return {"items": [dict(row) for row in rows[:limit]], "page": {"cursor": cursor, "limit": limit, "next_cursor": cursor + limit if has_more else None, "has_more": has_more}}
 
     def update_project_title(self, project_id: str, title: str, expected_revision: int, actor: str = "local-user") -> dict[str, Any]:
         if not title or len(title) > 200:

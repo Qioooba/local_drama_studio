@@ -123,8 +123,15 @@ def test_real_media_probe_range_thumbnail_and_production_read_model(workspace, d
     shot = project_service.create_shot(str(episode["id"]), "S001", 1000)
     production = ProductionReadModelService(database).episode(str(episode["id"]))
     assert production["items"][0]["blockers"]
-    assert production["request_shape"] == "single_query_read_model"
+    assert production["request_shape"] == "bounded_cursor_read_model"
+    assert production["page"]["cursor"] == 0
+    page = ProductionReadModelService(database).episode(str(episode["id"]), limit=1, cursor=1)
+    assert page["page"]["cursor"] == 1
     with TestClient(create_app(workspace)) as client:
+        paged_production = client.get(f"/api/v1/episodes/{episode['id']}/production", params={"cursor": 0, "limit": 1})
+        assert paged_production.status_code == 200
+        assert paged_production.json()["page"]["cursor"] == 0
+        assert paged_production.json()["page"]["limit"] == 1
         version_id = str(media["media_version_id"])
         ranged = client.get(f"/api/v1/media-versions/{version_id}/content", headers={"Range": "bytes=0-15"})
         assert ranged.status_code == 206
