@@ -113,6 +113,53 @@ class DiagnosticService:
             "PASS" if gpu.get("name") and int(gpu.get("total_bytes", 0)) > 0 else "BLOCKED",
             {"name": gpu.get("name"), "total_bytes": gpu.get("total_bytes"), "cuda": runtime.get("cuda")},
         )
+        cuda_available = runtime.get("cuda_available") is True
+        add(
+            "GPU_DRIVER_CUDA",
+            "gpu",
+            "PASS" if gpu.get("driver") and runtime.get("cuda") and cuda_available else "BLOCKED",
+            {"driver": gpu.get("driver"), "cuda": runtime.get("cuda"), "cuda_available": cuda_available},
+            {"action": "安装/配置本机 GPU 驱动与 CUDA；不会自动改驱动或联网下载"},
+        )
+        capabilities = manifest.capabilities
+        missing_nodes = [
+            str(capability)
+            for capability, payload in capabilities.items()
+            if not isinstance(payload, dict) or not isinstance(payload.get("required_nodes"), list) or not payload.get("required_nodes")
+        ]
+        add(
+            "COMFYUI_NODE_REGISTRY",
+            "runtime",
+            "PASS" if capabilities and not missing_nodes else "BLOCKED",
+            {"capability_count": len(capabilities), "missing_capability_nodes": missing_nodes},
+            {"action": "在本机 ComfyUI custom_nodes 中补齐 manifest 声明的节点；不会自动安装节点"},
+        )
+        model_entries: list[dict[str, Any]] = []
+        for partition, payload in dict(manifest.data.get("models", {}).get("partitions", {})).items():
+            if not isinstance(payload, dict):
+                continue
+            for component, item in payload.items():
+                if isinstance(item, dict):
+                    model_entries.append({"partition": partition, "component": component, **item})
+        missing_model_hashes = [
+            f"{item['partition']}.{item['component']}"
+            for item in model_entries
+            if not isinstance(item.get("full_sha256"), str) or len(str(item.get("full_sha256"))) != 64
+        ]
+        add(
+            "MODEL_INVENTORY_HASH",
+            "models",
+            "PASS" if model_entries and not missing_model_hashes else "BLOCKED",
+            {"entry_count": len(model_entries), "missing_hashes": missing_model_hashes, "manifest_sha256": manifest.sha256},
+            {"action": "为本机模型补齐 SHA-256 清单；不会移动、复制或上传权重"},
+        )
+        add(
+            "NETWORK_POLICY",
+            "network",
+            "PASS" if self.settings.mode == "LOCAL_ONLY" else "FAIL",
+            {"mode": self.settings.mode, "allowed_hosts": ["127.0.0.1", "localhost", "::1"], "public_network": False},
+            {"action": "保持 LOCAL_ONLY；远程 Provider 不提供自动修复"},
+        )
         add("REMOTE_PROVIDER", "network", "PASS", {"mode": "LOCAL_ONLY", "remote_provider": "disabled"})
 
         overall = (
@@ -161,5 +208,32 @@ class DiagnosticService:
             ).fetchall()
         return {
             **dict(run),
-            "checks": [{**dict(item), "observed": json.loads(item["observed_json"]), "remediation": json.loads(item["remediation_json"])} for item in checks],
+            "checks": [
+                {
+                    **dict(item),
+                    "code": str(item["check_code"]),
+                    "observed": json.loads(item["observed_json"]),
+                    "remediation": json.loads(item["remediation_json"]),
+                }
+                for item in checks
+            ],
+        }
+
+    def dry_run_fix(self, check_id: str) -> dict[str, Any]:
+        """Preview remediation only; never mutates the machine or contacts a runtime."""
+        latest = self.latest()
+        check = next((item for item in (latest or {}).get("checks", []) if item["code"] == check_id), None)
+        if check is None:
+            raise DomainRuleError("DIAGNOSTIC_CHECK_NOT_FOUND", "诊断检查不存在", {"check_id": check_id})
+        return {
+            "check_id": check_id,
+            "current_status": check["status"],
+            "remediation": check.get("remediation", {}),
+            "status": "PREVIEW_ONLY",
+            "would_change": False,
+            "requires_user_action": check["status"] in {"BLOCKED", "FAIL", "WARN"},
+            "local_only": True,
+            "runtime_contacted": False,
+            "network_contacted": False,
+            "mutated": False,
         }

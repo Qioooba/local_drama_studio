@@ -1,0 +1,65 @@
+{
+  "schema_version": "local-drama.requirement-evidence.v1",
+  "recorded_at": "2026-08-16T00:00:00+08:00",
+  "scope": "GEN-005..010",
+  "status": "PARTIAL",
+  "local_only": true,
+  "network_contacted": false,
+  "runtime_contacted": false,
+  "requirements": {
+    "FR-GEN-005": {
+      "status": "PARTIAL",
+      "implemented": [
+        "SOURCE_IMAGE_BRANCH remains an immutable child Variant and changes only FIRST_FRAME ordinal 0",
+        "media dependency snapshots freeze MediaVersion version_no, parent lineage, stage, owner, approval/selection and SHA",
+        "cross-project source inputs require an ACTIVE ProjectAssetGrant with matching authorization revision, SHA and size"
+      ],
+      "tests": ["apps/api/tests/test_generation_variants.py::test_media_dependency_freezes_source_revision_and_lineage_metadata", "apps/api/tests/test_generation_variants.py::test_generation_accepts_active_cross_project_grant_and_blocks_withdrawn_source"]
+    },
+    "FR-GEN-006": {
+      "status": "PARTIAL",
+      "implemented": [
+        "FIRST_FRAME/END_FRAME/MIDDLE_KEYFRAME are semantic slots with Profile cardinality, dimensions and aspect-ratio gates",
+        "unsupported slots return actionable PROFILE_CAPABILITY_UNSUPPORTED instead of silently dropping input"
+      ],
+      "tests": ["apps/api/tests/test_generation_variants.py::test_first_last_preflight_blocks_unprobed_and_incompatible_frames"]
+    },
+    "FR-GEN-007": {
+      "status": "PARTIAL",
+      "implemented": [
+        "FFprobe PTS frame extraction creates immutable MediaVersion and FrameAnchor records",
+        "GenerationWorkbench exposes first/current/last extraction using small thumbnails"
+      ],
+      "tests": ["apps/api/tests/test_generation_variants.py::test_frame_anchor_resolves_real_first_current_last_pts_and_rejects_out_of_range"]
+    },
+    "FR-GEN-008": {
+      "status": "PARTIAL",
+      "implemented": [
+        "experiment axes are lazily expanded into independent Job-backed cells",
+        "cell-count threshold requires explicit large-matrix confirmation"
+      ],
+      "tests": ["apps/api/tests/test_g5_jobs.py"]
+    },
+    "FR-GEN-009": {
+      "status": "PARTIAL",
+      "implemented": [
+        "transition constraint types are validated and shared-boundary validation requires two anchors",
+        "existing stale propagation preserves downstream Variant history"
+      ],
+      "tests": ["apps/api/tests/test_generation_variants.py::test_shared_boundary_transition_requires_two_immutable_anchors"]
+    },
+    "FR-GEN-010": {
+      "status": "PARTIAL",
+      "implemented": [
+        "advanced variant modes VIDEO_EXTEND, VIDEO_TO_VIDEO, MOTION_CONTROL and PERFORMANCE_DRIVEN require explicit Published Profile capability",
+        "SOURCE_VIDEO, MOTION_PATH and MASK semantic slots are capability-gated; existing driving/audio/reference and motion controls remain immutable"
+      ],
+      "tests": ["apps/api/tests/test_generation_variants.py::test_advanced_variant_modes_require_profile_capabilities_and_semantic_roles", "apps/api/tests/test_ctl_multimodal_contracts.py", "apps/api/tests/test_motion_controls.py"]
+    }
+  },
+  "remaining": [
+    "Profile-specific first/last and advanced local workflow packages require real Windows runtime evidence",
+    "experiment cells still need full winner/review/promotion UAT",
+    "shared-boundary timeline deduplication and downstream three-viewport UAT remain open"
+  ]
+}

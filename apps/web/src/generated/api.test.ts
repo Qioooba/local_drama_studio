@@ -14,6 +14,9 @@ import {
   selectDeliveryTargetVersion,
   getFrameAnchor,
   getEnhancementRun,
+  getDiagnostics,
+  dryRunDiagnosticFix,
+  scanLocalModelRegistry,
   getPostProcessRecipe,
   listPostProcessRecipes,
   planEnhancementRun,
@@ -174,5 +177,17 @@ describe("generated G8 timeline client", () => {
       "/api/v1/reviews/inbox?project_id=project%2F1&media_kind=VIDEO&episode_id=episode%2F2&age=OLD&priority=HIGH&blocking=BLOCKED&min_age_days=7&max_age_days=30",
       "/api/v1/reviews/inbox?project_id=project%2F1&media_kind=VIDEO&age=OLD&priority=HIGH&blocking=BLOCKED&episode_id=episode%2F2&cursor=20&limit=10",
     ]);
+  });
+
+  it("keeps diagnostics and model registry calls local and explicit", async () => {
+    await getDiagnostics();
+    await dryRunDiagnosticFix("GPU_DRIVER_CUDA");
+    await scanLocalModelRegistry("C:/models selected", 12);
+    expect(fetchMock.mock.calls.map(([path]) => path).filter((path) => !String(path).endsWith("/session/bootstrap"))).toEqual([
+      "/api/v1/diagnostics",
+      "/api/v1/diagnostics/GPU_DRIVER_CUDA:dry-run-fix",
+      "/api/v1/model-registry:scan",
+    ]);
+    expect(fetchMock.mock.calls.at(-1)?.[1]?.body).toBe(JSON.stringify({ root_path: "C:/models selected", max_files: 12 }));
   });
 });

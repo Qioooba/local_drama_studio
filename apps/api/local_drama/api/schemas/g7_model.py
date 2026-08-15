@@ -21,3 +21,10 @@ class ModelLicenseEvidenceRequest(BaseModel):
     evidence_path: str = Field(min_length=1, max_length=512)
     license_name: str = Field(min_length=1, max_length=160)
     license_status: Literal["LOCAL_LICENSE_VERIFIED", "USER_OWNED"]
+
+
+class ModelRegistryScanRequest(BaseModel):
+    """Read-only scan request for user-owned local model files."""
+
+    root_path: str = Field(min_length=3, max_length=2048)
+    max_files: int = Field(default=200, ge=1, le=2000)

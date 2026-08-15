@@ -54,7 +54,8 @@ export type ProfileValidation = { id: string; profile_version_id?: string; contr
 export type ProfileVersionDetail = { id: string; execution_profile_id: string; code: string; title: string; version_no: number; capability: string; status: string; revision: number; input_contract: Record<string, unknown>; parameter_schema: Record<string, unknown>; output_contract: Record<string, unknown>; resource_policy: Record<string, unknown>; capability_contract?: Record<string, unknown>; contract_hash: string; validation: ProfileValidation | null };
 export type CameraPlan = { mode: 'NATIVE' | 'PROMPT_FALLBACK' | 'UNSUPPORTED'; shot_type: string; movement: string; prompt_text: string; direction: string; intensity: number; curve: string; profile_version_id: string | null };
 export type CameraPlanResolution = { camera_plan: CameraPlan; submission_allowed: boolean; support: string; profile: { id: string; code: string; version_no: number }; runtime_contacted: false; network_contacted: false; mutated: false };
-export type DiagnosticRun = { id: string; status: string; checks: Array<{ code: string; category: string; status: string; observed: Record<string, unknown> }> };
+export type DiagnosticRun = { id: string; status: string; checks: Array<{ code: string; category: string; status: string; observed: Record<string, unknown>; remediation?: Record<string, unknown> }> };
+export type ModelRegistryScan = { root_path: string; items: Array<{ path: string; relative_path: string; extension: string; byte_size: number; sha256: string; quantization_hint: string; distribution_scope: 'REFERENCE_ONLY_NOT_BUNDLED'; copied: false; uploaded: false }>; scanned_count: number; candidate_count: number; truncated: boolean; max_files: number; read_only: true; runtime_contacted: false; network_contacted: false; mutated: false };
 export type AuditEvent = { event_id: number; actor: string; role_context: string; action: string; subject_type: string; subject_id: string; project_id: string | null; before_revision: number | null; after_revision: number | null; request_id: string | null; job_id: string | null; occurred_at: string; summary: string; metadata: Record<string, unknown>; metadata_redacted: true; local_only: true; network_contacted: false; mutated: false };
 export type AuditEventFilters = { project_id?: string; occurred_after?: string; occurred_before?: string; action?: string; actor?: string; subject_type?: string; subject_id?: string; cursor?: number; limit?: number };
 export type ReviewTemplate = { id: string; code: string; version_no: number; subject_type: string; items: Array<{ id: string; label: string; required: boolean }> };
@@ -96,7 +97,7 @@ export type ModelCompatibilitySnapshot = { reports: Array<{ artifact_id: string;
 export type ProjectConfiguration = { project: { id: string; code: string; title: string }; production_plan: { id: string; code: string; title: string; version_id: string; version_no: number; status: string; plan: Record<string, unknown> } | null; profile_bindings: Array<{ capability: string; binding_status: string; profile_version_id: string; profile_code: string; profile_title: string; version_no: number; profile_status: string; contract_hash: string; frozen_job_count: number }>; delivery_targets: Array<{ target_id: string; code: string; title: string; transport: string; target_status: string; version_id: string; version_no: number; version_status: string; spec: Record<string, unknown>; delivery_package_count: number }>; selected_delivery_target_version_id: string | null; impact: { profile_switches_preserve_frozen_jobs: true; profile_frozen_job_counts: Record<string, number>; delivery_package_counts: Record<string, number>; remote_transport_allowed: false }; runtime_contacted: false; network_contacted: false; mutated: false };
 export type AdapterContract = { code: string; title: string; kind: string; transport: string; base_url: string | null; executable_ref: string | null; capabilities: string[]; status: string; blockers: string[]; runtime_contacted: false; network_contacted: false; mutated: false };
 export type AdapterRegistry = { mode: 'LOCAL_ONLY'; contracts: AdapterContract[]; remote_transport_allowed: false; runtime_contacted: false; network_contacted: false; mutated: false };
-export type CapacitySnapshot = { scope: { project_id: string | null }; observed_at: string; jobs_by_state: Record<string, number>; jobs_by_channel: Record<string, number>; queued_count: number; oldest_queued_age_seconds: number | null; active_attempt_count: number; active_worker_count: number; gpu_active_count: number; gpu_concurrency_limit: number; completed_last_24h: number; observation_status: 'OBSERVED_NOT_BENCHMARKED'; webhook_status: 'LOOPBACK_EXPLICIT_BOUNDED'; would_create_jobs: false; runtime_contacted: false; network_contacted: false; mutated: false };
+export type CapacitySnapshot = { scope: { project_id: string | null }; observed_at: string; jobs_by_state: Record<string, number>; jobs_by_channel: Record<string, number>; queued_count: number; oldest_queued_age_seconds: number | null; active_attempt_count: number; active_worker_count: number; gpu_active_count: number; gpu_concurrency_limit: number; completed_last_24h: number; duration_seconds?: { completed_count: number; average: number | null; max: number | null }; failure_rate?: number | null; retry_rate?: number | null; review?: { decision_counts: Record<string, number>; approval_rate: number | null; total: number }; disk?: { free_bytes: number | null; total_bytes: number | null; used_bytes: number | null; source: string }; gpu?: { name: string | null; total_bytes: number | null; driver: string | null; source: string }; observation_status: 'OBSERVED_NOT_BENCHMARKED'; webhook_status: 'LOOPBACK_EXPLICIT_BOUNDED'; would_create_jobs: false; runtime_contacted: false; network_contacted: false; mutated: false };
 export type OutboxDelivery = { endpoint_url: string; scope: { project_id: string | null }; status: 'DELIVERED' | 'PARTIAL' | 'NO_EVENTS'; delivered_event_ids: number[]; delivered_count: number; failed: Array<Record<string, unknown>>; bounded: true; max_batch_size: number; remote_transport_allowed: false; runtime_contacted: false; network_contacted: false; mutated: boolean };
 export type AutomationClient = { id: string; project_id: string | null; code: string; title: string; scopes: string[]; status: 'ACTIVE' | 'REVOKED'; token?: string | null; token_returned_once: boolean; loopback_only: true; network_contacted: false; idempotent_replay?: boolean };
 export type WebhookSubscription = { id: string; automation_client_id: string; project_id: string | null; endpoint_url: string; event_types: string[]; status: 'ACTIVE' | 'REVOKED'; signing_secret?: string | null; secret_returned_once?: boolean; loopback_only: true; idempotent_replay?: boolean };
@@ -299,8 +300,16 @@ export async function latestDiagnostics(baseUrl = ''): Promise<{ run: Diagnostic
   return requestJson<{ run: DiagnosticRun | null }>('/api/v1/diagnostics/latest', undefined, baseUrl);
 }
 
+export async function getDiagnostics(baseUrl = ''): Promise<{ run: DiagnosticRun | null }> {
+  return requestJson<{ run: DiagnosticRun | null }>('/api/v1/diagnostics', undefined, baseUrl);
+}
+
 export async function runDiagnostics(baseUrl = ''): Promise<{ run: DiagnosticRun }> {
   return requestJson<{ run: DiagnosticRun }>('/api/v1/diagnostics/runs', { method: 'POST' }, baseUrl);
+}
+
+export async function dryRunDiagnosticFix(checkId: string, baseUrl = ''): Promise<{ preview: Record<string, unknown> }> {
+  return requestJson(`/api/v1/diagnostics/${encodeURIComponent(checkId)}:dry-run-fix`, { method: 'POST' }, baseUrl);
 }
 
 export async function listAuditEvents(filters: AuditEventFilters = {}, baseUrl = ''): Promise<{ items: AuditEvent[]; next_cursor: number | null; cursor: number; limit: number; filters: AuditEventFilters; local_only: true; network_contacted: false; mutated: false }> {
@@ -846,6 +855,10 @@ export async function getModelCompatibility(projectId: string, baseUrl = ''): Pr
 
 export async function registerLocalModelReference(projectId: string, payload: { code: string; kind: string; machine_path_ref: string; license_note?: string }, baseUrl = ''): Promise<{ artifact: LocalModelReference }> {
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/model-artifacts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function scanLocalModelRegistry(rootPath: string, maxFiles = 200, baseUrl = ''): Promise<{ scan: ModelRegistryScan }> {
+  return requestJson('/api/v1/model-registry:scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ root_path: rootPath, max_files: maxFiles }) }, baseUrl);
 }
 
 export async function pickLocalModelFile(baseUrl = ''): Promise<{ selection: { selected: boolean; path: string | null; uploaded: false; copied: false } }> {

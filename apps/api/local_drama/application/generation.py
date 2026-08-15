@@ -46,7 +46,61 @@ class GenerationService:
         "FACE_REFERENCE": ("face_reference", "face", "performance"),
         "CHARACTER_REFERENCE": ("character_reference", "reference", "performance"),
         "CHARACTER_DRIVING": ("character_driving", "performance"),
+        # Advanced inputs are still semantic slots.  Their workflow node is
+        # profile-owned, but a profile must explicitly advertise the local
+        # capability before a plan can bind one.  This prevents a V2V/
+        # extension/motion request from being silently treated as a generic
+        # image or prompt input.
+        "SOURCE_VIDEO": ("source_video", "video_to_video", "v2v", "video_extend"),
+        "MOTION_PATH": ("motion_path", "motion", "motion_control"),
+        "MASK": ("mask", "inpaint", "outpaint", "motion_mask"),
     }
+
+    _VARIANT_CAPABILITIES: dict[str, tuple[str, ...]] = {
+        "VIDEO_EXTEND": ("video_extend", "video_extension", "extend"),
+        "VIDEO_TO_VIDEO": ("video_to_video", "v2v", "video_transform"),
+        "MOTION_CONTROL": ("motion_control", "motion", "motion_path"),
+        "PERFORMANCE_DRIVEN": ("performance", "character_driving", "driving_video"),
+    }
+
+    @classmethod
+    def _validate_variant_capability(cls, variant_type: str, capabilities: dict[str, Any], roles: set[str]) -> None:
+        """Gate advanced variant modes on an explicit Published Profile capability.
+
+        The capabilities are intentionally aliases: existing local manifests
+        use both ``v2v`` and ``video_to_video`` naming.  Any declared object
+        with ``enabled=false`` or ``support=UNSUPPORTED`` is treated as
+        unavailable, and the error includes the required semantic role so the
+        UI can offer an actionable configuration path.
+        """
+        required = cls._VARIANT_CAPABILITIES.get(variant_type)
+        if not required:
+            return
+        matched_name = next((name for name in required if isinstance(capabilities.get(name), dict)), None)
+        contract = capabilities.get(matched_name) if matched_name else None
+        if not isinstance(contract, dict) or contract.get("enabled") is False or str(contract.get("support", "NATIVE")).upper() == "UNSUPPORTED":
+            raise DomainRuleError(
+                "PROFILE_VARIANT_UNSUPPORTED",
+                f"当前 Published Profile 未声明 {variant_type} 的本地能力",
+                {
+                    "variant_type": variant_type,
+                    "required_capabilities": list(required),
+                    "bound_roles": sorted(roles),
+                },
+                suggested_action="配置并发布声明该高阶输入能力和语义 input_slots 的本地 Profile",
+            )
+        role_requirements = {
+            "VIDEO_EXTEND": {"SOURCE_VIDEO"},
+            "VIDEO_TO_VIDEO": {"SOURCE_VIDEO"},
+            "MOTION_CONTROL": {"MOTION_PATH", "MASK"},
+            "PERFORMANCE_DRIVEN": {"DRIVING_VIDEO", "POSE_SEQUENCE", "POSE_REFERENCE", "AUDIO_GUIDE", "FACE_REFERENCE", "CHARACTER_REFERENCE", "CHARACTER_DRIVING"},
+        }
+        if not roles.intersection(role_requirements.get(variant_type, set())):
+            raise DomainRuleError(
+                "VARIANT_INPUT_ROLE_REQUIRED",
+                f"{variant_type} 必须绑定对应的语义输入槽",
+                {"variant_type": variant_type, "required_roles": sorted(role_requirements.get(variant_type, set()))},
+            )
 
     @staticmethod
     def _input_slots(input_contract: object) -> dict[str, Any]:
@@ -384,6 +438,10 @@ class GenerationService:
                     raise DomainRuleError("PROFILE_INPUT_ROLE_UNSUPPORTED", "Profile 未声明该语义输入槽", {"role": binding.role})
                 self._validate_driving_capability(binding.role, capabilities)
                 self._validate_slot_weight(binding.role, slot, binding.weight)
+            # Validate the high-level mode after per-slot driving checks so a
+            # missing local driving declaration retains its precise legacy
+            # PROFILE_DRIVING_UNSUPPORTED diagnostic.
+            self._validate_variant_capability(plan.variant_type, capabilities, set(bindings_by_role))
             for role, role_bindings in bindings_by_role.items():
                 ordinals = [item.ordinal for item in role_bindings]
                 if len(set(ordinals)) != len(ordinals) or sorted(ordinals) != list(range(len(ordinals))):
@@ -439,14 +497,47 @@ class GenerationService:
             for binding in plan.bindings:
                 counts[binding.role] = counts.get(binding.role, 0) + 1
                 media = connection.execute(
-                    """SELECT mv.sha256, mv.integrity_status, mv.probe_json, ma.media_kind, ma.project_id FROM media_versions mv
-                    JOIN media_assets ma ON ma.id=mv.media_asset_id WHERE mv.id=?""",
+                    """SELECT mv.version_no, mv.parent_version_id, mv.stage, mv.sha256, mv.byte_size, mv.integrity_status,
+                    mv.probe_json, ma.media_kind, ma.project_id, ma.owner_type, ma.owner_id,
+                    ma.purpose, ma.approved_version_id, ma.selected_version_id
+                    FROM media_versions mv JOIN media_assets ma ON ma.id=mv.media_asset_id WHERE mv.id=?""",
                     (binding.media_version_id,),
                 ).fetchone()
                 if media is None:
                     raise DomainRuleError("MEDIA_VERSION_NOT_FOUND", "Variant 输入必须引用已注册 MediaVersion")
+                grant_snapshot: dict[str, Any] | None = None
                 if str(media["project_id"]) != str(intent["project_id"]):
-                    raise DomainRuleError("VARIANT_INPUT_PROJECT_MISMATCH", "Variant 输入必须属于 GenerationIntent 所在项目")
+                    # Cross-project media is legal only through an ACTIVE
+                    # ProjectAssetGrant whose authorization and immutable
+                    # source hash/size still match the current MediaVersion.
+                    # This keeps source branches useful for shared workspace
+                    # references without weakening project isolation.
+                    grant = connection.execute(
+                        """SELECT pag.id, pag.source_project_id, pag.target_project_id, pag.source_authorization_id,
+                        pag.access_mode, pag.status, pag.source_revision, pag.source_sha256, pag.source_byte_size,
+                        waa.authorization_status, waa.revision AS authorization_revision
+                        FROM project_asset_grants pag
+                        JOIN workspace_asset_authorizations waa ON waa.id=pag.source_authorization_id
+                        WHERE pag.target_project_id=? AND pag.media_version_id=? ORDER BY pag.created_at DESC LIMIT 1""",
+                        (intent["project_id"], binding.media_version_id),
+                    ).fetchone()
+                    if grant is None:
+                        raise DomainRuleError("VARIANT_INPUT_PROJECT_MISMATCH", "Variant 输入必须属于 GenerationIntent 所在项目或通过有效跨项目授权")
+                    if str(grant["status"]) != "ACTIVE" or str(grant["authorization_status"]) != "AUTHORIZED":
+                        raise DomainRuleError("ASSET_GRANT_NOT_USABLE", "跨项目资产授权已撤回或不再可用", {"grant_id": grant["id"]})
+                    if (
+                        str(grant["source_sha256"]) != str(media["sha256"])
+                        or int(grant["source_byte_size"]) != int(media["byte_size"])
+                        or int(grant["source_revision"]) != int(grant["authorization_revision"])
+                    ):
+                        raise DomainRuleError("ASSET_GRANT_SOURCE_CHANGED", "跨项目授权源 MediaVersion 已发生变化，请重新授权", {"grant_id": grant["id"]})
+                    grant_snapshot = {
+                        "id": str(grant["id"]),
+                        "source_project_id": str(grant["source_project_id"]),
+                        "source_authorization_id": str(grant["source_authorization_id"]),
+                        "access_mode": str(grant["access_mode"]),
+                        "source_revision": int(grant["source_revision"]),
+                    }
                 if media["integrity_status"] != "VERIFIED":
                     raise DomainRuleError("SOURCE_INTEGRITY_FAILED", "Variant 输入完整性未通过")
                 slot = input_slots[binding.role]
@@ -503,9 +594,22 @@ class GenerationService:
                 media_dependencies.append(
                     {
                         "id": binding.media_version_id,
+                        # Source branch and replay evidence must identify the
+                        # immutable MediaVersion revision, not only its path
+                        # hash.  Paths may be re-homed while version lineage
+                        # and approval ownership remain auditable.
+                        "version_no": int(media["version_no"]),
+                        "parent_version_id": media["parent_version_id"],
+                        "stage": media["stage"],
+                        "owner_type": media["owner_type"],
+                        "owner_id": media["owner_id"],
+                        "purpose": media["purpose"],
+                        "approved_version_id": media["approved_version_id"],
+                        "selected_version_id": media["selected_version_id"],
                         "sha256": verified_media["sha256"],
                         "integrity_status": "VERIFIED",
                         "source_approval_id": approval_dependencies.get((binding.role, binding.ordinal)),
+                        **({"project_asset_grant": grant_snapshot} if grant_snapshot else {}),
                     }
                 )
             first_dimensions = visual_dimensions.get(("FIRST_FRAME", 0))

@@ -243,6 +243,48 @@
       "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py"]
     },
     {
+      "id": "FR-IMG-001",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_keyframe_candidate.py", "apps/api/tests/test_g4_reviews.py"]
+    },
+    {
+      "id": "FR-IMG-002",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx"]
+    },
+    {
+      "id": "FR-IMG-003",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json"],
+      "automated_tests": ["apps/web/src/features/reviews/ImageCandidateGrid.test.tsx", "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"]
+    },
+    {
+      "id": "FR-IMG-004",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g4_reviews.py"]
+    },
+    {
+      "id": "FR-IMG-005",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g4_reviews.py"]
+    },
+    {
+      "id": "FR-IMG-006",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_keyframe_candidate.py", "apps/api/tests/test_generation_variants.py"]
+    },
+    {
+      "id": "FR-IMG-007",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/contact-sheet-export-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_contact_sheet_export.py", "apps/web/src/features/production/EpisodeContactSheetAction.test.tsx"]
+    },
+    {
       "id": "FR-AST-001",
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/fr-ast-001-workspace-asset-grants-2026-08-16.json"],
@@ -277,6 +319,42 @@
       "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx"]
     },
     {
+      "id": "FR-GEN-005",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-gen-005-010-advanced-inputs-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_generation_variants.py"]
+    },
+    {
+      "id": "FR-GEN-006",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-gen-005-010-advanced-inputs-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx"]
+    },
+    {
+      "id": "FR-GEN-007",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-gen-005-010-advanced-inputs-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx"]
+    },
+    {
+      "id": "FR-GEN-008",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-gen-005-010-advanced-inputs-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g5_jobs.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx"]
+    },
+    {
+      "id": "FR-GEN-009",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-gen-005-010-advanced-inputs-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/api/tests/test_g8_timeline_delivery.py"]
+    },
+    {
+      "id": "FR-GEN-010",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-gen-005-010-advanced-inputs-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/api/tests/test_ctl_multimodal_contracts.py", "apps/api/tests/test_motion_controls.py"]
+    },
+    {
       "id": "FR-JOB-001",
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g5/job-scheduler-progress-2026-08-16.json"],
@@ -305,6 +383,42 @@
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g5/job-scheduler-progress-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_job_scheduler_progress.py", "apps/api/tests/test_g5_jobs.py"]
+    },
+    {
+      "id": "FR-OPS-001",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_ops_registry.py", "apps/api/tests/test_g3_configuration_media.py"]
+    },
+    {
+      "id": "FR-OPS-002",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_ops_registry.py", "apps/api/tests/test_model_compatibility_api.py"]
+    },
+    {
+      "id": "FR-OPS-003",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_ops_registry.py", "apps/api/tests/test_capacity_snapshot.py"]
+    },
+    {
+      "id": "FR-PRV-001",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_adapter_contracts.py", "apps/api/tests/test_profile_contract_editor.py"]
+    },
+    {
+      "id": "FR-PRV-002",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_network_e2e.py", "apps/api/tests/test_adapter_contracts.py"]
+    },
+    {
+      "id": "FR-PRV-003",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_profile_contract_editor.py", "apps/api/tests/test_profile_compatibility.py"]
     }
   ]
 }

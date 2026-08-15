@@ -3723,6 +3723,30 @@
         }
       }
     },
+    "/api/v1/diagnostics": {
+      "get": {
+        "tags": [
+          "diagnostics"
+        ],
+        "summary": "Diagnostics",
+        "description": "Blueprint-compatible read-only alias for the latest local run.",
+        "operationId": "getDiagnostics",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Getdiagnostics"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/diagnostics/runs": {
       "post": {
         "tags": [
@@ -3762,6 +3786,50 @@
                   "additionalProperties": true,
                   "type": "object",
                   "title": "Response Getlatestdiagnostics"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/diagnostics/{check_id}:dry-run-fix": {
+      "post": {
+        "tags": [
+          "diagnostics"
+        ],
+        "summary": "Dry Run Fix",
+        "operationId": "dryRunDiagnosticFix",
+        "parameters": [
+          {
+            "name": "check_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Check Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Dryrundiagnosticfix"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -4800,6 +4868,49 @@
                   "additionalProperties": true,
                   "type": "object",
                   "title": "Response Picklocaldocumentfile"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/model-registry:scan": {
+      "post": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "Scan Local Model Registry",
+        "operationId": "scanLocalModelRegistry",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelRegistryScanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Scanlocalmodelregistry"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -14223,6 +14334,29 @@
           "license_status"
         ],
         "title": "ModelLicenseEvidenceRequest"
+      },
+      "ModelRegistryScanRequest": {
+        "properties": {
+          "root_path": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 3,
+            "title": "Root Path"
+          },
+          "max_files": {
+            "type": "integer",
+            "maximum": 2000.0,
+            "minimum": 1.0,
+            "title": "Max Files",
+            "default": 200
+          }
+        },
+        "type": "object",
+        "required": [
+          "root_path"
+        ],
+        "title": "ModelRegistryScanRequest",
+        "description": "Read-only scan request for user-owned local model files."
       },
       "MotionControlKeyframe": {
         "properties": {

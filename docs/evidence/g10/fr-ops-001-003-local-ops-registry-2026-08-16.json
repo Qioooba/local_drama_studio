@@ -1,0 +1,42 @@
+{
+  "schema_version": "localdrama.requirement.evidence.v1",
+  "scope": ["FR-OPS-001", "FR-OPS-002", "FR-OPS-003", "FR-PRV-001", "FR-PRV-002", "FR-PRV-003"],
+  "status": "PARTIAL",
+  "local_only": true,
+  "implementation": {
+    "diagnostics": [
+      "GET /api/v1/diagnostics and GET /api/v1/diagnostics/latest expose the latest persisted local run",
+      "POST /api/v1/diagnostics/runs persists GPU/VRAM/driver/CUDA/FFmpeg/FFprobe/Comfy loopback/model hash/node/disk/network checks",
+      "POST /api/v1/diagnostics/{check_id}:dry-run-fix returns a remediation preview and never mutates or contacts a runtime"
+    ],
+    "model_registry": [
+      "POST /api/v1/model-registry:scan hashes user-selected local model files read-only",
+      "Existing model-artifacts reference flow records absolute path, license note, hash, quantization and compatibility without copying/uploading weights"
+    ],
+    "capacity": [
+      "GET /api/v1/capacity/snapshot now reports queue/GPU/disk/duration/failure/retry/review approval metrics from persisted local state",
+      "Capacity remains OBSERVED_NOT_BENCHMARKED and does not create jobs, claim leases, contact runtimes or send telemetry"
+    ],
+    "provider_registry": [
+      "Existing manifest-backed ProfileService and AdapterContractRegistry remain LOCAL_ONLY and versioned; remote transports stay disabled"
+    ]
+  },
+  "automated_tests": [
+    "apps/api/tests/test_ops_registry.py::test_diagnostics_exposes_blueprint_checks_and_dry_run_fix",
+    "apps/api/tests/test_ops_registry.py::test_offline_model_scan_hashes_candidates_without_registering_or_copying",
+    "apps/api/tests/test_ops_registry.py::test_capacity_snapshot_includes_local_metrics_without_mutation",
+    "apps/api/tests/test_capacity_snapshot.py",
+    "apps/api/tests/test_g3_configuration_media.py::test_diagnostics_persists_local_only_and_comfy_blocker",
+    "apps/api/tests/test_profile_contract_editor.py",
+    "apps/api/tests/test_adapter_contracts.py"
+    ,"apps/web/src/features/status/LocalModelScanForm.test.tsx"
+  ],
+  "remaining": [
+    "Windows production three-viewport UAT for scan/diagnostics/capacity remains pending",
+    "A real user-selected model and local license evidence are not fabricated by this evidence",
+    "Profile publication still requires existing workflow/runtime/license gates"
+  ],
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "mutated": false
+}

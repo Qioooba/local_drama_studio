@@ -8,11 +8,13 @@ webhook.
 
 from __future__ import annotations
 
+import shutil
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.infrastructure.manifest import load_manifest
 
 
 def _now() -> datetime:
@@ -30,8 +32,9 @@ def _parse(value: str | None) -> datetime | None:
 
 
 class CapacitySnapshotService:
-    def __init__(self, database: Database) -> None:
+    def __init__(self, database: Database, settings: Any | None = None) -> None:
         self.database = database
+        self.settings = settings
 
     def inspect(self, project_id: str | None = None) -> dict[str, Any]:
         with self.database.connect() as connection:
@@ -63,6 +66,21 @@ class CapacitySnapshotService:
                 f"SELECT COUNT(*) AS count FROM jobs {job_where + (' AND ' if job_where else 'WHERE ')}state='SUCCEEDED' AND updated_at>=?",
                 (*job_params, cutoff),
             ).fetchone()
+            duration_rows = connection.execute(
+                f"SELECT state, created_at, updated_at FROM jobs {job_where}", job_params
+            ).fetchall()
+            retry_rows = connection.execute(
+                f"SELECT COUNT(*) AS count FROM job_attempts a JOIN jobs j ON j.id=a.job_id {('WHERE j.project_id=?' if project_id else '')} GROUP BY a.job_id HAVING COUNT(*) > 1",
+                (project_id,) if project_id else (),
+            ).fetchall()
+            review_where = "WHERE ma.project_id=?" if project_id else ""
+            review_rows = connection.execute(
+                f"""SELECT r.decision, COUNT(*) AS count FROM review_decisions r
+                LEFT JOIN media_versions mv ON r.subject_id=mv.id
+                LEFT JOIN media_assets ma ON mv.media_asset_id=ma.id
+                {review_where} GROUP BY r.decision""",
+                (project_id,) if project_id else (),
+            ).fetchall()
 
         by_state: dict[str, int] = {}
         by_channel: dict[str, int] = {}
@@ -74,6 +92,31 @@ class CapacitySnapshotService:
             by_channel[channel] = by_channel.get(channel, 0) + amount
         oldest = _parse(queued["oldest"])
         queued_age = max(0, round((_now() - oldest).total_seconds())) if oldest else None
+        durations: list[float] = []
+        for row in duration_rows:
+            if str(row["state"]) not in {"SUCCEEDED", "FAILED", "CANCELLED"}:
+                continue
+            created = _parse(str(row["created_at"]))
+            updated = _parse(str(row["updated_at"]))
+            if created is not None and updated is not None:
+                durations.append(max(0.0, (updated - created).total_seconds()))
+        succeeded = by_state.get("SUCCEEDED", 0)
+        failed = by_state.get("FAILED", 0)
+        terminal = succeeded + failed
+        review_counts = {str(row["decision"]): int(row["count"]) for row in review_rows}
+        review_total = sum(review_counts.values())
+        total_jobs = sum(by_state.values())
+        gpu: dict[str, Any] = {"name": None, "total_bytes": None, "driver": None, "source": "UNAVAILABLE"}
+        if self.settings is not None:
+            try:
+                runtime_gpu = dict(load_manifest(self.settings.manifest_path).runtime.get("gpu", {}))
+                gpu = {"name": runtime_gpu.get("name"), "total_bytes": runtime_gpu.get("total_bytes"), "driver": runtime_gpu.get("driver"), "source": "LOCAL_MANIFEST"}
+            except Exception:  # diagnostics itself reports manifest problems; capacity remains read-only
+                pass
+        disk: dict[str, Any] = {"free_bytes": None, "total_bytes": None, "used_bytes": None, "source": "UNAVAILABLE"}
+        if self.settings is not None:
+            usage = shutil.disk_usage(self.settings.data_root)
+            disk = {"free_bytes": usage.free, "total_bytes": usage.total, "used_bytes": usage.used, "source": "LOCAL_FILESYSTEM"}
         return {
             "scope": {"project_id": project_id},
             "observed_at": _now().isoformat(),
@@ -86,6 +129,12 @@ class CapacitySnapshotService:
             "gpu_active_count": int(gpu_active["count"]),
             "gpu_concurrency_limit": 1,
             "completed_last_24h": int(completed_24h["count"]),
+            "gpu": gpu,
+            "disk": disk,
+            "duration_seconds": {"completed_count": len(durations), "average": round(sum(durations) / len(durations), 3) if durations else None, "max": round(max(durations), 3) if durations else None},
+            "failure_rate": round(failed / terminal, 4) if terminal else None,
+            "retry_rate": round(len(retry_rows) / total_jobs, 4) if total_jobs else None,
+            "review": {"decision_counts": review_counts, "approval_rate": round(review_counts.get("APPROVED", 0) / review_total, 4) if review_total else None, "total": review_total},
             "observation_status": "OBSERVED_NOT_BENCHMARKED",
             "webhook_status": "LOOPBACK_EXPLICIT_BOUNDED",
             "would_create_jobs": False,

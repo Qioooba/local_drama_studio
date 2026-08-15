@@ -609,6 +609,22 @@ class TimelineService:
     ) -> dict[str, Any]:
         if from_shot_id == to_shot_id:
             raise DomainRuleError("TRANSITION_SHOT_INVALID", "连续性约束不能连接同一镜头")
+        valid_types = {
+            "MATCH_CUT",
+            "CONTINUOUS_MOTION",
+            "START_FROM_PREVIOUS_LAST",
+            "END_AT_NEXT_FIRST",
+            "SHARED_BOUNDARY_FRAME",
+            "STYLE_ONLY",
+            "DIRECTIONAL_CONTINUITY",
+            # Legacy clients used this concise alias before the blueprint
+            # settled on START_FROM_PREVIOUS_LAST.
+            "LAST_TO_FIRST",
+        }
+        if constraint_type not in valid_types:
+            raise DomainRuleError("TRANSITION_TYPE_INVALID", "连续性约束类型不受支持", {"constraint_type": constraint_type, "supported": sorted(valid_types)})
+        if enforcement not in {"ADVISORY", "REQUIRED", "HARD", "SOFT"}:
+            raise DomainRuleError("TRANSITION_ENFORCEMENT_INVALID", "连续性约束 enforcement 必须是 ADVISORY、REQUIRED 或兼容别名", {"enforcement": enforcement})
         with self.database.transaction() as connection:
             shots = connection.execute(
                 """SELECT sh.id, se.project_id FROM shots sh JOIN episodes e ON e.id=sh.episode_id
@@ -667,6 +683,17 @@ class TimelineService:
                 }
             blockers: list[dict[str, Any]] = []
             warnings: list[dict[str, Any]] = []
+            # Boundary policies are explicit.  Missing anchors are allowed
+            # while drafting a transition, but validation must stop a shared
+            # boundary from being treated as a pixel-level guarantee without
+            # two immutable FrameAnchor references.
+            if constraint["constraint_type"] == "SHARED_BOUNDARY_FRAME" and (not constraint["from_anchor_id"] or not constraint["to_anchor_id"]):
+                blockers.append({"code": "SHARED_BOUNDARY_ANCHORS_REQUIRED"})
+            if constraint["constraint_type"] in {"START_FROM_PREVIOUS_LAST", "LAST_TO_FIRST"} and not constraint["from_anchor_id"]:
+                warnings.append({"code": "PREVIOUS_LAST_ANCHOR_NOT_BOUND"})
+            if constraint["constraint_type"] == "END_AT_NEXT_FIRST" and not constraint["to_anchor_id"]:
+                warnings.append({"code": "NEXT_FIRST_ANCHOR_NOT_BOUND"})
+            anchor_hashes: dict[str, str] = {}
             if constraint["from_project_id"] != constraint["to_project_id"]:
                 blockers.append({"code": "TRANSITION_PROJECT_MISMATCH"})
             for side, anchor_id, shot_id in (
@@ -710,12 +737,15 @@ class TimelineService:
                                 "reason": error.code,
                             }
                         )
+                anchor_hashes[side] = str(anchor["extracted_sha256"])
                 if str(anchor["sha256"]) != str(anchor["extracted_sha256"]):
                     blockers.append({"code": "FRAME_ANCHOR_HASH_MISMATCH", "side": side})
                 if anchor["owner_type"] == "SHOT" and str(anchor["owner_id"]) != str(shot_id):
                     blockers.append({"code": "FRAME_ANCHOR_SHOT_MISMATCH", "side": side})
                 elif anchor["owner_type"] != "SHOT":
                     warnings.append({"code": "FRAME_ANCHOR_PROJECT_BRIDGE", "side": side})
+            if constraint["constraint_type"] == "SHARED_BOUNDARY_FRAME" and len(anchor_hashes) == 2 and anchor_hashes["from"] != anchor_hashes["to"]:
+                blockers.append({"code": "SHARED_BOUNDARY_HASH_MISMATCH", "from_sha256": anchor_hashes["from"], "to_sha256": anchor_hashes["to"]})
             status = "BLOCKED" if blockers else "WARNING" if warnings else "COMPATIBLE"
             connection.execute(
                 "UPDATE shot_transition_constraints SET compatibility_status=?, updated_at=?, revision=revision+1 WHERE id=?",

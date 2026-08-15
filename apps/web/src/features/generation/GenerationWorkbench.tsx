@@ -39,6 +39,25 @@ function parseControlList(value: string, label: string): Array<Record<string, un
   return parsed as Array<Record<string, unknown>>;
 }
 
+function profileResourcePolicy(profile: Profile | undefined): Record<string, unknown> {
+  const raw = profile?.resource_policy ?? profile?.resource_policy_json;
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  if (typeof raw === "string") {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+    } catch {
+      // A malformed policy is displayed as undeclared; the server remains authoritative.
+    }
+  }
+  return {};
+}
+
+function estimateValue(policy: Record<string, unknown>, keys: string[], count: number): string {
+  const value = keys.map((key) => policy[key]).find((candidate) => typeof candidate === "number");
+  return typeof value === "number" && Number.isFinite(value) ? String(Math.round(value * count * 100) / 100) : "未声明";
+}
+
 const frameActionLabels: Record<FrameAction, string> = {
   FIRST_FRAME: "首帧",
   CURRENT_FRAME: "当前帧",
@@ -96,6 +115,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
   }, [approvedKeyframeId, approvedKeyframeIds]);
   useEffect(() => { setPrepared(null); setSubmitted(null); setSubmittedCount(0); setSubmittedVariantId(null); setSeedBatchPlan(null); setBranchPlan(null); }, [mode, profileVersionId, selectedShotId, promptText, timedDirectionsText, performanceBindingsText, referenceBindingsText, motionMasksText, seedText, approvedKeyframeId, takeCountText]);
   const selected = eligibleProfiles.find((profile) => profile.version_id === profileVersionId);
+  const resourcePolicy = profileResourcePolicy(selected);
   const selectedShot = shots.find((shot) => String(shot.id) === selectedShotId);
   const revision = selectedShot?.current_revision && typeof selectedShot.current_revision === "object" ? selectedShot.current_revision as Record<string, unknown> : {};
   const cameraPlan = revision.camera_plan && typeof revision.camera_plan === "object" ? revision.camera_plan as CameraPlan : null;
@@ -258,6 +278,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
               {mode === "I2V" && <label htmlFor="generation-keyframe">已批准关键帧<select id="generation-keyframe" value={approvedKeyframeId} onChange={(event) => setApprovedKeyframeId(event.target.value)}><option value="">请选择</option>{approvedKeyframeIds.map((mediaVersionId) => <option key={mediaVersionId} value={mediaVersionId}>APPROVED KEYFRAME · {mediaVersionId.slice(0, 12)}</option>)}</select></label>}
               <div className={`capability-truth ${cameraReady ? "ready" : "blocked"}`}><strong>CameraPlan</strong><small>{!requiresCamera ? "图片任务不要求运镜。" : cameraPlan ? `${cameraPlan.mode} · ${cameraPlan.movement} · ${cameraPlan.profile_version_id === profileVersionId ? "Profile 一致" : "需用当前 Profile 重新裁决"}` : "当前镜头没有结构化 CameraPlan；请在下方导演分镜中配置。"}</small></div>
             </div>
+            <div className="generation-batch-estimate" aria-label="批量资源估算"><strong>提交前资源估算</strong><span>Profile：{selected?.code ?? "未选择"}</span><span>本地 Runtime：{h3?.status ?? "未读取"}</span><span>预计 CPU：{estimateValue(resourcePolicy, ["estimated_cpu_seconds_per_take", "cpu_seconds_per_take"], takeCount)} 秒</span><span>预计显存：{estimateValue(resourcePolicy, ["estimated_vram_bytes_per_take", "vram_bytes_per_take"], takeCount)} bytes</span><span>预计磁盘：{estimateValue(resourcePolicy, ["estimated_disk_bytes_per_take", "disk_bytes_per_take"], takeCount)} bytes</span><small>只读估算；未声明的 Profile 字段显示“未声明”，不会伪造模型性能。</small></div>
             <div className="generation-submit-actions"><button type="button" className="secondary" disabled={!runnable || preflightMutation.isPending} onClick={() => preflightMutation.mutate()}>{preflightMutation.isPending ? "正在建立意图并预检…" : "建立意图并执行只读生成预检"}</button><button type="button" className="primary-action" disabled={!prepared || submitMutation.isPending || Boolean(submitted)} onClick={() => submitMutation.mutate()}>{submitMutation.isPending ? "提交中…" : "确认创建 Variant 与 Job"}</button></div>
             {prepared && !submitted && <p className="frame-feedback success" role="status"><strong>预检 READY，尚未创建 Job。</strong> Plan hash <code>{prepared.plan.plan_hash.slice(0, 16)}</code> · recipe <code>{prepared.plan.recipe_hash.slice(0, 16)}</code></p>}
             {submitted && <p className="frame-feedback success" role="status"><strong>{submittedCount > 1 ? `${submittedCount} 个代理 take 已创建；最近任务 ${submitted.state}` : `真实任务已持久化：${submitted.state}`}</strong> Job <code>{submitted.id}</code>；关闭浏览器不会丢失，历史不会覆盖。</p>}

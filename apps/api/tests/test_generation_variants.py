@@ -16,6 +16,7 @@ from local_drama.application.projects import ProjectService
 from local_drama.application.prompts import PromptService
 from local_drama.application.reviews import ReviewService
 from local_drama.application.timeline import TimelineService
+from local_drama.application.workspace_assets import WorkspaceAssetService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.generation import VariantPlan
 from local_drama.domain.policies import VariantInput
@@ -1459,3 +1460,80 @@ def test_transition_constraint_rejects_cross_project_shots(workspace, database) 
             str(first_shot["id"]), str(second_shot["id"]), "LAST_TO_FIRST"
         )
     assert error.value.code == "TRANSITION_PROJECT_MISMATCH"
+
+
+def test_advanced_variant_modes_require_profile_capabilities_and_semantic_roles(workspace, database) -> None:
+    """GEN-010: high-level modes cannot fall back to generic input slots."""
+    with pytest.raises(DomainRuleError) as missing:
+        GenerationService._validate_variant_capability("VIDEO_TO_VIDEO", {}, {"SOURCE_VIDEO"})
+    assert missing.value.code == "PROFILE_VARIANT_UNSUPPORTED"
+
+    with pytest.raises(DomainRuleError) as role_missing:
+        GenerationService._validate_variant_capability(
+            "VIDEO_EXTEND", {"video_extend": {"enabled": True, "support": "NATIVE"}}, {"FIRST_FRAME"}
+        )
+    assert role_missing.value.code == "VARIANT_INPUT_ROLE_REQUIRED"
+
+    GenerationService._validate_variant_capability(
+        "MOTION_CONTROL", {"motion_path": {"enabled": True, "support": "NATIVE"}}, {"MOTION_PATH"}
+    )
+
+
+def test_media_dependency_freezes_source_revision_and_lineage_metadata(workspace, database) -> None:
+    project = _project(workspace, database, "source_revision_snapshot")
+    project_id = str(project["id"])
+    media_id = _image(workspace, database, project_id, "source-revision.png")
+    profile_version_id = _published_profile(workspace, database)
+    intent = GenerationService(database, workspace).create_intent(project_id, "SHOT", project_id, "I2V", "revision snapshot")
+    plan = _plan(profile_version_id, media_id)
+    preflight = GenerationService(database, workspace).preflight_variant(str(intent["id"]), plan)
+    dependency = preflight["dependencies"]["media"][0]
+    with database.connect() as connection:
+        row = connection.execute(
+            "SELECT mv.version_no, mv.parent_version_id, mv.stage, ma.owner_type, ma.owner_id, ma.purpose, ma.approved_version_id, ma.selected_version_id FROM media_versions mv JOIN media_assets ma ON ma.id=mv.media_asset_id WHERE mv.id=?",
+            (media_id,),
+        ).fetchone()
+    assert dependency["id"] == media_id
+    assert dependency["version_no"] == int(row["version_no"])
+    assert dependency["parent_version_id"] == row["parent_version_id"]
+    assert dependency["stage"] == row["stage"]
+    assert dependency["owner_type"] == row["owner_type"]
+    assert dependency["owner_id"] == row["owner_id"]
+    assert dependency["purpose"] == row["purpose"]
+    assert dependency["approved_version_id"] == row["approved_version_id"]
+
+
+def test_shared_boundary_transition_requires_two_immutable_anchors(workspace, database) -> None:
+    project = _project(workspace, database, "shared_boundary_contract")
+    projects = ProjectService(database, workspace.projects_root)
+    season = projects.list_seasons(str(project["id"]))[0]
+    episode = projects.list_episodes(str(season["id"]))[0]
+    first = projects.create_shot(str(episode["id"]), "S001", 1000)
+    second = projects.create_shot(str(episode["id"]), "S002", 1000)
+    timeline = TimelineService(database, workspace)
+    constraint = timeline.create_transition_constraint(str(first["id"]), str(second["id"]), "SHARED_BOUNDARY_FRAME", enforcement="REQUIRED")
+    validation = timeline.validate_transition_constraint(str(constraint["id"]))
+    assert validation["status"] == "BLOCKED"
+    assert validation["blockers"] == [{"code": "SHARED_BOUNDARY_ANCHORS_REQUIRED"}]
+
+    with pytest.raises(DomainRuleError) as invalid:
+        timeline.create_transition_constraint(str(first["id"]), str(second["id"]), "UNSUPPORTED_BOUNDARY")
+    assert invalid.value.code == "TRANSITION_TYPE_INVALID"
+
+
+def test_generation_accepts_active_cross_project_grant_and_blocks_withdrawn_source(workspace, database) -> None:
+    source = _project(workspace, database, "generation_grant_source")
+    target = _project(workspace, database, "generation_grant_target")
+    source_media_id = _image(workspace, database, str(source["id"]), "grant-generation.png")
+    assets = WorkspaceAssetService(database, workspace)
+    authorization = assets.authorize_media_version(str(source["id"]), source_media_id)
+    grant = assets.create_grant(str(target["id"]), str(authorization["id"]), "DERIVED")
+    profile_version_id = _published_profile(workspace, database)
+    intent = GenerationService(database, workspace).create_intent(str(target["id"]), "PROJECT", str(target["id"]), "I2V", "shared source")
+    plan = _plan(profile_version_id, source_media_id)
+    dependencies = GenerationService(database, workspace).preflight_variant(str(intent["id"]), plan)["dependencies"]["media"][0]
+    assert dependencies["project_asset_grant"]["id"] == grant["id"]
+    assets.revoke_authorization(str(source["id"]), source_media_id, "source withdrawn")
+    with pytest.raises(DomainRuleError) as revoked:
+        GenerationService(database, workspace).preflight_variant(str(intent["id"]), plan)
+    assert revoked.value.code == "ASSET_GRANT_NOT_USABLE"

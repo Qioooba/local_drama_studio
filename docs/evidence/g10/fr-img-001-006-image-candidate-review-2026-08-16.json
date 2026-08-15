@@ -1,0 +1,56 @@
+{
+  "evidence_id": "fr-img-001-006-image-candidate-review-2026-08-16",
+  "schema_version": "localdrama.requirement.evidence.v1",
+  "requirement_ids": ["FR-IMG-001", "FR-IMG-002", "FR-IMG-003", "FR-IMG-004", "FR-IMG-005", "FR-IMG-006"],
+  "status": "IMPLEMENTATION_EVIDENCE",
+  "observed_at": "2026-08-16T00:00:00+08:00",
+  "scope": "LOCAL_ONLY immutable image candidates, thumbnail comparison, structured image review, approval/rejection and keyframe derivation",
+  "claims": {
+    "FR-IMG-001": {
+      "implemented": true,
+      "details": "MediaService.import_file probes local IMAGE files, records immutable SHA-256/size/probe/source metadata and creates versioned MediaAsset/MediaVersion rows; verify_content_integrity marks tampering CORRUPT before reads or downstream use."
+    },
+    "FR-IMG-002": {
+      "implemented": true,
+      "details": "GenerationWorkbench exposes explicit 1-8 take count and executes each take as an independent immutable Variant/Job with deterministic seed progression; seed-batch planning is bounded to 1-24 unique seeds and remains read-only until confirmation."
+    },
+    "FR-IMG-003": {
+      "implemented": true,
+      "details": "Reviews view now exposes ImageCandidateGrid for bounded candidate overview plus ReviewInboxPanel A/B compare, reference pinning and keyboard navigation; all image surfaces use derived small thumbnails and never expose original image content."
+    },
+    "FR-IMG-004": {
+      "implemented": true,
+      "details": "The immutable image_asset review template contains required identity, clothing, anatomy/hands, scene/props, composition, lighting, continuity and video-ready checks."
+    },
+    "FR-IMG-005": {
+      "implemented": true,
+      "details": "ReviewService requires every required check, rejects approval when any check fails, requires a reason for REJECTED, persists reviewer/time/rule-template provenance and keeps approval separate from selection."
+    },
+    "FR-IMG-006": {
+      "implemented": true,
+      "details": "Keyframe candidates are shot-owned immutable KEYFRAME versions with parent_version_id; selecting KEYFRAME only changes the selection pointer, while approval is an independently audited review decision and approval-impact propagation marks dependent continuity state stale."
+    }
+  },
+  "automated_tests": [
+    "apps/api/tests/test_keyframe_candidate.py::test_real_image_creates_idempotent_shot_keyframe_candidate",
+    "apps/api/tests/test_keyframe_candidate.py::test_video_cannot_be_selected_as_keyframe",
+    "apps/api/tests/test_g4_reviews.py::test_review_selection_machine_qc_stale_and_batch_invariants",
+    "apps/api/tests/test_g4_reviews.py::test_review_api_exposes_real_templates_inbox_context_and_selection",
+    "apps/api/tests/test_generation_variants.py::test_submitted_variant_freezes_workflow_and_local_model_execution_snapshot",
+    "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx",
+    "apps/web/src/features/reviews/ImageCandidateGrid.test.tsx",
+    "apps/web/src/features/generation/GenerationWorkbench.test.tsx"
+  ],
+  "command": ".venv/Scripts/python.exe -m pytest apps/api/tests/test_keyframe_candidate.py apps/api/tests/test_g4_reviews.py apps/api/tests/test_contact_sheet_export.py apps/api/tests/test_generation_variants.py -q",
+  "result": "PASS",
+  "test_count": 48,
+  "local_only": true,
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "remote_provider_used": false,
+  "production_uat": {
+    "status": "PENDING",
+    "required": ["real user-selected local image candidates", "Windows x64 three-viewport image review UAT", "human screenshot/sign-off for grid and A/B compare"]
+  },
+  "notes": "Automated tests establish the immutable and negative-path contract. The evidence is intentionally not marked VERIFIED until production UAT uses user-owned local images and records the human review path. FR-IMG-007 has separate production UAT evidence."
+}

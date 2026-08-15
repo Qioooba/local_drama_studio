@@ -54,7 +54,12 @@
 | FR-WRT-005 生产就绪判断 | VERIFIED PRODUCTION READ-ONLY UAT | 生产 read model 明确投影 `OUTLINE/DIRECTED/PRODUCTION_READY`，并逐项返回导演字段与 Profile/ProductionPlan/DeliveryTarget/镜头状态 blocker；UI 显示服务端状态且只有完整 DIRECTED revision 可进入 READY。三视口真实 `SHOT_001 · PRODUCTION_READY` UAT 通过，证据 `docs/evidence/g10/director-shot-editor-uat-2026-08-15.json` |
 | FR-WRT-006 连续性面板 | VERIFIED PRODUCTION READ-ONLY UAT | `ProductionReadModelService.continuity_context` 与生成工作台三列对照；上一/当前/下一镜的 revision、人物外观、服装、道具、光线、空间方向、连续性、已选/已批 MediaVersion 和边界约束均来自真实本地数据，缺项不推断。API 2 项、Web 2 项与三视口 UAT 通过；只请求 small 缩略图，证据 `docs/evidence/g10/continuity-panel-uat-2026-08-15.json` |
 | FR-WRT-007 AI 辅助提取先进入草稿且不覆盖人工内容 | VERIFIED PRODUCTION READ-ONLY UAT | 既有真实 `LocalLLMService.breakdown` 只保存 `DRAFT_READY`；新增项目级只读查询与 `AIDraftReviewPanel`，明确投影 `NOT_APPLIED`、`automatic_apply=false`、`requires_human_action=true`，无应用按钮。API 2 项证明查询不改变 Scene/Shot/CreativeEntry，Web 2 项覆盖真实草稿和无 mock 空态；正式项目三视口展示 1 份真实本地 LLM 草稿且零写入，证据 `docs/evidence/g10/ai-draft-review-uat-2026-08-15.json` |
-| FR-IMG-001/FR-MED media register、probe、hash、poster/cache、Range | VERIFIED | `application/media.py`、G3 evidence sample |
+| FR-IMG-001 媒体版本注册、probe、hash、缩略图缓存 | VERIFIED | `MediaService.import_file/verify_content_integrity/thumbnail`；不可变 MediaAsset/MediaVersion、源文件 hash/size 与篡改阻断，`apps/api/tests/test_keyframe_candidate.py` |
+| FR-IMG-002 图片候选批量生成 | PARTIAL / REAL-RUNTIME UAT PENDING | `GenerationWorkbench` 显式 1—8 take 提交为独立 Variant/Job，seed batch 1—24 只读规划；真实用户 Profile/Runtime 批量生成仍待 UAT，统一证据 `docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json` |
+| FR-IMG-003 图片网格与比较 | PARTIAL / UAT PENDING | `ReviewInboxPanel` 使用 small 派生缩略图、A/B、参考图置顶与键盘切换；原图接口对 IMAGE 硬拒绝，真实用户图片网格三视口 UAT 待补，见 `fr-img-001-006-image-candidate-review-2026-08-16.json` |
+| FR-IMG-004 图片结构化审核清单 | VERIFIED AUTOMATED / UAT PENDING | `ReviewService` 的 `image_asset` 模板包含身份、服装、人体/手、场景、构图、光线、连续性、可视频化 8 项必填检查；`apps/api/tests/test_g4_reviews.py` |
+| FR-IMG-005 图片批准与拒绝 | VERIFIED AUTOMATED / UAT PENDING | required fail 阻断批准，拒绝必须原因，reviewer/time/template 规则及 stale 保留；selection 与 approval 分离，见 `application/reviews.py`、`test_g4_reviews.py` |
+| FR-IMG-006 关键帧选择与派生 | VERIFIED AUTOMATED / UAT PENDING | `create_keyframe_candidate` 生成 SHOT-owned immutable KEYFRAME 并冻结 `parent_version_id`；`select_version` 与人工 approval 分离，approval impact 事务传播 stale；`test_keyframe_candidate.py`、`test_generation_variants.py` |
 | FR-ING-001 source document version、ImportSession、TXT/MD/DOCX preview | VERIFIED | `application/documents.py`、G3 import test |
 | FR-SRC-001 FTS5 global search minimum | VERIFIED | `application/read_models.py`、G3 import/search test |
 | G3 production read model / no N+1 page query | VERIFIED | `ProductionReadModelService`、browser production screenshot |
@@ -227,6 +232,8 @@ UI 图标 P1 已闭环：本地零依赖 SVG outline family 替代品牌文字�
 
 2026-08-15 最新全量门禁回归：蓝图清单仍为 86 FR / 14 NFR / 85 TC；API 129 passed / 4 Comfy live deselected，Ruff PASS，mypy 91 files PASS，Web 23/23 与 production build PASS。新增 FR-IMG-007 聚焦回归覆盖 API 4 项、Web 2 项。该进展不改变 G7 许可证证据阻塞，也不构成最终发布签字。
 
+2026-08-16 图片候选/审核收口回归：FR-IMG-001—006 统一登记到 G10 master map。媒体版本、关键帧派生、结构化 image_asset 审核、批准/拒绝与 selection/approval 分离均通过定向 API 回归；生成工作台的多 take 与受限 seed batch 规划保持本地、显式确认和不可变谱系。当前证据 `docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json` 标记 `IMPLEMENTATION_EVIDENCE`，原因是使用用户本地模型/图片的真实批量生成与 Windows 三视口 image grid/A-B UAT 尚未签字；FR-IMG-007 已有独立 production UAT VERIFIED 证据。
+
 FR-TML-004 完成后的最新全量门禁回归：API 132 passed / 4 Comfy live deselected，Ruff PASS，mypy 92 files PASS，Web 25/25 与 production build PASS。`scripts/check.ps1` 已补每个原生命令的显式退出码检查；修复前一次 mypy 失败却最终退出 0 的门禁假绿，修复后整套命令真实以 0 完成。该进展仍不改变 G7 许可证证据阻塞和有序退出状态。
 
 FR-PRJ-003 补齐后的最新全量门禁回归：API 134 passed / 4 Comfy live deselected，Ruff PASS，mypy 92 files PASS，Web 26/26 与 production build PASS；门禁脚本以真实 0 退出。G7 许可证证据阻塞和有序退出状态不变。
@@ -296,6 +303,10 @@ FR-AST-001 资产授权与跨项目生成门禁增量（2026-08-16）：Workspac
 FR-GEN-001..004 可复现生成增量（2026-08-16）：故障重试只把同一 Job 重新排队并增加 Attempt，创作重抽必须由 Variant Composer 产生子 Variant + 新 Job；固定 seed、provider random、EXACT_REPLAY 与 prompt/source branch 的 changed/preserved 字段均在提交前展示。提交 Job 冻结 Profile revision、runtime、Workflow/content hash、本地 model bundle/hash 与 manifest hash；EXACT_REPLAY 检测冻结快照变化并拒绝静默改用新模型/Workflow。GenerationWorkbench 增加固定 seed/精确重放入口，定向 API 与 Web 回归通过；证据 `docs/evidence/g10/fr-gen-001-004-generation-replay-2026-08-16.json` 为 `PARTIAL`，真实 Windows 本地模型 bundle、非确定 runtime 和三视口 UAT 仍待补齐。
 
 FR-JOB-001..005 调度增量（2026-08-16）：migration `0037_job_progress_scheduler` 为 jobs/attempts 持久化 phase/node/percent/ETA、开始/结束时间和脱敏失败详情，并新增 `job_resource_leases`；worker/API 重启 claim 前自动 reconcile 过期租约，GPU_H3_HEAVY 独占而 CPU/text/audio 通道独立。新增 Attempt 列表与分页日志 API，lease token 永不返回；取消、重试、克隆、幂等与产物防重复保持。9 项 G5/调度测试、迁移、Ruff/mypy 与 Web build 通过，证据 `docs/evidence/g5/job-scheduler-progress-2026-08-16.json` 为 `PARTIAL`，真实 Windows 重启/多 worker/三视口 UAT 仍待补齐。
+
+FR-GEN-005..010 高阶输入与边界连续性增量（2026-08-16）：SOURCE_IMAGE_BRANCH 继续只替换 FIRST_FRAME ordinal 0，并将 MediaVersion version_no、parent lineage、stage、owner、approval/selection、SHA 固化到 plan dependency；跨项目源图必须经 ACTIVE ProjectAssetGrant 且授权 revision/hash/size 一致。首尾/中间关键帧仍按 Published Profile input contract 做 slot/cardinality、宽高比与 workflow binding 硬校验；视频首/当前/末帧通过 FFprobe PTS 注册不可变 FrameAnchor。VIDEO_EXTEND、VIDEO_TO_VIDEO、MOTION_CONTROL、PERFORMANCE_DRIVEN 及 SOURCE_VIDEO/MOTION_PATH/MASK 语义槽新增显式 capability gate，未声明能力时返回可行动阻塞；TransitionConstraint 类型/执行级别校验，SHARED_BOUNDARY_FRAME 缺少双锚点或 hash 不一致时阻塞，历史 stale 传播不覆盖旧谱系。定向 API 回归通过，证据 `docs/evidence/g10/fr-gen-005-010-advanced-inputs-2026-08-16.json` 保持 `PARTIAL`；真实 Windows 本地高阶 workflow、实验 cell winner/review/promotion、shared-boundary timeline 去重和三视口 UAT 仍待补齐。
+
+FR-OPS-001..003 / FR-PRV-001..003 本地运维与能力 registry 增量（2026-08-16）：诊断中心新增 GPU driver/CUDA、ComfyUI 节点、模型 hash、网络策略检查及 GET 别名；dry-run-fix 只返回修复预览，不改驱动、不联网、不安装节点。模型 registry 提供用户选择目录的绝对路径只读扫描，逐文件 SHA-256/量化 hint，明确不复制、不上传；capacity snapshot 从持久 jobs/reviews/本地 filesystem 计算队列、GPU、磁盘、耗时、失败率、重试率和审核通过率，并标记 `OBSERVED_NOT_BENCHMARKED`。现有 Adapter/Profile registry 继续 LOCAL_ONLY，远端 transport 禁用。API 3 项定向测试与既有 profile/adapter/capacity 回归通过，证据 `docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json` 保持 `PARTIAL`；真实用户模型扫描和 Windows 三视口 UAT 仍待补齐。
 
 ## 更新规则
 

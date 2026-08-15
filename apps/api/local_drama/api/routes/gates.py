@@ -10,7 +10,7 @@ from local_drama.api.schemas.g7 import (
     WatermarkProfileRequest,
     WorkspaceAssetAuthorizationRequest,
 )
-from local_drama.api.schemas.g7_model import LocalModelReferenceRequest, ModelCompatibilityRequest, ModelLicenseEvidenceRequest
+from local_drama.api.schemas.g7_model import LocalModelReferenceRequest, ModelCompatibilityRequest, ModelLicenseEvidenceRequest, ModelRegistryScanRequest
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.g6_readiness import G6ReadinessService
 from local_drama.application.g7_readiness import G7ReadinessService
@@ -38,6 +38,14 @@ async def pick_model_file() -> dict[str, object]:
 async def pick_document_file() -> dict[str, object]:
     try:
         return {"selection": pick_local_document_file()}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/model-registry:scan", operation_id="scanLocalModelRegistry")
+async def scan_local_model_registry(payload: ModelRegistryScanRequest) -> dict[str, object]:
+    try:
+        return {"scan": ModelCompatibilityService.scan_local_directory(payload.root_path, payload.max_files)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

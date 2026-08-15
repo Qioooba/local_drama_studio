@@ -1,6 +1,6 @@
 {
   "schema_version": "g10.release_audit.read_only.v1",
-  "observed_at": "2026-08-15T16:55:03.316614+00:00",
+  "observed_at": "2026-08-15T17:29:37.898249+00:00",
   "status": "IN_PROGRESS",
   "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
   "checks": [
@@ -84,7 +84,7 @@
       "observed": {
         "valid": false,
         "status": "IN_PROGRESS",
-        "verified_fr": 14,
+        "verified_fr": 15,
         "required_fr": 84,
         "verified_nfr": 0,
         "required_nfr": 15,

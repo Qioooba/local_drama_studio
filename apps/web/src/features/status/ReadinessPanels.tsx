@@ -3,6 +3,7 @@ import { createDeliveryTarget, type AdapterRegistry, type G8Readiness, type G9Re
 import { GateStatusIcon } from "../../components/icons";
 import { ModelLicenseEvidenceForm } from "./ModelLicenseEvidenceForm";
 import { LocalModelReferenceForm } from "./LocalModelReferenceForm";
+import { LocalModelScanForm } from "./LocalModelScanForm";
 
 export function ProjectConfigurationSnapshot({ configuration, projectId, onChanged }: { configuration: ProjectConfiguration; projectId?: string; onChanged?: () => void }) {
   const [code, setCode] = useState("local-files");
@@ -66,7 +67,7 @@ export function ModelCompatibilityPanel({ snapshot, projectId, onEvidenceImporte
       {snapshot.reports.slice(0, 8).map((item) => <div className="configuration-row" role="row" key={item.artifact_id}><span>{item.code}<small>{item.kind}</small></span><span>{item.report_sha256 ? `${item.report_sha256.slice(0, 12)}…` : "未报告"} · {String(item.quantization.status ?? "UNKNOWN")}</span><span>{item.has_license_evidence ? item.license_path_rel : "用户未声明 · 自行负责"}</span><span className={`status-pill${item.report_status === "PASS" ? "" : " neutral"}`}>{item.report_status ?? "未报告"}</span></div>)}
     </div>
     <p className="muted">平台只保存本机绝对路径、hash 和兼容性，不捆绑、上传或重新分发模型。授权信息由用户按实际情况自愿记录；未填写时明确提示风险，但不阻塞平台功能验证。</p>
-    {projectId && onEvidenceImported && <><LocalModelReferenceForm projectId={projectId} onRegistered={onEvidenceImported} /><ModelLicenseEvidenceForm projectId={projectId} reports={snapshot.reports} onImported={onEvidenceImported} /></>}
+    {projectId && onEvidenceImported && <><LocalModelScanForm /><LocalModelReferenceForm projectId={projectId} onRegistered={onEvidenceImported} /><ModelLicenseEvidenceForm projectId={projectId} reports={snapshot.reports} onImported={onEvidenceImported} /></>}
   </section>;
 }
 

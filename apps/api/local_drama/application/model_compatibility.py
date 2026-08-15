@@ -56,6 +56,71 @@ class ModelCompatibilityService:
     def __init__(self, database: Database) -> None:
         self.database = database
 
+    @staticmethod
+    def scan_local_directory(root_path: str, max_files: int = 200) -> dict[str, Any]:
+        """Scan user-selected local model files without copying or registering them.
+
+        The scan is deliberately a pure read operation.  Symlinked roots/files,
+        relative paths and files outside the selected root are rejected so a
+        browser request cannot turn this into arbitrary filesystem traversal.
+        """
+        root = Path(root_path).expanduser()
+        if not root.is_absolute():
+            raise DomainRuleError("MODEL_SCAN_ROOT_ABSOLUTE_REQUIRED", "扫描目录必须是本机绝对路径")
+        if root.is_symlink():
+            raise DomainRuleError("MODEL_SCAN_ROOT_INVALID", "模型扫描目录不能是 symlink")
+        resolved_root = root.resolve()
+        if not resolved_root.is_dir():
+            raise DomainRuleError("MODEL_SCAN_ROOT_INVALID", "模型扫描目录不存在、不是目录或为 symlink")
+        extensions = {".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".gguf", ".onnx", ".tflite", ".mlx"}
+        files = [
+            item
+            for item in resolved_root.rglob("*")
+            if item.is_file()
+            and not item.is_symlink()
+            and item.suffix.casefold() in extensions
+            and item.resolve().is_relative_to(resolved_root)
+        ]
+        files.sort(key=lambda item: item.as_posix().casefold())
+        candidate_count = len(files)
+        truncated = candidate_count > max_files
+        files = files[:max_files]
+        items: list[dict[str, Any]] = []
+        for path in files:
+            digest = hashlib.sha256()
+            byte_size = 0
+            with path.open("rb") as source:
+                while chunk := source.read(4 * 1024 * 1024):
+                    digest.update(chunk)
+                    byte_size += len(chunk)
+            lowered = path.name.casefold()
+            quantization = next((token.upper() for token in ("fp32", "fp16", "bf16", "int8", "int4", "nvfp4", "awq") if token in lowered), "UNKNOWN")
+            items.append(
+                {
+                    "path": str(path),
+                    "relative_path": path.relative_to(resolved_root).as_posix(),
+                    "extension": path.suffix.casefold(),
+                    "byte_size": byte_size,
+                    "sha256": digest.hexdigest(),
+                    "quantization_hint": quantization,
+                    "distribution_scope": "REFERENCE_ONLY_NOT_BUNDLED",
+                    "copied": False,
+                    "uploaded": False,
+                }
+            )
+        return {
+            "root_path": str(resolved_root),
+            "items": items,
+            "scanned_count": len(items),
+            "candidate_count": candidate_count,
+            "truncated": truncated,
+            "max_files": max_files,
+            "read_only": True,
+            "runtime_contacted": False,
+            "network_contacted": False,
+            "mutated": False,
+        }
+
     def register_local_reference(
         self,
         project_id: str,

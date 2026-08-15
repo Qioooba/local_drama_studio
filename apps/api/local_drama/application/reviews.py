@@ -558,6 +558,8 @@ class ReviewService:
     ) -> dict[str, Any]:
         if decision not in {"APPROVED", "REJECTED", "NEEDS_CHANGES"}:
             raise DomainRuleError("INVALID_REVIEW_DECISION", "审核决定无效")
+        if decision == "REJECTED" and not str(comment or "").strip():
+            raise DomainRuleError("REVIEW_COMMENT_REQUIRED", "拒绝审核必须填写原因")
         media = self._media(media_version_id)
         if decision == "APPROVED" and str(media.get("approved_version_id") or "") == media_version_id:
             with self.database.connect() as connection:
