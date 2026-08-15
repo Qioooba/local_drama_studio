@@ -326,9 +326,17 @@ export async function createKeyframeCandidate(mediaVersionId: string, shotId: st
   return requestJson(`/api/v1/media-versions/${encodeURIComponent(mediaVersionId)}:create-keyframe-candidate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shot_id: shotId }) }, baseUrl);
 }
 
-export async function listJobs(projectId?: string, baseUrl = ''): Promise<{ items: Job[] }> {
+export async function listJobs(projectId?: string, baseUrl = ''): Promise<{ items: Job[]; next_cursor?: number | null; cursor?: number; limit?: number }> {
   const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
-  return requestJson<{ items: Job[] }>(`/api/v1/jobs${query}`, undefined, baseUrl);
+  return requestJson(`/api/v1/jobs${query}`, undefined, baseUrl);
+}
+
+export async function listJobsPage(projectId: string | undefined, cursor = 0, limit = 100, baseUrl = ''): Promise<{ items: Job[]; next_cursor: number | null; cursor: number; limit: number }> {
+  const query = new URLSearchParams();
+  if (projectId) query.set('project_id', projectId);
+  query.set('cursor', String(cursor));
+  query.set('limit', String(limit));
+  return requestJson(`/api/v1/jobs?${query.toString()}`, undefined, baseUrl);
 }
 
 export async function getJob(jobId: string, baseUrl = ''): Promise<{ job: Job & { attempts: Array<Record<string, unknown> & { artifacts?: JobArtifact[] }>; depends_on_job_ids: string[] } }> {

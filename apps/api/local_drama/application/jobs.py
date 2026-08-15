@@ -237,6 +237,26 @@ class JobService:
             rows = connection.execute(f"SELECT * FROM jobs {clause} ORDER BY created_at DESC LIMIT ?", params).fetchall()
         return [self._job_response(row) for row in rows]
 
+    def list_jobs_page(self, project_id: str | None = None, states: list[str] | None = None, cursor: int = 0, limit: int = 100) -> dict[str, Any]:
+        """Return a bounded server-side window and a deterministic offset cursor."""
+        where: list[str] = []
+        params: list[Any] = []
+        if project_id:
+            where.append("project_id=?")
+            params.append(project_id)
+        if states:
+            where.append(f"state IN ({','.join('?' for _ in states)})")
+            params.extend(states)
+        normalized_cursor = max(0, int(cursor))
+        normalized_limit = max(1, min(int(limit), 100))
+        clause = f"WHERE {' AND '.join(where)}" if where else ""
+        params.extend([normalized_limit + 1, normalized_cursor])
+        with self.database.connect() as connection:
+            rows = connection.execute(f"SELECT * FROM jobs {clause} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?", params).fetchall()
+        has_more = len(rows) > normalized_limit
+        items = [self._job_response(row) for row in rows[:normalized_limit]]
+        return {"items": items, "next_cursor": normalized_cursor + normalized_limit if has_more else None, "cursor": normalized_cursor, "limit": normalized_limit}
+
     def claim(self, worker_id: str, channels: list[str] | None = None, lease_seconds: int = 60, actor: str = "worker") -> dict[str, Any] | None:
         if not worker_id:
             raise DomainRuleError("WORKER_ID_REQUIRED", "claim 必须提供 worker_id")

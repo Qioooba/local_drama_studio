@@ -159,7 +159,24 @@ def test_twenty_cpu_jobs_sse_and_artifact_idempotency(workspace, database) -> No
         stream = client.get(f"/api/v1/events?project_id={project_id}&after_event_id=0")
         assert stream.status_code == 200
         assert stream.headers["content-type"].startswith("text/event-stream")
-        assert "JOB_QUEUED" in stream.text
+    assert "JOB_QUEUED" in stream.text
+
+
+def test_jobs_server_pagination_is_bounded_and_cursored(workspace, database) -> None:
+    project = _project(workspace, database, "g5_pagination")
+    service = JobService(database, workspace)
+    for index in range(205):
+        _create(service, str(project["id"]), f"page-{index:03d}")
+    first = service.list_jobs_page(str(project["id"]), cursor=0, limit=500)
+    assert first["limit"] == 100
+    assert len(first["items"]) == 100
+    assert first["next_cursor"] == 100
+    second = service.list_jobs_page(str(project["id"]), cursor=int(first["next_cursor"]), limit=100)
+    assert len(second["items"]) == 100
+    assert second["next_cursor"] == 200
+    last = service.list_jobs_page(str(project["id"]), cursor=int(second["next_cursor"]), limit=100)
+    assert len(last["items"]) == 5
+    assert last["next_cursor"] is None
 
 
 def test_real_local_worker_proxy_thumbnail_and_artifact_registration(workspace, database) -> None:
