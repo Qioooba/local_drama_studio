@@ -56,13 +56,18 @@ export type CameraPlan = { mode: 'NATIVE' | 'PROMPT_FALLBACK' | 'UNSUPPORTED'; s
 export type CameraPlanResolution = { camera_plan: CameraPlan; submission_allowed: boolean; support: string; profile: { id: string; code: string; version_no: number }; runtime_contacted: false; network_contacted: false; mutated: false };
 export type DiagnosticRun = { id: string; status: string; checks: Array<{ code: string; category: string; status: string; observed: Record<string, unknown> }> };
 export type ReviewTemplate = { id: string; code: string; version_no: number; subject_type: string; items: Array<{ id: string; label: string; required: boolean }> };
-export type ReviewInboxItem = { media_version_id: string; media_asset_id: string; project_id: string; media_kind: string; stage: string; decision: string | null; is_stale: number | null; [key: string]: unknown };
+export type ReviewInboxItem = { media_version_id: string; media_asset_id: string; project_id: string; project_code?: string; project_title?: string; episode_id?: string | null; episode_code?: string | null; episode_number?: number | null; shot_id?: string | null; shot_code?: string | null; media_kind: string; stage: string; decision: string | null; is_stale: number | null; inbox_at?: string; age_hours?: number; priority?: 'HIGH' | 'NORMAL' | 'LOW'; is_blocked?: number; machine_status?: string; integrity_status?: string; [key: string]: unknown };
+export type ReviewInboxFilters = { episode_id?: string; media_kind?: string; age?: 'ALL' | 'NEW' | 'AGING' | 'OLD'; priority?: 'ALL' | 'HIGH' | 'NORMAL' | 'LOW'; blocking?: 'ALL' | 'BLOCKED' | 'READY'; min_age_days?: number; max_age_days?: number };
 export type FormalSelectionCandidate = { media_version_id: string; media_asset_id: string; project_id: string; media_kind: 'VIDEO'; stage: 'FORMAL'; sha256: string; integrity_status: string; approved_version_id: string | null; decision: string | null; is_stale: number | null; [key: string]: unknown };
 export type FormalSelectionPlan = { project_id: string; status: 'READY' | 'BLOCKED'; plan_hash: string; items: Array<{ media_version_id: string; media_asset_id?: string; source_revision?: number; status: 'READY' | 'BLOCKED'; blockers: string[] }>; would_mutate: false };
 export type ReviewBatchPlan = { plan_id: string; plan_token: string; expires_at: string; status: 'READY'; items: Array<{ media_version_id: string; template_version_id: string; expected_subject_revision: number }> };
 export type VideoAnnotation = { id: string; media_version_id: string; timecode_ms: number; category: string; comment: string; snapshot_media_version_id: string | null; rework_job_id: string | null; created_at: string; created_by: string; schema_version: 'v2' };
 export type FrameAnchor = { id: string; source_media_version_id: string; source_time_us: number; source_frame_index: number; extracted_media_version_id: string; role_hint: string; sha256: string; requested_time_us: number | null; resolved_time_us: number; source_sha256: string; extraction_method: string; [key: string]: unknown };
 export type KeyframeCandidate = { id: string; media_asset_id: string; project_id: string; owner_type: 'SHOT'; owner_id: string; media_kind: 'IMAGE'; stage: 'KEYFRAME'; parent_version_id: string; duplicate: boolean; [key: string]: unknown };
+export type MotionControlPoint = { x: number; y: number; pressure?: number; time_us?: number | null };
+export type MotionControlKeyframe = { time_us: number; x?: number | null; y?: number | null; scale?: number | null; rotation_degrees?: number | null };
+export type MotionControlRequest = { control_kind: 'MOTION_MASK' | 'VECTOR' | 'KEYFRAME'; operation: 'MOTION_BRUSH' | 'INPAINT' | 'OUTPAINT'; subject_role: string; profile_version_id: string; mask_media_version_id?: string | null; keyframe_media_version_id?: string | null; vector_path?: MotionControlPoint[]; keyframes?: MotionControlKeyframe[]; coordinate_space?: 'NORMALIZED' | 'PIXELS'; note?: string };
+export type MotionControl = { id: string; source_media_version_id: string; control_media_version_id: string; profile_version_id: string; control_kind: 'MOTION_MASK' | 'VECTOR' | 'KEYFRAME'; operation: 'MOTION_BRUSH' | 'INPAINT' | 'OUTPAINT'; subject_role: string; control_payload: Record<string, unknown>; source_media: Record<string, unknown>; control_media: Record<string, unknown>; duplicate?: boolean; [key: string]: unknown };
 export type ContactSheetExport = { schema_version: 'localdrama.contact-sheet.v1'; status: 'EXPORTED'; rel_path: string; manifest_rel_path: string; contact_sheet_rel_path: string; export_hash: string; item_count: number; reused: boolean; database_mutated: false; runtime_contacted: false; network_contacted: false };
 export type TimelineExport = { schema_version: 'localdrama.timeline-export.v1'; status: 'EXPORTED'; rel_path: string; manifest_rel_path: string; files: Array<{ rel_path: string; byte_size: number; sha256: string }>; export_hash: string; reused: boolean; database_mutated: false; runtime_contacted: false; network_contacted: false };
 export type JobArtifact = { id: string; job_attempt_id: string; kind: string; sandbox_rel_path: string; sha256: string; status: string; byte_size?: number; [key: string]: unknown };
@@ -93,6 +98,9 @@ export type AutomationClient = { id: string; project_id: string | null; code: st
 export type WebhookSubscription = { id: string; automation_client_id: string; project_id: string | null; endpoint_url: string; event_types: string[]; status: 'ACTIVE' | 'REVOKED'; signing_secret?: string | null; secret_returned_once?: boolean; loopback_only: true; idempotent_replay?: boolean };
 export type WebhookDelivery = { id: string; subscription_id: string; event_id: number; status: 'PENDING' | 'RETRYING' | 'DELIVERED' | 'DEAD_LETTER'; attempt_count: number; next_attempt_at: string | null; last_error: string | null; last_response_status: number | null; created_at: string; updated_at: string; delivered_at: string | null };
 export type WebhookDeliveryResult = { status: 'DELIVERED' | 'RETRYING' | 'DEAD_LETTER' | 'NO_EVENTS'; client_id: string; delivered_delivery_ids: string[]; delivered_count: number; failed: Array<Record<string, unknown>>; dead_letter_delivery_ids: string[]; max_attempts: number; max_batch_size: number; retry_backoff_seconds: { base: number; max: number }; bounded: true; loopback_only: true; remote_transport_allowed: false; runtime_contacted: false; network_contacted: false; mutated: boolean };
+export type AutomationWorkflow = { id: string; project_id: string; code: string; title: string; mode: 'MANUAL' | 'ASSISTED' | 'BATCH_AUTOMATED'; status: 'ACTIVE' | 'ARCHIVED'; definition: Record<string, unknown>; plan_hash: string; local_only: true; network_contacted: false; ai_approval_allowed: false };
+export type AutomationWorkflowPlan = { workflow_id: string; project_id: string; plan_hash: string; mode: string; batch_count: number; estimated_iterations: number; estimated_tasks: number; estimated_disk_bytes: number; max_iterations: number; max_tasks: number; max_disk_bytes: number; human_gate: string; node_gate: boolean; conditions: Array<Record<string, unknown>>; requires_human_confirmation: true; ai_scores_can_approve: false; network_contacted: false; local_only: true };
+export type AutomationWorkflowRun = { id: string; workflow_id: string; project_id: string; status: 'RUNNING' | 'PAUSED_HITL' | 'SUCCEEDED' | 'STOPPED' | 'FAILED' | 'CANCELLED' | 'LIMIT_REACHED'; plan_hash: string; iteration_count: number; task_count: number; disk_bytes: number; limits: { max_iterations: number; max_tasks: number; max_disk_bytes: number }; pending_gate: Record<string, unknown>; machine_context: Record<string, unknown>; ai_scores: Record<string, unknown>; human_approval_status: string; tasks: Array<Record<string, unknown>>; events: Array<Record<string, unknown>>; local_only: true; network_contacted: false; ai_scores_can_approve: false };
 export type TimelineStatus = { episode: { id: string; code: string; title: string; project_id: string }; timeline: { revision_count: number; latest: Record<string, unknown> | null }; subtitles: { revision_count: number; latest: Record<string, unknown> | null }; audio: { binding_count: number; verified_local_count: number }; renders: { count: number; verified_count: number; latest: Record<string, unknown> | null }; delivery: { count: number; verified_count: number; latest: Record<string, unknown> | null }; observed_at: string; read_only: true; runtime_contacted: false; network_contacted: false; mutated: false };
 export type TimelineItemRequest = { track_type?: string; media_version_id?: string | null; start_us: number; end_us: number; parameters?: Record<string, unknown> };
 export type TimelineRevision = { id: string; episode_id: string; revision_no: number; status: string; input_snapshot: Record<string, unknown>; items: Array<Record<string, unknown>>; [key: string]: unknown };
@@ -293,15 +301,28 @@ export async function listReviewTemplates(baseUrl = ''): Promise<{ items: Review
   return requestJson<{ items: ReviewTemplate[] }>('/api/v1/review-templates', undefined, baseUrl);
 }
 
-export async function reviewInbox(projectId?: string, baseUrl = ''): Promise<{ items: ReviewInboxItem[]; next_cursor?: number | null; cursor?: number; limit?: number }> {
-  const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
+export async function reviewInbox(projectId?: string, baseUrl = '', filters?: ReviewInboxFilters): Promise<{ items: ReviewInboxItem[]; next_cursor?: number | null; cursor?: number; limit?: number }> {
+  const queryParams = new URLSearchParams();
+  if (projectId) queryParams.set('project_id', projectId);
+  if (filters?.media_kind) queryParams.set('media_kind', filters.media_kind);
+  if (filters?.episode_id) queryParams.set('episode_id', filters.episode_id);
+  if (filters?.age && filters.age !== 'ALL') queryParams.set('age', filters.age);
+  if (filters?.priority && filters.priority !== 'ALL') queryParams.set('priority', filters.priority);
+  if (filters?.blocking && filters.blocking !== 'ALL') queryParams.set('blocking', filters.blocking);
+  if (filters?.min_age_days !== undefined) queryParams.set('min_age_days', String(filters.min_age_days));
+  if (filters?.max_age_days !== undefined) queryParams.set('max_age_days', String(filters.max_age_days));
+  const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
   return requestJson<{ items: ReviewInboxItem[] }>(`/api/v1/reviews/inbox${query}`, undefined, baseUrl);
 }
 
-export async function reviewInboxPage(projectId: string | undefined, cursor = 0, limit = 100, mediaKind?: string, baseUrl = ''): Promise<{ items: ReviewInboxItem[]; next_cursor: number | null; cursor: number; limit: number }> {
+export async function reviewInboxPage(projectId: string | undefined, cursor = 0, limit = 100, mediaKind?: string, age?: string, priority?: string, blocking?: string, episodeId?: string, baseUrl = ''): Promise<{ items: ReviewInboxItem[]; next_cursor: number | null; cursor: number; limit: number }> {
   const query = new URLSearchParams();
   if (projectId) query.set('project_id', projectId);
   if (mediaKind) query.set('media_kind', mediaKind);
+  if (age) query.set('age', age);
+  if (priority) query.set('priority', priority);
+  if (blocking) query.set('blocking', blocking);
+  if (episodeId) query.set('episode_id', episodeId);
   query.set('cursor', String(cursor));
   query.set('limit', String(limit));
   return requestJson(`/api/v1/reviews/inbox?${query.toString()}`, undefined, baseUrl);
@@ -365,6 +386,14 @@ export async function createFrameAnchor(mediaVersionId: string, payload: { sourc
 
 export async function createKeyframeCandidate(mediaVersionId: string, shotId: string, baseUrl = ''): Promise<{ media: KeyframeCandidate }> {
   return requestJson(`/api/v1/media-versions/${encodeURIComponent(mediaVersionId)}:create-keyframe-candidate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shot_id: shotId }) }, baseUrl);
+}
+
+export async function createMotionControl(mediaVersionId: string, payload: MotionControlRequest, baseUrl = ''): Promise<{ motion_control: { duplicate: boolean; motion_control: MotionControl } }> {
+  return requestJson(`/api/v1/media-versions/${encodeURIComponent(mediaVersionId)}/motion-masks`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function listMotionControls(mediaVersionId: string, baseUrl = ''): Promise<{ items: MotionControl[] }> {
+  return requestJson(`/api/v1/media-versions/${encodeURIComponent(mediaVersionId)}/motion-masks`, undefined, baseUrl);
 }
 
 export async function listJobs(projectId?: string, baseUrl = ''): Promise<{ items: Job[]; next_cursor?: number | null; cursor?: number; limit?: number }> {
@@ -817,6 +846,50 @@ export async function listWebhookDeliveries(token: string, filters: { subscripti
 
 export async function retryWebhookDelivery(token: string, deliveryId: string, baseUrl = ''): Promise<{ delivery: WebhookDeliveryResult }> {
   return requestJson(`/api/v1/webhook-deliveries/${encodeURIComponent(deliveryId)}:retry`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: '{}' }, baseUrl);
+}
+
+export async function createAutomationWorkflow(projectId: string, payload: { code: string; title: string; mode?: 'MANUAL' | 'ASSISTED' | 'BATCH_AUTOMATED'; nodes: Array<Record<string, unknown>>; batch_items: Array<Record<string, unknown>>; conditions?: Array<Record<string, unknown>>; max_iterations?: number; max_tasks?: number; max_disk_bytes?: number; human_gate?: 'NONE' | 'BEFORE_RUN' | 'EACH_ITERATION' | 'ON_CONDITION'; repeat_batch?: boolean }, baseUrl = ''): Promise<{ workflow: AutomationWorkflow }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/automation-workflows`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function listAutomationWorkflows(projectId: string, baseUrl = ''): Promise<{ items: AutomationWorkflow[]; local_only: true; network_contacted: false }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/automation-workflows`, undefined, baseUrl);
+}
+
+export async function planAutomationWorkflow(workflowId: string, baseUrl = ''): Promise<{ plan: AutomationWorkflowPlan }> {
+  return requestJson(`/api/v1/automation-workflows/${encodeURIComponent(workflowId)}:plan`, { method: 'POST' }, baseUrl);
+}
+
+export async function startAutomationWorkflowRun(workflowId: string, planHash: string, idempotencyKey = crypto.randomUUID(), baseUrl = ''): Promise<{ run: AutomationWorkflowRun }> {
+  return requestJson(`/api/v1/automation-workflows/${encodeURIComponent(workflowId)}/runs`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }, body: JSON.stringify({ plan_hash: planHash }) }, baseUrl);
+}
+
+export async function listAutomationWorkflowRuns(projectId: string, filters: { status?: string; limit?: number } = {}, baseUrl = ''): Promise<{ items: AutomationWorkflowRun[]; limit: number; local_only: true; network_contacted: false }> {
+  const query = new URLSearchParams();
+  if (filters.status) query.set('status', filters.status);
+  if (filters.limit) query.set('limit', String(filters.limit));
+  const suffix = query.size ? `?${query.toString()}` : '';
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/automation-runs${suffix}`, undefined, baseUrl);
+}
+
+export async function getAutomationWorkflowRun(runId: string, baseUrl = ''): Promise<{ run: AutomationWorkflowRun }> {
+  return requestJson(`/api/v1/automation-runs/${encodeURIComponent(runId)}`, undefined, baseUrl);
+}
+
+export async function stepAutomationWorkflowRun(runId: string, payload: { machine_context?: Record<string, unknown>; ai_scores?: Record<string, unknown>; produced_bytes?: number } = {}, baseUrl = ''): Promise<{ run: AutomationWorkflowRun }> {
+  return requestJson(`/api/v1/automation-runs/${encodeURIComponent(runId)}:step`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function resumeAutomationWorkflowRun(runId: string, payload: { decision: 'HUMAN_APPROVED' | 'HUMAN_REJECTED'; note: string }, baseUrl = ''): Promise<{ run: AutomationWorkflowRun }> {
+  return requestJson(`/api/v1/automation-runs/${encodeURIComponent(runId)}:resume`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function pauseAutomationWorkflowRun(runId: string, reason = 'MANUAL_PAUSE', baseUrl = ''): Promise<{ run: AutomationWorkflowRun }> {
+  return requestJson(`/api/v1/automation-runs/${encodeURIComponent(runId)}:pause`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }) }, baseUrl);
+}
+
+export async function cancelAutomationWorkflowRun(runId: string, baseUrl = ''): Promise<{ run: AutomationWorkflowRun }> {
+  return requestJson(`/api/v1/automation-runs/${encodeURIComponent(runId)}:cancel`, { method: 'POST' }, baseUrl);
 }
 
 export async function runG7NetworkE2E(projectId: string, baseUrl = ''): Promise<{ attestation: Record<string, unknown> }> {

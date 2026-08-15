@@ -1,0 +1,46 @@
+{
+  "requirement_id": "FR-AUT-001",
+  "title": "声明式条件和 HITL",
+  "status": "PARTIAL",
+  "implementation_status": "IMPLEMENTED_IN_ISOLATED_LOCAL_CHAIN",
+  "scope": {
+    "declarative_conditions": true,
+    "finite_batch_loop": true,
+    "human_pause_and_resume": true,
+    "max_iterations": true,
+    "max_tasks": true,
+    "max_disk_bytes": true,
+    "ai_score_can_auto_approve": false,
+    "loopback_or_network_contacted": false,
+    "local_only": true
+  },
+  "artifacts": [
+    "apps/api/alembic/versions/0035_declarative_automation_workflows.py",
+    "apps/api/local_drama/application/automation_workflows.py",
+    "apps/api/local_drama/api/schemas/automation_workflows.py",
+    "apps/api/local_drama/api/routes/automation_workflows.py",
+    "apps/api/tests/test_automation_workflows.py",
+    "apps/web/src/features/shared/AutomationWorkflowPanel.tsx"
+  ],
+  "verified": {
+    "command": ".venv/Scripts/python.exe -m pytest apps/api/tests/test_automation_workflows.py -q",
+    "result": "3 passed",
+    "checks": [
+      "machine FAIL creates PAUSED_HITL rather than approval",
+      "HUMAN_APPROVED/HUMAN_REJECTED are the only resume decisions",
+      "AI scores are persisted for evidence but have no approval capability",
+      "disk limit stops a run without creating an over-budget task",
+      "API route uses the same service command boundary as the UI"
+    ]
+  },
+  "production_uat": {
+    "status": "PENDING",
+    "reason": "Windows x64 three-viewport production UAT, crash/restart reconciliation and long-running batch evidence remain outstanding"
+  },
+  "remaining": [
+    "Connect each declarative task node to the existing persistent Job DAG without bypassing job-level approval gates",
+    "Run production Windows x64 UAT and attach restart/disk-pressure evidence",
+    "Add full Playwright acceptance evidence for the panel"
+  ],
+  "observed_at": "2026-08-15"
+}
