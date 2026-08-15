@@ -40,4 +40,14 @@ describe("PostProcessPanel", () => {
     await waitFor(() => expect(createPostProcessRecipe).toHaveBeenCalledWith(expect.objectContaining({ code: "enhance", parent_recipe_id: "recipe-1" })));
     expect(publishPostProcessRecipe).not.toHaveBeenCalled();
   });
+
+  it("adds optional local post-process steps to the immutable recipe draft", async () => {
+    vi.mocked(createPostProcessRecipe).mockResolvedValue({ recipe: { ...recipe, id: "recipe-3", code: "enhance@v2", version_no: 2, parent_recipe_id: "recipe-1", status: "DRAFT" } });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={client}><PostProcessPanel videos={[video]} /></QueryClientProvider>);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "降噪 DENOISE" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "防抖 STABILIZE（deshake）" }));
+    fireEvent.click(screen.getByRole("button", { name: "派生 DRAFT 新版本" }));
+    await waitFor(() => expect(createPostProcessRecipe).toHaveBeenCalledWith(expect.objectContaining({ steps: expect.arrayContaining([{ kind: "DENOISE", strength: 1, executor_ref: "builtin:ffmpeg" }, { kind: "STABILIZE", mode: "DESHAKE", executor_ref: "builtin:ffmpeg" }]) })));
+  });
 });

@@ -102,6 +102,29 @@ class TimelineService:
             raise DomainRuleError("PATH_ESCAPE", "项目根目录越界")
         return root
 
+    def _project_root_for_project(self, project_id: str) -> Path:
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT root_rel FROM projects WHERE id=?", (project_id,)).fetchone()
+        if row is None:
+            raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
+        root = (self.settings.projects_root / str(row["root_rel"])).resolve()
+        if not root.is_relative_to(self.settings.projects_root.resolve()):
+            raise DomainRuleError("PATH_ESCAPE", "项目根目录越界")
+        return root
+
+    def _resolve_lut_file(self, project_id: str, path_rel: str) -> Path:
+        candidate_rel = Path(path_rel)
+        if candidate_rel.is_absolute() or ".." in candidate_rel.parts or not path_rel.strip():
+            raise DomainRuleError("POST_PROCESS_LUT_PATH_INVALID", "LUT 文件必须是项目内相对路径")
+        root = self._project_root_for_project(project_id)
+        candidate = root / candidate_rel
+        resolved = candidate.resolve()
+        if candidate.is_symlink() or not resolved.is_file() or not resolved.is_relative_to(root):
+            raise DomainRuleError("POST_PROCESS_LUT_FILE_INVALID", "LUT 文件必须是项目内普通文件")
+        if resolved.suffix.lower() != ".cube":
+            raise DomainRuleError("POST_PROCESS_LUT_FORMAT_INVALID", "当前只接受 .cube LUT 文件")
+        return resolved
+
     def _media_for_episode(self, episode_id: str, media_version_id: str) -> dict[str, Any]:
         episode = self._episode(episode_id)
         item = self.media.get_version(media_version_id)
@@ -705,7 +728,7 @@ class TimelineService:
         if not steps:
             raise DomainRuleError("POST_PROCESS_RECIPE_INVALID", "增强 recipe 至少需要 SCALE、TECHNICAL_QC 和 ENCODE")
         normalized: list[dict[str, Any]] = []
-        supported = {"SCALE", "TECHNICAL_QC", "ENCODE"}
+        supported = {"SCALE", "TECHNICAL_QC", "ENCODE", "FRAME_INTERPOLATION", "DENOISE", "STABILIZE", "LUT_3D"}
         for ordinal, raw in enumerate(steps):
             if not isinstance(raw, dict) or str(raw.get("kind")) not in supported:
                 raise DomainRuleError("CAPABILITY_UNSUPPORTED", "增强 recipe 包含未支持步骤", {"ordinal": ordinal, "kind": raw.get("kind") if isinstance(raw, dict) else None})
@@ -728,10 +751,47 @@ class TimelineService:
                 step["crf"] = int(step.get("crf", 18))
                 if step["codec"] != "H264" or step["preset"] not in {"ultrafast", "veryfast", "medium", "slow"} or not 0 <= step["crf"] <= 51:
                     raise DomainRuleError("POST_PROCESS_ENCODE_INVALID", "ENCODE 当前只支持本地 H264、受控 preset 和 0—51 CRF")
+            elif step["kind"] == "FRAME_INTERPOLATION":
+                try:
+                    target_fps = int(step.get("target_fps", 0))
+                except (TypeError, ValueError) as error:
+                    raise DomainRuleError("POST_PROCESS_INTERPOLATION_INVALID", "补帧必须显式提供整数 target_fps") from error
+                if not 1 <= target_fps <= 120:
+                    raise DomainRuleError("POST_PROCESS_INTERPOLATION_INVALID", "补帧 target_fps 必须在 1—120 之间")
+                step["target_fps"] = target_fps
+                step["mode"] = str(step.get("mode", "MCI"))
+                if step["mode"] not in {"MCI", "DUPLICATE"}:
+                    raise DomainRuleError("POST_PROCESS_INTERPOLATION_INVALID", "补帧 mode 仅支持 MCI 或 DUPLICATE")
+            elif step["kind"] == "DENOISE":
+                try:
+                    strength = float(step.get("strength", 1.0))
+                except (TypeError, ValueError) as error:
+                    raise DomainRuleError("POST_PROCESS_DENOISE_INVALID", "降噪 strength 必须是数字") from error
+                if not 0.1 <= strength <= 10.0:
+                    raise DomainRuleError("POST_PROCESS_DENOISE_INVALID", "降噪 strength 必须在 0.1—10.0 之间")
+                step["strength"] = strength
+            elif step["kind"] == "STABILIZE":
+                step["mode"] = str(step.get("mode", "DESHAKE"))
+                if step["mode"] != "DESHAKE":
+                    raise DomainRuleError("POST_PROCESS_STABILIZE_INVALID", "防抖当前只支持本地 FFmpeg deshake")
+            elif step["kind"] == "LUT_3D":
+                path_rel = str(step.get("path_rel", "")).strip()
+                if not path_rel or Path(path_rel).is_absolute() or ".." in Path(path_rel).parts:
+                    raise DomainRuleError("POST_PROCESS_LUT_PATH_INVALID", "LUT_3D 必须提供项目内相对 path_rel")
+                if Path(path_rel).suffix.lower() != ".cube":
+                    raise DomainRuleError("POST_PROCESS_LUT_FORMAT_INVALID", "当前只接受 .cube LUT 文件")
             normalized.append(step)
         kinds = [str(step["kind"]) for step in normalized]
-        if kinds != ["SCALE", "TECHNICAL_QC", "ENCODE"]:
-            raise DomainRuleError("POST_PROCESS_REQUIRED_STEPS_MISSING", "正式增强链必须按 SCALE → TECHNICAL_QC → ENCODE 且每步仅一次", {"observed": kinds})
+        if (
+            kinds.count("SCALE") != 1
+            or kinds.count("TECHNICAL_QC") != 1
+            or kinds.count("ENCODE") != 1
+            or not kinds
+            or kinds[0] != "SCALE"
+            or len(kinds) < 3
+            or kinds[-2:] != ["TECHNICAL_QC", "ENCODE"]
+        ):
+            raise DomainRuleError("POST_PROCESS_REQUIRED_STEPS_MISSING", "正式增强链必须按 SCALE → 可选步骤 → TECHNICAL_QC → ENCODE 且核心步骤各一次", {"observed": kinds})
         return normalized
 
     def create_recipe(self, code: str, title: str, steps: list[dict[str, Any]], capability_contract: dict[str, Any], parent_recipe_id: str | None = None, actor: str = "local-user") -> dict[str, Any]:
@@ -741,6 +801,10 @@ class TimelineService:
         normalized_steps = self._validated_enhancement_steps(steps)
         if capability_contract.get("transport") != "LOCAL_PROCESS" or capability_contract.get("network_allowed") is not False:
             raise DomainRuleError("POST_PROCESS_LOCAL_CONTRACT_REQUIRED", "增强 recipe 必须显式声明 LOCAL_PROCESS 且 network_allowed=false")
+        optional_kinds = {str(step["kind"]) for step in normalized_steps if step["kind"] not in {"SCALE", "TECHNICAL_QC", "ENCODE"}}
+        declared_optional = capability_contract.get("optional_steps", [])
+        if optional_kinds and (not isinstance(declared_optional, list) or not optional_kinds.issubset({str(kind) for kind in declared_optional})):
+            raise DomainRuleError("CAPABILITY_UNSUPPORTED", "可选后处理步骤必须由 recipe capability_contract 显式声明", {"required": sorted(optional_kinds), "declared": declared_optional})
         recipe_id = str(uuid.uuid4())
         now = _now()
         with self.database.transaction() as connection:
@@ -799,6 +863,13 @@ class TimelineService:
         if source["media_kind"] != "VIDEO":
             raise DomainRuleError("ENHANCEMENT_VIDEO_REQUIRED", "FR-PST-001 增强链当前只接受 VERIFIED VIDEO MediaVersion")
         verified = self.media.verify_content_integrity(input_media_version_id)
+        lut_inputs: list[dict[str, Any]] = []
+        for step in steps:
+            if step["kind"] != "LUT_3D":
+                continue
+            lut_path = self._resolve_lut_file(str(source["project_id"]), str(step["path_rel"]))
+            lut_sha256, lut_size = _hash_file(lut_path)
+            lut_inputs.append({"path_rel": str(step["path_rel"]), "sha256": lut_sha256, "byte_size": lut_size})
         snapshot = {
             "input_media_version_id": input_media_version_id,
             "input_sha256": verified["sha256"],
@@ -806,12 +877,13 @@ class TimelineService:
             "recipe_hash": recipe["recipe_hash"],
             "steps": steps,
             "parameters": parameters or {},
+            "lut_inputs": lut_inputs,
         }
         return {
             "status": "READY",
             "plan_hash": _hash(snapshot),
             "snapshot": snapshot,
-            "command_preview": {"executor": "builtin:ffmpeg", "input": "REGISTERED_MEDIA_VERSION", "output": "NEW_IMMUTABLE_MEDIA_VERSION", "steps": [step["kind"] for step in steps]},
+            "command_preview": {"executor": "builtin:ffmpeg", "input": "REGISTERED_MEDIA_VERSION", "output": "NEW_IMMUTABLE_MEDIA_VERSION", "steps": [step["kind"] for step in steps], "optional_steps": [step["kind"] for step in steps if step["kind"] not in {"SCALE", "TECHNICAL_QC", "ENCODE"}]},
             "would_create_run": False,
             "would_overwrite_input": False,
             "runtime_contacted": False,
@@ -827,16 +899,44 @@ class TimelineService:
         source_item, source_path = self.media.content_path(input_media_version_id)
         out_dir = self.settings.work_root / "enhancement_runs"
         out_dir.mkdir(parents=True, exist_ok=True)
-        scaled_output = out_dir / f"scaled-{uuid.uuid4().hex}.mkv"
-        output = out_dir / f"enhanced-{uuid.uuid4().hex}.mp4"
         run_id = str(uuid.uuid4())
+        output = out_dir / f"enhanced-{run_id}.mp4"
+        intermediate_paths: list[Path] = []
         now = _now()
         steps = recipe["steps"]
         scale = next(step for step in steps if step["kind"] == "SCALE")
         encode = next(step for step in steps if step["kind"] == "ENCODE")
         width, height = int(scale["width"]), int(scale["height"])
-        video_filter = f"scale={width}:{height}" if scale["fit"] == "STRETCH" else f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"
-        execution_snapshot = {**plan["snapshot"], "ffmpeg": {"video_filter": video_filter, "codec": "libx264", "preset": encode["preset"], "crf": encode["crf"], "audio_codec": "aac"}}
+        processing_steps = [step for step in steps if step["kind"] not in {"TECHNICAL_QC", "ENCODE"}]
+        filter_specs: list[tuple[dict[str, Any], str]] = []
+        for step in processing_steps:
+            kind = str(step["kind"])
+            if kind == "SCALE":
+                filter_spec = f"scale={width}:{height}" if scale["fit"] == "STRETCH" else f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"
+            elif kind == "FRAME_INTERPOLATION":
+                filter_spec = f"fps={int(step['target_fps'])}" if step["mode"] == "DUPLICATE" else f"minterpolate=fps={int(step['target_fps'])}:mi_mode=mci"
+            elif kind == "DENOISE":
+                strength = float(step["strength"])
+                filter_spec = f"hqdn3d={strength:g}:{strength:g}:{strength:g}:{strength:g}"
+            elif kind == "STABILIZE":
+                filter_spec = "deshake"
+            elif kind == "LUT_3D":
+                lut_path = self._resolve_lut_file(str(source_item["project_id"]), str(step["path_rel"]))
+                lut_filter_path = str(lut_path).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
+                filter_spec = f"lut3d=file='{lut_filter_path}'"
+            else:
+                raise DomainRuleError("CAPABILITY_UNSUPPORTED", "增强 recipe 包含未支持的本地步骤", {"kind": kind})
+            filter_specs.append((step, filter_spec))
+        execution_snapshot = {
+            **plan["snapshot"],
+            "ffmpeg": {
+                "video_filters": [{"kind": step["kind"], "filter": "lut3d" if step["kind"] == "LUT_3D" else filter_spec.split("=", 1)[0]} for step, filter_spec in filter_specs],
+                "codec": "libx264",
+                "preset": encode["preset"],
+                "crf": encode["crf"],
+                "audio_codec": "aac",
+            },
+        }
         with self.database.transaction() as connection:
             connection.execute(
                 """INSERT INTO enhancement_runs
@@ -847,29 +947,43 @@ class TimelineService:
             )
         try:
             before_qc = self._probe(source_path)
-            self._run_ffmpeg(["-i", str(source_path), "-map", "0:v:0", "-map", "0:a?", "-vf", video_filter, "-c:v", "ffv1", "-level", "3", "-c:a", "pcm_s16le", "-y", str(scaled_output)], timeout=300)
-            scaled_hash, _ = _hash_file(scaled_output)
-            scaled_qc = self._probe(scaled_output)
-            self._run_ffmpeg(["-i", str(scaled_output), "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", str(encode["preset"]), "-crf", str(encode["crf"]), "-c:a", "aac", "-movflags", "+faststart", "-y", str(output)], timeout=300)
+            current_path = source_path
+            current_hash = str(plan["snapshot"]["input_sha256"])
+            step_trace: list[dict[str, Any]] = []
+            for ordinal, (step, filter_spec) in enumerate(filter_specs):
+                stage_output = out_dir / f"step-{run_id}-{ordinal}-{str(step['kind']).lower()}.mkv"
+                intermediate_paths.append(stage_output)
+                self._run_ffmpeg(["-i", str(current_path), "-map", "0:v:0", "-map", "0:a?", "-vf", filter_spec, "-c:v", "ffv1", "-level", "3", "-c:a", "pcm_s16le", "-y", str(stage_output)], timeout=300)
+                next_hash, _ = _hash_file(stage_output)
+                step_trace.append({"ordinal": ordinal, "kind": step["kind"], "executor_ref": "builtin:ffmpeg", "profile": step, "input_sha256": current_hash, "output_sha256": next_hash, "status": "SUCCEEDED"})
+                current_path, current_hash = stage_output, next_hash
+            processed_qc = self._probe(current_path)
+            qc_step = next(step for step in steps if step["kind"] == "TECHNICAL_QC")
+            step_trace.append({"ordinal": len(step_trace), "kind": "TECHNICAL_QC", "executor_ref": "builtin:ffprobe", "profile": qc_step, "input_sha256": current_hash, "output_sha256": current_hash, "status": "PASSED", "result": {"dimensions_match": True}})
+            self._run_ffmpeg(["-i", str(current_path), "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", str(encode["preset"]), "-crf", str(encode["crf"]), "-c:a", "aac", "-movflags", "+faststart", "-y", str(output)], timeout=300)
             output_hash, _ = _hash_file(output)
             after_qc = self._probe(output)
             preserved_source = self.media.verify_content_integrity(input_media_version_id)
             if preserved_source["actual_sha256"] != plan["snapshot"]["input_sha256"]:
                 raise DomainRuleError("ENHANCEMENT_INPUT_CHANGED", "增强期间输入媒体发生变化，输出未注册")
+            expected_fps = next((int(step["target_fps"]) for step in steps if step["kind"] == "FRAME_INTERPOLATION"), None)
+            processed_video: dict[str, Any] = next((stream for stream in processed_qc.get("streams", []) if stream.get("codec_type") == "video"), {})
+            after_video: dict[str, Any] = next((stream for stream in after_qc.get("streams", []) if stream.get("codec_type") == "video"), {})
+            fps_passed = expected_fps is None or all(self._stream_fps_matches(stream, expected_fps) for stream in (processed_video, after_video))
             qc = {
                 "before": self._technical_qc_summary(before_qc),
-                "scaled": self._technical_qc_summary(scaled_qc),
+                "scaled": self._technical_qc_summary(processed_qc),
+                "processed": self._technical_qc_summary(processed_qc),
                 "after": self._technical_qc_summary(after_qc),
                 "expected_dimensions": {"width": width, "height": height},
-                "passed": all(any(int(stream.get("width", 0)) == width and int(stream.get("height", 0)) == height for stream in probe.get("streams", [])) for probe in (scaled_qc, after_qc)),
+                "expected_fps": expected_fps,
+                "fps_match": fps_passed,
+                "passed": fps_passed and all(any(int(stream.get("width", 0)) == width and int(stream.get("height", 0)) == height for stream in probe.get("streams", [])) for probe in (processed_qc, after_qc)),
             }
             if not qc["passed"]:
-                raise DomainRuleError("ENHANCEMENT_QC_FAILED", "增强输出尺寸未通过技术 QC")
-            execution_snapshot["step_trace"] = [
-                {"ordinal": 0, "kind": "SCALE", "executor_ref": "builtin:ffmpeg", "profile": scale, "input_sha256": plan["snapshot"]["input_sha256"], "output_sha256": scaled_hash, "status": "SUCCEEDED"},
-                {"ordinal": 1, "kind": "TECHNICAL_QC", "executor_ref": "builtin:ffprobe", "profile": next(step for step in steps if step["kind"] == "TECHNICAL_QC"), "input_sha256": scaled_hash, "output_sha256": scaled_hash, "status": "PASSED", "result": {"dimensions_match": True}},
-                {"ordinal": 2, "kind": "ENCODE", "executor_ref": "builtin:ffmpeg", "profile": encode, "input_sha256": scaled_hash, "output_sha256": output_hash, "status": "SUCCEEDED"},
-            ]
+                raise DomainRuleError("ENHANCEMENT_QC_FAILED", "增强输出尺寸或目标帧率未通过技术 QC")
+            step_trace.append({"ordinal": len(step_trace), "kind": "ENCODE", "executor_ref": "builtin:ffmpeg", "profile": encode, "input_sha256": current_hash, "output_sha256": output_hash, "status": "SUCCEEDED"})
+            execution_snapshot["step_trace"] = step_trace
             imported = self.media.import_file(source_item["project_id"], output, purpose="ENHANCEMENT", owner_type="MEDIA_VERSION", owner_id=input_media_version_id, media_kind=source_item["media_kind"], stage="ENHANCED", actor=actor)
             if imported.get("duplicate"):
                 raise DomainRuleError("ENHANCEMENT_OUTPUT_DUPLICATE", "增强输出与现有媒体 hash 相同，未注册伪新版本")
@@ -886,7 +1000,8 @@ class TimelineService:
                 connection.execute("UPDATE enhancement_runs SET status='FAILED', error_detail='UNEXPECTED_LOCAL_FAILURE', updated_at=?, revision=revision+1 WHERE id=?", (_now(), run_id))
             raise DomainRuleError("ENHANCEMENT_EXECUTION_FAILED", "本地增强执行失败", {"reason": type(error).__name__}) from error
         finally:
-            scaled_output.unlink(missing_ok=True)
+            for intermediate_path in intermediate_paths:
+                intermediate_path.unlink(missing_ok=True)
             output.unlink(missing_ok=True)
 
     def get_enhancement_run(self, run_id: str) -> dict[str, Any]:
@@ -918,6 +1033,16 @@ class TimelineService:
                 if stream.get("codec_type") == "audio"
             ],
         }
+
+    @staticmethod
+    def _stream_fps_matches(stream: dict[str, Any], expected_fps: int) -> bool:
+        value = str(stream.get("avg_frame_rate", "0/1"))
+        try:
+            numerator, denominator = value.split("/", 1)
+            observed = float(numerator) / float(denominator)
+        except (ValueError, ZeroDivisionError):
+            return False
+        return abs(observed - expected_fps) < 0.05
 
     def render_episode(self, timeline_revision_id: str, *, actor: str = "local-user") -> dict[str, Any]:
         timeline = self.get_timeline(timeline_revision_id)

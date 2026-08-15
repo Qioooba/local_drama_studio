@@ -13,6 +13,12 @@ export function PostProcessPanel({ videos }: { videos: ReviewInboxItem[] }) {
   const [height, setHeight] = useState("1080");
   const [crf, setCrf] = useState("18");
   const [preset, setPreset] = useState("veryfast");
+  const [interpolate, setInterpolate] = useState(false);
+  const [targetFps, setTargetFps] = useState("24");
+  const [denoise, setDenoise] = useState(false);
+  const [denoiseStrength, setDenoiseStrength] = useState("1");
+  const [stabilize, setStabilize] = useState(false);
+  const [lutPath, setLutPath] = useState("");
   const [prepared, setPrepared] = useState<EnhancementPlan | null>(null);
   const [completed, setCompleted] = useState<EnhancementRun | null>(null);
   const items = useMemo(() => recipes.data?.items ?? [], [recipes.data?.items]);
@@ -38,16 +44,30 @@ export function PostProcessPanel({ videos }: { videos: ReviewInboxItem[] }) {
     mutationFn: () => {
       const targetWidth = Number(width), targetHeight = Number(height), targetCrf = Number(crf);
       if (!Number.isInteger(targetWidth) || !Number.isInteger(targetHeight) || !Number.isInteger(targetCrf)) throw new Error("宽高和 CRF 必须是整数");
+      const optionalSteps: Array<Record<string, unknown>> = [];
+      if (interpolate) {
+        const fps = Number(targetFps);
+        if (!Number.isInteger(fps) || fps < 1 || fps > 120) throw new Error("补帧目标 FPS 必须是 1—120 的整数");
+        optionalSteps.push({ kind: "FRAME_INTERPOLATION", target_fps: fps, mode: "MCI", executor_ref: "builtin:ffmpeg" });
+      }
+      if (denoise) {
+        const strength = Number(denoiseStrength);
+        if (!Number.isFinite(strength) || strength < 0.1 || strength > 10) throw new Error("降噪强度必须在 0.1—10.0 之间");
+        optionalSteps.push({ kind: "DENOISE", strength, executor_ref: "builtin:ffmpeg" });
+      }
+      if (stabilize) optionalSteps.push({ kind: "STABILIZE", mode: "DESHAKE", executor_ref: "builtin:ffmpeg" });
+      if (lutPath.trim()) optionalSteps.push({ kind: "LUT_3D", path_rel: lutPath.trim(), executor_ref: "builtin:ffmpeg" });
       return createPostProcessRecipe({
         code: selected ? selected.recipe_key : code.trim(),
         title: title.trim(),
         parent_recipe_id: selected?.id,
         steps: [
           { kind: "SCALE", width: targetWidth, height: targetHeight, fit: "CONTAIN", executor_ref: "builtin:ffmpeg" },
+          ...optionalSteps,
           { kind: "TECHNICAL_QC", executor_ref: "builtin:ffprobe" },
           { kind: "ENCODE", codec: "H264", preset, crf: targetCrf, executor_ref: "builtin:ffmpeg" },
         ],
-        capability_contract: { transport: "LOCAL_PROCESS", network_allowed: false, input_media_kind: "VIDEO", output_media_kind: "VIDEO" },
+        capability_contract: { transport: "LOCAL_PROCESS", network_allowed: false, input_media_kind: "VIDEO", output_media_kind: "VIDEO", optional_steps: optionalSteps.map((step) => step.kind) },
       });
     },
     onSuccess: async ({ recipe }) => { await queryClient.invalidateQueries({ queryKey: ["post-process-recipes"] }); setSelectedRecipeId(recipe.id); },
@@ -70,7 +90,7 @@ export function PostProcessPanel({ videos }: { videos: ReviewInboxItem[] }) {
   const error = recipes.error ?? createMutation.error ?? publishMutation.error ?? planMutation.error ?? runMutation.error;
 
   return <section className="panel post-process-panel" aria-labelledby="post-process-title">
-    <div className="panel-heading"><div><p className="eyebrow">FR-PST-001 · LOCAL PROCESS</p><h3 id="post-process-title">版本化视频增强与旁路比较</h3></div><span className="status-pill neutral">输入永不覆盖</span></div>
+    <div className="panel-heading"><div><p className="eyebrow">FR-PST-001/002 · LOCAL PROCESS</p><h3 id="post-process-title">版本化视频增强与旁路比较</h3></div><span className="status-pill neutral">输入永不覆盖</span></div>
     <div className="post-process-grid">
       <div className="post-process-config">
         <div className="section-title"><span>配方版本</span><small>SCALE → TECHNICAL_QC → ENCODE</small></div>
@@ -79,6 +99,7 @@ export function PostProcessPanel({ videos }: { videos: ReviewInboxItem[] }) {
         <label htmlFor="post-title-input">标题<input id="post-title-input" value={title} onChange={(event) => setTitle(event.target.value)} /></label>
         <div className="post-process-dimensions"><label>宽<input type="number" min="64" max="8192" value={width} onChange={(event) => setWidth(event.target.value)} /></label><label>高<input type="number" min="64" max="8192" value={height} onChange={(event) => setHeight(event.target.value)} /></label><label>CRF<input type="number" min="0" max="51" value={crf} onChange={(event) => setCrf(event.target.value)} /></label></div>
         <label htmlFor="post-preset">H264 preset<select id="post-preset" value={preset} onChange={(event) => setPreset(event.target.value)}>{["ultrafast", "veryfast", "medium", "slow"].map((value) => <option key={value}>{value}</option>)}</select></label>
+        <fieldset className="post-process-options"><legend>可选本地后处理（能力驱动）</legend><label><input type="checkbox" checked={interpolate} onChange={(event) => setInterpolate(event.target.checked)} />补帧 FRAME_INTERPOLATION</label>{interpolate && <label>目标 FPS<input type="number" min="1" max="120" step="1" value={targetFps} onChange={(event) => setTargetFps(event.target.value)} /></label>}<label><input type="checkbox" checked={denoise} onChange={(event) => setDenoise(event.target.checked)} />降噪 DENOISE</label>{denoise && <label>降噪强度<input type="number" min="0.1" max="10" step="0.1" value={denoiseStrength} onChange={(event) => setDenoiseStrength(event.target.value)} /></label>}<label><input type="checkbox" checked={stabilize} onChange={(event) => setStabilize(event.target.checked)} />防抖 STABILIZE（deshake）</label><label>LUT 3D 项目内相对路径（可空）<input value={lutPath} onChange={(event) => setLutPath(event.target.value)} placeholder="例如 00_admin/color/look.cube" /></label><small>每个可选步骤都会进入只读 plan、独立 FFmpeg 中间版本和技术 QC；失败不会覆盖输入，也不会冒充原生模型 FPS/分辨率。</small></fieldset>
         <div className="post-process-actions"><button type="button" className="secondary" onClick={() => createMutation.mutate()} disabled={createMutation.isPending}>{createMutation.isPending ? "保存中…" : selected ? "派生 DRAFT 新版本" : "创建 DRAFT v1"}</button><button type="button" className="secondary" disabled={!selected || selected.status !== "DRAFT" || publishMutation.isPending} onClick={() => publishMutation.mutate()}>{publishMutation.isPending ? "发布中…" : "发布所选版本"}</button></div>
         {selected && <p className="recipe-fingerprint"><strong>{selected.status}</strong> · hash <code>{selected.recipe_hash.slice(0, 16)}</code> · 旧版本不会修改</p>}
       </div>

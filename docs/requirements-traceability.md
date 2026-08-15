@@ -275,6 +275,8 @@ FR-AUD-002 authorization correction：新增 migration `0028_audio_binding_autho
 
 FR-AUD-001 SAPI 选择入口增量：新增 `GET /api/v1/tts/voices:discover`，Windows 本机只读调用 System.Speech 列出已安装音色名称、区域与 `sapi:` 引用；未找到 runtime 时明确返回 `UNAVAILABLE`，扫描不复制/上传/写入项目。对白治理 UI 需用户显式点击扫描并选择，之后仍必须填写项目内授权证据、绑定 Published TTS Profile、执行真实 Job、QC、人工审核与选择；本入口不改变 FR-AUD-001 的 `PARTIAL` 状态。
 
+FR-PST-002 实现增量：版本化后处理 recipe 在核心 `SCALE → TECHNICAL_QC → ENCODE` 之间支持能力驱动的 `FRAME_INTERPOLATION`、`DENOISE`、`STABILIZE` 和项目内 `.cube LUT_3D`。每个步骤独立运行本地 FFmpeg 中间文件并冻结输入/输出 SHA；目标帧率与分辨率写入技术 QC，任一步失败只将 enhancement run 标记失败并清理临时输出，源 MediaVersion 与先前成功版本不变。API 真实 FFmpeg 回归与 Web 选项测试通过；FR-PST-002 的三视口生产 UAT 与正式总账证据仍待补齐，当前不标最终 VERIFIED。
+
 ## 更新规则
 
 任何新增/变更需求必须先分配 ID、写 ADR、补 migration/API/UI/test 影响；所有阶段报告、提交和缺陷引用至少一个需求或测试 ID。

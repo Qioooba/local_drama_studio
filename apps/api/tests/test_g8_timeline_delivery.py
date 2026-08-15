@@ -10,6 +10,7 @@ from local_drama.application.configuration import ConfigurationService
 from local_drama.application.documents import DocumentImportService
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
+from local_drama.application.timeline import TimelineService
 from local_drama.main import create_app
 
 
@@ -320,3 +321,105 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
         withdrawn = client.post(f"/api/v1/delivery-packages/{delivery['id']}:withdraw", json={"reason": "G8 recovery evidence tamper test"})
         assert withdrawn.status_code == 200
         assert withdrawn.json()["delivery"]["status"] == "WITHDRAWN"
+
+
+def test_optional_post_process_steps_are_local_and_preserve_input(workspace, database) -> None:
+    project = _project(workspace, database)
+    project_id = str(project["id"])
+    source = MediaService(database, workspace).import_file(project_id, _video(workspace), purpose="SHOT_VIDEO", media_kind="VIDEO")
+    video_id = str(source["media_version_id"])
+    original_sha = str(source["sha256"])
+    lut_path = workspace.projects_root / str(project["root_rel"]) / "00_admin" / "identity.cube"
+    lut_path.write_text(
+        "TITLE \"Identity\"\nLUT_3D_SIZE 2\nDOMAIN_MIN 0 0 0\nDOMAIN_MAX 1 1 1\n"
+        "0 0 0\n0 0 1\n0 1 0\n0 1 1\n1 0 0\n1 0 1\n1 1 0\n1 1 1\n",
+        encoding="utf-8",
+    )
+    steps = [
+        {"kind": "SCALE", "width": 160, "height": 90, "fit": "CONTAIN", "executor_ref": "builtin:ffmpeg"},
+        {"kind": "FRAME_INTERPOLATION", "target_fps": 24, "mode": "MCI", "executor_ref": "builtin:ffmpeg"},
+        {"kind": "DENOISE", "strength": 0.6, "executor_ref": "builtin:ffmpeg"},
+        {"kind": "STABILIZE", "mode": "DESHAKE", "executor_ref": "builtin:ffmpeg"},
+        {"kind": "LUT_3D", "path_rel": "00_admin/identity.cube", "executor_ref": "builtin:ffmpeg"},
+        {"kind": "TECHNICAL_QC", "executor_ref": "builtin:ffprobe"},
+        {"kind": "ENCODE", "codec": "H264", "preset": "ultrafast", "crf": 30, "executor_ref": "builtin:ffmpeg"},
+    ]
+    with TestClient(create_app(workspace)) as client:
+        recipe = client.post(
+            "/api/v1/post-process-recipes",
+            json={"code": "optional-local", "title": "可选本地步骤", "steps": steps, "capability_contract": {"transport": "LOCAL_PROCESS", "network_allowed": False, "optional_steps": ["FRAME_INTERPOLATION", "DENOISE", "STABILIZE", "LUT_3D"]}},
+        )
+        assert recipe.status_code == 201, recipe.text
+        published = client.post(f"/api/v1/post-process-recipes/{recipe.json()['recipe']['id']}:publish")
+        assert published.status_code == 200, published.text
+        planned = client.post("/api/v1/enhancement-runs:plan", json={"input_media_version_id": video_id, "recipe_id": recipe.json()["recipe"]["id"]})
+        assert planned.status_code == 200, planned.text
+        plan = planned.json()["plan"]
+        assert plan["command_preview"]["optional_steps"] == ["FRAME_INTERPOLATION", "DENOISE", "STABILIZE", "LUT_3D"]
+        run = client.post("/api/v1/enhancement-runs", json={"input_media_version_id": video_id, "recipe_id": recipe.json()["recipe"]["id"], "plan_hash": plan["plan_hash"]})
+        assert run.status_code == 201, run.text
+        enhancement = run.json()["enhancement"]
+        assert enhancement["status"] == "SUCCEEDED"
+        assert enhancement["qc"]["passed"] is True
+        assert [step["kind"] for step in enhancement["execution_snapshot"]["step_trace"]] == ["SCALE", "FRAME_INTERPOLATION", "DENOISE", "STABILIZE", "LUT_3D", "TECHNICAL_QC", "ENCODE"]
+        assert enhancement["input_sha256"] == original_sha
+        assert enhancement["bypass_comparison"]["input_preserved"] is True
+        invalid = client.post(
+            "/api/v1/post-process-recipes",
+            json={
+                "code": "bad-interpolation",
+                "title": "非法补帧",
+                "steps": [
+                    steps[0],
+                    {"kind": "FRAME_INTERPOLATION", "target_fps": 0, "executor_ref": "builtin:ffmpeg"},
+                    steps[-2],
+                    steps[-1],
+                ],
+                "capability_contract": {"transport": "LOCAL_PROCESS", "network_allowed": False, "optional_steps": ["FRAME_INTERPOLATION"]},
+            },
+        )
+        assert invalid.status_code == 422
+        assert invalid.json()["error"]["code"] == "POST_PROCESS_INTERPOLATION_INVALID"
+
+
+def test_optional_post_process_failure_does_not_register_or_overwrite_input(workspace, database, monkeypatch) -> None:
+    project = _project(workspace, database)
+    project_id = str(project["id"])
+    source = MediaService(database, workspace).import_file(project_id, _video(workspace), purpose="SHOT_VIDEO", media_kind="VIDEO")
+    video_id = str(source["media_version_id"])
+    original_sha = str(source["sha256"])
+    steps = [
+        {"kind": "SCALE", "width": 160, "height": 90, "fit": "CONTAIN", "executor_ref": "builtin:ffmpeg"},
+        {"kind": "DENOISE", "strength": 1.0, "executor_ref": "builtin:ffmpeg"},
+        {"kind": "TECHNICAL_QC", "executor_ref": "builtin:ffprobe"},
+        {"kind": "ENCODE", "codec": "H264", "preset": "ultrafast", "crf": 30, "executor_ref": "builtin:ffmpeg"},
+    ]
+    with TestClient(create_app(workspace)) as client:
+        recipe = client.post(
+            "/api/v1/post-process-recipes",
+            json={"code": "optional-failure", "title": "可选步骤失败", "steps": steps, "capability_contract": {"transport": "LOCAL_PROCESS", "network_allowed": False, "optional_steps": ["DENOISE"]}},
+        )
+        assert recipe.status_code == 201, recipe.text
+        recipe_id = recipe.json()["recipe"]["id"]
+        assert client.post(f"/api/v1/post-process-recipes/{recipe_id}:publish").status_code == 200
+        plan = client.post("/api/v1/enhancement-runs:plan", json={"input_media_version_id": video_id, "recipe_id": recipe_id}).json()["plan"]
+
+    original_run = TimelineService._run_ffmpeg
+
+    def fail_denoise(self: TimelineService, args: list[str], *, timeout: int) -> dict[str, object]:
+        if any("hqdn3d" in str(argument) for argument in args):
+            from local_drama.domain.errors import DomainRuleError
+
+            raise DomainRuleError("OPTIONAL_STEP_EXECUTION_FAILED", "测试模拟降噪步骤失败")
+        return original_run(self, args, timeout=timeout)
+
+    monkeypatch.setattr(TimelineService, "_run_ffmpeg", fail_denoise)
+    with TestClient(create_app(workspace)) as client:
+        failed = client.post("/api/v1/enhancement-runs", json={"input_media_version_id": video_id, "recipe_id": recipe_id, "plan_hash": plan["plan_hash"]})
+        assert failed.status_code == 422
+        assert failed.json()["error"]["code"] == "OPTIONAL_STEP_EXECUTION_FAILED"
+    with database.connect() as connection:
+        run = connection.execute("SELECT status, output_media_version_id FROM enhancement_runs WHERE recipe_id=? ORDER BY created_at DESC LIMIT 1", (recipe_id,)).fetchone()
+        assert run["status"] == "FAILED" and run["output_media_version_id"] is None
+        assert int(connection.execute("SELECT COUNT(*) FROM media_versions WHERE parent_version_id=?", (video_id,)).fetchone()[0]) == 0
+    assert MediaService(database, workspace).verify_content_integrity(video_id)["sha256"] == original_sha
