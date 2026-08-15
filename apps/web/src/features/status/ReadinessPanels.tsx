@@ -1,9 +1,29 @@
-import type { AdapterRegistry, G8Readiness, G9Readiness, ModelCompatibilitySnapshot, ProjectConfiguration, TimelineStatus } from "../../generated/api";
+import { useState } from "react";
+import { createDeliveryTarget, type AdapterRegistry, type G8Readiness, type G9Readiness, type ModelCompatibilitySnapshot, type ProjectConfiguration, type TimelineStatus } from "../../generated/api";
 import { GateStatusIcon } from "../../components/icons";
 import { ModelLicenseEvidenceForm } from "./ModelLicenseEvidenceForm";
 import { LocalModelReferenceForm } from "./LocalModelReferenceForm";
 
-export function ProjectConfigurationSnapshot({ configuration }: { configuration: ProjectConfiguration }) {
+export function ProjectConfigurationSnapshot({ configuration, projectId, onChanged }: { configuration: ProjectConfiguration; projectId?: string; onChanged?: () => void }) {
+  const [code, setCode] = useState("local-files");
+  const [title, setTitle] = useState("本地文件交付");
+  const [pathRel, setPathRel] = useState("06_delivery");
+  const [width, setWidth] = useState("1920");
+  const [height, setHeight] = useState("1080");
+  const [fps, setFps] = useState("24");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const createTarget = async () => {
+    if (!projectId) return;
+    setBusy(true); setMessage(null); setError(null);
+    try {
+      const result = await createDeliveryTarget(projectId, { code: code.trim(), title: title.trim(), transport: "LOCAL_FILESYSTEM", spec: { path_rel: pathRel.trim(), width: Number(width), height: Number(height), fps: Number(fps), audio: "AAC", subtitles: "SIDECAR" } });
+      setMessage(`已创建交付目标版本：${String(result.target.version_id ?? result.target.id ?? "已完成").slice(0, 16)}`);
+      onChanged?.();
+    } catch (caught) { setError(String(caught)); }
+    finally { setBusy(false); }
+  };
   return <section className="panel configuration-snapshot" aria-labelledby="configuration-snapshot-title">
     <div className="panel-heading"><div><p className="eyebrow">G7 PROJECT CONFIGURATION</p><h3 id="configuration-snapshot-title">项目配置快照与切换影响</h3></div><span className="status-pill">只读 · LOCAL_ONLY</span></div>
     <p className="muted">当前绑定、版本和已冻结任务来自持久化状态。切换 Profile 不会改写历史 Job；交付目标必须显式选择，远程 transport 永不启用。</p>
@@ -17,6 +37,7 @@ export function ProjectConfigurationSnapshot({ configuration }: { configuration:
       {configuration.profile_bindings.map((item) => <div className="configuration-row" role="row" key={`${item.capability}-${item.profile_version_id}`}><span>{item.capability}</span><span>{item.profile_code} · v{item.version_no}</span><span className="status-pill">{item.profile_status}</span><span>{item.frozen_job_count}</span></div>)}
       {configuration.profile_bindings.length === 0 && <p className="empty-state">尚未绑定 Profile。</p>}
     </div>
+    {projectId && <div className="delivery-target-editor"><div className="workflow-history-heading"><div><p className="eyebrow">FR-DEL-003 · EXPLICIT TARGET</p><h3>创建本地交付目标版本</h3></div><span className="status-pill neutral">LOCAL_FILESYSTEM</span></div><p className="muted">交付规格必须由用户显式填写；此处不会启用远程 transport，也不会覆盖已有目标版本。</p><div className="field-grid"><label>代码<input value={code} onChange={(event) => setCode(event.target.value)} /></label><label>标题<input value={title} onChange={(event) => setTitle(event.target.value)} /></label><label>相对目录<input value={pathRel} onChange={(event) => setPathRel(event.target.value)} /></label><label>宽<input type="number" min="64" value={width} onChange={(event) => setWidth(event.target.value)} /></label><label>高<input type="number" min="64" value={height} onChange={(event) => setHeight(event.target.value)} /></label><label>FPS<input type="number" min="1" max="120" value={fps} onChange={(event) => setFps(event.target.value)} /></label></div><button className="primary-action" type="button" onClick={() => void createTarget()} disabled={busy}>{busy ? "创建中…" : "创建新目标版本"}</button>{message && <p className="review-success" role="status">{message}</p>}{error && <p className="inline-error" role="alert">目标创建失败：{error}</p>}</div>}
   </section>;
 }
 

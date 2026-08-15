@@ -675,6 +675,10 @@ export async function getProjectConfiguration(projectId: string, baseUrl = ''): 
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/configuration`, undefined, baseUrl);
 }
 
+export async function createDeliveryTarget(projectId: string, payload: { code: string; title: string; transport: string; spec: Record<string, unknown> }, baseUrl = ''): Promise<{ target: Record<string, unknown> }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/delivery-targets`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
 export async function getModelCompatibility(projectId: string, baseUrl = ''): Promise<{ compatibility: ModelCompatibilitySnapshot }> {
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/model-compatibility`, undefined, baseUrl);
 }
