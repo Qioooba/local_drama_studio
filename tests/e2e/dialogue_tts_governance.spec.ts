@@ -42,6 +42,10 @@ for (const viewport of viewports) {
     await expect(panel.getByLabel("对白编号")).toBeVisible();
     await expect(panel.getByLabel("说话人")).toBeVisible();
     await expect(panel.getByLabel("剧本文本")).toBeVisible();
+    await mode.selectOption("REVISION");
+    await expect(panel.getByLabel("已有对白")).toHaveValue("");
+    await expect(panel.getByLabel("新文本")).toBeVisible();
+    await expect(panel.getByLabel("发音映射 JSON（可空）")).toBeVisible();
     const undersizedControls = await panel.locator(".dialogue-governance-actions button, .dialogue-governance-actions input, .dialogue-governance-actions select").evaluateAll((nodes) => nodes.filter((node) => node.getBoundingClientRect().height < 40).map((node) => ({ tag: node.tagName, height: node.getBoundingClientRect().height })));
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     const panelOverflow = await panel.evaluate((element) => element.scrollWidth - element.clientWidth);

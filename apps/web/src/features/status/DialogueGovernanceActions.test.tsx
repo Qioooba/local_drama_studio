@@ -5,7 +5,7 @@ import { DialogueGovernanceActions } from "./DialogueGovernanceActions";
 
 vi.mock("../../generated/api", async () => {
   const actual = await vi.importActual<typeof import("../../generated/api")>("../../generated/api");
-  return { ...actual, createDialogueLine: vi.fn(), createVoiceProfileVersion: vi.fn(), registerTTSCandidate: vi.fn(), selectTTSCandidate: vi.fn() };
+  return { ...actual, createDialogueLine: vi.fn(), createDialogueTextRevision: vi.fn(), createVoiceProfileVersion: vi.fn(), registerTTSCandidate: vi.fn(), selectTTSCandidate: vi.fn() };
 });
 
 const lines: api.DialogueLine[] = [{ id: "line-1", episode_id: "episode-1", shot_id: null, code: "DLG-001", speaker: "A", text_revisions: [{ id: "text-1", revision_no: 1, text: "你好", text_hash: "hash", pronunciation: {} }], candidates: [], selection: null }];
@@ -43,6 +43,18 @@ describe("DialogueGovernanceActions", () => {
     fireEvent.change(screen.getByLabelText("候选类型"), { target: { value: "PREVIEW" } });
     fireEvent.click(screen.getByRole("button", { name: "校验并创建不可变记录" }));
     await waitFor(() => expect(api.registerTTSCandidate).toHaveBeenCalledWith("text-1", { voice_profile_version_id: "voice-1", media_version_id: "media-1", emotion: "警觉", speech_rate: 0.95, seed: 42, model_ref: "IMPORTED_LOCAL_AUDIO", candidate_kind: "PREVIEW" }));
+  });
+
+  it("creates a new text and pronunciation revision with optimistic concurrency", async () => {
+    vi.mocked(api.createDialogueTextRevision).mockResolvedValue({ dialogue: { ...lines[0], text_revisions: [...lines[0].text_revisions, { id: "text-2", revision_no: 2, text: "您好", text_hash: "hash-2", pronunciation: { "您": "nin2" } }] } });
+    render(<DialogueGovernanceActions projectId="project-1" episodeId="episode-1" lines={lines} voices={voices} onChanged={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "新增对白、音色或候选" }));
+    fireEvent.change(screen.getByLabelText("操作类型"), { target: { value: "REVISION" } });
+    fireEvent.change(screen.getByLabelText("已有对白"), { target: { value: "line-1" } });
+    fireEvent.change(screen.getByLabelText("新文本"), { target: { value: "您好" } });
+    fireEvent.change(screen.getByLabelText("发音映射 JSON（可空）"), { target: { value: '{"您":"nin2"}' } });
+    fireEvent.click(screen.getByRole("button", { name: "校验并创建不可变记录" }));
+    await waitFor(() => expect(api.createDialogueTextRevision).toHaveBeenCalledWith("line-1", { expected_revision_no: 1, text: "您好", pronunciation: { "您": "nin2" } }));
   });
 
   it("keeps the action disabled until an operation is explicitly selected", () => {

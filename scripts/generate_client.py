@@ -84,6 +84,7 @@ export type TTSCandidate = { id: string; dialogue_text_revision_id: string; voic
 export type DialogueLine = { id: string; episode_id: string; shot_id: string | null; code: string; speaker: string; text_revisions: DialogueTextRevision[]; candidates: TTSCandidate[]; selection: Record<string, unknown> | null; [key: string]: unknown };
 export type VoiceProfileVersion = { id: string; project_id: string; code: string; version_no: number; title: string; voice_ref: string; license_status: string; license_evidence: { path_rel: string; sha256: string }; provider_profile_version_id: string | null; status: string; [key: string]: unknown };
 export type DialogueLineRequest = { code: string; speaker: string; text: string; pronunciation?: Record<string, unknown>; shot_id?: string | null };
+export type DialogueTextRevisionRequest = { expected_revision_no: number; text: string; pronunciation?: Record<string, unknown> };
 export type VoiceProfileRequest = { code: string; title: string; voice_ref: string; license_status: 'USER_OWNED' | 'VERIFIED_LOCAL'; license_evidence_path_rel: string; provider_profile_version_id?: string | null };
 export type TTSCandidateRequest = { voice_profile_version_id: string; media_version_id: string; emotion: string; speech_rate: number; seed?: number | null; model_ref: string; candidate_kind: 'PREVIEW' | 'FORMAL' };
 export type AudioBindingRequest = { media_version_id: string; track_type?: string; start_us: number; end_us: number; gain_db?: number; source_license_status?: 'VERIFIED_LOCAL' | 'USER_OWNED' | 'PUBLIC_DOMAIN'; license_evidence_path_rel: string; loop_enabled?: boolean; fade_in_us?: number; fade_out_us?: number };
@@ -480,6 +481,10 @@ export async function listDialogueLines(episodeId: string, baseUrl = ''): Promis
 
 export async function createDialogueLine(episodeId: string, payload: DialogueLineRequest, baseUrl = ''): Promise<{ dialogue: DialogueLine }> {
   return requestJson(`/api/v1/episodes/${encodeURIComponent(episodeId)}/dialogue-lines`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function createDialogueTextRevision(lineId: string, payload: DialogueTextRevisionRequest, baseUrl = ''): Promise<{ dialogue: DialogueLine }> {
+  return requestJson(`/api/v1/dialogue-lines/${encodeURIComponent(lineId)}/text-revisions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
 export async function createVoiceProfileVersion(projectId: string, payload: VoiceProfileRequest, baseUrl = ''): Promise<{ voice_profile: VoiceProfileVersion }> {
