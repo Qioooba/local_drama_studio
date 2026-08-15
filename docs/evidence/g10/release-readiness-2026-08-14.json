@@ -1,7 +1,7 @@
 {
   "schema_version": "g10.release_audit.read_only.v1",
-  "observed_at": "2026-08-15T05:20:46.838991+00:00",
-  "status": "PASS",
+  "observed_at": "2026-08-15T05:36:38.776018+00:00",
+  "status": "IN_PROGRESS",
   "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
   "checks": [
     {
@@ -79,8 +79,23 @@
       "evidence": "docs/evidence/g10/stale-job-maintenance-2026-08-14.json"
     },
     {
+      "code": "MASTER_REQUIREMENTS_CLOSURE",
+      "passed": false,
+      "observed": {
+        "valid": false,
+        "status": "IN_PROGRESS",
+        "verified_fr": 0,
+        "required_fr": 84,
+        "verified_nfr": 0,
+        "required_nfr": 15,
+        "passed_tc": 0,
+        "required_tc": 85
+      },
+      "evidence": "docs/evidence/g10/master-requirements-closure.json"
+    },
+    {
       "code": "RELEASE_ARTIFACTS",
-      "passed": true,
+      "passed": false,
       "artifacts": {
         "api_lock": {
           "exists": true,
@@ -114,7 +129,7 @@
         },
         "go_no_go": {
           "exists": true,
-          "final": true,
+          "final": false,
           "path": "docs/release/go-no-go.md"
         }
       }
@@ -127,5 +142,5 @@
     "migrations_run": false,
     "jobs_created": false
   },
-  "exit_decision": "GO for the Windows x64 LOCAL_ONLY source release; user-selected external models and media are not bundled"
+  "exit_decision": "G10 release go/no-go is pending; missing or blocked checks must not be bypassed"
 }

@@ -224,6 +224,68 @@ def _stale_job_maintenance_passed(path: Path) -> bool:
     )
 
 
+def _master_requirements_closure(path: Path) -> dict[str, Any]:
+    """Validate the formal-release closure ledger against the master blueprint.
+
+    The blueprint contains 86 FRs (84 P0/P1 release requirements plus two P2
+    enhancements), 15 NFRs (14 P0 plus one P1), and 85 named test cases.  A
+    local G7-G10 pass is necessary but cannot substitute for this ledger.
+    """
+    empty = {
+        "valid": False,
+        "status": "MISSING",
+        "verified_fr": 0,
+        "required_fr": 84,
+        "verified_nfr": 0,
+        "required_nfr": 15,
+        "passed_tc": 0,
+        "required_tc": 85,
+    }
+    if not path.is_file():
+        return empty
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {**empty, "status": "INVALID_JSON"}
+
+    inventory = document.get("inventory", {})
+    closure = document.get("closure", {})
+    verified_fr = closure.get("verified_release_fr", 0)
+    verified_nfr = closure.get("verified_release_nfr", 0)
+    passed_tc = closure.get("passed_tc", 0)
+    exact_inventory = (
+        inventory.get("fr_total") == 86
+        and inventory.get("fr_p0") == 63
+        and inventory.get("fr_p1") == 21
+        and inventory.get("fr_p2_non_blocking") == 2
+        and inventory.get("nfr_total") == 15
+        and inventory.get("nfr_p0") == 14
+        and inventory.get("nfr_p1") == 1
+        and inventory.get("tc_total") == 85
+    )
+    passed = (
+        document.get("schema_version") == "master.requirements.closure.v1"
+        and document.get("status") == "PASS"
+        and exact_inventory
+        and verified_fr == 84
+        and verified_nfr == 15
+        and passed_tc == 85
+        and closure.get("open_p0_defects") == 0
+        and closure.get("open_p1_defects") == 0
+        and closure.get("full_chain_local_uat") == "PASS"
+    )
+    return {
+        "valid": passed,
+        "status": document.get("status", "INVALID"),
+        "verified_fr": verified_fr,
+        "required_fr": 84,
+        "verified_nfr": verified_nfr,
+        "required_nfr": 15,
+        "passed_tc": passed_tc,
+        "required_tc": 85,
+    }
+
+
 def audit() -> dict[str, Any]:
     database = Database(DB_PATH)
     with database.connect() as connection:
@@ -259,6 +321,8 @@ def audit() -> dict[str, Any]:
     metadata_scale_path = ROOT / "docs" / "evidence" / "g10" / "metadata-scale-uat-2026-08-15.json"
     security_uat_path = ROOT / "docs" / "evidence" / "g10" / "security-uat-2026-08-15.json"
     recovery_restore_path = ROOT / "docs" / "evidence" / "g10" / "recovery-restore-uat-2026-08-15.json"
+    master_closure_path = ROOT / "docs" / "evidence" / "g10" / "master-requirements-closure.json"
+    master_closure = _master_requirements_closure(master_closure_path)
     artifact_state = {
         name: {"exists": path.is_file(), "final": _is_final(path) if requires_final else path.is_file(), "path": path.relative_to(ROOT).as_posix()}
         for name, (path, requires_final) in required_artifacts.items()
@@ -295,6 +359,12 @@ def audit() -> dict[str, Any]:
         {"code": "SECURITY_UAT", "passed": _security_uat_passed(security_uat_path), "evidence": security_uat_path.relative_to(ROOT).as_posix()},
         {"code": "CLEAN_ROOT_RECOVERY_UAT", "passed": _recovery_restore_passed(recovery_restore_path), "evidence": recovery_restore_path.relative_to(ROOT).as_posix()},
         {"code": "STALE_JOB_MAINTENANCE", "passed": _stale_job_maintenance_passed(stale_job_path), "evidence": stale_job_path.relative_to(ROOT).as_posix()},
+        {
+            "code": "MASTER_REQUIREMENTS_CLOSURE",
+            "passed": master_closure["valid"],
+            "observed": master_closure,
+            "evidence": master_closure_path.relative_to(ROOT).as_posix(),
+        },
         {"code": "RELEASE_ARTIFACTS", "passed": release_artifacts_ready, "artifacts": artifact_state},
     ]
     all_passed = all(bool(check["passed"]) for check in checks)

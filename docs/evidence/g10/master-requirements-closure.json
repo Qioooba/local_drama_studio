@@ -1,0 +1,31 @@
+{
+  "schema_version": "master.requirements.closure.v1",
+  "status": "IN_PROGRESS",
+  "source_of_truth": {
+    "functional_and_nonfunctional": "../LocalDramaStudio_Blueprint_v2/01_产品需求与验收范围.md",
+    "test_cases": "../LocalDramaStudio_Blueprint_v2/10_测试策略_用例矩阵与发布检查.md"
+  },
+  "inventory": {
+    "fr_total": 86,
+    "fr_p0": 63,
+    "fr_p1": 21,
+    "fr_p2_non_blocking": 2,
+    "nfr_total": 15,
+    "nfr_p0": 14,
+    "nfr_p1": 1,
+    "tc_total": 85
+  },
+  "closure": {
+    "verified_release_fr": 0,
+    "verified_nfr": 0,
+    "passed_tc": 0,
+    "open_p0_defects": null,
+    "open_p1_defects": null,
+    "full_chain_local_uat": "NOT_RUN"
+  },
+  "notes": [
+    "This ledger is deliberately conservative until every P0/P1 requirement and named test case is mapped to current automated or captured local evidence.",
+    "The two P2 FRs are inventoried but do not block the first formal release.",
+    "G7-G10 evidence is necessary but cannot by itself set this ledger to PASS."
+  ]
+}

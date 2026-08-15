@@ -7,7 +7,7 @@
 | 类别 | 蓝图基线 | G0 状态 | 规则 |
 |---|---:|---|---|
 | 功能需求 | 86/86 | NOT_STARTED（已登记） | 以 01 的需求表为准；P0/P1 最终必须逐项闭环 |
-| 非功能需求 | 14/14 | NOT_STARTED（已登记） | 以 01 的非功能表和 13 的验证映射为准 |
+| 非功能需求 | 15/15（14 P0 + 1 P1） | IN_PROGRESS（已登记，待逐项证据闭环） | 以 01 的非功能表和 13 的验证映射为准；旧“14/14”计数遗漏 P1 可访问性 |
 | 主干测试 | 85 | NOT_STARTED（已登记） | 以 10 的 TC ID 为准；不得用 mock/static page 冒充 |
 | 阶段门禁 | G0—G10 | G0 IN_PROGRESS | 只按 09 的顺序推进 |
 | legacy 迁移 | G11 | DEFERRED | 本次禁止实施 |
@@ -35,7 +35,7 @@
 | SQLite WAL/外键/完整性/在线备份/迁移前备份 | VERIFIED | `apps/api/tests/test_migration.py`、`docs/evidence/g2/g2_validation.txt` |
 | API 真实迁移存储、乐观并发冲突 | VERIFIED | `apps/api/tests/test_api_projects.py` |
 | 统一 Idempotency-Key、持久 Job/Attempt/Lease/SSE | NOT_STARTED（G5） | 不在 G2 退出范围 |
-| 86 FR、14 NFR、85 TC、完整本地 UAT、发布 | NOT_STARTED（G10） | 继续按 G3→G10 门禁 |
+| 86 FR（正式版阻塞 84 个 P0/P1）、15 NFR、85 TC、完整本地 UAT、发布 | IN_PROGRESS（G10） | `docs/evidence/g10/master-requirements-closure.json` 为机器硬门禁；局部 G7-G10 PASS 不等于总体 GO |
 
 ## G3 验证状态
 
