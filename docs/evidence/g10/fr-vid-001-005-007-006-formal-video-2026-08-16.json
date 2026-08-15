@@ -1,0 +1,32 @@
+{
+  "schema_version": "localdrama.requirement.evidence.v1",
+  "requirement_ids": ["FR-VID-001", "FR-VID-005", "FR-VID-006", "FR-VID-007"],
+  "status": "PARTIAL",
+  "observed_at": "2026-08-16T02:15:00+08:00",
+  "scope": "LOCAL_ONLY proxy take planning, frozen generation snapshots, formal video QC and atomic delivery selection",
+  "implementation": {
+    "proxy_takes": "GenerationWorkbench validates 1–8 explicit takes, derives one immutable Variant/Job per seed, and I2V preflight requires a current approved KEYFRAME; seed batch remains a read-only plan until explicit submit.",
+    "formal_generation": "Submitted Variant jobs persist workflow/profile/model/manifest/seed/media approval snapshots and promote successful local artifacts as new immutable MediaVersions; exact replay rejects changed execution snapshots.",
+    "formal_review": "Formal video machine QC now persists ffprobe-backed decode, dimensions, fps, duration and codec results under g6_formal_video_qc_v1; the immutable formal_video template separately requires action, identity, flicker and subtitle-safe-zone human checks.",
+    "batch_delivery": "Formal selection preflight filters project-owned FORMAL versions and returns per-item blockers for approval, stale human review and integrity; commit validates the plan hash and writes the batch atomically without silent partial success."
+  },
+  "automated_tests": [
+    "apps/api/tests/test_formal_video_qc.py",
+    "apps/api/tests/test_generation_variants.py",
+    "apps/api/tests/test_g4_reviews.py",
+    "apps/web/src/features/generation/GenerationWorkbench.test.tsx",
+    "apps/web/src/generated/api.test.ts"
+  ],
+  "production_uat": {
+    "status": "PENDING",
+    "required": [
+      "Windows x64 real local model proxy/formal output with multiple approved-keyframe takes",
+      "formal video review across three viewports with human action/identity/flicker/safe-zone checks",
+      "multi-item delivery preflight against real approval and integrity drift"
+    ]
+  },
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "remote_transport_allowed": false,
+  "notes": "Automated evidence uses isolated local fixtures only; no bundled model, upload or public runtime is implied."
+}

@@ -239,6 +239,7 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .workflow-version > div { display: grid; gap: 3px; }
 .workflow-version small, .workflow-version code { min-width: 0; overflow: hidden; color: var(--text-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .workflow-safety { margin: 12px 0 0; padding: 10px 12px; border-left: 3px solid var(--approved); color: var(--text-muted); background: var(--surface-muted); font-size: 11px; }
+.comfy-lab-panel code { overflow-wrap: anywhere; }
 .diagnostic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .diagnostic-status, .diagnostic-row { border: 1px solid #ded9cf; border-radius: 9px; padding: 13px; background: #fff; }
 .diagnostic-status { display: grid; gap: 8px; }

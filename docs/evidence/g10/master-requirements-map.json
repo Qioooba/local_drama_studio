@@ -449,6 +449,30 @@
       ]
     },
     {
+      "id": "FR-VID-001",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-vid-001-005-007-006-formal-video-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx"]
+    },
+    {
+      "id": "FR-VID-005",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-vid-001-005-007-006-formal-video-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/api/tests/test_i2v_probe_plan.py"]
+    },
+    {
+      "id": "FR-VID-006",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-vid-001-005-007-006-formal-video-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_formal_video_qc.py", "apps/api/tests/test_g4_reviews.py"]
+    },
+    {
+      "id": "FR-VID-007",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-vid-001-005-007-006-formal-video-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g4_reviews.py", "apps/web/src/generated/api.test.ts"]
+    },
+    {
       "id": "FR-VID-002",
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/fr-vid-002-008-frame-review-2026-08-16.json"],
@@ -471,6 +495,18 @@
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/fr-vid-002-008-frame-review-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_video_review_annotations.py", "apps/web/src/features/reviews/VideoAnnotations.test.tsx"]
+    },
+    {
+      "id": "FR-WFL-004",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-wfl-004-comfy-lab-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_comfy_lab.py", "apps/web/src/features/shared/ComfyLabPanel.test.tsx"]
+    },
+    {
+      "id": "NFR-OBS-001",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/nfr-obs-001-structured-logs-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_observability_logging.py"]
     }
   ]
 }

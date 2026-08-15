@@ -13,6 +13,7 @@ from .api.routes.automation import router as automation_router
 from .api.routes.automation_workflows import router as automation_workflows_router
 from .api.routes.canvas import router as canvas_router
 from .api.routes.capacity import router as capacity_router
+from .api.routes.comfy_lab import router as comfy_lab_router
 from .api.routes.configuration import router as configuration_router
 from .api.routes.creative_entries import router as creative_entries_router
 from .api.routes.diagnostics import router as diagnostics_router
@@ -82,6 +83,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_exception_handler(ApiError, api_error_handler)
     app.include_router(health_router, prefix="/api/v1")
     app.include_router(canvas_router, prefix="/api/v1")
+    app.include_router(comfy_lab_router, prefix="/api/v1")
     app.include_router(capacity_router, prefix="/api/v1")
     app.include_router(adapters_router, prefix="/api/v1")
     app.include_router(audit_router, prefix="/api/v1")

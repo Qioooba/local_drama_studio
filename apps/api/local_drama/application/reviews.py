@@ -818,6 +818,36 @@ class ReviewService:
         probe = media["probe"]
         probe_ok = media["media_kind"] in {"DOCUMENT"} or probe.get("probe_status") == "PASS"
         results.append({"item_id": "decode", "result": "PASS" if probe_ok else "FAIL", "details": {"probe_status": probe.get("probe_status")}})
+        # Formal video review is deliberately independent from the human
+        # checklist.  Persist technical facts from the immutable import/job
+        # probe so a reviewer can distinguish a missing/invalid stream from a
+        # creative failure (identity, motion, flicker, safe area, ...).
+        # These checks are structural and local-only; target/profile policy
+        # matching remains an explicit human/template decision rather than a
+        # guessed platform default.
+        if media["media_kind"] == "VIDEO" and media["stage"] == "FORMAL":
+            streams = probe.get("streams") if isinstance(probe.get("streams"), list) else []
+            video_stream = next((item for item in streams if isinstance(item, dict) and item.get("codec_type") == "video"), {})
+            width = video_stream.get("width")
+            height = video_stream.get("height")
+            codec_name = str(video_stream.get("codec_name") or "").strip()
+            fps_num = int(media["fps_num"]) if media.get("fps_num") else 0
+            fps_den = int(media["fps_den"]) if media.get("fps_den") else 0
+            duration_ms = int(media["duration_ms"]) if media.get("duration_ms") else 0
+            dimensions_ok = isinstance(width, int) and isinstance(height, int) and width > 0 and height > 0
+            fps_ok = fps_num > 0 and fps_den > 0
+            duration_ok = duration_ms > 0
+            codec_ok = bool(codec_name)
+            results.extend(
+                [
+                    {"item_id": "dimensions", "result": "PASS" if dimensions_ok else "FAIL", "details": {"width": width, "height": height, "source": "ffprobe"}},
+                    {"item_id": "fps", "result": "PASS" if fps_ok else "FAIL", "details": {"numerator": fps_num or None, "denominator": fps_den or None, "value": (fps_num / fps_den) if fps_ok else None, "source": "ffprobe"}},
+                    {"item_id": "duration", "result": "PASS" if duration_ok else "FAIL", "details": {"duration_ms": duration_ms or None, "source": "ffprobe"}},
+                    {"item_id": "codec", "result": "PASS" if codec_ok else "FAIL", "details": {"codec_name": codec_name or None, "source": "ffprobe"}},
+                ]
+            )
+            if policy_version == "g4_media_qc_v1":
+                policy_version = "g6_formal_video_qc_v1"
         if media["media_kind"] == "AUDIO":
             metrics = self.media.audio_qc_metrics(media_version_id)
             integrated_lufs = float(metrics["integrated_lufs"])

@@ -319,6 +319,207 @@
         }
       }
     },
+    "/api/v1/comfy-lab/status": {
+      "get": {
+        "tags": [
+          "comfy-lab"
+        ],
+        "summary": "Status",
+        "operationId": "getComfyLabStatus",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Getcomfylabstatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/comfy-lab/session": {
+      "get": {
+        "tags": [
+          "comfy-lab"
+        ],
+        "summary": "Session",
+        "operationId": "getComfyLabSession",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Getcomfylabsession"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/comfy-lab:start": {
+      "post": {
+        "tags": [
+          "comfy-lab"
+        ],
+        "summary": "Start",
+        "operationId": "startComfyLab",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Startcomfylab"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/comfy-lab:stop": {
+      "post": {
+        "tags": [
+          "comfy-lab"
+        ],
+        "summary": "Stop",
+        "operationId": "stopComfyLab",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Stopcomfylab"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/comfy-lab:restart": {
+      "post": {
+        "tags": [
+          "comfy-lab"
+        ],
+        "summary": "Restart",
+        "operationId": "restartComfyLab",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Restartcomfylab"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/comfy-lab/workflow:capture": {
+      "post": {
+        "tags": [
+          "comfy-lab"
+        ],
+        "summary": "Capture",
+        "operationId": "captureComfyLabWorkflow",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComfyLabCaptureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Capturecomfylabworkflow"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/comfy-lab/test-runs": {
+      "post": {
+        "tags": [
+          "comfy-lab"
+        ],
+        "summary": "Test Run",
+        "operationId": "createComfyLabTestRun",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComfyLabTestRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Createcomfylabtestrun"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/capacity/snapshot": {
       "get": {
         "tags": [
@@ -13019,6 +13220,46 @@
           "mode"
         ],
         "title": "CanvasPlanRequest"
+      },
+      "ComfyLabCaptureRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "default": "Designer capture"
+          },
+          "workflow": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Workflow"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow"
+        ],
+        "title": "ComfyLabCaptureRequest"
+      },
+      "ComfyLabTestRunRequest": {
+        "properties": {
+          "workflow": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Workflow"
+          },
+          "execute": {
+            "type": "boolean",
+            "title": "Execute",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow"
+        ],
+        "title": "ComfyLabTestRunRequest"
       },
       "ComfyWorkerRequest": {
         "properties": {

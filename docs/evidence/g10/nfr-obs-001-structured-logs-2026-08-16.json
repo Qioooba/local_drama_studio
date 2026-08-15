@@ -1,0 +1,29 @@
+{
+  "schema_version": "localdrama.requirement.evidence.v1",
+  "scope": ["NFR-OBS-001"],
+  "status": "PARTIAL",
+  "local_only": true,
+  "observed_at": "2026-08-16",
+  "implementation": {
+    "request_context": "RequestContextMiddleware emits JSON request.completed/request.failed/request.rejected records with timestamp, level, service, event, trace_id, request_id, project_id, episode_id, shot_id, job_id, attempt_id, worker_id, provider, method/path and duration/status context.",
+    "safety": "Only bounded identifier values are accepted; request bodies, query strings, authorization headers and exception messages are never logged. X-Trace-Id is echoed for local correlation.",
+    "existing_task_log_api": "Persistent job attempt logs remain available through GET /api/v1/job-attempts/{attempt_id}/logs; this change does not mutate job state."
+  },
+  "automated_tests": [
+    "apps/api/tests/test_observability_logging.py::test_request_log_contains_trace_job_project_context_without_sensitive_values",
+    "apps/api/tests/test_observability_logging.py::test_request_log_extracts_ids_from_resource_path",
+    "apps/api/tests/test_observability_logging.py::test_security_rejection_is_also_correlated_without_logging_origin"
+  ],
+  "verification": {
+    "pytest": "3 passed",
+    "ruff": "passed",
+    "mypy": "passed",
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "mutated": false
+  },
+  "remaining": [
+    "Formal production Windows UAT and log-retention/rotation inspection remain pending.",
+    "The task-log UI still needs a dedicated log viewer acceptance pass; this evidence does not claim that UAT."
+  ]
+}
