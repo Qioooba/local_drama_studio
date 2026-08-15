@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from local_drama.api.routes.automation_workflows import router as automation_workflow_router
 from local_drama.application.automation_workflows import AutomationWorkflowService
 from local_drama.application.projects import ProjectService
 from local_drama.domain.errors import DomainRuleError
@@ -97,7 +96,6 @@ def test_limits_and_declarative_validation(workspace, database) -> None:
 def test_workflow_api_uses_same_service_boundary(workspace, database) -> None:
     project_id = _project(workspace, database)
     app = create_app(workspace)
-    app.include_router(automation_workflow_router, prefix="/api/v1")
     with TestClient(app) as client:
         response = client.post(f"/api/v1/projects/{project_id}/automation-workflows", json={k: v for k, v in _definition(project_id).items() if k != "project_id"})
         assert response.status_code == 201, response.text
@@ -117,4 +115,3 @@ def test_workflow_api_uses_same_service_boundary(workspace, database) -> None:
         resumed = client.post(f"/api/v1/automation-runs/{run_id}:resume", json={"decision": "HUMAN_APPROVED", "note": "人工确认"})
         assert resumed.status_code == 200
         assert resumed.json()["run"]["status"] == "RUNNING"
-
