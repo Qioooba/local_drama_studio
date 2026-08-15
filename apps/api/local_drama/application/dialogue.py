@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
+import subprocess
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -172,6 +174,55 @@ class DialogueService:
                 ),
             )
         return self.get_voice_profile(profile_id)
+
+    def discover_local_sapi_voices(self) -> dict[str, Any]:
+        """Read installed Windows SAPI voice metadata without mutating project data."""
+        powershell = shutil.which("powershell.exe") or shutil.which("powershell") or shutil.which("pwsh")
+        base = {"runtime_contacted": False, "network_contacted": False, "mutated": False}
+        if not powershell:
+            return {"status": "UNAVAILABLE", "items": [], "message": "本机未找到 PowerShell/System.Speech runtime", **base}
+        script = (
+            "Add-Type -AssemblyName System.Speech; "
+            "$s=New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+            "try { $s.GetInstalledVoices() | ForEach-Object { $v=$_.VoiceInfo; "
+            "[pscustomobject]@{name=$v.Name; culture=$v.Culture.Name; gender=$v.Gender.ToString(); "
+            "age=$v.Age.ToString(); voice_ref=('sapi:' + $v.Name)} } | ConvertTo-Json -Compress } "
+            "finally { $s.Dispose() }"
+        )
+        try:
+            result = subprocess.run(
+                [powershell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            return {"status": "UNAVAILABLE", "items": [], "message": f"本机 SAPI 音色扫描失败：{type(error).__name__}", "runtime_contacted": True, "network_contacted": False, "mutated": False}
+        if result.returncode != 0:
+            return {"status": "UNAVAILABLE", "items": [], "message": "System.Speech 未能读取本机音色", "runtime_contacted": True, "network_contacted": False, "mutated": False}
+        try:
+            payload: Any = json.loads(result.stdout or "[]")
+        except json.JSONDecodeError:
+            payload = []
+        rows = payload if isinstance(payload, list) else [payload]
+        items = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            name = str(row.get("name", "")).strip()
+            if not name:
+                continue
+            items.append(
+                {
+                    "name": name,
+                    "culture": str(row.get("culture", "")).strip(),
+                    "gender": str(row.get("gender", "")).strip(),
+                    "age": str(row.get("age", "")).strip(),
+                    "voice_ref": f"sapi:{name}",
+                }
+            )
+        return {"status": "AVAILABLE" if items else "EMPTY", "items": items, "message": None, "runtime_contacted": True, "network_contacted": False, "mutated": False}
 
     def register_candidate(
         self,

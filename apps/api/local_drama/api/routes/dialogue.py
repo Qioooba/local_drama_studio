@@ -62,6 +62,11 @@ async def list_voice_profiles(project_id: str, request: Request) -> dict[str, ob
         raise api_error_from_domain(error) from error
 
 
+@router.get("/tts/voices:discover", operation_id="discoverLocalSapiVoices")
+async def discover_local_sapi_voices(request: Request) -> dict[str, object]:
+    return service(request).discover_local_sapi_voices()
+
+
 @router.post("/dialogue-text-revisions/{text_revision_id}/tts-candidates", status_code=201, operation_id="registerTTSCandidate")
 async def register_tts_candidate(text_revision_id: str, payload: TTSCandidateRequest, request: Request) -> dict[str, object]:
     try:

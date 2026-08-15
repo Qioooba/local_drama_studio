@@ -76,6 +76,7 @@ export type DialogueTextRevision = { id: string; revision_no: number; text: stri
 export type TTSCandidate = { id: string; dialogue_text_revision_id: string; voice_profile_version_id: string; media_version_id: string; emotion: string; speech_rate: number; seed: number | null; model_ref: string; candidate_kind: 'PREVIEW' | 'FORMAL'; status: string; provenance: Record<string, unknown>; [key: string]: unknown };
 export type DialogueLine = { id: string; episode_id: string; shot_id: string | null; code: string; speaker: string; text_revisions: DialogueTextRevision[]; candidates: TTSCandidate[]; selection: Record<string, unknown> | null; [key: string]: unknown };
 export type VoiceProfileVersion = { id: string; project_id: string; code: string; version_no: number; title: string; voice_ref: string; license_status: string; license_evidence: { path_rel: string; sha256: string }; provider_profile_version_id: string | null; status: string; [key: string]: unknown };
+export type LocalSapiVoice = { name: string; culture: string; gender: string; age: string; voice_ref: string };
 export type DialogueLineRequest = { code: string; speaker: string; text: string; pronunciation?: Record<string, unknown>; shot_id?: string | null };
 export type DialogueTextRevisionRequest = { expected_revision_no: number; text: string; pronunciation?: Record<string, unknown> };
 export type VoiceProfileRequest = { code: string; title: string; voice_ref: string; license_status: 'USER_OWNED' | 'VERIFIED_LOCAL'; license_evidence_path_rel: string; provider_profile_version_id?: string | null };
@@ -621,6 +622,10 @@ export async function finalizeTTSJob(jobId: string, baseUrl = ''): Promise<{ res
 
 export async function listVoiceProfileVersions(projectId: string, baseUrl = ''): Promise<{ items: VoiceProfileVersion[] }> {
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/voice-profile-versions`, undefined, baseUrl);
+}
+
+export async function discoverLocalSapiVoices(baseUrl = ''): Promise<{ status: 'AVAILABLE' | 'EMPTY' | 'UNAVAILABLE'; items: LocalSapiVoice[]; message: string | null; runtime_contacted: boolean; network_contacted: false; mutated: false }> {
+  return requestJson('/api/v1/tts/voices:discover', undefined, baseUrl);
 }
 
 export async function bindEpisodeAudio(episodeId: string, payload: AudioBindingRequest, baseUrl = ''): Promise<{ audio_binding: AudioBinding }> {

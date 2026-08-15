@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -8,6 +9,41 @@ from local_drama.application.dialogue import DialogueService
 from local_drama.application.projects import ProjectService
 from local_drama.application.worker import LocalMediaWorker
 from local_drama.main import create_app
+
+
+def test_local_sapi_voice_discovery_is_read_only(workspace, database, monkeypatch) -> None:
+    monkeypatch.setattr("local_drama.application.dialogue.shutil.which", lambda _name: "powershell.exe")
+    monkeypatch.setattr(
+        "local_drama.application.dialogue.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                [{"name": "Microsoft Huihui Desktop", "culture": "zh-CN", "gender": "Female", "age": "Adult"}]
+            ),
+            stderr="",
+        ),
+    )
+    with TestClient(create_app(workspace)) as client:
+        with database.connect() as connection:
+            before = int(connection.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0])
+        response = client.get("/api/v1/tts/voices:discover")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "AVAILABLE"
+    assert payload["items"] == [
+        {
+            "name": "Microsoft Huihui Desktop",
+            "culture": "zh-CN",
+            "gender": "Female",
+            "age": "Adult",
+            "voice_ref": "sapi:Microsoft Huihui Desktop",
+        }
+    ]
+    assert payload["runtime_contacted"] is True
+    assert payload["network_contacted"] is False
+    assert payload["mutated"] is False
+    with database.connect() as connection:
+        assert int(connection.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0]) == before
 
 
 def _published_sapi_profile(database) -> str:

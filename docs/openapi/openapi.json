@@ -2813,6 +2813,30 @@
         }
       }
     },
+    "/api/v1/tts/voices:discover": {
+      "get": {
+        "tags": [
+          "dialogue",
+          "tts"
+        ],
+        "summary": "Discover Local Sapi Voices",
+        "operationId": "discoverLocalSapiVoices",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Discoverlocalsapivoices"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/dialogue-text-revisions/{text_revision_id}/tts-candidates": {
       "post": {
         "tags": [

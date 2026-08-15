@@ -5,7 +5,7 @@ import { DialogueGovernanceActions } from "./DialogueGovernanceActions";
 
 vi.mock("../../generated/api", async () => {
   const actual = await vi.importActual<typeof import("../../generated/api")>("../../generated/api");
-  return { ...actual, createDialogueLine: vi.fn(), createDialogueTextRevision: vi.fn(), createVoiceProfileVersion: vi.fn(), registerTTSCandidate: vi.fn(), selectTTSCandidate: vi.fn(), submitTTSJob: vi.fn(), finalizeTTSJob: vi.fn() };
+  return { ...actual, createDialogueLine: vi.fn(), createDialogueTextRevision: vi.fn(), createVoiceProfileVersion: vi.fn(), discoverLocalSapiVoices: vi.fn(), registerTTSCandidate: vi.fn(), selectTTSCandidate: vi.fn(), submitTTSJob: vi.fn(), finalizeTTSJob: vi.fn() };
 });
 
 const lines: api.DialogueLine[] = [{ id: "line-1", episode_id: "episode-1", shot_id: null, code: "DLG-001", speaker: "A", text_revisions: [{ id: "text-1", revision_no: 1, text: "你好", text_hash: "hash", pronunciation: {} }], candidates: [], selection: null }];
@@ -62,6 +62,17 @@ describe("DialogueGovernanceActions", () => {
     fireEvent.click(screen.getByRole("button", { name: "新增对白、音色或候选" }));
     expect((screen.getByRole("button", { name: "校验并创建不可变记录" }) as HTMLButtonElement).disabled).toBe(true);
     expect(api.createDialogueLine).not.toHaveBeenCalled();
+  });
+
+  it("discovers local SAPI voices before the user explicitly saves a voice profile", async () => {
+    vi.mocked(api.discoverLocalSapiVoices).mockResolvedValue({ status: "AVAILABLE", items: [{ name: "Microsoft Huihui Desktop", culture: "zh-CN", gender: "Female", age: "Adult", voice_ref: "sapi:Microsoft Huihui Desktop" }], message: null, runtime_contacted: true, network_contacted: false, mutated: false });
+    render(<DialogueGovernanceActions projectId="project-1" episodeId="episode-1" lines={lines} voices={voices} onChanged={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "新增对白、音色或候选" }));
+    fireEvent.change(screen.getByLabelText("操作类型"), { target: { value: "VOICE" } });
+    fireEvent.click(screen.getByRole("button", { name: "扫描本机 SAPI 音色" }));
+    await waitFor(() => expect(api.discoverLocalSapiVoices).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByLabelText("本机 SAPI 音色"), { target: { value: "sapi:Microsoft Huihui Desktop" } });
+    expect((screen.getByLabelText("本地音色引用") as HTMLInputElement).value).toBe("sapi:Microsoft Huihui Desktop");
   });
 
   it("queues a formal local TTS Job only through a provider-bound voice", async () => {

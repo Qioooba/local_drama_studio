@@ -117,6 +117,7 @@ SAPI 批次已提交为 `ec48a61 feat: run real local sapi tts jobs`。源代码
 - `504f915`：thumbnail/filmstrip/waveform 每次读取前重新验证源 MediaVersion SHA，已存在的旧缓存也不能绕过篡改检测。
 - `c0c7368`：生成工作台增加 `Provider random 重提` 分支入口，明确显示 `NON_REPRODUCIBLE`。
 - 发布演练脚本已对齐当前 migration head `0032_episode_render_execution_evidence`，隔离证据 `docs/evidence/g10/upgrade-rollback-rehearsal-0032-2026-08-15.json` 为 PASS；总需求 closure 仍是 IN_PROGRESS/NO-GO，不能提前宣告完成。
+- 本轮新增 `GET /api/v1/tts/voices:discover`：在 Windows 上只读扫描本机 System.Speech/SAPI 音色元数据，页面可显式选择并填入 `sapi:` 引用；不复制、上传或写入项目。未安装 PowerShell/System.Speech 时返回 `UNAVAILABLE`，扫描结果包含 `runtime_contacted=true`、`network_contacted=false`、`mutated=false`。隔离 API 回归、Web 7 项对白治理测试、build、Ruff 与 mypy 101 files 通过。
 
 ## 下一步精确顺序
 

@@ -8,7 +8,7 @@ import json
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
@@ -805,7 +805,8 @@ class ReviewService:
         return result
 
     def inbox(self, project_id: str | None = None, media_kind: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
-        return self.inbox_page(project_id, media_kind, cursor=0, limit=limit)["items"]
+        page = self.inbox_page(project_id, media_kind, cursor=0, limit=limit)
+        return cast(list[dict[str, Any]], page["items"])
 
     def inbox_page(self, project_id: str | None = None, media_kind: str | None = None, cursor: int = 0, limit: int = 100) -> dict[str, Any]:
         params: list[Any] = []
