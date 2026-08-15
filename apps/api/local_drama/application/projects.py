@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import uuid
@@ -679,6 +680,145 @@ class ProjectService:
         with self.database.connect() as connection:
             rows = connection.execute("SELECT * FROM shots WHERE episode_id = ? ORDER BY CAST(order_key AS REAL), code", (episode_id,)).fetchall()
         return [dict(row) for row in rows]
+
+    def get_storyboard_workspace(self, episode_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            episode = connection.execute("SELECT id,title FROM episodes WHERE id=?", (episode_id,)).fetchone()
+            if episode is None:
+                raise DomainRuleError("EPISODE_NOT_FOUND", "集不存在", {"episode_id": episode_id})
+            rows = connection.execute(
+                """SELECT sh.*,sr.revision_no AS current_revision_no,sr.fields_json,sr.is_frozen
+                FROM shots sh LEFT JOIN shot_revisions sr ON sr.id=sh.current_revision_id
+                WHERE sh.episode_id=? ORDER BY CAST(sh.order_key AS REAL),sh.code""",
+                (episode_id,),
+            ).fetchall()
+        items = []
+        elapsed_ms = 0
+        for ordinal, row in enumerate(rows, start=1):
+            item = dict(row)
+            item["fields"] = json.loads(str(item.pop("fields_json") or "{}"))
+            item["display_ordinal"] = ordinal
+            item["timeline_start_ms"] = elapsed_ms
+            elapsed_ms += int(item["target_duration_ms"])
+            item["timeline_end_ms"] = elapsed_ms
+            items.append(item)
+        return {
+            "episode": dict(episode),
+            "items": items,
+            "views": ["TABLE", "STORYBOARD", "TIMELINE"],
+            "identity_invariant": "shot.id and revision history never change during reorder",
+            "total_duration_ms": elapsed_ms,
+        }
+
+    def plan_storyboard_batch(self, episode_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        workspace = self.get_storyboard_workspace(episode_id)
+        items = workspace["items"]
+        by_id = {str(item["id"]): item for item in items}
+        current_ids = list(by_id)
+        ordered_ids = [str(value) for value in payload.get("ordered_shot_ids", [])]
+        edits = list(payload.get("edits", []))
+        copies = list(payload.get("copies", []))
+        issues: list[dict[str, Any]] = []
+        if len(ordered_ids) != len(set(ordered_ids)) or set(ordered_ids) != set(current_ids):
+            issues.append({"code": "ORDER_SET_MISMATCH", "subject_id": episode_id, "message": "重排必须且只能包含当前集全部镜头一次"})
+        edited_ids: set[str] = set()
+        for index, edit in enumerate(edits):
+            shot_id = str(edit.get("shot_id", ""))
+            shot = by_id.get(shot_id)
+            if shot is None:
+                issues.append({"code": "SHOT_NOT_IN_EPISODE", "subject_id": shot_id, "item_index": index, "message": "批量编辑镜头不属于当前集"})
+                continue
+            if shot_id in edited_ids:
+                issues.append({"code": "DUPLICATE_EDIT", "subject_id": shot_id, "item_index": index, "message": "同一镜头不能在一批中编辑两次"})
+            edited_ids.add(shot_id)
+            if int(edit.get("expected_revision", 0)) != int(shot["revision"]):
+                issues.append({"code": "SHOT_REVISION_CONFLICT", "subject_id": shot_id, "item_index": index, "message": "镜头已被其他操作修改，请刷新后重试"})
+            if edit.get("fields") is not None and not isinstance(edit.get("fields"), dict):
+                issues.append({"code": "INVALID_FIELDS", "subject_id": shot_id, "item_index": index, "message": "fields 必须是对象"})
+        existing_codes = {str(item["code"]).casefold() for item in items}
+        copy_codes: set[str] = set()
+        for index, copy in enumerate(copies):
+            source_id = str(copy.get("source_shot_id", ""))
+            code = str(copy.get("code", "")).strip()
+            folded = code.casefold()
+            if source_id not in by_id:
+                issues.append({"code": "COPY_SOURCE_NOT_IN_EPISODE", "subject_id": source_id, "item_index": index, "message": "复制来源不属于当前集"})
+            if not code:
+                issues.append({"code": "COPY_CODE_REQUIRED", "subject_id": source_id, "item_index": index, "message": "复制镜头必须提供新编号"})
+            elif folded in existing_codes or folded in copy_codes:
+                issues.append({"code": "SHOT_CODE_CONFLICT", "subject_id": source_id, "item_index": index, "message": "复制后的镜头编号在当前集冲突"})
+            copy_codes.add(folded)
+        source_snapshot = [
+            {"id": str(item["id"]), "order_key": str(item["order_key"]), "revision": int(item["revision"]), "current_revision_id": str(item["current_revision_id"])}
+            for item in items
+        ]
+        canonical = {"episode_id": episode_id, "source_snapshot": source_snapshot, "ordered_shot_ids": ordered_ids, "edits": edits, "copies": copies}
+        plan_hash = hashlib.sha256(_json(canonical).encode("utf-8")).hexdigest()
+        return {
+            "episode_id": episode_id,
+            "ordered_shot_ids": ordered_ids,
+            "edits": edits,
+            "copies": copies,
+            "source_snapshot": source_snapshot,
+            "plan_hash": plan_hash,
+            "valid": not issues,
+            "issues": issues,
+            "summary": {"reordered": sum(shot_id != current_ids[index] for index, shot_id in enumerate(ordered_ids)) if len(ordered_ids) == len(current_ids) else 0, "edited": len(edits), "copied": len(copies)},
+            "runtime_contacted": False,
+            "network_contacted": False,
+        }
+
+    def commit_storyboard_batch(self, episode_id: str, payload: dict[str, Any], expected_plan_hash: str) -> dict[str, Any]:
+        plan = self.plan_storyboard_batch(episode_id, payload)
+        if plan["plan_hash"] != expected_plan_hash:
+            raise DomainRuleError("STORYBOARD_PLAN_STALE", "批量计划已变化，请重新校验")
+        if not plan["valid"]:
+            raise DomainRuleError("STORYBOARD_BATCH_INVALID", "批量计划含校验问题", {"issues": plan["issues"]})
+        now = _utc_now()
+        changed_shot_ids: list[str] = []
+        copied_ids: list[str] = []
+        with self.database.transaction() as connection:
+            for ordinal, shot_id in enumerate(plan["ordered_shot_ids"], start=1):
+                connection.execute("UPDATE shots SET order_key=?,updated_at=? WHERE id=? AND episode_id=?", (str(ordinal), now, shot_id, episode_id))
+            for edit in plan["edits"]:
+                shot_id = str(edit["shot_id"])
+                shot = connection.execute("SELECT * FROM shots WHERE id=? AND episode_id=?", (shot_id, episode_id)).fetchone()
+                if shot is None or int(shot["revision"]) != int(edit["expected_revision"]):
+                    raise DomainRuleError("SHOT_REVISION_CONFLICT", "镜头已被其他操作修改，请重新校验", {"shot_id": shot_id})
+                updates: list[str] = []
+                values: list[object] = []
+                for column in ("target_duration_ms", "shot_type"):
+                    if edit.get(column) is not None:
+                        updates.append(f"{column}=?")
+                        values.append(edit[column])
+                if edit.get("fields") is not None:
+                    current = connection.execute("SELECT fields_json FROM shot_revisions WHERE id=?", (shot["current_revision_id"],)).fetchone()
+                    fields = json.loads(str(current["fields_json"])) if current else {}
+                    fields.update(edit["fields"])
+                    revision_no = int(connection.execute("SELECT COALESCE(MAX(revision_no),0) FROM shot_revisions WHERE shot_id=?", (shot_id,)).fetchone()[0]) + 1
+                    revision_id = str(uuid.uuid4())
+                    connection.execute("INSERT INTO shot_revisions (id,shot_id,revision_no,fields_json,is_frozen,created_at,updated_at,created_by) VALUES (?,?,?,?,0,?,?,'local-user')", (revision_id, shot_id, revision_no, _json(fields), now, now))
+                    updates.append("current_revision_id=?")
+                    values.append(revision_id)
+                    updates.append("status='DIRECTED'")
+                updates.extend(["revision=revision+1", "updated_at=?"])
+                values.extend([now, shot_id])
+                connection.execute(f"UPDATE shots SET {','.join(updates)} WHERE id=?", values)
+                changed_shot_ids.append(shot_id)
+            for copy in plan["copies"]:
+                source = connection.execute("SELECT * FROM shots WHERE id=? AND episode_id=?", (copy["source_shot_id"], episode_id)).fetchone()
+                source_revision = connection.execute("SELECT fields_json,is_frozen FROM shot_revisions WHERE id=?", (source["current_revision_id"],)).fetchone()
+                shot_id, revision_id = str(uuid.uuid4()), str(uuid.uuid4())
+                maximum = float(connection.execute("SELECT COALESCE(MAX(CAST(order_key AS REAL)),0) FROM shots WHERE episode_id=?", (episode_id,)).fetchone()[0])
+                connection.execute("""INSERT INTO shots (id,episode_id,code,order_key,target_duration_ms,shot_type,status,current_revision_id,created_at,updated_at,created_by,revision,schema_version)
+                    VALUES (?,?,?,?,?,?,?, ?,?,?, 'local-user',1,'v2')""", (shot_id, episode_id, str(copy["code"]).strip(), str(maximum + 1), source["target_duration_ms"], source["shot_type"], source["status"], revision_id, now, now))
+                connection.execute("INSERT INTO shot_revisions (id,shot_id,revision_no,fields_json,is_frozen,created_at,updated_at,created_by) VALUES (?,?,1,?,?,?,?,'local-user')", (revision_id, shot_id, source_revision["fields_json"] if source_revision else "{}", source_revision["is_frozen"] if source_revision else 0, now, now))
+                copied_ids.append(shot_id)
+            connection.execute("""INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
+                VALUES ('local-user','writer','STORYBOARD_BATCH_COMMITTED','episode',?,'分镜批量计划已提交',?)""", (episode_id, _json({"plan_hash": expected_plan_hash, "changed_shot_ids": changed_shot_ids, "copied_shot_ids": copied_ids})))
+        for shot_id in changed_shot_ids:
+            ReviewService(self.database).mark_stale_for_owner(shot_id, "shot_revision_changed")
+        return {"plan_hash": expected_plan_hash, "changed_shot_ids": changed_shot_ids, "copied_shot_ids": copied_ids, "storyboard": self.get_storyboard_workspace(episode_id)}
 
     def get_episode(self, episode_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:

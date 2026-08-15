@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import pytest
+from fastapi.testclient import TestClient
 
 from local_drama.application.g7_readiness import G7ReadinessService
 from local_drama.application.projects import ProjectService
 from local_drama.application.workspace_assets import WorkspaceAssetService
 from local_drama.domain.errors import DomainRuleError
+from local_drama.main import create_app
 
 
 def test_workspace_asset_authorization_rehashes_media_and_publishes_brand_kit(workspace, database) -> None:
@@ -26,6 +28,21 @@ def test_workspace_asset_authorization_rehashes_media_and_publishes_brand_kit(wo
     assert kit["status"] == "ACTIVE"
     readiness = G7ReadinessService(database).inspect(str(project["id"]))
     assert next(item for item in readiness["checks"] if item["code"] == "WORKSPACE_ASSET_AUTHORIZATION")["passed"] is True
+
+
+def test_image_content_endpoint_requires_derived_thumbnail(workspace, database) -> None:
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="thumb_policy", title="Thumbnail policy", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1,
+        target_duration_ms=60_000, allow_unconfigured_capabilities=True,
+    )
+    source = workspace.work_root / "reference.png"
+    source.write_bytes(bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360f8cfc000000301010018dd8db00000000049454e44ae426082"))
+    from local_drama.application.media import MediaService
+    media = MediaService(database, workspace).import_file(str(project["id"]), source, media_kind="IMAGE")
+    with TestClient(create_app(workspace)) as client:
+        response = client.get(f"/api/v1/media-versions/{media['media_version_id']}/content")
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "IMAGE_CONTENT_REQUIRES_THUMBNAIL"
 
 
 def test_workspace_asset_authorization_rejects_cross_project_and_tamper(workspace, database) -> None:

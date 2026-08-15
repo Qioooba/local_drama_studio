@@ -103,3 +103,32 @@ class ShotRevisionRequest(BaseModel):
 
     fields: dict[str, Any]
     freeze: bool = False
+
+
+class StoryboardBatchEdit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    shot_id: str = Field(min_length=1, max_length=64)
+    expected_revision: int = Field(ge=1)
+    target_duration_ms: int | None = Field(default=None, gt=0)
+    shot_type: str | None = Field(default=None, min_length=1, max_length=64)
+    fields: dict[str, Any] | None = None
+
+
+class StoryboardBatchCopy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_shot_id: str = Field(min_length=1, max_length=64)
+    code: str = Field(min_length=1, max_length=64)
+
+
+class StoryboardBatchPlanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ordered_shot_ids: list[str]
+    edits: list[StoryboardBatchEdit] = Field(default_factory=list)
+    copies: list[StoryboardBatchCopy] = Field(default_factory=list)
+
+
+class StoryboardBatchCommitRequest(StoryboardBatchPlanRequest):
+    expected_plan_hash: str = Field(pattern="^[0-9a-f]{64}$")

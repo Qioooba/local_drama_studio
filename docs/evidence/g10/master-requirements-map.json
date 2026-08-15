@@ -75,6 +75,12 @@
       "automated_tests": ["apps/api/tests/test_document_import_commit.py", "apps/web/src/features/projects/ScriptImportPanel.test.tsx"]
     },
     {
+      "id": "FR-ING-003",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/fr-ing-003-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_storyboard_batch.py", "apps/web/src/features/projects/StoryboardBatchWorkbench.test.tsx"]
+    },
+    {
       "id": "FR-PST-001",
       "status": "PASS",
       "evidence": ["docs/evidence/g10/fr-pst-001-uat-2026-08-15.json"],
@@ -97,6 +103,12 @@
       "status": "PASS",
       "evidence": ["docs/evidence/g10/fr-ing-001-uat-2026-08-15.json"],
       "automated_tests": ["apps/api/tests/test_document_import_commit.py", "apps/web/src/features/projects/ScriptImportPanel.test.tsx"]
+    },
+    {
+      "id": "TC-CAP-003",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/fr-ing-003-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_storyboard_batch.py", "apps/web/src/features/projects/StoryboardBatchWorkbench.test.tsx"]
     },
     {
       "id": "TC-DOM-001",

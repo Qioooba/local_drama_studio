@@ -121,6 +121,13 @@ def _stream(path: Path, start: int, end: int) -> Iterator[bytes]:
 async def _content(media_version_id: str, request: Request, head: bool = False) -> Response:
     try:
         item, path = service(request).content_path(media_version_id)
+        if str(item["media_kind"]) == "IMAGE":
+            raise DomainRuleError(
+                "IMAGE_CONTENT_REQUIRES_THUMBNAIL",
+                "图片读取必须使用派生缩略图接口，不直接读取原图",
+                {"thumbnail_path": f"/api/v1/media-versions/{media_version_id}/thumbnail?size=small&frame=poster"},
+                suggested_action="改用 /thumbnail?size=small&frame=poster",
+            )
         selected = _range_headers(request, path)
         if isinstance(selected, Response):
             return selected

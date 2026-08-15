@@ -53,6 +53,7 @@ import { ProjectPackageAction } from "../features/projects/ProjectPackageAction"
 import { CreativeLibrary } from "../features/projects/CreativeLibrary";
 import { AIDraftReviewPanel } from "../features/projects/AIDraftReviewPanel";
 import { ScriptImportPanel } from "../features/projects/ScriptImportPanel";
+import { StoryboardBatchWorkbench } from "../features/projects/StoryboardBatchWorkbench";
 import { DialogueTTSPanel } from "../features/status/DialogueTTSPanel";
 import { AudioTrackPanel } from "../features/status/AudioTrackPanel";
 import { AdapterContractsPanel, DiagnosticPanel, G8ReadinessPanel, G9ReadinessPanel, ModelCompatibilityPanel, ProjectConfigurationSnapshot, ProjectList, TimelineStatusPanel } from "../features/status/ReadinessPanels";
@@ -322,6 +323,7 @@ export function App() {
                 {production.data?.items.map((shot) => <div className="shot-row" key={String(shot.id)}><strong>{String(shot.code)}</strong><span>{String(shot.status)}</span><span className="blocker-text">{Array.isArray(shot.blockers) ? `${shot.blockers.length} 个阻塞` : "读取中"}</span><span>{String(shot.next_action)}</span></div>)}
                 {production.data?.items.length === 0 && <p className="empty-state">当前集还没有镜头；请从真实 API 创建镜头。</p>}
                 {selectedProject && selectedEpisode && <EpisodeSceneRanges projectId={selectedProject} episodeId={selectedEpisode} />}
+                {selectedEpisode && <StoryboardBatchWorkbench episodeId={selectedEpisode} />}
                 {selectedProject && <CreativeLibrary projectId={selectedProject} />}
                 {selectedProject && <ScriptImportPanel projectId={selectedProject} />}
                 {selectedProject && <AIDraftReviewPanel projectId={selectedProject} />}

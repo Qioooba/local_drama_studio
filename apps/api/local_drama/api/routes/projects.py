@@ -11,6 +11,8 @@ from local_drama.api.schemas.projects import (
     SceneCreateRequest,
     ShotCreateRequest,
     ShotRevisionRequest,
+    StoryboardBatchCommitRequest,
+    StoryboardBatchPlanRequest,
 )
 from local_drama.application.configuration import ConfigurationService
 from local_drama.application.errors import api_error_from_domain
@@ -238,6 +240,32 @@ async def reorder_episode(episode_id: str, display_order: int, request: Request)
 @router.get("/episodes/{episode_id}/shots", operation_id="listShots")
 async def list_shots(episode_id: str, request: Request) -> dict[str, object]:
     return {"items": service(request).list_shots(episode_id)}
+
+
+@router.get("/episodes/{episode_id}/storyboard", operation_id="getStoryboardWorkspace")
+async def get_storyboard_workspace(episode_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"storyboard": service(request).get_storyboard_workspace(episode_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/episodes/{episode_id}/storyboard:plan", operation_id="planStoryboardBatch")
+async def plan_storyboard_batch(episode_id: str, payload: StoryboardBatchPlanRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"plan": service(request).plan_storyboard_batch(episode_id, payload.model_dump())}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/episodes/{episode_id}/storyboard:commit", operation_id="commitStoryboardBatch")
+async def commit_storyboard_batch(episode_id: str, payload: StoryboardBatchCommitRequest, request: Request) -> dict[str, object]:
+    try:
+        data = payload.model_dump()
+        expected_plan_hash = str(data.pop("expected_plan_hash"))
+        return {"result": service(request).commit_storyboard_batch(episode_id, data, expected_plan_hash)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
 
 
 @router.get("/shots/{shot_id}", operation_id="getShot")

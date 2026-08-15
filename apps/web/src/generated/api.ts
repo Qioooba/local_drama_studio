@@ -12,6 +12,10 @@ export type CreativeEntryRevision = { id: string; entry_id: string; revision_no:
 export type ScriptBreakdownDraft = { id: string; project_id: string; source_document_version_id: string; import_session_id: string; status: string; source_document_code: string; source_document_title: string; draft: { scenes?: Array<Record<string, unknown>> }; confidence: { profile_version_id?: string; model?: string; confidence?: { overall?: number; notes?: string[] }; questions?: string[]; source_passages?: Array<{ scene_no: number; quote: string; source_start: number; source_end: number }> }; profile_version_id: string | null; evidence_status: 'COMPLETE' | 'LEGACY_INCOMPLETE'; application_status: 'NOT_APPLIED'; automatic_apply: false; requires_human_action: true; created_at: string };
 export type DocumentImport = { source_document_id: string; source_document_version_id: string; import_session_id: string; media_version_id: string; status: 'PREVIEW_READY' | 'COMMITTED'; preview_hash: string; reused?: boolean; preview: { character_count: number; paragraph_count: number; paragraphs: string[]; requires_llm_confirmation: true } };
 export type ImportSession = { id: string; project_id: string; source_document_version_id: string; status: 'PREVIEW_READY' | 'COMMITTED'; revision: number; preview_hash: string; preview: { character_count: number; paragraph_count: number; paragraphs: string[]; requires_llm_confirmation: true }; validation: { valid: boolean; issue_count: number }; items: Array<Record<string, unknown>>; source_document_version: Record<string, unknown> };
+export type StoryboardShot = { id: string; code: string; order_key: string; target_duration_ms: number; shot_type: string; status: string; revision: number; current_revision_id: string; current_revision_no: number; is_frozen: number; fields: Record<string, unknown>; display_ordinal: number; timeline_start_ms: number; timeline_end_ms: number };
+export type StoryboardBatchPayload = { ordered_shot_ids: string[]; edits: Array<{ shot_id: string; expected_revision: number; target_duration_ms?: number; shot_type?: string; fields?: Record<string, unknown> }>; copies: Array<{ source_shot_id: string; code: string }> };
+export type StoryboardWorkspace = { episode: { id: string; title: string }; items: StoryboardShot[]; views: Array<'TABLE' | 'STORYBOARD' | 'TIMELINE'>; identity_invariant: string; total_duration_ms: number };
+export type StoryboardBatchPlan = StoryboardBatchPayload & { plan_hash: string; valid: boolean; issues: Array<{ code: string; subject_id: string; item_index?: number; message: string }>; summary: { reordered: number; edited: number; copied: number }; runtime_contacted: false; network_contacted: false };
 export type ProjectCreatePayload = { code: string; title: string; season_count: number; episode_count: number; target_duration_ms: number; aspect_ratio: string; width: number; height: number; fps: { numerator: number; denominator: number }; primary_language: string; subtitle_mode: 'NONE' | 'SIDECAR' | 'BURN_IN' | 'BOTH'; subtitle_language?: string; allow_unconfigured_capabilities: boolean; production_plan?: { code: string; title: string; plan: Record<string, unknown> }; profile_bindings?: Array<{ capability: string; profile_version_id: string }>; delivery_target?: { code: string; title: string; spec: Record<string, unknown> } };
 export type ProjectCreationPlan = { status: 'READY' | 'READY_WITH_CONFIGURATION_BLOCKERS' | 'BLOCKED'; checks: Array<{ code: string; passed: boolean; free_bytes?: number; required_bytes?: number }>; blockers: string[]; configuration_blockers: string[]; accepted_unconfigured: boolean; target_root_rel: string; estimated_bytes: number; structure: { season_count: number; episode_count_per_season: number; total_episode_count: number }; presentation: Record<string, unknown>; would_create_project: true; mutated: false; runtime_contacted: false; network_contacted: false };
 export type ProjectPackageExport = { status: 'EXPORTED'; project_id: string; rel_path: string; byte_size: number; sha256: string; entry_count: number; expanded_bytes: number; reused: boolean; database_mutated: false; runtime_contacted: false; network_contacted: false };
@@ -406,6 +410,18 @@ export async function createProjectScene(projectId: string, payload: { code: str
 
 export async function listEpisodeSceneRanges(episodeId: string, baseUrl = ''): Promise<{ items: EpisodeSceneRange[] }> {
   return requestJson(`/api/v1/projects/episodes/${encodeURIComponent(episodeId)}/scene-ranges`, undefined, baseUrl);
+}
+
+export async function getStoryboardWorkspace(episodeId: string, baseUrl = ''): Promise<{ storyboard: StoryboardWorkspace }> {
+  return requestJson(`/api/v1/projects/episodes/${encodeURIComponent(episodeId)}/storyboard`, undefined, baseUrl);
+}
+
+export async function planStoryboardBatch(episodeId: string, payload: StoryboardBatchPayload, baseUrl = ''): Promise<{ plan: StoryboardBatchPlan }> {
+  return requestJson(`/api/v1/projects/episodes/${encodeURIComponent(episodeId)}/storyboard:plan`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function commitStoryboardBatch(episodeId: string, payload: StoryboardBatchPayload, expectedPlanHash: string, baseUrl = ''): Promise<{ result: { plan_hash: string; changed_shot_ids: string[]; copied_shot_ids: string[]; storyboard: StoryboardWorkspace } }> {
+  return requestJson(`/api/v1/projects/episodes/${encodeURIComponent(episodeId)}/storyboard:commit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, expected_plan_hash: expectedPlanHash }) }, baseUrl);
 }
 
 export async function bindEpisodeSceneRange(episodeId: string, payload: { scene_id: string; ordinal: number; source_start: number; source_end: number; source_label?: string }, baseUrl = ''): Promise<{ range: EpisodeSceneRange }> {

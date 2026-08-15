@@ -1,0 +1,52 @@
+{
+  "schema_version": "uat.fr-ing-003.v1",
+  "observed_at": "2026-08-15T08:40:00+00:00",
+  "status": "PASS",
+  "requirements": ["FR-ING-003", "TC-CAP-003"],
+  "scope": "Identity-stable storyboard batch workspace with table/storyboard/timeline views, reorder, copy, batch edits and explicit plan hash commit",
+  "production_run": {
+    "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+    "episode_id": "d4db1033-9517-4bd0-958d-4228e0abead1",
+    "shot_count": 22,
+    "planned_reorder_hash_prefix": "23dd13ec5696",
+    "read_only_plan": true,
+    "identity_invariant": "shot.id and revision history remain stable while order_key changes",
+    "copy_creates_new_identity": true,
+    "batch_field_edits_create_revision": true,
+    "conflicts_are_itemized": true,
+    "commit_requires_plan_hash": true
+  },
+  "browser_uat": {
+    "viewport": "1280x720",
+    "views": ["TABLE", "STORYBOARD", "TIMELINE"],
+    "view_tabs_selected": ["表格", "故事板", "时间线"],
+    "visible_rows": 22,
+    "plan_validation": "可提交",
+    "document_horizontal_overflow": false,
+    "panel_horizontal_overflow": false,
+    "controls_under_36px": 0,
+    "console_errors": [],
+    "failed_requests": [],
+    "database_commit_triggered": false
+  },
+  "automated_evidence": {
+    "api_tests": "apps/api/tests/test_storyboard_batch.py: 3 passed",
+    "web_tests": "apps/web/src/features/projects/StoryboardBatchWorkbench.test.tsx: 2 passed",
+    "web_full_suite": "70/70 PASS",
+    "production_build": "PASS",
+    "ruff": "PASS",
+    "mypy": "PASS"
+  },
+  "thumbnail_policy": {
+    "all_rendered_img_sources": "derived thumbnail or waveform",
+    "direct_image_content_endpoint": "HARD_BLOCKED",
+    "error_code": "IMAGE_CONTENT_REQUIRES_THUMBNAIL",
+    "api_test": "apps/api/tests/test_workspace_assets.py::test_image_content_endpoint_requires_derived_thumbnail",
+    "web_static_test": "apps/web/src/features/shared/thumbnailPolicy.test.ts"
+  },
+  "safety": {
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "original_media_overwritten": false
+  }
+}

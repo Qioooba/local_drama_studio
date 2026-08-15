@@ -1462,6 +1462,158 @@
         }
       }
     },
+    "/api/v1/projects/episodes/{episode_id}/storyboard": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Get Storyboard Workspace",
+        "operationId": "getStoryboardWorkspace",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Getstoryboardworkspace"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/episodes/{episode_id}/storyboard:plan": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Plan Storyboard Batch",
+        "operationId": "planStoryboardBatch",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoryboardBatchPlanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Planstoryboardbatch"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/episodes/{episode_id}/storyboard:commit": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Commit Storyboard Batch",
+        "operationId": "commitStoryboardBatch",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoryboardBatchCommitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Commitstoryboardbatch"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/shots/{shot_id}": {
       "get": {
         "tags": [
@@ -11896,6 +12048,156 @@
           "inbox_name"
         ],
         "title": "StageProjectPackageRequest"
+      },
+      "StoryboardBatchCommitRequest": {
+        "properties": {
+          "ordered_shot_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Ordered Shot Ids"
+          },
+          "edits": {
+            "items": {
+              "$ref": "#/components/schemas/StoryboardBatchEdit"
+            },
+            "type": "array",
+            "title": "Edits"
+          },
+          "copies": {
+            "items": {
+              "$ref": "#/components/schemas/StoryboardBatchCopy"
+            },
+            "type": "array",
+            "title": "Copies"
+          },
+          "expected_plan_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Plan Hash"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "ordered_shot_ids",
+          "expected_plan_hash"
+        ],
+        "title": "StoryboardBatchCommitRequest"
+      },
+      "StoryboardBatchCopy": {
+        "properties": {
+          "source_shot_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Source Shot Id"
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source_shot_id",
+          "code"
+        ],
+        "title": "StoryboardBatchCopy"
+      },
+      "StoryboardBatchEdit": {
+        "properties": {
+          "shot_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Shot Id"
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          },
+          "target_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Duration Ms"
+          },
+          "shot_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shot Type"
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "shot_id",
+          "expected_revision"
+        ],
+        "title": "StoryboardBatchEdit"
+      },
+      "StoryboardBatchPlanRequest": {
+        "properties": {
+          "ordered_shot_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Ordered Shot Ids"
+          },
+          "edits": {
+            "items": {
+              "$ref": "#/components/schemas/StoryboardBatchEdit"
+            },
+            "type": "array",
+            "title": "Edits"
+          },
+          "copies": {
+            "items": {
+              "$ref": "#/components/schemas/StoryboardBatchCopy"
+            },
+            "type": "array",
+            "title": "Copies"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "ordered_shot_ids"
+        ],
+        "title": "StoryboardBatchPlanRequest"
       },
       "SubtitleAuthorityRequest": {
         "properties": {
