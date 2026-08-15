@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { createFrameAnchor, createGenerationIntent, createKeyframeCandidate, createPrompt, planGenerationVariant, submitGenerationVariant, type CameraPlan, type FrameAnchor, type G6Readiness, type GenerationVariantDraft, type GenerationVariantPlan, type I2VProbePlan, type Job, type Profile, type ReviewInboxItem } from "../../generated/api";
+import { createFrameAnchor, createGenerationIntent, createKeyframeCandidate, createPrompt, deriveGenerationVariantSeedBatch, planGenerationVariant, submitGenerationVariant, type CameraPlan, type FrameAnchor, type G6Readiness, type GenerationVariantDraft, type GenerationVariantPlan, type I2VProbePlan, type Job, type Profile, type ReviewInboxItem } from "../../generated/api";
 import { GateStatusIcon } from "../../components/icons";
 
 type Shot = Record<string, unknown>;
@@ -65,6 +65,9 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
   const [approvedKeyframeId, setApprovedKeyframeId] = useState("");
   const [prepared, setPrepared] = useState<{ draft: GenerationVariantDraft; plan: GenerationVariantPlan; idempotencyKey: string } | null>(null);
   const [submitted, setSubmitted] = useState<Job | null>(null);
+  const [submittedVariantId, setSubmittedVariantId] = useState<string | null>(null);
+  const [seedBatchText, setSeedBatchText] = useState("43,44,45,46");
+  const [seedBatchPlan, setSeedBatchPlan] = useState<Awaited<ReturnType<typeof deriveGenerationVariantSeedBatch>>["batch"] | null>(null);
   useEffect(() => {
     setProfileVersionId(eligibleProfiles.find((item) => item.status === "PUBLISHED")?.version_id ?? eligibleProfiles[0]?.version_id ?? "");
   }, [eligibleProfiles]);
@@ -74,7 +77,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
   useEffect(() => {
     if (!approvedKeyframeIds.includes(approvedKeyframeId)) setApprovedKeyframeId(approvedKeyframeIds[0] ?? "");
   }, [approvedKeyframeId, approvedKeyframeIds]);
-  useEffect(() => { setPrepared(null); setSubmitted(null); }, [mode, profileVersionId, selectedShotId, promptText, seedText, approvedKeyframeId]);
+  useEffect(() => { setPrepared(null); setSubmitted(null); setSubmittedVariantId(null); setSeedBatchPlan(null); }, [mode, profileVersionId, selectedShotId, promptText, seedText, approvedKeyframeId]);
   const selected = eligibleProfiles.find((profile) => profile.version_id === profileVersionId);
   const selectedShot = shots.find((shot) => String(shot.id) === selectedShotId);
   const revision = selectedShot?.current_revision && typeof selectedShot.current_revision === "object" ? selectedShot.current_revision as Record<string, unknown> : {};
@@ -137,7 +140,16 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
       if (!prepared) throw new Error("必须先完成当前输入的资源预检");
       return submitGenerationVariant({ ...prepared.draft, plan_hash: prepared.plan.plan_hash, idempotency_key: prepared.idempotencyKey });
     },
-    onSuccess: ({ job }) => { setSubmitted(job); onSubmitted?.(); },
+    onSuccess: ({ job, variant }) => { setSubmitted(job); setSubmittedVariantId(variant.id); onSubmitted?.(); },
+  });
+  const seedBatchMutation = useMutation({
+    mutationFn: async () => {
+      if (!submittedVariantId) throw new Error("请先提交一个生成 Variant");
+      const seeds = seedBatchText.split(",").map((value) => Number(value.trim())).filter((value) => Number.isInteger(value));
+      if (seeds.length === 0 || seeds.length > 24 || new Set(seeds).size !== seeds.length) throw new Error("批量 seed 必须是 1—24 个不重复整数");
+      return deriveGenerationVariantSeedBatch(submittedVariantId, { seeds, branch_reason: "UI_SEED_BATCH_EXPERIMENT" });
+    },
+    onSuccess: ({ batch }) => setSeedBatchPlan(batch),
   });
   const extractedThumbnail = draftAnchor ? `/api/v1/media-versions/${encodeURIComponent(draftAnchor.extracted_media_version_id)}/thumbnail?size=small` : null;
   const draftRoleLabel = draftAnchor ? frameActionLabels[draftAnchor.role_hint as FrameAction] ?? "提取帧" : null;
@@ -196,6 +208,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
             {prepared && !submitted && <p className="frame-feedback success" role="status"><strong>预检 READY，尚未创建 Job。</strong> Plan hash <code>{prepared.plan.plan_hash.slice(0, 16)}</code> · recipe <code>{prepared.plan.recipe_hash.slice(0, 16)}</code></p>}
             {submitted && <p className="frame-feedback success" role="status"><strong>真实任务已持久化：{submitted.state}</strong> Job <code>{submitted.id}</code>；关闭浏览器不会丢失。</p>}
             {(preflightMutation.error || submitMutation.error) && <p className="inline-error" role="alert">{(preflightMutation.error ?? submitMutation.error)?.message}</p>}
+            {submittedVariantId && <section className="seed-batch-panel" aria-label="Seed 批量实验"><div className="section-title"><span>同图同词 · Seed 批量实验</span><small>仅生成受限规划，不自动创建 Variant 或 Job</small></div><label htmlFor="seed-batch-input">Seed 列表（逗号分隔）<input id="seed-batch-input" value={seedBatchText} onChange={(event) => setSeedBatchText(event.target.value)} /></label><button type="button" className="secondary" onClick={() => seedBatchMutation.mutate()} disabled={seedBatchMutation.isPending}>{seedBatchMutation.isPending ? "规划中…" : "生成批量实验矩阵"}</button>{seedBatchPlan && <div className="seed-batch-result"><strong>{seedBatchPlan.count} 个独立分支计划</strong><span>父 Variant <code>{seedBatchPlan.parent_variant_id.slice(0, 12)}</code></span><span>每格只改变 explicit_seed</span><span>可复现声明：沿用 Profile determinism</span></div>}{seedBatchMutation.error && <p className="inline-error" role="alert">Seed 批量规划失败：{seedBatchMutation.error.message}</p>}</section>}
           </section>
           <section className="frame-anchor-panel" aria-labelledby="frame-anchor-title">
             <div className="section-title"><span id="frame-anchor-title">从视频取帧并用作输入</span><small>真实 PTS 解析 · 只加载 small 缩略图</small></div>
