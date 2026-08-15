@@ -63,6 +63,22 @@ def infer_media_kind(path: Path) -> str:
     return "OTHER"
 
 
+def _video_metadata(probe: dict[str, Any]) -> tuple[int | None, int | None, int | None]:
+    video_stream: dict[str, Any] = next((item for item in probe.get("streams", []) if item.get("codec_type") == "video"), {})
+    duration_value = video_stream.get("duration") or probe.get("format", {}).get("duration")
+    try:
+        duration_ms = round(float(duration_value) * 1000) if duration_value is not None else None
+    except (TypeError, ValueError):
+        duration_ms = None
+    rate = str(video_stream.get("avg_frame_rate") or video_stream.get("r_frame_rate") or "")
+    try:
+        parsed_num, parsed_den = (int(value) for value in rate.split("/", 1))
+        fps_num, fps_den = (parsed_num, parsed_den) if parsed_den else (None, None)
+    except (TypeError, ValueError):
+        fps_num = fps_den = None
+    return duration_ms, fps_num, fps_den
+
+
 class MediaService:
     def __init__(self, database: Database, settings: Settings) -> None:
         self.database = database
@@ -159,6 +175,7 @@ class MediaService:
                 }
             rel_path, destination = self._copy_into_project(project_root, resolved_source, resolved_source.name)
             probe = self._probe(destination, kind)
+            duration_ms, fps_num, fps_den = _video_metadata(probe)
             asset_id = str(uuid.uuid4())
             version_id = str(uuid.uuid4())
             now = _utc_now()
@@ -183,9 +200,10 @@ class MediaService:
             connection.execute(
                 """INSERT INTO media_versions
                 (id, media_asset_id, version_no, take_no, stage, rel_path, mime_type, byte_size, sha256,
-                 source_name, import_source, probe_json, integrity_status, created_at, updated_at, created_by, revision, schema_version)
-                VALUES (?, ?, 1, 1, ?, ?, ?, ?, ?, ?, 'LOCAL_FILE', ?, 'VERIFIED', ?, ?, ?, 1, 'v2')""",
-                (version_id, asset_id, stage, rel_path, mime, size, digest, resolved_source.name, _json(probe), now, now, actor),
+                source_name, import_source, probe_json, duration_ms, fps_num, fps_den,
+                integrity_status, created_at, updated_at, created_by, revision, schema_version)
+                VALUES (?, ?, 1, 1, ?, ?, ?, ?, ?, ?, 'LOCAL_FILE', ?, ?, ?, ?, 'VERIFIED', ?, ?, ?, 1, 'v2')""",
+                (version_id, asset_id, stage, rel_path, mime, size, digest, resolved_source.name, _json(probe), duration_ms, fps_num, fps_den, now, now, actor),
             )
             connection.execute(
                 "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'producer', 'MEDIA_IMPORTED', 'media_asset', ?, ?, ?)",
@@ -321,23 +339,7 @@ class MediaService:
         kind = media_kind or infer_media_kind(source)
         mime = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
         probe = self._probe(destination, kind)
-        video_stream: dict[str, Any] = next(
-            (item for item in probe.get("streams", []) if item.get("codec_type") == "video"),
-            {},
-        )
-        duration_value = video_stream.get("duration") or probe.get("format", {}).get("duration")
-        try:
-            duration_ms = round(float(duration_value) * 1000) if duration_value is not None else None
-        except (TypeError, ValueError):
-            duration_ms = None
-        rate = str(video_stream.get("avg_frame_rate") or video_stream.get("r_frame_rate") or "")
-        fps_num: int | None
-        fps_den: int | None
-        try:
-            parsed_num, parsed_den = (int(value) for value in rate.split("/", 1))
-            fps_num, fps_den = (parsed_num, parsed_den) if parsed_den else (None, None)
-        except (TypeError, ValueError):
-            fps_num = fps_den = None
+        duration_ms, fps_num, fps_den = _video_metadata(probe)
         asset_id = str(uuid.uuid4())
         version_id = str(uuid.uuid4())
         now = _utc_now()
@@ -437,8 +439,9 @@ class MediaService:
             connection.execute(
                 """INSERT INTO media_versions
                 (id, media_asset_id, version_no, take_no, stage, rel_path, mime_type, byte_size, sha256,
-                 source_name, import_source, probe_json, parent_version_id, integrity_status, created_at, updated_at, created_by, revision, schema_version)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DERIVED_LOCAL', ?, ?, 'VERIFIED', ?, ?, ?, 1, 'v2')""",
+                 source_name, import_source, probe_json, duration_ms, fps_num, fps_den,
+                 parent_version_id, integrity_status, created_at, updated_at, created_by, revision, schema_version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DERIVED_LOCAL', ?, ?, ?, ?, ?, 'VERIFIED', ?, ?, ?, 1, 'v2')""",
                 (
                     version_id,
                     media_asset_id,
@@ -451,6 +454,9 @@ class MediaService:
                     parent["sha256"],
                     parent.get("source_name"),
                     _json(parent["probe"]),
+                    parent.get("duration_ms"),
+                    parent.get("fps_num"),
+                    parent.get("fps_den"),
                     parent_version_id,
                     now,
                     now,

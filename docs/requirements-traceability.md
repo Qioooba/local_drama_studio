@@ -65,6 +65,7 @@
 | FR-REV subject revision/stale propagation and void path | VERIFIED | `ProjectService.create_shot_revision`、G4 stale test and audit evidence |
 | FR-REV batch preflight token and stale-safe commit | VERIFIED | `ReviewService.batch_preflight/batch_commit`、G4 invariant test |
 | G4 API/OpenAPI/UI review inbox/context/selection | VERIFIED | `api/routes/reviews.py`、generated `api.ts`、browser evidence |
+| FR-VID-008 视频时间码标记、截图与返工关联 | VERIFIED PRODUCTION READ-ONLY UAT | `0024_video_review_annotations`、`ReviewService.create_video_annotation` 与审核页时间码面板；时间码受真实 duration 约束，截图只接受同项目当前视频派生 IMAGE，返工 Job 只接受同项目引用，写入独立审计。API 2 项、Web 2 项及三档生产只读 UAT 通过，证据 `docs/evidence/g10/video-annotations-uat-2026-08-15.json` |
 | G5 persistent queue/recovery, G6/G7 generation and G8 delivery | NOT_STARTED | Continue in strict WBS order |
 
 ## G5 验证状态
@@ -216,6 +217,8 @@ FR-PRJ-002 crash recovery 批次后的最新全量回归：API 153 passed / 4 Co
 FR-PRJ-002 media closure 批次：同一全量门禁再次以 API 153 / Web 30/30 / build / Ruff / mypy 94 全绿；隔离真实 PNG 经包导出、媒体 metadata/manifest 交叉预检、身份重写、文件复验与注册后，由本地 FFmpeg 首次生成 small WebP 缩略图。生产三档只读 UAT 无包写入、公网、原片、错误或溢出。FR-PRJ-002 更新为 VERIFIED；G7 真实模型 license evidence 阻塞及 G8/G9 progress 状态不变。
 
 FR-PRJ-001 closure 批次：API 156 passed / 4 Comfy live deselected、Web 31/31、production build、Ruff 与 mypy 94 files PASS。生产库在线备份迁移至 `0023` 且 integrity ok；隔离测试完成 2 季×3 集真实创建及 plan/Profile/target 原子绑定零 blocker，三档生产只执行两次 plan、不点击 create。FR-PRJ-001 更新 VERIFIED；G7 license 真实证据阻塞与后续门禁状态不变。
+
+FR-VID-008 closure 批次：migration `0024_video_review_annotations` 已完成 0023→0024 隔离升级/精确恢复演练与生产在线备份迁移，integrity ok。不可变时间码标记支持结构化分类、备注、当前视频派生截图和同项目返工 Job；普通本地视频 import/derive 现持久化真实 duration/fps。全量 API 154 passed / 4 Comfy live deselected、Web 33/33、production build、Ruff、mypy 94 files PASS；三档生产只读 UAT 零写入、公网、原片、错误、溢出或截图。G7 license 真实证据阻塞与后续有序退出状态不变。
 
 ## 更新规则
 

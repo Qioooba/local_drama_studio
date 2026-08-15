@@ -189,6 +189,103 @@ class ReviewService:
             ).fetchone()
         return str(row["status"]) if row else None
 
+    def create_video_annotation(
+        self,
+        media_version_id: str,
+        timecode_ms: int,
+        category: str,
+        comment: str,
+        *,
+        snapshot_media_version_id: str | None = None,
+        rework_job_id: str | None = None,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Create an immutable, project-scoped marker on a verified video."""
+        media = self._media(media_version_id)
+        normalized_category = category.strip().upper()
+        allowed_categories = {"IDENTITY", "MOTION", "ARTIFACT", "FLICKER", "AUDIO_SYNC", "SUBTITLE", "CONTINUITY", "OTHER"}
+        if media["media_kind"] != "VIDEO":
+            raise DomainRuleError("VIDEO_ANNOTATION_REQUIRES_VIDEO", "时间码标记只支持视频 MediaVersion")
+        if media["integrity_status"] != "VERIFIED":
+            raise DomainRuleError("VIDEO_ANNOTATION_MEDIA_NOT_VERIFIED", "只有完整性 VERIFIED 的视频可以标记")
+        if normalized_category not in allowed_categories:
+            raise DomainRuleError("VIDEO_ANNOTATION_CATEGORY_INVALID", "视频问题分类无效", {"allowed": sorted(allowed_categories)})
+        normalized_comment = comment.strip()
+        if not normalized_comment:
+            raise DomainRuleError("VIDEO_ANNOTATION_COMMENT_REQUIRED", "视频标记必须填写备注")
+        duration_ms = media.get("duration_ms")
+        if duration_ms is None or int(duration_ms) <= 0:
+            raise DomainRuleError("VIDEO_DURATION_UNVERIFIED", "视频时长未核验，不能保存时间码标记")
+        if timecode_ms < 0 or timecode_ms >= int(duration_ms):
+            raise DomainRuleError(
+                "VIDEO_ANNOTATION_TIMECODE_OUT_OF_RANGE",
+                "时间码必须位于视频时长范围内",
+                {"timecode_ms": timecode_ms, "duration_ms": int(duration_ms)},
+            )
+        with self.database.connect() as connection:
+            if snapshot_media_version_id:
+                snapshot = connection.execute(
+                    """SELECT mv.id, mv.parent_version_id, ma.project_id, ma.media_kind,
+                    EXISTS(SELECT 1 FROM frame_anchors fa WHERE fa.source_media_version_id=?
+                      AND fa.extracted_media_version_id=mv.id) AS is_extracted_frame
+                    FROM media_versions mv JOIN media_assets ma ON ma.id=mv.media_asset_id WHERE mv.id=?""",
+                    (media_version_id, snapshot_media_version_id),
+                ).fetchone()
+                if (
+                    snapshot is None
+                    or str(snapshot["project_id"]) != str(media["project_id"])
+                    or str(snapshot["media_kind"]) != "IMAGE"
+                    or (str(snapshot["parent_version_id"] or "") != media_version_id and not bool(snapshot["is_extracted_frame"]))
+                ):
+                    raise DomainRuleError(
+                        "VIDEO_ANNOTATION_SNAPSHOT_INVALID",
+                        "截图必须是同项目且由当前视频派生的 IMAGE MediaVersion",
+                    )
+            if rework_job_id:
+                job = connection.execute("SELECT id, project_id FROM jobs WHERE id=?", (rework_job_id,)).fetchone()
+                if job is None or str(job["project_id"]) != str(media["project_id"]):
+                    raise DomainRuleError("VIDEO_ANNOTATION_REWORK_JOB_INVALID", "返工 Job 必须存在且属于同一项目")
+        annotation_id = str(uuid.uuid4())
+        now = _utc_now()
+        with self.database.transaction() as connection:
+            connection.execute(
+                """INSERT INTO video_review_annotations
+                (id, media_version_id, timecode_ms, category, comment, snapshot_media_version_id,
+                 rework_job_id, created_at, created_by, schema_version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'v2')""",
+                (annotation_id, media_version_id, timecode_ms, normalized_category, normalized_comment,
+                 snapshot_media_version_id, rework_job_id, now, actor),
+            )
+            connection.execute(
+                """INSERT INTO audit_events
+                (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json)
+                VALUES (?, 'reviewer', 'VIDEO_ANNOTATION_CREATED', 'media_version', ?, ?, ?)""",
+                (actor, media_version_id, "创建视频时间码问题标记", _json({"annotation_id": annotation_id, "timecode_ms": timecode_ms, "category": normalized_category, "snapshot_media_version_id": snapshot_media_version_id, "rework_job_id": rework_job_id})),
+            )
+        return {
+            "id": annotation_id,
+            "media_version_id": media_version_id,
+            "timecode_ms": timecode_ms,
+            "category": normalized_category,
+            "comment": normalized_comment,
+            "snapshot_media_version_id": snapshot_media_version_id,
+            "rework_job_id": rework_job_id,
+            "created_at": now,
+            "created_by": actor,
+            "schema_version": "v2",
+        }
+
+    def list_video_annotations(self, media_version_id: str) -> list[dict[str, Any]]:
+        media = self._media(media_version_id)
+        if media["media_kind"] != "VIDEO":
+            raise DomainRuleError("VIDEO_ANNOTATION_REQUIRES_VIDEO", "时间码标记只支持视频 MediaVersion")
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM video_review_annotations WHERE media_version_id=? ORDER BY timecode_ms, created_at, id",
+                (media_version_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def submit_episode_render_review(
         self,
         render_id: str,

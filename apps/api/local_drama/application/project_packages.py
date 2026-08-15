@@ -9,7 +9,7 @@ import uuid
 import zipfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, cast
 
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.policies import validate_project_code
@@ -302,7 +302,7 @@ class ProjectPackageService:
     def _read_state(self, package: Path) -> dict[str, Any]:
         self.inspect_path(package)
         with zipfile.ZipFile(package) as archive:
-            state = json.loads(archive.read("project-state.json"))
+            state = cast(dict[str, Any], json.loads(archive.read("project-state.json")))
         required_lists = ("seasons", "episodes", "scenes", "shots", "profile_bindings", "delivery_targets")
         if not isinstance(state.get("project"), dict) or any(not isinstance(state.get(key), list) for key in required_lists):
             raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包结构状态不完整")
@@ -382,7 +382,7 @@ class ProjectPackageService:
         with self.database.transaction() as connection:
             receipt = connection.execute("SELECT * FROM project_package_imports WHERE operation_key=?", (operation_key,)).fetchone()
             if receipt is not None and receipt["status"] == "COMPLETED":
-                result = json.loads(str(receipt["result_json"]))
+                result = cast(dict[str, Any], json.loads(str(receipt["result_json"])))
                 target = connection.execute("SELECT id,code FROM projects WHERE id=?", (receipt["target_project_id"],)).fetchone()
                 if target is None or str(target["code"]) != code:
                     raise DomainRuleError("PROJECT_PACKAGE_RECEIPT_INCONSISTENT", "项目包 receipt 与项目记录不一致")

@@ -5728,6 +5728,102 @@
         }
       }
     },
+    "/api/v1/media-versions/{media_version_id}/annotations": {
+      "get": {
+        "tags": [
+          "reviews"
+        ],
+        "summary": "List Video Annotations",
+        "operationId": "listVideoAnnotations",
+        "parameters": [
+          {
+            "name": "media_version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Media Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listvideoannotations"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "reviews"
+        ],
+        "summary": "Create Video Annotation",
+        "operationId": "createVideoAnnotation",
+        "parameters": [
+          {
+            "name": "media_version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Media Version Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoAnnotationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Createvideoannotation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/workflow-packages": {
       "post": {
         "tags": [
@@ -10469,6 +10565,58 @@
           "idempotency_key"
         ],
         "title": "VariantSubmitRequest"
+      },
+      "VideoAnnotationRequest": {
+        "properties": {
+          "timecode_ms": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Timecode Ms"
+          },
+          "category": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Category"
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Comment"
+          },
+          "snapshot_media_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Media Version Id"
+          },
+          "rework_job_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rework Job Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timecode_ms",
+          "category",
+          "comment"
+        ],
+        "title": "VideoAnnotationRequest"
       },
       "WorkflowCompileRequest": {
         "properties": {

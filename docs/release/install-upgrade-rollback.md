@@ -23,7 +23,7 @@ release_status: DRAFT
 1. 停止 LocalDramaStudio API/Worker，保留当前数据库与审计日志。
 2. 从指定备份复制回 `data/local_drama.sqlite3`，再次执行 `PRAGMA integrity_check`，不得删除历史备份。
 3. 检出与备份对应的代码 commit，重新运行 `scripts/start.ps1`；不得对数据库执行未经评审的降级 migration。
-4. 验证 G7/G8/G9 readiness、API/Web 回归和 LOCAL_ONLY 连接状态。
+4. 验证 migration head=`0024_video_review_annotations`、G7/G8/G9 readiness、API/Web 回归和 LOCAL_ONLY 连接状态。
 
 ## 尚未实测
 

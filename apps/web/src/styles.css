@@ -267,6 +267,15 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .review-guidance { border: 1px solid #dfc58e; color: #76520f; background: #fff8e7; }
 .review-success { border: 1px solid #9bc8b9; color: #245e53; background: #edf9f4; }
 .review-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; color: #77736c; font-size: 12px; }
+.video-annotations { margin-top: 18px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-subtle); }
+.annotation-form { display: grid; grid-template-columns: minmax(130px, .7fr) minmax(150px, .8fr) minmax(220px, 1.5fr); gap: 12px; align-items: end; }
+.annotation-form label { display: grid; gap: 6px; color: var(--text-muted); font-size: 12px; font-weight: 700; }
+.annotation-form input, .annotation-form select, .annotation-form textarea { min-height: 40px; width: 100%; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); padding: 8px 10px; }
+.annotation-form textarea { min-height: 72px; resize: vertical; }
+.annotation-list { display: grid; gap: 8px; margin-top: 14px; }
+.annotation-list article { padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--surface); }
+.annotation-list p { margin: 4px 0; }
+.annotation-list small { color: var(--text-muted); }
 .job-list { display: grid; gap: 8px; margin-top: 20px; }
 .job-row { display: grid; grid-template-columns: 1.3fr .6fr .8fr 1fr; gap: 12px; align-items: center; padding: 13px 15px; border: 1px solid #ded9cf; border-radius: 9px; background: #fff; color: #646a64; font-size: 12px; }
 .job-row strong { color: var(--text); }
@@ -553,6 +562,7 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
   .candidate-grid { grid-template-columns: 1fr; }
   .gate-checks { grid-template-columns: 1fr; }
   .probe-plan-grid { grid-template-columns: 1fr; }
+  .annotation-form { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

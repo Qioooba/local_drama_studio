@@ -26,6 +26,14 @@ class MachineCheckRequest(BaseModel):
     policy_version: str = "g4_media_qc_v1"
 
 
+class VideoAnnotationRequest(BaseModel):
+    timecode_ms: int = Field(ge=0)
+    category: str = Field(min_length=1, max_length=32)
+    comment: str = Field(min_length=1, max_length=4000)
+    snapshot_media_version_id: str | None = Field(default=None, min_length=1)
+    rework_job_id: str | None = Field(default=None, min_length=1)
+
+
 class BatchItemRequest(BaseModel):
     media_version_id: str = Field(min_length=1)
     template_version_id: str = Field(min_length=1)

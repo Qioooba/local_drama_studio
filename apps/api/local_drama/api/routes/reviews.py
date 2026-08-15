@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from local_drama.api.schemas.reviews import BatchCommitRequest, BatchPreflightRequest, MachineCheckRequest, ReviewRequest, SelectionRequest
+from local_drama.api.schemas.reviews import (
+    BatchCommitRequest,
+    BatchPreflightRequest,
+    MachineCheckRequest,
+    ReviewRequest,
+    SelectionRequest,
+    VideoAnnotationRequest,
+)
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.reviews import ReviewService
 from local_drama.domain.errors import DomainRuleError
@@ -117,5 +124,30 @@ async def batch_commit(payload: BatchCommitRequest, request: Request) -> dict[st
 async def select_media_version(media_version_id: str, payload: SelectionRequest, request: Request) -> dict[str, object]:
     try:
         return {"selection": service(request).select_version(media_version_id, payload.selection_type)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/media-versions/{media_version_id}/annotations", operation_id="listVideoAnnotations")
+async def list_video_annotations(media_version_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"items": service(request).list_video_annotations(media_version_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/media-versions/{media_version_id}/annotations", status_code=201, operation_id="createVideoAnnotation")
+async def create_video_annotation(media_version_id: str, payload: VideoAnnotationRequest, request: Request) -> dict[str, object]:
+    try:
+        return {
+            "annotation": service(request).create_video_annotation(
+                media_version_id,
+                payload.timecode_ms,
+                payload.category,
+                payload.comment,
+                snapshot_media_version_id=payload.snapshot_media_version_id,
+                rework_job_id=payload.rework_job_id,
+            )
+        }
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
