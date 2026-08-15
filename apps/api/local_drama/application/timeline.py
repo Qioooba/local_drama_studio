@@ -1476,6 +1476,12 @@ class TimelineService:
                 raise DomainRuleError("DELIVERY_PACKAGE_NOT_FOUND", "交付包不存在")
             if str(row["status"]) == "WITHDRAWN":
                 raise DomainRuleError("DELIVERY_WITHDRAWN", "已撤回交付不能继续审核")
+            # A machine preflight PASS is not enough to authorize review.  A
+            # package whose manifest/files have subsequently failed integrity
+            # verification must be rebuilt, rather than allowing a human or
+            # platform decision to be attached to a corrupt artifact.
+            if str(row["status"]) != "VERIFIED":
+                raise DomainRuleError("DELIVERY_NOT_VERIFIED", "只有完整性校验通过的交付包才能进入人工/平台审核")
             connection.execute(f"UPDATE delivery_packages SET {column}=?, updated_at=?, revision=revision+1 WHERE id=?", (decision, now, package_id))
             connection.execute("INSERT INTO delivery_events (id, delivery_package_id, action, note, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'v3')", (str(uuid.uuid4()), package_id, f"{reviewer_type}_REVIEW_{decision}", note.strip(), now, now, actor))
             updated = connection.execute("SELECT * FROM delivery_packages WHERE id=?", (package_id,)).fetchone()

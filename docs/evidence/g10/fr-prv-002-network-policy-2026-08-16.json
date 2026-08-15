@@ -1,0 +1,48 @@
+{
+  "schema_version": "g10.local_only_network_policy.v1",
+  "status": "PARTIAL",
+  "scope": [
+    "FR-PRV-002",
+    "NFR-SEC-003",
+    "NFR-PRIV-001"
+  ],
+  "observed_at": "2026-08-16",
+  "controls": {
+    "runtime_transport": "LOCAL_ONLY",
+    "allowed_network_hosts": ["127.0.0.1", "localhost", "::1"],
+    "remote_provider": "disabled",
+    "remote_api_key_fields": "rejected before profile contract persistence",
+    "model_path_policy": "user-selected absolute local file or directory; symlink and traversal rejected; no copy or upload",
+    "diagnostic_fix": "preview only; no runtime, driver, node install, download or public network access"
+  },
+  "automated_checks": [
+    {
+      "test": "apps/api/tests/test_profile_contract_editor.py::test_profile_contract_rejects_reserved_remote_configuration_without_persisting",
+      "result": "PASS",
+      "observed": "Nested api_key/client_secret/provider_url/remote_endpoint fields return LOCAL_CONFIG_FIELD_FORBIDDEN and no profile version is inserted"
+    },
+    {
+      "test": "apps/api/tests/test_adapter_contracts.py",
+      "result": "PASS",
+      "observed": "Static adapter inspection opens no socket; remote transport and non-loopback targets are rejected"
+    },
+    {
+      "test": "apps/api/tests/test_network_e2e.py",
+      "result": "PASS",
+      "observed": "Loopback Comfy/LLM chain is isolated and public connect attempts are blocked"
+    },
+    {
+      "test": "scripts/security_uat.py",
+      "result": "PASS",
+      "observed": "Security UAT retains zero public network and OpenAPI remote credential checks"
+    }
+  ],
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "public_network_contacted": false,
+  "mutated": false,
+  "limitations": [
+    "Formal Windows x64 three-viewport UAT and a packet-level production egress capture remain pending",
+    "User-owned model/provider license evidence and real local runtime smoke are not claimed by this control-plane evidence"
+  ]
+}

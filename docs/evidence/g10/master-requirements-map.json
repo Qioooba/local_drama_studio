@@ -90,6 +90,18 @@
       ]
     },
     {
+      "id": "FR-PST-002",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-pst-002-003-postprocess-delivery-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/features/generation/PostProcessPanel.test.tsx"]
+    },
+    {
+      "id": "FR-PST-003",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-pst-002-003-postprocess-delivery-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/features/production/DeliveryWorkflowPanel.tsx"]
+    },
+    {
       "id": "TC-CAP-009",
       "status": "PASS",
       "evidence": ["docs/evidence/g10/fr-pst-001-uat-2026-08-15.json"],
@@ -555,6 +567,34 @@
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/nfr-perf-bounded-observation-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_project_listing.py", "apps/api/tests/test_g3_configuration_media.py", "apps/web/src/features/shared/thumbnailPolicy.test.ts", "scripts/nfr_perf_benchmark.py"]
+    },
+    {
+      "id": "NFR-SEC-003",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-prv-002-network-policy-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_profile_contract_editor.py", "apps/api/tests/test_adapter_contracts.py", "scripts/security_uat.py"]
+    },
+    {
+      "id": "NFR-PRIV-001",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-prv-002-network-policy-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_network_e2e.py", "apps/api/tests/test_adapter_contracts.py", "scripts/security_uat.py"]
+    },
+    {
+      "id": "NFR-MAINT-001",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/nfr-maint-test-audit-2026-08-16.json"],
+      "automated_tests": ["scripts/maintainability_audit.py", "scripts/check.ps1"]
+    },
+    {
+      "id": "NFR-TEST-001",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/nfr-maint-test-audit-2026-08-16.json"],
+      "automated_tests": [
+        "apps/api/tests/test_domain_rules.py",
+        "scripts/maintainability_audit.py",
+        "scripts/check.ps1"
+      ]
     }
   ]
 }

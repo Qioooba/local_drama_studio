@@ -35,6 +35,8 @@ try {
   }
   & (Join-Path $repoRoot '.venv/Scripts/ruff.exe') check (Join-Path $repoRoot 'apps/api/local_drama') (Join-Path $repoRoot 'apps/api/tests') (Join-Path $repoRoot 'scripts')
   Assert-NativeSuccess 'Ruff'
+  & $python scripts/maintainability_audit.py
+  Assert-NativeSuccess 'maintainability and regression-contract audit'
   pnpm --dir apps/web build
   Assert-NativeSuccess 'Web production build'
   pnpm --dir apps/web test

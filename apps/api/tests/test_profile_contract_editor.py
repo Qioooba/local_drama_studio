@@ -104,3 +104,27 @@ def test_profile_contract_validation_rejects_incomplete_local_contract(workspace
     assert validation["status"] == "FAIL"
     failed = {item["code"] for item in validation["checks"] if not item["passed"]}
     assert {"PARAMETER_SCHEMA", "OUTPUT_CONTRACT", "RESOURCE_POLICY", "LOCAL_TRANSPORT"}.issubset(failed)
+
+
+@pytest.mark.parametrize("field_name", ["api_key", "client_secret", "provider_url", "remote_endpoint"])
+def test_profile_contract_rejects_reserved_remote_configuration_without_persisting(workspace, database, field_name: str) -> None:
+    service = ProfileService(database, workspace.manifest_path)
+    source = service.sync_manifest()["profiles"][0]
+    contracts = _contracts()
+    contracts["parameter_schema"] = {"nested": [{field_name: "must-not-persist"}]}
+
+    with pytest.raises(DomainRuleError) as raised:
+        service.derive_contract_version(
+            str(source["version_id"]),
+            1,
+            contracts["input_contract"],
+            contracts["parameter_schema"],
+            contracts["output_contract"],
+            contracts["resource_policy"],
+        )
+
+    assert raised.value.code == "LOCAL_CONFIG_FIELD_FORBIDDEN"
+    assert raised.value.details["field_path"] == f"parameter_schema.nested[0].{field_name}"
+    with database.connect() as connection:
+        count = connection.execute("SELECT COUNT(*) FROM execution_profile_versions WHERE execution_profile_id=?", (source["id"],)).fetchone()[0]
+    assert count == 1

@@ -318,6 +318,12 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
         corrupted = client.get(f"/api/v1/delivery-packages/{delivery['id']}:verify")
         assert corrupted.status_code == 200
         assert corrupted.json()["delivery"]["status"] == "CORRUPT"
+        corrupt_review = client.post(
+            f"/api/v1/delivery-packages/{delivery['id']}:review",
+            json={"reviewer_type": "HUMAN", "decision": "APPROVED", "note": "不应批准已篡改文件"},
+        )
+        assert corrupt_review.status_code == 422
+        assert corrupt_review.json()["error"]["code"] == "DELIVERY_NOT_VERIFIED"
         withdrawn = client.post(f"/api/v1/delivery-packages/{delivery['id']}:withdraw", json={"reason": "G8 recovery evidence tamper test"})
         assert withdrawn.status_code == 200
         assert withdrawn.json()["delivery"]["status"] == "WITHDRAWN"

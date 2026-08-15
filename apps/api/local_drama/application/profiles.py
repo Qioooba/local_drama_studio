@@ -32,6 +32,58 @@ def _code(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")[:120]
 
 
+# Profile contracts are user-editable JSON, but they are not a secret store or
+# a second runtime configuration channel.  Keep remote-provider credentials
+# and egress controls out of the persisted contract/API surface.  This is a
+# recursive check because input slots and parameter schemas may nest arbitrary
+# JSON objects and arrays.
+_FORBIDDEN_LOCAL_CONFIG_KEY_PARTS = (
+    "api_key",
+    "apikey",
+    "secret_key",
+    "secretkey",
+    "client_secret",
+    "clientsecret",
+    "credential",
+    "password",
+    "authorization",
+    "bearer",
+    "provider_url",
+    "providerurl",
+    "remote_url",
+    "remoteurl",
+    "remote_endpoint",
+    "remoteendpoint",
+    "endpoint_url",
+    "endpointurl",
+)
+
+
+def _validate_local_contract_config(value: Any, *, path: str) -> None:
+    """Reject secret/remote configuration fields before profile persistence.
+
+    A profile may still describe a local transport and user-selected model
+    references, but API keys, credential values and remote endpoint controls
+    are deliberately not supported in the LOCAL_ONLY release.  The error
+    reports only the JSON field path; it never echoes the supplied value.
+    """
+
+    if isinstance(value, dict):
+        for key, child in value.items():
+            key_text = str(key)
+            normalized = re.sub(r"[^a-z0-9]+", "", key_text.casefold())
+            if any(part in key_text.casefold() or re.sub(r"[^a-z0-9]+", "", part) in normalized for part in _FORBIDDEN_LOCAL_CONFIG_KEY_PARTS):
+                raise DomainRuleError(
+                    "LOCAL_CONFIG_FIELD_FORBIDDEN",
+                    "LOCAL_ONLY Profile 契约不得包含远程凭据或远程 endpoint 字段",
+                    {"field_path": f"{path}.{key_text}"},
+                )
+            _validate_local_contract_config(child, path=f"{path}.{key_text}")
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            _validate_local_contract_config(child, path=f"{path}[{index}]")
+
+
 class ProfileService:
     def __init__(self, database: Database, manifest_path: Path) -> None:
         self.database = database
@@ -324,6 +376,10 @@ class ProfileService:
         resource_policy: dict[str, Any],
         actor: str = "local-user",
     ) -> dict[str, Any]:
+        _validate_local_contract_config(input_contract, path="input_contract")
+        _validate_local_contract_config(parameter_schema, path="parameter_schema")
+        _validate_local_contract_config(output_contract, path="output_contract")
+        _validate_local_contract_config(resource_policy, path="resource_policy")
         now = _utc_now()
         with self.database.transaction() as connection:
             source = connection.execute("SELECT * FROM execution_profile_versions WHERE id=?", (source_version_id,)).fetchone()

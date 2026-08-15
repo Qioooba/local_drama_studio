@@ -334,10 +334,22 @@ FR-WFL-004 ComfyUI Lab control-plane 增量（2026-08-16）：新增 Designer �
 
 Job 创建、幂等记录、`JOB_QUEUED` outbox 和 audit row 在同一 SQLite transaction 内提交；`jobs`、`job_attempts`、progress、lease、resource lease 与 outbox 均由新建 `Database/JobService` 实例重新读取。新增独立子进程演练：子进程完成 create/claim/heartbeat 后使用 `os._exit(17)` 模拟非正常退出，父进程验证任务状态、phase/node/percent、Attempt 历史、outbox cursor 与脱敏 lease token 均持久存在，再将调度时钟前移 61 秒执行 reconcile，断言 Attempt→`ORPHANED`、可重试 Job→`QUEUED`、资源 lease 已释放并追加 `JOB_RECONCILED`。证据 `docs/evidence/g10/nfr-rel-001-002-persistence-restart-2026-08-16.json` 为 `PARTIAL`：测试不接触公网或 Comfy，也不修改生产库；真实 Windows API/Worker kill matrix、物理断电窗口、60 秒内可见状态和多 worker 竞争 UAT 仍待执行，不能据此宣称 NFR PASS。
 
-## 更新规则
+## FR-PRV-002 / NFR-SEC-003 / NFR-PRIV-001 本地网络与配置边界增量（2026-08-16）
+
+Profile 契约编辑仍允许用户声明本地 transport、能力与本机模型引用，但不再把它当作远程配置或凭据存储：输入契约、参数 Schema、输出契约和资源策略在派生不可变版本前递归拒绝 `api_key`、`client_secret`、`provider_url`、`remote_endpoint` 等保留字段，错误只返回 JSON 字段路径，不回显值，也不插入 Profile 版本。Adapter registry、Comfy/Local LLM client 和模型 registry 继续强制 loopback/本机路径、拒绝 symlink/越界、禁止复制/上传；网络 E2E 与安全 UAT 保持公网连接数为 0。定向回归见 `apps/api/tests/test_profile_contract_editor.py`、`apps/api/tests/test_adapter_contracts.py`、`apps/api/tests/test_network_e2e.py` 与 `scripts/security_uat.py`，证据 `docs/evidence/g10/fr-prv-002-network-policy-2026-08-16.json` 标记 `PARTIAL`。真实 Windows x64 三视口与生产级出口抓包仍待执行，故不提前宣称 NFR PASS。
 
 ## NFR-PERF-001/002 有界性能与列表分页增量（2026-08-16）
 
 项目列表新增稳定的 `cursor/limit` 页面契约；集生产 read model 新增服务端 `cursor/limit/next_cursor`，默认调用保持兼容；审核收件箱继续在筛选后按稳定 cursor 返回上限页面。新增 `scripts/nfr_perf_benchmark.py`，在隔离迁移 SQLite 的 60 集/800 镜头/10k 媒体 fixture 上通过真实 FastAPI read paths 观测收件箱首/深 cursor、每集生产页和项目页，同时记录缩略图 `loading="lazy"`/不批量读取原片的源级约束。API 测试覆盖 project cursor 与 production page；证据 `docs/evidence/g10/nfr-perf-bounded-observation-2026-08-16.json` 标记 `PARTIAL` / `OBSERVED_NOT_BENCHMARKED`。该证据不宣称 10k p95<500ms、Windows x64 浏览器 p95<2s、虚拟滚动、冷缓存或真实硬件容量；正式浏览器网络 trace 与 release 性能基线仍待 UAT。
 
+## 更新规则
+
 任何新增/变更需求必须先分配 ID、写 ADR、补 migration/API/UI/test 影响；所有阶段报告、提交和缺陷引用至少一个需求或测试 ID。
+
+FR-PST-002/003 边界加固（2026-08-16）：交付包在文件/manifest 完整性复验后若进入 `CORRUPT`，即使数据库仍保留 machine preflight=PASS，也不能追加 HUMAN/PLATFORM 审核；必须重建新的不可变包（`DELIVERY_NOT_VERIFIED`）。新增篡改后审核负例回归并补充证据 `docs/evidence/g10/fr-pst-002-003-postprocess-delivery-2026-08-16.json`。可选后处理链、输入不覆盖、品牌/水印/合规版本冻结和机器/人工/平台职责分离已有 API 回归；三视口生产 UAT、正式总账 closure 仍待补齐，当前保持 PARTIAL。
+
+## NFR-MAINT-001 / NFR-TEST-001 可维护性与回归审计增量（2026-08-16）
+
+新增只读 `scripts/maintainability_audit.py`，作为静态回归门禁的一部分检查后端分层边界、非生成 React 组件行数（建议 `<500`，`>700` 为硬警告）以及领域模块到自动化测试的导入覆盖。当前领域层未发现 FastAPI/SQLAlchemy/具体基础设施依赖，非生成 UI 组件均低于 700 行，4 个领域模块均被 API 测试直接覆盖（69 个 API 测试文件/255 个测试函数，Web 35 个测试文件）。
+
+审计同时显式报告当前应用层/路由层仍直接引用具体 SQLite/adapter 基础设施的迁移警告，不隐藏架构债务；该警告不伪装成边界 PASS，也不改变本机运行行为。证据 `docs/evidence/g10/nfr-maint-test-audit-2026-08-16.json` 状态为 `PARTIAL`：自动化源/测试检查通过，但完整 `scripts/check.ps1` 结果与 Windows x64 三视口 Playwright 核心链仍需独立执行，不能用静态审计替代 UAT。`NFR-MAINT-001` 与 `NFR-TEST-001` 暂不标最终 VERIFIED。
