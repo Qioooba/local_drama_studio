@@ -349,6 +349,10 @@ export async function cloneJob(jobId: string, inputOverrides: Record<string, unk
   return requestJson(`/api/v1/jobs/${encodeURIComponent(jobId)}:clone`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ input_overrides: inputOverrides }) }, baseUrl);
 }
 
+export async function reconcileJobs(baseUrl = ''): Promise<{ result: Record<string, unknown> }> {
+  return requestJson('/api/v1/jobs:reconcile', { method: 'POST' }, baseUrl);
+}
+
 export async function promoteJobArtifactToMedia(artifactId: string, payload: { purpose?: string; media_kind?: 'IMAGE' | 'VIDEO' | 'AUDIO'; stage?: 'KEYFRAME' | 'PROXY' | 'FORMAL' | 'TIMELINE' }, baseUrl = ''): Promise<{ media: Record<string, unknown> }> {
   return requestJson(`/api/v1/artifacts/${encodeURIComponent(artifactId)}:promote-media`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
