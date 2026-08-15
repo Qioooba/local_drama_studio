@@ -127,7 +127,7 @@
 | run node/from/to/range preflight | VERIFIED | `canvas_execution_plans`、max node/GPU concurrency/HITL/blocker 计划 |
 | 画布性能基础、键盘/不可连接/不可删除替代约束 | VERIFIED PRODUCTION UAT | 生产 EPISODE_001 持久化 22 个真实 SHOT、110 节点；三档浏览器 canvas-ready 1.0—1.3s、零水平溢出、零 console/page error、零失败响应；`g9-production-scale-uat-2026-08-15.json`、`g9-production-canvas-uat-2026-08-15.json` |
 | 三视图 route/selection 同步、画布搜索与上/下游聚焦 | VERIFIED PRODUCTION UAT | 三档真实生产页面验证语义画布、键盘节点列表、搜索过滤、URL shot 同步与选中态；`g9-production-accessibility-uat-2026-08-15.json`。只改变可视节点集合，不改变业务 edges |
-| automation/webhook/产能看板 | IMPLEMENTED / UAT PENDING | 旧 `POST /events:deliver` 继续兼容；新增 `POST /automation-clients`、`POST/GET /webhook-subscriptions`、`POST/GET /webhook-deliveries` 和 `:retry`。client token 只显示一次并存 hash，scope 为 read/plan/submit/review/delivery；回调仅 loopback、HMAC 签名、指数退避（最多 5 次）、死信和审计；UI `AutomationPanel` 使用同一 command。真实隔离服务回归为 `apps/api/tests/test_automation_webhooks.py`；正式三视口 UAT 与总账 PASS 证据仍待完成。产能仍标记 `OBSERVED_NOT_BENCHMARKED`。|
+| automation/webhook/产能看板 | IMPLEMENTED / UAT PENDING | 旧 `POST /events:deliver` 继续兼容；新增 `POST /automation-clients`、`POST/GET /webhook-subscriptions`、`POST/GET /webhook-deliveries` 和 `:retry`。client token 只显示一次并存 hash，scope 为 read/plan/submit/review/delivery；回调仅 literal loopback、每次请求重新校验、禁用代理与重定向、SQLite claim 防并发重复投递，HMAC 签名、指数退避（最多 5 次）、死信和审计；UI `AutomationPanel` 使用同一 command。真实隔离服务回归为 `apps/api/tests/test_automation_webhooks.py`，实现加固证据为 `docs/evidence/g10/fr-aut-002-loopback-hardening-2026-08-16.json`；正式三视口 UAT 与总账 PASS 证据仍待完成。产能仍标记 `OBSERVED_NOT_BENCHMARKED`。|
 | G9-09 本机队列产能观测 | VERIFIED BASELINE | `GET /capacity/snapshot`；真实 SQLite Job/Attempt 状态、GPU 并发和近 24h 完成数；`OBSERVED_NOT_BENCHMARKED`、`would_create_jobs=false`、无 runtime/network/mutation；`test_capacity_snapshot.py` |
 | G9-08 变体谱系、实验进度、相邻边界约束只读可视化 | VERIFIED BASELINE | Canvas graph read model 汇总真实 generation_variants/generation_experiments/experiment_cells/shot_transition_constraints；选中节点显示摘要，空数据不造数；`test_g9_canvas.py`、G9 validation evidence |
 | G9 readiness / ordered exit | EVIDENCE PASS / ORDERED BLOCKED | readiness 五项全部 PASS；发布审计强制 G7→G8→G9 链式顺序，因 G7 许可证证据阻塞而保持 `ORDERED_G9=false`，禁止越级宣告 |
@@ -200,7 +200,7 @@ G7 已可按蓝图 09 顺序开始，但当前不是 PASS；G8/G9 仍只记 prog
 
 G7 当前已按“用户自带本机模型、平台只引用管理、不捆绑权重”的正式范围 PASS；G8、G9 亦已按顺序 PASS。
 
-历史 G10 局部门禁证据曾为 PASS，但总设计复核后总体发布状态已撤回为 `IN_PROGRESS / NO-GO`。当前数据库与最近五份迁移前备份 `integrity=ok`，代码 migration head=`0037_job_progress_scheduler`；`0031→0037` 隔离升级与精确恢复演练已通过，但生产库仍需按发布步骤执行迁移后再签字。规模、安全、干净新根恢复、本地只读 UAT、G7→G8→G9 有序退出、SBOM 和运行手册仍是有效局部证据，但不能替代 84 个 P0/P1 FR、15 个 NFR 与 85 个命名 TC 的总账闭环。正式范围保持 Windows x64 LOCAL_ONLY 本地源码发行版，不捆绑用户模型或媒体。
+历史 G10 局部门禁证据曾为 PASS，但总设计复核后总体发布状态已撤回为 `IN_PROGRESS / NO-GO`。当前数据库与最近五份迁移前备份 `integrity=ok`，代码 migration head=`0038_outbox_delivery_ledger`；`0031→0038` 隔离升级与精确恢复演练已通过，但生产库仍需按发布步骤执行迁移后再签字。规模、安全、干净新根恢复、本地只读 UAT、G7→G8→G9 有序退出、SBOM 和运行手册仍是有效局部证据，但不能替代 84 个 P0/P1 FR、15 个 NFR 与 85 个命名 TC 的总账闭环。正式范围保持 Windows x64 LOCAL_ONLY 本地源码发行版，不捆绑用户模型或媒体。
 
 2026-08-15 用户自带模型策略闭环：新增本机模型引用 API 与页面原生文件选择器，返回绝对路径且 `copied=false/uploaded=false`；兼容报告将用户许可证缺失降级为可见风险，不改变 hash、量化、路径和 symlink 硬校验。生产数据库在线备份后迁移至 0029，G7/G8/G9 依次 PASS；完整门禁 API 178 passed / 4 live deselected、Web 60/60（以最终实际回归输出为准更新），三档模型路径 UI 3/3 PASS。G10 发布审计 PASS，GO 范围不包含模型权重、音色、媒体或 REMOTE Provider。
 
@@ -334,9 +334,19 @@ FR-WFL-004 ComfyUI Lab control-plane 增量（2026-08-16）：新增 Designer �
 
 Job 创建、幂等记录、`JOB_QUEUED` outbox 和 audit row 在同一 SQLite transaction 内提交；`jobs`、`job_attempts`、progress、lease、resource lease 与 outbox 均由新建 `Database/JobService` 实例重新读取。新增独立子进程演练：子进程完成 create/claim/heartbeat 后使用 `os._exit(17)` 模拟非正常退出，父进程验证任务状态、phase/node/percent、Attempt 历史、outbox cursor 与脱敏 lease token 均持久存在，再将调度时钟前移 61 秒执行 reconcile，断言 Attempt→`ORPHANED`、可重试 Job→`QUEUED`、资源 lease 已释放并追加 `JOB_RECONCILED`。证据 `docs/evidence/g10/nfr-rel-001-002-persistence-restart-2026-08-16.json` 为 `PARTIAL`：测试不接触公网或 Comfy，也不修改生产库；真实 Windows API/Worker kill matrix、物理断电窗口、60 秒内可见状态和多 worker 竞争 UAT 仍待执行，不能据此宣称 NFR PASS。
 
+## NFR-REL-003 transactional outbox backup/delivery continuity 增量（2026-08-16）
+
+`0038_outbox_delivery_ledger` 新增按 endpoint 持久化的 generic outbox delivery ledger，不改变不可变事件 payload。`POST /events:deliver` 创建持久 `PENDING` claim，在事务内进入带 30 秒租约的 `IN_FLIGHT`，仅收到 loopback 2xx 后确认 `DELIVERED`；新服务实例会回收过期 claim，并保留稳定 event-id header。失败持久化为 `RETRYING` 并指数退避（5 秒起、上限 300 秒），最多 5 次后进入 `DEAD_LETTER`；重试、回收、成功与失败均写脱敏 audit row。loopback 重定向在跟随前拒绝，防止跳转公网。定向回归为 `apps/api/tests/test_outbox_delivery.py`（失败/backoff、过期 claim 恢复、重复 event-id 和 redirect 负例）与 `apps/api/tests/test_migration.py`；隔离 `0031→0038` 升级/恢复证据为 `docs/evidence/g10/upgrade-rollback-rehearsal-0038-2026-08-16.json`。状态保持 `PARTIAL`：这是 bounded 本地演练，不代表最终 Windows x64 断电、备份介质或多进程 UAT 已完成。
+
 ## FR-PRV-002 / NFR-SEC-003 / NFR-PRIV-001 本地网络与配置边界增量（2026-08-16）
 
 Profile 契约编辑仍允许用户声明本地 transport、能力与本机模型引用，但不再把它当作远程配置或凭据存储：输入契约、参数 Schema、输出契约和资源策略在派生不可变版本前递归拒绝 `api_key`、`client_secret`、`provider_url`、`remote_endpoint` 等保留字段，错误只返回 JSON 字段路径，不回显值，也不插入 Profile 版本。Adapter registry、Comfy/Local LLM client 和模型 registry 继续强制 loopback/本机路径、拒绝 symlink/越界、禁止复制/上传；网络 E2E 与安全 UAT 保持公网连接数为 0。定向回归见 `apps/api/tests/test_profile_contract_editor.py`、`apps/api/tests/test_adapter_contracts.py`、`apps/api/tests/test_network_e2e.py` 与 `scripts/security_uat.py`，证据 `docs/evidence/g10/fr-prv-002-network-policy-2026-08-16.json` 标记 `PARTIAL`。真实 Windows x64 三视口与生产级出口抓包仍待执行，故不提前宣称 NFR PASS。
+
+## FR-PRV-003 / NFR-COMP-001 本机模型许可与兼容性边界增量（2026-08-16）
+
+模型登记继续只接收用户选择的本机绝对路径，拒绝相对路径、symlink 和越界；服务端离线读取完整文件 SHA-256 与 safetensors 头部 dtype/量化信息，项目内 `00_admin/licenses` JSON 许可证证明绑定当前模型 SHA-256、许可证名称、证据文件 hash 和 `LOCAL_LICENSE_VERIFIED`/`USER_OWNED` 状态。新增可选的显式验证目标 capability（T2V/I2V/VIDEO/IMAGE/AUDIO/TTS/TEXT）：根据用户声明的模型角色推导保守 capability alias，缺少声明或不匹配时报告为 `BLOCKED`，不会允许把模型当成该能力使用；许可证缺失仍只显示 `USER_RESPONSIBILITY_UNKNOWN`，不替用户做法律判断。模型路径、hash、量化和 attestation 元数据落库，权重永不复制、打包或上传；UI 展示能力状态、blocker 和本地授权风险。
+
+Unicode/空格/长路径、I2V→T2V 不匹配硬阻断、I2V 匹配、完整模型 hash 与本地授权证据回归见 `apps/api/tests/test_model_compatibility.py`、`apps/api/tests/test_model_license_evidence.py`、`apps/web/src/features/status/LocalModelReferenceForm.test.tsx` 和 `apps/web/src/features/status/ModelLicenseEvidenceForm.test.tsx`；证据 `docs/evidence/g10/fr-prv-003-nfr-comp-001-model-boundary-2026-08-16.json` 保持 `PARTIAL`。真实用户模型执行、Windows x64 跨卷/超长路径三视口 UAT 和最终法律许可证复核仍待补齐，不能据此宣称 NFR-COMP-001 或整体 Profile 发布闭环 VERIFIED。
 
 ## NFR-PERF-001/002 有界性能与列表分页增量（2026-08-16）
 

@@ -37,6 +37,11 @@ def test_imported_local_license_evidence_unlocks_report(workspace, database) -> 
     report = service.report("model-license", str(project["id"]))
     assert report["report_status"] == "PASS"
     assert report["license_evidence_id"] == imported["id"]
+    assert report["license_attestation"] == {
+        "status": "ATTESTED",
+        "evidence_id": imported["id"],
+        "artifact_sha256": artifact_sha,
+    }
 
 
 def test_license_evidence_must_match_current_model_hash(workspace, database) -> None:

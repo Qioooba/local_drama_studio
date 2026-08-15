@@ -121,6 +121,13 @@ def test_automation_scope_and_loopback_rules_are_enforced(database, workspace) -
     delivery_client = service.create_client(code="delivery", title="Delivery", project_id=None, scopes=["delivery"], idempotency_key="automation-client-5")
     with pytest.raises(DomainRuleError, match="loopback"):
         service.create_subscription(delivery_client["token"], endpoint_url="https://example.com/hook", project_id=None, event_types=[], idempotency_key="automation-hook-4")
+    with database.connect() as connection:
+        rejection = connection.execute(
+            "SELECT action,metadata_redacted_json FROM audit_events WHERE action='WEBHOOK_SUBSCRIPTION_REJECTED' ORDER BY occurred_at DESC,event_id DESC LIMIT 1"
+        ).fetchone()
+    assert rejection is not None
+    assert rejection["action"] == "WEBHOOK_SUBSCRIPTION_REJECTED"
+    assert "example.com" not in str(rejection["metadata_redacted_json"])
 
 
 def test_automation_routes_require_idempotency_and_allow_scoped_bearer(database, workspace) -> None:
@@ -146,3 +153,40 @@ def test_automation_routes_require_idempotency_and_allow_scoped_bearer(database,
         )
         assert subscription.status_code == 201
         assert client.post("/api/v1/webhook-deliveries:deliver", json={}).status_code == 403
+
+
+def test_webhook_redirect_is_not_followed_and_delivery_failure_is_bounded(database, workspace) -> None:
+    """A loopback callback cannot turn into public egress through redirects."""
+
+    project_id = _project(database, workspace)
+    JobService(database, workspace).create_job(project_id, "LOCAL_TEST", "PROJECT", project_id, "CPU", {}, "automation-redirect")
+    service = AutomationService(database)
+    client = service.create_client(code="automation-redirect", title="Redirect guard", project_id=project_id, scopes=["delivery"], idempotency_key="automation-client-redirect")
+
+    class _RedirectHandler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802
+            self.send_response(302)
+            self.send_header("Location", "http://example.com/should-not-be-contacted")
+            self.end_headers()
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _RedirectHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        subscription = service.create_subscription(
+            client["token"],
+            endpoint_url=f"http://127.0.0.1:{server.server_port}/events",
+            project_id=project_id,
+            event_types=[],
+            idempotency_key="automation-hook-redirect",
+        )
+        result = service.deliver(client["token"], subscription_id=subscription["id"], project_id=project_id, limit=1)
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
+    assert result["status"] == "RETRYING"
+    assert result["failed"][0]["reason"] == "HTTP_302"

@@ -7,6 +7,11 @@ from pydantic import BaseModel, Field
 
 class ModelCompatibilityRequest(BaseModel):
     model_artifact_id: str = Field(min_length=1)
+    # The operator must be explicit about the profile capability being
+    # checked.  Keeping this optional preserves the read-only registry's
+    # backwards-compatible hash/quantization report path; when provided the
+    # server performs a hard capability gate.
+    required_capability: Literal["T2V", "I2V", "VIDEO", "IMAGE", "AUDIO", "TTS", "TEXT"] | None = None
 
 
 class LocalModelReferenceRequest(BaseModel):

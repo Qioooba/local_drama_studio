@@ -19,7 +19,7 @@ from ipaddress import ip_address
 from typing import Any, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import ProxyHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
@@ -29,6 +29,17 @@ MAX_ATTEMPTS = 5
 MAX_BATCH_SIZE = 100
 BASE_RETRY_SECONDS = 5
 MAX_RETRY_SECONDS = 300
+# A claimed delivery is only held in this state while the explicit command is
+# making its bounded loopback request.  A stale claim is released on the next
+# command so a killed process cannot strand an event forever.
+CLAIM_TIMEOUT_SECONDS = 300
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    """Never follow a webhook redirect to a potentially non-loopback target."""
+
+    def redirect_request(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
 
 
 def _now() -> str:
@@ -44,15 +55,21 @@ def _json(value: object) -> str:
 
 
 def _is_loopback_url(endpoint_url: str) -> bool:
-    parsed = urlsplit(endpoint_url)
-    if parsed.scheme not in {"http", "https"} or parsed.username or parsed.password or not parsed.hostname:
-        return False
-    if parsed.hostname.casefold() == "localhost":
-        return True
     try:
-        return ip_address(parsed.hostname).is_loopback
+        parsed = urlsplit(endpoint_url)
+        hostname = parsed.hostname
+        # Only literal loopback IPs are accepted.  Hostnames (including
+        # ``localhost``) are rejected to avoid hosts-file/DNS rebinding and to
+        # keep the LOCAL_ONLY boundary auditable and deterministic.
+        host_ip = ip_address(hostname) if hostname else None
+        _ = parsed.port  # force malformed-port validation
     except ValueError:
         return False
+    if parsed.scheme not in {"http", "https"} or parsed.username or parsed.password or not hostname:
+        return False
+    if parsed.fragment or host_ip is None:
+        return False
+    return host_ip.is_loopback
 
 
 def _bearer(authorization: str | None) -> str:
@@ -177,6 +194,20 @@ class AutomationService:
         client = self._client(token, "delivery")
         self._check_project_scope(client, project_id)
         if not _is_loopback_url(endpoint_url):
+            # Rejections are auditable without persisting the potentially
+            # sensitive endpoint itself.  A hash keeps the operator trace
+            # useful while ensuring a public URL or credentials cannot leak
+            # into the audit ledger.
+            with self.database.transaction() as connection:
+                connection.execute(
+                    "INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json) VALUES (?,'automation','WEBHOOK_SUBSCRIPTION_REJECTED','automation_client',?,?,?)",
+                    (
+                        actor,
+                        str(client["id"]),
+                        "拒绝非 loopback webhook 订阅",
+                        _json({"reason": "LOOPBACK_ONLY", "endpoint_hash": _hash(endpoint_url)}),
+                    ),
+                )
             raise DomainRuleError("LOOPBACK_ONLY", "webhook endpoint 只能指向 loopback，禁止公网出站")
         if project_id:
             with self.database.connect() as connection:
@@ -270,11 +301,17 @@ class AutomationService:
         }
 
     def _attempt(self, row: Any) -> tuple[bool, str | None, int | None, str | None]:
+        # Re-validate the persisted target before every network call.  This
+        # protects the egress boundary even if a database is manually edited
+        # or an older migration contained a hostname target.
+        endpoint_url = str(row["endpoint_url"])
+        if not _is_loopback_url(endpoint_url):
+            return False, "LOOPBACK_ENDPOINT_REVALIDATION_FAILED", None, None
         event = self._event(row)
         body = json.dumps({"delivery_id": str(row["id"]), "event": event}, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         signature = "sha256=" + hmac.new(str(row["signing_secret"]).encode("utf-8"), body, hashlib.sha256).hexdigest()
         request = Request(
-            str(row["endpoint_url"]),
+            endpoint_url,
             data=body,
             method="POST",
             headers={
@@ -286,7 +323,11 @@ class AutomationService:
             },
         )
         try:
-            with build_opener(ProxyHandler({})).open(request, timeout=3) as response:  # noqa: S310 - loopback validated on creation
+            # An HTTP redirect is not a safe local transport primitive: the
+            # redirected Location could point off-host.  Disable redirects
+            # and use an empty proxy configuration so the request stays
+            # explicitly loopback-only.
+            with build_opener(_NoRedirect(), ProxyHandler({})).open(request, timeout=3) as response:  # noqa: S310 - endpoint is revalidated above
                 response.read(16 * 1024)
                 status = int(response.status)
                 if 200 <= status < 300:
@@ -317,6 +358,14 @@ class AutomationService:
                 raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
             if subscription_id and connection.execute("SELECT 1 FROM webhook_subscriptions WHERE id=? AND automation_client_id=? AND status='ACTIVE'", (subscription_id, client["id"])).fetchone() is None:
                 raise DomainRuleError("WEBHOOK_SUBSCRIPTION_NOT_FOUND", "webhook 订阅不存在或不可用", {"subscription_id": subscription_id})
+            # Recover a claim left by a killed process.  Claims are only used
+            # to serialize explicit commands; they never become an implicit
+            # background worker or an unbounded retry loop.
+            stale_before = (datetime.now(UTC) - timedelta(seconds=CLAIM_TIMEOUT_SECONDS)).isoformat()
+            connection.execute(
+                "UPDATE webhook_deliveries SET status='RETRYING',next_attempt_at=?,updated_at=?,revision=revision+1 WHERE status='SENDING' AND updated_at<?",
+                (now, now, stale_before),
+            )
             self._ensure_pending(connection, client, project_id, subscription_id, after_event_id, limit)
             # Newly materialized deliveries receive their timestamp inside
             # _ensure_pending; refresh the comparison cursor so they are
@@ -331,10 +380,21 @@ class AutomationService:
                 clauses.append("(s.project_id IS NULL OR e.project_id=?)")
                 params.append(project_id)
             params.append(limit)
-            rows = connection.execute(
+            candidate_rows = connection.execute(
                 f"SELECT d.*,s.endpoint_url,s.signing_secret,e.event_id,e.type,e.project_id,e.subject_type,e.subject_id,e.payload_json,e.occurred_at FROM webhook_deliveries d JOIN webhook_subscriptions s ON s.id=d.subscription_id JOIN outbox_events e ON e.event_id=d.event_id WHERE {' AND '.join(clauses)} ORDER BY d.created_at,d.id LIMIT ?",
                 params,
             ).fetchall()
+            # Claim rows while holding the SQLite write transaction.  A
+            # second explicit command racing this one sees zero rowcount and
+            # therefore cannot POST the same delivery twice.
+            rows: list[Any] = []
+            for row in candidate_rows:
+                claimed = connection.execute(
+                    "UPDATE webhook_deliveries SET status='SENDING',updated_at=?,revision=revision+1 WHERE id=? AND status IN ('PENDING','RETRYING')",
+                    (now, row["id"]),
+                )
+                if claimed.rowcount == 1:
+                    rows.append(row)
         if not rows:
             return self._result("NO_EVENTS", [], [], [], client["id"])
         delivered: list[str] = []
@@ -346,14 +406,14 @@ class AutomationService:
             updated = _now()
             if succeeded:
                 with self.database.transaction() as connection:
-                    connection.execute("UPDATE webhook_deliveries SET status='DELIVERED',attempt_count=?,next_attempt_at=NULL,last_error=NULL,last_response_status=?,signature=?,updated_at=?,delivered_at=?,revision=revision+1 WHERE id=? AND status IN ('PENDING','RETRYING')", (attempt_no, response_status, signature, updated, updated, row["id"]))
+                    connection.execute("UPDATE webhook_deliveries SET status='DELIVERED',attempt_count=?,next_attempt_at=NULL,last_error=NULL,last_response_status=?,signature=?,updated_at=?,delivered_at=?,revision=revision+1 WHERE id=? AND status='SENDING'", (attempt_no, response_status, signature, updated, updated, row["id"]))
                     connection.execute("INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json) VALUES (?,'automation','WEBHOOK_DELIVERY_SUCCEEDED','webhook_delivery',?,?,?)", (actor, str(row["id"]), "loopback webhook 投递成功", _json({"event_id": row["event_id"], "attempt": attempt_no, "response_status": response_status})))
                 delivered.append(str(row["id"]))
             else:
                 dead = attempt_no >= MAX_ATTEMPTS
                 next_at = None if dead else (datetime.now(UTC) + timedelta(seconds=min(BASE_RETRY_SECONDS * (2 ** (attempt_no - 1)), MAX_RETRY_SECONDS))).isoformat()
                 with self.database.transaction() as connection:
-                    connection.execute("UPDATE webhook_deliveries SET status=?,attempt_count=?,next_attempt_at=?,last_error=?,last_response_status=?,signature=?,updated_at=?,revision=revision+1 WHERE id=? AND status IN ('PENDING','RETRYING')", ("DEAD_LETTER" if dead else "RETRYING", attempt_no, next_at, error, response_status, signature, updated, row["id"]))
+                    connection.execute("UPDATE webhook_deliveries SET status=?,attempt_count=?,next_attempt_at=?,last_error=?,last_response_status=?,signature=?,updated_at=?,revision=revision+1 WHERE id=? AND status='SENDING'", ("DEAD_LETTER" if dead else "RETRYING", attempt_no, next_at, error, response_status, signature, updated, row["id"]))
                     connection.execute("INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json) VALUES (?,'automation',?,?,?,?,?)", (actor, "WEBHOOK_DELIVERY_DEAD_LETTER" if dead else "WEBHOOK_DELIVERY_RETRY_SCHEDULED", "webhook_delivery", str(row["id"]), "loopback webhook 投递失败", _json({"event_id": row["event_id"], "attempt": attempt_no, "next_attempt_at": next_at, "error": error})))
                 failed.append({"delivery_id": str(row["id"]), "event_id": int(row["event_id"]), "reason": error, "attempt": attempt_no, "next_attempt_at": next_at})
                 if dead:
@@ -392,7 +452,7 @@ class AutomationService:
             params.append(subscription_id)
         if status:
             normalized = status.upper()
-            if normalized not in {"PENDING", "RETRYING", "DELIVERED", "DEAD_LETTER"}:
+            if normalized not in {"PENDING", "SENDING", "RETRYING", "DELIVERED", "DEAD_LETTER"}:
                 raise DomainRuleError("WEBHOOK_DELIVERY_STATUS_INVALID", "delivery status 无效")
             clauses.append("d.status=?")
             params.append(normalized)

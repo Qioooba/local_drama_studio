@@ -5,6 +5,7 @@ export function LocalModelReferenceForm({ projectId, onRegistered }: { projectId
   const [expanded, setExpanded] = useState(false);
   const [code, setCode] = useState("");
   const [kind, setKind] = useState("");
+  const [requiredCapability, setRequiredCapability] = useState<"T2V" | "I2V" | "VIDEO" | "IMAGE" | "AUDIO" | "TTS" | "TEXT">("T2V");
   const [path, setPath] = useState("");
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -16,8 +17,9 @@ export function LocalModelReferenceForm({ projectId, onRegistered }: { projectId
       const registered = await registerLocalModelReference(projectId, {
         code: code.trim(), kind: kind.trim(), machine_path_ref: path.trim(), license_note: "USER_SUPPLIED_LOCAL_MODEL",
       });
-      const result = await createModelCompatibilityReport(projectId, registered.artifact.id);
-      setMessage(`已引用本机模型，未复制或上传权重；兼容性：${result.report.report_status}`);
+      const result = await createModelCompatibilityReport(projectId, registered.artifact.id, requiredCapability);
+      const capabilityStatus = result.report.capability?.status ?? "NOT_REQUESTED";
+      setMessage(`已引用本机模型，未复制或上传权重；${requiredCapability} 能力：${capabilityStatus}；兼容性：${result.report.report_status}`);
       onRegistered();
     } catch (error) {
       setMessage(`登记失败：${String(error)}`);
@@ -42,6 +44,7 @@ export function LocalModelReferenceForm({ projectId, onRegistered }: { projectId
       <div className="field-grid">
         <label>模型代码<input value={code} onChange={(event) => setCode(event.target.value)} placeholder="my-local-model" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" required /></label>
         <label>模型类型<input value={kind} onChange={(event) => setKind(event.target.value)} placeholder="T2V / I2V / VAE / TTS" required /></label>
+        <label>验证目标能力<select value={requiredCapability} onChange={(event) => setRequiredCapability(event.target.value as typeof requiredCapability)}><option value="T2V">T2V 文生视频</option><option value="I2V">I2V 图生视频</option><option value="VIDEO">通用视频</option><option value="IMAGE">图像</option><option value="AUDIO">音频</option><option value="TTS">语音合成</option><option value="TEXT">文本</option></select></label>
         <label>电脑中的模型绝对路径<span className="inline-control"><input value={path} onChange={(event) => setPath(event.target.value)} placeholder="E:\\AI\\Models\\model.safetensors" required /><button className="secondary" type="button" onClick={() => { void browse(); }}>浏览…</button></span></label>
       </div>
       <p className="muted">平台只保存路径引用并读取 hash/格式，不复制、不上传、不随安装包分发模型。路径失效时可用新代码重新登记；授权由用户自行确认。</p>

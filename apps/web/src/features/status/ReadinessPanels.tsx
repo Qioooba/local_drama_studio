@@ -60,11 +60,11 @@ export function ModelCompatibilityPanel({ snapshot, projectId, onEvidenceImporte
     <div className="configuration-grid">
       <div className="configuration-card"><small>模型 Artifact</small><strong>{snapshot.summary.artifact_count}</strong><span>仅引用电脑里的路径，不复制权重</span></div>
       <div className="configuration-card"><small>用户授权记录</small><strong>{snapshot.summary.missing_license_evidence_count} 未填写</strong><span>风险提示，不阻塞平台验证</span></div>
-      <div className="configuration-card"><small>兼容性报告</small><strong>{snapshot.summary.blocked_count} BLOCKED</strong><span>仅格式、hash 或量化异常会阻塞</span></div>
+      <div className="configuration-card"><small>兼容性报告</small><strong>{snapshot.summary.blocked_count} BLOCKED</strong><span>格式、hash、量化或能力不匹配均硬阻断</span></div>
     </div>
     <div className="configuration-table" role="table" aria-label="模型兼容性证据">
       <div className="configuration-row configuration-header" role="row"><strong>模型</strong><strong>Hash / 量化</strong><strong>许可证</strong><strong>状态</strong></div>
-      {snapshot.reports.slice(0, 8).map((item) => <div className="configuration-row" role="row" key={item.artifact_id}><span>{item.code}<small>{item.kind}</small></span><span>{item.report_sha256 ? `${item.report_sha256.slice(0, 12)}…` : "未报告"} · {String(item.quantization.status ?? "UNKNOWN")}</span><span>{item.has_license_evidence ? item.license_path_rel : "用户未声明 · 自行负责"}</span><span className={`status-pill${item.report_status === "PASS" ? "" : " neutral"}`}>{item.report_status ?? "未报告"}</span></div>)}
+      {snapshot.reports.slice(0, 8).map((item) => <div className="configuration-row" role="row" key={item.artifact_id}><span>{item.code}<small>{item.kind}</small></span><span>{item.report_sha256 ? `${item.report_sha256.slice(0, 12)}…` : "未报告"} · {String(item.quantization.status ?? "UNKNOWN")}<small>能力：{String((item.quantization.capability as { status?: string } | undefined)?.status ?? "未请求")}</small></span><span>{item.has_license_evidence ? item.license_path_rel : "用户未声明 · 自行负责"}</span><span className={`status-pill${item.report_status === "PASS" ? "" : " neutral"}`}>{item.report_status ?? "未报告"}{item.blockers.length > 0 && <small>{item.blockers.join(" · ")}</small>}</span></div>)}
     </div>
     <p className="muted">平台只保存本机绝对路径、hash 和兼容性，不捆绑、上传或重新分发模型。授权信息由用户按实际情况自愿记录；未填写时明确提示风险，但不阻塞平台功能验证。</p>
     {projectId && onEvidenceImported && <><LocalModelScanForm /><LocalModelReferenceForm projectId={projectId} onRegistered={onEvidenceImported} /><ModelLicenseEvidenceForm projectId={projectId} reports={snapshot.reports} onImported={onEvidenceImported} /></>}

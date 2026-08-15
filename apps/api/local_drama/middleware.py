@@ -8,6 +8,7 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
+from ipaddress import ip_address
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -22,6 +23,26 @@ SECURITY_HEADERS = {
 _OBSERVABILITY_LOG = logging.getLogger("local_drama.observability")
 _OBSERVABILITY_LOG.setLevel(logging.INFO)
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
+_LOCAL_AUTOMATION_PATHS = (
+    "/api/v1/automation-clients",
+    "/api/v1/webhook-",
+    "/api/v1/events:deliver",
+)
+
+
+def _is_loopback_client(request: Request) -> bool:
+    """Return whether an automation API caller is connected from loopback."""
+
+    # Starlette's in-process TestClient deliberately uses this synthetic host;
+    # it is not reachable over a real socket and remains useful for contract
+    # tests.  Every TCP caller must resolve to a literal loopback address.
+    host = request.client.host if request.client is not None else None
+    if host == "testclient":
+        return True
+    try:
+        return bool(host and ip_address(host).is_loopback)
+    except ValueError:
+        return False
 
 
 def _safe_identifier(value: object | None) -> str | None:
@@ -130,6 +151,23 @@ class LocalOriginMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         origin = request.headers.get("Origin")
         state_changing = request.method in {"POST", "PUT", "PATCH", "DELETE"}
+        if request.url.path.startswith(_LOCAL_AUTOMATION_PATHS) and not _is_loopback_client(request):
+            request_id, _trace_id = _ensure_request_context(request)
+            _log_request("request.rejected", request, status_code=403, error="LOCAL_ONLY_LOOPBACK_REQUIRED")
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": {
+                        "code": "LOCAL_ONLY_LOOPBACK_REQUIRED",
+                        "message": "本机自动化 API 只允许 loopback 连接",
+                        "request_id": request_id,
+                        "details": {},
+                        "retryable": False,
+                        "suggested_action": "从本机 LocalDramaStudio 实例发起自动化请求",
+                    }
+                },
+                headers={"X-Request-Id": request_id, **SECURITY_HEADERS},
+            )
         if state_changing and origin and origin not in self.allowed_origins:
             request_id, _trace_id = _ensure_request_context(request)
             _log_request("request.rejected", request, status_code=403, error="ORIGIN_NOT_ALLOWED")

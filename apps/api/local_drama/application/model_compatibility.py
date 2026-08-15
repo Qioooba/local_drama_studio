@@ -52,6 +52,48 @@ def _hash_and_header(path: Path) -> tuple[str, int, dict[str, Any]]:
     return digest.hexdigest(), size, {"tensor_count": len(tensors), "dtypes": dtypes, "metadata": header.get("__metadata__", {})}
 
 
+_MODEL_CAPABILITIES = frozenset({"T2V", "I2V", "VIDEO", "IMAGE", "AUDIO", "TTS", "TEXT"})
+
+
+def _declared_capabilities(kind: str, path: Path) -> set[str]:
+    """Derive only conservative capability aliases from the user declaration.
+
+    This is intentionally a bounded, offline check.  It never loads a model or
+    asks a runtime to guess what a custom model can do.  A declaration that
+    cannot be mapped is treated as unknown by the hard gate below.
+    """
+
+    value = f"{kind} {path.name}".casefold().replace("-", " ").replace("_", " ")
+    capabilities: set[str] = set()
+    if any(token in value for token in ("t2v", "t2va", "text to video", "text2video")):
+        capabilities.update({"T2V", "VIDEO"})
+    if any(token in value for token in ("i2v", "fl2va", "image to video", "image2video")):
+        capabilities.update({"I2V", "VIDEO"})
+    if "video vae" in value or "video_vae" in value:
+        capabilities.update({"T2V", "I2V", "VIDEO"})
+    if any(token in value for token in ("audio vae", "audio_vae", "audio model", "sapi", "tts")):
+        capabilities.update({"AUDIO", "TTS"})
+    if any(token in value for token in ("text encoder", "text_encoder", "llm", "language model")):
+        capabilities.update({"TEXT", "T2V", "I2V"})
+    if "image" in value and "video" not in value:
+        capabilities.add("IMAGE")
+    return capabilities
+
+
+def _capability_check(kind: str, path: Path, required_capability: str | None) -> dict[str, Any]:
+    required = required_capability.strip().upper() if isinstance(required_capability, str) and required_capability.strip() else None
+    if required is not None and required not in _MODEL_CAPABILITIES:
+        raise DomainRuleError("MODEL_CAPABILITY_INVALID", "模型兼容性检查的 capability 不受支持")
+    declared = sorted(_declared_capabilities(kind, path))
+    if required is None:
+        return {"required": None, "declared": declared, "status": "NOT_REQUESTED", "passed": True}
+    if not declared:
+        return {"required": required, "declared": [], "status": "UNDECLARED", "passed": False}
+    if required not in declared:
+        return {"required": required, "declared": declared, "status": "MISMATCH", "passed": False}
+    return {"required": required, "declared": declared, "status": "MATCHED", "passed": True}
+
+
 class ModelCompatibilityService:
     def __init__(self, database: Database) -> None:
         self.database = database
@@ -195,7 +237,13 @@ class ModelCompatibilityService:
                 return dict(row)
         return None
 
-    def report(self, artifact_id: str, project_id: str | None = None, actor: str = "local-user") -> dict[str, Any]:
+    def report(
+        self,
+        artifact_id: str,
+        project_id: str | None = None,
+        actor: str = "local-user",
+        required_capability: str | None = None,
+    ) -> dict[str, Any]:
         with self.database.connect() as connection:
             artifact = connection.execute("SELECT * FROM model_artifacts WHERE id=?", (artifact_id,)).fetchone()
         if artifact is None:
@@ -210,13 +258,16 @@ class ModelCompatibilityService:
         quantization_status = "HEADER_MATCHED" if header_dtypes else "HEADER_UNVERIFIED"
         evidence = self._license_evidence(project_id, artifact_id, sha256)
         license_status = str(evidence["license_status"]) if evidence else "UNVERIFIED_NO_LOCAL_LICENSE_EVIDENCE"
-        blockers = []
+        capability = _capability_check(str(artifact["kind"]), path, required_capability)
+        blockers: list[str] = []
         if quantization_status != "HEADER_MATCHED":
             blockers.append("QUANTIZATION_HEADER_UNVERIFIED")
-        report_status = "PASS" if quantization_status == "HEADER_MATCHED" else "BLOCKED"
+        if not capability["passed"]:
+            blockers.append("MODEL_CAPABILITY_UNDECLARED" if capability["status"] == "UNDECLARED" else "MODEL_CAPABILITY_MISMATCH")
+        report_status = "PASS" if not blockers else "BLOCKED"
         now = _utc_now()
         report_id = str(uuid.uuid4())
-        quantization = {"declared": declared_quantization, "header_dtypes": sorted(header_dtypes), "status": quantization_status}
+        quantization = {"declared": declared_quantization, "header_dtypes": sorted(header_dtypes), "status": quantization_status, "capability": capability}
         with self.database.transaction() as connection:
             connection.execute(
                 """INSERT INTO model_compatibility_reports
@@ -233,12 +284,14 @@ class ModelCompatibilityService:
                 """INSERT INTO audit_events
                 (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json)
                 VALUES (?, 'operator', 'MODEL_COMPATIBILITY_REPORTED', 'model_artifact', ?, ?, ?)""",
-                (actor, artifact_id, "离线模型 hash/量化报告生成", _json({"report_id": report_id, "sha256": sha256, "byte_size": byte_size, "report_status": report_status})),
+                (actor, artifact_id, "离线模型 hash/量化/能力报告生成", _json({"report_id": report_id, "sha256": sha256, "byte_size": byte_size, "report_status": report_status, "required_capability": capability["required"], "capability_status": capability["status"]})),
             )
         return {"id": report_id, "model_artifact_id": artifact_id, "path_ref": str(path), "sha256": sha256, "byte_size": byte_size,
                 "header": header, "quantization": quantization, "license_status": license_status, "report_status": report_status, "blockers": blockers,
                 "license_evidence_id": str(evidence["id"]) if evidence else None,
                 "license_risk": "RECORDED" if evidence else "USER_RESPONSIBILITY_UNKNOWN",
+                "license_attestation": {"status": "ATTESTED" if evidence else "NOT_RECORDED", "evidence_id": str(evidence["id"]) if evidence else None, "artifact_sha256": sha256},
+                "capability": capability,
                 "distribution_scope": "REFERENCE_ONLY_NOT_BUNDLED",
                 "runtime_contacted": False, "network_contacted": False}
 

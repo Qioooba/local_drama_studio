@@ -1,0 +1,39 @@
+{
+  "schema_version": "localdrama.fr-prv-003.nfr-comp-001.model-boundary.v1",
+  "recorded_at": "2026-08-16",
+  "requirements": ["FR-PRV-003", "NFR-COMP-001"],
+  "status": "PARTIAL",
+  "scope": "bounded offline model reference, compatibility and license-attestation boundary",
+  "observed": {
+    "user_selected_absolute_path": true,
+    "unicode_space_long_path_regression": true,
+    "sha256_and_safetensors_header_quantization": true,
+    "project_local_license_attestation": true,
+    "capability_mismatch_hard_block": true,
+    "copied": false,
+    "uploaded": false,
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "mutated": false
+  },
+  "capability_contract": {
+    "declared_aliases": ["T2V", "I2V", "VIDEO", "IMAGE", "AUDIO", "TTS", "TEXT"],
+    "mismatch_result": "BLOCKED / MODEL_CAPABILITY_MISMATCH",
+    "undeclared_result": "BLOCKED / MODEL_CAPABILITY_UNDECLARED",
+    "license_without_attestation": "USER_RESPONSIBILITY_UNKNOWN (non-blocking risk record)",
+    "license_with_attestation": "ATTESTED and bound to current artifact SHA-256"
+  },
+  "automated_tests": [
+    "apps/api/tests/test_model_compatibility.py::test_registers_user_model_absolute_path_without_copying_or_uploading",
+    "apps/api/tests/test_model_compatibility.py::test_model_capability_mismatch_is_hard_blocked_for_unicode_space_long_local_path",
+    "apps/api/tests/test_model_license_evidence.py::test_imported_local_license_evidence_unlocks_report",
+    "apps/web/src/features/status/LocalModelReferenceForm.test.tsx",
+    "apps/web/src/features/status/ModelLicenseEvidenceForm.test.tsx"
+  ],
+  "limitations": [
+    "Capability aliases are conservative declaration checks; they do not load or execute user models.",
+    "Real user model files, Windows three-viewport UAT and final legal license review remain outstanding.",
+    "This evidence does not claim that a model license is valid or that a runtime can execute it."
+  ],
+  "release_claim": "The platform stores only a local absolute path and immutable offline hashes/attestation metadata; incompatible declared capability is hard-blocked and no model bytes are packaged or uploaded."
+}

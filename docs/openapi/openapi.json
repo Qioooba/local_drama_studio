@@ -14603,6 +14603,26 @@
             "type": "string",
             "minLength": 1,
             "title": "Model Artifact Id"
+          },
+          "required_capability": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "T2V",
+                  "I2V",
+                  "VIDEO",
+                  "IMAGE",
+                  "AUDIO",
+                  "TTS",
+                  "TEXT"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Capability"
           }
         },
         "type": "object",

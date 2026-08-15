@@ -19,6 +19,7 @@ describe("LocalModelReferenceForm", () => {
     fireEvent.change(screen.getByLabelText("电脑中的模型绝对路径"), { target: { value: "E:\\AI\\model.safetensors" } });
     fireEvent.click(screen.getByRole("button", { name: "引用并检查兼容性" }));
     await waitFor(() => expect(api.registerLocalModelReference).toHaveBeenCalled());
+    expect(api.createModelCompatibilityReport).toHaveBeenCalledWith("project-1", "model-1", "T2V");
     expect(await screen.findByText(/未复制或上传权重/)).toBeTruthy();
     expect(onRegistered).toHaveBeenCalled();
   });

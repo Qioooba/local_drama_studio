@@ -216,7 +216,7 @@ async def create_model_compatibility_report(project_id: str, payload: ModelCompa
         with request.app.state.database.connect() as connection:
             if connection.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone() is None:
                 raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
-        return {"report": ModelCompatibilityService(request.app.state.database).report(payload.model_artifact_id, project_id)}
+        return {"report": ModelCompatibilityService(request.app.state.database).report(payload.model_artifact_id, project_id, required_capability=payload.required_capability)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

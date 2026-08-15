@@ -161,7 +161,7 @@
     {
       "id": "FR-AUT-002",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-aut-002-automation-implementation-2026-08-15.json"],
+      "evidence": ["docs/evidence/g10/fr-aut-002-automation-implementation-2026-08-15.json", "docs/evidence/g10/fr-aut-002-loopback-hardening-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_automation_webhooks.py", "apps/api/tests/test_migration.py"]
     },
     {
@@ -447,8 +447,8 @@
     {
       "id": "FR-PRV-003",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_profile_contract_editor.py", "apps/api/tests/test_profile_compatibility.py"]
+      "evidence": ["docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json", "docs/evidence/g10/fr-prv-003-nfr-comp-001-model-boundary-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_profile_contract_editor.py", "apps/api/tests/test_profile_compatibility.py", "apps/api/tests/test_model_compatibility.py", "apps/api/tests/test_model_license_evidence.py", "apps/web/src/features/status/LocalModelReferenceForm.test.tsx"]
     },
     {
       "id": "FR-CTL-001",
@@ -557,6 +557,12 @@
       "automated_tests": ["apps/api/tests/test_nfr_reliability.py", "apps/api/tests/test_g5_jobs.py"]
     },
     {
+      "id": "NFR-REL-003",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/upgrade-rollback-rehearsal-0038-2026-08-16.json", "docs/evidence/g10/nfr-rel-003-outbox-delivery-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_outbox_delivery.py", "apps/api/tests/test_migration.py"]
+    },
+    {
       "id": "NFR-PERF-001",
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/nfr-perf-bounded-observation-2026-08-16.json"],
@@ -567,6 +573,12 @@
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/nfr-perf-bounded-observation-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_project_listing.py", "apps/api/tests/test_g3_configuration_media.py", "apps/web/src/features/shared/thumbnailPolicy.test.ts", "scripts/nfr_perf_benchmark.py"]
+    },
+    {
+      "id": "NFR-COMP-001",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-prv-003-nfr-comp-001-model-boundary-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_model_compatibility.py", "apps/api/tests/test_model_license_evidence.py", "apps/web/src/features/status/LocalModelReferenceForm.test.tsx"]
     },
     {
       "id": "NFR-SEC-003",

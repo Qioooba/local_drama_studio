@@ -27,10 +27,11 @@ def test_registers_user_model_absolute_path_without_copying_or_uploading(workspa
         assert artifact["copied"] is False and artifact["uploaded"] is False
         report = client.post(
             f"/api/v1/projects/{project['id']}/model-compatibility-report",
-            json={"model_artifact_id": artifact["id"]},
+            json={"model_artifact_id": artifact["id"], "required_capability": "T2V"},
         )
         assert report.status_code == 201
         assert report.json()["report"]["report_status"] == "PASS"
+        assert report.json()["report"]["capability"]["status"] == "MATCHED"
         assert report.json()["report"]["license_risk"] == "USER_RESPONSIBILITY_UNKNOWN"
     assert path.read_bytes() == original_hash
 
@@ -87,3 +88,46 @@ def test_project_model_snapshot_is_read_only_and_exposes_non_blocking_license_ri
     assert snapshot["network_contacted"] is False
     assert snapshot["mutated"] is False
     assert before == after
+
+
+def test_model_capability_mismatch_is_hard_blocked_for_unicode_space_long_local_path(workspace, database) -> None:
+    """Windows-style user paths stay references while incompatible roles block."""
+
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="model_capability_matrix", title="Model capability matrix", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1,
+        target_duration_ms=60_000, allow_unconfigured_capabilities=True,
+    )
+    model_dir = workspace.work_root / ("中文 模型 " + ("x" * 80))
+    model_dir.mkdir(parents=True, exist_ok=True)
+    path = model_dir / "MiniMax FL2VA int8 fp16.safetensors"
+    header = b'{"x":{"dtype":"I8","shape":[1],"data_offsets":[0,0]}}'
+    path.write_bytes(len(header).to_bytes(8, "little") + header + b"payload")
+    with TestClient(create_app(workspace)) as client:
+        registered = client.post(
+            f"/api/v1/projects/{project['id']}/model-artifacts",
+            json={"code": "fl2va-unicode", "kind": "FL2VA I2V", "machine_path_ref": str(path)},
+        )
+        assert registered.status_code == 201, registered.text
+        artifact = registered.json()["artifact"]
+        assert artifact["machine_path_ref"] == str(path.resolve())
+        assert artifact["copied"] is False and artifact["uploaded"] is False
+
+        mismatch = client.post(
+            f"/api/v1/projects/{project['id']}/model-compatibility-report",
+            json={"model_artifact_id": artifact["id"], "required_capability": "T2V"},
+        )
+        assert mismatch.status_code == 201, mismatch.text
+        mismatch_report = mismatch.json()["report"]
+        assert mismatch_report["report_status"] == "BLOCKED"
+        assert "MODEL_CAPABILITY_MISMATCH" in mismatch_report["blockers"]
+        assert mismatch_report["capability"] == {"required": "T2V", "declared": ["I2V", "VIDEO"], "status": "MISMATCH", "passed": False}
+
+        compatible = client.post(
+            f"/api/v1/projects/{project['id']}/model-compatibility-report",
+            json={"model_artifact_id": artifact["id"], "required_capability": "I2V"},
+        )
+        assert compatible.status_code == 201, compatible.text
+        compatible_report = compatible.json()["report"]
+        assert compatible_report["report_status"] == "PASS"
+        assert compatible_report["capability"]["status"] == "MATCHED"
+    assert path.is_file()

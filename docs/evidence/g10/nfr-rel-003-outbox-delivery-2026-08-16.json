@@ -1,0 +1,47 @@
+{
+  "schema_version": "g10.nfr_rel_003_outbox_delivery.v1",
+  "observed_at": "2026-08-16T00:00:00Z",
+  "status": "PARTIAL",
+  "scope": ["NFR-REL-003", "FR-JOB outbox/SSE cursor"],
+  "bounded_implementation": {
+    "migration": "0038_outbox_delivery_ledger",
+    "ledger": "outbox_delivery_attempts",
+    "claim_states": ["PENDING", "IN_FLIGHT", "RETRYING", "DELIVERED", "DEAD_LETTER"],
+    "claim_lease_seconds": 30,
+    "max_attempts": 5,
+    "retry_backoff_seconds": {"base": 5, "max": 300},
+    "event_identity": "event_id remains stable in X-Local-Drama-Event-Id and unique (event_id, endpoint_url) ledger claim",
+    "redirect_policy": "HTTP redirects are rejected before following the Location target; endpoint validation remains loopback-only"
+  },
+  "automated_regression": {
+    "command": "PYTHONPATH=apps/api .venv/Scripts/python.exe -m pytest apps/api/tests/test_outbox_delivery.py apps/api/tests/test_migration.py -q",
+    "result": "5 passed",
+    "cases": [
+      "loopback 2xx acknowledgement marks event delivered",
+      "redirect to https://example.com is rejected without following public hop",
+      "failure persists RETRYING attempt_count and bounded next_attempt_at",
+      "expired IN_FLIGHT claim is reclaimed by a fresh service instance",
+      "replay uses the same event id and a later call does not deliver the same event again",
+      "migration schema/index and online backup integrity checks pass"
+    ]
+  },
+  "audit": {
+    "actions": [
+      "OUTBOX_DELIVERY_RETRY_SCHEDULED",
+      "OUTBOX_DELIVERY_RECLAIMED",
+      "OUTBOX_WEBHOOK_DELIVERED",
+      "OUTBOX_DELIVERY_DEAD_LETTER"
+    ],
+    "metadata_redacted": true,
+    "network_contacted": "loopback test server only",
+    "remote_transport_allowed": false,
+    "runtime_contacted": false,
+    "production_database_mutated": false
+  },
+  "limitations": [
+    "The rehearsal is isolated and does not prove physical power-loss durability.",
+    "No multi-process Windows worker contention or real backup-media restore was executed.",
+    "Generic delivery preserves the existing global delivered_at compatibility flag; automation subscriptions use their separate webhook delivery ledger."
+  ],
+  "next_required_action": "Run Windows x64 crash/restore and multi-process delivery UAT before promoting NFR-REL-003 to VERIFIED."
+}

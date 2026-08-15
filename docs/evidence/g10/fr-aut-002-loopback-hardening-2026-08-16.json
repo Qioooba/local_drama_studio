@@ -1,0 +1,35 @@
+{
+  "schema_version": "g10.fr-aut-002-loopback-hardening.v1",
+  "status": "PARTIAL",
+  "requirement": "FR-AUT-002",
+  "observed_at": "2026-08-16T00:00:00Z",
+  "scope": "implementation and isolated API regression",
+  "controls": {
+    "automation_api_loopback_guard": true,
+    "webhook_target_literal_loopback": true,
+    "delivery_target_revalidated_before_request": true,
+    "http_redirects_followed": false,
+    "proxy_transport": "DISABLED",
+    "concurrent_delivery_claim": "SQLITE_STATUS_CLAIM",
+    "stale_claim_recovery_seconds": 300,
+    "hmac_signature": "sha256",
+    "max_attempts": 5,
+    "dead_letter_and_explicit_retry": true,
+    "rejection_audit_without_endpoint_pii": true
+  },
+  "automated_tests": [
+    "apps/api/tests/test_automation_webhooks.py"
+  ],
+  "observed_results": {
+    "isolated_test_command": ".venv/Scripts/python.exe -m pytest apps/api/tests/test_automation_webhooks.py -q",
+    "isolated_tests_passed": 5,
+    "isolated_tests_failed": 0,
+    "public_network_contacted": false,
+    "remote_provider_contacted": false,
+    "user_model_or_media_bundled": false
+  },
+  "production_uat": {
+    "status": "PENDING",
+    "reason": "正式 Windows 三视口 UAT、外部自动化客户端实际接入与发布签字尚未执行。"
+  }
+}
