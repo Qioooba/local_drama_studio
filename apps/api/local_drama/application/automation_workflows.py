@@ -432,20 +432,20 @@ class AutomationWorkflowService:
         right = condition.get("value")
         operator = str(condition["operator"])
         if operator == "EQ":
-            return left == right
+            return bool(left == right)
         if operator == "NEQ":
-            return left != right
+            return bool(left != right)
         if operator == "IN":
             return isinstance(right, list) and left in right
         try:
             if operator == "GT":
-                return left > right
+                return bool(left > right)
             if operator == "GTE":
-                return left >= right
+                return bool(left >= right)
             if operator == "LT":
-                return left < right
+                return bool(left < right)
             if operator == "LTE":
-                return left <= right
+                return bool(left <= right)
         except TypeError:
             return False
         return False
