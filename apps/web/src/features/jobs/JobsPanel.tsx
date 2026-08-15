@@ -1,12 +1,20 @@
 import { useEffect, useState } from "react";
-import type { CapacitySnapshot, Job } from "../../generated/api";
+import { cancelJob, cloneJob, retryJob, type CapacitySnapshot, type Job } from "../../generated/api";
 import { INITIAL_LIST_WINDOW, progressiveSlice } from "../shared/progressive";
 
-export function JobsPanel({ jobs, loading }: { jobs: Job[]; loading: boolean }) {
+export function JobsPanel({ jobs, loading, onChanged }: { jobs: Job[]; loading: boolean; onChanged?: () => void }) {
   const [visibleCount, setVisibleCount] = useState(INITIAL_LIST_WINDOW);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => { setVisibleCount(INITIAL_LIST_WINDOW); }, [jobs]);
   const visibleJobs = progressiveSlice(jobs, visibleCount);
-  return <section className="panel"><div className="panel-heading"><div><p className="eyebrow">G5 TASKS & MACHINES</p><h3>持久任务队列与本地 worker</h3></div><span className="status-pill">SSE / OUTBOX</span></div><p className="muted">状态来自 SQLite jobs/attempts/outbox；页面关闭后队列继续运行，worker lease 过期由 reconcile 接管。</p>{loading ? <p className="empty-state">正在读取任务…</p> : jobs.length === 0 ? <p className="empty-state">当前项目没有任务。</p> : <><div className="job-list">{visibleJobs.map((job) => <div className="job-row progressive-row" key={job.id}><strong>{job.type}</strong><span>{job.channel}</span><span className={job.state === "SUCCEEDED" ? "status-pill" : "blocker-text"}>{job.state}</span><small>priority {job.priority} · rev {job.revision}</small></div>)}</div>{visibleJobs.length < jobs.length && <button className="secondary list-more" onClick={() => setVisibleCount((count) => count + INITIAL_LIST_WINDOW)}>继续显示任务（{visibleJobs.length}/{jobs.length}）</button>}</>}</section>;
+  const mutate = async (job: Job, action: "cancel" | "retry" | "clone") => {
+    setBusy(`${action}:${job.id}`); setError(null);
+    try { if (action === "cancel") await cancelJob(job.id); else if (action === "retry") await retryJob(job.id); else await cloneJob(job.id); onChanged?.(); }
+    catch (caught) { setError(`任务操作失败：${String(caught)}`); }
+    finally { setBusy(null); }
+  };
+  return <section className="panel"><div className="panel-heading"><div><p className="eyebrow">G5 TASKS & MACHINES</p><h3>持久任务队列与本地 worker</h3></div><span className="status-pill">SSE / OUTBOX</span></div><p className="muted">状态来自 SQLite jobs/attempts/outbox；页面关闭后队列继续运行，worker lease 过期由 reconcile 接管。取消、重试和克隆都会创建可追溯状态，不覆盖旧尝试。</p>{loading ? <p className="empty-state">正在读取任务…</p> : jobs.length === 0 ? <p className="empty-state">当前项目没有任务。</p> : <><div className="job-list">{visibleJobs.map((job) => <div className="job-row progressive-row" key={job.id}><strong>{job.type}</strong><span>{job.channel}</span><span className={job.state === "SUCCEEDED" ? "status-pill" : "blocker-text"}>{job.state}</span><small>priority {job.priority} · rev {job.revision}</small><div className="job-actions"><button className="secondary" onClick={() => void mutate(job, "cancel")} disabled={busy !== null || !["QUEUED", "RUNNING", "CLAIMED", "WAITING"].includes(job.state)}>{busy === `cancel:${job.id}` ? "取消中…" : "取消"}</button><button className="secondary" onClick={() => void mutate(job, "retry")} disabled={busy !== null || !["FAILED", "CANCELLED"].includes(job.state)}>{busy === `retry:${job.id}` ? "重试中…" : "重试"}</button><button className="secondary" onClick={() => void mutate(job, "clone")} disabled={busy !== null}>{busy === `clone:${job.id}` ? "克隆中…" : "克隆"}</button></div></div>)}</div>{visibleJobs.length < jobs.length && <button className="secondary list-more" onClick={() => setVisibleCount((count) => count + INITIAL_LIST_WINDOW)}>继续显示任务（{visibleJobs.length}/{jobs.length}）</button>}</>}{error && <p className="inline-error" role="alert">{error}</p>}</section>;
 }
 
 export function CapacitySnapshotPanel({ snapshot }: { snapshot?: CapacitySnapshot }) {

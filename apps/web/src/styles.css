@@ -714,3 +714,4 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .subtitle-revision-panel{margin-top:14px}.subtitle-revision-fields{align-items:end}.subtitle-cues-field{display:grid;gap:6px;margin-top:12px}.subtitle-cues-field textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;min-height:150px}
 .timeline-revision-panel{margin-top:14px}.timeline-revision-panel textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;min-height:150px}
 .delivery-workflow-panel{margin-top:14px}.delivery-workflow-panel .action-row{align-items:center}
+.job-actions{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}.job-actions button{min-height:32px;padding:5px 9px}

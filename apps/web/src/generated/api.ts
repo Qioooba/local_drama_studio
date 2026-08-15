@@ -297,6 +297,18 @@ export async function listJobs(projectId?: string, baseUrl = ''): Promise<{ item
   return requestJson<{ items: Job[] }>(`/api/v1/jobs${query}`, undefined, baseUrl);
 }
 
+export async function cancelJob(jobId: string, baseUrl = ''): Promise<{ job: Job }> {
+  return requestJson(`/api/v1/jobs/${encodeURIComponent(jobId)}:cancel`, { method: 'POST' }, baseUrl);
+}
+
+export async function retryJob(jobId: string, baseUrl = ''): Promise<{ job: Job }> {
+  return requestJson(`/api/v1/jobs/${encodeURIComponent(jobId)}:retry`, { method: 'POST' }, baseUrl);
+}
+
+export async function cloneJob(jobId: string, inputOverrides: Record<string, unknown> = {}, baseUrl = ''): Promise<{ job: Job }> {
+  return requestJson(`/api/v1/jobs/${encodeURIComponent(jobId)}:clone`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ input_overrides: inputOverrides }) }, baseUrl);
+}
+
 export async function createGenerationIntent(payload: { project_id: string; owner_type: string; owner_id: string; purpose: string; creative_goal: string }, baseUrl = ''): Promise<{ intent: GenerationIntent }> {
   return requestJson('/api/v1/generation-intents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
