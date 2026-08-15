@@ -273,6 +273,8 @@ FR-AUD-001 SAPI Job 批次：新增真实 Windows System.Speech `TTS_GENERATION`
 
 FR-AUD-002 authorization correction：新增 migration `0028_audio_binding_authority`，新绑定必须提供项目内授权证据文件并冻结 SHA/size，同时冻结媒体 SHA、loop、fade、gain 和时间范围；跨项目/非音频/源篡改/非法轨道/未 loop 超源时长/非法 fade 均拒绝。生产在线备份后升级至 0028、integrity=ok；既有 4 轨没有真实授权文件，统一保留为 `LEGACY_INCOMPLETE`，`verified_local_count` 由 4 修正为 0，G8 首动作真实退回 `DIALOGUE_ENVIRONMENT_SFX_MUSIC`。工作台新增四轨策略、`preload=none` 按需试听，以及显式本地导入→授权证据校验→绑定表单；三档 UAT 展开表单后零写入、公网、自动原音频请求、截图、短控件、错误或溢出。Web 全量 50 / build PASS，最近完整门禁 API 174 / Ruff / mypy 100 PASS。此项仍 PARTIAL；G7 license blocker 与有序门禁不变。
 
+FR-AUD-001 SAPI 选择入口增量：新增 `GET /api/v1/tts/voices:discover`，Windows 本机只读调用 System.Speech 列出已安装音色名称、区域与 `sapi:` 引用；未找到 runtime 时明确返回 `UNAVAILABLE`，扫描不复制/上传/写入项目。对白治理 UI 需用户显式点击扫描并选择，之后仍必须填写项目内授权证据、绑定 Published TTS Profile、执行真实 Job、QC、人工审核与选择；本入口不改变 FR-AUD-001 的 `PARTIAL` 状态。
+
 ## 更新规则
 
 任何新增/变更需求必须先分配 ID、写 ADR、补 migration/API/UI/test 影响；所有阶段报告、提交和缺陷引用至少一个需求或测试 ID。
