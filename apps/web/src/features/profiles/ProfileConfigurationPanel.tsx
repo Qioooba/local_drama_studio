@@ -6,6 +6,7 @@ import {
   publishProfileContractVersion,
   validateProfileContractVersion,
   publishWorkflowVersion,
+  rollbackWorkflowVersion,
   revokeWorkflowVersion,
   validateWorkflowLocal,
   type Profile,
@@ -34,6 +35,7 @@ export function ProfileConfigurationPanel({ profiles, workflows, workflowsLoadin
   const [resourceJson, setResourceJson] = useState("{}");
   const [feedback, setFeedback] = useState<{ kind: "success" | "error"; message: string } | null>(null);
   const [workflowValidations, setWorkflowValidations] = useState<Record<string, WorkflowValidation>>({});
+  const [workflowRevokeReasons, setWorkflowRevokeReasons] = useState<Record<string, string>>({});
   const [workflowBusy, setWorkflowBusy] = useState<string | null>(null);
   useEffect(() => {
     if (!current) return;
@@ -76,9 +78,19 @@ export function ProfileConfigurationPanel({ profiles, workflows, workflowsLoadin
     finally { setWorkflowBusy(null); }
   };
   const revokeWorkflow = async (workflow: WorkflowVersionSummary) => {
+    const reason = workflowRevokeReasons[workflow.id]?.trim() ?? "";
+    if (!reason) { setFeedback({ kind: "error", message: "撤销 workflow 必须填写原因。" }); return; }
     setWorkflowBusy(`revoke:${workflow.id}`); setFeedback(null);
-    try { await revokeWorkflowVersion(workflow.id); setFeedback({ kind: "success", message: `${workflow.code} v${workflow.version_no} 已撤销` }); onChanged(); }
+    try { await revokeWorkflowVersion(workflow.id, reason); setFeedback({ kind: "success", message: `${workflow.code} v${workflow.version_no} 已撤销` }); onChanged(); }
     catch (error) { setFeedback({ kind: "error", message: `工作流撤销失败：${String(error)}` }); }
+    finally { setWorkflowBusy(null); }
+  };
+  const rollbackWorkflow = async (workflow: WorkflowVersionSummary) => {
+    const validation = workflowValidations[workflow.id];
+    if (!validation || validation.status !== "PASS") { setFeedback({ kind: "error", message: "回滚前必须对目标历史版本重新执行本地验证。" }); return; }
+    setWorkflowBusy(`rollback:${workflow.id}`); setFeedback(null);
+    try { await rollbackWorkflowVersion(workflow.id, validation.id); setFeedback({ kind: "success", message: `${workflow.code} v${workflow.version_no} 已回滚并重新发布` }); onChanged(); }
+    catch (error) { setFeedback({ kind: "error", message: `工作流回滚失败：${String(error)}` }); }
     finally { setWorkflowBusy(null); }
   };
   return <section className="panel">
@@ -110,6 +122,6 @@ export function ProfileConfigurationPanel({ profiles, workflows, workflowsLoadin
       </div>
     </div>
     <div className="workflow-history-heading"><div><p className="eyebrow">WORKFLOW HISTORY</p><h3>工作流发布证据</h3></div><span className="status-pill neutral">只读 · 未连接 ComfyUI</span></div>
-    {workflowsLoading ? <p className="empty-state">正在读取本地工作流版本…</p> : <div className="workflow-history">{workflows.map((workflow) => { const validation = workflowValidations[workflow.id]; return <article className="workflow-version" key={workflow.id}><div><strong>{workflow.code}</strong><small>v{workflow.version_no} · {String(workflow.contract.capability ?? "未声明 capability")}</small></div><span className={`status-pill${workflow.status === "PUBLISHED" ? "" : " neutral"}`}>{workflow.status}</span><code>{workflow.content_hash.slice(0, 12)}</code><small>{workflow.published_at ? `发布于 ${new Date(workflow.published_at).toLocaleString()}` : "尚未发布；验证、发布与回滚均需显式操作。"}</small><div className="workflow-actions"><button className="secondary" onClick={() => void validateWorkflow(workflow)} disabled={workflowBusy !== null}>{workflowBusy === `validate:${workflow.id}` ? "验证中…" : "本地验证"}</button>{validation?.status === "PASS" && workflow.status !== "PUBLISHED" && <button className="primary-action" onClick={() => void publishWorkflow(workflow)} disabled={workflowBusy !== null}>{workflowBusy === `publish:${workflow.id}` ? "发布中…" : "发布"}</button>}{workflow.status === "PUBLISHED" && <button className="secondary" onClick={() => void revokeWorkflow(workflow)} disabled={workflowBusy !== null}>{workflowBusy === `revoke:${workflow.id}` ? "撤销中…" : "撤销"}</button>}</div>{validation && <small className={validation.status === "PASS" ? "ok-text" : "blocker-text"}>最近验证：{validation.status} · {validation.id.slice(0, 12)}</small>}</article>; })}</div>}
+    {workflowsLoading ? <p className="empty-state">正在读取本地工作流版本…</p> : <div className="workflow-history">{workflows.map((workflow) => { const validation = workflowValidations[workflow.id]; const revokeReason = workflowRevokeReasons[workflow.id] ?? ""; return <article className="workflow-version" key={workflow.id}><div><strong>{workflow.code}</strong><small>v{workflow.version_no} · {String(workflow.contract.capability ?? "未声明 capability")}</small></div><span className={`status-pill${workflow.status === "PUBLISHED" ? "" : " neutral"}`}>{workflow.status}</span><code>{workflow.content_hash.slice(0, 12)}</code><small>{workflow.published_at ? `发布于 ${new Date(workflow.published_at).toLocaleString()}` : "尚未发布；验证、发布与回滚均需显式操作。"}</small><div className="workflow-actions"><button className="secondary" onClick={() => void validateWorkflow(workflow)} disabled={workflowBusy !== null}>{workflowBusy === `validate:${workflow.id}` ? "验证中…" : "本地验证"}</button>{validation?.status === "PASS" && workflow.status !== "PUBLISHED" && workflow.status !== "RETIRED" && <button className="primary-action" onClick={() => void publishWorkflow(workflow)} disabled={workflowBusy !== null}>{workflowBusy === `publish:${workflow.id}` ? "发布中…" : "发布"}</button>}{workflow.status === "RETIRED" && validation?.status === "PASS" && <button className="primary-action" onClick={() => void rollbackWorkflow(workflow)} disabled={workflowBusy !== null}>{workflowBusy === `rollback:${workflow.id}` ? "回滚中…" : "验证后回滚"}</button>}{workflow.status === "PUBLISHED" && <><input aria-label={`撤销原因 ${workflow.code} v${workflow.version_no}`} placeholder="撤销原因（必填）" value={revokeReason} onChange={(event) => setWorkflowRevokeReasons((current) => ({ ...current, [workflow.id]: event.target.value }))} /><button className="secondary" onClick={() => void revokeWorkflow(workflow)} disabled={workflowBusy !== null || !revokeReason.trim()}>{workflowBusy === `revoke:${workflow.id}` ? "撤销中…" : "撤销"}</button></>}</div>{validation && <small className={validation.status === "PASS" ? "ok-text" : "blocker-text"}>最近验证：{validation.status} · {validation.id.slice(0, 12)}</small>}</article>; })}</div>}
   </section>;
 }

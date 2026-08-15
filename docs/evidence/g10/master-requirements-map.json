@@ -497,16 +497,40 @@
       "automated_tests": ["apps/api/tests/test_video_review_annotations.py", "apps/web/src/features/reviews/VideoAnnotations.test.tsx"]
     },
     {
+      "id": "FR-WFL-001",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-wfl-001-002-release-history-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_workflow_release_contracts.py", "apps/api/tests/test_g6_workflows.py", "apps/web/src/app/ProfileEditor.test.tsx"]
+    },
+    {
+      "id": "FR-WFL-002",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-wfl-001-002-release-history-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_workflow_release_contracts.py", "apps/api/tests/test_g6_workflows.py", "apps/web/src/app/ProfileEditor.test.tsx"]
+    },
+    {
       "id": "FR-WFL-004",
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/fr-wfl-004-comfy-lab-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_comfy_lab.py", "apps/web/src/features/shared/ComfyLabPanel.test.tsx"]
     },
     {
+      "id": "NFR-A11Y-001",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/nfr-a11y-001-keyboard-focus-2026-08-16.json"],
+      "automated_tests": ["apps/web/src/features/projects/ProjectCreateWizard.test.tsx", "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx", "apps/web/src/features/generation/GenerationWorkbench.test.tsx"]
+    },
+    {
       "id": "NFR-OBS-001",
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/nfr-obs-001-structured-logs-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_observability_logging.py"]
+    },
+    {
+      "id": "NFR-MEDIA-001",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/nfr-media-001-range-first-frame-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g3_configuration_media.py"]
     }
   ]
 }

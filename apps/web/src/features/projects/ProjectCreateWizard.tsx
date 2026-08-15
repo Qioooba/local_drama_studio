@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { createProject, planProjectCreation, type Profile, type Project, type ProjectCreatePayload } from "../../generated/api";
 
@@ -7,6 +7,10 @@ export function ProjectCreateWizard({ onCreated, profiles = [] }: { onCreated: (
   const [step, setStep] = useState(1);
   const [configureNow, setConfigureNow] = useState(false);
   const [profileBindings, setProfileBindings] = useState<Record<string, string>>({});
+  const openButtonRef = useRef<HTMLButtonElement | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const firstFieldRef = useRef<HTMLInputElement | null>(null);
+  const wasOpen = useRef(false);
   const [values, setValues] = useState({ code: "", title: "", seasons: "", episodes: "", duration: "", ratio: "", width: "", height: "", fpsNum: "", fpsDen: "", language: "", subtitleMode: "", subtitleLanguage: "", planCode: "", planTitle: "", targetCode: "", targetTitle: "", targetPath: "", accepted: false });
   const publishedByCapability = useMemo(() => Object.entries(profiles.filter((item) => item.status === "PUBLISHED").reduce<Record<string, Profile[]>>((groups, item) => { (groups[item.capability] ??= []).push(item); return groups; }, {})), [profiles]);
   const basePayload = useMemo<ProjectCreatePayload>(() => ({
@@ -27,10 +31,47 @@ export function ProjectCreateWizard({ onCreated, profiles = [] }: { onCreated: (
   const update = (key: keyof typeof values, value: string | boolean) => setValues((current) => ({ ...current, [key]: value }));
   const specsReady = values.ratio.trim() && Number(values.width) >= 64 && Number(values.height) >= 64 && Number(values.fpsNum) > 0 && Number(values.fpsDen) > 0 && Number(values.duration) > 0 && values.language.trim() && values.subtitleMode && (values.subtitleMode === "NONE" || values.subtitleLanguage.trim());
   const configuredReady = values.planCode.trim() && values.planTitle.trim() && values.targetCode.trim() && values.targetTitle.trim() && values.targetPath.trim() && Object.values(profileBindings).some(Boolean);
-  if (!open) return <button onClick={() => setOpen(true)}>新建项目</button>;
-  return <section className="project-create-wizard" aria-labelledby="project-create-title">
-    <div className="panel-heading"><div><p className="eyebrow">步骤 {step}/6</p><h3 id="project-create-title">新建版本化项目</h3></div><button className="secondary" onClick={() => setOpen(false)}>关闭</button></div>
-    {step === 1 && <div className="wizard-grid"><label>项目标题<input value={values.title} onChange={(e) => update("title", e.target.value)} /></label><label>项目 code<input value={values.code} onChange={(e) => update("code", e.target.value)} placeholder="小写字母、数字、下划线" /></label><label>季数<input type="number" min="1" value={values.seasons} onChange={(e) => update("seasons", e.target.value)} /></label><label>每季集数<input type="number" min="1" value={values.episodes} onChange={(e) => update("episodes", e.target.value)} /></label><button disabled={!values.title.trim() || !values.code.trim() || Number(values.seasons) < 1 || Number(values.episodes) < 1} onClick={() => setStep(2)}>下一步：发布规格</button></div>}
+  useEffect(() => {
+    if (!open) {
+      if (wasOpen.current) openButtonRef.current?.focus();
+      wasOpen.current = false;
+      return undefined;
+    }
+    wasOpen.current = true;
+    firstFieldRef.current?.focus();
+    const dialog = dialogRef.current;
+    if (!dialog) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"));
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    dialog.addEventListener("keydown", onKeyDown);
+    return () => dialog.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+  if (!open) return <button ref={openButtonRef} type="button" aria-haspopup="dialog" aria-expanded={false} onClick={() => setOpen(true)}>新建项目</button>;
+  return <section ref={dialogRef} className="project-create-wizard" role="dialog" aria-modal="true" aria-labelledby="project-create-title" aria-describedby="project-create-description" tabIndex={-1}>
+    <div className="panel-heading"><div><p className="eyebrow" aria-live="polite">步骤 {step}/6</p><h3 id="project-create-title">新建版本化项目</h3></div><button className="secondary" type="button" onClick={() => setOpen(false)}>关闭</button></div>
+    <p id="project-create-description" className="sr-only">项目向导分六步完成。按 Escape 关闭向导，关闭后焦点返回“新建项目”按钮。</p>
+    {step === 1 && <div className="wizard-grid"><label>项目标题<input ref={firstFieldRef} value={values.title} onChange={(e) => update("title", e.target.value)} /></label><label>项目 code<input value={values.code} onChange={(e) => update("code", e.target.value)} placeholder="小写字母、数字、下划线" /></label><label>季数<input type="number" min="1" value={values.seasons} onChange={(e) => update("seasons", e.target.value)} /></label><label>每季集数<input type="number" min="1" value={values.episodes} onChange={(e) => update("episodes", e.target.value)} /></label><button type="button" disabled={!values.title.trim() || !values.code.trim() || Number(values.seasons) < 1 || Number(values.episodes) < 1} onClick={() => setStep(2)}>下一步：发布规格</button></div>}
     {step === 2 && <div className="wizard-grid"><label>画幅比例<input value={values.ratio} onChange={(e) => update("ratio", e.target.value)} placeholder="例如 9:16（不自动选择）" /></label><label>制作宽度<input type="number" min="64" value={values.width} onChange={(e) => update("width", e.target.value)} /></label><label>制作高度<input type="number" min="64" value={values.height} onChange={(e) => update("height", e.target.value)} /></label><label>fps 分子<input type="number" min="1" value={values.fpsNum} onChange={(e) => update("fpsNum", e.target.value)} /></label><label>fps 分母<input type="number" min="1" value={values.fpsDen} onChange={(e) => update("fpsDen", e.target.value)} /></label><label>目标集时长（秒）<input type="number" min="1" value={values.duration} onChange={(e) => update("duration", e.target.value)} /></label><label>主语言<input value={values.language} onChange={(e) => update("language", e.target.value)} placeholder="例如 zh-CN" /></label><label>字幕策略<select value={values.subtitleMode} onChange={(e) => update("subtitleMode", e.target.value)}><option value="">未选择</option><option value="NONE">NONE</option><option value="SIDECAR">SIDECAR</option><option value="BURN_IN">BURN_IN</option><option value="BOTH">BOTH</option></select></label>{values.subtitleMode && values.subtitleMode !== "NONE" && <label>字幕语言<input value={values.subtitleLanguage} onChange={(e) => update("subtitleLanguage", e.target.value)} /></label>}<div className="action-row"><button className="secondary" onClick={() => setStep(1)}>上一步</button><button disabled={!specsReady} onClick={() => setStep(3)}>下一步：存储预检</button></div></div>}
     {step === 3 && <div className="wizard-confirm"><p>预检只检查 code、目标目录和磁盘，不创建正式目录或数据库记录。</p><div className="action-row"><button className="secondary" onClick={() => setStep(2)}>上一步</button><button onClick={() => storagePlan.mutate()} disabled={storagePlan.isPending}>{storagePlan.isPending ? "预检中…" : "运行只读存储预检"}</button></div>{storagePlan.data && <p>{storagePlan.data.plan.status} · 总集数 {storagePlan.data.plan.structure.total_episode_count}</p>}{storagePlan.error && <p role="alert">{storagePlan.error.message}</p>}</div>}
     {step === 4 && <div className="wizard-confirm"><p>选择配置路线；系统不会暗选 H3、Profile、ProductionPlan 或交付目标。</p><label className="check-label"><input type="radio" name="route" checked={configureNow} onChange={() => setConfigureNow(true)} />现在显式配置</label><label className="check-label"><input type="radio" name="route" checked={!configureNow && values.accepted} onChange={() => { setConfigureNow(false); update("accepted", true); }} />稍后配置并接受阻塞</label>{configureNow && <div className="profile-binding-grid">{publishedByCapability.length ? publishedByCapability.map(([capability, items]) => <label key={capability}>{capability}<select value={profileBindings[capability] ?? ""} onChange={(e) => setProfileBindings((current) => ({ ...current, [capability]: e.target.value }))}><option value="">暂不配置</option>{items.map((item) => <option key={item.version_id} value={item.version_id}>{item.title}</option>)}</select></label>) : <p className="muted">本机没有 Published Profile；请选择稍后配置，项目将保持阻塞。</p>}</div>}<div className="action-row"><button className="secondary" onClick={() => setStep(3)}>上一步</button><button disabled={!configureNow && !values.accepted} onClick={() => setStep(5)}>下一步：创建预览</button></div></div>}

@@ -14,6 +14,16 @@ function renderWorkbench(selectedShotId: string | null = null, onOpenReviews = v
 }
 
 describe("GenerationWorkbench FrameAnchor actions", () => {
+  it("exposes generation mode selection to keyboard and assistive technology", () => {
+    renderWorkbench();
+    const imageMode = screen.getByRole("button", { name: /文字生成图片/ });
+    const videoMode = screen.getByRole("button", { name: /图片生成视频/ });
+    expect(imageMode.getAttribute("aria-pressed")).toBe("false");
+    expect(videoMode.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(imageMode);
+    expect(imageMode.getAttribute("aria-pressed")).toBe("true");
+  });
+
   beforeEach(() => {
     vi.mocked(createFrameAnchor).mockReset().mockImplementation(async (_id, payload) => ({ frame_anchor: {
       id: "anchor-1", source_media_version_id: video.media_version_id, source_time_us: payload.source_time_us ?? (payload.position_mode === "LAST_FRAME" ? 2_000_000 : 0), source_frame_index: payload.position_mode === "LAST_FRAME" ? 2 : payload.source_time_us ? 1 : 0,

@@ -88,6 +88,35 @@ class WorkflowService:
             "manifest_sha256": manifest.sha256,
         }
 
+    @staticmethod
+    def _validate_bindings(workflow: dict[str, Any], contract: dict[str, Any], node_bindings: dict[str, Any]) -> None:
+        """Validate semantic bindings before a package becomes durable.
+
+        The browser only submits semantic slot names.  Keeping this check at
+        registration time prevents a typo in a node id/input from surviving
+        into a validation attestation and makes the immutable package useful
+        for offline inspection as well.
+        """
+
+        if not isinstance(node_bindings, dict):
+            raise DomainRuleError("WORKFLOW_BINDINGS_INVALID", "workflow node bindings 必须是对象")
+        for role, binding in node_bindings.items():
+            if not isinstance(role, str) or not role.strip() or not isinstance(binding, dict):
+                raise DomainRuleError("WORKFLOW_BINDINGS_INVALID", "workflow semantic binding 必须包含 role 和对象映射", {"role": role})
+            node_id = str(binding.get("node_id", ""))
+            input_name = str(binding.get("input", ""))
+            node = workflow.get(node_id)
+            if not node_id or not input_name or not isinstance(node, dict) or not isinstance(node.get("inputs"), dict):
+                raise DomainRuleError("WORKFLOW_BINDING_INVALID", "workflow semantic binding 指向不存在节点或输入", {"role": role, "node_id": node_id, "input": input_name})
+            if input_name not in node["inputs"]:
+                raise DomainRuleError("WORKFLOW_BINDING_INPUT_MISSING", "workflow semantic binding 指向节点未声明的输入", {"role": role, "node_id": node_id, "input": input_name})
+
+        input_slots = contract.get("input_slots") if isinstance(contract, dict) else None
+        if isinstance(input_slots, dict):
+            missing = sorted(str(slot) for slot, spec in input_slots.items() if isinstance(spec, dict) and spec.get("required", True) and str(slot) not in node_bindings)
+            if missing:
+                raise DomainRuleError("WORKFLOW_REQUIRED_BINDING_MISSING", "workflow contract 声明的必需输入没有 semantic binding", {"missing_slots": missing})
+
     def register_package(
         self,
         code: str,
@@ -101,6 +130,7 @@ class WorkflowService:
         if not workflow or not isinstance(workflow, dict):
             raise DomainRuleError("WORKFLOW_REQUIRED", "workflow package content 不能为空")
         supply_chain = self._validate_node_supply_chain(workflow)
+        self._validate_bindings(workflow, contract, node_bindings)
         if any(
             isinstance(value, str) and (value.startswith("\\") or ":\\" in value or value.startswith("/"))
             for node in workflow.values()

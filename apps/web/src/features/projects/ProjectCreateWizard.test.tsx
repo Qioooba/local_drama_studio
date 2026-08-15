@@ -7,6 +7,18 @@ import { ProjectCreateWizard } from "./ProjectCreateWizard";
 vi.mock("../../generated/api", () => ({ planProjectCreation: vi.fn(), createProject: vi.fn() }));
 
 describe("ProjectCreateWizard", () => {
+  it("uses a modal dialog with Escape close and focus return", async () => {
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(<QueryClientProvider client={client}><ProjectCreateWizard onCreated={vi.fn()} /></QueryClientProvider>);
+    const trigger = screen.getByRole("button", { name: "新建项目" });
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "新建版本化项目" });
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    expect(document.activeElement).toBe(screen.getByLabelText("项目标题"));
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "新建项目" })));
+  });
+
   it("keeps every production field empty and performs storage then final plan before creating", async () => {
     const plan = { status: "READY_WITH_CONFIGURATION_BLOCKERS" as const, checks: [{ code: "PROJECT_ROOT_AVAILABLE", passed: true }], blockers: [], configuration_blockers: ["PROFILE_NOT_BOUND", "PRODUCTION_PLAN_NOT_BOUND", "DELIVERY_TARGET_NOT_BOUND"], accepted_unconfigured: true, target_root_rel: "new_drama", estimated_bytes: 1048576, structure: { season_count: 1, episode_count_per_season: 60, total_episode_count: 60 }, presentation: {}, would_create_project: true as const, mutated: false as const, runtime_contacted: false as const, network_contacted: false as const };
     const project = { id: "new", code: "new_drama", title: "新剧", status: "DRAFT", revision: 1 };

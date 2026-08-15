@@ -226,7 +226,8 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
   const extractedThumbnail = draftAnchor ? `/api/v1/media-versions/${encodeURIComponent(draftAnchor.extracted_media_version_id)}/thumbnail?size=small` : null;
   const draftRoleLabel = draftAnchor ? frameActionLabels[draftAnchor.role_hint as FrameAction] ?? "提取帧" : null;
 
-  return <div className="creation-workbench">
+  return <div className="creation-workbench" role="region" aria-labelledby="generation-workbench-title">
+    <h2 id="generation-workbench-title" className="sr-only">生成工作台</h2>
     <section className="workflow-rail" aria-label="生成步骤">
       {["选择生成方式", "绑定输入", "选择本地能力", "资源预检", "比较与审核"].map((step, index) => <div className={`workflow-step${index === 0 ? " active" : ""}`} aria-current={index === 0 ? "step" : undefined} key={step}><span>{index + 1}</span><strong>{step}</strong></div>)}
     </section>
@@ -260,7 +261,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
       </div>
 
       <div className="section-heading"><p className="eyebrow">生成方式</p><h3>你想为当前镜头做什么？</h3></div>
-      <div className="mode-grid">{modes.map((item) => <button key={item.id} className={`mode-card${mode === item.id ? " selected" : ""}`} aria-pressed={mode === item.id} onClick={() => setMode(item.id)}><span className="mode-icon">{item.icon}</span><strong>{item.title}</strong><small>{item.detail}</small>{mode === item.id && <span className="selected-mark">当前方式</span>}</button>)}</div>
+      <div className="mode-grid" role="group" aria-label="生成方式">{modes.map((item) => <button type="button" key={item.id} className={`mode-card${mode === item.id ? " selected" : ""}`} aria-pressed={mode === item.id} onClick={() => setMode(item.id)}><span className="mode-icon" aria-hidden="true">{item.icon}</span><strong>{item.title}</strong><small>{item.detail}</small>{mode === item.id && <span className="selected-mark">当前方式</span>}</button>)}</div>
 
       <div className="composer-grid">
         <div className="composer-main">

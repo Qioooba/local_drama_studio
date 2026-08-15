@@ -224,6 +224,8 @@ G10 干净新根恢复 UAT 使用 100 个真实 FFprobe PASS 的本地 WAV：onl
 
 G10 UI 可访问性复审已把设计系统的 12px 可见文字下限与 40px 可用控件下限落到真实计算样式；1440×900 生成、1280×800 审核、1024×768 画布均无水平溢出、console/page error、失败响应或原片请求。生成客户端现保留结构化错误 code/status/retry guidance/request ID，工作区活动查询提供区域级错误与显式重试。证据见 `docs/evidence/g10/typography-accessibility-uat-2026-08-15.json`；Web 18/18。此项不改变 G7 的许可证证据阻塞，也不宣告最终 G10 发布退出。
 
+NFR-A11Y-001 增量（PARTIAL）：审核收件箱为候选列表提供选中态 `aria-current`、稳定可访问名称及 ArrowLeft/ArrowRight 键盘切换，并在切换后将焦点还原到新候选；生成工作台为方式卡提供 `aria-pressed` 与分组名称；项目创建向导实现 `role=dialog`/`aria-modal`、Escape 关闭、Tab 焦点环和关闭后焦点返回触发按钮；项目列表提供标记的选中项目。定向 Web 测试 11 项通过，证据见 `docs/evidence/g10/nfr-a11y-001-keyboard-focus-2026-08-16.json`。该证据不声称 axe、对比度测量、Windows 三视口或完整手动 UAT 已完成，故 NFR 仍保持 PARTIAL。
+
 审核与任务长列表现采用首屏 50 行的渐进窗口，深链接选择在窗口外时会扩展到该项，用户可显式每次再显示 50 行；离屏行启用 `content-visibility:auto`。纯函数窗口边界已覆盖 120 行/深链场景，Web 回归升至 18/18；这属于浏览器渲染保护，不替代后端分页或最终规模发布验收。
 
 React 可维护性拆分已把审核收件箱、任务/容量面板、Profile 契约编辑器、生产 DAG、配置/模型/timeline/gate/诊断投影与共享渐进窗口移入对应 `features/` 模块；应用壳从 558 行缩减为 289 行，仅保留路由及跨域 query 编排。分集摘要不再错误显示首集，而是与 URL 深链/生产查询共用所选记录；60 集第 47 集已覆盖。Web 19/19、production build，以及三档 typography/accessibility/canvas 共 9 项真实页面验收继续 PASS。
@@ -316,11 +318,17 @@ FR-GEN-005..010 高阶输入与边界连续性增量（2026-08-16）：SOURCE_IM
 
 FR-OPS-001..003 / FR-PRV-001..003 本地运维与能力 registry 增量（2026-08-16）：诊断中心新增 GPU driver/CUDA、ComfyUI 节点、模型 hash、网络策略检查及 GET 别名；dry-run-fix 只返回修复预览，不改驱动、不联网、不安装节点。模型 registry 提供用户选择目录的绝对路径只读扫描，逐文件 SHA-256/量化 hint，明确不复制、不上传；capacity snapshot 从持久 jobs/reviews/本地 filesystem 计算队列、GPU、磁盘、耗时、失败率、重试率和审核通过率，并标记 `OBSERVED_NOT_BENCHMARKED`。现有 Adapter/Profile registry 继续 LOCAL_ONLY，远端 transport 禁用。API 3 项定向测试与既有 profile/adapter/capacity 回归通过，证据 `docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json` 保持 `PARTIAL`；真实用户模型扫描和 Windows 三视口 UAT 仍待补齐。
 
+FR-WFL-001/002 工作流版本发布与回滚增量（2026-08-16）：WorkflowService 在注册阶段校验 semantic binding 的 role/node/input 以及 contract 必需 input slot，失败不会留下 workflow row；每个版本固化 API graph、contract、binding、runtime contract、content hash 和隔离 package path。Local validation 生成服务端 attestation 并绑定不可变 content hash，publish/rollback 拒绝伪造、失败或过期证明；publish 自动退休旧版本，revoke 要求并审计操作员原因，rollback 只能在重新验证后重新发布历史版本。ProfileConfigurationPanel 已提供本地验证、发布、必填原因撤销和验证后回滚入口，操作后刷新工作流历史。新增 `test_workflow_release_contracts.py` 与既有 G6/ProfileEditor 回归通过；证据 `docs/evidence/g10/fr-wfl-001-002-release-history-2026-08-16.json` 保持 `PARTIAL`，真实 Comfy smoke/regression/benchmark、用户批准和 Windows 三视口 UAT 仍待补齐。
+
 FR-WFL-004 ComfyUI Lab control-plane 增量（2026-08-16）：新增 Designer 专属 `status/session/start/stop/restart`、隔离 workflow capture 与显式 test-run plan API。只有用户配置的本机 Designer Python/root 才允许无 shell 启动；端点强制 loopback、`--disable-api-nodes`，输入/输出/temp/user/capture 全部位于 `work/comfy-lab`，绝不写正式 project/workflow_packages。未配置时服务端返回可行动 `COMFY_LAB_LAUNCH_NOT_CONFIGURED`，状态和 session 只读且明确 `runtime_contacted=false`；诊断页新增 ComfyLabPanel，默认只生成不执行的 test plan。API/Web 回归、Ruff/mypy 通过，证据 `docs/evidence/g10/fr-wfl-004-comfy-lab-2026-08-16.json` 保持 `PARTIAL`；真实 Windows Designer 进程、嵌入/新窗口和 proxy header 隔离 UAT 仍待完成。
 
 ## NFR-OBS-001 可观测性增量（2026-08-16）
 
 `RequestContextMiddleware` 现在在每个 API 请求结束、异常或安全早拒绝时输出结构化 JSON access/failure log，带 timestamp/level/service/event、`trace_id`、`request_id`、`project_id`、`episode_id`、`shot_id`、`job_id`、`attempt_id`、`worker_id`、`provider`、HTTP method/path、状态和耗时；标识符有长度/字符边界，body、query string、Authorization 和异常文本不进入日志。响应回显 `X-Trace-Id`，便于本机排障；既有持久任务日志 API 仍由 Jobs 域提供。本轮 API 自动测试验证成功/404/安全拒绝请求上下文提取、trace header 和 secret 不泄漏，Ruff/mypy 通过。证据 `docs/evidence/g10/nfr-obs-001-structured-logs-2026-08-16.json` 为 `PARTIAL`：正式 Windows 日志轮转/保留、以及任务日志 UI 的三视口验收尚未执行，不能据此宣称 NFR PASS。
+
+## NFR-MEDIA-001 Range / 首帧播放增量（2026-08-16）
+
+媒体 content 端点继续只接受 `media_version_id`，并使用 seek-based、1 MiB 上限的流式迭代器，不将整片读入内存；Range 现在覆盖首段、尾段/suffix、HEAD、无效范围 416，以及强 ETag/日期 `If-Range` 不匹配时回退完整 200。响应带 `Accept-Ranges`、`Content-Range`、ETag 和 `Last-Modified`，注册项目目录越界在打开前拒绝。视频 `first/poster` 缩略图仍按本地首帧 seek 生成并以源 SHA + normalized preset 隔离 cache；定向测试包含本地首帧 <2s smoke assertion、流式 chunk 上限和路径逃逸负例。证据 `docs/evidence/g10/nfr-media-001-range-first-frame-2026-08-16.json` 保持 `PARTIAL`：真实 Windows x64 代理冷/热缓存首帧计时、四路并发播放和代表性编解码器 benchmark 尚未执行，不能据此宣称 NFR PASS。
 
 ## 更新规则
 

@@ -1,0 +1,30 @@
+{
+  "schema_version": "localdrama.requirement.evidence.v1",
+  "scope": ["NFR-A11Y-001"],
+  "status": "PARTIAL",
+  "local_only": true,
+  "observed_at": "2026-08-16",
+  "implementation": {
+    "review": "ReviewInboxPanel exposes a named review region and labelled candidate list, marks the selected version with aria-current, and keeps ArrowLeft/ArrowRight candidate navigation keyboard-operable with focus restored to the newly selected row.",
+    "generation": "GenerationWorkbench exposes a named region, a labelled generation-mode group, aria-pressed mode buttons, and hides decorative mode glyphs from the accessibility tree.",
+    "projects": "ProjectCreateWizard uses a modal dialog contract with aria-modal, Escape close, a bounded Tab focus loop, initial focus on the first field, and focus return to the trigger. ProjectList exposes a labelled list and aria-current selected project.",
+    "global": "The application shell retains a skip link, a focus target for workspace content, visible focus outlines, and status/error announcements; this increment adds a visually hidden dialog instruction for keyboard users."
+  },
+  "automated_tests": [
+    "apps/web/src/features/projects/ProjectCreateWizard.test.tsx",
+    "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx",
+    "apps/web/src/features/generation/GenerationWorkbench.test.tsx"
+  ],
+  "verification": {
+    "targeted_web": "11 tests passed",
+    "focus_semantics": ["modal dialog and Escape/focus return", "review selected aria-current and arrow navigation", "generation mode aria-pressed"],
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "production_mutated": false
+  },
+  "remaining": [
+    "Axe/WCAG automated scan, contrast measurement, and real Windows/browser keyboard walkthrough remain pending.",
+    "Three-viewport production UAT and full NFR/TC closure are not claimed by this implementation evidence.",
+    "Focus behavior for every secondary panel and media-player/React Flow surface still needs the design-document acceptance pass."
+  ]
+}

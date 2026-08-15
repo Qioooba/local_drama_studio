@@ -1032,8 +1032,12 @@ export async function publishWorkflowVersion(versionId: string, validationId: st
   return requestJson(`/api/v1/workflow-versions/${encodeURIComponent(versionId)}:publish`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ validation_id: validationId }) }, baseUrl);
 }
 
-export async function revokeWorkflowVersion(versionId: string, baseUrl = ''): Promise<{ workflow_version: WorkflowVersionSummary }> {
-  return requestJson(`/api/v1/workflow-versions/${encodeURIComponent(versionId)}:revoke`, { method: 'POST' }, baseUrl);
+export async function revokeWorkflowVersion(versionId: string, reason: string, baseUrl = ''): Promise<{ workflow_version: WorkflowVersionSummary }> {
+  return requestJson(`/api/v1/workflow-versions/${encodeURIComponent(versionId)}:revoke`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }) }, baseUrl);
+}
+
+export async function rollbackWorkflowVersion(versionId: string, validationId: string, baseUrl = ''): Promise<{ workflow_version: WorkflowVersionSummary }> {
+  return requestJson(`/api/v1/workflow-versions/${encodeURIComponent(versionId)}:rollback`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ validation_id: validationId }) }, baseUrl);
 }
 
 export async function getComfyLabStatus(baseUrl = ''): Promise<{ status: ComfyLabStatus }> {

@@ -9,6 +9,7 @@ from local_drama.api.schemas.workflows import (
     WorkflowCompileRequest,
     WorkflowPackageRequest,
     WorkflowPublishRequest,
+    WorkflowRevokeRequest,
 )
 from local_drama.application.comfy_jobs import ComfyGenerationService
 from local_drama.application.errors import api_error_from_domain
@@ -157,9 +158,9 @@ async def rollback(version_id: str, payload: WorkflowPublishRequest, request: Re
 
 
 @router.post("/workflow-versions/{version_id}:revoke", operation_id="revokeWorkflowVersion")
-async def revoke(version_id: str, request: Request) -> dict[str, object]:
+async def revoke(version_id: str, payload: WorkflowRevokeRequest, request: Request) -> dict[str, object]:
     try:
-        return {"workflow_version": workflow_service(request).revoke(version_id, "runtime gate failed")}
+        return {"workflow_version": workflow_service(request).revoke(version_id, payload.reason)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

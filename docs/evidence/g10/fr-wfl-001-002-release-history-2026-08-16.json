@@ -1,0 +1,27 @@
+{
+  "schema_version": "localdrama.requirement.evidence.v1",
+  "scope": ["FR-WFL-001", "FR-WFL-002"],
+  "status": "PARTIAL",
+  "local_only": true,
+  "implementation": {
+    "versioning": "Workflow packages persist immutable content hash, semantic bindings, runtime contract, package path, version number and lifecycle status; registering an existing code always creates a new version.",
+    "static_gate": "Registration rejects malformed semantic bindings, missing target nodes/inputs and required contract input slots before a workflow row is persisted.",
+    "runtime_attestation": "Local validation persists a server-issued attestation bound to the exact workflow content hash; publish and rollback reject forged, stale or failed attestations.",
+    "release_history": "Publish retires the previous active version; revoke records an operator reason and retires the selected version; rollback re-publishes a previously validated immutable version and records an audit event.",
+    "ui": "ProfileConfigurationPanel exposes local validation, publish, reason-required revoke and validate-then-rollback actions while keeping version history read-only until an explicit operation."
+  },
+  "automated_tests": [
+    "apps/api/tests/test_workflow_release_contracts.py",
+    "apps/api/tests/test_g6_workflows.py",
+    "apps/web/src/app/ProfileEditor.test.tsx"
+  ],
+  "result": "4 workflow release API tests, 8 G6 workflow tests and 5 profile editor UI tests passed; Ruff/mypy targeted pass.",
+  "remaining": [
+    "Real ComfyUI smoke/regression artifact, benchmark and human approval evidence remain environment-dependent and are not fabricated here.",
+    "Windows production three-viewport UAT and real local model/runtime dependency lock evidence remain pending.",
+    "Evidence therefore remains PARTIAL and does not claim final release readiness."
+  ],
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "production_mutated": false
+}

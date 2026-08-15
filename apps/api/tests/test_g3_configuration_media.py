@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from time import perf_counter
 
 import pytest
 from fastapi.testclient import TestClient
 
+from local_drama.api.routes.media import _stream
 from local_drama.application.configuration import ConfigurationService
 from local_drama.application.documents import DocumentImportService
 from local_drama.application.media import MediaService
@@ -128,14 +130,41 @@ def test_real_media_probe_range_thumbnail_and_production_read_model(workspace, d
         assert ranged.status_code == 206
         assert len(ranged.content) == 16
         assert ranged.headers["content-range"].startswith("bytes 0-15/")
+        suffix = client.get(f"/api/v1/media-versions/{version_id}/content", headers={"Range": "bytes=-16"})
+        assert suffix.status_code == 206
+        assert len(suffix.content) == 16
+        assert suffix.headers["content-range"] == f"bytes {int(media['byte_size']) - 16}-{int(media['byte_size']) - 1}/{media['byte_size']}"
+        matching_if_range = client.get(
+            f"/api/v1/media-versions/{version_id}/content",
+            headers={"Range": "bytes=0-15", "If-Range": f'"{media["sha256"]}"'},
+        )
+        assert matching_if_range.status_code == 206
+        date_if_range = client.get(
+            f"/api/v1/media-versions/{version_id}/content",
+            headers={"Range": "bytes=0-15", "If-Range": ranged.headers["last-modified"]},
+        )
+        assert date_if_range.status_code == 206
+        stale_if_range = client.get(
+            f"/api/v1/media-versions/{version_id}/content",
+            headers={"Range": "bytes=0-15", "If-Range": '"stale-media-version"'},
+        )
+        assert stale_if_range.status_code == 200
+        assert len(stale_if_range.content) == int(media["byte_size"])
+        assert "content-range" not in stale_if_range.headers
         head = client.head(f"/api/v1/media-versions/{version_id}/content")
         assert head.status_code == 200
         assert head.headers["accept-ranges"] == "bytes"
+        assert head.headers["etag"] == f'"{media["sha256"]}"'
         invalid_range = client.get(f"/api/v1/media-versions/{version_id}/content", headers={"Range": "bytes=999999999-"})
         assert invalid_range.status_code == 416
-        poster = client.get(f"/api/v1/media-versions/{version_id}/thumbnail")
+        started = perf_counter()
+        poster = client.get(f"/api/v1/media-versions/{version_id}/thumbnail?frame=first")
+        first_frame_elapsed_ms = (perf_counter() - started) * 1000
         assert poster.status_code == 200
         assert poster.headers["content-type"].startswith("image/webp")
+        # This is a local smoke target for a tiny proxy fixture, not a Windows
+        # benchmark or a release-level performance claim.
+        assert first_frame_elapsed_ms < 2000
         filmstrip = client.get(f"/api/v1/media-versions/{version_id}/filmstrip")
         assert filmstrip.status_code == 200
         assert filmstrip.headers["content-type"].startswith("image/webp")
@@ -151,6 +180,27 @@ def test_real_media_probe_range_thumbnail_and_production_read_model(workspace, d
         assert waveform.status_code == 200
         assert waveform.headers["content-type"].startswith("image/png")
     assert shot["code"] == "S001"
+
+
+def test_media_range_stream_is_bounded_and_registered_path_cannot_escape(workspace, database, tmp_path) -> None:
+    payload = bytes((offset % 251 for offset in range(2 * 1024 * 1024 + 17)))
+    path = tmp_path / "large-proxy.mp4"
+    path.write_bytes(payload)
+    chunks = list(_stream(path, 37, len(payload) - 11))
+    streamed = b"".join(chunks)
+    assert streamed == payload[37:-10]
+    assert chunks
+    assert max(len(chunk) for chunk in chunks) <= 1024 * 1024
+
+    project = _project(workspace, database, "g3_range_path_safety")
+    source = _real_video(Path("g3-path-safe.mp4"), workspace)
+    media = MediaService(database, workspace).import_file(str(project["id"]), source, media_kind="VIDEO")
+    with database.transaction() as connection:
+        connection.execute("UPDATE media_versions SET rel_path=? WHERE id=?", ("../../outside.mp4", media["media_version_id"]))
+    with TestClient(create_app(workspace)) as client:
+        escaped = client.get(f"/api/v1/media-versions/{media['media_version_id']}/content")
+    assert escaped.status_code == 422
+    assert escaped.json()["error"]["code"] == "MEDIA_FILE_MISSING"
 
 
 def test_video_thumbnail_frame_parameter_resolves_distinct_local_frames(workspace, database) -> None:

@@ -119,7 +119,7 @@ export function G9ReadinessPanel({ readiness }: { readiness: G9Readiness }) {
 
 export function ProjectList({ projects, selectedProjectId, onSelect }: { projects: Array<{ id: string; code: string; title: string; status: string }>; selectedProjectId: string | null; onSelect: (id: string) => void }) {
   if (!projects.length) return <p className="empty-state">暂无项目。通过真实项目 API 创建后，项目会出现在这里。</p>;
-  return <div className="project-list">{projects.map((project) => <button className={`project-row${selectedProjectId === project.id ? " selected" : ""}`} key={project.id} onClick={() => onSelect(project.id)}><span><strong>{project.title}</strong><small>{project.code}</small></span><span className="status-pill">{project.status}</span></button>)}</div>;
+  return <div className="project-list" role="list" aria-label="项目列表">{projects.map((project) => <button type="button" className={`project-row${selectedProjectId === project.id ? " selected" : ""}`} aria-current={selectedProjectId === project.id ? "true" : undefined} key={project.id} onClick={() => onSelect(project.id)}><span><strong>{project.title}</strong><small>{project.code}</small></span><span className="status-pill">{project.status}</span></button>)}</div>;
 }
 
 export function DiagnosticPanel({ run }: { run: { status: string; checks: Array<{ code: string; status: string; observed: Record<string, unknown> }> } | null }) {

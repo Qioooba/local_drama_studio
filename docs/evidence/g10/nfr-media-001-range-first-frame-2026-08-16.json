@@ -1,0 +1,37 @@
+{
+  "schema_version": "localdrama.requirement.evidence.v1",
+  "scope": ["NFR-MEDIA-001"],
+  "status": "PARTIAL",
+  "local_only": true,
+  "observed_at": "2026-08-16",
+  "implementation": {
+    "range": "Media content uses a seek-based bounded 1 MiB iterator, supports single ranges including suffix ranges, emits 206/Content-Range/Accept-Ranges, HEAD, ETag/Last-Modified and If-Range fallback to a complete 200 representation.",
+    "first_frame": "VIDEO first/poster thumbnail generation seeks locally to the registered first frame and stores an immutable SHA/preset-keyed WebP cache entry; the smoke test asserts the tiny local fixture responds within the 2 second target.",
+    "safety": "Content paths remain media_version_id-only and resolve below the registered project root; path escape is rejected before opening a file. IMAGE content remains blocked in favor of derived thumbnails.",
+    "cache": "Thumbnail cache keys continue to include the immutable source SHA and normalized frame preset, so first/middle/last entries cannot alias one another."
+  },
+  "automated_tests": [
+    "apps/api/tests/test_g3_configuration_media.py::test_real_media_probe_range_thumbnail_and_production_read_model",
+    "apps/api/tests/test_g3_configuration_media.py::test_media_range_stream_is_bounded_and_registered_path_cannot_escape",
+    "apps/api/tests/test_g3_configuration_media.py::test_video_thumbnail_frame_parameter_resolves_distinct_local_frames"
+  ],
+  "verification": {
+    "pytest": "3 targeted tests passed",
+    "ruff": "pending full gate",
+    "mypy": "pending full gate",
+    "range_reads_full_file_into_memory": false,
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "production_database_mutated": false
+  },
+  "performance_boundary": {
+    "first_frame_target_ms": 2000,
+    "fixture_smoke_assertion": "PASS",
+    "benchmark_status": "NOT_BENCHMARKED",
+    "notes": "The local FFmpeg fixture assertion is not Windows x64 UAT and does not claim a production benchmark or sustained concurrent playback result."
+  },
+  "remaining": [
+    "Real Windows x64 local proxy first-frame timing and four-way playback load remain pending.",
+    "A production-scale benchmark with representative codecs, cold cache and warm cache has not been run; this evidence intentionally remains PARTIAL."
+  ]
+}

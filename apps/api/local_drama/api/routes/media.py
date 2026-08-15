@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from email.utils import formatdate, parsedate_to_datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Request, Response
@@ -118,17 +119,55 @@ async def clear_media_selection(media_asset_id: str, request: Request) -> dict[s
         raise api_error_from_domain(error) from error
 
 
-def _range_headers(request: Request, path: Path) -> tuple[int, int, int] | Response:
-    size = path.stat().st_size
+def _if_range_matches(value: str, *, etag: str | None, path: Path) -> bool:
+    """Return whether an If-Range validator still identifies this file.
+
+    Media versions expose a strong SHA-256 ETag.  A date validator is also
+    accepted for browser clients that do not retain the ETag; HTTP dates have
+    one-second precision, so compare truncated mtime values.
+    """
+    candidate = value.strip()
+    if not candidate:
+        return False
+    if candidate.startswith("W/") or candidate.startswith('"'):
+        return etag is not None and candidate == etag
+    try:
+        parsed = parsedate_to_datetime(candidate)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    if parsed.tzinfo is None:
+        return False
+    return int(path.stat().st_mtime) <= int(parsed.timestamp())
+
+
+def _range_headers(request: Request, path: Path, *, etag: str | None = None) -> tuple[int, int, int] | Response:
+    stat = path.stat()
+    size = stat.st_size
     value = request.headers.get("range")
     if not value:
+        return 0, size - 1, 200
+    if_range = request.headers.get("if-range")
+    if if_range and not _if_range_matches(if_range, etag=etag, path=path):
+        # RFC 9110: a failed If-Range validator causes the Range to be
+        # ignored, yielding the complete representation (200), not 416.
         return 0, size - 1, 200
     if not value.startswith("bytes=") or "," in value:
         return Response(status_code=416, headers={"Content-Range": f"bytes */{size}"})
     raw = value[6:].split("-", 1)
+    if len(raw) != 2:
+        return Response(status_code=416, headers={"Content-Range": f"bytes */{size}"})
     try:
-        start = int(raw[0]) if raw[0] else max(0, size - int(raw[1]))
-        end = int(raw[1]) if len(raw) > 1 and raw[1] else size - 1
+        if not raw[0]:
+            # Suffix-byte-range-spec: bytes=-N means the final N bytes, not
+            # bytes from offset zero through N.
+            suffix_length = int(raw[1])
+            if suffix_length <= 0:
+                raise ValueError("invalid suffix range")
+            start = max(0, size - suffix_length)
+            end = size - 1
+        else:
+            start = int(raw[0])
+            end = int(raw[1]) if len(raw) > 1 and raw[1] else size - 1
     except (ValueError, IndexError):
         return Response(status_code=416, headers={"Content-Range": f"bytes */{size}"})
     if start < 0 or end < start or start >= size:
@@ -158,13 +197,20 @@ async def _content(media_version_id: str, request: Request, head: bool = False) 
                 {"thumbnail_path": f"/api/v1/media-versions/{media_version_id}/thumbnail?size=small&frame=poster"},
                 suggested_action="改用 /thumbnail?size=small&frame=poster",
             )
-        selected = _range_headers(request, path)
+        selected = _range_headers(request, path, etag=f'"{item["sha256"]}"')
         if isinstance(selected, Response):
             return selected
         start, end, status = selected
-        headers = {"Accept-Ranges": "bytes", "Content-Length": str(end - start + 1), "Content-Type": item["mime_type"]}
+        stat = path.stat()
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(end - start + 1),
+            "Content-Type": item["mime_type"],
+            "ETag": f'"{item["sha256"]}"',
+            "Last-Modified": formatdate(stat.st_mtime, usegmt=True),
+        }
         if status == 206:
-            headers["Content-Range"] = f"bytes {start}-{end}/{path.stat().st_size}"
+            headers["Content-Range"] = f"bytes {start}-{end}/{stat.st_size}"
         if head:
             return Response(status_code=status, headers=headers)
         return StreamingResponse(_stream(path, start, end), status_code=status, headers=headers, media_type=item["mime_type"])

@@ -34,6 +34,19 @@ function countText() {
 }
 
 describe("ReviewInboxPanel filters", () => {
+  it("exposes selected review state and supports arrow-key candidate navigation", () => {
+    let selected = "fresh";
+    const onSelect = vi.fn((id: string) => { selected = id; rerenderPanel(); });
+    let rerenderPanel: () => void = () => undefined;
+    const renderResult = render(<ReviewInboxPanel items={items} templates={[]} selectedVersionId={selected} context={undefined} onSelect={onSelect} onPromote={vi.fn()} selecting={false} onMachineCheck={vi.fn()} machineChecking={false} machineCheckError={null} onSubmit={vi.fn()} submitting={false} submitError={null} submitSucceeded={false} />);
+    rerenderPanel = () => renderResult.rerender(<ReviewInboxPanel items={items} templates={[]} selectedVersionId={selected} context={undefined} onSelect={onSelect} onPromote={vi.fn()} selecting={false} machineChecking={false} machineCheckError={null} onMachineCheck={vi.fn()} onSubmit={vi.fn()} submitting={false} submitError={null} submitSucceeded={false} />);
+    const selectedButton = screen.getByRole("button", { name: /PROXY · VIDEO/ });
+    expect(selectedButton.getAttribute("aria-current")).toBe("true");
+    fireEvent.keyDown(selectedButton, { key: "ArrowLeft" });
+    expect(onSelect).toHaveBeenCalledWith("old");
+    expect(screen.getByRole("button", { name: /KEYFRAME · IMAGE/ }).getAttribute("aria-current")).toBe("true");
+  });
+
   it("filters project, episode, age, priority and blocking without changing the source list", () => {
     renderPanel();
     expect(countText()).toContain("显示 3/3");

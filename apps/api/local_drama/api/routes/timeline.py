@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from email.utils import formatdate
 from pathlib import Path
 
 from fastapi import APIRouter, Request, Response
@@ -57,14 +58,21 @@ def _stream(path: Path, start: int, end: int) -> Iterator[bytes]:
 async def _render_content(render_id: str, request: Request, head: bool = False) -> Response:
     try:
         item, path = service(request).render_content_path(render_id)
-        selected = _range_headers(request, path)
+        selected = _range_headers(request, path, etag=f'"{item["sha256"]}"')
         if isinstance(selected, Response):
             return selected
         start, end, status = selected
         mime = str(item["mime_type"] or "video/mp4")
-        headers = {"Accept-Ranges": "bytes", "Content-Length": str(end - start + 1), "Content-Type": mime}
+        stat = path.stat()
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(end - start + 1),
+            "Content-Type": mime,
+            "ETag": f'"{item["sha256"]}"',
+            "Last-Modified": formatdate(stat.st_mtime, usegmt=True),
+        }
         if status == 206:
-            headers["Content-Range"] = f"bytes {start}-{end}/{path.stat().st_size}"
+            headers["Content-Range"] = f"bytes {start}-{end}/{stat.st_size}"
         if head:
             return Response(status_code=status, headers=headers)
         return StreamingResponse(_stream(path, start, end), status_code=status, headers=headers, media_type=mime)

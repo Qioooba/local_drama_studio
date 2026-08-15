@@ -22,6 +22,12 @@ class WorkflowPublishRequest(BaseModel):
     validation_id: str = Field(min_length=1, max_length=36)
 
 
+class WorkflowRevokeRequest(BaseModel):
+    """Operator-authored reason for retiring a workflow version."""
+
+    reason: str = Field(min_length=1, max_length=1000)
+
+
 class H3CandidateWorkflowRequest(BaseModel):
     code: str = Field(min_length=1, max_length=120)
     title: str = Field(min_length=1, max_length=200)

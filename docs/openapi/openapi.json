@@ -10423,6 +10423,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowRevokeRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -17002,6 +17012,22 @@
           "validation_id"
         ],
         "title": "WorkflowPublishRequest"
+      },
+      "WorkflowRevokeRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "WorkflowRevokeRequest",
+        "description": "Operator-authored reason for retiring a workflow version."
       },
       "WorkspaceAssetAuthorizationRequest": {
         "properties": {
