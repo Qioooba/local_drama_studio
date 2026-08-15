@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+import shutil
+from pathlib import Path
+
 from fastapi import APIRouter, Header, Request
 
 from local_drama.api.schemas.projects import (
@@ -176,8 +180,56 @@ async def restore_project(project_id: str, request: Request) -> dict[str, object
 async def project_health(project_id: str, request: Request) -> dict[str, object]:
     try:
         project = service(request).get_project(project_id)
-        root = request.app.state.settings.projects_root / project["root_rel"]
-        return {"project_id": project_id, "status": "HEALTHY" if root.exists() else "BLOCKED", "root_exists": root.exists()}
+        root = (request.app.state.settings.projects_root / project["root_rel"]).resolve()
+        projects_root = request.app.state.settings.projects_root.resolve()
+        if not root.is_relative_to(projects_root):
+            raise DomainRuleError("PATH_ESCAPE", "项目根目录越界")
+        referenced: set[str] = set()
+        missing: list[str] = []
+        size_mismatch: list[str] = []
+        hash_mismatch: list[str] = []
+        with request.app.state.database.connect() as connection:
+            media_rows = connection.execute(
+                "SELECT mv.rel_path, mv.byte_size, mv.sha256 FROM media_versions mv JOIN media_assets ma ON ma.id=mv.media_asset_id WHERE ma.project_id=?",
+                (project_id,),
+            ).fetchall()
+        for row in media_rows:
+            rel = Path(str(row["rel_path"])).as_posix()
+            referenced.add(rel)
+            path = (root / rel).resolve()
+            if not path.is_relative_to(root) or not path.is_file() or path.is_symlink():
+                missing.append(rel)
+            elif path.stat().st_size != int(row["byte_size"]):
+                size_mismatch.append(rel)
+            else:
+                digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                if digest != str(row["sha256"]):
+                    hash_mismatch.append(rel)
+        orphan_files: list[str] = []
+        if root.is_dir():
+            for path in root.rglob("*"):
+                if not path.is_file() or path.is_symlink():
+                    continue
+                rel = path.relative_to(root).as_posix()
+                if rel not in referenced and not rel.startswith("exports/"):
+                    orphan_files.append(rel)
+        integrity = request.app.state.database.integrity_check()
+        disk = shutil.disk_usage(root if root.exists() else projects_root)
+        blockers = ([] if root.exists() else ["PROJECT_ROOT_MISSING"]) + ([] if integrity == "ok" else ["DATABASE_INTEGRITY_FAILED"]) + (["MEDIA_MISSING"] if missing else []) + (["MEDIA_SIZE_MISMATCH"] if size_mismatch else []) + (["MEDIA_HASH_MISMATCH"] if hash_mismatch else [])
+        return {
+            "project_id": project_id,
+            "status": "HEALTHY" if not blockers else "BLOCKED",
+            "root_exists": root.exists(),
+            "database_integrity": integrity,
+            "media": {"referenced_count": len(referenced), "missing": missing[:100], "size_mismatch": size_mismatch[:100], "hash_mismatch": hash_mismatch[:100]},
+            "orphan_files": orphan_files[:100],
+            "orphan_count": len(orphan_files),
+            "disk": {"free_bytes": disk.free, "total_bytes": disk.total},
+            "blockers": blockers,
+            "runtime_contacted": False,
+            "network_contacted": False,
+            "mutated": False,
+        }
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

@@ -177,6 +177,10 @@ export async function listProjects(filters: { search?: string; status?: string }
   return requestJson<{ items: Project[] }>(`/api/v1/projects${suffix}`, undefined, baseUrl);
 }
 
+export async function getProjectHealth(projectId: string, baseUrl = ''): Promise<{ project_id: string; status: string; root_exists: boolean; database_integrity: string; media: { referenced_count: number; missing: string[]; size_mismatch: string[]; hash_mismatch: string[] }; orphan_files: string[]; orphan_count: number; disk: { free_bytes: number; total_bytes: number }; blockers: string[]; runtime_contacted: false; network_contacted: false; mutated: false }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/health`, undefined, baseUrl);
+}
+
 export async function searchAll(query: string, projectId?: string, limit = 50, baseUrl = ''): Promise<{ items: SearchResult[] }> {
   const params = new URLSearchParams({ q: query, limit: String(limit) });
   if (projectId) params.set('project_id', projectId);
