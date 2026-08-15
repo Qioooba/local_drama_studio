@@ -130,6 +130,14 @@ async def revoke_workspace_asset_authorization(project_id: str, media_version_id
         raise api_error_from_domain(error) from error
 
 
+@router.get("/projects/{project_id}/workspace-assets/authorizations", operation_id="listWorkspaceAssetAuthorizations")
+async def list_workspace_asset_authorizations(project_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"items": WorkspaceAssetService(request.app.state.database, request.app.state.settings).list_authorizations(project_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.get("/projects/{project_id}/asset-grants", operation_id="listProjectAssetGrants")
 async def list_project_asset_grants(project_id: str, request: Request) -> dict[str, object]:
     try:

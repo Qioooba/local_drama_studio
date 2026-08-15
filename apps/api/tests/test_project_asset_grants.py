@@ -17,6 +17,7 @@ def test_cross_project_asset_grant_freezes_source_and_reports_withdrawal(workspa
     media = MediaService(database, workspace).import_file(str(source_project["id"]), source, media_kind="DOCUMENT")
     assets = WorkspaceAssetService(database, workspace)
     authorization = assets.authorize_media_version(str(source_project["id"]), str(media["media_version_id"]))
+    assert assets.list_authorizations(str(source_project["id"]))[0]["usable"] is True
     candidates = assets.list_grant_candidates(str(target_project["id"]))
     candidate = next(item for item in candidates if item["authorization_id"] == authorization["id"])
     assert candidate["grantable"] is True
@@ -25,6 +26,7 @@ def test_cross_project_asset_grant_freezes_source_and_reports_withdrawal(workspa
     assert assets.list_grants(str(target_project["id"]))[0]["usable"] is True
     revoked = assets.revoke_authorization(str(source_project["id"]), str(media["media_version_id"]), "源项目撤回共享")
     assert revoked["authorization_status"] == "REVOKED"
+    assert assets.list_authorizations(str(source_project["id"]))[0]["usable"] is False
     impacted = assets.list_grants(str(target_project["id"]))[0]
     assert "SOURCE_AUTHORIZATION_REVOKED" in impacted["impact"]
     assert impacted["usable"] is False

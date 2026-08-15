@@ -24,6 +24,7 @@ import {
   listJobs,
   listProjectAssetGrantCandidates,
   listProjectAssetGrants,
+  listWorkspaceAssetAuthorizations,
   listProfiles,
   listProjects,
   listVoiceProfileVersions,
@@ -151,6 +152,7 @@ export function App() {
   const projectConfiguration = useQuery({ queryKey: ["project-configuration", selectedProject], queryFn: () => getProjectConfiguration(selectedProject as string), enabled: Boolean(selectedProject) && (view === "profiles" || view === "projects") });
   const assetGrantCandidates = useQuery({ queryKey: ["asset-grant-candidates", selectedProject], queryFn: () => listProjectAssetGrantCandidates(selectedProject as string), enabled: Boolean(selectedProject) && view === "projects" });
   const assetGrants = useQuery({ queryKey: ["asset-grants", selectedProject], queryFn: () => listProjectAssetGrants(selectedProject as string), enabled: Boolean(selectedProject) && view === "projects" });
+  const workspaceAuthorizations = useQuery({ queryKey: ["workspace-asset-authorizations", selectedProject], queryFn: () => listWorkspaceAssetAuthorizations(selectedProject as string), enabled: Boolean(selectedProject) && view === "generation" });
   const modelCompatibility = useQuery({ queryKey: ["model-compatibility", selectedProject], queryFn: () => getModelCompatibility(selectedProject as string), enabled: Boolean(selectedProject) && (view === "profiles" || view === "diagnostics" || view === "overview") });
   const seasons = useQuery({ queryKey: ["project", selectedProject, "seasons"], queryFn: () => listSeasons(selectedProject as string), enabled: Boolean(selectedProject) });
   const selectedSeason = seasons.data?.items[0]?.id ?? null;
@@ -184,7 +186,7 @@ export function App() {
   if (view === "reviews") activeQueries.push({ label: "审核收件箱", query: reviewItems }, { label: "正式交付候选", query: formalCandidates }, { label: "审核模板", query: reviewTemplates }, { label: "审核上下文", query: reviewContext });
   if (view === "jobs") activeQueries.push({ label: "任务列表", query: jobs }, { label: "容量摘要", query: capacitySnapshot });
   if (view === "profiles") activeQueries.push({ label: "能力版本", query: profiles }, { label: "工作流版本", query: workflows }, { label: "项目配置", query: projectConfiguration }, { label: "模型证据", query: modelCompatibility });
-  if (view === "generation") activeQueries.push({ label: "能力版本", query: profiles }, { label: "H3 本机状态", query: h3Runtime }, { label: "媒体候选", query: reviewItems }, { label: "生产上下文", query: production }, { label: "连续性上下文", query: continuity }, { label: "G6 门禁", query: g6Readiness }, { label: "I2V 探针计划", query: i2vProbePlan });
+  if (view === "generation") activeQueries.push({ label: "能力版本", query: profiles }, { label: "H3 本机状态", query: h3Runtime }, { label: "媒体候选", query: reviewItems }, { label: "工作区授权", query: workspaceAuthorizations }, { label: "生产上下文", query: production }, { label: "连续性上下文", query: continuity }, { label: "G6 门禁", query: g6Readiness }, { label: "I2V 探针计划", query: i2vProbePlan });
   if (view === "diagnostics") activeQueries.push({ label: "诊断详情", query: diagnostics }, { label: "适配器契约", query: adapterContracts }, { label: "模型证据", query: modelCompatibility });
   const queryFailures = activeQueries.filter(({ query }) => Boolean(query.error));
   const diagnosticMutation = useMutation({

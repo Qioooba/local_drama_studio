@@ -124,6 +124,34 @@ class WorkspaceAssetService:
             result.append(item)
         return result
 
+    def list_authorizations(self, project_id: str) -> list[dict[str, Any]]:
+        with self.database.connect() as connection:
+            if connection.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone() is None:
+                raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
+            rows = connection.execute(
+                """SELECT waa.*, mv.version_no, mv.stage, mv.integrity_status,
+                mv.sha256 AS media_sha256, mv.byte_size AS media_byte_size, ma.media_kind
+                FROM workspace_asset_authorizations waa
+                JOIN media_versions mv ON mv.id=waa.media_version_id
+                JOIN media_assets ma ON ma.id=mv.media_asset_id
+                WHERE waa.project_id=? ORDER BY waa.created_at DESC""",
+                (project_id,),
+            ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            impact: list[str] = []
+            if str(item["authorization_status"]) != "AUTHORIZED":
+                impact.append("SOURCE_AUTHORIZATION_REVOKED")
+            if str(item["integrity_status"]) != "VERIFIED":
+                impact.append("MEDIA_NOT_VERIFIED")
+            if str(item["sha256"]) != str(item["media_sha256"]) or int(item["byte_size"]) != int(item["media_byte_size"]):
+                impact.append("SOURCE_CONTENT_CHANGED")
+            item["impact"] = impact
+            item["usable"] = not impact
+            result.append(item)
+        return result
+
     def revoke_authorization(self, project_id: str, media_version_id: str, reason: str, actor: str = "local-user") -> dict[str, Any]:
         if not reason.strip():
             raise DomainRuleError("WORKSPACE_ASSET_WITHDRAWAL_REASON_REQUIRED", "撤回源资产授权必须填写原因")
