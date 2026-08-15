@@ -49,6 +49,7 @@
 | FR-PRJ-006 项目复制为新剧模板 | VERIFIED PRODUCTION READ-ONLY UI UAT | `ProjectService.copy_as_template` 与 `POST /projects/{id}:copy-template`；新 UUID/DRAFT，只复制结构、解冻的当前镜头字段、ProductionPlan、本地交付目标与 Published ACTIVE Profile。媒体/授权资产/BrandKit/Job/审核/交付/审计历史明确排除；文件树+数据库失败双回滚、重码/孤立目录不覆盖。API 3 项、Web 1 项与三视口只读表单 UAT 通过，见 `docs/evidence/g10/project-template-copy-uat-2026-08-15.json` |
 | FR-WRT-002 Master Scene 与分集 source range 映射 | VERIFIED PRODUCTION READ-ONLY UI UAT | migration `0025_episode_scene_ranges`、`ProjectService.create_scene/bind_episode_scene_range` 与项目页管理面板；项目级 Scene 可跨集复用且不复制实体，集内 scene/ordinal 唯一，显式起止位置及同项目归属由服务端校验。API 3 项、Web 2 项、`0024→0025` 升级/精确恢复和三视口生产只读 UAT 通过，证据 `docs/evidence/g10/episode-scene-ranges-uat-2026-08-15.json` |
 | FR-WRT-003 导演分镜字段完整性 | VERIFIED PRODUCTION READ-ONLY UAT | `missing_shot_fields`/`validate_shot_ready`、生产 read model 与 `DirectorShotEditor`；九项字段可编辑，保存创建不可变 ShotRevision，可显式冻结，READY 只能从字段完整的 DIRECTED revision 进入且返回具体缺项。API 2 项、Web 2 项与三视口生产只读 UAT 通过，证据 `docs/evidence/g10/director-shot-editor-uat-2026-08-15.json` |
+| FR-WRT-004 关键词和提示词模板 | VERIFIED PRODUCTION READ-ONLY UAT | `PromptService` 对 `GENERATION_TEMPLATE` 强制冻结 source_fields/template/expanded/negative/language/model profile，展开结果与 content_text 必须一致；创建/branch 均为 immutable FROZEN hash，owner 列表只读返回最新 revision 且历史保留。Web 2 项、API 2 项及三视口 UAT 通过，证据 `docs/evidence/g10/prompt-template-panel-uat-2026-08-15.json` |
 | FR-WRT-005 生产就绪判断 | VERIFIED PRODUCTION READ-ONLY UAT | 生产 read model 明确投影 `OUTLINE/DIRECTED/PRODUCTION_READY`，并逐项返回导演字段与 Profile/ProductionPlan/DeliveryTarget/镜头状态 blocker；UI 显示服务端状态且只有完整 DIRECTED revision 可进入 READY。三视口真实 `SHOT_001 · PRODUCTION_READY` UAT 通过，证据 `docs/evidence/g10/director-shot-editor-uat-2026-08-15.json` |
 | FR-WRT-006 连续性面板 | VERIFIED PRODUCTION READ-ONLY UAT | `ProductionReadModelService.continuity_context` 与生成工作台三列对照；上一/当前/下一镜的 revision、人物外观、服装、道具、光线、空间方向、连续性、已选/已批 MediaVersion 和边界约束均来自真实本地数据，缺项不推断。API 2 项、Web 2 项与三视口 UAT 通过；只请求 small 缩略图，证据 `docs/evidence/g10/continuity-panel-uat-2026-08-15.json` |
 | FR-IMG-001/FR-MED media register、probe、hash、poster/cache、Range | VERIFIED | `application/media.py`、G3 evidence sample |
@@ -231,6 +232,8 @@ FR-WRT-006 closure 批次：只读 continuity read model 和 React 三列面板�
 FR-WRT-003 closure 批次：导演分镜九字段具备前端编辑、不可变/可冻结 ShotRevision 保存、服务端逐项缺失投影与显式 Production Ready 状态转换。生产三档只读 UAT 验证真实回填和安全按钮状态，零写入、公网、原片、错误、短控件或溢出；完整门禁 API 161 passed / 4 Comfy live deselected、Web 39/39、production build、Ruff、mypy 94 files PASS。G7 模型 license 真实证据阻塞和有序退出状态不变。
 
 FR-WRT-005 closure 批次：生产 read model 和导演编辑器明确区分 OUTLINE/DIRECTED/PRODUCTION_READY，并同时保留字段与配置 blocker；字段完整不替代 Profile/Plan/DeliveryTarget 就绪。三档生产只读 UAT 显示真实 PRODUCTION_READY 状态且全程零写；全量门禁仍为 API 161 / Web 39/39 / build / Ruff / mypy 94 PASS。G7 与后续有序门禁状态不变。
+
+FR-WRT-004 closure 批次：结构化提示词模板冻结原始字段、模板、展开结果、负向词、语言与 model Profile version，内容不一致或缺项拒绝；owner 范围查询只投影最新 revision 且保留全部历史。三档生产只读 UAT 零写入、公网、原片、错误、短控件或溢出；完整门禁 API 163 passed / 4 live deselected、Web 41/41、build/Ruff/mypy 94 PASS。G7 与有序门禁状态不变。
 
 ## 更新规则
 

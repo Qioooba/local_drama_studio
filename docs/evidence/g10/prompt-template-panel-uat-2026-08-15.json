@@ -1,0 +1,51 @@
+{
+  "schema_version": "fr-wrt-004-production-readonly-uat.v1",
+  "observed_at": "2026-08-15T00:51:23.826Z",
+  "mode": "LOCAL_ONLY",
+  "status": "PASS",
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "shot_id": "020f9248-14b7-4f92-9edd-ee587ffdedf3",
+  "production_mutated": false,
+  "screenshots_created": false,
+  "viewports": [
+    {
+      "viewport": "1440x900",
+      "status": "PASS",
+      "horizontal_overflow_px": 0,
+      "panel_overflow_px": 0,
+      "controls_below_40px": [],
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "public_requests": [],
+      "write_requests": [],
+      "original_media_requests": []
+    },
+    {
+      "viewport": "1280x800",
+      "status": "PASS",
+      "horizontal_overflow_px": 0,
+      "panel_overflow_px": 0,
+      "controls_below_40px": [],
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "public_requests": [],
+      "write_requests": [],
+      "original_media_requests": []
+    },
+    {
+      "viewport": "1024x768",
+      "status": "PASS",
+      "horizontal_overflow_px": 0,
+      "panel_overflow_px": 0,
+      "controls_below_40px": [],
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "public_requests": [],
+      "write_requests": [],
+      "original_media_requests": []
+    }
+  ]
+}

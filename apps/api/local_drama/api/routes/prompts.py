@@ -22,6 +22,11 @@ async def create_prompt(payload: PromptCreateRequest, request: Request) -> dict[
         raise api_error_from_domain(error) from error
 
 
+@router.get("/prompts", operation_id="listPrompts")
+async def list_prompts(project_id: str, request: Request, owner_type: str | None = None, owner_id: str | None = None) -> dict[str, object]:
+    return {"items": service(request).list_prompts(project_id, owner_type, owner_id)}
+
+
 @router.post("/prompt-revisions/{revision_id}:branch", status_code=201, operation_id="branchPromptRevision")
 async def branch_prompt_revision(revision_id: str, payload: PromptBranchRequest, request: Request) -> dict[str, object]:
     try:

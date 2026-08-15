@@ -376,6 +376,20 @@ h3 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
 .director-actions .checkbox-row { min-height: 40px; margin-right: auto; display: flex; align-items: center; gap: 8px; }
 @media (max-width: 1100px) { .director-grid { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 720px) { .director-grid { grid-template-columns: 1fr; } }
+
+.prompt-template-panel { margin-top: 16px; }
+.prompt-template-panel summary { min-height: 40px; display: flex; align-items: center; cursor: pointer; }
+.prompt-source-fields { max-height: 220px; overflow: auto; padding: 12px; border-radius: 10px; background: #191714; color: #f4eee4; font-size: 12px; white-space: pre-wrap; }
+.prompt-template-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.prompt-template-grid label { display: grid; gap: 6px; min-width: 0; color: #625d55; font-size: 12px; }
+.prompt-template-grid .wide { grid-column: 1 / -1; }
+.prompt-template-grid input, .prompt-template-grid select, .prompt-template-grid textarea { min-height: 40px; width: 100%; }
+.prompt-template-grid textarea { min-height: 76px; resize: vertical; }
+.prompt-template-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; color: #625d55; }
+.prompt-revision-list { display: grid; gap: 8px; margin-top: 12px; }
+.prompt-revision-list article { display: grid; gap: 4px; padding: 12px; border: 1px solid #ddd5c9; border-radius: 10px; }
+.prompt-revision-list p { margin: 3px 0; overflow-wrap: anywhere; }
+@media (max-width: 900px) { .prompt-template-grid { grid-template-columns: 1fr; } .prompt-template-grid .wide { grid-column: auto; } .prompt-template-actions { align-items: stretch; flex-direction: column; } }
 .media-slot.filled { border-style: solid; border-color: #a7c9c1; background: #eef8f5; }
 .media-slot img { display: block; width: 100%; height: auto; max-height: 124px; object-fit: cover; }
 .media-slot span { color: var(--creative); font-size: 24px; }

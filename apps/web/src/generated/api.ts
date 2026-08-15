@@ -300,6 +300,13 @@ export async function createPrompt(payload: { project_id: string; owner_type: st
   return requestJson('/api/v1/prompts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
+export async function listPrompts(projectId: string, ownerType?: string, ownerId?: string, baseUrl = ''): Promise<{ items: Array<Record<string, unknown>> }> {
+  const query = new URLSearchParams({ project_id: projectId });
+  if (ownerType) query.set('owner_type', ownerType);
+  if (ownerId) query.set('owner_id', ownerId);
+  return requestJson(`/api/v1/prompts?${query.toString()}`, undefined, baseUrl);
+}
+
 export async function branchPromptRevision(revisionId: string, payload: { content_text: string; structured?: Record<string, unknown> }, baseUrl = ''): Promise<{ revision: PromptRevision }> {
   return requestJson(`/api/v1/prompt-revisions/${encodeURIComponent(revisionId)}:branch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
