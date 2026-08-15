@@ -101,6 +101,26 @@ class ProjectPackageService:
                 created.append(media_version_id)
         return {"requested": len(media_version_ids), "created": len(created), "failed": len(failed), "created_media_version_ids": created, "failures": failed}
 
+    def rebuild_project_thumbnails(self, project_id: str, actor: str = "local-user") -> dict[str, Any]:
+        """Retry derived poster thumbnails without touching source media or project state."""
+        self._project(project_id)
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """SELECT mv.id FROM media_versions mv JOIN media_assets ma ON ma.id=mv.media_asset_id
+                WHERE ma.project_id=? AND ma.media_kind IN ('IMAGE','VIDEO') ORDER BY mv.created_at,mv.id""",
+                (project_id,),
+            ).fetchall()
+        result = self._rebuild_thumbnails([str(row["id"]) for row in rows])
+        with self.database.transaction() as connection:
+            connection.execute(
+                """INSERT INTO audit_events
+                (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json)
+                VALUES (?, 'producer', 'MEDIA_THUMBNAILS_REBUILT', 'project', ?, ?, ?)""",
+                (actor, project_id, "重建项目媒体缩略图", json.dumps(result, ensure_ascii=False, sort_keys=True)),
+            )
+        return {"project_id": project_id, **result, "pending": max(0, int(result["requested"]) - int(result["created"]) - int(result["failed"])),
+                "runtime_contacted": False, "network_contacted": False, "mutated": bool(result["created"])}
+
     def _project(self, project_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
             row = connection.execute("SELECT * FROM projects WHERE id=?", (project_id,)).fetchone()

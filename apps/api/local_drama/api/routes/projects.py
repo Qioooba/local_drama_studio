@@ -337,6 +337,15 @@ async def create_shot(project_id: str, episode_id: str, payload: ShotCreateReque
         raise api_error_from_domain(error) from error
 
 
+@router.post("/{project_id}/media-thumbnails:rebuild", operation_id="rebuildProjectThumbnails")
+async def rebuild_project_thumbnails(project_id: str, request: Request) -> dict[str, object]:
+    settings = request.app.state.settings
+    try:
+        return {"rebuild": ProjectPackageService(request.app.state.database, settings.projects_root, settings.data_root, settings=settings).rebuild_project_thumbnails(project_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.post("/shots/{shot_id}/revisions", operation_id="createShotRevision", status_code=201)
 async def create_shot_revision(shot_id: str, payload: ShotRevisionRequest, request: Request) -> dict[str, object]:
     try:

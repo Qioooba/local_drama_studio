@@ -1721,6 +1721,50 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/media-thumbnails:rebuild": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Rebuild Project Thumbnails",
+        "operationId": "rebuildProjectThumbnails",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Rebuildprojectthumbnails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/shots/{shot_id}/revisions": {
       "post": {
         "tags": [

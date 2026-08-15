@@ -4,6 +4,7 @@ import {
   commitStagedProjectPackage,
   dryRunProjectPackage,
   exportProjectPackage,
+  rebuildProjectThumbnails,
   stageProjectPackage,
 } from "../../generated/api";
 
@@ -27,12 +28,13 @@ export function ProjectPackageAction({ projectId, onImported }: { projectId: str
     },
     onSuccess: ({ commit: result }) => onImported?.(result.project_id),
   });
+  const rebuild = useMutation({ mutationFn: () => rebuildProjectThumbnails(projectId) });
   const submitStage = (event: FormEvent) => { event.preventDefault(); if (inboxName.trim()) stage.mutate(); };
-  const busy = exportPackage.isPending || inspect.isPending || stage.isPending || commit.isPending;
-  const error = exportPackage.error || inspect.error || stage.error || commit.error;
+  const busy = exportPackage.isPending || inspect.isPending || stage.isPending || commit.isPending || rebuild.isPending;
+  const error = exportPackage.error || inspect.error || stage.error || commit.error || rebuild.error;
   return <section className="project-package-action" aria-labelledby="project-package-title">
     <div><strong id="project-package-title">v2 标准项目包</strong><p className="muted">导出逐项记录 SHA-256。导入只读取固定本地 inbox，先暂存预检，再明确决定重写身份或仅恢复缺失目录；不会覆盖现有项目目录。</p></div>
-    <button className="secondary" onClick={() => exportPackage.mutate()} disabled={busy}>{exportPackage.isPending ? "导出校验中…" : "导出并 dry-run"}</button>
+    <div className="action-row"><button className="secondary" onClick={() => exportPackage.mutate()} disabled={busy}>{exportPackage.isPending ? "导出校验中…" : "导出并 dry-run"}</button><button className="secondary" onClick={() => rebuild.mutate()} disabled={busy}>{rebuild.isPending ? "重建缩略图中…" : "重建项目缩略图"}</button></div>
     {exportPackage.data && <p>包：{exportPackage.data.package.rel_path} · {exportPackage.data.package.entry_count} entries · SHA {exportPackage.data.package.sha256.slice(0, 12)}…</p>}
     {inspect.data && <p><strong>{inspect.data.dry_run.status}</strong> · 展开 {inspect.data.dry_run.expanded_bytes} bytes · {inspect.data.dry_run.blockers.join("、") || "hash/schema/disk PASS"}</p>}
     <form className="package-import-form" onSubmit={submitStage}>
@@ -50,6 +52,7 @@ export function ProjectPackageAction({ projectId, onImported }: { projectId: str
       </div>}
     </form>
     {error && <p role="alert">{error.message}</p>}
+    {rebuild.data && <p role="status">缩略图重建：{rebuild.data.rebuild.created}/{rebuild.data.rebuild.requested} 成功，{rebuild.data.rebuild.failed} 失败，待重试 {rebuild.data.rebuild.pending}。</p>}
     {commit.data && <p role="status"><strong>{commit.data.commit.status}</strong> · {commit.data.commit.project_code}
       {commit.data.commit.counts && <> · 媒体 {commit.data.commit.counts.media_versions ?? 0} · 已生成缩略图 {commit.data.commit.counts.thumbnails_created ?? 0} · 失败待重试 {commit.data.commit.counts.thumbnails_failed ?? 0}</>} · staged 包保留，可核验追溯</p>}
   </section>;

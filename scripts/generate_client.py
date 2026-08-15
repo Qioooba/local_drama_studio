@@ -236,6 +236,10 @@ export async function dryRunProjectPackage(projectId: string, relPath: string, b
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/packages:dry-run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rel_path: relPath }) }, baseUrl);
 }
 
+export async function rebuildProjectThumbnails(projectId: string, baseUrl = ''): Promise<{ rebuild: { project_id: string; requested: number; created: number; failed: number; pending: number; created_media_version_ids: string[]; failures: Array<Record<string, string>>; runtime_contacted: false; network_contacted: false; mutated: boolean } }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/media-thumbnails:rebuild`, { method: 'POST' }, baseUrl);
+}
+
 export async function stageProjectPackage(inboxName: string, baseUrl = ''): Promise<{ staging: ProjectPackageStaging }> {
   return requestJson('/api/v1/project-packages:stage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ inbox_name: inboxName }) }, baseUrl);
 }
