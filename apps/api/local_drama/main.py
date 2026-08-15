@@ -13,6 +13,7 @@ from .api.routes.capacity import router as capacity_router
 from .api.routes.configuration import router as configuration_router
 from .api.routes.creative_entries import router as creative_entries_router
 from .api.routes.diagnostics import router as diagnostics_router
+from .api.routes.dialogue import router as dialogue_router
 from .api.routes.experiments import router as experiments_router
 from .api.routes.gates import router as gates_router
 from .api.routes.health import router as health_router
@@ -85,6 +86,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(configuration_router, prefix="/api/v1")
     app.include_router(creative_entries_router, prefix="/api/v1")
     app.include_router(diagnostics_router, prefix="/api/v1")
+    app.include_router(dialogue_router, prefix="/api/v1")
     app.include_router(experiments_router, prefix="/api/v1")
     app.include_router(gates_router, prefix="/api/v1")
     app.include_router(imports_router, prefix="/api/v1")

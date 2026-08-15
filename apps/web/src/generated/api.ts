@@ -56,6 +56,10 @@ export type TimelineRevision = { id: string; episode_id: string; revision_no: nu
 export type SubtitleCueRequest = { start_us: number; end_us: number; text: string; style?: Record<string, unknown> };
 export type SubtitleAuthorityRequest = { text_authority: 'SCRIPT'; source_document_version_id: string; asr_alignment_media_version_id?: string; asr_profile_version_id?: string };
 export type SubtitleRevision = { id: string; episode_id: string; revision_no: number; format: string; content_text: string; input_snapshot: Record<string, unknown>; authority_status: 'VERIFIED_SCRIPT' | 'LEGACY_INCOMPLETE'; cues: Array<Record<string, unknown>>; [key: string]: unknown };
+export type DialogueTextRevision = { id: string; revision_no: number; text: string; text_hash: string; pronunciation: Record<string, unknown>; [key: string]: unknown };
+export type TTSCandidate = { id: string; dialogue_text_revision_id: string; voice_profile_version_id: string; media_version_id: string; emotion: string; speech_rate: number; seed: number | null; model_ref: string; candidate_kind: 'PREVIEW' | 'FORMAL'; status: string; provenance: Record<string, unknown>; [key: string]: unknown };
+export type DialogueLine = { id: string; episode_id: string; shot_id: string | null; code: string; speaker: string; text_revisions: DialogueTextRevision[]; candidates: TTSCandidate[]; selection: Record<string, unknown> | null; [key: string]: unknown };
+export type VoiceProfileVersion = { id: string; project_id: string; code: string; version_no: number; title: string; voice_ref: string; license_status: string; license_evidence: { path_rel: string; sha256: string }; provider_profile_version_id: string | null; status: string; [key: string]: unknown };
 export type AudioBindingRequest = { media_version_id: string; track_type?: string; start_us: number; end_us: number; gain_db?: number; source_license_status?: 'VERIFIED_LOCAL' | 'USER_OWNED' };
 export type AudioBinding = { id: string; episode_id: string; media_version_id: string; track_type: string; start_us: number; end_us: number; gain_db: number; source_license_status: string; [key: string]: unknown };
 export type EpisodeRender = { id: string; episode_id: string; timeline_revision_id: string; integrity_status: string; [key: string]: unknown };
@@ -440,6 +444,14 @@ export async function createSubtitleRevision(episodeId: string, payload: { cues:
 
 export async function getSubtitleRevision(subtitleRevisionId: string, baseUrl = ''): Promise<{ subtitle: SubtitleRevision }> {
   return requestJson(`/api/v1/subtitle-revisions/${encodeURIComponent(subtitleRevisionId)}`, undefined, baseUrl);
+}
+
+export async function listDialogueLines(episodeId: string, baseUrl = ''): Promise<{ items: DialogueLine[] }> {
+  return requestJson(`/api/v1/episodes/${encodeURIComponent(episodeId)}/dialogue-lines`, undefined, baseUrl);
+}
+
+export async function listVoiceProfileVersions(projectId: string, baseUrl = ''): Promise<{ items: VoiceProfileVersion[] }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/voice-profile-versions`, undefined, baseUrl);
 }
 
 export async function bindEpisodeAudio(episodeId: string, payload: AudioBindingRequest, baseUrl = ''): Promise<{ audio_binding: AudioBinding }> {

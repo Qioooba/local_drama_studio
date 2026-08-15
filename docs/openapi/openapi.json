@@ -2321,6 +2321,402 @@
         }
       }
     },
+    "/api/v1/episodes/{episode_id}/dialogue-lines": {
+      "post": {
+        "tags": [
+          "dialogue",
+          "tts"
+        ],
+        "summary": "Create Dialogue Line",
+        "operationId": "createDialogueLine",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DialogueLineRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Createdialogueline"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "dialogue",
+          "tts"
+        ],
+        "summary": "List Dialogue Lines",
+        "operationId": "listDialogueLines",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listdialoguelines"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/dialogue-lines/{line_id}": {
+      "get": {
+        "tags": [
+          "dialogue",
+          "tts"
+        ],
+        "summary": "Get Dialogue Line",
+        "operationId": "getDialogueLine",
+        "parameters": [
+          {
+            "name": "line_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Line Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Getdialogueline"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/dialogue-lines/{line_id}/text-revisions": {
+      "post": {
+        "tags": [
+          "dialogue",
+          "tts"
+        ],
+        "summary": "Create Dialogue Text Revision",
+        "operationId": "createDialogueTextRevision",
+        "parameters": [
+          {
+            "name": "line_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Line Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DialogueTextRevisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Createdialoguetextrevision"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/voice-profile-versions": {
+      "post": {
+        "tags": [
+          "dialogue",
+          "tts"
+        ],
+        "summary": "Create Voice Profile",
+        "operationId": "createVoiceProfileVersion",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceProfileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Createvoiceprofileversion"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "dialogue",
+          "tts"
+        ],
+        "summary": "List Voice Profiles",
+        "operationId": "listVoiceProfileVersions",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listvoiceprofileversions"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/dialogue-text-revisions/{text_revision_id}/tts-candidates": {
+      "post": {
+        "tags": [
+          "dialogue",
+          "tts"
+        ],
+        "summary": "Register Tts Candidate",
+        "operationId": "registerTTSCandidate",
+        "parameters": [
+          {
+            "name": "text_revision_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Text Revision Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TTSCandidateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Registerttscandidate"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tts-candidates/{candidate_id}:select": {
+      "post": {
+        "tags": [
+          "dialogue",
+          "tts"
+        ],
+        "summary": "Select Tts Candidate",
+        "operationId": "selectTTSCandidate",
+        "parameters": [
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Candidate Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Selectttscandidate"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/generation-intents": {
       "post": {
         "tags": [
@@ -9145,6 +9541,75 @@
         ],
         "title": "DeliveryWithdrawRequest"
       },
+      "DialogueLineRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "speaker": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Speaker"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Text"
+          },
+          "pronunciation": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Pronunciation"
+          },
+          "shot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shot Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "speaker",
+          "text"
+        ],
+        "title": "DialogueLineRequest"
+      },
+      "DialogueTextRevisionRequest": {
+        "properties": {
+          "expected_revision_no": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision No"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Text"
+          },
+          "pronunciation": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Pronunciation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expected_revision_no",
+          "text"
+        ],
+        "title": "DialogueTextRevisionRequest"
+      },
       "DocumentImportRequest": {
         "properties": {
           "source_path": {
@@ -10842,6 +11307,66 @@
         ],
         "title": "SubtitleRevisionRequest"
       },
+      "TTSCandidateRequest": {
+        "properties": {
+          "voice_profile_version_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Voice Profile Version Id"
+          },
+          "media_version_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Media Version Id"
+          },
+          "emotion": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Emotion"
+          },
+          "speech_rate": {
+            "type": "number",
+            "maximum": 2.0,
+            "minimum": 0.5,
+            "title": "Speech Rate"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          },
+          "model_ref": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Model Ref"
+          },
+          "candidate_kind": {
+            "type": "string",
+            "enum": [
+              "PREVIEW",
+              "FORMAL"
+            ],
+            "title": "Candidate Kind"
+          }
+        },
+        "type": "object",
+        "required": [
+          "voice_profile_version_id",
+          "media_version_id",
+          "emotion",
+          "speech_rate",
+          "model_ref",
+          "candidate_kind"
+        ],
+        "title": "TTSCandidateRequest"
+      },
       "TimelineItemRequest": {
         "properties": {
           "track_type": {
@@ -11513,6 +12038,60 @@
           "comment"
         ],
         "title": "VideoAnnotationRequest"
+      },
+      "VoiceProfileRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "voice_ref": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Voice Ref"
+          },
+          "license_status": {
+            "type": "string",
+            "enum": [
+              "USER_OWNED",
+              "VERIFIED_LOCAL"
+            ],
+            "title": "License Status"
+          },
+          "license_evidence_path_rel": {
+            "type": "string",
+            "minLength": 1,
+            "title": "License Evidence Path Rel"
+          },
+          "provider_profile_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Profile Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "title",
+          "voice_ref",
+          "license_status",
+          "license_evidence_path_rel"
+        ],
+        "title": "VoiceProfileRequest"
       },
       "WorkflowCompileRequest": {
         "properties": {

@@ -18,9 +18,11 @@ import {
   listReviewTemplates,
   latestDiagnostics,
   listEpisodes,
+  listDialogueLines,
   listJobs,
   listProfiles,
   listProjects,
+  listVoiceProfileVersions,
   listSeasons,
   listWorkflowVersions,
   runDiagnostics,
@@ -48,6 +50,7 @@ import { EpisodeSceneRanges } from "../features/projects/EpisodeSceneRanges";
 import { ProjectPackageAction } from "../features/projects/ProjectPackageAction";
 import { CreativeLibrary } from "../features/projects/CreativeLibrary";
 import { AIDraftReviewPanel } from "../features/projects/AIDraftReviewPanel";
+import { DialogueTTSPanel } from "../features/status/DialogueTTSPanel";
 import { AdapterContractsPanel, DiagnosticPanel, G8ReadinessPanel, G9ReadinessPanel, ModelCompatibilityPanel, ProjectConfigurationSnapshot, ProjectList, TimelineStatusPanel } from "../features/status/ReadinessPanels";
 import { selectedItemOrFirst } from "../features/shared/selection";
 import { BreadcrumbSeparatorIcon, ChevronRightIcon, StatusDotIcon, StudioMarkIcon } from "../components/icons";
@@ -134,6 +137,8 @@ export function App() {
   const selectedEpisode = selectedEpisodeRecord?.id ?? null;
   const production = useQuery({ queryKey: ["episode", selectedEpisode, "production"], queryFn: () => getEpisodeProduction(selectedEpisode as string), enabled: Boolean(selectedEpisode) });
   const timelineStatus = useQuery({ queryKey: ["episode", selectedEpisode, "timeline-status"], queryFn: () => getEpisodeTimelineStatus(selectedEpisode as string), enabled: Boolean(selectedEpisode) && view === "projects" });
+  const dialogueLines = useQuery({ queryKey: ["episode", selectedEpisode, "dialogue-lines"], queryFn: () => listDialogueLines(selectedEpisode as string), enabled: Boolean(selectedEpisode) && view === "projects" });
+  const voiceProfiles = useQuery({ queryKey: ["project", selectedProject, "voice-profiles"], queryFn: () => listVoiceProfileVersions(selectedProject as string), enabled: Boolean(selectedProject) && view === "projects" });
   const g8Readiness = useQuery({ queryKey: ["gates", "g8", selectedProject, selectedEpisode], queryFn: () => getG8Readiness(selectedProject as string, selectedEpisode as string), enabled: Boolean(selectedProject && selectedEpisode) && view === "projects" });
   const g9Readiness = useQuery({ queryKey: ["gates", "g9", selectedProject, selectedEpisode], queryFn: () => getG9Readiness(selectedProject as string, selectedEpisode as string), enabled: Boolean(selectedProject && selectedEpisode) && view === "canvas" });
   const selectedShot = production.data?.items.some((item) => String(item.id) === selectedShotId) ? selectedShotId : production.data?.items[0] ? String(production.data.items[0].id) : null;
@@ -314,6 +319,7 @@ export function App() {
                 {selectedProject && selectedEpisode && <EpisodeSceneRanges projectId={selectedProject} episodeId={selectedEpisode} />}
                 {selectedProject && <CreativeLibrary projectId={selectedProject} />}
                 {selectedProject && <AIDraftReviewPanel projectId={selectedProject} />}
+                <DialogueTTSPanel lines={dialogueLines.data?.items ?? []} voices={voiceProfiles.data?.items ?? []} />
                 <EpisodeContactSheetAction episodeId={selectedEpisode} />
                 {timelineStatus.data?.status && <TimelineStatusPanel status={timelineStatus.data.status} />}
                 <TimelineExportAction timelineRevisionId={timelineStatus.data?.status.timeline.latest?.id ? String(timelineStatus.data.status.timeline.latest.id) : null} />

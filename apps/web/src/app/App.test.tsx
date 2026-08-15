@@ -18,6 +18,8 @@ vi.mock("../generated/api", () => ({
   runDiagnostics: vi.fn().mockResolvedValue({ run: { status: "HEALTHY", checks: [] } }),
   listSeasons: vi.fn().mockResolvedValue({ items: [] }),
   listEpisodes: vi.fn().mockResolvedValue({ items: [] }),
+  listDialogueLines: vi.fn().mockResolvedValue({ items: [] }),
+  listVoiceProfileVersions: vi.fn().mockResolvedValue({ items: [] }),
   getEpisodeProduction: vi.fn().mockResolvedValue({ episode: {}, items: [] }),
   getEpisodeTimelineStatus: vi.fn().mockResolvedValue({ status: { episode: { id: "e", code: "E", title: "E", project_id: "p" }, timeline: { revision_count: 0, latest: null }, subtitles: { revision_count: 0, latest: null }, audio: { binding_count: 0, verified_local_count: 0 }, renders: { count: 0, verified_count: 0, latest: null }, delivery: { count: 0, verified_count: 0, latest: null }, observed_at: "2026-08-14T00:00:00Z", read_only: true, runtime_contacted: false, network_contacted: false, mutated: false } }),
   h3CandidateRuntime: vi.fn().mockResolvedValue({ runtime: { status: "BLOCKED" } }),
