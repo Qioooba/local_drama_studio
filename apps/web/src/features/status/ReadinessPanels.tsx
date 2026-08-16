@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { createDeliveryTarget, type AdapterRegistry, type G8Readiness, type G9Readiness, type ModelCompatibilitySnapshot, type ProjectConfiguration, type TimelineStatus } from "../../generated/api";
+import { useEffect, useState } from "react";
+import { createDeliveryTarget, selectDeliveryTargetVersion, type AdapterRegistry, type G8Readiness, type G9Readiness, type ModelCompatibilitySnapshot, type ProjectConfiguration, type TimelineStatus } from "../../generated/api";
 import { GateStatusIcon } from "../../components/icons";
 import { ModelLicenseEvidenceForm } from "./ModelLicenseEvidenceForm";
 import { LocalModelReferenceForm } from "./LocalModelReferenceForm";
@@ -15,6 +15,11 @@ export function ProjectConfigurationSnapshot({ configuration, projectId, onChang
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedTargetVersionId, setSelectedTargetVersionId] = useState(configuration.selected_delivery_target_version_id ?? "");
+  const [selecting, setSelecting] = useState(false);
+  useEffect(() => {
+    setSelectedTargetVersionId(configuration.selected_delivery_target_version_id ?? "");
+  }, [configuration.selected_delivery_target_version_id]);
   const createTarget = async () => {
     if (!projectId) return;
     setBusy(true); setMessage(null); setError(null);
@@ -24,6 +29,16 @@ export function ProjectConfigurationSnapshot({ configuration, projectId, onChang
       onChanged?.();
     } catch (caught) { setError(String(caught)); }
     finally { setBusy(false); }
+  };
+  const selectTarget = async () => {
+    if (!projectId || !selectedTargetVersionId) return;
+    setSelecting(true); setMessage(null); setError(null);
+    try {
+      await selectDeliveryTargetVersion(projectId, selectedTargetVersionId);
+      setMessage("已显式选择交付目标版本（新选择退休旧 ACTIVE 版本）");
+      onChanged?.();
+    } catch (caught) { setError(String(caught)); }
+    finally { setSelecting(false); }
   };
   return <section className="panel configuration-snapshot" aria-labelledby="configuration-snapshot-title">
     <div className="panel-heading"><div><p className="eyebrow">G7 PROJECT CONFIGURATION</p><h3 id="configuration-snapshot-title">项目配置快照与切换影响</h3></div><span className="status-pill">只读 · LOCAL_ONLY</span></div>
@@ -38,7 +53,7 @@ export function ProjectConfigurationSnapshot({ configuration, projectId, onChang
       {configuration.profile_bindings.map((item) => <div className="configuration-row" role="row" key={`${item.capability}-${item.profile_version_id}`}><span>{item.capability}</span><span>{item.profile_code} · v{item.version_no}</span><span className="status-pill">{item.profile_status}</span><span>{item.frozen_job_count}</span></div>)}
       {configuration.profile_bindings.length === 0 && <p className="empty-state">尚未绑定 Profile。</p>}
     </div>
-    {projectId && <div className="delivery-target-editor"><div className="workflow-history-heading"><div><p className="eyebrow">FR-DEL-003 · EXPLICIT TARGET</p><h3>创建本地交付目标版本</h3></div><span className="status-pill neutral">LOCAL_FILESYSTEM</span></div><p className="muted">交付规格必须由用户显式填写；此处不会启用远程 transport，也不会覆盖已有目标版本。</p><div className="field-grid"><label>代码<input value={code} onChange={(event) => setCode(event.target.value)} /></label><label>标题<input value={title} onChange={(event) => setTitle(event.target.value)} /></label><label>相对目录<input value={pathRel} onChange={(event) => setPathRel(event.target.value)} /></label><label>宽<input type="number" min="64" value={width} onChange={(event) => setWidth(event.target.value)} /></label><label>高<input type="number" min="64" value={height} onChange={(event) => setHeight(event.target.value)} /></label><label>FPS<input type="number" min="1" max="120" value={fps} onChange={(event) => setFps(event.target.value)} /></label></div><button className="primary-action" type="button" onClick={() => void createTarget()} disabled={busy}>{busy ? "创建中…" : "创建新目标版本"}</button>{message && <p className="review-success" role="status">{message}</p>}{error && <p className="inline-error" role="alert">目标创建失败：{error}</p>}</div>}
+    {projectId && <div className="delivery-target-editor"><div className="workflow-history-heading"><div><p className="eyebrow">FR-DEL-003 · EXPLICIT TARGET</p><h3>选择 / 创建本地交付目标版本</h3></div><span className="status-pill neutral">LOCAL_FILESYSTEM</span></div><p className="muted">交付规格必须由用户显式选择或填写；此处不会启用远程 transport，也不会覆盖已有目标版本。</p><div className="field-grid"><label>已创建目标版本<select aria-label="交付目标版本" value={selectedTargetVersionId} onChange={(event) => setSelectedTargetVersionId(event.target.value)}>{configuration.delivery_targets.length === 0 && <option value="">暂无目标版本</option>}{configuration.delivery_targets.map((target) => <option key={target.version_id} value={target.version_id}>{target.code} · v{target.version_no}{target.version_id === configuration.selected_delivery_target_version_id ? "（当前）" : ""}</option>)}</select></label><button className="secondary" type="button" onClick={() => void selectTarget()} disabled={selecting || !selectedTargetVersionId}>{selecting ? "选择中…" : "选择为当前交付目标"}</button></div><div className="field-grid"><label>代码<input value={code} onChange={(event) => setCode(event.target.value)} /></label><label>标题<input value={title} onChange={(event) => setTitle(event.target.value)} /></label><label>相对目录<input value={pathRel} onChange={(event) => setPathRel(event.target.value)} /></label><label>宽<input type="number" min="64" value={width} onChange={(event) => setWidth(event.target.value)} /></label><label>高<input type="number" min="64" value={height} onChange={(event) => setHeight(event.target.value)} /></label><label>FPS<input type="number" min="1" max="120" value={fps} onChange={(event) => setFps(event.target.value)} /></label></div><button className="primary-action" type="button" onClick={() => void createTarget()} disabled={busy}>{busy ? "创建中…" : "创建新目标版本"}</button>{message && <p className="review-success" role="status">{message}</p>}{error && <p className="inline-error" role="alert">目标操作失败：{error}</p>}</div>}
   </section>;
 }
 

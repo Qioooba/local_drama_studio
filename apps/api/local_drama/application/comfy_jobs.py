@@ -54,6 +54,13 @@ class ComfyGenerationService:
             )
             raise DomainRuleError("WORKFLOW_NOT_PUBLISHED", "Comfy Job 只能执行已通过本机验证并发布的 workflow")
         semantic_inputs = dict(snapshot.get("semantic_inputs", {}))
+        # Only roles the published workflow actually declares are compiled into
+        # the execution graph.  Metadata parameters frozen by the variant
+        # (camera_plan, timed_directions, performance_bindings, motion_masks,
+        # ...) stay in the immutable job snapshot for audit but must never be
+        # written into a node input they do not belong to.
+        declared_roles = set(workflow_version["node_bindings"])
+        semantic_inputs = {role: value for role, value in semantic_inputs.items() if role in declared_roles}
         for binding in snapshot.get("media_bindings", []):
             if not isinstance(binding, dict) or not binding.get("role") or not binding.get("media_version_id"):
                 raise DomainRuleError("COMFY_MEDIA_BINDING_INVALID", "Comfy Job 的媒体绑定快照无效")

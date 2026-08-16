@@ -5,8 +5,8 @@
     "NFR-TEST-001"
   ],
   "status": "PARTIAL",
-  "observed_at": "2026-08-16T19:18:01.251023+00:00",
-  "git_revision": "d67efbd3f17806db446c2010ba1d08721958eacb",
+  "observed_at": "2026-08-16T23:57:24.753749+00:00",
+  "git_revision": "00c1d6b080949cdca1e4efa0471e9f2f74f444c8",
   "deterministic_contracts_passed": true,
   "hard_failures": [],
   "dependencies": {
@@ -268,7 +268,7 @@
       },
       {
         "path": "apps/web/src/features/status/ReadinessPanels.tsx",
-        "lines": 128,
+        "lines": 143,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       },
@@ -324,8 +324,8 @@
     "domain_modules_without_direct_test_import": [],
     "domain_rule_coverage_floor_passed": true,
     "api_test_file_count": 75,
-    "api_test_function_count": 278,
-    "web_test_file_count": 36,
+    "api_test_function_count": 280,
+    "web_test_file_count": 37,
     "coverage_method": "static import inventory; full pytest/Vitest and Playwright remain separate gates"
   },
   "regression_gate": {

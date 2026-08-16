@@ -202,8 +202,14 @@ class ConfigurationService:
             if target_transport != "LOCAL_FILESYSTEM":
                 raise DomainRuleError("REMOTE_TRANSPORT_DISABLED", "LOCAL_ONLY 首版只允许 LOCAL_FILESYSTEM 交付")
             connection.execute(
-                "UPDATE delivery_target_versions SET status='RETIRED', updated_at=?, revision=revision+1 WHERE delivery_target_id=? AND status='ACTIVE'",
-                (now, target_id),
+                # The project configuration read model exposes exactly one
+                # selected_delivery_target_version_id: a single ACTIVE version
+                # across ALL of the project's targets.  Selecting one version
+                # therefore retires every other ACTIVE version in the project,
+                # not only the versions of the same target.
+                "UPDATE delivery_target_versions SET status='RETIRED', updated_at=?, revision=revision+1 "
+                "WHERE status='ACTIVE' AND delivery_target_id IN (SELECT id FROM delivery_targets WHERE project_id=?)",
+                (now, target_project_id),
             )
             connection.execute(
                 "UPDATE delivery_target_versions SET status='ACTIVE', updated_at=?, revision=revision+1 WHERE id=?",
@@ -212,6 +218,11 @@ class ConfigurationService:
             connection.execute(
                 "UPDATE delivery_targets SET status='ACTIVE', updated_at=?, revision=revision+1 WHERE id=?",
                 (now, target_id),
+            )
+            connection.execute(
+                "UPDATE delivery_targets SET status='INACTIVE', updated_at=?, revision=revision+1 "
+                "WHERE project_id=? AND status='ACTIVE' AND id<>?",
+                (now, target_project_id, target_id),
             )
             connection.execute(
                 """INSERT INTO audit_events

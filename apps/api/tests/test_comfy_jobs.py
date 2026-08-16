@@ -122,3 +122,59 @@ def test_submit_materializes_verified_media_binding_inside_isolated_input_root(w
     filename = captured["1"]["inputs"]["image"]
     assert filename.startswith(str(media["media_version_id"]))
     assert (workspace.comfy_input_root / filename).read_bytes() == source.read_bytes()
+
+
+def test_submit_drops_undeclared_metadata_roles_but_compiles_declared_ones(workspace, database, monkeypatch) -> None:
+    """The variant workbench freezes camera_plan/timed_directions/... metadata into
+    the job snapshot; those roles must never be compiled into workflow node inputs
+    unless the published workflow declares them (FR-CTL-001 integration)."""
+    workspace = workspace.model_copy(update={"comfy_input_root": workspace.work_root / "comfy-production" / "input"})
+    workflow_service = WorkflowService(database, workspace)
+    version = workflow_service.register_package(
+        "comfy_metadata_roles",
+        "Comfy metadata roles",
+        {"1": {"class_type": "LoadImage", "inputs": {"image": "pending.png"}}},
+        {},
+        {"FIRST_FRAME": {"node_id": "1", "input": "image"}},
+    )
+    _publish_offline(workflow_service, str(version["id"]))
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="comfy_metadata_project", title="Comfy metadata project", episode_count=1,
+        aspect_ratio="16:9", fps_num=24, fps_den=1, target_duration_ms=60_000,
+        allow_unconfigured_capabilities=True,
+    )
+    source = workspace.work_root / "meta-source.png"
+    source.write_bytes(
+        bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415408d763f8cfc0f01f00050001ff89993d1d0000000049454e44ae426082")
+    )
+    media = MediaService(database, workspace).import_file(str(project["id"]), source, media_kind="IMAGE")
+    jobs = JobService(database, workspace)
+    jobs.create_job(
+        str(project["id"]), "GENERATION_VARIANT", "WORKFLOW_VERSION", str(version["id"]), "GPU_H3",
+        {
+            "workflow_version_id": str(version["id"]),
+            "semantic_inputs": {
+                "camera_plan": {"mode": "NATIVE", "movement": "PUSH_IN"},
+                "timed_directions": [],
+                "performance_bindings": [],
+                "motion_masks": [],
+            },
+            "media_bindings": [{"role": "FIRST_FRAME", "media_version_id": media["media_version_id"], "ordinal": 0}],
+        },
+        "comfy-metadata-roles",
+    )
+    service = ComfyGenerationService(database, workspace)
+    captured = {}
+
+    def queue_prompt(workflow, **_kwargs):
+        captured.update(workflow)
+        return {"prompt_id": "metadata-prompt"}
+
+    monkeypatch.setattr(service.comfy, "queue_prompt", queue_prompt)
+    submitted = service.submit_next("metadata-worker")
+    assert submitted is not None
+    # Undeclared metadata roles are dropped; the declared FIRST_FRAME slot is compiled.
+    filename = captured["1"]["inputs"]["image"]
+    assert filename.startswith(str(media["media_version_id"]))
+    assert "camera_plan" not in captured["1"]["inputs"]
+    assert "timed_directions" not in captured["1"]["inputs"]
