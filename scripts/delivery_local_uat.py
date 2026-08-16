@@ -291,6 +291,9 @@ def run(artifact: Path, sandbox_root: Path) -> dict[str, Any]:
         raise RuntimeError("delivery lifecycle did not reach VERIFIED -> WITHDRAWN")
     if not {"BUILT", "VERIFY", "DOWNLOAD", "WITHDRAWN"}.issubset(set(event_actions)):
         raise RuntimeError(f"delivery history is incomplete: {event_actions}")
+    withdrawn_event = next(item for item in details_after_withdraw["events"] if item["action"] == "WITHDRAWN")
+    if withdrawn_event.get("manifest_sha256") != delivery.get("manifest_sha256"):
+        raise RuntimeError("withdrawal event lost the immutable delivery manifest hash")
     if len(download.content) != output_path.stat().st_size:
         raise RuntimeError("downloaded bytes differ from local delivery file")
 
