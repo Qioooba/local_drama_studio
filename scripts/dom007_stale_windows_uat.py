@@ -18,6 +18,7 @@ import socket
 import subprocess
 import sys
 import time
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -28,10 +29,15 @@ API_ROOT = ROOT / "apps" / "api"
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(API_ROOT))
 
+from local_drama.application.generation import GenerationService
 from local_drama.application.media import MediaService
+from local_drama.application.profiles import ProfileService
 from local_drama.application.projects import ProjectService
 from local_drama.application.reviews import ReviewService
+from local_drama.application.timeline import TimelineService
 from local_drama.config import Settings
+from local_drama.domain.generation import VariantPlan
+from local_drama.domain.policies import VariantInput
 from local_drama.infrastructure.database.sqlite import Database
 
 from scripts.migrate import migrate
@@ -99,6 +105,14 @@ def _check(code: str, passed: bool, observed: object, detail: str) -> dict[str, 
     return {"code": code, "status": "PASS" if passed else "FAIL", "observed": observed, "detail": detail}
 
 
+def _error_code(response: dict[str, object]) -> str | None:
+    payload = response.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    error = payload.get("error")
+    return str(error.get("code")) if isinstance(error, dict) else None
+
+
 def _video(settings: Settings) -> Path:
     if not settings.ffmpeg_path:
         raise RuntimeError("LOCAL_DRAMA_FFMPEG is required for this real local-media UAT")
@@ -110,6 +124,72 @@ def _video(settings: Settings) -> Path:
         capture_output=True,
     )
     return source
+
+
+def _published_profile(database: Database, settings: Settings) -> str:
+    profile_service = ProfileService(database, settings.manifest_path)
+    profile_service.sync_manifest()
+    profiles = profile_service.list_profiles()
+    if not profiles:
+        raise RuntimeError("No execution profiles available for continuity stale drill")
+
+    profile_version_id = str(profiles[0]["version_id"])
+    now = "2026-08-13T00:00:00Z"
+    workflow_id = str(uuid.uuid4())
+    workflow_version_id = str(uuid.uuid4())
+
+    with database.transaction() as connection:
+        row = connection.execute("SELECT status FROM execution_profile_versions WHERE id=?", (profile_version_id,)).fetchone()
+        if not row or str(row["status"]) != "PUBLISHED":
+            runtime_contract_json = json.dumps({"input_slots": {"FIRST_FRAME": {"min": 1, "max": 1}}})
+            connection.execute(
+                "INSERT INTO workflows (id, code, title, created_at, updated_at, created_by, revision, schema_version) "
+                "VALUES (?, ?, 'Variant UAT workflow', ?, ?, 'uat', 1, 'v2')",
+                (workflow_id, f"variant-uat-{profile_version_id}", now, now),
+            )
+            connection.execute(
+                """
+                INSERT INTO workflow_versions
+                (id, workflow_id, version_no, content_hash, status, contract_json, content_json, package_rel_path,
+                 node_bindings_json, runtime_contract_json, published_at, created_at, updated_at, created_by, revision, schema_version)
+                VALUES (?, ?, 1, ?, 'PUBLISHED', '{}', ?, NULL, ?, '{}', ?, ?, ?, 'uat', 1, 'v2')
+                """,
+                (
+                    workflow_version_id,
+                    workflow_id,
+                    "a" * 64,
+                    json.dumps({"1": {"class_type": "LoadImage", "inputs": {"image": ""}}}),
+                    json.dumps({"FIRST_FRAME": {"node_id": "1", "input": "image", "type": "image"}}),
+                    now,
+                    now,
+                    now,
+                ),
+            )
+        connection.execute(
+            "UPDATE execution_profile_versions "
+            "SET status='PUBLISHED', workflow_version_id=?, input_contract_json=?, revision=revision+1 "
+            "WHERE id=?",
+            (
+                workflow_version_id,
+                runtime_contract_json,
+                profile_version_id,
+            ),
+        )
+    return profile_version_id
+
+
+def _variant_plan(profile_version_id: str, media_version_id: str) -> VariantPlan:
+    return VariantPlan(
+        variant_type="BASE",
+        parent_variant_id=None,
+        branch_reason="continuity stale drill",
+        prompt_revision_id=None,
+        profile_version_id=profile_version_id,
+        parameter_set={"frames": 81, "steps": 20},
+        seed_policy="EXPLICIT",
+        explicit_seed=7,
+        bindings=(VariantInput("FIRST_FRAME", media_version_id),),
+    )
 
 
 def _checks(template: dict[str, object]) -> list[dict[str, str]]:
@@ -149,16 +229,57 @@ def run(*, root: Path, port: int | None = None) -> dict[str, object]:
     reviews.ensure_templates()
     templates = {str(item["code"]): item for item in reviews.templates()}
     formal_template = templates["formal_video"]
+    continuity_shot = projects.create_shot(str(episode["id"]), "SHOT_002", 1_000)
+    continuity_new_formal = media_service.derive_version(asset_id, str(formal["id"]), "FORMAL")
+    continuity_timeline = TimelineService(database, settings)
+    continuity_anchor = continuity_timeline.create_frame_anchor(str(formal["id"]), source_time_us=500_000, role_hint="LAST_FRAME")
+    continuity_transition = continuity_timeline.create_transition_constraint(
+        str(shot["id"]),
+        str(continuity_shot["id"]),
+        "START_FROM_PREVIOUS_LAST",
+        from_anchor_id=str(continuity_anchor["id"]),
+        enforcement="REQUIRED",
+    )
+    continuity_profile_id = _published_profile(database, settings)
+    continuity_generation = GenerationService(database, settings)
+    continuity_intent = continuity_generation.create_intent(
+        project_id, "SHOT", str(continuity_shot["id"]), "I2V", "continue continuity with stale upstream anchor"
+    )
+    continuity_variant = continuity_generation.create_variant(
+        str(continuity_intent["id"]),
+        _variant_plan(continuity_profile_id, str(continuity_anchor["extracted_media_version_id"])),
+    )
+    continuity_template = next(item for item in reviews.templates() if item["code"] == "formal_video")
+    continuity_checks = [{"item_id": str(item["id"]), "result": "PASS"} for item in continuity_template["items"]]
     machine = reviews.machine_check(str(formal["id"]))
     selection = reviews.select_version(str(formal["id"]), "FORMAL_SELECTION")
     approval = reviews.submit_review(
         str(formal["id"]), str(formal_template["id"]), "APPROVED", expected_subject_revision=2, checks=_checks(formal_template)
+    )
+    continuity_impact = reviews.preview_approval_impact(str(continuity_new_formal["id"]))
+    continuity_approval = reviews.submit_review(
+        str(continuity_new_formal["id"]),
+        str(continuity_template["id"]),
+        "APPROVED",
+        expected_subject_revision=int(continuity_new_formal["subject_revision"]),
+        checks=continuity_checks,
+        continuity_plan_hash=str(continuity_impact["plan_hash"]),
     )
     ready = reviews.formal_selection_preflight(project_id, [str(formal["id"])])
     revised = projects.create_shot_revision(str(shot["id"]), {"subject_action": "向前走"}, freeze=True)
     with database.connect() as connection:
         history = connection.execute(
             "SELECT id, media_version_id, selection_type, source_revision FROM selections WHERE id=?", (selection["id"],)
+        ).fetchone()
+        continuity_anchor_row = connection.execute(
+            "SELECT is_stale, stale_reason FROM frame_anchors WHERE id=?", (continuity_anchor["id"],)
+        ).fetchone()
+        continuity_transition_row = connection.execute(
+            "SELECT is_stale, stale_reason, compatibility_status FROM shot_transition_constraints WHERE id=?",
+            (continuity_transition["id"],),
+        ).fetchone()
+        continuity_variant_row = connection.execute(
+            "SELECT is_stale, stale_reason FROM generation_variants WHERE id=?", (continuity_variant["id"],)
         ).fetchone()
         audit = connection.execute(
             "SELECT action, metadata_redacted_json FROM audit_events WHERE action='REVIEWS_MARKED_STALE' ORDER BY event_id DESC LIMIT 1"
@@ -178,6 +299,7 @@ def run(*, root: Path, port: int | None = None) -> dict[str, object]:
             time.sleep(0.1)
         bootstrap = _http(base_url, "/api/v1/session/bootstrap")
         token = str(dict(bootstrap.get("payload") or {}).get("token", ""))
+        write_headers = {"X-Local-Instance-Token": token}
         context = _http(base_url, f"/api/v1/subjects/MEDIA_VERSION/{formal['id']}/review-context")
         loopback_stale = _http(
             base_url,
@@ -185,6 +307,48 @@ def run(*, root: Path, port: int | None = None) -> dict[str, object]:
             method="POST",
             payload={"project_id": project_id, "media_version_ids": [str(formal["id"])]},
             headers={"X-Local-Instance-Token": token},
+        )
+        stale_parent = _http(
+            base_url,
+            f"/api/v1/generation-variants/{continuity_variant['id']}:derive-plan",
+            method="POST",
+            payload={"operation": "RESAMPLE_NEW_SEED", "explicit_seed": 99, "branch_reason": "must reject stale parent"},
+            headers=write_headers,
+        )
+        stale_plan = _http(
+            base_url,
+            "/api/v1/generation-variants:plan",
+            method="POST",
+            payload={
+                "intent_id": str(continuity_intent["id"]),
+                "variant_type": "BASE",
+                "branch_reason": "must reject stale anchor input",
+                "profile_version_id": continuity_profile_id,
+                "parameter_set": {"frames": 81, "steps": 20},
+                "seed_policy": "EXPLICIT",
+                "explicit_seed": 100,
+                "bindings": [
+                    {
+                        "role": "FIRST_FRAME",
+                        "media_version_id": str(continuity_anchor["extracted_media_version_id"]),
+                        "ordinal": 0,
+                    }
+                ],
+            },
+            headers=write_headers,
+        )
+        stale_transition = _http(
+            base_url,
+            "/api/v1/shot-transitions",
+            method="POST",
+            payload={
+                "from_shot_id": str(continuity_transition["from_shot_id"]),
+                "to_shot_id": str(continuity_transition["to_shot_id"]),
+                "constraint_type": "START_FROM_PREVIOUS_LAST",
+                "from_anchor_id": str(continuity_anchor["id"]),
+                "enforcement": "REQUIRED",
+            },
+            headers=write_headers,
         )
     finally:
         process.terminate()
@@ -216,8 +380,26 @@ def run(*, root: Path, port: int | None = None) -> dict[str, object]:
         _check("APPROVAL_AND_SELECTION_HISTORY_CREATED", approval["decision"] == "APPROVED" and selection["status"] == "SELECTED" and ready["status"] == "READY", {"review_id": approval["id"], "selection_id": selection["id"], "ready_status": ready["status"]}, "current formal approval enabled formal-selection preflight before the upstream change"),
         _check("UPSTREAM_SHOT_REVISION_CREATED", int(revised["revision_no"]) >= 2, {"shot_revision_id": revised["id"], "revision_no": revised["revision_no"]}, "new immutable ShotRevision is the upstream change"),
         _check("HISTORY_RETAINED", history is not None and str(history["media_version_id"]) == str(formal["id"]) and str(history["selection_type"]) == "FORMAL_SELECTION", dict(history) if history else None, "selection history is retained rather than deleted or rewritten"),
+        _check(
+            "CONTINUITY_OBJECTS_STALE_PROPAGATED",
+            bool(continuity_anchor_row and continuity_transition_row and continuity_variant_row)
+            and continuity_anchor_row is not None
+            and int(continuity_anchor_row[0]) == 1
+            and continuity_anchor_row["stale_reason"] == "approved_video_winner_changed"
+            and int(continuity_transition_row[0]) == 1
+            and continuity_transition_row["stale_reason"] == "approved_video_winner_changed"
+            and continuity_transition_row["compatibility_status"] == "STALE"
+            and int(continuity_variant_row[0]) == 1
+            and continuity_variant_row["stale_reason"] == "approved_video_winner_changed",
+            {"frame_anchor": continuity_anchor_row, "transition_constraint": continuity_transition_row, "generation_variant": continuity_variant_row},
+            "continuity winner change stales frame anchor, transition constraint, and dependent variant",
+        ),
+        _check("CONTINUITY_WINNER_REVIEW_RECORDED", continuity_approval["decision"] == "APPROVED" and continuity_approval["id"] != approval["id"], continuity_approval, "continuity scenario includes second winner review using preview impact hash"),
         _check("REVIEW_MARKED_STALE", bool(review_summary) and bool(review_summary[0].get("is_stale")) and review_summary[0].get("stale_reason") == "shot_revision_changed", review_summary, "loopback review context exposes the exact upstream stale reason"),
         _check("FORMAL_SELECTION_GATE_BLOCKED", loopback_stale.get("status") == 200 and plan.get("status") == "BLOCKED" and "LATEST_HUMAN_APPROVAL_REQUIRED" in blockers, {"response_status": loopback_stale.get("status"), "plan": plan}, "the current formal-selection gate cannot reuse the now-stale approval"),
+        _check("VARIANT_PARENT_STALE_BLOCKED", stale_parent.get("status") == 422 and _error_code(stale_parent) == "VARIANT_PARENT_STALE", stale_parent, "stale winner propagation must block derive-plan with VARIANT_PARENT_STALE"),
+        _check("FRAME_ANCHOR_STALE_INPUT_BLOCKED", stale_plan.get("status") == 422 and _error_code(stale_plan) == "FRAME_ANCHOR_STALE_INPUT", stale_plan, "stale continuity frame anchor must block new generation-variant plan with FRAME_ANCHOR_STALE_INPUT"),
+        _check("FRAME_ANCHOR_STALE_TRANSITION_BLOCKED", stale_transition.get("status") == 422 and _error_code(stale_transition) == "FRAME_ANCHOR_STALE", stale_transition, "stale continuity anchor must block shot-transition creation with FRAME_ANCHOR_STALE"),
         _check("STALE_AUDIT_RECORDED", audit is not None and str(audit["action"]) == "REVIEWS_MARKED_STALE", {"action": audit["action"] if audit else None}, "stale propagation has an immutable local audit event"),
         _check("LOOPBACK_ONLY", live.get("status") == 200 and base_url.startswith("http://127.0.0.1:"), {"endpoint": base_url, "health": live}, "only a temporary loopback FastAPI process was contacted"),
     ]

@@ -21,7 +21,9 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -219,10 +221,50 @@ def run(*, root: Path, port: int | None = None, keep_root: bool = True) -> dict[
             method="POST",
             headers={"X-Local-Instance-Token": instance_token},
         )
+        concurrent_expected_revision = api_expected
+        if isinstance(api_reorder.get("payload"), dict):
+            concurrent_expected_revision = int(api_reorder["payload"]["episode"]["revision"])
+
         api_stale = _http(
             base_url,
             f"/api/v1/projects/episodes/{target_episode['id']}:reorder?{urlencode({'display_order': 3, 'expected_revision': api_expected})}",
             method="POST",
+            headers={"X-Local-Instance-Token": instance_token},
+        )
+
+        def _api_reorder(payload_display_order: int) -> dict[str, object]:
+            return _http(
+                base_url,
+                f"/api/v1/projects/episodes/{target_episode['id']}:reorder?{urlencode({'display_order': payload_display_order, 'expected_revision': concurrent_expected_revision})}",
+                method="POST",
+                headers={"X-Local-Instance-Token": instance_token},
+            )
+
+        start_concurrent = threading.Event()
+
+        def _run_concurrent_reorder(payload_display_order: int) -> dict[str, object]:
+            start_concurrent.wait(timeout=10)
+            return _api_reorder(payload_display_order)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            future_a = pool.submit(_run_concurrent_reorder, 1)
+            future_b = pool.submit(_run_concurrent_reorder, 3)
+            start_concurrent.set()
+            concurrent_a = future_a.result(timeout=20)
+            concurrent_b = future_b.result(timeout=20)
+
+        concurrency_statuses = [concurrent_a.get("status"), concurrent_b.get("status")]
+        api_concurrent_reorder_success = sum(1 for item in concurrency_statuses if item == 200)
+        api_concurrent_conflict = sum(1 for item in concurrency_statuses if item == 409)
+        concurrent_payloads = [
+            {"display_order": 1, "response": concurrent_a},
+            {"display_order": 3, "response": concurrent_b},
+        ]
+
+        api_delete_probe = _http(
+            base_url,
+            f"/api/v1/projects/seasons/{first_season['id']}",
+            method="DELETE",
             headers={"X-Local-Instance-Token": instance_token},
         )
     finally:
@@ -242,7 +284,29 @@ def run(*, root: Path, port: int | None = None, keep_root: bool = True) -> dict[
         _check("SHOT_REORDER_HISTORY_STABLE", shot_ids_after == list(reversed(shot_ids_before)) and revision_ids_after == revisions_before and storyboard_result["plan_hash"] == storyboard_plan["plan_hash"], {"before_ids": shot_ids_before, "after_ids": shot_ids_after, "revision_ids_stable": revision_ids_after == revisions_before, "plan_hash": storyboard_result["plan_hash"]}, "storyboard reorder preserves shot UUID and current revision references"),
         _check("LOOPBACK_API_READY", live.get("status") == 200, live, "real FastAPI process on 127.0.0.1"),
         _check("LOOPBACK_DOMAIN_READS", season_read.get("status") == 200 and episode_read.get("status") == 200 and scene_read.get("status") == 200 and shot_read.get("status") == 200, {"seasons": season_read.get("status"), "episodes": episode_read.get("status"), "scenes": scene_read.get("status"), "shots": shot_read.get("status")}, "API reads expose the same isolated data"),
-        _check("LOOPBACK_REORDER_AND_STALE_409", bootstrap.get("status") == 200 and bool(instance_token) and api_reorder.get("status") == 200 and api_stale.get("status") == 409 and isinstance(api_stale.get("payload"), dict) and api_stale["payload"].get("error", {}).get("code") == "REVISION_CONFLICT", {"bootstrap": bootstrap, "reorder": api_reorder, "stale": api_stale}, "API preserves optimistic concurrency contract after local session bootstrap"),
+        _check(
+            "LOOPBACK_REORDER_AND_STALE_409",
+            bootstrap.get("status") == 200
+            and bool(instance_token)
+            and api_reorder.get("status") == 200
+            and api_stale.get("status") == 409
+            and isinstance(api_stale.get("payload"), dict)
+            and api_stale["payload"].get("error", {}).get("code") == "REVISION_CONFLICT",
+            {"bootstrap": bootstrap, "reorder": api_reorder, "stale": api_stale},
+            "API preserves optimistic concurrency contract after local session bootstrap",
+        ),
+        _check(
+            "LOOPBACK_EPISODE_REORDER_CONCURRENCY",
+            api_concurrent_reorder_success == 1 and api_concurrent_conflict >= 1,
+            {"responses": concurrency_statuses, "details": concurrent_payloads},
+            "Two concurrent reorder calls with same expected_revision should produce one successful write and one conflict",
+        ),
+        _check(
+            "DESTRUCTIVE_CHILD_DELETE_PROBE",
+            api_delete_probe.get("status") in (404, 405),
+            {"status": api_delete_probe.get("status"), "payload": api_delete_probe.get("payload")},
+            "Season delete API remains unimplemented in this bounded run; FR-PRJ-004 remains PARTIAL pending delete/archive implementation",
+        ),
     ]
     result: dict[str, object] = {
         "schema_version": "g10.fr-prj-004.windows-uat.v1",
