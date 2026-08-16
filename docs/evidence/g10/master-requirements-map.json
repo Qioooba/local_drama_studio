@@ -322,6 +322,12 @@
       "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py"]
     },
     {
+      "id": "TC-DEL-006",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "scripts/delivery_local_uat.py"]
+    },
+    {
       "id": "FR-IMG-001",
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json"],

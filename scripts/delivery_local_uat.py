@@ -173,6 +173,32 @@ def run(artifact: Path, sandbox_root: Path) -> dict[str, Any]:
             200,
             "select local delivery target",
         )["target"]
+        target_v2 = _expect(
+            client.post(
+                f"/api/v1/projects/{project_id}/delivery-targets/{target['id']}/versions",
+                json={
+                    "transport": "LOCAL_FILESYSTEM",
+                    "spec": {
+                        **target_spec,
+                        "path_rel": "06_delivery/本地 交付 UAT v2",
+                        "width": 640,
+                        "height": 360,
+                        "fps": 30,
+                        "bitrate": "2M",
+                        "subtitles": "BURN_IN",
+                    },
+                },
+            ),
+            201,
+            "create second local delivery target version",
+        )["target"]
+        selected_target_v2 = _expect(
+            client.post(f"/api/v1/delivery-target-versions/{target_v2['version_id']}:select", params={"project_id": project_id}),
+            200,
+            "select second local delivery target version",
+        )["target"]
+        if selected_target_v2["version_id"] == selected_target["version_id"] or selected_target_v2["version_no"] != 2:
+            raise RuntimeError("target version selection did not produce an independent v2")
 
         brand = _expect(
             client.post(
@@ -245,7 +271,7 @@ def run(artifact: Path, sandbox_root: Path) -> dict[str, Any]:
         delivery = _expect(
             client.post(
                 "/api/v1/delivery-packages",
-                json={"episode_render_version_id": render["id"], "target_version_id": selected_target["version_id"], **control_ids},
+                json={"episode_render_version_id": render["id"], "target_version_id": selected_target_v2["version_id"], **control_ids},
             ),
             201,
             "build delivery package",
@@ -326,7 +352,8 @@ def run(artifact: Path, sandbox_root: Path) -> dict[str, Any]:
             "pre_approval_delivery_gate": {"status_code": blocked.status_code, "error_code": blocked_code},
             "failed_compliance_preflight": {"status_code": failed_preflight.status_code, "error_code": failed_preflight_payload.get("error", {}).get("code")},
             "latest_render_review": render_review,
-            "delivery_target": selected_target,
+            "delivery_target": selected_target_v2,
+            "delivery_target_versions": {"v1": selected_target, "v2": selected_target_v2},
             "controls": {"brand_kit": brand, "watermark_profile": watermark, "failing_policy": failing_policy, "passing_policy": passing_policy},
             "delivery": delivery,
             "manifest": {
@@ -356,7 +383,7 @@ def run(artifact: Path, sandbox_root: Path) -> dict[str, Any]:
             "交付候选仍保留 HUMAN/PLATFORM 审核责任边界；本次仅验证整集最新批准门禁与本地生命周期，不伪造最终发布签字。",
             "LOCAL_ONLY 本机运行未证明用户自有模型的许可范围；模型仍只作为本机引用，不打包、不上传。",
         ],
-        "related_requirements": ["FR-DEL-001", "FR-DEL-002", "FR-DEL-003", "FR-DEL-004", "FR-PST-002", "FR-PST-003"],
+        "related_requirements": ["FR-DEL-001", "FR-DEL-002", "FR-DEL-003", "FR-DEL-004", "TC-DEL-006", "FR-PST-002", "FR-PST-003"],
     }
 
 

@@ -1,7 +1,7 @@
 {
   "schema_version": "g10.delivery_local_windows_uat.v1",
   "status": "PARTIAL",
-  "observed_at": "2026-08-16T07:29:57.143102+00:00",
+  "observed_at": "2026-08-16T08:31:33.582726+00:00",
   "scope": "真实 H3 本地媒体进入隔离 Windows/F 盘路径的整集 Timeline -> Delivery 生命周期",
   "source": {
     "path": "F:\\AI_Projects\\h3\\local_drama_studio\\work\\comfy-production\\output\\family_redfruit_series_001\\uat\\SHOT_001_seed_20260816_00001_.mp4",
@@ -9,8 +9,8 @@
     "bytes": 505208
   },
   "isolated": {
-    "sandbox_root": "F:\\AI_Projects\\h3\\local_drama_studio\\work\\delivery-local-uat-20260816-v9",
-    "project_id": "a434dd70-0870-4d12-84c8-01ba9c8be971",
+    "sandbox_root": "F:\\AI_Projects\\h3\\local_drama_studio\\work\\delivery-local-uat-20260816-v10",
+    "project_id": "cdb5864e-b686-472a-9e9a-ddeee79421b3",
     "project_root_rel": "h3_delivery_local_uat",
     "database_integrity": "ok",
     "production_database_contacted": false,
@@ -20,9 +20,9 @@
   },
   "checks": {
     "formal_media_machine_qc": {
-      "id": "ab0a34cc-1990-43ed-a277-750478e2d997",
+      "id": "75b11c1b-2bfd-4dae-8136-93b17f030dfd",
       "subject_type": "MEDIA_VERSION",
-      "subject_id": "6cd52f74-5f3c-4412-8c29-8db952a4cf5b",
+      "subject_id": "f6787c3c-1173-4a85-9812-4f5e0b649963",
       "policy_version": "g6_formal_video_qc_v1",
       "status": "PASS",
       "results": [
@@ -79,23 +79,23 @@
       ]
     },
     "formal_media_selection": {
-      "id": "b9037c5f-e728-4cf1-bded-646d08c25c70",
-      "media_asset_id": "e8083375-a9ef-4cec-aa96-504651f41793",
-      "media_version_id": "6cd52f74-5f3c-4412-8c29-8db952a4cf5b",
+      "id": "bbcd71c6-205f-43f3-99b3-b8bb8fa00b3e",
+      "media_asset_id": "d9ab739e-c60d-49dc-870a-4d5a982e939b",
+      "media_version_id": "f6787c3c-1173-4a85-9812-4f5e0b649963",
       "selection_type": "FORMAL_SELECTION",
       "status": "SELECTED"
     },
     "formal_media_review": {
-      "id": "00e66030-bbc9-4e29-aed7-dd51139e6eff",
+      "id": "c15ac421-dd4c-4b34-a983-4850b6f1999e",
       "subject_type": "MEDIA_VERSION",
-      "subject_id": "6cd52f74-5f3c-4412-8c29-8db952a4cf5b",
+      "subject_id": "f6787c3c-1173-4a85-9812-4f5e0b649963",
       "decision": "APPROVED",
       "is_stale": false,
       "subject_revision": 2,
       "continuity_impact": {
-        "media_asset_id": "e8083375-a9ef-4cec-aa96-504651f41793",
+        "media_asset_id": "d9ab739e-c60d-49dc-870a-4d5a982e939b",
         "media_asset_revision": 2,
-        "new_approved_media_version_id": "6cd52f74-5f3c-4412-8c29-8db952a4cf5b",
+        "new_approved_media_version_id": "f6787c3c-1173-4a85-9812-4f5e0b649963",
         "old_approved_media_version_id": null,
         "shot_id": null,
         "frame_anchor_ids": [],
@@ -106,17 +106,17 @@
         "frame_anchor_count": 0,
         "transition_count": 0,
         "variant_count": 0,
-        "plan_hash": "30530690426a4e2701f9869dd8e8b18be0c99476e5c99d6c124b6ba6438e0b48"
+        "plan_hash": "ce8f1bb5df6b568fcc02a1dc91537043c701c40be7f91a302c7a69fdd04ba673"
       }
     },
     "formal_selection_preflight": {
-      "project_id": "a434dd70-0870-4d12-84c8-01ba9c8be971",
+      "project_id": "cdb5864e-b686-472a-9e9a-ddeee79421b3",
       "status": "READY",
-      "plan_hash": "411447ce4e2a6c150caeddf6dd34f35cc2076e8dfb753580d92078be97908568",
+      "plan_hash": "34b1709c48fcb4db1ac01b3efbd88b52eb1699d0cad40812d666dc17d8b9385b",
       "items": [
         {
-          "media_version_id": "6cd52f74-5f3c-4412-8c29-8db952a4cf5b",
-          "media_asset_id": "e8083375-a9ef-4cec-aa96-504651f41793",
+          "media_version_id": "f6787c3c-1173-4a85-9812-4f5e0b649963",
+          "media_asset_id": "d9ab739e-c60d-49dc-870a-4d5a982e939b",
           "source_revision": 3,
           "status": "READY",
           "blockers": []
@@ -125,35 +125,35 @@
       "would_mutate": false
     },
     "formal_selection_commit": {
-      "project_id": "a434dd70-0870-4d12-84c8-01ba9c8be971",
+      "project_id": "cdb5864e-b686-472a-9e9a-ddeee79421b3",
       "status": "COMMITTED",
       "items": [
         {
-          "id": "bacac7b6-0e48-4664-af33-b14b18b23c4b",
-          "media_asset_id": "e8083375-a9ef-4cec-aa96-504651f41793",
-          "media_version_id": "6cd52f74-5f3c-4412-8c29-8db952a4cf5b",
+          "id": "f659f75a-86d0-4d6f-bf05-e45b9f80bd26",
+          "media_asset_id": "d9ab739e-c60d-49dc-870a-4d5a982e939b",
+          "media_version_id": "f6787c3c-1173-4a85-9812-4f5e0b649963",
           "selection_type": "FORMAL_SELECTION",
           "status": "SELECTED"
         }
       ]
     },
     "timeline_revision": {
-      "id": "330919e7-9be5-4520-ad39-9d36ed2f260b",
-      "episode_id": "98c67d90-b38d-4c3c-ad7b-2b6563ba07fa",
+      "id": "ffc4c8f0-2d09-4867-9762-6143d9db0012",
+      "episode_id": "cd8e97fe-241c-4ff0-a76f-9845dc230854",
       "revision_no": 1,
-      "content_json": "[{\"end_us\":5167000,\"media_version_id\":\"6cd52f74-5f3c-4412-8c29-8db952a4cf5b\",\"parameters\":{\"source\":\"formal_selection\",\"source_sha256\":\"167b24c1550e0bac4b84603e2197378132f80630d13dcdfd5dbeffc999b570bc\"},\"start_us\":0,\"track_type\":\"VIDEO\"}]",
-      "input_snapshot_json": "{\"formal_selection_id\":\"bacac7b6-0e48-4664-af33-b14b18b23c4b\",\"media_version_id\":\"6cd52f74-5f3c-4412-8c29-8db952a4cf5b\",\"source\":\"h3_formal_pipeline_uat\"}",
-      "revision_hash": "f9be140d7938bdfba56b7d25a2ab4027c21f69cbe3445375fb4bda8f04a0ad11",
+      "content_json": "[{\"end_us\":5167000,\"media_version_id\":\"f6787c3c-1173-4a85-9812-4f5e0b649963\",\"parameters\":{\"source\":\"formal_selection\",\"source_sha256\":\"167b24c1550e0bac4b84603e2197378132f80630d13dcdfd5dbeffc999b570bc\"},\"start_us\":0,\"track_type\":\"VIDEO\"}]",
+      "input_snapshot_json": "{\"formal_selection_id\":\"f659f75a-86d0-4d6f-bf05-e45b9f80bd26\",\"media_version_id\":\"f6787c3c-1173-4a85-9812-4f5e0b649963\",\"source\":\"h3_formal_pipeline_uat\"}",
+      "revision_hash": "c6ab5ea0dd05cf334d3a035ce39ff50b7804003ce94de0734d52041bc4c81a81",
       "status": "DRAFT",
-      "created_at": "2026-08-16T07:29:55.452916+00:00",
-      "updated_at": "2026-08-16T07:29:55.452916+00:00",
+      "created_at": "2026-08-16T08:31:31.922112+00:00",
+      "updated_at": "2026-08-16T08:31:31.922112+00:00",
       "created_by": "local-user",
       "revision": 1,
       "schema_version": "v2",
       "content": [
         {
           "end_us": 5167000,
-          "media_version_id": "6cd52f74-5f3c-4412-8c29-8db952a4cf5b",
+          "media_version_id": "f6787c3c-1173-4a85-9812-4f5e0b649963",
           "parameters": {
             "source": "formal_selection",
             "source_sha256": "167b24c1550e0bac4b84603e2197378132f80630d13dcdfd5dbeffc999b570bc"
@@ -163,16 +163,16 @@
         }
       ],
       "input_snapshot": {
-        "formal_selection_id": "bacac7b6-0e48-4664-af33-b14b18b23c4b",
-        "media_version_id": "6cd52f74-5f3c-4412-8c29-8db952a4cf5b",
+        "formal_selection_id": "f659f75a-86d0-4d6f-bf05-e45b9f80bd26",
+        "media_version_id": "f6787c3c-1173-4a85-9812-4f5e0b649963",
         "source": "h3_formal_pipeline_uat"
       },
       "items": [
         {
-          "id": "07c50b34-e53e-40fa-bdfd-aa451fd65f92",
-          "timeline_revision_id": "330919e7-9be5-4520-ad39-9d36ed2f260b",
+          "id": "48199e8e-515a-41b0-a427-8d9503445fb4",
+          "timeline_revision_id": "ffc4c8f0-2d09-4867-9762-6143d9db0012",
           "track_type": "VIDEO",
-          "media_version_id": "6cd52f74-5f3c-4412-8c29-8db952a4cf5b",
+          "media_version_id": "f6787c3c-1173-4a85-9812-4f5e0b649963",
           "start_us": 0,
           "end_us": 5167000,
           "parameters_json": "{\"source\":\"formal_selection\",\"source_sha256\":\"167b24c1550e0bac4b84603e2197378132f80630d13dcdfd5dbeffc999b570bc\"}",
@@ -184,16 +184,16 @@
       ]
     },
     "episode_render": {
-      "id": "a6fc030e-c956-44f1-897e-38bfe129b0f1",
-      "episode_id": "98c67d90-b38d-4c3c-ad7b-2b6563ba07fa",
-      "timeline_revision_id": "330919e7-9be5-4520-ad39-9d36ed2f260b",
-      "rel_path": "05_timelines/renders/episode-EPISODE_001-ae1038d937584b62a3e63eaf5956b3b4.mp4",
+      "id": "fe143e6b-3167-4c95-a82c-11521f389689",
+      "episode_id": "cd8e97fe-241c-4ff0-a76f-9845dc230854",
+      "timeline_revision_id": "ffc4c8f0-2d09-4867-9762-6143d9db0012",
+      "rel_path": "05_timelines/renders/episode-EPISODE_001-03964a15c39a414792cd4630016c174f.mp4",
       "sha256": "99ef05acbff797caf4dc16e2f181bb3983f3cba069156b1f1d044094b4f3dba6",
       "byte_size": 347040,
       "probe": {
         "duration_ms": 5216,
         "format": {
-          "filename": "F:\\AI_Projects\\h3\\local_drama_studio\\work\\delivery-local-uat-20260816-v9\\projects\\h3_delivery_local_uat\\05_timelines\\renders\\episode-EPISODE_001-ae1038d937584b62a3e63eaf5956b3b4.mp4",
+          "filename": "F:\\AI_Projects\\h3\\local_drama_studio\\work\\delivery-local-uat-20260816-v10\\projects\\h3_delivery_local_uat\\05_timelines\\renders\\episode-EPISODE_001-03964a15c39a414792cd4630016c174f.mp4",
           "nb_streams": 2,
           "nb_programs": 0,
           "nb_stream_groups": 0,
@@ -327,16 +327,16 @@
       },
       "input_snapshot": {
         "schema_version": "localdrama.episode-render-input.v1",
-        "timeline_revision_id": "330919e7-9be5-4520-ad39-9d36ed2f260b",
-        "timeline_revision_hash": "f9be140d7938bdfba56b7d25a2ab4027c21f69cbe3445375fb4bda8f04a0ad11",
+        "timeline_revision_id": "ffc4c8f0-2d09-4867-9762-6143d9db0012",
+        "timeline_revision_hash": "c6ab5ea0dd05cf334d3a035ce39ff50b7804003ce94de0734d52041bc4c81a81",
         "timeline_input_snapshot": {
-          "formal_selection_id": "bacac7b6-0e48-4664-af33-b14b18b23c4b",
-          "media_version_id": "6cd52f74-5f3c-4412-8c29-8db952a4cf5b",
+          "formal_selection_id": "f659f75a-86d0-4d6f-bf05-e45b9f80bd26",
+          "media_version_id": "f6787c3c-1173-4a85-9812-4f5e0b649963",
           "source": "h3_formal_pipeline_uat"
         },
         "items": [
           {
-            "media_version_id": "6cd52f74-5f3c-4412-8c29-8db952a4cf5b",
+            "media_version_id": "f6787c3c-1173-4a85-9812-4f5e0b649963",
             "sha256": "167b24c1550e0bac4b84603e2197378132f80630d13dcdfd5dbeffc999b570bc",
             "byte_size": 505208,
             "start_us": 0,
@@ -358,7 +358,7 @@
           "-safe",
           "0",
           "-i",
-          "F:\\AI_Projects\\h3\\local_drama_studio\\work\\delivery-local-uat-20260816-v9\\projects\\h3_delivery_local_uat\\05_timelines\\renders\\.partial-f17815d1e8184df6a1e0c2e2655369d0.concat.txt",
+          "F:\\AI_Projects\\h3\\local_drama_studio\\work\\delivery-local-uat-20260816-v10\\projects\\h3_delivery_local_uat\\05_timelines\\renders\\.partial-8aff3516d81e4200b98c0f8d26ad9f4d.concat.txt",
           "-c:v",
           "libx264",
           "-preset",
@@ -368,11 +368,11 @@
           "-movflags",
           "+faststart",
           "-y",
-          "F:\\AI_Projects\\h3\\local_drama_studio\\work\\delivery-local-uat-20260816-v9\\projects\\h3_delivery_local_uat\\05_timelines\\renders\\episode-EPISODE_001-ae1038d937584b62a3e63eaf5956b3b4.mp4"
+          "F:\\AI_Projects\\h3\\local_drama_studio\\work\\delivery-local-uat-20260816-v10\\projects\\h3_delivery_local_uat\\05_timelines\\renders\\episode-EPISODE_001-03964a15c39a414792cd4630016c174f.mp4"
         ],
         "returncode": 0
       },
-      "execution_log": "{\"stderr_tail\": \"4,m4a,3gp,3g2,mj2 @ 0000022097cf4980] Auto-inserting h264_mp4toannexb bitstream filter\\nInput #0, concat, from 'F:\\\\AI_Projects\\\\h3\\\\local_drama_studio\\\\work\\\\delivery-local-uat-20260816-v9\\\\projects\\\\h3_delivery_local_uat\\\\05_timelines\\\\renders\\\\.partial-f17815d1e8184df6a1e0c2e2655369d0.concat.txt':\\n  Duration: N/A, start: -0.032000, bitrate: 765 kb/s\\n  Stream #0:0(und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(progressive), 480x832, 637 kb/s, 24 fps, 24 tbr, 12288 tbn\\n    Metadata:\\n      handler_name    : VideoHandler\\n  Stream #0:1(und): Audio: aac (LC) (mp4a / 0x6134706D), 32000 Hz, stereo, fltp, 128 kb/s, start -0.032000\\n    Metadata:\\n      handler_name    : SoundHandler\\nStream mapping:\\n  Stream #0:0 -> #0:0 (h264 (native) -> h264 (libx264))\\n  Stream #0:1 -> #0:1 (aac (native) -> aac (native))\\nPress [q] to stop, [?] for help\\n[libx264 @ 000002209809af40] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2\\n[libx264 @ 000002209809af40] profile High, level 3.0, 4:2:0, 8-bit\\n[libx264 @ 000002209809af40] 264 - core 165 r3223 0480cb0 - H.264/MPEG-4 AVC codec - Copyleft 2003-2025 - http://www.videolan.org/x264.html - options: cabac=1 ref=1 deblock=1:0:0 analyse=0x3:0x113 me=hex subme=2 psy=1 psy_rd=1.00:0.00 mixed_ref=0 me_range=16 chroma_me=1 trellis=0 8x8dct=1 cqm=0 deadzone=21,11 fast_pskip=1 chroma_qp_offset=0 threads=26 lookahead_threads=6 sliced_threads=0 nr=0 decimate=1 interlaced=0 bluray_compat=0 constrained_intra=0 bframes=3 b_pyramid=2 b_adapt=1 b_bias=0 direct=1 weightb=1 open_gop=0 weightp=1 keyint=250 keyint_min=24 scenecut=40 intra_refresh=0 rc_lookahead=10 rc=crf mbtree=1 crf=23.0 qcomp=0.60 qpmin=0 qpmax=69 qpstep=4 ip_ratio=1.40 aq=1:1.00\\nOutput #0, mp4, to 'F:\\\\AI_Projects\\\\h3\\\\local_drama_studio\\\\work\\\\delivery-local-uat-20260816-v9\\\\projects\\\\h3_delivery_local_uat\\\\05_timelines\\\\renders\\\\episode-EPISODE_001-ae1038d937584b62a3e63eaf5956b3b4.mp4':\\n  Metadata:\\n    encoder         : Lavf62.12.102\\n  Stream #0:0(und): Video: h264 (avc1 / 0x31637661), yuv420p(tv, progressive), 480x832, q=2-31, 24 fps, 12288 tbn\\n    Metadata:\\n      encoder         : Lavc62.28.102 libx264\\n      handler_name    : VideoHandler\\n    Side data:\\n      CPB properties: bitrate max/min/avg: 0/0/0 buffer size: 0 vbv_delay: N/A\\n  Stream #0:1(und): Audio: aac (LC) (mp4a / 0x6134706D), 32000 Hz, stereo, fltp, 128 kb/s\\n    Metadata:\\n      encoder         : Lavc62.28.102 aac\\n      handler_name    : SoundHandler\\n[mp4 @ 0000022097d10ac0] Starting second pass: moving the moov atom to the beginning of the file\\n[out#0/mp4 @ 0000022097d01900] video:253KiB audio:81KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 1.589532%\\nframe=  124 fps=0.0 q=-1.0 Lsize=     339KiB time=00:00:05.12 bitrate= 541.7kbits/s speed=21.1x elapsed=0:00:00.24    \\n[libx264 @ 000002209809af40] frame I:1     Avg QP:21.28  size: 48002\\n[libx264 @ 000002209809af40] frame P:35    Avg QP:21.92  size:  5642\\n[libx264 @ 000002209809af40] frame B:88    Avg QP:23.45  size:   141\\n[libx264 @ 000002209809af40] consecutive B-frames:  2.4%  8.1%  2.4% 87.1%\\n[libx264 @ 000002209809af40] mb I  I16..4:  7.2% 35.1% 57.6%\\n[libx264 @ 000002209809af40] mb P  I16..4:  0.4%  0.6%  0.8%  P16..4: 29.9%  3.6%  3.0%  0.0%  0.0%    skip:61.8%\\n[libx264 @ 000002209809af40] mb B  I16..4:  0.0%  0.0%  0.0%  B16..8:  1.3%  0.1%  0.0%  direct: 1.1%  skip:97.6%  L0:46.1% L1:51.4% BI: 2.5%\\n[libx264 @ 000002209809af40] 8x8 transform intra:34.8% inter:30.1%\\n[libx264 @ 000002209809af40] coded y,uvDC,uvAC intra: 81.5% 65.2% 13.3% inter: 4.2% 2.9% 0.0%\\n[libx264 @ 000002209809af40] i16 v,h,dc,p: 31% 27% 32% 10%\\n[libx264 @ 000002209809af40] i8 v,h,dc,ddl,ddr,vr,hd,vl,hu: 19% 19% 23%  8%  6%  4%  6%  5%  9%\\n[libx264 @ 000002209809af40] i4 v,h,dc,ddl,ddr,vr,hd,vl,hu: 18% 20% 16%  7%  9%  5% 10%  5% 10%\\n[libx264 @ 000002209809af40] i8c dc,h,v,p: 46% 26% 25%  3%\\n[libx264 @ 000002209809af40] Weighted P-Frames: Y:0.0% UV:0.0%\\n[libx264 @ 000002209809af40] kb/s:399.30\\n[aac @ 000002209a2cd280] Qavg: 715.622\\n\", \"stdout_tail\": \"\"}",
+      "execution_log": "{\"stderr_tail\": \"m4a,3gp,3g2,mj2 @ 0000018dd2332d00] Auto-inserting h264_mp4toannexb bitstream filter\\nInput #0, concat, from 'F:\\\\AI_Projects\\\\h3\\\\local_drama_studio\\\\work\\\\delivery-local-uat-20260816-v10\\\\projects\\\\h3_delivery_local_uat\\\\05_timelines\\\\renders\\\\.partial-8aff3516d81e4200b98c0f8d26ad9f4d.concat.txt':\\n  Duration: N/A, start: -0.032000, bitrate: 765 kb/s\\n  Stream #0:0(und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(progressive), 480x832, 637 kb/s, 24 fps, 24 tbr, 12288 tbn\\n    Metadata:\\n      handler_name    : VideoHandler\\n  Stream #0:1(und): Audio: aac (LC) (mp4a / 0x6134706D), 32000 Hz, stereo, fltp, 128 kb/s, start -0.032000\\n    Metadata:\\n      handler_name    : SoundHandler\\nStream mapping:\\n  Stream #0:0 -> #0:0 (h264 (native) -> h264 (libx264))\\n  Stream #0:1 -> #0:1 (aac (native) -> aac (native))\\nPress [q] to stop, [?] for help\\n[libx264 @ 0000018dd237e1c0] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2\\n[libx264 @ 0000018dd237e1c0] profile High, level 3.0, 4:2:0, 8-bit\\n[libx264 @ 0000018dd237e1c0] 264 - core 165 r3223 0480cb0 - H.264/MPEG-4 AVC codec - Copyleft 2003-2025 - http://www.videolan.org/x264.html - options: cabac=1 ref=1 deblock=1:0:0 analyse=0x3:0x113 me=hex subme=2 psy=1 psy_rd=1.00:0.00 mixed_ref=0 me_range=16 chroma_me=1 trellis=0 8x8dct=1 cqm=0 deadzone=21,11 fast_pskip=1 chroma_qp_offset=0 threads=26 lookahead_threads=6 sliced_threads=0 nr=0 decimate=1 interlaced=0 bluray_compat=0 constrained_intra=0 bframes=3 b_pyramid=2 b_adapt=1 b_bias=0 direct=1 weightb=1 open_gop=0 weightp=1 keyint=250 keyint_min=24 scenecut=40 intra_refresh=0 rc_lookahead=10 rc=crf mbtree=1 crf=23.0 qcomp=0.60 qpmin=0 qpmax=69 qpstep=4 ip_ratio=1.40 aq=1:1.00\\nOutput #0, mp4, to 'F:\\\\AI_Projects\\\\h3\\\\local_drama_studio\\\\work\\\\delivery-local-uat-20260816-v10\\\\projects\\\\h3_delivery_local_uat\\\\05_timelines\\\\renders\\\\episode-EPISODE_001-03964a15c39a414792cd4630016c174f.mp4':\\n  Metadata:\\n    encoder         : Lavf62.12.102\\n  Stream #0:0(und): Video: h264 (avc1 / 0x31637661), yuv420p(tv, progressive), 480x832, q=2-31, 24 fps, 12288 tbn\\n    Metadata:\\n      encoder         : Lavc62.28.102 libx264\\n      handler_name    : VideoHandler\\n    Side data:\\n      CPB properties: bitrate max/min/avg: 0/0/0 buffer size: 0 vbv_delay: N/A\\n  Stream #0:1(und): Audio: aac (LC) (mp4a / 0x6134706D), 32000 Hz, stereo, fltp, 128 kb/s\\n    Metadata:\\n      encoder         : Lavc62.28.102 aac\\n      handler_name    : SoundHandler\\n[mp4 @ 0000018dd454ec00] Starting second pass: moving the moov atom to the beginning of the file\\n[out#0/mp4 @ 0000018dd236b6c0] video:253KiB audio:81KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 1.589532%\\nframe=  124 fps=0.0 q=-1.0 Lsize=     339KiB time=00:00:05.12 bitrate= 541.7kbits/s speed=19.6x elapsed=0:00:00.26    \\n[libx264 @ 0000018dd237e1c0] frame I:1     Avg QP:21.28  size: 48002\\n[libx264 @ 0000018dd237e1c0] frame P:35    Avg QP:21.92  size:  5642\\n[libx264 @ 0000018dd237e1c0] frame B:88    Avg QP:23.45  size:   141\\n[libx264 @ 0000018dd237e1c0] consecutive B-frames:  2.4%  8.1%  2.4% 87.1%\\n[libx264 @ 0000018dd237e1c0] mb I  I16..4:  7.2% 35.1% 57.6%\\n[libx264 @ 0000018dd237e1c0] mb P  I16..4:  0.4%  0.6%  0.8%  P16..4: 29.9%  3.6%  3.0%  0.0%  0.0%    skip:61.8%\\n[libx264 @ 0000018dd237e1c0] mb B  I16..4:  0.0%  0.0%  0.0%  B16..8:  1.3%  0.1%  0.0%  direct: 1.1%  skip:97.6%  L0:46.1% L1:51.4% BI: 2.5%\\n[libx264 @ 0000018dd237e1c0] 8x8 transform intra:34.8% inter:30.1%\\n[libx264 @ 0000018dd237e1c0] coded y,uvDC,uvAC intra: 81.5% 65.2% 13.3% inter: 4.2% 2.9% 0.0%\\n[libx264 @ 0000018dd237e1c0] i16 v,h,dc,p: 31% 27% 32% 10%\\n[libx264 @ 0000018dd237e1c0] i8 v,h,dc,ddl,ddr,vr,hd,vl,hu: 19% 19% 23%  8%  6%  4%  6%  5%  9%\\n[libx264 @ 0000018dd237e1c0] i4 v,h,dc,ddl,ddr,vr,hd,vl,hu: 18% 20% 16%  7%  9%  5% 10%  5% 10%\\n[libx264 @ 0000018dd237e1c0] i8c dc,h,v,p: 46% 26% 25%  3%\\n[libx264 @ 0000018dd237e1c0] Weighted P-Frames: Y:0.0% UV:0.0%\\n[libx264 @ 0000018dd237e1c0] kb/s:399.30\\n[aac @ 0000018dd4507d40] Qavg: 715.622\\n\", \"stdout_tail\": \"\"}",
       "revision": 1,
       "status": "VERIFIED"
     },
@@ -385,36 +385,76 @@
       "error_code": "COMPLIANCE_PREFLIGHT_FAILED"
     },
     "latest_render_review": {
-      "id": "76453ac4-b86e-4bc4-bd21-2f3c8ec98457",
+      "id": "1d21acbb-ac7d-454f-b884-77427ec470b9",
       "subject_type": "EPISODE_RENDER_VERSION",
-      "subject_id": "a6fc030e-c956-44f1-897e-38bfe129b0f1",
+      "subject_id": "fe143e6b-3167-4c95-a82c-11521f389689",
       "decision": "APPROVED",
       "is_stale": false,
       "subject_revision": 1
     },
     "delivery_target": {
-      "id": "c08d30e9-10f4-4262-83ce-6ce4e743f688",
-      "version_id": "4ac6fa99-3821-4e88-bbe4-e808f07a6eaf",
-      "project_id": "a434dd70-0870-4d12-84c8-01ba9c8be971",
+      "id": "9838d41b-2ad9-4987-95a7-2566f61fba68",
+      "version_id": "7f80e78d-e60c-4351-9903-487317f2dbac",
+      "project_id": "cdb5864e-b686-472a-9e9a-ddeee79421b3",
       "code": "windows-local-uat",
       "title": "Windows 本地交付 UAT",
       "transport": "LOCAL_FILESYSTEM",
       "spec": {
         "audio_codec": "AAC",
-        "bitrate": "1M",
-        "fps": 24,
-        "height": 832,
-        "path_rel": "06_delivery/本地 交付 UAT",
-        "subtitles": "SIDECAR",
-        "width": 480
+        "bitrate": "2M",
+        "fps": 30,
+        "height": 360,
+        "path_rel": "06_delivery/本地 交付 UAT v2",
+        "subtitles": "BURN_IN",
+        "width": 640
       },
-      "version_no": 1,
+      "version_no": 2,
       "status": "ACTIVE"
+    },
+    "delivery_target_versions": {
+      "v1": {
+        "id": "9838d41b-2ad9-4987-95a7-2566f61fba68",
+        "version_id": "86b12e67-b045-404d-b875-6588affdd517",
+        "project_id": "cdb5864e-b686-472a-9e9a-ddeee79421b3",
+        "code": "windows-local-uat",
+        "title": "Windows 本地交付 UAT",
+        "transport": "LOCAL_FILESYSTEM",
+        "spec": {
+          "audio_codec": "AAC",
+          "bitrate": "1M",
+          "fps": 24,
+          "height": 832,
+          "path_rel": "06_delivery/本地 交付 UAT",
+          "subtitles": "SIDECAR",
+          "width": 480
+        },
+        "version_no": 1,
+        "status": "ACTIVE"
+      },
+      "v2": {
+        "id": "9838d41b-2ad9-4987-95a7-2566f61fba68",
+        "version_id": "7f80e78d-e60c-4351-9903-487317f2dbac",
+        "project_id": "cdb5864e-b686-472a-9e9a-ddeee79421b3",
+        "code": "windows-local-uat",
+        "title": "Windows 本地交付 UAT",
+        "transport": "LOCAL_FILESYSTEM",
+        "spec": {
+          "audio_codec": "AAC",
+          "bitrate": "2M",
+          "fps": 30,
+          "height": 360,
+          "path_rel": "06_delivery/本地 交付 UAT v2",
+          "subtitles": "BURN_IN",
+          "width": 640
+        },
+        "version_no": 2,
+        "status": "ACTIVE"
+      }
     },
     "controls": {
       "brand_kit": {
-        "id": "560f48ed-859e-478e-99d3-61f868819ebd",
-        "project_id": "a434dd70-0870-4d12-84c8-01ba9c8be971",
+        "id": "d6b985a4-e65e-47c9-b53f-c86894d89ae7",
+        "project_id": "cdb5864e-b686-472a-9e9a-ddeee79421b3",
         "code": "series",
         "title": "H3 本地系列 v1",
         "version_no": 1,
@@ -426,8 +466,8 @@
         "status": "ACTIVE"
       },
       "watermark_profile": {
-        "id": "114d0a92-9664-4438-9199-d86082e32a32",
-        "project_id": "a434dd70-0870-4d12-84c8-01ba9c8be971",
+        "id": "4b6bc515-52a4-40dd-b242-b14d1fe877ef",
+        "project_id": "cdb5864e-b686-472a-9e9a-ddeee79421b3",
         "code": "corner",
         "title": "Local Study watermark",
         "version_no": 1,
@@ -442,8 +482,8 @@
         }
       },
       "failing_policy": {
-        "id": "5f6c2845-5efe-4a7f-8605-542daaa2d077",
-        "project_id": "a434dd70-0870-4d12-84c8-01ba9c8be971",
+        "id": "65fb56ed-841d-4f3a-b3c2-e6b3d0a69d7f",
+        "project_id": "cdb5864e-b686-472a-9e9a-ddeee79421b3",
         "code": "duration",
         "title": "故意失败的本地合规策略",
         "version_no": 1,
@@ -456,8 +496,8 @@
         }
       },
       "passing_policy": {
-        "id": "c6121e1f-8fcc-40d7-8a13-b2756b84f29f",
-        "project_id": "a434dd70-0870-4d12-84c8-01ba9c8be971",
+        "id": "29e511e6-c1f5-44f4-829c-97e08ff31b4e",
+        "project_id": "cdb5864e-b686-472a-9e9a-ddeee79421b3",
         "code": "duration",
         "title": "本地合规策略 v2",
         "version_no": 2,
@@ -471,25 +511,25 @@
       }
     },
     "delivery": {
-      "id": "827980cb-9d61-442b-a366-d0d1ca15d942",
+      "id": "571bbefa-8c08-48c2-a634-1f3e28ec6b91",
       "status": "VERIFIED",
-      "rel_path": "06_delivery/本地 交付 UAT/EPISODE_001",
-      "manifest_sha256": "dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf",
+      "rel_path": "06_delivery/本地 交付 UAT v2/EPISODE_001",
+      "manifest_sha256": "7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339",
       "files": [
         {
-          "rel_path": "06_delivery/本地 交付 UAT/EPISODE_001/EPISODE_001.mp4",
+          "rel_path": "06_delivery/本地 交付 UAT v2/EPISODE_001/EPISODE_001.mp4",
           "sha256": "a208d1ca2528136cb4f356fae5a11d8aca8d6796e12ab66e3ce83cf2a98d60ca",
           "byte_size": 468210
         }
       ],
       "controls": {
         "brand_kit": {
-          "id": "560f48ed-859e-478e-99d3-61f868819ebd",
+          "id": "d6b985a4-e65e-47c9-b53f-c86894d89ae7",
           "code": "series",
           "version_no": 1
         },
         "watermark_profile": {
-          "id": "114d0a92-9664-4438-9199-d86082e32a32",
+          "id": "4b6bc515-52a4-40dd-b242-b14d1fe877ef",
           "code": "corner",
           "version_no": 1,
           "config": {
@@ -502,7 +542,7 @@
           }
         },
         "compliance_policy": {
-          "id": "c6121e1f-8fcc-40d7-8a13-b2756b84f29f",
+          "id": "29e511e6-c1f5-44f4-829c-97e08ff31b4e",
           "code": "duration",
           "version_no": 2,
           "rules": {
@@ -535,19 +575,19 @@
       "platform_review_status": "PENDING"
     },
     "manifest": {
-      "path_rel": "projects/h3_delivery_local_uat/06_delivery/本地 交付 UAT/EPISODE_001/manifest.json",
+      "path_rel": "projects/h3_delivery_local_uat/06_delivery/本地 交付 UAT v2/EPISODE_001/manifest.json",
       "schema_version": "delivery-manifest.v3",
-      "manifest_sha256": "dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf",
+      "manifest_sha256": "7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339",
       "file_count": 1,
       "target_transport": "LOCAL_FILESYSTEM",
       "model_license": "USER_SUPPLIED_LOCAL_REFERENCE_ONLY"
     },
     "verify": {
-      "id": "827980cb-9d61-442b-a366-d0d1ca15d942",
+      "id": "571bbefa-8c08-48c2-a634-1f3e28ec6b91",
       "status": "VERIFIED",
       "checks": [
         {
-          "rel_path": "06_delivery/本地 交付 UAT/EPISODE_001/EPISODE_001.mp4",
+          "rel_path": "06_delivery/本地 交付 UAT v2/EPISODE_001/EPISODE_001.mp4",
           "expected_sha256": "a208d1ca2528136cb4f356fae5a11d8aca8d6796e12ab66e3ce83cf2a98d60ca",
           "actual_sha256": "a208d1ca2528136cb4f356fae5a11d8aca8d6796e12ab66e3ce83cf2a98d60ca",
           "expected_byte_size": 468210,
@@ -555,18 +595,18 @@
           "ok": true
         },
         {
-          "rel_path": "06_delivery/本地 交付 UAT/EPISODE_001/manifest.json",
-          "expected_sha256": "b8768067038e2572398ee13b35f4876894d06eb4404cf18f463af08366d52485",
-          "actual_sha256": "b8768067038e2572398ee13b35f4876894d06eb4404cf18f463af08366d52485",
-          "expected_byte_size": 8311,
-          "actual_byte_size": 8311,
+          "rel_path": "06_delivery/本地 交付 UAT v2/EPISODE_001/manifest.json",
+          "expected_sha256": "719b7b73bbd55e1f420c2c65b2d933bb1817d2346a3df2fee8de98feb5e1c411",
+          "actual_sha256": "719b7b73bbd55e1f420c2c65b2d933bb1817d2346a3df2fee8de98feb5e1c411",
+          "expected_byte_size": 8318,
+          "actual_byte_size": 8318,
           "ok": true
         }
       ],
       "manifest_check": {
         "ok": true,
-        "expected_sha256": "dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf",
-        "actual_sha256": "dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf"
+        "expected_sha256": "7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339",
+        "actual_sha256": "7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339"
       },
       "machine_preflight_status": "PASS",
       "human_review_status": "PENDING",
@@ -574,29 +614,29 @@
       "withdrawn_reason": null
     },
     "details_before_download": {
-      "id": "827980cb-9d61-442b-a366-d0d1ca15d942",
-      "episode_id": "98c67d90-b38d-4c3c-ad7b-2b6563ba07fa",
-      "episode_render_version_id": "a6fc030e-c956-44f1-897e-38bfe129b0f1",
-      "timeline_revision_id": "330919e7-9be5-4520-ad39-9d36ed2f260b",
-      "target_version_id": "4ac6fa99-3821-4e88-bbe4-e808f07a6eaf",
+      "id": "571bbefa-8c08-48c2-a634-1f3e28ec6b91",
+      "episode_id": "cd8e97fe-241c-4ff0-a76f-9845dc230854",
+      "episode_render_version_id": "fe143e6b-3167-4c95-a82c-11521f389689",
+      "timeline_revision_id": "ffc4c8f0-2d09-4867-9762-6143d9db0012",
+      "target_version_id": "7f80e78d-e60c-4351-9903-487317f2dbac",
       "target": {
         "code": "windows-local-uat",
         "title": "Windows 本地交付 UAT",
         "transport": "LOCAL_FILESYSTEM",
-        "version_no": 1,
+        "version_no": 2,
         "spec": {
           "audio_codec": "AAC",
-          "bitrate": "1M",
-          "fps": 24,
-          "height": 832,
-          "path_rel": "06_delivery/本地 交付 UAT",
-          "subtitles": "SIDECAR",
-          "width": 480
+          "bitrate": "2M",
+          "fps": 30,
+          "height": 360,
+          "path_rel": "06_delivery/本地 交付 UAT v2",
+          "subtitles": "BURN_IN",
+          "width": 640
         }
       },
       "status": "VERIFIED",
-      "rel_path": "06_delivery/本地 交付 UAT/EPISODE_001",
-      "manifest_sha256": "dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf",
+      "rel_path": "06_delivery/本地 交付 UAT v2/EPISODE_001",
+      "manifest_sha256": "7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339",
       "withdrawn_reason": null,
       "machine_preflight_status": "PASS",
       "machine_preflight": {
@@ -610,40 +650,40 @@
       },
       "human_review_status": "PENDING",
       "platform_review_status": "PENDING",
-      "created_at": "2026-08-16T07:29:56.800695+00:00",
-      "updated_at": "2026-08-16T07:29:56.862583+00:00",
+      "created_at": "2026-08-16T08:31:33.264676+00:00",
+      "updated_at": "2026-08-16T08:31:33.318183+00:00",
       "revision": 2,
       "files": [
         {
-          "id": "a3c0161f-d1b1-47e1-9669-e08b81eaf8ce",
-          "delivery_package_id": "827980cb-9d61-442b-a366-d0d1ca15d942",
-          "rel_path": "06_delivery/本地 交付 UAT/EPISODE_001/EPISODE_001.mp4",
+          "id": "bf034948-25fb-4edc-9586-53690018d5c7",
+          "delivery_package_id": "571bbefa-8c08-48c2-a634-1f3e28ec6b91",
+          "rel_path": "06_delivery/本地 交付 UAT v2/EPISODE_001/EPISODE_001.mp4",
           "sha256": "a208d1ca2528136cb4f356fae5a11d8aca8d6796e12ab66e3ce83cf2a98d60ca",
           "byte_size": 468210
         },
         {
-          "id": "0259c24a-d288-449a-8e08-0a6123f4d336",
-          "delivery_package_id": "827980cb-9d61-442b-a366-d0d1ca15d942",
-          "rel_path": "06_delivery/本地 交付 UAT/EPISODE_001/manifest.json",
-          "sha256": "b8768067038e2572398ee13b35f4876894d06eb4404cf18f463af08366d52485",
-          "byte_size": 8311
+          "id": "9a4e2f79-e5e1-4fc1-b015-77666c1f168a",
+          "delivery_package_id": "571bbefa-8c08-48c2-a634-1f3e28ec6b91",
+          "rel_path": "06_delivery/本地 交付 UAT v2/EPISODE_001/manifest.json",
+          "sha256": "719b7b73bbd55e1f420c2c65b2d933bb1817d2346a3df2fee8de98feb5e1c411",
+          "byte_size": 8318
         }
       ],
       "events": [
         {
-          "id": "8c98561c-feab-430a-a592-5b04c8ea1772",
+          "id": "8e522e0a-e1b7-48e6-b6c4-c9d92f597f36",
           "action": "BUILT",
-          "manifest_sha256": "dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf",
+          "manifest_sha256": "7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339",
           "note": "local filesystem delivery built; machine preflight PASS; human/platform review remains separate",
-          "created_at": "2026-08-16T07:29:56.800695+00:00",
+          "created_at": "2026-08-16T08:31:33.264676+00:00",
           "created_by": "local-user"
         },
         {
-          "id": "6013a5e8-34fb-4a77-a9c1-c8f1f11b5812",
+          "id": "b070f805-3258-4c0c-9b17-46eb7b7e92ee",
           "action": "VERIFY",
-          "manifest_sha256": "dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf",
-          "note": "{\"manifest_hash\":\"dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf\",\"ok\":true,\"previous_status\":\"VERIFIED\"}",
-          "created_at": "2026-08-16T07:29:56.862583+00:00",
+          "manifest_sha256": "7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339",
+          "note": "{\"manifest_hash\":\"7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339\",\"ok\":true,\"previous_status\":\"VERIFIED\"}",
+          "created_at": "2026-08-16T08:31:33.318183+00:00",
           "created_by": "local-user"
         }
       ],
@@ -652,27 +692,27 @@
     },
     "files": [
       {
-        "id": "a3c0161f-d1b1-47e1-9669-e08b81eaf8ce",
-        "delivery_package_id": "827980cb-9d61-442b-a366-d0d1ca15d942",
-        "rel_path": "06_delivery/本地 交付 UAT/EPISODE_001/EPISODE_001.mp4",
+        "id": "bf034948-25fb-4edc-9586-53690018d5c7",
+        "delivery_package_id": "571bbefa-8c08-48c2-a634-1f3e28ec6b91",
+        "rel_path": "06_delivery/本地 交付 UAT v2/EPISODE_001/EPISODE_001.mp4",
         "sha256": "a208d1ca2528136cb4f356fae5a11d8aca8d6796e12ab66e3ce83cf2a98d60ca",
         "byte_size": 468210
       },
       {
-        "id": "0259c24a-d288-449a-8e08-0a6123f4d336",
-        "delivery_package_id": "827980cb-9d61-442b-a366-d0d1ca15d942",
-        "rel_path": "06_delivery/本地 交付 UAT/EPISODE_001/manifest.json",
-        "sha256": "b8768067038e2572398ee13b35f4876894d06eb4404cf18f463af08366d52485",
-        "byte_size": 8311
+        "id": "9a4e2f79-e5e1-4fc1-b015-77666c1f168a",
+        "delivery_package_id": "571bbefa-8c08-48c2-a634-1f3e28ec6b91",
+        "rel_path": "06_delivery/本地 交付 UAT v2/EPISODE_001/manifest.json",
+        "sha256": "719b7b73bbd55e1f420c2c65b2d933bb1817d2346a3df2fee8de98feb5e1c411",
+        "byte_size": 8318
       }
     ],
     "download": {
       "status_code": 200,
       "bytes": 468210,
-      "content_disposition": "attachment; filename=\"EPISODE_001-827980cb.mp4\""
+      "content_disposition": "attachment; filename=\"EPISODE_001-571bbefa.mp4\""
     },
     "human_delivery_review": {
-      "id": "827980cb-9d61-442b-a366-d0d1ca15d942",
+      "id": "571bbefa-8c08-48c2-a634-1f3e28ec6b91",
       "status": "VERIFIED",
       "machine_preflight_status": "PASS",
       "human_review_status": "APPROVED",
@@ -682,7 +722,7 @@
       "note": "隔离 UAT 人工确认画面与本地授权范围"
     },
     "platform_delivery_review": {
-      "id": "827980cb-9d61-442b-a366-d0d1ca15d942",
+      "id": "571bbefa-8c08-48c2-a634-1f3e28ec6b91",
       "status": "VERIFIED",
       "machine_preflight_status": "PASS",
       "human_review_status": "APPROVED",
@@ -692,29 +732,29 @@
       "note": "隔离 UAT 平台规则确认"
     },
     "history_after_download": {
-      "id": "827980cb-9d61-442b-a366-d0d1ca15d942",
-      "episode_id": "98c67d90-b38d-4c3c-ad7b-2b6563ba07fa",
-      "episode_render_version_id": "a6fc030e-c956-44f1-897e-38bfe129b0f1",
-      "timeline_revision_id": "330919e7-9be5-4520-ad39-9d36ed2f260b",
-      "target_version_id": "4ac6fa99-3821-4e88-bbe4-e808f07a6eaf",
+      "id": "571bbefa-8c08-48c2-a634-1f3e28ec6b91",
+      "episode_id": "cd8e97fe-241c-4ff0-a76f-9845dc230854",
+      "episode_render_version_id": "fe143e6b-3167-4c95-a82c-11521f389689",
+      "timeline_revision_id": "ffc4c8f0-2d09-4867-9762-6143d9db0012",
+      "target_version_id": "7f80e78d-e60c-4351-9903-487317f2dbac",
       "target": {
         "code": "windows-local-uat",
         "title": "Windows 本地交付 UAT",
         "transport": "LOCAL_FILESYSTEM",
-        "version_no": 1,
+        "version_no": 2,
         "spec": {
           "audio_codec": "AAC",
-          "bitrate": "1M",
-          "fps": 24,
-          "height": 832,
-          "path_rel": "06_delivery/本地 交付 UAT",
-          "subtitles": "SIDECAR",
-          "width": 480
+          "bitrate": "2M",
+          "fps": 30,
+          "height": 360,
+          "path_rel": "06_delivery/本地 交付 UAT v2",
+          "subtitles": "BURN_IN",
+          "width": 640
         }
       },
       "status": "VERIFIED",
-      "rel_path": "06_delivery/本地 交付 UAT/EPISODE_001",
-      "manifest_sha256": "dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf",
+      "rel_path": "06_delivery/本地 交付 UAT v2/EPISODE_001",
+      "manifest_sha256": "7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339",
       "withdrawn_reason": null,
       "machine_preflight_status": "PASS",
       "machine_preflight": {
@@ -728,64 +768,64 @@
       },
       "human_review_status": "APPROVED",
       "platform_review_status": "APPROVED",
-      "created_at": "2026-08-16T07:29:56.800695+00:00",
-      "updated_at": "2026-08-16T07:29:56.930706+00:00",
+      "created_at": "2026-08-16T08:31:33.264676+00:00",
+      "updated_at": "2026-08-16T08:31:33.385495+00:00",
       "revision": 4,
       "files": [
         {
-          "id": "a3c0161f-d1b1-47e1-9669-e08b81eaf8ce",
-          "delivery_package_id": "827980cb-9d61-442b-a366-d0d1ca15d942",
-          "rel_path": "06_delivery/本地 交付 UAT/EPISODE_001/EPISODE_001.mp4",
+          "id": "bf034948-25fb-4edc-9586-53690018d5c7",
+          "delivery_package_id": "571bbefa-8c08-48c2-a634-1f3e28ec6b91",
+          "rel_path": "06_delivery/本地 交付 UAT v2/EPISODE_001/EPISODE_001.mp4",
           "sha256": "a208d1ca2528136cb4f356fae5a11d8aca8d6796e12ab66e3ce83cf2a98d60ca",
           "byte_size": 468210
         },
         {
-          "id": "0259c24a-d288-449a-8e08-0a6123f4d336",
-          "delivery_package_id": "827980cb-9d61-442b-a366-d0d1ca15d942",
-          "rel_path": "06_delivery/本地 交付 UAT/EPISODE_001/manifest.json",
-          "sha256": "b8768067038e2572398ee13b35f4876894d06eb4404cf18f463af08366d52485",
-          "byte_size": 8311
+          "id": "9a4e2f79-e5e1-4fc1-b015-77666c1f168a",
+          "delivery_package_id": "571bbefa-8c08-48c2-a634-1f3e28ec6b91",
+          "rel_path": "06_delivery/本地 交付 UAT v2/EPISODE_001/manifest.json",
+          "sha256": "719b7b73bbd55e1f420c2c65b2d933bb1817d2346a3df2fee8de98feb5e1c411",
+          "byte_size": 8318
         }
       ],
       "events": [
         {
-          "id": "8c98561c-feab-430a-a592-5b04c8ea1772",
+          "id": "8e522e0a-e1b7-48e6-b6c4-c9d92f597f36",
           "action": "BUILT",
-          "manifest_sha256": "dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf",
+          "manifest_sha256": "7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339",
           "note": "local filesystem delivery built; machine preflight PASS; human/platform review remains separate",
-          "created_at": "2026-08-16T07:29:56.800695+00:00",
+          "created_at": "2026-08-16T08:31:33.264676+00:00",
           "created_by": "local-user"
         },
         {
-          "id": "6013a5e8-34fb-4a77-a9c1-c8f1f11b5812",
+          "id": "b070f805-3258-4c0c-9b17-46eb7b7e92ee",
           "action": "VERIFY",
-          "manifest_sha256": "dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf",
-          "note": "{\"manifest_hash\":\"dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf\",\"ok\":true,\"previous_status\":\"VERIFIED\"}",
-          "created_at": "2026-08-16T07:29:56.862583+00:00",
+          "manifest_sha256": "7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339",
+          "note": "{\"manifest_hash\":\"7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339\",\"ok\":true,\"previous_status\":\"VERIFIED\"}",
+          "created_at": "2026-08-16T08:31:33.318183+00:00",
           "created_by": "local-user"
         },
         {
-          "id": "a91a5219-5169-4858-a21a-5e3b471a7880",
+          "id": "6ebcadf1-2942-4131-897a-9a3a13994110",
           "action": "HUMAN_REVIEW_APPROVED",
           "manifest_sha256": null,
           "note": "隔离 UAT 人工确认画面与本地授权范围",
-          "created_at": "2026-08-16T07:29:56.921388+00:00",
+          "created_at": "2026-08-16T08:31:33.374754+00:00",
           "created_by": "local-user"
         },
         {
-          "id": "2550b1cb-6e0e-4979-a2c9-9dfa6c44994b",
+          "id": "6d002ec1-7f2f-46ff-b372-f42bbb0a4022",
           "action": "PLATFORM_REVIEW_APPROVED",
           "manifest_sha256": null,
           "note": "隔离 UAT 平台规则确认",
-          "created_at": "2026-08-16T07:29:56.930706+00:00",
+          "created_at": "2026-08-16T08:31:33.385495+00:00",
           "created_by": "local-user"
         },
         {
-          "id": "87bef5a2-0b7b-43d5-82e1-3ad768fb0902",
+          "id": "e1295731-3729-4b9e-ac51-77b5934c1d6d",
           "action": "DOWNLOAD",
-          "manifest_sha256": "dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf",
-          "note": "{\"file_byte_size\":468210,\"file_rel_path\":\"06_delivery/本地 交付 UAT/EPISODE_001/EPISODE_001.mp4\",\"file_sha256\":\"a208d1ca2528136cb4f356fae5a11d8aca8d6796e12ab66e3ce83cf2a98d60ca\",\"transport\":\"LOCAL_FILESYSTEM\"}",
-          "created_at": "2026-08-16T07:29:56.979876+00:00",
+          "manifest_sha256": "7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339",
+          "note": "{\"file_byte_size\":468210,\"file_rel_path\":\"06_delivery/本地 交付 UAT v2/EPISODE_001/EPISODE_001.mp4\",\"file_sha256\":\"a208d1ca2528136cb4f356fae5a11d8aca8d6796e12ab66e3ce83cf2a98d60ca\",\"transport\":\"LOCAL_FILESYSTEM\"}",
+          "created_at": "2026-08-16T08:31:33.435234+00:00",
           "created_by": "local-user"
         }
       ],
@@ -793,17 +833,17 @@
       "network_contacted": false
     },
     "withdraw": {
-      "id": "827980cb-9d61-442b-a366-d0d1ca15d942",
+      "id": "571bbefa-8c08-48c2-a634-1f3e28ec6b91",
       "status": "WITHDRAWN",
       "reason": "Windows 本地 UAT 撤回验证",
       "idempotent": false
     },
     "verify_after_withdraw": {
-      "id": "827980cb-9d61-442b-a366-d0d1ca15d942",
+      "id": "571bbefa-8c08-48c2-a634-1f3e28ec6b91",
       "status": "WITHDRAWN",
       "checks": [
         {
-          "rel_path": "06_delivery/本地 交付 UAT/EPISODE_001/EPISODE_001.mp4",
+          "rel_path": "06_delivery/本地 交付 UAT v2/EPISODE_001/EPISODE_001.mp4",
           "expected_sha256": "a208d1ca2528136cb4f356fae5a11d8aca8d6796e12ab66e3ce83cf2a98d60ca",
           "actual_sha256": "a208d1ca2528136cb4f356fae5a11d8aca8d6796e12ab66e3ce83cf2a98d60ca",
           "expected_byte_size": 468210,
@@ -811,18 +851,18 @@
           "ok": true
         },
         {
-          "rel_path": "06_delivery/本地 交付 UAT/EPISODE_001/manifest.json",
-          "expected_sha256": "b8768067038e2572398ee13b35f4876894d06eb4404cf18f463af08366d52485",
-          "actual_sha256": "b8768067038e2572398ee13b35f4876894d06eb4404cf18f463af08366d52485",
-          "expected_byte_size": 8311,
-          "actual_byte_size": 8311,
+          "rel_path": "06_delivery/本地 交付 UAT v2/EPISODE_001/manifest.json",
+          "expected_sha256": "719b7b73bbd55e1f420c2c65b2d933bb1817d2346a3df2fee8de98feb5e1c411",
+          "actual_sha256": "719b7b73bbd55e1f420c2c65b2d933bb1817d2346a3df2fee8de98feb5e1c411",
+          "expected_byte_size": 8318,
+          "actual_byte_size": 8318,
           "ok": true
         }
       ],
       "manifest_check": {
         "ok": true,
-        "expected_sha256": "dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf",
-        "actual_sha256": "dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf"
+        "expected_sha256": "7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339",
+        "actual_sha256": "7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339"
       },
       "machine_preflight_status": "PASS",
       "human_review_status": "APPROVED",
@@ -830,29 +870,29 @@
       "withdrawn_reason": "Windows 本地 UAT 撤回验证"
     },
     "history_after_withdraw": {
-      "id": "827980cb-9d61-442b-a366-d0d1ca15d942",
-      "episode_id": "98c67d90-b38d-4c3c-ad7b-2b6563ba07fa",
-      "episode_render_version_id": "a6fc030e-c956-44f1-897e-38bfe129b0f1",
-      "timeline_revision_id": "330919e7-9be5-4520-ad39-9d36ed2f260b",
-      "target_version_id": "4ac6fa99-3821-4e88-bbe4-e808f07a6eaf",
+      "id": "571bbefa-8c08-48c2-a634-1f3e28ec6b91",
+      "episode_id": "cd8e97fe-241c-4ff0-a76f-9845dc230854",
+      "episode_render_version_id": "fe143e6b-3167-4c95-a82c-11521f389689",
+      "timeline_revision_id": "ffc4c8f0-2d09-4867-9762-6143d9db0012",
+      "target_version_id": "7f80e78d-e60c-4351-9903-487317f2dbac",
       "target": {
         "code": "windows-local-uat",
         "title": "Windows 本地交付 UAT",
         "transport": "LOCAL_FILESYSTEM",
-        "version_no": 1,
+        "version_no": 2,
         "spec": {
           "audio_codec": "AAC",
-          "bitrate": "1M",
-          "fps": 24,
-          "height": 832,
-          "path_rel": "06_delivery/本地 交付 UAT",
-          "subtitles": "SIDECAR",
-          "width": 480
+          "bitrate": "2M",
+          "fps": 30,
+          "height": 360,
+          "path_rel": "06_delivery/本地 交付 UAT v2",
+          "subtitles": "BURN_IN",
+          "width": 640
         }
       },
       "status": "WITHDRAWN",
-      "rel_path": "06_delivery/本地 交付 UAT/EPISODE_001",
-      "manifest_sha256": "dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf",
+      "rel_path": "06_delivery/本地 交付 UAT v2/EPISODE_001",
+      "manifest_sha256": "7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339",
       "withdrawn_reason": "Windows 本地 UAT 撤回验证",
       "machine_preflight_status": "PASS",
       "machine_preflight": {
@@ -866,80 +906,80 @@
       },
       "human_review_status": "APPROVED",
       "platform_review_status": "APPROVED",
-      "created_at": "2026-08-16T07:29:56.800695+00:00",
-      "updated_at": "2026-08-16T07:29:57.066342+00:00",
+      "created_at": "2026-08-16T08:31:33.264676+00:00",
+      "updated_at": "2026-08-16T08:31:33.519424+00:00",
       "revision": 6,
       "files": [
         {
-          "id": "a3c0161f-d1b1-47e1-9669-e08b81eaf8ce",
-          "delivery_package_id": "827980cb-9d61-442b-a366-d0d1ca15d942",
-          "rel_path": "06_delivery/本地 交付 UAT/EPISODE_001/EPISODE_001.mp4",
+          "id": "bf034948-25fb-4edc-9586-53690018d5c7",
+          "delivery_package_id": "571bbefa-8c08-48c2-a634-1f3e28ec6b91",
+          "rel_path": "06_delivery/本地 交付 UAT v2/EPISODE_001/EPISODE_001.mp4",
           "sha256": "a208d1ca2528136cb4f356fae5a11d8aca8d6796e12ab66e3ce83cf2a98d60ca",
           "byte_size": 468210
         },
         {
-          "id": "0259c24a-d288-449a-8e08-0a6123f4d336",
-          "delivery_package_id": "827980cb-9d61-442b-a366-d0d1ca15d942",
-          "rel_path": "06_delivery/本地 交付 UAT/EPISODE_001/manifest.json",
-          "sha256": "b8768067038e2572398ee13b35f4876894d06eb4404cf18f463af08366d52485",
-          "byte_size": 8311
+          "id": "9a4e2f79-e5e1-4fc1-b015-77666c1f168a",
+          "delivery_package_id": "571bbefa-8c08-48c2-a634-1f3e28ec6b91",
+          "rel_path": "06_delivery/本地 交付 UAT v2/EPISODE_001/manifest.json",
+          "sha256": "719b7b73bbd55e1f420c2c65b2d933bb1817d2346a3df2fee8de98feb5e1c411",
+          "byte_size": 8318
         }
       ],
       "events": [
         {
-          "id": "8c98561c-feab-430a-a592-5b04c8ea1772",
+          "id": "8e522e0a-e1b7-48e6-b6c4-c9d92f597f36",
           "action": "BUILT",
-          "manifest_sha256": "dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf",
+          "manifest_sha256": "7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339",
           "note": "local filesystem delivery built; machine preflight PASS; human/platform review remains separate",
-          "created_at": "2026-08-16T07:29:56.800695+00:00",
+          "created_at": "2026-08-16T08:31:33.264676+00:00",
           "created_by": "local-user"
         },
         {
-          "id": "6013a5e8-34fb-4a77-a9c1-c8f1f11b5812",
+          "id": "b070f805-3258-4c0c-9b17-46eb7b7e92ee",
           "action": "VERIFY",
-          "manifest_sha256": "dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf",
-          "note": "{\"manifest_hash\":\"dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf\",\"ok\":true,\"previous_status\":\"VERIFIED\"}",
-          "created_at": "2026-08-16T07:29:56.862583+00:00",
+          "manifest_sha256": "7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339",
+          "note": "{\"manifest_hash\":\"7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339\",\"ok\":true,\"previous_status\":\"VERIFIED\"}",
+          "created_at": "2026-08-16T08:31:33.318183+00:00",
           "created_by": "local-user"
         },
         {
-          "id": "a91a5219-5169-4858-a21a-5e3b471a7880",
+          "id": "6ebcadf1-2942-4131-897a-9a3a13994110",
           "action": "HUMAN_REVIEW_APPROVED",
           "manifest_sha256": null,
           "note": "隔离 UAT 人工确认画面与本地授权范围",
-          "created_at": "2026-08-16T07:29:56.921388+00:00",
+          "created_at": "2026-08-16T08:31:33.374754+00:00",
           "created_by": "local-user"
         },
         {
-          "id": "2550b1cb-6e0e-4979-a2c9-9dfa6c44994b",
+          "id": "6d002ec1-7f2f-46ff-b372-f42bbb0a4022",
           "action": "PLATFORM_REVIEW_APPROVED",
           "manifest_sha256": null,
           "note": "隔离 UAT 平台规则确认",
-          "created_at": "2026-08-16T07:29:56.930706+00:00",
+          "created_at": "2026-08-16T08:31:33.385495+00:00",
           "created_by": "local-user"
         },
         {
-          "id": "87bef5a2-0b7b-43d5-82e1-3ad768fb0902",
+          "id": "e1295731-3729-4b9e-ac51-77b5934c1d6d",
           "action": "DOWNLOAD",
-          "manifest_sha256": "dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf",
-          "note": "{\"file_byte_size\":468210,\"file_rel_path\":\"06_delivery/本地 交付 UAT/EPISODE_001/EPISODE_001.mp4\",\"file_sha256\":\"a208d1ca2528136cb4f356fae5a11d8aca8d6796e12ab66e3ce83cf2a98d60ca\",\"transport\":\"LOCAL_FILESYSTEM\"}",
-          "created_at": "2026-08-16T07:29:56.979876+00:00",
+          "manifest_sha256": "7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339",
+          "note": "{\"file_byte_size\":468210,\"file_rel_path\":\"06_delivery/本地 交付 UAT v2/EPISODE_001/EPISODE_001.mp4\",\"file_sha256\":\"a208d1ca2528136cb4f356fae5a11d8aca8d6796e12ab66e3ce83cf2a98d60ca\",\"transport\":\"LOCAL_FILESYSTEM\"}",
+          "created_at": "2026-08-16T08:31:33.435234+00:00",
           "created_by": "local-user"
         },
         {
-          "id": "d31b8b46-e467-4c99-a4e8-dc19665e5b80",
+          "id": "fc393e16-3170-4989-b472-93042bd0776f",
           "action": "WITHDRAWN",
-          "manifest_sha256": "dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf",
+          "manifest_sha256": "7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339",
           "note": "Windows 本地 UAT 撤回验证",
-          "created_at": "2026-08-16T07:29:57.036222+00:00",
+          "created_at": "2026-08-16T08:31:33.479594+00:00",
           "created_by": "local-user"
         },
         {
-          "id": "a80062b7-9cf8-425d-aec6-bf99fcc84e57",
+          "id": "4fcb2478-cdf3-4d3a-9ab1-1a577f3a1a31",
           "action": "VERIFY",
-          "manifest_sha256": "dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf",
-          "note": "{\"manifest_hash\":\"dfce85b77858af75a87441fb7bb4be9114ff2a871f11a032b8ea3a3c1883b3cf\",\"ok\":true,\"previous_status\":\"WITHDRAWN\"}",
-          "created_at": "2026-08-16T07:29:57.066342+00:00",
+          "manifest_sha256": "7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339",
+          "note": "{\"manifest_hash\":\"7b87a1a0a729d6680b0aec1ca28c0bc00fcec62b2bcca5c5af9dddd537281339\",\"ok\":true,\"previous_status\":\"WITHDRAWN\"}",
+          "created_at": "2026-08-16T08:31:33.519424+00:00",
           "created_by": "local-user"
         }
       ],
@@ -949,11 +989,11 @@
     "episode_history": {
       "count": 1,
       "package_ids": [
-        "827980cb-9d61-442b-a366-d0d1ca15d942"
+        "571bbefa-8c08-48c2-a634-1f3e28ec6b91"
       ]
     },
     "preserved_output": {
-      "path_rel": "projects/h3_delivery_local_uat/06_delivery/本地 交付 UAT/EPISODE_001/EPISODE_001.mp4",
+      "path_rel": "projects/h3_delivery_local_uat/06_delivery/本地 交付 UAT v2/EPISODE_001/EPISODE_001.mp4",
       "sha256": "a208d1ca2528136cb4f356fae5a11d8aca8d6796e12ab66e3ce83cf2a98d60ca",
       "bytes": 468210
     }
@@ -969,6 +1009,7 @@
     "FR-DEL-002",
     "FR-DEL-003",
     "FR-DEL-004",
+    "TC-DEL-006",
     "FR-PST-002",
     "FR-PST-003"
   ]
