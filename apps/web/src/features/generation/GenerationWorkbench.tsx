@@ -230,7 +230,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
     },
     onSuccess: ({ job }) => { setSubmitted(job); setBranchPlan(null); onSubmitted?.(); },
   });
-  const extractedThumbnail = draftAnchor ? `/api/v1/media-versions/${encodeURIComponent(draftAnchor.extracted_media_version_id)}/thumbnail?size=small` : null;
+  const extractedThumbnail = draftAnchor ? `/api/v1/media-versions/${encodeURIComponent(draftAnchor.extracted_media_version_id)}/thumbnail?size=small&frame=poster` : null;
   const draftRoleLabel = draftAnchor ? frameActionLabels[draftAnchor.role_hint as FrameAction] ?? "提取帧" : null;
   const policyPerTake = {
     duration_seconds: policyEstimate(resourcePolicy, ["estimated_duration_seconds_per_take", "duration_seconds_per_take", "estimated_time_seconds_per_take", "time_seconds_per_take"]),

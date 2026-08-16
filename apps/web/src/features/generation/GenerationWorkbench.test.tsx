@@ -63,6 +63,7 @@ describe("GenerationWorkbench FrameAnchor actions", () => {
     fireEvent.click(screen.getByRole("button", { name: "用作末帧" }));
     await waitFor(() => expect(createFrameAnchor).toHaveBeenLastCalledWith(video.media_version_id, { position_mode: "LAST_FRAME", role_hint: "LAST_FRAME" }));
     expect(await screen.findByText(/末帧已注册并填入当前未提交输入槽/)).toBeTruthy();
+    expect(screen.getByAltText(/当前未提交输入：视频末帧缩略图/).getAttribute("src")).toContain("/thumbnail?size=small&frame=poster");
     expect(screen.getByText(/FFPROBE_PTS_FRAME_INDEX/)).toBeTruthy();
   });
 

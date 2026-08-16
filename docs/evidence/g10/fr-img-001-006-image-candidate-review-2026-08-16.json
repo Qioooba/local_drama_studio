@@ -16,7 +16,7 @@
     },
     "FR-IMG-003": {
       "implemented": true,
-      "details": "Reviews view now exposes ImageCandidateGrid for bounded candidate overview plus ReviewInboxPanel A/B compare, reference pinning and keyboard navigation. The grid uses roving tabindex with ArrowLeft/ArrowRight/Home/End selection and keeps focus on the selected candidate; the API also treats image/* MIME as an image safety fallback when media_kind is misclassified, so raw content remains blocked and the derived small thumbnail remains available."
+      "details": "Reviews view now exposes ImageCandidateGrid for bounded candidate overview plus ReviewInboxPanel A/B compare, reference pinning and keyboard navigation. The grid uses roving tabindex with ArrowLeft/ArrowRight/Home/End selection and keeps focus on the selected candidate; GenerationWorkbench frame previews explicitly request the small poster thumbnail; the API also treats image/* MIME as an image safety fallback when media_kind is misclassified, so raw content remains blocked and the derived small thumbnail remains available."
     },
     "FR-IMG-004": {
       "implemented": true,
