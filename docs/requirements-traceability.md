@@ -212,11 +212,11 @@ FR-CTL-001 提交链增量：生成工作台现按 `Intent + frozen PromptRevisi
 
 FR-PST-001 / TC-CAP-009 已闭环：PostProcessRecipe 采用逻辑 key + 不可变版本 + 显式 DRAFT 发布；运行必须先生成只读 plan hash，再由用户二次确认。真实本地执行按 `SCALE(FFV1 中间件) → TECHNICAL_QC(FFprobe) → ENCODE(H264)` 分步记录 executor、配置 profile、输入/输出 SHA-256 与结果，只有 QC 通过才注册带 `parent_version_id` 的新 ENHANCED MediaVersion，输入永不覆盖。1280×720 真实页面已完成创建、发布、预检、执行及双视频旁路比较，QC=true、无横向溢出或可见错误。证据见 `docs/evidence/g10/fr-pst-001-uat-2026-08-15.json`。
 
-总账现由 `scripts/master_requirements_audit.py` 与 `docs/evidence/g10/master-requirements-map.json` 逐项校验，不能再靠手填计数放行；PASS 项必须引用现存的 PASS JSON 证据和自动化测试文件，未知 ID、重复 ID、缺证据或缺测试路径都会使 mapping 失效。当前自动审计为 14/84 FR、0/15 NFR、9/85 TC；FR-AUT-002 已有自动化实现证据但映射保持 `PARTIAL`，不计入正式 PASS，整体仍为 NO-GO。
+总账现由 `scripts/master_requirements_audit.py` 与 `docs/evidence/g10/master-requirements-map.json` 逐项校验，不能再靠手填计数放行；PASS 项必须引用现存的 PASS JSON 证据和自动化测试文件，未知 ID、重复 ID、缺证据或缺测试路径都会使 mapping 失效。当前自动审计为 21/84 FR、0/15 NFR、10/85 TC；FR-AUT-002 已有自动化实现证据但映射保持 `PARTIAL`，不计入正式 PASS，整体仍为 NO-GO。
 
 FR-ING-001 / TC-CAP-001 已闭环：用户可从页面调用 Windows 原生选择器或填写绝对路径导入本机 TXT、Markdown、DOCX；平台先注册不可变源文档、解析并生成带 hash 的预览，只有用户显式提交且预览 hash 未变化时才进入 COMMITTED。重复导入/提交幂等复用，源文件与已提取文本均不覆盖，symlink、不支持扩展名、过期预览及 hash 篡改硬拒绝。正式项目 1280×720 页面完成真实预览和提交，唯一提交审计事件及源/文本 SHA-256 已固化于 `docs/evidence/g10/fr-ing-001-uat-2026-08-15.json`。总账更新为 13/84 FR、0/15 NFR、8/85 TC，整体仍为 NO-GO。
 
-FR-ING-003 / TC-CAP-003 已闭环：分镜批量台将镜头 identity、order_key 与不可变 revision 分离，提供表格/故事板/时间线三视图；重排、复制和批量字段编辑先生成带来源快照的 plan hash，逐项列出编号、归属和 revision 冲突，必须显式确认后原子提交。正式项目 22 个镜头在 1280×720 页面通过三视图与只读校验，证据见 `docs/evidence/g10/fr-ing-003-uat-2026-08-15.json`。所有页面图片读取统一使用派生 thumbnail/waveform；图片原图 content 接口硬拒绝并返回 `IMAGE_CONTENT_REQUIRES_THUMBNAIL`，源文件不覆盖。总账更新为 14/84 FR、0/15 NFR、9/85 TC，整体仍为 NO-GO。
+FR-ING-003 / TC-CAP-003 已闭环：分镜批量台将镜头 identity、order_key 与不可变 revision 分离，提供表格/故事板/时间线三视图；重排、复制和批量字段编辑先生成带来源快照的 plan hash，逐项列出编号、归属和 revision 冲突，必须显式确认后原子提交。正式项目 22 个镜头在 1280×720 页面通过三视图与只读校验，证据见 `docs/evidence/g10/fr-ing-003-uat-2026-08-15.json`。所有页面图片读取统一使用派生 thumbnail/waveform；图片原图 content 接口硬拒绝并返回 `IMAGE_CONTENT_REQUIRES_THUMBNAIL`，源文件不覆盖。总账更新为 21/84 FR、0/15 NFR、10/85 TC，整体仍为 NO-GO。
 
 G10 安全 UAT 已补齐此前缺失的 instance CSRF token：每个 API 进程生成独立 token，同源客户端从无 CORS 的 bootstrap/安全 GET 获取，所有网络写请求同时验证受控 Origin 与 `X-Local-Instance-Token`。隔离真实 FastAPI 验证恶意 Origin、缺失/错误 token、路径逃逸、REMOTE Provider、未入清单自定义节点均被拒绝；socket guard 对 TEST-NET 公网目标在 connect 前阻断，OpenAPI 无远程 credential 字段。证据为 `docs/evidence/g10/security-uat-2026-08-15.json`；不替代 G7 模型许可证或最终发布签字。
 
