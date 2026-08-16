@@ -358,6 +358,8 @@ Profile 契约编辑仍允许用户声明本地 transport、能力与本机模�
 
 Unicode/空格/长路径、I2V→T2V 不匹配硬阻断、I2V 匹配、完整模型 hash 与本地授权证据回归见 `apps/api/tests/test_model_compatibility.py`、`apps/api/tests/test_model_license_evidence.py`、`apps/web/src/features/status/LocalModelReferenceForm.test.tsx` 和 `apps/web/src/features/status/ModelLicenseEvidenceForm.test.tsx`；证据 `docs/evidence/g10/fr-prv-003-nfr-comp-001-model-boundary-2026-08-16.json` 保持 `PARTIAL`。真实用户模型执行、Windows x64 跨卷/超长路径三视口 UAT 和最终法律许可证复核仍待补齐，不能据此宣称 NFR-COMP-001 或整体 Profile 发布闭环 VERIFIED。
 
+新增独立 Windows 路径矩阵 `scripts/nfr_comp_windows_path_uat.py`：在隔离迁移数据库和真实 FastAPI 路径中，从 F: 创建包含中文、空格及 222 字符路径的 safetensors 夹具，复制到 E:（目标路径 189 字符）并校验跨卷 SHA-256 一致；登记与兼容性报告均保留 E: 本机绝对引用，返回 `copied=false`/`uploaded=false`，I2V capability 匹配和源文件未改变。证据 `docs/evidence/g10/nfr-comp-001-windows-path-2026-08-16.json` 状态为 `PARTIAL`：该复制由测试夹具执行且未写入项目，仍不替代真实用户模型执行、三视口浏览器 UAT 或最终许可证复核。
+
 ## NFR-PERF-001/002 有界性能与列表分页增量（2026-08-16）
 
 项目列表新增稳定的 `cursor/limit` 页面契约；集生产 read model 新增服务端 `cursor/limit/next_cursor`，默认调用保持兼容；审核收件箱继续在筛选后按稳定 cursor 返回上限页面。新增 `scripts/nfr_perf_benchmark.py`，在隔离迁移 SQLite 的 60 集/800 镜头/10k 媒体 fixture 上通过真实 FastAPI read paths 观测收件箱首/深 cursor、每集生产页和项目页，同时记录缩略图 `loading="lazy"`/不批量读取原片的源级约束。API 测试覆盖 project cursor 与 production page；证据 `docs/evidence/g10/nfr-perf-bounded-observation-2026-08-16.json` 标记 `PARTIAL` / `OBSERVED_NOT_BENCHMARKED`。该证据不宣称 10k p95<500ms、Windows x64 浏览器 p95<2s、虚拟滚动、冷缓存或真实硬件容量；正式浏览器网络 trace 与 release 性能基线仍待 UAT。

@@ -632,8 +632,8 @@
     {
       "id": "NFR-COMP-001",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-prv-003-nfr-comp-001-model-boundary-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_model_compatibility.py", "apps/api/tests/test_model_license_evidence.py", "apps/web/src/features/status/LocalModelReferenceForm.test.tsx"]
+      "evidence": ["docs/evidence/g10/fr-prv-003-nfr-comp-001-model-boundary-2026-08-16.json", "docs/evidence/g10/nfr-comp-001-windows-path-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_model_compatibility.py", "apps/api/tests/test_model_license_evidence.py", "apps/web/src/features/status/LocalModelReferenceForm.test.tsx", "scripts/nfr_comp_windows_path_uat.py"]
     },
     {
       "id": "NFR-SEC-001",
