@@ -625,7 +625,7 @@
     },
     {
       "id": "NFR-REL-003",
-      "status": "PARTIAL",
+      "status": "PASS",
       "evidence": ["docs/evidence/g10/upgrade-rollback-rehearsal-0039-2026-08-16.json", "docs/evidence/g10/recovery-restore-uat-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_migration.py", "scripts/recovery_restore_uat.py"]
     },

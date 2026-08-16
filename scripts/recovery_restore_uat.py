@@ -95,6 +95,30 @@ def run(root: Path) -> dict[str, Any]:
     restore_seconds = time.perf_counter() - restore_started
 
     restored_database = Database(restore.database_path)
+    # Rebuild the restored SQLite indexes before exercising API reads.  This
+    # is intentionally performed on the isolated restore copy and records a
+    # query-plan row so the recovery evidence covers index reconstruction,
+    # rather than only copying an already-indexed database file.
+    reindex_started = time.perf_counter()
+    with restored_database.transaction() as connection:
+        index_count_before = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND sql IS NOT NULL"
+            ).fetchone()[0]
+        )
+        connection.execute("REINDEX")
+        index_count_after = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND sql IS NOT NULL"
+            ).fetchone()[0]
+        )
+        restored_index_query_plan = connection.execute(
+            """EXPLAIN QUERY PLAN SELECT mv.id FROM media_versions mv
+            JOIN media_assets ma ON ma.id=mv.media_asset_id
+            WHERE ma.project_id=? ORDER BY mv.id LIMIT 1""",
+            (project["id"],),
+        ).fetchall()
+    reindex_seconds = time.perf_counter() - reindex_started
     hash_failures: list[dict[str, str]] = []
     with restored_database.connect() as connection:
         rows = connection.execute(
@@ -119,6 +143,7 @@ def run(root: Path) -> dict[str, Any]:
     api_ready_seconds = time.perf_counter() - api_started
     checks = [
         {"code": "ONLINE_BACKUP_INTEGRITY", "passed": backup_integrity == "ok"},
+        {"code": "RESTORED_INDEX_REBUILD", "passed": index_count_before > 0 and index_count_after == index_count_before and bool(restored_index_query_plan), "index_count": index_count_after, "query_plan_rows": len(restored_index_query_plan)},
         {"code": "RESTORED_DATABASE_INTEGRITY", "passed": restored_database.integrity_check() == "ok"},
         {"code": "ONE_HUNDRED_MEDIA_HASHES", "passed": len(rows) == 100 and not hash_failures, "checked": len(rows), "failures": len(hash_failures)},
         {"code": "RESTORED_API_READY", "passed": health.status_code == 200 and health.json()["status"] == "HEALTHY"},
@@ -132,7 +157,7 @@ def run(root: Path) -> dict[str, Any]:
         "checks": checks,
         "rto_seconds": round(restore_seconds + hash_seconds + api_ready_seconds, 3),
         "rpo": "zero fixture records lost from captured online backup",
-        "timings": {"online_backup_seconds": round(backup_seconds, 3), "restore_copy_seconds": round(restore_seconds, 3), "hash_verify_seconds": round(hash_seconds, 3), "api_ready_seconds": round(api_ready_seconds, 3)},
+        "timings": {"online_backup_seconds": round(backup_seconds, 3), "restore_copy_seconds": round(restore_seconds, 3), "index_rebuild_seconds": round(reindex_seconds, 3), "hash_verify_seconds": round(hash_seconds, 3), "api_ready_seconds": round(api_ready_seconds, 3)},
         "hash_failures": hash_failures,
         "runtime_contacted": False,
         "network_contacted": False,

@@ -8,6 +8,12 @@
       "passed": true
     },
     {
+      "code": "RESTORED_INDEX_REBUILD",
+      "passed": true,
+      "index_count": 76,
+      "query_plan_rows": 3
+    },
+    {
       "code": "RESTORED_DATABASE_INTEGRITY",
       "passed": true
     },
@@ -30,17 +36,18 @@
       "passed": true
     }
   ],
-  "rto_seconds": 0.817,
+  "rto_seconds": 0.952,
   "rpo": "zero fixture records lost from captured online backup",
   "timings": {
-    "online_backup_seconds": 0.044,
-    "restore_copy_seconds": 0.142,
-    "hash_verify_seconds": 0.222,
-    "api_ready_seconds": 0.453
+    "online_backup_seconds": 0.043,
+    "restore_copy_seconds": 0.141,
+    "index_rebuild_seconds": 0.036,
+    "hash_verify_seconds": 0.27,
+    "api_ready_seconds": 0.54
   },
   "hash_failures": [],
   "runtime_contacted": false,
   "network_contacted": false,
   "production_database_contacted": false,
-  "observed_at": "2026-08-16T03:17:55.311293+00:00"
+  "observed_at": "2026-08-16T07:14:46.371803+00:00"
 }
