@@ -532,11 +532,12 @@
     {
       "id": "FR-CTL-001",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-ctl-001-camera-capability-contracts-2026-08-16.json"],
+      "evidence": ["docs/evidence/g10/fr-ctl-001-camera-capability-contracts-2026-08-16.json", "docs/evidence/g10/fr-ctl-001-camera-windows-uat-2026-08-16.json"],
       "automated_tests": [
         "apps/api/tests/test_camera_plan_contracts.py",
         "apps/api/tests/test_generation_variants.py",
-        "apps/web/src/features/production/DirectorShotEditor.test.tsx"
+        "apps/web/src/features/production/DirectorShotEditor.test.tsx",
+        "scripts/camera_capability_windows_uat.py"
       ]
     },
     {
