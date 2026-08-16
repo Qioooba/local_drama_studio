@@ -110,7 +110,7 @@
 | FR-VAR unsupported First/Last capability action | VERIFIED | TC-VAR-007 API regression；Published Profile 缺 END_FRAME 时返回 Profile/roles/capability/suggested action，零 Variant/Job |
 | FR-VAR operational retry isolation | VERIFIED | TC-VAR-003 CPU persistent queue regression；同一 Job attempt 1→2，Variant/Job/take 数不增，未使用 GPU_H3 |
 | FR-ENH capability-driven technical enhancement chain | VERIFIED | persisted recipe/run、real FFmpeg output and MediaVersion registration |
-| FR-DEL-001..004 local filesystem delivery candidate、manifest/hash verify、target versioning、tamper detection、history/withdraw | PARTIAL / UAT PENDING | `TimelineService.build_delivery` now requires latest approved render, publishes a non-overwriting atomic local directory, and writes `delivery-manifest.v3` with source/encoding/subtitle/license/target/hash evidence. `GET/POST /delivery-packages/{id}:verify`, package/files/history/download routes preserve immutable files and withdrawn status; each successful local download appends a bounded `DOWNLOAD` audit event containing only manifest/file fingerprints and transport. Target version create/select API retires prior active versions. Automated regression: `apps/api/tests/test_g8_timeline_delivery.py` and generated client contract. Formal Windows x64 three-viewport production UAT and final evidence remain pending; see `docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json`. |
+| FR-DEL-001..004 local filesystem delivery candidate、manifest/hash verify、target versioning、tamper detection、history/withdraw | PARTIAL / UAT PENDING | `TimelineService.build_delivery` now requires latest approved render, publishes a non-overwriting atomic local directory, and writes `delivery-manifest.v3` with source/encoding/subtitle/license/target/hash evidence. `GET/POST /delivery-packages/{id}:verify`, package/files/history/download routes preserve immutable files and withdrawn status; each successful local download appends a bounded `DOWNLOAD` audit event containing only manifest/file fingerprints and transport. Target version create/select API retires prior active versions. Automated regression: `apps/api/tests/test_g8_timeline_delivery.py` and generated client contract. `scripts/delivery_local_uat.py` additionally exercised a real Windows/F-path H3 MP4 with Unicode/space path, watermark, compliance fail→pass, human/platform approval, verify/download/withdraw and preserved manifest SHA. Formal three-viewport production UAT and final release sign-off remain pending; see `docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json` and `fr-del-001-004-delivery-chain-2026-08-16.json`. |
 | FR-IMG-007 分集已选媒体联系表与原文件导出 | VERIFIED PRODUCTION UAT | `ContactSheetExportService` 仅跟随 `selected_version_id` 权威指针，逐项复核源/副本 SHA 与大小，输出自包含 HTML、320px WebP 和 manifest；相同输入逐文件复验后幂等复用，篡改硬拒绝；SQLite 行数不变，runtime/network 均未接触。API 4 项、Web 2 项及三视口真实页面通过，见 `docs/evidence/g10/contact-sheet-export-uat-2026-08-15.json` |
 | FR-TML-004 OTIO / EDL 专业 NLE 导出 | VERIFIED PRODUCTION UAT | 冻结 TimelineRevision 导出 OTIO `Timeline.1`/`Clip.2`、项目相对媒体 URL、媒体 ID/hash/size 与 CMX 3600 non-drop EDL；临时目录写入后原子发布，manifest 逐文件复验，源/导出篡改硬拒绝且失败不修改 revision/SQLite。API 3 项、Web 2 项及三视口生产 UAT 通过，见 `docs/evidence/g10/timeline-otio-edl-export-uat-2026-08-15.json` |
 | G8 migration/OpenAPI/static/type/full API regression | VERIFIED | `0006_g8_timeline_audio_delivery`、generated OpenAPI、33 API tests, Ruff, mypy |
@@ -212,7 +212,7 @@ FR-CTL-001 提交链增量：生成工作台现按 `Intent + frozen PromptRevisi
 
 FR-PST-001 / TC-CAP-009 已闭环：PostProcessRecipe 采用逻辑 key + 不可变版本 + 显式 DRAFT 发布；运行必须先生成只读 plan hash，再由用户二次确认。真实本地执行按 `SCALE(FFV1 中间件) → TECHNICAL_QC(FFprobe) → ENCODE(H264)` 分步记录 executor、配置 profile、输入/输出 SHA-256 与结果，只有 QC 通过才注册带 `parent_version_id` 的新 ENHANCED MediaVersion，输入永不覆盖。1280×720 真实页面已完成创建、发布、预检、执行及双视频旁路比较，QC=true、无横向溢出或可见错误。证据见 `docs/evidence/g10/fr-pst-001-uat-2026-08-15.json`。
 
-总账现由 `scripts/master_requirements_audit.py` 与 `docs/evidence/g10/master-requirements-map.json` 逐项校验，不能再靠手填计数放行；PASS 项必须引用现存的 PASS JSON 证据和自动化测试文件，未知 ID、重复 ID、缺证据或缺测试路径都会使 mapping 失效。当前自动审计为 21/84 FR、0/15 NFR、10/85 TC；FR-AUT-002 已有自动化实现证据但映射保持 `PARTIAL`，不计入正式 PASS，整体仍为 NO-GO。
+总账现由 `scripts/master_requirements_audit.py` 与 `docs/evidence/g10/master-requirements-map.json` 逐项校验，不能再靠手填计数放行；PASS 项必须引用现存的 PASS JSON 证据和自动化测试文件，未知 ID、重复 ID、缺证据或缺测试路径都会使 mapping 失效。当前自动审计为 24/84 FR、2/15 NFR、10/85 TC；FR-AUT-002 已有自动化实现证据但映射保持 `PARTIAL`，不计入正式 PASS，整体仍为 NO-GO。
 
 FR-ING-001 / TC-CAP-001 已闭环：用户可从页面调用 Windows 原生选择器或填写绝对路径导入本机 TXT、Markdown、DOCX；平台先注册不可变源文档、解析并生成带 hash 的预览，只有用户显式提交且预览 hash 未变化时才进入 COMMITTED。重复导入/提交幂等复用，源文件与已提取文本均不覆盖，symlink、不支持扩展名、过期预览及 hash 篡改硬拒绝。正式项目 1280×720 页面完成真实预览和提交，唯一提交审计事件及源/文本 SHA-256 已固化于 `docs/evidence/g10/fr-ing-001-uat-2026-08-15.json`。总账更新为 13/84 FR、0/15 NFR、8/85 TC，整体仍为 NO-GO。
 
@@ -338,7 +338,7 @@ FR-WFL-004 ComfyUI Lab control-plane 增量（2026-08-16）：新增 Designer �
 
 ## NFR-MEDIA-001 Range / 首帧播放增量（2026-08-16）
 
-媒体 content 端点继续只接受 `media_version_id`，并使用 seek-based、1 MiB 上限的流式迭代器，不将整片读入内存；Range 现在覆盖首段、尾段/suffix、HEAD、无效范围 416，以及强 ETag/日期 `If-Range` 不匹配时回退完整 200。响应带 `Accept-Ranges`、`Content-Range`、ETag 和 `Last-Modified`，注册项目目录越界在打开前拒绝。视频 `first/poster` 缩略图仍按本地首帧 seek 生成并以源 SHA + normalized preset 隔离 cache；定向测试包含本地首帧 <2s smoke assertion、流式 chunk 上限和路径逃逸负例。证据 `docs/evidence/g10/nfr-media-001-range-first-frame-2026-08-16.json` 保持 `PARTIAL`：真实 Windows x64 代理冷/热缓存首帧计时、四路并发播放和代表性编解码器 benchmark 尚未执行，不能据此宣称 NFR PASS。
+媒体 content 端点继续只接受 `media_version_id`，并使用 seek-based、1 MiB 上限的流式迭代器，不将整片读入内存；Range 现在覆盖首段、尾段/suffix、HEAD、无效范围 416，以及强 ETag/日期 `If-Range` 不匹配时回退完整 200。响应带 `Accept-Ranges`、`Content-Range`、ETag 和 `Last-Modified`，注册项目目录越界在打开前拒绝。视频 `first/poster` 缩略图仍按本地首帧 seek 生成并以源 SHA + normalized preset 隔离 cache；定向测试包含本地首帧 <2s smoke assertion、流式 chunk 上限和路径逃逸负例。`scripts/nfr_media_windows_uat.py` 又在 Windows 11 loopback 真实 API 上验证 HEAD、首/尾 Range、冷/热首帧和 4 路并发（冷 232ms、热 32ms、Range p95 41ms），但仍是短程单编码器观测；证据 `docs/evidence/g10/nfr-media-windows-uat-2026-08-16.json` 与基础 Range 证据均保持 `PARTIAL`，不能据此宣称 NFR PASS。
 
 ## NFR-REL-001/002 持久化与重启恢复增量（2026-08-16）
 
@@ -378,7 +378,7 @@ FR-PST-002/003 边界加固（2026-08-16）：交付包在文件/manifest 完整
 
 新增只读 `scripts/maintainability_audit.py`，作为静态回归门禁的一部分检查后端分层边界、非生成 React 组件行数（建议 `<500`，`>700` 为硬警告）以及领域模块到自动化测试的导入覆盖。当前领域层未发现 FastAPI/SQLAlchemy/具体基础设施依赖，非生成 UI 组件均低于 700 行，4 个领域模块均被 API 测试直接覆盖（69 个 API 测试文件/255 个测试函数，Web 35 个测试文件）。
 
-审计同时显式报告当前应用层/路由层仍直接引用具体 SQLite/adapter 基础设施的迁移警告，不隐藏架构债务；该警告不伪装成边界 PASS，也不改变本机运行行为。证据 `docs/evidence/g10/nfr-maint-test-audit-2026-08-16.json` 状态为 `PARTIAL`：自动化源/测试检查通过，但完整 `scripts/check.ps1` 结果与 Windows x64 三视口 Playwright 核心链仍需独立执行，不能用静态审计替代 UAT。`NFR-MAINT-001` 与 `NFR-TEST-001` 暂不标最终 VERIFIED。
+审计同时显式报告当前应用层/路由层仍直接引用具体 SQLite/adapter 基础设施的迁移警告，不隐藏架构债务；该警告不伪装成边界 PASS，也不改变本机运行行为。`NFR-MAINT-001` 证据 `docs/evidence/g10/nfr-maint-test-audit-2026-08-16.json` 仍为 `PARTIAL`。`NFR-TEST-001` 已由 Windows x64 `scripts/check.ps1` 全门禁（285 API、Ruff、mypy、生产构建、100 Web tests）和三视口 Edge 核心链（3/3）单独证实为 `PASS`，证据 `docs/evidence/g10/nfr-test-001-full-gate-2026-08-16.json`；这不代表其它 PARTIAL 需求自动关闭。
 
 ## 2026-08-16 隔离 UAT 与本地传输边界补充
 
@@ -387,7 +387,7 @@ FR-PST-002/003 边界加固（2026-08-16）：交付包在文件/manifest 完整
 ComfyUI 与 Local LLM loopback 客户端现在使用显式无代理、拒绝 3xx 跳转的本地传输；endpoint 拒绝凭据/query/fragment，Comfy provider 错误不再回显原始路径、token 或 node payload。11 项真实本地 socket 回归通过，证据 `docs/evidence/g10/nfr-sec-003-prv-002-local-adapter-transport-2026-08-16.json` 保持 PARTIAL。
 
 规模与恢复 UAT 也在隔离根目录通过：60 集/800 镜头/10,000 媒体元数据 read path 与索引检查通过（合成媒体明确保持 UNKNOWN，不冒充可播放素材），见 `docs/evidence/g10/metadata-scale-uat-2026-08-16.json`；100 个真实本地 WAV 经 online backup、干净恢复、100/100 SHA-256 与恢复 API 校验通过，见 `docs/evidence/g10/recovery-restore-uat-2026-08-16.json`。这些结果增强 NFR-PERF/REL 证据，但不宣称 Windows 硬件 p95、断电或最终发布通过。
-\n## 2026-08-16 核心链三视口隔离浏览器 UAT
+## 2026-08-16 核心链三视口隔离浏览器 UAT
 
 在生产 SQLite/项目树的只读快照上，用真实 FastAPI 与 React 页面完成 1440×900、1280×800、1024×768 三档核心链浏览器 UAT：项目健康、全局搜索、生成预检、审核收件箱、时间线与本地交付历史均可读取；只产生 GET，未请求原始媒体，无公网请求、控制台错误、页面错误或横向溢出。证据 `docs/evidence/g10/core-chain-browser-readonly-uat-2026-08-16.json` 为 PASS，脚本 `tests/e2e/core_chain_browser_readonly.spec.ts`；该证据仍是隔离只读 UAT，不替代真实生成、人工批准和正式发布签字。
 
@@ -396,3 +396,7 @@ ComfyUI 与 Local LLM loopback 客户端现在使用显式无代理、拒绝 3xx
 在已批准的 SHOT_001 关键帧和用户本机模型引用上，以真实 MiniMaxH3ImageToVideo 节点完成一次 10-step、480×832、124 帧的本地 I2V；ComfyUI 监听 `127.0.0.1:8190`，输出写入 F 盘 `work/comfy-production/output` 隔离目录。队列提交、执行成功、H.264/AAC 产物、24fps/5.167s、SHA-256 与 ffprobe 均已留证，模型未打包/上传，生产 DB 未接触。证据 `docs/evidence/g10/h3-local-i2v-uat-2026-08-16.json` 保持 `PARTIAL`：这是运行时真实产物，不等同于 LocalDramaStudio 正式 Job/MediaVersion 登记；正式 machine QC、人工审核、选择与交付，以及长时间稳定性/许可证复核仍需后续闭环。
 
 同一真实 MP4 随后在临时 SQLite/项目根中跑通平台正式媒体链：`MediaService.import_file(stage=FORMAL)`、`g6_formal_video_qc_v1` ffprobe 机器检查、`formal_video` 模板人工批准、FORMAL_SELECTION 预检与提交均成功，数据库 integrity=ok；新增 `scripts/h3_formal_pipeline_uat.py`、`test_formal_selection_commit.py`，证据 `docs/evidence/g10/h3-formal-pipeline-uat-2026-08-16.json` 仍为 `PARTIAL`，因为未把该隔离对象推进整集交付包/下载审计。期间发现并修复正式选择提交的 SQLite 参数绑定错误，避免真实批准链在最终写选择行时失败。
+
+## 2026-08-16 LocalDramaStudio Comfy 平台 Job UAT 阻塞
+
+新增 `scripts/h3_comfy_job_uat.py`，实际经过 `WorkflowService` 注册/验证/发布、`JobService` claim 和 `ComfyGenerationService.submit_next`，把关键帧按平台输入根物化后向 loopback Comfy 提交 `H3WorkflowFactory.build_fl2va`。受控 Comfy 进程只启用 `ComfyUI_RH_MinMaxH3` allow-list；提示已接受，但 RH `load_h3_model` 在 Windows 本机模型加载阶段触发 `WindowsAccessViolation`，进程退出且没有生成 Artifact。证据 `docs/evidence/g10/h3-comfy-job-uat-2026-08-16.json` 明确标记 `BLOCKED`，不把外部 native 节点生成或独立正式媒体链误报为平台 Job 成功；生产数据库/项目树、公网均未接触。待 RH 运行时资源/模型加载问题修复后重跑，FR-GEN/VID/WFL 相关条目继续保持 `PARTIAL`。

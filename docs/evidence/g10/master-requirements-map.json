@@ -128,14 +128,14 @@
     {
       "id": "FR-PST-002",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-pst-002-003-postprocess-delivery-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/features/generation/PostProcessPanel.test.tsx"]
+      "evidence": ["docs/evidence/g10/fr-pst-002-003-postprocess-delivery-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/features/generation/PostProcessPanel.test.tsx", "scripts/delivery_local_uat.py"]
     },
     {
       "id": "FR-PST-003",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-pst-002-003-postprocess-delivery-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/features/production/DeliveryWorkflowPanel.tsx"]
+      "evidence": ["docs/evidence/g10/fr-pst-002-003-postprocess-delivery-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/features/production/DeliveryWorkflowPanel.tsx", "scripts/delivery_local_uat.py"]
     },
     {
       "id": "TC-CAP-009",
@@ -270,55 +270,55 @@
     {
       "id": "FR-DEL-001",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/generated/api.test.ts", "apps/web/src/features/production/DeliveryWorkflowPanel.test.tsx"]
+      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/generated/api.test.ts", "apps/web/src/features/production/DeliveryWorkflowPanel.test.tsx", "scripts/delivery_local_uat.py"]
     },
     {
       "id": "FR-DEL-002",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/generated/api.test.ts", "apps/web/src/features/production/DeliveryWorkflowPanel.test.tsx"]
+      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/generated/api.test.ts", "apps/web/src/features/production/DeliveryWorkflowPanel.test.tsx", "scripts/delivery_local_uat.py"]
     },
     {
       "id": "FR-DEL-003",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/generated/api.test.ts", "apps/web/src/features/production/DeliveryWorkflowPanel.test.tsx"]
+      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/generated/api.test.ts", "apps/web/src/features/production/DeliveryWorkflowPanel.test.tsx", "scripts/delivery_local_uat.py"]
     },
     {
       "id": "FR-DEL-004",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/generated/api.test.ts", "apps/web/src/features/production/DeliveryWorkflowPanel.test.tsx"]
+      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/generated/api.test.ts", "apps/web/src/features/production/DeliveryWorkflowPanel.test.tsx", "scripts/delivery_local_uat.py"]
     },
     {
       "id": "TC-DEL-001",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json"],
+      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py"]
     },
     {
       "id": "TC-DEL-002",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json"],
+      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py"]
     },
     {
       "id": "TC-DEL-003",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json"],
+      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py"]
     },
     {
       "id": "TC-DEL-004",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json"],
+      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py"]
     },
     {
       "id": "TC-DEL-005",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json"],
+      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py"]
     },
     {
@@ -376,8 +376,8 @@
     {
       "id": "FR-GEN-001",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-gen-001-004-generation-replay-2026-08-16.json", "docs/evidence/g10/h3-local-i2v-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx"]
+      "evidence": ["docs/evidence/g10/fr-gen-001-004-generation-replay-2026-08-16.json", "docs/evidence/g10/h3-local-i2v-uat-2026-08-16.json", "docs/evidence/g10/h3-comfy-job-uat-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx", "scripts/h3_comfy_job_uat.py"]
     },
     {
       "id": "FR-GEN-002",
@@ -388,8 +388,8 @@
     {
       "id": "FR-GEN-003",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-gen-001-004-generation-replay-2026-08-16.json", "docs/evidence/g10/h3-local-i2v-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx"]
+      "evidence": ["docs/evidence/g10/fr-gen-001-004-generation-replay-2026-08-16.json", "docs/evidence/g10/h3-local-i2v-uat-2026-08-16.json", "docs/evidence/g10/h3-comfy-job-uat-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx", "scripts/h3_comfy_job_uat.py"]
     },
     {
       "id": "FR-GEN-004",
@@ -512,8 +512,8 @@
     {
       "id": "FR-VID-001",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-vid-001-005-007-006-formal-video-2026-08-16.json", "docs/evidence/g10/h3-local-i2v-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx"]
+      "evidence": ["docs/evidence/g10/fr-vid-001-005-007-006-formal-video-2026-08-16.json", "docs/evidence/g10/h3-local-i2v-uat-2026-08-16.json", "docs/evidence/g10/h3-comfy-job-uat-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx", "scripts/h3_comfy_job_uat.py"]
     },
     {
       "id": "FR-VID-005",
@@ -560,8 +560,8 @@
     {
       "id": "FR-WFL-001",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-wfl-001-002-release-history-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_workflow_release_contracts.py", "apps/api/tests/test_g6_workflows.py", "apps/web/src/app/ProfileEditor.test.tsx"]
+      "evidence": ["docs/evidence/g10/fr-wfl-001-002-release-history-2026-08-16.json", "docs/evidence/g10/h3-comfy-job-uat-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_workflow_release_contracts.py", "apps/api/tests/test_g6_workflows.py", "apps/web/src/app/ProfileEditor.test.tsx", "scripts/h3_comfy_job_uat.py"]
     },
     {
       "id": "FR-WFL-002",
@@ -590,8 +590,8 @@
     {
       "id": "FR-WFL-004",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-wfl-004-comfy-lab-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_comfy_lab.py", "apps/web/src/features/shared/ComfyLabPanel.test.tsx"]
+      "evidence": ["docs/evidence/g10/fr-wfl-004-comfy-lab-2026-08-16.json", "docs/evidence/g10/h3-comfy-job-uat-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_comfy_lab.py", "apps/web/src/features/shared/ComfyLabPanel.test.tsx", "scripts/h3_comfy_job_uat.py"]
     },
     {
       "id": "NFR-A11Y-001",
@@ -608,8 +608,8 @@
     {
       "id": "NFR-MEDIA-001",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/nfr-media-001-range-first-frame-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g3_configuration_media.py"]
+      "evidence": ["docs/evidence/g10/nfr-media-001-range-first-frame-2026-08-16.json", "docs/evidence/g10/nfr-media-windows-uat-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g3_configuration_media.py", "apps/api/tests/test_nfr_media_windows_uat.py", "scripts/nfr_media_windows_uat.py"]
     },
     {
       "id": "NFR-REL-001",

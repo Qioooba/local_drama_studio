@@ -1,0 +1,39 @@
+{
+  "schema_version": "g10.h3_comfy_job_uat.v1",
+  "status": "BLOCKED",
+  "requirement_ids": ["FR-GEN-001", "FR-GEN-003", "FR-VID-001", "FR-WFL-001", "FR-WFL-004"],
+  "observed_at": "2026-08-16T06:58:00Z",
+  "scope": "LocalDramaStudio ComfyGenerationService -> platform Job -> Artifact isolated UAT",
+  "runtime": {
+    "endpoint": "http://127.0.0.1:8190",
+    "endpoint_local": true,
+    "runtime_contacted": true,
+    "network_contacted": false,
+    "production_database_contacted": false,
+    "production_mutated": false,
+    "custom_node_policy": "--disable-all-custom-nodes with ComfyUI_RH_MinMaxH3 allow-list"
+  },
+  "workflow": {
+    "factory": "H3WorkflowFactory.build_fl2va",
+    "capability": "VIDEO_I2V_H3",
+    "stage_reached": "Comfy prompt accepted; RH H3 model load",
+    "job_artifact_produced": false
+  },
+  "failure": {
+    "type": "WindowsAccessViolation",
+    "stage": "runtime_h3_model_load",
+    "component": "ComfyUI_RH_MinMaxH3 load_h3_model",
+    "raw_provider_error_recorded": false,
+    "redaction": "No provider stack, token, prompt, or absolute input path is included"
+  },
+  "limitations": [
+    "This is a real local platform-job attempt, not a synthetic pass.",
+    "The controlled RH runtime crashed while loading the H3 model before an artifact was produced; the platform Job -> Artifact -> MediaVersion path therefore remains unverified.",
+    "A separate native Comfy node produced an H3 MP4 and a separate isolated formal-media pipeline passed, but neither substitutes for this platform Job UAT.",
+    "The controlled Comfy process and temporary materialized input were stopped/cleaned; no production tree or database was changed."
+  ],
+  "rerun": {
+    "command": "E:\\Tools\\Python\\python.exe scripts/h3_comfy_job_uat.py --keyframe <approved-local-keyframe> --server http://127.0.0.1:8190 --comfy-output-root <local-comfy-output> --comfy-input-root <local-comfy-input> --output docs/evidence/g10/h3-comfy-job-uat-2026-08-16.json",
+    "script": "scripts/h3_comfy_job_uat.py"
+  }
+}

@@ -5,8 +5,8 @@
     "NFR-TEST-001"
   ],
   "status": "PARTIAL",
-  "observed_at": "2026-08-16T06:53:44.861563+00:00",
-  "git_revision": "ed13dc53fa55ab70b0d9c805b996ea044d7a3248",
+  "observed_at": "2026-08-16T07:54:18.308311+00:00",
+  "git_revision": "2897a0db6b85a1a66cb021940631640b51291410",
   "deterministic_contracts_passed": true,
   "hard_failures": [],
   "dependencies": {
@@ -323,8 +323,8 @@
     ],
     "domain_modules_without_direct_test_import": [],
     "domain_rule_coverage_floor_passed": true,
-    "api_test_file_count": 73,
-    "api_test_function_count": 273,
+    "api_test_file_count": 74,
+    "api_test_function_count": 275,
     "web_test_file_count": 36,
     "coverage_method": "static import inventory; full pytest/Vitest and Playwright remain separate gates"
   },
