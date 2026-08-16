@@ -5,8 +5,8 @@
     "NFR-TEST-001"
   ],
   "status": "PARTIAL",
-  "observed_at": "2026-08-16T04:16:38.441030+00:00",
-  "git_revision": "3d190077e29ad9825a05a94fe94508cdb8ea2bc3",
+  "observed_at": "2026-08-16T04:55:44.983523+00:00",
+  "git_revision": "799c31eefef32fb213ab86b41728f832584f2b40",
   "deterministic_contracts_passed": true,
   "hard_failures": [],
   "dependencies": {
@@ -292,7 +292,7 @@
       },
       {
         "path": "apps/web/src/features/status/DialogueGovernanceActions.tsx",
-        "lines": 98,
+        "lines": 99,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       },
