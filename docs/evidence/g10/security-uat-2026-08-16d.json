@@ -1,0 +1,55 @@
+{
+  "schema_version": "g10.security_uat.v1",
+  "status": "PASS",
+  "scope": "isolated migrated database and in-process real FastAPI boundary",
+  "checks": [
+    {
+      "code": "MALICIOUS_ORIGIN_REJECTED",
+      "passed": true
+    },
+    {
+      "code": "CSRF_TOKEN_REQUIRED",
+      "passed": true
+    },
+    {
+      "code": "VALID_INSTANCE_TOKEN_ACCEPTED",
+      "passed": true
+    },
+    {
+      "code": "PROJECT_PATH_ESCAPE_REJECTED",
+      "passed": true,
+      "observed_error": "PATH_ESCAPE"
+    },
+    {
+      "code": "REMOTE_PROVIDER_DISABLED",
+      "passed": true,
+      "observed_error": "REMOTE_PROVIDER_DISABLED_IN_LOCAL_RELEASE"
+    },
+    {
+      "code": "UNTRUSTED_CUSTOM_NODE_REJECTED",
+      "passed": true,
+      "observed_error": "WORKFLOW_NODE_SUPPLY_CHAIN_UNTRUSTED"
+    },
+    {
+      "code": "ZERO_PUBLIC_NETWORK_E2E",
+      "passed": true,
+      "blocked_public_attempts": [
+        "203.0.113.1"
+      ]
+    },
+    {
+      "code": "OPENAPI_HAS_NO_REMOTE_CREDENTIAL_FIELDS",
+      "passed": true,
+      "forbidden_fields": []
+    },
+    {
+      "code": "DATABASE_INTEGRITY",
+      "passed": true
+    }
+  ],
+  "runtime_contacted": false,
+  "public_network_contacted": false,
+  "production_database_contacted": false,
+  "jobs_created": false,
+  "observed_at": "2026-08-16T10:39:44.795432+00:00"
+}

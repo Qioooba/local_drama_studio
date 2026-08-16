@@ -1,0 +1,344 @@
+{
+  "schema_version": "nfr.maintainability.regression.audit.v1",
+  "requirement_ids": [
+    "NFR-MAINT-001",
+    "NFR-TEST-001"
+  ],
+  "status": "PARTIAL",
+  "observed_at": "2026-08-16T10:49:32.694780+00:00",
+  "git_revision": "19e17eee340bb384328ef9cb089a192536c3f1fe",
+  "deterministic_contracts_passed": true,
+  "hard_failures": [],
+  "dependencies": {
+    "rules": {
+      "domain_forbidden_imports": [
+        "fastapi",
+        "sqlalchemy",
+        "pydantic",
+        "local_drama.api",
+        "local_drama.infrastructure",
+        "local_drama.config"
+      ],
+      "application_may_not_reach_concrete_infrastructure": true,
+      "routes_may_not_reach_concrete_infrastructure": true
+    },
+    "domain_forbidden_imports": [],
+    "application_infrastructure_warnings": [
+      {
+        "file": "apps/api/local_drama/application/audit.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/automation.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/automation_workflows.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/canvas.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/capacity.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/capacity.py",
+        "import": "local_drama.infrastructure.manifest"
+      },
+      {
+        "file": "apps/api/local_drama/application/comfy_jobs.py",
+        "import": "local_drama.infrastructure.comfy"
+      },
+      {
+        "file": "apps/api/local_drama/application/comfy_jobs.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/comfy_lab.py",
+        "import": "local_drama.infrastructure.comfy"
+      },
+      {
+        "file": "apps/api/local_drama/application/configuration.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/contact_sheets.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/creative_entries.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/diagnostics.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/diagnostics.py",
+        "import": "local_drama.infrastructure.manifest"
+      },
+      {
+        "file": "apps/api/local_drama/application/dialogue.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/documents.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/experiments.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/g6_readiness.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/g7_readiness.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/g8_readiness.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/g9_readiness.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/generation.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/i2v_probe.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/jobs.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/local_llm.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/local_llm.py",
+        "import": "local_drama.infrastructure.local_llm"
+      },
+      {
+        "file": "apps/api/local_drama/application/media.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/model_compatibility.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/motion_controls.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/network_e2e.py",
+        "import": "local_drama.infrastructure.comfy"
+      },
+      {
+        "file": "apps/api/local_drama/application/network_e2e.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/network_e2e.py",
+        "import": "local_drama.infrastructure.local_llm"
+      },
+      {
+        "file": "apps/api/local_drama/application/outbox_delivery.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/profiles.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/profiles.py",
+        "import": "local_drama.infrastructure.manifest"
+      },
+      {
+        "file": "apps/api/local_drama/application/projects.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/projects.py",
+        "import": "local_drama.infrastructure.filesystem.template"
+      },
+      {
+        "file": "apps/api/local_drama/application/project_packages.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/project_packages.py",
+        "import": "local_drama.infrastructure.filesystem.template"
+      },
+      {
+        "file": "apps/api/local_drama/application/prompts.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/read_models.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/reviews.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/timeline.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/timeline_exports.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/timeline_status.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/worker.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/workflows.py",
+        "import": "local_drama.infrastructure.comfy"
+      },
+      {
+        "file": "apps/api/local_drama/application/workflows.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/workflows.py",
+        "import": "local_drama.infrastructure.manifest"
+      },
+      {
+        "file": "apps/api/local_drama/application/workspace_assets.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      }
+    ],
+    "route_infrastructure_warnings": [
+      {
+        "file": "apps/api/local_drama/api/routes/adapters.py",
+        "import": "local_drama.infrastructure.adapters"
+      },
+      {
+        "file": "apps/api/local_drama/api/routes/profiles.py",
+        "import": "local_drama.infrastructure.manifest"
+      },
+      {
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "import": "local_drama.infrastructure.comfy"
+      }
+    ],
+    "domain_boundary_passed": true,
+    "concrete_infrastructure_boundary_passed": false
+  },
+  "ui_component_size": {
+    "scope": "apps/web/src/**/*.tsx excluding generated client and tests",
+    "recommended_limit_lines": 500,
+    "warning_limit_lines": 700,
+    "component_count": 51,
+    "largest_components": [
+      {
+        "path": "apps/web/src/app/App.tsx",
+        "lines": 391,
+        "recommended_limit_exceeded": false,
+        "warning_limit_exceeded": false
+      },
+      {
+        "path": "apps/web/src/features/generation/GenerationWorkbench.tsx",
+        "lines": 356,
+        "recommended_limit_exceeded": false,
+        "warning_limit_exceeded": false
+      },
+      {
+        "path": "apps/web/src/features/reviews/ReviewInboxPanel.tsx",
+        "lines": 215,
+        "recommended_limit_exceeded": false,
+        "warning_limit_exceeded": false
+      },
+      {
+        "path": "apps/web/src/features/status/ReadinessPanels.tsx",
+        "lines": 128,
+        "recommended_limit_exceeded": false,
+        "warning_limit_exceeded": false
+      },
+      {
+        "path": "apps/web/src/features/profiles/ProfileConfigurationPanel.tsx",
+        "lines": 127,
+        "recommended_limit_exceeded": false,
+        "warning_limit_exceeded": false
+      },
+      {
+        "path": "apps/web/src/features/generation/PostProcessPanel.tsx",
+        "lines": 123,
+        "recommended_limit_exceeded": false,
+        "warning_limit_exceeded": false
+      },
+      {
+        "path": "apps/web/src/features/canvas/ProductionCanvasPanel.tsx",
+        "lines": 105,
+        "recommended_limit_exceeded": false,
+        "warning_limit_exceeded": false
+      },
+      {
+        "path": "apps/web/src/features/status/DialogueGovernanceActions.tsx",
+        "lines": 99,
+        "recommended_limit_exceeded": false,
+        "warning_limit_exceeded": false
+      },
+      {
+        "path": "apps/web/src/features/projects/ProjectCreateWizard.tsx",
+        "lines": 81,
+        "recommended_limit_exceeded": false,
+        "warning_limit_exceeded": false
+      },
+      {
+        "path": "apps/web/src/features/reviews/ImageCandidateGrid.tsx",
+        "lines": 78,
+        "recommended_limit_exceeded": false,
+        "warning_limit_exceeded": false
+      }
+    ],
+    "components_needing_split": [],
+    "components_over_warning_limit": [],
+    "size_contract_passed": true
+  },
+  "domain_test_inventory": {
+    "domain_module_count": 4,
+    "domain_modules_covered_by_tests": [
+      "apps/api/local_drama/domain/errors.py",
+      "apps/api/local_drama/domain/generation.py",
+      "apps/api/local_drama/domain/generation_contracts.py",
+      "apps/api/local_drama/domain/policies.py"
+    ],
+    "domain_modules_without_direct_test_import": [],
+    "domain_rule_coverage_floor_passed": true,
+    "api_test_file_count": 75,
+    "api_test_function_count": 278,
+    "web_test_file_count": 36,
+    "coverage_method": "static import inventory; full pytest/Vitest and Playwright remain separate gates"
+  },
+  "regression_gate": {
+    "full_local_gate_command": "scripts/check.ps1",
+    "full_local_gate_status": "NOT_RUN_BY_AUDIT",
+    "playwright_core_path_status": "PENDING_WINDOWS_X64_UAT",
+    "note": "Run scripts/check.ps1 and the Windows x64 three-viewport Playwright path before release PASS; this read-only audit does not substitute for either."
+  },
+  "safety": {
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "mutated": false,
+    "jobs_created": false
+  },
+  "interpretation": "PARTIAL means deterministic source/test checks are green but complete NFR closure still requires the full local gate and Windows/browser UAT. Application concrete-infrastructure imports are reported as migration warnings, not hidden."
+}

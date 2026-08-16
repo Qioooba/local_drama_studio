@@ -25,7 +25,7 @@
           "error": null,
           "streams": 1,
           "format": {
-            "filename": "F:\\AI_Projects\\h3\\local_drama_studio\\temp\\runtime-smoke-smoke3\\ffmpeg-smoke.mp4",
+            "filename": "F:\\AI_Projects\\h3\\local_drama_studio\\temp\\runtime-smoke-20260816T110432Z\\ffmpeg-smoke.mp4",
             "nb_streams": 1,
             "nb_programs": 0,
             "nb_stream_groups": 0,
@@ -45,7 +45,7 @@
           }
         },
         "artifact": {
-          "path_rel": "temp/runtime-smoke-smoke3/ffmpeg-smoke.mp4",
+          "path_rel": "temp/runtime-smoke-20260816T110432Z/ffmpeg-smoke.mp4",
           "sha256": "eb129fb3d1f3a3ebebf94c551b955bf31072bfbcfe237fb15ca4a3e601b0c084",
           "bytes": 6111
         }
@@ -71,7 +71,7 @@
           }
         ],
         "artifact": {
-          "path_rel": "temp/runtime-smoke-smoke3/sapi-smoke.wav",
+          "path_rel": "temp/runtime-smoke-20260816T110432Z/sapi-smoke.wav",
           "sha256": "f90d9645661b15a9920404dd99b7861730b92abdb983143a963d2c5c6cbd8613",
           "bytes": 186510
         },
@@ -120,7 +120,7 @@
         "endpoint_local": true,
         "runtime_contacted": true,
         "network_contacted": false,
-        "generation_smoke": "PASS",
+        "generation_smoke": "NOT_RUN",
         "health": {
           "status_code": 200,
           "error": null,
@@ -131,59 +131,22 @@
               "type": "cuda",
               "index": 0,
               "vram_total": 25756565504,
-              "vram_free": 24449646592,
-              "torch_vram_total": 0,
-              "torch_vram_free": 0
+              "vram_free": 24353832960,
+              "torch_vram_total": 100663296,
+              "torch_vram_free": 90832896
             }
           ]
         },
         "object_info": {
           "status_code": 200,
           "error": null,
-          "node_count": 1480
+          "node_count": 1516
         },
         "queue": {
           "status_code": 200,
           "error": null,
           "running": 0,
           "pending": 0
-        },
-        "prompt_status_code": 200,
-        "prompt_error": null,
-        "runtime_mutated": true,
-        "prompt_id": "d48973a0-3992-4fee-9b4c-6bf884490708",
-        "history_status": {
-          "status_str": "success",
-          "completed": true,
-          "messages": [
-            [
-              "execution_start",
-              {
-                "prompt_id": "d48973a0-3992-4fee-9b4c-6bf884490708",
-                "timestamp": 1786857212650
-              }
-            ],
-            [
-              "execution_cached",
-              {
-                "nodes": [],
-                "prompt_id": "d48973a0-3992-4fee-9b4c-6bf884490708",
-                "timestamp": 1786857212656
-              }
-            ],
-            [
-              "execution_success",
-              {
-                "prompt_id": "d48973a0-3992-4fee-9b4c-6bf884490708",
-                "timestamp": 1786857212665
-              }
-            ]
-          ]
-        },
-        "output": {
-          "filename": "runtime_smoke_1f4ad7732ff947f4bc03558283efe012_00001_.png",
-          "bytes": 424,
-          "sha256": "21da8185607841b78ce8308e61cc25bad1833a0a0fcf466f44601a1aaca904e2"
         }
       }
     }
@@ -192,5 +155,5 @@
   "network_contacted": false,
   "production_database_contacted": false,
   "production_mutated": false,
-  "observed_at": "2026-08-16T05:13:33.072820+00:00"
+  "observed_at": "2026-08-16T11:04:34.617822+00:00"
 }

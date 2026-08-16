@@ -1,0 +1,80 @@
+{
+  "schema_version": "g10.dialogue_tts_windows_uat.v1",
+  "status": "PASS",
+  "scope": "isolated migrated database and real in-process FastAPI + Windows System.Speech runtime",
+  "selected_voice": {
+    "name": "Microsoft Huihui Desktop",
+    "culture": "zh-CN",
+    "gender": "Female",
+    "age": "Adult",
+    "voice_ref": "sapi:Microsoft Huihui Desktop"
+  },
+  "profile_version_id": "sapi-tts-b621e6bd-5362-4eb7-9fba-d50a17fa7b66-v1",
+  "job_id": "e3ac16fd-06f7-45b2-a9ba-956644b1067e",
+  "artifact": {
+    "path_rel": "work/jobs/e3ac16fd-06f7-45b2-a9ba-956644b1067e/speech.wav",
+    "sha256": "23b42e5053cae3153f8f95f26c7a5a038ebf86581bfe01bd0f516f96af58b6ac"
+  },
+  "checks": [
+    {
+      "code": "SAPI_VOICE_DISCOVERED",
+      "passed": true,
+      "voice": {
+        "name": "Microsoft Huihui Desktop",
+        "culture": "zh-CN",
+        "gender": "Female",
+        "age": "Adult",
+        "voice_ref": "sapi:Microsoft Huihui Desktop"
+      }
+    },
+    {
+      "code": "NO_NETWORK_DISCOVERY",
+      "passed": true
+    },
+    {
+      "code": "MISSING_IDEMPOTENCY_KEY_REJECTED",
+      "passed": true
+    },
+    {
+      "code": "TTS_JOB_SUBMITTED",
+      "passed": true
+    },
+    {
+      "code": "TTS_JOB_IDEMPOTENT_REPLAY",
+      "passed": true
+    },
+    {
+      "code": "PREMATURE_FINALIZE_REJECTED",
+      "passed": true
+    },
+    {
+      "code": "REAL_SAPI_WORKER_SUCCEEDED",
+      "passed": true
+    },
+    {
+      "code": "WAV_ARTIFACT_VERIFIED",
+      "passed": true
+    },
+    {
+      "code": "FORMAL_CANDIDATE_PROMOTED",
+      "passed": true
+    },
+    {
+      "code": "PROVENANCE_HASH_BOUND",
+      "passed": true
+    },
+    {
+      "code": "FINALIZE_IDEMPOTENT_REPLAY",
+      "passed": true
+    },
+    {
+      "code": "DATABASE_INTEGRITY",
+      "passed": true
+    }
+  ],
+  "runtime_contacted": true,
+  "network_contacted": false,
+  "production_database_contacted": false,
+  "production_profile_mutated": false,
+  "observed_at": "2026-08-16T10:39:45.652694+00:00"
+}

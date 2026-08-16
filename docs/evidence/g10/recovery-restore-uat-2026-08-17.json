@@ -1,0 +1,53 @@
+{
+  "schema_version": "g10.recovery_restore_uat.v1",
+  "status": "PASS",
+  "scope": "isolated clean-root restore with real locally probed WAV media",
+  "checks": [
+    {
+      "code": "ONLINE_BACKUP_INTEGRITY",
+      "passed": true
+    },
+    {
+      "code": "RESTORED_INDEX_REBUILD",
+      "passed": true,
+      "index_count": 76,
+      "query_plan_rows": 3
+    },
+    {
+      "code": "RESTORED_DATABASE_INTEGRITY",
+      "passed": true
+    },
+    {
+      "code": "ONE_HUNDRED_MEDIA_HASHES",
+      "passed": true,
+      "checked": 100,
+      "failures": 0
+    },
+    {
+      "code": "RESTORED_API_READY",
+      "passed": true
+    },
+    {
+      "code": "RESTORED_PROJECT_READ",
+      "passed": true
+    },
+    {
+      "code": "RESTORED_REVIEW_ENTRY",
+      "passed": true
+    }
+  ],
+  "rto_seconds": 0.878,
+  "rpo": "zero fixture records lost from captured online backup",
+  "timings": {
+    "online_backup_seconds": 0.044,
+    "restore_copy_seconds": 0.15,
+    "index_rebuild_seconds": 0.037,
+    "hash_verify_seconds": 0.228,
+    "api_ready_seconds": 0.5
+  },
+  "hash_failures": [],
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "production_database_contacted": false,
+  "observed_at": "2026-08-16T15:49:41.355269+00:00"
+}

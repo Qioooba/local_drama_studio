@@ -10,8 +10,8 @@
     "synthetic_media_integrity": "UNKNOWN",
     "playable_media_claimed": false
   },
-  "migration_head": "0021_g10_scale_read_indexes",
-  "build_seconds": 1.333,
+  "migration_head": "0039_automation_task_jobs",
+  "build_seconds": 1.544,
   "checks": [
     {
       "code": "SCALE_COUNTS",
@@ -25,25 +25,25 @@
     {
       "code": "PRODUCTION_READ_P95",
       "passed": true,
-      "p95_ms": 11.881,
-      "max_ms": 20.861
+      "p95_ms": 20.428,
+      "max_ms": 32.615
     },
     {
       "code": "TIMELINE_DELIVERY_READ_P95",
       "passed": true,
-      "p95_ms": 14.461,
-      "max_ms": 54.236
+      "p95_ms": 13.993,
+      "max_ms": 17.491
     },
     {
       "code": "REVIEW_INBOX_READ",
       "passed": true,
-      "elapsed_ms": 156.986,
+      "elapsed_ms": 201.539,
       "returned": 100
     },
     {
       "code": "MEDIA_OWNER_INDEX",
       "passed": true,
-      "elapsed_ms": 0.074
+      "elapsed_ms": 0.072
     },
     {
       "code": "DATABASE_INTEGRITY",
@@ -67,5 +67,5 @@
   "network_contacted": false,
   "production_database_contacted": false,
   "interpretation": "G10-01/G10-02 metadata-scale evidence only. It does not replace playable-media regression, ordered G7-G9 exits, final UAT, or go/no-go.",
-  "observed_at": "2026-08-14T19:29:01.612213+00:00"
+  "observed_at": "2026-08-16T15:43:50.535858+00:00"
 }

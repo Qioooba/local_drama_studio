@@ -1,0 +1,139 @@
+{
+  "schema_version": "g10.tc-dom-007.windows-uat.v1",
+  "status": "PARTIAL",
+  "scope": [
+    "TC-DOM-007",
+    "FR-WRT-001",
+    "FR-WRT-005"
+  ],
+  "limits": [
+    "bounded isolated SQLite and loopback UAT; not a production-database or release-scale certification",
+    "selection records remain immutable audit history; the enforced stale state is the approval and current formal-selection gate",
+    "does not exercise generation jobs, ComfyUI, provider runtimes, or model files"
+  ],
+  "observed_at": "2026-08-16T11:45:58.367388+00:00",
+  "platform": {
+    "system": "win32",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.10"
+  },
+  "local_only": true,
+  "network": {
+    "loopback_endpoint": "http://127.0.0.1:63453",
+    "public_network_contacted": false,
+    "provider_contacted": false,
+    "comfyui_contacted": false
+  },
+  "isolation": {
+    "root_rel": ".",
+    "production_database_contacted": false,
+    "production_projects_root_contacted": false
+  },
+  "checks": [
+    {
+      "code": "REAL_LOCAL_MP4_AND_FORMAL_QC",
+      "status": "PASS",
+      "observed": {
+        "machine_status": "PASS",
+        "formal_version_id": "93c6308e-5417-4a89-9132-3af5f89c0a43"
+      },
+      "detail": "ffmpeg-created MP4 was imported, derived, and locally QC checked"
+    },
+    {
+      "code": "APPROVAL_AND_SELECTION_HISTORY_CREATED",
+      "status": "PASS",
+      "observed": {
+        "review_id": "645c9653-1285-4370-b8eb-35ba8a9f704e",
+        "selection_id": "b17c1cc7-a483-42c9-9b33-89e8644c231f",
+        "ready_status": "READY"
+      },
+      "detail": "current formal approval enabled formal-selection preflight before the upstream change"
+    },
+    {
+      "code": "UPSTREAM_SHOT_REVISION_CREATED",
+      "status": "PASS",
+      "observed": {
+        "shot_revision_id": "7f08bdca-3f39-4098-8cb3-a1f22b9a9476",
+        "revision_no": 2
+      },
+      "detail": "new immutable ShotRevision is the upstream change"
+    },
+    {
+      "code": "HISTORY_RETAINED",
+      "status": "PASS",
+      "observed": {
+        "id": "b17c1cc7-a483-42c9-9b33-89e8644c231f",
+        "media_version_id": "93c6308e-5417-4a89-9132-3af5f89c0a43",
+        "selection_type": "FORMAL_SELECTION",
+        "source_revision": 1
+      },
+      "detail": "selection history is retained rather than deleted or rewritten"
+    },
+    {
+      "code": "REVIEW_MARKED_STALE",
+      "status": "PASS",
+      "observed": [
+        {
+          "id": "645c9653-1285-4370-b8eb-35ba8a9f704e",
+          "decision": "APPROVED",
+          "subject_revision": 2,
+          "is_stale": 1,
+          "stale_reason": "shot_revision_changed"
+        }
+      ],
+      "detail": "loopback review context exposes the exact upstream stale reason"
+    },
+    {
+      "code": "FORMAL_SELECTION_GATE_BLOCKED",
+      "status": "PASS",
+      "observed": {
+        "response_status": 200,
+        "plan": {
+          "project_id": "d9b418be-53ab-471c-8a81-12a8dff70f97",
+          "status": "BLOCKED",
+          "plan_hash": "54a882f835263baf0bb82144d983dd3e74874e185ddc97ddc24ec366c608b210",
+          "items": [
+            {
+              "media_version_id": "93c6308e-5417-4a89-9132-3af5f89c0a43",
+              "media_asset_id": "c1d3d50e-ca21-495d-bc66-1a379241fd6d",
+              "source_revision": 3,
+              "status": "BLOCKED",
+              "blockers": [
+                "LATEST_HUMAN_APPROVAL_REQUIRED"
+              ]
+            }
+          ],
+          "would_mutate": false
+        }
+      },
+      "detail": "the current formal-selection gate cannot reuse the now-stale approval"
+    },
+    {
+      "code": "STALE_AUDIT_RECORDED",
+      "status": "PASS",
+      "observed": {
+        "action": "REVIEWS_MARKED_STALE"
+      },
+      "detail": "stale propagation has an immutable local audit event"
+    },
+    {
+      "code": "LOOPBACK_ONLY",
+      "status": "PASS",
+      "observed": {
+        "endpoint": "http://127.0.0.1:63453",
+        "health": {
+          "status": 200,
+          "payload": {
+            "status": "HEALTHY",
+            "checks": {
+              "process": "ok",
+              "mode": "LOCAL_ONLY"
+            }
+          },
+          "error": null
+        }
+      },
+      "detail": "only a temporary loopback FastAPI process was contacted"
+    }
+  ]
+}

@@ -1,0 +1,101 @@
+{
+  "schema_version": "localdrama.nfr-comp-001.windows-path-uat.v1",
+  "status": "PARTIAL",
+  "scope": "isolated migrated SQLite + real FastAPI model-reference/compatibility paths on Windows",
+  "requirements": [
+    "NFR-COMP-001",
+    "FR-PRV-003"
+  ],
+  "source_volume": "F:",
+  "destination_volume": "E:",
+  "source_sha256": "caf1c2e5ccbd0e4c6027464e807b08aa50919050704a8cd17891b2a0c13edc59",
+  "destination_sha256": "caf1c2e5ccbd0e4c6027464e807b08aa50919050704a8cd17891b2a0c13edc59",
+  "api": {
+    "register_status": 201,
+    "report_status": 201
+  },
+  "checks": [
+    {
+      "code": "WINDOWS_X64_HOST",
+      "passed": true,
+      "platform": "Windows-11-10.0.26200-SP0"
+    },
+    {
+      "code": "UNICODE_SPACE_LONG_SOURCE_PATH",
+      "passed": true,
+      "path_length": 222,
+      "path": "F:\\AI_Projects\\h3\\local_drama_studio\\temp\\nfr-comp-20260816T103942Z\\source\\中文 空格 模型\\长路径-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\第二层-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\\第三层-zzzzzzzzzzzzzzzzzzzzzzzz\\FL2VA I2V int8 fp16.safetensors"
+    },
+    {
+      "code": "CROSS_VOLUME_COPY",
+      "passed": true,
+      "source_drive": "F:",
+      "destination_drive": "E:",
+      "source_hash": "caf1c2e5ccbd0e4c6027464e807b08aa50919050704a8cd17891b2a0c13edc59",
+      "destination_hash": "caf1c2e5ccbd0e4c6027464e807b08aa50919050704a8cd17891b2a0c13edc59",
+      "destination_path_length": 189,
+      "source": "F:\\AI_Projects\\h3\\local_drama_studio\\temp\\nfr-comp-20260816T103942Z\\source\\中文 空格 模型\\长路径-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\第二层-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\\第三层-zzzzzzzzzzzzzzzzzzzzzzzz\\FL2VA I2V int8 fp16.safetensors",
+      "destination": "E:\\AI\\Temp\\localdrama-nfr-comp-d94f608b80\\中文 空格 模型\\长路径-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\第二层-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\\第三层-zzzzzzzzzzzzzzzzzzzzzzzz\\FL2VA I2V int8 fp16.safetensors"
+    },
+    {
+      "code": "API_RETains_ABSOLUTE_EXTERNAL_REFERENCE",
+      "passed": true,
+      "register_status": 201,
+      "machine_path_ref": "E:\\AI\\Temp\\localdrama-nfr-comp-d94f608b80\\中文 空格 模型\\长路径-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\第二层-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\\第三层-zzzzzzzzzzzzzzzzzzzzzzzz\\FL2VA I2V int8 fp16.safetensors",
+      "copied": false,
+      "uploaded": false
+    },
+    {
+      "code": "API_OFFLINE_HASH_AND_CAPABILITY_REPORT",
+      "passed": true,
+      "report_status": 201,
+      "compatibility_status": "PASS",
+      "capability": {
+        "required": "I2V",
+        "declared": [
+          "I2V",
+          "VIDEO"
+        ],
+        "status": "MATCHED",
+        "passed": true
+      },
+      "report_sha256": "caf1c2e5ccbd0e4c6027464e807b08aa50919050704a8cd17891b2a0c13edc59"
+    },
+    {
+      "code": "MODEL_BYTES_NOT_IN_PROJECT_ROOT",
+      "passed": true,
+      "model_path": "E:\\AI\\Temp\\localdrama-nfr-comp-d94f608b80\\中文 空格 模型\\长路径-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\第二层-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\\第三层-zzzzzzzzzzzzzzzzzzzzzzzz\\FL2VA I2V int8 fp16.safetensors",
+      "project_root": "F:\\AI_Projects\\h3\\local_drama_studio\\temp\\nfr-comp-20260816T103942Z\\projects\\nfr_comp_path_matrix"
+    },
+    {
+      "code": "SOURCE_UNCHANGED_AFTER_COPY_AND_REPORT",
+      "passed": true
+    },
+    {
+      "code": "LOCAL_ONLY_NO_RUNTIME_OR_NETWORK",
+      "passed": true,
+      "runtime_contacted": false,
+      "network_contacted": false
+    }
+  ],
+  "failed_checks": [],
+  "observed": {
+    "unicode_path": true,
+    "space_path": true,
+    "long_path": true,
+    "cross_volume_copy": true,
+    "absolute_reference_only": true,
+    "copied": false,
+    "uploaded": false,
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "production_database_contacted": false
+  },
+  "limitations": [
+    "This is an isolated bounded path/reference UAT, not a real user model execution.",
+    "Windows three-viewport browser UAT and final legal license review remain outstanding.",
+    "The F-to-E copy is performed by this test fixture only; the platform retains no model bytes in the project."
+  ],
+  "next_required_action": "Run the Windows x64 three-viewport model selection and real user-runtime UAT before promoting NFR-COMP-001 to VERIFIED.",
+  "observed_at": "2026-08-16T10:39:42.464572+00:00"
+}

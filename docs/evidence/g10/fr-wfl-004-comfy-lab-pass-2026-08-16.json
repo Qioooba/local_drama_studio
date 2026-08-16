@@ -1,0 +1,34 @@
+{
+  "schema_version": "localdrama.requirement.evidence.v1",
+  "scope": [
+    "FR-WFL-004"
+  ],
+  "status": "PASS",
+  "local_only": true,
+  "implementation": {
+    "api": [
+      "GET /api/v1/comfy-lab/status",
+      "GET /api/v1/comfy-lab/session",
+      "POST /api/v1/comfy-lab:start|stop|restart",
+      "POST /api/v1/comfy-lab/workflow:capture",
+      "POST /api/v1/comfy-lab/test-runs"
+    ],
+    "designer_isolation": "explicit user-configured local Designer executable/root only; loopback endpoint; no shell; --disable-api-nodes",
+    "sandbox": "work/comfy-lab/{input,output,temp,user,captures}; captured JSON never enters formal workflow_packages or project media",
+    "control_truth": "unconfigured launch returns COMFY_LAB_LAUNCH_NOT_CONFIGURED; read-only status/session do not contact ComfyUI",
+    "ui": "ComfyLabPanel in Diagnostics shows status, sandbox, start/stop/restart, capture and non-executing test plan"
+  },
+  "automated_tests": [
+    "apps/api/tests/test_comfy_lab.py",
+    "apps/web/src/features/shared/ComfyLabPanel.test.tsx"
+  ],
+  "result": "4 API tests passed; 1 UI test passed; Ruff/mypy targeted pass",
+  "remaining": [
+    "Real user-configured Windows Designer process start/stop/restart and embedded/new-window browser UAT remain pending",
+    "Real Designer workflow capture/test run and proxy-path hop-by-hop header audit remain pending",
+    "This control-plane evidence does not claim final FR-WFL-004 PASS"
+  ],
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "production_mutated": false
+}

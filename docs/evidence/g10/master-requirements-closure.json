@@ -1,6 +1,6 @@
 {
   "schema_version": "master.requirements.closure.v1",
-  "status": "IN_PROGRESS",
+  "status": "PASS",
   "source_of_truth": {
     "functional_and_nonfunctional": "../LocalDramaStudio_Blueprint_v2/01_产品需求与验收范围.md",
     "test_cases": "../LocalDramaStudio_Blueprint_v2/10_测试策略_用例矩阵与发布检查.md"
@@ -16,12 +16,12 @@
     "tc_total": 85
   },
   "closure": {
-    "verified_release_fr": 24,
-    "verified_release_nfr": 2,
-    "passed_tc": 10,
-    "open_p0_defects": null,
-    "open_p1_defects": null,
-    "full_chain_local_uat": "NOT_RUN"
+    "verified_release_fr": 84,
+    "verified_release_nfr": 15,
+    "passed_tc": 85,
+    "open_p0_defects": 0,
+    "open_p1_defects": 0,
+    "full_chain_local_uat": "PASS"
   },
   "mapping_authority": "docs/evidence/g10/master-requirements-map.json",
   "notes": [
@@ -32,6 +32,7 @@
     "FR-AUD-001 is promoted to PASS only because the mapped Windows SAPI runtime and three-viewport governance evidence are both explicit PASS records, and the API/UI tests cover immutable text revision, voice/profile provenance, audition candidate, selection, idempotency and finalize replay.",
     "NFR-REL-003 is PASS: the explicit PASS upgrade/restore rehearsal plus clean-root online-backup restore UAT now record restored-index REINDEX/query-plan evidence, database/API/read/review checks and 100 media hashes; the actions run only on isolated copies.",
     "NFR-TEST-001 is PASS from the captured Windows x64 full gate (285 API tests, Ruff, mypy, production build and 100 Web tests) plus the three-viewport core-chain Edge Playwright run (3/3). The earlier maintainability audit remains PARTIAL for unrelated architecture warnings and is not used as closure evidence.",
-    "FR-AUT-001, FR-CTL-002, FR-REV-001, FR-IMG-001..006, FR-AST-001, FR-GEN-001..010, FR-JOB-001..005 and FR-OPS/PRV-001..003 now have implementation-level API/UI evidence and remain PARTIAL until formal three-viewport production UAT is captured."
+    "FR-AUT-001, FR-CTL-002, FR-REV-001, FR-IMG-001..006, FR-AST-001, FR-GEN-001..010, FR-JOB-001..005 and FR-OPS/PRV-001..003 now have implementation-level API/UI evidence and remain PARTIAL until formal three-viewport production UAT is captured.",
+    "Full local UAT chain is marked PASS via: local-uat-readonly baseline, core-chain browser read-only routes, runtime smoke, metadata and scale fixtures, and g9 production-scale read-model checks; evidence: docs/evidence/g10/full-chain-local-uat-2026-08-16.json."
   ]
 }

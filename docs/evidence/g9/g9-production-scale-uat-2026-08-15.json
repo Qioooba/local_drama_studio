@@ -1,108 +1,17 @@
 {
   "schema_version": "g9-production-scale-uat.v1",
-  "generated_at": "2026-08-14T17:11:31.305361+00:00",
+  "generated_at": "2026-08-16T15:55:02.426395+00:00",
   "mode": "LOCAL_ONLY",
   "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
   "episode_id": "d4db1033-9517-4bd0-958d-4228e0abead1",
   "persisted_scale_entities": true,
   "fixture_mode": false,
-  "created_shots": [
-    {
-      "id": "c2c3e482-14d2-4df9-92f0-004c601dab45",
-      "code": "G9_SCALE_UAT_005",
-      "shot_type": "SCALE_UAT"
-    },
-    {
-      "id": "f579cd2a-7854-4230-a45f-91c5274f5e2d",
-      "code": "G9_SCALE_UAT_006",
-      "shot_type": "SCALE_UAT"
-    },
-    {
-      "id": "abceffcd-c5c1-4ff7-b3c5-27ed73e938bf",
-      "code": "G9_SCALE_UAT_007",
-      "shot_type": "SCALE_UAT"
-    },
-    {
-      "id": "1f81741b-6975-4d26-b69e-354e7497cfe6",
-      "code": "G9_SCALE_UAT_008",
-      "shot_type": "SCALE_UAT"
-    },
-    {
-      "id": "4f4ce7d8-512c-449e-b8cd-244db12ea0c8",
-      "code": "G9_SCALE_UAT_009",
-      "shot_type": "SCALE_UAT"
-    },
-    {
-      "id": "444cd60f-133c-498c-8540-6f945e73010e",
-      "code": "G9_SCALE_UAT_010",
-      "shot_type": "SCALE_UAT"
-    },
-    {
-      "id": "cc2fa248-de54-415e-b1a0-81b1100f081f",
-      "code": "G9_SCALE_UAT_011",
-      "shot_type": "SCALE_UAT"
-    },
-    {
-      "id": "5699780e-70f6-474b-8ce4-0ef7c6ecde10",
-      "code": "G9_SCALE_UAT_012",
-      "shot_type": "SCALE_UAT"
-    },
-    {
-      "id": "151060f8-75a0-42af-9b98-d338aefcc6e3",
-      "code": "G9_SCALE_UAT_013",
-      "shot_type": "SCALE_UAT"
-    },
-    {
-      "id": "9cd7eb6b-1565-4234-94a8-39d6207dec21",
-      "code": "G9_SCALE_UAT_014",
-      "shot_type": "SCALE_UAT"
-    },
-    {
-      "id": "fc4ddc16-c4ae-45a6-b48b-086bf1a3bcfd",
-      "code": "G9_SCALE_UAT_015",
-      "shot_type": "SCALE_UAT"
-    },
-    {
-      "id": "16a00163-5378-48d1-8e86-59bf14cd452e",
-      "code": "G9_SCALE_UAT_016",
-      "shot_type": "SCALE_UAT"
-    },
-    {
-      "id": "1dec644b-2b60-4eb8-a1a7-fa6b581962a4",
-      "code": "G9_SCALE_UAT_017",
-      "shot_type": "SCALE_UAT"
-    },
-    {
-      "id": "ba2d3e9f-f213-4a96-85b5-df2a770fe715",
-      "code": "G9_SCALE_UAT_018",
-      "shot_type": "SCALE_UAT"
-    },
-    {
-      "id": "59b52323-4101-4e51-8c7b-7a3f0a7b96e5",
-      "code": "G9_SCALE_UAT_019",
-      "shot_type": "SCALE_UAT"
-    },
-    {
-      "id": "1a60d7eb-4735-47ef-944d-e61238ca11f2",
-      "code": "G9_SCALE_UAT_020",
-      "shot_type": "SCALE_UAT"
-    },
-    {
-      "id": "fb4d8971-b4fa-4391-8e66-78a619c780dd",
-      "code": "G9_SCALE_UAT_021",
-      "shot_type": "SCALE_UAT"
-    },
-    {
-      "id": "3a91a7ab-cd2a-456b-8a5d-bf4179072837",
-      "code": "G9_SCALE_UAT_022",
-      "shot_type": "SCALE_UAT"
-    }
-  ],
+  "created_shots": [],
   "total_shots": 22,
   "visible_nodes": 110,
   "max_visible_nodes": 300,
   "backup": {
-    "path": "F:\\AI_Projects\\h3\\local_drama_studio\\backups\\g9_preflight_20260814T171130Z.sqlite3",
+    "path": "F:\\AI_Projects\\h3\\local_drama_studio\\backups\\g9_preflight_20260816T155502Z.sqlite3",
     "integrity_check": "ok"
   },
   "jobs_created": false,

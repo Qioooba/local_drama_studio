@@ -1,0 +1,40 @@
+{
+  "schema_version": "master.local_chain_closure.v1",
+  "observed_at": "2026-08-16T13:37:20.985694+00:00",
+  "mode": "LOCAL_ONLY",
+  "status": "PASS",
+  "scope": "project read model, capacity, gates, runtime safety, browser read-only chain, metadata scale",
+  "evidence_parts": {
+    "local-uat-readonly": {
+      "status": "PASS",
+      "path": "docs/evidence/g10/local-uat-readonly-2026-08-16f2.json"
+    },
+    "core-chain-browser-readonly": {
+      "status": "PASS",
+      "path": "docs/evidence/g10/core-chain-browser-readonly-2026-08-16.json"
+    },
+    "runtime-smoke-windows-uat": {
+      "status": "PASS",
+      "path": "docs/evidence/g10/runtime-smoke-windows-uat-2026-08-16-final.json"
+    },
+    "metadata-scale-uat": {
+      "status": "PASS",
+      "path": "docs/evidence/g10/metadata-scale-uat-2026-08-16.json"
+    },
+    "g10-scale-uat": {
+      "status": "PASS",
+      "path": "docs/evidence/g10/g10-scale-uat-2026-08-16e.json"
+    },
+    "g9-production-scale-uat": {
+      "status": "PASS",
+      "path": "docs/evidence/g9/g9-production-scale-uat-2026-08-15.json"
+    }
+  },
+  "safety": {
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "production_database_contacted": false,
+    "jobs_created": false,
+    "mutated": false
+  }
+}

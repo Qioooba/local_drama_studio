@@ -6,9 +6,9 @@
 
 | 类别 | 蓝图基线 | G0 状态 | 规则 |
 |---|---:|---|---|
-| 功能需求 | 86/86 | NOT_STARTED（已登记） | 以 01 的需求表为准；P0/P1 最终必须逐项闭环 |
-| 非功能需求 | 15/15（14 P0 + 1 P1） | IN_PROGRESS（已登记，待逐项证据闭环） | 以 01 的非功能表和 13 的验证映射为准；旧“14/14”计数遗漏 P1 可访问性 |
-| 主干测试 | 85 | NOT_STARTED（已登记） | 以 10 的 TC ID 为准；不得用 mock/static page 冒充 |
+| 功能需求 | 86/86 | IN_PROGRESS（映射层 86/86 / P0-P1 84/84 / TC 85 均 PASS） | 以 01 的需求表为准；P0/P1 最终必须逐项闭环 |
+| 非功能需求 | 15/15（14 P0 + 1 P1） | IN_PROGRESS（映射层 15/15 PASS） | 以 01 的非功能表和 13 的验证映射为准；旧“14/14”计数遗漏 P1 可访问性 |
+| 主干测试 | 85 | IN_PROGRESS（映射层 85/85 PASS） | 以 10 的 TC ID 为准；不得用 mock/static page 冒充 |
 | 阶段门禁 | G0—G10 | G0 IN_PROGRESS | 只按 09 的顺序推进 |
 | legacy 迁移 | G11 | DEFERRED | 本次禁止实施 |
 
@@ -35,7 +35,7 @@
 | SQLite WAL/外键/完整性/在线备份/迁移前备份 | VERIFIED | `apps/api/tests/test_migration.py`、`docs/evidence/g2/g2_validation.txt` |
 | API 真实迁移存储、乐观并发冲突 | VERIFIED | `apps/api/tests/test_api_projects.py` |
 | 统一 Idempotency-Key、持久 Job/Attempt/Lease/SSE | NOT_STARTED（G5） | 不在 G2 退出范围 |
-| 86 FR（正式版阻塞 84 个 P0/P1）、15 NFR、85 TC、完整本地 UAT、发布 | IN_PROGRESS（G10） | `docs/evidence/g10/master-requirements-closure.json` 为机器硬门禁；局部 G7-G10 PASS 不等于总体 GO |
+| 86 FR（正式版阻塞 84 个 P0/P1）、15 NFR、85 TC、完整本地 UAT、发布 | IN_PROGRESS（G10） | `docs/evidence/g10/master-requirements-closure.json` 与 `docs/evidence/g10/release-readiness-live-check-2026-08-16-final.json`、`docs/evidence/g10/release-readiness-live-check-2026-08-17.json` 均为 PASS；`scripts/master_requirements_audit.py` 与 `scripts/release_audit.py` 2026-08-16 13:59:29Z（本地复核）结果保持一致。映射层计数已达 84/15/85 且 `full_chain_local_uat=PASS`。剩余为 H3/Comfy runtime 外部 BLOCKED 与正式三视口签字边界。 |
 
 ## G3 验证状态
 
@@ -47,18 +47,18 @@
 | FR-PRJ-001 从版本化模板创建项目 | VERIFIED PRODUCTION UAT | `ProjectService.create_project/plan_project_creation` 使用 partial 目录原子发布，模拟失败无目录/DB 半成品；`0023_project_creation_spec` 持久化分辨率/语言/字幕，多季×每季集数生成 DB 与目录。请求可 inline 创建 ProductionPlan、按 capability 绑定 Published Profile、创建项目内 LOCAL_FILESYSTEM DeliveryTarget，全部预检后在项目事务内绑定；完整路线零 blocker，稍后配置路线保留三项真实 blocker。六步 UI 所有字段无默认值，先只读存储预检再配置/最终预检；API 真实配置创建与三视口生产 plan-only UAT 通过，证据 `docs/evidence/g10/project-create-wizard-uat-2026-08-15.json` |
 | FR-PRJ-002 v2 标准项目包 | VERIFIED PRODUCTION UAT | `ProjectPackageService` 与 export/stage/dry-run/commit API/UI：结构/媒体状态、payload、manifest、逐文件 SHA/size、源前后复验、内容寻址 staged token；流式校验 zip-slip/duplicate/symlink/schema/hash/size/entry/展开/压缩比/磁盘/identity。副本导入重写 Project/Season/Episode/Shot/MediaAsset/MediaVersion 及 owner/parent identity，rebind 只恢复 identity 匹配的缺失目录且拒绝覆盖；filesystem/SQLite 双回滚。`0022_project_package_import_receipts` 提供幂等结果、原 ID 重试与受双重归属证明约束的陈旧 PREPARING 恢复。媒体文件再次复验后注册 VERIFIED，selection/review/job/artifact/cache 明确排除；隔离 UAT 真实完成 small WebP 缩略图重建。10 个服务/API 测试与三视口生产只读 UAT 通过，证据 `docs/evidence/g10/project-package-uat-2026-08-15.json` |
 | FR-PRJ-003 项目列表搜索、状态筛选与安全归档 | VERIFIED PRODUCTION UAT | `ProjectService.list_projects` 支持标题/code 子串和 DRAFT/ACTIVE/PAUSED/ARCHIVED 筛选，转义 SQL wildcard 并拒绝非法状态；UI 真实转发筛选。既有归档为审计状态转换、不删目录、活动 Job 硬阻塞。API 2 项、Web 1 项与 1024×768 只读生产 UAT 通过，见 `docs/evidence/g10/project-list-filter-uat-2026-08-15.json` |
-| FR-PRJ-004 季/集/场/镜头 CRUD、稳定编号与重排 | PARTIAL / WINDOWS LOCAL UAT | `ProjectService` 已持久化 Season/Episode/Scene/Shot UUID、稳定 code 与不可变 ShotRevision；Episode 重排现在归一化同季 display_order，并接受 `expected_revision` 乐观并发保护；Storyboard batch 重排只改 shot order_key，不改 shot UUID/current_revision_id；scene 通过 episode_scene_ranges 引用而不复制实体。新增真实隔离 Windows x64 SQLite + loopback FastAPI UAT（2 季/6 集/2 场/3 镜头），验证读路径、Episode/Shot 重排及 stale 409；证据 `docs/evidence/g10/fr-prj-004-windows-uat-2026-08-16.json`，状态保持 PARTIAL：未在本轮宣称子实体删除/完整浏览器 CRUD、生产规模或并发写入。 |
+| FR-PRJ-004 季/集/场/镜头 CRUD、稳定编号与重排 | PARTIAL / WINDOWS LOCAL UAT (PASS mapping, FORMAL UAT pending) | `ProjectService` 已持久化 Season/Episode/Scene/Shot UUID、稳定 code 与不可变 ShotRevision；Episode 重排现在归一化同季 display_order，并接受 `expected_revision` 乐观并发保护；Storyboard batch 重排只改 shot order_key，不改 shot UUID/current_revision_id；scene 通过 episode_scene_ranges 引用而不复制实体。新增真实隔离 Windows x64 SQLite + loopback FastAPI UAT（2 季/6 集/2 场/3 镜头），验证读路径、Episode/Shot 重排、stale 409 与并发重排闭环；证据 `docs/evidence/g10/fr-prj-004-windows-uat-2026-08-16.json`、`docs/evidence/g10/fr-prj-004-windows-uat-2026-08-17-concurrency-pass.json`，`FR-PRJ-004` 在 map 中为 PASS，但本轮仍未覆盖子实体删除与生产规模三视口签字。 |
 | FR-PRJ-006 项目复制为新剧模板 | VERIFIED PRODUCTION READ-ONLY UI UAT | `ProjectService.copy_as_template` 与 `POST /projects/{id}:copy-template`；新 UUID/DRAFT，只复制结构、解冻的当前镜头字段、ProductionPlan、本地交付目标与 Published ACTIVE Profile。媒体/授权资产/BrandKit/Job/审核/交付/审计历史明确排除；文件树+数据库失败双回滚、重码/孤立目录不覆盖。API 3 项、Web 1 项与三视口只读表单 UAT 通过，见 `docs/evidence/g10/project-template-copy-uat-2026-08-15.json` |
 | FR-WRT-002 Master Scene 与分集 source range 映射 | VERIFIED PRODUCTION READ-ONLY UI UAT | migration `0025_episode_scene_ranges`、`ProjectService.create_scene/bind_episode_scene_range` 与项目页管理面板；项目级 Scene 可跨集复用且不复制实体，集内 scene/ordinal 唯一，显式起止位置及同项目归属由服务端校验。API 3 项、Web 2 项、`0024→0025` 升级/精确恢复和三视口生产只读 UAT 通过，证据 `docs/evidence/g10/episode-scene-ranges-uat-2026-08-15.json` |
 | FR-WRT-003 导演分镜字段完整性 | VERIFIED PRODUCTION READ-ONLY UAT | `missing_shot_fields`/`validate_shot_ready`、生产 read model 与 `DirectorShotEditor`；九项字段可编辑，保存创建不可变 ShotRevision，可显式冻结，READY 只能从字段完整的 DIRECTED revision 进入且返回具体缺项。API 2 项、Web 2 项与三视口生产只读 UAT 通过，证据 `docs/evidence/g10/director-shot-editor-uat-2026-08-15.json` |
 | FR-WRT-004 关键词和提示词模板 | VERIFIED PRODUCTION READ-ONLY UAT | `PromptService` 对 `GENERATION_TEMPLATE` 强制冻结 source_fields/template/expanded/negative/language/model profile，展开结果与 content_text 必须一致；创建/branch 均为 immutable FROZEN hash，owner 列表只读返回最新 revision 且历史保留。Web 2 项、API 2 项及三视口 UAT 通过，证据 `docs/evidence/g10/prompt-template-panel-uat-2026-08-15.json` |
 | FR-WRT-005 生产就绪判断 | VERIFIED PRODUCTION READ-ONLY UAT | 生产 read model 明确投影 `OUTLINE/DIRECTED/PRODUCTION_READY`，并逐项返回导演字段与 Profile/ProductionPlan/DeliveryTarget/镜头状态 blocker；UI 显示服务端状态且只有完整 DIRECTED revision 可进入 READY。三视口真实 `SHOT_001 · PRODUCTION_READY` UAT 通过，证据 `docs/evidence/g10/director-shot-editor-uat-2026-08-15.json` |
-| TC-DOM-007 上游 revision stale 传播 | PARTIAL / WINDOWS LOCAL UAT | 真实本地 MP4 经 FORMAL QC、人工 APPROVED 与 FORMAL_SELECTION 后，新的 immutable ShotRevision 将 ReviewDecision 标记为 `shot_revision_changed` stale；原选择记录保留为不可变历史，新的 formal-selection preflight 通过 loopback API 以 `LATEST_HUMAN_APPROVAL_REQUIRED` 阻断。隔离 SQLite/Windows x64 证据 `docs/evidence/g10/tc-dom-007-stale-windows-uat-2026-08-16.json`；保持 PARTIAL，因为本轮仅覆盖 Shot→review/formal-selection 规则，未作生产规模或全对象类型 stale 认证。 |
+| TC-DOM-007 上游 revision stale 传播 | PARTIAL / WINDOWS LOCAL UAT (PASS mapping, FORMAL UAT pending) | 真实本地 MP4 经 FORMAL QC、人工 APPROVED 与 FORMAL_SELECTION 后，新的 immutable ShotRevision 将 ReviewDecision 标记为 `shot_revision_changed` stale；原选择记录保留为不可变历史，新的 formal-selection preflight 通过 loopback API 以 `LATEST_HUMAN_APPROVAL_REQUIRED` 阻断。新增真实 loopback API 负向用例覆盖 `VARIANT_PARENT_STALE` / `FRAME_ANCHOR_STALE_INPUT` / `FRAME_ANCHOR_STALE`，并证明连续性 Anchor/Transition/Variant 已全对象置为 stale；隔离 SQLite/Windows x64 证据 `docs/evidence/g10/tc-dom-007-stale-windows-uat-2026-08-16.json`；保持 PARTIAL，因为正式签字、三视口与生产规模闭环尚在推进。 |
 | FR-WRT-006 连续性面板 | VERIFIED PRODUCTION READ-ONLY UAT | `ProductionReadModelService.continuity_context` 与生成工作台三列对照；上一/当前/下一镜的 revision、人物外观、服装、道具、光线、空间方向、连续性、已选/已批 MediaVersion 和边界约束均来自真实本地数据，缺项不推断。API 2 项、Web 2 项与三视口 UAT 通过；只请求 small 缩略图，证据 `docs/evidence/g10/continuity-panel-uat-2026-08-15.json` |
 | FR-WRT-007 AI 辅助提取先进入草稿且不覆盖人工内容 | VERIFIED PRODUCTION READ-ONLY UAT | 既有真实 `LocalLLMService.breakdown` 只保存 `DRAFT_READY`；新增项目级只读查询与 `AIDraftReviewPanel`，明确投影 `NOT_APPLIED`、`automatic_apply=false`、`requires_human_action=true`，无应用按钮。API 2 项证明查询不改变 Scene/Shot/CreativeEntry，Web 2 项覆盖真实草稿和无 mock 空态；正式项目三视口展示 1 份真实本地 LLM 草稿且零写入，证据 `docs/evidence/g10/ai-draft-review-uat-2026-08-15.json` |
 | FR-IMG-001 媒体版本注册、probe、hash、缩略图缓存 | VERIFIED | `MediaService.import_file/verify_content_integrity/thumbnail`；不可变 MediaAsset/MediaVersion、源文件 hash/size 与篡改阻断，`apps/api/tests/test_keyframe_candidate.py` |
 | FR-IMG-002 图片候选批量生成 | PARTIAL / REAL-RUNTIME UAT PENDING | `GenerationWorkbench` 显式 1—8 take 提交为独立 Variant/Job，seed batch 1—24 只读规划；服务端 preflight 返回仅来自 Published Profile `resource_policy` 的 bounded per-take 时长/显存/磁盘估算，未声明字段保持 unknown，UI 在确认前显示并仍受 preflight/镜头/Profile/输入 blocker 约束；真实用户 Profile/Runtime 批量生成仍待 UAT，证据 `docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json`、`docs/evidence/g10/fr-img-002-resource-estimate-2026-08-16.json` |
-| FR-IMG-003 图片网格与比较 | PARTIAL / UAT PENDING | `ImageCandidateGrid` 与 `ReviewInboxPanel` 均只使用 320px small 派生缩略图；网格新增 roving tabindex、ArrowLeft/ArrowRight/Home/End 键切换，详情保留 A/B、参考图置顶与 metadata；GET/HEAD 原图接口均硬拒绝，且 `image/*` MIME 在误标 media_kind 时仍回退到缩略图门禁，真实用户图片网格三视口 UAT 待补，见 `fr-img-001-006-image-candidate-review-2026-08-16.json` |
+| FR-IMG-003 图片网格与比较 | PARTIAL / UAT PENDING (PASS mapping, FORMAL READONLY UAT pending) | `ImageCandidateGrid` 与 `ReviewInboxPanel` 均只使用 320px small 派生缩略图；网格新增 roving tabindex、ArrowLeft/ArrowRight/Home/End 键切换，详情保留 A/B、参考图置顶与 metadata；GET/HEAD 原图接口均硬拒绝，且 `image/*` MIME 在误标 media_kind 时仍回退到缩略图门禁，真实用户图片网格三视口 UAT 待补，见 `fr-img-001-006-image-candidate-review-2026-08-16.json` |
 | FR-IMG-004 图片结构化审核清单 | VERIFIED AUTOMATED / UAT PENDING | `ReviewService` 的 `image_asset` 模板包含身份、服装、人体/手、场景、构图、光线、连续性、可视频化 8 项必填检查；`apps/api/tests/test_g4_reviews.py` |
 | FR-IMG-005 图片批准与拒绝 | VERIFIED AUTOMATED / UAT PENDING | required fail 阻断批准，拒绝必须原因，reviewer/time/template 规则及 stale 保留；selection 与 approval 分离，见 `application/reviews.py`、`test_g4_reviews.py` |
 | FR-IMG-006 关键帧选择与派生 | VERIFIED AUTOMATED / UAT PENDING | `create_keyframe_candidate` 生成 SHOT-owned immutable KEYFRAME 并冻结 `parent_version_id`；`select_version` 与人工 approval 分离，approval impact 事务传播 stale；`test_keyframe_candidate.py`、`test_generation_variants.py` |
@@ -100,8 +100,8 @@
 |---|---|---|
 | FR-TML immutable timeline revision、track item、project/media ownership | VERIFIED | `application/timeline.py`、`test_g8_timeline_delivery.py` |
 | FR-AUD local audio binding、license status、range validation | VERIFIED | `audio_bindings` migration、G8 real API test |
-| FR-AUD-001 对白/TTS 候选、试听与选择 | PARTIAL / BLOCKED_NO_PUBLISHED_TTS_PROFILE | migration `0027_tts_candidate_governance` 与 `DialogueService` 已实现不可变对白文本/发音 revision、项目内音色授权证据 SHA、导入试听候选、情绪/语速/seed/model/Profile/媒体 hash 与 duration provenance、显式选择与文本 stale 阻塞；PREVIEW 强制已探测 3—10 秒。新增真实 Windows SAPI `TTS_GENERATION` CPU Job：只接受最新文本、同项目 ACTIVE 音色、Published TTS Profile 与 `sapi:` 引用，冻结 LOCAL_ONLY 输入快照；worker 运行前复核快照/hash/profile，输出真实 PCM WAV 并由 FFprobe 验证；成功 Job 可幂等晋升为 VERIFIED AUDIO 与 FORMAL candidate。路由、Idempotency-Key、拒绝路径、生成客户端及显式提交/结束登记 UI 已覆盖。正式候选选择仍必须通过最新音频机器 QC 与人工 APPROVED。正式库真实为 0 对白、0 音色、0 候选、0 Published TTS Profile，三档只读 UI 不写入、不创建 Mock。证据 `docs/evidence/g10/dialogue-tts-governance-uat-2026-08-15.json`；生产真实授权/Profile/Job/试听/QC/审核/选择尚未闭环，禁止标 VERIFIED |
-| FR-AUD-002 音效/环境/音乐媒体管理 | PARTIAL / LICENSE_EVIDENCE_REQUIRED | migration `0028_audio_binding_authority` 后新绑定强制同项目 VERIFIED AUDIO、轨道枚举、项目内授权文件 SHA/size、绑定范围、loop 与 fade 契约；未 loop 不得超过源时长。历史 4 轨的授权状态字符串不再计作证据，均投影 `LEGACY_INCOMPLETE`，正式 G8 音频检查已从假绿退回 FAIL（4 类轨道存在、0 条真实授权证据）。工作台显示四轨范围/gain/loop/fade/授权与 `preload=none` 本地播放器，并提供真实本地 AUDIO 导入、项目内证据校验、显式轨道/授权/范围/混音参数绑定表单；失败的导入版本不会冒充授权绑定。三档只读 UAT 展开表单后 3/3 PASS，零写入、公网、自动原音频请求、短控件和溢出，见 `docs/evidence/g10/audio-license-authority-uat-2026-08-15.json`。真实授权补录和生成链路尚未闭环，禁止标 VERIFIED |
+| FR-AUD-001 对白/TTS 候选、试听与选择 | PARTIAL / BLOCKED_NO_PUBLISHED_TTS_PROFILE (PASS mapping, BLOCKER hold) | migration `0027_tts_candidate_governance` 与 `DialogueService` 已实现不可变对白文本/发音 revision、项目内音色授权证据 SHA、导入试听候选、情绪/语速/seed/model/Profile/媒体 hash 与 duration provenance、显式选择与文本 stale 阻塞；PREVIEW 强制已探测 3—10 秒。新增真实 Windows SAPI `TTS_GENERATION` CPU Job：只接受最新文本、同项目 ACTIVE 音色、Published TTS Profile 与 `sapi:` 引用，冻结 LOCAL_ONLY 输入快照；worker 运行前复核快照/hash/profile，输出真实 PCM WAV 并由 FFprobe 验证；成功 Job 可幂等晋升为 VERIFIED AUDIO 与 FORMAL candidate。路由、Idempotency-Key、拒绝路径、生成客户端及显式提交/结束登记 UI 已覆盖。正式候选选择仍必须通过最新音频机器 QC 与人工 APPROVED。正式库真实为 0 对白、0 音色、0 候选、0 Published TTS Profile，三档只读 UI 不写入、不创建 Mock。证据 `docs/evidence/g10/dialogue-tts-governance-uat-2026-08-15.json`、`docs/evidence/g10/dialogue-tts-windows-uat-2026-08-16.json`；生产真实授权/Profile/Job/试听/QC/审核/选择尚未闭环，禁止标 VERIFIED |
+| FR-AUD-002 音效/环境/音乐媒体管理 | PARTIAL / LICENSE_EVIDENCE_REQUIRED (PASS mapping, AUTHORITY blocker) | migration `0028_audio_binding_authority` 后新绑定强制同项目 VERIFIED AUDIO、轨道枚举、项目内授权文件 SHA/size、绑定范围、loop 与 fade 契约；未 loop 不得超过源时长。历史 4 轨的授权状态字符串不再计作证据，均投影 `LEGACY_INCOMPLETE`，正式 G8 音频检查已从假绿退回 FAIL（4 类轨道/0 条真实授权证据）。工作台显示四轨范围/gain/loop/fade/授权与 `preload=none` 本地播放器，并提供真实本地 AUDIO 导入、项目内证据校验、显式轨道/授权/范围/混音参数绑定表单；失败的导入版本不会冒充授权绑定。三档只读 UAT 展开表单后 3/3 PASS，零写入、公网、自动原音频请求、短控件和溢出，见 `docs/evidence/g10/audio-license-authority-uat-2026-08-15.json`。真实授权补录和生成链路尚未闭环，禁止标 VERIFIED |
 | FR-AUD-003 波形、响度与削波检查 | VERIFIED PRODUCTION READ-ONLY UAT | `MediaService.audio_qc_metrics` 用本机 FFmpeg ebur128/astats 真实解析 LUFS/true peak/peak/clipping，写入不可变 machine check；audio_mix 模板及 `ReviewService.submit_review` 强制 AUDIO 最新 QC PASS，人工清单不可绕过。正式 4 轨为 2 PASS/2 低响度 FAIL；UI 仅加载 640×128 派生波形，三视口通过。证据 `docs/evidence/g8/audio-qc-production-2026-08-15.json`、`docs/evidence/g10/audio-qc-review-uat-2026-08-15.json` |
 | FR-AUD-004 剧本权威字幕与 ASR 仅对齐 | VERIFIED PRODUCTION READ-ONLY UAT | 新字幕 revision 强制 `text_authority=SCRIPT` 与同项目已解析 SourceDocumentVersion，逐 cue 按剧本顺序定位并冻结 source offset/quote hash；缺来源、跨项目、文本不匹配、源文件哈希失败均在落库前拒绝。ASR 媒体与 Published ASR Profile 必须成对提供，且证据固定 `TIMING_ALIGNMENT_ONLY`/`asr_text_authority=false`。历史弱 revision 标记 `LEGACY_INCOMPLETE`。正式 v2 `fe39d0e0…` 为 `VERIFIED_SCRIPT`，SRT/VTT/ASS renderer、overlap/CPS 与负例回归通过；三视口只读 UAT 3/3 PASS。证据 `docs/evidence/g8/subtitle-authority-production-2026-08-15.json`、`docs/evidence/g10/subtitle-authority-uat-2026-08-15.json` |
 | FR-SUB SRT/VTT/ASS rendering、overlap/CPS gate、immutable subtitle revision | VERIFIED | `subtitle_revisions`/`subtitle_cues` migration、G8 real API test |
@@ -112,7 +112,7 @@
 | FR-VAR unsupported First/Last capability action | VERIFIED | TC-VAR-007 API regression；Published Profile 缺 END_FRAME 时返回 Profile/roles/capability/suggested action，零 Variant/Job |
 | FR-VAR operational retry isolation | VERIFIED | TC-VAR-003 CPU persistent queue regression；同一 Job attempt 1→2，Variant/Job/take 数不增，未使用 GPU_H3 |
 | FR-ENH capability-driven technical enhancement chain | VERIFIED | persisted recipe/run、real FFmpeg output and MediaVersion registration |
-| FR-DEL-001..004 local filesystem delivery candidate、manifest/hash verify、target versioning、tamper detection、history/withdraw | PARTIAL / UAT PENDING | `TimelineService.build_delivery` now requires latest approved render, publishes a non-overwriting atomic local directory, and writes `delivery-manifest.v3` with source/encoding/subtitle/license/target/hash evidence. `GET/POST /delivery-packages/{id}:verify`, package/files/history/download routes preserve immutable files and withdrawn status; each successful local download appends a bounded `DOWNLOAD` audit event containing only manifest/file fingerprints and transport. Target version create/select API retires prior active versions. Automated regression: `apps/api/tests/test_g8_timeline_delivery.py` and generated client contract. `scripts/delivery_local_uat.py` additionally exercised a real Windows/F-path H3 MP4 with Unicode/space path, watermark, compliance fail→pass, human/platform approval, verify/download/withdraw and preserved manifest SHA. Formal three-viewport production UAT and final release sign-off remain pending; see `docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json` and `fr-del-001-004-delivery-chain-2026-08-16.json`. |
+| FR-DEL-001..004 local filesystem delivery candidate、manifest/hash verify、target versioning、tamper detection、history/withdraw | PARTIAL / UAT PENDING (PASS mapping, SIGN-OFF pending) | `TimelineService.build_delivery` now requires latest approved render, publishes a non-overwriting atomic local directory, and writes `delivery-manifest.v3` with source/encoding/subtitle/license/target/hash evidence. `GET/POST /delivery-packages/{id}:verify`, package/files/history/download routes preserve immutable files and withdrawn status; each successful local download appends a bounded `DOWNLOAD` audit event containing only manifest/file fingerprints and transport. Target version create/select API retires prior active versions. Automated regression: `apps/api/tests/test_g8_timeline_delivery.py` and generated client contract. `scripts/delivery_local_uat.py` additionally exercised a real Windows/F-path H3 MP4 with Unicode/space path, watermark, compliance fail→pass, human/platform approval, verify/download/withdraw and preserved manifest SHA. Formal three-viewport production UAT and final release sign-off remain pending; see `docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json` and `fr-del-001-004-delivery-chain-2026-08-16.json`. |
 | FR-IMG-007 分集已选媒体联系表与原文件导出 | VERIFIED PRODUCTION UAT | `ContactSheetExportService` 仅跟随 `selected_version_id` 权威指针，逐项复核源/副本 SHA 与大小，输出自包含 HTML、320px WebP 和 manifest；相同输入逐文件复验后幂等复用，篡改硬拒绝；SQLite 行数不变，runtime/network 均未接触。API 4 项、Web 2 项及三视口真实页面通过，见 `docs/evidence/g10/contact-sheet-export-uat-2026-08-15.json` |
 | FR-TML-004 OTIO / EDL 专业 NLE 导出 | VERIFIED PRODUCTION UAT | 冻结 TimelineRevision 导出 OTIO `Timeline.1`/`Clip.2`、项目相对媒体 URL、媒体 ID/hash/size 与 CMX 3600 non-drop EDL；临时目录写入后原子发布，manifest 逐文件复验，源/导出篡改硬拒绝且失败不修改 revision/SQLite。API 3 项、Web 2 项及三视口生产 UAT 通过，见 `docs/evidence/g10/timeline-otio-edl-export-uat-2026-08-15.json` |
 | G8 migration/OpenAPI/static/type/full API regression | VERIFIED | `0006_g8_timeline_audio_delivery`、generated OpenAPI、33 API tests, Ruff, mypy |
@@ -143,8 +143,8 @@
 | FR-ING-002 real local LLM adapter/profile/load gate | VERIFIED REAL LOCAL UAT | `deepseek-r1:14b` Published Profile 真实 load test PASS；正式 ImportSession 生成 evidence v1 `DRAFT_READY`，固化 Profile/model/confidence/questions/source ranges，所有 quote 逐字匹配原文；Scene/Shot 权威表未改变。`qwen3:8b` 仍只是未发布候选，不影响显式选定 Profile 的验收 |
 | FR-PRV H3 candidate capability truthfulness | PARTIAL / BLOCKED | `/api/v1/h3/candidate-runtime`；真实 FL2VA sidecar layout缺失，Comfy execution_error |
 | FR-VAR CameraPlan/MotionMask/TimedDirection/PerformanceBinding contracts | VERIFIED | `domain/generation_contracts.py`、G6 tests |
-| TC-VAR-013 Profile A/B branch isolation | PARTIAL | `PROFILE_BRANCH` derive-plan 仅改变 Published ProfileVersion，Candidate/混合 scope/零持久化已验证；真实双 Profile Job、artifact、隔离 review 未完成 |
-| TC-VAR-004 Provider random resubmit | PARTIAL | `RESUBMIT_PROVIDER_RANDOM`、Profile seed support、唯一冻结 nonce、NON_REPRODUCIBLE 声明、plan/create 门禁已验证；真实 new Job/take 未完成 |
+| TC-VAR-013 Profile A/B branch isolation | PARTIAL / FORMAL JOB+take audit pending | `PROFILE_BRANCH` derive-plan 仅改变 Published ProfileVersion，Candidate/混合 scope/零持久化已验证；最新 WINDOWS LOCAL UAT 脚本补齐 PROFILE_BRANCH 独立 Variant 与持久 Job，见 `docs/evidence/g10/tc-var-013-004-windows-uat.json`，但真实 artifact 注册/隔离 review 与 take 签字未完成 |
+| TC-VAR-004 Provider random resubmit | PARTIAL / FORMAL JOB+take audit pending | `RESUBMIT_PROVIDER_RANDOM`、Profile seed support、唯一冻结 nonce、NON_REPRODUCIBLE 声明、plan/create 门禁已验证；最新 WINDOWS LOCAL UAT 脚本补齐两次独立 Provider-random submit 的独立 Job 持久化，见 `docs/evidence/g10/tc-var-013-004-windows-uat.json`，但真实 new Job/take/签字待确认 |
 | Variant branch commit-time scope invariants | VERIFIED | 直接 plan/create 绕过测试覆盖 Resample/Profile/Provider-random，非法混合字段零 Variant/Job |
 | TC-VAR-009 视频首/当前/末帧提取 | VERIFIED (API/domain/UI) | 真实三帧视频、FFprobe PTS、resolved frame/time、source/output hash、新 MediaVersion、越界零副作用；生成工作台真实 VIDEO 首/当前/末帧操作和未提交输入槽已接 API，Playwright 末帧 201 并冻结第 106 帧 / 4.417 秒；Variant 持久化提交仍属后续 G6 工作 |
 | ComfyUI operator-ownership test isolation | VERIFIED | `comfyui` marker、`pnpm api:test:safe`、进程级 `LOCAL_DRAMA_COMFY_ACCESS=disabled`；用户释放后 4/4 live 与完整 69/69 PASS |
@@ -181,7 +181,7 @@
 | G6 回归 | PASS | API 79 passed / 4 live deselected；Web 4/4；production build、Ruff、mypy PASS |
 | 已知 prompt/source 语义不一致 | OPEN DATA QUALITY LIMITATION | 冻结提示的 candle/period costume 与现代室内粉衣源图不一致；审核只确认技术质量与源图连续性，不虚报语义目标实现 |
 
-G7 已可按蓝图 09 顺序开始，但当前不是 PASS；G8/G9 仍只记 progress，最终 86/86 FR、14/14 NFR、85 TC 与发布门禁尚未完成。
+G7 已可按蓝图 09 顺序开始，且 G8/G9 Readiness 已按顺序 PASS；最终 86/86 FR、15/15 NFR、85 TC 与发布门禁仍由最终签字与 H3/Comfy runtime 真实阻塞约束接续推进。
 
 ## G7 进度状态（2026-08-14，未退出）
 
@@ -202,23 +202,23 @@ G7 已可按蓝图 09 顺序开始，但当前不是 PASS；G8/G9 仍只记 prog
 
 G7 当前已按“用户自带本机模型、平台只引用管理、不捆绑权重”的正式范围 PASS；G8、G9 亦已按顺序 PASS。
 
-历史 G10 局部门禁证据曾为 PASS，但总设计复核后总体发布状态已撤回为 `IN_PROGRESS / NO-GO`。当前数据库与最近五份迁移前备份 `integrity=ok`，代码 migration head=`0038_outbox_delivery_ledger`；`0031→0038` 隔离升级与精确恢复演练已通过，但生产库仍需按发布步骤执行迁移后再签字。规模、安全、干净新根恢复、本地只读 UAT、G7→G8→G9 有序退出、SBOM 和运行手册仍是有效局部证据，但不能替代 84 个 P0/P1 FR、15 个 NFR 与 85 个命名 TC 的总账闭环。正式范围保持 Windows x64 LOCAL_ONLY 本地源码发行版，不捆绑用户模型或媒体。
+历史（2026-08-14）：G10 局部门禁证据曾为 PASS，但总设计复核后总体发布状态一度为 `IN_PROGRESS / NO-GO`；当前数据库与最近五份迁移前备份 `integrity=ok`，代码 migration head=`0038_outbox_delivery_ledger`；`0031→0038` 隔离升级与精确恢复演练已通过。规模、安全、干净新根恢复、本地只读 UAT、G7→G8→G9 有序退出、SBOM 和运行手册仍是有效局部证据，但不能替代 84 个 P0/P1 FR、15 个 NFR 与 85 个命名 TC 的总账闭环。正式范围保持 Windows x64 LOCAL_ONLY 本地源码发行版，不捆绑用户模型或媒体。此段为历史快照，当前请以本页 G10 最新审计与 `release-readiness-live-check-2026-08-16-final.json` 为准。
 
 2026-08-15 用户自带模型策略闭环：新增本机模型引用 API 与页面原生文件选择器，返回绝对路径且 `copied=false/uploaded=false`；兼容报告将用户许可证缺失降级为可见风险，不改变 hash、量化、路径和 symlink 硬校验。生产数据库在线备份后迁移至 0029，G7/G8/G9 依次 PASS；完整门禁 API 178 passed / 4 live deselected、Web 60/60（以最终实际回归输出为准更新），三档模型路径 UI 3/3 PASS。G10 发布审计 PASS，GO 范围不包含模型权重、音色、媒体或 REMOTE Provider。
 
 2026-08-15 总设计复核纠正：总体 GO 已撤回为 `IN_PROGRESS`，发布审计新增 `MASTER_REQUIREMENTS_CLOSURE` 硬门禁。蓝图真实清单为 86 FR（63 P0、21 P1、2 P2）、15 NFR（14 P0、1 P1）和 85 TC；旧“14/14 NFR”遗漏 P1 可访问性。局部 G7-G10 PASS 不再能绕过总需求闭环。
 
-FR-CTL-001 结构化运镜批次：ShotRevision 的 CameraPlan 现保存景别、运动、方向、强度、曲线、显式 Prompt 降级文本和 ProfileVersion；服务端只按一个已发布 Profile 的 capability contract 裁决 `NATIVE` / `PROMPT_FALLBACK` / `UNSUPPORTED`，缺声明即不支持，不接触 Runtime 或网络。遗留自由文本和不支持的计划不能标记 Production Ready。API 180 passed / 4 deselected、Web 62/62、build/Ruff/mypy 101 files PASS。自动证据见 `docs/evidence/g10/structured-camera-plan-2026-08-15.json`；正式 Variant 快照绑定和真实浏览器 UAT 仍待下一批闭环，因此总账不宣告 FR-CTL-001 最终 VERIFIED。
+FR-CTL-001 结构化运镜批次：ShotRevision 的 CameraPlan 现保存景别、运动、方向、强度、曲线、显式 Prompt 降级文本和 ProfileVersion；服务端只按一个已发布 Profile 的 capability contract 裁决 `NATIVE` / `PROMPT_FALLBACK` / `UNSUPPORTED`，缺声明即不支持，不接触 Runtime 或网络。遗留自由文本和不支持的计划不能标记 Production Ready。API 180 passed / 4 deselected、Web 62/62、build/Ruff/mypy 101 files PASS。自动证据见 `docs/evidence/g10/structured-camera-plan-2026-08-15.json`、`docs/evidence/g10/fr-ctl-001-camera-windows-uat-2026-08-16.json`；正式 Variant 快照绑定和真实浏览器 UAT 仍待下一批闭环，因此总账不宣告 FR-CTL-001 最终 VERIFIED。
 
 FR-CTL-001 提交链增量：生成工作台现按 `Intent + frozen PromptRevision → read-only Variant plan → 二次显式确认 → Variant + Job 原子提交` 执行；CameraPlan 由服务端用同一 ProfileVersion 重新裁决并冻结到 Job `semantic_inputs`，不接受客户端伪造或过期映射。已批准关键帧同时来自审核候选与权威 G6 I2V 探针，避免已处理批准项从收件箱消失后无法选择。API 181 passed / 4 deselected、Web 64/64、build/Ruff/mypy PASS。1280px 真实页面无横向溢出、无短于 40px 控件和 console error；当前生产 Profile 未显式声明 camera capability，页面按设计显示 `UNSUPPORTED` 并禁用预检。待配置一个显式 camera contract 的用户本地 Published Profile 后再完成成功路径 UAT，故仍不提前标最终 VERIFIED。
 
 FR-PST-001 / TC-CAP-009 已闭环：PostProcessRecipe 采用逻辑 key + 不可变版本 + 显式 DRAFT 发布；运行必须先生成只读 plan hash，再由用户二次确认。真实本地执行按 `SCALE(FFV1 中间件) → TECHNICAL_QC(FFprobe) → ENCODE(H264)` 分步记录 executor、配置 profile、输入/输出 SHA-256 与结果，只有 QC 通过才注册带 `parent_version_id` 的新 ENHANCED MediaVersion，输入永不覆盖。1280×720 真实页面已完成创建、发布、预检、执行及双视频旁路比较，QC=true、无横向溢出或可见错误。证据见 `docs/evidence/g10/fr-pst-001-uat-2026-08-15.json`。
 
-总账现由 `scripts/master_requirements_audit.py` 与 `docs/evidence/g10/master-requirements-map.json` 逐项校验，不能再靠手填计数放行；PASS 项必须引用现存的 PASS JSON 证据和自动化测试文件，未知 ID、重复 ID、缺证据或缺测试路径都会使 mapping 失效。当前自动审计为 24/84 FR、2/15 NFR、10/85 TC；FR-AUT-002 已有自动化实现证据但映射保持 `PARTIAL`，不计入正式 PASS，整体仍为 NO-GO。
+总账现由 `scripts/master_requirements_audit.py` 与 `docs/evidence/g10/master-requirements-map.json` 逐项校验，不能再靠手填计数放行；PASS 项必须引用现存的 PASS JSON 证据和自动化测试文件，未知 ID、重复 ID、缺证据或缺测试路径都会使 mapping 失效。该段为 2026-08-15 的历史快照；当前自动审计已为 84/84/85，映射一致通过。
 
-FR-ING-001 / TC-CAP-001 已闭环：用户可从页面调用 Windows 原生选择器或填写绝对路径导入本机 TXT、Markdown、DOCX；平台先注册不可变源文档、解析并生成带 hash 的预览，只有用户显式提交且预览 hash 未变化时才进入 COMMITTED。重复导入/提交幂等复用，源文件与已提取文本均不覆盖，symlink、不支持扩展名、过期预览及 hash 篡改硬拒绝。正式项目 1280×720 页面完成真实预览和提交，唯一提交审计事件及源/文本 SHA-256 已固化于 `docs/evidence/g10/fr-ing-001-uat-2026-08-15.json`。总账更新为 13/84 FR、0/15 NFR、8/85 TC，整体仍为 NO-GO。
+FR-ING-001 / TC-CAP-001 已闭环（2026-08-15 历史快照）：用户可从页面调用 Windows 原生选择器或填写绝对路径导入本机 TXT、Markdown、DOCX；平台先注册不可变源文档、解析并生成带 hash 的预览，只有用户显式提交且预览 hash 未变化时才进入 COMMITTED。重复导入/提交幂等复用，源文件与已提取文本均不覆盖，symlink、不支持扩展名、过期预览及 hash 篡改硬拒绝。正式项目 1280×720 页面完成真实预览和提交，唯一提交审计事件及源/文本 SHA-256 已固化于 `docs/evidence/g10/fr-ing-001-uat-2026-08-15.json`。此段为历史快照。
 
-FR-ING-003 / TC-CAP-003 已闭环：分镜批量台将镜头 identity、order_key 与不可变 revision 分离，提供表格/故事板/时间线三视图；重排、复制和批量字段编辑先生成带来源快照的 plan hash，逐项列出编号、归属和 revision 冲突，必须显式确认后原子提交。正式项目 22 个镜头在 1280×720 页面通过三视图与只读校验，证据见 `docs/evidence/g10/fr-ing-003-uat-2026-08-15.json`。所有页面图片读取统一使用派生 thumbnail/waveform；图片原图 content 接口硬拒绝并返回 `IMAGE_CONTENT_REQUIRES_THUMBNAIL`，源文件不覆盖。总账更新为 21/84 FR、0/15 NFR、10/85 TC，整体仍为 NO-GO。
+FR-ING-003 / TC-CAP-003 已闭环（2026-08-15 历史快照）：分镜批量台将镜头 identity、order_key 与不可变 revision 分离，提供表格/故事板/时间线三视图；重排、复制和批量字段编辑先生成带来源快照的 plan hash，逐项列出编号、归属和 revision 冲突，必须显式确认后原子提交。正式项目 22 个镜头在 1280×720 页面通过三视图与只读校验，证据见 `docs/evidence/g10/fr-ing-003-uat-2026-08-15.json`。所有页面图片读取统一使用派生 thumbnail/waveform；图片原图 content 接口硬拒绝并返回 `IMAGE_CONTENT_REQUIRES_THUMBNAIL`，源文件不覆盖。此段为历史快照。
 
 G10 安全 UAT 已补齐此前缺失的 instance CSRF token：每个 API 进程生成独立 token，同源客户端从无 CORS 的 bootstrap/安全 GET 获取，所有网络写请求同时验证受控 Origin 与 `X-Local-Instance-Token`。隔离真实 FastAPI 验证恶意 Origin、缺失/错误 token、路径逃逸、REMOTE Provider、未入清单自定义节点均被拒绝；socket guard 对 TEST-NET 公网目标在 connect 前阻断，OpenAPI 无远程 credential 字段。证据为 `docs/evidence/g10/security-uat-2026-08-15.json`；不替代 G7 模型许可证或最终发布签字。
 
@@ -302,7 +302,7 @@ FR-CTL-003/004 实现增量：生成服务现在对 `DRIVING_VIDEO`、`POSE_SEQU
 
 FR-REV-001 实现增量：审核收件箱 read model 现在在筛选前稳定投影跨项目、项目、集、媒体类型、年龄（NEW/AGING/OLD 及数值范围）、优先级和阻塞状态；项目/集来自真实 owner 关系，阻塞/优先级为只读派生字段，不自动审核。分页先过滤后以 `inbox_at, media_version_id` 固定排序，响应包含 age、machine、integrity、project/episode/shot 上下文；ReviewInboxPanel 提供对应显式筛选，生成客户端与 OpenAPI 已更新。隔离 API 回归覆盖跨项目、集、年龄、优先级、阻塞和稳定 cursor，Web 面板测试覆盖筛选组合；正式三视口 UAT、深链接返回位置恢复和总账最终证据仍待补齐，证据 `docs/evidence/g10/fr-rev-001-review-inbox-filters-2026-08-15.json` 保持 `PARTIAL`。
 
-FR-REV-002..004 审核治理增量（2026-08-16）：`ReviewService.ensure_templates` 改为启动幂等且追加版本，新增 `POST /review-templates` 显式创建新版本；模板定义、`subject_type` 与检查项 id 经服务端校验，历史 `review_decisions.review_template_version_id` 永不被覆盖，新审核自动使用最新版本，错误媒体/阶段模板硬拒绝。机器 QC 继续只写不可变 `machine_check_runs/results`，人工 `review_decisions/checks` 与 audit event 独立，机器 PASS 不会自动批准；正式视频和音频批准要求最新 machine PASS。批量审核要求显式勾选、同项目/同模板、revision 预检、完整必填检查与拒绝原因，失败返回逐项阻塞且不产生部分写入；正式候选选择仍通过 hash 绑定的原子预检/提交。新增 `test_review_versions.py` 覆盖模板历史解释、错误模板、机器/人工分离、批量异常与 API；ReviewInboxPanel 显示当前模板版本。新增真实 Windows x64 隔离 UAT：本地 FFmpeg MP4、SQLite、127.0.0.1 API 验证模板 v1/v2 追加不可变、历史回溯、机器 QC/人工批准分离、stale 批量 409 可见且无部分写入、修复后两项批量提交；8/8 checks PASS，但整体证据保持 `PARTIAL`，因为仍未宣称正式项目三视口/权限角色/生产规模或 Unicode 路径覆盖。证据 `docs/evidence/g10/fr-rev-002-004-review-governance-2026-08-16.json`。
+FR-REV-002..004 审核治理增量（2026-08-16）：`ReviewService.ensure_templates` 改为启动幂等且追加版本，新增 `POST /review-templates` 显式创建新版本；模板定义、`subject_type` 与检查项 id 经服务端校验，历史 `review_decisions.review_template_version_id` 永不被覆盖，新审核自动使用最新版本，错误媒体/阶段模板硬拒绝。机器 QC 继续只写不可变 `machine_check_runs/results`，人工 `review_decisions/checks` 与 audit event 独立，机器 PASS 不会自动批准；正式视频和音频批准要求最新 machine PASS。批量审核要求显式勾选、同项目/同模板、revision 预检、完整必填检查与拒绝原因，失败返回逐项阻塞且不产生部分写入；正式候选选择仍通过 hash 绑定的原子预检/提交。新增 `test_review_versions.py` 覆盖模板历史解释、错误模板、机器/人工分离、批量异常与 API；ReviewInboxPanel 显示当前模板版本。新增真实 Windows x64 隔离 UAT：本地 FFmpeg MP4、SQLite、127.0.0.1 API 验证模板 v1/v2 追加不可变、历史回溯、机器 QC/人工批准分离、stale 批量 409 可见且无部分写入、修复后两项批量提交；8/8 checks PASS，但整体证据保持 `PARTIAL`，因为仍未宣称正式项目三视口/权限角色/生产规模或 Unicode 路径覆盖。证据 `docs/evidence/g10/fr-rev-002-004-review-governance-2026-08-16.json` 与 `docs/evidence/g10/review-governance-windows-uat-2026-08-16-run.json`。
 
 FR-CTL-001 capability contract 增量（2026-08-16）：CameraPlan 的 `NATIVE`、`PROMPT_FALLBACK`、`UNSUPPORTED` 只能由已发布 Profile capability contract 只读裁决，fallback 必须显式声明 prompt；ShotRevision 保存和 Production Ready 转换在服务端重新裁决，阻断客户端伪造或 contract 变更后的旧 revision。DirectorShotEditor 展示 unsupported/fallback 真实状态并补齐 ZOOM vocabulary；Variant preflight/Job snapshot 继续冻结同一 resolution。新增真实 Windows x64 隔离 UAT，9/9 checks 验证 Published Profile 三种能力、正向 Revision/Ready、伪造 NATIVE 拒绝和 contract 变更后 stale Ready 拒绝；UAT 仍保持 `PARTIAL`，因为 fixture 是隔离 Published Profile，不宣称用户真实模型执行、浏览器三视口或正式生产签字。证据 `docs/evidence/g10/fr-ctl-001-camera-capability-contracts-2026-08-16.json` 与 `docs/evidence/g10/fr-ctl-001-camera-windows-uat-2026-08-16.json`。
 
@@ -395,7 +395,7 @@ ComfyUI 与 Local LLM loopback 客户端现在使用显式无代理、拒绝 3xx
 
 ## 2026-08-16 FR-PRJ-004 / TC-DOM-003/004 Windows 隔离 UAT
 
-新增 `scripts/project_crud_windows_uat.py`，在工作区下全新 Unicode/空格路径创建迁移至当前 head 的 SQLite 与项目根，实际调用 `ProjectService` 创建 2 季/6 集、2 个项目级母本场次并绑定 episode source range、3 个镜头及 ShotRevision；随后启动真实 loopback FastAPI 进程读取 seasons/episodes/scenes/shots，并通过 session bootstrap token 调用 Episode reorder。观测结果：Episode display_order 归一化且 UUID/code 不变，过期 `expected_revision` 在服务层和 HTTP API 均返回 409 且不覆盖当前顺序；Storyboard batch 反转镜头顺序但 shot UUID/current_revision_id 与历史引用保持不变。证据 `docs/evidence/g10/fr-prj-004-windows-uat-2026-08-16.json` 的 9 项检查全部 PASS，但总状态保持 `PARTIAL`：本次不宣称生产库、浏览器三视口、并发写入或季/集/场/镜头删除 CRUD 已完成。`apps/api/tests/test_project_commands.py` 新增 episode sibling normalization 与 stale conflict 回归；`FR-PRJ-004`、`TC-DOM-003`、`TC-DOM-004` 在 master map 中均登记为 PARTIAL。
+新增 `scripts/project_crud_windows_uat.py`，在工作区下全新 Unicode/空格路径创建迁移至当前 head 的 SQLite 与项目根，实际调用 `ProjectService` 创建 2 季/6 集、2 个项目级母本场次并绑定 episode source range、3 个镜头及 ShotRevision；随后启动真实 loopback FastAPI 进程读取 seasons/episodes/scenes/shots，并通过 session bootstrap token 调用 Episode reorder。观测结果：Episode display_order 归一化且 UUID/code 不变，过期 `expected_revision` 在服务层和 HTTP API 均返回 409 且不覆盖当前顺序；Storyboard batch 反转镜头顺序但 shot UUID/current_revision_id 与历史引用保持不变；并发重排对照测试已补到 `fr-prj-004-windows-uat-2026-08-17-concurrency-pass.json`（1 成功 1 冲突）。总状态保持 `PARTIAL`：本次不宣称生产库、浏览器三视口、子实体删除 CRUD 或生产规模签字已完成。`apps/api/tests/test_project_commands.py` 新增 episode sibling normalization 与 stale conflict 回归；`FR-PRJ-004`、`TC-DOM-003`、`TC-DOM-004` 在 master map 中均登记为 PARTIAL。
 
 ## 2026-08-16 真实 H3 FL2VA I2V 隔离运行
 
@@ -406,3 +406,43 @@ ComfyUI 与 Local LLM loopback 客户端现在使用显式无代理、拒绝 3xx
 ## 2026-08-16 LocalDramaStudio Comfy 平台 Job UAT 阻塞
 
 新增 `scripts/h3_comfy_job_uat.py`，实际经过 `WorkflowService` 注册/验证/发布、`JobService` claim 和 `ComfyGenerationService.submit_next`，把关键帧按平台输入根物化后向 loopback Comfy 提交 `H3WorkflowFactory.build_fl2va`。受控 Comfy 进程只启用 `ComfyUI_RH_MinMaxH3` allow-list；提示已接受，但 RH `load_h3_model` 在 Windows 本机模型加载阶段触发 `WindowsAccessViolation`，进程退出且没有生成 Artifact。证据 `docs/evidence/g10/h3-comfy-job-uat-2026-08-16.json` 明确标记 `BLOCKED`，不把外部 native 节点生成或独立正式媒体链误报为平台 Job 成功；生产数据库/项目树、公网均未接触。使用 `scripts/comfy.ps1` 的显式诊断旗标（仅允许 VRAM/allocator/precision 诊断选项）仍可复现；独立 CPU/CPU-offload 与 CUDA/CPU-offload loader 可读，问题聚焦完整 Comfy + Qwen CUDA residency/大 DiT 组合。另新增 `ComfyGenerationService` runtime-loss 收口：loopback 运行时丢失会写脱敏 `COMFY_RUNTIME_UNAVAILABLE`、释放 lease 并按 bounded retry 保持 Job `QUEUED`，回归见 `apps/api/tests/test_comfy_jobs.py::test_poll_closes_attempt_when_comfy_runtime_dies`。待 RH 运行时资源/模型加载问题修复后重跑，FR-GEN/VID/WFL 相关条目继续保持 `PARTIAL`。
+
+## 2026-08-16 继续执行：PARTIAL 冲刺清单（并行优先）
+
+- 目标是优先把可验证范围先闭环，不改动 H3/Comfy 外部运行时事实边界：
+  - 代理 A（无外部 runtime）：
+    - FR-PRJ-004（子实体重排边界）：补充“删除/生产规模”在隔离环境的真实 UAT；可复用 `fr-prj-004-windows-uat-2026-08-17-concurrency-pass.json`。
+    - FR-DEL-001..004：补充正式三视口只读与签字流程覆盖路径；当前有本地 delivery 与篡改/withdraw 证据，但未补正式读链。
+    - G6 四条真实代理 take（selection/review）：当前仅到达产物与 QC 成功，待 review/签字正式闭环并对齐正式签字流程。
+    - TC-DOM-007：补齐“全对象类型 stale”与规模场景，先不动模型 runtime。
+    - TC-VAR-013 / TC-VAR-004：补齐真实 `new Job` 与双 profile/retry 路径的生产尺度验证。
+    - FR-IMG-002 / FR-IMG-003：补齐真实用户 Profile 场景下的批量生成与三视口图片网格对比验收。
+  - 代理 B（外部接口依赖）
+    - FR-PRV（H3 候选 truthfulness）与 G6 相关 runtime 项：保持 BLOCKED；不允许伪造产物，需等待 Comfy/RH runtime 修复后复测。
+    - FR-AUD-001 / FR-AUD-002：外部 Profile/授权/媒体链路补齐后补齐正式候选与选择链路。
+- 共享门禁：
+  - 任何新证据不得将 `public_network_contacted` 置真，不得触及 production db 文件或 `projects_root`。
+  - 产物仅记录与现有脚本或 API 真实调用，文档中只下调 `PARTIAL` 或新增 `BLOCKED`，不做越权闭环。
+
+- 本阶段已完成事实快照：`master_requirements_audit.py` 与 `release_audit.py` 均通过（`release_fr=84, nfr=15, tc=85`）；`docs/evidence/g10/master-requirements-closure.json` 与 `docs/evidence/g10/full-chain-local-uat-2026-08-16.json` 为 `PASS`。
+
+- 补充：本节“PARTIAL”条目已按“证据已达技术闭环 + 正式签字/三视口待补”进行口径标注，且大部分条目在 `master-requirements-map.json` 已登记为 PASS；请以 `PARTIAL` 下方的 `... pending` 标签作为执行优先级来源，避免将映射层 PASS 与正式签字状态混淆。
+
+## 2026-08-17 上线冲刺收口（本窗口）
+
+本窗口目标：在不依赖 H3/Comfy 外部运行时、且由产品负责人自行运行 ComfyUI 的前提下，把所有可自行闭环的收尾全部完成并统一发布决策。
+
+已完成：
+
+- **门禁全绿**：`scripts/check.ps1` 真实退出 0。API `288 passed / 4 Comfy live deselected`；Ruff 115 source files；mypy PASS；maintainability audit PASS；Web production build PASS；Web `36 files / 100 tests` PASS。
+- **core-chain 三视口浏览器 UAT 扩至 6 视图**：`tests/e2e/core_chain_browser_readonly.spec.ts` 在生产 SQLite/项目树只读快照（`scripts/serve_isolated_core_browser_uat.py`，127.0.0.1:3222）上覆盖 `projects / generation / reviews / jobs / diagnostics` 五个视图 + 时间线/交付读断言，1440×900、1280×800、1024×768 三档 3/3 PASS：零写入、零公网、零原媒体、零 console/page error、零失败响应、零水平溢出。证据 `docs/evidence/g10/core-chain-browser-readonly-uat-2026-08-16.json`（`status=PASS`、scope 含 review inbox / timeline delivery / jobs capacity / diagnostics audit）。该证据为 FR-PRJ-*、FR-WRT-*、FR-IMG-*、FR-REV-*、FR-AUD-*、FR-DEL-001..004、FR-JOB-001..005、FR-AUT-001/002、FR-AUDT-001、FR-OPS-001..003、FR-WFL-004 与 NFR-* 的读路径提供了正式三视口生产快照 UAT 覆盖。
+- **修复审核页/对白页自动拉取原媒体**：`ReviewInboxPanel` 视频预览与同步比较、`DialogueTTSPanel` 试听 `<audio>` 由 `preload="metadata"` 改为 `preload="none"`，消除“进入审核视图即自动请求原视频/原音频”的违规；原媒体只在用户点击播放后才按需 Range 读取，与 EpisodeReviewPanel/AudioTrackPanel 的既定策略一致。`video_annotations` 与 `dialogue_tts_governance` 两套三视口 e2e 复跑 6/6 PASS，Web vitest 100/100 PASS。
+- **工作树卫生**：`.gitignore` 增补历次隔离 UAT 遗留工作根目录（`数据 SQLite/`、`data sqlite/`、`projects root/`、`work area/`、`tmp_obs/`、`$root/`），未入库临时目录不再进入提交。
+- **Ruff 修复**：`dom007_stale_windows_uat.py`、`project_crud_windows_uat.py`、`tc_var013_004_windows_uat.py` 的 import 问题已修复，门禁恢复全绿。
+
+仍未闭环且不依赖平台代码的边界（按产品负责人指示保持现状，不伪造证据）：
+
+- H3/Comfy runtime：`h3-comfy-job-uat` 保持 `BLOCKED`（RH `load_h3_model` WindowsAccessViolation）；产品负责人自行运行 ComfyUI，后续 runtime 恢复后可重跑 `scripts/h3_comfy_job_uat.py` 并推进 FR-PRV/FR-GEN/FR-VID/FR-WFL 的真实平台 Job 闭环。
+- FR-AUD-001/002：正式项目内真实授权音色、Published TTS Profile、试听/QC/人工审核/选择闭环仍为数据链缺失（隔离 SAPI 链路已 PASS，见 `dialogue-tts-windows-uat-2026-08-16.json`）。
+- FR-IMG-002：真实用户 Profile/Runtime 批量图片生成待用户本机 Profile 就绪后执行。
+- FR-DEL-001..004：交付链三视口读链已覆盖，最终交付包签字留待实际生产内容产生后执行。

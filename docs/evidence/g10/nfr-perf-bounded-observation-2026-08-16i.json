@@ -1,0 +1,213 @@
+{
+  "schema_version": "nfr.performance.bounded-observation.v1",
+  "status": "PARTIAL",
+  "benchmark_status": "OBSERVED_NOT_BENCHMARKED",
+  "scope": "isolated migrated SQLite + real FastAPI TestClient read paths",
+  "fixture": {
+    "episodes": 60,
+    "shots": 800,
+    "media_versions": 10000,
+    "synthetic_media_integrity": "UNKNOWN",
+    "playable_media_claimed": false
+  },
+  "migration_head": "0039_automation_task_jobs",
+  "build_seconds": 1.509,
+  "pages": [
+    {
+      "kind": "review_inbox",
+      "path": "/api/v1/reviews/inbox?project_id=e8877d7f-bc25-4991-924e-039c696d2d1a&cursor=0&limit=50",
+      "status_codes": [
+        200,
+        200,
+        200
+      ],
+      "p95_ms_observed": 227.142,
+      "max_ms_observed": 230.382,
+      "last": {
+        "keys": [
+          "cursor",
+          "items",
+          "limit",
+          "next_cursor"
+        ],
+        "item_count": 50,
+        "next_cursor": 50,
+        "page": null
+      },
+      "cursor": 0,
+      "returned": 50,
+      "next_cursor": 50,
+      "bounded": true
+    },
+    {
+      "kind": "review_inbox",
+      "path": "/api/v1/reviews/inbox?project_id=e8877d7f-bc25-4991-924e-039c696d2d1a&cursor=50&limit=50",
+      "status_codes": [
+        200,
+        200,
+        200
+      ],
+      "p95_ms_observed": 220.783,
+      "max_ms_observed": 222.481,
+      "last": {
+        "keys": [
+          "cursor",
+          "items",
+          "limit",
+          "next_cursor"
+        ],
+        "item_count": 50,
+        "next_cursor": 100,
+        "page": null
+      },
+      "cursor": 50,
+      "returned": 50,
+      "next_cursor": 100,
+      "bounded": true
+    },
+    {
+      "kind": "review_inbox",
+      "path": "/api/v1/reviews/inbox?project_id=e8877d7f-bc25-4991-924e-039c696d2d1a&cursor=5000&limit=50",
+      "status_codes": [
+        200,
+        200,
+        200
+      ],
+      "p95_ms_observed": 360.704,
+      "max_ms_observed": 361.603,
+      "last": {
+        "keys": [
+          "cursor",
+          "items",
+          "limit",
+          "next_cursor"
+        ],
+        "item_count": 50,
+        "next_cursor": 5050,
+        "page": null
+      },
+      "cursor": 5000,
+      "returned": 50,
+      "next_cursor": 5050,
+      "bounded": true
+    },
+    {
+      "kind": "review_inbox",
+      "path": "/api/v1/reviews/inbox?project_id=e8877d7f-bc25-4991-924e-039c696d2d1a&cursor=9950&limit=50",
+      "status_codes": [
+        200,
+        200,
+        200
+      ],
+      "p95_ms_observed": 477.367,
+      "max_ms_observed": 480.049,
+      "last": {
+        "keys": [
+          "cursor",
+          "items",
+          "limit",
+          "next_cursor"
+        ],
+        "item_count": 50,
+        "next_cursor": null,
+        "page": null
+      },
+      "cursor": 9950,
+      "returned": 50,
+      "next_cursor": null,
+      "bounded": true
+    },
+    {
+      "kind": "production_read_model",
+      "episode_count": 60,
+      "bounded_pages": true,
+      "sample": [
+        {
+          "episode_id": "c68fe15b-2e09-4035-bbb6-0735e70a2e90",
+          "returned": 10,
+          "page": {
+            "cursor": 0,
+            "limit": 10,
+            "next_cursor": 10,
+            "has_more": true
+          }
+        },
+        {
+          "episode_id": "7fda00e2-52d6-4111-822f-c97682e00335",
+          "returned": 10,
+          "page": {
+            "cursor": 0,
+            "limit": 10,
+            "next_cursor": 10,
+            "has_more": true
+          }
+        },
+        {
+          "episode_id": "8fbca5b8-62ad-4541-a290-56a0ac9a9efe",
+          "returned": 10,
+          "page": {
+            "cursor": 0,
+            "limit": 10,
+            "next_cursor": 10,
+            "has_more": true
+          }
+        }
+      ]
+    },
+    {
+      "path": "/api/v1/projects?cursor=0&limit=50",
+      "status_codes": [
+        200,
+        200,
+        200
+      ],
+      "p95_ms_observed": 6.79,
+      "max_ms_observed": 6.849,
+      "last": {
+        "keys": [
+          "items",
+          "page"
+        ],
+        "item_count": 1,
+        "next_cursor": null,
+        "page": {
+          "cursor": 0,
+          "limit": 50,
+          "next_cursor": null,
+          "has_more": false
+        }
+      },
+      "kind": "project_list",
+      "returned": 1,
+      "page": {
+        "cursor": 0,
+        "limit": 50,
+        "next_cursor": null,
+        "has_more": false
+      },
+      "bounded": true
+    }
+  ],
+  "lazy_thumbnail_contract": [
+    {
+      "path": "apps/web/src/features/reviews/ReviewInboxPanel.tsx",
+      "lazy_thumbnail_count": 1,
+      "requests_original_content": true
+    },
+    {
+      "path": "apps/web/src/features/generation/GenerationWorkbench.tsx",
+      "lazy_thumbnail_count": 2,
+      "requests_original_content": false
+    },
+    {
+      "path": "apps/web/src/features/production/ContinuityPanel.tsx",
+      "lazy_thumbnail_count": 1,
+      "requests_original_content": false
+    }
+  ],
+  "bounded_contracts_passed": true,
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "interpretation": "This bounded observation exercises cursor/page caps and source-level lazy thumbnail policy. It does not claim NFR-PERF-001 10k p95 <500ms, NFR-PERF-002 Windows/browser virtual-scroll UAT, cold-cache behavior, or production hardware capacity.",
+  "observed_at": "2026-08-16T11:46:01.527513+00:00"
+}

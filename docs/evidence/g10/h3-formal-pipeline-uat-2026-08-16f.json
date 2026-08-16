@@ -1,0 +1,123 @@
+{
+  "schema_version": "g10.h3_formal_pipeline_uat.v1",
+  "status": "PARTIAL",
+  "source": {
+    "path": "F:\\AI_Projects\\h3\\local_drama_studio\\temp\\formal-platform-uat-20260816.mp4",
+    "sha256": "c4aabe98055431f39dda1e722d0b3a30b45d656b3c21d4ec2f37022a087fdb94",
+    "bytes": 16896
+  },
+  "isolated": {
+    "project_id": "412c9b92-8adb-4736-a6fc-002144e9504c",
+    "project_root_rel": "h3_formal_pipeline_uat",
+    "database_integrity": "ok",
+    "production_database_contacted": false,
+    "production_project_tree_mutated": false,
+    "runtime_contacted": false,
+    "network_contacted": false
+  },
+  "checks": {
+    "media_registered": "11402b07-19c3-45ef-8e40-2819ff30130a",
+    "formal_machine_qc": {
+      "id": "a964caa0-d368-4881-b8fe-fc235248168e",
+      "subject_type": "MEDIA_VERSION",
+      "subject_id": "11402b07-19c3-45ef-8e40-2819ff30130a",
+      "policy_version": "g6_formal_video_qc_v1",
+      "status": "PASS",
+      "results": [
+        {
+          "item_id": "file_integrity",
+          "result": "PASS",
+          "details": {
+            "exists": true,
+            "byte_size": 16896
+          }
+        },
+        {
+          "item_id": "decode",
+          "result": "PASS",
+          "details": {
+            "probe_status": "PASS"
+          }
+        },
+        {
+          "item_id": "dimensions",
+          "result": "PASS",
+          "details": {
+            "width": 320,
+            "height": 180,
+            "source": "ffprobe"
+          }
+        },
+        {
+          "item_id": "fps",
+          "result": "PASS",
+          "details": {
+            "numerator": 2,
+            "denominator": 1,
+            "value": 2.0,
+            "source": "ffprobe"
+          }
+        },
+        {
+          "item_id": "duration",
+          "result": "PASS",
+          "details": {
+            "duration_ms": 2000,
+            "source": "ffprobe"
+          }
+        },
+        {
+          "item_id": "codec",
+          "result": "PASS",
+          "details": {
+            "codec_name": "h264",
+            "source": "ffprobe"
+          }
+        }
+      ]
+    },
+    "formal_selection": {
+      "id": "78c1fba2-0aa5-4632-b3d4-5d5b5c31bf5f",
+      "media_asset_id": "0577a854-7087-4ee4-9cc7-f87bced960c5",
+      "media_version_id": "11402b07-19c3-45ef-8e40-2819ff30130a",
+      "selection_type": "FORMAL_SELECTION",
+      "status": "SELECTED"
+    },
+    "human_review": {
+      "decision": "APPROVED",
+      "template_code": "formal_video"
+    },
+    "formal_selection_preflight": {
+      "project_id": "412c9b92-8adb-4736-a6fc-002144e9504c",
+      "status": "READY",
+      "plan_hash": "98be28d8ff2af1c70ad0ee30cf2b2b672198776b350db88b00238614b5a31602",
+      "items": [
+        {
+          "media_version_id": "11402b07-19c3-45ef-8e40-2819ff30130a",
+          "media_asset_id": "0577a854-7087-4ee4-9cc7-f87bced960c5",
+          "source_revision": 3,
+          "status": "READY",
+          "blockers": []
+        }
+      ],
+      "would_mutate": false
+    },
+    "formal_selection_commit": {
+      "project_id": "412c9b92-8adb-4736-a6fc-002144e9504c",
+      "status": "COMMITTED",
+      "items": [
+        {
+          "id": "1f25230d-9c2a-46ea-8213-15370817b284",
+          "media_asset_id": "0577a854-7087-4ee4-9cc7-f87bced960c5",
+          "media_version_id": "11402b07-19c3-45ef-8e40-2819ff30130a",
+          "selection_type": "FORMAL_SELECTION",
+          "status": "SELECTED"
+        }
+      ]
+    }
+  },
+  "limitations": [
+    "这是隔离 SQLite/项目根中的平台接入验收，不写入生产数据库。",
+    "未执行正式交付包、下载审计或多镜头整集门禁，因此整体仍为 PARTIAL。"
+  ]
+}

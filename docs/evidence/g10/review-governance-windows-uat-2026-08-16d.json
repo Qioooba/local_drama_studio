@@ -1,0 +1,184 @@
+{
+  "schema_version": "g10.fr-rev-002-004.windows-uat.v1",
+  "status": "PARTIAL",
+  "scope": [
+    "FR-REV-002",
+    "FR-REV-003",
+    "FR-REV-004"
+  ],
+  "observed_at": "2026-08-16T10:37:35.792403+00:00",
+  "platform": {
+    "system": "win32",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.10"
+  },
+  "local_only": true,
+  "network": {
+    "loopback_endpoint": "http://127.0.0.1:56003",
+    "public_network_contacted": false,
+    "provider_contacted": false,
+    "comfyui_contacted": false
+  },
+  "isolation": {
+    "root_rel": "work/review-governance-windows-20260816T104000Z",
+    "production_database_contacted": false,
+    "production_projects_root_contacted": false
+  },
+  "limits": [
+    "bounded isolated SQLite and loopback API UAT; not a production-database, three-viewport, role-permission, or release-scale certification",
+    "does not exercise model/provider generation, ComfyUI, remote transports, or real user production media",
+    "evidence demonstrates template evolution and batch recovery contracts but does not close the overall release ledger"
+  ],
+  "checks": [
+    {
+      "code": "ISOLATED_REAL_LOCAL_MP4",
+      "status": "PASS",
+      "observed": {
+        "media_version_ids": [
+          "3f244aa2-bf1a-4acd-afcb-a08ab1ee6651",
+          "c5fe0583-85cd-446d-9587-c16247995649",
+          "234a8a17-5d78-4dd8-af77-a0e20edba84f"
+        ],
+        "byte_sizes": [
+          2276,
+          2276,
+          2276
+        ]
+      },
+      "detail": "three FFmpeg-created local MP4 files were imported into the isolated project"
+    },
+    {
+      "code": "LOOPBACK_SESSION_AND_API",
+      "status": "PASS",
+      "observed": {
+        "endpoint": "http://127.0.0.1:56003",
+        "health": 200,
+        "bootstrap": 200
+      },
+      "detail": "only the temporary 127.0.0.1 FastAPI API was contacted"
+    },
+    {
+      "code": "MACHINE_QC_SEPARATE_FROM_HUMAN",
+      "status": "PASS",
+      "observed": {
+        "machine_run_id": "33c40a50-9637-45c9-9511-4e4c567c9120",
+        "review_count_after_qc": 0
+      },
+      "detail": "machine QC persists technical evidence but never manufactures a human review decision"
+    },
+    {
+      "code": "HUMAN_APPROVAL_IS_EXPLICIT",
+      "status": "PASS",
+      "observed": {
+        "review_id": "42907eac-47c6-4433-9d1e-337350e3ad2e",
+        "machine_run_id": "33c40a50-9637-45c9-9511-4e4c567c9120"
+      },
+      "detail": "human APPROVED was submitted through its own explicit checklist API call"
+    },
+    {
+      "code": "TEMPLATE_HISTORY_APPEND_ONLY",
+      "status": "PASS",
+      "observed": {
+        "versions": [
+          {
+            "id": "c0fa8150-3133-506d-b6df-a3f6d658e8a1",
+            "version_no": 1,
+            "item_ids": [
+              "identity",
+              "motion",
+              "continuity",
+              "technical"
+            ]
+          },
+          {
+            "id": "62ae3aa7-1cd6-4151-8a25-91779fa954cb",
+            "version_no": 2,
+            "item_ids": [
+              "identity",
+              "motion",
+              "continuity",
+              "technical",
+              "human_note"
+            ]
+          }
+        ]
+      },
+      "detail": "v2 was appended; the v1 definition was not rewritten"
+    },
+    {
+      "code": "HISTORICAL_REVIEW_EXPLAINABLE",
+      "status": "PASS",
+      "observed": {
+        "historical_review": {
+          "id": "42907eac-47c6-4433-9d1e-337350e3ad2e",
+          "subject_type": "MEDIA_VERSION",
+          "subject_id": "3f244aa2-bf1a-4acd-afcb-a08ab1ee6651",
+          "review_template_version_id": "c0fa8150-3133-506d-b6df-a3f6d658e8a1",
+          "decision": "APPROVED",
+          "comment": null,
+          "supersedes_decision_id": null,
+          "created_at": "2026-08-16T10:37:35.177977+00:00",
+          "updated_at": "2026-08-16T10:37:35.177977+00:00",
+          "created_by": "local-user",
+          "revision": 1,
+          "schema_version": "v2",
+          "subject_revision": 1,
+          "is_stale": 0,
+          "stale_reason": null,
+          "template": {
+            "id": "c0fa8150-3133-506d-b6df-a3f6d658e8a1",
+            "code": "proxy_video",
+            "version_no": 1,
+            "subject_type": "MEDIA_VERSION",
+            "items": [
+              {
+                "id": "identity",
+                "label": "身份一致",
+                "required": true
+              },
+              {
+                "id": "motion",
+                "label": "动作可用",
+                "required": true
+              },
+              {
+                "id": "continuity",
+                "label": "连续性",
+                "required": true
+              },
+              {
+                "id": "technical",
+                "label": "技术可播放",
+                "required": true
+              }
+            ]
+          }
+        }
+      },
+      "detail": "review context resolves the exact v1 definition retained by the historical decision"
+    },
+    {
+      "code": "BATCH_STALE_VISIBLE_AND_ATOMIC",
+      "status": "PASS",
+      "observed": {
+        "stale_commit_status": 409,
+        "error_code": "REVIEW_BATCH_STALE",
+        "review_counts_after_failure": [
+          0,
+          0
+        ]
+      },
+      "detail": "one changed batch item is explicitly reported stale and the other item receives no partial review"
+    },
+    {
+      "code": "BATCH_SUCCESS_RETURNS_PER_ITEM_HISTORY",
+      "status": "PASS",
+      "observed": {
+        "plan_status": "READY",
+        "commit_status": "COMMITTED",
+        "result_count": 2
+      },
+      "detail": "a re-preflighted batch commits both explicit items and each history references v2"
+    }
+  ]
+}

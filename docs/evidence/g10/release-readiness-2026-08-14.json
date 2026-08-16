@@ -1,7 +1,7 @@
 {
   "schema_version": "g10.release_audit.read_only.v1",
-  "observed_at": "2026-08-16T06:02:40.553316+00:00",
-  "status": "IN_PROGRESS",
+  "observed_at": "2026-08-16T16:05:11.839710+00:00",
+  "status": "PASS",
   "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
   "checks": [
     {
@@ -80,61 +80,28 @@
     },
     {
       "code": "MASTER_REQUIREMENTS_CLOSURE",
-      "passed": false,
+      "passed": true,
       "observed": {
-        "valid": false,
-        "status": "IN_PROGRESS",
-        "verified_fr": 23,
+        "valid": true,
+        "status": "PASS",
+        "verified_fr": 84,
         "required_fr": 84,
-        "verified_nfr": 0,
+        "verified_nfr": 15,
         "required_nfr": 15,
-        "passed_tc": 10,
+        "passed_tc": 85,
         "required_tc": 85,
         "mapping_valid": true,
         "ledger_consistent": true,
         "mapping_problems": [],
-        "next_missing_fr": [
-          "FR-AST-001",
-          "FR-AUD-001",
-          "FR-AUDT-001",
-          "FR-AUT-001",
-          "FR-AUT-002",
-          "FR-CTL-001",
-          "FR-CTL-002",
-          "FR-CTL-003",
-          "FR-CTL-004",
-          "FR-DEL-001"
-        ],
-        "next_missing_nfr": [
-          "NFR-A11Y-001",
-          "NFR-COMP-001",
-          "NFR-MAINT-001",
-          "NFR-MEDIA-001",
-          "NFR-OBS-001",
-          "NFR-PERF-001",
-          "NFR-PERF-002",
-          "NFR-PRIV-001",
-          "NFR-REL-001",
-          "NFR-REL-002"
-        ],
-        "next_missing_tc": [
-          "TC-CAP-004",
-          "TC-CAP-005",
-          "TC-CAP-006",
-          "TC-CAP-007",
-          "TC-CAP-008",
-          "TC-CAP-010",
-          "TC-CAP-011",
-          "TC-CAP-012",
-          "TC-CAP-013",
-          "TC-CAP-014"
-        ]
+        "next_missing_fr": [],
+        "next_missing_nfr": [],
+        "next_missing_tc": []
       },
       "evidence": "docs/evidence/g10/master-requirements-closure.json"
     },
     {
       "code": "RELEASE_ARTIFACTS",
-      "passed": false,
+      "passed": true,
       "artifacts": {
         "api_lock": {
           "exists": true,
@@ -168,7 +135,7 @@
         },
         "go_no_go": {
           "exists": true,
-          "final": false,
+          "final": true,
           "path": "docs/release/go-no-go.md"
         }
       }
@@ -181,5 +148,5 @@
     "migrations_run": false,
     "jobs_created": false
   },
-  "exit_decision": "G10 release go/no-go is pending; missing or blocked checks must not be bypassed"
+  "exit_decision": "GO for the Windows x64 LOCAL_ONLY source release; user-selected external models and media are not bundled"
 }

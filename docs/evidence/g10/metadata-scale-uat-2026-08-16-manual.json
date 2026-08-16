@@ -1,0 +1,71 @@
+{
+  "schema_version": "g10.metadata_scale_uat.v1",
+  "status": "PASS",
+  "scope": "isolated migrated SQLite + real FastAPI read paths",
+  "fixture": {
+    "episodes": 60,
+    "shots": 800,
+    "media_assets": 10000,
+    "media_versions": 10000,
+    "synthetic_media_integrity": "UNKNOWN",
+    "playable_media_claimed": false
+  },
+  "migration_head": "0039_automation_task_jobs",
+  "build_seconds": 1.512,
+  "checks": [
+    {
+      "code": "SCALE_COUNTS",
+      "passed": true
+    },
+    {
+      "code": "ALL_EPISODE_ENTRIES",
+      "passed": true,
+      "checked_episode_count": 60
+    },
+    {
+      "code": "PRODUCTION_READ_P95",
+      "passed": true,
+      "p95_ms": 19.09,
+      "max_ms": 27.289
+    },
+    {
+      "code": "TIMELINE_DELIVERY_READ_P95",
+      "passed": true,
+      "p95_ms": 12.657,
+      "max_ms": 14.439
+    },
+    {
+      "code": "REVIEW_INBOX_READ",
+      "passed": true,
+      "elapsed_ms": 199.266,
+      "returned": 100
+    },
+    {
+      "code": "MEDIA_OWNER_INDEX",
+      "passed": true,
+      "elapsed_ms": 0.069
+    },
+    {
+      "code": "DATABASE_INTEGRITY",
+      "passed": true,
+      "integrity": "ok"
+    }
+  ],
+  "entry_failures": [],
+  "query_plans": {
+    "media_owner": [
+      "SEARCH media_assets USING COVERING INDEX ix_media_assets_owner (owner_id=?)"
+    ],
+    "media_versions": [
+      "SEARCH media_versions USING INDEX ix_media_versions_asset_version (media_asset_id=?)"
+    ],
+    "review_subject": [
+      "SEARCH review_decisions USING INDEX ix_review_decisions_subject_created (subject_type=? AND subject_id=?)"
+    ]
+  },
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "production_database_contacted": false,
+  "interpretation": "G10-01/G10-02 metadata-scale evidence only. It does not replace playable-media regression, ordered G7-G9 exits, final UAT, or go/no-go.",
+  "observed_at": "2026-08-16T12:04:07.162638+00:00"
+}

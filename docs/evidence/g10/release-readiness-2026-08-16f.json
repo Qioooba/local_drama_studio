@@ -1,0 +1,185 @@
+{
+  "schema_version": "g10.release_audit.read_only.v1",
+  "observed_at": "2026-08-16T11:10:56.536031+00:00",
+  "status": "IN_PROGRESS",
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "checks": [
+    {
+      "code": "DATABASE_INTEGRITY",
+      "passed": true,
+      "observed": "ok"
+    },
+    {
+      "code": "MIGRATION_HEAD",
+      "passed": true,
+      "observed": "0039_automation_task_jobs"
+    },
+    {
+      "code": "BACKUP_INTEGRITY",
+      "passed": true,
+      "observed_count": 5
+    },
+    {
+      "code": "ORDERED_G7",
+      "passed": true,
+      "observed": "PASS",
+      "next_required_action": null
+    },
+    {
+      "code": "ORDERED_G8",
+      "passed": true,
+      "observed": "PASS",
+      "upstream_g7": "PASS",
+      "next_required_action": null
+    },
+    {
+      "code": "ORDERED_G9",
+      "passed": true,
+      "observed": "PASS",
+      "upstream_g7": "PASS",
+      "upstream_g8": "PASS",
+      "next_required_action": null
+    },
+    {
+      "code": "UPGRADE_ROLLBACK_REHEARSAL",
+      "passed": true,
+      "evidence": "docs/evidence/g10/upgrade-rollback-rehearsal-0039-2026-08-16.json"
+    },
+    {
+      "code": "SBOM_INVENTORY",
+      "passed": true,
+      "package_count": 317,
+      "target_runtime_noassertion": 0,
+      "lock_only_noassertion": 73,
+      "evidence": "docs/release/sbom.json"
+    },
+    {
+      "code": "LOCAL_UAT_READONLY_BASELINE",
+      "passed": true,
+      "evidence": "docs/evidence/g10/local-uat-readonly-2026-08-14.json"
+    },
+    {
+      "code": "METADATA_SCALE_UAT",
+      "passed": true,
+      "evidence": "docs/evidence/g10/metadata-scale-uat-2026-08-15.json"
+    },
+    {
+      "code": "SECURITY_UAT",
+      "passed": true,
+      "evidence": "docs/evidence/g10/security-uat-2026-08-15.json"
+    },
+    {
+      "code": "CLEAN_ROOT_RECOVERY_UAT",
+      "passed": true,
+      "evidence": "docs/evidence/g10/recovery-restore-uat-2026-08-15.json"
+    },
+    {
+      "code": "STALE_JOB_MAINTENANCE",
+      "passed": true,
+      "evidence": "docs/evidence/g10/stale-job-maintenance-2026-08-14.json"
+    },
+    {
+      "code": "MASTER_REQUIREMENTS_CLOSURE",
+      "passed": false,
+      "observed": {
+        "valid": false,
+        "status": "IN_PROGRESS",
+        "verified_fr": 24,
+        "required_fr": 84,
+        "verified_nfr": 2,
+        "required_nfr": 15,
+        "passed_tc": 10,
+        "required_tc": 85,
+        "mapping_valid": true,
+        "ledger_consistent": true,
+        "mapping_problems": [],
+        "next_missing_fr": [
+          "FR-AST-001",
+          "FR-AUDT-001",
+          "FR-AUT-001",
+          "FR-AUT-002",
+          "FR-CTL-001",
+          "FR-CTL-002",
+          "FR-CTL-003",
+          "FR-CTL-004",
+          "FR-DEL-001",
+          "FR-DEL-002"
+        ],
+        "next_missing_nfr": [
+          "NFR-A11Y-001",
+          "NFR-COMP-001",
+          "NFR-MAINT-001",
+          "NFR-MEDIA-001",
+          "NFR-OBS-001",
+          "NFR-PERF-001",
+          "NFR-PERF-002",
+          "NFR-PRIV-001",
+          "NFR-REL-001",
+          "NFR-REL-002"
+        ],
+        "next_missing_tc": [
+          "TC-CAP-004",
+          "TC-CAP-005",
+          "TC-CAP-006",
+          "TC-CAP-007",
+          "TC-CAP-008",
+          "TC-CAP-010",
+          "TC-CAP-011",
+          "TC-CAP-012",
+          "TC-CAP-013",
+          "TC-CAP-014"
+        ]
+      },
+      "evidence": "docs/evidence/g10/master-requirements-closure.json"
+    },
+    {
+      "code": "RELEASE_ARTIFACTS",
+      "passed": false,
+      "artifacts": {
+        "api_lock": {
+          "exists": true,
+          "final": true,
+          "path": "apps/api/requirements.lock"
+        },
+        "web_lock": {
+          "exists": true,
+          "final": true,
+          "path": "pnpm-lock.yaml"
+        },
+        "start_script": {
+          "exists": true,
+          "final": true,
+          "path": "scripts/start.ps1"
+        },
+        "migration_script": {
+          "exists": true,
+          "final": true,
+          "path": "scripts/migrate.py"
+        },
+        "install_upgrade_rollback": {
+          "exists": true,
+          "final": true,
+          "path": "docs/release/install-upgrade-rollback.md"
+        },
+        "sbom": {
+          "exists": true,
+          "final": true,
+          "path": "docs/release/sbom.json"
+        },
+        "go_no_go": {
+          "exists": true,
+          "final": false,
+          "path": "docs/release/go-no-go.md"
+        }
+      }
+    }
+  ],
+  "safety": {
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "mutated": false,
+    "migrations_run": false,
+    "jobs_created": false
+  },
+  "exit_decision": "G10 release go/no-go is pending; missing or blocked checks must not be bypassed"
+}

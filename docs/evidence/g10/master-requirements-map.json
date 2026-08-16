@@ -5,127 +5,228 @@
     {
       "id": "FR-PRJ-001",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/project-create-wizard-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_project_creation_plan.py", "apps/web/src/features/projects/ProjectCreateWizard.test.tsx"]
+      "evidence": [
+        "docs/evidence/g10/project-create-wizard-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_project_creation_plan.py",
+        "apps/web/src/features/projects/ProjectCreateWizard.test.tsx"
+      ]
     },
     {
       "id": "FR-PRJ-002",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/project-package-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_project_packages.py"]
+      "evidence": [
+        "docs/evidence/g10/project-package-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_project_packages.py"
+      ]
     },
     {
       "id": "FR-PRJ-003",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/project-list-filter-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_project_listing.py", "apps/api/tests/test_api_projects.py"]
+      "evidence": [
+        "docs/evidence/g10/project-list-filter-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_project_listing.py",
+        "apps/api/tests/test_api_projects.py"
+      ]
     },
     {
       "id": "FR-PRJ-004",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-prj-004-windows-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_project_commands.py", "apps/api/tests/test_storyboard_batch.py", "scripts/project_crud_windows_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/fr-prj-004-windows-uat-2026-08-16f-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_project_commands.py",
+        "apps/api/tests/test_storyboard_batch.py",
+        "scripts/project_crud_windows_uat.py"
+      ]
     },
     {
       "id": "FR-PRJ-006",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/project-template-copy-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_project_template_copy.py"]
+      "evidence": [
+        "docs/evidence/g10/project-template-copy-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_project_template_copy.py"
+      ]
     },
     {
       "id": "FR-PRJ-007",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/core-chain-browser-readonly-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_health.py", "tests/e2e/core_chain_browser_readonly.spec.ts"]
+      "evidence": [
+        "docs/evidence/g10/core-chain-browser-readonly-uat-2026-08-16.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_health.py",
+        "tests/e2e/core_chain_browser_readonly.spec.ts"
+      ]
     },
     {
       "id": "FR-SRC-001",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/core-chain-browser-readonly-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g3_configuration_media.py", "tests/e2e/core_chain_browser_readonly.spec.ts"]
+      "evidence": [
+        "docs/evidence/g10/core-chain-browser-readonly-uat-2026-08-16.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g3_configuration_media.py",
+        "tests/e2e/core_chain_browser_readonly.spec.ts"
+      ]
     },
     {
       "id": "FR-WRT-001",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/creative-library-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_creative_entries.py", "apps/web/src/features/projects/CreativeLibrary.test.tsx"]
+      "evidence": [
+        "docs/evidence/g10/creative-library-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_creative_entries.py",
+        "apps/web/src/features/projects/CreativeLibrary.test.tsx"
+      ]
     },
     {
       "id": "FR-WRT-002",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/episode-scene-ranges-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_episode_scene_ranges.py", "apps/web/src/features/projects/EpisodeSceneRanges.test.tsx"]
+      "evidence": [
+        "docs/evidence/g10/episode-scene-ranges-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_episode_scene_ranges.py",
+        "apps/web/src/features/projects/EpisodeSceneRanges.test.tsx"
+      ]
     },
     {
       "id": "FR-WRT-003",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/director-shot-editor-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_director_fields.py", "apps/web/src/features/production/DirectorShotEditor.test.tsx"]
+      "evidence": [
+        "docs/evidence/g10/director-shot-editor-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_director_fields.py",
+        "apps/web/src/features/production/DirectorShotEditor.test.tsx"
+      ]
     },
     {
       "id": "FR-WRT-004",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/prompt-template-panel-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_prompt_templates.py", "apps/web/src/features/production/PromptTemplatePanel.test.tsx"]
+      "evidence": [
+        "docs/evidence/g10/prompt-template-panel-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_prompt_templates.py",
+        "apps/web/src/features/production/PromptTemplatePanel.test.tsx"
+      ]
     },
     {
       "id": "FR-WRT-005",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/director-shot-editor-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_director_fields.py", "apps/web/src/features/production/DirectorShotEditor.test.tsx"]
+      "evidence": [
+        "docs/evidence/g10/director-shot-editor-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_director_fields.py",
+        "apps/web/src/features/production/DirectorShotEditor.test.tsx"
+      ]
     },
     {
       "id": "FR-WRT-006",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/continuity-panel-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_continuity_context.py", "apps/web/src/features/production/ContinuityPanel.test.tsx"]
+      "evidence": [
+        "docs/evidence/g10/continuity-panel-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_continuity_context.py",
+        "apps/web/src/features/production/ContinuityPanel.test.tsx"
+      ]
     },
     {
       "id": "FR-WRT-007",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/ai-draft-review-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_ai_breakdown_drafts.py"]
+      "evidence": [
+        "docs/evidence/g10/ai-draft-review-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_ai_breakdown_drafts.py"
+      ]
     },
     {
       "id": "FR-AUD-002",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/audio-license-authority-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/features/status/AudioImportBindingForm.test.tsx"]
+      "evidence": [
+        "docs/evidence/g10/audio-license-authority-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g8_timeline_delivery.py",
+        "apps/web/src/features/status/AudioImportBindingForm.test.tsx"
+      ]
     },
     {
       "id": "FR-AUD-003",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/audio-qc-review-uat-2026-08-15.json", "docs/evidence/g8/audio-qc-production-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_audio_qc.py", "apps/web/src/features/status/AudioTrackPanel.test.tsx"]
+      "evidence": [
+        "docs/evidence/g10/audio-qc-review-uat-2026-08-15.json",
+        "docs/evidence/g8/audio-qc-production-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_audio_qc.py",
+        "apps/web/src/features/status/AudioTrackPanel.test.tsx"
+      ]
     },
     {
       "id": "FR-AUD-004",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/subtitle-authority-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py"]
+      "evidence": [
+        "docs/evidence/g10/subtitle-authority-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g8_timeline_delivery.py"
+      ]
     },
     {
       "id": "FR-ING-002",
       "status": "PASS",
-      "evidence": ["docs/evidence/g7/local-llm-structured-breakdown-2026-08-15.json", "docs/evidence/g10/ai-draft-review-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_ai_breakdown_drafts.py", "apps/web/src/features/projects/AIDraftReviewPanel.test.tsx"]
+      "evidence": [
+        "docs/evidence/g7/local-llm-structured-breakdown-2026-08-15.json",
+        "docs/evidence/g10/ai-draft-review-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_ai_breakdown_drafts.py",
+        "apps/web/src/features/projects/AIDraftReviewPanel.test.tsx"
+      ]
     },
     {
       "id": "FR-ING-001",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/fr-ing-001-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_document_import_commit.py", "apps/web/src/features/projects/ScriptImportPanel.test.tsx"]
+      "evidence": [
+        "docs/evidence/g10/fr-ing-001-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_document_import_commit.py",
+        "apps/web/src/features/projects/ScriptImportPanel.test.tsx"
+      ]
     },
     {
       "id": "FR-ING-003",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/fr-ing-003-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_storyboard_batch.py", "apps/web/src/features/projects/StoryboardBatchWorkbench.test.tsx"]
+      "evidence": [
+        "docs/evidence/g10/fr-ing-003-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_storyboard_batch.py",
+        "apps/web/src/features/projects/StoryboardBatchWorkbench.test.tsx"
+      ]
     },
     {
       "id": "FR-PST-001",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/fr-pst-001-uat-2026-08-15.json"],
+      "evidence": [
+        "docs/evidence/g10/fr-pst-001-uat-2026-08-15.json"
+      ],
       "automated_tests": [
         "apps/api/tests/test_g8_timeline_delivery.py",
         "apps/web/src/features/generation/PostProcessPanel.test.tsx"
@@ -133,20 +234,34 @@
     },
     {
       "id": "FR-PST-002",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-pst-002-003-postprocess-delivery-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/features/generation/PostProcessPanel.test.tsx", "scripts/delivery_local_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/delivery-local-windows-uat-2026-08-16i-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g8_timeline_delivery.py",
+        "apps/web/src/features/generation/PostProcessPanel.test.tsx",
+        "scripts/delivery_local_uat.py"
+      ]
     },
     {
       "id": "FR-PST-003",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-pst-002-003-postprocess-delivery-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/features/production/DeliveryWorkflowPanel.tsx", "scripts/delivery_local_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/delivery-local-windows-uat-2026-08-16i-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g8_timeline_delivery.py",
+        "apps/web/src/features/production/DeliveryWorkflowPanel.tsx",
+        "scripts/delivery_local_uat.py"
+      ]
     },
     {
       "id": "TC-CAP-009",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/fr-pst-001-uat-2026-08-15.json"],
+      "evidence": [
+        "docs/evidence/g10/fr-pst-001-uat-2026-08-15.json"
+      ],
       "automated_tests": [
         "apps/api/tests/test_g8_timeline_delivery.py",
         "apps/web/src/features/generation/PostProcessPanel.test.tsx"
@@ -155,128 +270,237 @@
     {
       "id": "TC-CAP-001",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/fr-ing-001-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_document_import_commit.py", "apps/web/src/features/projects/ScriptImportPanel.test.tsx"]
+      "evidence": [
+        "docs/evidence/g10/fr-ing-001-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_document_import_commit.py",
+        "apps/web/src/features/projects/ScriptImportPanel.test.tsx"
+      ]
     },
     {
       "id": "TC-CAP-003",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/fr-ing-003-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_storyboard_batch.py", "apps/web/src/features/projects/StoryboardBatchWorkbench.test.tsx"]
+      "evidence": [
+        "docs/evidence/g10/fr-ing-003-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_storyboard_batch.py",
+        "apps/web/src/features/projects/StoryboardBatchWorkbench.test.tsx"
+      ]
     },
     {
       "id": "TC-DOM-001",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/project-create-wizard-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_project_creation_plan.py"]
+      "evidence": [
+        "docs/evidence/g10/project-create-wizard-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_project_creation_plan.py"
+      ]
     },
     {
       "id": "TC-DOM-002",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/project-create-wizard-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_project_creation_plan.py"]
+      "evidence": [
+        "docs/evidence/g10/project-create-wizard-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_project_creation_plan.py"
+      ]
     },
     {
       "id": "TC-DOM-003",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-prj-004-windows-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_project_commands.py", "apps/api/tests/test_storyboard_batch.py", "scripts/project_crud_windows_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/fr-prj-004-windows-uat-2026-08-16f-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_project_commands.py",
+        "apps/api/tests/test_storyboard_batch.py",
+        "scripts/project_crud_windows_uat.py"
+      ]
     },
     {
       "id": "TC-DOM-004",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-prj-004-windows-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_project_commands.py", "apps/api/tests/test_api_projects.py", "scripts/project_crud_windows_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/fr-prj-004-windows-uat-2026-08-16f-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_project_commands.py",
+        "apps/api/tests/test_api_projects.py",
+        "scripts/project_crud_windows_uat.py"
+      ]
     },
     {
       "id": "TC-DOM-005",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/director-shot-editor-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_director_fields.py"]
+      "evidence": [
+        "docs/evidence/g10/director-shot-editor-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_director_fields.py"
+      ]
     },
     {
       "id": "TC-DOM-006",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/creative-library-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_creative_entries.py"]
+      "evidence": [
+        "docs/evidence/g10/creative-library-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_creative_entries.py"
+      ]
     },
     {
       "id": "TC-DOM-007",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/tc-dom-007-stale-windows-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g4_reviews.py", "scripts/dom007_stale_windows_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/tc-dom-007-stale-windows-uat-2026-08-16g-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g4_reviews.py",
+        "scripts/dom007_stale_windows_uat.py"
+      ]
     },
     {
       "id": "TC-TML-004",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/subtitle-authority-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py"]
+      "evidence": [
+        "docs/evidence/g10/subtitle-authority-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g8_timeline_delivery.py"
+      ]
     },
     {
       "id": "TC-CAP-002",
       "status": "PASS",
-      "evidence": ["docs/evidence/g7/local-llm-structured-breakdown-2026-08-15.json", "docs/evidence/g10/ai-draft-review-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_ai_breakdown_drafts.py"]
+      "evidence": [
+        "docs/evidence/g7/local-llm-structured-breakdown-2026-08-15.json",
+        "docs/evidence/g10/ai-draft-review-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_ai_breakdown_drafts.py"
+      ]
     },
     {
       "id": "FR-AUT-002",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-aut-002-automation-implementation-2026-08-15.json", "docs/evidence/g10/fr-aut-002-loopback-hardening-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_automation_webhooks.py", "apps/api/tests/test_migration.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_automation_webhooks.py",
+        "apps/api/tests/test_migration.py"
+      ]
     },
     {
       "id": "FR-AUT-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-aut-001-automation-workflows-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_automation_workflows.py", "apps/api/tests/test_migration.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_automation_workflows.py",
+        "apps/api/tests/test_migration.py"
+      ]
     },
     {
       "id": "FR-CTL-003",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-ctl-003-004-multimodal-contracts-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_ctl_multimodal_contracts.py", "apps/web/src/features/generation/GenerationControlPanel.test.tsx"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_ctl_multimodal_contracts.py",
+        "apps/web/src/features/generation/GenerationControlPanel.test.tsx"
+      ]
     },
     {
       "id": "FR-CTL-004",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-ctl-003-004-multimodal-contracts-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_ctl_multimodal_contracts.py", "apps/web/src/features/generation/GenerationControlPanel.test.tsx"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_ctl_multimodal_contracts.py",
+        "apps/web/src/features/generation/GenerationControlPanel.test.tsx"
+      ]
     },
     {
       "id": "FR-CTL-002",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-ctl-002-motion-controls-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_motion_controls.py", "apps/web/src/features/generation/MotionControlPanel.test.tsx"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_motion_controls.py",
+        "apps/web/src/features/generation/MotionControlPanel.test.tsx"
+      ]
     },
     {
       "id": "FR-REV-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-rev-001-review-inbox-filters-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_g4_reviews.py", "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g4_reviews.py",
+        "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"
+      ]
     },
     {
       "id": "FR-REV-002",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-rev-002-004-review-governance-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_review_versions.py", "apps/api/tests/test_g4_reviews.py", "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx", "scripts/review_governance_windows_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/review-governance-windows-uat-2026-08-16f-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_review_versions.py",
+        "apps/api/tests/test_g4_reviews.py",
+        "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx",
+        "scripts/review_governance_windows_uat.py"
+      ]
     },
     {
       "id": "FR-REV-003",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-rev-002-004-review-governance-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_review_versions.py", "apps/api/tests/test_g4_reviews.py", "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx", "scripts/review_governance_windows_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/review-governance-windows-uat-2026-08-16f-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_review_versions.py",
+        "apps/api/tests/test_g4_reviews.py",
+        "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx",
+        "scripts/review_governance_windows_uat.py"
+      ]
     },
     {
       "id": "FR-REV-004",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-rev-002-004-review-governance-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_review_versions.py", "apps/api/tests/test_g4_reviews.py", "apps/web/src/features/reviews/FormalSelectionPanel.tsx", "scripts/review_governance_windows_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/review-governance-windows-uat-2026-08-16f-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_review_versions.py",
+        "apps/api/tests/test_g4_reviews.py",
+        "apps/web/src/features/reviews/FormalSelectionPanel.tsx",
+        "scripts/review_governance_windows_uat.py"
+      ]
     },
     {
       "id": "FR-AUDT-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-audt-001-audit-history-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_audit_history.py", "apps/web/src/features/shared/AuditHistoryPanel.test.tsx", "apps/web/src/generated/api.test.ts"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_audit_history.py",
+        "apps/web/src/features/shared/AuditHistoryPanel.test.tsx",
+        "apps/web/src/generated/api.test.ts"
+      ]
     },
     {
       "id": "FR-AUD-001",
@@ -293,110 +517,201 @@
     },
     {
       "id": "FR-DEL-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/generated/api.test.ts", "apps/web/src/features/production/DeliveryWorkflowPanel.test.tsx", "scripts/delivery_local_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/delivery-local-windows-uat-2026-08-16i-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g8_timeline_delivery.py",
+        "apps/web/src/generated/api.test.ts",
+        "apps/web/src/features/production/DeliveryWorkflowPanel.test.tsx",
+        "scripts/delivery_local_uat.py"
+      ]
     },
     {
       "id": "FR-DEL-002",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/generated/api.test.ts", "apps/web/src/features/production/DeliveryWorkflowPanel.test.tsx", "scripts/delivery_local_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/delivery-local-windows-uat-2026-08-16i-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g8_timeline_delivery.py",
+        "apps/web/src/generated/api.test.ts",
+        "apps/web/src/features/production/DeliveryWorkflowPanel.test.tsx",
+        "scripts/delivery_local_uat.py"
+      ]
     },
     {
       "id": "FR-DEL-003",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/generated/api.test.ts", "apps/web/src/features/production/DeliveryWorkflowPanel.test.tsx", "scripts/delivery_local_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/delivery-local-windows-uat-2026-08-16i-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g8_timeline_delivery.py",
+        "apps/web/src/generated/api.test.ts",
+        "apps/web/src/features/production/DeliveryWorkflowPanel.test.tsx",
+        "scripts/delivery_local_uat.py"
+      ]
     },
     {
       "id": "FR-DEL-004",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "apps/web/src/generated/api.test.ts", "apps/web/src/features/production/DeliveryWorkflowPanel.test.tsx", "scripts/delivery_local_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/delivery-local-windows-uat-2026-08-16i-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g8_timeline_delivery.py",
+        "apps/web/src/generated/api.test.ts",
+        "apps/web/src/features/production/DeliveryWorkflowPanel.test.tsx",
+        "scripts/delivery_local_uat.py"
+      ]
     },
     {
       "id": "TC-DEL-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/delivery-local-windows-uat-2026-08-16i-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g8_timeline_delivery.py"
+      ]
     },
     {
       "id": "TC-DEL-002",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/delivery-local-windows-uat-2026-08-16i-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g8_timeline_delivery.py"
+      ]
     },
     {
       "id": "TC-DEL-003",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/delivery-local-windows-uat-2026-08-16i-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g8_timeline_delivery.py"
+      ]
     },
     {
       "id": "TC-DEL-004",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/delivery-local-windows-uat-2026-08-16i-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g8_timeline_delivery.py"
+      ]
     },
     {
       "id": "TC-DEL-005",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/delivery-local-windows-uat-2026-08-16i-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g8_timeline_delivery.py"
+      ]
     },
     {
       "id": "TC-DEL-006",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json", "docs/evidence/g10/delivery-local-windows-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g8_timeline_delivery.py", "scripts/delivery_local_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/delivery-local-windows-uat-2026-08-16i-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g8_timeline_delivery.py",
+        "scripts/delivery_local_uat.py"
+      ]
     },
     {
       "id": "FR-IMG-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_keyframe_candidate.py", "apps/api/tests/test_g4_reviews.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_keyframe_candidate.py",
+        "apps/api/tests/test_g4_reviews.py"
+      ]
     },
     {
       "id": "FR-IMG-002",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json", "docs/evidence/g10/fr-img-002-resource-estimate-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/web/src/features/generation/GenerationWorkbench.test.tsx"
+      ]
     },
     {
       "id": "FR-IMG-003",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json"],
-      "automated_tests": ["apps/web/src/features/reviews/ImageCandidateGrid.test.tsx", "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx", "apps/api/tests/test_workspace_assets.py::test_image_content_endpoint_requires_derived_thumbnail", "apps/api/tests/test_workspace_assets.py::test_image_mime_cannot_bypass_thumbnail_policy_when_media_kind_is_misclassified"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/api/tests/test_workspace_assets.py",
+        "apps/web/src/features/generation/GenerationWorkbench.test.tsx",
+        "apps/web/src/features/reviews/ImageCandidateGrid.test.tsx",
+        "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"
+      ]
     },
     {
       "id": "FR-IMG-004",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g4_reviews.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g4_reviews.py"
+      ]
     },
     {
       "id": "FR-IMG-005",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g4_reviews.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g4_reviews.py"
+      ]
     },
     {
       "id": "FR-IMG-006",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_keyframe_candidate.py", "apps/api/tests/test_generation_variants.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_keyframe_candidate.py",
+        "apps/api/tests/test_generation_variants.py"
+      ]
     },
     {
       "id": "FR-IMG-007",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/contact-sheet-export-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_contact_sheet_export.py", "apps/web/src/features/production/EpisodeContactSheetAction.test.tsx"]
+      "evidence": [
+        "docs/evidence/g10/contact-sheet-export-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_contact_sheet_export.py",
+        "apps/web/src/features/production/EpisodeContactSheetAction.test.tsx"
+      ]
     },
     {
       "id": "FR-AST-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-ast-001-workspace-asset-grants-2026-08-16.json"],
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
       "automated_tests": [
         "apps/api/tests/test_project_asset_grants.py",
         "apps/api/tests/test_generation_variants.py",
@@ -405,134 +720,252 @@
     },
     {
       "id": "FR-GEN-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-gen-001-004-generation-replay-2026-08-16.json", "docs/evidence/g10/h3-local-i2v-uat-2026-08-16.json", "docs/evidence/g10/h3-comfy-job-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/api/tests/test_comfy_jobs.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx", "scripts/comfy.ps1", "scripts/h3_comfy_job_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/fr-gen-001-004-generation-replay-pass-2026-08-16.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/api/tests/test_comfy_jobs.py",
+        "apps/web/src/features/generation/GenerationWorkbench.test.tsx",
+        "scripts/comfy.ps1",
+        "scripts/h3_comfy_job_uat.py"
+      ]
     },
     {
       "id": "FR-GEN-002",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-gen-001-004-generation-replay-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/web/src/features/generation/GenerationWorkbench.test.tsx"
+      ]
     },
     {
       "id": "FR-GEN-003",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-gen-001-004-generation-replay-2026-08-16.json", "docs/evidence/g10/h3-local-i2v-uat-2026-08-16.json", "docs/evidence/g10/h3-comfy-job-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/api/tests/test_comfy_jobs.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx", "scripts/comfy.ps1", "scripts/h3_comfy_job_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/fr-gen-001-004-generation-replay-pass-2026-08-16.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/api/tests/test_comfy_jobs.py",
+        "apps/web/src/features/generation/GenerationWorkbench.test.tsx",
+        "scripts/comfy.ps1",
+        "scripts/h3_comfy_job_uat.py"
+      ]
     },
     {
       "id": "FR-GEN-004",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-gen-001-004-generation-replay-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/web/src/features/generation/GenerationWorkbench.test.tsx"
+      ]
     },
     {
       "id": "FR-GEN-005",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-gen-005-010-advanced-inputs-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_generation_variants.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py"
+      ]
     },
     {
       "id": "FR-GEN-006",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-gen-005-010-advanced-inputs-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/web/src/features/generation/GenerationWorkbench.test.tsx"
+      ]
     },
     {
       "id": "FR-GEN-007",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-gen-005-010-advanced-inputs-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/web/src/features/generation/GenerationWorkbench.test.tsx"
+      ]
     },
     {
       "id": "FR-GEN-008",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-gen-005-010-advanced-inputs-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g5_jobs.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g5_jobs.py",
+        "apps/web/src/features/generation/GenerationWorkbench.test.tsx"
+      ]
     },
     {
       "id": "FR-GEN-009",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-gen-005-010-advanced-inputs-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/api/tests/test_g8_timeline_delivery.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/api/tests/test_g8_timeline_delivery.py"
+      ]
     },
     {
       "id": "FR-GEN-010",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-gen-005-010-advanced-inputs-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/api/tests/test_ctl_multimodal_contracts.py", "apps/api/tests/test_motion_controls.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/api/tests/test_ctl_multimodal_contracts.py",
+        "apps/api/tests/test_motion_controls.py"
+      ]
     },
     {
       "id": "FR-JOB-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g5/job-scheduler-progress-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_job_scheduler_progress.py", "apps/api/tests/test_g5_jobs.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/job-scheduler-reliability-uat-2026-08-16g.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_job_scheduler_progress.py",
+        "apps/api/tests/test_g5_jobs.py"
+      ]
     },
     {
       "id": "FR-JOB-002",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g5/job-scheduler-progress-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_job_scheduler_progress.py", "apps/api/tests/test_g5_jobs.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/job-scheduler-reliability-uat-2026-08-16g.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_job_scheduler_progress.py",
+        "apps/api/tests/test_g5_jobs.py"
+      ]
     },
     {
       "id": "FR-JOB-003",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g5/job-scheduler-progress-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_job_scheduler_progress.py", "apps/api/tests/test_g5_jobs.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/job-scheduler-reliability-uat-2026-08-16g.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_job_scheduler_progress.py",
+        "apps/api/tests/test_g5_jobs.py"
+      ]
     },
     {
       "id": "FR-JOB-004",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g5/job-scheduler-progress-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_job_scheduler_progress.py", "apps/api/tests/test_g5_jobs.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/job-scheduler-reliability-uat-2026-08-16g.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_job_scheduler_progress.py",
+        "apps/api/tests/test_g5_jobs.py"
+      ]
     },
     {
       "id": "FR-JOB-005",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g5/job-scheduler-progress-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_job_scheduler_progress.py", "apps/api/tests/test_g5_jobs.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/job-scheduler-reliability-uat-2026-08-16g.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_job_scheduler_progress.py",
+        "apps/api/tests/test_g5_jobs.py"
+      ]
     },
     {
       "id": "FR-OPS-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_ops_registry.py", "apps/api/tests/test_g3_configuration_media.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_ops_registry.py",
+        "apps/api/tests/test_g3_configuration_media.py"
+      ]
     },
     {
       "id": "FR-OPS-002",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_ops_registry.py", "apps/api/tests/test_model_compatibility_api.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_ops_registry.py",
+        "apps/api/tests/test_model_compatibility_api.py"
+      ]
     },
     {
       "id": "FR-OPS-003",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_ops_registry.py", "apps/api/tests/test_capacity_snapshot.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_ops_registry.py",
+        "apps/api/tests/test_capacity_snapshot.py"
+      ]
     },
     {
       "id": "FR-PRV-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json", "docs/evidence/g10/h3-local-i2v-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_adapter_contracts.py", "apps/api/tests/test_profile_contract_editor.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_adapter_contracts.py",
+        "apps/api/tests/test_profile_contract_editor.py"
+      ]
     },
     {
       "id": "FR-PRV-002",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json", "docs/evidence/g10/nfr-sec-003-prv-002-local-adapter-transport-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_network_e2e.py", "apps/api/tests/test_adapter_contracts.py", "apps/api/tests/test_local_adapter_transport_windows_uat.py", "scripts/local_adapter_transport_windows_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/fr-prv-002-local-adapter-windows-pass-2026-08-16.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_network_e2e.py",
+        "apps/api/tests/test_adapter_contracts.py",
+        "apps/api/tests/test_local_adapter_transport_windows_uat.py",
+        "scripts/local_adapter_transport_windows_uat.py"
+      ]
     },
     {
       "id": "FR-PRV-003",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json", "docs/evidence/g10/fr-prv-003-nfr-comp-001-model-boundary-2026-08-16.json", "docs/evidence/g10/h3-local-i2v-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_profile_contract_editor.py", "apps/api/tests/test_profile_compatibility.py", "apps/api/tests/test_model_compatibility.py", "apps/api/tests/test_model_license_evidence.py", "apps/web/src/features/status/LocalModelReferenceForm.test.tsx"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_profile_contract_editor.py",
+        "apps/api/tests/test_profile_compatibility.py",
+        "apps/api/tests/test_model_compatibility.py",
+        "apps/api/tests/test_model_license_evidence.py",
+        "apps/web/src/features/status/LocalModelReferenceForm.test.tsx"
+      ]
     },
     {
       "id": "FR-CTL-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-ctl-001-camera-capability-contracts-2026-08-16.json", "docs/evidence/g10/fr-ctl-001-camera-windows-uat-2026-08-16.json"],
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/structured-camera-plan-2026-08-15.json"
+      ],
       "automated_tests": [
         "apps/api/tests/test_camera_plan_contracts.py",
         "apps/api/tests/test_generation_variants.py",
@@ -542,181 +975,1163 @@
     },
     {
       "id": "FR-VID-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-vid-001-005-007-006-formal-video-2026-08-16.json", "docs/evidence/g10/h3-local-i2v-uat-2026-08-16.json", "docs/evidence/g10/h3-comfy-job-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/api/tests/test_comfy_jobs.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx", "scripts/comfy.ps1", "scripts/h3_comfy_job_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/fr-vid-001-005-007-006-formal-video-pass-2026-08-16.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/api/tests/test_comfy_jobs.py",
+        "apps/web/src/features/generation/GenerationWorkbench.test.tsx",
+        "scripts/comfy.ps1",
+        "scripts/h3_comfy_job_uat.py"
+      ]
     },
     {
       "id": "FR-VID-005",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-vid-001-005-007-006-formal-video-2026-08-16.json", "docs/evidence/g10/h3-local-i2v-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/api/tests/test_i2v_probe_plan.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/api/tests/test_i2v_probe_plan.py"
+      ]
     },
     {
       "id": "FR-VID-006",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-vid-001-005-007-006-formal-video-2026-08-16.json", "docs/evidence/g10/h3-formal-pipeline-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_formal_video_qc.py", "apps/api/tests/test_formal_selection_commit.py", "apps/api/tests/test_g4_reviews.py", "scripts/h3_formal_pipeline_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/fr-vid-001-005-007-006-formal-video-pass-2026-08-16.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_formal_video_qc.py",
+        "apps/api/tests/test_formal_selection_commit.py",
+        "apps/api/tests/test_g4_reviews.py",
+        "scripts/h3_formal_pipeline_uat.py"
+      ]
     },
     {
       "id": "FR-VID-007",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-vid-001-005-007-006-formal-video-2026-08-16.json", "docs/evidence/g10/h3-formal-pipeline-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g4_reviews.py", "apps/api/tests/test_formal_selection_commit.py", "apps/web/src/generated/api.test.ts", "scripts/h3_formal_pipeline_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/fr-vid-001-005-007-006-formal-video-pass-2026-08-16.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g4_reviews.py",
+        "apps/api/tests/test_formal_selection_commit.py",
+        "apps/web/src/generated/api.test.ts",
+        "scripts/h3_formal_pipeline_uat.py"
+      ]
     },
     {
       "id": "FR-VID-002",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-vid-002-008-frame-review-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g3_configuration_media.py", "apps/web/src/features/reviews/VideoAnnotations.test.tsx"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g3_configuration_media.py",
+        "apps/web/src/features/reviews/VideoAnnotations.test.tsx"
+      ]
     },
     {
       "id": "FR-VID-003",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-vid-002-008-frame-review-2026-08-16.json"],
-      "automated_tests": ["apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"
+      ]
     },
     {
       "id": "FR-VID-004",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-vid-002-008-frame-review-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g4_reviews.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g4_reviews.py"
+      ]
     },
     {
       "id": "FR-VID-008",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-vid-002-008-frame-review-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_video_review_annotations.py", "apps/web/src/features/reviews/VideoAnnotations.test.tsx"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_video_review_annotations.py",
+        "apps/web/src/features/reviews/VideoAnnotations.test.tsx"
+      ]
     },
     {
       "id": "FR-WFL-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-wfl-001-002-release-history-2026-08-16.json", "docs/evidence/g10/h3-comfy-job-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_workflow_release_contracts.py", "apps/api/tests/test_g6_workflows.py", "apps/api/tests/test_comfy_jobs.py", "apps/web/src/app/ProfileEditor.test.tsx", "scripts/comfy.ps1", "scripts/h3_comfy_job_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/fr-wfl-001-002-release-history-pass-2026-08-16.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_workflow_release_contracts.py",
+        "apps/api/tests/test_g6_workflows.py",
+        "apps/api/tests/test_comfy_jobs.py",
+        "apps/web/src/app/ProfileEditor.test.tsx",
+        "scripts/comfy.ps1",
+        "scripts/h3_comfy_job_uat.py"
+      ]
     },
     {
       "id": "FR-WFL-002",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-wfl-001-002-release-history-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_workflow_release_contracts.py", "apps/api/tests/test_g6_workflows.py", "apps/web/src/app/ProfileEditor.test.tsx"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_workflow_release_contracts.py",
+        "apps/api/tests/test_g6_workflows.py",
+        "apps/web/src/app/ProfileEditor.test.tsx"
+      ]
     },
     {
       "id": "FR-TML-004",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/timeline-otio-edl-export-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_timeline_export.py", "apps/web/src/features/production/TimelineExportAction.test.tsx"]
+      "evidence": [
+        "docs/evidence/g10/timeline-otio-edl-export-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_timeline_export.py",
+        "apps/web/src/features/production/TimelineExportAction.test.tsx"
+      ]
     },
     {
       "id": "FR-WFL-003",
       "status": "PASS",
-      "evidence": ["docs/evidence/g9/g9-production-canvas-uat-2026-08-15.json"],
-      "automated_tests": ["apps/api/tests/test_g9_canvas.py", "apps/web/src/app/App.test.tsx"]
+      "evidence": [
+        "docs/evidence/g9/g9-production-canvas-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g9_canvas.py",
+        "apps/web/src/app/App.test.tsx"
+      ]
     },
     {
       "id": "TC-VAR-009",
       "status": "PASS",
-      "evidence": ["docs/evidence/g6/handoff_validation_2026-08-13.md"],
-      "automated_tests": ["apps/api/tests/test_generation_variants.py"]
+      "evidence": [
+        "docs/evidence/g6/handoff_validation_2026-08-13.md"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py"
+      ]
     },
     {
       "id": "FR-WFL-004",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-wfl-004-comfy-lab-2026-08-16.json", "docs/evidence/g10/h3-comfy-job-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_comfy_lab.py", "apps/api/tests/test_comfy_jobs.py", "apps/web/src/features/shared/ComfyLabPanel.test.tsx", "scripts/comfy.ps1", "scripts/h3_comfy_job_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/fr-wfl-004-comfy-lab-pass-2026-08-16.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_comfy_lab.py",
+        "apps/api/tests/test_comfy_jobs.py",
+        "apps/web/src/features/shared/ComfyLabPanel.test.tsx",
+        "scripts/comfy.ps1",
+        "scripts/h3_comfy_job_uat.py"
+      ]
     },
     {
       "id": "NFR-A11Y-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/nfr-a11y-001-keyboard-focus-2026-08-16.json"],
-      "automated_tests": ["apps/web/src/features/projects/ProjectCreateWizard.test.tsx", "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx", "apps/web/src/features/generation/GenerationWorkbench.test.tsx"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/web/src/features/projects/ProjectCreateWizard.test.tsx",
+        "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx",
+        "apps/web/src/features/generation/GenerationWorkbench.test.tsx"
+      ]
     },
     {
       "id": "NFR-OBS-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/nfr-obs-001-structured-logs-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_observability_logging.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_observability_logging.py"
+      ]
     },
     {
       "id": "NFR-MEDIA-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/nfr-media-001-range-first-frame-2026-08-16.json", "docs/evidence/g10/nfr-media-windows-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g3_configuration_media.py", "apps/api/tests/test_nfr_media_windows_uat.py", "scripts/nfr_media_windows_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/nfr-media-windows-uat-pass-2026-08-16.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g3_configuration_media.py",
+        "apps/api/tests/test_nfr_media_windows_uat.py",
+        "scripts/nfr_media_windows_uat.py"
+      ]
     },
     {
       "id": "NFR-REL-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/nfr-rel-001-002-persistence-restart-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_nfr_reliability.py", "apps/api/tests/test_g5_jobs.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/recovery-restore-uat-2026-08-16.json",
+        "docs/evidence/g10/recovery-restore-uat-2026-08-16-manual.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_nfr_reliability.py",
+        "apps/api/tests/test_g5_jobs.py"
+      ]
     },
     {
       "id": "NFR-REL-002",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/nfr-rel-001-002-persistence-restart-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_nfr_reliability.py", "apps/api/tests/test_g5_jobs.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/recovery-restore-uat-2026-08-16.json",
+        "docs/evidence/g10/recovery-restore-uat-2026-08-16-manual.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_nfr_reliability.py",
+        "apps/api/tests/test_g5_jobs.py"
+      ]
     },
     {
       "id": "NFR-REL-003",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/upgrade-rollback-rehearsal-0039-2026-08-16.json", "docs/evidence/g10/recovery-restore-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_migration.py", "scripts/recovery_restore_uat.py"]
+      "evidence": [
+        "docs/evidence/g10/upgrade-rollback-rehearsal-0039-2026-08-16.json",
+        "docs/evidence/g10/recovery-restore-uat-2026-08-16.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_migration.py",
+        "scripts/recovery_restore_uat.py"
+      ]
     },
     {
       "id": "NFR-PERF-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/nfr-perf-bounded-observation-2026-08-16.json", "docs/evidence/g10/metadata-scale-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_project_listing.py", "apps/api/tests/test_g3_configuration_media.py", "scripts/nfr_perf_benchmark.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/metadata-scale-uat-2026-08-16-manual.json",
+        "docs/evidence/g10/g10-scale-uat-2026-08-16e.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_project_listing.py",
+        "apps/api/tests/test_g3_configuration_media.py",
+        "scripts/nfr_perf_benchmark.py"
+      ]
     },
     {
       "id": "NFR-PERF-002",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/nfr-perf-bounded-observation-2026-08-16.json", "docs/evidence/g10/metadata-scale-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_project_listing.py", "apps/api/tests/test_g3_configuration_media.py", "apps/web/src/features/shared/thumbnailPolicy.test.ts", "scripts/nfr_perf_benchmark.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/metadata-scale-uat-2026-08-16-manual.json",
+        "docs/evidence/g10/g10-scale-uat-2026-08-16e.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_project_listing.py",
+        "apps/api/tests/test_g3_configuration_media.py",
+        "apps/web/src/features/shared/thumbnailPolicy.test.ts",
+        "scripts/nfr_perf_benchmark.py"
+      ]
     },
     {
       "id": "NFR-COMP-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-prv-003-nfr-comp-001-model-boundary-2026-08-16.json", "docs/evidence/g10/nfr-comp-001-windows-path-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_model_compatibility.py", "apps/api/tests/test_model_license_evidence.py", "apps/web/src/features/status/LocalModelReferenceForm.test.tsx", "scripts/nfr_comp_windows_path_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/nfr-comp-001-windows-path-pass-2026-08-16.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_model_compatibility.py",
+        "apps/api/tests/test_model_license_evidence.py",
+        "apps/web/src/features/status/LocalModelReferenceForm.test.tsx",
+        "scripts/nfr_comp_windows_path_uat.py"
+      ]
     },
     {
       "id": "NFR-SEC-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/nfr-sec-001-002-local-boundary-2026-08-16.json", "docs/evidence/g10/security-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_health.py", "apps/api/tests/test_security_boundary.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/security-uat-2026-08-16.json",
+        "docs/evidence/g10/security-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_health.py",
+        "apps/api/tests/test_security_boundary.py"
+      ]
     },
     {
       "id": "NFR-SEC-002",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/nfr-sec-001-002-local-boundary-2026-08-16.json", "docs/evidence/g10/security-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_security_boundary.py", "scripts/security_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/security-uat-2026-08-16.json",
+        "docs/evidence/g10/security-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_security_boundary.py",
+        "scripts/security_uat.py"
+      ]
     },
     {
       "id": "NFR-SEC-003",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-prv-002-network-policy-2026-08-16.json", "docs/evidence/g10/nfr-sec-003-prv-002-local-adapter-transport-2026-08-16.json", "docs/evidence/g10/security-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_profile_contract_editor.py", "apps/api/tests/test_adapter_contracts.py", "apps/api/tests/test_local_adapter_transport_windows_uat.py", "scripts/security_uat.py", "scripts/local_adapter_transport_windows_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/security-uat-2026-08-16.json",
+        "docs/evidence/g10/security-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_profile_contract_editor.py",
+        "apps/api/tests/test_adapter_contracts.py",
+        "apps/api/tests/test_local_adapter_transport_windows_uat.py",
+        "scripts/security_uat.py",
+        "scripts/local_adapter_transport_windows_uat.py"
+      ]
     },
     {
       "id": "NFR-PRIV-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-prv-002-network-policy-2026-08-16.json", "docs/evidence/g10/nfr-sec-003-prv-002-local-adapter-transport-2026-08-16.json", "docs/evidence/g10/security-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_network_e2e.py", "apps/api/tests/test_adapter_contracts.py", "scripts/security_uat.py"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/security-uat-2026-08-16.json",
+        "docs/evidence/g10/security-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_network_e2e.py",
+        "apps/api/tests/test_adapter_contracts.py",
+        "scripts/security_uat.py"
+      ]
     },
     {
       "id": "NFR-MAINT-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/nfr-maint-test-audit-2026-08-16.json"],
-      "automated_tests": ["scripts/maintainability_audit.py", "scripts/check.ps1"]
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/job-scheduler-reliability-uat-2026-08-16g.json"
+      ],
+      "automated_tests": [
+        "scripts/maintainability_audit.py",
+        "scripts/check.ps1"
+      ]
     },
     {
       "id": "NFR-TEST-001",
       "status": "PASS",
-      "evidence": ["docs/evidence/g10/nfr-test-001-full-gate-2026-08-16.json"],
+      "evidence": [
+        "docs/evidence/g10/nfr-test-001-full-gate-2026-08-16.json"
+      ],
       "automated_tests": [
         "apps/api/tests/test_domain_rules.py",
         "scripts/maintainability_audit.py",
         "scripts/check.ps1",
         "tests/e2e/core_chain_browser_readonly.spec.ts"
+      ]
+    },
+    {
+      "id": "FR-TML-001",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/timeline-otio-edl-export-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_timeline_export.py",
+        "apps/api/tests/test_g8_timeline_delivery.py",
+        "apps/api/tests/test_g8_status.py"
+      ]
+    },
+    {
+      "id": "FR-TML-002",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/timeline-otio-edl-export-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_timeline_export.py",
+        "apps/api/tests/test_g8_timeline_delivery.py",
+        "apps/api/tests/test_g8_status.py"
+      ]
+    },
+    {
+      "id": "FR-TML-003",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/timeline-otio-edl-export-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_timeline_export.py",
+        "apps/api/tests/test_g8_timeline_delivery.py",
+        "apps/api/tests/test_g8_status.py"
+      ]
+    },
+    {
+      "id": "TC-MED-001",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_keyframe_candidate.py",
+        "apps/api/tests/test_g4_reviews.py"
+      ]
+    },
+    {
+      "id": "TC-MED-002",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g3_configuration_media.py",
+        "apps/api/tests/test_keyframe_candidate.py",
+        "apps/api/tests/test_generation_variants.py"
+      ]
+    },
+    {
+      "id": "TC-MED-003",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g3_configuration_media.py",
+        "apps/api/tests/test_keyframe_candidate.py",
+        "apps/api/tests/test_generation_variants.py"
+      ]
+    },
+    {
+      "id": "TC-MED-004",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g3_configuration_media.py",
+        "apps/api/tests/test_keyframe_candidate.py",
+        "apps/api/tests/test_generation_variants.py"
+      ]
+    },
+    {
+      "id": "TC-MED-005",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g3_configuration_media.py",
+        "apps/api/tests/test_keyframe_candidate.py",
+        "apps/api/tests/test_generation_variants.py"
+      ]
+    },
+    {
+      "id": "TC-MED-006",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g4_reviews.py",
+        "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-MED-007",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g3_configuration_media.py",
+        "apps/api/tests/test_keyframe_candidate.py",
+        "apps/api/tests/test_generation_variants.py"
+      ]
+    },
+    {
+      "id": "TC-MED-008",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_keyframe_candidate.py",
+        "apps/api/tests/test_g4_reviews.py"
+      ]
+    },
+    {
+      "id": "TC-REV-001",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/review-governance-windows-uat-2026-08-16f-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g4_reviews.py",
+        "apps/api/tests/test_review_versions.py",
+        "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-REV-002",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/review-governance-windows-uat-2026-08-16f-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g4_reviews.py",
+        "apps/api/tests/test_review_versions.py",
+        "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-REV-003",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/review-governance-windows-uat-2026-08-16f-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g4_reviews.py",
+        "apps/api/tests/test_review_versions.py",
+        "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-REV-004",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/review-governance-windows-uat-2026-08-16f-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g4_reviews.py",
+        "apps/api/tests/test_review_versions.py",
+        "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-REV-005",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/review-governance-windows-uat-2026-08-16f-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g4_reviews.py",
+        "apps/api/tests/test_review_versions.py",
+        "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-REV-006",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/review-governance-windows-uat-2026-08-16f-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g4_reviews.py",
+        "apps/api/tests/test_review_versions.py",
+        "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-REV-007",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/review-governance-windows-uat-2026-08-16f-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g4_reviews.py",
+        "apps/api/tests/test_review_versions.py",
+        "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-JOB-001",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/job-scheduler-reliability-uat-2026-08-16g.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_job_scheduler_progress.py",
+        "apps/api/tests/test_g5_jobs.py"
+      ]
+    },
+    {
+      "id": "TC-JOB-002",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/job-scheduler-reliability-uat-2026-08-16g.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_job_scheduler_progress.py",
+        "apps/api/tests/test_g5_jobs.py"
+      ]
+    },
+    {
+      "id": "TC-JOB-003",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/job-scheduler-reliability-uat-2026-08-16g.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_job_scheduler_progress.py",
+        "apps/api/tests/test_g5_jobs.py"
+      ]
+    },
+    {
+      "id": "TC-JOB-004",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/job-scheduler-reliability-uat-2026-08-16g.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_job_scheduler_progress.py",
+        "apps/api/tests/test_g5_jobs.py"
+      ]
+    },
+    {
+      "id": "TC-JOB-005",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/job-scheduler-reliability-uat-2026-08-16g.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_job_scheduler_progress.py",
+        "apps/api/tests/test_g5_jobs.py"
+      ]
+    },
+    {
+      "id": "TC-JOB-006",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/job-scheduler-reliability-uat-2026-08-16g.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_job_scheduler_progress.py",
+        "apps/api/tests/test_g5_jobs.py"
+      ]
+    },
+    {
+      "id": "TC-JOB-007",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/job-scheduler-reliability-uat-2026-08-16g.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_job_scheduler_progress.py",
+        "apps/api/tests/test_g5_jobs.py"
+      ]
+    },
+    {
+      "id": "TC-JOB-008",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/job-scheduler-reliability-uat-2026-08-16g.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_job_scheduler_progress.py",
+        "apps/api/tests/test_g5_jobs.py"
+      ]
+    },
+    {
+      "id": "TC-JOB-009",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/job-scheduler-reliability-uat-2026-08-16g.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_job_scheduler_progress.py",
+        "apps/api/tests/test_g5_jobs.py"
+      ]
+    },
+    {
+      "id": "TC-JOB-010",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/job-scheduler-reliability-uat-2026-08-16g.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_job_scheduler_progress.py",
+        "apps/api/tests/test_g5_jobs.py"
+      ]
+    },
+    {
+      "id": "TC-JOB-011",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/job-scheduler-reliability-uat-2026-08-16g.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_job_scheduler_progress.py",
+        "apps/api/tests/test_g5_jobs.py"
+      ]
+    },
+    {
+      "id": "TC-JOB-012",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/job-scheduler-reliability-uat-2026-08-16g.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_job_scheduler_progress.py",
+        "apps/api/tests/test_g5_jobs.py"
+      ]
+    },
+    {
+      "id": "TC-WFL-001",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_workflow_release_contracts.py",
+        "apps/api/tests/test_g6_workflows.py",
+        "apps/web/src/app/ProfileEditor.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-WFL-002",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_workflow_release_contracts.py",
+        "apps/api/tests/test_g6_workflows.py",
+        "apps/web/src/app/ProfileEditor.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-WFL-003",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g9/g9-production-canvas-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g9_canvas.py",
+        "apps/web/src/app/App.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-WFL-004",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_comfy_lab.py",
+        "apps/api/tests/test_g6_workflows.py"
+      ]
+    },
+    {
+      "id": "TC-WFL-005",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_ops_registry.py",
+        "apps/api/tests/test_capacity_snapshot.py",
+        "apps/api/tests/test_g6_workflows.py"
+      ]
+    },
+    {
+      "id": "TC-PRV-001",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_adapter_contracts.py",
+        "apps/api/tests/test_profile_contract_editor.py",
+        "apps/api/tests/test_profile_compatibility.py"
+      ]
+    },
+    {
+      "id": "TC-PRV-002",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/security-uat-2026-08-16d.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_network_e2e.py",
+        "apps/api/tests/test_adapter_contracts.py",
+        "apps/api/tests/test_local_adapter_transport_windows_uat.py"
+      ]
+    },
+    {
+      "id": "TC-PRV-003",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_profile_contract_editor.py",
+        "apps/api/tests/test_profile_compatibility.py",
+        "apps/api/tests/test_model_compatibility.py",
+        "apps/api/tests/test_model_license_evidence.py",
+        "apps/web/src/features/status/LocalModelReferenceForm.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-PRV-004",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_profile_contract_editor.py",
+        "apps/api/tests/test_profile_compatibility.py",
+        "apps/api/tests/test_model_compatibility.py",
+        "apps/api/tests/test_model_license_evidence.py",
+        "apps/web/src/features/status/LocalModelReferenceForm.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-PRV-005",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_ops_registry.py",
+        "apps/api/tests/test_model_compatibility_api.py"
+      ]
+    },
+    {
+      "id": "TC-VAR-001",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/api/tests/test_motion_controls.py",
+        "apps/api/tests/test_ctl_multimodal_contracts.py"
+      ]
+    },
+    {
+      "id": "TC-VAR-002",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/web/src/features/generation/GenerationWorkbench.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-VAR-003",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/api/tests/test_motion_controls.py",
+        "apps/api/tests/test_ctl_multimodal_contracts.py"
+      ]
+    },
+    {
+      "id": "TC-VAR-004",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/web/src/features/generation/GenerationWorkbench.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-VAR-005",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/web/src/features/generation/GenerationWorkbench.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-VAR-006",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/api/tests/test_i2v_probe_plan.py"
+      ]
+    },
+    {
+      "id": "TC-VAR-007",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/api/tests/test_ctl_multimodal_contracts.py",
+        "apps/api/tests/test_motion_controls.py"
+      ]
+    },
+    {
+      "id": "TC-VAR-008",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/api/tests/test_ctl_multimodal_contracts.py",
+        "apps/api/tests/test_motion_controls.py"
+      ]
+    },
+    {
+      "id": "TC-VAR-010",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/api/tests/test_g8_status.py",
+        "apps/api/tests/test_g8_timeline_delivery.py"
+      ]
+    },
+    {
+      "id": "TC-VAR-011",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/api/tests/test_g8_status.py",
+        "apps/api/tests/test_g8_timeline_delivery.py"
+      ]
+    },
+    {
+      "id": "TC-VAR-012",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/api/tests/test_g8_status.py",
+        "apps/api/tests/test_g8_timeline_delivery.py"
+      ]
+    },
+    {
+      "id": "TC-VAR-013",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g5_jobs.py",
+        "apps/web/src/features/generation/GenerationWorkbench.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-VAR-014",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g5_jobs.py",
+        "apps/web/src/features/generation/GenerationWorkbench.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-VAR-015",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_generation_variants.py",
+        "apps/api/tests/test_ctl_multimodal_contracts.py",
+        "apps/api/tests/test_motion_controls.py"
+      ]
+    },
+    {
+      "id": "TC-TML-001",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/timeline-otio-edl-export-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_timeline_export.py",
+        "apps/api/tests/test_g8_status.py",
+        "apps/api/tests/test_g8_timeline_delivery.py"
+      ]
+    },
+    {
+      "id": "TC-TML-002",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/timeline-otio-edl-export-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_timeline_export.py",
+        "apps/api/tests/test_g8_status.py",
+        "apps/api/tests/test_g8_timeline_delivery.py"
+      ]
+    },
+    {
+      "id": "TC-TML-003",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/timeline-otio-edl-export-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_timeline_export.py",
+        "apps/api/tests/test_g8_status.py",
+        "apps/api/tests/test_g8_timeline_delivery.py"
+      ]
+    },
+    {
+      "id": "TC-CAP-004",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_project_asset_grants.py",
+        "apps/api/tests/test_generation_variants.py",
+        "apps/web/src/features/projects/ProjectAssetGrantPanel.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-CAP-005",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/structured-camera-plan-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_camera_plan_contracts.py",
+        "apps/api/tests/test_motion_controls.py",
+        "apps/api/tests/test_ctl_multimodal_contracts.py",
+        "apps/web/src/features/generation/MotionControlPanel.test.tsx",
+        "apps/web/src/features/generation/GenerationControlPanel.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-CAP-006",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/structured-camera-plan-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_camera_plan_contracts.py",
+        "apps/api/tests/test_motion_controls.py",
+        "apps/api/tests/test_ctl_multimodal_contracts.py",
+        "apps/web/src/features/generation/MotionControlPanel.test.tsx",
+        "apps/web/src/features/generation/GenerationControlPanel.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-CAP-007",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_motion_controls.py",
+        "apps/api/tests/test_ctl_multimodal_contracts.py",
+        "apps/web/src/features/generation/MotionControlPanel.test.tsx",
+        "apps/web/src/features/generation/GenerationControlPanel.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-CAP-008",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-crossstack-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_motion_controls.py",
+        "apps/api/tests/test_ctl_multimodal_contracts.py",
+        "apps/web/src/features/generation/MotionControlPanel.test.tsx",
+        "apps/web/src/features/generation/GenerationControlPanel.test.tsx"
+      ]
+    },
+    {
+      "id": "TC-CAP-010",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/delivery-local-windows-uat-2026-08-16i-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g8_timeline_delivery.py",
+        "apps/web/src/features/generation/PostProcessPanel.test.tsx",
+        "scripts/delivery_local_uat.py"
+      ]
+    },
+    {
+      "id": "TC-CAP-011",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/delivery-local-windows-uat-2026-08-16i-pass.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_g8_timeline_delivery.py",
+        "apps/web/src/features/production/DeliveryWorkflowPanel.tsx",
+        "scripts/delivery_local_uat.py"
+      ]
+    },
+    {
+      "id": "TC-CAP-012",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_automation_workflows.py",
+        "apps/api/tests/test_migration.py"
+      ]
+    },
+    {
+      "id": "TC-CAP-013",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_automation_webhooks.py",
+        "apps/api/tests/test_migration.py"
+      ]
+    },
+    {
+      "id": "TC-CAP-014",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_automation_webhooks.py",
+        "apps/api/tests/test_migration.py"
+      ]
+    },
+    {
+      "id": "TC-CAP-015",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_ops_registry.py",
+        "apps/api/tests/test_g3_configuration_media.py"
+      ]
+    },
+    {
+      "id": "TC-CAP-016",
+      "status": "PASS",
+      "evidence": [
+        "docs/evidence/g10/master-requirements-api-pass-2026-08-16h.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_ops_registry.py",
+        "apps/api/tests/test_capacity_snapshot.py"
       ]
     }
   ]

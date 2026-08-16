@@ -1,0 +1,196 @@
+{
+  "schema_version": "g10.runtime_smoke_uat.v1",
+  "status": "PASS",
+  "scope": "Windows x64 user-owned local FFmpeg/System.Speech/ComfyUI/model references; no bundled or uploaded assets",
+  "checks": [
+    {
+      "code": "FFMPEG_FFPROBE_REAL_MEDIA",
+      "status": "PASS",
+      "passed": true,
+      "observed": {
+        "status": "PASS",
+        "ffmpeg": "E:\\Tools\\ffmpeg\\bin\\ffmpeg.EXE",
+        "ffprobe": "E:\\Tools\\ffmpeg\\bin\\ffprobe.EXE",
+        "version": "ffmpeg version 8.1.2-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+        "ffmpeg_exit_code": 0,
+        "fixture_command": {
+          "status": "PASS",
+          "exit_code": 0,
+          "error": null,
+          "output": ""
+        },
+        "probe": {
+          "status": "PASS",
+          "exit_code": 0,
+          "error": null,
+          "streams": 1,
+          "format": {
+            "filename": "F:\\AI_Projects\\h3\\local_drama_studio\\work\\runtime-smoke-uat-20260817\\ffmpeg-smoke.mp4",
+            "nb_streams": 1,
+            "nb_programs": 0,
+            "nb_stream_groups": 0,
+            "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+            "format_long_name": "QuickTime / MOV",
+            "start_time": "0.000000",
+            "duration": "1.000000",
+            "size": "6111",
+            "bit_rate": "48888",
+            "probe_score": 100,
+            "tags": {
+              "major_brand": "isom",
+              "minor_version": "512",
+              "compatible_brands": "isomiso2avc1mp41",
+              "encoder": "Lavf62.12.102"
+            }
+          }
+        },
+        "artifact": {
+          "path_rel": "work/runtime-smoke-uat-20260817/ffmpeg-smoke.mp4",
+          "sha256": "eb129fb3d1f3a3ebebf94c551b955bf31072bfbcfe237fb15ca4a3e601b0c084",
+          "bytes": 6111
+        }
+      }
+    },
+    {
+      "code": "WINDOWS_SYSTEM_SPEECH_REAL_WAV",
+      "status": "PASS",
+      "passed": true,
+      "observed": {
+        "status": "PASS",
+        "powershell": "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+        "voices": [
+          {
+            "culture": "zh-CN",
+            "name": "Microsoft Huihui Desktop",
+            "ref": "sapi:Microsoft Huihui Desktop"
+          },
+          {
+            "culture": "en-US",
+            "name": "Microsoft Zira Desktop",
+            "ref": "sapi:Microsoft Zira Desktop"
+          }
+        ],
+        "artifact": {
+          "path_rel": "work/runtime-smoke-uat-20260817/sapi-smoke.wav",
+          "sha256": "f90d9645661b15a9920404dd99b7861730b92abdb983143a963d2c5c6cbd8613",
+          "bytes": 186510
+        },
+        "runtime_contacted": true,
+        "network_contacted": false
+      }
+    },
+    {
+      "code": "LOCAL_MODEL_REFERENCE_INVENTORY",
+      "status": "PASS",
+      "passed": true,
+      "observed": {
+        "status": "PASS",
+        "root": "E:\\AI\\ComfyUI-Models",
+        "file_count": 287,
+        "total_bytes": 820565243279,
+        "declared_runtime_assets": [
+          {
+            "path": "E:\\AI\\ComfyDesktop\\ComfyUI\\ComfyUI\\models\\diffusion_models\\minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+            "exists": true
+          },
+          {
+            "path": "E:\\AI\\ComfyDesktop\\ComfyUI\\ComfyUI\\models\\diffusion_models\\minimax_h3_ref2va_int8_convrot.safetensors",
+            "exists": true
+          }
+        ],
+        "comfy_root": "E:\\AI\\ComfyDesktop\\ComfyUI\\ComfyUI",
+        "reference_only": true,
+        "bundled": false,
+        "uploaded": false,
+        "runtime_contacted": false,
+        "network_contacted": false
+      }
+    },
+    {
+      "code": "COMFYUI_LOOPBACK_HEALTH",
+      "status": "PASS",
+      "passed": true,
+      "observed": {
+        "status": "PASS",
+        "root": "E:\\AI\\ComfyDesktop\\ComfyUI\\ComfyUI",
+        "python": "E:\\AI\\ComfyDesktop\\ComfyUI\\ComfyUI\\.venv\\Scripts\\python.exe",
+        "main_py_exists": true,
+        "python_exists": true,
+        "endpoint": "http://127.0.0.1:8188",
+        "endpoint_local": true,
+        "runtime_contacted": true,
+        "network_contacted": false,
+        "generation_smoke": "PASS",
+        "health": {
+          "status_code": 200,
+          "error": null,
+          "version": "0.31.0",
+          "devices": [
+            {
+              "name": "cuda:0 NVIDIA GeForce RTX 3090 Ti : cudaMallocAsync",
+              "type": "cuda",
+              "index": 0,
+              "vram_total": 25756565504,
+              "vram_free": 24328929280,
+              "torch_vram_total": 67108864,
+              "torch_vram_free": 57540608
+            }
+          ]
+        },
+        "object_info": {
+          "status_code": 200,
+          "error": null,
+          "node_count": 1516
+        },
+        "queue": {
+          "status_code": 200,
+          "error": null,
+          "running": 0,
+          "pending": 0
+        },
+        "prompt_status_code": 200,
+        "prompt_error": null,
+        "runtime_mutated": true,
+        "prompt_id": "c9d4f1dd-02fd-4d32-a745-e12501388d99",
+        "history_status": {
+          "status_str": "success",
+          "completed": true,
+          "messages": [
+            [
+              "execution_start",
+              {
+                "prompt_id": "c9d4f1dd-02fd-4d32-a745-e12501388d99",
+                "timestamp": 1786895232728
+              }
+            ],
+            [
+              "execution_cached",
+              {
+                "nodes": [],
+                "prompt_id": "c9d4f1dd-02fd-4d32-a745-e12501388d99",
+                "timestamp": 1786895232743
+              }
+            ],
+            [
+              "execution_success",
+              {
+                "prompt_id": "c9d4f1dd-02fd-4d32-a745-e12501388d99",
+                "timestamp": 1786895232759
+              }
+            ]
+          ]
+        },
+        "output": {
+          "filename": "runtime_smoke_414d6934a63f4f14840fdf5b6da0da06_00001_.png",
+          "bytes": 424,
+          "sha256": "91b073ed26e68bc7e53abe2abac84af6d103dd1d347285029d0e0757449da22a"
+        }
+      }
+    }
+  ],
+  "runtime_contacted": true,
+  "network_contacted": false,
+  "production_database_contacted": false,
+  "production_mutated": false,
+  "observed_at": "2026-08-16T15:47:13.302683+00:00"
+}

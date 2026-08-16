@@ -24,7 +24,7 @@
       "code": "UNICODE_SPACE_LONG_SOURCE_PATH",
       "passed": true,
       "path_length": 222,
-      "path": "F:\\AI_Projects\\h3\\local_drama_studio\\temp\\nfr-comp-20260816T050906Z\\source\\中文 空格 模型\\长路径-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\第二层-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\\第三层-zzzzzzzzzzzzzzzzzzzzzzzz\\FL2VA I2V int8 fp16.safetensors"
+      "path": "F:\\AI_Projects\\h3\\local_drama_studio\\temp\\nfr-comp-20260816T154346Z\\source\\中文 空格 模型\\长路径-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\第二层-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\\第三层-zzzzzzzzzzzzzzzzzzzzzzzz\\FL2VA I2V int8 fp16.safetensors"
     },
     {
       "code": "CROSS_VOLUME_COPY",
@@ -34,14 +34,14 @@
       "source_hash": "caf1c2e5ccbd0e4c6027464e807b08aa50919050704a8cd17891b2a0c13edc59",
       "destination_hash": "caf1c2e5ccbd0e4c6027464e807b08aa50919050704a8cd17891b2a0c13edc59",
       "destination_path_length": 189,
-      "source": "F:\\AI_Projects\\h3\\local_drama_studio\\temp\\nfr-comp-20260816T050906Z\\source\\中文 空格 模型\\长路径-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\第二层-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\\第三层-zzzzzzzzzzzzzzzzzzzzzzzz\\FL2VA I2V int8 fp16.safetensors",
-      "destination": "E:\\AI\\Temp\\localdrama-nfr-comp-a960e0d625\\中文 空格 模型\\长路径-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\第二层-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\\第三层-zzzzzzzzzzzzzzzzzzzzzzzz\\FL2VA I2V int8 fp16.safetensors"
+      "source": "F:\\AI_Projects\\h3\\local_drama_studio\\temp\\nfr-comp-20260816T154346Z\\source\\中文 空格 模型\\长路径-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\第二层-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\\第三层-zzzzzzzzzzzzzzzzzzzzzzzz\\FL2VA I2V int8 fp16.safetensors",
+      "destination": "E:\\AI\\Temp\\localdrama-nfr-comp-82ba839f03\\中文 空格 模型\\长路径-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\第二层-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\\第三层-zzzzzzzzzzzzzzzzzzzzzzzz\\FL2VA I2V int8 fp16.safetensors"
     },
     {
       "code": "API_RETains_ABSOLUTE_EXTERNAL_REFERENCE",
       "passed": true,
       "register_status": 201,
-      "machine_path_ref": "E:\\AI\\Temp\\localdrama-nfr-comp-a960e0d625\\中文 空格 模型\\长路径-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\第二层-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\\第三层-zzzzzzzzzzzzzzzzzzzzzzzz\\FL2VA I2V int8 fp16.safetensors",
+      "machine_path_ref": "E:\\AI\\Temp\\localdrama-nfr-comp-82ba839f03\\中文 空格 模型\\长路径-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\第二层-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\\第三层-zzzzzzzzzzzzzzzzzzzzzzzz\\FL2VA I2V int8 fp16.safetensors",
       "copied": false,
       "uploaded": false
     },
@@ -64,8 +64,8 @@
     {
       "code": "MODEL_BYTES_NOT_IN_PROJECT_ROOT",
       "passed": true,
-      "model_path": "E:\\AI\\Temp\\localdrama-nfr-comp-a960e0d625\\中文 空格 模型\\长路径-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\第二层-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\\第三层-zzzzzzzzzzzzzzzzzzzzzzzz\\FL2VA I2V int8 fp16.safetensors",
-      "project_root": "F:\\AI_Projects\\h3\\local_drama_studio\\temp\\nfr-comp-20260816T050906Z\\projects\\nfr_comp_path_matrix"
+      "model_path": "E:\\AI\\Temp\\localdrama-nfr-comp-82ba839f03\\中文 空格 模型\\长路径-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\第二层-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\\第三层-zzzzzzzzzzzzzzzzzzzzzzzz\\FL2VA I2V int8 fp16.safetensors",
+      "project_root": "F:\\AI_Projects\\h3\\local_drama_studio\\temp\\nfr-comp-20260816T154346Z\\projects\\nfr_comp_path_matrix"
     },
     {
       "code": "SOURCE_UNCHANGED_AFTER_COPY_AND_REPORT",
@@ -97,5 +97,5 @@
     "The F-to-E copy is performed by this test fixture only; the platform retains no model bytes in the project."
   ],
   "next_required_action": "Run the Windows x64 three-viewport model selection and real user-runtime UAT before promoting NFR-COMP-001 to VERIFIED.",
-  "observed_at": "2026-08-16T05:09:06.097615+00:00"
+  "observed_at": "2026-08-16T15:43:46.815129+00:00"
 }

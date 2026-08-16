@@ -1,0 +1,50 @@
+{
+  "schema_version": "g10.job_scheduler_reliability_audit.v1",
+  "observed_at": "2026-08-16T11:21:52.660843+00:00",
+  "status": "PASS",
+  "scope": [
+    "FR-JOB-001",
+    "FR-JOB-002",
+    "FR-JOB-003",
+    "FR-JOB-004",
+    "FR-JOB-005",
+    "NFR-MAINT-001"
+  ],
+  "safety": {
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "mutated": false,
+    "migrations_run": false,
+    "jobs_created": true,
+    "comfyui_contacted": false
+  },
+  "checks": [
+    {
+      "code": "PYTEST",
+      "result": "PASS",
+      "command": "python -m pytest apps/api/tests/test_job_scheduler_progress.py apps/api/tests/test_g5_jobs.py apps/api/tests/test_nfr_reliability.py -q",
+      "assertions": [
+        "job scheduler progress survives service recreation",
+        "attempt log cursor returns persisted outbox events",
+        "GPU heavy and CPU channels are isolated",
+        "expired lease is reconciled automatically",
+        "retry preserves attempts and idempotent create behavior",
+        "job lifecycle is durable across process exit and restart",
+        "g5 queue APIs stay bounded and paginated",
+        "worker kill reconciles attempts without duplicate registration",
+        "NFR restart/recovery preserves running job progress and lease state"
+      ],
+      "exit_code": 0,
+      "passed_count": 15
+    }
+  ],
+  "notes": "Used .venv pytest without remote provider/comfy runtime. Covers idempotent job creation/claim/recovery and local-only restart semantics. No production-wide H3 job lane or external network dependency was exercised.",
+  "related_requirements": [
+    "FR-JOB-001",
+    "FR-JOB-002",
+    "FR-JOB-003",
+    "FR-JOB-004",
+    "FR-JOB-005",
+    "NFR-MAINT-001"
+  ]
+}

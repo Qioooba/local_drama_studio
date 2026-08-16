@@ -70,5 +70,5 @@
     "The loopback harness exercises production transports but is not a user-owned ComfyUI or Ollama runtime smoke.",
     "No packet-level release-host capture, browser three-viewport UAT, or final release sign-off is claimed."
   ],
-  "observed_at": "2026-08-16T09:36:56.550051+00:00"
+  "observed_at": "2026-08-16T15:43:03.086767+00:00"
 }

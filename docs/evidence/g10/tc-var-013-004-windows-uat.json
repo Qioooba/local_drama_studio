@@ -1,0 +1,547 @@
+{
+  "schema_version": "g10.tc-var-013-014.windows-uat.v1",
+  "status": "PARTIAL",
+  "scope": [
+    "TC-VAR-013",
+    "TC-VAR-004",
+    "GENERATION_VARIANT"
+  ],
+  "platform": {
+    "system": "win32",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.10"
+  },
+  "local_only": true,
+  "network": {
+    "loopback_endpoint": "http://127.0.0.1:58604",
+    "public_network_contacted": false,
+    "provider_contacted": false,
+    "comfyui_contacted": false
+  },
+  "isolation": {
+    "root_rel": ".",
+    "production_database_contacted": false,
+    "production_projects_root_contacted": false
+  },
+  "checks": [
+    {
+      "code": "LOOPBACK_ONLY",
+      "status": "PASS",
+      "observed": {
+        "endpoint": "http://127.0.0.1:58604"
+      },
+      "detail": "only local loopback host was used"
+    },
+    {
+      "code": "BASE_VARIANT_SUBMITTED",
+      "status": "PASS",
+      "observed": {
+        "plan": {
+          "status": 200,
+          "payload": {
+            "plan": {
+              "intent_id": "46fa5ee2-4610-43bb-ae51-5013be3216fb",
+              "status": "READY",
+              "plan_hash": "85139cd1adb9d5c8510ab2943a7369e496888088d03a1e5ad593703052c2aee8",
+              "recipe_hash": "dfc3d2a334607d75929a34f6c0133aeaa0050cac2fb3b58b6084c1c3f3c646ab",
+              "dependencies": {
+                "intent_id": "46fa5ee2-4610-43bb-ae51-5013be3216fb",
+                "intent_updated_at": "2026-08-16T15:11:31.136249Z",
+                "profile_version_id": "12aee64f-bdf3-53d8-b072-c9bf824d245c",
+                "profile_revision": 4,
+                "profile_status": "PUBLISHED",
+                "seed_support": "OPTIONAL",
+                "determinism": "NONDETERMINISTIC",
+                "workflow_version_id": "cd868913-84f6-4ee0-b40f-b24651605914",
+                "workflow_content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "workflow_revision": 1,
+                "model_bundle": {
+                  "artifact_ids": [
+                    "83c66a47-b0a3-536a-93f1-f7af6d14bbe1",
+                    "a5d9e1b8-265f-56de-9db3-89b953c7dc03",
+                    "949bf2a5-94b9-5ecf-92b9-0c237956387c",
+                    "a3cad3fb-d70e-5e98-8197-f8f8c6fd1803",
+                    "02652f43-80c8-54a7-bd54-0069e50399a8"
+                  ],
+                  "manifest_sha256": "1fb8580b707558b85fa4134eb3d4f8a12e64777a064e280b24a5ffb3f2b6eb2c",
+                  "route_status": "verified_proxy_candidate"
+                },
+                "model_bundle_hash": "b2d0632c913673ff28c35feb84988ec75cd42e9fe1f33a5fb13a5ec8e197ac88",
+                "runtime_version_id": null,
+                "profile_manifest_sha256": "1fb8580b707558b85fa4134eb3d4f8a12e64777a064e280b24a5ffb3f2b6eb2c",
+                "profile_execution_snapshot_hash": "4b06d4967466b7ae32d7ad13c77cf2e043ad81e40296facca5edc9966a75d914",
+                "resource_estimate": {
+                  "status": "UNKNOWN",
+                  "source": "PROFILE_RESOURCE_POLICY",
+                  "per_take": {
+                    "duration_seconds": null,
+                    "vram_bytes": null,
+                    "disk_bytes": null
+                  },
+                  "policy_keys": {
+                    "duration_seconds": null,
+                    "vram_bytes": null,
+                    "disk_bytes": null
+                  },
+                  "unknown": [
+                    "duration_seconds",
+                    "vram_bytes",
+                    "disk_bytes"
+                  ],
+                  "take_count": 1,
+                  "bounded": true
+                },
+                "parent_recipe_hash": null,
+                "prompt_revision_hash": null,
+                "media": [
+                  {
+                    "id": "f66e4e49-6634-4a3f-a090-e459fe0afb79",
+                    "version_no": 1,
+                    "parent_version_id": null,
+                    "stage": "PROXY",
+                    "owner_type": "SHOT",
+                    "owner_id": "b6e5be91-8eed-45cf-a898-4f43f69e0fe5",
+                    "purpose": "IMPORT",
+                    "approved_version_id": null,
+                    "selected_version_id": null,
+                    "sha256": "a5c07a5bca01152a4a28497ac05a6f494f704947cb9a832122c2ef6a87c9c43a",
+                    "integrity_status": "VERIFIED",
+                    "source_approval_id": null
+                  }
+                ],
+                "approvals": []
+              },
+              "resource_estimate": {
+                "status": "UNKNOWN",
+                "source": "PROFILE_RESOURCE_POLICY",
+                "per_take": {
+                  "duration_seconds": null,
+                  "vram_bytes": null,
+                  "disk_bytes": null
+                },
+                "policy_keys": {
+                  "duration_seconds": null,
+                  "vram_bytes": null,
+                  "disk_bytes": null
+                },
+                "unknown": [
+                  "duration_seconds",
+                  "vram_bytes",
+                  "disk_bytes"
+                ],
+                "take_count": 1,
+                "bounded": true
+              },
+              "would_persist_variant": false,
+              "would_create_job": false,
+              "reproducibility": {
+                "level": "NONDETERMINISTIC",
+                "determinism": "NONDETERMINISTIC",
+                "seed_support": "OPTIONAL",
+                "claim": "遵循 Profile determinism 声明"
+              }
+            }
+          },
+          "error": null
+        },
+        "submit": {
+          "status": 201,
+          "payload": {
+            "variant": {
+              "id": "7b42f082-f067-44a4-b86f-84ccf33c6f2a",
+              "intent_id": "46fa5ee2-4610-43bb-ae51-5013be3216fb",
+              "variant_no": 1,
+              "variant_type": "BASE",
+              "parent_variant_id": null,
+              "branch_reason": "baseline",
+              "prompt_revision_id": null,
+              "capability_profile_version_id": "12aee64f-bdf3-53d8-b072-c9bf824d245c",
+              "parameter_set_json": "{\"frames\":81,\"steps\":20}",
+              "seed_policy": "EXPLICIT",
+              "explicit_seed": 7,
+              "input_fingerprint": "ac257bce26a3148b713b907594705755ac7ca4094a155753d0f7056660d92c95",
+              "recipe_hash": "dfc3d2a334607d75929a34f6c0133aeaa0050cac2fb3b58b6084c1c3f3c646ab",
+              "status": "QUEUED",
+              "created_at": "2026-08-16T15:11:34.977165Z",
+              "updated_at": "2026-08-16T15:11:34.977165Z",
+              "created_by": "local-user",
+              "revision": 1,
+              "schema_version": "v2",
+              "is_stale": 0,
+              "stale_reason": null,
+              "provider_random_nonce": null,
+              "bindings": [
+                {
+                  "id": "29ecf383-233f-4e72-b5bb-a4bf6352db57",
+                  "variant_id": "7b42f082-f067-44a4-b86f-84ccf33c6f2a",
+                  "role": "FIRST_FRAME",
+                  "media_version_id": "f66e4e49-6634-4a3f-a090-e459fe0afb79",
+                  "ordinal": 0,
+                  "weight": null,
+                  "frame_time_us": null,
+                  "source_approval_id": null
+                }
+              ]
+            },
+            "job": {
+              "id": "31bd9ded-9159-4ea7-a611-f596f63165be",
+              "type": "GENERATION_VARIANT",
+              "project_id": "58a8fb88-4417-4de5-a949-98346a5106f0",
+              "subject_type": "GENERATION_VARIANT",
+              "subject_id": "7b42f082-f067-44a4-b86f-84ccf33c6f2a",
+              "state": "QUEUED",
+              "channel": "GPU_H3",
+              "idempotency_key": "tc-var-submit-base",
+              "input_snapshot": {
+                "execution_snapshot": {
+                  "manifest_sha256": "1fb8580b707558b85fa4134eb3d4f8a12e64777a064e280b24a5ffb3f2b6eb2c",
+                  "model_bundle": {
+                    "artifact_ids": [
+                      "83c66a47-b0a3-536a-93f1-f7af6d14bbe1",
+                      "a5d9e1b8-265f-56de-9db3-89b953c7dc03",
+                      "949bf2a5-94b9-5ecf-92b9-0c237956387c",
+                      "a3cad3fb-d70e-5e98-8197-f8f8c6fd1803",
+                      "02652f43-80c8-54a7-bd54-0069e50399a8"
+                    ],
+                    "manifest_sha256": "1fb8580b707558b85fa4134eb3d4f8a12e64777a064e280b24a5ffb3f2b6eb2c",
+                    "route_status": "verified_proxy_candidate"
+                  },
+                  "model_bundle_hash": "b2d0632c913673ff28c35feb84988ec75cd42e9fe1f33a5fb13a5ec8e197ac88",
+                  "profile_revision": 4,
+                  "profile_version_id": "12aee64f-bdf3-53d8-b072-c9bf824d245c",
+                  "runtime_version_id": null,
+                  "snapshot_hash": "4b06d4967466b7ae32d7ad13c77cf2e043ad81e40296facca5edc9966a75d914",
+                  "workflow_content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "workflow_version_id": "cd868913-84f6-4ee0-b40f-b24651605914"
+                },
+                "media_bindings": [
+                  {
+                    "media_version_id": "f66e4e49-6634-4a3f-a090-e459fe0afb79",
+                    "ordinal": 0,
+                    "role": "FIRST_FRAME",
+                    "source_approval_id": null
+                  }
+                ],
+                "recipe_hash": "dfc3d2a334607d75929a34f6c0133aeaa0050cac2fb3b58b6084c1c3f3c646ab",
+                "semantic_inputs": {
+                  "frames": 81,
+                  "steps": 20
+                },
+                "variant_id": "7b42f082-f067-44a4-b86f-84ccf33c6f2a",
+                "workflow_version_id": "cd868913-84f6-4ee0-b40f-b24651605914"
+              },
+              "execution_profile_version_id": "12aee64f-bdf3-53d8-b072-c9bf824d245c",
+              "priority": 100,
+              "max_attempts": 1,
+              "revision": 1,
+              "progress": {},
+              "progress_updated_at": null,
+              "started_at": null,
+              "finished_at": null,
+              "last_error_code": null,
+              "last_error_detail_redacted": null,
+              "idempotent_replay": false
+            }
+          },
+          "error": null
+        }
+      },
+      "detail": "base variant submit succeeds and creates a queued GPU_H3 job"
+    },
+    {
+      "code": "BASE_AND_BRANCH_VARIANTS_PERSISTED",
+      "status": "PASS",
+      "observed": {
+        "variants": 4,
+        "base_jobs": 1,
+        "profile_jobs": 1,
+        "random_jobs": 2
+      },
+      "detail": "exactly one base and three descendant variants were persisted, with one job each"
+    },
+    {
+      "code": "PROFILE_BRANCH_PLAN_SCOPE",
+      "status": "PASS",
+      "observed": {
+        "intent_id": "46fa5ee2-4610-43bb-ae51-5013be3216fb",
+        "status": "READY",
+        "plan_hash": "5dbd932ba9f7445b5ace033f9e5b5baa6dfcddc9d3d53c8e00f542728d83e830",
+        "recipe_hash": "85c5babe5e3228cfd8c489f34c51b37eaffcb39c8e71eeef76ec64c5c98f0efb",
+        "dependencies": {
+          "intent_id": "46fa5ee2-4610-43bb-ae51-5013be3216fb",
+          "intent_updated_at": "2026-08-16T15:11:31.136249Z",
+          "profile_version_id": "1a8ee5cf-c084-4489-9f51-7323a4269cf1",
+          "profile_revision": 1,
+          "profile_status": "PUBLISHED",
+          "seed_support": "OPTIONAL",
+          "determinism": "NONDETERMINISTIC",
+          "workflow_version_id": "cd868913-84f6-4ee0-b40f-b24651605914",
+          "workflow_content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "workflow_revision": 1,
+          "model_bundle": {
+            "artifact_ids": [
+              "83c66a47-b0a3-536a-93f1-f7af6d14bbe1",
+              "a5d9e1b8-265f-56de-9db3-89b953c7dc03",
+              "949bf2a5-94b9-5ecf-92b9-0c237956387c",
+              "a3cad3fb-d70e-5e98-8197-f8f8c6fd1803",
+              "02652f43-80c8-54a7-bd54-0069e50399a8"
+            ],
+            "manifest_sha256": "1fb8580b707558b85fa4134eb3d4f8a12e64777a064e280b24a5ffb3f2b6eb2c",
+            "route_status": "verified_proxy_candidate"
+          },
+          "model_bundle_hash": "b2d0632c913673ff28c35feb84988ec75cd42e9fe1f33a5fb13a5ec8e197ac88",
+          "runtime_version_id": null,
+          "profile_manifest_sha256": "1fb8580b707558b85fa4134eb3d4f8a12e64777a064e280b24a5ffb3f2b6eb2c",
+          "profile_execution_snapshot_hash": "72debb1adf134a22543fef988f90fe872f0d1d2e8f1e5c59bc065a048d00076d",
+          "resource_estimate": {
+            "status": "UNKNOWN",
+            "source": "PROFILE_RESOURCE_POLICY",
+            "per_take": {
+              "duration_seconds": null,
+              "vram_bytes": null,
+              "disk_bytes": null
+            },
+            "policy_keys": {
+              "duration_seconds": null,
+              "vram_bytes": null,
+              "disk_bytes": null
+            },
+            "unknown": [
+              "duration_seconds",
+              "vram_bytes",
+              "disk_bytes"
+            ],
+            "take_count": 1,
+            "bounded": true
+          },
+          "parent_recipe_hash": "dfc3d2a334607d75929a34f6c0133aeaa0050cac2fb3b58b6084c1c3f3c646ab",
+          "prompt_revision_hash": null,
+          "media": [
+            {
+              "id": "f66e4e49-6634-4a3f-a090-e459fe0afb79",
+              "version_no": 1,
+              "parent_version_id": null,
+              "stage": "PROXY",
+              "owner_type": "SHOT",
+              "owner_id": "b6e5be91-8eed-45cf-a898-4f43f69e0fe5",
+              "purpose": "IMPORT",
+              "approved_version_id": null,
+              "selected_version_id": null,
+              "sha256": "a5c07a5bca01152a4a28497ac05a6f494f704947cb9a832122c2ef6a87c9c43a",
+              "integrity_status": "VERIFIED",
+              "source_approval_id": null
+            }
+          ],
+          "approvals": []
+        },
+        "resource_estimate": {
+          "status": "UNKNOWN",
+          "source": "PROFILE_RESOURCE_POLICY",
+          "per_take": {
+            "duration_seconds": null,
+            "vram_bytes": null,
+            "disk_bytes": null
+          },
+          "policy_keys": {
+            "duration_seconds": null,
+            "vram_bytes": null,
+            "disk_bytes": null
+          },
+          "unknown": [
+            "duration_seconds",
+            "vram_bytes",
+            "disk_bytes"
+          ],
+          "take_count": 1,
+          "bounded": true
+        },
+        "would_persist_variant": false,
+        "would_create_job": false,
+        "reproducibility": {
+          "level": "NONDETERMINISTIC",
+          "determinism": "NONDETERMINISTIC",
+          "seed_support": "OPTIONAL",
+          "claim": "遵循 Profile determinism 声明"
+        },
+        "operation": "PROFILE_BRANCH",
+        "parent_variant_id": "7b42f082-f067-44a4-b86f-84ccf33c6f2a",
+        "draft": {
+          "variant_type": "PROFILE_BRANCH",
+          "parent_variant_id": "7b42f082-f067-44a4-b86f-84ccf33c6f2a",
+          "branch_reason": "profile branch compare",
+          "prompt_revision_id": null,
+          "profile_version_id": "1a8ee5cf-c084-4489-9f51-7323a4269cf1",
+          "parameter_set": {
+            "frames": 81,
+            "steps": 20
+          },
+          "seed_policy": "EXPLICIT",
+          "explicit_seed": 7,
+          "provider_random_nonce": null,
+          "bindings": [
+            {
+              "role": "FIRST_FRAME",
+              "media_version_id": "f66e4e49-6634-4a3f-a090-e459fe0afb79",
+              "ordinal": 0
+            }
+          ],
+          "intent_id": "46fa5ee2-4610-43bb-ae51-5013be3216fb"
+        },
+        "diff": {
+          "changed_fields": [
+            "profile_version_id"
+          ],
+          "preserved_fields": [
+            "prompt_revision_id",
+            "parameter_set",
+            "seed_policy",
+            "explicit_seed",
+            "bindings",
+            "provider_random_nonce"
+          ],
+          "before": {
+            "profile_version_id": "12aee64f-bdf3-53d8-b072-c9bf824d245c"
+          },
+          "after": {
+            "profile_version_id": "1a8ee5cf-c084-4489-9f51-7323a4269cf1"
+          }
+        }
+      },
+      "detail": "PROFILE_BRANCH is limited to profile version field changes"
+    },
+    {
+      "code": "PROFILE_BRANCH_SUBMIT_JOB",
+      "status": "PASS",
+      "observed": {
+        "branch_variant": {
+          "id": "4daf0b9d-f5f3-4402-9ece-feae87818f5b",
+          "intent_id": "46fa5ee2-4610-43bb-ae51-5013be3216fb",
+          "variant_no": 2,
+          "variant_type": "PROFILE_BRANCH",
+          "parent_variant_id": "7b42f082-f067-44a4-b86f-84ccf33c6f2a",
+          "branch_reason": "profile branch compare",
+          "prompt_revision_id": null,
+          "capability_profile_version_id": "1a8ee5cf-c084-4489-9f51-7323a4269cf1",
+          "parameter_set_json": "{\"frames\":81,\"steps\":20}",
+          "seed_policy": "EXPLICIT",
+          "explicit_seed": 7,
+          "input_fingerprint": "ac257bce26a3148b713b907594705755ac7ca4094a155753d0f7056660d92c95",
+          "recipe_hash": "85c5babe5e3228cfd8c489f34c51b37eaffcb39c8e71eeef76ec64c5c98f0efb",
+          "status": "QUEUED",
+          "created_at": "2026-08-16T15:11:35.078164Z",
+          "updated_at": "2026-08-16T15:11:35.078164Z",
+          "created_by": "local-user",
+          "revision": 1,
+          "schema_version": "v2",
+          "is_stale": 0,
+          "stale_reason": null,
+          "provider_random_nonce": null,
+          "bindings": [
+            {
+              "id": "f8c4c82a-49cd-4b23-bab6-838dd5f5aedd",
+              "variant_id": "4daf0b9d-f5f3-4402-9ece-feae87818f5b",
+              "role": "FIRST_FRAME",
+              "media_version_id": "f66e4e49-6634-4a3f-a090-e459fe0afb79",
+              "ordinal": 0,
+              "weight": null,
+              "frame_time_us": null,
+              "source_approval_id": null
+            }
+          ]
+        },
+        "branch_job": {
+          "id": "e72d196f-a2f7-4d6d-bf3a-b87c5d6b71df",
+          "type": "GENERATION_VARIANT",
+          "project_id": "58a8fb88-4417-4de5-a949-98346a5106f0",
+          "subject_type": "GENERATION_VARIANT",
+          "subject_id": "4daf0b9d-f5f3-4402-9ece-feae87818f5b",
+          "state": "QUEUED",
+          "channel": "GPU_H3",
+          "idempotency_key": "tc-var-submit-profile-branch",
+          "input_snapshot": {
+            "execution_snapshot": {
+              "manifest_sha256": "1fb8580b707558b85fa4134eb3d4f8a12e64777a064e280b24a5ffb3f2b6eb2c",
+              "model_bundle": {
+                "artifact_ids": [
+                  "83c66a47-b0a3-536a-93f1-f7af6d14bbe1",
+                  "a5d9e1b8-265f-56de-9db3-89b953c7dc03",
+                  "949bf2a5-94b9-5ecf-92b9-0c237956387c",
+                  "a3cad3fb-d70e-5e98-8197-f8f8c6fd1803",
+                  "02652f43-80c8-54a7-bd54-0069e50399a8"
+                ],
+                "manifest_sha256": "1fb8580b707558b85fa4134eb3d4f8a12e64777a064e280b24a5ffb3f2b6eb2c",
+                "route_status": "verified_proxy_candidate"
+              },
+              "model_bundle_hash": "b2d0632c913673ff28c35feb84988ec75cd42e9fe1f33a5fb13a5ec8e197ac88",
+              "profile_revision": 1,
+              "profile_version_id": "1a8ee5cf-c084-4489-9f51-7323a4269cf1",
+              "runtime_version_id": null,
+              "snapshot_hash": "72debb1adf134a22543fef988f90fe872f0d1d2e8f1e5c59bc065a048d00076d",
+              "workflow_content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "workflow_version_id": "cd868913-84f6-4ee0-b40f-b24651605914"
+            },
+            "media_bindings": [
+              {
+                "media_version_id": "f66e4e49-6634-4a3f-a090-e459fe0afb79",
+                "ordinal": 0,
+                "role": "FIRST_FRAME",
+                "source_approval_id": null
+              }
+            ],
+            "recipe_hash": "85c5babe5e3228cfd8c489f34c51b37eaffcb39c8e71eeef76ec64c5c98f0efb",
+            "semantic_inputs": {
+              "frames": 81,
+              "steps": 20
+            },
+            "variant_id": "4daf0b9d-f5f3-4402-9ece-feae87818f5b",
+            "workflow_version_id": "cd868913-84f6-4ee0-b40f-b24651605914"
+          },
+          "execution_profile_version_id": "1a8ee5cf-c084-4489-9f51-7323a4269cf1",
+          "priority": 100,
+          "max_attempts": 1,
+          "revision": 1,
+          "progress": {},
+          "progress_updated_at": null,
+          "started_at": null,
+          "finished_at": null,
+          "last_error_code": null,
+          "last_error_detail_redacted": null,
+          "idempotent_replay": false
+        }
+      },
+      "detail": "PROFILE_BRANCH submit creates isolated variant and matching job"
+    },
+    {
+      "code": "RESUBMIT_RANDOM_NONCE_UNIQUE",
+      "status": "PASS",
+      "observed": {
+        "plan_one_nonce": "590ef9fd-6383-4506-88b6-fa12184eed2f",
+        "plan_two_nonce": "101415eb-b080-4788-bafd-4fba1c807b7c"
+      },
+      "detail": "two RESUBMIT_PROVIDER_RANDOM plans generate independent nonces"
+    },
+    {
+      "code": "RESUBMIT_RANDOM_SUBMIT_JOBS",
+      "status": "PASS",
+      "observed": {
+        "random_variant_ids": [
+          "337afaa9-6443-4e94-a4a2-a098e571aeee",
+          "4c0747ee-ebf9-4e9a-8ca4-d5aa7c35550b"
+        ],
+        "random_job_ids": [
+          "7b57bebd-7e02-4f6c-8733-dbb9e98dbac2",
+          "7ec5eee6-2ebf-436d-97d7-a36c3b207301"
+        ],
+        "random_snapshot_profile_ids": [
+          "12aee64f-bdf3-53d8-b072-c9bf824d245c",
+          "12aee64f-bdf3-53d8-b072-c9bf824d245c"
+        ]
+      },
+      "detail": "RESUBMIT_PROVIDER_RANDOM submit creates two independent jobs"
+    }
+  ],
+  "limits": [
+    "No variant take was executed by a worker; only submission, job persistence, and branch plan isolation are validated.",
+    "No external runtime/Comfy/model execution path was invoked."
+  ]
+}

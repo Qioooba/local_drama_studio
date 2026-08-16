@@ -9,10 +9,10 @@
     "age": "Adult",
     "voice_ref": "sapi:Microsoft Huihui Desktop"
   },
-  "profile_version_id": "sapi-tts-7f06eb65-31f5-493b-b1cb-553f182fa8b2-v1",
-  "job_id": "148b70e8-7b8e-4202-86b7-4107439a7618",
+  "profile_version_id": "sapi-tts-2a453a5a-81ab-484f-b2c9-2f62d78a2f85-v1",
+  "job_id": "559613a4-ba8e-4b58-bf58-a2076997a4db",
   "artifact": {
-    "path_rel": "work/jobs/148b70e8-7b8e-4202-86b7-4107439a7618/speech.wav",
+    "path_rel": "work/jobs/559613a4-ba8e-4b58-bf58-a2076997a4db/speech.wav",
     "sha256": "23b42e5053cae3153f8f95f26c7a5a038ebf86581bfe01bd0f516f96af58b6ac"
   },
   "checks": [
@@ -76,5 +76,5 @@
   "network_contacted": false,
   "production_database_contacted": false,
   "production_profile_mutated": false,
-  "observed_at": "2026-08-16T03:59:14.092658+00:00"
+  "observed_at": "2026-08-16T13:27:58.330837+00:00"
 }

@@ -12,10 +12,10 @@
     "python": "3.12.10"
   },
   "local_only": true,
-  "loopback_endpoint": "http://127.0.0.1:58971",
+  "loopback_endpoint": "http://127.0.0.1:60083",
   "isolation": {
-    "root_rel": "work/project-crud-windows-20260816T084209Z",
-    "database_rel": "work/project-crud-windows-20260816T084209Z/数据 SQLite/local_drama.sqlite3",
+    "root_rel": ".",
+    "database_rel": "数据 SQLite/local_drama.sqlite3",
     "production_database_contacted": false,
     "production_projects_root_contacted": false,
     "public_network_contacted": false,
@@ -41,31 +41,31 @@
     ]
   },
   "fixture": {
-    "project_id": "e95fb5ee-e31c-43fa-b98a-9bce5d58d1cd",
+    "project_id": "cef38f7e-e5be-4542-ba6b-f39267f9e895",
     "season_ids": [
-      "0cd1b474-2cdb-45d6-94c4-d71f9f16d35e",
-      "e5384f64-7555-4d75-ac95-ca3966722636"
+      "449a4815-bef5-4e5d-ab63-febdf2cdac95",
+      "0ded4409-a24d-40b6-a486-4151936cdf39"
     ],
     "episode_ids": [
-      "040571b1-5109-4691-8691-d3e92d61187a",
-      "11a66b91-7cc4-493c-b52c-28f23168f51f",
-      "f7c3ae3e-53f1-48c1-ac87-44c45ea1db8e",
-      "cbcc9ffd-788f-474e-a676-dc3fb46d5d15",
-      "a21db45c-f276-49f9-8a47-1cc51da818d6",
-      "15478495-2450-4221-bc4d-fccb6d4166df"
+      "ee0c4093-ac2a-4970-b341-78a513461bc6",
+      "eae89da1-b82a-43fc-8b1b-e11e6deef026",
+      "4bbcdf38-2149-4abc-9aff-81663b98ad9d",
+      "cca90ba4-27ba-4ee4-addb-c53051759a37",
+      "8017dc70-75a2-4e94-b220-1641cd344293",
+      "9349ece4-9e91-4f2e-bb86-cbcdcd00a3ac"
     ],
     "scene_ids": [
-      "f69bc0ff-cf72-4b52-a92d-70fe2e441d36",
-      "687e9671-df9e-462c-912f-94114c2d6fa7"
+      "4f2ded06-f590-4d6a-8470-21e89d6c16ae",
+      "8362fb2b-4998-4f24-bf44-7cee599fc44c"
     ],
     "shot_ids": [
-      "aed252df-8086-4d5b-923e-3274cbd78f0d",
-      "71267136-fa20-4b46-84fd-3f2cd516a638",
-      "312042b7-41a7-467f-8ec7-08ced7f586fa"
+      "c933d340-4c1a-4c56-b34c-dbb193871782",
+      "3d1197de-dfb8-49cc-909a-1849264f7728",
+      "013aa1f1-4cbb-407a-98a3-48681b6502e1"
     ],
     "range_ids": [
-      "56887845-1f71-48d3-9127-0f47551c7d54",
-      "413d6ae5-902e-48b7-952b-b2967e67deac"
+      "4d195fb5-8f98-4828-94c1-a8165f727f12",
+      "746d4be2-d1de-4bad-ab12-e351dd236e17"
     ]
   },
   "checks": [
@@ -73,7 +73,7 @@
       "code": "PROJECT_CREATED_IN_ISOLATED_SQLITE",
       "status": "PASS",
       "observed": {
-        "project_id": "e95fb5ee-e31c-43fa-b98a-9bce5d58d1cd"
+        "project_id": "cef38f7e-e5be-4542-ba6b-f39267f9e895"
       },
       "detail": "real ProjectService transaction"
     },
@@ -94,12 +94,12 @@
       "status": "PASS",
       "observed": {
         "scene_ids": [
-          "f69bc0ff-cf72-4b52-a92d-70fe2e441d36",
-          "687e9671-df9e-462c-912f-94114c2d6fa7"
+          "4f2ded06-f590-4d6a-8470-21e89d6c16ae",
+          "8362fb2b-4998-4f24-bf44-7cee599fc44c"
         ],
         "range_ids": [
-          "56887845-1f71-48d3-9127-0f47551c7d54",
-          "413d6ae5-902e-48b7-952b-b2967e67deac"
+          "4d195fb5-8f98-4828-94c1-a8165f727f12",
+          "746d4be2-d1de-4bad-ab12-e351dd236e17"
         ]
       },
       "detail": "project scene identity is referenced by episode ranges"
@@ -110,34 +110,34 @@
       "observed": {
         "before": [
           {
-            "id": "040571b1-5109-4691-8691-d3e92d61187a",
+            "id": "ee0c4093-ac2a-4970-b341-78a513461bc6",
             "code": "EPISODE_001",
             "order": 1
           },
           {
-            "id": "11a66b91-7cc4-493c-b52c-28f23168f51f",
+            "id": "eae89da1-b82a-43fc-8b1b-e11e6deef026",
             "code": "EPISODE_002",
             "order": 2
           },
           {
-            "id": "f7c3ae3e-53f1-48c1-ac87-44c45ea1db8e",
+            "id": "4bbcdf38-2149-4abc-9aff-81663b98ad9d",
             "code": "EPISODE_003",
             "order": 3
           }
         ],
         "after": [
           {
-            "id": "f7c3ae3e-53f1-48c1-ac87-44c45ea1db8e",
+            "id": "4bbcdf38-2149-4abc-9aff-81663b98ad9d",
             "code": "EPISODE_003",
             "order": 1
           },
           {
-            "id": "040571b1-5109-4691-8691-d3e92d61187a",
+            "id": "ee0c4093-ac2a-4970-b341-78a513461bc6",
             "code": "EPISODE_001",
             "order": 2
           },
           {
-            "id": "11a66b91-7cc4-493c-b52c-28f23168f51f",
+            "id": "eae89da1-b82a-43fc-8b1b-e11e6deef026",
             "code": "EPISODE_002",
             "order": 3
           }
@@ -158,17 +158,17 @@
       "status": "PASS",
       "observed": {
         "before_ids": [
-          "aed252df-8086-4d5b-923e-3274cbd78f0d",
-          "71267136-fa20-4b46-84fd-3f2cd516a638",
-          "312042b7-41a7-467f-8ec7-08ced7f586fa"
+          "c933d340-4c1a-4c56-b34c-dbb193871782",
+          "3d1197de-dfb8-49cc-909a-1849264f7728",
+          "013aa1f1-4cbb-407a-98a3-48681b6502e1"
         ],
         "after_ids": [
-          "312042b7-41a7-467f-8ec7-08ced7f586fa",
-          "71267136-fa20-4b46-84fd-3f2cd516a638",
-          "aed252df-8086-4d5b-923e-3274cbd78f0d"
+          "013aa1f1-4cbb-407a-98a3-48681b6502e1",
+          "3d1197de-dfb8-49cc-909a-1849264f7728",
+          "c933d340-4c1a-4c56-b34c-dbb193871782"
         ],
         "revision_ids_stable": true,
-        "plan_hash": "c08e6b4c19600788a2b7a55f73a085c8bf4a86d17ba8362169675822c2ddeeda"
+        "plan_hash": "d3ccec01b3e79141a96237cbfcc5959fab8d832dce9e5e123bba62d3d66b80c7"
       },
       "detail": "storyboard reorder preserves shot UUID and current revision references"
     },
@@ -184,7 +184,7 @@
             "mode": "LOCAL_ONLY"
           }
         },
-        "elapsed_ms": 521.195,
+        "elapsed_ms": 530.124,
         "error": null
       },
       "detail": "real FastAPI process on 127.0.0.1"
@@ -207,18 +207,18 @@
         "bootstrap": {
           "status": 200,
           "payload": {
-            "token": "aHizNqdfuUWh_7yzQUlmLy3PuQH84Q-ps8CJQ_u4GG4",
+            "token": "ouB7dRxki-g2ijKHXSF80SocrbNkiSPRLhFnE5gAX2A",
             "mode": "LOCAL_ONLY"
           },
-          "elapsed_ms": 14.497,
+          "elapsed_ms": 20.327,
           "error": null
         },
         "reorder": {
           "status": 200,
           "payload": {
             "episode": {
-              "id": "f7c3ae3e-53f1-48c1-ac87-44c45ea1db8e",
-              "season_id": "0cd1b474-2cdb-45d6-94c4-d71f9f16d35e",
+              "id": "4bbcdf38-2149-4abc-9aff-81663b98ad9d",
+              "season_id": "449a4815-bef5-4e5d-ab63-febdf2cdac95",
               "number": 3,
               "display_order": 2,
               "code": "EPISODE_003",
@@ -227,14 +227,14 @@
               "production_status": "NOT_STARTED",
               "target_duration_ms": 60000,
               "source_range_json": "{}",
-              "created_at": "2026-08-16T08:42:10.609698Z",
-              "updated_at": "2026-08-16T08:42:13.850862Z",
+              "created_at": "2026-08-16T15:52:05.995868Z",
+              "updated_at": "2026-08-16T15:52:09.212399Z",
               "created_by": "local-user",
               "revision": 3,
               "schema_version": "v2"
             }
           },
-          "elapsed_ms": 49.627,
+          "elapsed_ms": 29.347,
           "error": null
         },
         "stale": {
@@ -243,9 +243,9 @@
             "error": {
               "code": "REVISION_CONFLICT",
               "message": "集的 revision 已变化，请刷新后重试",
-              "request_id": "7d5ef843-3b18-4f85-94c3-9f7f028a817b",
+              "request_id": "6c9cfca1-b420-4e2a-8ee1-98847fc617da",
               "details": {
-                "episode_id": "f7c3ae3e-53f1-48c1-ac87-44c45ea1db8e",
+                "episode_id": "4bbcdf38-2149-4abc-9aff-81663b98ad9d",
                 "expected_revision": 2,
                 "current_revision": 3
               },
@@ -253,11 +253,84 @@
               "suggested_action": null
             }
           },
-          "elapsed_ms": 27.759,
+          "elapsed_ms": 30.702,
           "error": "HTTPError"
         }
       },
       "detail": "API preserves optimistic concurrency contract after local session bootstrap"
+    },
+    {
+      "code": "LOOPBACK_EPISODE_REORDER_CONCURRENCY",
+      "status": "PASS",
+      "observed": {
+        "responses": [
+          409,
+          200
+        ],
+        "details": [
+          {
+            "display_order": 1,
+            "response": {
+              "status": 409,
+              "payload": {
+                "error": {
+                  "code": "REVISION_CONFLICT",
+                  "message": "集的 revision 已变化，请刷新后重试",
+                  "request_id": "f50e6e64-b895-42b5-a5a1-61097bb16649",
+                  "details": {
+                    "episode_id": "4bbcdf38-2149-4abc-9aff-81663b98ad9d",
+                    "expected_revision": 3,
+                    "current_revision": 4
+                  },
+                  "retryable": false,
+                  "suggested_action": null
+                }
+              },
+              "elapsed_ms": 57.614,
+              "error": "HTTPError"
+            }
+          },
+          {
+            "display_order": 3,
+            "response": {
+              "status": 200,
+              "payload": {
+                "episode": {
+                  "id": "4bbcdf38-2149-4abc-9aff-81663b98ad9d",
+                  "season_id": "449a4815-bef5-4e5d-ab63-febdf2cdac95",
+                  "number": 3,
+                  "display_order": 3,
+                  "code": "EPISODE_003",
+                  "title": "第 3 集",
+                  "narrative_status": "OUTLINE",
+                  "production_status": "NOT_STARTED",
+                  "target_duration_ms": 60000,
+                  "source_range_json": "{}",
+                  "created_at": "2026-08-16T15:52:05.995868Z",
+                  "updated_at": "2026-08-16T15:52:09.294439Z",
+                  "created_by": "local-user",
+                  "revision": 4,
+                  "schema_version": "v2"
+                }
+              },
+              "elapsed_ms": 55.826,
+              "error": null
+            }
+          }
+        ]
+      },
+      "detail": "Two concurrent reorder calls with same expected_revision should produce one successful write and one conflict"
+    },
+    {
+      "code": "DESTRUCTIVE_CHILD_DELETE_PROBE",
+      "status": "PASS",
+      "observed": {
+        "status": 404,
+        "payload": {
+          "detail": "Not Found"
+        }
+      },
+      "detail": "Season delete API remains unimplemented in this bounded run; FR-PRJ-004 remains PARTIAL pending delete/archive implementation"
     }
   ],
   "runtime_contacted": true,
@@ -271,5 +344,5 @@
     "The bounded fixture uses two seasons, six episodes, two master scenes, and three shots; release-scale volume and concurrent writers remain unverified.",
     "FR-PRJ-004 remains PARTIAL because destructive CRUD (delete/archive semantics for child entities) is not claimed by this evidence."
   ],
-  "observed_at": "2026-08-16T08:42:13.974077+00:00"
+  "observed_at": "2026-08-16T15:52:09.692279+00:00"
 }

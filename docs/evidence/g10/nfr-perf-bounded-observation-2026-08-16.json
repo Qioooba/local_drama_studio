@@ -10,19 +10,19 @@
     "synthetic_media_integrity": "UNKNOWN",
     "playable_media_claimed": false
   },
-  "migration_head": "0037_job_progress_scheduler",
-  "build_seconds": 1.427,
+  "migration_head": "0039_automation_task_jobs",
+  "build_seconds": 1.477,
   "pages": [
     {
       "kind": "review_inbox",
-      "path": "/api/v1/reviews/inbox?project_id=6d7322c7-7ee6-4dae-826f-09968d74a3be&cursor=0&limit=50",
+      "path": "/api/v1/reviews/inbox?project_id=cdcbe691-bde9-4131-bc1e-88fe14a12099&cursor=0&limit=50",
       "status_codes": [
         200,
         200,
         200
       ],
-      "p95_ms_observed": 468.401,
-      "max_ms_observed": 496.44,
+      "p95_ms_observed": 529.173,
+      "max_ms_observed": 562.828,
       "last": {
         "keys": [
           "cursor",
@@ -41,14 +41,14 @@
     },
     {
       "kind": "review_inbox",
-      "path": "/api/v1/reviews/inbox?project_id=6d7322c7-7ee6-4dae-826f-09968d74a3be&cursor=50&limit=50",
+      "path": "/api/v1/reviews/inbox?project_id=cdcbe691-bde9-4131-bc1e-88fe14a12099&cursor=50&limit=50",
       "status_codes": [
         200,
         200,
         200
       ],
-      "p95_ms_observed": 200.317,
-      "max_ms_observed": 200.727,
+      "p95_ms_observed": 219.768,
+      "max_ms_observed": 221.81,
       "last": {
         "keys": [
           "cursor",
@@ -67,14 +67,14 @@
     },
     {
       "kind": "review_inbox",
-      "path": "/api/v1/reviews/inbox?project_id=6d7322c7-7ee6-4dae-826f-09968d74a3be&cursor=5000&limit=50",
+      "path": "/api/v1/reviews/inbox?project_id=cdcbe691-bde9-4131-bc1e-88fe14a12099&cursor=5000&limit=50",
       "status_codes": [
         200,
         200,
         200
       ],
-      "p95_ms_observed": 390.953,
-      "max_ms_observed": 392.129,
+      "p95_ms_observed": 404.0,
+      "max_ms_observed": 407.678,
       "last": {
         "keys": [
           "cursor",
@@ -93,14 +93,14 @@
     },
     {
       "kind": "review_inbox",
-      "path": "/api/v1/reviews/inbox?project_id=6d7322c7-7ee6-4dae-826f-09968d74a3be&cursor=9950&limit=50",
+      "path": "/api/v1/reviews/inbox?project_id=cdcbe691-bde9-4131-bc1e-88fe14a12099&cursor=9950&limit=50",
       "status_codes": [
         200,
         200,
         200
       ],
-      "p95_ms_observed": 421.43,
-      "max_ms_observed": 421.609,
+      "p95_ms_observed": 486.017,
+      "max_ms_observed": 486.999,
       "last": {
         "keys": [
           "cursor",
@@ -123,7 +123,7 @@
       "bounded_pages": true,
       "sample": [
         {
-          "episode_id": "49025cdf-695d-484f-afa4-872570abaac3",
+          "episode_id": "56f6cdfe-20b8-42b1-ae70-9362b11ccb2f",
           "returned": 10,
           "page": {
             "cursor": 0,
@@ -133,7 +133,7 @@
           }
         },
         {
-          "episode_id": "9a5c2936-2ffc-429a-a166-8f99187f0e52",
+          "episode_id": "d695eebe-6d47-434e-abc6-bd3441d36203",
           "returned": 10,
           "page": {
             "cursor": 0,
@@ -143,7 +143,7 @@
           }
         },
         {
-          "episode_id": "9e58b969-07e9-4813-8079-3d54742a74b4",
+          "episode_id": "edf3d3af-5f1f-437e-a2cd-680af0281993",
           "returned": 10,
           "page": {
             "cursor": 0,
@@ -161,8 +161,8 @@
         200,
         200
       ],
-      "p95_ms_observed": 10.332,
-      "max_ms_observed": 10.671,
+      "p95_ms_observed": 11.222,
+      "max_ms_observed": 11.721,
       "last": {
         "keys": [
           "items",
@@ -209,5 +209,5 @@
   "runtime_contacted": false,
   "network_contacted": false,
   "interpretation": "This bounded observation exercises cursor/page caps and source-level lazy thumbnail policy. It does not claim NFR-PERF-001 10k p95 <500ms, NFR-PERF-002 Windows/browser virtual-scroll UAT, cold-cache behavior, or production hardware capacity.",
-  "observed_at": "2026-08-15T19:03:20.414812+00:00"
+  "observed_at": "2026-08-16T11:02:05.496634+00:00"
 }

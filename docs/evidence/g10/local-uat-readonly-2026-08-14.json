@@ -1,6 +1,6 @@
 {
   "schema_version": "g10.local_uat_readonly.v1",
-  "observed_at": "2026-08-15T05:06:16.893867+00:00",
+  "observed_at": "2026-08-16T13:27:52.475004+00:00",
   "status": "PASS",
   "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
   "episode_id": "d4db1033-9517-4bd0-958d-4228e0abead1",
@@ -136,7 +136,7 @@
           "scope": {
             "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7"
           },
-          "observed_at": "2026-08-15T05:06:16.668251+00:00",
+          "observed_at": "2026-08-16T13:27:52.417614+00:00",
           "jobs_by_state": {
             "CANCELLED": 5,
             "FAILED": 3,
@@ -349,7 +349,7 @@
             ],
             "subtitle_revision_count": 2
           },
-          "observed_at": "2026-08-15T05:06:16.810208+00:00",
+          "observed_at": "2026-08-16T13:27:52.434827+00:00",
           "runtime_contacted": false,
           "network_contacted": false,
           "mutated": false
@@ -421,7 +421,7 @@
             },
             "automated_fixture": "apps/api/tests/test_g9_canvas.py creates 62 shots and asserts 100-node page; fixture is not production evidence"
           },
-          "observed_at": "2026-08-15T05:06:16.857075+00:00",
+          "observed_at": "2026-08-16T13:27:52.465433+00:00",
           "runtime_contacted": false,
           "network_contacted": false,
           "mutated": false

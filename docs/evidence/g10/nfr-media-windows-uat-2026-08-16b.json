@@ -1,0 +1,347 @@
+{
+  "schema_version": "g10.nfr-media-001.windows-uat.v1",
+  "status": "PARTIAL",
+  "scope": [
+    "NFR-MEDIA-001"
+  ],
+  "platform": {
+    "system": "win32",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.10"
+  },
+  "local_only": true,
+  "loopback_endpoint": "http://127.0.0.1:55345",
+  "fixture": {
+    "project_id": "2977970f-00e9-407b-a77e-d8e2271ee252",
+    "media_version_id": "c019f8fd-f88e-478a-a400-26ebf46d5bf9",
+    "source_path_rel": "docs/evidence/g3/g3_real_sample.mp4",
+    "source_sha256": "417e7f7d55cfc3db58599fe0e128ebb9ac44c32900d4a5da50ccba07a5e3d7ac",
+    "source_bytes": 363727,
+    "registered_bytes": 363727,
+    "probe": {
+      "status": "PASS",
+      "format": {
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "duration": "4.458333",
+        "size": "363727",
+        "probe_score": 100
+      },
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 480,
+          "height": 832,
+          "duration": "4.458333",
+          "r_frame_rate": "24/1",
+          "sample_rate": null,
+          "channels": null
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "width": null,
+          "height": null,
+          "duration": "4.450000",
+          "r_frame_rate": "0/0",
+          "sample_rate": "32000",
+          "channels": 2
+        }
+      ]
+    }
+  },
+  "checks": [
+    {
+      "code": "LOOPBACK_API_READY",
+      "status": "PASS",
+      "observed": {
+        "status": 200,
+        "headers": {
+          "date": "Sun, 16 Aug 2026 10:02:45 GMT",
+          "server": "uvicorn",
+          "content-length": "66",
+          "content-type": "application/json",
+          "x-request-id": "cde21c14-6049-48a3-9952-70e0502fb206",
+          "x-trace-id": "cde21c14-6049-48a3-9952-70e0502fb206",
+          "x-local-instance-token": "OhZSYNHM6O6igRpgzQtUdh8iwZ5wYPKC_nk3Aq3Z9Dc",
+          "cache-control": "no-store",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "no-referrer",
+          "content-security-policy": "default-src 'self'; frame-ancestors 'self'",
+          "connection": "close"
+        },
+        "bytes": 66,
+        "sha256": "c763e4248ea0d986357c37fc04b71e6ace8fd98ae26f84c19f967a9e31e361b2",
+        "elapsed_ms": 533.726,
+        "error": null
+      }
+    },
+    {
+      "code": "HEAD_RANGE_CONTRACT",
+      "status": "PASS",
+      "observed": {
+        "status": 200,
+        "headers": {
+          "date": "Sun, 16 Aug 2026 10:02:45 GMT",
+          "server": "uvicorn",
+          "accept-ranges": "bytes",
+          "content-length": "363727",
+          "content-type": "video/mp4",
+          "etag": "\"417e7f7d55cfc3db58599fe0e128ebb9ac44c32900d4a5da50ccba07a5e3d7ac\"",
+          "last-modified": "Sun, 16 Aug 2026 10:02:42 GMT",
+          "x-request-id": "fb73aef9-5da8-4d4d-9230-191f8ec97573",
+          "x-trace-id": "fb73aef9-5da8-4d4d-9230-191f8ec97573",
+          "x-local-instance-token": "OhZSYNHM6O6igRpgzQtUdh8iwZ5wYPKC_nk3Aq3Z9Dc",
+          "cache-control": "no-store",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "no-referrer",
+          "content-security-policy": "default-src 'self'; frame-ancestors 'self'",
+          "connection": "close"
+        },
+        "bytes": 0,
+        "sha256": null,
+        "elapsed_ms": 271.829,
+        "error": null
+      }
+    },
+    {
+      "code": "SINGLE_RANGE_64K",
+      "status": "PASS",
+      "observed": {
+        "status": 206,
+        "headers": {
+          "date": "Sun, 16 Aug 2026 10:02:45 GMT",
+          "server": "uvicorn",
+          "accept-ranges": "bytes",
+          "content-length": "65536",
+          "content-type": "video/mp4",
+          "etag": "\"417e7f7d55cfc3db58599fe0e128ebb9ac44c32900d4a5da50ccba07a5e3d7ac\"",
+          "last-modified": "Sun, 16 Aug 2026 10:02:42 GMT",
+          "content-range": "bytes 0-65535/363727",
+          "x-request-id": "411400d8-e5ab-4ce4-a78d-7141cd8131ee",
+          "x-trace-id": "411400d8-e5ab-4ce4-a78d-7141cd8131ee",
+          "x-local-instance-token": "OhZSYNHM6O6igRpgzQtUdh8iwZ5wYPKC_nk3Aq3Z9Dc",
+          "cache-control": "no-store",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "no-referrer",
+          "content-security-policy": "default-src 'self'; frame-ancestors 'self'",
+          "connection": "close"
+        },
+        "bytes": 65536,
+        "sha256": "9a8d245e9fdb3f2c241824e86a31d7094b812fb5e1a892928042b919810c83cd",
+        "elapsed_ms": 33.199,
+        "error": null
+      }
+    },
+    {
+      "code": "SUFFIX_RANGE_64K",
+      "status": "PASS",
+      "observed": {
+        "status": 206,
+        "headers": {
+          "date": "Sun, 16 Aug 2026 10:02:45 GMT",
+          "server": "uvicorn",
+          "accept-ranges": "bytes",
+          "content-length": "65536",
+          "content-type": "video/mp4",
+          "etag": "\"417e7f7d55cfc3db58599fe0e128ebb9ac44c32900d4a5da50ccba07a5e3d7ac\"",
+          "last-modified": "Sun, 16 Aug 2026 10:02:42 GMT",
+          "content-range": "bytes 298191-363726/363727",
+          "x-request-id": "7320f061-b27a-4a54-85ac-9a239187add3",
+          "x-trace-id": "7320f061-b27a-4a54-85ac-9a239187add3",
+          "x-local-instance-token": "OhZSYNHM6O6igRpgzQtUdh8iwZ5wYPKC_nk3Aq3Z9Dc",
+          "cache-control": "no-store",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "no-referrer",
+          "content-security-policy": "default-src 'self'; frame-ancestors 'self'",
+          "connection": "close"
+        },
+        "bytes": 65536,
+        "sha256": "d403d8f26bb752619fce9503cb32527d4a543ca03c3018409db7b317f278bdd1",
+        "elapsed_ms": 33.226,
+        "error": null
+      }
+    },
+    {
+      "code": "FIRST_FRAME_THUMBNAIL",
+      "status": "PASS",
+      "cold": {
+        "status": 200,
+        "headers": {
+          "date": "Sun, 16 Aug 2026 10:02:45 GMT",
+          "server": "uvicorn",
+          "content-type": "image/webp",
+          "accept-ranges": "bytes",
+          "content-length": "8952",
+          "last-modified": "Sun, 16 Aug 2026 10:02:46 GMT",
+          "etag": "\"102ae0687c2778931c4bb992de52a982\"",
+          "x-request-id": "6a214d5c-e234-4008-affa-bb6f8ec3a2fc",
+          "x-trace-id": "6a214d5c-e234-4008-affa-bb6f8ec3a2fc",
+          "x-local-instance-token": "OhZSYNHM6O6igRpgzQtUdh8iwZ5wYPKC_nk3Aq3Z9Dc",
+          "cache-control": "no-store",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "no-referrer",
+          "content-security-policy": "default-src 'self'; frame-ancestors 'self'",
+          "connection": "close"
+        },
+        "bytes": 8952,
+        "sha256": "1137993fcc37ea7a63d024e18aa7d8ea02b745e61df22d78555dd7b54e92b654",
+        "elapsed_ms": 191.178,
+        "error": null
+      },
+      "warm": {
+        "status": 200,
+        "headers": {
+          "date": "Sun, 16 Aug 2026 10:02:45 GMT",
+          "server": "uvicorn",
+          "content-type": "image/webp",
+          "accept-ranges": "bytes",
+          "content-length": "8952",
+          "last-modified": "Sun, 16 Aug 2026 10:02:46 GMT",
+          "etag": "\"102ae0687c2778931c4bb992de52a982\"",
+          "x-request-id": "153e6667-a860-493c-abe0-7ce80402c8a0",
+          "x-trace-id": "153e6667-a860-493c-abe0-7ce80402c8a0",
+          "x-local-instance-token": "OhZSYNHM6O6igRpgzQtUdh8iwZ5wYPKC_nk3Aq3Z9Dc",
+          "cache-control": "no-store",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "no-referrer",
+          "content-security-policy": "default-src 'self'; frame-ancestors 'self'",
+          "connection": "close"
+        },
+        "bytes": 8952,
+        "sha256": "1137993fcc37ea7a63d024e18aa7d8ea02b745e61df22d78555dd7b54e92b654",
+        "elapsed_ms": 32.691,
+        "error": null
+      }
+    },
+    {
+      "code": "FOUR_WAY_RANGE_LOAD",
+      "status": "PASS",
+      "workers": 4,
+      "p95_ms": 41.2,
+      "observed": [
+        {
+          "status": 206,
+          "headers": {
+            "date": "Sun, 16 Aug 2026 10:02:45 GMT",
+            "server": "uvicorn",
+            "accept-ranges": "bytes",
+            "content-length": "65536",
+            "content-type": "video/mp4",
+            "etag": "\"417e7f7d55cfc3db58599fe0e128ebb9ac44c32900d4a5da50ccba07a5e3d7ac\"",
+            "last-modified": "Sun, 16 Aug 2026 10:02:42 GMT",
+            "content-range": "bytes 0-65535/363727",
+            "x-request-id": "cac58067-4d5f-4750-bbf8-251f285df759",
+            "x-trace-id": "cac58067-4d5f-4750-bbf8-251f285df759",
+            "x-local-instance-token": "OhZSYNHM6O6igRpgzQtUdh8iwZ5wYPKC_nk3Aq3Z9Dc",
+            "cache-control": "no-store",
+            "x-content-type-options": "nosniff",
+            "referrer-policy": "no-referrer",
+            "content-security-policy": "default-src 'self'; frame-ancestors 'self'",
+            "connection": "close"
+          },
+          "bytes": 65536,
+          "sha256": "9a8d245e9fdb3f2c241824e86a31d7094b812fb5e1a892928042b919810c83cd",
+          "elapsed_ms": 41.151,
+          "error": null
+        },
+        {
+          "status": 206,
+          "headers": {
+            "date": "Sun, 16 Aug 2026 10:02:45 GMT",
+            "server": "uvicorn",
+            "accept-ranges": "bytes",
+            "content-length": "65536",
+            "content-type": "video/mp4",
+            "etag": "\"417e7f7d55cfc3db58599fe0e128ebb9ac44c32900d4a5da50ccba07a5e3d7ac\"",
+            "last-modified": "Sun, 16 Aug 2026 10:02:42 GMT",
+            "content-range": "bytes 0-65535/363727",
+            "x-request-id": "e5c5c589-6884-4e47-b84d-520746012a0e",
+            "x-trace-id": "e5c5c589-6884-4e47-b84d-520746012a0e",
+            "x-local-instance-token": "OhZSYNHM6O6igRpgzQtUdh8iwZ5wYPKC_nk3Aq3Z9Dc",
+            "cache-control": "no-store",
+            "x-content-type-options": "nosniff",
+            "referrer-policy": "no-referrer",
+            "content-security-policy": "default-src 'self'; frame-ancestors 'self'",
+            "connection": "close"
+          },
+          "bytes": 65536,
+          "sha256": "9a8d245e9fdb3f2c241824e86a31d7094b812fb5e1a892928042b919810c83cd",
+          "elapsed_ms": 39.63,
+          "error": null
+        },
+        {
+          "status": 206,
+          "headers": {
+            "date": "Sun, 16 Aug 2026 10:02:45 GMT",
+            "server": "uvicorn",
+            "accept-ranges": "bytes",
+            "content-length": "65536",
+            "content-type": "video/mp4",
+            "etag": "\"417e7f7d55cfc3db58599fe0e128ebb9ac44c32900d4a5da50ccba07a5e3d7ac\"",
+            "last-modified": "Sun, 16 Aug 2026 10:02:42 GMT",
+            "content-range": "bytes 0-65535/363727",
+            "x-request-id": "ea81ee93-42f9-4ebd-9839-19e8271207dd",
+            "x-trace-id": "ea81ee93-42f9-4ebd-9839-19e8271207dd",
+            "x-local-instance-token": "OhZSYNHM6O6igRpgzQtUdh8iwZ5wYPKC_nk3Aq3Z9Dc",
+            "cache-control": "no-store",
+            "x-content-type-options": "nosniff",
+            "referrer-policy": "no-referrer",
+            "content-security-policy": "default-src 'self'; frame-ancestors 'self'",
+            "connection": "close"
+          },
+          "bytes": 65536,
+          "sha256": "9a8d245e9fdb3f2c241824e86a31d7094b812fb5e1a892928042b919810c83cd",
+          "elapsed_ms": 37.863,
+          "error": null
+        },
+        {
+          "status": 206,
+          "headers": {
+            "date": "Sun, 16 Aug 2026 10:02:45 GMT",
+            "server": "uvicorn",
+            "accept-ranges": "bytes",
+            "content-length": "65536",
+            "content-type": "video/mp4",
+            "etag": "\"417e7f7d55cfc3db58599fe0e128ebb9ac44c32900d4a5da50ccba07a5e3d7ac\"",
+            "last-modified": "Sun, 16 Aug 2026 10:02:42 GMT",
+            "content-range": "bytes 0-65535/363727",
+            "x-request-id": "ce9b0d5f-743a-4406-b4d5-c65da313aca0",
+            "x-trace-id": "ce9b0d5f-743a-4406-b4d5-c65da313aca0",
+            "x-local-instance-token": "OhZSYNHM6O6igRpgzQtUdh8iwZ5wYPKC_nk3Aq3Z9Dc",
+            "cache-control": "no-store",
+            "x-content-type-options": "nosniff",
+            "referrer-policy": "no-referrer",
+            "content-security-policy": "default-src 'self'; frame-ancestors 'self'",
+            "connection": "close"
+          },
+          "bytes": 65536,
+          "sha256": "9a8d245e9fdb3f2c241824e86a31d7094b812fb5e1a892928042b919810c83cd",
+          "elapsed_ms": 41.209,
+          "error": null
+        }
+      ]
+    }
+  ],
+  "performance": {
+    "first_frame_target_ms": 2000,
+    "first_frame_cold_ms": 191.178,
+    "first_frame_warm_ms": 32.691,
+    "first_frame_target_passed": true,
+    "four_way_range_p95_ms": 41.2,
+    "read_chunk_bound_bytes": 1048576,
+    "whole_file_read": false
+  },
+  "runtime_contacted": true,
+  "network_contacted": false,
+  "loopback_network_contacted": true,
+  "public_network_contacted": false,
+  "production_database_contacted": false,
+  "production_mutated": false,
+  "limitations": [
+    "Real Windows x64 loopback API and actual local H3 MP4 were exercised, but this is a bounded short run rather than a sustained codec/load benchmark.",
+    "The four-way load uses bounded Range reads, not four full browser playback sessions.",
+    "NFR-MEDIA-001 remains PARTIAL until representative codecs, cold-cache behavior and release-scale Windows/browser UAT are signed off."
+  ],
+  "observed_at": "2026-08-16T10:02:46.524987+00:00"
+}

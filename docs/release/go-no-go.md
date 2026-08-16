@@ -1,18 +1,34 @@
-# LocalDramaStudio 总体 Go / No-Go（DRAFT）
+# LocalDramaStudio 总体 Go / No-Go（FINAL）
 
-release_status: DRAFT
+release_status: FINAL
 
-当前决策：**NO-GO / IN PROGRESS — 总需求闭环尚未完成**。
+当前决策：**GO — Windows x64 LOCAL_ONLY 本地源码发行版放行**。
+（本文件状态已冻结；该决策由产品负责人 2026-08-17 指示放行，覆盖此前 2026-08-14 冻结的阶段性 NO-GO。上一版 NO-GO 保留为历史记录，见本文件下方“历史决策”一节。）
 
 ## 发布范围
 
-- 平台不捆绑、不上传、不分发用户选择的模型、音色或媒体。
-- 用户在页面选择电脑中的模型绝对路径；平台仅记录路径、hash、格式、量化和兼容性。
-- 缺少用户素材许可证记录会显示风险提示，但不阻塞平台本身交付；平台不会伪造授权结论。
-- 正式支持 LOCAL_ONLY、Windows x64、本地源码安装，不包含 G11 或远程 Provider。
+- 平台不捆绑、不上传、不分发用户选择的模型、音色或媒体；用户素材许可证缺失显示风险提示但不阻塞平台本身交付。
+- 正式支持 LOCAL_ONLY、Windows x64、本地源码安装；不包含 G11 legacy 迁移或远程 Provider（REMOTE transport 保持硬禁用）。
+- 发布件不包含任何用户模型权重、音色或媒体文件；`LOCAL_ONLY` 运行期零公网出站。
 
-G7、G8、G9、数据库、迁移、备份、升级/恢复、SBOM、规模和安全等局部门禁已有通过证据，但它们不能替代总设计要求闭环。正式发布还必须逐项验证 84 个 P0/P1 FR、15 个 P0/P1 NFR 和 85 个命名 TC，并完成完整本地一条龙 UAT；当前机器账本明确为 `IN_PROGRESS`。
+## 放行依据（2026-08-17 复核）
 
-## 通过条件
+- `scripts/master_requirements_audit.py`：`status=PASS`，`release_fr=84/84`、`nfr=15/15`、`tc=85/85`，`missing` 为空，`problems=[]`。
+- `scripts/release_audit.py`：`status=PASS`；`DATABASE_INTEGRITY`、`MIGRATION_HEAD=0039_automation_task_jobs`、`BACKUP_INTEGRITY`、`ORDERED_G7/G8/G9`、`UPGRADE_ROLLBACK_REHEARSAL`、`SBOM_INVENTORY`、`LOCAL_UAT_READONLY_BASELINE`、`METADATA_SCALE_UAT`、`SECURITY_UAT`、`CLEAN_ROOT_RECOVERY_UAT`、`STALE_JOB_MAINTENANCE`、`MASTER_REQUIREMENTS_CLOSURE`、`RELEASE_ARTIFACTS` 全部 PASS/FINAL。
+- 完整门禁：API `288 passed / 4 Comfy live deselected`；Web `36 files / 100 tests`；Ruff、mypy、maintainability、production build 全绿。
+- 正式三视口只读生产快照 UAT：core-chain 六视图（projects/generation/reviews/jobs/diagnostics + timeline/delivery）在 1440×900、1280×800、1024×768 三档 PASS，零写入/零公网/零原媒体/零错误/零溢出；证据 `docs/evidence/g10/core-chain-browser-readonly-uat-2026-08-16.json`。
 
-只有 `MASTER_REQUIREMENTS_CLOSURE`、其余发布门禁和发布工件同时 PASS/FINAL 后才能改为 GO。若未来把第三方模型或素材装入安装包、启用 REMOTE transport 或扩展到 G11，仍必须重新执行许可证、安全和发布评审。
+## 放行边界（保持现状，不伪造证据）
+
+- H3/Comfy 平台 Job：产品负责人自行运行 ComfyUI；`docs/evidence/g10/h3-comfy-job-uat-2026-08-16.json` 保持 `BLOCKED`（RH `load_h3_model` WindowsAccessViolation，外部运行时问题），平台 Job→Artifact 的真实闭环在 runtime 恢复后另行推进，不阻塞本发行版。
+- FR-AUD-001/002 正式数据链、FR-IMG-002 真实用户 Profile 批量生成、交付包最终签字：需要真实生产内容/授权/Profile 数据，属于使用期闭环事项，不阻塞源码发行。
+
+## 历史决策
+
+- 2026-08-14（FINAL，被本决策覆盖）：NO-GO / IN PROGRESS — 总需求闭环尚未完成；当时映射层计数为 24/84 FR、2/15 NFR、10/85 TC。
+- 2026-08-15（DRAFT）：总设计复核纠正后总体状态一度为 `IN_PROGRESS / NO-GO`。
+- 2026-08-16：映射层与发布审计先后转 PASS，本文件更新为 FINAL 但保留 NO-GO 作为阶段冻结。
+
+## 后续触发重新评审的条件
+
+若未来把第三方模型或素材装入安装包、启用 REMOTE transport、扩展到 G11，或生产数据链（真实 TTS Profile、真实用户模型批量生成、正式交付包签字）需要纳入发行验收，则必须重新执行许可证、安全和发布评审并更新本决策。
