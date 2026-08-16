@@ -376,7 +376,7 @@
     {
       "id": "FR-GEN-001",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-gen-001-004-generation-replay-2026-08-16.json"],
+      "evidence": ["docs/evidence/g10/fr-gen-001-004-generation-replay-2026-08-16.json", "docs/evidence/g10/h3-local-i2v-uat-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx"]
     },
     {
@@ -388,7 +388,7 @@
     {
       "id": "FR-GEN-003",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-gen-001-004-generation-replay-2026-08-16.json"],
+      "evidence": ["docs/evidence/g10/fr-gen-001-004-generation-replay-2026-08-16.json", "docs/evidence/g10/h3-local-i2v-uat-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx"]
     },
     {
@@ -484,7 +484,7 @@
     {
       "id": "FR-PRV-001",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json"],
+      "evidence": ["docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json", "docs/evidence/g10/h3-local-i2v-uat-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_adapter_contracts.py", "apps/api/tests/test_profile_contract_editor.py"]
     },
     {
@@ -496,7 +496,7 @@
     {
       "id": "FR-PRV-003",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json", "docs/evidence/g10/fr-prv-003-nfr-comp-001-model-boundary-2026-08-16.json"],
+      "evidence": ["docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json", "docs/evidence/g10/fr-prv-003-nfr-comp-001-model-boundary-2026-08-16.json", "docs/evidence/g10/h3-local-i2v-uat-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_profile_contract_editor.py", "apps/api/tests/test_profile_compatibility.py", "apps/api/tests/test_model_compatibility.py", "apps/api/tests/test_model_license_evidence.py", "apps/web/src/features/status/LocalModelReferenceForm.test.tsx"]
     },
     {
@@ -512,13 +512,13 @@
     {
       "id": "FR-VID-001",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-vid-001-005-007-006-formal-video-2026-08-16.json"],
+      "evidence": ["docs/evidence/g10/fr-vid-001-005-007-006-formal-video-2026-08-16.json", "docs/evidence/g10/h3-local-i2v-uat-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/web/src/features/generation/GenerationWorkbench.test.tsx"]
     },
     {
       "id": "FR-VID-005",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-vid-001-005-007-006-formal-video-2026-08-16.json"],
+      "evidence": ["docs/evidence/g10/fr-vid-001-005-007-006-formal-video-2026-08-16.json", "docs/evidence/g10/h3-local-i2v-uat-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_generation_variants.py", "apps/api/tests/test_i2v_probe_plan.py"]
     },
     {

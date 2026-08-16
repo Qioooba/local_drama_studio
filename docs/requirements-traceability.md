@@ -390,3 +390,7 @@ ComfyUI 与 Local LLM loopback 客户端现在使用显式无代理、拒绝 3xx
 \n## 2026-08-16 核心链三视口隔离浏览器 UAT
 
 在生产 SQLite/项目树的只读快照上，用真实 FastAPI 与 React 页面完成 1440×900、1280×800、1024×768 三档核心链浏览器 UAT：项目健康、全局搜索、生成预检、审核收件箱、时间线与本地交付历史均可读取；只产生 GET，未请求原始媒体，无公网请求、控制台错误、页面错误或横向溢出。证据 `docs/evidence/g10/core-chain-browser-readonly-uat-2026-08-16.json` 为 PASS，脚本 `tests/e2e/core_chain_browser_readonly.spec.ts`；该证据仍是隔离只读 UAT，不替代真实生成、人工批准和正式发布签字。
+
+## 2026-08-16 真实 H3 FL2VA I2V 隔离运行
+
+在已批准的 SHOT_001 关键帧和用户本机模型引用上，以真实 MiniMaxH3ImageToVideo 节点完成一次 10-step、480×832、124 帧的本地 I2V；ComfyUI 监听 `127.0.0.1:8190`，输出写入 F 盘 `work/comfy-production/output` 隔离目录。队列提交、执行成功、H.264/AAC 产物、24fps/5.167s、SHA-256 与 ffprobe 均已留证，模型未打包/上传，生产 DB 未接触。证据 `docs/evidence/g10/h3-local-i2v-uat-2026-08-16.json` 保持 `PARTIAL`：这是运行时真实产物，不等同于 LocalDramaStudio 正式 Job/MediaVersion 登记；正式 machine QC、人工审核、选择与交付，以及长时间稳定性/许可证复核仍需后续闭环。

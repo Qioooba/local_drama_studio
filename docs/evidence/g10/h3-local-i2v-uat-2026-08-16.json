@@ -1,0 +1,64 @@
+{
+  "schema_version": "g10.h3_local_i2v_uat.v1",
+  "status": "PARTIAL",
+  "scope": "真实本机 MiniMax H3 FL2VA I2V 单镜头运行验收；隔离 ComfyUI 端口与 F 盘运行时输出，不接触生产数据库",
+  "observed_at": "2026-08-16T14:30:25.8414976+08:00",
+  "runtime": {
+    "endpoint": "http://127.0.0.1:8190",
+    "endpoint_local": true,
+    "comfy_version": "0.31.0",
+    "cuda_device": "NVIDIA GeForce RTX 3090 Ti",
+    "node": "MiniMaxH3ImageToVideo",
+    "python": "E:\\AI\\ComfyDesktop\\ComfyUI\\ComfyUI\\.venv\\Scripts\\python.exe",
+    "model_manifest_reference_only": true,
+    "network_contacted": false,
+    "production_database_contacted": false,
+    "production_mutated": false
+  },
+  "input": {
+    "project_id": "family_redfruit_series_001",
+    "cut_no": 1,
+    "shot_no": 1,
+    "seed": 20260816,
+    "steps": 10,
+    "canvas": "proxy",
+    "keyframe_approved": true,
+    "keyframe_sha256": "25a5a2ab1a90df677cd29ef0625b389ea3928d82b79933b8868aea0efab069ae",
+    "prompt_id": "0c7f2b4c-56d4-470c-8aa0-f891f5094f14",
+    "node_errors": {}
+  },
+  "output": {
+    "path_rel": "work/comfy-production/output/family_redfruit_series_001/uat/SHOT_001_seed_20260816_00001_.mp4",
+    "sha256": "167B24C1550E0BAC4B84603E2197378132F80630D13DCDFD5DBEFFC999B570BC",
+    "bytes": 505208,
+    "container": "mov,mp4,m4a,3gp,3g2,mj2",
+    "video": {
+      "codec": "h264",
+      "width": 480,
+      "height": 832,
+      "fps": 24,
+      "frames": 124,
+      "duration_seconds": 5.166667
+    },
+    "audio": {
+      "codec": "aac",
+      "sample_rate": 32000,
+      "channels": 2,
+      "duration_seconds": 5.167
+    }
+  },
+  "checks": [
+    {"code": "APPROVED_KEYFRAME_MATERIALIZED_IN_ISOLATED_INPUT", "status": "PASS"},
+    {"code": "COMFY_QUEUE_SUBMIT_ONE_TASK", "status": "PASS"},
+    {"code": "COMFY_EXECUTION_SUCCESS", "status": "PASS"},
+    {"code": "H3_FL2VA_VIDEO_AUDIO_OUTPUT_PROBED", "status": "PASS"},
+    {"code": "OUTPUT_ON_F_DRIVE_SANDBOX", "status": "PASS"},
+    {"code": "LOCAL_MODEL_NOT_BUNDLED_OR_UPLOADED", "status": "PASS"}
+  ],
+  "limitations": [
+    "本次是隔离运行时真实生成，不等同于 LocalDramaStudio 生产 Job/MediaVersion 登记。",
+    "尚未在生产数据库执行正式 machine QC、人工审核、版本选择和交付，因此 FR-VID/GEN 相关条目仍保持 PARTIAL。",
+    "未声称 Windows 长时间稳定性、崩溃恢复、正式模型许可/UAT 或多镜头交付。"
+  ],
+  "related_requirements": ["FR-VID-001", "FR-VID-005", "FR-PRV-001", "FR-PRV-003", "FR-GEN-001", "FR-GEN-003"]
+}
