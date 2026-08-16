@@ -1,0 +1,69 @@
+{
+  "schema_version": "g10.nfr-test-001.full-gate.v1",
+  "requirement_ids": ["NFR-TEST-001"],
+  "status": "PASS",
+  "observed_at": "2026-08-16T07:29:55.1253126Z",
+  "scope": "Windows x64 local regression gate plus isolated core-chain Edge Playwright UAT",
+  "checks": [
+    {
+      "code": "BLUEPRINT_VALIDATION",
+      "passed": true,
+      "command": "scripts/check.ps1",
+      "observed": "FR=86, NFR=15, TC=85"
+    },
+    {
+      "code": "API_TEST_SUITE",
+      "passed": true,
+      "observed": "285 passed, 4 deselected, 246 warnings in 259.08s"
+    },
+    {
+      "code": "DOMAIN_RULE_COVERAGE_FLOOR",
+      "passed": true,
+      "domain_module_count": 4,
+      "domain_modules_without_direct_test_import": [],
+      "api_test_file_count": 74,
+      "api_test_function_count": 275
+    },
+    {
+      "code": "MYPY",
+      "passed": true,
+      "observed": "local_drama"
+    },
+    {
+      "code": "RUFF",
+      "passed": true,
+      "observed": "115 source files"
+    },
+    {
+      "code": "WEB_PRODUCTION_BUILD",
+      "passed": true,
+      "observed": "vite build succeeded; chunk-size warning only"
+    },
+    {
+      "code": "WEB_TEST_SUITE",
+      "passed": true,
+      "test_files": 36,
+      "tests": 100
+    },
+    {
+      "code": "CORE_CHAIN_PLAYWRIGHT",
+      "passed": true,
+      "command": "pnpm --dir apps/web exec playwright test --config playwright.core-uat.config.ts",
+      "observed": "3 passed (30.9s)",
+      "viewports": ["1440x900", "1280x800", "1024x768"],
+      "evidence": "docs/evidence/g10/core-chain-browser-readonly-uat-2026-08-16.json"
+    }
+  ],
+  "safety": {
+    "test_runtime": "isolated fixtures and loopback test servers only",
+    "network_contacted": false,
+    "production_database_mutated": false,
+    "production_project_tree_mutated": false
+  },
+  "interpretation": "All P0 domain modules have direct automated coverage, the complete local check gate passed, and the core one-stop browser path passed at all three required viewports. This evidence does not imply that unrelated FR/NFR requirements are closed.",
+  "automated_tests": [
+    "scripts/check.ps1",
+    "apps/api/tests/test_domain_rules.py",
+    "tests/e2e/core_chain_browser_readonly.spec.ts"
+  ]
+}

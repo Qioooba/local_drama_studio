@@ -679,8 +679,8 @@
     },
     {
       "id": "NFR-TEST-001",
-      "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/nfr-maint-test-audit-2026-08-16.json", "docs/evidence/g10/core-chain-browser-readonly-uat-2026-08-16.json"],
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/nfr-test-001-full-gate-2026-08-16.json"],
       "automated_tests": [
         "apps/api/tests/test_domain_rules.py",
         "scripts/maintainability_audit.py",
