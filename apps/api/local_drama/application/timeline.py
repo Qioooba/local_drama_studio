@@ -1478,7 +1478,7 @@ class TimelineService:
             raise DomainRuleError("DELIVERY_WITHDRAW_REASON_REQUIRED", "撤回交付必须记录原因")
         now = _now()
         with self.database.transaction() as connection:
-            row = connection.execute("SELECT id, status FROM delivery_packages WHERE id=?", (package_id,)).fetchone()
+            row = connection.execute("SELECT id, status, manifest_sha256 FROM delivery_packages WHERE id=?", (package_id,)).fetchone()
             if row is None:
                 raise DomainRuleError("DELIVERY_PACKAGE_NOT_FOUND", "交付包不存在")
             if str(row["status"]) == "WITHDRAWN":
@@ -1486,7 +1486,10 @@ class TimelineService:
                 # history intact while returning the already withdrawn state.
                 return {"id": package_id, "status": "WITHDRAWN", "reason": reason.strip(), "idempotent": True}
             connection.execute("UPDATE delivery_packages SET status='WITHDRAWN', withdrawn_reason=?, updated_at=?, revision=revision+1 WHERE id=?", (reason, now, package_id))
-            connection.execute("INSERT INTO delivery_events (id, delivery_package_id, action, note, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, 'WITHDRAWN', ?, ?, ?, ?, 1, 'v2')", (str(uuid.uuid4()), package_id, reason, now, now, actor))
+            # Keep the immutable package fingerprint on the withdrawal event;
+            # otherwise history loses the link between a withdrawal reason and
+            # the exact manifest that was handed off.
+            connection.execute("INSERT INTO delivery_events (id, delivery_package_id, action, manifest_sha256, note, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, 'WITHDRAWN', ?, ?, ?, ?, ?, 1, 'v2')", (str(uuid.uuid4()), package_id, row["manifest_sha256"], reason, now, now, actor))
         return {"id": package_id, "status": "WITHDRAWN", "reason": reason.strip(), "idempotent": False}
 
     def review_delivery(self, package_id: str, reviewer_type: str, decision: str, note: str, actor: str = "local-user") -> dict[str, Any]:

@@ -568,6 +568,8 @@ def test_delivery_manifest_history_verify_and_withdraw_preserve_files(workspace,
         assert first_bytes
         withdrawn = client.post(f"/api/v1/delivery-packages/{first['id']}:withdraw", json={"reason": "发布版本替换"})
         assert withdrawn.status_code == 200 and withdrawn.json()["delivery"]["status"] == "WITHDRAWN"
+        withdrawn_event = next(event for event in client.get(f"/api/v1/delivery-packages/{first['id']}").json()["delivery"]["events"] if event["action"] == "WITHDRAWN")
+        assert withdrawn_event["manifest_sha256"] == first["manifest_sha256"]
         verified_withdrawn = client.post(f"/api/v1/delivery-packages/{first['id']}:verify")
         assert verified_withdrawn.status_code == 200 and verified_withdrawn.json()["delivery"]["status"] == "WITHDRAWN"
         history = client.get(f"/api/v1/episodes/{render['episode_id']}/delivery-packages")
