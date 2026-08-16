@@ -373,3 +373,11 @@ FR-PST-002/003 边界加固（2026-08-16）：交付包在文件/manifest 完整
 新增只读 `scripts/maintainability_audit.py`，作为静态回归门禁的一部分检查后端分层边界、非生成 React 组件行数（建议 `<500`，`>700` 为硬警告）以及领域模块到自动化测试的导入覆盖。当前领域层未发现 FastAPI/SQLAlchemy/具体基础设施依赖，非生成 UI 组件均低于 700 行，4 个领域模块均被 API 测试直接覆盖（69 个 API 测试文件/255 个测试函数，Web 35 个测试文件）。
 
 审计同时显式报告当前应用层/路由层仍直接引用具体 SQLite/adapter 基础设施的迁移警告，不隐藏架构债务；该警告不伪装成边界 PASS，也不改变本机运行行为。证据 `docs/evidence/g10/nfr-maint-test-audit-2026-08-16.json` 状态为 `PARTIAL`：自动化源/测试检查通过，但完整 `scripts/check.ps1` 结果与 Windows x64 三视口 Playwright 核心链仍需独立执行，不能用静态审计替代 UAT。`NFR-MAINT-001` 与 `NFR-TEST-001` 暂不标最终 VERIFIED。
+
+## 2026-08-16 隔离 UAT 与本地传输边界补充
+
+本轮在干净临时根目录执行了真实 FastAPI/SQLite 安全 UAT：恶意 Origin、缺失/错误 token、项目路径逃逸、远端 Provider、自定义不可信节点和公网网络请求均按预期阻断，数据库 integrity 通过，证据为 `docs/evidence/g10/security-uat-2026-08-16.json`。该证据只覆盖隔离本地边界，不替代生产 Windows 三视口验收。
+
+ComfyUI 与 Local LLM loopback 客户端现在使用显式无代理、拒绝 3xx 跳转的本地传输；endpoint 拒绝凭据/query/fragment，Comfy provider 错误不再回显原始路径、token 或 node payload。11 项真实本地 socket 回归通过，证据 `docs/evidence/g10/nfr-sec-003-prv-002-local-adapter-transport-2026-08-16.json` 保持 PARTIAL。
+
+规模与恢复 UAT 也在隔离根目录通过：60 集/800 镜头/10,000 媒体元数据 read path 与索引检查通过（合成媒体明确保持 UNKNOWN，不冒充可播放素材），见 `docs/evidence/g10/metadata-scale-uat-2026-08-16.json`；100 个真实本地 WAV 经 online backup、干净恢复、100/100 SHA-256 与恢复 API 校验通过，见 `docs/evidence/g10/recovery-restore-uat-2026-08-16.json`。这些结果增强 NFR-PERF/REL 证据，但不宣称 Windows 硬件 p95、断电或最终发布通过。

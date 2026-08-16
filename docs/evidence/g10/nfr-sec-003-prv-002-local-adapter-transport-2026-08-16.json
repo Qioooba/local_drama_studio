@@ -1,0 +1,40 @@
+{
+  "schema_version": "g10.nfr-sec-003-prv-002-local-adapter-transport.v1",
+  "status": "PARTIAL",
+  "scope": [
+    "NFR-SEC-003",
+    "FR-PRV-002"
+  ],
+  "observed_at": "2026-08-16",
+  "controls": {
+    "proxy": "ComfyUI and Local LLM requests use an explicit empty ProxyHandler and do not inherit HTTP(S)_PROXY/ALL_PROXY",
+    "redirect": "The shared local opener rejects HTTP 3xx before opening Location; loopback adapters cannot hop to another local or public target",
+    "endpoint": "Runtime clients reject credentials, query and fragment-bearing loopback URLs; adapter contracts reject the same ambiguous targets",
+    "provider_error": "Comfy workflow rejection returns a stable provider_response=rejected marker and never exposes raw provider error/node_errors payloads"
+  },
+  "automated_checks": [
+    {
+      "test": "apps/api/tests/test_local_transport_security.py::test_local_clients_do_not_follow_redirects_or_use_provider_payload_details",
+      "result": "PASS",
+      "observed": "real loopback redirect server receives one request, sink receives zero requests for both Comfy and Local LLM while proxy variables are set; provider path/token details are absent"
+    },
+    {
+      "test": "apps/api/tests/test_local_transport_security.py::test_local_clients_reject_credential_or_query_bearing_endpoints",
+      "result": "PASS",
+      "observed": "credentials and query-bearing endpoints return LOCAL_ONLY_ENDPOINT_AMBIGUOUS before runtime contact"
+    },
+    {
+      "test": "apps/api/tests/test_adapter_contracts.py",
+      "result": "PASS",
+      "observed": "static adapter registry remains read-only, LOCAL_ONLY, and network_contacted=false"
+    }
+  ],
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "public_network_contacted": false,
+  "mutated": false,
+  "limitations": [
+    "Formal Windows x64 packet capture and production runtime smoke remain pending",
+    "The redirect test is isolated to loopback HTTP servers and does not claim a production Comfy/LLM run"
+  ]
+}

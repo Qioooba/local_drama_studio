@@ -46,6 +46,8 @@ def validate_adapter_target(transport: str, *, base_url: str | None = None, exec
             raise DomainRuleError("LOOPBACK_ONLY", "本地 adapter base_url 只能指向 loopback")
         if parsed.username or parsed.password:
             raise DomainRuleError("LOOPBACK_CREDENTIALS_FORBIDDEN", "loopback adapter URL 不得携带凭据")
+        if parsed.query or parsed.fragment:
+            raise DomainRuleError("LOOPBACK_ENDPOINT_AMBIGUOUS", "loopback adapter URL 不得携带 query 或 fragment")
         return
     if transport in LOCAL_EXECUTABLE_TRANSPORTS:
         if not executable_ref or not executable_ref.strip():

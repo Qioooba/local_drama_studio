@@ -545,6 +545,24 @@
       "automated_tests": ["apps/api/tests/test_workflow_release_contracts.py", "apps/api/tests/test_g6_workflows.py", "apps/web/src/app/ProfileEditor.test.tsx"]
     },
     {
+      "id": "FR-TML-004",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/timeline-otio-edl-export-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_timeline_export.py", "apps/web/src/features/production/TimelineExportAction.test.tsx"]
+    },
+    {
+      "id": "FR-WFL-003",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g9/g9-production-canvas-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_g9_canvas.py", "apps/web/src/app/App.test.tsx"]
+    },
+    {
+      "id": "TC-VAR-009",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g6/handoff_validation_2026-08-13.md"],
+      "automated_tests": ["apps/api/tests/test_generation_variants.py"]
+    },
+    {
       "id": "FR-WFL-004",
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/fr-wfl-004-comfy-lab-2026-08-16.json"],
@@ -583,19 +601,19 @@
     {
       "id": "NFR-REL-003",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/upgrade-rollback-rehearsal-0038-2026-08-16.json", "docs/evidence/g10/nfr-rel-003-outbox-delivery-2026-08-16.json"],
+      "evidence": ["docs/evidence/g10/upgrade-rollback-rehearsal-0038-2026-08-16.json", "docs/evidence/g10/nfr-rel-003-outbox-delivery-2026-08-16.json", "docs/evidence/g10/recovery-restore-uat-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_outbox_delivery.py", "apps/api/tests/test_migration.py"]
     },
     {
       "id": "NFR-PERF-001",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/nfr-perf-bounded-observation-2026-08-16.json"],
+      "evidence": ["docs/evidence/g10/nfr-perf-bounded-observation-2026-08-16.json", "docs/evidence/g10/metadata-scale-uat-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_project_listing.py", "apps/api/tests/test_g3_configuration_media.py", "scripts/nfr_perf_benchmark.py"]
     },
     {
       "id": "NFR-PERF-002",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/nfr-perf-bounded-observation-2026-08-16.json"],
+      "evidence": ["docs/evidence/g10/nfr-perf-bounded-observation-2026-08-16.json", "docs/evidence/g10/metadata-scale-uat-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_project_listing.py", "apps/api/tests/test_g3_configuration_media.py", "apps/web/src/features/shared/thumbnailPolicy.test.ts", "scripts/nfr_perf_benchmark.py"]
     },
     {
@@ -607,25 +625,25 @@
     {
       "id": "NFR-SEC-001",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/nfr-sec-001-002-local-boundary-2026-08-16.json"],
+      "evidence": ["docs/evidence/g10/nfr-sec-001-002-local-boundary-2026-08-16.json", "docs/evidence/g10/security-uat-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_health.py", "apps/api/tests/test_security_boundary.py"]
     },
     {
       "id": "NFR-SEC-002",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/nfr-sec-001-002-local-boundary-2026-08-16.json"],
+      "evidence": ["docs/evidence/g10/nfr-sec-001-002-local-boundary-2026-08-16.json", "docs/evidence/g10/security-uat-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_security_boundary.py", "scripts/security_uat.py"]
     },
     {
       "id": "NFR-SEC-003",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-prv-002-network-policy-2026-08-16.json"],
+      "evidence": ["docs/evidence/g10/fr-prv-002-network-policy-2026-08-16.json", "docs/evidence/g10/nfr-sec-003-prv-002-local-adapter-transport-2026-08-16.json", "docs/evidence/g10/security-uat-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_profile_contract_editor.py", "apps/api/tests/test_adapter_contracts.py", "scripts/security_uat.py"]
     },
     {
       "id": "NFR-PRIV-001",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-prv-002-network-policy-2026-08-16.json"],
+      "evidence": ["docs/evidence/g10/fr-prv-002-network-policy-2026-08-16.json", "docs/evidence/g10/nfr-sec-003-prv-002-local-adapter-transport-2026-08-16.json", "docs/evidence/g10/security-uat-2026-08-16.json"],
       "automated_tests": ["apps/api/tests/test_network_e2e.py", "apps/api/tests/test_adapter_contracts.py", "scripts/security_uat.py"]
     },
     {

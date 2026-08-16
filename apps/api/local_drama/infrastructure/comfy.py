@@ -10,9 +10,10 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 from local_drama.domain.errors import DomainRuleError
+from local_drama.infrastructure.local_http import open_local
 
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
@@ -20,8 +21,10 @@ LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 class ComfyClient:
     def __init__(self, base_url: str = "http://127.0.0.1:8188", output_root: Path | None = None, timeout_seconds: float = 10.0) -> None:
         parsed = urlparse(base_url)
-        if parsed.scheme not in {"http", "https"} or parsed.hostname not in LOOPBACK_HOSTS:
+        if parsed.scheme not in {"http", "https"} or (parsed.hostname or "").casefold() not in LOOPBACK_HOSTS:
             raise DomainRuleError("LOCAL_ONLY_ENDPOINT_REQUIRED", "ComfyUI client 只允许 loopback endpoint")
+        if parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise DomainRuleError("LOCAL_ONLY_ENDPOINT_AMBIGUOUS", "ComfyUI loopback endpoint 不得携带凭据、query 或 fragment")
         self.base_url = base_url.rstrip("/")
         self.output_root = output_root.resolve() if output_root else None
         self.timeout_seconds = timeout_seconds
@@ -31,7 +34,7 @@ class ComfyClient:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
         request = Request(f"{self.base_url}{path}", data=body, method=method, headers={"Content-Type": "application/json"} if body else {})
         try:
-            with urlopen(request, timeout=self.timeout_seconds) as response:
+            with open_local(request, timeout=self.timeout_seconds) as response:
                 raw = response.read()
         except (HTTPError, URLError, TimeoutError, OSError) as error:
             raise DomainRuleError("COMFY_LOOPBACK_UNAVAILABLE", "ComfyUI loopback 请求失败", {"reason": type(error).__name__, "path": path}) from error
@@ -64,7 +67,10 @@ class ComfyClient:
             payload["extra_data"] = extra_data
         result = self._request("POST", "/prompt", payload)
         if result.get("error") or not result.get("prompt_id"):
-            raise DomainRuleError("COMFY_PROMPT_REJECTED", "ComfyUI 拒绝 workflow", {"error": result.get("error"), "node_errors": result.get("node_errors")})
+            # Provider payloads may contain local paths, node input text or
+            # credentials.  Keep the API error stable and intentionally
+            # discard that response detail.
+            raise DomainRuleError("COMFY_PROMPT_REJECTED", "ComfyUI 拒绝 workflow", {"provider_response": "rejected"})
         return dict(result)
 
     def queue(self) -> dict[str, Any]:

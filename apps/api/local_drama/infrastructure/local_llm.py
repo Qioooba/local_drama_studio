@@ -7,9 +7,10 @@ import re
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 from local_drama.domain.errors import DomainRuleError
+from local_drama.infrastructure.local_http import open_local
 
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
@@ -17,8 +18,10 @@ LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 class LocalLLMClient:
     def __init__(self, base_url: str, model: str | None, timeout_seconds: float = 30.0) -> None:
         parsed = urlparse(base_url)
-        if parsed.scheme != "http" or parsed.hostname not in LOOPBACK_HOSTS:
+        if parsed.scheme != "http" or (parsed.hostname or "").casefold() not in LOOPBACK_HOSTS:
             raise DomainRuleError("LOCAL_ONLY_ENDPOINT_REQUIRED", "本地 LLM 只允许 http loopback endpoint")
+        if parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise DomainRuleError("LOCAL_ONLY_ENDPOINT_AMBIGUOUS", "本地 LLM endpoint 不得携带凭据、query 或 fragment")
         if not model or not model.strip():
             raise DomainRuleError("LOCAL_LLM_MODEL_REQUIRED", "本地 LLM 必须显式配置模型名")
         self.base_url = base_url.rstrip("/")
@@ -29,7 +32,7 @@ class LocalLLMClient:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
         request = Request(f"{self.base_url}{path}", data=body, method="POST" if body else "GET", headers={"Content-Type": "application/json"} if body else {})
         try:
-            with urlopen(request, timeout=timeout_seconds or self.timeout_seconds) as response:
+            with open_local(request, timeout=timeout_seconds or self.timeout_seconds) as response:
                 raw = response.read()
         except (HTTPError, URLError, TimeoutError, OSError) as error:
             raise DomainRuleError("LOCAL_LLM_LOOPBACK_UNAVAILABLE", "本地 LLM loopback 请求失败", {"reason": type(error).__name__}) from error
