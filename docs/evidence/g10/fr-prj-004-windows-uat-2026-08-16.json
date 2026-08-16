@@ -1,0 +1,275 @@
+{
+  "schema_version": "g10.fr-prj-004.windows-uat.v1",
+  "status": "PARTIAL",
+  "scope": [
+    "FR-PRJ-004",
+    "TC-DOM-003",
+    "TC-DOM-004"
+  ],
+  "platform": {
+    "system": "win32",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.10"
+  },
+  "local_only": true,
+  "loopback_endpoint": "http://127.0.0.1:58971",
+  "isolation": {
+    "root_rel": "work/project-crud-windows-20260816T084209Z",
+    "database_rel": "work/project-crud-windows-20260816T084209Z/数据 SQLite/local_drama.sqlite3",
+    "production_database_contacted": false,
+    "production_projects_root_contacted": false,
+    "public_network_contacted": false,
+    "provider_contacted": false
+  },
+  "inventory": {
+    "implemented_service_paths": [
+      "ProjectService.create_project (seasons/episodes)",
+      "ProjectService.create_scene/list_scenes/bind_episode_scene_range",
+      "ProjectService.create_shot/create_shot_revision/list_shots",
+      "ProjectService.reorder_episode (normalized siblings + expected_revision)",
+      "ProjectService.plan_storyboard_batch/commit_storyboard_batch"
+    ],
+    "api_paths": [
+      "GET /projects/{project_id}/seasons",
+      "GET /projects/seasons/{season_id}/episodes",
+      "GET/POST /projects/{project_id}/scenes",
+      "GET /projects/episodes/{episode_id}/shots",
+      "POST /projects/episodes/{episode_id}:reorder"
+    ],
+    "not_claimed": [
+      "No delete UI/API for season/episode/scene/shot was added in this bounded task; FR-PRJ-004 remains PARTIAL."
+    ]
+  },
+  "fixture": {
+    "project_id": "e95fb5ee-e31c-43fa-b98a-9bce5d58d1cd",
+    "season_ids": [
+      "0cd1b474-2cdb-45d6-94c4-d71f9f16d35e",
+      "e5384f64-7555-4d75-ac95-ca3966722636"
+    ],
+    "episode_ids": [
+      "040571b1-5109-4691-8691-d3e92d61187a",
+      "11a66b91-7cc4-493c-b52c-28f23168f51f",
+      "f7c3ae3e-53f1-48c1-ac87-44c45ea1db8e",
+      "cbcc9ffd-788f-474e-a676-dc3fb46d5d15",
+      "a21db45c-f276-49f9-8a47-1cc51da818d6",
+      "15478495-2450-4221-bc4d-fccb6d4166df"
+    ],
+    "scene_ids": [
+      "f69bc0ff-cf72-4b52-a92d-70fe2e441d36",
+      "687e9671-df9e-462c-912f-94114c2d6fa7"
+    ],
+    "shot_ids": [
+      "aed252df-8086-4d5b-923e-3274cbd78f0d",
+      "71267136-fa20-4b46-84fd-3f2cd516a638",
+      "312042b7-41a7-467f-8ec7-08ced7f586fa"
+    ],
+    "range_ids": [
+      "56887845-1f71-48d3-9127-0f47551c7d54",
+      "413d6ae5-902e-48b7-952b-b2967e67deac"
+    ]
+  },
+  "checks": [
+    {
+      "code": "PROJECT_CREATED_IN_ISOLATED_SQLITE",
+      "status": "PASS",
+      "observed": {
+        "project_id": "e95fb5ee-e31c-43fa-b98a-9bce5d58d1cd"
+      },
+      "detail": "real ProjectService transaction"
+    },
+    {
+      "code": "SEASON_EPISODE_CRUD_READ",
+      "status": "PASS",
+      "observed": {
+        "seasons": 2,
+        "episodes_per_season": [
+          3,
+          3
+        ]
+      },
+      "detail": "season/episode structures are persisted and readable"
+    },
+    {
+      "code": "MASTER_SCENE_AND_RANGE_BINDING",
+      "status": "PASS",
+      "observed": {
+        "scene_ids": [
+          "f69bc0ff-cf72-4b52-a92d-70fe2e441d36",
+          "687e9671-df9e-462c-912f-94114c2d6fa7"
+        ],
+        "range_ids": [
+          "56887845-1f71-48d3-9127-0f47551c7d54",
+          "413d6ae5-902e-48b7-952b-b2967e67deac"
+        ]
+      },
+      "detail": "project scene identity is referenced by episode ranges"
+    },
+    {
+      "code": "EPISODE_REORDER_IDENTITY_STABLE",
+      "status": "PASS",
+      "observed": {
+        "before": [
+          {
+            "id": "040571b1-5109-4691-8691-d3e92d61187a",
+            "code": "EPISODE_001",
+            "order": 1
+          },
+          {
+            "id": "11a66b91-7cc4-493c-b52c-28f23168f51f",
+            "code": "EPISODE_002",
+            "order": 2
+          },
+          {
+            "id": "f7c3ae3e-53f1-48c1-ac87-44c45ea1db8e",
+            "code": "EPISODE_003",
+            "order": 3
+          }
+        ],
+        "after": [
+          {
+            "id": "f7c3ae3e-53f1-48c1-ac87-44c45ea1db8e",
+            "code": "EPISODE_003",
+            "order": 1
+          },
+          {
+            "id": "040571b1-5109-4691-8691-d3e92d61187a",
+            "code": "EPISODE_001",
+            "order": 2
+          },
+          {
+            "id": "11a66b91-7cc4-493c-b52c-28f23168f51f",
+            "code": "EPISODE_002",
+            "order": 3
+          }
+        ]
+      },
+      "detail": "display order changes while UUID/code stay stable"
+    },
+    {
+      "code": "EPISODE_REORDER_EXPECTED_REVISION",
+      "status": "PASS",
+      "observed": {
+        "error_code": "REVISION_CONFLICT"
+      },
+      "detail": "stale reorder is rejected without overwrite"
+    },
+    {
+      "code": "SHOT_REORDER_HISTORY_STABLE",
+      "status": "PASS",
+      "observed": {
+        "before_ids": [
+          "aed252df-8086-4d5b-923e-3274cbd78f0d",
+          "71267136-fa20-4b46-84fd-3f2cd516a638",
+          "312042b7-41a7-467f-8ec7-08ced7f586fa"
+        ],
+        "after_ids": [
+          "312042b7-41a7-467f-8ec7-08ced7f586fa",
+          "71267136-fa20-4b46-84fd-3f2cd516a638",
+          "aed252df-8086-4d5b-923e-3274cbd78f0d"
+        ],
+        "revision_ids_stable": true,
+        "plan_hash": "c08e6b4c19600788a2b7a55f73a085c8bf4a86d17ba8362169675822c2ddeeda"
+      },
+      "detail": "storyboard reorder preserves shot UUID and current revision references"
+    },
+    {
+      "code": "LOOPBACK_API_READY",
+      "status": "PASS",
+      "observed": {
+        "status": 200,
+        "payload": {
+          "status": "HEALTHY",
+          "checks": {
+            "process": "ok",
+            "mode": "LOCAL_ONLY"
+          }
+        },
+        "elapsed_ms": 521.195,
+        "error": null
+      },
+      "detail": "real FastAPI process on 127.0.0.1"
+    },
+    {
+      "code": "LOOPBACK_DOMAIN_READS",
+      "status": "PASS",
+      "observed": {
+        "seasons": 200,
+        "episodes": 200,
+        "scenes": 200,
+        "shots": 200
+      },
+      "detail": "API reads expose the same isolated data"
+    },
+    {
+      "code": "LOOPBACK_REORDER_AND_STALE_409",
+      "status": "PASS",
+      "observed": {
+        "bootstrap": {
+          "status": 200,
+          "payload": {
+            "token": "aHizNqdfuUWh_7yzQUlmLy3PuQH84Q-ps8CJQ_u4GG4",
+            "mode": "LOCAL_ONLY"
+          },
+          "elapsed_ms": 14.497,
+          "error": null
+        },
+        "reorder": {
+          "status": 200,
+          "payload": {
+            "episode": {
+              "id": "f7c3ae3e-53f1-48c1-ac87-44c45ea1db8e",
+              "season_id": "0cd1b474-2cdb-45d6-94c4-d71f9f16d35e",
+              "number": 3,
+              "display_order": 2,
+              "code": "EPISODE_003",
+              "title": "第 3 集",
+              "narrative_status": "OUTLINE",
+              "production_status": "NOT_STARTED",
+              "target_duration_ms": 60000,
+              "source_range_json": "{}",
+              "created_at": "2026-08-16T08:42:10.609698Z",
+              "updated_at": "2026-08-16T08:42:13.850862Z",
+              "created_by": "local-user",
+              "revision": 3,
+              "schema_version": "v2"
+            }
+          },
+          "elapsed_ms": 49.627,
+          "error": null
+        },
+        "stale": {
+          "status": 409,
+          "payload": {
+            "error": {
+              "code": "REVISION_CONFLICT",
+              "message": "集的 revision 已变化，请刷新后重试",
+              "request_id": "7d5ef843-3b18-4f85-94c3-9f7f028a817b",
+              "details": {
+                "episode_id": "f7c3ae3e-53f1-48c1-ac87-44c45ea1db8e",
+                "expected_revision": 2,
+                "current_revision": 3
+              },
+              "retryable": false,
+              "suggested_action": null
+            }
+          },
+          "elapsed_ms": 27.759,
+          "error": "HTTPError"
+        }
+      },
+      "detail": "API preserves optimistic concurrency contract after local session bootstrap"
+    }
+  ],
+  "runtime_contacted": true,
+  "network_contacted": true,
+  "loopback_network_contacted": true,
+  "public_network_contacted": false,
+  "production_database_contacted": false,
+  "production_mutated": false,
+  "limitations": [
+    "Fresh local SQLite and loopback API were exercised on Windows, but this is not a production database or browser UAT.",
+    "The bounded fixture uses two seasons, six episodes, two master scenes, and three shots; release-scale volume and concurrent writers remain unverified.",
+    "FR-PRJ-004 remains PARTIAL because destructive CRUD (delete/archive semantics for child entities) is not claimed by this evidence."
+  ],
+  "observed_at": "2026-08-16T08:42:13.974077+00:00"
+}

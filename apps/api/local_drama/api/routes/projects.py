@@ -282,9 +282,14 @@ async def bind_episode_scene_range(episode_id: str, payload: EpisodeSceneRangeRe
 
 
 @router.post("/episodes/{episode_id}:reorder", operation_id="reorderEpisode")
-async def reorder_episode(episode_id: str, display_order: int, request: Request) -> dict[str, object]:
+async def reorder_episode(
+    episode_id: str,
+    display_order: int,
+    request: Request,
+    expected_revision: int | None = None,
+) -> dict[str, object]:
     try:
-        return {"episode": service(request).reorder_episode(episode_id, display_order)}
+        return {"episode": service(request).reorder_episode(episode_id, display_order, expected_revision=expected_revision)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

@@ -833,17 +833,62 @@ class ProjectService:
             raise DomainRuleError("EPISODE_NOT_FOUND", "集不存在", {"episode_id": episode_id})
         return dict(row)
 
-    def reorder_episode(self, episode_id: str, display_order: int) -> dict[str, Any]:
+    def reorder_episode(
+        self,
+        episode_id: str,
+        display_order: int,
+        expected_revision: int | None = None,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Move an episode without changing its durable identity.
+
+        ``display_order`` is presentation state only.  Reordering therefore
+        normalizes every sibling's order while keeping each episode UUID,
+        number and code intact.  A caller may provide the episode revision as
+        an optimistic-concurrency guard; a stale value must never overwrite a
+        newer order or history reference.
+        """
         if display_order < 1:
             raise DomainRuleError("INVALID_DISPLAY_ORDER", "display_order 必须大于 0")
         with self.database.transaction() as connection:
             row = connection.execute("SELECT * FROM episodes WHERE id = ?", (episode_id,)).fetchone()
             if row is None:
                 raise DomainRuleError("EPISODE_NOT_FOUND", "集不存在", {"episode_id": episode_id})
-            connection.execute(
-                "UPDATE episodes SET display_order = ?, revision = revision + 1, updated_at = ? WHERE id = ?",
-                (display_order, _utc_now(), episode_id),
-            )
+            current_revision = int(row["revision"])
+            if expected_revision is not None and current_revision != expected_revision:
+                raise DomainRuleError(
+                    "REVISION_CONFLICT",
+                    "集的 revision 已变化，请刷新后重试",
+                    {"episode_id": episode_id, "expected_revision": expected_revision, "current_revision": current_revision},
+                )
+            siblings = connection.execute(
+                "SELECT id, display_order FROM episodes WHERE season_id=? ORDER BY display_order, number, id",
+                (row["season_id"],),
+            ).fetchall()
+            if display_order > len(siblings):
+                raise DomainRuleError("INVALID_DISPLAY_ORDER", "display_order 不能超过当前季集数")
+            current_index = next(index for index, sibling in enumerate(siblings) if sibling["id"] == episode_id)
+            target_index = display_order - 1
+            ordered = list(siblings)
+            moved = ordered.pop(current_index)
+            ordered.insert(target_index, moved)
+            now = _utc_now()
+            changed = False
+            for index, sibling in enumerate(ordered, start=1):
+                if int(sibling["display_order"]) == index:
+                    continue
+                changed = True
+                connection.execute(
+                    "UPDATE episodes SET display_order=?, revision=revision+1, updated_at=? WHERE id=?",
+                    (index, now, sibling["id"]),
+                )
+            if changed:
+                connection.execute(
+                    """INSERT INTO audit_events
+                    (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
+                    VALUES (?,'writer','EPISODE_REORDERED','episode',?,'分集显示顺序已调整',?)""",
+                    (actor, episode_id, _json({"from_order": current_index + 1, "to_order": display_order, "season_id": row["season_id"]})),
+                )
         return self.get_episode(episode_id)
 
     def create_shot_revision(self, shot_id: str, fields: dict[str, object], freeze: bool = False) -> dict[str, Any]:

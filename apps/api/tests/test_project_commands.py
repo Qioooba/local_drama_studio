@@ -88,6 +88,39 @@ def test_episode_reorder_preserves_identity_and_code(workspace, database) -> Non
     assert moved["id"] == episodes[1]["id"]
     assert moved["code"] == "EPISODE_002"
     assert service.get_episode(episodes[0]["id"])["code"] == "EPISODE_001"
+    reordered = service.list_episodes(season["id"])
+    assert [item["display_order"] for item in reordered] == [1, 2]
+    assert {item["id"] for item in reordered} == {item["id"] for item in episodes}
+    assert {item["code"] for item in reordered} == {item["code"] for item in episodes}
+
+
+def test_episode_reorder_expected_revision_conflict_does_not_overwrite(workspace, database) -> None:
+    service = make_service(workspace, database)
+    project = service.create_project(
+        code="g2_episode_revision",
+        title="Episode Revision",
+        episode_count=3,
+        aspect_ratio="16:9",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=60000,
+        allow_unconfigured_capabilities=True,
+        width=1920,
+        height=1080,
+        primary_language="zh-CN",
+        subtitle_mode="NONE",
+    )
+    season = service.list_seasons(project["id"])[0]
+    episodes = service.list_episodes(season["id"])
+    expected_revision = int(episodes[2]["revision"])
+    moved = service.reorder_episode(episodes[2]["id"], 1, expected_revision=expected_revision)
+    assert moved["display_order"] == 1
+    with pytest.raises(DomainRuleError) as error:
+        service.reorder_episode(episodes[2]["id"], 3, expected_revision=expected_revision)
+    assert error.value.code == "REVISION_CONFLICT"
+    current = service.list_episodes(season["id"])
+    assert [item["display_order"] for item in current] == [1, 2, 3]
+    assert current[0]["id"] == episodes[2]["id"]
 
 
 def test_expected_revision_conflict_never_overwrites(workspace, database) -> None:

@@ -21,6 +21,12 @@
       "automated_tests": ["apps/api/tests/test_project_listing.py", "apps/api/tests/test_api_projects.py"]
     },
     {
+      "id": "FR-PRJ-004",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-prj-004-windows-uat-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_project_commands.py", "apps/api/tests/test_storyboard_batch.py", "scripts/project_crud_windows_uat.py"]
+    },
+    {
       "id": "FR-PRJ-006",
       "status": "PASS",
       "evidence": ["docs/evidence/g10/project-template-copy-uat-2026-08-15.json"],
@@ -169,6 +175,18 @@
       "status": "PASS",
       "evidence": ["docs/evidence/g10/project-create-wizard-uat-2026-08-15.json"],
       "automated_tests": ["apps/api/tests/test_project_creation_plan.py"]
+    },
+    {
+      "id": "TC-DOM-003",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-prj-004-windows-uat-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_project_commands.py", "apps/api/tests/test_storyboard_batch.py", "scripts/project_crud_windows_uat.py"]
+    },
+    {
+      "id": "TC-DOM-004",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/fr-prj-004-windows-uat-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_project_commands.py", "apps/api/tests/test_api_projects.py", "scripts/project_crud_windows_uat.py"]
     },
     {
       "id": "TC-DOM-005",
