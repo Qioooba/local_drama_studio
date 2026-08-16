@@ -16,7 +16,7 @@
     "tc_total": 85
   },
   "closure": {
-    "verified_release_fr": 21,
+    "verified_release_fr": 23,
     "verified_release_nfr": 0,
     "passed_tc": 10,
     "open_p0_defects": null,
