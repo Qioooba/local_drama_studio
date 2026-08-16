@@ -5,6 +5,7 @@ from local_drama.application.jobs import JobService
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
 from local_drama.application.workflows import WorkflowService
+from local_drama.domain.errors import DomainRuleError
 
 
 class _OfflineWorkflowNodes:
@@ -54,6 +55,27 @@ def test_poll_maps_live_comfy_queue_state_before_history_exists(workspace, datab
     assert service.poll_attempt(attempt_id, "worker-1")["status"] == "QUEUED"
     monkeypatch.setattr(service.comfy, "queue", lambda: {"queue_running": [], "queue_pending": []})
     assert service.poll_attempt(attempt_id, "worker-1")["status"] == "PROVIDER_UNCONFIRMED"
+
+
+def test_poll_closes_attempt_when_comfy_runtime_dies(workspace, database, monkeypatch) -> None:
+    service, attempt_id = _active_attempt(workspace, database)
+
+    def unavailable(_prompt_id: str) -> dict[str, object]:
+        raise DomainRuleError("COMFY_LOOPBACK_UNAVAILABLE", "offline")
+
+    monkeypatch.setattr(service.comfy, "history", unavailable)
+    result = service.poll_attempt(attempt_id, "worker-1")
+    assert result["status"] == "FAILED"
+    with database.connect() as connection:
+        row = connection.execute(
+            "SELECT a.state AS attempt_state, a.error_code, j.state AS job_state, j.last_error_code "
+            "FROM job_attempts a JOIN jobs j ON j.id=a.job_id WHERE a.id=?",
+            (attempt_id,),
+        ).fetchone()
+    assert row["attempt_state"] == "FAILED"
+    assert row["error_code"] == "COMFY_RUNTIME_UNAVAILABLE"
+    assert row["job_state"] == "QUEUED"
+    assert row["last_error_code"] == "COMFY_RUNTIME_UNAVAILABLE"
 
 
 def test_submit_materializes_verified_media_binding_inside_isolated_input_root(workspace, database, monkeypatch) -> None:

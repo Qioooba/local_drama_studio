@@ -89,9 +89,21 @@ class ComfyGenerationService:
             semantic_inputs[role] = target_name
         compiled = self.workflows.compile_semantic_inputs(workflow_version_id, semantic_inputs)
         client_id = f"local-drama-{worker_id}"
-        response = self.comfy.queue_prompt(
-            compiled["workflow"], client_id=client_id, extra_data={"local_drama_job_id": job["id"], "compiled_hash": compiled["compiled_hash"]}
-        )
+        try:
+            response = self.comfy.queue_prompt(
+                compiled["workflow"], client_id=client_id, extra_data={"local_drama_job_id": job["id"], "compiled_hash": compiled["compiled_hash"]}
+            )
+        except DomainRuleError as error:
+            if error.code == "COMFY_LOOPBACK_UNAVAILABLE":
+                self.jobs.complete(
+                    str(attempt["id"]),
+                    token,
+                    worker_id,
+                    success=False,
+                    error_code="COMFY_RUNTIME_UNAVAILABLE",
+                    error_detail_redacted="Comfy loopback unavailable; attempt closed locally",
+                )
+            raise
         prompt_id = str(response["prompt_id"])
         self.jobs.attach_provider(
             str(attempt["id"]), token, worker_id, prompt_id, comfy_prompt_id=prompt_id, comfy_client_id=client_id, sandbox_rel_path=f"jobs/{job['id']}/comfy"
@@ -114,10 +126,38 @@ class ComfyGenerationService:
         prompt_id = str(attempt.get("comfy_prompt_id") or attempt.get("provider_job_id") or "")
         if not prompt_id:
             raise DomainRuleError("COMFY_PROMPT_ID_REQUIRED", "Attempt 尚未记录 Comfy prompt_id")
-        history = self.comfy.history(prompt_id)
+        try:
+            history = self.comfy.history(prompt_id)
+        except DomainRuleError as error:
+            if error.code == "COMFY_LOOPBACK_UNAVAILABLE":
+                result = self.jobs.complete(
+                    str(attempt["id"]),
+                    str(attempt["lease_token"]),
+                    worker_id,
+                    success=False,
+                    error_code="COMFY_RUNTIME_UNAVAILABLE",
+                    error_detail_redacted="Comfy loopback unavailable; attempt closed locally",
+                    provider_job_id=prompt_id,
+                )
+                return {"status": "FAILED", "prompt_id": prompt_id, "result": result}
+            raise
         item = history.get(prompt_id)
         if not item:
-            queue = self.comfy.queue()
+            try:
+                queue = self.comfy.queue()
+            except DomainRuleError as error:
+                if error.code == "COMFY_LOOPBACK_UNAVAILABLE":
+                    result = self.jobs.complete(
+                        str(attempt["id"]),
+                        str(attempt["lease_token"]),
+                        worker_id,
+                        success=False,
+                        error_code="COMFY_RUNTIME_UNAVAILABLE",
+                        error_detail_redacted="Comfy loopback unavailable; attempt closed locally",
+                        provider_job_id=prompt_id,
+                    )
+                    return {"status": "FAILED", "prompt_id": prompt_id, "result": result}
+                raise
             running_ids = self._queue_prompt_ids(queue.get("queue_running", []))
             pending_ids = self._queue_prompt_ids(queue.get("queue_pending", []))
             phase = "RUNNING" if prompt_id in running_ids else "QUEUED" if prompt_id in pending_ids else "PROVIDER_UNCONFIRMED"

@@ -26,6 +26,11 @@
     "raw_provider_error_recorded": false,
     "redaction": "No provider stack, token, prompt, or absolute input path is included"
   },
+  "service_safety_followup": {
+    "status": "PASS",
+    "behavior": "ComfyGenerationService now converts a loopback runtime loss during queue/history polling into a redacted COMFY_RUNTIME_UNAVAILABLE attempt result, releases the lease, and leaves the Job retryable (QUEUED) according to its bounded retry policy.",
+    "automated_test": "apps/api/tests/test_comfy_jobs.py::test_poll_closes_attempt_when_comfy_runtime_dies"
+  },
   "limitations": [
     "This is a real local platform-job attempt, not a synthetic pass.",
     "The controlled RH runtime crashed while loading the H3 model before an artifact was produced; the platform Job -> Artifact -> MediaVersion path therefore remains unverified.",
