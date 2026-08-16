@@ -352,7 +352,7 @@ Job 创建、幂等记录、`JOB_QUEUED` outbox 和 audit row 在同一 SQLite t
 
 ## FR-PRV-002 / NFR-SEC-003 / NFR-PRIV-001 本地网络与配置边界增量（2026-08-16）
 
-Profile 契约编辑仍允许用户声明本地 transport、能力与本机模型引用，但不再把它当作远程配置或凭据存储：输入契约、参数 Schema、输出契约和资源策略在派生不可变版本前递归拒绝 `api_key`、`client_secret`、`provider_url`、`remote_endpoint` 等保留字段，错误只返回 JSON 字段路径，不回显值，也不插入 Profile 版本。Adapter registry、Comfy/Local LLM client 和模型 registry 继续强制 loopback/本机路径、拒绝 symlink/越界、禁止复制/上传；网络 E2E 与安全 UAT 保持公网连接数为 0。定向回归见 `apps/api/tests/test_profile_contract_editor.py`、`apps/api/tests/test_adapter_contracts.py`、`apps/api/tests/test_network_e2e.py` 与 `scripts/security_uat.py`，证据 `docs/evidence/g10/fr-prv-002-network-policy-2026-08-16.json` 标记 `PARTIAL`。真实 Windows x64 三视口与生产级出口抓包仍待执行，故不提前宣称 NFR PASS。
+Profile 契约编辑仍允许用户声明本地 transport、能力与本机模型引用，但不再把它当作远程配置或凭据存储：输入契约、参数 Schema、输出契约和资源策略在派生不可变版本前递归拒绝 `api_key`、`client_secret`、`provider_url`、`remote_endpoint` 等保留字段，错误只返回 JSON 字段路径，不回显值，也不插入 Profile 版本。Adapter registry、Comfy/Local LLM client 和模型 registry 继续强制 loopback/本机路径、拒绝 symlink/越界、禁止复制/上传；网络 E2E 与安全 UAT 保持公网连接数为 0。新增真实 Windows x64 隔离 transport UAT：对临时 127.0.0.1 服务执行 5 次真实连接，代理环境不会改变 loopback 目标，302→公网在跟随前拒绝，非 loopback/凭据/query endpoint 在连接前拒绝，provider 错误中的路径/token 不进入证据；脚本回归 `apps/api/tests/test_local_adapter_transport_windows_uat.py` 与 `scripts/local_adapter_transport_windows_uat.py`，7 项测试通过，证据 `docs/evidence/g10/nfr-sec-003-prv-002-local-adapter-transport-2026-08-16.json` 仍标记 `PARTIAL`。这不是正式生产出口抓包或三视口 UAT，故不提前宣称 NFR PASS。
 
 ## FR-PRV-003 / NFR-COMP-001 本机模型许可与兼容性边界增量（2026-08-16）
 

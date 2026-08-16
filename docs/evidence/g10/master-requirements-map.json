@@ -520,8 +520,8 @@
     {
       "id": "FR-PRV-002",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_network_e2e.py", "apps/api/tests/test_adapter_contracts.py"]
+      "evidence": ["docs/evidence/g10/fr-ops-001-003-local-ops-registry-2026-08-16.json", "docs/evidence/g10/nfr-sec-003-prv-002-local-adapter-transport-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_network_e2e.py", "apps/api/tests/test_adapter_contracts.py", "apps/api/tests/test_local_adapter_transport_windows_uat.py", "scripts/local_adapter_transport_windows_uat.py"]
     },
     {
       "id": "FR-PRV-003",
@@ -694,7 +694,7 @@
       "id": "NFR-SEC-003",
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/fr-prv-002-network-policy-2026-08-16.json", "docs/evidence/g10/nfr-sec-003-prv-002-local-adapter-transport-2026-08-16.json", "docs/evidence/g10/security-uat-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_profile_contract_editor.py", "apps/api/tests/test_adapter_contracts.py", "scripts/security_uat.py"]
+      "automated_tests": ["apps/api/tests/test_profile_contract_editor.py", "apps/api/tests/test_adapter_contracts.py", "apps/api/tests/test_local_adapter_transport_windows_uat.py", "scripts/security_uat.py", "scripts/local_adapter_transport_windows_uat.py"]
     },
     {
       "id": "NFR-PRIV-001",
