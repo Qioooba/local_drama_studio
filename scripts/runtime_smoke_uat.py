@@ -24,7 +24,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import time
 import uuid
 from datetime import UTC, datetime
@@ -290,7 +289,7 @@ def _execute_comfy_smoke(base_url: str, manifest: dict[str, Any], root: Path) ->
             deadline = time.monotonic() + 45
             history: dict[str, Any] = {}
             while time.monotonic() < deadline:
-                history_code, history, history_error = _http_json(base_url, f"/history/{prompt_id}", timeout=5)
+                history_code, history, _history_error = _http_json(base_url, f"/history/{prompt_id}", timeout=5)
                 if history_code == 200 and prompt_id in history:
                     break
                 time.sleep(0.5)
