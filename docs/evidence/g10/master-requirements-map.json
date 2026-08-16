@@ -27,6 +27,18 @@
       "automated_tests": ["apps/api/tests/test_project_template_copy.py"]
     },
     {
+      "id": "FR-PRJ-007",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/core-chain-browser-readonly-uat-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_health.py", "tests/e2e/core_chain_browser_readonly.spec.ts"]
+    },
+    {
+      "id": "FR-SRC-001",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/core-chain-browser-readonly-uat-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g3_configuration_media.py", "tests/e2e/core_chain_browser_readonly.spec.ts"]
+    },
+    {
       "id": "FR-WRT-001",
       "status": "PASS",
       "evidence": ["docs/evidence/g10/creative-library-uat-2026-08-15.json"],
@@ -668,11 +680,12 @@
     {
       "id": "NFR-TEST-001",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/nfr-maint-test-audit-2026-08-16.json"],
+      "evidence": ["docs/evidence/g10/nfr-maint-test-audit-2026-08-16.json", "docs/evidence/g10/core-chain-browser-readonly-uat-2026-08-16.json"],
       "automated_tests": [
         "apps/api/tests/test_domain_rules.py",
         "scripts/maintainability_audit.py",
-        "scripts/check.ps1"
+        "scripts/check.ps1",
+        "tests/e2e/core_chain_browser_readonly.spec.ts"
       ]
     }
   ]

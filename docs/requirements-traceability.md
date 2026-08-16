@@ -387,3 +387,6 @@ FR-PST-002/003 边界加固（2026-08-16）：交付包在文件/manifest 完整
 ComfyUI 与 Local LLM loopback 客户端现在使用显式无代理、拒绝 3xx 跳转的本地传输；endpoint 拒绝凭据/query/fragment，Comfy provider 错误不再回显原始路径、token 或 node payload。11 项真实本地 socket 回归通过，证据 `docs/evidence/g10/nfr-sec-003-prv-002-local-adapter-transport-2026-08-16.json` 保持 PARTIAL。
 
 规模与恢复 UAT 也在隔离根目录通过：60 集/800 镜头/10,000 媒体元数据 read path 与索引检查通过（合成媒体明确保持 UNKNOWN，不冒充可播放素材），见 `docs/evidence/g10/metadata-scale-uat-2026-08-16.json`；100 个真实本地 WAV 经 online backup、干净恢复、100/100 SHA-256 与恢复 API 校验通过，见 `docs/evidence/g10/recovery-restore-uat-2026-08-16.json`。这些结果增强 NFR-PERF/REL 证据，但不宣称 Windows 硬件 p95、断电或最终发布通过。
+\n## 2026-08-16 核心链三视口隔离浏览器 UAT
+
+在生产 SQLite/项目树的只读快照上，用真实 FastAPI 与 React 页面完成 1440×900、1280×800、1024×768 三档核心链浏览器 UAT：项目健康、全局搜索、生成预检、审核收件箱、时间线与本地交付历史均可读取；只产生 GET，未请求原始媒体，无公网请求、控制台错误、页面错误或横向溢出。证据 `docs/evidence/g10/core-chain-browser-readonly-uat-2026-08-16.json` 为 PASS，脚本 `tests/e2e/core_chain_browser_readonly.spec.ts`；该证据仍是隔离只读 UAT，不替代真实生成、人工批准和正式发布签字。
