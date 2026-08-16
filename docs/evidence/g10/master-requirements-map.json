@@ -243,6 +243,19 @@
       "automated_tests": ["apps/api/tests/test_audit_history.py", "apps/web/src/features/shared/AuditHistoryPanel.test.tsx", "apps/web/src/generated/api.test.ts"]
     },
     {
+      "id": "FR-AUD-001",
+      "status": "PARTIAL",
+      "evidence": [
+        "docs/evidence/g10/dialogue-tts-windows-uat-2026-08-16.json",
+        "docs/evidence/g10/dialogue-tts-governance-uat-2026-08-15.json"
+      ],
+      "automated_tests": [
+        "apps/api/tests/test_local_sapi_tts.py",
+        "scripts/tts_windows_uat.py",
+        "apps/web/src/features/dialogue/DialogueGovernanceActions.test.tsx"
+      ]
+    },
+    {
       "id": "FR-DEL-001",
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/fr-del-001-004-delivery-chain-2026-08-16.json"],

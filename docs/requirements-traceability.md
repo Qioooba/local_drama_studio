@@ -284,6 +284,8 @@ FR-AUD-002 authorization correction：新增 migration `0028_audio_binding_autho
 
 FR-AUD-001 SAPI 选择入口增量：新增 `GET /api/v1/tts/voices:discover`，Windows 本机只读调用 System.Speech 列出已安装音色名称、区域与 `sapi:` 引用；未找到 runtime 时明确返回 `UNAVAILABLE`，扫描不复制/上传/写入项目。对白治理 UI 需用户显式点击扫描并选择，之后仍必须填写项目内授权证据、绑定 Published TTS Profile、执行真实 Job、QC、人工审核与选择；本入口不改变 FR-AUD-001 的 `PARTIAL` 状态。
 
+FR-AUD-001 Windows SAPI 隔离 UAT：新增 `scripts/tts_windows_uat.py`，在全新迁移数据库和临时项目中发现当前 Windows System.Speech 音色，写入用户提供的项目内授权证据，绑定 Published `TTS_SAPI_LOCAL` Profile，提交带 Idempotency-Key 的真实 CPU Job，由 `LocalMediaWorker` 调用本机 SAPI 生成 PCM WAV，经 FFprobe、SHA 与正式候选晋升校验，并验证提交/结束登记幂等、提前结束拒绝、无公网访问和数据库完整性。证据 `docs/evidence/g10/dialogue-tts-windows-uat-2026-08-16.json` 为真实本机隔离 PASS；不接触正式数据库、不自动创建正式 Profile/音色，也未替代正式项目的 QC、人工审核、候选选择和发布签字，因此 FR-AUD-001 仍保持 `PARTIAL`。
+
 FR-PST-002 实现增量：版本化后处理 recipe 在核心 `SCALE → TECHNICAL_QC → ENCODE` 之间支持能力驱动的 `FRAME_INTERPOLATION`、`DENOISE`、`STABILIZE` 和项目内 `.cube LUT_3D`。每个步骤独立运行本地 FFmpeg 中间文件并冻结输入/输出 SHA；目标帧率与分辨率写入技术 QC，任一步失败只将 enhancement run 标记失败并清理临时输出，源 MediaVersion 与先前成功版本不变。API 真实 FFmpeg 回归与 Web 选项测试通过；FR-PST-002 的三视口生产 UAT 与正式总账证据仍待补齐，当前不标最终 VERIFIED。
 
 FR-PST-003 实现增量：新增不可变版本化 `WatermarkProfile` 与 `CompliancePolicy`，并扩展 BrandKit 为项目视觉 token 版本；新版本发布会 RETIRE 同 code 的旧 ACTIVE 版本。整集本地交付自动读取或显式绑定当前 ACTIVE 控制版本，水印使用本机 Windows 字体由 FFmpeg 生成新文件，不覆盖整集渲染；合规机器预检记录规则、render SHA、发现项与责任边界，失败不产生交付包。交付 manifest 与 `delivery_packages` 冻结 BrandKit/Watermark/Compliance 版本、machine preflight=PASS、human/platform review=PENDING，后续 verify 只校验文件完整性，不把机器结果冒充人工/平台批准。真实 FFmpeg/API 回归、版本轮换与失败预检测试通过，Web 面板提供显式发布入口；三视口生产 UAT、正式证据与总账 closure 仍待补齐，当前不标最终 VERIFIED。
