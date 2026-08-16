@@ -1,53 +1,184 @@
 {
-  "schema_version": "g10.fr-rev-002-004-review-governance.v1",
+  "schema_version": "g10.fr-rev-002-004.windows-uat.v1",
   "status": "PARTIAL",
-  "requirements": ["FR-REV-002", "FR-REV-003", "FR-REV-004"],
-  "observed_at": "2026-08-16T00:00:00Z",
-  "implementation": {
-    "template_versions": {
-      "append_only": true,
-      "startup_idempotent": true,
-      "historical_decisions_keep_template_id": true,
-      "historical_context_includes_template_definition": true,
-      "latest_template_selected_for_new_reviews": true,
-      "wrong_media_template_blocked": true,
-      "api": "POST /api/v1/review-templates"
-    },
-    "machine_human_separation": {
-      "machine_qc_persists_machine_check_runs_and_results": true,
-      "machine_pass_does_not_create_review_decision": true,
-      "human_decision_requires_structured_checks": true,
-      "formal_and_audio_approval_require_latest_machine_pass": true,
-      "review_decision_is_a_separate_audit_event": true
-    },
-    "batch_protection": {
-      "explicit_selection": true,
-      "project_and_template_homogeneous": true,
-      "revision_preflight_and_stale_block": true,
-      "no_partial_commit_on_preflight_failure": true,
-      "per_item_results": true,
-      "rejection_requires_comment": true,
-      "formal_selection_uses_hash_bound_atomic_plan": true
-    },
-    "network_contacted": false,
-    "runtime_contacted": false
-  },
-  "automated_tests": [
-    "apps/api/tests/test_review_versions.py::test_review_template_versions_are_immutable_and_history_explainable",
-    "apps/api/tests/test_review_versions.py::test_machine_qc_does_not_create_human_approval_and_batch_errors_are_explicit",
-    "apps/api/tests/test_review_versions.py::test_review_rejects_template_for_wrong_media_stage",
-    "apps/api/tests/test_review_versions.py::test_review_template_version_api_exposes_append_only_contract",
-    "apps/api/tests/test_g4_reviews.py::test_review_selection_machine_qc_stale_and_batch_invariants",
-    "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx",
-    "apps/web/src/features/reviews/FormalSelectionPanel.tsx"
+  "scope": [
+    "FR-REV-002",
+    "FR-REV-003",
+    "FR-REV-004"
   ],
-  "production_uat": {
-    "status": "PENDING",
-    "reason": "正式项目三视口审核、模板更新历史解释、人工批准与异常恢复 UAT 尚未执行；自动化回归不冒充最终 PASS。"
+  "observed_at": "2026-08-16T09:15:01.016885+00:00",
+  "platform": {
+    "system": "win32",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.10"
   },
-  "remaining_limits": [
-    "模板管理 API 尚无专用编辑器与权限角色，当前由本地操作者显式提交新版本。",
-    "批量 commit 的逐项结果在成功响应中返回；若预检阻塞则整体拒绝并返回阻塞项，未做跨项目并行 UI UAT。",
-    "机器异常重试与真实 Windows FFmpeg 运行证据仍需正式 UAT。"
+  "local_only": true,
+  "network": {
+    "loopback_endpoint": "http://127.0.0.1:63097",
+    "public_network_contacted": false,
+    "provider_contacted": false,
+    "comfyui_contacted": false
+  },
+  "isolation": {
+    "root_rel": "work/review-governance-uat-20260816-v3",
+    "production_database_contacted": false,
+    "production_projects_root_contacted": false
+  },
+  "limits": [
+    "bounded isolated SQLite and loopback API UAT; not a production-database, three-viewport, role-permission, or release-scale certification",
+    "does not exercise model/provider generation, ComfyUI, remote transports, or real user production media",
+    "evidence demonstrates template evolution and batch recovery contracts but does not close the overall release ledger"
+  ],
+  "checks": [
+    {
+      "code": "ISOLATED_REAL_LOCAL_MP4",
+      "status": "PASS",
+      "observed": {
+        "media_version_ids": [
+          "6ad17416-bd08-4903-836a-175f5b87b09d",
+          "e0c578d4-577b-4f6a-bf9e-4834b3ac4f97",
+          "239b111c-e47e-430a-baa1-1e045383c8c0"
+        ],
+        "byte_sizes": [
+          2276,
+          2276,
+          2276
+        ]
+      },
+      "detail": "three FFmpeg-created local MP4 files were imported into the isolated project"
+    },
+    {
+      "code": "LOOPBACK_SESSION_AND_API",
+      "status": "PASS",
+      "observed": {
+        "endpoint": "http://127.0.0.1:63097",
+        "health": 200,
+        "bootstrap": 200
+      },
+      "detail": "only the temporary 127.0.0.1 FastAPI API was contacted"
+    },
+    {
+      "code": "MACHINE_QC_SEPARATE_FROM_HUMAN",
+      "status": "PASS",
+      "observed": {
+        "machine_run_id": "27a15f68-4628-40e2-8785-1b0a3a4d4c67",
+        "review_count_after_qc": 0
+      },
+      "detail": "machine QC persists technical evidence but never manufactures a human review decision"
+    },
+    {
+      "code": "HUMAN_APPROVAL_IS_EXPLICIT",
+      "status": "PASS",
+      "observed": {
+        "review_id": "03d09f72-f702-475d-9fda-3090e87991af",
+        "machine_run_id": "27a15f68-4628-40e2-8785-1b0a3a4d4c67"
+      },
+      "detail": "human APPROVED was submitted through its own explicit checklist API call"
+    },
+    {
+      "code": "TEMPLATE_HISTORY_APPEND_ONLY",
+      "status": "PASS",
+      "observed": {
+        "versions": [
+          {
+            "id": "c0fa8150-3133-506d-b6df-a3f6d658e8a1",
+            "version_no": 1,
+            "item_ids": [
+              "identity",
+              "motion",
+              "continuity",
+              "technical"
+            ]
+          },
+          {
+            "id": "7f10cff6-c8bc-4fb4-9b59-09dc13e8d12c",
+            "version_no": 2,
+            "item_ids": [
+              "identity",
+              "motion",
+              "continuity",
+              "technical",
+              "human_note"
+            ]
+          }
+        ]
+      },
+      "detail": "v2 was appended; the v1 definition was not rewritten"
+    },
+    {
+      "code": "HISTORICAL_REVIEW_EXPLAINABLE",
+      "status": "PASS",
+      "observed": {
+        "historical_review": {
+          "id": "03d09f72-f702-475d-9fda-3090e87991af",
+          "subject_type": "MEDIA_VERSION",
+          "subject_id": "6ad17416-bd08-4903-836a-175f5b87b09d",
+          "review_template_version_id": "c0fa8150-3133-506d-b6df-a3f6d658e8a1",
+          "decision": "APPROVED",
+          "comment": null,
+          "supersedes_decision_id": null,
+          "created_at": "2026-08-16T09:15:00.442890+00:00",
+          "updated_at": "2026-08-16T09:15:00.442890+00:00",
+          "created_by": "local-user",
+          "revision": 1,
+          "schema_version": "v2",
+          "subject_revision": 1,
+          "is_stale": 0,
+          "stale_reason": null,
+          "template": {
+            "id": "c0fa8150-3133-506d-b6df-a3f6d658e8a1",
+            "code": "proxy_video",
+            "version_no": 1,
+            "subject_type": "MEDIA_VERSION",
+            "items": [
+              {
+                "id": "identity",
+                "label": "身份一致",
+                "required": true
+              },
+              {
+                "id": "motion",
+                "label": "动作可用",
+                "required": true
+              },
+              {
+                "id": "continuity",
+                "label": "连续性",
+                "required": true
+              },
+              {
+                "id": "technical",
+                "label": "技术可播放",
+                "required": true
+              }
+            ]
+          }
+        }
+      },
+      "detail": "review context resolves the exact v1 definition retained by the historical decision"
+    },
+    {
+      "code": "BATCH_STALE_VISIBLE_AND_ATOMIC",
+      "status": "PASS",
+      "observed": {
+        "stale_commit_status": 409,
+        "error_code": "REVIEW_BATCH_STALE",
+        "review_counts_after_failure": [
+          0,
+          0
+        ]
+      },
+      "detail": "one changed batch item is explicitly reported stale and the other item receives no partial review"
+    },
+    {
+      "code": "BATCH_SUCCESS_RETURNS_PER_ITEM_HISTORY",
+      "status": "PASS",
+      "observed": {
+        "plan_status": "READY",
+        "commit_status": "COMMITTED",
+        "result_count": 2
+      },
+      "detail": "a re-preflighted batch commits both explicit items and each history references v2"
+    }
   ]
 }
