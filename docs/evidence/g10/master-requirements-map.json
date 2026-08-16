@@ -201,6 +201,12 @@
       "automated_tests": ["apps/api/tests/test_creative_entries.py"]
     },
     {
+      "id": "TC-DOM-007",
+      "status": "PARTIAL",
+      "evidence": ["docs/evidence/g10/tc-dom-007-stale-windows-uat-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g4_reviews.py", "scripts/dom007_stale_windows_uat.py"]
+    },
+    {
       "id": "TC-TML-004",
       "status": "PASS",
       "evidence": ["docs/evidence/g10/subtitle-authority-uat-2026-08-15.json"],

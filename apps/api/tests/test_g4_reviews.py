@@ -114,6 +114,8 @@ def test_review_selection_machine_qc_stale_and_batch_invariants(workspace, datab
         checks=_checks(formal_template),
     )
     assert approved_formal["decision"] == "APPROVED"
+    ready_formal_plan = review_service.formal_selection_preflight(project_id, [str(formal_version["id"])])
+    assert ready_formal_plan["status"] == "READY"
 
     missing_qc_version = media_service.derive_version(asset_id, str(formal_version["id"]), "FORMAL")
     with pytest.raises(DomainRuleError, match="正式媒体必须先通过机器 QC"):
@@ -138,6 +140,18 @@ def test_review_selection_machine_qc_stale_and_batch_invariants(workspace, datab
     reviews = review_service.list_reviews("MEDIA_VERSION", str(formal_version["id"]))
     assert reviews[0]["is_stale"] == 1
     assert reviews[0]["stale_reason"] == "shot_revision_changed"
+    # Selections are immutable historical records.  The formerly-selected
+    # formal version cannot pass the current formal-selection gate after its
+    # upstream ShotRevision changes, while the original selection remains
+    # queryable for audit rather than being deleted or silently rewritten.
+    stale_formal_plan = review_service.formal_selection_preflight(project_id, [str(formal_version["id"])])
+    assert stale_formal_plan["status"] == "BLOCKED"
+    assert "LATEST_HUMAN_APPROVAL_REQUIRED" in stale_formal_plan["items"][0]["blockers"]
+    with database.connect() as connection:
+        selection_history = connection.execute(
+            "SELECT media_version_id, selection_type FROM selections WHERE id=?", (formal_selection["id"],)
+        ).fetchone()
+    assert tuple(selection_history) == (str(formal_version["id"]), "FORMAL_SELECTION")
 
 
 def test_review_api_exposes_real_templates_inbox_context_and_selection(workspace, database) -> None:
