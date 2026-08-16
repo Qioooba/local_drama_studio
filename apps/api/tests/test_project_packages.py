@@ -76,6 +76,44 @@ def test_project_package_export_is_verified_deterministic_and_database_read_only
         assert connection.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == audit_before
 
 
+def test_project_package_never_bundles_external_user_model_reference(workspace, database) -> None:
+    """User-selected model weights remain machine references, never package payload."""
+
+    project = _project(workspace, database)
+    external_model = workspace.data_root.parent / "user-model.safetensors"
+    external_model.write_bytes(b"user-owned model bytes")
+    with database.transaction() as connection:
+        connection.execute(
+            """INSERT INTO model_artifacts
+            (id,runtime_id,code,kind,machine_path_ref,sha256,size_bytes,license_note,compatibility_json,
+             status,created_at,updated_at,created_by,revision,schema_version)
+            VALUES (?,?,?,?,?,?,?,?,?,'CANDIDATE',?,?,?,?, 'v2')""",
+            (
+                str(uuid.uuid4()),
+                None,
+                "external-user-model",
+                "T2V",
+                str(external_model.resolve()),
+                hashlib.sha256(external_model.read_bytes()).hexdigest(),
+                external_model.stat().st_size,
+                "USER_SUPPLIED_LOCAL_MODEL",
+                "{}",
+                "now",
+                "now",
+                "test",
+                1,
+            ),
+        )
+    exported = ProjectPackageService(database, workspace.projects_root).export(str(project["id"]))
+    package = workspace.projects_root / "package_source" / str(exported["rel_path"])
+    with zipfile.ZipFile(package) as archive:
+        names = archive.namelist()
+        state = archive.read("project-state.json")
+    assert not any("user-model.safetensors" in name for name in names)
+    assert str(external_model.resolve()).encode("utf-8") not in state
+    assert external_model.is_file()
+
+
 def test_project_package_dry_run_rejects_zip_slip_duplicates_and_unregistered_paths(workspace, database) -> None:
     project = _project(workspace, database)
     service = ProjectPackageService(database, workspace.projects_root)
