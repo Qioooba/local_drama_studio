@@ -272,7 +272,10 @@ def _execute_comfy_smoke(base_url: str, manifest: dict[str, Any], root: Path) ->
         return {"generation_smoke": "BLOCKED", "generation_reason": error or "local_input_root_missing", "runtime_mutated": False}
     destination = input_root / input_name
     output_prefix = token
-    shutil.copy2(source, destination)
+    try:
+        shutil.copy2(source, destination)
+    except OSError as copy_error:
+        return {"generation_smoke": "BLOCKED", "generation_reason": "comfy_input_copy_failed", "copy_error": type(copy_error).__name__, "runtime_mutated": False}
     prompt = {
         "1": {"class_type": "LoadImage", "inputs": {"image": input_name}},
         "2": {"class_type": "SaveImage", "inputs": {"filename_prefix": output_prefix, "images": ["1", 0]}},
