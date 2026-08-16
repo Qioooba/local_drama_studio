@@ -270,6 +270,9 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
         assert render_response.status_code == 201, render_response.text
         render = render_response.json()["render"]
         assert render["status"] == "VERIFIED"
+        # Review clients must use the server-issued immutable revision for the
+        # latest-approval delivery gate instead of guessing a default.
+        assert render["revision"] == 1
         assert render["input_snapshot"]["schema_version"] == "localdrama.episode-render-input.v1"
         assert render["input_snapshot"]["timeline_revision_id"] == timeline["id"]
         assert render["input_snapshot"]["items"]

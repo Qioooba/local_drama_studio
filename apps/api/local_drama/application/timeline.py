@@ -1117,7 +1117,11 @@ class TimelineService:
                 VALUES (?, ?, ?, ?, ?, ?, 'VERIFIED', ?, 'video/mp4', ?, ?, ?, ?, ?, ?, 1, 'v2')""",
                 (render_id, episode["id"], timeline_revision_id, render_path.relative_to(project_root).as_posix(), digest, _json(probe), probe.get("duration_ms"), _json(input_snapshot), _json(ffmpeg_command), execution_log, now, now, actor),
             )
-        return {"id": render_id, "episode_id": episode["id"], "timeline_revision_id": timeline_revision_id, "rel_path": render_path.relative_to(project_root).as_posix(), "sha256": digest, "byte_size": size, "probe": probe, "input_snapshot": input_snapshot, "ffmpeg_command": ffmpeg_command, "execution_log": execution_log, "status": "VERIFIED"}
+        # Expose the immutable render revision to the review client.  The
+        # delivery gate compares the review's expected_subject_revision with
+        # this value; omitting it forced the UI to guess ``1`` and made a
+        # future render-revision migration impossible to use safely.
+        return {"id": render_id, "episode_id": episode["id"], "timeline_revision_id": timeline_revision_id, "rel_path": render_path.relative_to(project_root).as_posix(), "sha256": digest, "byte_size": size, "probe": probe, "input_snapshot": input_snapshot, "ffmpeg_command": ffmpeg_command, "execution_log": execution_log, "revision": 1, "status": "VERIFIED"}
 
     def render_content_path(self, episode_render_version_id: str) -> tuple[dict[str, Any], Path]:
         """Resolve a registered episode render through the local project root.
