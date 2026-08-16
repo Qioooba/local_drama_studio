@@ -66,8 +66,7 @@ class I2VProbePlanService:
             "semantic_inputs": {
                 "PROMPT": "subtle natural breathing, gentle camera push-in, stable identity and lighting",
                 "SEED": 260825,
-                "DURATION_SECONDS": 4.0,
-                "ASPECT_RATIO": "9:16",
+                "FRAME_COUNT": 124,
                 "OUTPUT_PREFIX": "local_drama/i2v_profile_probe",
             },
             "resource_policy": {"channel": "GPU_H3", "max_parallel": 1, "ephemeral_single_job": True},

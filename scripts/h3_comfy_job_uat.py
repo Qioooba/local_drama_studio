@@ -124,7 +124,7 @@ def run(keyframe: Path, server: str, comfy_output_root: Path, comfy_input_root: 
             "H3 platform FL2VA UAT",
             workflow,
             {"capability": "VIDEO_I2V_H3", "input_slots": {"FIRST_FRAME": {"required": True}}},
-            {"FIRST_FRAME": {"node_id": "1", "input": "image"}},
+            {"FIRST_FRAME": {"node_id": "5", "input": "image"}},
             {"local_only": True, "network_policy": "LOOPBACK_ONLY"},
         )
         client = ComfyClient(server, comfy_output_root)

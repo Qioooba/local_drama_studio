@@ -92,14 +92,15 @@ def test_h3_factory_reads_manifest_and_compiles_real_candidate_workflow(workspac
     factory = H3WorkflowFactory(workspace)
     assets = factory.candidate_assets()
     assert assets["model_root"] == "MiniMax-H3"
-    assert assets["transformer_path"] == "transformer_int8_convrot"
-    assert assets["text_encoder_path"] == "text_encoder_int8_convrot"
+    assert assets["fl2va_unet_name"] == "minimax_h3_fl2va_pruned_int8_convrot.safetensors"
+    assert assets["text_encoder_name"] == "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
     layout = factory.runtime_layout()
     assert layout["status"] == "PASS"
-    assert not layout["missing_sidecars"]
+    assert not layout["missing_model_files"]
     workflow = factory.build_t2va("a local test shot", seed=42, duration_seconds=4.0, sigma_points=2)
-    assert workflow["1"]["class_type"] == "RHMiniMaxH3DirectTextEncoderLoader"
-    assert workflow["10"]["inputs"]["format"] == "mp4"
+    assert workflow["1"]["class_type"] == "UNETLoader"
+    assert workflow["8"]["class_type"] == "MiniMaxH3ImageToVideo"
+    assert workflow["14"]["inputs"]["format"] == "mp4"
 
     with TestClient(create_app(workspace)) as client:
         response = client.post(
@@ -115,14 +116,14 @@ def test_h3_factory_reads_manifest_and_compiles_real_candidate_workflow(workspac
         )
         assert i2v_response.status_code == 201
         i2v = i2v_response.json()["workflow_version"]
-        assert i2v["workflow"]["1"]["class_type"] == "LoadImage"
-        assert i2v["workflow"]["2"]["class_type"] == "RHMiniMaxH3FL2VAFirstFrameCondition"
-        assert i2v["node_bindings"]["FIRST_FRAME"] == {"node_id": "1", "input": "image"}
+        assert i2v["workflow"]["5"]["class_type"] == "LoadImage"
+        assert i2v["workflow"]["7"]["class_type"] == "MiniMaxH3ImageToVideo"
+        assert i2v["node_bindings"]["FIRST_FRAME"] == {"node_id": "5", "input": "image"}
 
     fl2va = factory.build_fl2va("approved keyframe motion", first_frame="keyframe.png", seed=9, duration_seconds=4.0, sigma_points=2)
-    assert fl2va["6"]["inputs"]["keyframes"] == ["2", 0]
-    assert fl2va["7"]["inputs"]["h3_vae_bundle"] == ["5", 0]
-    assert fl2va["12"]["inputs"]["format"] == "mp4"
+    assert fl2va["6"]["inputs"]["image"] == ["5", 0]
+    assert fl2va["7"]["inputs"]["vae"] == ["3", 0]
+    assert fl2va["16"]["inputs"]["format"] == "mp4"
 
     h3_service = WorkflowService(database, workspace)
     h3 = h3_service.register_package(

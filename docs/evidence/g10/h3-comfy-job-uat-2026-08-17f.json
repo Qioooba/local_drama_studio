@@ -1,0 +1,20 @@
+{
+  "schema_version": "g10.h3_comfy_job_uat.v1",
+  "status": "BLOCKED",
+  "runtime": {
+    "endpoint": "http://127.0.0.1:8188",
+    "endpoint_local": true,
+    "runtime_contacted": true,
+    "network_contacted": false,
+    "production_database_contacted": false,
+    "production_mutated": false
+  },
+  "failure": {
+    "type": "RuntimeError",
+    "stage": "platform_comfy_job"
+  },
+  "limitations": [
+    "本次平台 Comfy Job UAT 在真实本机运行时失败，未将失败伪装成生成成功。",
+    "请检查隔离 Comfy stderr/runtime 资源后重跑；外部 native 节点生成与平台正式媒体链证据仍分别保留。"
+  ]
+}

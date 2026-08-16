@@ -18,7 +18,26 @@ from local_drama.infrastructure.comfy import ComfyClient
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.manifest import load_manifest
 
-TRUSTED_COMFY_BUILTINS = {"CreateVideo", "LoadImage", "SaveImage", "SaveVideo"}
+# ComfyUI core builtins (nodes.py) and core comfy_extras used by the native
+# MiniMax H3 chain verified on this host (openclaw docs/H3_TURBO_PIPELINE.md).
+TRUSTED_COMFY_BUILTINS = {
+    "BasicGuider",
+    "BasicScheduler",
+    "CLIPLoader",
+    "CreateVideo",
+    "ImageScale",
+    "KSamplerSelect",
+    "LoadImage",
+    "MiniMaxH3ImageToVideo",
+    "RandomNoise",
+    "SamplerCustomAdvanced",
+    "SaveImage",
+    "SaveVideo",
+    "UNETLoader",
+    "VAEDecode",
+    "VAEDecodeAudio",
+    "VAELoader",
+}
 
 
 def _now() -> str:

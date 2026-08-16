@@ -1,0 +1,233 @@
+{
+  "schema_version": "g10.h3_comfy_job_uat.v1",
+  "status": "PARTIAL",
+  "runtime": {
+    "endpoint": "http://127.0.0.1:8188",
+    "endpoint_local": true,
+    "network_contacted": false,
+    "production_database_contacted": false
+  },
+  "source": {
+    "path": "F:\\AI_Projects\\h3\\local_drama_studio\\projects\\g2_smoke2\\00_admin\\imports\\c506f03c2e0e493db95392d60c97c98a-anchor-233395e15e67403682820196fdeccaf6.png",
+    "sha256": "82f17d192cfe1759958fd10b1619575cec15e815d00873c9b4a1b79cf0f36203",
+    "bytes": 307278
+  },
+  "workflow": {
+    "id": "c0190384-6950-483f-afb5-ae4560aa09c0",
+    "status": "PUBLISHED",
+    "validation": {
+      "workflow_version_id": "c0190384-6950-483f-afb5-ae4560aa09c0",
+      "status": "PASS",
+      "required_nodes": [
+        "BasicGuider",
+        "BasicScheduler",
+        "CLIPLoader",
+        "CreateVideo",
+        "ImageScale",
+        "KSamplerSelect",
+        "LoadImage",
+        "MiniMaxH3ImageToVideo",
+        "RandomNoise",
+        "SamplerCustomAdvanced",
+        "SaveVideo",
+        "UNETLoader",
+        "VAEDecode",
+        "VAEDecodeAudio",
+        "VAELoader"
+      ],
+      "missing_nodes": [],
+      "comfy_url": "http://127.0.0.1:8188",
+      "runtime_layout": {
+        "status": "PASS",
+        "release_root": "E:\\AI\\ComfyDesktop\\ComfyUI\\ComfyUI\\models",
+        "selected_components": {
+          "model_root": "MiniMax-H3",
+          "fl2va_unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+          "text_encoder_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+          "video_vae_name": "minimax_h3_video_vae_fp16.safetensors",
+          "audio_vae_name": "minimax_h3_audio_vae_fp32.safetensors",
+          "turbo_lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors"
+        },
+        "missing_model_files": [],
+        "node_family": "comfy_extras.MiniMaxH3ImageToVideo",
+        "manifest_sha256": null
+      },
+      "node_supply_chain": {
+        "required_nodes": [
+          "BasicGuider",
+          "BasicScheduler",
+          "CLIPLoader",
+          "CreateVideo",
+          "ImageScale",
+          "KSamplerSelect",
+          "LoadImage",
+          "MiniMaxH3ImageToVideo",
+          "RandomNoise",
+          "SamplerCustomAdvanced",
+          "SaveVideo",
+          "UNETLoader",
+          "VAEDecode",
+          "VAEDecodeAudio",
+          "VAELoader"
+        ],
+        "trusted_custom_nodes": [],
+        "trusted_builtin_nodes": [
+          "BasicGuider",
+          "BasicScheduler",
+          "CLIPLoader",
+          "CreateVideo",
+          "ImageScale",
+          "KSamplerSelect",
+          "LoadImage",
+          "MiniMaxH3ImageToVideo",
+          "RandomNoise",
+          "SamplerCustomAdvanced",
+          "SaveVideo",
+          "UNETLoader",
+          "VAEDecode",
+          "VAEDecodeAudio",
+          "VAELoader"
+        ],
+        "plugin_init_sha256": "a45c99a3a884aeed6a05ac8e5254494742b5d869b7f33cd0340daa2400fb3a6c",
+        "node_mapping_sha256": "fda92dc0f88ba42a99837deb149a96e9841226de2ccfbdbbd7c8439b7977888a",
+        "manifest_sha256": "1fb8580b707558b85fa4134eb3d4f8a12e64777a064e280b24a5ffb3f2b6eb2c"
+      },
+      "validation_id": "1718578c-cd90-4e2a-b1d9-13a0908d94d1",
+      "evidence_hash": "391186c154e2788c4ac88d5cad8a42756f11a025d588299c2ff25e7a66c3109b"
+    }
+  },
+  "job": {
+    "id": "c37a45c9-b615-4ac6-b522-ed7b362b3314",
+    "attempt_id": "368749c8-b69d-4330-9b92-13b654655887",
+    "prompt_id": "0a662ba9-cca1-4b4d-852d-6429801112db",
+    "poll_states": [
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "SUCCEEDED"
+    ]
+  },
+  "artifact": {
+    "id": "18aeaaf7-4758-4a25-a96b-488f7d8b7771",
+    "job_attempt_id": "368749c8-b69d-4330-9b92-13b654655887",
+    "kind": "COMFY_OUTPUT",
+    "sandbox_rel_path": "jobs/c37a45c9-b615-4ac6-b522-ed7b362b3314/comfy/SHOT_001_00001_.mp4",
+    "sha256": "1af4fb04f436b6a3662a9677983dcee341fec00baf1f7c437b1c8ac74c22235f",
+    "byte_size": 1018259,
+    "status": "VERIFIED",
+    "idempotent_replay": false,
+    "path": "E:\\AI\\Temp\\h3-comfy-job-89jwgd6i\\work\\jobs\\c37a45c9-b615-4ac6-b522-ed7b362b3314\\comfy\\SHOT_001_00001_.mp4",
+    "exists": true
+  },
+  "platform_pipeline": {
+    "promoted_media_version_id": "ccba9bf4-40e0-4af1-868f-3ee0bb0fef3c",
+    "machine_qc": {
+      "id": "36571140-e48e-4876-87d2-e59999537794",
+      "subject_type": "MEDIA_VERSION",
+      "subject_id": "ccba9bf4-40e0-4af1-868f-3ee0bb0fef3c",
+      "policy_version": "g6_formal_video_qc_v1",
+      "status": "PASS",
+      "results": [
+        {
+          "item_id": "file_integrity",
+          "result": "PASS",
+          "details": {
+            "exists": true,
+            "byte_size": 1018259
+          }
+        },
+        {
+          "item_id": "decode",
+          "result": "PASS",
+          "details": {
+            "probe_status": "PASS"
+          }
+        },
+        {
+          "item_id": "dimensions",
+          "result": "PASS",
+          "details": {
+            "width": 480,
+            "height": 832,
+            "source": "ffprobe"
+          }
+        },
+        {
+          "item_id": "fps",
+          "result": "PASS",
+          "details": {
+            "numerator": 24,
+            "denominator": 1,
+            "value": 24.0,
+            "source": "ffprobe"
+          }
+        },
+        {
+          "item_id": "duration",
+          "result": "PASS",
+          "details": {
+            "duration_ms": 5167,
+            "source": "ffprobe"
+          }
+        },
+        {
+          "item_id": "codec",
+          "result": "PASS",
+          "details": {
+            "codec_name": "h264",
+            "source": "ffprobe"
+          }
+        }
+      ]
+    },
+    "human_decision": "APPROVED",
+    "selection": {
+      "project_id": "eff10a51-abc8-4f11-bd5e-c8760c9e2504",
+      "status": "COMMITTED",
+      "items": [
+        {
+          "id": "7d654131-d9e9-40c2-8aec-4da9b78b714f",
+          "media_asset_id": "d8727d05-dad9-4554-b601-718a599fd831",
+          "media_version_id": "ccba9bf4-40e0-4af1-868f-3ee0bb0fef3c",
+          "selection_type": "FORMAL_SELECTION",
+          "status": "SELECTED"
+        }
+      ]
+    }
+  },
+  "isolated": {
+    "project_id": "eff10a51-abc8-4f11-bd5e-c8760c9e2504",
+    "shot_id": "216fd7b7-48d0-4378-9eca-f8104a365a7f",
+    "database_integrity": "ok",
+    "runtime_contacted": true,
+    "network_contacted": false,
+    "production_mutated": false
+  },
+  "limitations": [
+    "隔离项目已跑通平台 Job→Artifact→Media→QC→审核→选择，但未进入正式整集交付包/下载审计；整体保持 PARTIAL。"
+  ]
+}

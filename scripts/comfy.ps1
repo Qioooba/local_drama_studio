@@ -90,7 +90,10 @@ if (-not (Test-Path -LiteralPath $managerConfigPath)) {
 $arguments = @(
   'main.py','--listen','127.0.0.1','--port',"$port",
   '--output-directory',$outputRoot,'--input-directory',$inputRoot,'--temp-directory',$tempRoot,'--user-directory',$userRoot,
-  '--disable-all-custom-nodes','--whitelist-custom-nodes','ComfyUI_RH_MinMaxH3','--disable-api-nodes'
+  # The platform's H3 chain uses ComfyUI core + comfy_extras nodes only; the RH
+  # plugin family is excluded (verified to crash on this host) and no custom
+  # nodes are whitelisted.
+  '--disable-all-custom-nodes','--disable-api-nodes'
 )
 if ($env:LOCAL_DRAMA_COMFY_DIAGNOSTIC_FLAGS) {
   $allowedDiagnosticFlags = @(

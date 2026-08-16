@@ -55,13 +55,10 @@ async def register_h3_candidate(payload: H3CandidateWorkflowRequest, request: Re
             acceleration=payload.acceleration,
         )
         bindings = {
-            "PROMPT": {"node_id": "5", "input": "prompt"},
-            "SEED": {"node_id": "7", "input": "seed"},
-            "DURATION_SECONDS": {"node_id": "4", "input": "duration_seconds"},
-            "ASPECT_RATIO": {"node_id": "4", "input": "aspect_ratio"},
-            "OUTPUT_PREFIX": {"node_id": "10", "input": "filename_prefix"},
-            "SIGMA_POINTS": {"node_id": "7", "input": "sigma_points"},
-            "ACCELERATION": {"node_id": "7", "input": "accel"},
+            "PROMPT": {"node_id": "8", "input": "prompt"},
+            "SEED": {"node_id": "5", "input": "noise_seed"},
+            "FRAME_COUNT": {"node_id": "8", "input": "length"},
+            "OUTPUT_PREFIX": {"node_id": "14", "input": "filename_prefix"},
         }
         contract = {"capability": "H3_T2VA_CANDIDATE", "requires_explicit_validation": True, "local_only": True}
         runtime_contract = {"transport": "LOOPBACK_HTTP", "worker_policy": "ONE_H3_WORKER_ONE_GPU_TASK", "candidate": True}
@@ -86,14 +83,11 @@ async def register_h3_i2v_candidate(payload: H3I2VCandidateWorkflowRequest, requ
             acceleration=payload.acceleration,
         )
         bindings = {
-            "FIRST_FRAME": {"node_id": "1", "input": "image"},
+            "FIRST_FRAME": {"node_id": "5", "input": "image"},
             "PROMPT": {"node_id": "7", "input": "prompt"},
-            "SEED": {"node_id": "9", "input": "seed"},
-            "DURATION_SECONDS": {"node_id": "6", "input": "duration_seconds"},
-            "ASPECT_RATIO": {"node_id": "6", "input": "aspect_ratio"},
-            "OUTPUT_PREFIX": {"node_id": "12", "input": "filename_prefix"},
-            "SIGMA_POINTS": {"node_id": "9", "input": "sigma_points"},
-            "ACCELERATION": {"node_id": "9", "input": "accel"},
+            "SEED": {"node_id": "8", "input": "noise_seed"},
+            "FRAME_COUNT": {"node_id": "7", "input": "length"},
+            "OUTPUT_PREFIX": {"node_id": "16", "input": "filename_prefix"},
         }
         contract = {"capability": "H3_FL2VA_I2V_CANDIDATE", "input_slots": {"FIRST_FRAME": {"min": 1, "max": 1}}, "requires_explicit_validation": True, "local_only": True}
         runtime_contract = {"transport": "LOOPBACK_HTTP", "worker_policy": "ONE_H3_WORKER_ONE_GPU_TASK", "candidate": True}
