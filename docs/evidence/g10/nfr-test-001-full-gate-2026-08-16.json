@@ -56,7 +56,8 @@
   ],
   "safety": {
     "test_runtime": "isolated fixtures and loopback test servers only",
-    "network_contacted": false,
+    "loopback_test_servers_contacted": true,
+    "public_network_contacted": false,
     "production_database_mutated": false,
     "production_project_tree_mutated": false
   },
