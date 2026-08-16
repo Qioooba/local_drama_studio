@@ -8,7 +8,7 @@ opener prevents ComfyUI and Local LLM clients from drifting apart.
 from __future__ import annotations
 
 from email.message import Message
-from typing import IO
+from typing import IO, cast
 from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, OpenerDirector, ProxyHandler, Request, build_opener
 from urllib.response import addinfourl
@@ -27,4 +27,4 @@ LOCAL_HTTP_OPENER: OpenerDirector = build_opener(ProxyHandler({}), _RejectRedire
 def open_local(request: Request, *, timeout: float) -> addinfourl:
     """Open one already-validated local request without proxy/redirect hops."""
 
-    return LOCAL_HTTP_OPENER.open(request, timeout=timeout)
+    return cast(addinfourl, LOCAL_HTTP_OPENER.open(request, timeout=timeout))

@@ -73,6 +73,10 @@ def redirect_servers():
 
 def test_local_clients_do_not_follow_redirects_or_use_provider_payload_details(redirect_servers, monkeypatch) -> None:
     redirect, _sink = redirect_servers
+    # The safe API harness disables Comfy access globally.  This test is
+    # specifically exercising the allowed loopback transport after the
+    # access guard, so opt into that bounded local path explicitly.
+    monkeypatch.setenv("LOCAL_DRAMA_COMFY_ACCESS", "enabled")
     monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
     monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
 
