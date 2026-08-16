@@ -26,6 +26,17 @@
     "raw_provider_error_recorded": false,
     "redaction": "No provider stack, token, prompt, or absolute input path is included"
   },
+  "diagnostics": {
+    "safe_flags": ["--disable-dynamic-vram", "--disable-cuda-malloc", "--disable-smart-memory"],
+    "safe_flags_result": "BLOCKED_REPRODUCED",
+    "runtime": "torch 2.10.0+cu130; RTX3090Ti; total VRAM 24563 MB; RAM 130964 MB",
+    "independent_loader": {
+      "device_cpu_offload_cpu": "PASS",
+      "device_cuda_offload_cpu": "PASS",
+      "interpretation": "The local safetensors files are readable; the crash is isolated to full Comfy plus Qwen CUDA residency and large DiT load."
+    },
+    "diagnostic_script": "scripts/comfy.ps1"
+  },
   "service_safety_followup": {
     "status": "PASS",
     "behavior": "ComfyGenerationService now converts a loopback runtime loss during queue/history polling into a redacted COMFY_RUNTIME_UNAVAILABLE attempt result, releases the lease, and leaves the Job retryable (QUEUED) according to its bounded retry policy.",

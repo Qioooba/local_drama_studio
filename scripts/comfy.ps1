@@ -92,6 +92,18 @@ $arguments = @(
   '--output-directory',$outputRoot,'--input-directory',$inputRoot,'--temp-directory',$tempRoot,'--user-directory',$userRoot,
   '--disable-all-custom-nodes','--whitelist-custom-nodes','ComfyUI_RH_MinMaxH3','--disable-api-nodes'
 )
+if ($env:LOCAL_DRAMA_COMFY_DIAGNOSTIC_FLAGS) {
+  $allowedDiagnosticFlags = @(
+    '--disable-dynamic-vram','--disable-cuda-malloc','--disable-smart-memory',
+    '--lowvram','--cpu-vae','--force-fp16','--force-fp32'
+  )
+  $requestedDiagnosticFlags = @($env:LOCAL_DRAMA_COMFY_DIAGNOSTIC_FLAGS -split '\s+' | Where-Object { $_ })
+  $invalidDiagnosticFlags = @($requestedDiagnosticFlags | Where-Object { $_ -notin $allowedDiagnosticFlags })
+  if ($invalidDiagnosticFlags.Count -gt 0) {
+    throw "unsupported LOCAL_DRAMA_COMFY_DIAGNOSTIC_FLAGS: $($invalidDiagnosticFlags -join ', ')"
+  }
+  $arguments += $requestedDiagnosticFlags
+}
 $env:LOCAL_DRAMA_H3_EPHEMERAL_WORKER = '1'
 $launcher = Start-Process -FilePath $python -WorkingDirectory $comfyRoot -ArgumentList $arguments -WindowStyle Hidden -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru
 $listener = $null
