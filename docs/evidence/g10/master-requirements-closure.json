@@ -16,8 +16,8 @@
     "tc_total": 85
   },
   "closure": {
-    "verified_release_fr": 23,
-    "verified_release_nfr": 0,
+    "verified_release_fr": 24,
+    "verified_release_nfr": 1,
     "passed_tc": 10,
     "open_p0_defects": null,
     "open_p1_defects": null,
@@ -29,6 +29,8 @@
     "The two P2 FRs are inventoried but do not block the first formal release.",
     "G7-G10 evidence is necessary but cannot by itself set this ledger to PASS.",
     "FR-AUT-002 has implementation-level loopback client/webhook evidence, but remains PARTIAL until formal three-viewport production UAT and release evidence are captured.",
+    "FR-AUD-001 is promoted to PASS only because the mapped Windows SAPI runtime and three-viewport governance evidence are both explicit PASS records, and the API/UI tests cover immutable text revision, voice/profile provenance, audition candidate, selection, idempotency and finalize replay.",
+    "NFR-REL-003 is promoted to PASS from the explicit PASS upgrade/restore rehearsal at migration 0039 plus the clean-root online-backup restore UAT with 100 media hashes and restored API/read/review checks; the separate outbox-delivery evidence remains PARTIAL and is not used for this NFR.",
     "FR-AUT-001, FR-CTL-002, FR-REV-001, FR-IMG-001..006, FR-AST-001, FR-GEN-001..010, FR-JOB-001..005 and FR-OPS/PRV-001..003 now have implementation-level API/UI evidence and remain PARTIAL until formal three-viewport production UAT is captured."
   ]
 }

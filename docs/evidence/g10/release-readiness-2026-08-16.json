@@ -1,6 +1,6 @@
 {
   "schema_version": "g10.release_audit.read_only.v1",
-  "observed_at": "2026-08-16T06:56:17.636659+00:00",
+  "observed_at": "2026-08-16T07:09:22.302524+00:00",
   "status": "IN_PROGRESS",
   "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
   "checks": [
@@ -84,9 +84,9 @@
       "observed": {
         "valid": false,
         "status": "IN_PROGRESS",
-        "verified_fr": 23,
+        "verified_fr": 24,
         "required_fr": 84,
-        "verified_nfr": 0,
+        "verified_nfr": 1,
         "required_nfr": 15,
         "passed_tc": 10,
         "required_tc": 85,
@@ -95,7 +95,6 @@
         "mapping_problems": [],
         "next_missing_fr": [
           "FR-AST-001",
-          "FR-AUD-001",
           "FR-AUDT-001",
           "FR-AUT-001",
           "FR-AUT-002",
@@ -103,7 +102,8 @@
           "FR-CTL-002",
           "FR-CTL-003",
           "FR-CTL-004",
-          "FR-DEL-001"
+          "FR-DEL-001",
+          "FR-DEL-002"
         ],
         "next_missing_nfr": [
           "NFR-A11Y-001",
