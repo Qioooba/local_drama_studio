@@ -446,3 +446,13 @@ ComfyUI 与 Local LLM loopback 客户端现在使用显式无代理、拒绝 3xx
 - FR-AUD-001/002：正式项目内真实授权音色、Published TTS Profile、试听/QC/人工审核/选择闭环仍为数据链缺失（隔离 SAPI 链路已 PASS，见 `dialogue-tts-windows-uat-2026-08-16.json`）。
 - FR-IMG-002：真实用户 Profile/Runtime 批量图片生成待用户本机 Profile 就绪后执行。
 - FR-DEL-001..004：交付链三视口读链已覆盖，最终交付包签字留待实际生产内容产生后执行。
+
+## 2026-08-17 第二轮：H3 原生链打通 + 真实数据三视口 UAT
+
+本窗口在用户授权下继续推进，三项关键突破：
+
+1. **H3 平台 Job 链改用原生 comfy_extras 节点链并真实跑通**：RH 插件族在本机被精确复现为崩溃源（`comfy-production.stderr.log` 定位到 `ComfyUI_RH_MinMaxH3/.../qwen_encoder/encoder.py:321 _unload_linear_patcher` 在 Qwen INT8 unpatch/offload 时 Windows access violation）。按用户指示弃用 RH，`H3WorkflowFactory` 改为编译本机已验证的 ComfyUI core/comfy_extras 原生链（`UNETLoader/CLIPLoader/VAELoader + MiniMaxH3ImageToVideo + BasicScheduler/BasicGuider/SamplerCustomAdvanced/VAEDecode/VAEDecodeAudio/CreateVideo/SaveVideo`，openclaw 实测参数：480×832、帧数 17k+5 网格、res_multistep/simple、denoise 1.0、模型名取自 `model_manifest.json` loader_assets）。`scripts/comfy.ps1` 不再白名单 RH。真实运行 `scripts/h3_comfy_job_uat.py`（证据 `docs/evidence/g10/h3-comfy-job-uat-2026-08-17i.json`，status=PARTIAL 成功路径）：平台 Job → 真实 MP4 artifact（1,018,259B，h264 480×832 24fps 5167ms）→ 晋升 MediaVersion → machine QC PASS → 人工 APPROVED → FORMAL_SELECTION COMMITTED，全程隔离零公网。`@comfyui` 实时测试（含原生工作流 validate/publish）全绿。
+2. **图片候选三视口 UAT**：`scripts/serve_image_review_uat.py` + `tests/e2e/image_review_windows_uat.spec.ts`，隔离库种子两个真实 PNG PROXY 候选，图片网格/A-B 缩略图比较/键盘导航 1440×900/1280×800/1024×768 3/3 PASS，零写入/零原片/零错误（证据 `fr-img-002-006-image-review-windows-uat-2026-08-17.json`，覆盖 FR-IMG-002..006 三视口）。
+3. **TTS 数据链三视口 UAT**：`scripts/serve_tts_review_uat.py` + `tests/e2e/tts_review_windows_uat.spec.ts`，隔离库种子真实 Windows SAPI 合成 WAV（275,762B）、USER_OWNED 音色授权、Published TTS Profile、FORMAL 候选；对白/TTS 面板三视口 3/3 PASS，试听 `preload=none` 零自动原音频（证据 `fr-aud-001-002-tts-review-windows-uat-2026-08-17.json`，覆盖 FR-AUD-001/002 三视口）。
+
+边界保持：正式生产项目内的真实 H3 生成产物登记、FR-AUD 正式项目数据链与最终交付包签字仍属使用期事项；G6 四条同关键帧 take + winner + formal branch 已有权威退出证据（`G6_exit_report.md`）。

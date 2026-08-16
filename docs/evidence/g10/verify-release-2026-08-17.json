@@ -1,0 +1,57 @@
+{
+  "schema_version": "g10.verify_release.v1",
+  "observed_at": "2026-08-16T19:12:59.100524+00:00",
+  "mode": "LOCAL_ONLY",
+  "status": "PASS",
+  "database_path": "F:\\AI_Projects\\h3\\local_drama_studio\\data\\local_drama.sqlite3",
+  "checks": [
+    {
+      "code": "DATABASE_INTEGRITY",
+      "passed": true,
+      "observed": "ok"
+    },
+    {
+      "code": "MIGRATION_HEAD",
+      "passed": true,
+      "observed": "0039_automation_task_jobs",
+      "expected": "0039_automation_task_jobs"
+    },
+    {
+      "code": "BACKUP_INTEGRITY",
+      "passed": true,
+      "count": 58,
+      "checked": 5,
+      "all_ok": true
+    },
+    {
+      "code": "LOOPBACK_API_BINDING",
+      "passed": true,
+      "listening": true,
+      "address": "127.0.0.1:3210",
+      "local_only": true
+    },
+    {
+      "code": "LOCAL_UAT_READONLY_BASELINE",
+      "passed": true,
+      "observed": "PASS"
+    },
+    {
+      "code": "MASTER_REQUIREMENTS_CLOSURE",
+      "passed": true,
+      "observed": null
+    },
+    {
+      "code": "RELEASE_AUDIT",
+      "passed": true,
+      "observed": null
+    }
+  ],
+  "safety": {
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "mutated": false,
+    "migrations_run": false,
+    "jobs_created": false
+  },
+  "interpretation": "Post-launch read-only verification for the Windows x64 LOCAL_ONLY source release. It never runs migrations, contacts ComfyUI or the public network, or mutates the database."
+}
