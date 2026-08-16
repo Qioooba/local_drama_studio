@@ -92,6 +92,22 @@ describe("DialogueGovernanceActions", () => {
     expect(vi.mocked(api.submitTTSJob).mock.calls[0][2]).toMatch(/^[0-9a-f-]{36}$/);
   });
 
+  it("binds a selected Published TTS Profile when creating a voice", async () => {
+    vi.mocked(api.createVoiceProfileVersion).mockResolvedValue({ voice_profile: { ...voices[0], id: "voice-tts", provider_profile_version_id: "tts-profile-v1" } });
+    const profiles: api.Profile[] = [{ id: "profile", code: "sapi-tts", title: "Windows SAPI", version_id: "tts-profile-v1", version_no: 1, capability: "TTS_SAPI_LOCAL", status: "PUBLISHED" }];
+    render(<DialogueGovernanceActions projectId="project-1" episodeId="episode-1" lines={lines} voices={voices} profiles={profiles} onChanged={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "新增对白、音色或候选" }));
+    fireEvent.change(screen.getByLabelText("操作类型"), { target: { value: "VOICE" } });
+    fireEvent.change(screen.getByLabelText("音色标识"), { target: { value: "VOICE-TTS" } });
+    fireEvent.change(screen.getByLabelText("音色名称"), { target: { value: "Windows SAPI" } });
+    fireEvent.change(screen.getByLabelText("本地音色引用"), { target: { value: "sapi:Microsoft Huihui Desktop" } });
+    fireEvent.change(screen.getByLabelText("项目内授权证据路径"), { target: { value: "00_admin/voice-license.json" } });
+    fireEvent.change(screen.getByLabelText("授权状态"), { target: { value: "USER_OWNED" } });
+    fireEvent.change(screen.getByLabelText("Published TTS Profile"), { target: { value: "tts-profile-v1" } });
+    fireEvent.click(screen.getByRole("button", { name: "校验并创建不可变记录" }));
+    await waitFor(() => expect(api.createVoiceProfileVersion).toHaveBeenCalledWith("project-1", { code: "VOICE-TTS", title: "Windows SAPI", voice_ref: "sapi:Microsoft Huihui Desktop", license_status: "USER_OWNED", license_evidence_path_rel: "00_admin/voice-license.json", provider_profile_version_id: "tts-profile-v1" }));
+  });
+
   it("finalizes only an explicitly supplied successful TTS Job", async () => {
     vi.mocked(api.finalizeTTSJob).mockResolvedValue({ result: { job_id: "job-1", artifact_id: "artifact-1", media: { id: "media-1" }, candidate: { id: "candidate-1", dialogue_text_revision_id: "text-1", voice_profile_version_id: "voice-1", media_version_id: "media-1", emotion: "neutral", speech_rate: 1, seed: null, model_ref: "WINDOWS_SAPI_LOCAL", candidate_kind: "FORMAL", status: "READY", provenance: {} }, idempotent_replay: false } });
     render(<DialogueGovernanceActions projectId="project-1" episodeId="episode-1" lines={lines} voices={voices} onChanged={() => undefined} />);

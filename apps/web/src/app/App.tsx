@@ -145,7 +145,7 @@ export function App() {
   const contract = useQuery<SystemContract>({ queryKey: ["system", "contract"], queryFn: () => systemContract() });
   const adapterContracts = useQuery({ queryKey: ["adapters", "contracts"], queryFn: () => getAdapterContracts(), enabled: view === "overview" || view === "diagnostics" });
   const projects = useQuery({ queryKey: ["projects", projectSearch, projectStatus], queryFn: () => listProjects({ search: projectSearch || undefined, status: projectStatus || undefined }) });
-  const profiles = useQuery({ queryKey: ["profiles"], queryFn: () => listProfiles(), enabled: view === "profiles" || view === "generation" || view === "overview" });
+  const profiles = useQuery({ queryKey: ["profiles"], queryFn: () => listProfiles(), enabled: view === "profiles" || view === "generation" || view === "overview" || view === "projects" });
   const workflows = useQuery({ queryKey: ["workflow-versions"], queryFn: () => listWorkflowVersions(), enabled: view === "profiles" });
   const diagnostics = useQuery({ queryKey: ["diagnostics", "latest"], queryFn: () => latestDiagnostics(), enabled: view === "diagnostics" || view === "overview" });
   const h3Runtime = useQuery({ queryKey: ["h3", "candidate-runtime"], queryFn: () => h3CandidateRuntime(), enabled: view === "generation" || view === "overview" });
@@ -355,7 +355,7 @@ export function App() {
                 {selectedProject && <CreativeLibrary projectId={selectedProject} />}
                 {selectedProject && <ScriptImportPanel projectId={selectedProject} />}
                 {selectedProject && <AIDraftReviewPanel projectId={selectedProject} />}
-                {selectedProject && selectedEpisode && <DialogueTTSPanel lines={dialogueLines.data?.items ?? []} voices={voiceProfiles.data?.items ?? []} projectId={selectedProject} episodeId={selectedEpisode} onChanged={() => { void dialogueLines.refetch(); void voiceProfiles.refetch(); void queryClient.invalidateQueries({ queryKey: ["jobs"] }); }} />}
+                {selectedProject && selectedEpisode && <DialogueTTSPanel lines={dialogueLines.data?.items ?? []} voices={voiceProfiles.data?.items ?? []} profiles={profiles.data?.items ?? []} projectId={selectedProject} episodeId={selectedEpisode} onChanged={() => { void dialogueLines.refetch(); void voiceProfiles.refetch(); void profiles.refetch(); void queryClient.invalidateQueries({ queryKey: ["jobs"] }); }} />}
                 {selectedProject && selectedEpisode && <AudioTrackPanel bindings={audioBindings.data?.items ?? []} projectId={selectedProject} episodeId={selectedEpisode} onBound={() => { void audioBindings.refetch(); void timelineStatus.refetch(); void g8Readiness.refetch(); }} />}
                 {selectedEpisode && <SubtitleRevisionPanel episodeId={selectedEpisode} defaultSourceDocumentVersionId={String(timelineStatus.data?.status.subtitles.latest?.source_document_version_id ?? "")} onCreated={() => { void timelineStatus.refetch(); void g8Readiness.refetch(); }} />}
                 {selectedEpisode && <TimelineRevisionPanel episodeId={selectedEpisode} onCreated={() => { void timelineStatus.refetch(); void g8Readiness.refetch(); }} />}
