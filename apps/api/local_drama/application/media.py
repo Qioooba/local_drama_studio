@@ -592,7 +592,10 @@ class MediaService:
 
     def thumbnail(self, media_version_id: str, size: str = "small", frame: str = "poster") -> tuple[Path, str]:
         item, source = self.content_path(media_version_id)
-        if item["media_kind"] not in {"IMAGE", "VIDEO"}:
+        mime_type = str(item["mime_type"]).lower()
+        is_image = item["media_kind"] == "IMAGE" or mime_type.startswith("image/")
+        is_video = item["media_kind"] == "VIDEO" or mime_type.startswith("video/")
+        if not is_image and not is_video:
             raise DomainRuleError("THUMBNAIL_UNSUPPORTED", "该媒体类型不支持缩略图")
         normalized_frame = str(frame or "poster").strip().lower()
         frame_aliases = {"poster": "first", "start": "first", "first_frame": "first", "middle_frame": "middle", "end": "last", "last_frame": "last"}
@@ -603,7 +606,7 @@ class MediaService:
                 "缩略图 frame 仅支持 first、middle、last（poster 等价于 first）",
                 {"frame": frame},
             )
-        if item["media_kind"] == "IMAGE" and normalized_frame != "first":
+        if is_image and not is_video and normalized_frame != "first":
             raise DomainRuleError("THUMBNAIL_FRAME_UNSUPPORTED", "图片只有 first/poster 缩略图")
         self.verify_content_integrity(media_version_id)
         preset = f"thumbnail-v2:{size}:{normalized_frame}"
@@ -616,7 +619,7 @@ class MediaService:
             partial = destination.with_suffix(".partial.webp")
             scale = "320:-1" if size == "small" else "960:-1"
             seek: list[str] = []
-            if item["media_kind"] == "VIDEO":
+            if is_video and not is_image:
                 duration_ms = int(item.get("duration_ms") or 0)
                 if normalized_frame != "first" and duration_ms <= 0:
                     raise DomainRuleError("THUMBNAIL_FRAME_UNRESOLVED", "视频缺少有效 duration，无法定位缩略图帧")

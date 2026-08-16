@@ -56,6 +56,25 @@ def test_image_content_endpoint_requires_derived_thumbnail(workspace, database) 
     assert tampered_poster.json()["error"]["code"] == "SOURCE_INTEGRITY_FAILED"
 
 
+def test_image_mime_cannot_bypass_thumbnail_policy_when_media_kind_is_misclassified(workspace, database) -> None:
+    """A mislabeled image still gets a derived read surface, never raw bytes."""
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="thumb_mime_guard", title="Thumbnail MIME guard", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1,
+        target_duration_ms=60_000, allow_unconfigured_capabilities=True,
+    )
+    source = workspace.work_root / "mime-guard.png"
+    subprocess.run([workspace.ffmpeg_path, "-f", "lavfi", "-i", "color=c=blue:s=16x16:d=1", "-frames:v", "1", "-y", str(source)], check=True, capture_output=True)
+    from local_drama.application.media import MediaService
+    media = MediaService(database, workspace).import_file(str(project["id"]), source, media_kind="DOCUMENT")
+    with TestClient(create_app(workspace)) as client:
+        raw = client.get(f"/api/v1/media-versions/{media['media_version_id']}/content")
+        thumbnail = client.get(f"/api/v1/media-versions/{media['media_version_id']}/thumbnail?size=small&frame=poster")
+    assert raw.status_code == 409
+    assert raw.json()["error"]["code"] == "IMAGE_CONTENT_REQUIRES_THUMBNAIL"
+    assert thumbnail.status_code == 200
+    assert thumbnail.headers["content-type"].startswith("image/webp")
+
+
 def test_workspace_asset_authorization_rejects_cross_project_and_tamper(workspace, database) -> None:
     first = ProjectService(database, workspace.projects_root).create_project(code="asset_first", title="first", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1, target_duration_ms=60_000, allow_unconfigured_capabilities=True)
     second = ProjectService(database, workspace.projects_root).create_project(code="asset_second", title="second", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1, target_duration_ms=60_000, allow_unconfigured_capabilities=True)

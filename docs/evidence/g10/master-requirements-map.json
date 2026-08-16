@@ -9,10 +9,22 @@
       "automated_tests": ["apps/api/tests/test_project_creation_plan.py", "apps/web/src/features/projects/ProjectCreateWizard.test.tsx"]
     },
     {
+      "id": "FR-PRJ-002",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/project-package-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_project_packages.py"]
+    },
+    {
       "id": "FR-PRJ-003",
       "status": "PASS",
       "evidence": ["docs/evidence/g10/project-list-filter-uat-2026-08-15.json"],
       "automated_tests": ["apps/api/tests/test_project_listing.py", "apps/api/tests/test_api_projects.py"]
+    },
+    {
+      "id": "FR-PRJ-006",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/project-template-copy-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_project_template_copy.py"]
     },
     {
       "id": "FR-WRT-001",
@@ -43,6 +55,18 @@
       "status": "PASS",
       "evidence": ["docs/evidence/g10/director-shot-editor-uat-2026-08-15.json"],
       "automated_tests": ["apps/api/tests/test_director_fields.py", "apps/web/src/features/production/DirectorShotEditor.test.tsx"]
+    },
+    {
+      "id": "FR-WRT-006",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/continuity-panel-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_continuity_context.py", "apps/web/src/features/production/ContinuityPanel.test.tsx"]
+    },
+    {
+      "id": "FR-WRT-007",
+      "status": "PASS",
+      "evidence": ["docs/evidence/g10/ai-draft-review-uat-2026-08-15.json"],
+      "automated_tests": ["apps/api/tests/test_ai_breakdown_drafts.py"]
     },
     {
       "id": "FR-AUD-002",
@@ -288,7 +312,7 @@
       "id": "FR-IMG-003",
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/fr-img-001-006-image-candidate-review-2026-08-16.json"],
-      "automated_tests": ["apps/web/src/features/reviews/ImageCandidateGrid.test.tsx", "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx", "apps/api/tests/test_workspace_assets.py::test_image_content_endpoint_requires_derived_thumbnail"]
+      "automated_tests": ["apps/web/src/features/reviews/ImageCandidateGrid.test.tsx", "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx", "apps/api/tests/test_workspace_assets.py::test_image_content_endpoint_requires_derived_thumbnail", "apps/api/tests/test_workspace_assets.py::test_image_mime_cannot_bypass_thumbnail_policy_when_media_kind_is_misclassified"]
     },
     {
       "id": "FR-IMG-004",

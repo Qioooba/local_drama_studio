@@ -190,7 +190,11 @@ def _stream(path: Path, start: int, end: int) -> Iterator[bytes]:
 async def _content(media_version_id: str, request: Request, head: bool = False) -> Response:
     try:
         item, path = service(request).content_path(media_version_id)
-        if str(item["media_kind"]) == "IMAGE":
+        # MIME is an independent safety net for callers that imported a real
+        # image with an incorrect semantic media_kind.  An image must never
+        # fall through to the raw range endpoint just because its label was
+        # misclassified; the only visual read surface is the derived cache.
+        if str(item["media_kind"]) == "IMAGE" or str(item["mime_type"]).lower().startswith("image/"):
             raise DomainRuleError(
                 "IMAGE_CONTENT_REQUIRES_THUMBNAIL",
                 "图片读取必须使用派生缩略图接口，不直接读取原图",
