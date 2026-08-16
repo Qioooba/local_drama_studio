@@ -1521,19 +1521,26 @@ class TimelineService:
         if not ffmpeg or not Path(ffmpeg).is_file():
             raise DomainRuleError("FFMPEG_UNAVAILABLE", "本机 FFmpeg 不可用")
         try:
-            result = subprocess.run([ffmpeg, *args], capture_output=True, text=True, timeout=timeout, check=False)
+            # FFmpeg emits localized/UTF-8 diagnostics even on Windows where
+            # the process default code page may be GBK.  Pin decoding and
+            # replace malformed bytes so a valid local render cannot fail
+            # while Python is merely collecting stderr (especially for
+            # Chinese/space-containing delivery paths).
+            result = subprocess.run([ffmpeg, *args], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, check=False)
         except (OSError, subprocess.TimeoutExpired) as error:
             raise DomainRuleError("FFMPEG_EXECUTION_FAILED", "本地 FFmpeg 执行失败", {"reason": type(error).__name__}) from error
+        stdout_tail = result.stdout or ""
+        stderr_tail = result.stderr or ""
         if result.returncode != 0:
-            raise DomainRuleError("FFMPEG_EXECUTION_FAILED", "本地 FFmpeg 执行失败", {"stderr_redacted": result.stderr[-500:]})
-        return {"executable": str(ffmpeg), "args": args, "returncode": result.returncode, "stdout_tail": result.stdout[-2000:], "stderr_tail": result.stderr[-4000:]}
+            raise DomainRuleError("FFMPEG_EXECUTION_FAILED", "本地 FFmpeg 执行失败", {"stderr_redacted": stderr_tail[-500:]})
+        return {"executable": str(ffmpeg), "args": args, "returncode": result.returncode, "stdout_tail": stdout_tail[-2000:], "stderr_tail": stderr_tail[-4000:]}
 
     def _probe(self, path: Path) -> dict[str, Any]:
         ffprobe = self.settings.ffprobe_path
         if not ffprobe or not Path(ffprobe).is_file():
             raise DomainRuleError("FFPROBE_UNAVAILABLE", "本机 FFprobe 不可用")
         try:
-            result = subprocess.run([ffprobe, "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)], capture_output=True, text=True, timeout=60, check=False)
+            result = subprocess.run([ffprobe, "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, check=False)
         except (OSError, subprocess.TimeoutExpired) as error:
             raise DomainRuleError("FFPROBE_FAILED", "本地 FFprobe 检查失败", {"reason": type(error).__name__}) from error
         if result.returncode != 0:

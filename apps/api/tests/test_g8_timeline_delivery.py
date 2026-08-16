@@ -461,7 +461,7 @@ def test_brand_watermark_and_compliance_versions_bind_delivery_without_auto_revi
             },
         )
         assert render_review.status_code == 201, render_review.text
-        target = ConfigurationService(database).create_delivery_target(project_id, "brand-local", "Brand local", "LOCAL_FILESYSTEM", {"path_rel": "06_delivery/brand"})
+        target = ConfigurationService(database).create_delivery_target(project_id, "brand-local", "Brand local", "LOCAL_FILESYSTEM", {"path_rel": "06_delivery/品牌 本地 UAT"})
         brand = client.post(f"/api/v1/projects/{project_id}/brand-kits", json={"code": "series", "title": "Series v1", "tokens": {"colors": {"primary": "#223344"}}})
         assert brand.status_code == 201, brand.text
         watermark = client.post(f"/api/v1/projects/{project_id}/watermark-profiles", json={"code": "corner", "title": "右下角水印", "config": {"text": "LOCAL STUDY", "position": "BOTTOM_RIGHT", "opacity": 0.8, "font_size": 18, "margin": 8, "color": "white"}})

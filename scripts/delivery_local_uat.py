@@ -174,11 +174,55 @@ def run(artifact: Path, sandbox_root: Path) -> dict[str, Any]:
             "select local delivery target",
         )["target"]
 
+        brand = _expect(
+            client.post(
+                f"/api/v1/projects/{project_id}/brand-kits",
+                json={"code": "series", "title": "H3 本地系列 v1", "tokens": {"colors": {"primary": "#223344"}}},
+            ),
+            201,
+            "create brand kit",
+        )["brand_kit"]
+        watermark = _expect(
+            client.post(
+                f"/api/v1/projects/{project_id}/watermark-profiles",
+                json={
+                    "code": "corner",
+                    "title": "Local Study watermark",
+                    "config": {"text": "LOCAL STUDY", "position": "BOTTOM_RIGHT", "opacity": 0.8, "font_size": 18, "margin": 8, "color": "white"},
+                },
+            ),
+            201,
+            "create watermark profile",
+        )["watermark_profile"]
+        failing_policy = _expect(
+            client.post(
+                f"/api/v1/projects/{project_id}/compliance-policies",
+                json={"code": "duration", "title": "故意失败的本地合规策略", "rules": {"require_watermark": True, "max_duration_ms": 100}},
+            ),
+            201,
+            "create failing compliance policy",
+        )["compliance_policy"]
+        control_ids = {"brand_kit_id": brand["id"], "watermark_profile_id": watermark["id"]}
+        failed_preflight = client.post(
+            "/api/v1/delivery-packages",
+            json={"episode_render_version_id": render["id"], "target_version_id": target["version_id"], **control_ids, "compliance_policy_id": failing_policy["id"]},
+        )
+        failed_preflight_payload = _expect(failed_preflight, 422, "failing compliance preflight")
+        passing_policy = _expect(
+            client.post(
+                f"/api/v1/projects/{project_id}/compliance-policies",
+                json={"code": "duration", "title": "本地合规策略 v2", "rules": {"require_watermark": True, "max_duration_ms": 10_000, "require_human_review": True, "require_platform_review": True}},
+            ),
+            201,
+            "create passing compliance policy",
+        )["compliance_policy"]
+        control_ids["compliance_policy_id"] = passing_policy["id"]
+
         # Prove that the immutable render cannot be handed off before its
         # latest human approval.  No output directory should be touched here.
         blocked = client.post(
             "/api/v1/delivery-packages",
-            json={"episode_render_version_id": render["id"], "target_version_id": target["version_id"]},
+            json={"episode_render_version_id": render["id"], "target_version_id": target["version_id"], **control_ids},
         )
         blocked_payload = _expect(blocked, 422, "pre-approval delivery gate")
         blocked_code = str(blocked_payload.get("error", {}).get("code", ""))
@@ -201,7 +245,7 @@ def run(artifact: Path, sandbox_root: Path) -> dict[str, Any]:
         delivery = _expect(
             client.post(
                 "/api/v1/delivery-packages",
-                json={"episode_render_version_id": render["id"], "target_version_id": selected_target["version_id"]},
+                json={"episode_render_version_id": render["id"], "target_version_id": selected_target["version_id"], **control_ids},
             ),
             201,
             "build delivery package",
@@ -214,6 +258,16 @@ def run(artifact: Path, sandbox_root: Path) -> dict[str, Any]:
         verify = _expect(client.get(f"/api/v1/delivery-packages/{package_id}:verify"), 200, "verify delivery")["delivery"]
         details_before_download = _expect(client.get(f"/api/v1/delivery-packages/{package_id}"), 200, "get delivery details")["delivery"]
         files = _expect(client.get(f"/api/v1/delivery-packages/{package_id}/files"), 200, "list delivery files")["items"]
+        human_review = _expect(
+            client.post(f"/api/v1/delivery-packages/{package_id}:review", json={"reviewer_type": "HUMAN", "decision": "APPROVED", "note": "隔离 UAT 人工确认画面与本地授权范围"}),
+            200,
+            "human delivery review",
+        )["delivery"]
+        platform_review = _expect(
+            client.post(f"/api/v1/delivery-packages/{package_id}:review", json={"reviewer_type": "PLATFORM", "decision": "APPROVED", "note": "隔离 UAT 平台规则确认"}),
+            200,
+            "platform delivery review",
+        )["delivery"]
         download = client.get(f"/api/v1/delivery-packages/{package_id}/download")
         if download.status_code != 200 or not download.content:
             raise RuntimeError(f"download delivery: expected non-empty HTTP 200, got {download.status_code}")
@@ -267,8 +321,10 @@ def run(artifact: Path, sandbox_root: Path) -> dict[str, Any]:
             "timeline_revision": timeline,
             "episode_render": render,
             "pre_approval_delivery_gate": {"status_code": blocked.status_code, "error_code": blocked_code},
+            "failed_compliance_preflight": {"status_code": failed_preflight.status_code, "error_code": failed_preflight_payload.get("error", {}).get("code")},
             "latest_render_review": render_review,
             "delivery_target": selected_target,
+            "controls": {"brand_kit": brand, "watermark_profile": watermark, "failing_policy": failing_policy, "passing_policy": passing_policy},
             "delivery": delivery,
             "manifest": {
                 "path_rel": str(manifest_path.relative_to(sandbox)).replace("\\", "/"),
@@ -282,6 +338,8 @@ def run(artifact: Path, sandbox_root: Path) -> dict[str, Any]:
             "details_before_download": details_before_download,
             "files": files,
             "download": {"status_code": download.status_code, "bytes": len(download.content), "content_disposition": download.headers.get("content-disposition")},
+            "human_delivery_review": human_review,
+            "platform_delivery_review": platform_review,
             "history_after_download": details_after_download,
             "withdraw": withdrawn,
             "verify_after_withdraw": verify_withdrawn,
