@@ -1,0 +1,430 @@
+{
+  "schema_version": "g10.fr-ctl-001.windows-local-uat.v1",
+  "status": "PARTIAL",
+  "requirement_id": "FR-CTL-001",
+  "scope": [
+    "Published Profile NATIVE/PROMPT_FALLBACK/UNSUPPORTED resolution",
+    "ShotRevision and Production Ready positive/negative API gates",
+    "loopback-only Windows isolated UAT"
+  ],
+  "platform": {
+    "system": "win32",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.10"
+  },
+  "local_only": true,
+  "loopback_endpoint": "http://127.0.0.1:54425",
+  "isolation": {
+    "root_rel": "work/camera-capability-uat-20260816-v4",
+    "database_rel": "work/camera-capability-uat-20260816-v4/数据 SQLite/local_drama.sqlite3",
+    "published_profile_fixtures": [
+      "a1e7b1f6-aa87-4ebb-a531-f5fbc6f66786",
+      "69d736e0-83f3-4372-83e4-13efa42e0d56",
+      "5a64a0e9-6898-4111-8d68-0cca20f1b9d6"
+    ],
+    "production_database_contacted": false,
+    "user_model_executed": false,
+    "provider_contacted": false,
+    "public_network_contacted": false
+  },
+  "checks": [
+    {
+      "code": "LOOPBACK_FASTAPI_READY",
+      "status": "PASS",
+      "observed": {
+        "live": {
+          "status": 200,
+          "payload": {
+            "status": "HEALTHY",
+            "checks": {
+              "process": "ok",
+              "mode": "LOCAL_ONLY"
+            }
+          },
+          "error": null,
+          "elapsed_ms": 531.817
+        },
+        "bootstrap": {
+          "status": 200,
+          "payload": {
+            "token": "P01cnbrZfCXV8umvYU4EGEyJLB15wfqiWTDPNMcsAbU",
+            "mode": "LOCAL_ONLY"
+          },
+          "error": null,
+          "elapsed_ms": 19.324
+        }
+      },
+      "detail": "actual 127.0.0.1 FastAPI process with local write token"
+    },
+    {
+      "code": "PUBLISHED_NATIVE_RESOLUTION",
+      "status": "PASS",
+      "observed": {
+        "camera_plan": {
+          "mode": "NATIVE",
+          "shot_type": "CLOSEUP",
+          "movement": "PUSH_IN",
+          "prompt_text": "",
+          "direction": "FORWARD",
+          "intensity": 0.55,
+          "curve": "EASE_IN_OUT",
+          "profile_version_id": "a1e7b1f6-aa87-4ebb-a531-f5fbc6f66786"
+        },
+        "submission_allowed": true,
+        "support": "NATIVE",
+        "profile": {
+          "id": "a1e7b1f6-aa87-4ebb-a531-f5fbc6f66786",
+          "code": "camera-native-uat",
+          "version_no": 1
+        },
+        "runtime_contacted": false,
+        "network_contacted": false,
+        "mutated": false
+      },
+      "detail": "explicit Published Profile NATIVE contract"
+    },
+    {
+      "code": "PUBLISHED_FALLBACK_RESOLUTION",
+      "status": "PASS",
+      "observed": {
+        "camera_plan": {
+          "mode": "PROMPT_FALLBACK",
+          "shot_type": "CLOSEUP",
+          "movement": "PUSH_IN",
+          "prompt_text": "camera: PUSH_IN",
+          "direction": "FORWARD",
+          "intensity": 0.55,
+          "curve": "EASE_IN_OUT",
+          "profile_version_id": "69d736e0-83f3-4372-83e4-13efa42e0d56"
+        },
+        "submission_allowed": true,
+        "support": "PROMPT_FALLBACK",
+        "profile": {
+          "id": "69d736e0-83f3-4372-83e4-13efa42e0d56",
+          "code": "camera-fallback-uat",
+          "version_no": 1
+        },
+        "runtime_contacted": false,
+        "network_contacted": false,
+        "mutated": false
+      },
+      "detail": "fallback must expose an explicit prompt"
+    },
+    {
+      "code": "PUBLISHED_UNSUPPORTED_RESOLUTION",
+      "status": "PASS",
+      "observed": {
+        "camera_plan": {
+          "mode": "UNSUPPORTED",
+          "shot_type": "CLOSEUP",
+          "movement": "PUSH_IN",
+          "prompt_text": "",
+          "direction": "FORWARD",
+          "intensity": 0.55,
+          "curve": "EASE_IN_OUT",
+          "profile_version_id": "5a64a0e9-6898-4111-8d68-0cca20f1b9d6"
+        },
+        "submission_allowed": false,
+        "support": "UNSUPPORTED",
+        "profile": {
+          "id": "5a64a0e9-6898-4111-8d68-0cca20f1b9d6",
+          "code": "camera-unsupported-uat",
+          "version_no": 1
+        },
+        "runtime_contacted": false,
+        "network_contacted": false,
+        "mutated": false
+      },
+      "detail": "unsupported is a truthful non-submittable outcome"
+    },
+    {
+      "code": "RESOLUTION_LOCAL_READ_ONLY",
+      "status": "PASS",
+      "observed": {
+        "native": {
+          "camera_plan": {
+            "mode": "NATIVE",
+            "shot_type": "CLOSEUP",
+            "movement": "PUSH_IN",
+            "prompt_text": "",
+            "direction": "FORWARD",
+            "intensity": 0.55,
+            "curve": "EASE_IN_OUT",
+            "profile_version_id": "a1e7b1f6-aa87-4ebb-a531-f5fbc6f66786"
+          },
+          "submission_allowed": true,
+          "support": "NATIVE",
+          "profile": {
+            "id": "a1e7b1f6-aa87-4ebb-a531-f5fbc6f66786",
+            "code": "camera-native-uat",
+            "version_no": 1
+          },
+          "runtime_contacted": false,
+          "network_contacted": false,
+          "mutated": false
+        },
+        "fallback": {
+          "camera_plan": {
+            "mode": "PROMPT_FALLBACK",
+            "shot_type": "CLOSEUP",
+            "movement": "PUSH_IN",
+            "prompt_text": "camera: PUSH_IN",
+            "direction": "FORWARD",
+            "intensity": 0.55,
+            "curve": "EASE_IN_OUT",
+            "profile_version_id": "69d736e0-83f3-4372-83e4-13efa42e0d56"
+          },
+          "submission_allowed": true,
+          "support": "PROMPT_FALLBACK",
+          "profile": {
+            "id": "69d736e0-83f3-4372-83e4-13efa42e0d56",
+            "code": "camera-fallback-uat",
+            "version_no": 1
+          },
+          "runtime_contacted": false,
+          "network_contacted": false,
+          "mutated": false
+        },
+        "unsupported": {
+          "camera_plan": {
+            "mode": "UNSUPPORTED",
+            "shot_type": "CLOSEUP",
+            "movement": "PUSH_IN",
+            "prompt_text": "",
+            "direction": "FORWARD",
+            "intensity": 0.55,
+            "curve": "EASE_IN_OUT",
+            "profile_version_id": "5a64a0e9-6898-4111-8d68-0cca20f1b9d6"
+          },
+          "submission_allowed": false,
+          "support": "UNSUPPORTED",
+          "profile": {
+            "id": "5a64a0e9-6898-4111-8d68-0cca20f1b9d6",
+            "code": "camera-unsupported-uat",
+            "version_no": 1
+          },
+          "runtime_contacted": false,
+          "network_contacted": false,
+          "mutated": false
+        }
+      },
+      "detail": "resolving contracts neither executes nor configures a Runtime"
+    },
+    {
+      "code": "NATIVE_REVISION_AND_READY",
+      "status": "PASS",
+      "observed": {
+        "revision": {
+          "status": 201,
+          "payload": {
+            "shot_revision": {
+              "id": "6a8fb6b6-a975-4118-bea3-c77f12a597f1",
+              "shot_id": "fc743d6b-5e0f-48d3-b0bb-af7be00aa7fc",
+              "revision_no": 2,
+              "fields": {
+                "shot_type": "CLOSEUP",
+                "composition": "center",
+                "subject_action": "turn toward camera",
+                "camera_plan": {
+                  "mode": "NATIVE",
+                  "shot_type": "CLOSEUP",
+                  "movement": "PUSH_IN",
+                  "prompt_text": "",
+                  "direction": "FORWARD",
+                  "intensity": 0.55,
+                  "curve": "EASE_IN_OUT",
+                  "profile_version_id": "a1e7b1f6-aa87-4ebb-a531-f5fbc6f66786"
+                },
+                "target_duration_ms": 4000,
+                "dialogue": "",
+                "environment": "interior",
+                "continuity": "same wardrobe",
+                "creative_intent": "focus on reaction"
+              },
+              "is_frozen": true
+            }
+          },
+          "error": null,
+          "elapsed_ms": 54.884
+        },
+        "ready": {
+          "status": 200,
+          "payload": {
+            "shot": {
+              "id": "fc743d6b-5e0f-48d3-b0bb-af7be00aa7fc",
+              "episode_id": "88ba23f7-aa28-4fb8-83d3-a6e933098b9b",
+              "code": "CAM_NATIVE",
+              "order_key": "1.0",
+              "target_duration_ms": 4000,
+              "shot_type": "OTHER",
+              "status": "READY",
+              "current_revision_id": "6a8fb6b6-a975-4118-bea3-c77f12a597f1",
+              "created_at": "2026-08-16T09:28:59.448780Z",
+              "updated_at": "2026-08-16T09:29:02.644968Z",
+              "created_by": "local-user",
+              "revision": 3,
+              "schema_version": "v2"
+            }
+          },
+          "error": null,
+          "elapsed_ms": 25.573
+        }
+      },
+      "detail": "real API positive path"
+    },
+    {
+      "code": "FALLBACK_REVISION_AND_READY",
+      "status": "PASS",
+      "observed": {
+        "revision": {
+          "status": 201,
+          "payload": {
+            "shot_revision": {
+              "id": "1ed278fc-16cb-483c-b469-607befe6a018",
+              "shot_id": "37ca97d8-e6c3-49e8-92eb-53b01ad031e8",
+              "revision_no": 2,
+              "fields": {
+                "shot_type": "CLOSEUP",
+                "composition": "center",
+                "subject_action": "turn toward camera",
+                "camera_plan": {
+                  "mode": "PROMPT_FALLBACK",
+                  "shot_type": "CLOSEUP",
+                  "movement": "PUSH_IN",
+                  "prompt_text": "camera: PUSH_IN",
+                  "direction": "FORWARD",
+                  "intensity": 0.55,
+                  "curve": "EASE_IN_OUT",
+                  "profile_version_id": "69d736e0-83f3-4372-83e4-13efa42e0d56"
+                },
+                "target_duration_ms": 4000,
+                "dialogue": "",
+                "environment": "interior",
+                "continuity": "same wardrobe",
+                "creative_intent": "focus on reaction"
+              },
+              "is_frozen": true
+            }
+          },
+          "error": null,
+          "elapsed_ms": 28.277
+        },
+        "ready": {
+          "status": 200,
+          "payload": {
+            "shot": {
+              "id": "37ca97d8-e6c3-49e8-92eb-53b01ad031e8",
+              "episode_id": "88ba23f7-aa28-4fb8-83d3-a6e933098b9b",
+              "code": "CAM_FALLBACK",
+              "order_key": "2.0",
+              "target_duration_ms": 4000,
+              "shot_type": "OTHER",
+              "status": "READY",
+              "current_revision_id": "1ed278fc-16cb-483c-b469-607befe6a018",
+              "created_at": "2026-08-16T09:28:59.468649Z",
+              "updated_at": "2026-08-16T09:29:02.701439Z",
+              "created_by": "local-user",
+              "revision": 3,
+              "schema_version": "v2"
+            }
+          },
+          "error": null,
+          "elapsed_ms": 39.722
+        }
+      },
+      "detail": "real API fallback positive path"
+    },
+    {
+      "code": "FORGED_UNSUPPORTED_REVISION_REJECTED",
+      "status": "PASS",
+      "observed": {
+        "status": 422,
+        "payload": {
+          "error": {
+            "code": "CAMERA_PLAN_UNSUPPORTED",
+            "message": "当前 Published Profile 不支持该结构化运镜，不能保存可执行 revision",
+            "request_id": "a4e736ed-b448-4b73-b658-91f8e57707ee",
+            "details": {
+              "profile_version_id": "5a64a0e9-6898-4111-8d68-0cca20f1b9d6",
+              "movement": "PUSH_IN"
+            },
+            "retryable": false,
+            "suggested_action": null
+          }
+        },
+        "error": "HTTPError",
+        "elapsed_ms": 8.263
+      },
+      "detail": "server does not trust client supplied NATIVE mode"
+    },
+    {
+      "code": "READY_RECHECKS_STALE_PROFILE",
+      "status": "PASS",
+      "observed": {
+        "revision": {
+          "status": 201,
+          "payload": {
+            "shot_revision": {
+              "id": "b3cb5a26-112d-4c01-a663-5caff904265c",
+              "shot_id": "402485f2-742f-4268-92ae-5eb012daefcb",
+              "revision_no": 2,
+              "fields": {
+                "shot_type": "CLOSEUP",
+                "composition": "center",
+                "subject_action": "turn toward camera",
+                "camera_plan": {
+                  "mode": "NATIVE",
+                  "shot_type": "CLOSEUP",
+                  "movement": "PUSH_IN",
+                  "prompt_text": "",
+                  "direction": "FORWARD",
+                  "intensity": 0.55,
+                  "curve": "EASE_IN_OUT",
+                  "profile_version_id": "a1e7b1f6-aa87-4ebb-a531-f5fbc6f66786"
+                },
+                "target_duration_ms": 4000,
+                "dialogue": "",
+                "environment": "interior",
+                "continuity": "same wardrobe",
+                "creative_intent": "focus on reaction"
+              },
+              "is_frozen": true
+            }
+          },
+          "error": null,
+          "elapsed_ms": 56.897
+        },
+        "ready": {
+          "status": 422,
+          "payload": {
+            "error": {
+              "code": "CAMERA_PLAN_UNSUPPORTED",
+              "message": "当前 Published Profile 不支持该结构化运镜，不能保存可执行 revision",
+              "request_id": "4de520cd-f580-4259-b799-b77069933adf",
+              "details": {
+                "profile_version_id": "a1e7b1f6-aa87-4ebb-a531-f5fbc6f66786",
+                "movement": "PUSH_IN"
+              },
+              "retryable": false,
+              "suggested_action": null
+            }
+          },
+          "error": "HTTPError",
+          "elapsed_ms": 46.08
+        }
+      },
+      "detail": "Ready re-resolves after isolated fixture contract changes"
+    }
+  ],
+  "runtime_contacted": false,
+  "network_contacted": true,
+  "loopback_network_contacted": true,
+  "public_network_contacted": false,
+  "production_mutated": false,
+  "limitations": [
+    "Profiles are disposable isolated Published fixtures, not production evidence publication or a user-model execution.",
+    "The test changes one isolated fixture contract directly solely to prove ProjectService's stale Ready recheck; published contract immutability is covered separately.",
+    "No browser interaction, real user model execution, or release-scale concurrency is claimed."
+  ],
+  "observed_at": "2026-08-16T09:29:02.920323+00:00"
+}
