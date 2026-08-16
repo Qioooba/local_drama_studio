@@ -1,0 +1,63 @@
+{
+  "schema_version": "g10-fr-img-002-006-image-review-windows-uat.v1",
+  "observed_at": "2026-08-16T18:39:01.527Z",
+  "mode": "LOCAL_ONLY",
+  "project_id": "19fb17a9-4b13-42f4-ba34-869dd133fc39",
+  "scope": [
+    "image candidate grid",
+    "image review inbox",
+    "image A/B thumbnail compare",
+    "keyboard candidate navigation"
+  ],
+  "status": "PASS",
+  "isolated_snapshot": true,
+  "production_database_touched": false,
+  "production_project_tree_touched": false,
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "mutated": false,
+  "original_media_requested": false,
+  "screenshots_created": false,
+  "viewports": [
+    {
+      "viewport": "1440x900",
+      "status": "PASS",
+      "image_candidates_seen": 2,
+      "thumbnail_requests": 2,
+      "writes": [],
+      "public_requests": [],
+      "original_media_requests": [],
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "horizontal_overflow_px": 0
+    },
+    {
+      "viewport": "1280x800",
+      "status": "PASS",
+      "image_candidates_seen": 2,
+      "thumbnail_requests": 2,
+      "writes": [],
+      "public_requests": [],
+      "original_media_requests": [],
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "horizontal_overflow_px": 0
+    },
+    {
+      "viewport": "1024x768",
+      "status": "PASS",
+      "image_candidates_seen": 2,
+      "thumbnail_requests": 2,
+      "writes": [],
+      "public_requests": [],
+      "original_media_requests": [],
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "horizontal_overflow_px": 0
+    }
+  ],
+  "interpretation": "Real React review surfaces (ImageCandidateGrid + ReviewInboxPanel) were exercised at 1440x900/1280x800/1024x768 against an isolated SQLite snapshot seeded with two real local PNG PROXY image candidates. Only size=small derived thumbnails are requested; original /content is never fetched; no mutation controls were clicked."
+}

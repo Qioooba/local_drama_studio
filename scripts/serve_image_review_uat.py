@@ -20,9 +20,13 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 from local_drama.application.media import MediaService  # type: ignore[import-not-found]
-from local_drama.application.projects import ProjectService  # type: ignore[import-not-found]
+from local_drama.application.projects import (
+    ProjectService,  # type: ignore[import-not-found]
+)
 from local_drama.config import Settings  # type: ignore[import-not-found]
-from local_drama.infrastructure.database.sqlite import Database  # type: ignore[import-not-found]
+from local_drama.infrastructure.database.sqlite import (
+    Database,  # type: ignore[import-not-found]
+)
 from local_drama.main import create_app  # type: ignore[import-not-found]
 
 from scripts.migrate import migrate

@@ -1,0 +1,64 @@
+{
+  "schema_version": "g10-fr-aud-001-002-tts-review-windows-uat.v1",
+  "observed_at": "2026-08-16T18:57:27.419Z",
+  "mode": "LOCAL_ONLY",
+  "project_id": "289cf744-ff65-413d-ae7d-4c9d9b1e912e",
+  "episode_id": "2132aabb-131f-4ad6-9060-5960aa21265c",
+  "scope": [
+    "dialogue TTS governance panel",
+    "voice authorization",
+    "published TTS profile",
+    "FORMAL TTS candidate audition"
+  ],
+  "status": "PASS",
+  "isolated_snapshot": true,
+  "production_database_touched": false,
+  "production_project_tree_touched": false,
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "mutated": false,
+  "original_media_requested": false,
+  "screenshots_created": false,
+  "viewports": [
+    {
+      "viewport": "1440x900",
+      "status": "PASS",
+      "candidate_cards": 1,
+      "waveform_requests": 0,
+      "content_requests": [],
+      "writes": [],
+      "public_requests": [],
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "horizontal_overflow_px": 0
+    },
+    {
+      "viewport": "1280x800",
+      "status": "PASS",
+      "candidate_cards": 1,
+      "waveform_requests": 0,
+      "content_requests": [],
+      "writes": [],
+      "public_requests": [],
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "horizontal_overflow_px": 0
+    },
+    {
+      "viewport": "1024x768",
+      "status": "PASS",
+      "candidate_cards": 1,
+      "waveform_requests": 0,
+      "content_requests": [],
+      "writes": [],
+      "public_requests": [],
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "horizontal_overflow_px": 0
+    }
+  ],
+  "interpretation": "Real React dialogue/TTS governance surfaces were exercised at 1440x900/1280x800/1024x768 against an isolated SQLite snapshot seeded with a real Windows SAPI-synthesized WAV, a USER_OWNED voice authorization, a published TTS profile and a FORMAL TTS candidate. Only derived waveforms are requested; original audio /content is never fetched (preload=none); no mutation controls were clicked."
+}

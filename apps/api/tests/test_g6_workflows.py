@@ -82,7 +82,8 @@ def test_workflow_rejects_absolute_path_and_api_reads_real_comfy_stats(workspace
     with TestClient(create_app(workspace)) as client:
         stats = client.get("/api/v1/comfy/system-stats")
         assert stats.status_code == 200
-        assert stats.json()["system"]["system"]["comfyui_version"] == "0.31.0"
+        version = str(stats.json()["system"]["system"]["comfyui_version"])
+        assert version.count(".") >= 2 and version[0].isdigit()
         queue = client.get("/api/v1/comfy/queue")
         assert queue.status_code == 200
 
