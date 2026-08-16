@@ -323,7 +323,7 @@ class ReviewService:
                 if asset is None:
                     raise DomainRuleError("MEDIA_ASSET_NOT_FOUND", "正式交付选择的媒体资产不存在")
                 selection_id = str(uuid.uuid4())
-                connection.execute("INSERT INTO selections (id, media_asset_id, media_version_id, selection_type, source_revision, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, 'FORMAL_SELECTION', ?, ?, ?, ?, 1, 'v2')", (selection_id, item["media_asset_id"], item["media_version_id"], asset["revision"], now, now, now, actor))
+                connection.execute("INSERT INTO selections (id, media_asset_id, media_version_id, selection_type, source_revision, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, 'FORMAL_SELECTION', ?, ?, ?, ?, 1, 'v2')", (selection_id, item["media_asset_id"], item["media_version_id"], asset["revision"], now, now, actor))
                 connection.execute("UPDATE media_assets SET selected_version_id=?, version_counter=version_counter+1, revision=revision+1, updated_at=? WHERE id=?", (item["media_version_id"], now, item["media_asset_id"]))
                 selected.append({"id": selection_id, "media_asset_id": item["media_asset_id"], "media_version_id": item["media_version_id"], "selection_type": "FORMAL_SELECTION", "status": "SELECTED"})
             connection.execute("INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'producer', 'FORMAL_SELECTION_BATCH_COMMITTED', 'project', ?, ?, ?)", (actor, project_id, "批量选择已批准正式视频用于交付", _json({"count": len(selected), "media_version_ids": media_version_ids})))

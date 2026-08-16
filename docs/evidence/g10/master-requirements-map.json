@@ -524,14 +524,14 @@
     {
       "id": "FR-VID-006",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-vid-001-005-007-006-formal-video-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_formal_video_qc.py", "apps/api/tests/test_g4_reviews.py"]
+      "evidence": ["docs/evidence/g10/fr-vid-001-005-007-006-formal-video-2026-08-16.json", "docs/evidence/g10/h3-formal-pipeline-uat-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_formal_video_qc.py", "apps/api/tests/test_formal_selection_commit.py", "apps/api/tests/test_g4_reviews.py", "scripts/h3_formal_pipeline_uat.py"]
     },
     {
       "id": "FR-VID-007",
       "status": "PARTIAL",
-      "evidence": ["docs/evidence/g10/fr-vid-001-005-007-006-formal-video-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_g4_reviews.py", "apps/web/src/generated/api.test.ts"]
+      "evidence": ["docs/evidence/g10/fr-vid-001-005-007-006-formal-video-2026-08-16.json", "docs/evidence/g10/h3-formal-pipeline-uat-2026-08-16.json"],
+      "automated_tests": ["apps/api/tests/test_g4_reviews.py", "apps/api/tests/test_formal_selection_commit.py", "apps/web/src/generated/api.test.ts", "scripts/h3_formal_pipeline_uat.py"]
     },
     {
       "id": "FR-VID-002",

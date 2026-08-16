@@ -394,3 +394,5 @@ ComfyUI 与 Local LLM loopback 客户端现在使用显式无代理、拒绝 3xx
 ## 2026-08-16 真实 H3 FL2VA I2V 隔离运行
 
 在已批准的 SHOT_001 关键帧和用户本机模型引用上，以真实 MiniMaxH3ImageToVideo 节点完成一次 10-step、480×832、124 帧的本地 I2V；ComfyUI 监听 `127.0.0.1:8190`，输出写入 F 盘 `work/comfy-production/output` 隔离目录。队列提交、执行成功、H.264/AAC 产物、24fps/5.167s、SHA-256 与 ffprobe 均已留证，模型未打包/上传，生产 DB 未接触。证据 `docs/evidence/g10/h3-local-i2v-uat-2026-08-16.json` 保持 `PARTIAL`：这是运行时真实产物，不等同于 LocalDramaStudio 正式 Job/MediaVersion 登记；正式 machine QC、人工审核、选择与交付，以及长时间稳定性/许可证复核仍需后续闭环。
+
+同一真实 MP4 随后在临时 SQLite/项目根中跑通平台正式媒体链：`MediaService.import_file(stage=FORMAL)`、`g6_formal_video_qc_v1` ffprobe 机器检查、`formal_video` 模板人工批准、FORMAL_SELECTION 预检与提交均成功，数据库 integrity=ok；新增 `scripts/h3_formal_pipeline_uat.py`、`test_formal_selection_commit.py`，证据 `docs/evidence/g10/h3-formal-pipeline-uat-2026-08-16.json` 仍为 `PARTIAL`，因为未把该隔离对象推进整集交付包/下载审计。期间发现并修复正式选择提交的 SQLite 参数绑定错误，避免真实批准链在最终写选择行时失败。
