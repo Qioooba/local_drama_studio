@@ -1,40 +1,74 @@
 {
-  "schema_version": "g10.nfr-sec-003-prv-002-local-adapter-transport.v1",
+  "schema_version": "g10.nfr-sec-003-fr-prv-002-local-adapter-windows-uat.v1",
   "status": "PARTIAL",
-  "scope": [
+  "scope": "isolated Windows x64 LOCAL_ONLY real urllib transport against ephemeral loopback harnesses",
+  "requirements": [
     "NFR-SEC-003",
     "FR-PRV-002"
   ],
-  "observed_at": "2026-08-16",
-  "controls": {
-    "proxy": "ComfyUI and Local LLM requests use an explicit empty ProxyHandler and do not inherit HTTP(S)_PROXY/ALL_PROXY",
-    "redirect": "The shared local opener rejects HTTP 3xx before opening Location; loopback adapters cannot hop to another local or public target",
-    "endpoint": "Runtime clients reject credentials, query and fragment-bearing loopback URLs; adapter contracts reject the same ambiguous targets",
-    "provider_error": "Comfy workflow rejection returns a stable provider_response=rejected marker and never exposes raw provider error/node_errors payloads"
-  },
-  "automated_checks": [
+  "checks": [
     {
-      "test": "apps/api/tests/test_local_transport_security.py::test_local_clients_do_not_follow_redirects_or_use_provider_payload_details",
-      "result": "PASS",
-      "observed": "real loopback redirect server receives one request, sink receives zero requests for both Comfy and Local LLM while proxy variables are set; provider path/token details are absent"
+      "code": "WINDOWS_HOST",
+      "passed": true,
+      "platform": "Windows-11-10.0.26200-SP0"
     },
     {
-      "test": "apps/api/tests/test_local_transport_security.py::test_local_clients_reject_credential_or_query_bearing_endpoints",
-      "result": "PASS",
-      "observed": "credentials and query-bearing endpoints return LOCAL_ONLY_ENDPOINT_AMBIGUOUS before runtime contact"
+      "code": "REAL_LOOPBACK_COMFY_AND_LLM_TRANSPORT",
+      "passed": true,
+      "server_requests": [
+        "GET /system_stats",
+        "GET /api/tags",
+        "GET /redirect/system_stats",
+        "GET /redirect/api/tags"
+      ]
     },
     {
-      "test": "apps/api/tests/test_adapter_contracts.py",
-      "result": "PASS",
-      "observed": "static adapter registry remains read-only, LOCAL_ONLY, and network_contacted=false"
+      "code": "HOSTILE_PROXY_ENV_IGNORED",
+      "passed": true,
+      "observed_connections": [
+        "127.0.0.1",
+        "127.0.0.1",
+        "127.0.0.1",
+        "127.0.0.1",
+        "127.0.0.1"
+      ],
+      "blocked_connections": []
+    },
+    {
+      "code": "REDIRECT_TO_PUBLIC_REJECTED_BEFORE_HOP",
+      "passed": true,
+      "comfy_code": "COMFY_LOOPBACK_UNAVAILABLE",
+      "llm_code": "LOCAL_LLM_LOOPBACK_UNAVAILABLE",
+      "public_redirect_connected": false
+    },
+    {
+      "code": "PUBLIC_AND_AMBIGUOUS_ENDPOINTS_REJECTED_PRE_CONNECT",
+      "passed": true,
+      "error_codes": [
+        "LOCAL_ONLY_ENDPOINT_REQUIRED",
+        "LOCAL_ONLY_ENDPOINT_REQUIRED",
+        "LOCAL_ONLY_ENDPOINT_AMBIGUOUS"
+      ]
+    },
+    {
+      "code": "PROVIDER_CREDENTIALS_AND_PATH_REDACTED",
+      "passed": true,
+      "error_code": "COMFY_PROMPT_REJECTED",
+      "redacted_details": {
+        "provider_response": "rejected"
+      }
     }
   ],
+  "failed_checks": [],
   "runtime_contacted": false,
-  "network_contacted": false,
+  "loopback_network_contacted": true,
   "public_network_contacted": false,
+  "production_runtime_contacted": false,
+  "production_database_contacted": false,
   "mutated": false,
   "limitations": [
-    "Formal Windows x64 packet capture and production runtime smoke remain pending",
-    "The redirect test is isolated to loopback HTTP servers and does not claim a production Comfy/LLM run"
-  ]
+    "The loopback harness exercises production transports but is not a user-owned ComfyUI or Ollama runtime smoke.",
+    "No packet-level release-host capture, browser three-viewport UAT, or final release sign-off is claimed."
+  ],
+  "observed_at": "2026-08-16T09:36:56.550051+00:00"
 }
