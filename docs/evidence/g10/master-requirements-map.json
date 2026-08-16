@@ -258,19 +258,19 @@
       "id": "FR-REV-002",
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/fr-rev-002-004-review-governance-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_review_versions.py", "apps/api/tests/test_g4_reviews.py", "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"]
+      "automated_tests": ["apps/api/tests/test_review_versions.py", "apps/api/tests/test_g4_reviews.py", "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx", "scripts/review_governance_windows_uat.py"]
     },
     {
       "id": "FR-REV-003",
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/fr-rev-002-004-review-governance-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_review_versions.py", "apps/api/tests/test_g4_reviews.py", "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx"]
+      "automated_tests": ["apps/api/tests/test_review_versions.py", "apps/api/tests/test_g4_reviews.py", "apps/web/src/features/reviews/ReviewInboxPanel.test.tsx", "scripts/review_governance_windows_uat.py"]
     },
     {
       "id": "FR-REV-004",
       "status": "PARTIAL",
       "evidence": ["docs/evidence/g10/fr-rev-002-004-review-governance-2026-08-16.json"],
-      "automated_tests": ["apps/api/tests/test_review_versions.py", "apps/api/tests/test_g4_reviews.py", "apps/web/src/features/reviews/FormalSelectionPanel.tsx"]
+      "automated_tests": ["apps/api/tests/test_review_versions.py", "apps/api/tests/test_g4_reviews.py", "apps/web/src/features/reviews/FormalSelectionPanel.tsx", "scripts/review_governance_windows_uat.py"]
     },
     {
       "id": "FR-AUDT-001",
