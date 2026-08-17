@@ -1,0 +1,57 @@
+{
+  "schema_version": "g10.g6-four-takes-windows-uat.v1",
+  "observed_at": "2026-08-17T05:29:47.957794+00:00",
+  "mode": "LOCAL_ONLY",
+  "status": "PASS",
+  "project_id": "950acbb7-959e-43e3-991f-35a9a763b30b",
+  "workflow_version_id": "6053ef4a-ee00-44a7-8fa8-a9f245167ec9",
+  "profile_version_id": "ee74b27e-36e4-4871-af63-7c79a7a90cb0",
+  "evidence_job_id": "c52f211f-b2df-4e53-98bb-ed3be17f8804",
+  "takes": [
+    {
+      "seed": 260831,
+      "job_id": "df23bcd6-fa77-4ad5-b9b1-7cdf3d0bb855",
+      "media_version_id": "8a08c1f6-ed27-4a9c-9fc7-1994b309352b",
+      "machine_qc": "PASS",
+      "human_approval": "APPROVED"
+    },
+    {
+      "seed": 260832,
+      "job_id": "c90fe572-ee7d-4eb4-96b2-1ce6663d9cd7",
+      "media_version_id": "ffadd2a7-62f8-4eae-9a55-103a58cf29a5",
+      "machine_qc": "PASS",
+      "human_approval": "APPROVED"
+    },
+    {
+      "seed": 260833,
+      "job_id": "94a1a41c-f0e3-4260-aeb2-0158172d7b35",
+      "media_version_id": "b728a24f-8111-466c-a719-28a98f1a4ebd",
+      "machine_qc": "PASS",
+      "human_approval": "APPROVED"
+    },
+    {
+      "seed": 260834,
+      "job_id": "cc97452e-72f9-4617-8e15-733b8ba5a08d",
+      "media_version_id": "3da1a765-5654-4872-bd97-2889c8488e06",
+      "machine_qc": "PASS",
+      "human_approval": "APPROVED",
+      "selection": "5aac0a1a-314a-4271-81c4-f49cdb3be867"
+    }
+  ],
+  "winner": {
+    "seed": 260834,
+    "job_id": "cc97452e-72f9-4617-8e15-733b8ba5a08d",
+    "media_version_id": "3da1a765-5654-4872-bd97-2889c8488e06",
+    "machine_qc": "PASS",
+    "human_approval": "APPROVED",
+    "selection": "5aac0a1a-314a-4271-81c4-f49cdb3be867"
+  },
+  "database_integrity": "ok",
+  "safety": {
+    "production_database_contacted": false,
+    "network_contacted": false
+  },
+  "limitations": [
+    "四条真实同源 I2V take 经平台 Variant 路径生成并完成 QC/人工批准/winner 选择；隔离项目，非生产库。"
+  ]
+}

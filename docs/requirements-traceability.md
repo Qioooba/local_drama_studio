@@ -496,3 +496,12 @@ ComfyUI 与 Local LLM loopback 客户端现在使用显式无代理、拒绝 3xx
 
 - 导演编辑器将 CameraPlan 重绑 T2V Profile（UI）→ T2V 模式卡（"文字生成视频"）→ 一句话 prompt + Profile + seed → 只读预检 READY → 页面提交真实 Variant+Job → **真实 H3 T2V Job SUCCEEDED**（原生链）→ 新生成的 5.17s/2.1MB 视频在审核收件箱被人工批准（4 项检查）。
 - 结论：平台 T2V"一句话生成视频"能力已闭环验证（真实产物 + 页面点击 + 审核）；openclaw 工作区另有独立的 T2V/Turbo 出片管线。
+
+## 2026-08-17 第六轮：agent 自主测试补全（kill-matrix / 性能基线 / motion 三视口 / G6 四条 take）
+
+按产品负责人要求，把剩余可由 agent 自主完成（无需人工审查/测试）的内容全部开发并测试完毕，四项全 PASS：
+
+1. **NFR-REL-001/002 Windows kill-matrix 演练**（`scripts/windows_kill_matrix_uat.py`，证据 `nfr-rel-windows-kill-matrix-2026-08-17.json` PASS）：子进程 `os._exit(17)` 崩溃窗口、Job/进度/outbox/Attempt 持久化、租约脱敏、调度时钟 +61s reconcile → ORPHANED → QUEUED、backoff 推迟重试（无双重 claim）、GPU_H3 独占租约单 winner、重试 attempt 2 SUCCEEDED。
+2. **NFR-PERF-001/002 性能基线**：API 规模基准复跑（60 集/800 镜头/10k 媒体，`nfr-perf-bounded-observation-2026-08-17.json`，OBSERVED_NOT_BENCHMARKED）+ 浏览器三视口页面加载观测（`tests/e2e/nfr_perf_browser_observation.spec.ts`，18 样本零错误，DOMContentLoaded p95=722ms；jobs 视图 networkidle 最高 ~4.6s，SSE 流保持连接所致，如实标注非正式基准）。
+3. **FR-CTL-002/003/004 运动/多模态三视口 UAT**（`tests/e2e/motion_multimodal_windows_uat.spec.ts`，证据 `fr-ctl-002-004-motion-multimodal-windows-uat-2026-08-17.json` 3/3 PASS）：模拟环境种子真实 MOTION_MASK 运动控制（真实归一化矢量路径、Profile 声明 motion/inpaint/outpaint enabled），MotionControlPanel 与多模态输入面板在三视口渲染真实数据，零写入/零原片/零错误/零溢出。
+4. **G6 同关键帧四条 take 当轮复跑**（`scripts/g6_four_takes_uat.py`，证据 `g6-four-takes-windows-uat-2026-08-17.json` PASS）：隔离项目经平台 Variant 路径（intent/prompt/plan/submit API）提交 4 个不同 seed（260831—260834）的 BASE Variant，4 个真实 H3 GPU Job 全部 SUCCEEDED，产物晋升 → 机器 QC PASS → 人工 APPROVED → 第 4 条（seed 260834）PROXY_WINNER 选择。

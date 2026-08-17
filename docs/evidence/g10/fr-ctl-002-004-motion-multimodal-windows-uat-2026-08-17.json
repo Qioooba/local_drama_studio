@@ -1,0 +1,51 @@
+{
+  "schema_version": "g10.fr-ctl-002-004-motion-multimodal-windows-uat.v1",
+  "observed_at": "2026-08-17T04:42:58.217Z",
+  "mode": "LOCAL_ONLY",
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "status": "PASS",
+  "isolated_snapshot": true,
+  "production_database_touched": false,
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "mutated": false,
+  "viewports": [
+    {
+      "viewport": "1440x900",
+      "status": "PASS",
+      "saved_motion_masks": 1,
+      "writes": [],
+      "public_requests": [],
+      "original_media_requests": [],
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "horizontal_overflow_px": 0
+    },
+    {
+      "viewport": "1280x800",
+      "status": "PASS",
+      "saved_motion_masks": 1,
+      "writes": [],
+      "public_requests": [],
+      "original_media_requests": [],
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "horizontal_overflow_px": 0
+    },
+    {
+      "viewport": "1024x768",
+      "status": "PASS",
+      "saved_motion_masks": 1,
+      "writes": [],
+      "public_requests": [],
+      "original_media_requests": [],
+      "console_errors": [],
+      "page_errors": [],
+      "failed_responses": [],
+      "horizontal_overflow_px": 0
+    }
+  ],
+  "interpretation": "Real saved MOTION_MASK motion control and the multimodal input panel are rendered at three viewports with zero writes, zero public/original-media requests, zero console/page errors, zero failed responses and zero horizontal overflow."
+}

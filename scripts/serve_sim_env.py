@@ -168,7 +168,10 @@ def _create_i2v_profile_candidate(database: Database, workflow_version_id: str) 
                             "extend": {"support": "UNSUPPORTED", "required_inputs": []},
                             "V2V": {"support": "UNSUPPORTED", "required_inputs": []},
                             "reference": {"support": "UNSUPPORTED", "required_inputs": []},
-                            "motion": {"support": "UNSUPPORTED", "required_inputs": []},
+                            "motion": {"support": "NATIVE", "required_inputs": [], "enabled": True, "operations": ["MOTION_BRUSH"]},
+                            "motion_mask": {"enabled": True, "support": "NATIVE", "required_inputs": [], "operations": ["MOTION_BRUSH"]},
+                            "inpaint": {"enabled": True, "support": "NATIVE", "required_inputs": [], "operations": ["INPAINT"]},
+                            "outpaint": {"enabled": True, "support": "NATIVE", "required_inputs": [], "operations": ["OUTPAINT"]},
                         },
                     }
                 ),
@@ -309,7 +312,10 @@ def _create_t2v_profile_candidate(database: Database, workflow_version_id: str) 
                             "extend": {"support": "UNSUPPORTED", "required_inputs": []},
                             "V2V": {"support": "UNSUPPORTED", "required_inputs": []},
                             "reference": {"support": "UNSUPPORTED", "required_inputs": []},
-                            "motion": {"support": "UNSUPPORTED", "required_inputs": []},
+                            "motion": {"support": "NATIVE", "required_inputs": [], "enabled": True, "operations": ["MOTION_BRUSH"]},
+                            "motion_mask": {"enabled": True, "support": "NATIVE", "required_inputs": [], "operations": ["MOTION_BRUSH"]},
+                            "inpaint": {"enabled": True, "support": "NATIVE", "required_inputs": [], "operations": ["INPAINT"]},
+                            "outpaint": {"enabled": True, "support": "NATIVE", "required_inputs": [], "operations": ["OUTPAINT"]},
                         },
                     }
                 ),
@@ -408,6 +414,32 @@ def main() -> None:
     t2v_published = profiles.publish_from_evidence(t2v_candidate, t2v_evidence["media_version_id"], t2v_workflow["workflow_version_id"])
     t2v_profile_version_id = str(t2v_published["id"])
 
+    # Seed a real motion control on the approved keyframe through the motion
+    # control service so the generation view's MotionControlPanel has real data
+    # (FR-CTL-002 MOTION_MASK with a real normalized vector path).
+    from local_drama.application.motion_controls import (
+        MotionControlService,  # type: ignore[import-not-found]
+    )
+
+    motion = MotionControlService(database, settings)
+    motion_control = motion.create(
+        keyframe_id,
+        {
+            "control_kind": "MOTION_MASK",
+            "operation": "MOTION_BRUSH",
+            "subject_role": "character",
+            "profile_version_id": published_profile_version_id,
+            "vector_path": [
+                {"x": 0.2, "y": 0.3, "pressure": 1.0, "time_us": 0},
+                {"x": 0.5, "y": 0.55, "pressure": 0.8, "time_us": 500_000},
+                {"x": 0.8, "y": 0.7, "pressure": 1.0, "time_us": 1_000_000},
+            ],
+            "coordinate_space": "NORMALIZED",
+            "note": "simulation motion brush path",
+        },
+        actor="sim-operator",
+    )
+
     # Give the shot a structured CameraPlan resolved against the published profile
     # so the UI generation preflight is enabled (real service round-trip).
     project_service = ProjectService(database, settings.projects_root)
@@ -453,7 +485,7 @@ def main() -> None:
         f"evidence_media={evidence['media_version_id']} published={published['status']} "
         f"t2v_workflow={t2v_workflow['workflow_version_id']} t2v_profile={t2v_profile_version_id} "
         f"t2v_evidence_job={t2v_evidence['job_id']} t2v_evidence_media={t2v_evidence['media_version_id']} "
-        f"t2v_published={t2v_published['status']} integrity={integrity} port={args.port}",
+        f"t2v_published={t2v_published['status']} motion_control={motion_control['id']} integrity={integrity} port={args.port}",
         flush=True,
     )
     uvicorn.run(create_app(settings), host="127.0.0.1", port=args.port, log_level="warning")

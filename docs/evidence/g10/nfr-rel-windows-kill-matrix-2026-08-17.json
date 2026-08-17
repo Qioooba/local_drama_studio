@@ -1,0 +1,80 @@
+{
+  "schema_version": "g10.nfr-rel-windows-kill-matrix.v1",
+  "observed_at": "2026-08-17T03:49:27.400444+00:00",
+  "mode": "LOCAL_ONLY",
+  "status": "PASS",
+  "scenarios": {
+    "crash_window": {
+      "attempt_id": "90a672af-e18b-47b3-bb83-d2bb29c3a267",
+      "checks": [
+        {
+          "code": "CHILD_CRASHED_WITH_EXIT_17",
+          "passed": true
+        },
+        {
+          "code": "JOB_PERSISTED_AFTER_CRASH",
+          "passed": true
+        },
+        {
+          "code": "PROGRESS_PERSISTED",
+          "passed": true
+        },
+        {
+          "code": "ATTEMPT_PERSISTED_LEASE_REDACTED",
+          "passed": true
+        },
+        {
+          "code": "OUTBOX_TYPES_PERSISTED",
+          "passed": true
+        },
+        {
+          "code": "RECONCILE_ORPHANS_EXPIRED_LEASE",
+          "passed": true
+        },
+        {
+          "code": "JOB_RETRYABLE_AFTER_RECONCILE",
+          "passed": true
+        },
+        {
+          "code": "BACKOFF_DEFERS_RETRY_CLAIM",
+          "passed": true,
+          "reason": "reconcile schedules next_run_at at the crash-window clock"
+        },
+        {
+          "code": "NO_DOUBLE_CLAIM_BEFORE_BACKOFF",
+          "passed": true
+        }
+      ],
+      "passed": true
+    },
+    "gpu_single_winner": {
+      "job_id": "e82445d8-57d3-45cc-a13c-125e8d401bdd",
+      "checks": [
+        {
+          "code": "FIRST_WORKER_CLAIMED",
+          "passed": true
+        },
+        {
+          "code": "SECOND_WORKER_BLOCKED",
+          "passed": true,
+          "reason": "GPU_H3 heavy lease is exclusive"
+        },
+        {
+          "code": "JOB_SUCCEEDED_AFTER_SINGLE_WINNER",
+          "passed": true
+        }
+      ],
+      "passed": true
+    }
+  },
+  "database_integrity": "ok",
+  "safety": {
+    "production_database_contacted": false,
+    "runtime_contacted": false,
+    "network_contacted": false,
+    "mutated": false
+  },
+  "limitations": [
+    "确定性崩溃窗口演练：用子进程 os._exit 与调度时钟前移代替真实 60 秒等待；真实 Windows 断电与备份介质恢复仍属后续硬件演练。"
+  ]
+}
