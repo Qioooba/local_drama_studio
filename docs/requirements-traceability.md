@@ -456,3 +456,21 @@ ComfyUI 与 Local LLM loopback 客户端现在使用显式无代理、拒绝 3xx
 3. **TTS 数据链三视口 UAT**：`scripts/serve_tts_review_uat.py` + `tests/e2e/tts_review_windows_uat.spec.ts`，隔离库种子真实 Windows SAPI 合成 WAV（275,762B）、USER_OWNED 音色授权、Published TTS Profile、FORMAL 候选；对白/TTS 面板三视口 3/3 PASS，试听 `preload=none` 零自动原音频（证据 `fr-aud-001-002-tts-review-windows-uat-2026-08-17.json`，覆盖 FR-AUD-001/002 三视口）。
 
 边界保持：正式生产项目内的真实 H3 生成产物登记、FR-AUD 正式项目数据链与最终交付包签字仍属使用期事项；G6 四条同关键帧 take + winner + formal branch 已有权威退出证据（`G6_exit_report.md`）。
+
+## 2026-08-17 第三轮：上线后全流程模拟测试（真实数据 + 页面点击）
+
+按产品负责人指示，在上线后做全流程模拟测试：用真实数据、在页面上点击、把每一步都真实走一遍。搭建了隔离模拟环境（`scripts/serve_sim_env.py`：生产库在线备份快照 + 项目树副本 + 原生 H3 工作流发布 + 真实证据 Job 发布 I2V Profile + 结构化 CameraPlan + 关键帧重新批准；`scripts/run_sim_worker.py`：CPU + GPU_H3 常驻 worker，含产物晋升）。`tests/e2e/post_launch_simulation.spec.ts` 通过真实页面点击完成全链路，证据 `docs/evidence/g10/post-launch-simulation-2026-08-17.json`（status=PASS，19 步全记录）：
+
+- 项目视图：健康检查/全局搜索/时间线交付面板；生成视图：G6 门禁/探针计划
+- 生成：只读预检 READY → 页面提交 → **真实 H3 I2V Variant+Job**（原生链）→ Job SUCCEEDED
+- 审核：定位最新 VIDEO 候选（本次真实产物）→ 机器检查不适用（VIDEO）→ 4 项清单全 PASS → 人工 APPROVED → PROXY_WINNER 选择
+- 诊断视图：本机环境检查/ComfyUI Lab/审计历史
+- 交付：**FR-DEL-003 目标版本显式选择（新增 UI）** → 真实 FFmpeg 整集渲染 → 渲染人工批准 → 交付候选构建（machine preflight PASS）→ manifest/SHA 验证 → 人工批准 → 平台批准；项目视图零自动原媒体拉取
+
+模拟发现并修复 3 个真实缺陷（均有回归测试）：
+
+1. **`comfy_jobs.py`**：UI 提交的 Variant 参数集含 `camera_plan/timed_directions/performance_bindings/motion_masks` 元数据键，但 workflow bindings 未声明 → `compile_semantic_inputs` 全量编译必然 `WORKFLOW_SLOT_UNSUPPORTED`，**UI 提交 H3 生成被完全阻断**（G6 时代 UI 无这些键、RH 崩溃后又从未端到端跑过，一直未暴露）。修复：`submit_next` 只编译 workflow 声明的槽位，元数据保留在不可变 Job 快照。
+2. **`configuration.py`**：`select_delivery_target_version` 只退休同一目标内的 ACTIVE 版本，而配置读模型 `selected_delivery_target_version_id` 要求全项目唯一 ACTIVE——生产库两个目标各有一个 ACTIVE 版本时**交付构建永远禁用**。修复：选择时退休项目内全部目标的 ACTIVE 版本（新回归测试 `test_selecting_one_target_version_resolves_project_wide_single_active`）。
+3. **`ReadinessPanels.tsx`**：FR-DEL-003 交付目标版本显式选择只有 API 无 UI。新增选择器 + 激活按钮 + Vitest（`ProjectConfigurationSnapshot.test.tsx`）。
+
+门禁全绿：API **290 passed** / 4 Comfy live deselected、Web **37 files / 102 tests**、mypy、Ruff、maintainability、production build 全过。
