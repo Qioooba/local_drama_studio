@@ -428,7 +428,7 @@ def audit() -> dict[str, Any]:
     release_artifacts_ready = all(item["final"] for item in artifact_state.values())
     checks = [
         {"code": "DATABASE_INTEGRITY", "passed": _integrity(DB_PATH) == "ok", "observed": _integrity(DB_PATH)},
-        {"code": "MIGRATION_HEAD", "passed": bool(migration and str(migration["version_num"]) == "0039_automation_task_jobs"), "observed": str(migration["version_num"]) if migration else None},
+        {"code": "MIGRATION_HEAD", "passed": bool(migration and str(migration["version_num"]) == "0041_character_voice_bindings"), "observed": str(migration["version_num"]) if migration else None},
         {"code": "BACKUP_INTEGRITY", "passed": bool(backup_paths) and all(_integrity(path) == "ok" for path in backup_paths[:5]), "observed_count": min(len(backup_paths), 5)},
         {"code": "ORDERED_G7", "passed": g7_pass, "observed": g7["status"], "next_required_action": g7["next_required_action"]},
         {

@@ -1,0 +1,25 @@
+{
+  "schema_version": "g11.story-asset-windows-uat.v1",
+  "observed_at": "2026-08-17T14:06:20.643Z",
+  "mode": "LOCAL_ONLY",
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "episode_id": "d4db1033-9517-4bd0-958d-4228e0abead1",
+  "shot_id": "020f9248-14b7-4f92-9edd-ee587ffdedf3",
+  "status": "PASS",
+  "isolated_snapshot": true,
+  "production_database_touched": false,
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "steps": [
+    "projects view: seeded CHARACTER 母亲 with canonical thumbnail rendered",
+    "projects view: SCENE 老屋 rendered on scene tab",
+    "projects view: created CHARACTER 女儿 through the real form",
+    "generation view: seeded 母亲 binding visible in DirectorShotEditor",
+    "generation view: bound 女儿 to SHOT_001 through the real UI",
+    "generation view: ContinuityPanel lists both bound assets",
+    "prompt-anchor preview: 2 characters, anchor text reflects both bindings",
+    "zero console errors / zero failed responses / zero public requests"
+  ],
+  "errors": [],
+  "interpretation": "G11 story asset library real-click UAT against the isolated snapshot: seeded assets render in the library, a new character asset is created through the real form, the DirectorShotEditor binds it to the shot, the ContinuityPanel lists bound assets, and the prompt-anchor preview reflects the bound characters."
+}

@@ -42,3 +42,14 @@ class TTSJobRequest(BaseModel):
     voice_profile_version_id: str = Field(min_length=1)
     emotion: str = Field(min_length=1, max_length=80)
     speech_rate: float = Field(ge=0.5, le=2.0)
+
+
+class CharacterVoiceBindRequest(BaseModel):
+    character_asset_id: str = Field(min_length=1)
+    voice_profile_version_id: str = Field(min_length=1)
+
+
+class EpisodeTTSBatchRequest(BaseModel):
+    idempotency_key_prefix: str = Field(min_length=1, max_length=100)
+    emotion: str = Field(default="NEUTRAL", min_length=1, max_length=80)
+    speech_rate: float = Field(default=1.0, ge=0.5, le=2.0)

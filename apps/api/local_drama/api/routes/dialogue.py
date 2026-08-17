@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Header, Request
 
-from local_drama.api.schemas.dialogue import DialogueLineRequest, DialogueTextRevisionRequest, TTSCandidateRequest, TTSJobRequest, VoiceProfileRequest
+from local_drama.api.schemas.dialogue import (
+    CharacterVoiceBindRequest,
+    DialogueLineRequest,
+    DialogueTextRevisionRequest,
+    EpisodeTTSBatchRequest,
+    TTSCandidateRequest,
+    TTSJobRequest,
+    VoiceProfileRequest,
+)
 from local_drama.application.dialogue import DialogueService
 from local_drama.application.errors import api_error_from_domain
 from local_drama.domain.errors import DomainRuleError
@@ -100,5 +108,37 @@ async def submit_tts_job(
 async def finalize_tts_job(job_id: str, request: Request) -> dict[str, object]:
     try:
         return {"result": service(request).finalize_tts_job(job_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/projects/{project_id}/character-voice-bindings", status_code=201, operation_id="bindCharacterVoice")
+async def bind_character_voice(project_id: str, payload: CharacterVoiceBindRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"binding": service(request).bind_character_voice(project_id, **payload.model_dump())}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/projects/{project_id}/character-voice-bindings", operation_id="listCharacterVoiceBindings")
+async def list_character_voice_bindings(project_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"items": service(request).list_character_voice_bindings(project_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.delete("/character-voice-bindings/{binding_id}", operation_id="unbindCharacterVoice")
+async def unbind_character_voice(binding_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"result": service(request).unbind_character_voice(binding_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/episodes/{episode_id}/dialogue-tts:batch", status_code=201, operation_id="submitEpisodeTTSBatch")
+async def submit_episode_tts_batch(episode_id: str, payload: EpisodeTTSBatchRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"batch": service(request).submit_episode_tts_batch(episode_id, **payload.model_dump())}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error

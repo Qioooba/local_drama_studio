@@ -1,0 +1,21 @@
+{
+  "schema_version": "g11.breakdown-apply-windows-uat.v1",
+  "observed_at": "2026-08-17T14:06:18.198Z",
+  "mode": "LOCAL_ONLY",
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "episode_id": "d4db1033-9517-4bd0-958d-4228e0abead1",
+  "status": "PASS",
+  "isolated_snapshot": true,
+  "production_database_touched": false,
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "steps": [
+    "draft review panel: DRAFT_READY draft visible, target episode selected",
+    "applied draft through the real UI: 1 scene / 1 shot / 1 line, character 母亲×1",
+    "API: dialogue line AI-DL-0001 with speaker 母亲 created with verbatim draft text",
+    "API: draft application_status flipped to APPLIED, requires_human_action false",
+    "zero console errors / zero failed responses"
+  ],
+  "errors": [],
+  "interpretation": "G11 breakdown draft apply real-click UAT: the seeded DRAFT_READY draft is applied through AIDraftReviewPanel into real scenes/shots/dialogue rows, the extracted characters are reported, and the draft flips to APPLIED with requires_human_action false."
+}

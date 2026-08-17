@@ -1,7 +1,11 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ContinuityContext, ContinuityShot } from "../../generated/api";
+import { listShotStoryAssets } from "../../generated/api";
 import { ContinuityPanel } from "./ContinuityPanel";
+
+vi.mock("../../generated/api", () => ({ listShotStoryAssets: vi.fn() }));
 
 function shot(position: ContinuityShot["position"], code: string): ContinuityShot {
   return {
@@ -29,9 +33,18 @@ const context: ContinuityContext = {
   mutated: false,
 };
 
+function renderPanel(value: ContinuityContext | undefined) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={client}><ContinuityPanel context={value} /></QueryClientProvider>);
+}
+
 describe("ContinuityPanel", () => {
+  beforeEach(() => {
+    vi.mocked(listShotStoryAssets).mockReset().mockResolvedValue({ items: [] });
+  });
+
   it("renders adjacent revisions, six facets and only a small thumbnail request", () => {
-    const { container } = render(<ContinuityPanel context={context} />);
+    const { container } = renderPanel(context);
     expect(screen.getByText("S001")).toBeTruthy();
     expect(screen.getByText("S002")).toBeTruthy();
     expect(screen.getByText("S003")).toBeTruthy();
@@ -43,8 +56,28 @@ describe("ContinuityPanel", () => {
   });
 
   it("shows an explicit episode boundary instead of inventing a neighbor", () => {
-    render(<ContinuityPanel context={{ ...context, shots: { ...context.shots, previous: null } }} />);
+    renderPanel({ ...context, shots: { ...context.shots, previous: null } });
     expect(screen.getByText("无相邻镜头")).toBeTruthy();
     expect(screen.getByText("已到达当前分集边界")).toBeTruthy();
+  });
+
+  it("lists bound story assets under the continuity references", async () => {
+    vi.mocked(listShotStoryAssets).mockResolvedValue({ items: [
+      { binding_id: "binding-1", shot_id: "current-id", asset_id: "asset-1", name: "母亲", code: "CHAR_MOTHER", kind: "CHARACTER", status: "ACTIVE", canonical_media_version_id: null, role_in_shot: "main", created_at: "now", created_by: "local-user" },
+      { binding_id: "binding-2", shot_id: "current-id", asset_id: "asset-2", name: "厨房", code: "SCENE_KITCHEN", kind: "SCENE", status: "ARCHIVED", canonical_media_version_id: null, role_in_shot: "location", created_at: "now", created_by: "local-user" },
+    ] });
+    renderPanel(context);
+    expect(await screen.findByText("母亲")).toBeTruthy();
+    expect(screen.getByText("厨房")).toBeTruthy();
+    expect(screen.getByText(/角色 · main/)).toBeTruthy();
+    expect(screen.getByText(/场景 · location/)).toBeTruthy();
+    expect(screen.getByText("已归档")).toBeTruthy();
+    expect(listShotStoryAssets).toHaveBeenCalledWith("current-id");
+  });
+
+  it("hides the bound asset section when the shot has none", async () => {
+    renderPanel(context);
+    await screen.findByText("S002");
+    expect(screen.queryByLabelText("当前镜头绑定资产")).toBeNull();
   });
 });

@@ -35,7 +35,7 @@ export type ContinuityShot = { position: 'previous' | 'current' | 'next'; id: st
 export type ContinuityContext = { episode_id: string; selected_shot_id: string; shots: { previous: ContinuityShot | null; current: ContinuityShot; next: ContinuityShot | null }; transitions: Array<Record<string, unknown>>; read_only: true; runtime_contacted: false; network_contacted: false; mutated: false };
 export type CreativeEntry = { id: string; project_id: string; kind: string; code: string; title: string; current_revision_id: string; revision_no: number; content_hash: string; change_note: string; content: Record<string, unknown>; revision: number };
 export type CreativeEntryRevision = { id: string; entry_id: string; revision_no: number; parent_revision_id: string | null; restored_from_revision_id: string | null; content_hash: string; change_note: string; content: Record<string, unknown>; created_at: string };
-export type ScriptBreakdownDraft = { id: string; project_id: string; source_document_version_id: string; import_session_id: string; status: string; source_document_code: string; source_document_title: string; draft: { scenes?: Array<Record<string, unknown>> }; confidence: { profile_version_id?: string; model?: string; confidence?: { overall?: number; notes?: string[] }; questions?: string[]; source_passages?: Array<{ scene_no: number; quote: string; source_start: number; source_end: number }> }; profile_version_id: string | null; evidence_status: 'COMPLETE' | 'LEGACY_INCOMPLETE'; application_status: 'NOT_APPLIED'; automatic_apply: false; requires_human_action: true; created_at: string };
+export type ScriptBreakdownDraft = { id: string; project_id: string; source_document_version_id: string; import_session_id: string; status: string; source_document_code: string; source_document_title: string; draft: { scenes?: Array<Record<string, unknown>> }; confidence: { profile_version_id?: string; model?: string; confidence?: { overall?: number; notes?: string[] }; questions?: string[]; source_passages?: Array<{ scene_no: number; quote: string; source_start: number; source_end: number }> }; profile_version_id: string | null; evidence_status: 'COMPLETE' | 'LEGACY_INCOMPLETE'; application_status: 'NOT_APPLIED' | 'APPLIED'; automatic_apply: false; requires_human_action: boolean; created_at: string };
 export type DocumentImport = { source_document_id: string; source_document_version_id: string; import_session_id: string; media_version_id: string; status: 'PREVIEW_READY' | 'COMMITTED'; preview_hash: string; reused?: boolean; preview: { character_count: number; paragraph_count: number; paragraphs: string[]; requires_llm_confirmation: true } };
 export type ImportSession = { id: string; project_id: string; source_document_version_id: string; status: 'PREVIEW_READY' | 'COMMITTED'; revision: number; preview_hash: string; preview: { character_count: number; paragraph_count: number; paragraphs: string[]; requires_llm_confirmation: true }; validation: { valid: boolean; issue_count: number }; items: Array<Record<string, unknown>>; source_document_version: Record<string, unknown> };
 export type StoryboardShot = { id: string; code: string; order_key: string; target_duration_ms: number; shot_type: string; status: string; revision: number; current_revision_id: string; current_revision_no: number; is_frozen: number; fields: Record<string, unknown>; display_ordinal: number; timeline_start_ms: number; timeline_end_ms: number };
@@ -148,6 +148,16 @@ export type CanvasNode = { id: string; type: string; shot_id: string; shot_code:
 export type CanvasEdge = { id: string; source: string; target: string; kind: string; status?: string; mutable_by_layout: false };
 export type CanvasGraph = { scope: Record<string, unknown>; nodes: CanvasNode[]; edges: CanvasEdge[]; layout: { positions: Record<string, { x: number; y: number }>; groups: Array<Record<string, unknown>>; viewport: Record<string, number>; revision: number; layout_hash: string | null }; page: { cursor: number; limit: number; returned_shots: number; total_shots: number; next_cursor: number | null }; invariants: { layout_changes_business_dependencies: false; max_visible_nodes: number; lazy: true } };
 export type SearchResult = { project_id: string; subject_type: string; subject_id: string; snippet: string };
+export type StoryAsset = { id: string; project_id: string; kind: 'CHARACTER' | 'SCENE' | 'PROP' | 'COSTUME'; code: string; name: string; description: string; canonical_media_version_id: string | null; extra: Record<string, unknown>; status: 'ACTIVE' | 'ARCHIVED'; revision: number; created_at: string; updated_at: string; created_by: string; schema_version: string; [key: string]: unknown };
+export type ShotAssetBinding = { binding_id: string; shot_id: string; asset_id: string; name: string; code: string; kind: string; status: string; canonical_media_version_id: string | null; role_in_shot: string; created_at: string; created_by: string; [key: string]: unknown };
+export type StoryAssetCreateRequest = { kind: 'CHARACTER' | 'SCENE' | 'PROP' | 'COSTUME'; code: string; name: string; description?: string; canonical_media_version_id?: string | null; extra?: Record<string, unknown> | null };
+export type StoryAssetUpdateRequest = { expected_revision: number; name?: string | null; description?: string | null; canonical_media_version_id?: string | null; extra?: Record<string, unknown> | null };
+export type StoryAssetArchiveRequest = { expected_revision: number };
+export type ShotAssetBindRequest = { asset_id: string; role_in_shot?: string };
+export type CharacterVoiceBindRequest = { character_asset_id: string; voice_profile_version_id: string };
+export type CharacterVoiceBinding = { id: string; project_id: string; character_asset_id: string; voice_profile_version_id: string; created_at: string; created_by: string; character: { id: string; code: string; name: string; kind: string; status: string }; voice: { id: string; code: string; title: string; voice_ref: string; status: string }; [key: string]: unknown };
+export type EpisodeTTSBatchRequest = { idempotency_key_prefix: string; emotion?: string; speech_rate?: number };
+export type EpisodeTTSBatchResult = { episode_id: string; submitted: Array<{ line_id: string; code: string; speaker: string; character_asset_id: string; voice_profile_version_id: string; job_id: string; text_revision_id: string }>; skipped: Array<{ line_id: string; code: string; speaker: string; reason: string }>; failed: Array<{ line_id: string; code: string; reason: string }>; counts: { submitted: number; skipped: number; failed: number } };
 
 const instanceTokens = new Map<string, string>();
 
@@ -551,6 +561,10 @@ export async function listScriptBreakdownDrafts(projectId: string, baseUrl = '')
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/script-breakdown-drafts`, undefined, baseUrl);
 }
 
+export async function applyScriptBreakdownDraft(draftId: string, payload: { episode_id: string }, baseUrl = ''): Promise<{ apply: { draft_id: string; episode_id: string; created: { scenes: number; shots: number; lines: number }; extracted_characters: Array<{ name: string; scene_count: number }>; applied: true } }> {
+  return requestJson(`/api/v1/breakdown-drafts/${encodeURIComponent(draftId)}:apply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
 export async function importScriptDocument(projectId: string, sourcePath: string, baseUrl = ''): Promise<{ import: DocumentImport }> {
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/imports`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source_path: sourcePath }) }, baseUrl);
 }
@@ -737,6 +751,22 @@ export async function finalizeTTSJob(jobId: string, baseUrl = ''): Promise<{ res
 
 export async function listVoiceProfileVersions(projectId: string, baseUrl = ''): Promise<{ items: VoiceProfileVersion[] }> {
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/voice-profile-versions`, undefined, baseUrl);
+}
+
+export async function bindCharacterVoice(projectId: string, payload: CharacterVoiceBindRequest, baseUrl = ''): Promise<{ binding: CharacterVoiceBinding }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/character-voice-bindings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function listCharacterVoiceBindings(projectId: string, baseUrl = ''): Promise<{ items: CharacterVoiceBinding[] }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/character-voice-bindings`, undefined, baseUrl);
+}
+
+export async function unbindCharacterVoice(bindingId: string, baseUrl = ''): Promise<{ result: Record<string, unknown> }> {
+  return requestJson(`/api/v1/character-voice-bindings/${encodeURIComponent(bindingId)}`, { method: 'DELETE' }, baseUrl);
+}
+
+export async function submitEpisodeTTSBatch(episodeId: string, payload: EpisodeTTSBatchRequest, baseUrl = ''): Promise<{ batch: EpisodeTTSBatchResult }> {
+  return requestJson(`/api/v1/episodes/${encodeURIComponent(episodeId)}/dialogue-tts:batch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
 export async function discoverLocalSapiVoices(baseUrl = ''): Promise<{ status: 'AVAILABLE' | 'EMPTY' | 'UNAVAILABLE'; items: LocalSapiVoice[]; message: string | null; runtime_contacted: boolean; network_contacted: false; mutated: false }> {
@@ -979,6 +1009,14 @@ export async function cancelAutomationWorkflowRun(runId: string, baseUrl = ''): 
   return requestJson(`/api/v1/automation-runs/${encodeURIComponent(runId)}:cancel`, { method: 'POST' }, baseUrl);
 }
 
+export async function listAutomationWorkflowTemplates(baseUrl = ''): Promise<{ items: Array<{ code: string; title: string; description: string }> }> {
+  return requestJson('/api/v1/automation-templates', undefined, baseUrl);
+}
+
+export async function createAutomationWorkflowFromTemplate(projectId: string, payload: { template_code: string; title: string }, baseUrl = ''): Promise<{ workflow: AutomationWorkflow }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/automation-workflows:from-template`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
 export async function runG7NetworkE2E(projectId: string, baseUrl = ''): Promise<{ attestation: Record<string, unknown> }> {
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/gates/g7/network-e2e`, { method: 'POST' }, baseUrl);
 }
@@ -1093,6 +1131,39 @@ export async function saveProductionCanvasLayout(scopeType: 'EPISODE' | 'SHOT', 
 
 export async function preflightProductionCanvasRun(scopeType: 'EPISODE' | 'SHOT', scopeId: string, payload: { mode: 'NODE' | 'FROM' | 'TO' | 'RANGE'; from_node_id?: string; to_node_id?: string; max_nodes?: number }, baseUrl = ''): Promise<{ plan: { id: string; status: string; node_ids: string[]; blockers: Array<Record<string, unknown>>; estimate: Record<string, unknown>; submitted: false } }> {
   return requestJson(`/api/v1/canvas/${scopeType}/${encodeURIComponent(scopeId)}/runs:preflight`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function createStoryAsset(projectId: string, payload: StoryAssetCreateRequest, baseUrl = ''): Promise<{ asset: StoryAsset }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/story-assets`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function listStoryAssets(projectId: string, kind?: string, baseUrl = ''): Promise<{ items: StoryAsset[] }> {
+  const query = kind ? `?kind=${encodeURIComponent(kind)}` : '';
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/story-assets${query}`, undefined, baseUrl);
+}
+
+export async function getStoryAsset(assetId: string, baseUrl = ''): Promise<{ asset: StoryAsset }> {
+  return requestJson(`/api/v1/story-assets/${encodeURIComponent(assetId)}`, undefined, baseUrl);
+}
+
+export async function updateStoryAsset(assetId: string, payload: StoryAssetUpdateRequest, baseUrl = ''): Promise<{ asset: StoryAsset }> {
+  return requestJson(`/api/v1/story-assets/${encodeURIComponent(assetId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function archiveStoryAsset(assetId: string, payload: StoryAssetArchiveRequest, baseUrl = ''): Promise<{ asset: StoryAsset }> {
+  return requestJson(`/api/v1/story-assets/${encodeURIComponent(assetId)}:archive`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function bindStoryAssetToShot(shotId: string, payload: ShotAssetBindRequest, baseUrl = ''): Promise<{ binding: ShotAssetBinding }> {
+  return requestJson(`/api/v1/shots/${encodeURIComponent(shotId)}/story-asset-bindings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function listShotStoryAssets(shotId: string, baseUrl = ''): Promise<{ items: ShotAssetBinding[] }> {
+  return requestJson(`/api/v1/shots/${encodeURIComponent(shotId)}/story-asset-bindings`, undefined, baseUrl);
+}
+
+export async function unbindStoryAssetFromShot(bindingId: string, baseUrl = ''): Promise<{ unbound: true; binding_id: string }> {
+  return requestJson(`/api/v1/story-asset-bindings/${encodeURIComponent(bindingId)}`, { method: 'DELETE' }, baseUrl);
 }
 """
     client_path.write_text(client_source, encoding="utf-8")

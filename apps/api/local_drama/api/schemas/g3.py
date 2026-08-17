@@ -36,6 +36,10 @@ class BreakdownRequest(BaseModel):
     profile_version_id: str | None = None
 
 
+class BreakdownDraftApplyRequest(BaseModel):
+    episode_id: str = Field(min_length=1)
+
+
 class ProfileBindingRequest(BaseModel):
     capability: str = Field(min_length=1, max_length=120)
     profile_version_id: str = Field(min_length=1)

@@ -1,0 +1,20 @@
+{
+  "schema_version": "g11.character-voice-windows-uat.v1",
+  "observed_at": "2026-08-17T14:07:14.170Z",
+  "mode": "LOCAL_ONLY",
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "episode_id": "d4db1033-9517-4bd0-958d-4228e0abead1",
+  "status": "PASS",
+  "isolated_snapshot": true,
+  "production_database_touched": false,
+  "runtime_contacted": true,
+  "network_contacted": false,
+  "steps": [
+    "seeded character-voice binding (母亲 ↔ SAPI voice) visible",
+    "episode batch TTS submitted 1 job through the real form (0 skipped / 0 failed)",
+    "real TTS job f5ea0409-deb7-41d4-be76-f0fbd33f0a03 reached SUCCEEDED through the controlled worker (Windows SAPI synthesis)",
+    "zero console errors / zero failed responses"
+  ],
+  "errors": [],
+  "interpretation": "G11 multi-voice TTS orchestration real-click UAT: seeded character-voice binding visible, episode batch TTS submits one real job per dialogue line through the real form, and the controlled worker synthesizes the WAV through Windows SAPI (job SUCCEEDED, verified audio artifact)."
+}

@@ -22,7 +22,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = ROOT / "data" / "local_drama.sqlite3"
-MIGRATION_HEAD = "0039_automation_task_jobs"
+MIGRATION_HEAD = "0041_character_voice_bindings"
 
 
 def _integrity(path: Path) -> str:

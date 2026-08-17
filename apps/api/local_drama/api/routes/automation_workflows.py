@@ -8,6 +8,7 @@ from local_drama.api.schemas.automation_workflows import (
     AutomationWorkflowResumeRequest,
     AutomationWorkflowRunRequest,
     AutomationWorkflowStepRequest,
+    AutomationWorkflowTemplateRequest,
 )
 from local_drama.application.automation_workflows import AutomationWorkflowService
 from local_drama.application.errors import api_error_from_domain
@@ -26,6 +27,19 @@ async def create_workflow(project_id: str, payload: AutomationWorkflowRequest, r
         return {"workflow": service(request).create_workflow(project_id, **payload.model_dump())}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
+
+
+@router.post("/projects/{project_id}/automation-workflows:from-template", status_code=201, operation_id="createAutomationWorkflowFromTemplate")
+async def create_workflow_from_template(project_id: str, payload: AutomationWorkflowTemplateRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"workflow": service(request).create_from_template(project_id, template_code=payload.template_code, title=payload.title)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/automation-templates", operation_id="listAutomationWorkflowTemplates")
+async def list_templates(request: Request) -> dict[str, object]:
+    return {"items": service(request).list_templates()}
 
 
 @router.get("/projects/{project_id}/automation-workflows", operation_id="listAutomationWorkflows")

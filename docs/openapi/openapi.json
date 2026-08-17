@@ -1421,6 +1421,83 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/automation-workflows:from-template": {
+      "post": {
+        "tags": [
+          "automation-workflows"
+        ],
+        "summary": "Create Workflow From Template",
+        "operationId": "createAutomationWorkflowFromTemplate",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutomationWorkflowTemplateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Createautomationworkflowfromtemplate"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation-templates": {
+      "get": {
+        "tags": [
+          "automation-workflows"
+        ],
+        "summary": "List Templates",
+        "operationId": "listAutomationWorkflowTemplates",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Listautomationworkflowtemplates"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/automation-workflows/{workflow_id}": {
       "get": {
         "tags": [
@@ -4754,6 +4831,204 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/character-voice-bindings": {
+      "post": {
+        "tags": [
+          "dialogue",
+          "tts"
+        ],
+        "summary": "Bind Character Voice",
+        "operationId": "bindCharacterVoice",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CharacterVoiceBindRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Bindcharactervoice"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "dialogue",
+          "tts"
+        ],
+        "summary": "List Character Voice Bindings",
+        "operationId": "listCharacterVoiceBindings",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listcharactervoicebindings"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/character-voice-bindings/{binding_id}": {
+      "delete": {
+        "tags": [
+          "dialogue",
+          "tts"
+        ],
+        "summary": "Unbind Character Voice",
+        "operationId": "unbindCharacterVoice",
+        "parameters": [
+          {
+            "name": "binding_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Binding Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Unbindcharactervoice"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/episodes/{episode_id}/dialogue-tts:batch": {
+      "post": {
+        "tags": [
+          "dialogue",
+          "tts"
+        ],
+        "summary": "Submit Episode Tts Batch",
+        "operationId": "submitEpisodeTTSBatch",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EpisodeTTSBatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Submitepisodettsbatch"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/generation-intents": {
       "post": {
         "tags": [
@@ -6602,6 +6877,60 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Requestscriptbreakdown"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/breakdown-drafts/{draft_id}:apply": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Apply Breakdown Draft",
+        "operationId": "applyScriptBreakdownDraft",
+        "parameters": [
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Draft Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BreakdownDraftApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Applyscriptbreakdowndraft"
                 }
               }
             }
@@ -12817,6 +13146,453 @@
           }
         }
       }
+    },
+    "/api/v1/shots/{shot_id}/prompt-anchor": {
+      "get": {
+        "tags": [
+          "generation-variants"
+        ],
+        "summary": "Get Shot Prompt Anchor",
+        "description": "Preview the exact character appearance anchors injected at submit time.",
+        "operationId": "getShotPromptAnchor",
+        "parameters": [
+          {
+            "name": "shot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Shot Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Getshotpromptanchor"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/story-assets": {
+      "post": {
+        "tags": [
+          "story-assets"
+        ],
+        "summary": "Create Story Asset",
+        "operationId": "createStoryAsset",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoryAssetCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Createstoryasset"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "story-assets"
+        ],
+        "summary": "List Story Assets",
+        "operationId": "listStoryAssets",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Liststoryassets"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/story-assets/{asset_id}": {
+      "get": {
+        "tags": [
+          "story-assets"
+        ],
+        "summary": "Get Story Asset",
+        "operationId": "getStoryAsset",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Getstoryasset"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "story-assets"
+        ],
+        "summary": "Update Story Asset",
+        "operationId": "updateStoryAsset",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoryAssetUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Updatestoryasset"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/story-assets/{asset_id}:archive": {
+      "post": {
+        "tags": [
+          "story-assets"
+        ],
+        "summary": "Archive Story Asset",
+        "operationId": "archiveStoryAsset",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoryAssetArchiveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Archivestoryasset"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shots/{shot_id}/story-asset-bindings": {
+      "post": {
+        "tags": [
+          "story-assets"
+        ],
+        "summary": "Bind Story Asset To Shot",
+        "operationId": "bindStoryAssetToShot",
+        "parameters": [
+          {
+            "name": "shot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Shot Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShotAssetBindRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Bindstoryassettoshot"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "story-assets"
+        ],
+        "summary": "List Shot Story Assets",
+        "operationId": "listShotStoryAssets",
+        "parameters": [
+          {
+            "name": "shot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Shot Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listshotstoryassets"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/story-asset-bindings/{binding_id}": {
+      "delete": {
+        "tags": [
+          "story-assets"
+        ],
+        "summary": "Unbind Story Asset From Shot",
+        "operationId": "unbindStoryAssetFromShot",
+        "parameters": [
+          {
+            "name": "binding_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Binding Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Unbindstoryassetfromshot"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -13167,6 +13943,28 @@
         "type": "object",
         "title": "AutomationWorkflowStepRequest"
       },
+      "AutomationWorkflowTemplateRequest": {
+        "properties": {
+          "template_code": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Template Code"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "template_code",
+          "title"
+        ],
+        "title": "AutomationWorkflowTemplateRequest"
+      },
       "BatchCommitRequest": {
         "properties": {
           "plan_token": {
@@ -13275,6 +14073,20 @@
           "tokens"
         ],
         "title": "BrandKitRequest"
+      },
+      "BreakdownDraftApplyRequest": {
+        "properties": {
+          "episode_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Episode Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "episode_id"
+        ],
+        "title": "BreakdownDraftApplyRequest"
       },
       "BreakdownRequest": {
         "properties": {
@@ -13427,6 +14239,26 @@
           "mode"
         ],
         "title": "CanvasPlanRequest"
+      },
+      "CharacterVoiceBindRequest": {
+        "properties": {
+          "character_asset_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Character Asset Id"
+          },
+          "voice_profile_version_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Voice Profile Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "character_asset_id",
+          "voice_profile_version_id"
+        ],
+        "title": "CharacterVoiceBindRequest"
       },
       "ComfyLabCaptureRequest": {
         "properties": {
@@ -14017,6 +14849,35 @@
           "source_end"
         ],
         "title": "EpisodeSceneRangeRequest"
+      },
+      "EpisodeTTSBatchRequest": {
+        "properties": {
+          "idempotency_key_prefix": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Idempotency Key Prefix"
+          },
+          "emotion": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Emotion",
+            "default": "NEUTRAL"
+          },
+          "speech_rate": {
+            "type": "number",
+            "maximum": 2.0,
+            "minimum": 0.5,
+            "title": "Speech Rate",
+            "default": 1.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "idempotency_key_prefix"
+        ],
+        "title": "EpisodeTTSBatchRequest"
       },
       "ExperimentConfirmRequest": {
         "properties": {
@@ -15916,6 +16777,29 @@
         ],
         "title": "SelectionRequest"
       },
+      "ShotAssetBindRequest": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Asset Id"
+          },
+          "role_in_shot": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Role In Shot",
+            "default": "main"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "asset_id"
+        ],
+        "title": "ShotAssetBindRequest"
+      },
       "ShotCreateRequest": {
         "properties": {
           "code": {
@@ -15978,6 +16862,147 @@
           "inbox_name"
         ],
         "title": "StageProjectPackageRequest"
+      },
+      "StoryAssetArchiveRequest": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_revision"
+        ],
+        "title": "StoryAssetArchiveRequest"
+      },
+      "StoryAssetCreateRequest": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Kind"
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 4000,
+            "title": "Description",
+            "default": ""
+          },
+          "canonical_media_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Media Version Id"
+          },
+          "extra": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "code",
+          "name"
+        ],
+        "title": "StoryAssetCreateRequest"
+      },
+      "StoryAssetUpdateRequest": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "canonical_media_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Media Version Id"
+          },
+          "extra": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_revision"
+        ],
+        "title": "StoryAssetUpdateRequest"
       },
       "StoryboardBatchCommitRequest": {
         "properties": {

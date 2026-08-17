@@ -1,4 +1,5 @@
-import type { ContinuityContext, ContinuityShot } from "../../generated/api";
+import { useQuery } from "@tanstack/react-query";
+import { listShotStoryAssets, type ContinuityContext, type ContinuityShot } from "../../generated/api";
 
 const facetLabels: Record<string, string> = {
   appearance: "人物外观",
@@ -8,6 +9,18 @@ const facetLabels: Record<string, string> = {
   spatial_direction: "空间方向",
   continuity: "连续性",
 };
+
+const assetKindLabels: Record<string, string> = { CHARACTER: "角色", SCENE: "场景", PROP: "道具", COSTUME: "服装" };
+
+function BoundAssetList({ shotId }: { shotId: string }) {
+  const bindings = useQuery({ queryKey: ["shot-story-assets", shotId], queryFn: () => listShotStoryAssets(shotId), enabled: Boolean(shotId) });
+  const items = bindings.data?.items ?? [];
+  if (items.length === 0) return null;
+  return <div className="continuity-bound-assets" aria-label="当前镜头绑定资产">
+    <small>绑定资产 · {items.length}</small>
+    {items.map((item) => <div className="continuity-bound-asset" key={item.binding_id}><strong>{item.name}</strong><span>{assetKindLabels[item.kind] ?? item.kind} · {item.role_in_shot}</span>{item.status === "ARCHIVED" ? <span className="status-pill archived">已归档</span> : null}</div>)}
+  </div>;
+}
 
 function displayValue(value: unknown): string {
   if (Array.isArray(value)) return value.map(String).join("、");
@@ -40,6 +53,7 @@ export function ContinuityPanel({ context }: { context: ContinuityContext | unde
         <ShotColumn shot={context.shots.current} label="当前镜" />
         <ShotColumn shot={context.shots.next} label="下一镜" />
       </div>
+      <BoundAssetList shotId={context.selected_shot_id} />
       <div className="continuity-footer"><span>边界约束 {context.transitions.length}</span><span>runtime_contacted=false</span><span>network_contacted=false</span><span>mutated=false</span></div>
     </>}
   </section>;

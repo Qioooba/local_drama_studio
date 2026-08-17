@@ -332,6 +332,109 @@ def _create_t2v_profile_candidate(database: Database, workflow_version_id: str) 
     return version_id
 
 
+def _seed_g11(database: Database, settings: Settings, project_id: str, root_rel: str, shot_id: str, keyframe_id: str) -> dict[str, Any]:
+    """Seed G11 story assets, shot bindings, character-voice bindings and a breakdown draft.
+
+    Every seeded row goes through the real services (StoryAssetService /
+    DialogueService) so the UI three-viewport UAT reads genuine data.  The
+    voice chain is real Windows SAPI: discover installed voices, synthesize
+    nothing here (the TTS batch path synthesizes on job execution), register a
+    published local TTS profile and a USER_OWNED voice profile, then bind the
+    character to that voice.  A DRAFT_READY breakdown draft is inserted only
+    when the snapshot project has a committed script source document.
+    """
+    from local_drama.application.dialogue import (
+        DialogueService,  # type: ignore[import-not-found]
+    )
+    from local_drama.application.story_assets import (
+        StoryAssetService,  # type: ignore[import-not-found]
+    )
+
+    result: dict[str, Any] = {"assets": {}, "voice": {}, "draft": {}}
+    assets = StoryAssetService(database, settings)
+    mother = assets.create_asset(
+        project_id, "CHARACTER", "mother", "母亲", "中年女性，面容温和，身着素色棉衣", canonical_media_version_id=keyframe_id, actor="sim-operator"
+    )
+    scene = assets.create_asset(project_id, "SCENE", "old-house", "老屋", "北方乡村老屋，土墙木窗，暖色灯光", actor="sim-operator")
+    assets.create_asset(project_id, "PROP", "letter", "信件", "泛黄的信封与信纸", actor="sim-operator")
+    assets.create_asset(project_id, "COSTUME", "cotton-coat", "素色棉衣", "母亲常穿的素色棉衣", actor="sim-operator")
+    binding = assets.bind_asset_to_shot(shot_id, str(mother["id"]), "main", actor="sim-operator")
+    result["assets"] = {
+        "mother_asset_id": str(mother["id"]),
+        "scene_asset_id": str(scene["id"]),
+        "binding_id": str(binding["binding_id"]),
+        "bound_shot_id": shot_id,
+    }
+
+    dialogue = DialogueService(database, settings)
+    voices = dialogue.discover_local_sapi_voices()
+    if voices.get("status") == "AVAILABLE" and voices.get("items"):
+        voice = dict(voices["items"][0])
+        profile_version_id = f"sapi-g11-{uuid.uuid4()}"
+        now = datetime.now(UTC).isoformat()
+        with database.transaction() as connection:
+            connection.execute("INSERT INTO execution_profiles (id,code,title) VALUES (?,?,?)", (profile_version_id, "sapi-local-g11", "Windows SAPI local TTS (G11 sim)"))
+            connection.execute(
+                """INSERT INTO execution_profile_versions
+                (id,execution_profile_id,version_no,capability,model_bundle_json,input_contract_json,
+                 parameter_schema_json,output_contract_json,resource_policy_json,status,created_at,updated_at,created_by,revision,schema_version)
+                VALUES (?,?,1,'TTS_SAPI_LOCAL','{}','{}','{}','{}','{}','PUBLISHED',?,?,?,1,'v2')""",
+                (f"{profile_version_id}-v1", profile_version_id, now, now, "sim-operator"),
+            )
+        project_root = settings.projects_root / root_rel
+        evidence = project_root / "00_admin" / "g11-voice-license.json"
+        evidence.parent.mkdir(parents=True, exist_ok=True)
+        evidence.write_text(
+            json.dumps({"schema_version": "g11.voice-license.v1", "voice": voice["name"], "scope": "isolated G11 sim UAT", "user_owned": True}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        voice_profile = dialogue.create_voice_profile(
+            project_id,
+            code="sapi-mother",
+            title=f"SAPI {voice['name']}",
+            voice_ref=str(voice["voice_ref"]),
+            license_status="USER_OWNED",
+            license_evidence_path_rel="00_admin/g11-voice-license.json",
+            provider_profile_version_id=f"{profile_version_id}-v1",
+            actor="sim-operator",
+        )
+        dialogue.bind_character_voice(project_id, str(mother["id"]), str(voice_profile["id"]), actor="sim-operator")
+        result["voice"] = {"voice_name": voice["name"], "voice_profile_version_id": str(voice_profile["id"]), "character_asset_id": str(mother["id"])}
+    else:
+        result["voice"] = {"status": "SAPI_UNAVAILABLE", "detail": voices.get("message")}
+
+    with database.connect() as connection:
+        doc = connection.execute(
+            "SELECT sdv.id AS version_id FROM source_document_versions sdv JOIN source_documents sd ON sd.id=sdv.source_document_id WHERE sd.project_id=? ORDER BY sdv.created_at DESC LIMIT 1",
+            (project_id,),
+        ).fetchone()
+        session = connection.execute(
+            "SELECT id FROM import_sessions WHERE project_id=? AND status='COMMITTED' ORDER BY created_at DESC LIMIT 1", (project_id,)
+        ).fetchone()
+    if doc is not None and session is not None:
+        draft_id, now = str(uuid.uuid4()), datetime.now(UTC).isoformat()
+        draft = {
+            "scenes": [
+                {
+                    "scene_no": 1,
+                    "title": "读信",
+                    "summary": "母亲在老屋灯下读信",
+                    "characters": ["母亲"],
+                    "shots": [{"shot_no": 1, "visual": "近景", "action": "展开信纸", "dialogue": "母亲：先喝口热水，天亮以前我们一起想办法。", "duration_seconds": 4}],
+                }
+            ]
+        }
+        confidence = {"source": "model_output", "confidence": {"overall": 0.9, "notes": ["simulation seed"]}, "source_passages": []}
+        with database.transaction() as connection:
+            connection.execute(
+                """INSERT INTO script_breakdown_drafts (id,project_id,source_document_version_id,import_session_id,draft_json,confidence_json,status,created_at,updated_at,created_by,revision,schema_version)
+                VALUES (?,?,?,?,?,?,'DRAFT_READY',?,?,'local-llm',1,'v2')""",
+                (draft_id, project_id, str(doc["version_id"]), str(session["id"]), json.dumps(draft, ensure_ascii=False), json.dumps(confidence, ensure_ascii=False), now, now),
+            )
+        result["draft"] = {"draft_id": draft_id, "scene_count": 1, "shot_count": 1, "line_count": 1}
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True, help="isolated writable root")
@@ -479,13 +582,15 @@ def main() -> None:
 
     with database.connect() as connection:
         integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
+    g11 = _seed_g11(database, settings, project_id, root_rel, shot_id, keyframe_id)
     print(
         f"sim env ready project={project_id} root_rel={root_rel} shot={shot_id} keyframe={keyframe_id} "
         f"workflow={workflow['workflow_version_id']} profile={candidate_version_id} evidence_job={evidence['job_id']} "
         f"evidence_media={evidence['media_version_id']} published={published['status']} "
         f"t2v_workflow={t2v_workflow['workflow_version_id']} t2v_profile={t2v_profile_version_id} "
         f"t2v_evidence_job={t2v_evidence['job_id']} t2v_evidence_media={t2v_evidence['media_version_id']} "
-        f"t2v_published={t2v_published['status']} motion_control={motion_control['id']} integrity={integrity} port={args.port}",
+        f"t2v_published={t2v_published['status']} motion_control={motion_control['id']} "
+        f"g11={json.dumps(g11, ensure_ascii=False)} integrity={integrity} port={args.port}",
         flush=True,
     )
     uvicorn.run(create_app(settings), host="127.0.0.1", port=args.port, log_level="warning")

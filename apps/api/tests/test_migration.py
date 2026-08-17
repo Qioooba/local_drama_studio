@@ -22,7 +22,7 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         foreign_keys = connection.execute("PRAGMA foreign_keys").fetchone()[0]
         indexes = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
-        assert version == "0039_automation_task_jobs"
+        assert version == "0041_character_voice_bindings"
     assert "provider_random_nonce" in variant_columns
     assert {"requested_time_us", "resolved_time_us", "source_sha256", "extraction_method"} <= anchor_columns
     assert "source_artifact_id" in media_columns
@@ -56,6 +56,10 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         "ix_outbox_delivery_attempts_endpoint_status_next",
         "ix_outbox_delivery_attempts_event_endpoint",
         "ix_automation_workflow_run_tasks_job",
+        "ix_story_assets_project_kind",
+        "ix_shot_asset_bindings_asset",
+        "ix_shot_asset_bindings_shot",
+        "ix_character_voice_bindings_project",
     } <= indexes
     expected = {
         "projects",
@@ -105,6 +109,9 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         "motion_controls",
         "job_resource_leases",
         "outbox_delivery_attempts",
+        "story_assets",
+        "shot_asset_bindings",
+        "character_voice_bindings",
     }
     assert expected <= tables
 

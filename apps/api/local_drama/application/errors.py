@@ -27,6 +27,10 @@ def api_error_from_domain(error: DomainRuleError) -> ApiError:
         "JOB_NOT_RETRYABLE",
         "INVALID_JOB_DEPENDENCY",
         "IMAGE_CONTENT_REQUIRES_THUMBNAIL",
+        "STORY_ASSET_CODE_CONFLICT",
+        "STORY_ASSET_REVISION_CONFLICT",
+        "STORY_ASSET_ALREADY_BOUND",
+        "STORY_ASSET_ALREADY_ARCHIVED",
     }:
         status = 409
     else:

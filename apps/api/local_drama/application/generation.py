@@ -17,6 +17,7 @@ from local_drama.infrastructure.database.sqlite import Database
 
 from .jobs import JobService
 from .media import MediaService
+from .prompt_anchors import character_anchor_line, character_anchor_rows
 
 
 def _now() -> str:
@@ -29,6 +30,26 @@ def _canonical(value: object) -> str:
 
 def _digest(value: object) -> str:
     return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
+
+
+def _character_anchor_lines(connection: Any, intent_row: Any) -> list[str]:
+    """Build the character appearance anchor lines for a SHOT-owned intent.
+
+    Pure function over the *current* DB binding state: one line per ACTIVE
+    CHARACTER story asset bound to the intent's shot, ordered by
+    ``role_in_shot`` then ``name``. Returns ``[]`` when the intent is not
+    SHOT-owned, has no owner id, or has no bound characters — in which case the
+    caller leaves the prompt and job snapshot untouched.
+    """
+    if str(intent_row["owner_type"]) != "SHOT" or not intent_row["owner_id"]:
+        return []
+    rows = character_anchor_rows(connection, str(intent_row["owner_id"]))
+    return [
+        character_anchor_line(
+            str(item["name"]), str(item.get("description") or ""), item.get("canonical_media_version_id") or None
+        )
+        for item in rows
+    ]
 
 
 class GenerationService:
@@ -1247,6 +1268,46 @@ class GenerationService:
                         binding.weight, approval_by_slot.get((binding.role, binding.ordinal)),
                     ),
                 )
+            # G11 P0-1: inject the shot's bound CHARACTER appearance anchors into
+            # the *executed* PROMPT semantic input. This deliberately mutates
+            # only the ephemeral job input snapshot — never plan.parameter_set,
+            # the frozen variant row, or plan_hash — so preflight / EXACT_REPLAY
+            # semantics stay intact. Derivation replays from the parent's
+            # parameter_set (anchor-free) and re-injects from the *current*
+            # binding state at submit time; the original anchor text + sha256
+            # are frozen into the job snapshot and audit trail below, keeping
+            # every execution auditable even when the story library changes
+            # later. With no bound characters the snapshot is byte-identical to
+            # the pre-injection behaviour (no story_assets key).
+            anchor_lines = _character_anchor_lines(connection, intent)
+            story_assets_snapshot: dict[str, str] | None = None
+            if anchor_lines and "PROMPT" in semantic_inputs and isinstance(semantic_inputs["PROMPT"], str) and semantic_inputs["PROMPT"].strip():
+                anchor_text = "\n".join(anchor_lines)
+                semantic_inputs["PROMPT"] = semantic_inputs["PROMPT"] + "\n\n" + anchor_text
+                story_assets_snapshot = {
+                    "anchor": anchor_text,
+                    "anchor_sha256": hashlib.sha256(anchor_text.encode("utf-8")).hexdigest(),
+                }
+            job_input_snapshot: dict[str, Any] = {
+                "variant_id": variant_id,
+                "workflow_version_id": workflow_version_id,
+                "execution_snapshot": {
+                    "profile_version_id": plan.profile_version_id,
+                    "profile_revision": dependencies["profile_revision"],
+                    "runtime_version_id": dependencies["runtime_version_id"],
+                    "workflow_version_id": workflow_version_id,
+                    "workflow_content_hash": dependencies["workflow_content_hash"],
+                    "model_bundle": dependencies["model_bundle"],
+                    "model_bundle_hash": dependencies["model_bundle_hash"],
+                    "manifest_sha256": dependencies["profile_manifest_sha256"],
+                    "snapshot_hash": dependencies["profile_execution_snapshot_hash"],
+                },
+                "semantic_inputs": semantic_inputs,
+                "media_bindings": media_bindings_snapshot,
+                "recipe_hash": recipe_hash,
+            }
+            if story_assets_snapshot is not None:
+                job_input_snapshot["story_assets"] = story_assets_snapshot
             job = JobService(self.database).create_job_in_transaction(
                 connection,
                 str(intent["project_id"]),
@@ -1254,24 +1315,7 @@ class GenerationService:
                 "GENERATION_VARIANT",
                 variant_id,
                 "GPU_H3",
-                {
-                    "variant_id": variant_id,
-                    "workflow_version_id": workflow_version_id,
-                    "execution_snapshot": {
-                        "profile_version_id": plan.profile_version_id,
-                        "profile_revision": dependencies["profile_revision"],
-                        "runtime_version_id": dependencies["runtime_version_id"],
-                        "workflow_version_id": workflow_version_id,
-                        "workflow_content_hash": dependencies["workflow_content_hash"],
-                        "model_bundle": dependencies["model_bundle"],
-                        "model_bundle_hash": dependencies["model_bundle_hash"],
-                        "manifest_sha256": dependencies["profile_manifest_sha256"],
-                        "snapshot_hash": dependencies["profile_execution_snapshot_hash"],
-                    },
-                    "semantic_inputs": semantic_inputs,
-                    "media_bindings": media_bindings_snapshot,
-                    "recipe_hash": recipe_hash,
-                },
+                job_input_snapshot,
                 idempotency_key,
                 execution_profile_version_id=plan.profile_version_id,
                 max_attempts=1,
@@ -1282,6 +1326,26 @@ class GenerationService:
                 VALUES ('local-user', 'producer', 'GENERATION_VARIANT_SUBMITTED', 'generation_variant', ?, ?, ?)""",
                 (variant_id, "原子创建 GenerationVariant 与 GPU_H3 Job", _canonical({"job_id": job["id"], "recipe_hash": recipe_hash})),
             )
+            if story_assets_snapshot is not None:
+                # Dedicated audit action: the existing SUBMITTED event stays
+                # byte-identical, and this one records the injected anchor's
+                # original text hash + line count for replay/audit.
+                connection.execute(
+                    """INSERT INTO audit_events
+                    (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json)
+                    VALUES ('local-user', 'producer', 'GENERATION_CHARACTER_ANCHOR_INJECTED', 'generation_variant', ?, ?, ?)""",
+                    (
+                        variant_id,
+                        "提交时按分镜当前绑定将角色外观锚点注入 PROMPT 语义输入并冻结原文哈希",
+                        _canonical(
+                            {
+                                "job_id": job["id"],
+                                "character_anchor_sha256": story_assets_snapshot["anchor_sha256"],
+                                "character_anchor_lines": len(anchor_lines),
+                            }
+                        ),
+                    ),
+                )
         return {"variant": self.get_variant(variant_id), "job": job}
 
     def create_variant(self, intent_id: str, plan: VariantPlan) -> dict[str, Any]:

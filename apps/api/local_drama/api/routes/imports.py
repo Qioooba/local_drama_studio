@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from local_drama.api.schemas.g3 import BreakdownRequest, DocumentImportCommitRequest, DocumentImportRequest
+from local_drama.api.schemas.g3 import BreakdownDraftApplyRequest, BreakdownRequest, DocumentImportCommitRequest, DocumentImportRequest
+from local_drama.application.breakdown_apply import BreakdownApplyService
 from local_drama.application.documents import DocumentImportService
 from local_drama.application.errors import api_error_from_domain
 from local_drama.domain.errors import DomainRuleError
@@ -50,5 +51,14 @@ async def commit_import_session(session_id: str, payload: DocumentImportCommitRe
 async def request_breakdown(session_id: str, payload: BreakdownRequest, request: Request) -> dict[str, object]:
     try:
         return {"draft": service(request).request_breakdown(session_id, payload.profile_version_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/breakdown-drafts/{draft_id}:apply", operation_id="applyScriptBreakdownDraft")
+async def apply_breakdown_draft(draft_id: str, payload: BreakdownDraftApplyRequest, request: Request) -> dict[str, object]:
+    try:
+        apply = BreakdownApplyService(request.app.state.database, request.app.state.settings).apply_draft(draft_id, payload.episode_id)
+        return {"apply": apply}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error

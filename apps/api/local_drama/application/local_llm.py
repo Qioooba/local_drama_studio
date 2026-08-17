@@ -270,7 +270,8 @@ class LocalLLMService:
             item["draft"] = json.loads(item.pop("draft_json"))
             item["confidence"] = json.loads(item.pop("confidence_json"))
             complete = all(key in item["confidence"] for key in ("profile_version_id", "confidence", "questions", "source_passages"))
-            item.update({"profile_version_id": item["confidence"].get("profile_version_id"), "evidence_status": "COMPLETE" if complete else "LEGACY_INCOMPLETE", "application_status": "NOT_APPLIED", "automatic_apply": False, "requires_human_action": True})
+            applied = item["status"] == "APPLIED"
+            item.update({"profile_version_id": item["confidence"].get("profile_version_id"), "evidence_status": "COMPLETE" if complete else "LEGACY_INCOMPLETE", "application_status": "APPLIED" if applied else "NOT_APPLIED", "automatic_apply": False, "requires_human_action": not applied})
             items.append(item)
         return items
 

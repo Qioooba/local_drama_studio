@@ -505,3 +505,15 @@ ComfyUI 与 Local LLM loopback 客户端现在使用显式无代理、拒绝 3xx
 2. **NFR-PERF-001/002 性能基线**：API 规模基准复跑（60 集/800 镜头/10k 媒体，`nfr-perf-bounded-observation-2026-08-17.json`，OBSERVED_NOT_BENCHMARKED）+ 浏览器三视口页面加载观测（`tests/e2e/nfr_perf_browser_observation.spec.ts`，18 样本零错误，DOMContentLoaded p95=722ms；jobs 视图 networkidle 最高 ~4.6s，SSE 流保持连接所致，如实标注非正式基准）。
 3. **FR-CTL-002/003/004 运动/多模态三视口 UAT**（`tests/e2e/motion_multimodal_windows_uat.spec.ts`，证据 `fr-ctl-002-004-motion-multimodal-windows-uat-2026-08-17.json` 3/3 PASS）：模拟环境种子真实 MOTION_MASK 运动控制（真实归一化矢量路径、Profile 声明 motion/inpaint/outpaint enabled），MotionControlPanel 与多模态输入面板在三视口渲染真实数据，零写入/零原片/零错误/零溢出。
 4. **G6 同关键帧四条 take 当轮复跑**（`scripts/g6_four_takes_uat.py`，证据 `g6-four-takes-windows-uat-2026-08-17.json` PASS）：隔离项目经平台 Variant 路径（intent/prompt/plan/submit API）提交 4 个不同 seed（260831—260834）的 BASE Variant，4 个真实 H3 GPU Job 全部 SUCCEEDED，产物晋升 → 机器 QC PASS → 人工 APPROVED → 第 4 条（seed 260834）PROXY_WINNER 选择。
+
+## 2026-08-17 第七轮：G11 增强批次 1（P0 五项，agent 自主开发）
+
+按调研结论与 `docs/plan/gap-closure-development-plan.md` 完成 G11 增强批次 1（P0 短剧完整闭环），5 个子代理并行开发 + 协调者集成，全部真实数据、真实页面点击验证：
+
+1. **P0-1/2 故事资产库**：`story_assets`/`shot_asset_bindings`（迁移 0040）——四类资产卡（角色/场景/道具/服装）CRUD + 乐观锁 + 归档 + canonical 参考图 + 镜头绑定/解绑 + 审计；UI 三件套（StoryAssetLibraryPanel 四 Tab 卡片库 / DirectorShotEditor 资产绑定区 / ContinuityPanel 绑定资产区）；e2e `story_asset_windows_uat.spec.ts` PASS（种子资产渲染、真实表单创建"女儿"、绑定镜头、连续性 2 项、prompt-anchor 预览含两个角色锚点）。
+2. **P0-1 角色锚点提示词注入**：`prompt_anchors.py` 纯函数模块 + `generation.submit_confirmed_variant` 注入（锚点追加进执行的 PROMPT 语义输入、独立审计 `GENERATION_CHARACTER_ANCHOR_INJECTED`、job 快照冻结 anchor+sha256、无角色时快照字节不变、EXACT_REPLAY/plan_hash 语义保持）+ 预览端点 `GET /shots/{id}/prompt-anchor`（与执行锚点逐字节一致）。
+3. **P0-3 剧本拆解草稿落地应用**：`breakdown_apply.py` 单事务应用（草稿→母本场次+集映射+镜头+对白，对白解析支持"角色：台词"/对象/多行，幂等状态翻转 APPLIED，失败整体回滚）+ 路由 `POST /breakdown-drafts/{id}:apply` + AIDraftReviewPanel"应用到成片"区；e2e `breakdown_apply_windows_uat.spec.ts` PASS（UI 应用 1 场/1 镜/1 对白，角色 母亲×1，草稿投影变 APPLIED）。
+4. **P0-5 多角色 TTS 编排**：`character_voice_bindings`（迁移 0041）角色↔音色绑定 + `submit_episode_tts_batch` 整集批量（镜头单角色绑定优先、speaker 规范化匹配兜底、逐行隔离、VOICE_UNRESOLVED/VOICE_NOT_JOB_ELIGIBLE 跳过）+ DialogueTTSPanel 编排区（绑定管理 + 情绪/语速 + 批量结果摘要）；e2e `character_voice_windows_uat.spec.ts` PASS（种子绑定可见 → 页面批量提交 1 条 → **真实 Windows SAPI 合成 Job SUCCEEDED**）。
+5. **P0-4 整剧一键编排**：`AUTOMATION_TEMPLATES.WHOLE_DRAMA` 内置模板（按集展开 关键帧确认→批量TTS→渲染→交付，machine_check 条件驱动 HITL 暂停）+ **自动化任务执行器**（LocalMediaWorker 处理 AUTOMATION_WORKFLOW_TASK：KEYFRAME_CHECK/TTS_BATCH/RENDER/DELIVERY/SUBTITLE，产物 AUTOMATION_TASK_REPORT，完成后自动 step_run 推进 run）+ `BATCH_AUTOMATED` 启动预置首任务 + run 终态持久化机器上下文 + 面板模板区与 3 秒 run 轮询；e2e `whole_drama_windows_uat.spec.ts` PASS（面板建模板→冻结 plan→启动→**worker 自主驱动** KEYFRAME_CHECK 暂停→人工批准→TTS_BATCH→RENDER 失败暂停→人工拒绝 FAILED，两轮 HITL 全记录）。
+
+门禁：API 全量 **338 passed**（基线 290 + 48 新增）、Web **39 files / 118 tests**、`pnpm check` 全绿（Ruff/mypy/build/G5）、`release_audit` PASS/GO（链头 0041，正式库已迁移，`release_rehearsal.py`/`verify_release.py` 链头同步）。正式库结构变更仅新增表（0040/0041 纯增量，preflight 备份在 `backups/`）。

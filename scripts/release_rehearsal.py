@@ -15,7 +15,7 @@ from alembic import command
 from alembic.config import Config
 
 ROOT = Path(__file__).resolve().parents[1]
-HEAD_MIGRATION = "0039_automation_task_jobs"
+HEAD_MIGRATION = "0041_character_voice_bindings"
 SOURCE_MIGRATION = "0031_project_asset_grants"
 
 

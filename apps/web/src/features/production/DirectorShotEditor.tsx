@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { createShotRevision, markShotProductionReady, resolveProfileCameraPlan, type CameraPlan, type Profile } from "../../generated/api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { bindStoryAssetToShot, createShotRevision, listShotStoryAssets, listStoryAssets, markShotProductionReady, resolveProfileCameraPlan, unbindStoryAssetFromShot, type CameraPlan, type Profile } from "../../generated/api";
 
 const labels: Record<string, string> = { shot_type: "景别", composition: "构图", subject_action: "主体动作", camera_plan: "镜头运动", target_duration_ms: "时长", dialogue: "对白", environment: "环境", continuity: "连续性", creative_intent: "创作意图" };
 const requiredNonEmpty = ["shot_type", "composition", "subject_action", "camera_plan", "target_duration_ms", "continuity", "creative_intent"];
+const assetKindLabels: Record<string, string> = { CHARACTER: "角色", SCENE: "场景", PROP: "道具", COSTUME: "服装" };
 
 const emptyCamera: CameraPlan = { mode: "UNSUPPORTED", shot_type: "", movement: "", prompt_text: "", direction: "FORWARD", intensity: 0.5, curve: "LINEAR", profile_version_id: null };
 
@@ -13,7 +14,41 @@ function cameraFrom(value: unknown): CameraPlan {
   return { ...emptyCamera, ...item, mode: item.mode ?? "UNSUPPORTED" };
 }
 
-export function DirectorShotEditor({ shot, profiles = [], onChanged }: { shot: Record<string, unknown> | undefined; profiles?: Profile[]; onChanged: () => void }) {
+function ShotAssetSection({ projectId, shotId }: { projectId: string; shotId: string }) {
+  const client = useQueryClient();
+  const assets = useQuery({ queryKey: ["story-assets", projectId], queryFn: () => listStoryAssets(projectId), enabled: Boolean(projectId) });
+  const bindings = useQuery({ queryKey: ["shot-story-assets", shotId], queryFn: () => listShotStoryAssets(shotId), enabled: Boolean(shotId) });
+  const [selectedAssetId, setSelectedAssetId] = useState("");
+  const [role, setRole] = useState("main");
+  const [sectionError, setSectionError] = useState<string | null>(null);
+  const bound = bindings.data?.items ?? [];
+  const boundAssetIds = new Set(bound.map((item) => item.asset_id));
+  const available = (assets.data?.items ?? []).filter((item) => item.status === "ACTIVE" && !boundAssetIds.has(item.id));
+  const grouped = available.reduce<Record<string, typeof available>>((acc, item) => { (acc[item.kind] ??= []).push(item); return acc; }, {});
+  const refresh = async () => { await client.invalidateQueries({ queryKey: ["shot-story-assets", shotId] }); await client.invalidateQueries({ queryKey: ["story-assets", projectId] }); };
+  const bind = useMutation({
+    mutationFn: () => bindStoryAssetToShot(shotId, { asset_id: selectedAssetId, role_in_shot: role }),
+    onSuccess: async () => { setSelectedAssetId(""); setSectionError(null); await refresh(); },
+    onError: (error) => setSectionError(String(error)),
+  });
+  const unbind = useMutation({
+    mutationFn: (bindingId: string) => unbindStoryAssetFromShot(bindingId),
+    onSuccess: async () => { await refresh(); },
+    onError: (error) => setSectionError(String(error)),
+  });
+  return <div className="shot-asset-section" aria-label="故事资产">
+    <h4>故事资产</h4>
+    {bound.length > 0 ? <ul className="shot-asset-bindings">{bound.map((item) => <li key={item.binding_id}><strong>{item.name}</strong><code>{item.code}</code><span>{assetKindLabels[item.kind] ?? item.kind}</span><span className={item.status === "ARCHIVED" ? "status-pill archived" : "status-pill"}>{item.status === "ARCHIVED" ? "已归档" : "启用中"}</span><span>角色：{item.role_in_shot}</span><button type="button" className="secondary" disabled={unbind.isPending} onClick={() => unbind.mutate(item.binding_id)}>解绑</button></li>)}</ul> : <p className="muted">本镜头尚未绑定故事资产。</p>}
+    <div className="shot-asset-bind-form">
+      <label>绑定资产<select value={selectedAssetId} aria-label="绑定资产" onChange={(event) => setSelectedAssetId(event.target.value)}><option value="">请选择</option>{Object.entries(grouped).map(([kind, items]) => <optgroup key={kind} label={assetKindLabels[kind] ?? kind}>{items.map((item) => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}</optgroup>)}</select></label>
+      <label>镜头内角色<input value={role} onChange={(event) => setRole(event.target.value)} /></label>
+      <button type="button" className="secondary" disabled={!selectedAssetId || bind.isPending} onClick={() => bind.mutate()}>{bind.isPending ? "绑定中…" : "绑定到本镜头"}</button>
+    </div>
+    {(sectionError || bindings.error || assets.error) && <p className="inline-error" role="alert">{String(sectionError ?? bindings.error ?? assets.error)}</p>}
+  </div>;
+}
+
+export function DirectorShotEditor({ shot, profiles = [], onChanged, projectId }: { shot: Record<string, unknown> | undefined; profiles?: Profile[]; onChanged: () => void; projectId?: string | null }) {
   const current = shot?.current_revision && typeof shot.current_revision === "object" ? shot.current_revision as Record<string, unknown> : {};
   const [fields, setFields] = useState<Record<string, string>>({});
   const [camera, setCamera] = useState<CameraPlan>(emptyCamera);
@@ -62,6 +97,7 @@ export function DirectorShotEditor({ shot, profiles = [], onChanged }: { shot: R
       <label>{labels.continuity}<textarea value={fields.continuity ?? ""} onChange={(event) => update("continuity", event.target.value)} /></label>
       <label>{labels.creative_intent}<textarea value={fields.creative_intent ?? ""} onChange={(event) => update("creative_intent", event.target.value)} /></label>
     </div>
+    {projectId && shot && <ShotAssetSection projectId={projectId} shotId={String(shot.id)} />}
     <div className="director-actions"><label className="checkbox-row"><input type="checkbox" checked={freeze} onChange={(event) => setFreeze(event.target.checked)} />保存时冻结 revision</label><button className="secondary" disabled={save.isPending} onClick={() => save.mutate()}>{save.isPending ? "保存中…" : "保存新 revision"}</button><button className="primary-action" disabled={ready.isPending || missing.length > 0 || shot.status !== "DIRECTED"} onClick={() => ready.mutate()}>{ready.isPending ? "校验中…" : "标记 Production Ready"}</button></div>
     <p className={missing.length ? "review-guidance" : "review-success"} role="status">{missing.length ? `还缺 ${missing.length} 项：${missing.map((key) => labels[key]).join("、")}` : shot.status === "DIRECTED" ? "九项字段完整，结构化运镜已通过 Profile 裁决，可显式标记 Production Ready。" : `九项字段完整；当前状态 ${readiness?.state ?? String(shot.status)}。`}</p>
     {readiness?.blockers && readiness.blockers.length > 0 && <p className="muted">服务端阻塞：{readiness.blockers.join("、")}</p>}

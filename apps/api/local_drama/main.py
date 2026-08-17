@@ -32,6 +32,7 @@ from .api.routes.projects import router as project_router
 from .api.routes.prompts import router as prompts_router
 from .api.routes.reviews import router as reviews_router
 from .api.routes.search import router as search_router
+from .api.routes.story_assets import router as story_assets_router
 from .api.routes.timeline import router as timeline_router
 from .api.routes.variants import router as variants_router
 from .api.routes.workflows import router as workflows_router
@@ -109,6 +110,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(search_router, prefix="/api/v1")
     app.include_router(timeline_router, prefix="/api/v1")
     app.include_router(variants_router, prefix="/api/v1")
+    app.include_router(story_assets_router, prefix="/api/v1")
     return app
 
 

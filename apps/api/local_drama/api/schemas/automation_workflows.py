@@ -36,3 +36,8 @@ class AutomationWorkflowResumeRequest(BaseModel):
 
 class AutomationWorkflowPauseRequest(BaseModel):
     reason: str = Field(default="MANUAL_PAUSE", min_length=1, max_length=500)
+
+
+class AutomationWorkflowTemplateRequest(BaseModel):
+    template_code: str = Field(min_length=1, max_length=120)
+    title: str = Field(min_length=1, max_length=200)

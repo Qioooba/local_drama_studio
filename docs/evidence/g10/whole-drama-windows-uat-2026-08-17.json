@@ -1,0 +1,22 @@
+{
+  "schema_version": "g11.whole-drama-windows-uat.v1",
+  "observed_at": "2026-08-17T14:13:13.304Z",
+  "mode": "LOCAL_ONLY",
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "status": "PASS",
+  "isolated_snapshot": true,
+  "production_database_touched": false,
+  "runtime_contacted": true,
+  "network_contacted": false,
+  "steps": [
+    "WHOLE_DRAMA template workflow created through the panel",
+    "plan frozen and run started through the panel",
+    "worker drove run 6d657ac9-9d91-4e48-82e9-acdbb3037674 to first PAUSED_HITL after 2 real automation tasks (keyframe check or machine check requires human attention)",
+    "first HITL decision recorded through the panel: HUMAN_APPROVED",
+    "worker continued and run 6d657ac9-9d91-4e48-82e9-acdbb3037674 paused again after 8 real automation tasks (RENDER machine check)",
+    "operator decision recorded through the panel: run FAILED after HUMAN_REJECTED",
+    "zero console errors / zero failed responses"
+  ],
+  "errors": [],
+  "interpretation": "G11 whole-drama one-click orchestration real-click UAT: WHOLE_DRAMA template created from the panel, plan frozen, run started; the controlled worker executed the real AUTOMATION_WORKFLOW_TASK jobs (keyframe check / TTS batch / render), the run paused at the RENDER failure waiting for human attention, and the operator decision was recorded through the panel."
+}

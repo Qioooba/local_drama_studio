@@ -5,8 +5,8 @@
     "NFR-TEST-001"
   ],
   "status": "PARTIAL",
-  "observed_at": "2026-08-17T05:36:12.013832+00:00",
-  "git_revision": "29565e79c23146f442e06188952c9ec83379d2d1",
+  "observed_at": "2026-08-17T14:38:36.705406+00:00",
+  "git_revision": "3cbb5266cb9b137d9dc8b3858502d8848c032efa",
   "deterministic_contracts_passed": true,
   "hard_failures": [],
   "dependencies": {
@@ -34,6 +34,10 @@
       },
       {
         "file": "apps/api/local_drama/application/automation_workflows.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/breakdown_apply.py",
         "import": "local_drama.infrastructure.database.sqlite"
       },
       {
@@ -185,11 +189,19 @@
         "import": "local_drama.infrastructure.database.sqlite"
       },
       {
+        "file": "apps/api/local_drama/application/prompt_anchors.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
         "file": "apps/api/local_drama/application/read_models.py",
         "import": "local_drama.infrastructure.database.sqlite"
       },
       {
         "file": "apps/api/local_drama/application/reviews.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/story_assets.py",
         "import": "local_drama.infrastructure.database.sqlite"
       },
       {
@@ -246,11 +258,11 @@
     "scope": "apps/web/src/**/*.tsx excluding generated client and tests",
     "recommended_limit_lines": 500,
     "warning_limit_lines": 700,
-    "component_count": 51,
+    "component_count": 52,
     "largest_components": [
       {
         "path": "apps/web/src/app/App.tsx",
-        "lines": 391,
+        "lines": 393,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       },
@@ -273,6 +285,12 @@
         "warning_limit_exceeded": false
       },
       {
+        "path": "apps/web/src/features/shared/AutomationWorkflowPanel.tsx",
+        "lines": 132,
+        "recommended_limit_exceeded": false,
+        "warning_limit_exceeded": false
+      },
+      {
         "path": "apps/web/src/features/profiles/ProfileConfigurationPanel.tsx",
         "lines": 127,
         "recommended_limit_exceeded": false,
@@ -285,6 +303,12 @@
         "warning_limit_exceeded": false
       },
       {
+        "path": "apps/web/src/features/production/DirectorShotEditor.tsx",
+        "lines": 106,
+        "recommended_limit_exceeded": false,
+        "warning_limit_exceeded": false
+      },
+      {
         "path": "apps/web/src/features/canvas/ProductionCanvasPanel.tsx",
         "lines": 105,
         "recommended_limit_exceeded": false,
@@ -293,18 +317,6 @@
       {
         "path": "apps/web/src/features/status/DialogueGovernanceActions.tsx",
         "lines": 99,
-        "recommended_limit_exceeded": false,
-        "warning_limit_exceeded": false
-      },
-      {
-        "path": "apps/web/src/features/projects/ProjectCreateWizard.tsx",
-        "lines": 81,
-        "recommended_limit_exceeded": false,
-        "warning_limit_exceeded": false
-      },
-      {
-        "path": "apps/web/src/features/reviews/ImageCandidateGrid.tsx",
-        "lines": 78,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       }
@@ -323,9 +335,9 @@
     ],
     "domain_modules_without_direct_test_import": [],
     "domain_rule_coverage_floor_passed": true,
-    "api_test_file_count": 75,
-    "api_test_function_count": 280,
-    "web_test_file_count": 37,
+    "api_test_file_count": 80,
+    "api_test_function_count": 324,
+    "web_test_file_count": 39,
     "coverage_method": "static import inventory; full pytest/Vitest and Playwright remain separate gates"
   },
   "regression_gate": {

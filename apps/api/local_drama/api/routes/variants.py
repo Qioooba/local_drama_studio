@@ -11,6 +11,7 @@ from local_drama.api.schemas.variants import (
 )
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.generation import GenerationService
+from local_drama.application.prompt_anchors import PromptAnchorService
 from local_drama.domain.errors import DomainRuleError
 
 router = APIRouter(tags=["generation-variants"])
@@ -97,5 +98,14 @@ async def get_variant(variant_id: str, request: Request) -> dict[str, object]:
 async def get_lineage(variant_id: str, request: Request) -> dict[str, object]:
     try:
         return {"items": service(request).lineage(variant_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/shots/{shot_id}/prompt-anchor", operation_id="getShotPromptAnchor")
+async def get_shot_prompt_anchor(shot_id: str, request: Request) -> dict[str, object]:
+    """Preview the exact character appearance anchors injected at submit time."""
+    try:
+        return PromptAnchorService(request.app.state.database).shot_prompt_anchor(shot_id)
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error

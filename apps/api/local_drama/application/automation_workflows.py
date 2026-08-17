@@ -46,6 +46,18 @@ MAX_ITERATIONS = 100_000
 MAX_TASKS = 100_000
 MAX_DISK_BYTES = 1 << 50
 
+# Built-in workflow templates.  The code is also the workflow code, so a
+# project can hold at most one workflow per template (create_workflow enforces
+# AUTOMATION_WORKFLOW_CODE_EXISTS).
+AUTOMATION_TEMPLATES: dict[str, dict[str, str]] = {
+    "WHOLE_DRAMA": {
+        "title": "整剧一键编排",
+        "description": "按集顺序执行 关键帧确认→批量TTS→渲染→交付",
+    },
+}
+# Estimated disk budget per episode (render + delivery + report slack).
+_TEMPLATE_EPISODE_DISK_BYTES = 2 * 1024 * 1024 * 1024
+
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
@@ -235,6 +247,80 @@ class AutomationWorkflowService:
             )
         return self.get_workflow(workflow_id)
 
+    def create_from_template(
+        self,
+        project_id: str,
+        *,
+        template_code: str,
+        title: str,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Expand a built-in template into a persisted workflow definition.
+
+        WHOLE_DRAMA enumerates every episode of the project (season display
+        order first, then episode display order) and emits four batch items per
+        episode: KEYFRAME_CHECK (human confirmation of approved keyframes) →
+        TTS_BATCH (per-episode bulk TTS) → RENDER (latest timeline revision →
+        episode render) → DELIVERY (project delivery target → delivery package).
+        SUBTITLE is intentionally not part of v1: automated subtitle text
+        cannot be proven to match the authoritative script verbatim.
+
+        The node itself carries no hard gate; the machine_check conditions own
+        the HITL pauses, so an AI/machine report can never approve anything.
+        """
+        normalized_code = str(template_code or "").strip().upper()
+        if normalized_code not in AUTOMATION_TEMPLATES:
+            raise DomainRuleError("AUTOMATION_TEMPLATE_UNSUPPORTED", "不支持的自动化模板", {"template_code": template_code})
+        normalized_title = _require_nonempty(title, "AUTOMATION_WORKFLOW_INVALID", "workflow title", 200)
+        episodes: list[dict[str, str]] = []
+        with self.database.connect() as connection:
+            if connection.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone() is None:
+                raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
+            seasons = connection.execute("SELECT * FROM seasons WHERE project_id=? ORDER BY display_order", (project_id,)).fetchall()
+            for season in seasons:
+                rows = connection.execute("SELECT id, code FROM episodes WHERE season_id=? ORDER BY display_order", (str(season["id"]),)).fetchall()
+                episodes.extend({"id": str(row["id"]), "code": str(row["code"])} for row in rows)
+        if not episodes:
+            raise DomainRuleError("AUTOMATION_TEMPLATE_NO_EPISODES", "项目没有任何分集，无法创建整剧编排模板", {"template_code": normalized_code})
+        batch_items: list[dict[str, Any]] = []
+        for episode in episodes:
+            episode_code = episode["code"]
+            batch_items.extend(
+                [
+                    {"key": f"{episode_code}:KEYFRAME_CHECK", "payload": {"action": "KEYFRAME_CHECK", "episode_id": episode["id"], "requires_human_approval": True}},
+                    {"key": f"{episode_code}:TTS_BATCH", "payload": {"action": "TTS_BATCH", "episode_id": episode["id"]}},
+                    {"key": f"{episode_code}:RENDER", "payload": {"action": "RENDER", "episode_id": episode["id"]}},
+                    {"key": f"{episode_code}:DELIVERY", "payload": {"action": "DELIVERY", "episode_id": episode["id"]}},
+                ]
+            )
+        task_cap = len(batch_items) + 1  # one extra step lets the final advance observe batch exhaustion as SUCCEEDED
+        estimated_disk = min(MAX_DISK_BYTES, max(1, len(episodes)) * _TEMPLATE_EPISODE_DISK_BYTES)
+        return self.create_workflow(
+            project_id,
+            code=normalized_code,
+            title=normalized_title,
+            mode="BATCH_AUTOMATED",
+            nodes=[{"id": "whole-drama", "type": "WHOLE_DRAMA_TASK", "requires_human_approval": False}],
+            batch_items=batch_items,
+            conditions=[
+                {"field": "machine_check.status", "operator": "EQ", "value": "NEEDS_HITL", "action": "PAUSE_HITL"},
+                {"field": "machine_check.status", "operator": "IN", "value": ["FAIL", "FAILED", "BLOCKED"], "action": "PAUSE_HITL"},
+            ],
+            max_iterations=task_cap,
+            max_tasks=task_cap,
+            max_disk_bytes=estimated_disk,
+            human_gate="ON_CONDITION",
+            repeat_batch=False,
+            actor=actor,
+        )
+
+    @staticmethod
+    def list_templates() -> list[dict[str, str]]:
+        return [
+            {"code": code, "title": meta["title"], "description": meta["description"]}
+            for code, meta in AUTOMATION_TEMPLATES.items()
+        ]
+
     @staticmethod
     def _workflow_view(row: Any) -> dict[str, Any]:
         definition = cast(dict[str, Any], _decode(row["definition_json"], {}))
@@ -414,6 +500,12 @@ class AutomationWorkflowService:
             )
             self._event(connection, run_id, "STARTED", {"status": initial_status, "human_gate": gate, "ai_score_ignored": True}, actor)
             connection.execute("INSERT INTO command_idempotencies (scope,idempotency_key,payload_hash,response_json) VALUES (?,?,?,?)", (scope, idempotency_key, payload_hash, _json({"id": run_id})))
+        if definition["mode"] == "BATCH_AUTOMATED" and gate != "BEFORE_RUN":
+            # Prime the first task job so a worker/scheduler can drive the run
+            # without a manual step.  Every later task is advanced by the task
+            # executor after the previous Job completes; HITL gates remain
+            # enforced by the declarative conditions/nodes in step_run.
+            self.step_run(run_id, actor=actor)
         return self.get_run(run_id)
 
     @staticmethod
@@ -484,15 +576,24 @@ class AutomationWorkflowService:
             task_count = int(row["task_count"])
             disk_bytes = int(row["disk_bytes"])
             if iteration > int(row["max_iterations"]) or task_count >= int(row["max_tasks"]):
-                connection.execute("UPDATE automation_workflow_runs SET status='LIMIT_REACHED',completed_at=?,updated_at=?,revision=revision+1 WHERE id=?", (_now(), _now(), run_id))
+                connection.execute(
+                    "UPDATE automation_workflow_runs SET status='LIMIT_REACHED',completed_at=?,updated_at=?,machine_context_json=?,ai_scores_json=?,revision=revision+1 WHERE id=?",
+                    (_now(), _now(), _json(machine), _json(scores), run_id),
+                )
                 self._event(connection, run_id, "LIMIT_REACHED", {"iteration": iteration, "task_count": task_count, "reason": "max_iterations_or_max_tasks"}, actor)
             else:
                 batch = definition["batch_items"]
                 if not definition.get("repeat_batch", False) and task_count >= len(batch):
-                    connection.execute("UPDATE automation_workflow_runs SET status='SUCCEEDED',completed_at=?,updated_at=?,revision=revision+1 WHERE id=?", (_now(), _now(), run_id))
+                    connection.execute(
+                        "UPDATE automation_workflow_runs SET status='SUCCEEDED',completed_at=?,updated_at=?,machine_context_json=?,ai_scores_json=?,revision=revision+1 WHERE id=?",
+                        (_now(), _now(), _json(machine), _json(scores), run_id),
+                    )
                     self._event(connection, run_id, "COMPLETED", {"reason": "finite_batch_exhausted"}, actor)
                 elif disk_bytes + produced_bytes > int(row["max_disk_bytes"]):
-                    connection.execute("UPDATE automation_workflow_runs SET status='LIMIT_REACHED',completed_at=?,updated_at=?,revision=revision+1 WHERE id=?", (_now(), _now(), run_id))
+                    connection.execute(
+                        "UPDATE automation_workflow_runs SET status='LIMIT_REACHED',completed_at=?,updated_at=?,machine_context_json=?,ai_scores_json=?,revision=revision+1 WHERE id=?",
+                        (_now(), _now(), _json(machine), _json(scores), run_id),
+                    )
                     self._event(connection, run_id, "LIMIT_REACHED", {"reason": "max_disk_bytes", "disk_bytes": disk_bytes + produced_bytes, "max_disk_bytes": int(row["max_disk_bytes"])}, actor)
                 else:
                     item = batch[task_count % len(batch)]

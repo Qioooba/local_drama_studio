@@ -496,3 +496,319 @@ class DialogueService:
         if project is None:
             raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
         return [self.get_voice_profile(str(row["id"])) for row in rows]
+
+    def bind_character_voice(
+        self,
+        project_id: str,
+        character_asset_id: str,
+        voice_profile_version_id: str,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Bind a project CHARACTER story asset to an ACTIVE voice profile version."""
+        with self.database.connect() as connection:
+            project = connection.execute("SELECT id FROM projects WHERE id=?", (project_id,)).fetchone()
+            asset = connection.execute("SELECT * FROM story_assets WHERE id=?", (character_asset_id,)).fetchone()
+            voice = connection.execute("SELECT * FROM voice_profile_versions WHERE id=?", (voice_profile_version_id,)).fetchone()
+            existing = connection.execute(
+                "SELECT id FROM character_voice_bindings WHERE character_asset_id=?", (character_asset_id,)
+            ).fetchone()
+        if project is None:
+            raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
+        if asset is None:
+            raise DomainRuleError("STORY_ASSET_NOT_FOUND", "故事资产不存在")
+        if str(asset["kind"]) != "CHARACTER":
+            raise DomainRuleError("STORY_ASSET_KIND_INVALID", "角色音色绑定只接受 CHARACTER 故事资产")
+        if str(asset["status"]) != "ACTIVE":
+            raise DomainRuleError("STORY_ASSET_NOT_ACTIVE", "角色资产必须处于 ACTIVE 状态")
+        if str(asset["project_id"]) != project_id:
+            raise DomainRuleError("STORY_ASSET_PROJECT_MISMATCH", "角色资产必须属于当前项目")
+        if voice is None or str(voice["status"]) != "ACTIVE":
+            raise DomainRuleError("VOICE_PROFILE_NOT_ACTIVE", "音色版本不存在或未启用")
+        if str(voice["project_id"]) != project_id:
+            raise DomainRuleError("VOICE_PROFILE_PROJECT_MISMATCH", "音色版本必须属于当前项目")
+        if existing is not None:
+            raise DomainRuleError("CHARACTER_VOICE_ALREADY_BOUND", "该角色已绑定音色，请先解绑再换绑")
+        binding_id, now = str(uuid.uuid4()), _now()
+        with self.database.transaction() as connection:
+            connection.execute(
+                """INSERT INTO character_voice_bindings
+                (id,project_id,character_asset_id,voice_profile_version_id,created_at,created_by,revision,schema_version)
+                VALUES (?,?,?,?,?,?,1,'v2')""",
+                (binding_id, project_id, character_asset_id, voice_profile_version_id, now, actor),
+            )
+            connection.execute(
+                """INSERT INTO audit_events
+                (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
+                VALUES (?,'audio_editor','CHARACTER_VOICE_BOUND','character_voice_binding',?,'角色绑定音色',?)""",
+                (
+                    actor,
+                    binding_id,
+                    _json(
+                        {
+                            "project_id": project_id,
+                            "character_asset_id": character_asset_id,
+                            "voice_profile_version_id": voice_profile_version_id,
+                        }
+                    ),
+                ),
+            )
+        return self._get_character_voice_binding(binding_id)
+
+    def unbind_character_voice(self, binding_id: str, actor: str = "local-user") -> dict[str, Any]:
+        with self.database.connect() as connection:
+            binding = connection.execute("SELECT * FROM character_voice_bindings WHERE id=?", (binding_id,)).fetchone()
+        if binding is None:
+            raise DomainRuleError("CHARACTER_VOICE_BINDING_NOT_FOUND", "角色音色绑定不存在")
+        with self.database.transaction() as connection:
+            connection.execute("DELETE FROM character_voice_bindings WHERE id=?", (binding_id,))
+            connection.execute(
+                """INSERT INTO audit_events
+                (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
+                VALUES (?,'audio_editor','CHARACTER_VOICE_UNBOUND','character_voice_binding',?,'角色解除音色绑定',?)""",
+                (
+                    actor,
+                    binding_id,
+                    _json(
+                        {
+                            "character_asset_id": str(binding["character_asset_id"]),
+                            "voice_profile_version_id": str(binding["voice_profile_version_id"]),
+                        }
+                    ),
+                ),
+            )
+        return {"id": binding_id, "status": "UNBOUND"}
+
+    def list_character_voice_bindings(self, project_id: str) -> list[dict[str, Any]]:
+        with self.database.connect() as connection:
+            project = connection.execute("SELECT id FROM projects WHERE id=?", (project_id,)).fetchone()
+            rows = connection.execute(
+                """SELECT cvb.id AS binding_id, cvb.project_id, cvb.character_asset_id, cvb.voice_profile_version_id,
+                   cvb.created_at, cvb.created_by,
+                   sa.code AS character_code, sa.name AS character_name, sa.kind AS character_kind, sa.status AS character_status,
+                   vpv.code AS voice_code, vpv.title AS voice_title, vpv.voice_ref, vpv.status AS voice_status
+                FROM character_voice_bindings cvb
+                JOIN story_assets sa ON sa.id=cvb.character_asset_id
+                JOIN voice_profile_versions vpv ON vpv.id=cvb.voice_profile_version_id
+                WHERE cvb.project_id=? ORDER BY sa.code, cvb.created_at""",
+                (project_id,),
+            ).fetchall()
+        if project is None:
+            raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
+        return [self._character_voice_binding_row(row) for row in rows]
+
+    def _get_character_voice_binding(self, binding_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """SELECT cvb.id AS binding_id, cvb.project_id, cvb.character_asset_id, cvb.voice_profile_version_id,
+                   cvb.created_at, cvb.created_by,
+                   sa.code AS character_code, sa.name AS character_name, sa.kind AS character_kind, sa.status AS character_status,
+                   vpv.code AS voice_code, vpv.title AS voice_title, vpv.voice_ref, vpv.status AS voice_status
+                FROM character_voice_bindings cvb
+                JOIN story_assets sa ON sa.id=cvb.character_asset_id
+                JOIN voice_profile_versions vpv ON vpv.id=cvb.voice_profile_version_id
+                WHERE cvb.id=?""",
+                (binding_id,),
+            ).fetchone()
+        if row is None:
+            raise DomainRuleError("CHARACTER_VOICE_BINDING_NOT_FOUND", "角色音色绑定不存在")
+        return self._character_voice_binding_row(row)
+
+    @staticmethod
+    def _character_voice_binding_row(row: Any) -> dict[str, Any]:
+        return {
+            "id": str(row["binding_id"]),
+            "project_id": str(row["project_id"]),
+            "character_asset_id": str(row["character_asset_id"]),
+            "voice_profile_version_id": str(row["voice_profile_version_id"]),
+            "created_at": str(row["created_at"]),
+            "created_by": str(row["created_by"]),
+            "character": {
+                "id": str(row["character_asset_id"]),
+                "code": str(row["character_code"]),
+                "name": str(row["character_name"]),
+                "kind": str(row["character_kind"]),
+                "status": str(row["character_status"]),
+            },
+            "voice": {
+                "id": str(row["voice_profile_version_id"]),
+                "code": str(row["voice_code"]),
+                "title": str(row["voice_title"]),
+                "voice_ref": str(row["voice_ref"]),
+                "status": str(row["voice_status"]),
+            },
+        }
+
+    def submit_episode_tts_batch(
+        self,
+        episode_id: str,
+        *,
+        idempotency_key_prefix: str,
+        emotion: str = "NEUTRAL",
+        speech_rate: float = 1.0,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Resolve every dialogue line to its bound voice and submit one TTS job per line.
+
+        Resolution order: exactly one CHARACTER shot binding (when the line has a shot)
+        first, then an exact normalized speaker match against CHARACTER asset name/code.
+        Lines without a resolvable job-eligible voice are skipped, never blocking the rest.
+        """
+        emotion = emotion.strip()
+        prefix = idempotency_key_prefix.strip()
+        if not emotion:
+            raise DomainRuleError("TTS_JOB_PARAMETERS_INVALID", "TTS 批量 Job 必须提供情绪")
+        if not 0.5 <= speech_rate <= 2.0:
+            raise DomainRuleError("TTS_SPEECH_RATE_INVALID", "TTS 语速必须在 0.5 到 2.0 之间")
+        if not prefix or len(prefix) > 100:
+            raise DomainRuleError("IDEMPOTENCY_KEY_REQUIRED", "TTS 批量幂等前缀必须是 1—100 字符")
+        with self.database.connect() as connection:
+            episode = connection.execute(
+                "SELECT e.id,s.project_id FROM episodes e JOIN seasons s ON s.id=e.season_id WHERE e.id=?", (episode_id,)
+            ).fetchone()
+        if episode is None:
+            raise DomainRuleError("EPISODE_NOT_FOUND", "集不存在")
+        project_id = str(episode["project_id"])
+        lines = self.list_lines(episode_id)
+        with self.database.connect() as connection:
+            characters = connection.execute(
+                "SELECT id,code,name FROM story_assets WHERE project_id=? AND kind='CHARACTER' AND status='ACTIVE' ORDER BY code",
+                (project_id,),
+            ).fetchall()
+            binding_rows = connection.execute(
+                """SELECT cvb.character_asset_id, cvb.voice_profile_version_id, vpv.voice_ref, vpv.status
+                FROM character_voice_bindings cvb
+                JOIN voice_profile_versions vpv ON vpv.id=cvb.voice_profile_version_id
+                WHERE cvb.project_id=?""",
+                (project_id,),
+            ).fetchall()
+            voice_rows: list[Any] = []
+            profiles_by_id: dict[str, Any] = {}
+            voice_ids = [str(row["voice_profile_version_id"]) for row in binding_rows]
+            if voice_ids:
+                placeholders = ",".join("?" for _ in voice_ids)
+                voice_rows = connection.execute(
+                    f"SELECT id,provider_profile_version_id FROM voice_profile_versions WHERE id IN ({placeholders})",
+                    voice_ids,
+                ).fetchall()
+                provider_ids = [str(row["provider_profile_version_id"]) for row in voice_rows if row["provider_profile_version_id"]]
+                if provider_ids:
+                    profile_placeholders = ",".join("?" for _ in provider_ids)
+                    for profile in connection.execute(
+                        f"SELECT id,status,capability FROM execution_profile_versions WHERE id IN ({profile_placeholders})",
+                        provider_ids,
+                    ).fetchall():
+                        profiles_by_id[str(profile["id"])] = profile
+            shot_character_by_shot: dict[str, list[dict[str, Any]]] = {}
+            shot_ids = [str(line["shot_id"]) for line in lines if line.get("shot_id")]
+            if shot_ids:
+                shot_placeholders = ",".join("?" for _ in shot_ids)
+                for row in connection.execute(
+                    f"""SELECT sab.shot_id, sa.id AS asset_id FROM shot_asset_bindings sab
+                    JOIN story_assets sa ON sa.id=sab.asset_id
+                    WHERE sab.shot_id IN ({shot_placeholders}) AND sa.kind='CHARACTER' AND sa.status='ACTIVE'""",
+                    shot_ids,
+                ).fetchall():
+                    shot_character_by_shot.setdefault(str(row["shot_id"]), []).append(dict(row))
+        provider_by_voice_id = {str(row["id"]): row["provider_profile_version_id"] for row in voice_rows}
+        voice_by_character = {str(row["character_asset_id"]): row for row in binding_rows}
+
+        def _normalize(value: str) -> str:
+            return value.strip().replace("\u3000", "").replace(" ", "")
+
+        submitted: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        failed: list[dict[str, Any]] = []
+        for line in lines:
+            line_id = str(line["id"])
+            code = str(line["code"])
+            speaker = str(line["speaker"])
+            revisions = line["text_revisions"]
+            if not revisions:
+                skipped.append({"line_id": line_id, "code": code, "speaker": speaker, "reason": "NO_TEXT_REVISION"})
+                continue
+            text_revision = revisions[-1]
+            character_asset_id: str | None = None
+            shot_id = line.get("shot_id")
+            if shot_id:
+                shot_characters = shot_character_by_shot.get(str(shot_id), [])
+                if len(shot_characters) == 1:
+                    character_asset_id = str(shot_characters[0]["asset_id"])
+            if character_asset_id is None:
+                normalized_speaker = _normalize(speaker)
+                for character in characters:
+                    if normalized_speaker and normalized_speaker in {
+                        _normalize(str(character["name"])),
+                        _normalize(str(character["code"])),
+                    }:
+                        character_asset_id = str(character["id"])
+                        break
+            if character_asset_id is None:
+                skipped.append({"line_id": line_id, "code": code, "speaker": speaker, "reason": "VOICE_UNRESOLVED"})
+                continue
+            voice = voice_by_character.get(character_asset_id)
+            if voice is None or str(voice["status"]) != "ACTIVE":
+                skipped.append({"line_id": line_id, "code": code, "speaker": speaker, "reason": "VOICE_UNRESOLVED"})
+                continue
+            voice_profile_version_id = str(voice["voice_profile_version_id"])
+            provider_profile_version_id = provider_by_voice_id.get(voice_profile_version_id)
+            profile = profiles_by_id.get(str(provider_profile_version_id)) if provider_profile_version_id else None
+            eligible = (
+                provider_profile_version_id is not None
+                and profile is not None
+                and str(profile["status"]) == "PUBLISHED"
+                and "TTS" in str(profile["capability"]).upper()
+                and str(voice["voice_ref"]).startswith("sapi:")
+            )
+            if not eligible:
+                skipped.append({"line_id": line_id, "code": code, "speaker": speaker, "reason": "VOICE_NOT_JOB_ELIGIBLE"})
+                continue
+            try:
+                job = self.submit_tts_job(
+                    str(text_revision["id"]),
+                    voice_profile_version_id=voice_profile_version_id,
+                    emotion=emotion,
+                    speech_rate=speech_rate,
+                    idempotency_key=f"{prefix}:{line_id}",
+                    actor=actor,
+                )
+            except Exception as error:  # noqa: BLE001 - batch isolates per-line failures
+                failed.append({"line_id": line_id, "code": code, "reason": str(getattr(error, "code", "UNKNOWN_ERROR"))})
+                continue
+            submitted.append(
+                {
+                    "line_id": line_id,
+                    "code": code,
+                    "speaker": speaker,
+                    "character_asset_id": character_asset_id,
+                    "voice_profile_version_id": voice_profile_version_id,
+                    "job_id": str(job["id"]),
+                    "text_revision_id": str(text_revision["id"]),
+                }
+            )
+        result: dict[str, Any] = {
+            "episode_id": episode_id,
+            "submitted": submitted,
+            "skipped": skipped,
+            "failed": failed,
+            "counts": {"submitted": len(submitted), "skipped": len(skipped), "failed": len(failed)},
+        }
+        with self.database.transaction() as connection:
+            connection.execute(
+                """INSERT INTO audit_events
+                (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
+                VALUES (?,'audio_editor','EPISODE_TTS_BATCH_SUBMITTED','episode',?,'整集 TTS 批量提交',?)""",
+                (
+                    actor,
+                    episode_id,
+                    _json(
+                        {
+                            "counts": result["counts"],
+                            "job_ids": [item["job_id"] for item in submitted],
+                            "idempotency_key_prefix": prefix,
+                            "emotion": emotion,
+                            "speech_rate": speech_rate,
+                        }
+                    ),
+                ),
+            )
+        return result

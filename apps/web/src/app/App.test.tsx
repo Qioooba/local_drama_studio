@@ -34,6 +34,8 @@ vi.mock("../generated/api", () => ({
   getStoryboardWorkspace: vi.fn().mockResolvedValue({ storyboard: { episode: { id: "e", title: "E" }, items: [], views: ["TABLE", "STORYBOARD", "TIMELINE"], identity_invariant: "stable", total_duration_ms: 0 } }),
   planStoryboardBatch: vi.fn(),
   commitStoryboardBatch: vi.fn(),
+  listStoryAssets: vi.fn().mockResolvedValue({ items: [] }),
+  listShotStoryAssets: vi.fn().mockResolvedValue({ items: [] }),
 }));
 
 describe("G1 app shell", () => {
