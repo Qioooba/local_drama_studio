@@ -1,0 +1,25 @@
+{
+  "schema_version": "g10.t2v-one-shot-generation.v1",
+  "observed_at": "2026-08-17T03:12:23.220Z",
+  "mode": "LOCAL_ONLY",
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "episode_id": "d4db1033-9517-4bd0-958d-4228e0abead1",
+  "shot_id": "020f9248-14b7-4f92-9edd-ee587ffdedf3",
+  "status": "PASS",
+  "isolated_snapshot": true,
+  "production_database_touched": false,
+  "runtime_contacted": true,
+  "network_contacted": false,
+  "steps": [
+    "generation view: readiness visible",
+    "director shot editor: camera plan rebound to T2V profile via UI",
+    "T2V mode card selected",
+    "T2V prompt (one sentence) + profile + seed entered",
+    "T2V preflight: read-only plan READY via real API",
+    "T2V submit: REAL Variant + Job persisted through the UI",
+    "T2V jobs wait: real H3 T2V job SUCCEEDED (state=SUCCEEDED)",
+    "T2V review: newest generated video 30e23f05-abb approved (4 checks)"
+  ],
+  "errors": [],
+  "interpretation": "One-sentence T2V generation driven by real browser clicks: director shot editor rebinds the camera plan to the published native T2V profile, the T2V mode card is selected, a single sentence is typed, the read-only preflight plans, and a REAL H3 T2V variant+job is submitted and completes with a real MP4 artifact, which is then approved in the review inbox."
+}

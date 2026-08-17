@@ -191,21 +191,24 @@ def _run_evidence_job(
     workflow_version_id: str,
     project_id: str,
     shot_id: str,
-    keyframe_media_version_id: str,
     server: str,
     timeout_seconds: int,
+    *,
+    job_type: str = "I2V",
+    semantic_inputs: dict[str, Any] | None = None,
+    media_bindings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     jobs = JobService(database, settings)
     job = jobs.create_job(
         project_id,
-        "I2V",
+        job_type,
         "SHOT",
         shot_id,
         "GPU_H3",
         {
             "workflow_version_id": workflow_version_id,
-            "semantic_inputs": {},
-            "media_bindings": [{"role": "FIRST_FRAME", "media_version_id": keyframe_media_version_id, "ordinal": 0}],
+            "semantic_inputs": semantic_inputs or {},
+            "media_bindings": media_bindings or [],
         },
         f"sim-evidence-{uuid.uuid4().hex[:8]}",
     )
@@ -238,6 +241,89 @@ def _run_evidence_job(
         "media_version_id": str(promoted["media_version_id"]),
         "poll_states": poll_states,
     }
+
+
+def _publish_native_t2v_workflow(database: Database, settings: Settings, server: str) -> dict[str, Any]:
+    factory = H3WorkflowFactory(settings)
+    prompt = "细雨中的北方乡村老屋，一名女子缓步走进院子，保持空间方向和道具连续。"
+    workflow = factory.build_t2va(
+        prompt,
+        seed=20260818,
+        duration_seconds=5.0,
+        aspect_ratio="9:16",
+        filename_prefix="sim_env_t2v/EVIDENCE",
+        sigma_points=10,
+    )
+    workflows = WorkflowService(database, settings)
+    version = workflows.register_package(
+        "sim_native_t2v",
+        "Simulation native T2V",
+        workflow,
+        {"capability": "H3_T2VA_CANDIDATE", "local_only": True},
+        {
+            "PROMPT": {"node_id": "8", "input": "prompt"},
+            "SEED": {"node_id": "5", "input": "noise_seed"},
+            "FRAME_COUNT": {"node_id": "8", "input": "length"},
+            "OUTPUT_PREFIX": {"node_id": "14", "input": "filename_prefix"},
+        },
+        {"local_only": True, "network_policy": "LOOPBACK_ONLY"},
+    )
+    client = ComfyClient(server, settings.comfy_output_root)
+    validation = workflows.validate_against_comfy(str(version["id"]), client)
+    if validation["status"] != "PASS":
+        raise RuntimeError(f"SIM_T2V_WORKFLOW_VALIDATION_FAILED: {json.dumps(validation, ensure_ascii=False)[:1000]}")
+    published = workflows.publish(str(version["id"]), str(validation["validation_id"]))
+    return {"workflow_version_id": str(version["id"]), "published_status": published["status"]}
+
+
+def _create_t2v_profile_candidate(database: Database, workflow_version_id: str) -> str:
+    profile_id = f"sim-t2v-{uuid.uuid4().hex[:8]}"
+    version_id = f"{profile_id}-v1"
+    with database.transaction() as connection:
+        connection.execute("INSERT INTO execution_profiles (id,code,title) VALUES (?,?,?)", (profile_id, "sim-native-t2v", "Simulation native T2V profile"))
+        connection.execute(
+            """INSERT INTO execution_profile_versions
+            (id, execution_profile_id, version_no, capability, runtime_version_id, workflow_version_id,
+             model_bundle_json, input_contract_json, parameter_schema_json, output_contract_json,
+             resource_policy_json, status, manifest_sha256, capability_json, worker_policy,
+             created_at, updated_at, created_by, revision, schema_version)
+            VALUES (?,?,1,'T2V',NULL,?,?,?,?,?,?,'DRAFT',?,?,?,?,?,?,1,'v2')""",
+            (
+                version_id,
+                profile_id,
+                workflow_version_id,
+                json.dumps({"model_ref": "minimax_h3_fl2va_pruned_int8_convrot.safetensors", "provider_kind": "LOCAL_COMFY", "network_allowed": False}),
+                json.dumps(
+                    {
+                        "transport": "LOOPBACK_HTTP",
+                        "input_slots": {},
+                        "capabilities": {"seed": {"determinism": "EXPLICIT"}},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "seed": {"type": "integer", "determinism": "EXPLICIT"},
+                        "prompt": {"type": "string"},
+                        "capabilities": {
+                            "camera": {"support": "NATIVE", "prompt_fallback": False},
+                            "extend": {"support": "UNSUPPORTED", "required_inputs": []},
+                            "V2V": {"support": "UNSUPPORTED", "required_inputs": []},
+                            "reference": {"support": "UNSUPPORTED", "required_inputs": []},
+                            "motion": {"support": "UNSUPPORTED", "required_inputs": []},
+                        },
+                    }
+                ),
+                json.dumps({"media_kind": "VIDEO", "container": "mp4", "codec": "h264"}),
+                json.dumps({"channel": "GPU_H3", "gpu_heavy_concurrency": 1, "worker_policy": "ONE_H3_WORKER_ONE_GPU_TASK"}),
+                None,
+                json.dumps({"provider_kind": "LOCAL_COMFY", "network_allowed": False}),
+                "ONE_H3_WORKER_ONE_GPU_TASK",
+                datetime.now(UTC).isoformat(),
+                datetime.now(UTC).isoformat(),
+                "sim-operator",
+            ),
+        )
+    return version_id
 
 
 def main() -> None:
@@ -292,9 +378,35 @@ def main() -> None:
     compatibility = profiles.validate_compatibility(candidate_version_id)
     if compatibility["status"] != "PASS":
         raise RuntimeError(f"SIM_PROFILE_COMPATIBILITY_FAILED: {json.dumps(compatibility, ensure_ascii=False)[:800]}")
-    evidence = _run_evidence_job(database, settings, workflow["workflow_version_id"], project_id, shot_id, keyframe_id, args.server, args.timeout_seconds)
+    evidence = _run_evidence_job(
+        database, settings, workflow["workflow_version_id"], project_id, shot_id, args.server, args.timeout_seconds,
+        media_bindings=[{"role": "FIRST_FRAME", "media_version_id": keyframe_id, "ordinal": 0}],
+    )
     published = profiles.publish_from_evidence(candidate_version_id, evidence["media_version_id"], workflow["workflow_version_id"])
     published_profile_version_id = str(published["id"])
+
+    # T2V ("one-sentence video") native chain: publish workflow + evidence profile.
+    t2v_workflow = _publish_native_t2v_workflow(database, settings, args.server)
+    t2v_candidate = _create_t2v_profile_candidate(database, t2v_workflow["workflow_version_id"])
+    t2v_validation = profiles.validate_contract_version(t2v_candidate)
+    if t2v_validation["status"] != "PASS":
+        raise RuntimeError(f"SIM_T2V_PROFILE_VALIDATION_FAILED: {json.dumps(t2v_validation, ensure_ascii=False)[:800]}")
+    t2v_compatibility = profiles.validate_compatibility(t2v_candidate)
+    if t2v_compatibility["status"] != "PASS":
+        raise RuntimeError(f"SIM_T2V_PROFILE_COMPATIBILITY_FAILED: {json.dumps(t2v_compatibility, ensure_ascii=False)[:800]}")
+    t2v_evidence = _run_evidence_job(
+        database, settings, t2v_workflow["workflow_version_id"], project_id, shot_id, args.server, args.timeout_seconds,
+        job_type="T2V",
+        semantic_inputs={
+            "PROMPT": "细雨中的北方乡村老屋，一名女子缓步走进院子，保持空间方向和道具连续。",
+            "SEED": 20260818,
+            "FRAME_COUNT": 124,
+            "OUTPUT_PREFIX": "sim_env_t2v/EVIDENCE",
+        },
+        media_bindings=[],
+    )
+    t2v_published = profiles.publish_from_evidence(t2v_candidate, t2v_evidence["media_version_id"], t2v_workflow["workflow_version_id"])
+    t2v_profile_version_id = str(t2v_published["id"])
 
     # Give the shot a structured CameraPlan resolved against the published profile
     # so the UI generation preflight is enabled (real service round-trip).
@@ -338,7 +450,10 @@ def main() -> None:
     print(
         f"sim env ready project={project_id} root_rel={root_rel} shot={shot_id} keyframe={keyframe_id} "
         f"workflow={workflow['workflow_version_id']} profile={candidate_version_id} evidence_job={evidence['job_id']} "
-        f"evidence_media={evidence['media_version_id']} published={published['status']} integrity={integrity} port={args.port}",
+        f"evidence_media={evidence['media_version_id']} published={published['status']} "
+        f"t2v_workflow={t2v_workflow['workflow_version_id']} t2v_profile={t2v_profile_version_id} "
+        f"t2v_evidence_job={t2v_evidence['job_id']} t2v_evidence_media={t2v_evidence['media_version_id']} "
+        f"t2v_published={t2v_published['status']} integrity={integrity} port={args.port}",
         flush=True,
     )
     uvicorn.run(create_app(settings), host="127.0.0.1", port=args.port, log_level="warning")

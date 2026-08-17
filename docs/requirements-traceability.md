@@ -489,3 +489,10 @@ ComfyUI 与 Local LLM loopback 客户端现在使用显式无代理、拒绝 3xx
 - 交付链保持全真实：目标版本选择 → 真实 FFmpeg 整集渲染 → 渲染人工批准 → 交付候选（machine preflight PASS）→ verify → 人工/平台批准；零自动原媒体。
 
 补充验证：本轮仅改 spec（无应用代码改动），全量门禁复跑全绿。
+
+## 2026-08-17 第五轮：一句话生成视频（T2V）闭环
+
+按产品负责人要求验证"一句话生成视频"：`scripts/serve_sim_env.py` 新增 T2V 段（原生 T2V workflow `H3_T2VA_CANDIDATE` + DRAFT Profile 契约/兼容性验证 + **真实 T2V 证据 Job**（seed 20260818 → FORMAL 证据媒体）→ `publish_from_evidence` 发布 `Simulation native T2V profile`）。`tests/e2e/t2v_one_shot_generation.spec.ts` 8 步全 PASS、零错误（证据 `docs/evidence/g10/t2v-one-shot-generation-2026-08-17.json`）：
+
+- 导演编辑器将 CameraPlan 重绑 T2V Profile（UI）→ T2V 模式卡（"文字生成视频"）→ 一句话 prompt + Profile + seed → 只读预检 READY → 页面提交真实 Variant+Job → **真实 H3 T2V Job SUCCEEDED**（原生链）→ 新生成的 5.17s/2.1MB 视频在审核收件箱被人工批准（4 项检查）。
+- 结论：平台 T2V"一句话生成视频"能力已闭环验证（真实产物 + 页面点击 + 审核）；openclaw 工作区另有独立的 T2V/Turbo 出片管线。
