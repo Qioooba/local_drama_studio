@@ -474,3 +474,18 @@ ComfyUI 与 Local LLM loopback 客户端现在使用显式无代理、拒绝 3xx
 3. **`ReadinessPanels.tsx`**：FR-DEL-003 交付目标版本显式选择只有 API 无 UI。新增选择器 + 激活按钮 + Vitest（`ProjectConfigurationSnapshot.test.tsx`）。
 
 门禁全绿：API **290 passed** / 4 Comfy live deselected、Web **37 files / 102 tests**、mypy、Ruff、maintainability、production build 全过。
+
+## 2026-08-17 第四轮：模拟补全（导演分镜/关键帧重批/机器 QC/分支/时间线/字幕/模型能力视图）
+
+按目标清单补全模拟测试的剩余步骤（`tests/e2e/post_launch_simulation.spec.ts` 最终版，证据 `post-launch-simulation-2026-08-17.json`，**27 步全 PASS、零错误**）：
+
+- **导演分镜（UI）**：生成视图 DirectorShotEditor 将 CameraPlan 绑定模拟 Profile → 运动 PUSH_IN→PAN → "按 Profile 裁决运镜能力" → "保存新 revision" → "标记 Production Ready"。
+- **关键帧重新批准（UI）**：新 ShotRevision 使关键帧批准正确 stale（传播验证），审核视图 8 项 image_asset 清单全 PASS + 人工 APPROVED 重新批准。
+- **机器 QC**：对最新真实产物调用 `g4_media_qc_v1` machine-check（携带 bootstrap instance token + Origin 的 CSRF 合规请求），PASS。
+- **formal 分支**：同会话点击"同图同词 · 新 seed"分支 chip → "确认创建分支 Job" → base + branch 两个真实 H3 Job 均 SUCCEEDED。
+- **时间线（UI）**：TimelineRevisionPanel 填真实视频 items JSON → 创建新不可变 TimelineRevision。
+- **字幕（UI）**：SubtitleRevisionPanel 填真实源剧本文档 ID + 逐字真实 cue → 创建新 script-authority 字幕 revision（quote hash 校验通过）。
+- **模型能力视图**：profiles 视图展示本地能力契约/工作流发布证据/项目配置快照/用户自带模型兼容性。
+- 交付链保持全真实：目标版本选择 → 真实 FFmpeg 整集渲染 → 渲染人工批准 → 交付候选（machine preflight PASS）→ verify → 人工/平台批准；零自动原媒体。
+
+补充验证：本轮仅改 spec（无应用代码改动），全量门禁复跑全绿。
