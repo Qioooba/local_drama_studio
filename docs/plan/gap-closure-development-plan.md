@@ -180,3 +180,41 @@
 - Ref2V/长镜头依赖用户本机 H3 模型文件，验收以"能力位+门禁+受控真机证据"为准，无 GPU 时退化为编译级验证并在证据中注明。
 - 任何新增不得引入外部 API（C1）；本地 LLM 仅当用户配置了自备模型时才可选启用（C2）。
 - 剪映草稿格式为逆向社区格式，按"可被剪映打开"做真机验证，格式细节以实测为准。
+
+---
+
+## 8. 完成状态（2026-08-17 更新）
+
+本计划全部批次已交付并提交，工作树干净。提交：`82e23e5`（P0）、`d34f217`（P1）、`4d448b5`+`72fd219`（清理代理临时产物）。
+
+### 批次 1（P0）— 全部完成 ✅
+| 项 | 状态 | 验证 |
+|---|---|---|
+| P0-1/2 故事资产库 | ✅ | API 16 用例 + Web 24；e2e `story_asset_windows_uat.spec.ts` PASS（证据 `docs/evidence/g10/story-asset-windows-uat-2026-08-17.json`） |
+| P0-1 锚点注入 | ✅ | 6 用例；预览端点与执行锚点逐字节一致 |
+| P0-3 拆解草稿应用 | ✅ | 9 用例；e2e `breakdown_apply_windows_uat.spec.ts` PASS（证据 `breakdown-apply-windows-uat-2026-08-17.json`） |
+| P0-5 多角色 TTS | ✅ | 5 用例；e2e `character_voice_windows_uat.spec.ts` PASS（**真实 SAPI 合成**，证据 `character-voice-windows-uat-2026-08-17.json`） |
+| P0-4 整剧一键编排 | ✅ | 13 用例（含 worker 驱动链路）；e2e `whole_drama_windows_uat.spec.ts` PASS（两轮 HITL，证据 `whole-drama-windows-uat-2026-08-17.json`） |
+
+### 批次 2/3（P1）— 全部完成 ✅
+| 项 | 状态 | 验证 |
+|---|---|---|
+| P1-6 交付规格预设库 | ✅ | 6 用例；e2e `delivery_presets_windows_uat.spec.ts` PASS（证据 `delivery-presets-windows-uat-2026-08-17.json`） |
+| P1-7 生产档位 | ✅ | 8 用例；tier 冻结进 parameter_set 元数据（不触 WORKFLOW_SLOT 白名单） |
+| P1-8 Ref2V 能力位 | ✅ | 7 用例；`MiniMaxH3ReferenceToVideo` 已加入 TRUSTED_COMFY_BUILTINS 并经真实 `/object_info` 核实 |
+| P1-9 长镜头分段 | ✅ | 7 用例（含真实 ffmpeg 拼接登记） |
+| P1-10 剪映草稿导出 | ✅ | 8 用例；e2e `jianying_export_windows_uat.spec.ts` PASS（证据 `jianying-export-windows-uat-2026-08-17.json`） |
+| P1-11 音效/BGM 轨 | ✅ | 3 用例（含真实 ffmpeg 混音 probe 断言） |
+| P1-12 字幕样式模板 | ✅ | 5 用例；e2e `subtitle_styles_windows_uat.spec.ts` PASS（证据 `subtitle-styles-windows-uat-2026-08-17.json`） |
+
+### 批次 4（P2）— 设计文档已交付 ✅（不实施代码）
+`docs/plan/timeline-editor-design.md`：P2-A 可视化剪辑器四阶段设计、P2-B 封面合成、P2-C 敏感内容预检、P2-D 多模态画布，各含验收标准。
+
+### 门禁汇总
+API 全量 **382 passed**（基线 290 + 92 新增）、Web **39 文件 / 126 tests**、`pnpm check` 全绿、7 个 e2e 全 PASS、`release_audit` PASS/GO（正式库链头 0041，P1 无新迁移）、`docs/requirements-traceability.md` 第七/八轮已登记。
+
+### 留待事项（不阻塞，计划内边界）
+1. **Ref2V 真机跑通**：能力位与编译链已交付，待 GPU 环境跑通一条真实 ref2v 生成并出证据。
+2. **档位落地实际生成**：tier 目前冻结为元数据，实际生成参数映射需在 profiles/execution 层接入 `resolve_tier`。
+3. **剪映草稿真机导入**：格式为社区逆向 best-effort，待真机验证"可被剪映打开"（按 §7 以实测为准调整字段）。
+4. **使用期人工事项**（非 agent 范围）：正式项目真实音色/素材数据链、交付包最终签字。

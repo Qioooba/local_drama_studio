@@ -32,3 +32,13 @@ release_status: FINAL
 ## 后续触发重新评审的条件
 
 若未来把第三方模型或素材装入安装包、启用 REMOTE transport、扩展到 G11，或生产数据链（真实 TTS Profile、真实用户模型批量生成、正式交付包签字）需要纳入发行验收，则必须重新执行许可证、安全和发布评审并更新本决策。
+
+## G11 增强批次附注（2026-08-17）
+
+G11（增强批次，非 legacy 迁移）已按 `docs/plan/gap-closure-development-plan.md` 实施完毕并归档（`docs/plan/G11-completion-report.md`）。本附注确认：
+
+- **发行边界不变**：仍为 Windows x64 LOCAL_ONLY 源码发行；不捆绑用户模型/音色/媒体；REMOTE transport 保持禁用；多租户/云 Provider/G11 legacy 迁移仍不实施。
+- **链头更新**：正式库迁移至 `0041_character_voice_bindings`（0040/0041 为纯增量表；preflight 备份在 `backups/`）；`release_audit` 保持 PASS/GO，exit_decision 不变。
+- **交付范围**：P0 五项（故事资产库/拆解草稿应用/多角色 TTS/整剧一键编排/锚点注入）+ P1 七项（交付预设/生产档位/Ref2V 能力位/长镜头分段/剪映导出/BGM 轨/字幕样式模板）+ P2 四项设计文档；API 382 passed、Web 126 tests、7 个 e2e PASS。
+- **留待事项不阻塞发行**：Ref2V 真机跑通、档位落地实际生成、剪映真机导入验证、使用期人工数据链（真实音色/素材/交付签字）——均不改变本发行验收结论。
+- **重新评审触发条件不变**：若未来装入第三方模型/素材、启用 REMOTE、或把使用期数据链纳入发行验收，仍须重新执行许可证、安全和发布评审。
