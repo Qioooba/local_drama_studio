@@ -35,3 +35,8 @@ projects root/
 work area/
 tmp_obs/
 $root/
+
+# ad-hoc UI audit artifacts
+apps/web/clicks/
+apps/web/screenshots/
+test-ui-audit/
