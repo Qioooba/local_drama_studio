@@ -38,7 +38,7 @@ export function AudioImportBindingForm({ projectId, episodeId, onBound }: { proj
       <div className="field-grid">
         <label>本地音频绝对路径<input value={sourcePath} onChange={(event) => setSourcePath(event.target.value)} required /></label>
         <label>项目内授权证据相对路径<input value={licensePath} onChange={(event) => setLicensePath(event.target.value)} placeholder="00_admin/licenses/music.json" required /></label>
-        <label>轨道<select value={trackType} onChange={(event) => setTrackType(event.target.value)} required><option value="">显式选择</option><option value="DIALOGUE">对白</option><option value="ENVIRONMENT">环境</option><option value="SFX">音效</option><option value="MUSIC">音乐</option></select></label>
+        <label>轨道<select value={trackType} onChange={(event) => setTrackType(event.target.value)} required><option value="">显式选择</option><option value="DIALOGUE">对白</option><option value="BGM">BGM/音乐</option><option value="SFX">音效</option><option value="ENVIRONMENT">环境（旧兼容）</option><option value="MUSIC">音乐（旧兼容）</option></select></label>
         <label>授权类型<select value={licenseStatus} onChange={(event) => setLicenseStatus(event.target.value)} required><option value="">显式选择</option><option value="USER_OWNED">用户拥有</option><option value="VERIFIED_LOCAL">本地授权已核验</option><option value="PUBLIC_DOMAIN">公有领域</option></select></label>
         <label>开始（秒）<input type="number" min="0" step="0.001" value={startSeconds} onChange={(event) => setStartSeconds(event.target.value)} required /></label>
         <label>结束（秒）<input type="number" min="0.001" step="0.001" value={endSeconds} onChange={(event) => setEndSeconds(event.target.value)} required /></label>

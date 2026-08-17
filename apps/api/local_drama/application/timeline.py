@@ -21,9 +21,21 @@ from pathlib import Path
 from typing import Any
 
 from local_drama.application.media import MediaService, _hash_file
+from local_drama.application.subtitle_styles import DEFAULT_SUBTITLE_STYLE, validate_style
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
+
+# Canonical audio track kinds (P1-11).  Legacy values from before the BGM/SFX
+# split are accepted on new submissions and normalized on storage so the
+# database only ever holds the canonical set; historical rows keep their old
+# value and the renderer treats MUSIC/ENVIRONMENT as BGM/SFX equivalents.
+_CANONICAL_TRACK_TYPES = {"DIALOGUE": "DIALOGUE", "BGM": "BGM", "SFX": "SFX"}
+_LEGACY_TRACK_TYPES = {"MUSIC": "BGM", "ENVIRONMENT": "SFX"}
+
+
+def _canonical_track_type(track_type: str) -> str | None:
+    return _CANONICAL_TRACK_TYPES.get(track_type) or _LEGACY_TRACK_TYPES.get(track_type)
 
 
 def _now() -> str:
@@ -216,6 +228,7 @@ class TimelineService:
         *,
         format: str = "SRT",
         authority: dict[str, Any],
+        style: dict[str, Any] | None = None,
         actor: str = "local-user",
     ) -> dict[str, Any]:
         episode = self._episode(episode_id)
@@ -226,6 +239,7 @@ class TimelineService:
             raise DomainRuleError("SUBTITLE_FORMAT_UNSUPPORTED", "只支持 SRT、VTT、ASS")
         if not cues:
             raise DomainRuleError("SUBTITLE_CUES_REQUIRED", "字幕至少需要一个 cue")
+        revision_style = validate_style(style) if style is not None else dict(DEFAULT_SUBTITLE_STYLE)
         normalized: list[dict[str, Any]] = []
         previous_end = -1
         source_cursor = 0
@@ -265,9 +279,11 @@ class TimelineService:
                 }
             )
             source_cursor = match_end
-            normalized.append({"cue_no": index, "start_us": start_us, "end_us": end_us, "text": text, "style": raw.get("style", {})})
+            cue_style = {**revision_style, **raw.get("style", {})}
+            normalized.append({"cue_no": index, "start_us": start_us, "end_us": end_us, "text": text, "style": cue_style})
             previous_end = end_us
         authority_snapshot["source_passages"] = source_passages
+        authority_snapshot["style"] = revision_style
         content = self._render_subtitles(normalized, normalized_format)
         revision_id = str(uuid.uuid4())
         now = _now()
@@ -360,7 +376,32 @@ class TimelineService:
                 lines.extend([str(cue["cue_no"]), f"{_timestamp_us(cue['start_us']).replace(',', '.')} --> {_timestamp_us(cue['end_us']).replace(',', '.')}", cue["text"], ""])
             return "\n".join(lines)
         if format == "ASS":
-            lines = ["[Script Info]", "ScriptType: v4.00+", "", "[Events]", "Format: Layer, Start, End, Text"]
+            # P1-12: emit a [V4+ Styles] block derived from the effective cue
+            # style (see subtitle_styles.validate_style).  Dialogue events keep
+            # the legacy "Layer, Start, End, Text" layout for backward
+            # compatibility with existing render output; the authoritative
+            # style is also persisted per-cue in subtitle_cues.style_json.
+            style = cues[0].get("style") or {}
+            position_to_alignment = {"TOP": 8, "CENTER": 5, "BOTTOM": 2}
+            hex_color = str(style.get("color", "#FFFFFF")).lstrip("#").upper()
+            # ASS stores colours as &HAABBGGRR&; swap the RR/BB pair order.
+            ass_rgb = f"{hex_color[4:6]}{hex_color[2:4]}{hex_color[0:2]}"
+            primary = f"&H00{ass_rgb}&"
+            fontname = str(style.get("font", "Microsoft YaHei"))
+            fontsize = int(style.get("size", 48))
+            outline = int(style.get("outline", 2))
+            alignment = position_to_alignment.get(str(style.get("position", "BOTTOM")), 2)
+            lines = [
+                "[Script Info]",
+                "ScriptType: v4.00+",
+                "",
+                "[V4+ Styles]",
+                "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+                f"Style: Default,{fontname},{fontsize},{primary},&H000000FF&,&H00000000&,&H80000000&,0,0,0,0,100,100,0,0,1,{outline},0,{alignment},10,10,10,1",
+                "",
+                "[Events]",
+                "Format: Layer, Start, End, Text",
+            ]
             for cue in cues:
                 def ass_time(value: int) -> str:
                     centiseconds = value // 10_000
@@ -410,8 +451,18 @@ class TimelineService:
         episode = self._episode(episode_id)
         if media["project_id"] != episode["project_id"] or media["media_kind"] != "AUDIO":
             raise DomainRuleError("AUDIO_BINDING_MEDIA_INVALID", "音频绑定必须引用同项目已验证 AUDIO MediaVersion")
-        if track_type not in {"DIALOGUE", "ENVIRONMENT", "SFX", "MUSIC"}:
-            raise DomainRuleError("AUDIO_TRACK_TYPE_INVALID", "音频轨道必须是 DIALOGUE、ENVIRONMENT、SFX 或 MUSIC")
+        # P1-11: canonical track kinds are DIALOGUE/BGM/SFX.  Legacy MUSIC and
+        # ENVIRONMENT values stay accepted (kept as aliases so existing
+        # producers/tests keep working) and are normalized on storage; anything
+        # else is rejected for NEW submissions only.
+        canonical_track_type = _canonical_track_type(track_type)
+        if canonical_track_type is None:
+            raise DomainRuleError(
+                "AUDIO_TRACK_TYPE_UNSUPPORTED",
+                "音频轨道必须是 DIALOGUE、BGM 或 SFX（兼容旧值 MUSIC/ENVIRONMENT）",
+                {"supported": sorted(_CANONICAL_TRACK_TYPES), "legacy_aliases": sorted(_LEGACY_TRACK_TYPES)},
+            )
+        track_type = canonical_track_type
         if end_us <= start_us or start_us < 0:
             raise DomainRuleError("AUDIO_BINDING_RANGE_INVALID", "音频绑定时间范围无效")
         if source_license_status not in {"VERIFIED_LOCAL", "PUBLIC_DOMAIN", "USER_OWNED"}:
@@ -1075,6 +1126,13 @@ class TimelineService:
         return abs(observed - expected_fps) < 0.05
 
     def render_episode(self, timeline_revision_id: str, *, actor: str = "local-user") -> dict[str, Any]:
+        """Render the whole episode from its VIDEO timeline items.
+
+        Without audio bindings this keeps the historical single-command concat
+        (identical command and artifact).  When the episode has DIALOGUE/BGM/SFX
+        audio bindings the video is concatenated first, the bound tracks are
+        mixed (volume/loop/fades/adelay), then the final mp4 is muxed.
+        """
         timeline = self.get_timeline(timeline_revision_id)
         episode = self._episode(str(timeline["episode_id"]))
         video_items = [item for item in timeline["items"] if item["track_type"].upper() == "VIDEO" and item["media_version_id"]]
@@ -1093,19 +1151,232 @@ class TimelineService:
         render_dir = project_root / "05_timelines" / "renders"
         render_dir.mkdir(parents=True, exist_ok=True)
         render_path = render_dir / f"episode-{episode['code']}-{uuid.uuid4().hex}.mp4"
-        concat_list = render_dir / f".partial-{uuid.uuid4().hex}.concat.txt"
+        bindings = self._audio_bindings_for_render(str(episode["id"]))
+        execution = self._concat_and_mix(paths, bindings, render_dir, render_path)
+        input_snapshot = {"schema_version": "localdrama.episode-render-input.v1", "timeline_revision_id": timeline_revision_id, "timeline_revision_hash": timeline["revision_hash"], "timeline_input_snapshot": timeline["input_snapshot"], "items": input_snapshot_items}
+        if bindings:
+            input_snapshot["render_mode"] = "MIXED_AUDIO"
+            input_snapshot["audio_bindings"] = self._binding_snapshot(bindings)
+        return self._register_render(episode=episode, timeline_revision_id=timeline_revision_id, timeline=timeline, render_path=render_path, project_root=project_root, input_snapshot=input_snapshot, ffmpeg_execution=execution, actor=actor)
+
+    def render_segmented_episode(
+        self,
+        timeline_revision_id: str,
+        segments: list[dict[str, Any]],
+        *,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Render a long take (P1-9) from pre-generated segment videos.
+
+        Segments are concatenated in ``segment_no`` order with the same concat
+        command as ``render_episode`` (same encoding parameters, seamless
+        concat demuxer).  The segment plan guarantees segment N's tail frame is
+        segment N+1's head frame, so the segments simply play back-to-back.
+        Episode audio bindings are mixed in exactly like ``render_episode``.
+        """
+        timeline = self.get_timeline(timeline_revision_id)
+        episode = self._episode(str(timeline["episode_id"]))
+        if not segments:
+            raise DomainRuleError("SEGMENT_VIDEOS_REQUIRED", "分段渲染至少需要一个分段视频")
+        ordered = sorted(segments, key=lambda segment: int(segment.get("segment_no", 0)))
+        paths: list[Path] = []
+        input_snapshot_items: list[dict[str, Any]] = []
+        for index, segment in enumerate(ordered, start=1):
+            media_version_id = str(segment["media_version_id"])
+            media = self._media_for_episode(str(episode["id"]), media_version_id)
+            if media["media_kind"] != "VIDEO":
+                raise DomainRuleError("SEGMENT_MEDIA_KIND_INVALID", "分段渲染的媒体必须是视频", {"segment_no": int(segment.get("segment_no", index))})
+            _, path = self.media.content_path(media_version_id)
+            paths.append(path)
+            input_snapshot_items.append(
+                {
+                    "segment_no": int(segment.get("segment_no", index)),
+                    "media_version_id": str(media["id"]),
+                    "sha256": str(media["sha256"]),
+                    "byte_size": int(media["byte_size"]),
+                    "start_seconds": segment.get("start_seconds"),
+                    "end_seconds": segment.get("end_seconds"),
+                    "frames": segment.get("frames"),
+                    "continuation": segment.get("continuation"),
+                }
+            )
+        project_root = (self.settings.projects_root / episode["root_rel"]).resolve()
+        render_dir = project_root / "05_timelines" / "renders"
+        render_dir.mkdir(parents=True, exist_ok=True)
+        render_path = render_dir / f"episode-{episode['code']}-{uuid.uuid4().hex}.mp4"
+        bindings = self._audio_bindings_for_render(str(episode["id"]))
+        execution = self._concat_and_mix(paths, bindings, render_dir, render_path)
+        input_snapshot = {
+            "schema_version": "localdrama.episode-render-input.v1",
+            "render_mode": "SEGMENTED_CONCAT",
+            "segments": input_snapshot_items,
+            "timeline_revision_id": timeline_revision_id,
+            "timeline_revision_hash": timeline["revision_hash"],
+            "timeline_input_snapshot": timeline["input_snapshot"],
+            "items": input_snapshot_items,
+        }
+        if bindings:
+            input_snapshot["audio_bindings"] = self._binding_snapshot(bindings)
+        return self._register_render(episode=episode, timeline_revision_id=timeline_revision_id, timeline=timeline, render_path=render_path, project_root=project_root, input_snapshot=input_snapshot, ffmpeg_execution=execution, actor=actor)
+
+    def _audio_bindings_for_render(self, episode_id: str) -> list[dict[str, Any]]:
+        """Active audio bindings of an episode with media fingerprints for the render snapshot."""
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """SELECT ab.id, ab.media_version_id, ab.track_type, ab.start_us, ab.end_us,
+                ab.gain_db, ab.loop_enabled, ab.fade_in_us, ab.fade_out_us, ab.status,
+                mv.sha256 AS media_sha256, mv.byte_size AS media_byte_size
+                FROM audio_bindings ab JOIN media_versions mv ON mv.id=ab.media_version_id
+                WHERE ab.episode_id=? AND ab.status='ACTIVE' ORDER BY ab.start_us, ab.id""",
+                (episode_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    @staticmethod
+    def _binding_snapshot(bindings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": str(binding["id"]),
+                "media_version_id": str(binding["media_version_id"]),
+                "track_type": str(binding["track_type"]),
+                "start_us": int(binding["start_us"]),
+                "end_us": int(binding["end_us"]),
+                "gain_db": float(binding["gain_db"]),
+                "loop_enabled": bool(binding["loop_enabled"]),
+                "fade_in_us": int(binding["fade_in_us"]),
+                "fade_out_us": int(binding["fade_out_us"]),
+                "media_sha256": str(binding["media_sha256"]),
+                "media_byte_size": int(binding["media_byte_size"]),
+            }
+            for binding in bindings
+        ]
+
+    def _concat_videos(self, paths: list[Path], output_path: Path) -> dict[str, Any]:
+        concat_list = output_path.parent / f".partial-{uuid.uuid4().hex}.concat.txt"
         escaped_paths = [path.as_posix().replace("'", "'\\''") for path in paths]
         concat_list.write_text("\n".join(f"file '{path}'" for path in escaped_paths) + "\n", encoding="utf-8")
         try:
-            ffmpeg_args = ["-f", "concat", "-safe", "0", "-i", str(concat_list), "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", "-movflags", "+faststart", "-y", str(render_path)]
-            execution = self._run_ffmpeg(ffmpeg_args, timeout=900)
+            return self._run_ffmpeg(
+                ["-f", "concat", "-safe", "0", "-i", str(concat_list), "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", "-movflags", "+faststart", "-y", str(output_path)],
+                timeout=900,
+            )
         finally:
             concat_list.unlink(missing_ok=True)
+
+    def _concat_and_mix(self, paths: list[Path], bindings: list[dict[str, Any]], render_dir: Path, render_path: Path) -> dict[str, Any]:
+        """Concat videos and, when bindings exist, mix + mux the audio tracks.
+
+        Without bindings the concat output IS the final render (identical
+        command and artifact to the historical single-pass render).  With
+        bindings the concat goes to a partial file, the audio is mixed and the
+        final mp4 is muxed with the mixed track.
+        """
+        if not bindings:
+            return self._concat_videos(paths, render_path)
+        concat_out = render_dir / f".partial-{uuid.uuid4().hex}.mp4"
+        concat_execution = self._concat_videos(paths, concat_out)
+        mixed_wav = render_dir / f".partial-{uuid.uuid4().hex}.mix.wav"
+        try:
+            video_duration = self._probe(concat_out)["duration_ms"] / 1000
+            if video_duration <= 0:
+                raise DomainRuleError("RENDER_DURATION_INVALID", "整集渲染时长无效，无法混音")
+            mix_execution = self._mix_audio(concat_out, bindings, mixed_wav, video_duration)
+            mux_args = ["-i", str(concat_out), "-i", str(mixed_wav), "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-y", str(render_path)]
+            mux_execution = self._run_ffmpeg(mux_args, timeout=900)
+        finally:
+            concat_out.unlink(missing_ok=True)
+            mixed_wav.unlink(missing_ok=True)
+        return {
+            "executable": mux_execution["executable"],
+            "args": mux_args,
+            "returncode": mux_execution["returncode"],
+            "stdout_tail": mux_execution["stdout_tail"],
+            "stderr_tail": mux_execution["stderr_tail"],
+            "steps": [
+                {"stage": "concat", "stdout_tail": concat_execution["stdout_tail"], "stderr_tail": concat_execution["stderr_tail"]},
+                {"stage": "mix", "stdout_tail": mix_execution["stdout_tail"], "stderr_tail": mix_execution["stderr_tail"]},
+                {"stage": "mux", "stdout_tail": mux_execution["stdout_tail"], "stderr_tail": mux_execution["stderr_tail"]},
+            ],
+        }
+
+    def _mix_audio(self, video_path: Path, bindings: list[dict[str, Any]], output_path: Path, video_duration_seconds: float) -> dict[str, Any]:
+        """Build one mixed audio stream: the video's own audio plus every binding.
+
+        Each binding is placed at its ``start_us`` with ``adelay``, ``gain_db``
+        applied as linear volume, optional loop (``atrim`` to the binding
+        range) and optional fade in/out.  Every input is normalized
+        (fltp/48 kHz/stereo) before ``amix`` so mixed sample formats can never
+        fail; ``apad`` + ``-t`` pin the mix to the exact video duration.
+        """
+        probe = self._probe(video_path)
+        video_has_audio = any(str(stream.get("codec_type")) == "audio" for stream in probe.get("streams", []))
+        args: list[str] = []
+        chains: list[str] = []
+        mix_inputs: list[str] = []
+        input_index = 0
+        if video_has_audio:
+            args += ["-i", str(video_path)]
+            chains.append("[0:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[vid_a]")
+            mix_inputs.append("[vid_a]")
+            input_index = 1
+        for index, binding in enumerate(bindings):
+            _, source_path = self.media.content_path(str(binding["media_version_id"]))
+            if binding.get("loop_enabled"):
+                args += ["-stream_loop", "-1", "-i", str(source_path)]
+            else:
+                args += ["-i", str(source_path)]
+            start_us = int(binding["start_us"])
+            end_us = int(binding["end_us"])
+            duration_s = (end_us - start_us) / 1_000_000
+            start_ms = int(start_us / 1000)
+            gain_db = float(binding.get("gain_db") or 0.0)
+            fade_in_s = int(binding.get("fade_in_us") or 0) / 1_000_000
+            fade_out_s = int(binding.get("fade_out_us") or 0) / 1_000_000
+            chain = f"[{input_index}:a]volume={10 ** (gain_db / 20):.6f}"
+            if fade_in_s > 0:
+                chain += f",afade=t=in:st=0:d={fade_in_s:.3f}"
+            if fade_out_s > 0:
+                chain += f",afade=t=out:st={max(0.0, duration_s - fade_out_s):.3f}:d={fade_out_s:.3f}"
+            if binding.get("loop_enabled"):
+                chain += f",atrim=duration={duration_s:.3f}"
+            chain += f",adelay={start_ms}:all=1,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a{index}]"
+            chains.append(chain)
+            mix_inputs.append(f"[a{index}]")
+            input_index += 1
+        filter_complex = ";".join(chains) + f";{''.join(mix_inputs)}amix=inputs={len(mix_inputs)}:duration=longest:normalize=0[mix];[mix]apad[mixout]"
+        return self._run_ffmpeg(
+            [*args, "-filter_complex", filter_complex, "-map", "[mixout]", "-t", f"{video_duration_seconds:.3f}", "-c:a", "pcm_s16le", "-y", str(output_path)],
+            timeout=900,
+        )
+
+    def _register_render(
+        self,
+        *,
+        episode: dict[str, Any],
+        timeline_revision_id: str,
+        timeline: dict[str, Any],
+        render_path: Path,
+        project_root: Path,
+        input_snapshot: dict[str, Any],
+        ffmpeg_execution: dict[str, Any],
+        actor: str,
+    ) -> dict[str, Any]:
+        """Register a finished render file as an immutable episode_render_versions row.
+
+        Shared by the plain, mixed-audio and segmented render paths so every
+        render version is registered with identical columns and provenance.
+        """
         digest, size = _hash_file(render_path)
         probe = self._probe(render_path)
-        input_snapshot = {"schema_version": "localdrama.episode-render-input.v1", "timeline_revision_id": timeline_revision_id, "timeline_revision_hash": timeline["revision_hash"], "timeline_input_snapshot": timeline["input_snapshot"], "items": input_snapshot_items}
-        ffmpeg_command = {"executor": "builtin:ffmpeg", "executable": execution["executable"], "args": execution["args"], "returncode": execution["returncode"]}
-        execution_log = json.dumps({"stdout_tail": execution["stdout_tail"], "stderr_tail": execution["stderr_tail"]}, ensure_ascii=False, sort_keys=True)
+        ffmpeg_command = {"executor": "builtin:ffmpeg", "executable": ffmpeg_execution["executable"], "args": ffmpeg_execution["args"], "returncode": ffmpeg_execution["returncode"]}
+        if "steps" in ffmpeg_execution:
+            execution_log = json.dumps(
+                {"steps": ffmpeg_execution["steps"], "stdout_tail": ffmpeg_execution["stdout_tail"], "stderr_tail": ffmpeg_execution["stderr_tail"]},
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        else:
+            execution_log = json.dumps({"stdout_tail": ffmpeg_execution["stdout_tail"], "stderr_tail": ffmpeg_execution["stderr_tail"]}, ensure_ascii=False, sort_keys=True)
         render_id = str(uuid.uuid4())
         now = _now()
         with self.database.transaction() as connection:

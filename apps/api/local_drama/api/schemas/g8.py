@@ -37,6 +37,26 @@ class SubtitleRevisionRequest(BaseModel):
     cues: list[SubtitleCueRequest] = Field(min_length=1)
     format: str = Field(default="SRT", min_length=3, max_length=16)
     authority: SubtitleAuthorityRequest
+    style: dict[str, Any] | None = Field(default=None)
+
+
+class SubtitleStyleTemplateRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=64)
+    title: str = Field(min_length=1, max_length=200)
+    style: dict[str, Any]
+    change_note: str = Field(min_length=1, max_length=500)
+
+
+class SegmentInputRequest(BaseModel):
+    media_version_id: str = Field(min_length=1)
+    segment_no: int = Field(default=1, ge=1)
+    start_seconds: float | None = Field(default=None, ge=0)
+    end_seconds: float | None = Field(default=None, ge=0)
+    frames: int | None = Field(default=None, ge=1)
+
+
+class RenderSegmentedEpisodeRequest(BaseModel):
+    segments: list[SegmentInputRequest] = Field(min_length=1)
 
 
 class AudioBindingRequest(BaseModel):

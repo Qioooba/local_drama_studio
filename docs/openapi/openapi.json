@@ -3605,6 +3605,29 @@
         }
       }
     },
+    "/api/v1/delivery-presets": {
+      "get": {
+        "tags": [
+          "configuration"
+        ],
+        "summary": "List Delivery Presets",
+        "operationId": "listDeliveryPresets",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Listdeliverypresets"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/configuration": {
       "get": {
         "tags": [
@@ -3740,6 +3763,60 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Createdeliverytarget"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/delivery-targets:from-preset": {
+      "post": {
+        "tags": [
+          "configuration"
+        ],
+        "summary": "Create Delivery Target From Preset",
+        "operationId": "createDeliveryTargetFromPreset",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeliveryTargetFromPresetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Createdeliverytargetfrompreset"
                 }
               }
             }
@@ -10658,6 +10735,54 @@
         }
       }
     },
+    "/api/v1/production-tiers": {
+      "get": {
+        "tags": [
+          "workflows"
+        ],
+        "summary": "Production Tiers",
+        "description": "P1-7: declared H3 production tiers for the GenerationControlPanel selector.",
+        "operationId": "listProductionTiers",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Listproductiontiers"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/capabilities/ref2va": {
+      "get": {
+        "tags": [
+          "workflows"
+        ],
+        "summary": "Ref2Va Capability",
+        "description": "P1-8: Ref2V capability bit (manifest-backed); UI greys the slot when unsupported.",
+        "operationId": "getRef2VaCapability",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Getref2Vacapability"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/workflow-versions/{version_id}": {
       "get": {
         "tags": [
@@ -11594,6 +11719,32 @@
               "type": "string",
               "title": "Timeline Revision Id"
             }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "standard",
+              "title": "Format"
+            }
+          },
+          {
+            "name": "subtitle_revision_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subtitle Revision Id"
+            }
           }
         ],
         "responses": {
@@ -12343,6 +12494,247 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Renderepisode"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/timeline-revisions/{timeline_revision_id}:render-segmented": {
+      "post": {
+        "tags": [
+          "timeline",
+          "delivery"
+        ],
+        "summary": "Render Segmented Episode",
+        "operationId": "renderSegmentedEpisode",
+        "parameters": [
+          {
+            "name": "timeline_revision_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Timeline Revision Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderSegmentedEpisodeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Rendersegmentedepisode"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/subtitle-style-templates": {
+      "get": {
+        "tags": [
+          "timeline",
+          "delivery"
+        ],
+        "summary": "List Subtitle Style Templates",
+        "operationId": "listSubtitleStyleTemplates",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listsubtitlestyletemplates"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "timeline",
+          "delivery"
+        ],
+        "summary": "Save Subtitle Style Template",
+        "operationId": "saveSubtitleStyleTemplate",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubtitleStyleTemplateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Savesubtitlestyletemplate"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/subtitle-style-templates/{entry_id}": {
+      "get": {
+        "tags": [
+          "timeline",
+          "delivery"
+        ],
+        "summary": "Get Subtitle Style Template",
+        "operationId": "getSubtitleStyleTemplate",
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entry Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Getsubtitlestyletemplate"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "timeline",
+          "delivery"
+        ],
+        "summary": "Delete Subtitle Style Template",
+        "operationId": "deleteSubtitleStyleTemplate",
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entry Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Deletesubtitlestyletemplate"
                 }
               }
             }
@@ -14570,6 +14962,29 @@
         ],
         "title": "DeliveryReviewRequest"
       },
+      "DeliveryTargetFromPresetRequest": {
+        "properties": {
+          "preset_code": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Preset Code"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "preset_code",
+          "title"
+        ],
+        "title": "DeliveryTargetFromPresetRequest",
+        "description": "Create a LOCAL_FILESYSTEM delivery target by applying one built-in preset (G11 P1-6)."
+      },
       "DeliveryTargetRequest": {
         "properties": {
           "code": {
@@ -15155,6 +15570,18 @@
             "type": "string",
             "title": "Acceleration",
             "default": "off"
+          },
+          "tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tier",
+            "description": "P1-7 生产档位（FAST/DRAFT/SCREEN/PRODUCTION/MASTER）；提供时覆盖分辨率与帧数"
           }
         },
         "type": "object",
@@ -15218,6 +15645,18 @@
             "type": "string",
             "title": "Acceleration",
             "default": "off"
+          },
+          "tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tier",
+            "description": "P1-7 生产档位（FAST/DRAFT/SCREEN/PRODUCTION/MASTER）；提供时覆盖分辨率与帧数"
           },
           "first_frame": {
             "type": "string",
@@ -16569,6 +17008,23 @@
         ],
         "title": "RenderEpisodeRequest"
       },
+      "RenderSegmentedEpisodeRequest": {
+        "properties": {
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/SegmentInputRequest"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Segments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "segments"
+        ],
+        "title": "RenderSegmentedEpisodeRequest"
+      },
       "ReviewCheckRequest": {
         "properties": {
           "item_id": {
@@ -16762,6 +17218,62 @@
           "title"
         ],
         "title": "SceneCreateRequest"
+      },
+      "SegmentInputRequest": {
+        "properties": {
+          "media_version_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Media Version Id"
+          },
+          "segment_no": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Segment No",
+            "default": 1
+          },
+          "start_seconds": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Seconds"
+          },
+          "end_seconds": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Seconds"
+          },
+          "frames": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frames"
+          }
+        },
+        "type": "object",
+        "required": [
+          "media_version_id"
+        ],
+        "title": "SegmentInputRequest"
       },
       "SelectionRequest": {
         "properties": {
@@ -17246,6 +17758,18 @@
           },
           "authority": {
             "$ref": "#/components/schemas/SubtitleAuthorityRequest"
+          },
+          "style": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Style"
           }
         },
         "type": "object",
@@ -17254,6 +17778,41 @@
           "authority"
         ],
         "title": "SubtitleRevisionRequest"
+      },
+      "SubtitleStyleTemplateRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "style": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Style"
+          },
+          "change_note": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Change Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "title",
+          "style",
+          "change_note"
+        ],
+        "title": "SubtitleStyleTemplateRequest"
       },
       "TTSCandidateRequest": {
         "properties": {

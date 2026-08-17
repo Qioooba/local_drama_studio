@@ -18,11 +18,14 @@ from local_drama.api.schemas.g8 import (
     FrameAnchorRequest,
     PostProcessRecipeRequest,
     RenderEpisodeRequest,
+    RenderSegmentedEpisodeRequest,
     SubtitleRevisionRequest,
+    SubtitleStyleTemplateRequest,
     TimelineRevisionRequest,
     TransitionConstraintRequest,
 )
 from local_drama.application.errors import api_error_from_domain
+from local_drama.application.subtitle_styles import SubtitleStyleTemplateService
 from local_drama.application.timeline import TimelineService
 from local_drama.application.timeline_exports import TimelineExportService
 from local_drama.application.timeline_status import TimelineStatusService
@@ -107,9 +110,18 @@ async def get_timeline_revision(timeline_revision_id: str, request: Request) -> 
 
 
 @router.post("/timeline-revisions/{timeline_revision_id}:export", operation_id="exportTimelineRevision")
-async def export_timeline_revision(timeline_revision_id: str, request: Request) -> dict[str, object]:
+async def export_timeline_revision(
+    timeline_revision_id: str,
+    request: Request,
+    format: str = "standard",
+    subtitle_revision_id: str | None = None,
+) -> dict[str, object]:
     try:
-        return {"export": TimelineExportService(request.app.state.database, request.app.state.settings).export_revision(timeline_revision_id)}
+        return {
+            "export": TimelineExportService(request.app.state.database, request.app.state.settings).export_revision(
+                timeline_revision_id, format=format, subtitle_revision_id=subtitle_revision_id
+            )
+        }
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -123,6 +135,7 @@ async def create_subtitle_revision(episode_id: str, payload: SubtitleRevisionReq
                 [cue.model_dump() for cue in payload.cues],
                 format=payload.format,
                 authority=payload.authority.model_dump(),
+                style=payload.style,
             )
         }
     except DomainRuleError as error:
@@ -245,6 +258,58 @@ async def render_episode(timeline_revision_id: str, request: Request, payload: R
         if revision_id != timeline_revision_id:
             raise DomainRuleError("TIMELINE_REVISION_MISMATCH", "路径和请求体的时间线 revision 不一致")
         return {"render": service(request).render_episode(timeline_revision_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/timeline-revisions/{timeline_revision_id}:render-segmented", status_code=201, operation_id="renderSegmentedEpisode")
+async def render_segmented_episode(timeline_revision_id: str, payload: RenderSegmentedEpisodeRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"render": service(request).render_segmented_episode(timeline_revision_id, [segment.model_dump() for segment in payload.segments])}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+def _style_templates(request: Request) -> SubtitleStyleTemplateService:
+    return SubtitleStyleTemplateService(request.app.state.database)
+
+
+@router.get("/projects/{project_id}/subtitle-style-templates", operation_id="listSubtitleStyleTemplates")
+async def list_subtitle_style_templates(project_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"items": _style_templates(request).list_templates(project_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/projects/{project_id}/subtitle-style-templates", status_code=201, operation_id="saveSubtitleStyleTemplate")
+async def save_subtitle_style_template(project_id: str, payload: SubtitleStyleTemplateRequest, request: Request) -> dict[str, object]:
+    try:
+        return {
+            "template": _style_templates(request).save_template(
+                project_id,
+                payload.code,
+                payload.title,
+                payload.style,
+                payload.change_note,
+            )
+        }
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/subtitle-style-templates/{entry_id}", operation_id="getSubtitleStyleTemplate")
+async def get_subtitle_style_template(entry_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"template": _style_templates(request).get_template(entry_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.delete("/subtitle-style-templates/{entry_id}", operation_id="deleteSubtitleStyleTemplate")
+async def delete_subtitle_style_template(entry_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"deleted": _style_templates(request).delete_template(entry_id)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

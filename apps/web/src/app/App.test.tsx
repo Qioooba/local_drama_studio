@@ -36,6 +36,10 @@ vi.mock("../generated/api", () => ({
   commitStoryboardBatch: vi.fn(),
   listStoryAssets: vi.fn().mockResolvedValue({ items: [] }),
   listShotStoryAssets: vi.fn().mockResolvedValue({ items: [] }),
+  listProductionTiers: vi.fn().mockResolvedValue({ items: [], default_tier: "DRAFT" }),
+  getRef2VaCapability: vi.fn().mockResolvedValue({ capability: "H3_REF2VA_CANDIDATE", supported: false, reason: "mocked", manifest_hint: "mocked" }),
+  listDeliveryPresets: vi.fn().mockResolvedValue({ items: [] }),
+  createDeliveryTargetFromPreset: vi.fn(),
 }));
 
 describe("G1 app shell", () => {

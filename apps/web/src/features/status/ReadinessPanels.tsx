@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { createDeliveryTarget, selectDeliveryTargetVersion, type AdapterRegistry, type G8Readiness, type G9Readiness, type ModelCompatibilitySnapshot, type ProjectConfiguration, type TimelineStatus } from "../../generated/api";
+import { createDeliveryTarget, createDeliveryTargetFromPreset, listDeliveryPresets, selectDeliveryTargetVersion, type AdapterRegistry, type DeliveryPreset, type G8Readiness, type G9Readiness, type ModelCompatibilitySnapshot, type ProjectConfiguration, type TimelineStatus } from "../../generated/api";
 import { GateStatusIcon } from "../../components/icons";
 import { ModelLicenseEvidenceForm } from "./ModelLicenseEvidenceForm";
 import { LocalModelReferenceForm } from "./LocalModelReferenceForm";
@@ -17,9 +17,20 @@ export function ProjectConfigurationSnapshot({ configuration, projectId, onChang
   const [error, setError] = useState<string | null>(null);
   const [selectedTargetVersionId, setSelectedTargetVersionId] = useState(configuration.selected_delivery_target_version_id ?? "");
   const [selecting, setSelecting] = useState(false);
+  const [presets, setPresets] = useState<DeliveryPreset[]>([]);
+  const [selectedPresetCode, setSelectedPresetCode] = useState("");
+  const [presetTitle, setPresetTitle] = useState("");
+  const [creatingPreset, setCreatingPreset] = useState(false);
   useEffect(() => {
     setSelectedTargetVersionId(configuration.selected_delivery_target_version_id ?? "");
   }, [configuration.selected_delivery_target_version_id]);
+  useEffect(() => {
+    let cancelled = false;
+    void listDeliveryPresets()
+      .then((result) => { if (!cancelled) { setPresets(result.items); setSelectedPresetCode((current) => current || (result.items[0]?.code ?? "")); } })
+      .catch((caught) => { if (!cancelled) setError(`读取交付规格预设失败：${String(caught)}`); });
+    return () => { cancelled = true; };
+  }, []);
   const createTarget = async () => {
     if (!projectId) return;
     setBusy(true); setMessage(null); setError(null);
@@ -40,6 +51,17 @@ export function ProjectConfigurationSnapshot({ configuration, projectId, onChang
     } catch (caught) { setError(String(caught)); }
     finally { setSelecting(false); }
   };
+  const createFromPreset = async () => {
+    if (!projectId || !selectedPresetCode) return;
+    setCreatingPreset(true); setMessage(null); setError(null);
+    try {
+      const result = await createDeliveryTargetFromPreset(projectId, { preset_code: selectedPresetCode, title: presetTitle.trim() });
+      setMessage(`已按预设创建交付目标：${String(result.target.code)} · 版本 ${String(result.target.version_id ?? result.target.id ?? "").slice(0, 16)}`);
+      onChanged?.();
+    } catch (caught) { setError(String(caught)); }
+    finally { setCreatingPreset(false); }
+  };
+  const selectedPreset = presets.find((preset) => preset.code === selectedPresetCode);
   return <section className="panel configuration-snapshot" aria-labelledby="configuration-snapshot-title">
     <div className="panel-heading"><div><p className="eyebrow">G7 PROJECT CONFIGURATION</p><h3 id="configuration-snapshot-title">项目配置快照与切换影响</h3></div><span className="status-pill">只读 · LOCAL_ONLY</span></div>
     <p className="muted">当前绑定、版本和已冻结任务来自持久化状态。切换 Profile 不会改写历史 Job；交付目标必须显式选择，远程 transport 永不启用。</p>
@@ -53,7 +75,7 @@ export function ProjectConfigurationSnapshot({ configuration, projectId, onChang
       {configuration.profile_bindings.map((item) => <div className="configuration-row" role="row" key={`${item.capability}-${item.profile_version_id}`}><span>{item.capability}</span><span>{item.profile_code} · v{item.version_no}</span><span className="status-pill">{item.profile_status}</span><span>{item.frozen_job_count}</span></div>)}
       {configuration.profile_bindings.length === 0 && <p className="empty-state">尚未绑定 Profile。</p>}
     </div>
-    {projectId && <div className="delivery-target-editor"><div className="workflow-history-heading"><div><p className="eyebrow">FR-DEL-003 · EXPLICIT TARGET</p><h3>选择 / 创建本地交付目标版本</h3></div><span className="status-pill neutral">LOCAL_FILESYSTEM</span></div><p className="muted">交付规格必须由用户显式选择或填写；此处不会启用远程 transport，也不会覆盖已有目标版本。</p><div className="field-grid"><label>已创建目标版本<select aria-label="交付目标版本" value={selectedTargetVersionId} onChange={(event) => setSelectedTargetVersionId(event.target.value)}>{configuration.delivery_targets.length === 0 && <option value="">暂无目标版本</option>}{configuration.delivery_targets.map((target) => <option key={target.version_id} value={target.version_id}>{target.code} · v{target.version_no}{target.version_id === configuration.selected_delivery_target_version_id ? "（当前）" : ""}</option>)}</select></label><button className="secondary" type="button" onClick={() => void selectTarget()} disabled={selecting || !selectedTargetVersionId}>{selecting ? "选择中…" : "选择为当前交付目标"}</button></div><div className="field-grid"><label>代码<input value={code} onChange={(event) => setCode(event.target.value)} /></label><label>标题<input value={title} onChange={(event) => setTitle(event.target.value)} /></label><label>相对目录<input value={pathRel} onChange={(event) => setPathRel(event.target.value)} /></label><label>宽<input type="number" min="64" value={width} onChange={(event) => setWidth(event.target.value)} /></label><label>高<input type="number" min="64" value={height} onChange={(event) => setHeight(event.target.value)} /></label><label>FPS<input type="number" min="1" max="120" value={fps} onChange={(event) => setFps(event.target.value)} /></label></div><button className="primary-action" type="button" onClick={() => void createTarget()} disabled={busy}>{busy ? "创建中…" : "创建新目标版本"}</button>{message && <p className="review-success" role="status">{message}</p>}{error && <p className="inline-error" role="alert">目标操作失败：{error}</p>}</div>}
+    {projectId && <div className="delivery-target-editor"><div className="workflow-history-heading"><div><p className="eyebrow">FR-DEL-003 · EXPLICIT TARGET</p><h3>选择 / 创建本地交付目标版本</h3></div><span className="status-pill neutral">LOCAL_FILESYSTEM</span></div><p className="muted">交付规格必须由用户显式选择或填写；此处不会启用远程 transport，也不会覆盖已有目标版本。</p><div className="field-grid"><label>已创建目标版本<select aria-label="交付目标版本" value={selectedTargetVersionId} onChange={(event) => setSelectedTargetVersionId(event.target.value)}>{configuration.delivery_targets.length === 0 && <option value="">暂无目标版本</option>}{configuration.delivery_targets.map((target) => <option key={target.version_id} value={target.version_id}>{target.code} · v{target.version_no}{target.version_id === configuration.selected_delivery_target_version_id ? "（当前）" : ""}</option>)}</select></label><button className="secondary" type="button" onClick={() => void selectTarget()} disabled={selecting || !selectedTargetVersionId}>{selecting ? "选择中…" : "选择为当前交付目标"}</button></div><div className="field-grid"><label>代码<input value={code} onChange={(event) => setCode(event.target.value)} /></label><label>标题<input value={title} onChange={(event) => setTitle(event.target.value)} /></label><label>相对目录<input value={pathRel} onChange={(event) => setPathRel(event.target.value)} /></label><label>宽<input type="number" min="64" value={width} onChange={(event) => setWidth(event.target.value)} /></label><label>高<input type="number" min="64" value={height} onChange={(event) => setHeight(event.target.value)} /></label><label>FPS<input type="number" min="1" max="120" value={fps} onChange={(event) => setFps(event.target.value)} /></label></div><button className="primary-action" type="button" onClick={() => void createTarget()} disabled={busy}>{busy ? "创建中…" : "创建新目标版本"}</button><div className="preset-creator"><p className="eyebrow">G11 P1-6 · PLATFORM PRESETS</p><h4>从平台预设创建交付目标</h4><p className="muted">内置平台规格预设为不可变常量；套用后仍作为普通交付目标版本管理，可继续显式选择或创建新版本。</p><div className="field-grid"><label>平台预设<select aria-label="交付规格预设" value={selectedPresetCode} onChange={(event) => setSelectedPresetCode(event.target.value)}>{presets.length === 0 && <option value="">暂无预设</option>}{presets.map((preset) => <option key={preset.code} value={preset.code}>{preset.title} · {preset.code}</option>)}</select></label><label>预设标题<input value={presetTitle} onChange={(event) => setPresetTitle(event.target.value)} placeholder="例如：抖音短剧交付" /></label><button className="secondary" type="button" onClick={() => void createFromPreset()} disabled={creatingPreset || !selectedPresetCode || !presetTitle.trim()}>{creatingPreset ? "创建中…" : "按预设创建目标"}</button></div>{selectedPreset && <p className="muted">{selectedPreset.description}</p>}</div>{message && <p className="review-success" role="status">{message}</p>}{error && <p className="inline-error" role="alert">目标操作失败：{error}</p>}</div>}
   </section>;
 }
 

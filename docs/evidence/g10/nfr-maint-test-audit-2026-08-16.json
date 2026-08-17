@@ -5,8 +5,8 @@
     "NFR-TEST-001"
   ],
   "status": "PARTIAL",
-  "observed_at": "2026-08-17T14:38:36.705406+00:00",
-  "git_revision": "3cbb5266cb9b137d9dc8b3858502d8848c032efa",
+  "observed_at": "2026-08-17T16:20:30.298298+00:00",
+  "git_revision": "82e23e5b02f393409a2514ca471cf05902e014d7",
   "deterministic_contracts_passed": true,
   "hard_failures": [],
   "dependencies": {
@@ -205,6 +205,10 @@
         "import": "local_drama.infrastructure.database.sqlite"
       },
       {
+        "file": "apps/api/local_drama/application/subtitle_styles.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
         "file": "apps/api/local_drama/application/timeline.py",
         "import": "local_drama.infrastructure.database.sqlite"
       },
@@ -268,7 +272,7 @@
       },
       {
         "path": "apps/web/src/features/generation/GenerationWorkbench.tsx",
-        "lines": 356,
+        "lines": 357,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       },
@@ -280,7 +284,7 @@
       },
       {
         "path": "apps/web/src/features/status/ReadinessPanels.tsx",
-        "lines": 143,
+        "lines": 165,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       },
@@ -303,6 +307,12 @@
         "warning_limit_exceeded": false
       },
       {
+        "path": "apps/web/src/features/production/SubtitleRevisionPanel.tsx",
+        "lines": 108,
+        "recommended_limit_exceeded": false,
+        "warning_limit_exceeded": false
+      },
+      {
         "path": "apps/web/src/features/production/DirectorShotEditor.tsx",
         "lines": 106,
         "recommended_limit_exceeded": false,
@@ -311,12 +321,6 @@
       {
         "path": "apps/web/src/features/canvas/ProductionCanvasPanel.tsx",
         "lines": 105,
-        "recommended_limit_exceeded": false,
-        "warning_limit_exceeded": false
-      },
-      {
-        "path": "apps/web/src/features/status/DialogueGovernanceActions.tsx",
-        "lines": 99,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       }
@@ -335,8 +339,8 @@
     ],
     "domain_modules_without_direct_test_import": [],
     "domain_rule_coverage_floor_passed": true,
-    "api_test_file_count": 80,
-    "api_test_function_count": 324,
+    "api_test_file_count": 87,
+    "api_test_function_count": 368,
     "web_test_file_count": 39,
     "coverage_method": "static import inventory; full pytest/Vitest and Playwright remain separate gates"
   },

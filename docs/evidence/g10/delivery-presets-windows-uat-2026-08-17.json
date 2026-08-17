@@ -1,0 +1,18 @@
+{
+  "schema_version": "g11.delivery-presets-windows-uat.v1",
+  "observed_at": "2026-08-17T16:09:38.847Z",
+  "mode": "LOCAL_ONLY",
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "status": "PASS",
+  "isolated_snapshot": true,
+  "production_database_touched": false,
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "steps": [
+    "DOUYIN_VERTICAL preset applied through the panel",
+    "API: DOUYIN_VERTICAL target frozen spec verified ({\"width\":1080,\"height\":1920,\"fps\":30,\"bitrate_kbps\":6000} )",
+    "zero console errors / zero failed responses"
+  ],
+  "errors": [],
+  "interpretation": "G11 P1-6 delivery platform presets real-click UAT: DOUYIN_VERTICAL preset selected and applied through ReadinessPanels, target created with the frozen platform spec (1080x1920 @30fps, 6000 kbps, 180s, cover 1080x1440), verified through the configuration API."
+}

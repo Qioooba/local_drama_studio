@@ -2,12 +2,20 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from local_drama.api.schemas.g3 import DeliveryTargetRequest, DeliveryTargetVersionRequest, ProductionPlanRequest
+from local_drama.api.schemas.g3 import DeliveryTargetFromPresetRequest, DeliveryTargetRequest, DeliveryTargetVersionRequest, ProductionPlanRequest
 from local_drama.application.configuration import ConfigurationService
 from local_drama.application.errors import api_error_from_domain
 from local_drama.domain.errors import DomainRuleError
 
 router = APIRouter(tags=["configuration"])
+
+
+@router.get("/delivery-presets", operation_id="listDeliveryPresets")
+async def list_delivery_presets(request: Request) -> dict[str, object]:
+    try:
+        return ConfigurationService(request.app.state.database).list_delivery_presets()
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
 
 
 @router.get("/projects/{project_id}/configuration", operation_id="getProjectConfiguration")
@@ -32,6 +40,18 @@ async def create_delivery_target(project_id: str, payload: DeliveryTargetRequest
         return {
             "target": ConfigurationService(request.app.state.database).create_delivery_target(
                 project_id, payload.code, payload.title, payload.transport, payload.spec
+            )
+        }
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/projects/{project_id}/delivery-targets:from-preset", status_code=201, operation_id="createDeliveryTargetFromPreset")
+async def create_delivery_target_from_preset(project_id: str, payload: DeliveryTargetFromPresetRequest, request: Request) -> dict[str, object]:
+    try:
+        return {
+            "target": ConfigurationService(request.app.state.database).create_delivery_target_from_preset(
+                project_id, payload.preset_code, payload.title
             )
         }
     except DomainRuleError as error:

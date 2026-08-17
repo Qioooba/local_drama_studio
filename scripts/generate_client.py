@@ -90,6 +90,8 @@ export type GenerationExperiment = { id: string; intent_id: string; title: strin
 export type GenerationExperimentEstimate = { experiment_id: string; cell_count: number; expanded_count: number; remaining_count: number; max_parallel: number; estimated_cpu_seconds: number; estimated_disk_bytes: number; gpu_slots: number; status: string; plan_hash: string; confirmation_required: boolean; large_matrix_confirmation_required: boolean; large_matrix_confirmation_threshold: number; would_create_jobs: false };
 export type LocalLLMStatus = { status: string; base_url: string; model: string | null; error_code?: string; available_models?: string[]; model_present?: boolean };
 export type H3Runtime = { status: string; release_root?: string; missing_sidecars?: string[]; missing_model_files?: string[]; required_sidecars?: string[] };
+export type H3ProductionTier = { code: string; label: string; frames: number; resolution: Record<string, number[]>; denoise: number; steps: number; cfg: number; default_takes: number; duration_seconds?: number };
+export type H3Ref2VaCapability = { capability: 'H3_REF2VA_CANDIDATE' | 'H3_REF2VA_UNAVAILABLE'; supported: boolean; reason: string; manifest_hint: { ref2va_unet_name?: string | null; route_status?: string | null; video_reference_route?: string | null; node_family?: string; video_reference_gate?: string } };
 export type G6Readiness = { gate: 'G6'; status: 'PASS' | 'IN_PROGRESS'; project_id: string; checks: Array<{ code: string; passed: boolean; count?: number }>; next_required_action: string | null; evidence: Record<string, unknown>; mutated: false };
 export type G7Readiness = { gate: 'G7'; status: 'PASS' | 'IN_PROGRESS'; project_id: string; checks: Array<{ code: string; passed: boolean; count?: number }>; next_required_action: string | null; evidence: Record<string, unknown>; runtime_contacted: false; network_contacted: false; mutated: false };
 export type G8Readiness = { gate: 'G8'; status: 'PASS' | 'IN_PROGRESS'; project_id: string; episode: { id: string; code: string; title: string }; checks: Array<{ code: string; passed: boolean; count?: number; required?: number; detail: string; required_tracks?: string[]; observed_tracks?: string[] }>; next_required_action: string | null; evidence: { timeline_revision_id: string | null; render_id: string | null; delivery_id: string | null; audio_tracks: string[]; subtitle_revision_count: number }; observed_at: string; runtime_contacted: false; network_contacted: false; mutated: false };
@@ -133,6 +135,7 @@ export type EpisodeRender = { id: string; episode_id: string; timeline_revision_
 export type DeliveryPackage = { id: string; episode_render_version_id: string; target_version_id: string; status: string; rel_path?: string; manifest_sha256?: string; withdrawn_reason?: string | null; files?: Array<Record<string, unknown>>; events?: Array<Record<string, unknown>>; target?: Record<string, unknown>; [key: string]: unknown };
 export type DeliveryPackageFile = { id: string; delivery_package_id: string; rel_path: string; sha256: string; byte_size: number };
 export type DeliveryTargetVersion = { id: string; version_id: string; project_id: string; code: string; title: string; transport: 'LOCAL_FILESYSTEM'; spec: Record<string, unknown>; version_no: number; status: string };
+export type DeliveryPreset = { code: string; title: string; description: string; spec: { path_rel: string; width: number; height: number; fps: number; bitrate_kbps: number; max_duration_seconds: number; cover_aspect: string; audio: string; subtitles: string } };
 export type TransitionConstraint = { id: string; from_shot_id: string; to_shot_id: string; constraint_type: string; enforcement: string; compatibility_status?: string; [key: string]: unknown };
 export type PostProcessRecipe = { id: string; code: string; recipe_key: string; title: string; version_no: number; parent_recipe_id: string | null; recipe_hash: string; status: 'DRAFT' | 'ACTIVE' | 'RETIRED'; steps: Array<Record<string, unknown>>; capability_contract: Record<string, unknown>; [key: string]: unknown };
 export type EnhancementPlan = { status: 'READY'; plan_hash: string; snapshot: Record<string, unknown>; command_preview: Record<string, unknown>; would_create_run: false; would_overwrite_input: false; runtime_contacted: false; network_contacted: false; mutated: false };
@@ -705,11 +708,19 @@ export async function getTimelineRevision(timelineRevisionId: string, baseUrl = 
   return requestJson(`/api/v1/timeline-revisions/${encodeURIComponent(timelineRevisionId)}`, undefined, baseUrl);
 }
 
-export async function exportTimelineRevision(timelineRevisionId: string, baseUrl = ''): Promise<{ export: TimelineExport }> {
-  return requestJson(`/api/v1/timeline-revisions/${encodeURIComponent(timelineRevisionId)}:export`, { method: 'POST' }, baseUrl);
+export async function exportTimelineRevision(timelineRevisionId: string, format?: 'standard' | 'otio' | 'edl' | 'jianying', subtitleRevisionId?: string, baseUrl = ''): Promise<{ export: TimelineExport }> {
+  const query = new URLSearchParams();
+  if (format) query.set('format', format);
+  if (subtitleRevisionId) query.set('subtitle_revision_id', subtitleRevisionId);
+  const suffix = query.size ? `?${query.toString()}` : '';
+  return requestJson(`/api/v1/timeline-revisions/${encodeURIComponent(timelineRevisionId)}:export${suffix}`, { method: 'POST' }, baseUrl);
 }
 
-export async function createSubtitleRevision(episodeId: string, payload: { cues: SubtitleCueRequest[]; authority: SubtitleAuthorityRequest; format?: string }, baseUrl = ''): Promise<{ subtitle: SubtitleRevision }> {
+export async function exportJianyingTimeline(timelineRevisionId: string, subtitleRevisionId?: string, baseUrl = ''): Promise<{ export: TimelineExport }> {
+  return exportTimelineRevision(timelineRevisionId, 'jianying', subtitleRevisionId, baseUrl);
+}
+
+export async function createSubtitleRevision(episodeId: string, payload: { cues: SubtitleCueRequest[]; authority: SubtitleAuthorityRequest; format?: string; style?: Record<string, unknown> }, baseUrl = ''): Promise<{ subtitle: SubtitleRevision }> {
   return requestJson(`/api/v1/episodes/${encodeURIComponent(episodeId)}/subtitle-revisions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
@@ -787,6 +798,26 @@ export async function listEpisodeAudioBindings(episodeId: string, baseUrl = ''):
 
 export async function renderEpisode(timelineRevisionId: string, baseUrl = ''): Promise<{ render: EpisodeRender }> {
   return requestJson(`/api/v1/timeline-revisions/${encodeURIComponent(timelineRevisionId)}:render`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ timeline_revision_id: timelineRevisionId }) }, baseUrl);
+}
+
+export async function renderSegmentedEpisode(timelineRevisionId: string, payload: { segments: Array<{ media_version_id: string; segment_no?: number; start_seconds?: number; end_seconds?: number; frames?: number }> }, baseUrl = ''): Promise<{ render: EpisodeRender }> {
+  return requestJson(`/api/v1/timeline-revisions/${encodeURIComponent(timelineRevisionId)}:render-segmented`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function listSubtitleStyleTemplates(projectId: string, baseUrl = ''): Promise<{ items: CreativeEntry[] }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/subtitle-style-templates`, undefined, baseUrl);
+}
+
+export async function saveSubtitleStyleTemplate(projectId: string, payload: { code: string; title: string; style: Record<string, unknown>; change_note: string }, baseUrl = ''): Promise<{ template: CreativeEntry }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/subtitle-style-templates`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function getSubtitleStyleTemplate(entryId: string, baseUrl = ''): Promise<{ template: CreativeEntry }> {
+  return requestJson(`/api/v1/subtitle-style-templates/${encodeURIComponent(entryId)}`, undefined, baseUrl);
+}
+
+export async function deleteSubtitleStyleTemplate(entryId: string, baseUrl = ''): Promise<{ deleted: { id: string; deleted: true } }> {
+  return requestJson(`/api/v1/subtitle-style-templates/${encodeURIComponent(entryId)}`, { method: 'DELETE' }, baseUrl);
 }
 
 export async function buildDeliveryPackage(payload: { episode_render_version_id: string; target_version_id: string; brand_kit_id?: string; watermark_profile_id?: string; compliance_policy_id?: string }, baseUrl = ''): Promise<{ delivery: DeliveryPackage }> {
@@ -875,6 +906,22 @@ export async function h3CandidateRuntime(baseUrl = ''): Promise<{ runtime: H3Run
   return requestJson('/api/v1/h3/candidate-runtime', undefined, baseUrl);
 }
 
+export async function listProductionTiers(baseUrl = ''): Promise<{ items: H3ProductionTier[]; default_tier: string }> {
+  return requestJson('/api/v1/production-tiers', undefined, baseUrl);
+}
+
+export async function getRef2VaCapability(baseUrl = ''): Promise<{ capability: H3Ref2VaCapability }> {
+  return requestJson('/api/v1/capabilities/ref2va', undefined, baseUrl);
+}
+
+export async function registerH3CandidateWorkflow(payload: { code: string; title: string; prompt: string; seed: number; duration_seconds?: number; aspect_ratio?: string; filename_prefix?: string; sigma_points?: number; acceleration?: string; tier?: string | null }, baseUrl = ''): Promise<{ workflow_version: WorkflowVersionSummary & { workflow: Record<string, unknown>; node_bindings: Record<string, unknown> }; candidate_assets: Record<string, string> }> {
+  return requestJson('/api/v1/workflow-packages:h3-candidate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function registerH3I2VCandidateWorkflow(payload: { code: string; title: string; prompt: string; seed: number; first_frame?: string; duration_seconds?: number; aspect_ratio?: string; filename_prefix?: string; sigma_points?: number; acceleration?: string; tier?: string | null }, baseUrl = ''): Promise<{ workflow_version: WorkflowVersionSummary & { workflow: Record<string, unknown>; node_bindings: Record<string, unknown> }; candidate_assets: Record<string, string> }> {
+  return requestJson('/api/v1/workflow-packages:h3-i2v-candidate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
 export async function getG6Readiness(projectId: string, baseUrl = ''): Promise<{ readiness: G6Readiness }> {
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/gates/g6`, undefined, baseUrl);
 }
@@ -889,6 +936,14 @@ export async function getG7Readiness(projectId: string, baseUrl = ''): Promise<{
 
 export async function getProjectConfiguration(projectId: string, baseUrl = ''): Promise<{ configuration: ProjectConfiguration }> {
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/configuration`, undefined, baseUrl);
+}
+
+export async function listDeliveryPresets(baseUrl = ''): Promise<{ items: DeliveryPreset[] }> {
+  return requestJson('/api/v1/delivery-presets', undefined, baseUrl);
+}
+
+export async function createDeliveryTargetFromPreset(projectId: string, payload: { preset_code: string; title: string }, baseUrl = ''): Promise<{ target: DeliveryTargetVersion & { preset_code?: string } }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/delivery-targets:from-preset`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
 export async function createDeliveryTarget(projectId: string, payload: { code: string; title: string; transport: string; spec: Record<string, unknown> }, baseUrl = ''): Promise<{ target: Record<string, unknown> }> {

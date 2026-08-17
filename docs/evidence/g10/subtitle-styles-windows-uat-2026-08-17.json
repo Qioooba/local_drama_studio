@@ -1,0 +1,21 @@
+{
+  "schema_version": "g11.subtitle-styles-windows-uat.v1",
+  "observed_at": "2026-08-17T16:04:16.960Z",
+  "mode": "LOCAL_ONLY",
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "episode_id": "d4db1033-9517-4bd0-958d-4228e0abead1",
+  "status": "PASS",
+  "isolated_snapshot": true,
+  "production_database_touched": false,
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "steps": [
+    "custom subtitle style filled (微软雅黑/36/#FFD700/TOP/outline 2)",
+    "style saved as project template 黄金字幕",
+    "ASS subtitle revision created with the custom style",
+    "API: ASS revision v3 verified with [V4+ Styles] block + per-cue style_json",
+    "zero console errors / zero failed responses"
+  ],
+  "errors": [],
+  "interpretation": "G11 P1-12 subtitle style templates real-click UAT: custom style filled in SubtitleRevisionPanel, saved as a project template, applied to a new ASS subtitle revision with verbatim script-authority cues; the [V4+ Styles] block and per-cue style_json are verified through the API."
+}

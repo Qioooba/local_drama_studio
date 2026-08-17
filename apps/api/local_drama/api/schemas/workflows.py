@@ -38,6 +38,7 @@ class H3CandidateWorkflowRequest(BaseModel):
     filename_prefix: str = "local_drama/h3_candidate"
     sigma_points: int = Field(default=50, ge=2, le=1000)
     acceleration: str = "off"
+    tier: str | None = Field(default=None, description="P1-7 生产档位（FAST/DRAFT/SCREEN/PRODUCTION/MASTER）；提供时覆盖分辨率与帧数")
 
 
 class H3I2VCandidateWorkflowRequest(H3CandidateWorkflowRequest):

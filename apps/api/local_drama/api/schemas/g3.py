@@ -76,6 +76,13 @@ class DeliveryTargetRequest(BaseModel):
     spec: dict[str, Any] = Field(default_factory=dict)
 
 
+class DeliveryTargetFromPresetRequest(BaseModel):
+    """Create a LOCAL_FILESYSTEM delivery target by applying one built-in preset (G11 P1-6)."""
+
+    preset_code: str = Field(min_length=1, max_length=120)
+    title: str = Field(min_length=1, max_length=200)
+
+
 class DeliveryTargetVersionRequest(BaseModel):
     """Create a new immutable version for an existing delivery target.
 

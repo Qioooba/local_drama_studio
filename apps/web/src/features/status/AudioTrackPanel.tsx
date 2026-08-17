@@ -1,7 +1,7 @@
 import type { AudioBinding } from "../../generated/api";
 import { AudioImportBindingForm } from "./AudioImportBindingForm";
 
-const trackLabels: Record<string, string> = { DIALOGUE: "对白", ENVIRONMENT: "环境", SFX: "音效", MUSIC: "音乐" };
+const trackLabels: Record<string, string> = { DIALOGUE: "对白", BGM: "BGM/音乐", SFX: "音效", MUSIC: "音乐（旧）", ENVIRONMENT: "环境（旧）" };
 
 export function AudioTrackPanel({ bindings, projectId, episodeId, onBound }: { bindings: AudioBinding[]; projectId: string; episodeId: string; onBound: () => void }) {
   return <section className="panel audio-track-panel" aria-labelledby="audio-track-title">

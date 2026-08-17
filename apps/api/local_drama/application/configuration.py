@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from typing import Any
 
+from local_drama.application.delivery_presets import preset_items, require_preset
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
 
@@ -100,6 +101,33 @@ class ConfigurationService:
             "spec": spec,
             "status": "ACTIVE",
         }
+
+    def list_delivery_presets(self) -> dict[str, Any]:
+        """List the immutable built-in platform delivery spec presets (G11 P1-6)."""
+        return {"items": preset_items()}
+
+    def create_delivery_target_from_preset(self, project_id: str, preset_code: str, title: str, actor: str = "local-user") -> dict[str, Any]:
+        """Create a LOCAL_FILESYSTEM delivery target by applying one platform preset.
+
+        Validation, persistence and the base DELIVERY_TARGET_CREATED audit are
+        fully reused from ``create_delivery_target``; this method only resolves
+        the preset spec and records the preset provenance audit event.
+        """
+        preset = require_preset(preset_code)
+        target = self.create_delivery_target(project_id, preset.code, title, "LOCAL_FILESYSTEM", dict(preset.spec), actor=actor)
+        with self.database.transaction() as connection:
+            connection.execute(
+                """INSERT INTO audit_events
+                (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json)
+                VALUES (?, 'producer', 'DELIVERY_TARGET_CREATED_FROM_PRESET', 'delivery_target', ?, ?, ?)""",
+                (
+                    actor,
+                    target["id"],
+                    f"按平台预设创建交付目标：{preset.title}",
+                    _json({"project_id": project_id, "preset_code": preset.code, "title": title}),
+                ),
+            )
+        return {**target, "preset_code": preset.code}
 
     def create_delivery_target_version(
         self,

@@ -102,6 +102,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
   const [motionMasksText, setMotionMasksText] = useState("[]");
   const [seedText, setSeedText] = useState("42");
   const [takeCountText, setTakeCountText] = useState("1");
+  const [tier, setTier] = useState("");
   const [approvedKeyframeId, setApprovedKeyframeId] = useState("");
   const [prepared, setPrepared] = useState<{ draft: GenerationVariantDraft; plan: GenerationVariantPlan; idempotencyKey: string } | null>(null);
   const [preflightResourceEstimate, setPreflightResourceEstimate] = useState<GenerationResourceEstimate | null>(null);
@@ -120,7 +121,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
   useEffect(() => {
     if (!approvedKeyframeIds.includes(approvedKeyframeId)) setApprovedKeyframeId(approvedKeyframeIds[0] ?? "");
   }, [approvedKeyframeId, approvedKeyframeIds]);
-  useEffect(() => { setPrepared(null); setPreflightResourceEstimate(null); setSubmitted(null); setSubmittedCount(0); setSubmittedVariantId(null); setSeedBatchPlan(null); setBranchPlan(null); }, [mode, profileVersionId, selectedShotId, promptText, timedDirectionsText, performanceBindingsText, referenceBindingsText, motionMasksText, seedText, approvedKeyframeId, takeCountText]);
+  useEffect(() => { setPrepared(null); setPreflightResourceEstimate(null); setSubmitted(null); setSubmittedCount(0); setSubmittedVariantId(null); setSeedBatchPlan(null); setBranchPlan(null); }, [mode, profileVersionId, selectedShotId, promptText, timedDirectionsText, performanceBindingsText, referenceBindingsText, motionMasksText, seedText, approvedKeyframeId, takeCountText, tier]);
   const selected = eligibleProfiles.find((profile) => profile.version_id === profileVersionId);
   const resourcePolicy = profileResourcePolicy(selected);
   const selectedShot = shots.find((shot) => String(shot.id) === selectedShotId);
@@ -173,7 +174,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
         branch_reason: "UI_BASE_GENERATION",
         prompt_revision_id: prompt.revision.id,
         profile_version_id: selected.version_id,
-        parameter_set: { PROMPT: promptText.trim(), SEED: seed, ...(cameraPlan ? { camera_plan: cameraPlan } : {}), timed_directions: parseControlList(timedDirectionsText, "TimedDirection"), performance_bindings: parseControlList(performanceBindingsText, "PerformanceBinding"), motion_masks: parseControlList(motionMasksText, "MotionMask") },
+        parameter_set: { PROMPT: promptText.trim(), SEED: seed, ...(cameraPlan ? { camera_plan: cameraPlan } : {}), timed_directions: parseControlList(timedDirectionsText, "TimedDirection"), performance_bindings: parseControlList(performanceBindingsText, "PerformanceBinding"), motion_masks: parseControlList(motionMasksText, "MotionMask"), ...(tier ? { tier } : {}) },
         seed_policy: "EXPLICIT",
         explicit_seed: seed,
         bindings,
@@ -284,7 +285,7 @@ export function GenerationWorkbench({ projectId, profiles, candidates, h3, g6Rea
             <div className={`media-slot${draftAnchor ? " filled" : ""}`} aria-describedby="media-slot-help">{extractedThumbnail ? <img src={extractedThumbnail} alt={`当前未提交输入：视频${draftRoleLabel}缩略图`} width="220" height="124" decoding="async" /> : <span aria-hidden="true">+</span>}<strong>{draftAnchor ? `${draftRoleLabel}已填入当前草稿` : mode === "R2V" ? "选择参考图片" : "选择视频帧"}</strong><small id="media-slot-help">{mode === "T2V" || mode === "T2I" ? "当前方式不需要图片输入；已提取帧仅保留在未提交草稿。" : draftAnchor ? "FrameAnchor 已真实注册；创建 Variant 前仍可替换。" : "从下方已注册视频提取真实帧，不上传或读取原片。"}</small></div>
             <div className="prompt-field"><label htmlFor="generation-prompt">镜头 Prompt</label><textarea id="generation-prompt" value={promptText} onChange={(event) => setPromptText(event.target.value)} placeholder="描述主体动作、镜头运动、节奏与环境变化…" /><div className="prompt-tools"><span>结构化运镜</span><span>负向约束</span><span>版本化保存</span></div></div>
           </div>
-          <GenerationControlPanel timedDirections={timedDirectionsText} performanceBindings={performanceBindingsText} referenceBindings={referenceBindingsText} motionMasks={motionMasksText} onTimedDirectionsChange={setTimedDirectionsText} onPerformanceBindingsChange={setPerformanceBindingsText} onReferenceBindingsChange={setReferenceBindingsText} onMotionMasksChange={setMotionMasksText} />
+          <GenerationControlPanel timedDirections={timedDirectionsText} performanceBindings={performanceBindingsText} referenceBindings={referenceBindingsText} motionMasks={motionMasksText} onTimedDirectionsChange={setTimedDirectionsText} onPerformanceBindingsChange={setPerformanceBindingsText} onReferenceBindingsChange={setReferenceBindingsText} onMotionMasksChange={setMotionMasksText} tier={tier} onTierChange={setTier} />
           {approvedKeyframeId && profileVersionId && <MotionControlPanel sourceMediaVersionId={approvedKeyframeId} profileVersionId={profileVersionId} />}
           <section className="generation-submit-panel" aria-labelledby="generation-submit-title">
             <div className="section-title"><span id="generation-submit-title">计划 → 确认 → 提交真实任务</span><small>两阶段提交，不自动运行</small></div>

@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFrameAnchor, createGenerationIntent, createKeyframeCandidate, createPrompt, planGenerationVariant, submitGenerationVariant } from "../../generated/api";
 import { GenerationWorkbench } from "./GenerationWorkbench";
 
-vi.mock("../../generated/api", () => ({ createFrameAnchor: vi.fn(), createGenerationIntent: vi.fn(), createKeyframeCandidate: vi.fn(), createPrompt: vi.fn(), planGenerationVariant: vi.fn(), submitGenerationVariant: vi.fn(), listMotionControls: vi.fn().mockResolvedValue({ items: [] }), createMotionControl: vi.fn() }));
+vi.mock("../../generated/api", () => ({ createFrameAnchor: vi.fn(), createGenerationIntent: vi.fn(), createKeyframeCandidate: vi.fn(), createPrompt: vi.fn(), planGenerationVariant: vi.fn(), submitGenerationVariant: vi.fn(), listMotionControls: vi.fn().mockResolvedValue({ items: [] }), createMotionControl: vi.fn(), listProductionTiers: vi.fn().mockResolvedValue({ items: [{ code: "PRODUCTION", label: "正式成片", frames: 175, resolution: { "9:16": [480, 832], "16:9": [864, 480] }, denoise: 1.0, steps: 20, cfg: 1.0, default_takes: 8 }], default_tier: "DRAFT" }), getRef2VaCapability: vi.fn().mockResolvedValue({ capability: { capability: "H3_REF2VA_UNAVAILABLE", supported: false, reason: "manifest 缺少 ref2va 模型", manifest_hint: {} } }) }));
 
 const video = { media_version_id: "video-123456789", media_asset_id: "asset-1", project_id: "project-1", media_kind: "VIDEO", stage: "PROXY", decision: null, is_stale: null };
 
@@ -76,5 +76,23 @@ describe("GenerationWorkbench FrameAnchor actions", () => {
     await waitFor(() => expect(createKeyframeCandidate).toHaveBeenCalledWith("frame-1", "shot-1"));
     expect(openReviews).toHaveBeenCalledWith("keyframe-1");
     expect(screen.getByText(/不会自动选择或批准/)).toBeTruthy();
+  });
+
+  it("freezes the selected production tier as parameter_set metadata on the draft", async () => {
+    const profile = { id: "profile", code: "i2v", title: "本地 I2V", version_id: "profile-v1", capability: "I2V", status: "PUBLISHED" };
+    const cameraPlan = { mode: "NATIVE" as const, shot_type: "CLOSEUP", movement: "PUSH_IN", prompt_text: "", direction: "FORWARD", intensity: 0.5, curve: "LINEAR", profile_version_id: "profile-v1" };
+    const keyframe = { media_version_id: "keyframe-approved", media_asset_id: "asset-k", project_id: "project-1", media_kind: "IMAGE", stage: "KEYFRAME", decision: "APPROVED", is_stale: 0 };
+    vi.mocked(createGenerationIntent).mockResolvedValue({ intent: { id: "intent-1", project_id: "project-1", owner_type: "SHOT", owner_id: "shot-1", purpose: "I2V_PROXY", creative_goal: "slow turn" } });
+    vi.mocked(createPrompt).mockResolvedValue({ prompt: {}, revision: { id: "prompt-r1", prompt_id: "prompt-1", revision_no: 1, parent_revision_id: null, content_text: "slow turn", structured: {}, content_hash: "hash", status: "FROZEN" } });
+    vi.mocked(planGenerationVariant).mockResolvedValue({ plan: { intent_id: "intent-1", status: "READY", plan_hash: "a".repeat(64), recipe_hash: "b".repeat(64), dependencies: {}, would_persist_variant: false, would_create_job: false } });
+    vi.mocked(submitGenerationVariant).mockResolvedValue({ variant: { id: "variant-1", intent_id: "intent-1", variant_no: 1, variant_type: "BASE", parent_variant_id: null, recipe_hash: "b".repeat(64), status: "QUEUED", bindings: [] }, job: { id: "job-1", type: "GENERATION_VARIANT", project_id: "project-1", state: "QUEUED", channel: "GPU_H3", priority: 100, max_attempts: 1, revision: 1 } });
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(<QueryClientProvider client={client}><GenerationWorkbench projectId="project-1" profiles={[profile]} candidates={[video, keyframe]} shots={[{ id: "shot-1", code: "SH-001", status: "READY", current_revision: { camera_plan: cameraPlan } }]} selectedShotId="shot-1" onSelectShot={vi.fn()} onOpenProfiles={vi.fn()} /></QueryClientProvider>);
+    fireEvent.change(screen.getByLabelText("镜头 Prompt"), { target: { value: "slow turn" } });
+    fireEvent.change(screen.getByLabelText(/生产档位/), { target: { value: "PRODUCTION" } });
+    fireEvent.click(screen.getByRole("button", { name: "建立意图并执行只读生成预检" }));
+    await screen.findByText(/预检 READY，尚未创建 Job/);
+    fireEvent.click(screen.getByRole("button", { name: "确认创建 Variant 与 Job" }));
+    await waitFor(() => expect(submitGenerationVariant).toHaveBeenCalledWith(expect.objectContaining({ parameter_set: expect.objectContaining({ tier: "PRODUCTION", PROMPT: "slow turn" }) })));
   });
 });

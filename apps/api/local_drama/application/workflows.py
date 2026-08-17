@@ -29,6 +29,7 @@ TRUSTED_COMFY_BUILTINS = {
     "KSamplerSelect",
     "LoadImage",
     "MiniMaxH3ImageToVideo",
+    "MiniMaxH3ReferenceToVideo",
     "RandomNoise",
     "SamplerCustomAdvanced",
     "SaveImage",

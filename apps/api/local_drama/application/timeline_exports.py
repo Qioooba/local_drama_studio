@@ -51,8 +51,32 @@ def _edl_timecode(microseconds: int, nominal_fps: int) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}:{frames:02d}"
 
 
+def _video_probe_size(media: dict[str, Any]) -> tuple[int | None, int | None]:
+    """Best-effort pixel dimensions from the immutable ffprobe snapshot."""
+    probe = media.get("probe") or {}
+    video_stream: dict[str, Any] = next(
+        (stream for stream in probe.get("streams", []) if stream.get("codec_type") == "video"), {}
+    )
+    try:
+        return int(video_stream["width"]), int(video_stream["height"])
+    except (KeyError, TypeError, ValueError):
+        return None, None
+
+
 class TimelineExportService:
-    """Export a frozen timeline revision without mutating SQLite state."""
+    """Export a frozen timeline revision without mutating SQLite state.
+
+    Supported export formats:
+
+    * ``standard`` (default; aliases ``otio`` / ``edl``): the historical
+      OTIO + CMX 3600 EDL interchange package.  OTIO and EDL are always
+      written as a pair; the alias only selects the package flavour and is
+      kept for callers that ask for a specific interchange file.
+    * ``jianying``: a best-effort CapCut/Jianying ``draft_content.json``
+      package (community-reversed schema, see :meth:`_jianying`) with the
+      referenced media copied into the draft folder so the package is
+      self-contained and can be opened by the Jianying desktop app.
+    """
 
     def __init__(self, database: Database, settings: Settings) -> None:
         self.database = database
@@ -64,7 +88,7 @@ class TimelineExportService:
             revision = connection.execute(
                 """SELECT tr.id, tr.revision_no, tr.revision_hash, tr.status, e.id AS episode_id,
                 e.code AS episode_code, e.title AS episode_title, p.id AS project_id, p.root_rel,
-                p.fps_num, p.fps_den
+                p.fps_num, p.fps_den, p.width, p.height, p.aspect_ratio
                 FROM timeline_revisions tr JOIN episodes e ON e.id=tr.episode_id
                 JOIN seasons s ON s.id=e.season_id JOIN projects p ON p.id=s.project_id
                 WHERE tr.id=?""",
@@ -87,7 +111,7 @@ class TimelineExportService:
         for item in items:
             media_version_id = item["media_version_id"]
             if not media_version_id:
-                raise DomainRuleError("TIMELINE_EXPORT_MEDIA_REQUIRED", "OTIO/EDL 导出不接受无媒体的时间线 item")
+                raise DomainRuleError("TIMELINE_EXPORT_MEDIA_REQUIRED", "时间线导出不接受无媒体的时间线 item")
             media = self.media.verify_content_integrity(str(media_version_id))
             if media["project_id"] != revision["project_id"]:
                 raise DomainRuleError("MEDIA_PROJECT_MISMATCH", "导出媒体必须属于时间线项目")
@@ -219,7 +243,29 @@ class TimelineExportService:
         except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as error:
             raise DomainRuleError("TIMELINE_EXPORT_TAMPERED", "已有时间线导出不完整或已被修改，请保留现场并移走目录后重试") from error
 
-    def export_revision(self, timeline_revision_id: str) -> dict[str, Any]:
+    def export_revision(
+        self,
+        timeline_revision_id: str,
+        format: str = "standard",
+        subtitle_revision_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Export a frozen timeline revision in the requested format.
+
+        ``format`` accepts ``standard`` (default), ``otio`` and ``edl`` as
+        aliases of the historical OTIO+EDL package, plus ``jianying`` for the
+        CapCut/Jianying draft.  Unknown formats are rejected.
+        """
+        normalized_format = (format or "standard").lower()
+        if normalized_format in {"standard", "otio", "edl"}:
+            return self._export_standard(timeline_revision_id)
+        if normalized_format == "jianying":
+            return self._export_jianying(timeline_revision_id, subtitle_revision_id=subtitle_revision_id)
+        raise DomainRuleError(
+            "TIMELINE_EXPORT_FORMAT_UNSUPPORTED",
+            f"不支持的导出格式：{format}；支持 standard/otio/edl/jianying",
+        )
+
+    def _export_standard(self, timeline_revision_id: str) -> dict[str, Any]:
         revision, raw_items = self._snapshot(timeline_revision_id)
         if not revision["fps_num"] or not revision["fps_den"]:
             raise DomainRuleError("TIMELINE_FPS_REQUIRED", "项目必须显式配置 fps 才能导出 OTIO/EDL")
@@ -272,6 +318,254 @@ class TimelineExportService:
                 for path in (otio_path, edl_path)
             ]
             manifest = {**identity, "export_hash": export_hash, "files": files, "database_mutated": False}
+            (partial / "manifest.json").write_bytes(_canonical(manifest) + b"\n")
+            os.replace(partial, final)
+        except Exception:
+            shutil.rmtree(partial, ignore_errors=True)
+            raise
+        return self._result(project_root, final, manifest, reused=False)
+
+    def _subtitle_revision(self, revision: dict[str, Any], subtitle_revision_id: str) -> dict[str, Any]:
+        """Read a frozen subtitle revision (read-only) for the jianying text track."""
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT id, episode_id, revision_no, content_hash FROM subtitle_revisions WHERE id=?", (subtitle_revision_id,)
+            ).fetchone()
+            if row is None:
+                raise DomainRuleError("SUBTITLE_REVISION_NOT_FOUND", "字幕 revision 不存在")
+            if str(row["episode_id"]) != str(revision["episode_id"]):
+                raise DomainRuleError("SUBTITLE_EPISODE_MISMATCH", "剪映导出要求字幕 revision 与时间线属于同一集")
+            cue_rows = connection.execute(
+                "SELECT cue_no, start_us, end_us, text, style_json FROM subtitle_cues WHERE subtitle_revision_id=? ORDER BY cue_no",
+                (subtitle_revision_id,),
+            ).fetchall()
+        cues = [{**dict(cue), "style": json.loads(cue["style_json"])} for cue in cue_rows]
+        if not cues:
+            raise DomainRuleError("SUBTITLE_CUES_REQUIRED", "字幕 revision 没有可导出的 cue")
+        return {"id": str(row["id"]), "revision_no": int(row["revision_no"]), "content_hash": str(row["content_hash"]), "cues": cues}
+
+    @staticmethod
+    def _jianying(
+        revision: dict[str, Any],
+        items: list[dict[str, Any]],
+        subtitle: dict[str, Any] | None,
+        media_entries: dict[str, dict[str, Any]],
+        *,
+        draft_fold_path: str,
+        draft_name: str,
+    ) -> dict[str, Any]:
+        """Build a best-effort CapCut/Jianying ``draft_content.json``.
+
+        The Jianying draft layout is reverse-engineered from the community and
+        is NOT an official schema.  Field names follow the widely documented
+        ``draft_content.json`` shape (``canvas_config`` / ``materials`` /
+        ``tracks`` with per-segment ``target_timerange`` / ``source_timerange``)
+        and times are integer microseconds; media ``path`` values are relative
+        to the draft folder (``./media/...``).  Exact CapCut-version
+        compatibility must be verified on a real machine — treat this as
+        best-effort until then.
+        """
+        videos: list[dict[str, Any]] = []
+        audios: list[dict[str, Any]] = []
+        video_segments: list[dict[str, Any]] = []
+        audio_segments: list[dict[str, Any]] = []
+        duration_us = 0
+        for item in items:
+            track_type = str(item["track_type"]).upper()
+            entry = media_entries.get(str(item["media_version_id"]))
+            if entry is None:
+                raise DomainRuleError("TIMELINE_EXPORT_MEDIA_MAP_MISSING", "剪映导出缺少媒体映射")
+            start_us = int(item["start_us"])
+            end_us = int(item["end_us"])
+            duration_us = max(duration_us, end_us)
+            segment = {
+                "id": f"segment-{uuid.uuid4().hex[:24]}",
+                "material_id": entry["material_id"],
+                "target_timerange": {"start": start_us, "end": end_us},
+                "source_timerange": {"duration": int(item["duration_us"]), "start": int(item["source_start_us"])},
+            }
+            if track_type == "VIDEO":
+                video_segments.append(segment)
+            elif track_type == "AUDIO":
+                audio_segments.append(segment)
+            else:
+                raise DomainRuleError("TIMELINE_TRACK_TYPE_UNSUPPORTED", f"剪映导出不支持的轨道类型：{track_type}")
+        for entry in media_entries.values():
+            media = entry["media"]
+            material: dict[str, Any] = {
+                "id": entry["material_id"],
+                "path": entry["path"],
+                "duration": int(media["duration_ms"] or 0) * 1000,
+                "material_name": str(media["source_name"]),
+            }
+            if entry["kind"] == "video":
+                width, height = _video_probe_size(media)
+                if width is not None and height is not None:
+                    material["width"] = width
+                    material["height"] = height
+                videos.append(material)
+            else:
+                audios.append(material)
+        texts: list[dict[str, Any]] = []
+        text_segments: list[dict[str, Any]] = []
+        if subtitle is not None:
+            for cue in subtitle["cues"]:
+                material_id = f"text-{uuid.uuid4().hex[:24]}"
+                start_us = int(cue["start_us"])
+                end_us = int(cue["end_us"])
+                duration_us = max(duration_us, end_us)
+                style = cue.get("style")
+                texts.append(
+                    {
+                        "id": material_id,
+                        "content": str(cue["text"]),
+                        "style": style if isinstance(style, dict) else {},
+                        "time": {"start": start_us, "duration": end_us - start_us},
+                    }
+                )
+                text_segments.append(
+                    {
+                        "id": f"segment-{uuid.uuid4().hex[:24]}",
+                        "material_id": material_id,
+                        "target_timerange": {"start": start_us, "end": end_us},
+                        "source_timerange": {"duration": end_us - start_us},
+                    }
+                )
+        tracks: list[dict[str, Any]] = []
+        if video_segments:
+            tracks.append({"type": "video", "segments": video_segments})
+        if audio_segments:
+            tracks.append({"type": "audio", "segments": audio_segments})
+        if text_segments:
+            tracks.append({"type": "text", "segments": text_segments})
+        if not tracks:
+            raise DomainRuleError("TIMELINE_ITEMS_REQUIRED", "剪映导出至少需要一个可导出轨道")
+        fps_num = int(revision["fps_num"]) if revision["fps_num"] else None
+        fps_den = int(revision["fps_den"]) if revision["fps_den"] else None
+        canvas: dict[str, Any] = {
+            "width": int(revision["width"]) if revision["width"] else 0,
+            "height": int(revision["height"]) if revision["height"] else 0,
+            "ratio": str(revision.get("aspect_ratio") or ""),
+        }
+        if fps_num and fps_den:
+            canvas["fps"] = fps_num / fps_den
+        return {
+            "schema_version": "localdrama.jianying-draft.v1",
+            "best_effort": True,
+            "canvas_config": canvas,
+            "duration": duration_us,
+            "draft_fold_path": draft_fold_path,
+            "draft_name": draft_name,
+            "materials": {"videos": videos, "audios": audios, "texts": texts},
+            "tracks": tracks,
+            "localdrama": {
+                "schema": "localdrama.timeline-export.v1",
+                "writer_version": 3,
+                "timeline_revision_id": revision["id"],
+                "revision_hash": revision["revision_hash"],
+                "fps_num": fps_num,
+                "fps_den": fps_den,
+                "subtitle_revision_id": subtitle["id"] if subtitle is not None else None,
+                "subtitle_revision_hash": subtitle["content_hash"] if subtitle is not None else None,
+            },
+        }
+
+    def _export_jianying(self, timeline_revision_id: str, *, subtitle_revision_id: str | None = None) -> dict[str, Any]:
+        revision, raw_items = self._snapshot(timeline_revision_id)
+        fps_num = int(revision["fps_num"]) if revision["fps_num"] else None
+        fps_den = int(revision["fps_den"]) if revision["fps_den"] else None
+        items = self._verified_items(revision, raw_items)
+        subtitle = self._subtitle_revision(revision, subtitle_revision_id) if subtitle_revision_id else None
+        identity = {
+            "schema_version": "localdrama.timeline-export.v1",
+            "writer_version": 3,
+            "format": "jianying",
+            "timeline_revision_id": timeline_revision_id,
+            "revision_hash": revision["revision_hash"],
+            "fps_num": fps_num,
+            "fps_den": fps_den,
+            "subtitle_revision_id": subtitle["id"] if subtitle is not None else None,
+            "subtitle_revision_hash": subtitle["content_hash"] if subtitle is not None else None,
+            "items": [
+                {
+                    "id": item["id"],
+                    "media_version_id": item["media_version_id"],
+                    "media_sha256": item["media"]["sha256"],
+                    "start_us": item["start_us"],
+                    "end_us": item["end_us"],
+                    "source_start_us": item["source_start_us"],
+                }
+                for item in items
+            ],
+        }
+        export_hash = hashlib.sha256(_canonical(identity)).hexdigest()
+        project_root = (self.settings.projects_root / str(revision["root_rel"])).resolve()
+        if not project_root.is_relative_to(self.settings.projects_root.resolve()) or not project_root.is_dir() or project_root.is_symlink():
+            raise DomainRuleError("PROJECT_ROOT_INVALID", "项目根目录无效")
+        base = project_root / "05_timelines" / str(revision["episode_code"]) / "exports"
+        final = base / f'timeline-v{revision["revision_no"]}-{export_hash[:12]}'
+        if final.exists():
+            if not final.is_dir() or final.is_symlink():
+                raise DomainRuleError("TIMELINE_EXPORT_TAMPERED", "时间线导出目标不是安全目录")
+            manifest = self._verify_existing(final, export_hash)
+            return self._result(project_root, final, manifest, reused=True)
+        draft_name = f'{revision["episode_code"]}-v{revision["revision_no"]}'
+        draft_folder_name = f"{draft_name}.draft"
+        final_draft_dir = (final / draft_folder_name).resolve()
+        partial = base / f".timeline-export.partial-{uuid.uuid4().hex}"
+        try:
+            partial.mkdir(parents=True)
+            draft_dir = partial / draft_folder_name
+            media_dir = draft_dir / "media"
+            media_dir.mkdir(parents=True)
+            media_entries: dict[str, dict[str, Any]] = {}
+            for item in items:
+                media_version_id = str(item["media_version_id"])
+                if media_version_id in media_entries:
+                    continue
+                track_type = str(item["track_type"]).upper()
+                if track_type not in {"VIDEO", "AUDIO"}:
+                    raise DomainRuleError("TIMELINE_TRACK_TYPE_UNSUPPORTED", f"剪映导出不支持的轨道类型：{track_type}")
+                kind = "video" if track_type == "VIDEO" else "audio"
+                _, source_path = self.media.content_path(media_version_id)
+                suffix = Path(str(item["media"]["rel_path"])).suffix or ".bin"
+                filename = f"{kind}_{len(media_entries) + 1:02d}{suffix}"
+                media_entries[media_version_id] = {
+                    "kind": kind,
+                    "media": item["media"],
+                    "source_path": source_path,
+                    "filename": filename,
+                    "path": f"./media/{filename}",
+                    "material_id": f"material-{kind}-{uuid.uuid4().hex[:24]}",
+                    "manifest_rel_path": f"{draft_folder_name}/media/{filename}",
+                }
+            files: list[dict[str, Any]] = []
+            for entry in media_entries.values():
+                destination = media_dir / entry["filename"]
+                shutil.copy2(entry["source_path"], destination)
+                files.append(
+                    {"rel_path": entry["manifest_rel_path"], "byte_size": destination.stat().st_size, "sha256": _sha256(destination)}
+                )
+            draft = self._jianying(
+                revision,
+                items,
+                subtitle,
+                media_entries,
+                draft_fold_path=str(final_draft_dir),
+                draft_name=draft_name,
+            )
+            draft_path = draft_dir / "draft_content.json"
+            draft_path.write_bytes(_canonical(draft) + b"\n")
+            files.append(
+                {"rel_path": f"{draft_folder_name}/draft_content.json", "byte_size": draft_path.stat().st_size, "sha256": _sha256(draft_path)}
+            )
+            manifest = {
+                **identity,
+                "export_hash": export_hash,
+                "files": files,
+                "database_mutated": False,
+                "media_copy": "BUNDLED",
+            }
             (partial / "manifest.json").write_bytes(_canonical(manifest) + b"\n")
             os.replace(partial, final)
         except Exception:

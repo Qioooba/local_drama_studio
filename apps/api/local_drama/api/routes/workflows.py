@@ -13,7 +13,7 @@ from local_drama.api.schemas.workflows import (
 )
 from local_drama.application.comfy_jobs import ComfyGenerationService
 from local_drama.application.errors import api_error_from_domain
-from local_drama.application.h3_workflows import H3WorkflowFactory
+from local_drama.application.h3_workflows import H3WorkflowFactory, production_tiers_payload
 from local_drama.application.workflows import WorkflowService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.comfy import ComfyClient
@@ -53,6 +53,7 @@ async def register_h3_candidate(payload: H3CandidateWorkflowRequest, request: Re
             filename_prefix=payload.filename_prefix,
             sigma_points=payload.sigma_points,
             acceleration=payload.acceleration,
+            tier=payload.tier,
         )
         bindings = {
             "PROMPT": {"node_id": "8", "input": "prompt"},
@@ -81,6 +82,7 @@ async def register_h3_i2v_candidate(payload: H3I2VCandidateWorkflowRequest, requ
             filename_prefix=payload.filename_prefix,
             sigma_points=payload.sigma_points,
             acceleration=payload.acceleration,
+            tier=payload.tier,
         )
         bindings = {
             "FIRST_FRAME": {"node_id": "5", "input": "image"},
@@ -102,6 +104,21 @@ async def h3_candidate_runtime(request: Request) -> dict[str, object]:
     try:
         factory = H3WorkflowFactory(request.app.state.settings)
         return {"runtime": factory.runtime_layout(), "candidate_assets": factory.candidate_assets()}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/production-tiers", operation_id="listProductionTiers")
+async def production_tiers() -> dict[str, object]:
+    """P1-7: declared H3 production tiers for the GenerationControlPanel selector."""
+    return {"items": production_tiers_payload(), "default_tier": "DRAFT"}
+
+
+@router.get("/capabilities/ref2va", operation_id="getRef2VaCapability")
+async def ref2va_capability(request: Request) -> dict[str, object]:
+    """P1-8: Ref2V capability bit (manifest-backed); UI greys the slot when unsupported."""
+    try:
+        return {"capability": H3WorkflowFactory(request.app.state.settings).ref2va_capability()}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

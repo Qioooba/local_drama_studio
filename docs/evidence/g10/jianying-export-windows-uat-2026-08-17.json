@@ -1,0 +1,20 @@
+{
+  "schema_version": "g11.jianying-export-windows-uat.v1",
+  "observed_at": "2026-08-17T16:12:58.261Z",
+  "mode": "LOCAL_ONLY",
+  "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+  "episode_id": "d4db1033-9517-4bd0-958d-4228e0abead1",
+  "status": "PASS",
+  "isolated_snapshot": true,
+  "production_database_touched": false,
+  "runtime_contacted": false,
+  "network_contacted": false,
+  "steps": [
+    "real timeline revision v4 created with verified video b6b102ad-d344-45aa-801b-80cddbb297cd",
+    "Jianying draft exported through the panel button",
+    "API: export package verified with draft_content.json + bundled media (2 files)",
+    "zero console errors / zero failed responses"
+  ],
+  "errors": [],
+  "interpretation": "G11 P1-10 Jianying draft export real-click UAT: a real timeline revision referencing a verified VIDEO media version is exported through the TimelineExportAction panel; the export package contains draft_content.json with video tracks/segments and the bundled media copy."
+}
