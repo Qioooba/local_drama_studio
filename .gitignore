@@ -42,8 +42,10 @@ apps/web/screenshots/
 test-ui-audit/
 test-results/
 minimax-ui-test/
+deepseek-ui-audit/
 .pytest_tmp*/
 .pt8c/
 tmp_*/
+
 
 
