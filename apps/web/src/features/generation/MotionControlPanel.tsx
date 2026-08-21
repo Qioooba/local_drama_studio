@@ -52,7 +52,7 @@ export function MotionControlPanel({ sourceMediaVersionId, profileVersionId }: P
     <div className="field-grid">
       <label>控制类型<select value={kind} onChange={(event) => setKind(event.target.value as MotionControlRequest["control_kind"])}><option value="MOTION_MASK">MOTION_MASK</option><option value="VECTOR">VECTOR</option><option value="KEYFRAME">KEYFRAME</option></select></label>
       <label>能力槽<select value={operation} onChange={(event) => setOperation(event.target.value as MotionControlRequest["operation"])}><option value="MOTION_BRUSH">MOTION_BRUSH</option><option value="INPAINT">INPAINT</option><option value="OUTPAINT">OUTPAINT</option></select></label>
-      <label>subject role<input value={subjectRole} onChange={(event) => setSubjectRole(event.target.value)} /></label>
+      <label>主体角色<input value={subjectRole} onChange={(event) => setSubjectRole(event.target.value)} /></label>
       {kind === "MOTION_MASK" && <label>现有 mask MediaVersion（可选）<input value={maskMediaVersionId} onChange={(event) => setMaskMediaVersionId(event.target.value)} placeholder="仅引用本机已注册版本" /></label>}
       {kind === "KEYFRAME" && <label>keyframe MediaVersion<input value={keyframeMediaVersionId} onChange={(event) => setKeyframeMediaVersionId(event.target.value)} placeholder="仅引用本机已注册 IMAGE 版本" required /></label>}
       <label>运动笔刷 vector JSON<textarea value={vectorJson} onChange={(event) => setVectorJson(event.target.value)} spellCheck={false} /></label>

@@ -12,7 +12,7 @@ vi.mock("../../generated/api", () => ({
 
 const items = [
   { media_version_id: "old", media_asset_id: "asset-old", project_id: "p1", project_code: "alpha", episode_id: "e1", episode_code: "E01", media_kind: "IMAGE", stage: "KEYFRAME", decision: null, is_stale: 0, age_hours: 240, priority: "HIGH", is_blocked: 1 },
-  { media_version_id: "fresh", media_asset_id: "asset-fresh", project_id: "p2", project_code: "beta", episode_id: "e2", episode_code: "E02", media_kind: "VIDEO", stage: "PROXY", decision: null, is_stale: 0, age_hours: 2, priority: "NORMAL", is_blocked: 0 },
+  { media_version_id: "fresh", media_asset_id: "asset-fresh", project_id: "p2", project_code: "beta", episode_id: "e2", episode_code: "E02", shot_id: "shot-12", shot_code: "S12", media_kind: "VIDEO", stage: "PROXY", decision: null, is_stale: 0, age_hours: 2, priority: "NORMAL", is_blocked: 0 },
   { media_version_id: "stale", media_asset_id: "asset-stale", project_id: "p2", project_code: "beta", episode_id: "e2", episode_code: "E02", media_kind: "AUDIO", stage: "IMPORTED", decision: "REJECTED", is_stale: 1, age_hours: 48, priority: "HIGH", is_blocked: 1 },
 ] as never[];
 
@@ -41,6 +41,8 @@ describe("ReviewInboxPanel filters", () => {
     const renderResult = render(<ReviewInboxPanel items={items} templates={[]} selectedVersionId={selected} context={undefined} onSelect={onSelect} onPromote={vi.fn()} selecting={false} onMachineCheck={vi.fn()} machineChecking={false} machineCheckError={null} onSubmit={vi.fn()} submitting={false} submitError={null} submitSucceeded={false} />);
     rerenderPanel = () => renderResult.rerender(<ReviewInboxPanel items={items} templates={[]} selectedVersionId={selected} context={undefined} onSelect={onSelect} onPromote={vi.fn()} selecting={false} machineChecking={false} machineCheckError={null} onMachineCheck={vi.fn()} onSubmit={vi.fn()} submitting={false} submitError={null} submitSucceeded={false} />);
     const selectedButton = screen.getByRole("button", { name: /PROXY · VIDEO/ });
+    expect(selectedButton.textContent).toContain("S12 · PROXY · VIDEO");
+    expect(selectedButton.textContent).not.toContain("fresh");
     expect(selectedButton.getAttribute("aria-current")).toBe("true");
     fireEvent.keyDown(selectedButton, { key: "ArrowLeft" });
     expect(onSelect).toHaveBeenCalledWith("old");

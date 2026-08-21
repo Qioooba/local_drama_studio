@@ -1,0 +1,307 @@
+{
+  "schema_version": "localdrama.competitor-evidence.v1",
+  "product": "minimax",
+  "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+  "image_count": 42,
+  "contact_sheets": [
+    "contact-sheet-evidence-01.jpg",
+    "contact-sheet-evidence-02.jpg",
+    "contact-sheet-evidence-03.jpg"
+  ],
+  "images": [
+    {
+      "file": "01_official_hero_desktop_interface.webp",
+      "width": 3072,
+      "height": 1639,
+      "bytes": 196842,
+      "thumbnail": "thumbs-evidence/01_official_hero_desktop_interface-d4dad61f.jpg"
+    },
+    {
+      "file": "02_official_step_agent_mode_background.webp",
+      "width": 790,
+      "height": 446,
+      "bytes": 698,
+      "thumbnail": "thumbs-evidence/02_official_step_agent_mode_background-2885dab6.jpg"
+    },
+    {
+      "file": "03_official_step_canvas_flow_background.webp",
+      "width": 790,
+      "height": 446,
+      "bytes": 698,
+      "thumbnail": "thumbs-evidence/03_official_step_canvas_flow_background-885301eb.jpg"
+    },
+    {
+      "file": "04_official_step_skill_ready_background.webp",
+      "width": 790,
+      "height": 446,
+      "bytes": 698,
+      "thumbnail": "thumbs-evidence/04_official_step_skill_ready_background-43ffda64.jpg"
+    },
+    {
+      "file": "05_official_step_local_index_background.webp",
+      "width": 790,
+      "height": 446,
+      "bytes": 698,
+      "thumbnail": "thumbs-evidence/05_official_step_local_index_background-ed6362ee.jpg"
+    },
+    {
+      "file": "06_official_step_output_sync_background.webp",
+      "width": 790,
+      "height": 446,
+      "bytes": 698,
+      "thumbnail": "thumbs-evidence/06_official_step_output_sync_background-5c6c503e.jpg"
+    },
+    {
+      "file": "07_official_agent_mode_composite.png",
+      "width": 790,
+      "height": 446,
+      "bytes": 166495,
+      "thumbnail": "thumbs-evidence/07_official_agent_mode_composite-63e7dbe0.jpg"
+    },
+    {
+      "file": "08_official_canvas_flow_composite.png",
+      "width": 790,
+      "height": 446,
+      "bytes": 343739,
+      "thumbnail": "thumbs-evidence/08_official_canvas_flow_composite-d157f345.jpg"
+    },
+    {
+      "file": "09_official_skill_ready_composite.png",
+      "width": 790,
+      "height": 446,
+      "bytes": 152639,
+      "thumbnail": "thumbs-evidence/09_official_skill_ready_composite-b81cbe2b.jpg"
+    },
+    {
+      "file": "10_official_local_index_composite.png",
+      "width": 790,
+      "height": 446,
+      "bytes": 109847,
+      "thumbnail": "thumbs-evidence/10_official_local_index_composite-cc58982a.jpg"
+    },
+    {
+      "file": "11_official_output_sync_composite.png",
+      "width": 790,
+      "height": 446,
+      "bytes": 188986,
+      "thumbnail": "thumbs-evidence/11_official_output_sync_composite-224d4010.jpg"
+    },
+    {
+      "file": "12_official_manual_basic_interface_a.png",
+      "width": 778,
+      "height": 388,
+      "bytes": 29184,
+      "thumbnail": "thumbs-evidence/12_official_manual_basic_interface_a-2f2ce611.jpg"
+    },
+    {
+      "file": "13_official_manual_basic_interface_b.png",
+      "width": 1280,
+      "height": 672,
+      "bytes": 559143,
+      "thumbnail": "thumbs-evidence/13_official_manual_basic_interface_b-8298c69a.jpg"
+    },
+    {
+      "file": "14_official_manual_basic_interface_c.png",
+      "width": 1280,
+      "height": 692,
+      "bytes": 381734,
+      "thumbnail": "thumbs-evidence/14_official_manual_basic_interface_c-654f9da0.jpg"
+    },
+    {
+      "file": "15_official_weibo_v110_features_3d_director_a.jpg",
+      "width": 1800,
+      "height": 2400,
+      "bytes": 1472672,
+      "thumbnail": "thumbs-evidence/15_official_weibo_v110_features_3d_director_a-5b536db1.jpg"
+    },
+    {
+      "file": "16_official_weibo_v110_features_3d_director_b.jpg",
+      "width": 1800,
+      "height": 2400,
+      "bytes": 1071453,
+      "thumbnail": "thumbs-evidence/16_official_weibo_v110_features_3d_director_b-677192fc.jpg"
+    },
+    {
+      "file": "17_official_design_v3_overview_a.jpg",
+      "width": 1080,
+      "height": 1440,
+      "bytes": 357335,
+      "thumbnail": "thumbs-evidence/17_official_design_v3_overview_a-7538c4f3.jpg"
+    },
+    {
+      "file": "18_official_design_v3_overview_b.jpg",
+      "width": 1080,
+      "height": 1440,
+      "bytes": 304175,
+      "thumbnail": "thumbs-evidence/18_official_design_v3_overview_b-80f1c71d.jpg"
+    },
+    {
+      "file": "19_appsso_sample_motion_graphic.jpg",
+      "width": 1024,
+      "height": 577,
+      "bytes": 147491,
+      "thumbnail": "thumbs-evidence/19_appsso_sample_motion_graphic-c8948d39.jpg"
+    },
+    {
+      "file": "20_appsso_sample_chinese_wonderland.jpg",
+      "width": 1024,
+      "height": 566,
+      "bytes": 110931,
+      "thumbnail": "thumbs-evidence/20_appsso_sample_chinese_wonderland-65e5d71a.jpg"
+    },
+    {
+      "file": "21_appsso_workspace_h3_playground.jpg",
+      "width": 1024,
+      "height": 590,
+      "bytes": 124885,
+      "thumbnail": "thumbs-evidence/21_appsso_workspace_h3_playground-7d4966d4.jpg"
+    },
+    {
+      "file": "22_appsso_3d_director_empty_workspace.jpg",
+      "width": 1024,
+      "height": 590,
+      "bytes": 100664,
+      "thumbnail": "thumbs-evidence/22_appsso_3d_director_empty_workspace-4c37eaed.jpg"
+    },
+    {
+      "file": "23_appsso_skill_marketplace.jpg",
+      "width": 1024,
+      "height": 590,
+      "bytes": 201724,
+      "thumbnail": "thumbs-evidence/23_appsso_skill_marketplace-80629c48.jpg"
+    },
+    {
+      "file": "24_appsso_sample_director_grassland.jpg",
+      "width": 1024,
+      "height": 570,
+      "bytes": 131406,
+      "thumbnail": "thumbs-evidence/24_appsso_sample_director_grassland-8329a203.jpg"
+    },
+    {
+      "file": "25_appsso_agent_brief_approval_gate.jpg",
+      "width": 1024,
+      "height": 590,
+      "bytes": 148732,
+      "thumbnail": "thumbs-evidence/25_appsso_agent_brief_approval_gate-2d5594e1.jpg"
+    },
+    {
+      "file": "26_appsso_add_node_menu.jpg",
+      "width": 944,
+      "height": 1016,
+      "bytes": 72579,
+      "thumbnail": "thumbs-evidence/26_appsso_add_node_menu-7099ac22.jpg"
+    },
+    {
+      "file": "27_appsso_product_ad_node_generation.jpg",
+      "width": 1024,
+      "height": 590,
+      "bytes": 162261,
+      "thumbnail": "thumbs-evidence/27_appsso_product_ad_node_generation-84482cf4.jpg"
+    },
+    {
+      "file": "28_appsso_3d_director_timeline_scene.jpg",
+      "width": 1024,
+      "height": 642,
+      "bytes": 138642,
+      "thumbnail": "thumbs-evidence/28_appsso_3d_director_timeline_scene-bf807de5.jpg"
+    },
+    {
+      "file": "29_appsso_sample_motion_record.jpg",
+      "width": 1024,
+      "height": 567,
+      "bytes": 91442,
+      "thumbnail": "thumbs-evidence/29_appsso_sample_motion_record-c15d6247.jpg"
+    },
+    {
+      "file": "30_appsso_sample_short_drama.jpg",
+      "width": 1024,
+      "height": 570,
+      "bytes": 144678,
+      "thumbnail": "thumbs-evidence/30_appsso_sample_short_drama-ba10b757.jpg"
+    },
+    {
+      "file": "31_appsso_mv_parallel_canvas_workflow.jpg",
+      "width": 1024,
+      "height": 590,
+      "bytes": 113598,
+      "thumbnail": "thumbs-evidence/31_appsso_mv_parallel_canvas_workflow-8a5eb6d6.jpg"
+    },
+    {
+      "file": "32_appsso_sample_paper_collage_story.jpg",
+      "width": 1024,
+      "height": 574,
+      "bytes": 243575,
+      "thumbnail": "thumbs-evidence/32_appsso_sample_paper_collage_story-b188d349.jpg"
+    },
+    {
+      "file": "33_appsso_sample_paper_collage_explainer.jpg",
+      "width": 1024,
+      "height": 568,
+      "bytes": 81426,
+      "thumbnail": "thumbs-evidence/33_appsso_sample_paper_collage_explainer-cd78cb09.jpg"
+    },
+    {
+      "file": "34_appsso_h3_video_generation_node.jpg",
+      "width": 1024,
+      "height": 590,
+      "bytes": 177944,
+      "thumbnail": "thumbs-evidence/34_appsso_h3_video_generation_node-a38e4363.jpg"
+    },
+    {
+      "file": "35_appsso_sample_animation_explainer.jpg",
+      "width": 1024,
+      "height": 573,
+      "bytes": 96107,
+      "thumbnail": "thumbs-evidence/35_appsso_sample_animation_explainer-b45d3041.jpg"
+    },
+    {
+      "file": "36_appsso_sample_ink_video.jpg",
+      "width": 1024,
+      "height": 567,
+      "bytes": 125403,
+      "thumbnail": "thumbs-evidence/36_appsso_sample_ink_video-3750792f.jpg"
+    },
+    {
+      "file": "37_appsso_course_video_grid.jpg",
+      "width": 1024,
+      "height": 590,
+      "bytes": 207539,
+      "thumbnail": "thumbs-evidence/37_appsso_course_video_grid-82b8901c.jpg"
+    },
+    {
+      "file": "38_appsso_product_ad_graph_workflow.jpg",
+      "width": 1024,
+      "height": 590,
+      "bytes": 153314,
+      "thumbnail": "thumbs-evidence/38_appsso_product_ad_graph_workflow-99e421ad.jpg"
+    },
+    {
+      "file": "39_appsso_sample_product_video_a.jpg",
+      "width": 1024,
+      "height": 567,
+      "bytes": 44473,
+      "thumbnail": "thumbs-evidence/39_appsso_sample_product_video_a-eb51b244.jpg"
+    },
+    {
+      "file": "40_appsso_sample_product_video_b.jpg",
+      "width": 1024,
+      "height": 567,
+      "bytes": 131633,
+      "thumbnail": "thumbs-evidence/40_appsso_sample_product_video_b-2776bc90.jpg"
+    },
+    {
+      "file": "41_appsso_video_editor_timeline.jpg",
+      "width": 1024,
+      "height": 590,
+      "bytes": 119757,
+      "thumbnail": "thumbs-evidence/41_appsso_video_editor_timeline-c8ddae77.jpg"
+    },
+    {
+      "file": "42_appsso_skill_workflow_agent_panel.jpg",
+      "width": 1024,
+      "height": 590,
+      "bytes": 113663,
+      "thumbnail": "thumbs-evidence/42_appsso_skill_workflow_agent_panel-8f844e87.jpg"
+    }
+  ]
+}

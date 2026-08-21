@@ -15,7 +15,7 @@ release_status: FINAL
 
 1. 停止由 `runtime/api.pid.json` 追踪的 API 进程，不停止用户未授权的 ComfyUI 工作。
 2. 将 `data/local_drama.sqlite3` 复制到受控 `backups/`，记录 SHA-256 与 `PRAGMA integrity_check`。
-3. 更新代码与锁文件，在离线环境运行 `scripts/migrate.py --database data/local_drama.sqlite3`。
+3. 检查 `docs/release/migration-contract.json`，更新代码与锁文件，在离线环境运行 `scripts/migrate.py --database data/local_drama.sqlite3`；实际 head 必须等于 contract 的唯一 `expected_heads`。
 4. 运行 `scripts/check.ps1`、本地 UAT 和 `scripts/release_audit.py`；只有审计明确 PASS 才能进入正式评审。
 
 ## 回滚
@@ -23,7 +23,27 @@ release_status: FINAL
 1. 停止 LocalDramaStudio API/Worker，保留当前数据库与审计日志。
 2. 从指定备份复制回 `data/local_drama.sqlite3`，再次执行 `PRAGMA integrity_check`，不得删除历史备份。
 3. 检出与备份对应的代码 commit，重新运行 `scripts/start.ps1`；不得对数据库执行未经评审的降级 migration。
-4. 验证 migration head=`0039_automation_task_jobs`、G7/G8/G9 readiness、API/Web 回归和 LOCAL_ONLY 连接状态。
+4. 验证恢复库 migration revision 等于备份时记录的 revision，并验证 G7/G8/G9 readiness、API/Web 回归和 LOCAL_ONLY 连接状态。只有重新升级的隔离副本才必须等于 `migration-contract.json.expected_heads`。
+
+### V2 UI 安全降级（不回滚数据库）
+
+Director Desk、Asset Bible、Episode Agent Run 保留三项本地安全开关：
+
+- `VITE_DIRECTOR_DESK_V2=false`
+- `VITE_ASSET_BIBLE_V2=false`
+- `VITE_EPISODE_AGENT_RUN_V2=false`
+
+构建时显式设为 `false` 会将对应深链降级到仍保留上下文的 V2 项目或分集规划页，不会加载已退役的旧 Shell，也不会写入 `legacy=1`。UAT 也可在浏览器 localStorage 的 `local-drama.feature-flags.v2` JSON 中设置同名布尔值；清除该键恢复默认开启。开关只控制页面可达性，不修改、降级或伪造数据库事实。
+
+### P12 退役硬门禁
+
+发布评审必须运行 `python scripts/p12_decommission_readiness.py --require-ready`。报告中的 `BLOCKED` 不是可豁免的 UAT 待办；以下任一条件都会以非零状态退出，禁止宣称 legacy 已退役：
+
+- `main.tsx`、`router.tsx` 或 `legacyRoute.tsx` 以静态或动态 import 引用 `App.tsx`；
+- V2 的 `/` 根路由沿实际 import 链仍能挂载 legacy shell；
+- 旧 `?view=` 重定向没有显式携带传入的 project / episode / shot 上下文。
+
+`DEFERRED` 仅表示入口硬约束已通过、但旧 surface/API caller 或三份已批准 UAT 证据仍未清零。报告的 `app_exclusive_components` 会列出只被旧 Shell 调用的组件及其真实生产 caller；这些组件必须逐项迁移或确认删除，不能因文件存在但无人审计而视作完成。该脚本全程只读，不会删除路由、组件、API 或数据库事实。当前 V2 Router/AppShell 是唯一 Web 入口，旧 `App.tsx` 已退出源码树。
 
 ## 支持边界
 
@@ -32,7 +52,11 @@ release_status: FINAL
 - 用户模型通过页面选择本机绝对路径，平台只保存引用和 hash，不复制、上传或卸载模型。
 - 回滚采用数据库备份加匹配代码版本，不执行破坏性的 downgrade migration。
 
-## 已完成的隔离演练（2026-08-15）
+## 当前 0044–0048 操作入口
+
+升级/备份/恢复和 Project Package 兼容检查见 `docs/release/migrations-0044-0048.md`。版本由 `migration-contract.json` 与 Alembic graph 的自动测试约束；不得复制下节旧证据文件名作为当前 release PASS。
+
+## 历史隔离演练（2026-08-15/16，仅为当时版本证据）
 
 已将 `backups/pre_migration_20260814T193026Z.sqlite3` 复制到受控临时目录，执行
 `0020_g7_model_license_evidence → 0021_g10_scale_read_indexes` 的 Alembic

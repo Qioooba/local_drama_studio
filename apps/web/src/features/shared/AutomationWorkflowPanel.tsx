@@ -102,7 +102,7 @@ export function AutomationWorkflowPanel({ projectId }: { projectId: string }) {
   });
   return <>
     <section className="panel automation-template-panel" aria-labelledby="automation-template-title">
-      <div className="panel-heading"><div><p className="eyebrow">G11 · P0-4 WHOLE_DRAMA</p><h3 id="automation-template-title">整剧一键编排</h3></div><span className="status-pill neutral">BATCH_AUTOMATED · LOCAL ONLY</span></div>
+      <div className="panel-heading"><div><p className="eyebrow">G11 · P0-4 整剧编排</p><h3 id="automation-template-title">整剧一键编排</h3></div><span className="status-pill neutral">批量自动化 · 仅本地</span></div>
       <p className="muted">内置流水线模板：按集顺序执行 关键帧确认 → 整集批量 TTS → 渲染成片 → 构建交付包。字幕不在 v1 模板内（自动化字幕无法保证逐字匹配剧本权威）。关键帧缺失或机器检查失败时 run 会自动暂停，等待人工处理后再继续。</p>
       <div className="field-grid">
         <label>模板
@@ -120,9 +120,9 @@ export function AutomationWorkflowPanel({ projectId }: { projectId: string }) {
       {templateWorkflowId && <p className="review-success" role="status">已创建整剧编排 workflow：{templateWorkflowId}；请使用下方按钮读取并冻结 plan 后启动 run。</p>}
     </section>
     <section className="panel automation-workflow-panel" aria-labelledby="automation-workflow-title">
-      <div className="panel-heading"><div><p className="eyebrow">FR-AUT-001 · DECLARATIVE HITL</p><h3 id="automation-workflow-title">有限流程与人工暂停</h3></div><span className="status-pill neutral">BOUNDED · LOCAL ONLY</span></div>
+      <div className="panel-heading"><div><p className="eyebrow">FR-AUT-001 · 声明式人工闸门</p><h3 id="automation-workflow-title">有限流程与人工暂停</h3></div><span className="status-pill neutral">有界 · 仅本地</span></div>
       <p className="muted">流程只接受声明式节点、结构化机器检查和有限批次。max_iterations、max_tasks、max_disk_bytes 在 SQLite run 中持久化；AI 评分永远不能替代正式人工批准。</p>
-      <div className="field-grid"><label>Workflow code<input value={code} onChange={(event) => setCode(event.target.value)} /></label><label>标题<input value={title} onChange={(event) => setTitle(event.target.value)} /></label></div>
+      <div className="field-grid"><label>工作流代码<input value={code} onChange={(event) => setCode(event.target.value)} /></label><label>标题<input value={title} onChange={(event) => setTitle(event.target.value)} /></label></div>
       <div className="button-row"><button className="secondary" type="button" onClick={create} disabled={busy || !code.trim() || !title.trim()}>创建声明式 workflow</button><button className="secondary" type="button" onClick={plan} disabled={busy || !workflowId}>读取并冻结 plan</button><button className="primary-action" type="button" onClick={start} disabled={busy || !workflowId || !planHash}>启动 run</button></div>
       {run && <div className="review-meta"><span>状态：{run.status}</span><span>迭代：{run.iteration_count}</span><span>任务：{run.task_count}</span><span>磁盘：{run.disk_bytes} / {run.limits.max_disk_bytes}</span><span>人工：{run.human_approval_status}</span></div>}
       {run && <div className="button-row"><button className="secondary" type="button" onClick={step} disabled={busy || run.status !== "RUNNING"}>执行一步</button><button className="secondary" type="button" onClick={() => resume("HUMAN_APPROVED")} disabled={busy || run.status !== "PAUSED_HITL"}>人工批准并继续</button><button className="secondary" type="button" onClick={() => resume("HUMAN_REJECTED")} disabled={busy || run.status !== "PAUSED_HITL"}>人工拒绝</button><button className="secondary" type="button" onClick={cancel} disabled={busy || !["RUNNING", "PAUSED_HITL"].includes(run.status)}>取消 run</button></div>}

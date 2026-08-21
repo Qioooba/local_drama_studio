@@ -1,25 +1,26 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { applyScriptBreakdownDraft, listEpisodes, listScriptBreakdownDrafts, listSeasons } from "../../generated/api";
+import { queryKeys } from "../../query/queryKeys";
 
 export function AIDraftReviewPanel({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
-  const drafts = useQuery({ queryKey: ["script-breakdown-drafts", projectId], queryFn: () => listScriptBreakdownDrafts(projectId) });
-  const seasons = useQuery({ queryKey: ["seasons", projectId], queryFn: () => listSeasons(projectId) });
+  const drafts = useQuery({ queryKey: queryKeys.scriptBreakdown.all(projectId), queryFn: () => listScriptBreakdownDrafts(projectId) });
+  const seasons = useQuery({ queryKey: queryKeys.seasons.list(projectId), queryFn: () => listSeasons(projectId) });
   const firstSeasonId = seasons.data?.items?.[0]?.id;
-  const episodes = useQuery({ queryKey: ["episodes", projectId, firstSeasonId ?? "none"], queryFn: () => listEpisodes(firstSeasonId as string), enabled: Boolean(firstSeasonId) });
+  const episodes = useQuery({ queryKey: queryKeys.episodes.list(firstSeasonId as string), queryFn: () => listEpisodes(firstSeasonId as string), enabled: Boolean(firstSeasonId) });
   const defaultEpisodeId = episodes.data?.items?.[0]?.id;
   const [selectedEpisode, setSelectedEpisode] = useState<Record<string, string>>({});
   const apply = useMutation({
     mutationFn: ({ draftId, episodeId }: { draftId: string; episodeId: string }) => applyScriptBreakdownDraft(draftId, { episode_id: episodeId }),
-    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ["script-breakdown-drafts", projectId] }); },
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: queryKeys.scriptBreakdown.all(projectId) }); },
   });
 
   return <section className="ai-draft-panel" aria-labelledby="ai-draft-title">
-    <div className="panel-heading"><div><p className="eyebrow">FR-WRT-007 · local LLM drafts</p><h3 id="ai-draft-title">AI 辅助提取草稿</h3></div><span className="status-pill">{drafts.data?.items.length ?? 0} 份</span></div>
+    <div className="panel-heading"><div><p className="eyebrow">FR-WRT-007 · 本地 LLM 草稿</p><h3 id="ai-draft-title">AI 辅助提取草稿</h3></div><span className="status-pill">{drafts.data?.items.length ?? 0} 份</span></div>
     <p className="review-guidance">模型输出只保存为 DRAFT_READY；不会自动创建或覆盖母本场次、镜头或创作资料。采纳必须由后续显式人工流程完成。</p>
     {drafts.isPending && <p className="empty-state">正在读取本地草稿…</p>}
-    {drafts.error && <p className="inline-error" role="alert">{String(drafts.error)}</p>}
+    {drafts.error && <div className="query-error-actions"><p className="inline-error" role="alert">{String(drafts.error)}</p><button type="button" className="secondary" onClick={() => void drafts.refetch()} disabled={drafts.isFetching}>{drafts.isFetching ? "正在重试…" : "重新读取草稿"}</button></div>}
     <div className="ai-draft-list">{drafts.data?.items.map((item) => {
       const scenes = Array.isArray(item.draft.scenes) ? item.draft.scenes : [];
       const shots = scenes.reduce((count, scene) => count + (Array.isArray(scene.shots) ? scene.shots.length : 0), 0);

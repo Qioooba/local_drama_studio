@@ -155,7 +155,7 @@ def test_local_llm_is_loopback_only_and_never_fakes_breakdown(workspace, databas
     with database.connect() as connection:
         row = connection.execute("SELECT status, capability FROM execution_profile_versions WHERE id=?", (candidate["profile_version_id"],)).fetchone()
     assert row["status"] == candidate["status"]
-    assert row["capability"] == "SCRIPT_BREAKDOWN_LLM"
+    assert row["capability"] == "LLM_STORY_PARSE"
 
 
 def test_local_llm_parser_accepts_real_reasoning_fence_and_array_shape() -> None:

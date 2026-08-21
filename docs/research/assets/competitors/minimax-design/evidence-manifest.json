@@ -1,0 +1,18 @@
+{
+  "schema_version": "localdrama.competitor-evidence.v1",
+  "product": "minimax-design",
+  "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+  "image_count": 1,
+  "contact_sheets": [
+    "contact-sheet-evidence-01.jpg"
+  ],
+  "images": [
+    {
+      "file": "official-home-h3-modal-2026-08-21.png",
+      "width": 1265,
+      "height": 712,
+      "bytes": 86431,
+      "thumbnail": "thumbs-evidence/official-home-h3-modal-2026-08-21-f3607698.jpg"
+    }
+  ]
+}

@@ -13,7 +13,7 @@ from local_drama.domain.generation import VariantPlan
 def test_confirmed_variant_and_gpu_job_are_atomic(workspace, database) -> None:
     # Reuse the published profile fixture pattern through the manifest candidate,
     # then bind a minimal published workflow contract in the isolated database.
-    profile = next(item for item in ProfileService(database, workspace.manifest_path).sync_manifest()["profiles"] if item["capability"] == "T2V")
+    profile = next(item for item in ProfileService(database, workspace.manifest_path).sync_manifest()["profiles"] if item["capability"] == "VIDEO_T2V")
     with database.transaction() as connection:
         project_id = connection.execute("SELECT id FROM projects LIMIT 1").fetchone()
     if project_id is None:

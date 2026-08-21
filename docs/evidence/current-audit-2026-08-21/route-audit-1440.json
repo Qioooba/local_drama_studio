@@ -1,0 +1,448 @@
+{
+  "observedAt": "2026-08-21T07:50:11.332Z",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "routes": [
+    {
+      "name": "projects",
+      "path": "/projects",
+      "durationMs": 1046,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n\n选择项目后显示资产圣经与分集生产导航。\n\n进入具体分集后显示策划、导演、审核、声音、时间线与交付。\n\n系统区\n本地任务持续运行\n关闭浏览器不会中断 Worker\n\n项目工作区\n\n从一个项目继续创作\n\n选择现有项目继续下一步，或创建一个新的本地项目。\n\n新建项目\n搜索项目\n项目状态\n全部状态\n生产中\n待配置\n已暂停\n已归档\n最近项目\n按最近更新排序\n待配置\n修订 1\ndirector_pydantic\n\ndirector_pydantic\n\n完成项目设定\n待配置\n修订 2\nG2 smoke 2\n\ng2_smoke2\n\n完成项目设定\n待配置\n修订 1\nG2 smoke\n\ng2_smoke\n\n完成项目设定",
+      "clientWidth": 1440,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [
+        "从一个项目继续创作"
+      ],
+      "href": "http://127.0.0.1:5173/projects",
+      "scrollHeight": 900,
+      "scrollWidth": 1440,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    },
+    {
+      "name": "project-home",
+      "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+      "durationMs": 1031,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n项目总览\n故事\n资产圣经\nQC 策略\n导演配方\n生产设置\n工具区\n高级画布\n素材实验室\n项目维护\n\n进入具体分集后显示策划、导演、审核、声音、时间线与交付。\n\n系统区\n本地任务持续运行\n关闭浏览器不会中断 Worker\n\n项目总览\n\n项目加载中…\n\n按目标开始\n\n你现在想从哪里继续？\n目标分集：尚无分集\n原文\n导入小说 / 剧本\n\n下一步：为 尚无分集 核对原文权威并预览 AI 拆解。\n\n先创建季度与分集后可用\n分集\n继续未完成分集\n\n下一步：从 尚无分集 的分集规划继续到导演、审核与交付。\n\n当前项目还没有分集\n资产\n从已有分镜 / 资产开始\n\n下一步：补齐 尚无分集 所需角色状态、场景参考和镜头使用关系。\n\n打开资产圣经\n高级\n自由创作\n\n下一步：围绕 尚无分集 检查依赖、分支实验与非线性工作流。\n\n打开高级画布\n\n分集\n\n选择一集进入生产流程\n0 集 ",
+      "clientWidth": 1440,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [
+        "项目加载中…"
+      ],
+      "href": "http://127.0.0.1:5173/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+      "scrollHeight": 900,
+      "scrollWidth": 1440,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    },
+    {
+      "name": "story",
+      "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/story",
+      "durationMs": 2080,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n项目总览\n故事\n资产圣经\nQC 策略\n导演配方\n生产设置\n工具区\n高级画布\n素材实验室\n项目维护\n\n进入具体分集后显示策划、导演、审核、声音、时间线与交付。\n\n系统区\n本地任务持续运行\n关闭浏览器不会中断 Worker\n\n项目级故事工作区\n\n从长文原稿到可审核的生产事实\n收起详情返回项目总览\n\n源文档先生成解析预览；AI 拆解只保存草稿。只有明确选择目标分集并点击应用，才会创建场次、镜头与对白。\n\n1\n故事圣经\n结构化创作资料库与设定\n2\n导入长文\n剧本长文解析与提交\n3\n审核拆解\nAI 分镜预览与目标分集应用\n4\n裁决身份\nAI 提取角色身份建议与建档\n工作流步骤\n1. 故事圣经\n结构化创作资料库与设定\n2. 导入长文\n剧本长文解析与提交\n3. 审核拆解\nAI 分镜预览与目标分集应用\n4. 裁决身份\nAI 提取角色身份建议与建档\n1\n故事圣经与创作资料\n\n",
+      "clientWidth": 1425,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [
+        "从长文原稿到可审核的生产事实"
+      ],
+      "href": "http://127.0.0.1:5173/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/story",
+      "scrollHeight": 2420,
+      "scrollWidth": 1425,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    },
+    {
+      "name": "assets",
+      "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/assets",
+      "durationMs": 1063,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n项目总览\n故事\n资产圣经\nQC 策略\n导演配方\n生产设置\n工具区\n高级画布\n素材实验室\n项目维护\n\n进入具体分集后显示策划、导演、审核、声音、时间线与交付。\n\n系统区\n本地任务持续运行\n关闭浏览器不会中断 Worker\n\n资产圣经\n\n角色 / 场景 / 道具 / 服装\n0 项资产\n角色\n场景\n道具\n服装\n还没有角色资产\n\n使用右侧的新建入口建立第一项资产；已有媒体可在创建后绑定为参考。\n\n请选择一项资产\n\n从左侧打开现有资产，或使用新建入口开始。\n\n新建角色资产\n返回项目总览",
+      "clientWidth": 1440,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [],
+      "href": "http://127.0.0.1:5173/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/assets",
+      "scrollHeight": 900,
+      "scrollWidth": 1440,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    },
+    {
+      "name": "qc-policies",
+      "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/qc-policies",
+      "durationMs": 2084,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n项目总览\n故事\n资产圣经\nQC 策略\n导演配方\n生产设置\n工具区\n高级画布\n素材实验室\n项目维护\n\n进入具体分集后显示策划、导演、审核、声音、时间线与交付。\n\n系统区\n本地任务持续运行\n关闭浏览器不会中断 Worker\n\n生产治理\n\nQC 策略\n版本化门禁\n\n定义检查类别、阈值和有限自动重抽。所有策略版本不可变；机器检查通过仍不会创建人工批准。\n\n0045 · QC POLICY\n\n生产范围与继承解析\nProject → Episode → Shot\n季度\n选择季度\nSEASON_001 · 第 1 季\n分集\n仅项目级\nEPISODE_001 · 第 1 集\nEPISODE_002 · 第 2 集\nEPISODE_003 · 第 3 集\n镜头\n仅分集级\nSHOT_001\nG8_SHOT_001\nG8_SHOT_002\nG8_SHOT_003\nG9_SCALE",
+      "clientWidth": 1425,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [
+        "QC 策略"
+      ],
+      "href": "http://127.0.0.1:5173/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/qc-policies",
+      "scrollHeight": 1675,
+      "scrollWidth": 1425,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    },
+    {
+      "name": "director-recipes",
+      "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/director-recipes",
+      "durationMs": 1076,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n项目总览\n故事\n资产圣经\nQC 策略\n导演配方\n生产设置\n工具区\n高级画布\n素材实验室\n项目维护\n\n进入具体分集后显示策划、导演、审核、声音、时间线与交付。\n\n系统区\n本地任务持续运行\n关闭浏览器不会中断 Worker\n\n专业生产模板\n\n导演配方\n0046 · Declarative\n\n把画幅、镜头规划、资产要求、生成能力与 QC 固定为可复现的不可变版本。项目只在你显式绑定时升级。\n\n当前项目绑定\n\nRecipe provenance\n尚未绑定\n\n生成前请显式绑定一个不可变版本；系统不会静默跟随“最新版”。\n\n目标版本\n选择版本\n升级原因\n绑定到项目\n\n版本库\n\n不可变历史\n新建\n\n还没有 Director Recipe。\n\n声明式编辑器\n\n创建 Recipe\nRecipe code\n标题\n画幅与镜头规划\n画幅\n9:16\n16:9\n1:1\n4:3\n平均时长",
+      "clientWidth": 1425,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [
+        "导演配方"
+      ],
+      "href": "http://127.0.0.1:5173/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/director-recipes",
+      "scrollHeight": 1477,
+      "scrollWidth": 1425,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    },
+    {
+      "name": "production-settings",
+      "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/production-settings",
+      "durationMs": 1143,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n项目总览\n故事\n资产圣经\nQC 策略\n导演配方\n生产设置\n工具区\n高级画布\n素材实验室\n项目维护\n\n进入具体分集后显示策划、导演、审核、声音、时间线与交付。\n\n系统区\n本地任务持续运行\n关闭浏览器不会中断 Worker\n\nPROJECT SETTINGS\n\n生产设置与项目配置\n项目级事实真值\n\n集中管理项目生效默认、覆盖来源、交付规格、自动化与资产授权；具体配置由各自版本化模块管理，不生成第二套业务事实。\n\n⚙️ 生效概览\n🎯 交付目标与品牌\n⚡ 自动化与外发\n📦 授权与项目包\n\n正在汇总项目生产事实…\n\n01\n项目默认\n管理风格资产\n默认画幅\n未在生产计划声明\n生产计划\n未配置\n默认风格资产\n由资产圣经 Style 分类与引用版本生效\n\n来源：Project Configuration 与资产圣经；本页不复制配置副本。\n\n02\n生成能力\n配置偏好\n默认",
+      "clientWidth": 1425,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [
+        "生产设置与项目配置"
+      ],
+      "href": "http://127.0.0.1:5173/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/production-settings",
+      "scrollHeight": 1365,
+      "scrollWidth": 1425,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    },
+    {
+      "name": "project-models",
+      "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/models",
+      "durationMs": 2108,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n项目总览\n故事\n资产圣经\nQC 策略\n导演配方\n生产设置\n工具区\n高级画布\n素材实验室\n项目维护\n\n进入具体分集后显示策划、导演、审核、声音、时间线与交付。\n\n系统区\n本地任务持续运行\n关闭浏览器不会中断 Worker\n\n系统区\n\n模型与能力管理\n显式版本 · 禁止静默回退\n\nProfile 定义能力与输入输出合同，Workflow Version 定义本机可执行图；项目、分集和镜头只保存显式偏好。已冻结的 Variant 永远保留当时解析到的确切 Profile/Workflow 版本。\n\n⚙️ 执行配置与工作流\n🛡️ 模型兼容性与存证\n\nG7 能力配置\n\n本地能力契约与不可变版本\n仅本地\n\n编辑只会派生新 DRAFT；本地验证不会连接 ComfyUI。执行指纹有变化时，发布必须提供真实成功媒体证据。\n\nh3-native-i2v\nVIDEO_I2V ·",
+      "clientWidth": 1425,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [
+        "模型与能力管理"
+      ],
+      "href": "http://127.0.0.1:5173/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/models",
+      "scrollHeight": 3111,
+      "scrollWidth": 1425,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    },
+    {
+      "name": "project-jobs",
+      "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/jobs",
+      "durationMs": 1097,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n项目总览\n故事\n资产圣经\nQC 策略\n导演配方\n生产设置\n工具区\n高级画布\n素材实验室\n项目维护\n\n进入具体分集后显示策划、导演、审核、声音、时间线与交付。\n\n系统区\n本地任务持续运行\n关闭浏览器不会中断 Worker\n\n系统区\n\n任务与机器\nSQLite durable queue · LOCAL_ONLY\n\n查看真实 Job、Attempt、lease、进度和已验证产物。故障重试保持同一 Job；创作重抽必须回到导演台创建新的 Variant。\n\n项目范围\n全部项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n\nG5 任务与机器\n\n持久任务队列与本地 worker\n扫描过期租约\nSSE / 发件箱\n\n状态来自 SQLite jobs/attempts/outbox；页面关闭后队列继续运行，worker lease 过期由 ",
+      "clientWidth": 1425,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [
+        "任务与机器"
+      ],
+      "href": "http://127.0.0.1:5173/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/jobs",
+      "scrollHeight": 2418,
+      "scrollWidth": 1425,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    },
+    {
+      "name": "project-diagnostics",
+      "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/diagnostics",
+      "durationMs": 1040,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n项目总览\n故事\n资产圣经\nQC 策略\n导演配方\n生产设置\n工具区\n高级画布\n素材实验室\n项目维护\n\n进入具体分集后显示策划、导演、审核、声音、时间线与交付。\n\n系统区\n本地任务持续运行\n关闭浏览器不会中断 Worker\n\n系统区\n\n诊断、审计与运维检索\n本机事实 · 创作区外\n\n诊断检查本机数据库、FFmpeg、Comfy 与运行时清单；审计历史保持只读、追加和脱敏；全局检索提供跨剧目无泄漏实体定位。\n\n🩺 本机环境检查\n📜 审计历史\n🔍 全局检索\n\n显式检查\n\n本机环境检查\n运行诊断\n整体状态\nDEGRADED\nCANONICAL_MODEL_ROOT\nPASS\nCOMFYUI_LOOPBACK\nPASS\nCOMFYUI_NODE_REGISTRY\nBLOCKED\nDISABLED_MODEL_GUARD\nPASS\nDISK_SPACE\nPASS\nF",
+      "clientWidth": 1425,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [
+        "诊断、审计与运维检索"
+      ],
+      "href": "http://127.0.0.1:5173/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/diagnostics",
+      "scrollHeight": 933,
+      "scrollWidth": 1425,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    },
+    {
+      "name": "media-lab",
+      "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/lab",
+      "durationMs": 1020,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n项目总览\n故事\n资产圣经\nQC 策略\n导演配方\n生产设置\n工具区\n高级画布\n素材实验室\n项目维护\n\n进入具体分集后显示策划、导演、审核、声音、时间线与交付。\n\n系统区\n本地任务持续运行\n关闭浏览器不会中断 Worker\n\n工具区\n\n素材实验室\n本地沙盒\n\n验证本机 Comfy 工作流和能力合同；实验结果不会自动进入正式资产、候选、采用或审核事实。\n\nFR-WFL-004 · DESIGNER 沙盒\n\nComfyUI 实验室\n仅本地 · 不写正式目录\n\nDesigner 是独立的本地工作流调试进程。捕获和 test plan 只允许进入 work/comfy-lab 隔离沙盒；不会修改正式项目 workflow、媒体或批准结果。\n\n状态：STOPPED\n端口：http://127.0.0.1:8188\n启动配置：未配置\n正式目录写入：否\n启动 Designer",
+      "clientWidth": 1440,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [
+        "素材实验室"
+      ],
+      "href": "http://127.0.0.1:5173/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/lab",
+      "scrollHeight": 900,
+      "scrollWidth": 1440,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    },
+    {
+      "name": "canvas",
+      "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/canvas",
+      "durationMs": 1198,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n项目总览\n故事\n资产圣经\nQC 策略\n导演配方\n生产设置\n工具区\n高级画布\n素材实验室\n项目维护\n\n进入具体分集后显示策划、导演、审核、声音、时间线与交付。\n\n系统区\n本地任务持续运行\n关闭浏览器不会中断 Worker\n\nADVANCED CANVAS\n\n高级生产画布\n\n业务依赖来自权威 read model；拖动只保存布局，不改变生成事实。\n\n当前分集\n选择分集\nEPISODE_001 · 第 1 集\nEPISODE_002 · 第 2 集\nEPISODE_003 · 第 3 集\n\nG9 生产画布\n\n业务依赖 DAG · 拖动只保存布局\n保存布局\n运行节点预检\n\n节点显示状态、take、variant 和阻塞；edges 来自后端业务依赖，布局接口无法修改它们。当前页 22/22 个镜头，最多显示 300 个节点。\n\n搜索节点\n全部\n聚焦上游\n聚焦下游\nS",
+      "clientWidth": 1425,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [
+        "高级生产画布"
+      ],
+      "href": "http://127.0.0.1:5173/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/canvas?episode=d4db1033-9517-4bd0-958d-4228e0abead1",
+      "scrollHeight": 1499,
+      "scrollWidth": 1425,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    },
+    {
+      "name": "operations",
+      "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/operations",
+      "durationMs": 2239,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n项目总览\n故事\n资产圣经\nQC 策略\n导演配方\n生产设置\n工具区\n高级画布\n素材实验室\n项目维护\n\n进入具体分集后显示策划、导演、审核、声音、时间线与交付。\n\n系统区\n本地任务持续运行\n关闭浏览器不会中断 Worker\n\nPROJECT OPERATIONS\n\n项目维护、运维与系统总览\n\n迁移、授权、健康、自动化与审计工具已拆分为语义子工作区；下方提供直达入口与全量事实面板。\n\n⚙️\n生产设置\n\n项目默认参数、交付规格、自动化与资产授权\n\n进入生产设置 →\n🤖\n模型与能力\n\nProfile 配置、工作流图、离线兼容性与许可证存证\n\n进入模型管理 →\n📋\n任务队列\n\nSQLite 持久化任务队列、Attempt 追踪与容量快照\n\n进入任务监控 →\n🩺\n诊断与审计\n\n环境检查、脱敏审计历史与跨实体全局检索\n\n进入系统诊断 →\n\nG7 适配器 SDK\n\n本地",
+      "clientWidth": 1425,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [
+        "项目维护、运维与系统总览"
+      ],
+      "href": "http://127.0.0.1:5173/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/operations",
+      "scrollHeight": 7583,
+      "scrollWidth": 1425,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    },
+    {
+      "name": "episode-plan",
+      "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/plan",
+      "durationMs": 1319,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n项目总览\n故事\n资产圣经\nQC 策略\n导演配方\n生产设置\n工具区\n高级画布\n素材实验室\n项目维护\n本集生产\n分集策划\n导演台\n手动生成\n整集生产\n审核\n声音\n时间线\n交付\n系统区\n本地任务持续运行\n关闭浏览器不会中断 Worker\n\n分集策划\n\n从原文证据到可生产镜头\n⚡ 选定 Beat 重排故事工作区进入导演台\n\n项目长文导入与 AI 拆解在故事工作区统一管理；此处展示当前集引用的原文范围与分镜头编排。\n\n1\n原文引用\n2\n审核拆解\n3\n编排镜头\n🎬 镜头分镜板\n📍 场景与分组\n📜 原文与草稿\n💡 提示词快照\n\nFR-ING-003 · 分镜批量台\n\n身份稳定的排序、复制与批量字段编辑\n22 镜 · 40.0 秒\n\n镜头 id 与显示顺序分离；提交只改变 order_key，字段编辑派生新 revision，复制创建新身份。\n\n表格\n故事板\n时间线",
+      "clientWidth": 1425,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [
+        "从原文证据到可生产镜头"
+      ],
+      "href": "http://127.0.0.1:5173/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/plan",
+      "scrollHeight": 7295,
+      "scrollWidth": 1425,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    },
+    {
+      "name": "director-shot3",
+      "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/direct/86b8e810-9f54-4412-a2ca-8892b3659a67",
+      "durationMs": 2050,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n项目总览\n故事\n资产圣经\nQC 策略\n导演配方\n生产设置\n工具区\n高级画布\n素材实验室\n项目维护\n本集生产\n分集策划\n导演台\n手动生成\n整集生产\n审核\n声音\n时间线\n交付\n系统区\n本地任务持续运行\n关闭浏览器不会中断 Worker\nG2 smoke 2\n/\n第 1 集\n/\nG8_SHOT_002\n查看原文\nO\n并排比较\n集审核\n重抽当前镜头\n镜头导航\n22 镜\n搜索镜头\n全部\n失败\n已过期\n待审\n全选可见\n清除\n仅看所选\n0 已选\n筛选/搜索时暂停排序；批量入口不会伪造批量提交。\n未分场镜头\n22 镜\n⠿\n↑\n↓\nSHOT_001\nMISSING\n镜头生产单元\n可生成\n⠿\n↑\n↓\nG8_SHOT_001\nMISSING\n镜头生产单元\n草稿\n⠿\n↑\n↓\nG8_SHOT_002\nMISSING\n镜头生产单元\n草稿\n⠿\n↑\n↓\nG8_SHOT_003\nMISSIN",
+      "clientWidth": 1425,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [
+        "G8_SHOT_002 · PRODUCTION"
+      ],
+      "href": "http://127.0.0.1:5173/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/direct/86b8e810-9f54-4412-a2ca-8892b3659a67",
+      "scrollHeight": 928,
+      "scrollWidth": 1425,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    },
+    {
+      "name": "generation-shot3",
+      "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/generation/86b8e810-9f54-4412-a2ca-8892b3659a67",
+      "durationMs": 1163,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n项目总览\n故事\n资产圣经\nQC 策略\n导演配方\n生产设置\n工具区\n高级画布\n素材实验室\n项目维护\n本集生产\n分集策划\n导演台\n手动生成\n整集生产\n审核\n声音\n时间线\n交付\n系统区\n本地任务持续运行\n关闭浏览器不会中断 Worker\n\nADVANCED · MANUAL GENERATION\n\n手动生成工作台\n\n先建立 Intent 并运行只读预检，再由你二次确认创建 Variant 与 Job；此页不会自动选择或批准候选。\n\n显式提交 · 不可变输入\n生成工作台\n1\n选择生成方式\n2\n绑定输入\n3\n选择本地能力\n4\n资源预检\n5\n比较与审核\n\nG6 退出就绪门禁\n\n真实生成闭环门禁\nIN_PROGRESS\n批准一张真实关键帧\n1 项证据\n用真实 I2V 成功证据发布能力\n从同一批准关键帧生成 4 个真实代理\n4 项证据\n由人工选择代理 winner\n从 wi",
+      "clientWidth": 1425,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [
+        "手动生成工作台",
+        "生成工作台"
+      ],
+      "href": "http://127.0.0.1:5173/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/generation/86b8e810-9f54-4412-a2ca-8892b3659a67",
+      "scrollHeight": 3910,
+      "scrollWidth": 1425,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    },
+    {
+      "name": "review",
+      "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/review",
+      "durationMs": 2080,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n项目总览\n故事\n资产圣经\nQC 策略\n导演配方\n生产设置\n工具区\n高级画布\n素材实验室\n项目维护\n本集生产\n分集策划\n导演台\n手动生成\n整集生产\n审核\n声音\n时间线\n交付\n系统区\n本地任务持续运行\n关闭浏览器不会中断 Worker\n\n本集审核\n\n从候选问题到整集批准\n返回导演台\n查看时间线\n\n集中处理本集未解决候选；采用候选、批准媒体与批准整集始终是三项可追溯的人工作业。\n\n1\n候选审核\n7 项未解决\n2\n采用正式版本\n与批准分离\n3\n整集审核\n已有 render\n未解决候选\n7\n仅当前分集\n阻塞问题\n2\n完整性、QC 或失效\n机器证据待补\n5\n未运行或未通过\n失效审核\n0\n上游变更后需重审\n\n步骤 1 · 本集候选\n\n只处理未解决问题\n机器证据 ≠ 人工批准\n\n批量审核使用同一模板、先预检再原子提交；机器检查只记录技术证据，不能代替人工决定。\n\n问题范围\n",
+      "clientWidth": 1425,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [
+        "从候选问题到整集批准"
+      ],
+      "href": "http://127.0.0.1:5173/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/review",
+      "scrollHeight": 4154,
+      "scrollWidth": 1425,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    },
+    {
+      "name": "audio",
+      "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/audio",
+      "durationMs": 1111,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n项目总览\n故事\n资产圣经\nQC 策略\n导演配方\n生产设置\n工具区\n高级画布\n素材实验室\n项目维护\n本集生产\n分集策划\n导演台\n手动生成\n整集生产\n审核\n声音\n时间线\n交付\n系统区\n本地任务持续运行\n关闭浏览器不会中断 Worker\n\n本集声音 · AUDIO WORKSPACE\n\n台词、角色声音与音轨编排\n音频审核\n进入时间线\n\n从台词 revision 到 speaker / voice、TTS takes、selected audio、BGM 与 SFX 的单一工作台；所有写入复用既有领域动作，试听默认不预加载。\n\n台词\n0\n文本 revision 齐全\nSpeaker / Voice\n0 / 0\n0 个音色可提交正式 TTS\nTTS Takes\n0\n0 条无候选 · 0 条未选音频\nSelected Audio\n0\n0 条已选 FORMAL；选择由 Q",
+      "clientWidth": 1425,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [
+        "台词、角色声音与音轨编排"
+      ],
+      "href": "http://127.0.0.1:5173/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/audio",
+      "scrollHeight": 2211,
+      "scrollWidth": 1425,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    },
+    {
+      "name": "timeline",
+      "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/timeline",
+      "durationMs": 1206,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n项目总览\n故事\n资产圣经\nQC 策略\n导演配方\n生产设置\n工具区\n高级画布\n素材实验室\n项目维护\n本集生产\n分集策划\n导演台\n手动生成\n整集生产\n审核\n声音\n时间线\n交付\n系统区\n本地任务持续运行\n关闭浏览器不会中断 Worker\n\n本集时间线\n\n版本化成片编排\n合成与交付\n\n采用结果、声音与字幕编排为新的不可变时间线版本；上游选择变化时只标记 stale，必须显式载入后才能创建新版本。\n\n时间线版本\n1\n最新 DRAFT\n音频绑定\n4\n0 个已验证本地来源\n整集渲染\n1\n1 个完整性已验证\n\nP10 · TIMELINE / COMPOSE\n\n从已采用镜头编排本集\n\n画面、声音、字幕和转场共同写入新的不可变快照。\n\n40s\n22 镜 · 4 音轨\n\n最新历史 revision 没有 v2 上游指纹，无法自动判定 stale；仍可查看或导出，但建议显式载入当",
+      "clientWidth": 1425,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [
+        "版本化成片编排"
+      ],
+      "href": "http://127.0.0.1:5173/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/timeline",
+      "scrollHeight": 3663,
+      "scrollWidth": 1425,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    },
+    {
+      "name": "delivery",
+      "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/delivery",
+      "durationMs": 1111,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n项目总览\n故事\n资产圣经\nQC 策略\n导演配方\n生产设置\n工具区\n高级画布\n素材实验室\n项目维护\n本集生产\n分集策划\n导演台\n手动生成\n整集生产\n审核\n声音\n时间线\n交付\n系统区\n本地任务持续运行\n关闭浏览器不会中断 Worker\n\n合成与交付\n\n从冻结时间线创建可验证成片\n返回时间线\n\n渲染、交付候选、manifest 校验与人工批准是分开的证据步骤；机器通过不等于人工批准。\n\nG8 正式退出就绪\n\n整集音频、字幕、时间线与交付门禁\nPASS\n\n只读检查蓝图 09 的正式退出条件；不会创建素材、启动 ComfyUI 或自动替代整集人工批准。当前集：EPISODE_001 · 第 1 集\n\n3+ 个真实镜头\n3 项真实证据\n已发现 3 个以上真实镜头\n对白 / 环境 / SFX / 音乐\n4 项真实证据\n四类用户选择的本地音轨必须真实绑定；0 条含用户授权记",
+      "clientWidth": 1425,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [
+        "从冻结时间线创建可验证成片"
+      ],
+      "href": "http://127.0.0.1:5173/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/delivery",
+      "scrollHeight": 2110,
+      "scrollWidth": 1425,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    },
+    {
+      "name": "run",
+      "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/run",
+      "durationMs": 1194,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n项目总览\n故事\n资产圣经\nQC 策略\n导演配方\n生产设置\n工具区\n高级画布\n素材实验室\n项目维护\n本集生产\n分集策划\n导演台\n手动生成\n整集生产\n审核\n声音\n时间线\n交付\n系统区\n本地任务持续运行\n关闭浏览器不会中断 Worker\n\nEPISODE COCKPIT · 只读事实\n\nEPISODE_001 生产驾驶舱\n刷新\n已导演\n22 / 22\n有候选\n1 镜头\n已选择\n1 镜头\n已批准\n1 镜头\n失败\n0 镜头 / 0 任务\n已过期\n0 镜头\n镜头桥\n0 / 0 可用\n声音\n4 / 4 已验证\nQC\n9 通过 · 0 失败\n\n当前聚合事实没有发现失败或 stale blocker；人工审核仍需显式完成。\n\n生成剩余\n21\n仅重试失败\n运行 QC\n合成\n送审\n导出\n\n“生成剩余”进入下方现有生产预检；其余入口打开真实工作区。此驾驶舱本身不创建任务、不自动批准",
+      "clientWidth": 1425,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [
+        "一键生产整集"
+      ],
+      "href": "http://127.0.0.1:5173/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/run",
+      "scrollHeight": 4815,
+      "scrollWidth": 1425,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    },
+    {
+      "name": "global-diagnostics",
+      "path": "/diagnostics",
+      "durationMs": 1057,
+      "bodyText": "跳到工作区内容\n\n本地制片系统\n\nLocalDramaStudio\n搜索命令与实体\nCtrl K\n当前项目\n所有项目\ndirector_pydantic\nG2 smoke 2\nG2 smoke\n本机生产环境需处理\n创作区\n全部项目\n\n选择项目后显示资产圣经与分集生产导航。\n\n进入具体分集后显示策划、导演、审核、声音、时间线与交付。\n\n系统区\n模型与能力\n任务与机器\n诊断与审计\n本地任务持续运行\n关闭浏览器不会中断 Worker\n\n系统区\n\n诊断、审计与运维检索\n本机事实 · 创作区外\n\n诊断检查本机数据库、FFmpeg、Comfy 与运行时清单；审计历史保持只读、追加和脱敏；全局检索提供跨剧目无泄漏实体定位。\n\n🩺 本机环境检查\n📜 审计历史\n🔍 全局检索\n\n显式检查\n\n本机环境检查\n运行诊断\n整体状态\nDEGRADED\nCANONICAL_MODEL_ROOT\nPASS\nCOMFYUI_LOOPBACK\nPASS\nCOMFYUI_NODE_REGISTRY\nBLOCKED\nDISABLED_MODEL_GUARD\nPASS\nDISK_SPACE\nPASS\nFFMPEG\nPASS",
+      "clientWidth": 1425,
+      "defaultError": false,
+      "h1": [
+        "LocalDramaStudio"
+      ],
+      "h2": [
+        "诊断、审计与运维检索"
+      ],
+      "href": "http://127.0.0.1:5173/diagnostics",
+      "scrollHeight": 933,
+      "scrollWidth": 1425,
+      "title": "LocalDramaStudio",
+      "viewportHeight": 900,
+      "errorLogCount": 0
+    }
+  ]
+}

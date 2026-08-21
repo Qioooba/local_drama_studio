@@ -27,7 +27,7 @@ export function ImageCandidateGrid({ items, selectedVersionId, onSelect }: Props
     <section className="panel image-candidate-grid-panel" aria-labelledby="image-candidate-grid-title">
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">FR-IMG-003 · IMAGE CANDIDATES</p>
+          <p className="eyebrow">FR-IMG-003 · 图片候选</p>
           <h3 id="image-candidate-grid-title">图片候选缩略图网格</h3>
         </div>
         <span className="status-pill">{images.length} 张</span>
@@ -61,13 +61,14 @@ export function ImageCandidateGrid({ items, selectedVersionId, onSelect }: Props
             >
               <img
                 src={`/api/v1/media-versions/${encodeURIComponent(item.media_version_id)}/thumbnail?size=small&frame=poster`}
-                alt=""
+                alt={`${item.stage} 候选图像`}
                 width="160"
                 height="90"
                 loading="lazy"
                 decoding="async"
               />
-              <span>{item.stage} · {item.decision ?? "未审核"}</span>
+              <span>{item.stage}</span>
+              <span className={`status-pill state-${item.decision === "APPROVED" ? "approved" : "pending"}`}>{item.decision ?? "未审核"}</span>
               <code>{item.media_version_id.slice(0, 12)}</code>
             </button>
           );

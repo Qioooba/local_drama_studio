@@ -15,6 +15,7 @@ from local_drama.application.media import MediaService
 from local_drama.application.profiles import ProfileService
 from local_drama.application.projects import ProjectService
 from local_drama.application.read_models import ProductionReadModelService, SearchService
+from local_drama.domain.errors import DomainRuleError
 from local_drama.main import create_app
 
 
@@ -208,6 +209,79 @@ def test_media_range_stream_is_bounded_and_registered_path_cannot_escape(workspa
         escaped = client.get(f"/api/v1/media-versions/{media['media_version_id']}/content")
     assert escaped.status_code == 422
     assert escaped.json()["error"]["code"] == "MEDIA_FILE_MISSING"
+
+
+def test_media_integrity_detection_is_read_only_and_repair_is_explicit(workspace, database, monkeypatch) -> None:
+    project = _project(workspace, database, "g3_integrity_repair")
+    source = _real_video(Path("g3-integrity-repair.mp4"), workspace)
+    media_service = MediaService(database, workspace)
+    media = media_service.import_file(str(project["id"]), source, media_kind="VIDEO")
+    media_version_id = str(media["media_version_id"])
+    registered = workspace.projects_root / str(project["root_rel"]) / str(media["rel_path"])
+    original = registered.read_bytes()
+
+    registered.unlink()
+    with TestClient(create_app(workspace)) as client:
+        missing = client.get(f"/api/v1/projects/{project['id']}/health")
+    assert missing.status_code == 200
+    assert missing.json()["blockers"] == ["MEDIA_MISSING"]
+    assert missing.json()["mutated"] is False
+    with database.connect() as connection:
+        assert connection.execute(
+            "SELECT integrity_status FROM media_versions WHERE id=?", (media_version_id,),
+        ).fetchone()["integrity_status"] == "VERIFIED"
+
+    registered.write_bytes(b"tampered-but-not-adopted")
+    with TestClient(create_app(workspace)) as client:
+        tampered = client.get(f"/api/v1/projects/{project['id']}/health")
+    assert "MEDIA_SIZE_MISMATCH" in tampered.json()["blockers"]
+    with pytest.raises(DomainRuleError) as failed:
+        media_service.verify_content_integrity(media_version_id)
+    assert failed.value.code == "SOURCE_INTEGRITY_FAILED"
+    corrupt = media_service.get_version(media_version_id)
+    assert corrupt["integrity_status"] == "CORRUPT"
+    assert corrupt["sha256"] == media["sha256"]
+
+    registered.write_bytes(original)
+    original_read_bytes = Path.read_bytes
+
+    def reject_whole_media_read(path: Path) -> bytes:
+        if path.resolve() == registered.resolve():
+            raise AssertionError("project health must stream media hashes")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", reject_whole_media_read)
+    with TestClient(create_app(workspace)) as client:
+        restored_health = client.get(f"/api/v1/projects/{project['id']}/health")
+    assert restored_health.status_code == 200
+    assert restored_health.json()["status"] == "HEALTHY"
+    with pytest.raises(DomainRuleError) as repair_required:
+        media_service.verify_content_integrity(media_version_id)
+    assert repair_required.value.code == "MEDIA_INTEGRITY_REPAIR_REQUIRED"
+    assert media_service.get_version(media_version_id)["integrity_status"] == "CORRUPT"
+
+    with TestClient(create_app(workspace)) as client:
+        conflict = client.post(
+            f"/api/v1/media-versions/{media_version_id}:repair-integrity",
+            json={"expected_revision": int(corrupt["revision"]) - 1},
+        )
+        repaired = client.post(
+            f"/api/v1/media-versions/{media_version_id}:repair-integrity",
+            json={"expected_revision": int(corrupt["revision"])},
+        )
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "REVISION_CONFLICT"
+    assert repaired.status_code == 200
+    assert repaired.json()["media_version"]["repaired"] is True
+    assert repaired.json()["media_version"]["integrity_status"] == "VERIFIED"
+    assert media_service.verify_content_integrity(media_version_id)["integrity_status"] == "VERIFIED"
+    with database.connect() as connection:
+        event = connection.execute(
+            "SELECT action,metadata_redacted_json FROM audit_events WHERE subject_id=? ORDER BY event_id DESC LIMIT 1",
+            (media_version_id,),
+        ).fetchone()
+    assert event["action"] == "MEDIA_INTEGRITY_REPAIRED"
+    assert json.loads(event["metadata_redacted_json"])["adopted_new_content"] is False
 
 
 def test_video_thumbnail_frame_parameter_resolves_distinct_local_frames(workspace, database) -> None:

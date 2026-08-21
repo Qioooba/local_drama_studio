@@ -9,12 +9,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 from local_drama.application.generation import GenerationService
+from local_drama.application.character_identity_packs import CharacterIdentityPackService
 from local_drama.application.jobs import JobService
 from local_drama.application.media import MediaService
 from local_drama.application.profiles import ProfileService
 from local_drama.application.projects import ProjectService
 from local_drama.application.prompts import PromptService
 from local_drama.application.reviews import ReviewService
+from local_drama.application.story_assets import StoryAssetService
 from local_drama.application.timeline import TimelineService
 from local_drama.application.workspace_assets import WorkspaceAssetService
 from local_drama.domain.errors import DomainRuleError
@@ -1561,3 +1563,84 @@ def test_generation_accepts_active_cross_project_grant_and_blocks_withdrawn_sour
     with pytest.raises(DomainRuleError) as revoked:
         GenerationService(database, workspace).preflight_variant(str(intent["id"]), plan)
     assert revoked.value.code == "ASSET_GRANT_NOT_USABLE"
+
+
+def test_generation_freezes_exact_identity_pack_in_variant_and_job_then_tracks_stale(workspace, database) -> None:
+    project = _project(workspace, database, "identity_pack_generation_snapshot")
+    project_id = str(project["id"])
+    projects = ProjectService(database, workspace.projects_root)
+    season = projects.list_seasons(project_id)[0]
+    episode = projects.list_episodes(str(season["id"]))[0]
+    shot = projects.create_shot(str(episode["id"]), "S_IDENTITY", 4_000)
+    character = StoryAssetService(database, workspace).create_asset(
+        project_id,
+        "CHARACTER",
+        "HERO_IDENTITY",
+        "主角身份包",
+        "用于生成快照验证",
+    )
+    assets = WorkspaceAssetService(database, workspace)
+    views = {
+        slot_kind: _image(workspace, database, project_id, f"identity-{slot_kind.lower()}.png")
+        for slot_kind in ("FRONT", "LEFT", "RIGHT")
+    }
+    for media_version_id in views.values():
+        assets.authorize_media_version(project_id, media_version_id)
+
+    packs = CharacterIdentityPackService(database)
+    pack = packs.create_pack(project_id, str(character["id"]), "BASE", "基础定妆")
+    v1_id = str(pack["versions"][0]["id"])
+    for slot_kind, media_version_id in views.items():
+        packs.set_version_slot(v1_id, slot_kind, media_version_id)
+    v1 = packs.approve_pack_version(v1_id, comment="人工确认角色三视图 v1")
+    packs.bind_shot_identity_pack(str(shot["id"]), str(character["id"]), v1_id)
+
+    first_frame_id = _image(workspace, database, project_id, "identity-first-frame.png")
+    profile_version_id = _published_profile(workspace, database)
+    generation = GenerationService(database, workspace)
+    intent = generation.create_intent(project_id, "SHOT", str(shot["id"]), "I2V", "冻结身份包输入")
+    plan = _plan(profile_version_id, first_frame_id)
+    preflight = generation.preflight_variant(str(intent["id"]), plan)
+    identity_snapshot = preflight["dependencies"]["identity_pack_snapshot"]
+    assert identity_snapshot["shot_id"] == shot["id"]
+    assert [item["pack_version_id"] for item in identity_snapshot["packs"]] == [v1_id]
+    assert {item["slot_kind"] for item in identity_snapshot["packs"][0]["slots"]} >= {
+        "FRONT",
+        "LEFT",
+        "RIGHT",
+    }
+    assert identity_snapshot["packs"][0]["content_hash"] == v1["content_hash"]
+
+    planned = generation.create_variant(str(intent["id"]), plan)
+    assert planned["identity_pack_snapshot"]["snapshot_hash"] == identity_snapshot["snapshot_hash"]
+    submitted = generation.submit_confirmed_variant(
+        str(intent["id"]),
+        plan,
+        str(preflight["plan_hash"]),
+        "identity-pack-job-snapshot",
+    )
+    with database.connect() as connection:
+        job_row = connection.execute(
+            "SELECT input_snapshot_json FROM jobs WHERE id=?",
+            (submitted["job"]["id"],),
+        ).fetchone()
+    job_snapshot = json.loads(str(job_row["input_snapshot_json"]))
+    assert job_snapshot["identity_packs"] == identity_snapshot
+    assert submitted["variant"]["identity_pack_snapshot"] == identity_snapshot
+
+    new_front_id = _image(workspace, database, project_id, "identity-front-v2.png")
+    assets.authorize_media_version(project_id, new_front_id)
+    v2 = packs.create_version_draft(str(pack["id"]), from_version_id=v1_id)
+    packs.set_version_slot(str(v2["id"]), "FRONT", new_front_id)
+    packs.approve_pack_version(str(v2["id"]), comment="人工确认角色三视图 v2")
+
+    planned_after = generation.get_variant(str(planned["id"]))
+    submitted_after = generation.get_variant(str(submitted["variant"]["id"]))
+    assert planned_after["is_stale"] == 1
+    assert submitted_after["is_stale"] == 1
+    assert str(planned_after["stale_reason"]).startswith("identity_pack_superseded:")
+    assert planned_after["identity_pack_snapshot"]["snapshot_hash"] == identity_snapshot["snapshot_hash"]
+    assert submitted_after["identity_pack_snapshot"]["snapshot_hash"] == identity_snapshot["snapshot_hash"]
+    with pytest.raises(DomainRuleError) as stale_binding:
+        generation.preflight_variant(str(intent["id"]), plan)
+    assert stale_binding.value.code == "IDENTITY_PACK_BINDING_STALE"

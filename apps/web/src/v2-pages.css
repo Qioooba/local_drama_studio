@@ -1,0 +1,313 @@
+.sidebar-context-hint {
+  margin: 12px 8px 0;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.brand-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.projects-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.projects-page-filters {
+  padding: 16px;
+  border: 1px solid var(--border, #d8d2c7);
+  border-radius: 10px;
+  background: var(--surface, #fffdf8);
+}
+
+.projects-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 14px;
+}
+
+.project-card {
+  display: flex;
+  min-height: 230px;
+  flex-direction: column;
+  gap: 20px;
+  padding: 18px;
+  border: 1px solid var(--border, #d8d2c7);
+  border-radius: 12px;
+  background: var(--surface, #fffdf8);
+  box-shadow: var(--shadow-panel);
+}
+
+.project-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.project-card-heading small,
+.project-code {
+  color: var(--text-muted, #666b66);
+  font-size: 12px;
+}
+
+.project-card h3 {
+  overflow-wrap: anywhere;
+}
+
+.project-code {
+  margin-top: 7px;
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  overflow-wrap: anywhere;
+}
+
+.project-next-action {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  margin-top: auto;
+  text-decoration: none;
+}
+
+.projects-empty {
+  margin-bottom: 16px;
+}
+
+@media (max-width: 760px) {
+  .projects-hero {
+    flex-direction: column;
+  }
+}
+
+.episode-review-workspace,
+.episode-review-stage {
+  display: grid;
+  gap: 14px;
+}
+
+.episode-review-flow,
+.episode-review-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.episode-review-flow a {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 1px 10px;
+  min-height: 64px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--border, #d8d2c7);
+  border-radius: 10px;
+  color: inherit;
+  background: var(--surface, #fffdf8);
+  text-decoration: none;
+}
+
+.episode-review-flow a:hover,
+.episode-review-flow a:focus-visible {
+  border-color: var(--creative, #e9633b);
+}
+
+.episode-review-flow a > span {
+  grid-row: 1 / 3;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--creative-dark, #7f2e1e);
+  background: var(--creative-subtle, #fff0e9);
+  font-weight: 800;
+}
+
+.episode-review-flow small,
+.episode-review-summary-card small {
+  color: var(--text-muted, #666b66);
+}
+
+.episode-review-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.episode-review-summary-card {
+  display: grid;
+  gap: 4px;
+  padding: 13px 14px;
+  border: 1px solid var(--border, #d8d2c7);
+  border-radius: 10px;
+  background: var(--surface, #fffdf8);
+}
+
+.episode-review-summary-card > span {
+  color: var(--text-muted, #666b66);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.episode-review-summary-card strong {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+
+.episode-review-summary-card.tone-danger { border-left: 4px solid var(--danger, #b43a2f); }
+.episode-review-summary-card.tone-warning { border-left: 4px solid var(--warning, #b87816); }
+.episode-review-summary-card.tone-ok { border-left: 4px solid var(--success, #2f7d57); }
+
+.episode-review-stage {
+  scroll-margin-top: 20px;
+  padding: 18px;
+  border: 1px solid var(--border, #d8d2c7);
+  border-radius: 12px;
+  background: var(--surface, #fffdf8);
+  box-shadow: var(--shadow-panel);
+}
+
+.episode-review-stage > .panel {
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+
+.episode-review-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid var(--border, #d8d2c7);
+  border-radius: 10px;
+  background: var(--surface-muted, #f4f0e8);
+}
+
+.episode-review-filters label {
+  display: grid;
+  min-width: 190px;
+  gap: 5px;
+  color: var(--text-muted, #666b66);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.episode-review-filters label:nth-child(2) { flex: 1 1 260px; }
+.episode-review-filters input,
+.episode-review-filters select { width: 100%; }
+.episode-review-filters .status-pill { margin-left: auto; }
+
+@media (max-width: 900px) {
+  .episode-review-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 700px) {
+  .episode-review-flow,
+  .episode-review-summary { grid-template-columns: 1fr; }
+  .episode-review-stage { padding: 14px; }
+  .episode-review-filters label { width: 100%; }
+  .episode-review-filters .status-pill { margin-left: 0; }
+}
+
+.v2-page > .panel-heading:first-child {
+  margin-bottom: 8px;
+}
+
+.v2-page > .panel-heading:first-child h2 {
+  margin: 2px 0 0;
+  font-size: 24px;
+}
+
+.v2-stage-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 20px 0;
+}
+
+.v2-stage-strip a {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--border, #d8d2c7);
+  border-radius: 8px;
+  color: inherit;
+  background: var(--surface, #fffdf8);
+  text-decoration: none;
+}
+
+.v2-stage-strip a:hover,
+.v2-stage-strip a:focus-visible {
+  border-color: var(--creative, #e9633b);
+}
+
+.v2-stage-strip span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface-muted, #ebe7de);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.v2-summary-grid {
+  margin: 20px 0;
+}
+
+.v2-goal-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0 24px;
+}
+
+.v2-goal-grid article {
+  display: flex;
+  min-height: 190px;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 16px;
+  border: 1px solid var(--border, #d8d2c7);
+  border-radius: 10px;
+  background: var(--surface, #fffdf8);
+}
+
+.v2-goal-grid h3 {
+  margin: 16px 0 6px;
+}
+
+.v2-goal-grid p {
+  margin: 0 0 16px;
+  color: var(--text-muted, #666b66);
+  line-height: 1.55;
+}
+
+.v2-goal-grid a,
+.v2-goal-grid small {
+  margin-top: auto;
+}
+
+.v2-goal-grid a {
+  min-height: 44px;
+  color: var(--creative, #e9633b);
+  font-weight: 700;
+}
+
+@media (max-width: 1024px) {
+  .v2-stage-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .v2-goal-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -1,0 +1,53 @@
+.episode-plan-batch-bar{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin:14px 0;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-raised)}
+.episode-plan-batch-bar label{display:grid;gap:5px;min-width:260px}.episode-plan-batch-bar select{max-width:420px}
+.episode-plan-shot-row{align-items:flex-start}.episode-plan-shot-row>input[type="checkbox"]{margin-top:8px}.episode-plan-shot-row .shot-context{display:grid;gap:3px;min-width:130px}.episode-plan-shot-row .shot-content{display:grid;gap:3px;min-width:210px;max-width:360px}.episode-plan-shot-row .shot-assets{display:grid;gap:3px;min-width:190px}.episode-plan-shot-row .shot-status{display:grid;gap:4px;min-width:100px}
+.episode-plan-batch-result{display:grid;gap:4px;margin:8px 0}.episode-plan-batch-result p{margin:0}.episode-plan-batch-failure{color:var(--danger,#b42318)}
+
+.storyboard-workbench{min-width:0;overflow:visible}
+.storyboard-command-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;margin:14px 0 10px}
+.storyboard-command-bar .storyboard-tabs{margin:0}
+.storyboard-command-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0;flex-wrap:wrap}
+.storyboard-page-summary,.storyboard-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--text-muted);font-size:13px;font-variant-numeric:tabular-nums}
+.storyboard-page-summary{padding:8px 2px}
+.storyboard-pagination{padding-top:12px}
+.storyboard-pagination button{min-height:44px;min-width:88px}
+.storyboard-bounded-viewport{max-height:min(58vh,680px);min-height:240px;min-width:0;overflow-y:auto;overflow-x:hidden;padding:2px 6px 8px 2px;overscroll-behavior:contain;scrollbar-gutter:stable;border-block:1px solid var(--border)}
+.storyboard-bounded-viewport:focus-visible{outline:3px solid var(--focus-ring,var(--info));outline-offset:2px;border-radius:8px}
+.storyboard-workbench .storyboard-table{gap:8px;padding-block:8px}
+.storyboard-workbench .episode-plan-shot-row{display:grid;grid-template-columns:44px 32px minmax(112px,.7fr) minmax(130px,1fr) minmax(180px,1.5fr) minmax(120px,.75fr) minmax(104px,.65fr) auto;align-items:center;gap:10px;min-width:0;padding:10px 12px}
+.episode-plan-shot-row>input[type="checkbox"]{grid-column:1;width:20px;height:20px;margin:0;justify-self:center}
+.episode-plan-shot-row .shot-ordinal{grid-column:2;color:var(--text-muted);font-variant-numeric:tabular-nums}
+.episode-plan-shot-row .shot-identity{grid-column:3;display:grid;gap:3px;min-width:0}
+.episode-plan-shot-row .shot-identity small,.episode-plan-shot-row .shot-context,.episode-plan-shot-row .shot-content,.episode-plan-shot-row .shot-assets{overflow-wrap:anywhere}
+.episode-plan-shot-row .shot-context{grid-column:4}
+.episode-plan-shot-row .shot-content{grid-column:5;min-width:0;max-width:none}
+.episode-plan-shot-row .shot-assets{grid-column:6;min-width:0}
+.episode-plan-shot-row .shot-status{grid-column:7;min-width:0}
+.episode-plan-shot-row>button{grid-column:8;min-height:44px;white-space:nowrap}
+.storyboard-workbench .storyboard-grid{grid-template-columns:repeat(auto-fill,minmax(180px,1fr));padding-block:8px}
+.storyboard-workbench .storyboard-grid article{display:grid;align-content:start;gap:8px;min-width:0}
+.storyboard-workbench .storyboard-grid article p{margin:0;overflow-wrap:anywhere}
+.storyboard-workbench .storyboard-grid article button{min-height:44px;margin-top:auto}
+.storyboard-workbench .storyboard-timeline{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;min-height:0;padding-block:8px;overflow:visible}
+.storyboard-workbench .storyboard-timeline>article{display:grid;gap:6px;min-width:0;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--accent-soft)}
+.storyboard-workbench .storyboard-timeline>article button{min-height:44px;margin-top:4px}
+.storyboard-drawer-stack{display:grid;gap:16px;min-width:0}
+.storyboard-drawer-stack>label,.storyboard-drawer-stack section label{display:grid;gap:6px;min-width:0}
+.storyboard-drawer-stack input,.storyboard-drawer-stack select{width:100%;min-width:0;min-height:44px}
+.storyboard-drawer-stack .storyboard-copy{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:10px 0 0}
+.storyboard-drawer-stack .storyboard-copy button,.storyboard-drawer-stack .storyboard-copy>span{grid-column:1/-1}
+.shot-detail-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0}
+.shot-detail-facts>div{min-width:0;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-muted)}
+.shot-detail-facts dt{color:var(--text-muted);font-size:12px}.shot-detail-facts dd{margin:4px 0 0;overflow-wrap:anywhere}
+.shot-detail-copy,.shot-detail-assets{display:grid;gap:6px;min-width:0}.shot-detail-copy p{margin:0;overflow-wrap:anywhere}.shot-detail-assets span{overflow-wrap:anywhere}
+
+@media(max-width:1200px){
+  .storyboard-workbench .episode-plan-shot-row{grid-template-columns:44px minmax(0,1fr) auto;grid-template-areas:"select identity action" "ordinal context action" ". content content" ". assets status";align-items:start}
+  .episode-plan-shot-row>input[type="checkbox"]{grid-area:select}.episode-plan-shot-row .shot-ordinal{grid-area:ordinal}.episode-plan-shot-row .shot-identity{grid-area:identity}.episode-plan-shot-row .shot-context{grid-area:context}.episode-plan-shot-row .shot-content{grid-area:content}.episode-plan-shot-row .shot-assets{grid-area:assets}.episode-plan-shot-row .shot-status{grid-area:status}.episode-plan-shot-row>button{grid-area:action}
+}
+@media(max-width:840px){
+  .storyboard-command-bar{align-items:stretch;flex-direction:column}.storyboard-command-actions{justify-content:flex-start}
+  .storyboard-workbench .episode-plan-shot-row{grid-template-columns:44px minmax(0,1fr);grid-template-areas:"select identity" "ordinal context" "content content" "assets assets" "status status" "action action"}
+  .episode-plan-shot-row>button{width:100%}
+  .shot-detail-facts{grid-template-columns:1fr}.storyboard-drawer-stack .storyboard-copy{grid-template-columns:1fr}.storyboard-drawer-stack .storyboard-copy>*{grid-column:1}
+}

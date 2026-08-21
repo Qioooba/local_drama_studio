@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
+from local_drama.domain.capabilities import normalize_capability
+from local_drama.domain.director_intent import normalize_director_intent_v3, validate_director_intent_v3_payload
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.generation_contracts import CameraPlan, resolve_camera_plan
 from local_drama.domain.policies import (
@@ -30,6 +32,21 @@ def _utc_now() -> str:
 
 def _json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _canonical_profile_capability(value: Any) -> str:
+    try:
+        return normalize_capability(str(value or ""))
+    except ValueError as error:
+        raise DomainRuleError(
+            "PROFILE_CAPABILITY_INVALID",
+            "Profile 绑定 capability 未知或含义不唯一",
+            {"capability": str(value or "")},
+        ) from error
+
+
+def _canonical_profile_bindings(bindings: list[dict[str, str]]) -> list[dict[str, str]]:
+    return [{**binding, "capability": _canonical_profile_capability(binding.get("capability"))} for binding in bindings]
 
 
 class ProjectService:
@@ -75,7 +92,7 @@ class ProjectService:
             raise DomainRuleError("INVALID_PROJECT_TITLE", "项目标题必须是 1—200 个字符")
         if target_duration_ms <= 0:
             raise DomainRuleError("INVALID_TARGET_DURATION", "target_duration_ms 必须大于 0")
-        profile_bindings = profile_bindings or []
+        profile_bindings = _canonical_profile_bindings(profile_bindings or [])
         self._validate_creation_bindings(production_plan, profile_bindings, delivery_target,
                                          require_complete=not allow_unconfigured_capabilities)
         project_id = str(uuid.uuid4())
@@ -201,7 +218,7 @@ class ProjectService:
             raise DomainRuleError("INVALID_PROJECT_TITLE", "项目标题必须是 1—200 个字符")
         if target_duration_ms <= 0:
             raise DomainRuleError("INVALID_TARGET_DURATION", "target_duration_ms 必须大于 0")
-        profile_bindings = profile_bindings or []
+        profile_bindings = _canonical_profile_bindings(profile_bindings or [])
         self._validate_creation_bindings(production_plan, profile_bindings, delivery_target,
                                          require_complete=False)
         with self.database.connect() as connection:
@@ -270,7 +287,8 @@ class ProjectService:
                     raise DomainRuleError("PROFILE_NOT_FOUND", "Profile 版本不存在")
                 if profile["status"] != "PUBLISHED":
                     raise DomainRuleError("PROFILE_NOT_PUBLISHED", "创建项目只能绑定 Published Profile")
-                if str(profile["capability"]) != binding.get("capability"):
+                profile_capability = _canonical_profile_capability(profile["capability"])
+                if profile_capability != binding.get("capability"):
                     raise DomainRuleError("PROFILE_CAPABILITY_MISMATCH", "Profile capability 与绑定键不一致")
 
     def get_project(self, project_id: str) -> dict[str, Any]:
@@ -422,7 +440,15 @@ class ProjectService:
                     connection.execute(
                         """INSERT INTO project_profile_bindings (id, project_id, capability, execution_profile_version_id, status,
                         created_at, updated_at, created_by) VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?, ?)""",
-                        (str(uuid.uuid4()), project_id, profile["capability"], profile["execution_profile_version_id"], now, now, actor),
+                        (
+                            str(uuid.uuid4()),
+                            project_id,
+                            _canonical_profile_capability(profile["capability"]),
+                            profile["execution_profile_version_id"],
+                            now,
+                            now,
+                            actor,
+                        ),
                     )
                     counts["profiles"] += 1
                 targets = connection.execute(
@@ -661,7 +687,7 @@ class ProjectService:
             connection.execute(
                 """INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
                 VALUES (?,'writer','EPISODE_SCENE_RANGE_BOUND','episode_scene_range',?,'关联分集与项目级母本场次',?)""",
-                (actor, range_id, _json({"episode_id": episode_id, "scene_id": scene_id, "ordinal": ordinal, "source_start": source_start, "source_end": source_end})),
+                (actor, range_id, _json({"episode_id": episode_id, "scene_id": scene_id, "ordinal": ordinal, "source_start": source_start, "source_end": source_end, "offset_unit": "UNICODE_CODEPOINT"})),
             )
         return next(item for item in self.list_episode_scene_ranges(episode_id) if item["id"] == range_id)
 
@@ -675,7 +701,7 @@ class ProjectService:
                 WHERE esr.episode_id=? ORDER BY esr.ordinal,esr.id""",
                 (episode_id,),
             ).fetchall()
-        return [dict(row) for row in rows]
+        return [{**dict(row), "offset_unit": "UNICODE_CODEPOINT"} for row in rows]
 
     def list_episodes(self, season_id: str) -> list[dict[str, Any]]:
         with self.database.connect() as connection:
@@ -684,7 +710,10 @@ class ProjectService:
 
     def list_shots(self, episode_id: str) -> list[dict[str, Any]]:
         with self.database.connect() as connection:
-            rows = connection.execute("SELECT * FROM shots WHERE episode_id = ? ORDER BY CAST(order_key AS REAL), code", (episode_id,)).fetchall()
+            rows = connection.execute(
+                "SELECT * FROM shots WHERE episode_id = ? AND archived_at IS NULL ORDER BY CAST(order_key AS REAL), code",
+                (episode_id,),
+            ).fetchall()
         return [dict(row) for row in rows]
 
     def get_storyboard_workspace(self, episode_id: str) -> dict[str, Any]:
@@ -695,7 +724,7 @@ class ProjectService:
             rows = connection.execute(
                 """SELECT sh.*,sr.revision_no AS current_revision_no,sr.fields_json,sr.is_frozen
                 FROM shots sh LEFT JOIN shot_revisions sr ON sr.id=sh.current_revision_id
-                WHERE sh.episode_id=? ORDER BY CAST(sh.order_key AS REAL),sh.code""",
+                WHERE sh.episode_id=? AND sh.archived_at IS NULL ORDER BY CAST(sh.order_key AS REAL),sh.code""",
                 (episode_id,),
             ).fetchall()
         items = []
@@ -891,30 +920,62 @@ class ProjectService:
                 )
         return self.get_episode(episode_id)
 
-    def create_shot_revision(self, shot_id: str, fields: dict[str, object], freeze: bool = False) -> dict[str, Any]:
+    def create_shot_revision(
+        self,
+        shot_id: str,
+        fields: dict[str, object],
+        freeze: bool = False,
+        expected_revision_no: int | None = None,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        fields = normalize_director_intent_v3(fields)
+        validate_director_intent_v3_payload(fields)
         if "camera_plan" in fields:
-            camera_plan = CameraPlan.from_payload(fields["camera_plan"])
+            camera_plan = CameraPlan.from_payload(fields["camera_plan"]) if fields["camera_plan"] is not None else None
             # An unresolved plan may be saved as a truthful draft so the
             # director can see the blocker, but any executable mode must be
             # re-resolved against the current Published Profile server-side.
-            if camera_plan.mode != "UNSUPPORTED":
+            if camera_plan is not None and camera_plan.mode != "UNSUPPORTED":
                 self._assert_camera_profile_resolution(camera_plan)
         now = _utc_now()
         revision_id = str(uuid.uuid4())
         with self.database.transaction() as connection:
-            shot = connection.execute("SELECT * FROM shots WHERE id = ?", (shot_id,)).fetchone()
+            shot = connection.execute(
+                """SELECT s.*,se.project_id FROM shots s JOIN episodes e ON e.id=s.episode_id
+                JOIN seasons se ON se.id=e.season_id WHERE s.id=?""", (shot_id,),
+            ).fetchone()
             if shot is None:
                 raise DomainRuleError("SHOT_NOT_FOUND", "镜头不存在", {"shot_id": shot_id})
             current = connection.execute("SELECT COALESCE(MAX(revision_no), 0) FROM shot_revisions WHERE shot_id = ?", (shot_id,)).fetchone()[0]
+            if expected_revision_no is not None and int(current) != expected_revision_no:
+                raise DomainRuleError(
+                    "REVISION_CONFLICT",
+                    "镜头导演意图已被其他编辑更新，请刷新后重试",
+                    {
+                        "shot_id": shot_id,
+                        "expected_revision_no": expected_revision_no,
+                        "current_revision_no": int(current),
+                    },
+                )
             revision_no = int(current) + 1
             connection.execute(
                 """INSERT INTO shot_revisions (id, shot_id, revision_no, fields_json, is_frozen, created_at, updated_at, created_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'local-user')""",
-                (revision_id, shot_id, revision_no, _json(fields), int(freeze), now, now),
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (revision_id, shot_id, revision_no, _json(fields), int(freeze), now, now, actor),
             )
             connection.execute(
                 "UPDATE shots SET current_revision_id = ?, status = 'DIRECTED', revision = revision + 1, updated_at = ? WHERE id = ?",
                 (revision_id, now, shot_id),
+            )
+            event_payload = {"shot_id": shot_id, "revision_id": revision_id, "revision_no": revision_no, "schema_version": "director-intent.v3", "is_frozen": bool(freeze)}
+            connection.execute(
+                """INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
+                VALUES (?,'director','SHOT_REVISION_CREATED','shot',?,'镜头导演意图 revision 已创建',?)""",
+                (actor, shot_id, _json(event_payload)),
+            )
+            connection.execute(
+                "INSERT INTO outbox_events (type,project_id,subject_type,subject_id,payload_json) VALUES ('SHOT_REVISION_CREATED',?,'SHOT',?,?)",
+                (shot["project_id"], shot_id, _json(event_payload)),
             )
         ReviewService(self.database).mark_stale_for_owner(shot_id, "shot_revision_changed")
         return {"id": revision_id, "shot_id": shot_id, "revision_no": revision_no, "fields": fields, "is_frozen": freeze}
@@ -975,9 +1036,12 @@ class ProjectService:
                 {"profile_version_id": profile_version_id},
             )
 
-    def mark_shot_production_ready(self, shot_id: str) -> dict[str, Any]:
+    def mark_shot_production_ready(self, shot_id: str, *, actor: str = "local-user") -> dict[str, Any]:
         with self.database.transaction() as connection:
-            shot = connection.execute("SELECT * FROM shots WHERE id = ?", (shot_id,)).fetchone()
+            shot = connection.execute(
+                """SELECT s.*,se.project_id FROM shots s JOIN episodes e ON e.id=s.episode_id
+                JOIN seasons se ON se.id=e.season_id WHERE s.id=?""", (shot_id,),
+            ).fetchone()
             if shot is None:
                 raise DomainRuleError("SHOT_NOT_FOUND", "镜头不存在", {"shot_id": shot_id})
             revision = connection.execute("SELECT fields_json FROM shot_revisions WHERE id = ?", (shot["current_revision_id"],)).fetchone()
@@ -985,5 +1049,16 @@ class ProjectService:
             validate_shot_ready(fields)
             self._assert_camera_profile_resolution(CameraPlan.from_payload(fields["camera_plan"]))
             require_transition(VALID_SHOT_TRANSITIONS, shot["status"], "READY", "Shot")
-            connection.execute("UPDATE shots SET status = 'READY', updated_at = ?, revision = revision + 1 WHERE id = ?", (_utc_now(), shot_id))
+            now = _utc_now()
+            connection.execute("UPDATE shots SET status = 'READY', updated_at = ?, revision = revision + 1 WHERE id = ?", (now, shot_id))
+            event_payload = {"shot_id": shot_id, "revision_id": shot["current_revision_id"], "from_status": shot["status"], "to_status": "READY"}
+            connection.execute(
+                """INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
+                VALUES (?,'director','SHOT_MARKED_PRODUCTION_READY','shot',?,'镜头已标记 Production Ready',?)""",
+                (actor, shot_id, _json(event_payload)),
+            )
+            connection.execute(
+                "INSERT INTO outbox_events (type,project_id,subject_type,subject_id,payload_json) VALUES ('SHOT_PRODUCTION_READY',?,'SHOT',?,?)",
+                (shot["project_id"], shot_id, _json(event_payload)),
+            )
         return self.get_shot(shot_id)

@@ -1,0 +1,67 @@
+{
+  "schema_version": "localdrama.competitor-evidence.v1",
+  "product": "lumenx",
+  "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+  "image_count": 8,
+  "contact_sheets": [
+    "contact-sheet-evidence-01.jpg"
+  ],
+  "images": [
+    {
+      "file": "ui-01.jpg",
+      "width": 3024,
+      "height": 1898,
+      "bytes": 756174,
+      "thumbnail": "thumbs-evidence/ui-01-6d581444.jpg"
+    },
+    {
+      "file": "ui-02.jpg",
+      "width": 3024,
+      "height": 1898,
+      "bytes": 595063,
+      "thumbnail": "thumbs-evidence/ui-02-62ce8644.jpg"
+    },
+    {
+      "file": "ui-03.jpg",
+      "width": 3024,
+      "height": 1898,
+      "bytes": 457861,
+      "thumbnail": "thumbs-evidence/ui-03-dde9b861.jpg"
+    },
+    {
+      "file": "ui-04.jpg",
+      "width": 3024,
+      "height": 1898,
+      "bytes": 819235,
+      "thumbnail": "thumbs-evidence/ui-04-ad4f5d3a.jpg"
+    },
+    {
+      "file": "ui-05.jpg",
+      "width": 3024,
+      "height": 1898,
+      "bytes": 744823,
+      "thumbnail": "thumbs-evidence/ui-05-f5276236.jpg"
+    },
+    {
+      "file": "ui-06.jpg",
+      "width": 3024,
+      "height": 1898,
+      "bytes": 979691,
+      "thumbnail": "thumbs-evidence/ui-06-bd08d456.jpg"
+    },
+    {
+      "file": "ui-07.jpg",
+      "width": 3024,
+      "height": 1898,
+      "bytes": 497821,
+      "thumbnail": "thumbs-evidence/ui-07-1398a414.jpg"
+    },
+    {
+      "file": "ui-08.jpg",
+      "width": 3024,
+      "height": 1898,
+      "bytes": 605727,
+      "thumbnail": "thumbs-evidence/ui-08-4311091a.jpg"
+    }
+  ]
+}

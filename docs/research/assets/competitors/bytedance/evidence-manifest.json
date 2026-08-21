@@ -1,0 +1,46 @@
+{
+  "schema_version": "localdrama.competitor-evidence.v1",
+  "product": "bytedance",
+  "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+  "image_count": 5,
+  "contact_sheets": [
+    "contact-sheet-evidence-01.jpg"
+  ],
+  "images": [
+    {
+      "file": "01_workbench_upload_script.webp",
+      "width": 1080,
+      "height": 587,
+      "bytes": 15742,
+      "thumbnail": "thumbs-evidence/01_workbench_upload_script-ef15f206.jpg"
+    },
+    {
+      "file": "02_project_planning_dialog.webp",
+      "width": 1080,
+      "height": 539,
+      "bytes": 21730,
+      "thumbnail": "thumbs-evidence/02_project_planning_dialog-86ed4fb3.jpg"
+    },
+    {
+      "file": "03_asset_design_workspace.webp",
+      "width": 1080,
+      "height": 447,
+      "bytes": 34700,
+      "thumbnail": "thumbs-evidence/03_asset_design_workspace-34aaefd3.jpg"
+    },
+    {
+      "file": "04_episode_storyboard_script.webp",
+      "width": 1080,
+      "height": 723,
+      "bytes": 89806,
+      "thumbnail": "thumbs-evidence/04_episode_storyboard_script-4fa315e7.jpg"
+    },
+    {
+      "file": "05_episode_composition_export.webp",
+      "width": 684,
+      "height": 1094,
+      "bytes": 27896,
+      "thumbnail": "thumbs-evidence/05_episode_composition_export-d6629d89.jpg"
+    }
+  ]
+}

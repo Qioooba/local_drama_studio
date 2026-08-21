@@ -318,7 +318,15 @@ class JobService:
         next_cursor = int(items[-1]["event_id"]) if has_more and items else None
         return {"items": items, "cursor": max(0, int(cursor)), "next_cursor": next_cursor, "limit": normalized_limit}
 
-    def claim(self, worker_id: str, channels: list[str] | None = None, lease_seconds: int = 60, actor: str = "worker") -> dict[str, Any] | None:
+    def claim(
+        self,
+        worker_id: str,
+        channels: list[str] | None = None,
+        lease_seconds: int = 60,
+        actor: str = "worker",
+        *,
+        worker_session_id: str | None = None,
+    ) -> dict[str, Any] | None:
         if not worker_id:
             raise DomainRuleError("WORKER_ID_REQUIRED", "claim 必须提供 worker_id")
         if lease_seconds < 5 or lease_seconds > 3600:
@@ -331,6 +339,17 @@ class JobService:
         # orphaned attempt cannot strand the queue until a manual endpoint call.
         self.reconcile(now=now, actor="scheduler-restart")
         with self.database.transaction() as connection:
+            if worker_session_id is not None:
+                session = connection.execute(
+                    "SELECT worker_id,status,lease_expires_at FROM worker_sessions WHERE id=?",
+                    (worker_session_id,),
+                ).fetchone()
+                if session is None:
+                    raise DomainRuleError("WORKER_SESSION_NOT_FOUND", "WorkerSession 不存在")
+                if str(session["worker_id"]) != worker_id:
+                    raise DomainRuleError("WORKER_SESSION_MISMATCH", "WorkerSession 与 worker_id 不匹配")
+                if str(session["status"]) != "RUNNING" or datetime.fromisoformat(str(session["lease_expires_at"])) <= now:
+                    raise DomainRuleError("WORKER_SESSION_NOT_ACTIVE", "WorkerSession 未运行或 heartbeat 已过期")
             params: list[Any] = [now_iso]
             channel_clause = ""
             if channels:
@@ -365,16 +384,21 @@ class JobService:
             )
             connection.execute(
                 """INSERT INTO job_attempts
-                (id, job_id, attempt_no, state, worker_id, lease_token, lease_expires_at, heartbeat_at, started_at, created_at, updated_at, created_by, revision, schema_version)
-                VALUES (?, ?, ?, 'CLAIMED', ?, ?, ?, ?, ?, ?, ?, ?, 1, 'v2')""",
-                (attempt_id, row["id"], attempt_no, worker_id, token, expires, now_iso, now_iso, now_iso, now_iso, actor),
+                (id, job_id, attempt_no, state, worker_id, worker_session_id, lease_token, lease_expires_at, heartbeat_at, started_at, created_at, updated_at, created_by, revision, schema_version)
+                VALUES (?, ?, ?, 'CLAIMED', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'v2')""",
+                (attempt_id, row["id"], attempt_no, worker_id, worker_session_id, token, expires, now_iso, now_iso, now_iso, now_iso, actor),
             )
             connection.execute(
                 "INSERT INTO job_resource_leases (id, job_id, attempt_id, channel, resource_key, acquired_at, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (str(uuid.uuid4()), row["id"], attempt_id, row["channel"], _resource_key(str(row["channel"]), worker_id), now_iso, now_iso, actor),
             )
             self._emit(
-                connection, "JOB_CLAIMED", row["project_id"], "JOB_ATTEMPT", attempt_id, {"job_id": row["id"], "attempt_no": attempt_no, "worker_id": worker_id}
+                connection,
+                "JOB_CLAIMED",
+                row["project_id"],
+                "JOB_ATTEMPT",
+                attempt_id,
+                {"job_id": row["id"], "attempt_no": attempt_no, "worker_id": worker_id, "worker_session_id": worker_session_id},
             )
             return {
                 "job": self._job_response({**dict(row), "state": CLAIMED, "revision": row["revision"] + 1}),
@@ -384,6 +408,7 @@ class JobService:
                     "attempt_no": attempt_no,
                     "state": CLAIMED,
                     "worker_id": worker_id,
+                    "worker_session_id": worker_session_id,
                     "lease_token": token,
                     "lease_expires_at": expires,
                 },
@@ -428,7 +453,10 @@ class JobService:
                 (now_iso, expires, _json(progress_payload), now_iso, attempt_id),
             )
             connection.execute(
-                "UPDATE jobs SET state='RUNNING', progress_json=?, progress_updated_at=?, updated_at=?, revision=revision+1 WHERE id=?",
+                """UPDATE jobs
+                SET state=CASE WHEN state='CANCEL_REQUESTED' THEN state ELSE 'RUNNING' END,
+                    progress_json=?, progress_updated_at=?, updated_at=?, revision=revision+1
+                WHERE id=?""",
                 (_json(progress_payload), now_iso, now_iso, row["job_id"]),
             )
             self._emit(connection, "JOB_HEARTBEAT", row["project_id"], "JOB_ATTEMPT", attempt_id, {"job_id": row["job_id"], "progress": progress_payload})
@@ -439,6 +467,7 @@ class JobService:
             "heartbeat_at": now_iso,
             "lease_expires_at": expires,
             "progress": progress_payload,
+            "cancel_requested": row["job_state"] == CANCEL_REQUESTED,
         }
 
     def attach_provider(
@@ -486,13 +515,15 @@ class JobService:
             job = connection.execute("SELECT * FROM jobs WHERE id=?", (row["job_id"],)).fetchone()
             if job is None:
                 raise DomainRuleError("JOB_NOT_FOUND", "Job 不存在")
-            if success:
-                attempt_state = SUCCEEDED
-                job_state = SUCCEEDED
-                next_run_at = None
-            elif job["state"] == CANCEL_REQUESTED:
+            # A cancellation requested while a local runtime is finishing must
+            # never be overwritten by a late success heartbeat/completion.
+            if job["state"] == CANCEL_REQUESTED:
                 attempt_state = CANCELLED
                 job_state = CANCELLED
+                next_run_at = None
+            elif success:
+                attempt_state = SUCCEEDED
+                job_state = SUCCEEDED
                 next_run_at = None
             elif int(row["attempt_no"]) < int(job["max_attempts"]):
                 attempt_state = FAILED

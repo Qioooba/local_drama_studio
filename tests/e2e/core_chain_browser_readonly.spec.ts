@@ -14,6 +14,15 @@ type ViewportResult = {
   page_errors: string[];
   failed_responses: string[];
   horizontal_overflow_px: number;
+  director: {
+    fixture_status: "DESK" | "NO_DIRECTOR_DATA";
+    page_horizontal_overflow_px: number;
+    desk_horizontal_overflow_px: number | null;
+    media_stage_width_px: number | null;
+    shot_nav_reachable: boolean;
+    inspector_reachable: boolean;
+    timeline_collapse_keyboard_reachable: boolean;
+  };
 };
 
 const defaultProjectId = "e5eaa01d-d39a-4a63-acbf-026da30b46e7";
@@ -21,9 +30,10 @@ const defaultEpisodeId = "d4db1033-9517-4bd0-958d-4228e0abead1";
 const projectId = process.env.CORE_UAT_PROJECT_ID ?? defaultProjectId;
 const episodeId = process.env.CORE_UAT_EPISODE_ID ?? defaultEpisodeId;
 const viewports = [
+  { name: "1280x720", width: 1280, height: 720 },
   { name: "1440x900", width: 1440, height: 900 },
-  { name: "1280x800", width: 1280, height: 800 },
-  { name: "1024x768", width: 1024, height: 768 },
+  { name: "1920x1080", width: 1920, height: 1080 },
+  { name: "2560x1440", width: 2560, height: 1440 },
 ] as const;
 
 test.setTimeout(120_000);
@@ -45,6 +55,7 @@ function isAllowedFailureApiPath(pathname: string, status: number, projectId: st
     `/api/v1/projects/${projectId}/asset-grants`,
     `/api/v1/projects/${projectId}/workspace-assets/authorizations`,
     `/api/v1/projects/${projectId}/brand-controls`,
+    `/api/v1/projects/${projectId}/episodes/${episodeId}/director-desk`,
     `/api/v1/workspace-assets/authorizations`,
     "/api/v1/media-versions/",
   ].some((prefix) => {
@@ -85,12 +96,12 @@ async function maybeFillGlobalSearch(page: any) {
 test.afterAll(() => {
   const passed = results.length === viewports.length && results.every((item) => item.status === "PASS");
   const output = {
-    schema_version: "g10-core-chain-browser-readonly-uat.v1",
+    schema_version: "g10-core-chain-browser-readonly-uat.v2",
     observed_at: new Date().toISOString(),
     mode: "LOCAL_ONLY",
     project_id: projectId,
     episode_id: episodeId,
-    scope: ["project read model", "generation readiness / read-only probe", "review inbox", "timeline / delivery history", "jobs / capacity", "diagnostics / audit"],
+    scope: ["project read model", "generation readiness / read-only probe", "review inbox", "timeline / delivery history", "Director Desk responsive shell / panes / collapse", "jobs / capacity", "diagnostics / audit"],
     status: passed ? "PASS" : "IN_PROGRESS",
     isolated_snapshot: true,
     production_database_touched: false,
@@ -101,7 +112,7 @@ test.afterAll(() => {
     original_media_requested: false,
     screenshots_created: false,
     viewports: results,
-    interpretation: "Real React routes and FastAPI read paths were exercised from an isolated SQLite/project snapshot. Mutation controls were intentionally not clicked; POST/PUT/PATCH/DELETE API traffic would fail the test.",
+    interpretation: "Real React routes and FastAPI read paths were exercised at the four §38 viewport sizes from an isolated SQLite/project snapshot. Director Desk shell, horizontal fit, Media Stage width, pane reachability, and keyboard collapse were checked when fixture data existed; NO_DIRECTOR_DATA records an honest shell-only fallback. Mutation controls were intentionally not clicked; POST/PUT/PATCH/DELETE API traffic would fail the test.",
   };
   fs.mkdirSync(path.dirname(evidencePath()), { recursive: true });
   fs.writeFileSync(evidencePath(), `${JSON.stringify(output, null, 2)}\n`, "utf8");
@@ -117,6 +128,15 @@ for (const viewport of viewports) {
     const publicRequests: string[] = [];
     const originalMediaRequests: string[] = [];
     const apiGets = new Set<string>();
+    let directorObservation: ViewportResult["director"] = {
+      fixture_status: "NO_DIRECTOR_DATA",
+      page_horizontal_overflow_px: 0,
+      desk_horizontal_overflow_px: null,
+      media_stage_width_px: null,
+      shot_nav_reachable: false,
+      inspector_reachable: false,
+      timeline_collapse_keyboard_reachable: false,
+    };
     page.on("console", (message) => {
       if (message.type() === "error") {
         const text = message.text();
@@ -160,7 +180,7 @@ for (const viewport of viewports) {
     const routes = [
       {
         name: "project",
-        url: `/?view=projects&project=${projectId}&episode=${episodeId}`,
+        url: `/?view=projects&project=${projectId}&episode=${episodeId}&legacy=1`,
         checks: async () => {
           await expect(page).toHaveURL(/\bview=projects\b/);
           await maybeFillGlobalSearch(page);
@@ -170,15 +190,66 @@ for (const viewport of viewports) {
       },
       {
         name: "generation",
-        url: `/?view=generation&project=${projectId}&episode=${episodeId}`,
+        url: `/?view=generation&project=${projectId}&episode=${episodeId}&legacy=1`,
         checks: async () => {
           await expect(page).toHaveURL(/\bview=generation\b/);
           await expect(page.getByRole("heading", { name: "生成工作台" })).toBeVisible();
         },
       },
       {
+        name: "director",
+        url: `/projects/${projectId}/episodes/${episodeId}/direct`,
+        checks: async () => {
+          await expect(page.locator("#v2-workspace-content")).toBeVisible();
+          const desk = page.locator(".director-desk");
+          const hasDirectorFixture = await desk
+            .waitFor({ state: "visible", timeout: 5_000 })
+            .then(() => true)
+            .catch(() => false);
+          if (hasDirectorFixture) {
+            const pageOverflow = await page.evaluate(() => Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth));
+            const deskMetrics = await desk.evaluate((element) => ({ overflow: Math.max(0, element.scrollWidth - element.clientWidth), width: element.clientWidth }));
+            const mediaStage = page.locator(".director-media-stage");
+            const mediaBox = await mediaStage.boundingBox();
+            const shotNav = page.locator(".director-shot-nav");
+            const inspector = page.locator(".director-inspector");
+            const collapse = page.locator(".director-timeline-toggle");
+            await expect(mediaStage).toBeVisible();
+            await expect(shotNav).toBeVisible();
+            await expect(inspector).toBeVisible();
+            await expect(collapse).toBeVisible();
+            await collapse.focus();
+            await expect(collapse).toBeFocused();
+            const expanded = await collapse.getAttribute("aria-expanded");
+            expect(expanded).not.toBeNull();
+            await collapse.press("Enter");
+            await expect(collapse).toHaveAttribute("aria-expanded", expanded === "true" ? "false" : "true");
+            await collapse.press("Enter");
+            await expect(collapse).toHaveAttribute("aria-expanded", expanded!);
+            expect(pageOverflow, "Director route must not create page-level horizontal scrolling").toBe(0);
+            expect(mediaBox?.width ?? 0, "Media Stage must stay wider than a 200px unusable sliver").toBeGreaterThanOrEqual(320);
+            directorObservation = {
+              fixture_status: "DESK",
+              page_horizontal_overflow_px: pageOverflow,
+              desk_horizontal_overflow_px: deskMetrics.overflow,
+              media_stage_width_px: Math.round(mediaBox?.width ?? 0),
+              shot_nav_reachable: true,
+              inspector_reachable: true,
+              timeline_collapse_keyboard_reachable: true,
+            };
+          } else {
+            const honestState = page.locator(".director-error");
+            await expect(honestState).toBeVisible();
+            await expect(honestState).toContainText(/没有镜头|无法打开|分集规划/);
+            const pageOverflow = await page.evaluate(() => Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth));
+            expect(pageOverflow).toBe(0);
+            directorObservation = { ...directorObservation, page_horizontal_overflow_px: pageOverflow };
+          }
+        },
+      },
+      {
         name: "review",
-        url: `/?view=reviews&project=${projectId}&episode=${episodeId}`,
+        url: `/?view=reviews&project=${projectId}&episode=${episodeId}&legacy=1`,
         checks: async () => {
           await expect(page).toHaveURL(/\bview=reviews\b/);
           await expect(page.getByRole("heading", { name: "媒体版本审核与选择" })).toBeVisible();
@@ -186,7 +257,7 @@ for (const viewport of viewports) {
       },
       {
         name: "jobs",
-        url: `/?view=jobs&project=${projectId}&episode=${episodeId}`,
+        url: `/?view=jobs&project=${projectId}&episode=${episodeId}&legacy=1`,
         checks: async () => {
           await expect(page).toHaveURL(/\bview=jobs\b/);
           await expect(page.getByRole("heading", { name: "持久任务队列与本地 worker" })).toBeVisible();
@@ -195,11 +266,11 @@ for (const viewport of viewports) {
       },
       {
         name: "diagnostics",
-        url: `/?view=diagnostics&project=${projectId}&episode=${episodeId}`,
+        url: `/?view=diagnostics&project=${projectId}&episode=${episodeId}&legacy=1`,
         checks: async () => {
           await expect(page).toHaveURL(/\bview=diagnostics\b/);
           await expect(page.getByRole("heading", { name: "本机环境检查" })).toBeVisible();
-          await expect(page.getByRole("heading", { name: "ComfyUI Lab" })).toBeVisible();
+          await expect(page.getByRole("heading", { name: "ComfyUI 实验室" })).toBeVisible();
           await expect(page.getByRole("heading", { name: "本地适配器契约" })).toBeVisible();
           await expect(page.getByRole("heading", { name: "审计历史" })).toBeVisible();
         },
@@ -208,7 +279,7 @@ for (const viewport of viewports) {
 
     for (const route of routes) {
       await page.goto(route.url, { waitUntil: "domcontentloaded" });
-      await expect(page.locator("#workspace-content")).toBeVisible();
+      await expect(page.locator("#workspace-content:visible, #v2-workspace-content:visible")).toHaveCount(1);
       await expect(page.locator(".workspace-error")).toHaveCount(0);
       await route.checks();
     }
@@ -226,7 +297,7 @@ for (const viewport of viewports) {
       "/api/v1/episodes/" + episodeId + "/delivery-packages",
     ];
     for (const expected of expectedPaths) {
-      expect(apiPaths.some((actual) => actual === expected || actual.startsWith(`${expected}?`))).toBe(true);
+      expect(apiPaths.some((actual) => actual === expected || actual.startsWith(`${expected}?`)), `missing ${expected}; observed ${apiPaths.join(", ")}`).toBe(true);
     }
     const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     const result: ViewportResult = {
@@ -250,6 +321,7 @@ for (const viewport of viewports) {
       page_errors: pageErrors,
       failed_responses: failedResponses,
       horizontal_overflow_px: horizontalOverflow,
+      director: directorObservation,
     };
     results.push(result);
     expect(writes).toEqual([]);
@@ -261,4 +333,3 @@ for (const viewport of viewports) {
     expect(horizontalOverflow).toBe(0);
   });
 }
-

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -63,3 +63,34 @@ class VariantDeriveRequest(BaseModel):
 class VariantSeedBatchRequest(BaseModel):
     seeds: list[int] = Field(min_length=1, max_length=24)
     branch_reason: str = Field(min_length=1, max_length=1000)
+
+
+RerollReasonCode = Literal[
+    "USER_REROLL",
+    "FACE_FIX",
+    "IDENTITY_FIX",
+    "COMPOSITION_FIX",
+    "MOTION_FIX",
+    "CONTINUITY_FIX",
+    "FRAME_BRIDGE_FIX",
+    "MODEL_COMPARE",
+    "PROMPT_TUNE",
+    "QC_AUTO_RETRY",
+    "OTHER",
+]
+
+
+class VariantRerollRequest(BaseModel):
+    """One-step creative reroll command.
+
+    ``bindings=None`` means byte-for-byte semantic-slot inheritance.  A supplied
+    list is a complete replacement snapshot; it is deliberately not a patch.
+    Operational retries remain on ``POST /jobs/{id}:retry``.
+    """
+
+    reason_code: RerollReasonCode
+    reason_note: str | None = Field(default=None, max_length=900)
+    explicit_seed: int | None = None
+    profile_version_id: str | None = Field(default=None, min_length=1)
+    bindings: list[VariantInputRequest] | None = Field(default=None, max_length=100)
+    idempotency_key: str = Field(min_length=1, max_length=200)

@@ -31,7 +31,7 @@ class G6ReadinessService:
             published_i2v = connection.execute(
                 """SELECT epv.id, epv.workflow_version_id FROM execution_profile_versions epv
                 JOIN workflow_versions wv ON wv.id=epv.workflow_version_id
-                WHERE epv.capability='I2V' AND epv.status='PUBLISHED' AND wv.status='PUBLISHED'
+                WHERE epv.capability='VIDEO_I2V' AND epv.status='PUBLISHED' AND wv.status='PUBLISHED'
                 ORDER BY epv.version_no DESC LIMIT 1"""
             ).fetchone()
 

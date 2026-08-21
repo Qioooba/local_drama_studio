@@ -13,10 +13,35 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
-HEAD_MIGRATION = "0041_character_voice_bindings"
-SOURCE_MIGRATION = "0031_project_asset_grants"
+
+
+def _alembic_config() -> Config:
+    config = Config(str(ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(ROOT / "apps" / "api" / "alembic"))
+    config.set_main_option("prepend_sys_path", str(ROOT / "apps" / "api"))
+    return config
+
+
+def _migration_graph() -> tuple[list[str], set[str]]:
+    scripts = ScriptDirectory.from_config(_alembic_config())
+    return sorted(scripts.get_heads()), {revision.revision for revision in scripts.walk_revisions()}
+
+
+def _default_evidence_path() -> Path:
+    heads, _ = _migration_graph()
+    head_label = "-".join(heads) if heads else "no-head"
+    date_label = datetime.now(UTC).strftime("%Y-%m-%d")
+    return ROOT / "docs" / "evidence" / "g10" / f"upgrade-rollback-rehearsal-{head_label}-{date_label}.json"
+
+
+def _display_path(path: Path) -> str:
+    try:
+        return path.resolve().relative_to(ROOT).as_posix()
+    except ValueError:
+        return str(path.resolve())
 
 
 def _sha256(path: Path) -> str:
@@ -29,8 +54,10 @@ def _sha256(path: Path) -> str:
 
 def _database_state(path: Path) -> dict[str, object]:
     with sqlite3.connect(path) as connection:
+        migrations = sorted(str(row[0]) for row in connection.execute("SELECT version_num FROM alembic_version"))
         return {
-            "migration": str(connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]),
+            "migration": migrations[0] if len(migrations) == 1 else None,
+            "migration_heads": migrations,
             "integrity": str(connection.execute("PRAGMA integrity_check").fetchone()[0]),
             "bytes": path.stat().st_size,
             "sha256": _sha256(path),
@@ -41,10 +68,7 @@ def _upgrade(path: Path) -> None:
     previous = os.environ.get("LOCAL_DRAMA_DATABASE_URL")
     try:
         os.environ["LOCAL_DRAMA_DATABASE_URL"] = f"sqlite:///{path.as_posix()}"
-        config = Config(str(ROOT / "alembic.ini"))
-        config.set_main_option("script_location", str(ROOT / "apps" / "api" / "alembic"))
-        config.set_main_option("prepend_sys_path", str(ROOT / "apps" / "api"))
-        command.upgrade(config, "head")
+        command.upgrade(_alembic_config(), "heads")
     finally:
         if previous is None:
             os.environ.pop("LOCAL_DRAMA_DATABASE_URL", None)
@@ -59,14 +83,17 @@ def rehearse(source: Path, rehearsal_root: Path) -> dict[str, object]:
     shutil.copy2(source, upgrade_copy)
     shutil.copy2(source, restore_copy)
     source_state = _database_state(source)
-    _upgrade(upgrade_copy)
+    expected_heads, known_revisions = _migration_graph()
+    source_revision_known = bool(source_state["migration_heads"]) and set(source_state["migration_heads"]).issubset(known_revisions)
+    if source_revision_known:
+        _upgrade(upgrade_copy)
     upgrade_state = _database_state(upgrade_copy)
     restore_state = _database_state(restore_copy)
     status = "PASS" if (
         source_state["integrity"] == "ok"
         and upgrade_state["integrity"] == "ok"
-        and source_state["migration"] == SOURCE_MIGRATION
-        and upgrade_state["migration"] == HEAD_MIGRATION
+        and source_revision_known
+        and upgrade_state["migration_heads"] == expected_heads
         and restore_state["integrity"] == "ok"
         and restore_state["sha256"] == source_state["sha256"]
     ) else "FAIL"
@@ -75,11 +102,12 @@ def rehearse(source: Path, rehearsal_root: Path) -> dict[str, object]:
         "observed_at": datetime.now(UTC).isoformat(),
         "status": status,
         "scope": "isolated copy of a production pre-migration backup",
-        "source_backup": {"path": source.relative_to(ROOT).as_posix(), **source_state},
+        "source_backup": {"path": _display_path(source), **source_state},
         "upgrade_copy": {
-            "operation": "alembic upgrade head on isolated copy",
+            "operation": "alembic upgrade heads on isolated copy" if source_revision_known else "skipped: source revision is outside the migration graph",
             "from_migration": source_state["migration"],
             "to_migration": upgrade_state["migration"],
+            "expected_heads": expected_heads,
             **upgrade_state,
         },
         "restore_copy": {
@@ -93,7 +121,7 @@ def rehearse(source: Path, rehearsal_root: Path) -> dict[str, object]:
             "comfyui_contacted": False,
             "network_contacted": False,
             "jobs_created": False,
-            "temporary_directory_retained": rehearsal_root.relative_to(ROOT).as_posix(),
+            "temporary_directory_retained": _display_path(rehearsal_root),
         },
         "interpretation": "Current migration upgrade and exact backup restore are verified on isolated copies; this does not authorize final release.",
     }
@@ -103,7 +131,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path)
     parser.add_argument("--root", type=Path, default=ROOT / "temp" / f"release-rehearsal-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}")
-    parser.add_argument("--output", type=Path, default=ROOT / "docs" / "evidence" / "g10" / "upgrade-rollback-rehearsal-0039-2026-08-16.json")
+    parser.add_argument("--output", type=Path, default=_default_evidence_path())
     args = parser.parse_args()
     source = args.source or max((ROOT / "backups").glob("pre_migration_*.sqlite3"), key=lambda path: path.stat().st_mtime)
     result = rehearse(source.resolve(), args.root.resolve())

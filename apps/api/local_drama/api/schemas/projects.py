@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from local_drama.domain.director_intent import normalize_director_intent_v3
 
 
 class Rational(BaseModel):
@@ -98,11 +100,63 @@ class EpisodeSceneRangeRequest(BaseModel):
     source_label: str | None = Field(default=None, max_length=500)
 
 
+class DirectorIntentCompositionV3(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    preset: str | None = None
+    framing: str | None = None
+    subject_position: str | None = None
+    headroom: str | None = None
+    lead_room: str | None = None
+    screen_direction: str | None = None
+    axis_rule: str | None = None
+    depth_plan: str | None = None
+
+
+class DirectorIntentPerformanceV3(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    emotion: str | None = None
+    intensity: float | None = Field(default=None, ge=0, le=1, strict=True)
+    body_action: str | None = None
+    facial_action: str | None = None
+    eye_line: str | None = None
+    blocking_summary: str | None = None
+
+
+class DirectorIntentV3(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    schema_version: Literal["director-intent.v3"]
+    shot_type: str | None = None
+    composition: DirectorIntentCompositionV3
+    subject_action: str | None = None
+    performance: DirectorIntentPerformanceV3
+    camera_plan: dict[str, Any] | None = None
+    target_duration_ms: int | None = Field(default=None, gt=0, strict=True)
+    dialogue: list[Any] | str | None = None
+    environment: str | None = None
+    continuity: str | None = None
+    transition_plan: dict[str, Any] | None = None
+    sound_plan: dict[str, Any] | None = None
+    creative_intent: str | None = None
+    staging: dict[str, Any] | None = None
+    staging_3d: dict[str, Any] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy(cls, value: Any) -> Any:
+        if isinstance(value, dict) and value.get("schema_version") == "director-intent.v3":
+            return value
+        return normalize_director_intent_v3(value) if isinstance(value, dict) else value
+
+
 class ShotRevisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    fields: dict[str, Any]
+    fields: DirectorIntentV3
     freeze: bool = False
+    expected_revision_no: int | None = Field(default=None, ge=1)
 
 
 class StoryboardBatchEdit(BaseModel):

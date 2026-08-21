@@ -554,6 +554,8 @@ class AutomationWorkflowService:
         machine_context: dict[str, Any] | None = None,
         ai_scores: dict[str, Any] | None = None,
         produced_bytes: int = 0,
+        expected_completed_job_id: str | None = None,
+        additional_dependency_job_ids: list[str] | None = None,
         actor: str = "local-user",
     ) -> dict[str, Any]:
         if produced_bytes < 0:
@@ -568,6 +570,22 @@ class AutomationWorkflowService:
                 raise DomainRuleError("AUTOMATION_RUN_NOT_FOUND", "workflow run 不存在")
             if row["status"] != "RUNNING":
                 raise DomainRuleError("AUTOMATION_RUN_NOT_RUNNING", "只有 RUNNING 的 workflow run 才能 step", {"status": row["status"]})
+            if expected_completed_job_id:
+                completed = connection.execute(
+                    """SELECT t.ordinal,j.state FROM automation_workflow_run_tasks t JOIN jobs j ON j.id=t.job_id
+                    WHERE t.run_id=? AND t.job_id=?""", (run_id, expected_completed_job_id),
+                ).fetchone()
+                if completed is None:
+                    raise DomainRuleError("AUTOMATION_COMPLETED_JOB_NOT_LINKED", "完成 Job 不属于该 workflow run")
+                if str(completed["state"]) != "SUCCEEDED":
+                    raise DomainRuleError("AUTOMATION_COMPLETED_JOB_NOT_SUCCEEDED", "只有 SUCCEEDED task Job 可以推进 workflow run")
+                # Completion delivery and crash recovery may race.  Once a
+                # later task exists, this completion was already consumed and
+                # must be an idempotent no-op instead of advancing twice.
+                if int(completed["ordinal"]) < int(row["task_count"]):
+                    return self.get_run(run_id)
+                if int(completed["ordinal"]) != int(row["task_count"]):
+                    raise DomainRuleError("AUTOMATION_COMPLETION_OUT_OF_ORDER", "task completion ordinal 与 run cursor 不一致")
             workflow = connection.execute("SELECT * FROM automation_workflows WHERE id=?", (row["workflow_id"],)).fetchone()
             if workflow is None:
                 raise DomainRuleError("AUTOMATION_WORKFLOW_NOT_FOUND", "workflow 不存在")
@@ -611,6 +629,25 @@ class AutomationWorkflowService:
                         pending_gate = {"reason": "MACHINE_CHECK_REQUIRES_HITL", "machine_status": machine_status, "ai_score_ignored": True}
                     elif action == "PAUSE_HITL":
                         pending_gate = {"reason": "DECLARATIVE_CONDITION", "ai_score_ignored": True}
+                    nodes = definition.get("nodes", [])
+                    metadata = nodes[0].get("metadata", {}) if nodes and isinstance(nodes[0], dict) else {}
+                    checkpoint_policy = str(metadata.get("checkpoint_policy") or "ON_EXCEPTION").upper()
+                    item_payload = item.get("payload", {}) if isinstance(item, dict) else {}
+                    next_episode_action = str(item_payload.get("action") or "") if isinstance(item_payload, dict) else ""
+                    checkpoint_action = {
+                        "AFTER_ASSETS": "KEYFRAME_CHECK",
+                        "AFTER_SHOT_PLAN": "KEYFRAME_CHECK",
+                        "BEFORE_VIDEO": "VIDEO_GENERATION",
+                    }.get(checkpoint_policy)
+                    if action == "CONTINUE" and checkpoint_action == next_episode_action:
+                        action = "PAUSE_HITL"
+                        pending_gate = {
+                            "reason": "CONFIGURED_CREATOR_CHECKPOINT",
+                            "checkpoint_policy": checkpoint_policy,
+                            "next_action": next_episode_action,
+                            "source": "workflow_snapshot",
+                            "ai_score_ignored": True,
+                        }
                     if definition["human_gate"] == "EACH_ITERATION" or (definition["node_gate"] and action == "CONTINUE"):
                         action = "PAUSE_HITL"
                         pending_gate = {"reason": "NODE_HUMAN_GATE", "ai_score_ignored": True}
@@ -636,6 +673,10 @@ class AutomationWorkflowService:
                         (run_id,),
                     ).fetchone()
                     dependencies = [str(previous_job["job_id"])] if previous_job else []
+                    for dependency_id in additional_dependency_job_ids or []:
+                        normalized_dependency_id = str(dependency_id).strip()
+                        if normalized_dependency_id and normalized_dependency_id not in dependencies:
+                            dependencies.append(normalized_dependency_id)
                     job = self.jobs.create_job_in_transaction(
                         connection,
                         str(row["project_id"]),
@@ -699,7 +740,7 @@ class AutomationWorkflowService:
                 raise DomainRuleError("AUTOMATION_HITL_NOT_PENDING", "workflow run 当前没有等待人工决定", {"status": row["status"]})
             now = _now()
             gated_jobs = connection.execute(
-                "SELECT j.id,j.project_id FROM automation_workflow_run_tasks t JOIN jobs j ON j.id=t.job_id WHERE t.run_id=? AND j.state='NEEDS_ATTENTION' AND j.last_error_code='AUTOMATION_HITL_REQUIRED'",
+                "SELECT j.id,j.project_id FROM automation_workflow_run_tasks t JOIN jobs j ON j.id=t.job_id WHERE t.run_id=? AND j.state='NEEDS_ATTENTION' AND j.last_error_code IN ('AUTOMATION_HITL_REQUIRED','AUTOMATION_MANUAL_PAUSE')",
                 (run_id,),
             ).fetchall()
             if normalized == "HUMAN_APPROVED":
@@ -732,8 +773,22 @@ class AutomationWorkflowService:
                 raise DomainRuleError("AUTOMATION_RUN_NOT_RUNNING", "只有 RUNNING 的 workflow run 才能暂停")
             pending = {"reason": normalized_reason, "source": "human", "ai_score_ignored": True}
             now = _now()
+            # A workflow pause must also close the scheduler boundary.  Merely
+            # changing the run row leaves an already-created QUEUED task
+            # claimable by JobService, which violates the creator-facing
+            # promise that pending work is not dispatched while paused.
+            queued_jobs = connection.execute(
+                "SELECT j.id,j.project_id FROM automation_workflow_run_tasks t JOIN jobs j ON j.id=t.job_id WHERE t.run_id=? AND j.state='QUEUED'",
+                (run_id,),
+            ).fetchall()
+            for job in queued_jobs:
+                connection.execute(
+                    "UPDATE jobs SET state='NEEDS_ATTENTION',next_run_at=NULL,last_error_code='AUTOMATION_MANUAL_PAUSE',last_error_detail_redacted='workflow manually paused before dispatch',updated_at=?,revision=revision+1 WHERE id=?",
+                    (now, job["id"]),
+                )
+                self.jobs._emit(connection, "JOB_BLOCKED_BY_WORKFLOW_PAUSE", str(job["project_id"]), "JOB", str(job["id"]), {"run_id": run_id, "state": "NEEDS_ATTENTION"})
             connection.execute("UPDATE automation_workflow_runs SET status='PAUSED_HITL',pending_gate_json=?,human_approval_status='PENDING',updated_at=?,revision=revision+1 WHERE id=?", (_json(pending), now, run_id))
-            self._event(connection, run_id, "MANUAL_PAUSE", pending, actor)
+            self._event(connection, run_id, "MANUAL_PAUSE", {**pending, "gated_job_count": len(queued_jobs)}, actor)
         return self.get_run(run_id)
 
     def cancel_run(self, run_id: str, *, actor: str = "local-user") -> dict[str, Any]:
@@ -744,6 +799,17 @@ class AutomationWorkflowService:
             if row["status"] in {"SUCCEEDED", "STOPPED", "FAILED", "CANCELLED", "LIMIT_REACHED"}:
                 raise DomainRuleError("AUTOMATION_RUN_NOT_CANCELLABLE", "已结束的 workflow run 不能取消")
             now = _now()
+            linked_jobs = connection.execute(
+                "SELECT j.id,j.project_id,j.state FROM automation_workflow_run_tasks t JOIN jobs j ON j.id=t.job_id WHERE t.run_id=? AND j.state NOT IN ('SUCCEEDED','FAILED','CANCELLED')",
+                (run_id,),
+            ).fetchall()
+            for job in linked_jobs:
+                target = "CANCELLED" if str(job["state"]) in {"QUEUED", "NEEDS_ATTENTION", "ORPHANED"} else "CANCEL_REQUESTED"
+                connection.execute(
+                    "UPDATE jobs SET state=?,cancel_requested_at=?,finished_at=CASE WHEN ?='CANCELLED' THEN ? ELSE finished_at END,updated_at=?,revision=revision+1 WHERE id=?",
+                    (target, now, target, now, now, job["id"]),
+                )
+                self.jobs._emit(connection, "JOB_CANCEL_REQUESTED", str(job["project_id"]), "JOB", str(job["id"]), {"state": target, "run_id": run_id})
             connection.execute("UPDATE automation_workflow_runs SET status='CANCELLED',completed_at=?,updated_at=?,revision=revision+1 WHERE id=?", (now, now, run_id))
-            self._event(connection, run_id, "CANCELLED", {"reason": "human"}, actor)
+            self._event(connection, run_id, "CANCELLED", {"reason": "human", "linked_job_count": len(linked_jobs)}, actor)
         return self.get_run(run_id)

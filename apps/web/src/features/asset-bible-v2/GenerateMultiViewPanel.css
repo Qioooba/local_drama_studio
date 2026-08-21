@@ -1,0 +1,40 @@
+.multiview-panel { grid-column: 1 / -1; display: grid; gap: 12px; }
+.multiview-heading { margin-bottom: 0; }
+.multiview-heading h4 { margin: 0; }
+.multiview-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.multiview-controls label, .multiview-advanced label { display: grid; gap: 5px; color: var(--text-muted); font-size: 12px; font-weight: 700; }
+.multiview-advanced { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.multiview-advanced summary { cursor: pointer; color: var(--text-muted); font-size: 12px; font-weight: 700; }
+.multiview-advanced label { margin-top: 10px; }
+.multiview-advanced select { width: 100%; margin-top: 6px; }
+.multiview-profile-help { display: block; min-height: 18px; margin-top: 6px; color: var(--text-muted); font-size: 11px; line-height: 1.45; }
+.multiview-profile-help.is-error { color: var(--danger); }
+.multiview-advanced select:disabled { cursor: not-allowed; opacity: .65; }
+.multiview-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.multiview-preflight { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--border); border-left-width: 4px; border-radius: 8px; background: var(--surface-muted); }
+.multiview-preflight.ready { border-left-color: var(--approved); }
+.multiview-preflight.blocked { border-left-color: var(--danger); }
+.multiview-preflight > small { color: var(--text-muted); overflow-wrap: anywhere; }
+.multiview-blocker { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding-top: 6px; border-top: 1px solid var(--border); font-size: 12px; }
+.multiview-blocker small { grid-column: 1; color: var(--text-muted); }
+.multiview-blocker code { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 10px; color: var(--danger); }
+.multiview-history { display: grid; gap: 8px; }
+.multiview-history > details { border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
+.multiview-history > details > summary { display: grid; grid-template-columns: minmax(100px, 1fr) auto auto; gap: 10px; align-items: center; min-height: 40px; padding: 6px 10px; cursor: pointer; font-size: 12px; font-weight: 700; }
+.multiview-history time { color: var(--text-muted); font-size: 11px; font-weight: 400; }
+.multiview-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 0 10px 10px; }
+.multiview-slot { display: grid; align-content: start; gap: 7px; min-width: 0; padding: 10px; border: 1px solid var(--border); border-top: 3px solid var(--running); border-radius: 8px; background: var(--surface-muted); }
+.multiview-slot.succeeded { border-top-color: var(--approved); }
+.multiview-slot.failed { border-top-color: var(--danger); }
+.multiview-slot-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.multiview-slot-head span, .multiview-slot small { color: var(--text-muted); font-size: 10px; }
+.multiview-slot img, .multiview-slot-placeholder { width: 100%; aspect-ratio: 4 / 3; border-radius: 7px; background: #d9d3c8; object-fit: cover; }
+.multiview-slot-placeholder { display: grid; place-items: center; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.multiview-progress { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; color: var(--text-muted); font-size: 11px; }
+.multiview-progress progress { width: 100%; accent-color: var(--running); }
+.multiview-slot.succeeded progress { accent-color: var(--approved); }
+.multiview-slot.failed progress { accent-color: var(--danger); }
+.multiview-slot > code { overflow: hidden; color: var(--text-muted); font-size: 10px; text-overflow: ellipsis; }
+@media (max-width: 1100px) { .multiview-slots { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .multiview-controls { grid-template-columns: 1fr; } .multiview-history > details > summary { grid-template-columns: 1fr auto; } .multiview-history time { grid-column: 1 / -1; } }
+@media (prefers-reduced-motion: reduce) { .multiview-panel * { scroll-behavior: auto; transition: none !important; } }

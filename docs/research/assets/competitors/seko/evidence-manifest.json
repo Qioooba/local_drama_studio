@@ -1,0 +1,88 @@
+{
+  "schema_version": "localdrama.competitor-evidence.v1",
+  "product": "seko",
+  "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+  "image_count": 11,
+  "contact_sheets": [
+    "contact-sheet-evidence-01.jpg"
+  ],
+  "images": [
+    {
+      "file": "ui-01.webp",
+      "width": 1080,
+      "height": 735,
+      "bytes": 82130,
+      "thumbnail": "thumbs-evidence/ui-01-7824a598.jpg"
+    },
+    {
+      "file": "ui-02.webp",
+      "width": 640,
+      "height": 240,
+      "bytes": 599229,
+      "thumbnail": "thumbs-evidence/ui-02-0675863e.jpg"
+    },
+    {
+      "file": "ui-03.webp",
+      "width": 1080,
+      "height": 608,
+      "bytes": 49902,
+      "thumbnail": "thumbs-evidence/ui-03-9bb2d15d.jpg"
+    },
+    {
+      "file": "ui-04.webp",
+      "width": 1080,
+      "height": 651,
+      "bytes": 33914,
+      "thumbnail": "thumbs-evidence/ui-04-a178b91a.jpg"
+    },
+    {
+      "file": "ui-05.webp",
+      "width": 1080,
+      "height": 608,
+      "bytes": 40702,
+      "thumbnail": "thumbs-evidence/ui-05-ae28872d.jpg"
+    },
+    {
+      "file": "ui-06.webp",
+      "width": 1080,
+      "height": 608,
+      "bytes": 62616,
+      "thumbnail": "thumbs-evidence/ui-06-7d874e5d.jpg"
+    },
+    {
+      "file": "ui-07.webp",
+      "width": 1080,
+      "height": 703,
+      "bytes": 40324,
+      "thumbnail": "thumbs-evidence/ui-07-45145fed.jpg"
+    },
+    {
+      "file": "ui-08.webp",
+      "width": 1080,
+      "height": 686,
+      "bytes": 62866,
+      "thumbnail": "thumbs-evidence/ui-08-a1a7f677.jpg"
+    },
+    {
+      "file": "ui-09.webp",
+      "width": 1080,
+      "height": 584,
+      "bytes": 31946,
+      "thumbnail": "thumbs-evidence/ui-09-5ca501a6.jpg"
+    },
+    {
+      "file": "ui-10.png",
+      "width": 1080,
+      "height": 813,
+      "bytes": 497556,
+      "thumbnail": "thumbs-evidence/ui-10-04e1939f.jpg"
+    },
+    {
+      "file": "ui-11.png",
+      "width": 2088,
+      "height": 1540,
+      "bytes": 1645802,
+      "thumbnail": "thumbs-evidence/ui-11-d99f66fc.jpg"
+    }
+  ]
+}

@@ -56,7 +56,7 @@ export function GenerationExperimentPanel({ intentId }: { intentId: string | nul
     finally { setBusy(null); }
   };
   return <section className="panel generation-experiment-panel" aria-labelledby="generation-experiment-title">
-    <div className="panel-heading"><div><p className="eyebrow">FR-GEN-008 · MATRIX SAFETY</p><h3 id="generation-experiment-title">参数实验矩阵</h3></div><span className="status-pill neutral">懒展开 · 显式确认</span></div>
+    <div className="panel-heading"><div><p className="eyebrow">FR-GEN-008 · 矩阵安全</p><h3 id="generation-experiment-title">参数实验矩阵</h3></div><span className="status-pill neutral">懒展开 · 显式确认</span></div>
     <p className="muted">实验只绑定当前 GenerationIntent；先估算，再确认，按上限懒展开 Job。大矩阵超过 24 格需要额外确认，不会一次性占满队列。</p>
     <div className="field-grid"><label>实验标题<input value={title} onChange={(event) => setTitle(event.target.value)} disabled={Boolean(experiment)} /></label><label>最大并发<input type="number" min="1" max="64" value={maxParallel} onChange={(event) => setMaxParallel(event.target.value)} disabled={Boolean(experiment)} /></label><label>本次展开上限<input type="number" min="1" max="500" value={expandLimit} onChange={(event) => setExpandLimit(event.target.value)} /></label></div>
     <label>实验轴 JSON<textarea value={axesText} onChange={(event) => setAxesText(event.target.value)} disabled={Boolean(experiment)} spellCheck={false} /></label>

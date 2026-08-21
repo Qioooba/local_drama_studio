@@ -34,15 +34,15 @@ export function ProjectPackageAction({ projectId, onImported }: { projectId: str
   const error = exportPackage.error || inspect.error || stage.error || commit.error || rebuild.error;
   return <section className="project-package-action" aria-labelledby="project-package-title">
     <div><strong id="project-package-title">v2 标准项目包</strong><p className="muted">导出逐项记录 SHA-256。导入只读取固定本地 inbox，先暂存预检，再明确决定重写身份或仅恢复缺失目录；不会覆盖现有项目目录。</p></div>
-    <div className="action-row"><button className="secondary" onClick={() => exportPackage.mutate()} disabled={busy}>{exportPackage.isPending ? "导出校验中…" : "导出并 dry-run"}</button><button className="secondary" onClick={() => rebuild.mutate()} disabled={busy}>{rebuild.isPending ? "重建缩略图中…" : "重建项目缩略图"}</button></div>
-    {exportPackage.data && <p>包：{exportPackage.data.package.rel_path} · {exportPackage.data.package.entry_count} entries · SHA {exportPackage.data.package.sha256.slice(0, 12)}…</p>}
-    {inspect.data && <p><strong>{inspect.data.dry_run.status}</strong> · 展开 {inspect.data.dry_run.expanded_bytes} bytes · {inspect.data.dry_run.blockers.join("、") || "hash/schema/disk PASS"}</p>}
+    <div className="action-row"><button type="button" className="secondary" onClick={() => exportPackage.mutate()} disabled={busy}>{exportPackage.isPending ? "导出校验中…" : "导出并 dry-run"}</button><button type="button" className="secondary" onClick={() => rebuild.mutate()} disabled={busy}>{rebuild.isPending ? "重建缩略图中…" : "重建项目缩略图"}</button></div>
+    {exportPackage.data && <p>包：{exportPackage.data.package.rel_path} · {exportPackage.data.package.entry_count} entries · SHA {String(exportPackage.data.package.sha256 ?? "").slice(0, 12) || "—"}…</p>}
+    {inspect.data && <p><strong>{inspect.data.dry_run.status}</strong> · 展开 {inspect.data.dry_run.expanded_bytes} bytes · {inspect.data.dry_run.blockers.join("、") || "哈希 / 结构 / 磁盘 PASS"}</p>}
     <form className="package-import-form" onSubmit={submitStage}>
       <p className="muted">把 .ldspkg 放入本机 <code>data/imports/project-packages/inbox</code>，这里只填写文件名，不接受任意路径。</p>
       <label>Inbox 文件名<input value={inboxName} onChange={(event) => setInboxName(event.target.value)} placeholder="my-project.ldspkg" required /></label>
       <button className="secondary" type="submit" disabled={busy || !inboxName.trim()}>{stage.isPending ? "暂存校验中…" : "暂存并预检"}</button>
       {stage.data && <div className="package-commit-fields">
-        <p><strong>{stage.data.staging.dry_run.status}</strong> · token {stage.data.staging.stage_token.slice(0, 12)}… · 原 inbox 文件已保留</p>
+        <p><strong>{stage.data.staging.dry_run.status}</strong> · token {String(stage.data.staging.stage_token ?? "").slice(0, 12) || "—"}… · 原 inbox 文件已保留</p>
         <label>身份处理<select value={identityMode} onChange={(event) => setIdentityMode(event.target.value as IdentityMode)}>
           <option value="IMPORT_AS_COPY_REWRITE_IDENTITY">导入为副本并重写身份</option>
           <option value="REBIND_EXISTING">仅恢复身份匹配且缺失的目录</option>

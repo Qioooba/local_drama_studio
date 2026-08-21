@@ -1,0 +1,754 @@
+{
+  "schema_version": "localdrama.ui-evidence.v1",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "page_count": 22,
+  "segment_count": 80,
+  "contact_sheet_chunks": [
+    "contact-sheet-01.jpg",
+    "contact-sheet-02.jpg",
+    "contact-sheet-03.jpg",
+    "contact-sheet-04.jpg",
+    "contact-sheet-05.jpg"
+  ],
+  "pages": [
+    {
+      "page": "00-projects",
+      "source": "00-projects-full.png",
+      "width": 1280,
+      "height": 720,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/00-projects-seg-01.jpg",
+          "thumbnail": "thumbs/00-projects-seg-01.jpg"
+        }
+      ]
+    },
+    {
+      "page": "01-project-home",
+      "source": "01-project-home-full.png",
+      "width": 1265,
+      "height": 1086,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/01-project-home-seg-01.jpg",
+          "thumbnail": "thumbs/01-project-home-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1086,
+          "segment": "segments/01-project-home-seg-02.jpg",
+          "thumbnail": "thumbs/01-project-home-seg-02.jpg"
+        }
+      ]
+    },
+    {
+      "page": "02-story-workspace",
+      "source": "02-story-workspace-full.png",
+      "width": 1265,
+      "height": 2170,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/02-story-workspace-seg-01.jpg",
+          "thumbnail": "thumbs/02-story-workspace-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/02-story-workspace-seg-02.jpg",
+          "thumbnail": "thumbs/02-story-workspace-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 2160,
+          "segment": "segments/02-story-workspace-seg-03.jpg",
+          "thumbnail": "thumbs/02-story-workspace-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2160,
+          "y_end": 2170,
+          "segment": "segments/02-story-workspace-seg-04.jpg",
+          "thumbnail": "thumbs/02-story-workspace-seg-04.jpg"
+        }
+      ]
+    },
+    {
+      "page": "03-asset-bible",
+      "source": "03-asset-bible-full.png",
+      "width": 1280,
+      "height": 720,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/03-asset-bible-seg-01.jpg",
+          "thumbnail": "thumbs/03-asset-bible-seg-01.jpg"
+        }
+      ]
+    },
+    {
+      "page": "04-qc-policies",
+      "source": "04-qc-policies-full.png",
+      "width": 1265,
+      "height": 1746,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/04-qc-policies-seg-01.jpg",
+          "thumbnail": "thumbs/04-qc-policies-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/04-qc-policies-seg-02.jpg",
+          "thumbnail": "thumbs/04-qc-policies-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 1746,
+          "segment": "segments/04-qc-policies-seg-03.jpg",
+          "thumbnail": "thumbs/04-qc-policies-seg-03.jpg"
+        }
+      ]
+    },
+    {
+      "page": "05-director-recipes",
+      "source": "05-director-recipes-full.png",
+      "width": 1265,
+      "height": 1477,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/05-director-recipes-seg-01.jpg",
+          "thumbnail": "thumbs/05-director-recipes-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/05-director-recipes-seg-02.jpg",
+          "thumbnail": "thumbs/05-director-recipes-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 1477,
+          "segment": "segments/05-director-recipes-seg-03.jpg",
+          "thumbnail": "thumbs/05-director-recipes-seg-03.jpg"
+        }
+      ]
+    },
+    {
+      "page": "06-production-settings",
+      "source": "06-production-settings-full.png",
+      "width": 1265,
+      "height": 1322,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/06-production-settings-seg-01.jpg",
+          "thumbnail": "thumbs/06-production-settings-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1322,
+          "segment": "segments/06-production-settings-seg-02.jpg",
+          "thumbnail": "thumbs/06-production-settings-seg-02.jpg"
+        }
+      ]
+    },
+    {
+      "page": "07-canvas",
+      "source": "07-canvas-full.png",
+      "width": 1265,
+      "height": 1495,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/07-canvas-seg-01.jpg",
+          "thumbnail": "thumbs/07-canvas-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/07-canvas-seg-02.jpg",
+          "thumbnail": "thumbs/07-canvas-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 1495,
+          "segment": "segments/07-canvas-seg-03.jpg",
+          "thumbnail": "thumbs/07-canvas-seg-03.jpg"
+        }
+      ]
+    },
+    {
+      "page": "08-media-lab",
+      "source": "08-media-lab-full.png",
+      "width": 1280,
+      "height": 720,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/08-media-lab-seg-01.jpg",
+          "thumbnail": "thumbs/08-media-lab-seg-01.jpg"
+        }
+      ]
+    },
+    {
+      "page": "09-project-operations",
+      "source": "09-project-operations-full.png",
+      "width": 1265,
+      "height": 7284,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/09-project-operations-seg-01.jpg",
+          "thumbnail": "thumbs/09-project-operations-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/09-project-operations-seg-02.jpg",
+          "thumbnail": "thumbs/09-project-operations-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 2160,
+          "segment": "segments/09-project-operations-seg-03.jpg",
+          "thumbnail": "thumbs/09-project-operations-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2160,
+          "y_end": 2880,
+          "segment": "segments/09-project-operations-seg-04.jpg",
+          "thumbnail": "thumbs/09-project-operations-seg-04.jpg"
+        },
+        {
+          "index": 5,
+          "y_start": 2880,
+          "y_end": 3600,
+          "segment": "segments/09-project-operations-seg-05.jpg",
+          "thumbnail": "thumbs/09-project-operations-seg-05.jpg"
+        },
+        {
+          "index": 6,
+          "y_start": 3600,
+          "y_end": 4320,
+          "segment": "segments/09-project-operations-seg-06.jpg",
+          "thumbnail": "thumbs/09-project-operations-seg-06.jpg"
+        },
+        {
+          "index": 7,
+          "y_start": 4320,
+          "y_end": 5040,
+          "segment": "segments/09-project-operations-seg-07.jpg",
+          "thumbnail": "thumbs/09-project-operations-seg-07.jpg"
+        },
+        {
+          "index": 8,
+          "y_start": 5040,
+          "y_end": 5760,
+          "segment": "segments/09-project-operations-seg-08.jpg",
+          "thumbnail": "thumbs/09-project-operations-seg-08.jpg"
+        },
+        {
+          "index": 9,
+          "y_start": 5760,
+          "y_end": 6480,
+          "segment": "segments/09-project-operations-seg-09.jpg",
+          "thumbnail": "thumbs/09-project-operations-seg-09.jpg"
+        },
+        {
+          "index": 10,
+          "y_start": 6480,
+          "y_end": 7200,
+          "segment": "segments/09-project-operations-seg-10.jpg",
+          "thumbnail": "thumbs/09-project-operations-seg-10.jpg"
+        },
+        {
+          "index": 11,
+          "y_start": 7200,
+          "y_end": 7284,
+          "segment": "segments/09-project-operations-seg-11.jpg",
+          "thumbnail": "thumbs/09-project-operations-seg-11.jpg"
+        }
+      ]
+    },
+    {
+      "page": "10-models",
+      "source": "10-models-full.png",
+      "width": 1265,
+      "height": 3407,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/10-models-seg-01.jpg",
+          "thumbnail": "thumbs/10-models-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/10-models-seg-02.jpg",
+          "thumbnail": "thumbs/10-models-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 2160,
+          "segment": "segments/10-models-seg-03.jpg",
+          "thumbnail": "thumbs/10-models-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2160,
+          "y_end": 2880,
+          "segment": "segments/10-models-seg-04.jpg",
+          "thumbnail": "thumbs/10-models-seg-04.jpg"
+        },
+        {
+          "index": 5,
+          "y_start": 2880,
+          "y_end": 3407,
+          "segment": "segments/10-models-seg-05.jpg",
+          "thumbnail": "thumbs/10-models-seg-05.jpg"
+        }
+      ]
+    },
+    {
+      "page": "11-jobs",
+      "source": "11-jobs-full.png",
+      "width": 1265,
+      "height": 2038,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/11-jobs-seg-01.jpg",
+          "thumbnail": "thumbs/11-jobs-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/11-jobs-seg-02.jpg",
+          "thumbnail": "thumbs/11-jobs-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 2038,
+          "segment": "segments/11-jobs-seg-03.jpg",
+          "thumbnail": "thumbs/11-jobs-seg-03.jpg"
+        }
+      ]
+    },
+    {
+      "page": "12-diagnostics",
+      "source": "12-diagnostics-full.png",
+      "width": 1265,
+      "height": 1815,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/12-diagnostics-seg-01.jpg",
+          "thumbnail": "thumbs/12-diagnostics-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/12-diagnostics-seg-02.jpg",
+          "thumbnail": "thumbs/12-diagnostics-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 1815,
+          "segment": "segments/12-diagnostics-seg-03.jpg",
+          "thumbnail": "thumbs/12-diagnostics-seg-03.jpg"
+        }
+      ]
+    },
+    {
+      "page": "13-episode-plan",
+      "source": "13-episode-plan-full.png",
+      "width": 1280,
+      "height": 720,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/13-episode-plan-seg-01.jpg",
+          "thumbnail": "thumbs/13-episode-plan-seg-01.jpg"
+        }
+      ]
+    },
+    {
+      "page": "14-director-desk",
+      "source": "14-director-desk-full.png",
+      "width": 1670,
+      "height": 764,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/14-director-desk-seg-01.jpg",
+          "thumbnail": "thumbs/14-director-desk-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 764,
+          "segment": "segments/14-director-desk-seg-02.jpg",
+          "thumbnail": "thumbs/14-director-desk-seg-02.jpg"
+        }
+      ]
+    },
+    {
+      "page": "15-generation",
+      "source": "15-generation-full.png",
+      "width": 1265,
+      "height": 4356,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/15-generation-seg-01.jpg",
+          "thumbnail": "thumbs/15-generation-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/15-generation-seg-02.jpg",
+          "thumbnail": "thumbs/15-generation-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 2160,
+          "segment": "segments/15-generation-seg-03.jpg",
+          "thumbnail": "thumbs/15-generation-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2160,
+          "y_end": 2880,
+          "segment": "segments/15-generation-seg-04.jpg",
+          "thumbnail": "thumbs/15-generation-seg-04.jpg"
+        },
+        {
+          "index": 5,
+          "y_start": 2880,
+          "y_end": 3600,
+          "segment": "segments/15-generation-seg-05.jpg",
+          "thumbnail": "thumbs/15-generation-seg-05.jpg"
+        },
+        {
+          "index": 6,
+          "y_start": 3600,
+          "y_end": 4320,
+          "segment": "segments/15-generation-seg-06.jpg",
+          "thumbnail": "thumbs/15-generation-seg-06.jpg"
+        },
+        {
+          "index": 7,
+          "y_start": 4320,
+          "y_end": 4356,
+          "segment": "segments/15-generation-seg-07.jpg",
+          "thumbnail": "thumbs/15-generation-seg-07.jpg"
+        }
+      ]
+    },
+    {
+      "page": "16-episode-review",
+      "source": "16-episode-review-full.png",
+      "width": 1265,
+      "height": 4376,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/16-episode-review-seg-01.jpg",
+          "thumbnail": "thumbs/16-episode-review-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/16-episode-review-seg-02.jpg",
+          "thumbnail": "thumbs/16-episode-review-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 2160,
+          "segment": "segments/16-episode-review-seg-03.jpg",
+          "thumbnail": "thumbs/16-episode-review-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2160,
+          "y_end": 2880,
+          "segment": "segments/16-episode-review-seg-04.jpg",
+          "thumbnail": "thumbs/16-episode-review-seg-04.jpg"
+        },
+        {
+          "index": 5,
+          "y_start": 2880,
+          "y_end": 3600,
+          "segment": "segments/16-episode-review-seg-05.jpg",
+          "thumbnail": "thumbs/16-episode-review-seg-05.jpg"
+        },
+        {
+          "index": 6,
+          "y_start": 3600,
+          "y_end": 4320,
+          "segment": "segments/16-episode-review-seg-06.jpg",
+          "thumbnail": "thumbs/16-episode-review-seg-06.jpg"
+        },
+        {
+          "index": 7,
+          "y_start": 4320,
+          "y_end": 4376,
+          "segment": "segments/16-episode-review-seg-07.jpg",
+          "thumbnail": "thumbs/16-episode-review-seg-07.jpg"
+        }
+      ]
+    },
+    {
+      "page": "17-audio",
+      "source": "17-audio-full.png",
+      "width": 1265,
+      "height": 2229,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/17-audio-seg-01.jpg",
+          "thumbnail": "thumbs/17-audio-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/17-audio-seg-02.jpg",
+          "thumbnail": "thumbs/17-audio-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 2160,
+          "segment": "segments/17-audio-seg-03.jpg",
+          "thumbnail": "thumbs/17-audio-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2160,
+          "y_end": 2229,
+          "segment": "segments/17-audio-seg-04.jpg",
+          "thumbnail": "thumbs/17-audio-seg-04.jpg"
+        }
+      ]
+    },
+    {
+      "page": "18-timeline",
+      "source": "18-timeline-full.png",
+      "width": 1265,
+      "height": 4255,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/18-timeline-seg-01.jpg",
+          "thumbnail": "thumbs/18-timeline-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/18-timeline-seg-02.jpg",
+          "thumbnail": "thumbs/18-timeline-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 2160,
+          "segment": "segments/18-timeline-seg-03.jpg",
+          "thumbnail": "thumbs/18-timeline-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2160,
+          "y_end": 2880,
+          "segment": "segments/18-timeline-seg-04.jpg",
+          "thumbnail": "thumbs/18-timeline-seg-04.jpg"
+        },
+        {
+          "index": 5,
+          "y_start": 2880,
+          "y_end": 3600,
+          "segment": "segments/18-timeline-seg-05.jpg",
+          "thumbnail": "thumbs/18-timeline-seg-05.jpg"
+        },
+        {
+          "index": 6,
+          "y_start": 3600,
+          "y_end": 4255,
+          "segment": "segments/18-timeline-seg-06.jpg",
+          "thumbnail": "thumbs/18-timeline-seg-06.jpg"
+        }
+      ]
+    },
+    {
+      "page": "19-delivery",
+      "source": "19-delivery-full.png",
+      "width": 1265,
+      "height": 2110,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/19-delivery-seg-01.jpg",
+          "thumbnail": "thumbs/19-delivery-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/19-delivery-seg-02.jpg",
+          "thumbnail": "thumbs/19-delivery-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 2110,
+          "segment": "segments/19-delivery-seg-03.jpg",
+          "thumbnail": "thumbs/19-delivery-seg-03.jpg"
+        }
+      ]
+    },
+    {
+      "page": "20-episode-run",
+      "source": "20-episode-run-full.png",
+      "width": 1265,
+      "height": 4815,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/20-episode-run-seg-01.jpg",
+          "thumbnail": "thumbs/20-episode-run-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/20-episode-run-seg-02.jpg",
+          "thumbnail": "thumbs/20-episode-run-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 2160,
+          "segment": "segments/20-episode-run-seg-03.jpg",
+          "thumbnail": "thumbs/20-episode-run-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2160,
+          "y_end": 2880,
+          "segment": "segments/20-episode-run-seg-04.jpg",
+          "thumbnail": "thumbs/20-episode-run-seg-04.jpg"
+        },
+        {
+          "index": 5,
+          "y_start": 2880,
+          "y_end": 3600,
+          "segment": "segments/20-episode-run-seg-05.jpg",
+          "thumbnail": "thumbs/20-episode-run-seg-05.jpg"
+        },
+        {
+          "index": 6,
+          "y_start": 3600,
+          "y_end": 4320,
+          "segment": "segments/20-episode-run-seg-06.jpg",
+          "thumbnail": "thumbs/20-episode-run-seg-06.jpg"
+        },
+        {
+          "index": 7,
+          "y_start": 4320,
+          "y_end": 4815,
+          "segment": "segments/20-episode-run-seg-07.jpg",
+          "thumbnail": "thumbs/20-episode-run-seg-07.jpg"
+        }
+      ]
+    },
+    {
+      "page": "21-root-boundary",
+      "source": "21-root-boundary-full.png",
+      "width": 1280,
+      "height": 720,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/21-root-boundary-seg-01.jpg",
+          "thumbnail": "thumbs/21-root-boundary-seg-01.jpg"
+        }
+      ]
+    }
+  ]
+}

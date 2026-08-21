@@ -1,0 +1,130 @@
+{
+  "schema_version": "localdrama.competitor-evidence.v1",
+  "product": "nadou-pro",
+  "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+  "image_count": 17,
+  "contact_sheets": [
+    "contact-sheet-evidence-01.jpg"
+  ],
+  "images": [
+    {
+      "file": "01-script-agent-workbench.jpeg",
+      "width": 1080,
+      "height": 580,
+      "bytes": 67242,
+      "thumbnail": "thumbs-evidence/01-script-agent-workbench-2c60e3ba.jpg"
+    },
+    {
+      "file": "02-agent-cost-failure-state.jpeg",
+      "width": 1080,
+      "height": 578,
+      "bytes": 45945,
+      "thumbnail": "thumbs-evidence/02-agent-cost-failure-state-2d96982f.jpg"
+    },
+    {
+      "file": "ui-01.jpg",
+      "width": 1409,
+      "height": 1045,
+      "bytes": 651206,
+      "thumbnail": "thumbs-evidence/ui-01-6d581444.jpg"
+    },
+    {
+      "file": "ui-02.png",
+      "width": 3840,
+      "height": 2160,
+      "bytes": 7665023,
+      "thumbnail": "thumbs-evidence/ui-02-b2cb41b3.jpg"
+    },
+    {
+      "file": "ui-03.jpg",
+      "width": 1452,
+      "height": 1312,
+      "bytes": 271886,
+      "thumbnail": "thumbs-evidence/ui-03-dde9b861.jpg"
+    },
+    {
+      "file": "ui-04.png",
+      "width": 1883,
+      "height": 926,
+      "bytes": 838014,
+      "thumbnail": "thumbs-evidence/ui-04-8bb43639.jpg"
+    },
+    {
+      "file": "ui-05.png",
+      "width": 1456,
+      "height": 1468,
+      "bytes": 324502,
+      "thumbnail": "thumbs-evidence/ui-05-b769ae55.jpg"
+    },
+    {
+      "file": "ui-06.png",
+      "width": 2828,
+      "height": 1796,
+      "bytes": 451499,
+      "thumbnail": "thumbs-evidence/ui-06-2e2627b1.jpg"
+    },
+    {
+      "file": "ui-07.png",
+      "width": 1088,
+      "height": 662,
+      "bytes": 71515,
+      "thumbnail": "thumbs-evidence/ui-07-6b339399.jpg"
+    },
+    {
+      "file": "ui-08.jpg",
+      "width": 1318,
+      "height": 850,
+      "bytes": 155457,
+      "thumbnail": "thumbs-evidence/ui-08-4311091a.jpg"
+    },
+    {
+      "file": "ui-09.jpg",
+      "width": 3290,
+      "height": 1704,
+      "bytes": 588336,
+      "thumbnail": "thumbs-evidence/ui-09-27745bc0.jpg"
+    },
+    {
+      "file": "ui-10.jpg",
+      "width": 3252,
+      "height": 1700,
+      "bytes": 974810,
+      "thumbnail": "thumbs-evidence/ui-10-ef1433b7.jpg"
+    },
+    {
+      "file": "ui-12.png",
+      "width": 3294,
+      "height": 1680,
+      "bytes": 824556,
+      "thumbnail": "thumbs-evidence/ui-12-07fbce8f.jpg"
+    },
+    {
+      "file": "ui-13.png",
+      "width": 1280,
+      "height": 661,
+      "bytes": 305208,
+      "thumbnail": "thumbs-evidence/ui-13-008dc212.jpg"
+    },
+    {
+      "file": "ui-14.png",
+      "width": 3236,
+      "height": 1654,
+      "bytes": 2881485,
+      "thumbnail": "thumbs-evidence/ui-14-2de45816.jpg"
+    },
+    {
+      "file": "ui-15.png",
+      "width": 2300,
+      "height": 892,
+      "bytes": 610432,
+      "thumbnail": "thumbs-evidence/ui-15-58f7b27c.jpg"
+    },
+    {
+      "file": "ui-16.png",
+      "width": 1913,
+      "height": 907,
+      "bytes": 250126,
+      "thumbnail": "thumbs-evidence/ui-16-8b3f8e53.jpg"
+    }
+  ]
+}

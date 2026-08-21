@@ -1,0 +1,140 @@
+{
+  "schema_version": "1.0",
+  "research_date": "2026-08-21",
+  "product": "字节跳动内测“漫剧创作工具”",
+  "evidence_scale": {
+    "A1": "官方公开产品界面或官方手册",
+    "A2": "官方营销材料中的产品界面",
+    "B1": "可信媒体的实机/记者截图",
+    "B2": "媒体文字转述，未见对应界面",
+    "C": "第三方推测或无法交叉核验"
+  },
+  "source_page": {
+    "title": "独家 | 字节内测“漫剧创作工具”：搭载豆包大模型，支持20万字剧本上传",
+    "publisher": "读佳 / AITNT News",
+    "published_at": "2026-08-18 11:53 +08:00",
+    "page_url": "https://m.aitntnews.com/newDetail.html?newId=28337",
+    "source_type": "exclusive_media_report",
+    "evidence_grade": "B1",
+    "caveat": "截至2026-08-21未检索到字节官方公开产品页、使用手册或可访问演示；下列五图均来自同一篇独家报道。人人都是产品经理等后续文章为转引，不能算独立交叉验证。"
+  },
+  "images": [
+    {
+      "id": "byte-01",
+      "file": "01_workbench_upload_script.webp",
+      "title": "工作台空状态与上传剧本",
+      "artifact_type": "reporter_product_screenshot",
+      "image_url": "https://www.aitntnews.com/pictures/2026/8/18/650dfc27-9ab8-11f1-bd62-fa163e47d677.webp",
+      "page_url": "https://m.aitntnews.com/newDetail.html?newId=28337",
+      "dimensions": "1080x587",
+      "sha256_16": "381915e4fc205502",
+      "evidence_grade": "B1",
+      "visual_analysis": {
+        "regions": "深色桌面壳层；左侧约48px图标栏；顶部右侧团队空间选择；中央单任务空状态卡；底部三张价值说明卡。",
+        "menus_controls": "左栏只有图标，中央“上传剧本”按钮及拖拽区；界面文案可辨认为PDF/DOCX、单文件最大5MB。",
+        "operation_chain": "新建/进入工作台→上传剧本；没有在首屏暴露后续大量设置。",
+        "information_density": "低；把首次动作压缩为一个主CTA。",
+        "ux_strengths": "新手入口明确，空状态不形成长页面；团队上下文始终可见。",
+        "ux_risks": "图标栏无文字时发现性弱；看不到上传进度、解析失败恢复、项目列表与最近项目。"
+      },
+      "confirmed_by_image": ["存在上传剧本入口", "支持拖拽", "PDF/DOCX", "5MB文件上限", "团队空间入口"],
+      "not_confirmed": ["20万字上限仅由报道文字说明", "OCR能力", "扫描PDF支持", "模型选择", "Seedance接入"]
+    },
+    {
+      "id": "byte-02",
+      "file": "02_project_planning_dialog.webp",
+      "title": "项目规划与剧本策划双节点",
+      "artifact_type": "reporter_product_screenshot",
+      "image_url": "https://www.aitntnews.com/pictures/2026/8/18/6572eee2-9ab8-11f1-b68a-fa163e47d677.webp",
+      "page_url": "https://m.aitntnews.com/newDetail.html?newId=28337",
+      "dimensions": "1080x539",
+      "sha256_16": "e977753fc15d6f33",
+      "evidence_grade": "B1",
+      "visual_analysis": {
+        "regions": "深色点阵画布上横向排布“01 项目规划”“02 剧本策划/大纲”两块大节点；左节点为表单，右节点为AI理解后的结构字段；底部居中为下一步动作。",
+        "menus_controls": "剧名、画幅比例卡片（9:16、3:4、4:3、16:9、1:1）、画风卡片（电影写实、3D、动漫/国漫等）；底部“生成资产”；左下缩放控件。",
+        "operation_chain": "上传完成→确定剧名/画幅/画风→等待系统理解和拆分→人工检查策划结果→生成资产。",
+        "information_density": "中等；通过阶段编号和画布留白表达顺序。",
+        "ux_strengths": "关键全局设定在生成资产前统一确认；阶段性对象可回看。",
+        "ux_risks": "右侧大部分文本被报道打码；看不到字段级修改、差异对比、重跑范围或约10分钟解析的进度与取消。"
+      },
+      "confirmed_by_image": ["多画幅选择", "多画风选择", "阶段节点", "生成资产动作"],
+      "not_confirmed": ["被打码的剧情字段具体结构", "局部重解析", "版本管理", "模型与成本"]
+    },
+    {
+      "id": "byte-03",
+      "file": "03_asset_design_workspace.webp",
+      "title": "角色资产详情与造型管理",
+      "artifact_type": "reporter_product_screenshot",
+      "image_url": "https://www.aitntnews.com/pictures/2026/8/18/65d953e1-9ab8-11f1-b2f9-fa163e47d677.webp",
+      "page_url": "https://m.aitntnews.com/newDetail.html?newId=28337",
+      "dimensions": "1080x447",
+      "sha256_16": "750c92f6420d984b",
+      "evidence_grade": "B1",
+      "visual_analysis": {
+        "regions": "左侧为角色/场景资产纵向列表；中间为大图预览与造型缩略图；右侧为角色说明、出现集数、造型说明和音色等元数据；顶部有返回资产详情与编辑角色。",
+        "menus_controls": "“添加角色”“添加造型”“主图”标记、编辑角色；列表项显示头像和造型数量。",
+        "operation_chain": "从资产清单选择实体→审阅主图与造型→查看跨集引用及描述→编辑或新增造型。",
+        "information_density": "中高；典型“清单—预览—属性”三栏，不依赖纵向长滚动。",
+        "ux_strengths": "角色选择、视觉审阅、属性编辑保持同屏；出现集数有助影响面判断。",
+        "ux_risks": "窄屏时三栏易拥挤；截图只证明主图/造型，不证明固定人物三视图、姿态库、表情库、角色关系或版本锁定。"
+      },
+      "confirmed_by_image": ["角色列表", "主图", "多造型入口", "角色描述", "出现集数", "音色相关字段"],
+      "not_confirmed": ["正侧背三视图", "身份一致性评测", "声音试听/克隆", "场景资产详情完整字段"]
+    },
+    {
+      "id": "byte-04",
+      "file": "04_episode_storyboard_script.webp",
+      "title": "单集分镜脚本编辑与首尾帧开关",
+      "artifact_type": "reporter_product_screenshot",
+      "image_url": "https://www.aitntnews.com/pictures/2026/8/18/6644ae75-9ab8-11f1-bb43-fa163e47d677.webp",
+      "page_url": "https://m.aitntnews.com/newDetail.html?newId=28337",
+      "dimensions": "1080x723",
+      "sha256_16": "c5b3df3ab7c10a21",
+      "evidence_grade": "B1",
+      "visual_analysis": {
+        "regions": "左侧竖屏镜头预览；中央弹出式分镜脚本编辑器；右侧为原文/历史与资产引用栏；底部为分镜组卡片时间线。",
+        "menus_controls": "全局视觉提示、天气/时间、地点和角色引用标签；每个分镜块含时长以及画面、机位/运动、声音、文本等字段；“常规叙事模式/超长叙事模式”选择；“首尾帧功能”开关；保存/取消；右侧“查看原文”“查看历史”。",
+        "operation_chain": "选中分镜组→对照原文与资产→编辑镜头结构→选择叙事模式及首尾帧策略→保存→回到底部时间线继续审阅。",
+        "information_density": "高；用居中模态框把复杂表单从主工作台暂时隔离。",
+        "ux_strengths": "剧本文本、结构化镜头字段、引用资产与时间线同域；历史入口与首尾帧显式开关降低黑箱感。",
+        "ux_risks": "模态框遮挡画面与上下游上下文；字段很多，需批量编辑/继承/校验机制，否则逐镜头操作成本高。"
+      },
+      "confirmed_by_image": ["分镜级时长", "结构化画面/机位/声音/文本字段", "资产引用标签", "两种叙事模式", "首尾帧功能开关", "原文与历史入口", "底部分镜组时间线"],
+      "not_confirmed": ["首尾帧具体生成模型与控制精度", "口型同步", "批量改参数", "失败重试与费用", "多轨音频混音"]
+    },
+    {
+      "id": "byte-05",
+      "file": "05_episode_composition_export.webp",
+      "title": "单集合成与导出操作（页面裁切）",
+      "artifact_type": "reporter_product_screenshot_crop",
+      "image_url": "https://www.aitntnews.com/pictures/2026/8/18/67d6cc03-9ab8-11f1-8fce-fa163e47d677.webp",
+      "page_url": "https://m.aitntnews.com/newDetail.html?newId=28337",
+      "dimensions": "684x1094",
+      "sha256_16": "381f8b2087996b30",
+      "evidence_grade": "B1",
+      "visual_analysis": {
+        "regions": "竖向裁切图，只保留工作台右上操作区、右侧资产引用区与底部分镜卡片一部分，不能代表完整屏幕布局。",
+        "menus_controls": "“生成剩余分镜”“合成本集”“导出本集”以及素材筛选/添加、时间线缩放。",
+        "operation_chain": "补齐未生成镜头→合成本集→导出本地。",
+        "information_density": "裁切导致整体密度不可判断。",
+        "ux_strengths": "集级动作位于稳定的右上方，符合完成/导出的高优先级操作习惯。",
+        "ux_risks": "截图未显示合成队列、进度、失败镜头、音频轨、导出规格、审核状态或发布动作。"
+      },
+      "confirmed_by_image": ["生成剩余分镜", "合成本集", "导出本集"],
+      "not_confirmed": ["完整合成器界面", "自动音频添加", "片头片尾", "字幕与混音", "导出格式", "抖音发布"]
+    }
+  ],
+  "secondary_sources": [
+    {
+      "title": "字节下场“漫剧工业化”，LibTV们迎来大考？",
+      "publisher": "人人都是产品经理 / AI价值官",
+      "published_at": "2026-08-19",
+      "url": "https://www.woshipm.com/ai/6450345.html",
+      "evidence_grade": "B2",
+      "note": "主要转引读佳并做行业分析，不是独立实测。"
+    }
+  ],
+  "contact_sheet": "contact_sheet_real_ui.jpg",
+  "thumbnails_directory": "thumbs/"
+}

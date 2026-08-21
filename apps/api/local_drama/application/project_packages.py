@@ -11,8 +11,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
+from local_drama.application.commands.director_recipes import canonical_recipe, recipe_hash, validate_recipe
 from local_drama.application.media import MediaService
 from local_drama.config import Settings
+from local_drama.domain.capabilities import normalize_capability
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.policies import validate_project_code
 from local_drama.infrastructure.database.sqlite import Database
@@ -144,9 +146,16 @@ class ProjectPackageService:
             episodes = [dict(row) for row in connection.execute("""SELECT e.id,e.season_id,e.number,e.display_order,e.code,e.title,e.target_duration_ms
                 FROM episodes e JOIN seasons s ON s.id=e.season_id WHERE s.project_id=? ORDER BY s.display_order,e.display_order""", (project_id,))]
             scenes = [dict(row) for row in connection.execute("SELECT id,code,title,location,time_of_day FROM scenes WHERE project_id=? ORDER BY code", (project_id,))]
-            shots = [dict(row) for row in connection.execute("""SELECT sh.id,sh.episode_id,sh.code,sh.order_key,sh.target_duration_ms,sh.shot_type,sr.fields_json
+            shots = [dict(row) for row in connection.execute("""SELECT sh.id,sh.episode_id,sh.scene_id,sh.code,sh.order_key,sh.target_duration_ms,sh.shot_type,sr.fields_json
                 FROM shots sh JOIN episodes e ON e.id=sh.episode_id JOIN seasons s ON s.id=e.season_id
                 LEFT JOIN shot_revisions sr ON sr.id=sh.current_revision_id WHERE s.project_id=? ORDER BY e.display_order,CAST(sh.order_key AS REAL),sh.code""", (project_id,))]
+            shot_groups = [dict(row) for row in connection.execute("""SELECT g.id,g.episode_id,g.scene_id,g.kind,g.code,g.title,g.order_key,
+                g.metadata_json,g.status,g.created_at,g.updated_at,g.created_by,g.revision,g.schema_version
+                FROM shot_groups g JOIN episodes e ON e.id=g.episode_id JOIN seasons s ON s.id=e.season_id
+                WHERE s.project_id=? ORDER BY e.display_order,g.order_key,g.id""", (project_id,))]
+            shot_group_members = [dict(row) for row in connection.execute("""SELECT m.group_id,m.shot_id,m.order_key,m.created_at,m.created_by
+                FROM shot_group_members m JOIN shot_groups g ON g.id=m.group_id JOIN episodes e ON e.id=g.episode_id
+                JOIN seasons s ON s.id=e.season_id WHERE s.project_id=? ORDER BY m.group_id,m.order_key,m.shot_id""", (project_id,))]
             plan = connection.execute("""SELECT pp.code,pp.title,ppv.version_no,ppv.plan_json,ppv.status FROM project_plan_bindings ppb
                 JOIN production_plan_versions ppv ON ppv.id=ppb.production_plan_version_id JOIN production_plans pp ON pp.id=ppv.production_plan_id WHERE ppb.project_id=?""", (project_id,)).fetchone()
             profiles = [dict(row) for row in connection.execute("""SELECT ppb.capability,ppb.status AS binding_status,ppb.execution_profile_version_id,epv.status AS profile_status
@@ -159,16 +168,84 @@ class ProjectPackageService:
                 mv.byte_size,mv.sha256,mv.duration_ms,mv.fps_num,mv.fps_den,mv.parent_version_id,mv.integrity_status,mv.source_name,
                 mv.import_source,mv.probe_json FROM media_versions mv JOIN media_assets ma ON ma.id=mv.media_asset_id
                 WHERE ma.project_id=? ORDER BY ma.created_at,mv.version_no,mv.id""", (project_id,))]
+            story_assets = [dict(row) for row in connection.execute("""SELECT id,kind,code,name,description,canonical_media_version_id,
+                extra_json,status,created_at,updated_at,created_by,revision,schema_version
+                FROM story_assets WHERE project_id=? ORDER BY kind,code,id""", (project_id,))]
+            asset_proposals = [dict(row) for row in connection.execute("""SELECT id,breakdown_draft_id,proposal_key,kind,name,
+                evidence_json,suggested_asset_id,resolved_asset_id,status,decision_note,created_at,updated_at,created_by,
+                revision,schema_version FROM story_asset_proposals WHERE project_id=? ORDER BY created_at,id""", (project_id,))]
+            asset_states = [dict(row) for row in connection.execute("""SELECT id,story_asset_id,code,label,state_kind,description,state_json,
+                status,created_at,updated_at,created_by,revision,schema_version
+                FROM story_asset_states WHERE project_id=? ORDER BY story_asset_id,code,id""", (project_id,))]
+            asset_references = [dict(row) for row in connection.execute("""SELECT id,story_asset_id,asset_state_id,media_version_id,
+                reference_kind,label,priority,is_locked,yaw_deg,pitch_deg,metadata_json,status,created_at,updated_at,created_by,revision,schema_version
+                FROM story_asset_references WHERE project_id=? ORDER BY story_asset_id,priority,created_at,id""", (project_id,))]
+            episode_asset_state_bindings = [dict(row) for row in connection.execute("""SELECT b.id,b.episode_id,b.story_asset_id,b.asset_state_id,
+                b.created_at,b.created_by,b.revision,b.schema_version FROM episode_asset_state_bindings b
+                JOIN episodes e ON e.id=b.episode_id JOIN seasons s ON s.id=e.season_id
+                WHERE s.project_id=? ORDER BY b.episode_id,b.story_asset_id,b.id""", (project_id,))]
+            shot_asset_bindings = [dict(row) for row in connection.execute("""SELECT b.id,b.shot_id,b.asset_id,b.asset_state_id,b.role_in_shot,
+                b.created_at,b.created_by,b.revision,b.schema_version FROM shot_asset_bindings b
+                JOIN shots sh ON sh.id=b.shot_id JOIN episodes e ON e.id=sh.episode_id JOIN seasons s ON s.id=e.season_id
+                WHERE s.project_id=? ORDER BY b.shot_id,b.asset_id,b.role_in_shot,b.id""", (project_id,))]
+            generation_preference_sets = [dict(row) for row in connection.execute("""SELECT id,owner_type,owner_id,capability,current_version_id,
+                status,created_at,updated_at,created_by,revision,schema_version FROM generation_preference_sets
+                WHERE project_id=? ORDER BY capability,owner_type,owner_id,id""", (project_id,))]
+            generation_preference_versions = [dict(row) for row in connection.execute("""SELECT v.id,v.preference_set_id,v.version_no,
+                v.execution_profile_version_id,v.resolution_mode,v.settings_json,v.reason,v.is_frozen,v.created_at,v.created_by,v.schema_version
+                FROM generation_preference_versions v JOIN generation_preference_sets s ON s.id=v.preference_set_id
+                WHERE s.project_id=? ORDER BY v.preference_set_id,v.version_no,v.id""", (project_id,))]
+            qc_policy_sets = [dict(row) for row in connection.execute("""SELECT id,owner_type,owner_id,stage,current_version_id,status,
+                created_at,updated_at,created_by,revision,schema_version FROM generation_qc_policy_sets
+                WHERE project_id=? ORDER BY stage,owner_type,owner_id,id""", (project_id,))]
+            qc_policy_versions = [dict(row) for row in connection.execute("""SELECT v.id,v.policy_set_id,v.version_no,v.policy_json,
+                v.max_auto_rerolls,v.auto_reroll_categories_json,v.is_frozen,v.reason,v.created_at,v.created_by,v.schema_version
+                FROM generation_qc_policy_versions v JOIN generation_qc_policy_sets s ON s.id=v.policy_set_id
+                WHERE s.project_id=? ORDER BY v.policy_set_id,v.version_no,v.id""", (project_id,))]
+            director_recipes = [dict(row) for row in connection.execute("""SELECT id,code,title,status,created_at,updated_at,
+                created_by,revision,schema_version FROM director_recipes WHERE project_id=? ORDER BY code,id""", (project_id,))]
+            director_recipe_versions = [dict(row) for row in connection.execute("""SELECT v.id,v.recipe_id,v.version_no,v.recipe_json,
+                v.recipe_hash,v.reason,v.is_frozen,v.created_at,v.created_by,v.schema_version
+                FROM director_recipe_versions v JOIN director_recipes r ON r.id=v.recipe_id
+                WHERE r.project_id=? ORDER BY v.recipe_id,v.version_no,v.id""", (project_id,))]
+            director_recipe_binding_row = connection.execute("""SELECT recipe_version_id,reason,created_at,updated_at,created_by,
+                revision,schema_version FROM project_director_recipe_bindings WHERE project_id=?""", (project_id,)).fetchone()
         for shot in shots:
             shot["fields"] = json.loads(str(shot.pop("fields_json") or "{}"))
         for asset in media_assets:
             asset["metadata"] = json.loads(str(asset.pop("metadata_json") or "{}"))
         for version in media_versions:
             version["probe"] = json.loads(str(version.pop("probe_json") or "{}"))
+        for asset in story_assets:
+            asset["extra"] = json.loads(str(asset.pop("extra_json") or "{}"))
+        for proposal in asset_proposals:
+            proposal["evidence"] = json.loads(str(proposal.pop("evidence_json") or "{}"))
+        for state in asset_states:
+            state["state"] = json.loads(str(state.pop("state_json") or "{}"))
+        for reference in asset_references:
+            reference["metadata"] = json.loads(str(reference.pop("metadata_json") or "{}"))
+        for version in generation_preference_versions:
+            version["settings"] = json.loads(str(version.pop("settings_json") or "{}"))
+        for group in shot_groups:
+            group["metadata"] = json.loads(str(group.pop("metadata_json") or "{}"))
+        for version in qc_policy_versions:
+            version["policy"] = json.loads(str(version.pop("policy_json") or "{}"))
+            version["auto_reroll_categories"] = json.loads(str(version.pop("auto_reroll_categories_json") or "[]"))
+        for version in director_recipe_versions:
+            version["recipe"] = json.loads(str(version.pop("recipe_json") or "{}"))
         return {"schema_version": STATE_SCHEMA, "project": dict(project), "seasons": seasons, "episodes": episodes, "scenes": scenes,
-                "shots": shots, "production_plan": dict(plan) if plan else None, "profile_bindings": profiles, "delivery_targets": targets,
+                "shots": shots, "shot_groups": shot_groups, "shot_group_members": shot_group_members,
+                "production_plan": dict(plan) if plan else None, "profile_bindings": profiles, "delivery_targets": targets,
                 "media_assets": media_assets, "media_versions": media_versions, "media_selection_state_excluded": True,
-                "excluded_domains": ["jobs", "attempts", "reviews", "selections", "audit_events", "outbox", "cache", "work"]}
+                "story_assets": story_assets, "story_asset_proposals": asset_proposals,
+                "story_asset_states": asset_states, "story_asset_references": asset_references,
+                "episode_asset_state_bindings": episode_asset_state_bindings, "shot_asset_bindings": shot_asset_bindings,
+                "generation_preference_sets": generation_preference_sets,
+                "generation_preference_versions": generation_preference_versions,
+                "generation_qc_policy_sets": qc_policy_sets, "generation_qc_policy_versions": qc_policy_versions,
+                "director_recipes": director_recipes, "director_recipe_versions": director_recipe_versions,
+                "project_director_recipe_binding": dict(director_recipe_binding_row) if director_recipe_binding_row else None,
+                "excluded_domains": ["jobs", "attempts", "reviews", "selections", "variant_qc_links", "audit_events", "outbox", "cache", "work"]}
 
     def _source_files(self, root: Path) -> list[Path]:
         files: list[Path] = []
@@ -366,8 +443,32 @@ class ProjectPackageService:
             raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包镜头引用了未知分集")
         state.setdefault("media_assets", [])
         state.setdefault("media_versions", [])
+        optional_lists = (
+            "shot_groups",
+            "shot_group_members",
+            "story_assets",
+            "story_asset_proposals",
+            "story_asset_states",
+            "story_asset_references",
+            "episode_asset_state_bindings",
+            "shot_asset_bindings",
+            "generation_preference_sets",
+            "generation_preference_versions",
+            "generation_qc_policy_sets",
+            "generation_qc_policy_versions",
+            "director_recipes",
+            "director_recipe_versions",
+        )
+        for key in optional_lists:
+            state.setdefault(key, [])
         if not isinstance(state["media_assets"], list) or not isinstance(state["media_versions"], list):
             raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包媒体状态格式无效")
+        if any(not isinstance(state[key], list) for key in optional_lists):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包扩展状态格式无效")
+        if any(not isinstance(item, dict) for key in optional_lists for item in state[key]):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包扩展状态条目无效")
+        if state.get("project_director_recipe_binding") is not None and not isinstance(state["project_director_recipe_binding"], dict):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包导演配方绑定格式无效")
         media_asset_ids = {str(item.get("id")) for item in state["media_assets"]}
         media_version_ids = {str(item.get("id")) for item in state["media_versions"]}
         if len(media_asset_ids) != len(state["media_assets"]) or len(media_version_ids) != len(state["media_versions"]):
@@ -382,6 +483,133 @@ class ProjectPackageService:
             relative = _safe_member(str(version.get("rel_path") or ""))
             if f"payload/{relative.as_posix()}" not in manifest_paths:
                 raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "媒体版本文件未登记在 manifest", {"rel_path": str(relative)})
+
+        def unique_ids(key: str, label: str) -> set[str]:
+            values = {str(item.get("id")) for item in state[key]}
+            if "None" in values or len(values) != len(state[key]):
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", f"项目包包含重复或缺失的{label} ID")
+            return values
+
+        story_asset_ids = unique_ids("story_assets", "故事资产")
+        proposal_ids = unique_ids("story_asset_proposals", "资产建议")
+        state_ids = unique_ids("story_asset_states", "资产状态")
+        reference_ids = unique_ids("story_asset_references", "资产参考")
+        episode_binding_ids = unique_ids("episode_asset_state_bindings", "分集资产状态绑定")
+        shot_binding_ids = unique_ids("shot_asset_bindings", "镜头资产绑定")
+        preference_set_ids = unique_ids("generation_preference_sets", "生成偏好集")
+        preference_version_ids = unique_ids("generation_preference_versions", "生成偏好版本")
+        shot_group_ids = unique_ids("shot_groups", "镜头分组")
+        qc_policy_set_ids = unique_ids("generation_qc_policy_sets", "QC policy 集")
+        qc_policy_version_ids = unique_ids("generation_qc_policy_versions", "QC policy 版本")
+        director_recipe_ids = unique_ids("director_recipes", "导演配方")
+        director_recipe_version_ids = unique_ids("director_recipe_versions", "导演配方版本")
+        # Keep the variables explicit: duplicate detection above is part of the
+        # frozen package contract even when a given ID is not referenced below.
+        _ = proposal_ids, reference_ids, episode_binding_ids, shot_binding_ids, preference_version_ids, qc_policy_version_ids, director_recipe_version_ids
+        scene_ids = {str(item.get("id")) for item in state["scenes"]}
+        shot_ids = {str(item.get("id")) for item in state["shots"]}
+        for shot in state["shots"]:
+            if shot.get("scene_id") is not None and str(shot["scene_id"]) not in scene_ids:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "镜头 scene_id 引用了未知场景")
+        group_episode: dict[str, str] = {}
+        for group in state["shot_groups"]:
+            group_id, episode_id = str(group["id"]), str(group.get("episode_id"))
+            if episode_id not in episode_ids or (group.get("scene_id") is not None and str(group["scene_id"]) not in scene_ids):
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "镜头分组引用未知分集或场景")
+            group_episode[group_id] = episode_id
+        seen_members: set[tuple[str, str]] = set()
+        shot_episode = {str(item["id"]): str(item.get("episode_id")) for item in state["shots"]}
+        for member in state["shot_group_members"]:
+            pair = (str(member.get("group_id")), str(member.get("shot_id")))
+            if pair in seen_members or pair[0] not in shot_group_ids or pair[1] not in shot_ids or group_episode[pair[0]] != shot_episode[pair[1]]:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "镜头分组成员重复、越界或跨分集")
+            seen_members.add(pair)
+        state_asset = {str(item["id"]): str(item.get("story_asset_id")) for item in state["story_asset_states"]}
+        if any(asset_id not in story_asset_ids for asset_id in state_asset.values()):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "资产状态引用了未知故事资产")
+        for asset in state["story_assets"]:
+            canonical = asset.get("canonical_media_version_id")
+            if canonical is not None and str(canonical) not in media_version_ids:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "故事资产 canonical 引用了未知媒体版本")
+        allowed_proposal_statuses = {"PENDING", "ACCEPTED_NEW", "ACCEPTED_MERGE", "REJECTED"}
+        for proposal in state["story_asset_proposals"]:
+            suggested_id, resolved_id = proposal.get("suggested_asset_id"), proposal.get("resolved_asset_id")
+            if suggested_id is not None and str(suggested_id) not in story_asset_ids:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "资产建议引用了未知 suggested 资产")
+            if resolved_id is not None and str(resolved_id) not in story_asset_ids:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "资产建议引用了未知 resolved 资产")
+            if str(proposal.get("status")) not in allowed_proposal_statuses or not isinstance(proposal.get("evidence", {}), dict):
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "资产建议状态或 evidence 无效")
+        for reference in state["story_asset_references"]:
+            asset_id = str(reference.get("story_asset_id"))
+            state_id = reference.get("asset_state_id")
+            if asset_id not in story_asset_ids or str(reference.get("media_version_id")) not in media_version_ids:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "资产参考引用了未知故事资产或媒体版本")
+            if state_id is not None and (str(state_id) not in state_ids or state_asset[str(state_id)] != asset_id):
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "资产参考状态与故事资产不一致")
+        for binding in state["episode_asset_state_bindings"]:
+            asset_id, asset_state_id = str(binding.get("story_asset_id")), str(binding.get("asset_state_id"))
+            if str(binding.get("episode_id")) not in episode_ids or asset_id not in story_asset_ids:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "分集资产状态绑定引用未知对象")
+            if asset_state_id not in state_ids or state_asset[asset_state_id] != asset_id:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "分集资产状态绑定不一致")
+        for binding in state["shot_asset_bindings"]:
+            asset_id, asset_state_id = str(binding.get("asset_id")), binding.get("asset_state_id")
+            if str(binding.get("shot_id")) not in {str(item.get("id")) for item in state["shots"]} or asset_id not in story_asset_ids:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "镜头资产绑定引用未知对象")
+            if asset_state_id is not None and (str(asset_state_id) not in state_ids or state_asset[str(asset_state_id)] != asset_id):
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "镜头资产状态绑定不一致")
+        version_set = {str(item.get("preference_set_id")) for item in state["generation_preference_versions"]}
+        if any(set_id not in preference_set_ids for set_id in version_set):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "生成偏好版本引用未知偏好集")
+        versions_by_set = {
+            set_id: {str(item["id"]) for item in state["generation_preference_versions"] if str(item.get("preference_set_id")) == set_id}
+            for set_id in preference_set_ids
+        }
+        source_project_id = str(project["id"])
+        valid_owners = {"PROJECT": {source_project_id}, "EPISODE": episode_ids, "SHOT": shot_ids}
+        for preference in state["generation_preference_sets"]:
+            set_id = str(preference["id"])
+            owner_type, owner_id = str(preference.get("owner_type")), str(preference.get("owner_id"))
+            if owner_type not in valid_owners or owner_id not in valid_owners[owner_type]:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "生成偏好 owner 不属于包内项目")
+            current = preference.get("current_version_id")
+            if current is not None and str(current) not in versions_by_set[set_id]:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "生成偏好 current version 不属于对应偏好集")
+        qc_versions_by_set = {
+            set_id: {str(item["id"]) for item in state["generation_qc_policy_versions"] if str(item.get("policy_set_id")) == set_id}
+            for set_id in qc_policy_set_ids
+        }
+        if any(str(item.get("policy_set_id")) not in qc_policy_set_ids for item in state["generation_qc_policy_versions"]):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "QC policy 版本引用未知 policy 集")
+        for policy_set in state["generation_qc_policy_sets"]:
+            set_id = str(policy_set["id"])
+            owner_type, owner_id = str(policy_set.get("owner_type")), str(policy_set.get("owner_id"))
+            if owner_type not in valid_owners or owner_id not in valid_owners[owner_type]:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "QC policy owner 不属于包内项目")
+            current = policy_set.get("current_version_id")
+            if current is not None and str(current) not in qc_versions_by_set[set_id]:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "QC policy current version 不属于对应 policy 集")
+        recipe_versions_by_recipe = {
+            recipe_id: {str(item["id"]) for item in state["director_recipe_versions"] if str(item.get("recipe_id")) == recipe_id}
+            for recipe_id in director_recipe_ids
+        }
+        if any(str(item.get("recipe_id")) not in director_recipe_ids for item in state["director_recipe_versions"]):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "导演配方版本引用未知配方")
+        for version in state["director_recipe_versions"]:
+            raw_recipe = version.get("recipe")
+            if not isinstance(raw_recipe, dict):
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "导演配方版本 recipe 格式无效")
+            recipe = validate_recipe(raw_recipe)
+            if str(version.get("recipe_hash") or "") != recipe_hash(recipe):
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "导演配方版本 hash 与声明内容不一致")
+            policy_ref = recipe["qc_policy_ref"].get("policy_version_id")
+            if policy_ref is not None and str(policy_ref) not in qc_policy_version_ids:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "导演配方引用未知 QC policy 版本")
+        binding = state.get("project_director_recipe_binding")
+        all_recipe_version_ids = set().union(*recipe_versions_by_recipe.values()) if recipe_versions_by_recipe else set()
+        if binding is not None and str(binding.get("recipe_version_id")) not in all_recipe_version_ids:
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目导演配方绑定引用未知版本")
         return state
 
     def _manifest_entries(self, package: Path) -> list[dict[str, Any]]:
@@ -487,7 +715,15 @@ class ProjectPackageService:
         promoted = False
         counts = {"seasons": 0, "episodes": 0, "scenes": 0, "shots": 0, "profiles": 0, "profiles_skipped": 0,
                   "delivery_targets": 0, "media_assets": 0, "media_versions": 0, "thumbnails_pending": 0, "thumbnails_created": 0,
-                  "thumbnails_failed": 0, "payload_files": 0}
+                  "thumbnails_failed": 0, "payload_files": 0, "story_assets": 0, "story_asset_proposals": 0,
+                  "story_asset_states": 0,
+                  "story_asset_references": 0, "episode_asset_state_bindings": 0, "shot_asset_bindings": 0,
+                  "generation_preference_sets": 0, "generation_preference_versions": 0,
+                  "generation_preference_sets_skipped_missing_profiles": 0,
+                  "shot_groups": 0, "shot_group_members": 0,
+                  "generation_qc_policy_sets": 0, "generation_qc_policy_versions": 0,
+                  "director_recipes": 0, "director_recipe_versions": 0,
+                  "project_director_recipe_bindings": 0}
         thumbnail_media_version_ids: list[str] = []
         try:
             self._extract_payload(package, temporary_root)
@@ -503,9 +739,20 @@ class ProjectPackageService:
             promoted = True
             season_map = {str(item["id"]): str(uuid.uuid4()) for item in state["seasons"]}
             episode_map = {str(item["id"]): str(uuid.uuid4()) for item in state["episodes"]}
+            scene_map = {str(item["id"]): str(uuid.uuid4()) for item in state["scenes"]}
             shot_map = {str(item["id"]): str(uuid.uuid4()) for item in state["shots"]}
+            shot_group_map = {str(item["id"]): str(uuid.uuid4()) for item in state["shot_groups"]}
             media_asset_map = {str(item["id"]): str(uuid.uuid4()) for item in state["media_assets"]}
             media_version_map = {str(item["id"]): str(uuid.uuid4()) for item in state["media_versions"]}
+            story_asset_map = {str(item["id"]): str(uuid.uuid4()) for item in state["story_assets"]}
+            asset_proposal_map = {str(item["id"]): str(uuid.uuid4()) for item in state["story_asset_proposals"]}
+            asset_state_map = {str(item["id"]): str(uuid.uuid4()) for item in state["story_asset_states"]}
+            preference_set_map = {str(item["id"]): str(uuid.uuid4()) for item in state["generation_preference_sets"]}
+            preference_version_map = {str(item["id"]): str(uuid.uuid4()) for item in state["generation_preference_versions"]}
+            qc_policy_set_map = {str(item["id"]): str(uuid.uuid4()) for item in state["generation_qc_policy_sets"]}
+            qc_policy_version_map = {str(item["id"]): str(uuid.uuid4()) for item in state["generation_qc_policy_versions"]}
+            director_recipe_map = {str(item["id"]): str(uuid.uuid4()) for item in state["director_recipes"]}
+            director_recipe_version_map = {str(item["id"]): str(uuid.uuid4()) for item in state["director_recipe_versions"]}
             media_kind_by_asset = {str(item["id"]): str(item["media_kind"]) for item in state["media_assets"]}
             with self.database.transaction() as connection:
                 if connection.execute("SELECT 1 FROM projects WHERE code=?", (code,)).fetchone():
@@ -538,22 +785,42 @@ class ProjectPackageService:
                 for scene in state["scenes"]:
                     connection.execute(
                         "INSERT INTO scenes (id,project_id,code,title,location,time_of_day,created_at,updated_at,created_by) VALUES (?,?,?,?,?,?,?,?,?)",
-                        (str(uuid.uuid4()), project_id, scene["code"], scene["title"], scene.get("location"), scene.get("time_of_day"), now, now, actor),
+                        (scene_map[str(scene["id"])], project_id, scene["code"], scene["title"], scene.get("location"), scene.get("time_of_day"), now, now, actor),
                     )
                     counts["scenes"] += 1
                 for shot in state["shots"]:
                     shot_id, revision_id = shot_map[str(shot["id"])], str(uuid.uuid4())
                     connection.execute(
-                        """INSERT INTO shots (id,episode_id,code,order_key,target_duration_ms,shot_type,status,current_revision_id,
-                        created_at,updated_at,created_by) VALUES (?,?,?,?,?,?,'DRAFT',?,?,?,?)""",
-                        (shot_id, episode_map[str(shot["episode_id"])], shot["code"], shot["order_key"], shot["target_duration_ms"],
-                         shot.get("shot_type") or "OTHER", revision_id, now, now, actor),
+                        """INSERT INTO shots (id,episode_id,scene_id,code,order_key,target_duration_ms,shot_type,status,current_revision_id,
+                        created_at,updated_at,created_by) VALUES (?,?,?,?,?,?,?,'DRAFT',?,?,?,?)""",
+                        (shot_id, episode_map[str(shot["episode_id"])], scene_map[str(shot["scene_id"])] if shot.get("scene_id") is not None else None,
+                         shot["code"], shot["order_key"], shot["target_duration_ms"], shot.get("shot_type") or "OTHER", revision_id, now, now, actor),
                     )
                     connection.execute(
                         "INSERT INTO shot_revisions (id,shot_id,revision_no,fields_json,is_frozen,created_at,updated_at,created_by) VALUES (?,?,1,?,0,?,?,?)",
                         (revision_id, shot_id, json.dumps(shot.get("fields") or {}, ensure_ascii=False), now, now, actor),
                     )
                     counts["shots"] += 1
+                for group in state["shot_groups"]:
+                    connection.execute(
+                        """INSERT INTO shot_groups
+                        (id,episode_id,scene_id,kind,code,title,order_key,metadata_json,status,created_at,updated_at,created_by,revision,schema_version)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (shot_group_map[str(group["id"])], episode_map[str(group["episode_id"])],
+                         scene_map[str(group["scene_id"])] if group.get("scene_id") is not None else None,
+                         group["kind"], group["code"], group.get("title") or "", group["order_key"],
+                         json.dumps(group.get("metadata") or {}, ensure_ascii=False, sort_keys=True), group.get("status") or "ACTIVE",
+                         group.get("created_at") or now, group.get("updated_at") or now, group.get("created_by") or actor,
+                         int(group.get("revision") or 1), group.get("schema_version") or "v1"),
+                    )
+                    counts["shot_groups"] += 1
+                for member in state["shot_group_members"]:
+                    connection.execute(
+                        "INSERT INTO shot_group_members (group_id,shot_id,order_key,created_at,created_by) VALUES (?,?,?,?,?)",
+                        (shot_group_map[str(member["group_id"])], shot_map[str(member["shot_id"])], member["order_key"],
+                         member.get("created_at") or now, member.get("created_by") or actor),
+                    )
+                    counts["shot_group_members"] += 1
                 for asset in state["media_assets"]:
                     owner_type = str(asset["owner_type"])
                     source_owner_id = str(asset["owner_id"])
@@ -600,6 +867,239 @@ class ProjectPackageService:
                     if media_kind_by_asset[str(version["media_asset_id"])] in {"IMAGE", "VIDEO"}:
                         thumbnail_media_version_ids.append(media_version_map[str(version["id"])])
                         counts["thumbnails_pending"] += 1
+                for asset in state["story_assets"]:
+                    canonical = asset.get("canonical_media_version_id")
+                    connection.execute(
+                        """INSERT INTO story_assets
+                        (id,project_id,kind,code,name,description,canonical_media_version_id,extra_json,status,
+                        created_at,updated_at,created_by,revision,schema_version)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (story_asset_map[str(asset["id"])], project_id, asset["kind"], asset["code"], asset["name"],
+                         asset.get("description") or "", media_version_map[str(canonical)] if canonical is not None else None,
+                         json.dumps(asset.get("extra") or {}, ensure_ascii=False, sort_keys=True), asset.get("status") or "ACTIVE",
+                         asset.get("created_at") or now, asset.get("updated_at") or now, asset.get("created_by") or actor,
+                         int(asset.get("revision") or 1), asset.get("schema_version") or "v2"),
+                    )
+                    counts["story_assets"] += 1
+                for proposal in state["story_asset_proposals"]:
+                    source_draft_id = proposal.get("breakdown_draft_id")
+                    evidence = dict(proposal.get("evidence") or {})
+                    if source_draft_id is not None:
+                        evidence.setdefault("source_breakdown_draft_id", source_draft_id)
+                    suggested_id, resolved_id = proposal.get("suggested_asset_id"), proposal.get("resolved_asset_id")
+                    connection.execute(
+                        """INSERT INTO story_asset_proposals
+                        (id,project_id,breakdown_draft_id,proposal_key,kind,name,evidence_json,suggested_asset_id,
+                         resolved_asset_id,status,decision_note,created_at,updated_at,created_by,revision,schema_version)
+                        VALUES (?,?,NULL,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (asset_proposal_map[str(proposal["id"])], project_id, proposal["proposal_key"], proposal["kind"],
+                         proposal["name"], json.dumps(evidence, ensure_ascii=False, sort_keys=True),
+                         story_asset_map[str(suggested_id)] if suggested_id is not None else None,
+                         story_asset_map[str(resolved_id)] if resolved_id is not None else None,
+                         proposal.get("status") or "PENDING", proposal.get("decision_note") or "",
+                         proposal.get("created_at") or now, proposal.get("updated_at") or now,
+                         proposal.get("created_by") or actor, int(proposal.get("revision") or 1),
+                         proposal.get("schema_version") or "v2"),
+                    )
+                    counts["story_asset_proposals"] += 1
+                for asset_state in state["story_asset_states"]:
+                    connection.execute(
+                        """INSERT INTO story_asset_states
+                        (id,project_id,story_asset_id,code,label,state_kind,description,state_json,status,
+                        created_at,updated_at,created_by,revision,schema_version)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (asset_state_map[str(asset_state["id"])], project_id,
+                         story_asset_map[str(asset_state["story_asset_id"])], asset_state["code"], asset_state["label"],
+                         asset_state["state_kind"], asset_state.get("description") or "",
+                         json.dumps(asset_state.get("state") or {}, ensure_ascii=False, sort_keys=True),
+                         asset_state.get("status") or "ACTIVE", asset_state.get("created_at") or now,
+                         asset_state.get("updated_at") or now, asset_state.get("created_by") or actor,
+                         int(asset_state.get("revision") or 1), asset_state.get("schema_version") or "v1"),
+                    )
+                    counts["story_asset_states"] += 1
+                for reference in state["story_asset_references"]:
+                    source_state_id = reference.get("asset_state_id")
+                    connection.execute(
+                        """INSERT INTO story_asset_references
+                        (id,project_id,story_asset_id,asset_state_id,media_version_id,reference_kind,label,priority,is_locked,
+                        yaw_deg,pitch_deg,metadata_json,status,created_at,updated_at,created_by,revision,schema_version)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (str(uuid.uuid4()), project_id, story_asset_map[str(reference["story_asset_id"])],
+                         asset_state_map[str(source_state_id)] if source_state_id is not None else None,
+                         media_version_map[str(reference["media_version_id"])], reference["reference_kind"],
+                         reference.get("label") or "", int(reference.get("priority", 100)),
+                         1 if reference.get("is_locked") else 0, reference.get("yaw_deg"), reference.get("pitch_deg"),
+                         json.dumps(reference.get("metadata") or {}, ensure_ascii=False, sort_keys=True),
+                         reference.get("status") or "ACTIVE", reference.get("created_at") or now,
+                         reference.get("updated_at") or now, reference.get("created_by") or actor,
+                         int(reference.get("revision") or 1), reference.get("schema_version") or "v1"),
+                    )
+                    counts["story_asset_references"] += 1
+                for binding in state["episode_asset_state_bindings"]:
+                    connection.execute(
+                        """INSERT INTO episode_asset_state_bindings
+                        (id,episode_id,story_asset_id,asset_state_id,created_at,created_by,revision,schema_version)
+                        VALUES (?,?,?,?,?,?,?,?)""",
+                        (str(uuid.uuid4()), episode_map[str(binding["episode_id"])],
+                         story_asset_map[str(binding["story_asset_id"])], asset_state_map[str(binding["asset_state_id"])],
+                         binding.get("created_at") or now, binding.get("created_by") or actor,
+                         int(binding.get("revision") or 1), binding.get("schema_version") or "v1"),
+                    )
+                    counts["episode_asset_state_bindings"] += 1
+                for binding in state["shot_asset_bindings"]:
+                    source_state_id = binding.get("asset_state_id")
+                    connection.execute(
+                        """INSERT INTO shot_asset_bindings
+                        (id,shot_id,asset_id,asset_state_id,role_in_shot,created_at,created_by,revision,schema_version)
+                        VALUES (?,?,?,?,?,?,?,?,?)""",
+                        (str(uuid.uuid4()), shot_map[str(binding["shot_id"])], story_asset_map[str(binding["asset_id"])],
+                         asset_state_map[str(source_state_id)] if source_state_id is not None else None,
+                         binding.get("role_in_shot") or "main", binding.get("created_at") or now,
+                         binding.get("created_by") or actor, int(binding.get("revision") or 1),
+                         binding.get("schema_version") or "v2"),
+                    )
+                    counts["shot_asset_bindings"] += 1
+                preference_versions_by_set: dict[str, list[dict[str, Any]]] = {}
+                for preference_version in state["generation_preference_versions"]:
+                    preference_versions_by_set.setdefault(str(preference_version["preference_set_id"]), []).append(preference_version)
+                for preference in state["generation_preference_sets"]:
+                    source_set_id = str(preference["id"])
+                    source_versions = preference_versions_by_set.get(source_set_id, [])
+                    required_profiles = {
+                        str(item["execution_profile_version_id"])
+                        for item in source_versions if item.get("execution_profile_version_id") is not None
+                    }
+                    missing_profiles = [profile_id for profile_id in required_profiles if connection.execute(
+                        "SELECT 1 FROM execution_profile_versions WHERE id=?", (profile_id,)
+                    ).fetchone() is None]
+                    if missing_profiles:
+                        # A preference version is immutable evidence.  Dropping
+                        # only its profile or inventing a replacement would
+                        # falsify history, so skip the entire set atomically.
+                        counts["generation_preference_sets_skipped_missing_profiles"] += 1
+                        continue
+                    owner_type, source_owner_id = str(preference["owner_type"]), str(preference["owner_id"])
+                    owner_id = project_id if owner_type == "PROJECT" else (
+                        episode_map[source_owner_id] if owner_type == "EPISODE" else shot_map[source_owner_id]
+                    )
+                    target_set_id = preference_set_map[source_set_id]
+                    connection.execute(
+                        """INSERT INTO generation_preference_sets
+                        (id,project_id,owner_type,owner_id,capability,current_version_id,status,created_at,updated_at,created_by,revision,schema_version)
+                        VALUES (?,?,?,?,?,NULL,?,?,?,?,?,?)""",
+                        (target_set_id, project_id, owner_type, owner_id, preference["capability"],
+                         preference.get("status") or "ACTIVE", preference.get("created_at") or now,
+                         preference.get("updated_at") or now, preference.get("created_by") or actor,
+                         int(preference.get("revision") or 1), preference.get("schema_version") or "v1"),
+                    )
+                    for preference_version in source_versions:
+                        source_version_id = str(preference_version["id"])
+                        connection.execute(
+                            """INSERT INTO generation_preference_versions
+                            (id,preference_set_id,version_no,execution_profile_version_id,resolution_mode,settings_json,
+                            reason,is_frozen,created_at,created_by,schema_version)
+                            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                            (preference_version_map[source_version_id], target_set_id,
+                             int(preference_version["version_no"]), preference_version.get("execution_profile_version_id"),
+                             preference_version["resolution_mode"],
+                             json.dumps(preference_version.get("settings") or {}, ensure_ascii=False, sort_keys=True),
+                             preference_version.get("reason") or "", 1 if preference_version.get("is_frozen", True) else 0,
+                             preference_version.get("created_at") or now, preference_version.get("created_by") or actor,
+                             preference_version.get("schema_version") or "v1"),
+                        )
+                        counts["generation_preference_versions"] += 1
+                    source_current_id = preference.get("current_version_id")
+                    if source_current_id is not None:
+                        connection.execute(
+                            "UPDATE generation_preference_sets SET current_version_id=? WHERE id=?",
+                            (preference_version_map[str(source_current_id)], target_set_id),
+                        )
+                    counts["generation_preference_sets"] += 1
+                qc_versions_by_set: dict[str, list[dict[str, Any]]] = {}
+                for policy_version in state["generation_qc_policy_versions"]:
+                    qc_versions_by_set.setdefault(str(policy_version["policy_set_id"]), []).append(policy_version)
+                for policy_set in state["generation_qc_policy_sets"]:
+                    source_set_id = str(policy_set["id"])
+                    owner_type, source_owner_id = str(policy_set["owner_type"]), str(policy_set["owner_id"])
+                    owner_id = project_id if owner_type == "PROJECT" else (
+                        episode_map[source_owner_id] if owner_type == "EPISODE" else shot_map[source_owner_id]
+                    )
+                    target_set_id = qc_policy_set_map[source_set_id]
+                    connection.execute(
+                        """INSERT INTO generation_qc_policy_sets
+                        (id,project_id,owner_type,owner_id,stage,current_version_id,status,created_at,updated_at,created_by,revision,schema_version)
+                        VALUES (?,?,?,?,?,NULL,?,?,?,?,?,?)""",
+                        (target_set_id, project_id, owner_type, owner_id, policy_set["stage"], policy_set.get("status") or "ACTIVE",
+                         policy_set.get("created_at") or now, policy_set.get("updated_at") or now,
+                         policy_set.get("created_by") or actor, int(policy_set.get("revision") or 1), policy_set.get("schema_version") or "v1"),
+                    )
+                    for policy_version in qc_versions_by_set.get(source_set_id, []):
+                        source_version_id = str(policy_version["id"])
+                        connection.execute(
+                            """INSERT INTO generation_qc_policy_versions
+                            (id,policy_set_id,version_no,policy_json,max_auto_rerolls,auto_reroll_categories_json,
+                            is_frozen,reason,created_at,created_by,schema_version) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                            (qc_policy_version_map[source_version_id], target_set_id, int(policy_version["version_no"]),
+                             json.dumps(policy_version.get("policy") or {}, ensure_ascii=False, sort_keys=True),
+                             int(policy_version.get("max_auto_rerolls") or 0),
+                             json.dumps(policy_version.get("auto_reroll_categories") or [], ensure_ascii=False, sort_keys=True),
+                             1 if policy_version.get("is_frozen", True) else 0, policy_version.get("reason") or "",
+                             policy_version.get("created_at") or now, policy_version.get("created_by") or actor,
+                             policy_version.get("schema_version") or "v1"),
+                        )
+                        counts["generation_qc_policy_versions"] += 1
+                    source_current_id = policy_set.get("current_version_id")
+                    if source_current_id is not None:
+                        connection.execute(
+                            "UPDATE generation_qc_policy_sets SET current_version_id=? WHERE id=?",
+                            (qc_policy_version_map[str(source_current_id)], target_set_id),
+                        )
+                    counts["generation_qc_policy_sets"] += 1
+                recipe_versions_by_recipe: dict[str, list[dict[str, Any]]] = {}
+                for recipe_version in state["director_recipe_versions"]:
+                    recipe_versions_by_recipe.setdefault(str(recipe_version["recipe_id"]), []).append(recipe_version)
+                for recipe in state["director_recipes"]:
+                    source_recipe_id = str(recipe["id"])
+                    target_recipe_id = director_recipe_map[source_recipe_id]
+                    connection.execute(
+                        """INSERT INTO director_recipes
+                        (id,project_id,code,title,status,created_at,updated_at,created_by,revision,schema_version)
+                        VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                        (target_recipe_id, project_id, recipe["code"], recipe["title"], recipe.get("status") or "ACTIVE",
+                         recipe.get("created_at") or now, recipe.get("updated_at") or now, recipe.get("created_by") or actor,
+                         int(recipe.get("revision") or 1), recipe.get("schema_version") or "v1"),
+                    )
+                    for recipe_version in recipe_versions_by_recipe.get(source_recipe_id, []):
+                        source_version_id = str(recipe_version["id"])
+                        rewritten_recipe = json.loads(json.dumps(recipe_version.get("recipe") or {}))
+                        qc_ref = rewritten_recipe.get("qc_policy_ref")
+                        if isinstance(qc_ref, dict) and qc_ref.get("policy_version_id") is not None:
+                            qc_ref["policy_version_id"] = qc_policy_version_map[str(qc_ref["policy_version_id"])]
+                        canonical = canonical_recipe(rewritten_recipe)
+                        rewritten_hash = recipe_hash(rewritten_recipe)
+                        connection.execute(
+                            """INSERT INTO director_recipe_versions
+                            (id,recipe_id,version_no,recipe_json,recipe_hash,reason,is_frozen,created_at,created_by,schema_version)
+                            VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                            (director_recipe_version_map[source_version_id], target_recipe_id, int(recipe_version["version_no"]),
+                             canonical, rewritten_hash, recipe_version.get("reason") or "",
+                             1 if recipe_version.get("is_frozen", True) else 0, recipe_version.get("created_at") or now,
+                             recipe_version.get("created_by") or actor, recipe_version.get("schema_version") or "v1"),
+                        )
+                        counts["director_recipe_versions"] += 1
+                    counts["director_recipes"] += 1
+                recipe_binding = state.get("project_director_recipe_binding")
+                if isinstance(recipe_binding, dict):
+                    connection.execute(
+                        """INSERT INTO project_director_recipe_bindings
+                        (project_id,recipe_version_id,reason,created_at,updated_at,created_by,revision,schema_version)
+                        VALUES (?,?,?,?,?,?,?,?)""",
+                        (project_id, director_recipe_version_map[str(recipe_binding["recipe_version_id"])],
+                         recipe_binding.get("reason") or "", recipe_binding.get("created_at") or now,
+                         recipe_binding.get("updated_at") or now, recipe_binding.get("created_by") or actor,
+                         int(recipe_binding.get("revision") or 1), recipe_binding.get("schema_version") or "v1"),
+                    )
+                    counts["project_director_recipe_bindings"] += 1
                 plan = state.get("production_plan")
                 if isinstance(plan, dict):
                     plan_id, version_id = str(uuid.uuid4()), str(uuid.uuid4())
@@ -616,15 +1116,30 @@ class ProjectPackageService:
                 for profile in state["profile_bindings"]:
                     profile_version_id = str(profile.get("execution_profile_version_id") or "")
                     exists = connection.execute(
-                        "SELECT 1 FROM execution_profile_versions WHERE id=? AND status='PUBLISHED'", (profile_version_id,)
+                        "SELECT capability FROM execution_profile_versions WHERE id=? AND status='PUBLISHED'", (profile_version_id,)
                     ).fetchone()
                     if not exists:
                         counts["profiles_skipped"] += 1
                         continue
+                    try:
+                        package_capability = normalize_capability(str(profile.get("capability") or ""))
+                        profile_capability = normalize_capability(str(exists["capability"]))
+                    except ValueError as error:
+                        raise DomainRuleError(
+                            "PROFILE_CAPABILITY_INVALID",
+                            "项目包 Profile 绑定 capability 未知或含义不唯一",
+                            {"profile_version_id": profile_version_id},
+                        ) from error
+                    if package_capability != profile_capability:
+                        raise DomainRuleError(
+                            "PROFILE_CAPABILITY_MISMATCH",
+                            "项目包绑定 capability 与 Profile 版本不一致",
+                            {"profile_version_id": profile_version_id},
+                        )
                     connection.execute(
                         """INSERT INTO project_profile_bindings (id,project_id,capability,execution_profile_version_id,status,
                         created_at,updated_at,created_by) VALUES (?,?,?,?,'ACTIVE',?,?,?)""",
-                        (str(uuid.uuid4()), project_id, profile["capability"], profile_version_id, now, now, actor),
+                        (str(uuid.uuid4()), project_id, package_capability, profile_version_id, now, now, actor),
                     )
                     counts["profiles"] += 1
                 for target in state["delivery_targets"]:

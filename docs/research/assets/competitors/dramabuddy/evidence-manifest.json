@@ -1,0 +1,236 @@
+{
+  "schema_version": "localdrama.competitor-evidence.v1",
+  "product": "dramabuddy",
+  "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+  "image_count": 32,
+  "contact_sheets": [
+    "contact-sheet-evidence-01.jpg",
+    "contact-sheet-evidence-02.jpg"
+  ],
+  "images": [
+    {
+      "file": "official-guide-page-14.png",
+      "width": 1192,
+      "height": 1686,
+      "bytes": 510942,
+      "thumbnail": "thumbs-evidence/official-guide-page-14-95eea98b.jpg"
+    },
+    {
+      "file": "official-guide-page-15.png",
+      "width": 1192,
+      "height": 1686,
+      "bytes": 241439,
+      "thumbnail": "thumbs-evidence/official-guide-page-15-7b64023b.jpg"
+    },
+    {
+      "file": "official-guide-page-16.png",
+      "width": 1192,
+      "height": 1686,
+      "bytes": 314004,
+      "thumbnail": "thumbs-evidence/official-guide-page-16-ced430d3.jpg"
+    },
+    {
+      "file": "official-guide-page-17.png",
+      "width": 1192,
+      "height": 1686,
+      "bytes": 161509,
+      "thumbnail": "thumbs-evidence/official-guide-page-17-a783084a.jpg"
+    },
+    {
+      "file": "official-guide-page-18.png",
+      "width": 1192,
+      "height": 1686,
+      "bytes": 664184,
+      "thumbnail": "thumbs-evidence/official-guide-page-18-b35aa0fd.jpg"
+    },
+    {
+      "file": "official-guide-page-19.png",
+      "width": 1192,
+      "height": 1686,
+      "bytes": 1103664,
+      "thumbnail": "thumbs-evidence/official-guide-page-19-8c572133.jpg"
+    },
+    {
+      "file": "press-eastmoney-01.jpg",
+      "width": 136,
+      "height": 213,
+      "bytes": 30883,
+      "thumbnail": "thumbs-evidence/press-eastmoney-01-b229a854.jpg"
+    },
+    {
+      "file": "press-eastmoney-02.jpg",
+      "width": 300,
+      "height": 300,
+      "bytes": 52494,
+      "thumbnail": "thumbs-evidence/press-eastmoney-02-81405868.jpg"
+    },
+    {
+      "file": "press-eastmoney-03.jpg",
+      "width": 706,
+      "height": 988,
+      "bytes": 366370,
+      "thumbnail": "thumbs-evidence/press-eastmoney-03-69ce837a.jpg"
+    },
+    {
+      "file": "press-eastmoney-04.jpg",
+      "width": 996,
+      "height": 828,
+      "bytes": 314975,
+      "thumbnail": "thumbs-evidence/press-eastmoney-04-07837e50.jpg"
+    },
+    {
+      "file": "press-eastmoney-05.jpg",
+      "width": 996,
+      "height": 828,
+      "bytes": 313790,
+      "thumbnail": "thumbs-evidence/press-eastmoney-05-77f0ee75.jpg"
+    },
+    {
+      "file": "press-eastmoney-06.jpg",
+      "width": 1044,
+      "height": 753,
+      "bytes": 296895,
+      "thumbnail": "thumbs-evidence/press-eastmoney-06-251cae41.jpg"
+    },
+    {
+      "file": "press-eastmoney-07.jpg",
+      "width": 996,
+      "height": 828,
+      "bytes": 308386,
+      "thumbnail": "thumbs-evidence/press-eastmoney-07-194d3569.jpg"
+    },
+    {
+      "file": "press-eastmoney-08.jpg",
+      "width": 996,
+      "height": 828,
+      "bytes": 310433,
+      "thumbnail": "thumbs-evidence/press-eastmoney-08-91ecfe40.jpg"
+    },
+    {
+      "file": "press-eastmoney-09.jpg",
+      "width": 145,
+      "height": 95,
+      "bytes": 7655,
+      "thumbnail": "thumbs-evidence/press-eastmoney-09-ece5e037.jpg"
+    },
+    {
+      "file": "press-eastmoney-10.jpg",
+      "width": 706,
+      "height": 1069,
+      "bytes": 318000,
+      "thumbnail": "thumbs-evidence/press-eastmoney-10-f88ee873.jpg"
+    },
+    {
+      "file": "press-eastmoney-11.jpg",
+      "width": 145,
+      "height": 95,
+      "bytes": 6668,
+      "thumbnail": "thumbs-evidence/press-eastmoney-11-e3175859.jpg"
+    },
+    {
+      "file": "press-eastmoney-12.jpg",
+      "width": 996,
+      "height": 828,
+      "bytes": 317377,
+      "thumbnail": "thumbs-evidence/press-eastmoney-12-15d1c10d.jpg"
+    },
+    {
+      "file": "press-eastmoney-13.jpg",
+      "width": 996,
+      "height": 828,
+      "bytes": 309290,
+      "thumbnail": "thumbs-evidence/press-eastmoney-13-8eb8a7f8.jpg"
+    },
+    {
+      "file": "press-eastmoney-14.jpg",
+      "width": 706,
+      "height": 1063,
+      "bytes": 412021,
+      "thumbnail": "thumbs-evidence/press-eastmoney-14-9d3f68f3.jpg"
+    },
+    {
+      "file": "raw-01.png",
+      "width": 116,
+      "height": 200,
+      "bytes": 13654,
+      "thumbnail": "thumbs-evidence/raw-01-4547e366.jpg"
+    },
+    {
+      "file": "raw-02.png",
+      "width": 108,
+      "height": 200,
+      "bytes": 11414,
+      "thumbnail": "thumbs-evidence/raw-02-ba5c2fe4.jpg"
+    },
+    {
+      "file": "raw-03.png",
+      "width": 284,
+      "height": 88,
+      "bytes": 1608,
+      "thumbnail": "thumbs-evidence/raw-03-356ffef9.jpg"
+    },
+    {
+      "file": "raw-04.png",
+      "width": 1120,
+      "height": 638,
+      "bytes": 209215,
+      "thumbnail": "thumbs-evidence/raw-04-f6a256b6.jpg"
+    },
+    {
+      "file": "raw-05.png",
+      "width": 356,
+      "height": 200,
+      "bytes": 37866,
+      "thumbnail": "thumbs-evidence/raw-05-5ecf8582.jpg"
+    },
+    {
+      "file": "raw-06.png",
+      "width": 386,
+      "height": 690,
+      "bytes": 130611,
+      "thumbnail": "thumbs-evidence/raw-06-adf99ae2.jpg"
+    },
+    {
+      "file": "raw-07.jpg",
+      "width": 258,
+      "height": 258,
+      "bytes": 26898,
+      "thumbnail": "thumbs-evidence/raw-07-7715ff61.jpg"
+    },
+    {
+      "file": "raw-08.jpg",
+      "width": 1439,
+      "height": 360,
+      "bytes": 157405,
+      "thumbnail": "thumbs-evidence/raw-08-8860101e.jpg"
+    },
+    {
+      "file": "raw-09.webp",
+      "width": 2752,
+      "height": 1536,
+      "bytes": 195342,
+      "thumbnail": "thumbs-evidence/raw-09-5cb76d6b.jpg"
+    },
+    {
+      "file": "raw-10.jpg",
+      "width": 1026,
+      "height": 882,
+      "bytes": 114926,
+      "thumbnail": "thumbs-evidence/raw-10-b586bd4f.jpg"
+    },
+    {
+      "file": "raw-11.png",
+      "width": 20,
+      "height": 20,
+      "bytes": 1415,
+      "thumbnail": "thumbs-evidence/raw-11-cc8e8dea.jpg"
+    },
+    {
+      "file": "ui-01-dashboard.png",
+      "width": 1030,
+      "height": 510,
+      "bytes": 507340,
+      "thumbnail": "thumbs-evidence/ui-01-dashboard-fcb0ffc6.jpg"
+    }
+  ]
+}

@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import unicodedata
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -255,6 +256,29 @@ class BreakdownApplyService:
                 {"name": name, "scene_count": count}
                 for name, count in sorted(extracted_characters.items(), key=lambda item: (-item[1], item[0]))
             ]
+            for character in extracted:
+                normalized_name = unicodedata.normalize("NFKC", character["name"]).strip().casefold()
+                suggested = connection.execute(
+                    """SELECT id FROM story_assets WHERE project_id=? AND kind='CHARACTER' AND status='ACTIVE'
+                    AND lower(name)=lower(?) ORDER BY created_at,id LIMIT 1""",
+                    (project_id, character["name"]),
+                ).fetchone()
+                proposal_id = str(uuid.uuid4())
+                connection.execute(
+                    """INSERT INTO story_asset_proposals
+                    (id,project_id,breakdown_draft_id,proposal_key,kind,name,evidence_json,suggested_asset_id,
+                     resolved_asset_id,status,decision_note,created_at,updated_at,created_by,revision,schema_version)
+                    VALUES (?,?,?,?,?,?,?, ?,NULL,'PENDING','',?,?,?,1,'v2')""",
+                    (proposal_id, project_id, draft_id, f"CHARACTER:{normalized_name}", "CHARACTER", character["name"],
+                     _json({"scene_count": character["scene_count"], "source": "script_breakdown_draft"}),
+                     suggested["id"] if suggested else None, now, now, actor),
+                )
+                connection.execute(
+                    """INSERT INTO audit_events
+                    (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
+                    VALUES (?,'writer','STORY_ASSET_PROPOSAL_CREATED','story_asset_proposal',?,'AI 提取角色形成待审核资产建议',?)""",
+                    (actor, proposal_id, _json({"draft_id": draft_id, "suggested_asset_id": suggested["id"] if suggested else None})),
+                )
             created = {"scenes": created_scenes, "shots": created_shots, "lines": created_lines}
             connection.execute(
                 """INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)

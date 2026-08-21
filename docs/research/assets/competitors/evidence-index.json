@@ -1,0 +1,1960 @@
+{
+  "schema_version": "localdrama.competitor-catalog.v1",
+  "warning": "Inventory is not popularity or authenticity proof. See final research document and per-product source records.",
+  "product_count": 19,
+  "source_image_count": 248,
+  "overview_contact_sheet": "competitor-overview-contact-sheet.jpg",
+  "products": [
+    {
+      "schema_version": "localdrama.competitor-evidence.v1",
+      "product": "bytedance",
+      "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+      "image_count": 5,
+      "contact_sheets": [
+        "contact-sheet-evidence-01.jpg"
+      ],
+      "images": [
+        {
+          "file": "01_workbench_upload_script.webp",
+          "width": 1080,
+          "height": 587,
+          "bytes": 15742,
+          "thumbnail": "thumbs-evidence/01_workbench_upload_script-ef15f206.jpg"
+        },
+        {
+          "file": "02_project_planning_dialog.webp",
+          "width": 1080,
+          "height": 539,
+          "bytes": 21730,
+          "thumbnail": "thumbs-evidence/02_project_planning_dialog-86ed4fb3.jpg"
+        },
+        {
+          "file": "03_asset_design_workspace.webp",
+          "width": 1080,
+          "height": 447,
+          "bytes": 34700,
+          "thumbnail": "thumbs-evidence/03_asset_design_workspace-34aaefd3.jpg"
+        },
+        {
+          "file": "04_episode_storyboard_script.webp",
+          "width": 1080,
+          "height": 723,
+          "bytes": 89806,
+          "thumbnail": "thumbs-evidence/04_episode_storyboard_script-4fa315e7.jpg"
+        },
+        {
+          "file": "05_episode_composition_export.webp",
+          "width": 684,
+          "height": 1094,
+          "bytes": 27896,
+          "thumbnail": "thumbs-evidence/05_episode_composition_export-d6629d89.jpg"
+        }
+      ]
+    },
+    {
+      "schema_version": "localdrama.competitor-evidence.v1",
+      "product": "bytedance-comic",
+      "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+      "image_count": 5,
+      "contact_sheets": [
+        "contact-sheet-evidence-01.jpg"
+      ],
+      "images": [
+        {
+          "file": "01-home-script-upload.webp",
+          "width": 1080,
+          "height": 587,
+          "bytes": 15742,
+          "thumbnail": "thumbs-evidence/01-home-script-upload-c00be818.jpg"
+        },
+        {
+          "file": "02-project-plan-script-planning.webp",
+          "width": 1080,
+          "height": 539,
+          "bytes": 21730,
+          "thumbnail": "thumbs-evidence/02-project-plan-script-planning-f4419514.jpg"
+        },
+        {
+          "file": "03-asset-design-master-detail.webp",
+          "width": 1080,
+          "height": 447,
+          "bytes": 34700,
+          "thumbnail": "thumbs-evidence/03-asset-design-master-detail-be0c99d7.jpg"
+        },
+        {
+          "file": "04-storyboard-editor.webp",
+          "width": 1080,
+          "height": 723,
+          "bytes": 89806,
+          "thumbnail": "thumbs-evidence/04-storyboard-editor-f9af1946.jpg"
+        },
+        {
+          "file": "05-episode-compose-export.webp",
+          "width": 684,
+          "height": 1094,
+          "bytes": 27896,
+          "thumbnail": "thumbs-evidence/05-episode-compose-export-a312635a.jpg"
+        }
+      ]
+    },
+    {
+      "schema_version": "localdrama.competitor-evidence.v1",
+      "product": "bytedance-comic-studio",
+      "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+      "image_count": 5,
+      "contact_sheets": [
+        "contact-sheet-evidence-01.jpg"
+      ],
+      "images": [
+        {
+          "file": "ui-01.webp",
+          "width": 1080,
+          "height": 587,
+          "bytes": 15742,
+          "thumbnail": "thumbs-evidence/ui-01-7824a598.jpg"
+        },
+        {
+          "file": "ui-02.webp",
+          "width": 1080,
+          "height": 539,
+          "bytes": 21730,
+          "thumbnail": "thumbs-evidence/ui-02-0675863e.jpg"
+        },
+        {
+          "file": "ui-03.webp",
+          "width": 1080,
+          "height": 447,
+          "bytes": 34700,
+          "thumbnail": "thumbs-evidence/ui-03-9bb2d15d.jpg"
+        },
+        {
+          "file": "ui-04.webp",
+          "width": 1080,
+          "height": 723,
+          "bytes": 89806,
+          "thumbnail": "thumbs-evidence/ui-04-a178b91a.jpg"
+        },
+        {
+          "file": "ui-05.webp",
+          "width": 684,
+          "height": 1094,
+          "bytes": 27896,
+          "thumbnail": "thumbs-evidence/ui-05-ae28872d.jpg"
+        }
+      ]
+    },
+    {
+      "schema_version": "localdrama.competitor-evidence.v1",
+      "product": "dramabuddy",
+      "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+      "image_count": 32,
+      "contact_sheets": [
+        "contact-sheet-evidence-01.jpg",
+        "contact-sheet-evidence-02.jpg"
+      ],
+      "images": [
+        {
+          "file": "official-guide-page-14.png",
+          "width": 1192,
+          "height": 1686,
+          "bytes": 510942,
+          "thumbnail": "thumbs-evidence/official-guide-page-14-95eea98b.jpg"
+        },
+        {
+          "file": "official-guide-page-15.png",
+          "width": 1192,
+          "height": 1686,
+          "bytes": 241439,
+          "thumbnail": "thumbs-evidence/official-guide-page-15-7b64023b.jpg"
+        },
+        {
+          "file": "official-guide-page-16.png",
+          "width": 1192,
+          "height": 1686,
+          "bytes": 314004,
+          "thumbnail": "thumbs-evidence/official-guide-page-16-ced430d3.jpg"
+        },
+        {
+          "file": "official-guide-page-17.png",
+          "width": 1192,
+          "height": 1686,
+          "bytes": 161509,
+          "thumbnail": "thumbs-evidence/official-guide-page-17-a783084a.jpg"
+        },
+        {
+          "file": "official-guide-page-18.png",
+          "width": 1192,
+          "height": 1686,
+          "bytes": 664184,
+          "thumbnail": "thumbs-evidence/official-guide-page-18-b35aa0fd.jpg"
+        },
+        {
+          "file": "official-guide-page-19.png",
+          "width": 1192,
+          "height": 1686,
+          "bytes": 1103664,
+          "thumbnail": "thumbs-evidence/official-guide-page-19-8c572133.jpg"
+        },
+        {
+          "file": "press-eastmoney-01.jpg",
+          "width": 136,
+          "height": 213,
+          "bytes": 30883,
+          "thumbnail": "thumbs-evidence/press-eastmoney-01-b229a854.jpg"
+        },
+        {
+          "file": "press-eastmoney-02.jpg",
+          "width": 300,
+          "height": 300,
+          "bytes": 52494,
+          "thumbnail": "thumbs-evidence/press-eastmoney-02-81405868.jpg"
+        },
+        {
+          "file": "press-eastmoney-03.jpg",
+          "width": 706,
+          "height": 988,
+          "bytes": 366370,
+          "thumbnail": "thumbs-evidence/press-eastmoney-03-69ce837a.jpg"
+        },
+        {
+          "file": "press-eastmoney-04.jpg",
+          "width": 996,
+          "height": 828,
+          "bytes": 314975,
+          "thumbnail": "thumbs-evidence/press-eastmoney-04-07837e50.jpg"
+        },
+        {
+          "file": "press-eastmoney-05.jpg",
+          "width": 996,
+          "height": 828,
+          "bytes": 313790,
+          "thumbnail": "thumbs-evidence/press-eastmoney-05-77f0ee75.jpg"
+        },
+        {
+          "file": "press-eastmoney-06.jpg",
+          "width": 1044,
+          "height": 753,
+          "bytes": 296895,
+          "thumbnail": "thumbs-evidence/press-eastmoney-06-251cae41.jpg"
+        },
+        {
+          "file": "press-eastmoney-07.jpg",
+          "width": 996,
+          "height": 828,
+          "bytes": 308386,
+          "thumbnail": "thumbs-evidence/press-eastmoney-07-194d3569.jpg"
+        },
+        {
+          "file": "press-eastmoney-08.jpg",
+          "width": 996,
+          "height": 828,
+          "bytes": 310433,
+          "thumbnail": "thumbs-evidence/press-eastmoney-08-91ecfe40.jpg"
+        },
+        {
+          "file": "press-eastmoney-09.jpg",
+          "width": 145,
+          "height": 95,
+          "bytes": 7655,
+          "thumbnail": "thumbs-evidence/press-eastmoney-09-ece5e037.jpg"
+        },
+        {
+          "file": "press-eastmoney-10.jpg",
+          "width": 706,
+          "height": 1069,
+          "bytes": 318000,
+          "thumbnail": "thumbs-evidence/press-eastmoney-10-f88ee873.jpg"
+        },
+        {
+          "file": "press-eastmoney-11.jpg",
+          "width": 145,
+          "height": 95,
+          "bytes": 6668,
+          "thumbnail": "thumbs-evidence/press-eastmoney-11-e3175859.jpg"
+        },
+        {
+          "file": "press-eastmoney-12.jpg",
+          "width": 996,
+          "height": 828,
+          "bytes": 317377,
+          "thumbnail": "thumbs-evidence/press-eastmoney-12-15d1c10d.jpg"
+        },
+        {
+          "file": "press-eastmoney-13.jpg",
+          "width": 996,
+          "height": 828,
+          "bytes": 309290,
+          "thumbnail": "thumbs-evidence/press-eastmoney-13-8eb8a7f8.jpg"
+        },
+        {
+          "file": "press-eastmoney-14.jpg",
+          "width": 706,
+          "height": 1063,
+          "bytes": 412021,
+          "thumbnail": "thumbs-evidence/press-eastmoney-14-9d3f68f3.jpg"
+        },
+        {
+          "file": "raw-01.png",
+          "width": 116,
+          "height": 200,
+          "bytes": 13654,
+          "thumbnail": "thumbs-evidence/raw-01-4547e366.jpg"
+        },
+        {
+          "file": "raw-02.png",
+          "width": 108,
+          "height": 200,
+          "bytes": 11414,
+          "thumbnail": "thumbs-evidence/raw-02-ba5c2fe4.jpg"
+        },
+        {
+          "file": "raw-03.png",
+          "width": 284,
+          "height": 88,
+          "bytes": 1608,
+          "thumbnail": "thumbs-evidence/raw-03-356ffef9.jpg"
+        },
+        {
+          "file": "raw-04.png",
+          "width": 1120,
+          "height": 638,
+          "bytes": 209215,
+          "thumbnail": "thumbs-evidence/raw-04-f6a256b6.jpg"
+        },
+        {
+          "file": "raw-05.png",
+          "width": 356,
+          "height": 200,
+          "bytes": 37866,
+          "thumbnail": "thumbs-evidence/raw-05-5ecf8582.jpg"
+        },
+        {
+          "file": "raw-06.png",
+          "width": 386,
+          "height": 690,
+          "bytes": 130611,
+          "thumbnail": "thumbs-evidence/raw-06-adf99ae2.jpg"
+        },
+        {
+          "file": "raw-07.jpg",
+          "width": 258,
+          "height": 258,
+          "bytes": 26898,
+          "thumbnail": "thumbs-evidence/raw-07-7715ff61.jpg"
+        },
+        {
+          "file": "raw-08.jpg",
+          "width": 1439,
+          "height": 360,
+          "bytes": 157405,
+          "thumbnail": "thumbs-evidence/raw-08-8860101e.jpg"
+        },
+        {
+          "file": "raw-09.webp",
+          "width": 2752,
+          "height": 1536,
+          "bytes": 195342,
+          "thumbnail": "thumbs-evidence/raw-09-5cb76d6b.jpg"
+        },
+        {
+          "file": "raw-10.jpg",
+          "width": 1026,
+          "height": 882,
+          "bytes": 114926,
+          "thumbnail": "thumbs-evidence/raw-10-b586bd4f.jpg"
+        },
+        {
+          "file": "raw-11.png",
+          "width": 20,
+          "height": 20,
+          "bytes": 1415,
+          "thumbnail": "thumbs-evidence/raw-11-cc8e8dea.jpg"
+        },
+        {
+          "file": "ui-01-dashboard.png",
+          "width": 1030,
+          "height": 510,
+          "bytes": 507340,
+          "thumbnail": "thumbs-evidence/ui-01-dashboard-fcb0ffc6.jpg"
+        }
+      ]
+    },
+    {
+      "schema_version": "localdrama.competitor-evidence.v1",
+      "product": "dramart",
+      "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+      "image_count": 4,
+      "contact_sheets": [
+        "contact-sheet-evidence-01.jpg"
+      ],
+      "images": [
+        {
+          "file": "ui-01.png",
+          "width": 1080,
+          "height": 608,
+          "bytes": 161210,
+          "thumbnail": "thumbs-evidence/ui-01-e790de70.jpg"
+        },
+        {
+          "file": "ui-02.png",
+          "width": 1080,
+          "height": 608,
+          "bytes": 380788,
+          "thumbnail": "thumbs-evidence/ui-02-b2cb41b3.jpg"
+        },
+        {
+          "file": "ui-03.png",
+          "width": 1080,
+          "height": 608,
+          "bytes": 399127,
+          "thumbnail": "thumbs-evidence/ui-03-0f26dbd5.jpg"
+        },
+        {
+          "file": "ui-04.png",
+          "width": 1080,
+          "height": 608,
+          "bytes": 147526,
+          "thumbnail": "thumbs-evidence/ui-04-8bb43639.jpg"
+        }
+      ]
+    },
+    {
+      "schema_version": "localdrama.competitor-evidence.v1",
+      "product": "jurilu",
+      "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+      "image_count": 7,
+      "contact_sheets": [
+        "contact-sheet-evidence-01.jpg"
+      ],
+      "images": [
+        {
+          "file": "01-main-workbench.jpeg",
+          "width": 1080,
+          "height": 581,
+          "bytes": 38853,
+          "thumbnail": "thumbs-evidence/01-main-workbench-bd181772.jpg"
+        },
+        {
+          "file": "ui-01.jpg",
+          "width": 1280,
+          "height": 720,
+          "bytes": 31749,
+          "thumbnail": "thumbs-evidence/ui-01-6d581444.jpg"
+        },
+        {
+          "file": "ui-02.jpg",
+          "width": 1280,
+          "height": 720,
+          "bytes": 44248,
+          "thumbnail": "thumbs-evidence/ui-02-62ce8644.jpg"
+        },
+        {
+          "file": "ui-03.jpg",
+          "width": 1280,
+          "height": 720,
+          "bytes": 62423,
+          "thumbnail": "thumbs-evidence/ui-03-dde9b861.jpg"
+        },
+        {
+          "file": "ui-04.jpg",
+          "width": 1280,
+          "height": 720,
+          "bytes": 56290,
+          "thumbnail": "thumbs-evidence/ui-04-ad4f5d3a.jpg"
+        },
+        {
+          "file": "ui-05.jpg",
+          "width": 1280,
+          "height": 720,
+          "bytes": 65880,
+          "thumbnail": "thumbs-evidence/ui-05-f5276236.jpg"
+        },
+        {
+          "file": "ui-06.jpg",
+          "width": 1280,
+          "height": 720,
+          "bytes": 51005,
+          "thumbnail": "thumbs-evidence/ui-06-bd08d456.jpg"
+        }
+      ]
+    },
+    {
+      "schema_version": "localdrama.competitor-evidence.v1",
+      "product": "libtv",
+      "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+      "image_count": 39,
+      "contact_sheets": [
+        "contact-sheet-evidence-01.jpg",
+        "contact-sheet-evidence-02.jpg",
+        "contact-sheet-evidence-03.jpg"
+      ],
+      "images": [
+        {
+          "file": "ui-01.webp",
+          "width": 1080,
+          "height": 601,
+          "bytes": 47560,
+          "thumbnail": "thumbs-evidence/ui-01-7824a598.jpg"
+        },
+        {
+          "file": "ui-02.webp",
+          "width": 1080,
+          "height": 639,
+          "bytes": 23546,
+          "thumbnail": "thumbs-evidence/ui-02-0675863e.jpg"
+        },
+        {
+          "file": "ui-03.webp",
+          "width": 1080,
+          "height": 671,
+          "bytes": 40482,
+          "thumbnail": "thumbs-evidence/ui-03-9bb2d15d.jpg"
+        },
+        {
+          "file": "ui-04.webp",
+          "width": 846,
+          "height": 540,
+          "bytes": 25318,
+          "thumbnail": "thumbs-evidence/ui-04-a178b91a.jpg"
+        },
+        {
+          "file": "ui-05.webp",
+          "width": 1080,
+          "height": 742,
+          "bytes": 20940,
+          "thumbnail": "thumbs-evidence/ui-05-ae28872d.jpg"
+        },
+        {
+          "file": "ui-06.webp",
+          "width": 1080,
+          "height": 743,
+          "bytes": 20562,
+          "thumbnail": "thumbs-evidence/ui-06-7d874e5d.jpg"
+        },
+        {
+          "file": "ui-07.webp",
+          "width": 1080,
+          "height": 743,
+          "bytes": 28200,
+          "thumbnail": "thumbs-evidence/ui-07-45145fed.jpg"
+        },
+        {
+          "file": "ui-08.webp",
+          "width": 1080,
+          "height": 738,
+          "bytes": 29550,
+          "thumbnail": "thumbs-evidence/ui-08-a1a7f677.jpg"
+        },
+        {
+          "file": "ui-09.webp",
+          "width": 1080,
+          "height": 718,
+          "bytes": 827978,
+          "thumbnail": "thumbs-evidence/ui-09-5ca501a6.jpg"
+        },
+        {
+          "file": "ui-10.webp",
+          "width": 1080,
+          "height": 718,
+          "bytes": 693420,
+          "thumbnail": "thumbs-evidence/ui-10-f96398ae.jpg"
+        },
+        {
+          "file": "ui-11.webp",
+          "width": 1080,
+          "height": 796,
+          "bytes": 28560,
+          "thumbnail": "thumbs-evidence/ui-11-79cd647d.jpg"
+        },
+        {
+          "file": "ui-12.webp",
+          "width": 1080,
+          "height": 744,
+          "bytes": 20170,
+          "thumbnail": "thumbs-evidence/ui-12-b325ea1d.jpg"
+        },
+        {
+          "file": "ui-13.webp",
+          "width": 800,
+          "height": 532,
+          "bytes": 1171432,
+          "thumbnail": "thumbs-evidence/ui-13-64f2ad05.jpg"
+        },
+        {
+          "file": "ui-14.webp",
+          "width": 800,
+          "height": 532,
+          "bytes": 1162412,
+          "thumbnail": "thumbs-evidence/ui-14-a83eced1.jpg"
+        },
+        {
+          "file": "ui-15.webp",
+          "width": 1080,
+          "height": 665,
+          "bytes": 38284,
+          "thumbnail": "thumbs-evidence/ui-15-439588d7.jpg"
+        },
+        {
+          "file": "ui-16.webp",
+          "width": 1080,
+          "height": 565,
+          "bytes": 26824,
+          "thumbnail": "thumbs-evidence/ui-16-ee441bed.jpg"
+        },
+        {
+          "file": "ui-17.webp",
+          "width": 1080,
+          "height": 929,
+          "bytes": 40542,
+          "thumbnail": "thumbs-evidence/ui-17-b4ee8e36.jpg"
+        },
+        {
+          "file": "ui-18.webp",
+          "width": 300,
+          "height": 401,
+          "bytes": 205260,
+          "thumbnail": "thumbs-evidence/ui-18-2bd9fae9.jpg"
+        },
+        {
+          "file": "ui-19.webp",
+          "width": 1080,
+          "height": 745,
+          "bytes": 27808,
+          "thumbnail": "thumbs-evidence/ui-19-13cd50e1.jpg"
+        },
+        {
+          "file": "ui-20.webp",
+          "width": 1080,
+          "height": 744,
+          "bytes": 74400,
+          "thumbnail": "thumbs-evidence/ui-20-eda179a2.jpg"
+        },
+        {
+          "file": "ui-21.webp",
+          "width": 1080,
+          "height": 659,
+          "bytes": 51572,
+          "thumbnail": "thumbs-evidence/ui-21-ffcd8c5c.jpg"
+        },
+        {
+          "file": "ui-22.webp",
+          "width": 500,
+          "height": 281,
+          "bytes": 560396,
+          "thumbnail": "thumbs-evidence/ui-22-af047f20.jpg"
+        },
+        {
+          "file": "ui-23.webp",
+          "width": 1080,
+          "height": 945,
+          "bytes": 81108,
+          "thumbnail": "thumbs-evidence/ui-23-148eb50e.jpg"
+        },
+        {
+          "file": "ui-24.webp",
+          "width": 1078,
+          "height": 1328,
+          "bytes": 147168,
+          "thumbnail": "thumbs-evidence/ui-24-81cbb084.jpg"
+        },
+        {
+          "file": "ui-25.webp",
+          "width": 1080,
+          "height": 707,
+          "bytes": 49034,
+          "thumbnail": "thumbs-evidence/ui-25-8a1b6f57.jpg"
+        },
+        {
+          "file": "ui-26.webp",
+          "width": 954,
+          "height": 1226,
+          "bytes": 101274,
+          "thumbnail": "thumbs-evidence/ui-26-30d49e9b.jpg"
+        },
+        {
+          "file": "ui-27.webp",
+          "width": 850,
+          "height": 480,
+          "bytes": 17928,
+          "thumbnail": "thumbs-evidence/ui-27-b78dcd12.jpg"
+        },
+        {
+          "file": "ui-28.webp",
+          "width": 540,
+          "height": 359,
+          "bytes": 718854,
+          "thumbnail": "thumbs-evidence/ui-28-eb957155.jpg"
+        },
+        {
+          "file": "ui-29.webp",
+          "width": 874,
+          "height": 1112,
+          "bytes": 45724,
+          "thumbnail": "thumbs-evidence/ui-29-e5dca749.jpg"
+        },
+        {
+          "file": "ui-30.webp",
+          "width": 1080,
+          "height": 738,
+          "bytes": 62446,
+          "thumbnail": "thumbs-evidence/ui-30-c255aced.jpg"
+        },
+        {
+          "file": "ui-31.webp",
+          "width": 1080,
+          "height": 758,
+          "bytes": 51544,
+          "thumbnail": "thumbs-evidence/ui-31-f5f4b21a.jpg"
+        },
+        {
+          "file": "ui-32.webp",
+          "width": 1080,
+          "height": 847,
+          "bytes": 67448,
+          "thumbnail": "thumbs-evidence/ui-32-27f83898.jpg"
+        },
+        {
+          "file": "ui-33.webp",
+          "width": 1080,
+          "height": 1201,
+          "bytes": 164392,
+          "thumbnail": "thumbs-evidence/ui-33-9418cb08.jpg"
+        },
+        {
+          "file": "ui-34.webp",
+          "width": 850,
+          "height": 483,
+          "bytes": 49916,
+          "thumbnail": "thumbs-evidence/ui-34-de09ef70.jpg"
+        },
+        {
+          "file": "ui-35.webp",
+          "width": 1080,
+          "height": 1354,
+          "bytes": 132596,
+          "thumbnail": "thumbs-evidence/ui-35-da8e7f7e.jpg"
+        },
+        {
+          "file": "ui-36.webp",
+          "width": 1080,
+          "height": 644,
+          "bytes": 56080,
+          "thumbnail": "thumbs-evidence/ui-36-3eab5229.jpg"
+        },
+        {
+          "file": "ui-37.webp",
+          "width": 1080,
+          "height": 744,
+          "bytes": 63122,
+          "thumbnail": "thumbs-evidence/ui-37-98164690.jpg"
+        },
+        {
+          "file": "ui-38.webp",
+          "width": 854,
+          "height": 480,
+          "bytes": 50212,
+          "thumbnail": "thumbs-evidence/ui-38-21484ccf.jpg"
+        },
+        {
+          "file": "ui-39.webp",
+          "width": 1080,
+          "height": 601,
+          "bytes": 47560,
+          "thumbnail": "thumbs-evidence/ui-39-6b06da2e.jpg"
+        }
+      ]
+    },
+    {
+      "schema_version": "localdrama.competitor-evidence.v1",
+      "product": "lumenx",
+      "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+      "image_count": 8,
+      "contact_sheets": [
+        "contact-sheet-evidence-01.jpg"
+      ],
+      "images": [
+        {
+          "file": "ui-01.jpg",
+          "width": 3024,
+          "height": 1898,
+          "bytes": 756174,
+          "thumbnail": "thumbs-evidence/ui-01-6d581444.jpg"
+        },
+        {
+          "file": "ui-02.jpg",
+          "width": 3024,
+          "height": 1898,
+          "bytes": 595063,
+          "thumbnail": "thumbs-evidence/ui-02-62ce8644.jpg"
+        },
+        {
+          "file": "ui-03.jpg",
+          "width": 3024,
+          "height": 1898,
+          "bytes": 457861,
+          "thumbnail": "thumbs-evidence/ui-03-dde9b861.jpg"
+        },
+        {
+          "file": "ui-04.jpg",
+          "width": 3024,
+          "height": 1898,
+          "bytes": 819235,
+          "thumbnail": "thumbs-evidence/ui-04-ad4f5d3a.jpg"
+        },
+        {
+          "file": "ui-05.jpg",
+          "width": 3024,
+          "height": 1898,
+          "bytes": 744823,
+          "thumbnail": "thumbs-evidence/ui-05-f5276236.jpg"
+        },
+        {
+          "file": "ui-06.jpg",
+          "width": 3024,
+          "height": 1898,
+          "bytes": 979691,
+          "thumbnail": "thumbs-evidence/ui-06-bd08d456.jpg"
+        },
+        {
+          "file": "ui-07.jpg",
+          "width": 3024,
+          "height": 1898,
+          "bytes": 497821,
+          "thumbnail": "thumbs-evidence/ui-07-1398a414.jpg"
+        },
+        {
+          "file": "ui-08.jpg",
+          "width": 3024,
+          "height": 1898,
+          "bytes": 605727,
+          "thumbnail": "thumbs-evidence/ui-08-4311091a.jpg"
+        }
+      ]
+    },
+    {
+      "schema_version": "localdrama.competitor-evidence.v1",
+      "product": "minimax",
+      "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+      "image_count": 42,
+      "contact_sheets": [
+        "contact-sheet-evidence-01.jpg",
+        "contact-sheet-evidence-02.jpg",
+        "contact-sheet-evidence-03.jpg"
+      ],
+      "images": [
+        {
+          "file": "01_official_hero_desktop_interface.webp",
+          "width": 3072,
+          "height": 1639,
+          "bytes": 196842,
+          "thumbnail": "thumbs-evidence/01_official_hero_desktop_interface-d4dad61f.jpg"
+        },
+        {
+          "file": "02_official_step_agent_mode_background.webp",
+          "width": 790,
+          "height": 446,
+          "bytes": 698,
+          "thumbnail": "thumbs-evidence/02_official_step_agent_mode_background-2885dab6.jpg"
+        },
+        {
+          "file": "03_official_step_canvas_flow_background.webp",
+          "width": 790,
+          "height": 446,
+          "bytes": 698,
+          "thumbnail": "thumbs-evidence/03_official_step_canvas_flow_background-885301eb.jpg"
+        },
+        {
+          "file": "04_official_step_skill_ready_background.webp",
+          "width": 790,
+          "height": 446,
+          "bytes": 698,
+          "thumbnail": "thumbs-evidence/04_official_step_skill_ready_background-43ffda64.jpg"
+        },
+        {
+          "file": "05_official_step_local_index_background.webp",
+          "width": 790,
+          "height": 446,
+          "bytes": 698,
+          "thumbnail": "thumbs-evidence/05_official_step_local_index_background-ed6362ee.jpg"
+        },
+        {
+          "file": "06_official_step_output_sync_background.webp",
+          "width": 790,
+          "height": 446,
+          "bytes": 698,
+          "thumbnail": "thumbs-evidence/06_official_step_output_sync_background-5c6c503e.jpg"
+        },
+        {
+          "file": "07_official_agent_mode_composite.png",
+          "width": 790,
+          "height": 446,
+          "bytes": 166495,
+          "thumbnail": "thumbs-evidence/07_official_agent_mode_composite-63e7dbe0.jpg"
+        },
+        {
+          "file": "08_official_canvas_flow_composite.png",
+          "width": 790,
+          "height": 446,
+          "bytes": 343739,
+          "thumbnail": "thumbs-evidence/08_official_canvas_flow_composite-d157f345.jpg"
+        },
+        {
+          "file": "09_official_skill_ready_composite.png",
+          "width": 790,
+          "height": 446,
+          "bytes": 152639,
+          "thumbnail": "thumbs-evidence/09_official_skill_ready_composite-b81cbe2b.jpg"
+        },
+        {
+          "file": "10_official_local_index_composite.png",
+          "width": 790,
+          "height": 446,
+          "bytes": 109847,
+          "thumbnail": "thumbs-evidence/10_official_local_index_composite-cc58982a.jpg"
+        },
+        {
+          "file": "11_official_output_sync_composite.png",
+          "width": 790,
+          "height": 446,
+          "bytes": 188986,
+          "thumbnail": "thumbs-evidence/11_official_output_sync_composite-224d4010.jpg"
+        },
+        {
+          "file": "12_official_manual_basic_interface_a.png",
+          "width": 778,
+          "height": 388,
+          "bytes": 29184,
+          "thumbnail": "thumbs-evidence/12_official_manual_basic_interface_a-2f2ce611.jpg"
+        },
+        {
+          "file": "13_official_manual_basic_interface_b.png",
+          "width": 1280,
+          "height": 672,
+          "bytes": 559143,
+          "thumbnail": "thumbs-evidence/13_official_manual_basic_interface_b-8298c69a.jpg"
+        },
+        {
+          "file": "14_official_manual_basic_interface_c.png",
+          "width": 1280,
+          "height": 692,
+          "bytes": 381734,
+          "thumbnail": "thumbs-evidence/14_official_manual_basic_interface_c-654f9da0.jpg"
+        },
+        {
+          "file": "15_official_weibo_v110_features_3d_director_a.jpg",
+          "width": 1800,
+          "height": 2400,
+          "bytes": 1472672,
+          "thumbnail": "thumbs-evidence/15_official_weibo_v110_features_3d_director_a-5b536db1.jpg"
+        },
+        {
+          "file": "16_official_weibo_v110_features_3d_director_b.jpg",
+          "width": 1800,
+          "height": 2400,
+          "bytes": 1071453,
+          "thumbnail": "thumbs-evidence/16_official_weibo_v110_features_3d_director_b-677192fc.jpg"
+        },
+        {
+          "file": "17_official_design_v3_overview_a.jpg",
+          "width": 1080,
+          "height": 1440,
+          "bytes": 357335,
+          "thumbnail": "thumbs-evidence/17_official_design_v3_overview_a-7538c4f3.jpg"
+        },
+        {
+          "file": "18_official_design_v3_overview_b.jpg",
+          "width": 1080,
+          "height": 1440,
+          "bytes": 304175,
+          "thumbnail": "thumbs-evidence/18_official_design_v3_overview_b-80f1c71d.jpg"
+        },
+        {
+          "file": "19_appsso_sample_motion_graphic.jpg",
+          "width": 1024,
+          "height": 577,
+          "bytes": 147491,
+          "thumbnail": "thumbs-evidence/19_appsso_sample_motion_graphic-c8948d39.jpg"
+        },
+        {
+          "file": "20_appsso_sample_chinese_wonderland.jpg",
+          "width": 1024,
+          "height": 566,
+          "bytes": 110931,
+          "thumbnail": "thumbs-evidence/20_appsso_sample_chinese_wonderland-65e5d71a.jpg"
+        },
+        {
+          "file": "21_appsso_workspace_h3_playground.jpg",
+          "width": 1024,
+          "height": 590,
+          "bytes": 124885,
+          "thumbnail": "thumbs-evidence/21_appsso_workspace_h3_playground-7d4966d4.jpg"
+        },
+        {
+          "file": "22_appsso_3d_director_empty_workspace.jpg",
+          "width": 1024,
+          "height": 590,
+          "bytes": 100664,
+          "thumbnail": "thumbs-evidence/22_appsso_3d_director_empty_workspace-4c37eaed.jpg"
+        },
+        {
+          "file": "23_appsso_skill_marketplace.jpg",
+          "width": 1024,
+          "height": 590,
+          "bytes": 201724,
+          "thumbnail": "thumbs-evidence/23_appsso_skill_marketplace-80629c48.jpg"
+        },
+        {
+          "file": "24_appsso_sample_director_grassland.jpg",
+          "width": 1024,
+          "height": 570,
+          "bytes": 131406,
+          "thumbnail": "thumbs-evidence/24_appsso_sample_director_grassland-8329a203.jpg"
+        },
+        {
+          "file": "25_appsso_agent_brief_approval_gate.jpg",
+          "width": 1024,
+          "height": 590,
+          "bytes": 148732,
+          "thumbnail": "thumbs-evidence/25_appsso_agent_brief_approval_gate-2d5594e1.jpg"
+        },
+        {
+          "file": "26_appsso_add_node_menu.jpg",
+          "width": 944,
+          "height": 1016,
+          "bytes": 72579,
+          "thumbnail": "thumbs-evidence/26_appsso_add_node_menu-7099ac22.jpg"
+        },
+        {
+          "file": "27_appsso_product_ad_node_generation.jpg",
+          "width": 1024,
+          "height": 590,
+          "bytes": 162261,
+          "thumbnail": "thumbs-evidence/27_appsso_product_ad_node_generation-84482cf4.jpg"
+        },
+        {
+          "file": "28_appsso_3d_director_timeline_scene.jpg",
+          "width": 1024,
+          "height": 642,
+          "bytes": 138642,
+          "thumbnail": "thumbs-evidence/28_appsso_3d_director_timeline_scene-bf807de5.jpg"
+        },
+        {
+          "file": "29_appsso_sample_motion_record.jpg",
+          "width": 1024,
+          "height": 567,
+          "bytes": 91442,
+          "thumbnail": "thumbs-evidence/29_appsso_sample_motion_record-c15d6247.jpg"
+        },
+        {
+          "file": "30_appsso_sample_short_drama.jpg",
+          "width": 1024,
+          "height": 570,
+          "bytes": 144678,
+          "thumbnail": "thumbs-evidence/30_appsso_sample_short_drama-ba10b757.jpg"
+        },
+        {
+          "file": "31_appsso_mv_parallel_canvas_workflow.jpg",
+          "width": 1024,
+          "height": 590,
+          "bytes": 113598,
+          "thumbnail": "thumbs-evidence/31_appsso_mv_parallel_canvas_workflow-8a5eb6d6.jpg"
+        },
+        {
+          "file": "32_appsso_sample_paper_collage_story.jpg",
+          "width": 1024,
+          "height": 574,
+          "bytes": 243575,
+          "thumbnail": "thumbs-evidence/32_appsso_sample_paper_collage_story-b188d349.jpg"
+        },
+        {
+          "file": "33_appsso_sample_paper_collage_explainer.jpg",
+          "width": 1024,
+          "height": 568,
+          "bytes": 81426,
+          "thumbnail": "thumbs-evidence/33_appsso_sample_paper_collage_explainer-cd78cb09.jpg"
+        },
+        {
+          "file": "34_appsso_h3_video_generation_node.jpg",
+          "width": 1024,
+          "height": 590,
+          "bytes": 177944,
+          "thumbnail": "thumbs-evidence/34_appsso_h3_video_generation_node-a38e4363.jpg"
+        },
+        {
+          "file": "35_appsso_sample_animation_explainer.jpg",
+          "width": 1024,
+          "height": 573,
+          "bytes": 96107,
+          "thumbnail": "thumbs-evidence/35_appsso_sample_animation_explainer-b45d3041.jpg"
+        },
+        {
+          "file": "36_appsso_sample_ink_video.jpg",
+          "width": 1024,
+          "height": 567,
+          "bytes": 125403,
+          "thumbnail": "thumbs-evidence/36_appsso_sample_ink_video-3750792f.jpg"
+        },
+        {
+          "file": "37_appsso_course_video_grid.jpg",
+          "width": 1024,
+          "height": 590,
+          "bytes": 207539,
+          "thumbnail": "thumbs-evidence/37_appsso_course_video_grid-82b8901c.jpg"
+        },
+        {
+          "file": "38_appsso_product_ad_graph_workflow.jpg",
+          "width": 1024,
+          "height": 590,
+          "bytes": 153314,
+          "thumbnail": "thumbs-evidence/38_appsso_product_ad_graph_workflow-99e421ad.jpg"
+        },
+        {
+          "file": "39_appsso_sample_product_video_a.jpg",
+          "width": 1024,
+          "height": 567,
+          "bytes": 44473,
+          "thumbnail": "thumbs-evidence/39_appsso_sample_product_video_a-eb51b244.jpg"
+        },
+        {
+          "file": "40_appsso_sample_product_video_b.jpg",
+          "width": 1024,
+          "height": 567,
+          "bytes": 131633,
+          "thumbnail": "thumbs-evidence/40_appsso_sample_product_video_b-2776bc90.jpg"
+        },
+        {
+          "file": "41_appsso_video_editor_timeline.jpg",
+          "width": 1024,
+          "height": 590,
+          "bytes": 119757,
+          "thumbnail": "thumbs-evidence/41_appsso_video_editor_timeline-c8ddae77.jpg"
+        },
+        {
+          "file": "42_appsso_skill_workflow_agent_panel.jpg",
+          "width": 1024,
+          "height": 590,
+          "bytes": 113663,
+          "thumbnail": "thumbs-evidence/42_appsso_skill_workflow_agent_panel-8f844e87.jpg"
+        }
+      ]
+    },
+    {
+      "schema_version": "localdrama.competitor-evidence.v1",
+      "product": "minimax-design",
+      "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+      "image_count": 1,
+      "contact_sheets": [
+        "contact-sheet-evidence-01.jpg"
+      ],
+      "images": [
+        {
+          "file": "official-home-h3-modal-2026-08-21.png",
+          "width": 1265,
+          "height": 712,
+          "bytes": 86431,
+          "thumbnail": "thumbs-evidence/official-home-h3-modal-2026-08-21-f3607698.jpg"
+        }
+      ]
+    },
+    {
+      "schema_version": "localdrama.competitor-evidence.v1",
+      "product": "nadou-pro",
+      "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+      "image_count": 17,
+      "contact_sheets": [
+        "contact-sheet-evidence-01.jpg"
+      ],
+      "images": [
+        {
+          "file": "01-script-agent-workbench.jpeg",
+          "width": 1080,
+          "height": 580,
+          "bytes": 67242,
+          "thumbnail": "thumbs-evidence/01-script-agent-workbench-2c60e3ba.jpg"
+        },
+        {
+          "file": "02-agent-cost-failure-state.jpeg",
+          "width": 1080,
+          "height": 578,
+          "bytes": 45945,
+          "thumbnail": "thumbs-evidence/02-agent-cost-failure-state-2d96982f.jpg"
+        },
+        {
+          "file": "ui-01.jpg",
+          "width": 1409,
+          "height": 1045,
+          "bytes": 651206,
+          "thumbnail": "thumbs-evidence/ui-01-6d581444.jpg"
+        },
+        {
+          "file": "ui-02.png",
+          "width": 3840,
+          "height": 2160,
+          "bytes": 7665023,
+          "thumbnail": "thumbs-evidence/ui-02-b2cb41b3.jpg"
+        },
+        {
+          "file": "ui-03.jpg",
+          "width": 1452,
+          "height": 1312,
+          "bytes": 271886,
+          "thumbnail": "thumbs-evidence/ui-03-dde9b861.jpg"
+        },
+        {
+          "file": "ui-04.png",
+          "width": 1883,
+          "height": 926,
+          "bytes": 838014,
+          "thumbnail": "thumbs-evidence/ui-04-8bb43639.jpg"
+        },
+        {
+          "file": "ui-05.png",
+          "width": 1456,
+          "height": 1468,
+          "bytes": 324502,
+          "thumbnail": "thumbs-evidence/ui-05-b769ae55.jpg"
+        },
+        {
+          "file": "ui-06.png",
+          "width": 2828,
+          "height": 1796,
+          "bytes": 451499,
+          "thumbnail": "thumbs-evidence/ui-06-2e2627b1.jpg"
+        },
+        {
+          "file": "ui-07.png",
+          "width": 1088,
+          "height": 662,
+          "bytes": 71515,
+          "thumbnail": "thumbs-evidence/ui-07-6b339399.jpg"
+        },
+        {
+          "file": "ui-08.jpg",
+          "width": 1318,
+          "height": 850,
+          "bytes": 155457,
+          "thumbnail": "thumbs-evidence/ui-08-4311091a.jpg"
+        },
+        {
+          "file": "ui-09.jpg",
+          "width": 3290,
+          "height": 1704,
+          "bytes": 588336,
+          "thumbnail": "thumbs-evidence/ui-09-27745bc0.jpg"
+        },
+        {
+          "file": "ui-10.jpg",
+          "width": 3252,
+          "height": 1700,
+          "bytes": 974810,
+          "thumbnail": "thumbs-evidence/ui-10-ef1433b7.jpg"
+        },
+        {
+          "file": "ui-12.png",
+          "width": 3294,
+          "height": 1680,
+          "bytes": 824556,
+          "thumbnail": "thumbs-evidence/ui-12-07fbce8f.jpg"
+        },
+        {
+          "file": "ui-13.png",
+          "width": 1280,
+          "height": 661,
+          "bytes": 305208,
+          "thumbnail": "thumbs-evidence/ui-13-008dc212.jpg"
+        },
+        {
+          "file": "ui-14.png",
+          "width": 3236,
+          "height": 1654,
+          "bytes": 2881485,
+          "thumbnail": "thumbs-evidence/ui-14-2de45816.jpg"
+        },
+        {
+          "file": "ui-15.png",
+          "width": 2300,
+          "height": 892,
+          "bytes": 610432,
+          "thumbnail": "thumbs-evidence/ui-15-58f7b27c.jpg"
+        },
+        {
+          "file": "ui-16.png",
+          "width": 1913,
+          "height": 907,
+          "bytes": 250126,
+          "thumbnail": "thumbs-evidence/ui-16-8b3f8e53.jpg"
+        }
+      ]
+    },
+    {
+      "schema_version": "localdrama.competitor-evidence.v1",
+      "product": "popomint",
+      "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+      "image_count": 3,
+      "contact_sheets": [
+        "contact-sheet-evidence-01.jpg"
+      ],
+      "images": [
+        {
+          "file": "ui-01-home.png",
+          "width": 1280,
+          "height": 720,
+          "bytes": 671607,
+          "thumbnail": "thumbs-evidence/ui-01-home-aff15c85.jpg"
+        },
+        {
+          "file": "ui-02-core-workspace.png",
+          "width": 760,
+          "height": 368,
+          "bytes": 169832,
+          "thumbnail": "thumbs-evidence/ui-02-core-workspace-2a50614b.jpg"
+        },
+        {
+          "file": "ui-03-creation-type-menu.png",
+          "width": 760,
+          "height": 368,
+          "bytes": 168385,
+          "thumbnail": "thumbs-evidence/ui-03-creation-type-menu-eb75f90e.jpg"
+        }
+      ]
+    },
+    {
+      "schema_version": "localdrama.competitor-evidence.v1",
+      "product": "seko",
+      "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+      "image_count": 11,
+      "contact_sheets": [
+        "contact-sheet-evidence-01.jpg"
+      ],
+      "images": [
+        {
+          "file": "ui-01.webp",
+          "width": 1080,
+          "height": 735,
+          "bytes": 82130,
+          "thumbnail": "thumbs-evidence/ui-01-7824a598.jpg"
+        },
+        {
+          "file": "ui-02.webp",
+          "width": 640,
+          "height": 240,
+          "bytes": 599229,
+          "thumbnail": "thumbs-evidence/ui-02-0675863e.jpg"
+        },
+        {
+          "file": "ui-03.webp",
+          "width": 1080,
+          "height": 608,
+          "bytes": 49902,
+          "thumbnail": "thumbs-evidence/ui-03-9bb2d15d.jpg"
+        },
+        {
+          "file": "ui-04.webp",
+          "width": 1080,
+          "height": 651,
+          "bytes": 33914,
+          "thumbnail": "thumbs-evidence/ui-04-a178b91a.jpg"
+        },
+        {
+          "file": "ui-05.webp",
+          "width": 1080,
+          "height": 608,
+          "bytes": 40702,
+          "thumbnail": "thumbs-evidence/ui-05-ae28872d.jpg"
+        },
+        {
+          "file": "ui-06.webp",
+          "width": 1080,
+          "height": 608,
+          "bytes": 62616,
+          "thumbnail": "thumbs-evidence/ui-06-7d874e5d.jpg"
+        },
+        {
+          "file": "ui-07.webp",
+          "width": 1080,
+          "height": 703,
+          "bytes": 40324,
+          "thumbnail": "thumbs-evidence/ui-07-45145fed.jpg"
+        },
+        {
+          "file": "ui-08.webp",
+          "width": 1080,
+          "height": 686,
+          "bytes": 62866,
+          "thumbnail": "thumbs-evidence/ui-08-a1a7f677.jpg"
+        },
+        {
+          "file": "ui-09.webp",
+          "width": 1080,
+          "height": 584,
+          "bytes": 31946,
+          "thumbnail": "thumbs-evidence/ui-09-5ca501a6.jpg"
+        },
+        {
+          "file": "ui-10.png",
+          "width": 1080,
+          "height": 813,
+          "bytes": 497556,
+          "thumbnail": "thumbs-evidence/ui-10-04e1939f.jpg"
+        },
+        {
+          "file": "ui-11.png",
+          "width": 2088,
+          "height": 1540,
+          "bytes": 1645802,
+          "thumbnail": "thumbs-evidence/ui-11-d99f66fc.jpg"
+        }
+      ]
+    },
+    {
+      "schema_version": "localdrama.competitor-evidence.v1",
+      "product": "tiangong-drama",
+      "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+      "image_count": 2,
+      "contact_sheets": [
+        "contact-sheet-evidence-01.jpg"
+      ],
+      "images": [
+        {
+          "file": "01-asset-extraction-workbench.jpeg",
+          "width": 1080,
+          "height": 580,
+          "bytes": 41469,
+          "thumbnail": "thumbs-evidence/01-asset-extraction-workbench-5a9f5992.jpg"
+        },
+        {
+          "file": "02-video-generation-workbench.jpeg",
+          "width": 1080,
+          "height": 542,
+          "bytes": 46420,
+          "thumbnail": "thumbs-evidence/02-video-generation-workbench-2f3d67e5.jpg"
+        }
+      ]
+    },
+    {
+      "schema_version": "localdrama.competitor-evidence.v1",
+      "product": "wonderclip",
+      "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+      "image_count": 6,
+      "contact_sheets": [
+        "contact-sheet-evidence-01.jpg"
+      ],
+      "images": [
+        {
+          "file": "ui-01.png",
+          "width": 1080,
+          "height": 456,
+          "bytes": 595454,
+          "thumbnail": "thumbs-evidence/ui-01-e790de70.jpg"
+        },
+        {
+          "file": "ui-02.jpg",
+          "width": 1080,
+          "height": 723,
+          "bytes": 115463,
+          "thumbnail": "thumbs-evidence/ui-02-62ce8644.jpg"
+        },
+        {
+          "file": "ui-03.jpg",
+          "width": 1206,
+          "height": 638,
+          "bytes": 399212,
+          "thumbnail": "thumbs-evidence/ui-03-dde9b861.jpg"
+        },
+        {
+          "file": "ui-04.png",
+          "width": 2802,
+          "height": 1536,
+          "bytes": 1567693,
+          "thumbnail": "thumbs-evidence/ui-04-8bb43639.jpg"
+        },
+        {
+          "file": "ui-05.png",
+          "width": 1080,
+          "height": 608,
+          "bytes": 734706,
+          "thumbnail": "thumbs-evidence/ui-05-b769ae55.jpg"
+        },
+        {
+          "file": "ui-06.png",
+          "width": 556,
+          "height": 556,
+          "bytes": 24279,
+          "thumbnail": "thumbs-evidence/ui-06-2e2627b1.jpg"
+        }
+      ]
+    },
+    {
+      "schema_version": "localdrama.competitor-evidence.v1",
+      "product": "wondershare-drama",
+      "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+      "image_count": 4,
+      "contact_sheets": [
+        "contact-sheet-evidence-01.jpg"
+      ],
+      "images": [
+        {
+          "file": "01-project-workbench.jpeg",
+          "width": 1080,
+          "height": 545,
+          "bytes": 128660,
+          "thumbnail": "thumbs-evidence/01-project-workbench-c663021a.jpg"
+        },
+        {
+          "file": "02-storyboard-editor.jpeg",
+          "width": 1080,
+          "height": 581,
+          "bytes": 55914,
+          "thumbnail": "thumbs-evidence/02-storyboard-editor-3b2b6cad.jpg"
+        },
+        {
+          "file": "ui-03-video-generation-page.png",
+          "width": 1280,
+          "height": 720,
+          "bytes": 68926,
+          "thumbnail": "thumbs-evidence/ui-03-video-generation-page-bd7c3086.jpg"
+        },
+        {
+          "file": "ui-04-toolbox.png",
+          "width": 1280,
+          "height": 720,
+          "bytes": 832179,
+          "thumbnail": "thumbs-evidence/ui-04-toolbox-7525cfbe.jpg"
+        }
+      ]
+    },
+    {
+      "schema_version": "localdrama.competitor-evidence.v1",
+      "product": "workrally",
+      "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+      "image_count": 11,
+      "contact_sheets": [
+        "contact-sheet-evidence-01.jpg"
+      ],
+      "images": [
+        {
+          "file": "ui-01.png",
+          "width": 1663,
+          "height": 946,
+          "bytes": 805322,
+          "thumbnail": "thumbs-evidence/ui-01-e790de70.jpg"
+        },
+        {
+          "file": "ui-02.jpeg",
+          "width": 1920,
+          "height": 1080,
+          "bytes": 65085,
+          "thumbnail": "thumbs-evidence/ui-02-9ed20809.jpg"
+        },
+        {
+          "file": "ui-03.jpeg",
+          "width": 2540,
+          "height": 1310,
+          "bytes": 177721,
+          "thumbnail": "thumbs-evidence/ui-03-95afc8dc.jpg"
+        },
+        {
+          "file": "ui-04.png",
+          "width": 901,
+          "height": 584,
+          "bytes": 80085,
+          "thumbnail": "thumbs-evidence/ui-04-8bb43639.jpg"
+        },
+        {
+          "file": "ui-05.png",
+          "width": 863,
+          "height": 619,
+          "bytes": 72839,
+          "thumbnail": "thumbs-evidence/ui-05-b769ae55.jpg"
+        },
+        {
+          "file": "ui-06.jpeg",
+          "width": 1280,
+          "height": 720,
+          "bytes": 36630,
+          "thumbnail": "thumbs-evidence/ui-06-7993c8be.jpg"
+        },
+        {
+          "file": "ui-07.png",
+          "width": 1605,
+          "height": 789,
+          "bytes": 426938,
+          "thumbnail": "thumbs-evidence/ui-07-6b339399.jpg"
+        },
+        {
+          "file": "ui-08.png",
+          "width": 880,
+          "height": 387,
+          "bytes": 90710,
+          "thumbnail": "thumbs-evidence/ui-08-b41ed822.jpg"
+        },
+        {
+          "file": "ui-09.png",
+          "width": 1251,
+          "height": 641,
+          "bytes": 200902,
+          "thumbnail": "thumbs-evidence/ui-09-608a4177.jpg"
+        },
+        {
+          "file": "ui-14.png",
+          "width": 1672,
+          "height": 940,
+          "bytes": 713921,
+          "thumbnail": "thumbs-evidence/ui-14-2de45816.jpg"
+        },
+        {
+          "file": "ui-15.png",
+          "width": 1672,
+          "height": 941,
+          "bytes": 869063,
+          "thumbnail": "thumbs-evidence/ui-15-58f7b27c.jpg"
+        }
+      ]
+    },
+    {
+      "schema_version": "localdrama.competitor-evidence.v1",
+      "product": "worksolo-onsolo",
+      "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+      "image_count": 10,
+      "contact_sheets": [
+        "contact-sheet-evidence-01.jpg"
+      ],
+      "images": [
+        {
+          "file": "ui-01.png",
+          "width": 1080,
+          "height": 463,
+          "bytes": 844271,
+          "thumbnail": "thumbs-evidence/ui-01-e790de70.jpg"
+        },
+        {
+          "file": "ui-02.png",
+          "width": 1080,
+          "height": 501,
+          "bytes": 364147,
+          "thumbnail": "thumbs-evidence/ui-02-b2cb41b3.jpg"
+        },
+        {
+          "file": "ui-03.png",
+          "width": 1080,
+          "height": 501,
+          "bytes": 726927,
+          "thumbnail": "thumbs-evidence/ui-03-0f26dbd5.jpg"
+        },
+        {
+          "file": "ui-04.png",
+          "width": 1080,
+          "height": 501,
+          "bytes": 126362,
+          "thumbnail": "thumbs-evidence/ui-04-8bb43639.jpg"
+        },
+        {
+          "file": "ui-06.png",
+          "width": 1080,
+          "height": 501,
+          "bytes": 159708,
+          "thumbnail": "thumbs-evidence/ui-06-2e2627b1.jpg"
+        },
+        {
+          "file": "ui-09.png",
+          "width": 1080,
+          "height": 501,
+          "bytes": 33486,
+          "thumbnail": "thumbs-evidence/ui-09-608a4177.jpg"
+        },
+        {
+          "file": "ui-12.png",
+          "width": 933,
+          "height": 1005,
+          "bytes": 45605,
+          "thumbnail": "thumbs-evidence/ui-12-07fbce8f.jpg"
+        },
+        {
+          "file": "ui-14.png",
+          "width": 1020,
+          "height": 878,
+          "bytes": 50710,
+          "thumbnail": "thumbs-evidence/ui-14-2de45816.jpg"
+        },
+        {
+          "file": "ui-15.png",
+          "width": 927,
+          "height": 1056,
+          "bytes": 479709,
+          "thumbnail": "thumbs-evidence/ui-15-58f7b27c.jpg"
+        },
+        {
+          "file": "ui-16.png",
+          "width": 1080,
+          "height": 477,
+          "bytes": 242252,
+          "thumbnail": "thumbs-evidence/ui-16-8b3f8e53.jpg"
+        }
+      ]
+    },
+    {
+      "schema_version": "localdrama.competitor-evidence.v1",
+      "product": "xiaoyunque",
+      "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+      "image_count": 36,
+      "contact_sheets": [
+        "contact-sheet-evidence-01.jpg",
+        "contact-sheet-evidence-02.jpg"
+      ],
+      "images": [
+        {
+          "file": "01-script-generation.jpeg",
+          "width": 1080,
+          "height": 734,
+          "bytes": 82198,
+          "thumbnail": "thumbs-evidence/01-script-generation-8b96627a.jpg"
+        },
+        {
+          "file": "02-character-storyboard-overview.jpeg",
+          "width": 1080,
+          "height": 623,
+          "bytes": 77933,
+          "thumbnail": "thumbs-evidence/02-character-storyboard-overview-1cc0d51e.jpg"
+        },
+        {
+          "file": "03-video-linear-workbench.jpeg",
+          "width": 1080,
+          "height": 584,
+          "bytes": 78492,
+          "thumbnail": "thumbs-evidence/03-video-linear-workbench-a6dff1d0.jpg"
+        },
+        {
+          "file": "ui-01.webp",
+          "width": 1080,
+          "height": 713,
+          "bytes": 29088,
+          "thumbnail": "thumbs-evidence/ui-01-7824a598.jpg"
+        },
+        {
+          "file": "ui-02.webp",
+          "width": 829,
+          "height": 468,
+          "bytes": 23612,
+          "thumbnail": "thumbs-evidence/ui-02-0675863e.jpg"
+        },
+        {
+          "file": "ui-03.webp",
+          "width": 1080,
+          "height": 780,
+          "bytes": 93666,
+          "thumbnail": "thumbs-evidence/ui-03-9bb2d15d.jpg"
+        },
+        {
+          "file": "ui-04.webp",
+          "width": 1080,
+          "height": 597,
+          "bytes": 23168,
+          "thumbnail": "thumbs-evidence/ui-04-a178b91a.jpg"
+        },
+        {
+          "file": "ui-05.webp",
+          "width": 825,
+          "height": 466,
+          "bytes": 26698,
+          "thumbnail": "thumbs-evidence/ui-05-ae28872d.jpg"
+        },
+        {
+          "file": "ui-06.webp",
+          "width": 826,
+          "height": 469,
+          "bytes": 21352,
+          "thumbnail": "thumbs-evidence/ui-06-7d874e5d.jpg"
+        },
+        {
+          "file": "ui-07.webp",
+          "width": 830,
+          "height": 459,
+          "bytes": 17880,
+          "thumbnail": "thumbs-evidence/ui-07-45145fed.jpg"
+        },
+        {
+          "file": "ui-08.webp",
+          "width": 830,
+          "height": 466,
+          "bytes": 64862,
+          "thumbnail": "thumbs-evidence/ui-08-a1a7f677.jpg"
+        },
+        {
+          "file": "ui-09.webp",
+          "width": 1080,
+          "height": 601,
+          "bytes": 25038,
+          "thumbnail": "thumbs-evidence/ui-09-5ca501a6.jpg"
+        },
+        {
+          "file": "ui-10.webp",
+          "width": 829,
+          "height": 463,
+          "bytes": 27640,
+          "thumbnail": "thumbs-evidence/ui-10-f96398ae.jpg"
+        },
+        {
+          "file": "ui-11.webp",
+          "width": 829,
+          "height": 469,
+          "bytes": 48646,
+          "thumbnail": "thumbs-evidence/ui-11-79cd647d.jpg"
+        },
+        {
+          "file": "ui-12.webp",
+          "width": 830,
+          "height": 470,
+          "bytes": 47380,
+          "thumbnail": "thumbs-evidence/ui-12-b325ea1d.jpg"
+        },
+        {
+          "file": "ui-13.webp",
+          "width": 830,
+          "height": 466,
+          "bytes": 22220,
+          "thumbnail": "thumbs-evidence/ui-13-64f2ad05.jpg"
+        },
+        {
+          "file": "ui-14.webp",
+          "width": 1080,
+          "height": 713,
+          "bytes": 29634,
+          "thumbnail": "thumbs-evidence/ui-14-a83eced1.jpg"
+        },
+        {
+          "file": "ui-15.webp",
+          "width": 1080,
+          "height": 375,
+          "bytes": 9116,
+          "thumbnail": "thumbs-evidence/ui-15-439588d7.jpg"
+        },
+        {
+          "file": "ui-16.webp",
+          "width": 1080,
+          "height": 297,
+          "bytes": 8350,
+          "thumbnail": "thumbs-evidence/ui-16-ee441bed.jpg"
+        },
+        {
+          "file": "ui-17.webp",
+          "width": 721,
+          "height": 385,
+          "bytes": 5664,
+          "thumbnail": "thumbs-evidence/ui-17-b4ee8e36.jpg"
+        },
+        {
+          "file": "ui-18.webp",
+          "width": 1080,
+          "height": 599,
+          "bytes": 36974,
+          "thumbnail": "thumbs-evidence/ui-18-2bd9fae9.jpg"
+        },
+        {
+          "file": "ui-19.webp",
+          "width": 1080,
+          "height": 775,
+          "bytes": 18052,
+          "thumbnail": "thumbs-evidence/ui-19-13cd50e1.jpg"
+        },
+        {
+          "file": "ui-20.webp",
+          "width": 1080,
+          "height": 565,
+          "bytes": 24044,
+          "thumbnail": "thumbs-evidence/ui-20-eda179a2.jpg"
+        },
+        {
+          "file": "ui-21.webp",
+          "width": 1080,
+          "height": 781,
+          "bytes": 40178,
+          "thumbnail": "thumbs-evidence/ui-21-ffcd8c5c.jpg"
+        },
+        {
+          "file": "ui-22.webp",
+          "width": 1080,
+          "height": 564,
+          "bytes": 14210,
+          "thumbnail": "thumbs-evidence/ui-22-af047f20.jpg"
+        },
+        {
+          "file": "ui-23.webp",
+          "width": 1080,
+          "height": 565,
+          "bytes": 43530,
+          "thumbnail": "thumbs-evidence/ui-23-148eb50e.jpg"
+        },
+        {
+          "file": "ui-24.webp",
+          "width": 1080,
+          "height": 567,
+          "bytes": 56004,
+          "thumbnail": "thumbs-evidence/ui-24-81cbb084.jpg"
+        },
+        {
+          "file": "ui-25.webp",
+          "width": 822,
+          "height": 257,
+          "bytes": 16768,
+          "thumbnail": "thumbs-evidence/ui-25-8a1b6f57.jpg"
+        },
+        {
+          "file": "ui-26.webp",
+          "width": 1080,
+          "height": 568,
+          "bytes": 18284,
+          "thumbnail": "thumbs-evidence/ui-26-30d49e9b.jpg"
+        },
+        {
+          "file": "ui-27.webp",
+          "width": 830,
+          "height": 470,
+          "bytes": 29434,
+          "thumbnail": "thumbs-evidence/ui-27-b78dcd12.jpg"
+        },
+        {
+          "file": "ui-28.webp",
+          "width": 1080,
+          "height": 544,
+          "bytes": 29938,
+          "thumbnail": "thumbs-evidence/ui-28-eb957155.jpg"
+        },
+        {
+          "file": "ui-29.webp",
+          "width": 1080,
+          "height": 559,
+          "bytes": 23390,
+          "thumbnail": "thumbs-evidence/ui-29-e5dca749.jpg"
+        },
+        {
+          "file": "ui-30.webp",
+          "width": 1080,
+          "height": 536,
+          "bytes": 25556,
+          "thumbnail": "thumbs-evidence/ui-30-c255aced.jpg"
+        },
+        {
+          "file": "ui-31.webp",
+          "width": 620,
+          "height": 229,
+          "bytes": 26050,
+          "thumbnail": "thumbs-evidence/ui-31-f5f4b21a.jpg"
+        },
+        {
+          "file": "ui-32.webp",
+          "width": 1080,
+          "height": 554,
+          "bytes": 33064,
+          "thumbnail": "thumbs-evidence/ui-32-27f83898.jpg"
+        },
+        {
+          "file": "ui-33.webp",
+          "width": 1080,
+          "height": 1019,
+          "bytes": 143626,
+          "thumbnail": "thumbs-evidence/ui-33-9418cb08.jpg"
+        }
+      ]
+    }
+  ]
+}

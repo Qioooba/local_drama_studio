@@ -1,0 +1,1738 @@
+Local Drama Studio 最新 V2 工作树全量只读审计底稿
+审计日期：2026-08-21（Asia/Shanghai）
+审计对象：F:\AI_Projects\h3\local_drama_studio 当前工作树
+基线声明：只以最新 V2 迁移后的代码为事实基线；暂停前关于旧 App 仍为入口、V2 未接管路由等判断全部作废。
+交付用途：供最终 3 份 Markdown 设计/开发/测试文档引用；本文件是内部 TXT，不计入用户要求的 Markdown 数量。
+修改边界：本轮没有修改任何源码、数据库、最终 Markdown、配置或迁移；只替换本审计 TXT。
+
+========================================================================
+0. 一页结论
+========================================================================
+
+0.1 当前产品已经不是“只有几个新页面的旧单页应用”
+
+最新工作树已经完成 V2 路由接管：
+- apps/web/src/app/App.tsx 已删除，当前文件不存在。
+- apps/web/src/app/router.tsx:31-80 是唯一前端路由表。
+- 根路径由 apps/web/src/app/router.tsx:39-40 的 LegacyRouteBoundary 接管。
+- apps/web/src/app/legacyRoute.tsx:6-40 只对可无损的旧 query 链接做 V2 跳转；无法无损映射时进入明确的 V2 兼容选择页。
+- apps/web/src/app/legacyRoute.tsx:80-95 明确不加载旧应用。
+- apps/web/src/app/featureFlags.ts:16-33 即使关闭 V2 开关，也只回退到其他 V2 页面，不会复活旧 Shell。
+- scripts/p12_decommission_readiness.py 的当前真实结果为 DEFERRED，不是 BLOCKED；旧 App 已没有入口，也没有调用者。DEFERRED 仅因三份 UAT/签收证据尚缺。
+
+因此后续 agent 禁止：
+- 恢复 apps/web/src/app/App.tsx；
+- 把根路由改回旧 query 驱动 App；
+- 再做一遍“V2 路由迁移”；
+- 依据旧审计结论删除当前 LegacyRouteBoundary；
+- 把兼容选择页误判为旧版应用。
+
+0.2 当前已有大量真实生产能力，不应推倒重做
+
+已存在且应复用：
+- 长文 TXT/Markdown/DOCX 导入、预览、commit、版本化文本、段落索引、原文证据定位、20 万字符回归测试；
+- AI 拆解草稿、人工应用、资产身份建议审核；
+- 角色/场景/道具/服装资产圣经、状态、引用、镜头绑定、正/左/右三视图任务；
+- 镜头组、局部 replan 预览/apply、镜头编辑和归档；
+- 三栏 Director Desk、镜头导航、导演意图不可变 revision、候选对比/采用/撤销、首尾帧桥接、连续性、声音、审核；
+- T2I/I2V/T2V/R2V 生成工作台、预检、批量种子、分支重抽、结果审核；
+- 图像/视频选择、人工和机器检查、对白/TTS/配音绑定、时间线 revision、FFmpeg 渲染、交付版本；
+- SQLite/WAL、文件系统不可变媒体版本、持久化 Job/Attempt、lease、heartbeat、依赖、GPU 单资源锁、重试和孤儿任务回收；
+- 分层的生成偏好版本、QC 策略版本、导演配方版本及 Shot → Episode → Project → AUTO 解析模型；
+- 48 个线性 Alembic 迁移，当前数据库 migration head 为 0048_asset_proposals。
+
+0.3 当前三个发布阻断问题
+
+P0-A：Episode Plan 真实运行时崩溃
+- apps/web/src/features/projects/AIDraftReviewPanel.tsx:7 使用 key ["script-breakdown-drafts", projectId]，queryFn 返回对象 {items,...}。
+- apps/web/src/features/episode-plan-v2/SelectedBeatReplanPanel.tsx:22 使用完全相同 key，但 queryFn 返回数组。
+- apps/web/src/features/episode-plan-v2/beatReplanApi.ts:31-32 主动把响应解包为 items。
+- SelectedBeatReplanPanel.tsx:30 对缓存数据调用 find；若先由 AIDraftReviewPanel 写入对象，就抛出 drafts.data?.find is not a function。
+- EpisodePlanPage.tsx:38 和 :41 同页挂载两者，所以这是稳定可复现的组合缺陷，不是偶发网络问题。
+- 真实浏览器已经看到 React 默认 Error Boundary。
+- 必须统一响应形状和语义 query key，不能只加 Array.isArray 或可选链掩盖契约冲突。
+
+P0-B：Director Desk 的“首个候选”会跳错镜头
+- apps/web/src/pages/DirectorDeskPage.tsx:162 构造 generation?shot=<id>。
+- 同文件 :224、:239、:267 使用该 URL。
+- apps/web/src/pages/GenerationPage.tsx:10 只读取 path param shotId。
+- GenerationPage.tsx:21 当 path 中没有 shotId 时选择第一镜。
+- 实测从非第一镜点击后，URL 带正确 query，但生成表单选择了本集第一镜。
+- 必须改为 /generation/:shotId，并增加 Director → Generation 端到端断言。
+
+P0-C：生成能力命名和解析路径分裂，当前“自定义选择大模型”不可作为可靠产品承诺
+- 新偏好域 apps/api/local_drama/application/commands/generation_preferences.py:10-16 使用 LLM_STORY_PARSE、IMAGE_*、VIDEO_I2V、VIDEO_T2V 等新枚举，:32-55 精确校验。
+- 前端 apps/web/src/features/preferences-v2/GenerationPreferencePanel.tsx:19-24、:57、:133 使用同一套新枚举和精确 published 过滤。
+- 旧 Profile/运行链仍使用 I2V、T2V、SCRIPT_BREAKDOWN_LLM。
+- apps/api/local_drama/application/director_desk.py:460-463 同一响应里解析 IMAGE_GENERATION、I2V、VIDEO_FIRST_LAST_FRAME，混用了新旧词汇。
+- apps/api/local_drama/application/local_llm.py:159-168 仍注册 SCRIPT_BREAKDOWN_LLM。
+- apps/api/local_drama/application/episode_worker_actions.py:209-220 的 _video_profile 绕过统一偏好解析器，直接查 project_profile_bindings 并用 LIKE 匹配 video/I2V/T2V。
+- 当前真实数据库中 VIDEO_I2V 和 LLM_STORY_PARSE 都返回 NO_COMPATIBLE_PROFILE；但旧 I2V 和 SCRIPT_BREAKDOWN_LLM 能解析到 published Profile。
+- 这会造成设置页显示无兼容模型、Director 又显示另一套结果、整集 worker 再选第三套结果。
+- 必须先建立唯一 canonical capability、显式 alias/backfill 迁移及共享 resolver，再扩展豆包/MiniMax/其他供应商。
+
+0.4 最高优先级但非 P0 的事实
+
+P1：
+- 后端全量非 Comfy 测试当前 510 passed、1 failed、4 deselected；唯一失败是过时 P12 测试仍断言旧 App 存在/状态 BLOCKED。
+- 当前 P12 审计为 DEFERRED，缺 3 份证据；不可伪造 READY。
+- OpenAPI 已有 requestScriptBreakdown，但生成的前端 client 没有该方法；V2 无法从 UI 触发 AI 拆解请求。
+- start.ps1 只迁移并启动 API，worker 是 run-until-idle 脚本；Shell 却声称关闭浏览器不会中断 worker，真实运行状态不够可信。
+- 媒体文件复制和数据库事务之间没有补偿式一致性机制，DB 插入失败可留下孤儿文件。
+- uv run pytest 在 apps/api 的独立可复现环境中会因 setuptools 自动发现 alembic 与 local_drama 两个顶层包而失败；根目录既有 .venv 脚本可运行，但包声明不完整。
+- “一键整集”当前只自动跑满足前置条件后的 KEYFRAME_CHECK、VIDEO_GENERATION、QC、可选 TTS、RENDER、DELIVERY；故事/资产/镜头策划阶段只是计数，不是自动动作。
+- Director 自定义对话框没有统一使用已有可访问 Dialog；大量高频控件小于 44×44。
+- 多个核心页面仍是 2000–7000px 长页，逻辑虽已按 V2 路由拆分，页面内部仍需任务化和渐进披露。
+
+========================================================================
+1. 审计方法、证据与限制
+========================================================================
+
+1.1 只读检查范围
+
+仓库与约束：
+- README.md、package.json、pnpm-workspace.yaml、前后端 package/pyproject、启动和检查脚本。
+- git status 和目录/文件数量；未清理、回滚或覆盖任何既有改动。
+- 未发现 AGENTS.md。
+
+前端：
+- main/router/AppShell/legacy compatibility/feature flag/query key。
+- 所有 apps/web/src/pages 页面。
+- Director V2、Asset Bible V2、Episode Plan V2、Review V2、Timeline V2、Preferences V2、QC V2、Recipe V2。
+- 旧 feature 组件的真实消费者，避免把可复用子模块误删。
+- CSS、响应式断点、Dialog、键盘和 ARIA。
+- 生成 client 与手写 feature API。
+
+后端：
+- FastAPI composition root、42 个 route 文件、schemas。
+- command/query/application services、repositories/ports/infrastructure。
+- SQLite、Alembic、文件模板、媒体和文档。
+- Job/Attempt/Worker/episode run/Comfy adapter。
+- Profile、generation preferences、QC policy、director recipes。
+- timeline/review/delivery/audio。
+
+验证：
+- TypeScript noEmit 类型检查。
+- 全部 Vitest。
+- 全部非 Comfy 后端 pytest。
+- P12 decommission readiness。
+- 当前代码 API 与 Vite 的临时只读运行态检查；API 使用 --lifespan off，避免 startup sync 写数据库。
+- Playwright/Edge 对真实项目数据检查路由、控制台、页面高度、Director 跳转和响应式布局。
+- SQLite integrity/count/capacity/profile capability 查询均为只读。
+
+1.2 未做的动作
+
+- 没有执行会写 dist/generated 的生产 build。
+- 没有运行需要真实 ComfyUI 服务或可能创建任务/媒体的 live 测试。
+- 没有点击任何会提交生成、应用拆解、采用候选、写 review 或修改数据库的按钮。
+- 没有生成缺失的 P12 UAT 证据。
+- 没有更改 provider、凭据或网络策略。
+- 没有修改源码。
+
+1.3 当前工作树必须先固化
+
+这是大规模未提交 V2 迁移工作树，不是已知干净 main：
+- App.tsx 和旧 App.test.tsx 已删除。
+- 大量 V2 页面、后端应用服务、迁移和测试为 modified/untracked。
+- 后续重构前应由负责人按功能切片建立可恢复提交/tag。
+- 禁止使用 reset --hard、checkout -- 或批量删除未跟踪文件。
+- 本报告行号以 2026-08-21 当前快照为准，提交后可能漂移；符号名比行号更稳定。
+
+========================================================================
+2. 技术栈、规模与现有架构
+========================================================================
+
+2.1 技术栈
+
+Web：
+- React 19、TypeScript 5.6、Vite 6。
+- React Router 7.18.2。
+- TanStack Query。
+- xyflow 用于生产画布。
+- Vitest + Testing Library。
+- Playwright 真实浏览器测试。
+- 当前 apps/web/src 约 175 个 TSX、55 个 TS、29 个 CSS。
+- tests/e2e 下约 32 个浏览器规格文件。
+
+API：
+- Python 3.12。
+- FastAPI、Pydantic v2。
+- SQLAlchemy + Alembic；业务层大量使用显式 SQLite SQL。
+- httpx。
+- pytest、ruff、strict mypy。
+- apps/api/local_drama 约 182 个 Python 文件。
+- apps/api/tests 有约 125 个 test_*.py 测试模块。
+- 48 个线性迁移，0048_asset_proposals 为当前 head。
+
+存储与媒体：
+- SQLite 是结构化事实和状态机权威。
+- 项目文件系统保存不可变媒体/文本版本。
+- FFmpeg/ffprobe 处理代理图、缩略图、接触表、波形、合成和交付。
+- ComfyUI 作为本地生成 runtime。
+- H3 manifest 管理本地 Profile/Workflow。
+
+2.2 当前运行架构
+
+Browser / React V2
+  |
+  | HTTP /api/v1 + event polling
+  v
+FastAPI composition root
+  |
+  +-- route functions
+  |     |
+  |     +-- 新 command/query services（少量）
+  |     +-- 大量 legacy application services（主要实现）
+  |
+  +-- SQLite transaction layer
+  +-- project filesystem / cache / work directories
+  +-- JobService durable queue
+          |
+          v
+     独立 run_worker.py
+          |
+          +-- ComfyUI loopback
+          +-- local LLM loopback
+          +-- FFmpeg local process
+
+优点：
+- LOCAL_ONLY 默认面较小。
+- 任务和媒体具有持久化、审计和版本。
+- 单机 SQLite/WAL 与本地文件适合当前产品规模。
+- 不需要为此次重构拆微服务。
+
+主要架构债：
+- apps/api/local_drama/main.py:97-137 手工 include 41 个 router，composition root 已变成目录清单。
+- 约 53 个 legacy application 文件直接 import 具体 Database。
+- 新 apps/api/local_drama/application/ports 只有约 6 个端口，commands 4 个、queries 7 个，orchestration 目录为空。
+- test_refactor_architecture_boundaries.py 只保护新 commands/queries/orchestration，不约束旧 application debt。
+- 页面 API 调用同时存在 generated/api.ts 和各 feature 手写 api.ts，错误包络、响应解包、query key 易漂移。
+- 93 处左右仍使用原始数组 queryKey；中央 queryKeys.ts 只覆盖部分域。
+
+2.3 推荐目标架构：继续做“可测试的模块化单体”
+
+Web
+  AppShell + typed Route Registry + Context Switcher
+    |
+    +-- Task Pages（Story / Plan / Director / Generation / Review / Audio / Timeline / Run）
+    |      |
+    |      +-- Page Controller hooks
+    |      +-- Domain feature components
+    |      +-- shared Dialog / Drawer / Tabs / MediaPicker / JobProgress
+    |
+    +-- Query Key Authority
+    +-- Generated Contract Client
+           |
+           v
+API route adapters
+  |
+  +-- Commands（写）
+  +-- Queries（读模型）
+  +-- Orchestration（长链/DAG）
+           |
+           +-- Ports
+           |     +-- Provider port
+           |     +-- Job port
+           |     +-- Media store port
+           |     +-- Credential port（Connected Edition 才有）
+           |
+           +-- Infrastructure adapters
+                 +-- SQLite repositories
+                 +-- project filesystem
+                 +-- Comfy/local provider
+                 +-- optional cloud providers
+                 +-- OS credential vault
+  |
+  +-- Durable Job / Attempt / Outbox / Operation Ledger
+
+架构原则：
+- 不拆微服务；先把边界、数据契约和依赖方向做好。
+- route 只做鉴权/校验/DTO/错误映射。
+- command/query 不 import FastAPI，也不 import具体 SQLite Database。
+- 所有生成提交都走同一个 capability resolver 和 job dispatcher。
+- SQLite 保存元数据、选择、状态和哈希；文件系统保存大字节。
+- 外部副作用采用 staged operation + commit/finalize + reconciler。
+- UI 不重复制造服务端事实；每个事实只有一个 owner 页面和一个 authoritative query。
+
+========================================================================
+3. 最新 V2 路由与页面清单
+========================================================================
+
+3.1 路由事实
+
+文件：apps/web/src/app/router.tsx:31-80
+
+全局/入口：
+- / → LegacyRouteBoundary；无 query 时跳 /projects。
+- /projects → ProjectsPage。
+- /models → ModelsPage。
+- /jobs → JobsPage。
+- /diagnostics → DiagnosticsPage。
+- * → /。
+
+项目级：
+- /projects/:projectId → ProjectHomePage。
+- /story → StoryWorkspacePage。
+- /assets → AssetBiblePage，受 ASSET_BIBLE_V2 控制。
+- /qc-policies → QcPoliciesPage。
+- /director-recipes → DirectorRecipesPage。
+- /production-settings → ProductionSettingsPage。
+- /lab → MediaLabPage。
+- /canvas → CanvasPage。
+- /operations → ProjectOperationsPage。
+
+分集级：
+- /episodes/:episodeId/plan → EpisodePlanPage。
+- /episodes/:episodeId/direct → DirectorDeskPage，受 DIRECTOR_DESK_V2 控制。
+- /episodes/:episodeId/direct/:shotId → 精确镜头 DirectorDeskPage。
+- /episodes/:episodeId/generation → GenerationPage。
+- /episodes/:episodeId/generation/:shotId → 精确镜头 GenerationPage。
+- /episodes/:episodeId/review → EpisodeReviewPage。
+- /episodes/:episodeId/audio → AudioPage。
+- /episodes/:episodeId/timeline → TimelinePage。
+- /episodes/:episodeId/delivery → DeliveryPage。
+- /episodes/:episodeId/run → EpisodeRunPage，受 EPISODE_AGENT_RUN_V2 控制。
+
+3.2 旧 URL 兼容
+
+文件：apps/web/src/app/legacyRoute.tsx
+
+无损自动迁移：
+- overview + project → 项目首页。
+- jobs → /jobs，可保留 project query。
+- profiles → 项目生产设置或全局 models。
+- diagnostics → /diagnostics，可保留 project query。
+- canvas + project（无 shot）→ 项目 canvas，可保留 episode。
+- projects + project + episode → Episode Plan。
+- projects + project → operations。
+- generation + project + episode + 可选 shot → path-based Generation。
+- reviews + project + episode 且无 review/shot 精细上下文 → Episode Review。
+
+不能无损时：
+- legacy=1；
+- canvas 带 shot；
+- reviews 带 shot/review；
+- 其他未知 view。
+这些进入 LegacyCompatibilityPage，展示保留的 context 和可选 V2 工作区，不猜测目标。
+
+正确处置：
+- 保留该边界直到三份 UAT/签收完成并收集旧书签使用数据。
+- 兼容页不等于旧 App，不能作为“仍有旧入口”的证据。
+- 精确 review/shot deep link 若未来有 V2 等价路由，再扩充 lossless mapping。
+
+3.3 真实浏览器运行态
+
+测试视口：1280×720；使用当前工作树 API 和真实本地数据库，只做 GET/导航。
+结果：
+- /projects：正常，约 720px。
+- 项目首页：正常，约 1086px。
+- Story：正常，约 2170px。
+- Asset Bible：正常；当前数据库无资产时为 720px 空态。
+- QC Policies：正常，约 1747px。
+- Director Recipes：正常，约 1477px。
+- Production Settings：正常，约 1322px。
+- Lab：正常，约 720px。
+- Canvas：正常，约 1495px；当前 22 镜数据产生约 134 个按钮。
+- Operations：正常，约 7056px。
+- Episode Plan：崩溃，原因见 P0-A。
+- Director Desk：正常，指定镜约 764px；交互控件非常密集。
+- Generation：正常，约 4340px。
+- Review：正常，约 4322px。
+- Audio：正常，约 2229px。
+- Timeline：正常，约 4255px。
+- Delivery：正常，约 2110px。
+- Episode Run：正常，约 4815px。
+- Models：正常，约 3337px。
+- Jobs：正常，约 2436px。
+- Diagnostics：正常，约 1815px。
+
+这说明：
+- “旧单页太长”的根入口问题已经解决；
+- 但多个 V2 task page 仍把所有编辑器、列表、说明和高级配置纵向展开；
+- 重构目标应从“拆路由”转为“页面内部任务化、主从布局、抽屉/弹窗、虚拟化、状态保留”。
+
+3.4 AppShell 与导航
+
+文件：apps/web/src/layouts/AppShell.tsx
+- :10-31 定义 command list。
+- :69-103 定义 sidebar。
+- 当前优点：固定侧栏、项目上下文、分集路由可出现相应入口、全局 Jobs/Diagnostics。
+- 当前重复：命令面板与侧栏各自维护 route/label。
+- 当前缺口：有项目切换器，没有同等清晰的季/分集切换器；进入深层页面依赖 URL 上下文。
+- 当前错误暗示：:103 附近文案声称关闭浏览器不影响本机 worker，但运行态只检查 API/dependencies，不证明 worker 正在守护。
+- 推荐：建立 typed routeRegistry，字段包含 id、scope、path builder、label、icon、shortcut、feature flag、legacy mapping、requires context；侧栏/命令面板/面包屑全部从它生成。
+- 推荐：顶栏固定 Project → Season → Episode 上下文切换，并在镜头页显示 Shot 快捷跳转。
+- 推荐：将“API 在线”和“Worker 活跃/最近心跳/当前 lease”分成不同状态，不再用一个绿点概括。
+
+========================================================================
+4. 现有功能事实矩阵：已实现、部分实现、待实现
+========================================================================
+
+4.1 故事与长文导入
+
+已实现：
+- apps/api/local_drama/application/documents.py:1 声明 TXT/Markdown/DOCX。
+- documents.py:61-88 解析文本和 DOCX，保持源文件不变。
+- 文档 import session、preview、commit、source document version。
+- 提取文本使用 partial + replace。
+- 原文 passage 分页、scene range、全文搜索/索引。
+- apps/api/tests/test_large_source_workflow.py:28-106 真实覆盖 200,000 字符：
+  - character_count 精确 200000；
+  - preview 有上限；
+  - 单段预览不超过 1000；
+  - 原文件哈希和字节不变；
+  - 提取文本哈希正确；
+  - passage total_character_count 正确。
+- StoryWorkspacePage.tsx 有项目级“故事圣经 → 导入 → 审核拆解 → 资产身份裁决”流程。
+- ScriptImportPanel.tsx 提供本地路径选择、preview 和 commit。
+- AIDraftReviewPanel.tsx 展示草稿证据/置信度/问题/引用并显式选择分集 apply。
+
+部分实现：
+- “支持 20 万字”已被测试证明，但当前实现 documents.py:64 仍 read_bytes 全量载入，没有文件大小/字符数明确硬上限，也没有流式解析。
+- 支持格式仅 TXT/Markdown/DOCX，不支持 PDF、Final Draft、Fountain、EPUB。
+- Web 是本地桌面式路径选择，不是浏览器拖放上传。
+- StoryWorkspacePage 与 EpisodePlanPage 都完整嵌入 ScriptImportPanel/AIDraftReviewPanel/AssetProposal，职责重复。
+
+待实现：
+- V2 从 UI 发起 AI 拆解。
+  - 后端 apps/api/local_drama/api/routes/imports.py:67-70 已有 requestScriptBreakdown operation。
+  - docs/openapi/openapi.json:8474、:8480 已记录 requestScriptBreakdown。
+  - apps/web/src/generated/api.ts 没有 requestScriptBreakdown。
+  - AIDraftReviewPanel 只能 list/apply，不能创建 draft。
+- 200k+ 内容应增加：
+  - 明确文件字节/字符政策；
+  - 流式 hash/解码；
+  - 分块解析进度；
+  - 取消和恢复；
+  - 章节树和长文虚拟化；
+  - 失败定位到页/段。
+- PDF 若加入，必须区分 text PDF 和 OCR；OCR 是独立可取消 Job，不能阻塞 API 请求。
+
+推荐 owner：
+- Story Workspace 唯一拥有导入和全项目拆解。
+- Episode Plan 只显示“已绑定源版本/草稿/场次范围”的紧凑状态和 deep link，不再次铺开全导入工作流。
+
+禁止重做：
+- 不要重写 document version、passage、scene range、draft apply。
+- 不要把 AI draft 改成自动落地；人工 apply 是正确安全边界。
+- 不要为了“上传”丢弃本地路径模式；桌面本地模式仍应保留。
+
+4.2 Episode Plan、分镜与局部重排
+
+已实现：
+- StoryboardBatchWorkbench：镜头批量工作台。
+- ShotGroupPlanner：镜头组创建/排序/成员移动。
+- SelectedBeatReplanPanel + backend beat_replan：选中 beat/组内 plan → diff → apply。
+- replan 支持 KEEP/ADD/MODIFY/DELETE/PROTECTED，带 expected revision、plan hash、idempotency。
+- EpisodeSceneRanges 和 EpisodeSourcePassage 保存原文证据。
+- PromptTemplatePanel 可按真实 shot 和 published profile 冻结提示词快照。
+- 0044_shot_groups 和 0047_shot_editing 已建立数据基础。
+
+当前故障：
+- 同页两个 breakdown drafts 查询的 cache key/shape 冲突导致整页崩溃，见 P0-A。
+
+UI/职责问题：
+- EpisodePlanPage.tsx:37-52 顺序铺开 8 个重组件。
+- 与 Story Workspace 重复导入、草稿审核、资产建议。
+- 当前没有“左边场次/beat，中间镜头表，右边镜头 inspector”的常驻编辑布局。
+- 镜头较多时纵向滚动、上下文切换和批量反馈成本高。
+
+目标：
+- 左：场次/beat/镜头组树，可搜索、折叠、拖放。
+- 中：虚拟化镜头表/卡片，行级状态、批选、排序。
+- 右：选中镜头 inspector，以 tab 呈现叙事、构图、资产、生成准备。
+- Import/AI breakdown 由 Story owner 页面完成，Plan 只显示来源状态。
+- replan 在右侧 drawer：选择草稿场次 → 预览 diff → apply。
+- 大批量 apply 必须继续逐项返回结果，不做“全成功假象”。
+
+4.3 Asset Bible 与人物一致性
+
+已实现：
+- AssetBiblePage 支持 CHARACTER、SCENE、PROP、COSTUME。
+- 资产 revision/state/reference/usage/shot binding。
+- 参考类型含 HERO、FRONT、BACK、LEFT、RIGHT、THREE_VIEW 等。
+- MediaPicker 和版本比较。
+- 场景变体。
+- GenerateMultiViewPanel.tsx:17-20 当前生成 FRONT、LEFT、RIGHT。
+- apps/api/local_drama/application/asset_multiview.py:26-31、:66-160：
+  - HERO 是前置；
+  - 走 capability resolver；
+  - 创建 3 个持久 Job；
+  - 结果绑定资产 reference。
+- 表情变体和细节面板已经存在；不能重复造相同 CRUD。
+- 0042_asset_bible_states_references 和 0048_asset_proposals 已迁移。
+
+部分实现：
+- “固定人物三视图”有 FRONT/LEFT/RIGHT 生成，不是完整身份包。
+- reference taxonomy 有 BACK/THREE_VIEW，但生成器没有 back 或 3/4。
+- 当前不存在 identity_pack 聚合和“批准的身份包版本”。
+- 下游生成没有统一强制要求某个已批准 identity pack。
+- 当前真实数据库 story_assets/states/references 为 0，浏览器只看到空态；不能因空态误判代码缺失。
+
+待实现：
+- CharacterIdentityPack 聚合：
+  - front/side/back/3-4/full body/height chart；
+  - 主服装与服装变体；
+  - expression sheet；
+  - face/costume/distinctive detail；
+  - source media hashes；
+  - profile/workflow/version/prompt snapshot；
+  - review state、approved version、stale reason。
+- 下游镜头生成应解析到 identity_pack_version_id，并在资产变更后标 stale。
+- 多人镜头要支持多个角色包、优先级和遮挡/站位约束。
+- 身份包生成仍使用现有 Job/Media/Review，不新建第二套任务系统。
+
+页面结构：
+- 当前 AssetBiblePage 逻辑上有左列表、中详情、创建区；CSS 两列时第三 sibling 会下移。
+- 创建资产应放 shared Dialog/Drawer，不应长期占主页面。
+- 推荐三栏：资产筛选/列表；预览/版本/三视图；属性/状态/引用/使用。
+- “生成三视图”“表情”“细节”是 action dialog；结果进入同一版本轨和 review。
+
+4.4 Director Desk
+
+已实现：
+- apps/web/src/pages/DirectorDeskPage.tsx 是 V2 主页面。
+- ShotNavigator：
+  - 搜索、过滤、分组；
+  - 选中镜头；
+  - 前后移动/拖放重排；
+  - 多选。
+- DirectorMediaStage：
+  - 当前媒体舞台；
+  - 对比媒体；
+  - grid/safe-frame/flicker；
+  - 空态行动。
+- DirectorIntentEditor：
+  - versioned revision；
+  - optimistic expected revision；
+  - freeze；
+  - 本地草稿按 shot/revision/schema 保存；
+  - 快捷键测试。
+- Inspector tabs：
+  - 画面、资产、生成、衔接、声音、审核。
+- Candidate compare：
+  - 2–4 候选同步播放比较。
+- Candidate adoption：
+  - 采用、撤销、选择与批准分离。
+- Frame bridge：
+  - 前镜尾帧/当前首帧；
+  - VIDEO FIRST/LAST；
+  - 提取、锁定、stale/conflict。
+- 资产绑定、声音上下文、连续性和审核均已接入。
+- 无 shotId 时 :119-120 replace 到真实首镜 deep link。
+
+真实布局：
+- 1280px 宽：内容约 1060；Director desk 约 1034，三栏约 238 + 466 + 330。
+- 900px 宽：sidebar 收为约 57；Director 左栏 220 + 主区约 692，inspector 下移整行。
+- director-desk.css:40-42 有响应式规则，不是完全不响应。
+- 900px 时 desk 比 viewport 宽约 12px，左右各约 6px 轻微溢出。负 margin 只是用于抵消页面 padding 的全幅工作台设计，不能单独视为根因；更关键的是 director-desk.css:10 的 .director-main-grid 没有 min-width:0，且作为父 grid item 会接收子项的 intrinsic/min-content contribution。虽然 :41 已把第二列写成 minmax(0, 1fr)，grid 容器自身以及 .director-shot-nav/.director-inspector 仍保留 auto minimum，长文本、表单和跨列 inspector 可把轨道撑宽。
+- 修复顺序应是：给 .director-main-grid、.director-shot-nav、.director-inspector 明确 min-width:0；对会产生 min-content 的 flex/grid 子项补 min-width:0 与 overflow-wrap:anywhere；再检查 .director-desk 的负 margin 是否精确等于 AppShell content padding。不要用 overflow-x:hidden 掩盖 intrinsic overflow，因为那会裁掉焦点环、菜单或真实内容。
+
+缺陷与改进：
+- P0：生成链接 query/path 不一致，见 P0-B。
+- 当前 22 个真实镜头已产生约 146 个按钮、52 个链接；镜头上百时 ShotNavigator 需要 windowing。
+- 154/237 交互元素至少一个维度小于 44px；常用 re-order 约 23×22、32×41，过滤控件 28–40。
+- 小尺寸本身不必机械判定 WCAG 失败，但导演台是高频点击，实际误触风险高。
+- 顶部六个 tab 有 role=tab/aria-selected，但没有 aria-controls/tabpanel，也没有左右键 tab 行为。
+- CandidateCompareDialog、DirectorTakeAdoption、FrameBridgeControls 等自定义 modal 主要只处理 Escape/初始焦点，没有共享 Dialog 的完整 Tab trap 和 focus return。
+- apps/web/src/components/ui/primitives.tsx:140-180 已有可访问 Dialog；应复用，不要再造对话框基础设施。
+- 导演台适合保持“左镜头 / 中舞台 / 右 inspector / 底 takes”结构；这是当前 V2 最接近专业工作台的页面，不要改回纵向卡片流。
+- 响应式建议：≥1440 三栏；1024–1439 左栏可折叠；768–1023 inspector drawer；<768 进入只读/轻编辑移动模式，不硬塞三栏。
+
+4.5 Generation Workbench、抽卡和首尾帧
+
+已实现：
+- apps/web/src/features/generation/GenerationWorkbench.tsx:28-31 支持 T2I/I2V/T2V/R2V。
+- 精确 shot 选择。
+- generation intent 和 prompt snapshot。
+- 结构化 generation controls。
+- current/first/last frame anchors。
+- keyframe candidate。
+- preflight + two-phase submission。
+- 1–8 takes/seeds。
+- 1–24 seed batch planning。
+- parent variant branch/resample。
+- review shelf 和结果状态。
+- model/workflow/profile version 事实可冻结进结果链。
+- Director 中已经有“重抽候选”入口。
+
+部分实现：
+- GenerationWorkbench.tsx:329 明确把 first-last-frame branch 标为未发布；不能在最终文档中写成完整可用。
+- GenerationControlPanel.tsx:64-67 有 timed directions、performance、reference、masks 等 4 个原始 JSON textarea。
+- JSON 高级能力是真的，但不是普通创作者可用的交互。
+- 页面真实高度约 4340px，所有高级参数同时展开。
+
+目标：
+- 顶部 sticky action bar：shot、capability、profile resolution、takes、preflight、submit。
+- 中部双栏：媒体/候选预览 + 主要创作参数。
+- 高级结构参数放 typed editors：
+  - 时间方向用可视时间段；
+  - performance 用角色/动作行；
+  - reference 用 MediaPicker；
+  - mask 用画布/文件选择。
+- JSON 只保留“高级/原始”折叠入口，带 schema validation 和 reset。
+- 首尾帧 action 应展示：
+  - first 来源；
+  - last 来源；
+  - stale/conflict；
+  - 预计能力/Profile；
+  - 不支持时的具体阻塞原因。
+- 抽卡/重抽必须保存 parent_variant_id、seed、prompt/profile/workflow snapshot 和原因；现有 branch 模型应继续复用。
+
+禁止重做：
+- 不要重写 variants/jobs/preflight/batch plan。
+- 不要新增独立“抽卡表”绕过 variant lineage。
+- 不要让 Director 直接调用 provider；仍走 Generation command/job chain。
+
+4.6 生成偏好、模型选择与供应商扩展
+
+已实现：
+- migration 0043_generation_preferences。
+- GenerationPreference set/version。
+- owner scope：Project/Episode/Shot。
+- 解析顺序：Shot → Episode → Project → AUTO。
+- UI 可选择 capability、owner、Profile/Workflow 和 resolution。
+- published/exact compatibility 约束。
+- ModelsPage 有 profile/workflow 管理。
+- LOCAL_ONLY Profile 契约拒绝远程 endpoint 和 credential。
+
+真实缺口：
+- canonical capability 只存在于新偏好模块，旧 Profile/worker/LLM 未迁移。
+- 当前数据库 generation preference sets/versions 都是 0，尚无真实已配置偏好。
+- 当前 Profile 统计：
+  - I2V：PUBLISHED 6、DRAFT 7、RETIRED 3、CANDIDATE_BLOCKED 1；
+  - T2V：PUBLISHED 1、CANDIDATE_BLOCKED 1；
+  - R2V：CANDIDATE_BLOCKED 1；
+  - SCRIPT_BREAKDOWN_LLM：PUBLISHED 1、CANDIDATE_UNVERIFIED 1。
+- 新 VIDEO_I2V、LLM_STORY_PARSE、IMAGE_GENERATION、IMAGE_MULTI_VIEW 无对应发布 Profile。
+- 实测 resolver：
+  - VIDEO_I2V → NO_COMPATIBLE_PROFILE；
+  - I2V → published H3；
+  - LLM_STORY_PARSE → NO_COMPATIBLE_PROFILE；
+  - SCRIPT_BREAKDOWN_LLM → published Ollama；
+  - IMAGE_MULTI_VIEW / IMAGE_GENERATION → none。
+- Director G8 数据仅 I2V 成功，image 和 first-last blocked。
+
+必须的统一方案：
+1. 在 domain 定义唯一 GenerationCapability enum。
+2. 建立显式 alias：
+   - I2V → VIDEO_I2V；
+   - T2V → VIDEO_T2V；
+   - R2V → VIDEO_REFERENCE 或明确新 canonical；
+   - SCRIPT_BREAKDOWN_LLM → LLM_STORY_PARSE；
+   - 其他旧值逐一列清单，不允许 LIKE 猜测。
+3. 新迁移：
+   - profile capability backfill；
+   - preference version references 校验；
+   - 不可识别值写 migration report，不静默替换。
+4. 共享 resolver：
+   - DirectorDeskQueryService；
+   - asset multiview；
+   - manual generation；
+   - EpisodeWorkerActions；
+   - local LLM request；
+   - future cloud adapters。
+5. 每次 Job/Variant 写入最终 resolved profile_version_id、workflow_version_id、capability、resolution_source 和 compatibility verdict。
+6. 删除 _video_profile 的 LIKE 路径，只保留统一 resolver。
+7. 建立 matrix tests：每个 capability × owner level × provider × published status × workflow compatibility。
+
+云模型边界：
+- README.md:1-12、apps/api/local_drama/config.py:19、:41-45、profiles.py:66-81 把当前版定义为 LOCAL_ONLY。
+- 豆包/MiniMax/OpenAI 等不是在现有 endpoint 字段填 URL 即可。
+- 推荐保留默认 Local Edition；新增显式 Connected Edition ADR 和功能开关。
+- Connected Edition 至少需要：
+  - OS Credential Manager/DPAPI/Keychain 类端口；
+  - 数据库只存 credential_ref，不存 secret；
+  - endpoint allowlist 和 TLS；
+  - egress 审计；
+  - 项目/模型数据出境确认；
+  - 日志/错误脱敏；
+  - cost estimate、budget、rate limit、cancel；
+  - provider terms/license/region 元数据；
+  - 本地 fallback 必须是用户显式选择，不可静默。
+- 后续 agent 禁止把 API Key 写入 Profile JSON 或 SQLite 明文字段。
+
+4.7 Episode Run / “一键生成漫剧”
+
+已实现：
+- apps/web/src/features/episode-run-v2/EpisodeRunPanel.tsx 有 run 创建、模式、阶段、暂停/恢复/取消。
+- backend episode_production_runs 有持久 run/stage/action。
+- Job 可以恢复、重试、记录失败和人工阻塞。
+- 真实自动 action：
+  - KEYFRAME_CHECK；
+  - VIDEO_GENERATION；
+  - QC；
+  - 可选 TTS_BATCH；
+  - RENDER；
+  - DELIVERY。
+- modes/checkpoints/NEEDS_HITL 已有。
+- worker 会阻塞缺 approved keyframe、profile、first frame 等前置。
+
+部分实现：
+- UI/后端展示 STORY、ASSET、PLAN 等阶段，但 apps/api/local_drama/application/episode_production_runs.py:396-405 对这些阶段主要读取现有计数。
+- episode_production_runs.py:299-302 的实际 creator actions 从已准备好的镜头/关键帧往后跑。
+- 这不是“上传剧本后真正一键完成全剧”，而是“从当前生产事实继续生成整集”。
+
+产品文案立即修正：
+- 现有能力命名为“整集生产运行”或“生成剩余步骤”。
+- 开始前给出 prerequisite checklist：
+  - 源版本；
+  - 拆解已应用；
+  - 资产身份已批准；
+  - 镜头计划；
+  - Profile/Workflow；
+  - 关键帧/首帧；
+  - QC policy；
+  - 磁盘/worker/runtime。
+- 不满足时显示可操作 deep link，不只给 error code。
+
+真正一键的目标 DAG：
+SOURCE_IMPORT
+  → STORY_BREAKDOWN_DRAFT
+  → HUMAN_APPLY
+  → ASSET_PROPOSALS
+  → HUMAN_IDENTITY_DECISION
+  → IDENTITY_PACK_GENERATION
+  → HUMAN_ASSET_APPROVAL
+  → SHOT_PLAN
+  → HUMAN_PLAN_APPROVAL
+  → KEYFRAME_GENERATION
+  → HUMAN_KEYFRAME_APPROVAL
+  → VIDEO_GENERATION
+  → MACHINE_QC
+  → HUMAN_REVIEW
+  → TTS/AUDIO
+  → TIMELINE
+  → RENDER
+  → DELIVERY
+
+原则：
+- “一键”是启动可暂停 DAG，不是取消人工门。
+- 复用现有 Run/Stage/Action/Job/Review/Media；补齐前半段 action handler。
+- 每个节点必须幂等、可重试、记录 input snapshot/output reference。
+- 用户可以选择 FULL_AUTO_WITH_GATES、ASSISTED、MANUAL 等模式，但任何自动应用/批准必须符合明确策略。
+
+4.8 Review、Audio、Timeline、Delivery
+
+Review 已实现：
+- EpisodeReviewWorkspace。
+- 图像/视频候选、FormalSelectionPanel、annotation、machine result 和 human decision 分离。
+- Director adoption 与 formal approval 不混为一谈。
+- freshness/stale 事实。
+
+Review 改进：
+- 当前约 4322px；改为 review inbox master-detail：
+  - 左：筛选/队列；
+  - 中：媒体比较；
+  - 右：证据、机器检查、批注、决策。
+- ImageCandidateGrid 旧组件不应因“有测试”就保留一套重复产品流；先迁移准确消费者。
+- FormalSelectionPanel 仍被 EpisodeReviewWorkspace 使用，不能删。
+
+Audio 已实现：
+- DialogueTTSPanel。
+- 角色 voice binding。
+- batch TTS。
+- AudioTrackPanel。
+- gain/fade/loop/range/license。
+- waveform preview。
+- 分集声音页整合。
+部分：
+- 没有真正 waveform 剪辑、drag/trim、automation curve。
+- 页面约 2229px。
+目标：
+- 左 track list、中 waveform/timeline、右 clip inspector。
+- 先做轻量编辑器，不承诺完整 DAW。
+- voice/model/profile 同样走统一 capability resolver。
+
+Timeline 已实现：
+- immutable timeline revision。
+- 从采用/选择媒体构建 draft。
+- stale fingerprint/reload。
+- duration、CUT/DISSOLVE/FADE。
+- audio/subtitle 轨道。
+- freeze。
+- visual lane facts。
+部分：
+- TimelineTracks 主要是只读比例轨，不是 NLE。
+- 没有 playhead、拖拽 trim/snap、ripple edit。
+- 页面约 4255px。
+- TimelineComposer 为读取 Director 分页最多循环 10 页；超大分集可能截断。
+目标：
+- 明确定位为“NLE-lite”：playhead、选中 clip、trim handles、transition、snap、keyboard、undo history。
+- 若暂不实现编辑，就把界面命名为“时间线预览/组装”，避免伪装完整 NLE。
+- 用正式 episode shot pagination，不以 10 页隐式上限收集全镜。
+
+Delivery 已实现：
+- readiness。
+- versioned FFmpeg post-process chain。
+- render version。
+- delivery version。
+- contact sheet。
+- human/platform review 分离。
+- 约 2110px，逻辑完整度较高。
+改进：
+- 把 preset/advanced output options 放 drawer；
+- 主页只显示当前 render、检查、导出、历史。
+- 所有 FFmpeg 命令继续记录输入/版本/哈希，不直接覆盖输出。
+
+4.9 Canvas、Operations、Settings
+
+Canvas：
+- xyflow 生产图存在。
+- 当前 22 镜已有约 134 个按钮；规模增长必须做节点虚拟化/分层聚合。
+- 适合高级用户，不应成为默认创作入口。
+- legacy canvas 带 shot 的旧链接当前进入兼容选择页，是为了不丢上下文，正确。
+
+Operations：
+- ProjectOperationsPage 注释明确是原 App 工具的 V2 home。
+- 当前真实高度约 7056px，是最大长页。
+- 这不是“路由未迁移”，而是把过多低频工具放进一个管理员页。
+- 应拆为页面内 tabs/accordion，必要时二级路由：
+  - package/import-export；
+  - project grants；
+  - automation；
+  - audit；
+  - brand；
+  - search；
+  - health。
+- 不能把这些工具重新塞回创作主流程。
+
+Production Settings：
+- 当前是 read-only overview + 链接到 Models/QC/Recipes/Ops。
+- 它不是统一编辑器。
+- 推荐作为项目生产配置 hub，显示 resolution summary 和深链；不要复制 Models/QC/Recipes 的编辑实现。
+
+Models：
+- 约 3337px，Profile/Workflow/adapter 混在全局页。
+- capability canonicalization 完成后再重排为：
+  - providers/runtimes；
+  - profiles；
+  - workflows；
+  - compatibility matrix；
+  - credentials（仅 Connected Edition）。
+- 不要先做漂亮的 provider 下拉而底层 resolver 仍分裂。
+
+========================================================================
+5. 后端、数据、任务和文件系统审计
+========================================================================
+
+5.1 FastAPI composition
+
+事实：
+- apps/api/local_drama/main.py:62-72 的 lifespan 会创建目录，并 sync manifest/local LLM/review template 等。
+- main.py:80-137 创建 app 并手工 include 41 个 router。
+- routes 目录有 42 个 Python 文件，OpenAPI 约 357 个 endpoint。
+- startup 有真实写操作；因此只读诊断启动必须像本次一样禁用 lifespan，常规生产不能禁用。
+
+建议：
+- 建立 RouterModule registry，router 与 service wiring 成对注册。
+- 不要用运行时自动扫描掩盖依赖；显式模块注册但按域拆分。
+- composition root 只构造 Settings、Database、repositories、services、routers。
+- 将 startup sync 拆为可观察 bootstrap step：
+  - status；
+  - changed count；
+  - failure；
+  - retry；
+  - idempotency。
+- readiness 应区分 API ready、schema ready、manifest ready、worker ready、provider ready。
+
+5.2 应用分层
+
+事实：
+- 新 command/query/ports 框架方向正确。
+- test_refactor_architecture_boundaries.py 确保新 commands/queries/orchestration 不依赖 FastAPI/infrastructure/legacy。
+- 但 legacy application 仍是绝大多数业务实现，约 53 个文件直接依赖具体 Database。
+- orchestration 目录尚无真实 DAG 实现。
+
+推荐迁移策略：
+1. 不大爆炸重写所有服务。
+2. 以 P0 capability resolver 和 Episode Run DAG 为第一批“垂直切片”。
+3. 为每个切片定义 command/query DTO 和 ports。
+4. route 逐个切到新 service。
+5. legacy service 变 facade 或删除。
+6. architecture test 扩大到已经迁移的具体模块。
+7. 用 import-linter/AST 测试禁止反向依赖。
+
+后续 agent 禁止：
+- 只创建空 interface 不迁移调用者。
+- 将 SQL 复制到新 service 而保留旧 SQL 两份。
+- 为每个 page 新建专用后端数据库模型，导致事实重复。
+
+5.3 SQLite 与事务
+
+已实现：
+- apps/api/local_drama/infrastructure/database/sqlite.py:21 foreign_keys ON。
+- :22 busy_timeout=10000。
+- :23 WAL。
+- :30 写事务用 BEGIN IMMEDIATE。
+- 当前数据库 integrity_check = ok。
+- 当前约 125 张表、migration head 0048。
+
+优点：
+- 单机导演台适合继续 SQLite。
+- WAL + 短事务 + durable queue 足够当前部署模型。
+- 不要因“重构”直接换 PostgreSQL。
+
+风险：
+- 巨型 application methods 可能持锁时间长。
+- 外部文件/FFmpeg/provider 调用不能在 DB 写事务内。
+- 迁移越来越多但需要更系统的 upgrade/downgrade/rehearsal。
+- 部分状态由 JSON 列承载，canonical schema/版本兼容要明确。
+
+建议：
+- 所有外部动作先写 operation/job，再退出事务执行。
+- 加 DB backup-before-migrate、migration rehearsal 和 crash recovery tests。
+- 为高频 query 加 explain/query plan 预算。
+- 大项目上对 shots/variants/jobs/reviews/media 使用 cursor pagination。
+- schema 变更不压扁历史迁移；新增 0049+。
+
+5.4 Job、Attempt、Worker
+
+已实现：
+- apps/api/local_drama/application/jobs.py:321 起 claim。
+- lease 5–3600 秒。
+- 依赖检查。
+- GPU_H3/GPU/VIDEO_GPU 单重资源互斥。
+- job_resource_leases。
+- HMAC-safe lease token 比较。
+- heartbeat :407 起。
+- complete :472 起。
+- retry :562 起。
+- reconcile :594 起，expired attempt 标 ORPHANED 并释放资源。
+- apps/api/local_drama/application/worker.py:507 run_once，:564 run_until_idle。
+- durable Job/Attempt 不是浏览器内任务，架构基础正确。
+
+当前运行事实：
+- queued 1。
+- oldest queued age 约 191116 秒，约 53.1 小时。
+- active attempts 0。
+- active workers 0。
+- GPU active 0 / limit 1。
+- 过去 24h completed 0。
+- job states：cancelled 5、failed 3、needs attention 5、queued 1、succeeded 14。
+- 失败率约 0.1765。
+- 磁盘空闲约 947GB。
+- GPU 为 3090 Ti。
+
+缺口：
+- scripts/run_worker.py:27 调 run_until_idle，队列空就退出。
+- scripts/start.ps1:21-52 执行迁移并启动 API，不负责长期 worker/Web/Comfy lifecycle。
+- AppShell 和 LocalRuntimeIndicator 只说明 API/dependency，不能证明 worker。
+- 当前 53 小时 queued job 是很强的可观察性/守护缺口证据。
+
+目标：
+- LocalSupervisor：
+  - API；
+  - Web；
+  - Worker；
+  - Comfy/local LLM；
+  - health、PID、heartbeat、restart/backoff；
+  - 安全停止；
+  - 日志链接。
+- worker_sessions 或 heartbeat projection：
+  - worker id；
+  - started/last_seen；
+  - channels；
+  - current attempt；
+  - version；
+  - draining。
+- Shell 状态：
+  - API online；
+  - worker offline/idle/busy；
+  - provider online；
+  - queue oldest age；
+  - blocked count。
+- 关闭浏览器文案仅在 worker heartbeat 活跃时显示“后台继续”。
+
+5.5 文件与媒体一致性
+
+已实现：
+- infrastructure/filesystem/template.py:58 临时项目根。
+- :99 os.replace 原子发布。
+- media.py:93-104 项目根 containment。
+- media.py:114-121 partial copy + os.replace + partial cleanup。
+- media.py:174-182 source exists/file/not symlink/hash/mime/probe。
+- derivative proxy/contact/waveform 也使用 partial + replace。
+- media read path 做 resolve/is_relative_to/is_file。
+- 媒体版本不可变、hash 可审计。
+
+风险：
+- media.import_file 在 DB transaction 内先把最终文件复制到项目目录，再插入 media rows；后续 DB 失败 rollback 不会删除已发布文件。
+- documents import 把 source media、extracted text 和 import session 分多个步骤提交；中途失败可能留下孤儿或半状态。
+- documents.py:64、:131、:359 使用 read_bytes；reviews/timeline/jobs 也有 whole-file hash 热点。
+- 缺少统一“存储动作 ledger + reconciler”。
+
+目标：
+- MediaStore.stage(source) → staged_path/hash/size。
+- DB 写 pending media operation。
+- commit 元数据。
+- finalize staged file 到不可变地址。
+- 标 complete。
+- crash/restart reconciler：
+  - pending DB + staged file；
+  - committed DB + missing final；
+  - final file + no DB；
+  - hash mismatch。
+- 或采用 content-addressed storage，使重复 finalize 幂等。
+- 建立 streaming_hash helper，替换大文件 read_bytes。
+- 媒体删除默认 tombstone/回收站，不能物理级联误删历史交付。
+
+5.6 配置和部署
+
+事实：
+- config.py:19 mode 固定 LOCAL_ONLY。
+- :41-45 非 loopback fail closed。
+- data_root 默认 repo/data。
+- ffmpeg/ffprobe 除 PATH 外硬编码 fallback E:\Tools\ffmpeg\bin。
+- from_env 没有完整暴露 data/projects/work/cache/log/backups/origins。
+- 当前 canonical start 依赖仓库根 .venv。
+- 在 apps/api 执行 uv run pytest 时，setuptools 自动包发现报 alembic 与 local_drama 两个顶层包。
+- apps/api/pyproject.toml:1-25 没有 packages.find 规则。
+
+建议：
+- 在 pyproject 明确：
+  [tool.setuptools.packages.find]
+  include = ["local_drama*"]
+  exclude = ["alembic*", "tests*"]
+  或迁到 src layout。
+- 然后验证 uv sync --extra dev、uv run pytest、uv run mypy、uv run ruff。
+- 将 ffmpeg path、data_root、projects_root、work_root、cache_root、logs_root、backups_root 变成显式配置并在 Diagnostics 显示 resolution source。
+- start/supervisor 不依赖特定 E 盘。
+- 打包时把 schema migration、manifest、FFmpeg detection、权限检查做成 preflight。
+
+========================================================================
+6. API、契约和前端状态管理
+========================================================================
+
+6.1 API 规模与组织
+
+当前优点：
+- route 按业务域拆分。
+- OpenAPI operation id 多数明确。
+- generated/api.ts 提供一部分 typed client。
+- DomainRuleError 统一错误语义。
+- version/revision/idempotency 在关键写操作中出现。
+
+风险：
+- 42 route files、约 357 endpoint，手工 registry 容易漏 client。
+- generated client 与手写 fetch 并行：
+  - features/episode-plan-v2/beatReplanApi.ts；
+  - features/director-v2/DirectorDeskClient.ts；
+  - features/preferences-v2/api.ts；
+  - qc/recipes/timeline 等。
+- response 有时返回 {items}，有时 feature adapter 解包成数组。
+- 错误解包实现重复。
+- OpenAPI 和 generated client 已经出现 requestScriptBreakdown 漏生成。
+
+目标：
+- generated client 是 transport contract authority。
+- domain adapter 可以做形状归一，但必须：
+  - 名称不同；
+  - typed return；
+  - 不共享不兼容 query key；
+  - 有 contract test。
+- 建立 CI：
+  - 重新生成 client 后 git diff 必须为空；
+  - OpenAPI operation ids 唯一；
+  - 所有 V2 使用的 endpoint 在 client 存在；
+  - error envelope 一致；
+  - pagination schema 一致。
+
+6.2 Query key
+
+事实：
+- apps/web/src/query/queryKeys.ts:7-81 已存在中央 authority。
+- 已定义 projects/seasons/episodes/assetBible/productionSettings/jobs/capacity/diagnostics/audit/profiles/workflows/freshness/sourcePassage。
+- 仍约 93 处 raw array key，分布约 30 个文件。
+- Episode Plan 崩溃正是 raw key 与不同 shape 的直接后果。
+
+规则：
+- 每个 server resource 一个 key namespace。
+- 同一个 exact key 必须具有同一个 TypeScript return type 和同一 queryFn contract。
+- list wrapper {items, pagination} 与 items array 不能共享 key。
+- mutation invalidation 使用 prefix key factory。
+- 不把 view-specific formatting 放进 server cache；用 select。
+- key factory 应把 filters 排序/归一。
+- 写 ESLint/custom test 禁止新增 raw queryKey: [，允许测试夹具例外。
+
+6.3 数据模型与权威边界
+
+现有主要 aggregate：
+- Project / Season / Episode / Shot。
+- CreativeEntry revision。
+- SourceDocument / SourceDocumentVersion / Passage / SceneRange。
+- ScriptBreakdownDraft / Apply record。
+- StoryAsset / State / Reference / Shot binding / Proposal。
+- ShotGroup / Member / Shot revision/archive。
+- Prompt/GenerationIntent/Variant/Selection。
+- ModelProfile/Version/Workflow/Binding。
+- GenerationPreference Set/Version。
+- QC Policy Set/Version。
+- Director Recipe/Version。
+- MediaAsset/MediaVersion/Derivative。
+- Job/Attempt/ResourceLease/Outbox。
+- Review/MachineCheck/Annotation。
+- Dialogue/VoiceBinding/AudioTrack/TTS。
+- TimelineRevision/RenderVersion/DeliveryVersion。
+- EpisodeProductionRun/Stage/Action。
+
+必须新增或强化：
+- CharacterIdentityPackVersion（聚合已存在 reference，不复制媒体）。
+- Provider/CredentialRef/ProviderCapability（Connected Edition）。
+- WorkerSession/RuntimeHeartbeat projection。
+- StorageOperation ledger。
+- ProductionDAG node input/output snapshot。
+- CapabilityAlias migration report，迁移完成后运行时只认 canonical。
+- UI route registry 不需要 DB 表。
+
+禁止重复事实：
+- 不新增第二套 StoryAsset。
+- 不新增第二套 Variant。
+- 不新增“抽卡结果”表。
+- 不新增页面专属 Job。
+- 不把 selected/adopted/approved 合成一个布尔字段。
+- 不把媒体二进制放 SQLite。
+- 不把 secret 放 Profile JSON。
+
+========================================================================
+7. 遗留入口、重复实现和可删除性
+========================================================================
+
+7.1 已真正退役
+
+- apps/web/src/app/App.tsx：不存在。
+- apps/web/src/app/App.test.tsx：删除。
+- 当前 router/main/legacyRoute 没有静态或动态导入 App。
+- legacyRetirementAudit.test.ts:78 断言 router 不导入 App。
+- scripts/p12 当前证明 can_mount_legacy_shell=false。
+
+结论：
+- 不存在需要“再切一次入口”的工作。
+- 不应恢复旧 App 来满足过时测试。
+- P12 测试必须更新事实，而不是产品倒退。
+
+7.2 仍需保留的兼容/后端事实
+
+- LegacyRouteBoundary：在 UAT 证据和旧书签迁移完成前保留。
+- LegacyCompatibilityPage：用于不可无损映射上下文。
+- getReviewContext：P12 配置把精确 owner/review detail 视为受保护后端事实；在 V2 projection 完整前不删。
+- FormalSelectionPanel：EpisodeReviewWorkspace 仍使用。
+- ShotAssetSection：DirectorDesk 从 DirectorShotEditor.tsx 导入，仍有真实消费者。
+- old package/project API：P12 package signoff 未完成，不能只凭页面迁移删除。
+
+7.3 疑似遗留或重复模块
+
+DirectorShotEditor.tsx：
+- ShotAssetSection 有真实消费者。
+- DirectorShotEditor 主 export 主要只在测试中出现，产品已由 Director Desk 替代。
+- 正确做法：先把 ShotAssetSection 拆成独立模块并迁移 import/test，再删除主旧 editor。
+
+TimelineRevisionPanel.tsx：
+- 未发现生产页面 importer。
+- TimelineComposer 已成为 V2 owner。
+- 先做依赖图和等价事实检查，再退役。
+
+StoryAssetLibraryPanel.tsx：
+- 主要只剩测试，AssetBiblePage 是 V2 owner。
+- 不能直接删其底层 API；先迁移仍有效测试到 Asset Bible。
+
+ImageCandidateGrid.tsx：
+- 主要只剩测试，EpisodeReviewWorkspace 有自己的候选比较。
+- 先确认没有 lazy/dynamic/test harness 消费后退役。
+
+ProjectOperationsPage：
+- 不是遗留 App；它是迁移后的低频工具 owner。
+- 要拆 UI，不要删除其中 package/audit/automation 等真实能力。
+
+7.4 退役流程
+
+每个候选模块都按以下 gate：
+1. rg/TS dependency graph 无生产 importer。
+2. V2 replacement 覆盖原有 authoritative facts 和 actions。
+3. 原测试迁到 replacement，不是删除测试换绿。
+4. deep link/legacy mapping 有处置。
+5. UAT evidence。
+6. 删除组件、样式、mock、story/test fixture。
+7. build/typecheck/unit/e2e。
+8. P12 或对应 release gate 更新。
+
+========================================================================
+8. UI/UX 结构性审计与重构映射
+========================================================================
+
+8.1 设计系统现状
+
+已有：
+- AppShell、panel、status pill、buttons、Dialog 等共享基础。
+- feature CSS 已开始分离。
+- Director/Story/Timeline 等有独立样式。
+- 统一暗色本地工作台方向基本成立。
+
+问题：
+- apps/web/src/styles.css 约 1324 行，仍混合 tokens/base/shell/legacy utilities/page styles。
+- director/generation/operations 等 feature 自己创造相似 action/dialog/tab。
+- index.html theme color #0b1020 与 CSS chrome variable #1f2625 不一致。
+- 全局控制高度多为 40px；高频操作在触屏/高 DPI 下偏密。
+- 小字大量使用 9–12px。
+- 默认焦点、error/success、disabled 虽有基础，但跨 feature 不统一。
+- 缺少统一 Drawer/Tabs/CommandBar/InspectorSection/DataGrid/VirtualList。
+
+拆分建议：
+- styles/tokens.css：颜色、间距、圆角、阴影、字阶、层级、motion。
+- styles/base.css：reset、body、focus、selection、scrollbars。
+- styles/shell.css。
+- components/ui/primitives：
+  Button、IconButton、Dialog、Drawer、Tabs、Popover、Tooltip、Select、Field、Status、Toast。
+- components/workbench：
+  ThreePaneLayout、Inspector、MediaStage、ShotRail、CandidateTray、StickyCommandBar。
+- components/data：
+  DataGrid、VirtualList、Empty/Error/Skeleton。
+- feature CSS 只定义领域布局，不复制 primitive 状态。
+
+8.2 页面长度根因
+
+不是一个根因，而是五类：
+1. 页面同时承担 overview + edit + history + diagnostics。
+2. owner 重复，如 Story 与 Episode Plan 都挂导入/拆解。
+3. 所有高级设置默认展开。
+4. 列表没有虚拟化/分页。
+5. 低频工具没有 tabs/drawer。
+
+规则：
+- 一个 route 对应一个首要用户目标。
+- 默认可见：上下文、主要素材、主要决策、主 CTA、阻塞。
+- 次要：inspector tab。
+- 低频：drawer/dialog。
+- 历史：独立 tab 或分页。
+- 诊断：deep link 到 Operations/Diagnostics。
+- 切换 tab/drawer 不丢未保存 draft，使用明确 dirty state。
+
+8.3 推荐最终信息架构
+
+全局：
+- Projects
+- Models & Runtimes
+- Jobs & Machine
+- Diagnostics
+
+项目：
+- Home
+- Story
+- Asset Bible
+- Episodes
+- Production Settings
+- Advanced（Canvas/Lab/Operations）
+
+分集：
+- Plan
+- Director
+- Generation
+- Review
+- Audio
+- Timeline
+- Delivery
+- Run
+
+不要再把 QC、Recipe、Preferences 全塞全局侧栏：
+- Production Settings 做 hub；
+- 深层独立路由仍可访问；
+- 页面 owner 不重复编辑控件。
+
+8.4 Modal/Drawer 决策
+
+Dialog：
+- 创建/确认；
+- 生成三视图；
+- 重抽候选；
+- 批量操作确认；
+- 不超过单屏的小表单。
+
+Drawer：
+- 复杂 inspector；
+- replan diff；
+- generation advanced controls；
+- Job details；
+- model/profile resolution；
+- 历史/审计。
+
+Inline：
+- 高频、需要边看媒体边调的字段；
+- shot navigation；
+- candidate strip；
+- primary review decision。
+
+独立 route：
+- 超过两类工作；
+- 需要 deep link；
+- 有长历史或大表；
+- 可独立恢复上下文。
+
+8.5 可访问性和键盘
+
+必须：
+- tabs 实现 aria-controls、tabpanel、roving tabindex、左右/Home/End。
+- 所有 modal 用 shared Dialog/Drawer，保证：
+  - initial focus；
+  - Tab trap；
+  - Escape；
+  - focus return；
+  - aria-labelledby/description；
+  - backdrop semantics。
+- frequent icon actions 44×44 target；若视觉需小，扩大 hit area。
+- 不用颜色单独表示 stale/failed/selected。
+- media shortcuts 在 modal 打开时继续禁用；Director 已有 keyboardShortcutsEnabled 基础。
+- 对 canvas/virtual grid 提供等价列表和键盘移动。
+- 尊重 prefers-reduced-motion。
+- 加 Axe/Playwright 和视觉回归，而不只 snapshot DOM。
+
+========================================================================
+9. 测试、迁移与发布现状
+========================================================================
+
+9.1 本轮验证结果
+
+Web TypeScript：
+- pnpm exec tsc --noEmit：PASS。
+
+Web Vitest：
+- 90 test files PASS。
+- 286 tests PASS。
+- 约 15.05 秒。
+- GenerationControlPanel/GenerationWorkbench 测试有重复 React act(...) warnings；不影响通过，但说明异步状态测试需要 await/userEvent 收口。
+
+API pytest（排除 live ComfyUI）：
+- 510 passed。
+- 1 failed。
+- 4 deselected。
+- 450 warnings。
+- 约 479.06 秒。
+- 唯一失败：apps/api/tests/test_p12_decommission_readiness.py:18-36 仍断言 status=BLOCKED、App.tsx 存在、canvas/reviews context loss、app-exclusive components。
+- 当前脚本真实输出不再满足这些旧事实。
+
+Warnings：
+- Starlette httpx deprecation。
+- Alembic path_separator 配置 warning。
+- 应纳入依赖升级维护，但不是当前功能 P0。
+
+P12：
+- 当前 status = DEFERRED。
+- required routes 全存在。
+- root component = LegacyRouteBoundary。
+- can_mount_legacy_shell = false。
+- App exists = false。
+- callers = 0。
+- query context losses = 0。
+- hard blockers = 0。
+- 唯一 blockers 是缺：
+  - docs/evidence/refactor-2026/p12-new-routes-uat.json；
+  - docs/evidence/refactor-2026/p12-old-project-compat-uat.json；
+  - docs/evidence/refactor-2026/p12-package-api-decommission-signoff.json。
+
+9.2 P12 正确修复
+
+先改测试：
+- test_current_tree... 应断言 DEFERRED。
+- App legacy surface exists=false。
+- entrypoint imports=[]。
+- can_mount_legacy_shell=false。
+- context_losses=[]。
+- hard_blockers=[]。
+- blockers 仅为三项 uat。
+- app_exclusive_components=[] 或按当前 report 精确值。
+
+保留 synthetic tests：
+- tmp_path 中手工创建 App 动态/静态 import 时仍应 BLOCKED。
+- 所有 UAT evidence approved 才 READY。
+- 这样测试既符合当前树，也继续防止旧 App 回归。
+
+再做真实 UAT：
+- 不可直接创建 PASS JSON。
+- 跑新 routes。
+- 跑旧 project/episode/shot/review bookmarks。
+- 验证 package API/导入导出/保护事实。
+- 由责任人批准后落 evidence。
+- scripts/p12 输出 READY 仅授权 reviewed removal，不自动删兼容层。
+
+9.3 迁移现状
+
+当前线性 head：
+- 0042：asset bible states/references/episode state bindings/shot state FK。
+- 0043：generation preferences。
+- 0044：shot groups/members/shot scene。
+- 0045：QC sets/versions/variant links。
+- 0046：director recipes/versions/project binding/variant refs。
+- 0047：source_shot/archive。
+- 0048：asset proposals。
+
+下一迁移建议：
+- 0049 capability canonicalization/backfill/report。
+- 后续 identity pack。
+- worker session/storage operation 可分开。
+- 每个迁移必须：
+  - fresh upgrade；
+  - 0048 → head upgrade；
+  - downgrade（若项目政策允许）；
+  - 数据 backfill；
+  - 未知 legacy 值；
+  - 外键/index；
+  - backup/recovery rehearsal。
+
+9.4 发布证据漂移
+
+- docs/release/go-no-go.md 仍记载 API 288、Web 36/100 等旧数量，与当前 510/90/286 和 1 个失败不一致。
+- 不应手工把数字改绿。
+- 由测试命令生成带 commit/tree hash、时间、环境、命令、退出码的 evidence。
+- release gate 必须读取 evidence，不读取人工叙述。
+
+9.5 必须增加的测试
+
+P0 contract：
+- EpisodePlanPage 真实挂载 AIDraftReviewPanel + SelectedBeatReplanPanel，共享 QueryClient，服务端响应对象，断言无 crash。
+- 同 key return type compile/lint guard。
+- Director 指定非第一 shot，点击生成，Generation select 必须等于该 shot。
+- capability alias/backfill/resolution matrix。
+- Episode worker、Director、Asset multiview、manual generation 解析同一 capability 得同一 version。
+
+Storage：
+- copy 成功 + DB insert 失败。
+- DB commit + finalize crash。
+- staged orphan reconcile。
+- hash mismatch。
+- symlink/path traversal。
+- 大文件 streaming memory budget。
+
+DAG：
+- 每节点幂等。
+- pause/resume/cancel。
+- retry after crash。
+- human gate。
+- changed upstream marks downstream stale。
+- no worker/unsupported capability/insufficient disk。
+- duplicate click idempotency。
+
+UX/browser：
+- 每个 V2 route smoke，无默认 Error Boundary。
+- legacy bookmarks。
+- 900/1280/1440/1920 screenshots。
+- keyboard tabs/dialog/drawer。
+- focus return。
+- Axe。
+- 100/500/1000 shots/assets/jobs performance。
+- dirty draft route change。
+
+========================================================================
+10. 风险登记
+========================================================================
+
+P0-01 Episode Plan cache contract collision
+影响：页面不可用。
+证据：AIDraftReviewPanel.tsx:7；SelectedBeatReplanPanel.tsx:22/:30；beatReplanApi.ts:31-32。
+处置：统一 key/shape；composition test。
+验收：真实 route 无 console/runtime error。
+
+P0-02 Director generation wrong-shot navigation
+影响：用户可能对错误镜头生成，浪费时间/GPU并污染版本链。
+证据：DirectorDeskPage.tsx:162/:224/:239/:267；GenerationPage.tsx:10/:21。
+处置：path param deep link；测试非第一镜。
+验收：URL、select、preflight、Job shot_id 四者一致。
+
+P0-03 Capability taxonomy/resolver split
+影响：模型选择显示、提交和 worker 实际执行不一致。
+证据：generation_preferences.py；director_desk.py；local_llm.py；episode_worker_actions.py。
+处置：canonical enum、alias migration、shared resolver、snapshot。
+验收：全调用链 matrix test；无 LIKE resolver。
+
+P1-01 Stale P12 test and missing evidence
+影响：后端 CI 红；可能诱使 agent 恢复旧 App。
+处置：更新 current-tree test；真实 UAT evidence。
+验收：pytest 全绿；P12 由 DEFERRED 经真实批准变 READY。
+
+P1-02 Frontend cannot request breakdown
+影响：AI 拆解只能靠 API/外部步骤，核心流程断点。
+处置：重新生成 client；Story action；job/progress/preflight。
+验收：commit source → request → progress → draft appears → human apply。
+
+P1-03 No durable local supervisor
+影响：queued job 长期无人处理；Shell 状态误导。
+处置：worker daemon/supervisor/heartbeat/status。
+验收：重启恢复、自动 backoff、UI 能区分 offline/idle/busy。
+
+P1-04 File/DB split consistency
+影响：孤儿或缺失媒体，磁盘慢性污染。
+处置：stage/finalize ledger + reconciler + streaming hash。
+验收：fault injection 后可恢复，审计报告为 0 unresolved。
+
+P1-05 “One-click” scope overclaim
+影响：用户期望和实际链路不一致。
+处置：先改名/前置清单；后补前半 DAG。
+验收：每阶段要么真实 action，要么明确 human gate，不用假 progress。
+
+P1-06 Packaging reproduction
+影响：新开发机/CI uv 环境不能安装测试。
+证据：apps/api/pyproject.toml 无 package discovery，uv run 报 multiple top-level packages。
+处置：packages.find 或 src layout。
+验收：空环境 uv sync/test/mypy/ruff。
+
+P1-07 LOCAL_ONLY 与云 provider 边界
+影响：凭据、网络、账单、隐私高风险。
+处置：Connected Edition ADR、安全端口和 consent。
+验收：默认本地 fail closed；secret 不落日志/DB；provider contract tests。
+
+P1-08 Accessibility/modal fragmentation
+影响：键盘/焦点/误触。
+处置：共享 Tabs/Dialog/Drawer；44px 高频 hit area。
+验收：keyboard/axe/visual tests。
+
+P2-01 Long V2 pages
+影响：认知负担和上下文丢失。
+处置：task owner、三栏/master-detail、drawer、virtual list。
+验收：首屏主任务可达；高级区默认折叠；页面无全局滚动马拉松。
+
+P2-02 Query key/raw fetch sprawl
+影响：继续出现 cache/shape drift。
+处置：query key authority、generated transport、lint。
+验收：无新增 raw query keys；client generation clean。
+
+P2-03 Dead/duplicate components
+影响：agent 不知道改哪套。
+处置：依赖证明后退役。
+验收：一个功能一个 production owner；测试随 owner 迁移。
+
+P2-04 Timeline 10-page collection limit
+影响：超大 episode 可能静默截断。
+处置：正式 cursor/all-shots query。
+验收：> page limit 的 episode 媒体数准确。
+
+P2-05 Style monolith
+影响：视觉漂移和重构冲突。
+处置：tokens/base/shell/primitives/features。
+验收：visual regression；无 feature 重写 primitive 状态。
+
+P2-06 Director intrinsic width overflow
+影响：约 900px 窗口出现水平溢出；若直接裁剪会影响 inspector、焦点环和弹出内容。
+证据：apps/web/src/features/director-v2/director-desk.css:10 的 .director-main-grid 无 min-width:0；:41 虽使用 220px minmax(0,1fr)，父/子 grid item 的 auto minimum 仍接收 intrinsic contribution。
+处置：为 main grid、shot nav、inspector 及长文本子项建立 min-width:0/overflow-wrap 约束；随后核对 desk 负 margin 与 shell padding。
+验收：900/1024/1080/1280 宽无 document horizontal overflow，所有 inspector 内容可达，焦点环不被裁剪。
+
+========================================================================
+11. 建议实施顺序与文件级改造清单
+========================================================================
+
+Phase 0：固化与救火（发布前）
+1. 固化当前 V2 工作树为可恢复基线。
+2. 修 Episode Plan query contract。
+   - 修改：
+     apps/web/src/features/projects/AIDraftReviewPanel.tsx
+     apps/web/src/features/episode-plan-v2/SelectedBeatReplanPanel.tsx
+     apps/web/src/features/episode-plan-v2/beatReplanApi.ts
+     apps/web/src/query/queryKeys.ts
+   - 新增/改测试：
+     EpisodePlanPage composition/integration。
+   - 推荐方案：
+     queryKeys.sourcePassage.breakdownDrafts(projectId)；
+     一个 canonical fetch 返回 {items,...}；
+     两个组件都通过 data.items；
+     或 adapter 用不同 key，但更推荐同契约。
+3. 修 Director path。
+   - apps/web/src/pages/DirectorDeskPage.tsx generationHref。
+   - apps/web/src/pages/GenerationPage.test.tsx 或新增 Director navigation integration。
+4. 更新 P12 current-tree test，不恢复 App。
+   - apps/api/tests/test_p12_decommission_readiness.py:18-36。
+5. 重新跑 typecheck、Vitest、API non-Comfy、route smoke。
+
+Phase 1：能力与执行一致性
+1. canonical capability module。
+2. 0049 migration/alias report。
+3. shared GenerationPreferenceQueryService resolver。
+4. 替换：
+   - DirectorDeskQueryService generation resolution；
+   - AssetMultiViewService；
+   - EpisodeWorkerActions._video_profile；
+   - manual generation submission；
+   - LocalLLM profile lookup。
+5. Job/Variant resolved snapshot。
+6. matrix/upgrade tests。
+7. 再做 provider UI；否则 UI 只是错误选择器。
+
+Phase 2：打通故事到草稿
+1. 从 docs/openapi 重新生成 client，补 requestScriptBreakdown。
+2. Story Workspace 增加“请求本地 AI 拆解”action。
+3. 显示 Profile resolution/preflight/Job progress/error/retry。
+4. Episode Plan 删除重复完整导入/审核，改为来源摘要/deep link。
+5. 保留人工 apply。
+6. 长文流式 hash/上限/章节虚拟化。
+
+Phase 3：身份包与生产就绪
+1. IdentityPackVersion aggregate/migration。
+2. 从现有 asset references 组装，不复制媒体。
+3. 生成/审核/批准/stale。
+4. Episode Plan/Director 生产就绪 gate。
+5. 生成 Job snapshot 绑定 pack version。
+6. 多角色镜头测试。
+
+Phase 4：页面内部重构
+1. typed route registry + project/episode switcher。
+2. primitives：Tabs/Drawer/Dialog/StickyCommandBar。
+3. Director 只修密度、可访问性和小屏，不推倒。
+4. Plan 三栏。
+5. Review master-detail。
+6. Audio track/waveform/inspector。
+7. Timeline NLE-lite 或诚实名为预览。
+8. Generation typed editors + advanced JSON drawer。
+9. Operations tabs/二级路由。
+10. virtualize large lists。
+
+Phase 5：真正整集 DAG
+1. 在 application/orchestration 实现 production graph。
+2. 复用 Run/Stage/Action/Job。
+3. 补 story/asset/plan/keyframe action handlers。
+4. human gates。
+5. freshness propagation。
+6. retry/resume/cancel/idempotency。
+7. UI graph + blocker deep links。
+8. 只有所有阶段真实可执行后才使用“从剧本一键成片”营销文案。
+
+Phase 6：运行与存储可靠性
+1. LocalSupervisor/worker heartbeat。
+2. storage operation ledger/reconciler。
+3. streaming hash。
+4. packaging/env config。
+5. backup/migration rehearsal。
+6. Diagnostics 汇总。
+7. release evidence automation。
+
+Phase 7：Connected Edition（若产品明确授权）
+1. ADR 和 threat model。
+2. credential vault。
+3. provider ports/adapters。
+4. consent/egress/audit/cost/rate limit。
+5. provider capability matrix。
+6. offline/local fallback。
+7. 供应商 contract/e2e sandbox。
+8. 默认仍 LOCAL_ONLY。
+
+========================================================================
+12. “不要让后续 agent 重做”的明确清单
+========================================================================
+
+已实现，必须复用：
+- V2 router、AppShell、LegacyRouteBoundary。
+- Project/Season/Episode/Shot 主模型。
+- 20 万字 import/version/passage/scene range。
+- AI draft list/apply 和人工边界。
+- Asset Bible state/reference/usage。
+- FRONT/LEFT/RIGHT multiview jobs。
+- Shot group/replan/shot edit。
+- Director 三栏框架和 DirectorIntent revision。
+- Candidate compare/adopt/undo。
+- Frame bridge。
+- Generation preflight/batch/variant lineage。
+- Profile/Workflow versions。
+- Generation Preference/QC/Recipe version tables和层级解析意图。
+- MediaAsset/MediaVersion。
+- Job/Attempt/lease/heartbeat/retry/reconcile。
+- Review/MachineCheck/Human decision。
+- Dialogue/TTS/VoiceBinding/AudioTrack。
+- Timeline/Render/Delivery versions。
+- Episode Run/Stage/Action 持久状态机。
+- SQLite/WAL/local filesystem。
+
+部分实现，只补缺口：
+- 三视图 → 身份包。
+- 整集 run → 前半 DAG。
+- Timeline visual tracks → NLE-lite。
+- Audio waveform preview → 轻量编辑。
+- model selection UI → canonical resolver + provider。
+- Story AI draft UI → request action。
+- V2 pages → 页面内任务化。
+- local runtime indicator → worker/supervisor 事实。
+
+待新增：
+- canonical capability alias/backfill。
+- shared resolver across every submission path。
+- IdentityPackVersion。
+- LocalSupervisor/WorkerSession。
+- StorageOperation ledger/reconciler。
+- Connected Edition credential/provider security。
+- route registry。
+- shared Drawer/Tabs。
+- end-to-end one-click front-half nodes。
+
+必须删除/退役前证明：
+- DirectorShotEditor 主组件。
+- TimelineRevisionPanel。
+- StoryAssetLibraryPanel。
+- ImageCandidateGrid。
+- 其他仅测试 importer 的旧组件。
+不能先删：
+- ShotAssetSection。
+- FormalSelectionPanel。
+- getReviewContext。
+- compatibility route/package facts。
+
+========================================================================
+13. 完成定义
+========================================================================
+
+稳定性：
+- 所有 V2 route 在真实空项目和大项目都不进入默认 Error Boundary。
+- API non-Comfy、Vitest、typecheck、lint/mypy 全绿。
+- 无 stale release evidence。
+- P12 READY 必须来自真实 UAT，不是假 JSON。
+
+正确性：
+- 从任意 Director shot 到 Generation，shot_id 全链一致。
+- 一个 capability 在设置页、Director、manual generation、Episode Run、worker 得到同一 resolution。
+- 每个 Job/Variant 可追溯 input/model/workflow/seed/media/identity pack。
+- 上游变更能标记下游 stale。
+- selected/adopted/approved 各自独立。
+
+体验：
+- Story、Plan、Director、Generation、Review、Audio、Timeline、Run 各只有一个清晰主目标。
+- 主要操作首屏可见；高级设置不默认铺满。
+- 对话框、抽屉、tabs 完整键盘可用。
+- 大列表可搜索、分页或虚拟化。
+- 失败都给下一步 deep link。
+- 用户可以知道 worker 是否真的运行，而不是只知道 API 在线。
+
+可靠性：
+- 浏览器关闭不影响已由活跃 worker 接管的任务。
+- worker crash 可回收 lease。
+- DB/文件 crash 可 reconcile。
+- 迁移前备份、迁移后校验。
+- 长文/大媒体不会因 read_bytes 造成不可控内存峰值。
+
+安全：
+- 默认 LOCAL_ONLY 和 loopback fail closed 不退化。
+- 云供应商只有在 Connected Edition 明确启用。
+- secret 永不进入 Profile JSON、SQLite 明文、日志和导出包。
+- 所有外发有 consent、审计、预算和取消。
+
+========================================================================
+14. 本轮命令与结果摘要
+========================================================================
+
+只读/诊断：
+- rg/rg --files、Get-Content、git status、SQLite read-only query。
+- pnpm exec tsc --noEmit → PASS。
+- Vitest → 90 files / 286 tests PASS。
+- scripts/test_api_safe.ps1 的非 Comfy pytest → 510 pass / 1 stale P12 fail / 4 deselected。
+- python scripts/p12_decommission_readiness.py → DEFERRED，仅 3 UAT blockers。
+- 当前代码临时 API 使用 --lifespan off；临时 Vite 代理该 API。
+- Playwright/Edge GET 导航和 DOM/布局测量。
+- 临时 API、Vite 和 Playwright 会话已关闭。
+- 用户原有 5173/3210 进程未停止、未干预。
+
+UI/UX 方法：
+- 本轮使用 ui-ux-pro-max 的工作台布局、可访问性、交互目标和响应式准则辅助审计。
+- 其影响体现在：保留 Director 三栏、把复杂低频操作放 Drawer/Dialog、统一 Tabs/焦点、44px 高频 hit target、虚拟化大列表和移动端降级策略。
+- 未使用该技能生成源码或设计稿。
+
+最终基线提醒：
+最新 V2 已接管路由并删除旧 App。当前最危险的不是“还没迁移”，而是：
+1. Episode Plan query cache 契约冲突；
+2. Director 跳错镜头；
+3. capability/resolver 分裂；
+4. worker/存储/发布证据尚未闭环；
+5. V2 页面内部仍然过长。
+所有后续设计、开发和测试文档都应从这些真实事实出发。

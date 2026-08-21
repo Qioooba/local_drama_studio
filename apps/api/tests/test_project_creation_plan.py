@@ -84,5 +84,6 @@ def test_configured_creation_rejects_profile_mismatch_before_creating_directory(
     payload["delivery_target"] = {"code": "local", "title": "Local", "spec": {"path_rel": "06_delivery/local"}}
     with TestClient(create_app(workspace)) as client:
         response = client.post("/api/v1/projects", json=payload)
-    assert response.status_code == 404
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "PROFILE_CAPABILITY_INVALID"
     assert not (workspace.projects_root / "bad_profile").exists()

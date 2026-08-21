@@ -68,7 +68,7 @@ def _published_profile(workspace, database):
     profile = next(
         item
         for item in ProfileService(database, workspace.manifest_path).sync_manifest()["profiles"]
-        if item["capability"] == "T2V"
+        if item["capability"] == "VIDEO_T2V"
     )
     workflow = {"1": {"class_type": "LoadImage", "inputs": {"prompt": "", "seed": 0}}}
     version = WorkflowService(database, workspace).register_package(

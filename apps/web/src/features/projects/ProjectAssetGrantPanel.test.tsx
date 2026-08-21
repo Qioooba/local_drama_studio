@@ -33,10 +33,14 @@ describe("ProjectAssetGrantPanel", () => {
   });
 
   it("requires an explicit withdrawal reason for an active grant", async () => {
-    vi.spyOn(window, "prompt").mockReturnValue("不再需要");
     renderPanel();
     await screen.findByText("SOURCE");
     fireEvent.click(screen.getByRole("button", { name: "撤回 Grant" }));
+    const reasonInput = await screen.findByLabelText("撤回 Grant 原因");
+    const confirmButton = screen.getByRole("button", { name: "确认撤回" }) as HTMLButtonElement;
+    expect(confirmButton.disabled).toBe(true);
+    fireEvent.change(reasonInput, { target: { value: "不再需要" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认撤回" }));
     await waitFor(() => expect(revokeProjectAssetGrant).toHaveBeenCalledWith("grant-1", "不再需要"));
   });
 });

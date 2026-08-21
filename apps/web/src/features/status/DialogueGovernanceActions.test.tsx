@@ -7,6 +7,7 @@ vi.mock("../../generated/api", async () => {
   const actual = await vi.importActual<typeof import("../../generated/api")>("../../generated/api");
   return { ...actual, createDialogueLine: vi.fn(), createDialogueTextRevision: vi.fn(), createVoiceProfileVersion: vi.fn(), discoverLocalSapiVoices: vi.fn(), registerTTSCandidate: vi.fn(), selectTTSCandidate: vi.fn(), submitTTSJob: vi.fn(), finalizeTTSJob: vi.fn() };
 });
+vi.mock("../media-picker/MediaPicker", () => ({ MediaPicker: ({ onChange, label }: { onChange: (value: string) => void; label: string }) => <button type="button" aria-label={label} onClick={() => onChange("media-1")}>选择 dialogue-preview.wav · v2</button> }));
 
 const lines: api.DialogueLine[] = [{ id: "line-1", episode_id: "episode-1", shot_id: null, code: "DLG-001", speaker: "A", text_revisions: [{ id: "text-1", revision_no: 1, text: "你好", text_hash: "hash", pronunciation: {} }], candidates: [], selection: null }];
 const voices: api.VoiceProfileVersion[] = [{ id: "voice-1", project_id: "project-1", code: "VOICE-A", version_no: 1, title: "A", voice_ref: "local:a", license_status: "USER_OWNED", license_evidence: { path_rel: "00_admin/voice.txt", sha256: "hash" }, provider_profile_version_id: null, status: "ACTIVE" }];
@@ -35,7 +36,7 @@ describe("DialogueGovernanceActions", () => {
     fireEvent.change(screen.getByLabelText("操作类型"), { target: { value: "CANDIDATE" } });
     fireEvent.change(screen.getByLabelText("对白文本 revision"), { target: { value: "text-1" } });
     fireEvent.change(screen.getByLabelText("音色版本"), { target: { value: "voice-1" } });
-    fireEvent.change(screen.getByLabelText("AUDIO MediaVersion ID"), { target: { value: "media-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "候选音频选择器" }));
     fireEvent.change(screen.getByLabelText("情绪"), { target: { value: "警觉" } });
     fireEvent.change(screen.getByLabelText("语速"), { target: { value: "0.95" } });
     fireEvent.change(screen.getByLabelText("Seed（可空）"), { target: { value: "42" } });
@@ -71,7 +72,7 @@ describe("DialogueGovernanceActions", () => {
     fireEvent.change(screen.getByLabelText("操作类型"), { target: { value: "VOICE" } });
     fireEvent.click(screen.getByRole("button", { name: "扫描本机 SAPI 音色" }));
     await waitFor(() => expect(api.discoverLocalSapiVoices).toHaveBeenCalledTimes(1));
-    fireEvent.change(screen.getByLabelText("本机 SAPI 音色"), { target: { value: "sapi:Microsoft Huihui Desktop" } });
+    fireEvent.change(await screen.findByLabelText("本机 SAPI 音色"), { target: { value: "sapi:Microsoft Huihui Desktop" } });
     expect((screen.getByLabelText("本地音色引用") as HTMLInputElement).value).toBe("sapi:Microsoft Huihui Desktop");
   });
 
@@ -103,7 +104,7 @@ describe("DialogueGovernanceActions", () => {
     fireEvent.change(screen.getByLabelText("本地音色引用"), { target: { value: "sapi:Microsoft Huihui Desktop" } });
     fireEvent.change(screen.getByLabelText("项目内授权证据路径"), { target: { value: "00_admin/voice-license.json" } });
     fireEvent.change(screen.getByLabelText("授权状态"), { target: { value: "USER_OWNED" } });
-    fireEvent.change(screen.getByLabelText("Published TTS Profile"), { target: { value: "tts-profile-v1" } });
+    fireEvent.change(screen.getByLabelText("已发布 TTS Profile"), { target: { value: "tts-profile-v1" } });
     fireEvent.click(screen.getByRole("button", { name: "校验并创建不可变记录" }));
     await waitFor(() => expect(api.createVoiceProfileVersion).toHaveBeenCalledWith("project-1", { code: "VOICE-TTS", title: "Windows SAPI", voice_ref: "sapi:Microsoft Huihui Desktop", license_status: "USER_OWNED", license_evidence_path_rel: "00_admin/voice-license.json", provider_profile_version_id: "tts-profile-v1" }));
   });
@@ -113,7 +114,7 @@ describe("DialogueGovernanceActions", () => {
     render(<DialogueGovernanceActions projectId="project-1" episodeId="episode-1" lines={lines} voices={voices} onChanged={() => undefined} />);
     fireEvent.click(screen.getByRole("button", { name: "新增对白、音色或候选" }));
     fireEvent.change(screen.getByLabelText("操作类型"), { target: { value: "FINALIZE_TTS_JOB" } });
-    fireEvent.change(screen.getByLabelText("TTS Job ID"), { target: { value: "job-1" } });
+    fireEvent.change(screen.getByLabelText("TTS 任务 ID"), { target: { value: "job-1" } });
     fireEvent.click(screen.getByRole("button", { name: "校验并创建不可变记录" }));
     await waitFor(() => expect(api.finalizeTTSJob).toHaveBeenCalledWith("job-1"));
   });

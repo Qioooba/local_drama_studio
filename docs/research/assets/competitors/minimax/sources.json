@@ -1,0 +1,629 @@
+{
+  "schema_version": "1.0",
+  "research_date": "2026-08-21",
+  "product": "MiniMax Design（原 MiniMax Hub）",
+  "identity_guardrails": [
+    "MiniMax Design 是本地桌面端 Agent + 无限画布 + Skill + 资产 + 专业编辑器的创作工作台。",
+    "海螺AI是面向单次图片/视频生成的独立产品，不能用海螺单点页截图代替Design界面。",
+    "MiniMax H3是模型，不是“导演台”界面；H3能力不自动等于Design已有完整UI入口。",
+    "GitHub上的 ComfyUI_MiniMaxH3_Director、Automated-All-in-One-Director 等为第三方工作流，不是MiniMax官方3D导演台。"
+  ],
+  "evidence_scale": {
+    "A1": "官方产品页、官方手册或官方账号中的直接证据",
+    "A2": "官方营销视觉；能证明定位/宣发，但不能证明实际控件",
+    "B1": "可信媒体的实机上手截图与描述",
+    "B2": "媒体转述或无法看到完整交互",
+    "C": "第三方推测/社区实现"
+  },
+  "source_pages": [
+    {
+      "id": "official-landing",
+      "title": "MiniMax Design — 多模态创作 Agent，你的AI创作工作室",
+      "url": "https://hub.minimaxi.com/",
+      "publisher": "MiniMax",
+      "captured_at": "2026-08-21",
+      "evidence_grade": "A1"
+    },
+    {
+      "id": "official-manual",
+      "title": "MiniMax Design 使用教程",
+      "url": "https://my.feishu.cn/wiki/VEoVwpfCKiTHvHkAGQ7cQJxCncf",
+      "publisher": "MiniMax",
+      "last_modified_observed": "2026-08-20",
+      "evidence_grade": "A1"
+    },
+    {
+      "id": "official-weibo-v110",
+      "title": "MiniMax Hub v1.1.0｜8K高清、批量生视频、3D导演台、飞书/微信接入",
+      "url": "https://www.sina.cn/news/detail/5318468564948421.html",
+      "publisher": "海螺AI-MiniMaxHub（认证官方账号）",
+      "published_at": "2026-07-08 18:06 +08:00",
+      "evidence_grade": "A1"
+    },
+    {
+      "id": "official-weibo-v3",
+      "title": "MM Design｜真实可用的多模态生产力",
+      "url": "https://www.sina.cn/news/detail/5333988803872172.html",
+      "publisher": "MiniMaxDesign（认证官方账号）",
+      "published_at": "2026-08-20 13:58 +08:00",
+      "evidence_grade": "A1"
+    },
+    {
+      "id": "appsso-hands-on",
+      "title": "MiniMax Design 来了，视频模型也有了自己的 Codex",
+      "url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "accessible_mirror": "https://www.sina.cn/news/detail/5333942988442749.html",
+      "short_url": "https://t.cn/AXpyRzA3",
+      "publisher": "爱范儿 / APPSO",
+      "published_at": "2026-08-20 10:56:11 +08:00",
+      "evidence_grade": "B1"
+    },
+    {
+      "id": "official-h3",
+      "title": "MiniMax H3 开源生态：使用教程 · 本地部署 · 创作工作流",
+      "url": "https://design.minimaxi.com/h3",
+      "publisher": "MiniMax",
+      "captured_at": "2026-08-21",
+      "evidence_grade": "A1"
+    }
+  ],
+  "images": [
+    {
+      "id": "mm-01",
+      "file": "01_official_hero_desktop_interface.webp",
+      "title": "官网首屏桌面工作台全景",
+      "artifact_type": "official_staged_product_ui",
+      "page_url": "https://hub.minimaxi.com/",
+      "image_url": "https://filecdn.minimax.chat/public/hero-interface-ui-minimax-design-20260805.webp",
+      "dimensions": "3072x1639",
+      "sha256_16": "06562f6e2e6a3fcc",
+      "evidence_grade": "A1",
+      "visual_analysis": {
+        "regions": "白色三栏桌面壳层：左侧约250px导航/最近项目，中间约55%点阵无限画布，右侧约33% Agent对话与执行计划。",
+        "menus_controls": "左栏开始创作、资产中心、Skill、全部创作和最近项目；中部多媒体节点、连线、浮动工具条；右栏新对话/历史、模型/Skill/自动模式、发送。",
+        "operation_chain": "在右栏给brief→Agent拆任务→在画布创建文图音视频节点→生成动作进入“等待批准”→用户确认花费→继续输出。",
+        "information_density": "中高；工作区始终三栏，右侧执行状态不遮挡画布。",
+        "ux_strengths": "人机对话、可追溯节点与人工审批同时存在；不像纯一键黑箱。",
+        "ux_risks": "桌面宽度需求高；画布增长后依赖缩放与空间记忆；对连续剧集的集/场/镜结构没有可见一级导航。"
+      }
+    },
+    {
+      "id": "mm-07",
+      "file": "07_official_agent_mode_composite.png",
+      "title": "Agent Mode概念视觉",
+      "artifact_type": "locally_composited_official_marketing_layers",
+      "page_url": "https://hub.minimaxi.com/",
+      "image_url": null,
+      "derived_from_pattern": "https://filecdn.minimax.chat/minimax-hub-landing-page/landing-refresh-20260729/psd-parallax/psd-06/layer-*.webp",
+      "dimensions": "790x446",
+      "sha256_16": "9757473ccd9ebb84",
+      "evidence_grade": "A2",
+      "visual_analysis": "展示Agent、素材和提示词的营销构图，不是可操作界面；只用于理解定位。"
+    },
+    {
+      "id": "mm-08",
+      "file": "08_official_canvas_flow_composite.png",
+      "title": "Canvas Flow概念视觉",
+      "artifact_type": "locally_composited_official_marketing_layers",
+      "page_url": "https://hub.minimaxi.com/",
+      "image_url": null,
+      "derived_from_pattern": "https://filecdn.minimax.chat/minimax-hub-landing-page/landing-refresh-20260729/psd-parallax/psd-07/layer-*.webp",
+      "dimensions": "790x446",
+      "sha256_16": "635a445f3ccfa229",
+      "evidence_grade": "A2",
+      "visual_analysis": "强调视频、音频、图像在同一画布串联；为概念图，不能据此认定具体按钮。"
+    },
+    {
+      "id": "mm-09",
+      "file": "09_official_skill_ready_composite.png",
+      "title": "Skill Ready概念视觉",
+      "artifact_type": "locally_composited_official_marketing_layers",
+      "page_url": "https://hub.minimaxi.com/",
+      "image_url": null,
+      "derived_from_pattern": "https://filecdn.minimax.chat/minimax-hub-landing-page/landing-refresh-20260729/psd-parallax/psd-08/layer-*.webp",
+      "dimensions": "790x446",
+      "sha256_16": "4e2dfca555a845b6",
+      "evidence_grade": "A2",
+      "visual_analysis": "表达可复用Skill/模板，不是Skill广场实屏。"
+    },
+    {
+      "id": "mm-10",
+      "file": "10_official_local_index_composite.png",
+      "title": "Local Index概念视觉",
+      "artifact_type": "locally_composited_official_marketing_layers",
+      "page_url": "https://hub.minimaxi.com/",
+      "image_url": null,
+      "derived_from_pattern": "https://filecdn.minimax.chat/minimax-hub-landing-page/landing-refresh-20260729/psd-parallax/psd-09/layer-*.webp",
+      "dimensions": "790x446",
+      "sha256_16": "ae0c3bc627204235",
+      "evidence_grade": "A2",
+      "visual_analysis": "表达本地素材和AE/专业工具衔接，不是资产中心实屏。"
+    },
+    {
+      "id": "mm-11",
+      "file": "11_official_output_sync_composite.png",
+      "title": "Output Sync概念视觉",
+      "artifact_type": "locally_composited_official_marketing_layers",
+      "page_url": "https://hub.minimaxi.com/",
+      "image_url": null,
+      "derived_from_pattern": "https://filecdn.minimax.chat/minimax-hub-landing-page/landing-refresh-20260729/psd-parallax/psd-10/layer-*.webp",
+      "dimensions": "790x446",
+      "sha256_16": "828f4d2fc748b1b1",
+      "evidence_grade": "A2",
+      "visual_analysis": "表达多模态输出和审核同步，不是交付页面实屏。"
+    },
+    {
+      "id": "mm-12",
+      "file": "12_official_manual_basic_interface_a.png",
+      "title": "官方手册中的品牌开屏",
+      "artifact_type": "official_manual_marketing_frame",
+      "page_url": "https://my.feishu.cn/wiki/VEoVwpfCKiTHvHkAGQ7cQJxCncf",
+      "image_url": "https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/v2/cover/J6V9bMRACoFwIMxqwWXcWOaJnjd/?fallback_source=1&height=1280&mount_node_token=WZF7dbjN1oXvq2xEVU4cZIG7nq9&mount_point=docx_image&policy=equal&width=1280",
+      "dimensions": "778x388",
+      "sha256_16": "b68091b6fd2baee3",
+      "evidence_grade": "A2",
+      "visual_analysis": "黑底Logo，不含产品控件。"
+    },
+    {
+      "id": "mm-13",
+      "file": "13_official_manual_basic_interface_b.png",
+      "title": "官方手册中的产品官网页",
+      "artifact_type": "official_manual_website_screenshot",
+      "page_url": "https://my.feishu.cn/wiki/VEoVwpfCKiTHvHkAGQ7cQJxCncf",
+      "image_url": "https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/v2/cover/CWxOb43aGosgnsxKLYdceThznze/?fallback_source=1&height=1280&mount_node_token=A3hkdWezton4gbxf6GIcHBA7nje&mount_point=docx_image&policy=equal&width=1280",
+      "dimensions": "1280x672",
+      "sha256_16": "99137c2c2f79cb23",
+      "evidence_grade": "A2",
+      "visual_analysis": "下载页/官网，不是创作工作台。"
+    },
+    {
+      "id": "mm-14",
+      "file": "14_official_manual_basic_interface_c.png",
+      "title": "官方手册三栏工作台与生成审批",
+      "artifact_type": "official_manual_product_ui",
+      "page_url": "https://my.feishu.cn/wiki/VEoVwpfCKiTHvHkAGQ7cQJxCncf",
+      "image_url": "https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/v2/cover/OITxbFqU7oqGK9xlaYUck6OlnGh/?fallback_source=1&height=1280&mount_node_token=Q03BdDAofoyi0UxJ52UcnviLnZg&mount_point=docx_image&policy=equal&width=1280",
+      "dimensions": "1280x692",
+      "sha256_16": "f6bde1afe23380f9",
+      "evidence_grade": "A1",
+      "visual_analysis": {
+        "regions": "左导航/项目，中间画布节点，右Agent执行区。",
+        "menus_controls": "选中节点出现浮动工具栏；右侧Generation卡片显示等待批准、积分成本、Generate/Cancel。",
+        "operation_chain": "Agent计划→节点生成请求→用户审阅参数和费用→批准或取消。",
+        "ux_strengths": "成本与决定权前置；上下游素材留在画布。",
+        "ux_risks": "频繁审批可能打断大批量无人值守生产；需批量预算策略。"
+      }
+    },
+    {
+      "id": "mm-15",
+      "file": "15_official_weibo_v110_features_3d_director_a.jpg",
+      "title": "v1.1.0更新封面",
+      "artifact_type": "official_social_marketing_cover",
+      "page_url": "https://www.sina.cn/news/detail/5318468564948421.html",
+      "image_url": "https://wx2.sinaimg.cn/large/008IQyHMly1iewqmnyrirj31e01uoe81.jpg",
+      "dimensions": "1800x2400",
+      "sha256_16": "4f4313889dd883cc",
+      "evidence_grade": "A2",
+      "visual_analysis": "版本封面写明8K、批量生视频、3D导演台、飞书/微信接入；无工作台控件。"
+    },
+    {
+      "id": "mm-16",
+      "file": "16_official_weibo_v110_features_3d_director_b.jpg",
+      "title": "v1.1.0功能拼图",
+      "artifact_type": "official_social_feature_collage",
+      "page_url": "https://www.sina.cn/news/detail/5318468564948421.html",
+      "image_url": "https://wx4.sinaimg.cn/large/008IQyHMly1iewqo39k9uj31e01uo1kx.jpg",
+      "dimensions": "1800x2400",
+      "sha256_16": "68c7b535ac268f58",
+      "evidence_grade": "A2",
+      "visual_analysis": "拼图可见视频生成数量x1~x4、彩色素体3D场景和微信对话入口；为宣发裁切，细节以官方手册/实测图为准。"
+    },
+    {
+      "id": "mm-17",
+      "file": "17_official_design_v3_overview_a.jpg",
+      "title": "MiniMax Design焕新上线视觉",
+      "artifact_type": "official_social_marketing",
+      "page_url": "https://www.sina.cn/news/detail/5333988803872172.html",
+      "image_url": "https://wx4.sinaimg.cn/large/008IQyHMly1iga93aliqbj30u0140wnw.jpg",
+      "dimensions": "1080x1440",
+      "sha256_16": "2514ecfc633ab64c",
+      "evidence_grade": "A2",
+      "visual_analysis": "品牌与H3/多媒体拼贴，含小型产品视觉但不是可读UI。"
+    },
+    {
+      "id": "mm-18",
+      "file": "18_official_design_v3_overview_b.jpg",
+      "title": "v3定位：Agent、多场景、本地工作流",
+      "artifact_type": "official_social_marketing",
+      "page_url": "https://www.sina.cn/news/detail/5333988803872172.html",
+      "image_url": "https://wx1.sinaimg.cn/large/008IQyHMly1iga93akygmj30u014010p.jpg",
+      "dimensions": "1080x1440",
+      "sha256_16": "c70ddcc1abc6ae41",
+      "evidence_grade": "A2",
+      "visual_analysis": "明确三项产品主张：Agent全程带领、广告/电商/品牌/投流/后期等多场景、支持本地资产/本地部署/API；不提供控件证据。"
+    },
+    {
+      "id": "mm-19",
+      "file": "19_appsso_sample_motion_graphic.jpg",
+      "title": "实测文章生成样片：动态视觉",
+      "artifact_type": "hands_on_output_frame",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx2.sinaimg.cn/mw1024/61e9ece0gy1iga3zl6pwxj20zh0k0tdw.jpg",
+      "dimensions": "1024x577",
+      "sha256_16": "2bf129e888c8c099",
+      "evidence_grade": "B1",
+      "visual_analysis": "生成结果帧，不是UI；只能证明文章展示了该风格结果，不能证明长期稳定质量。"
+    },
+    {
+      "id": "mm-20",
+      "file": "20_appsso_sample_chinese_wonderland.jpg",
+      "title": "实测文章样片：中国仙境",
+      "artifact_type": "hands_on_output_frame",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx4.sinaimg.cn/mw1024/61e9ece0ly4iga3ybn260j215m0n0qll.jpg",
+      "dimensions": "1024x566",
+      "sha256_16": "f1a5b6ba59f0b83d",
+      "evidence_grade": "B1",
+      "visual_analysis": "样片画面，不含流程信息。"
+    },
+    {
+      "id": "mm-21",
+      "file": "21_appsso_workspace_h3_playground.jpg",
+      "title": "H3 Playground/开始创作工作区",
+      "artifact_type": "hands_on_product_ui",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx3.sinaimg.cn/mw1024/61e9ece0ly4iga3ybmfagj21g30u0nd2.jpg",
+      "dimensions": "1024x590",
+      "sha256_16": "73424f575fd74978",
+      "evidence_grade": "B1",
+      "visual_analysis": {
+        "regions": "左侧全局图标栏；中央为按主题分组的H3案例/起始模板和空生成卡；右侧为新建对话、推荐任务与输入框。",
+        "menus_controls": "画布底部新增/选择/文件夹/帮助；右输入框含模型、Skill、自动模式；右上对话与面板控制。",
+        "operation_chain": "选示例或在Agent输入→自动建项目/画布→生成节点。",
+        "ux_strengths": "模板降低空白页焦虑；对话与模板两种起步方式并存。",
+        "ux_risks": "项目级与示例级信息混在一个大画布；连续剧集缺少显式集数导航。"
+      }
+    },
+    {
+      "id": "mm-22",
+      "file": "22_appsso_3d_director_empty_workspace.jpg",
+      "title": "3D导演台空场景与属性面板",
+      "artifact_type": "hands_on_product_ui",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx1.sinaimg.cn/mw1024/61e9ece0ly4iga3ybf60qj21g30u0the.jpg",
+      "dimensions": "1024x590",
+      "sha256_16": "77a84cfebbf8add4",
+      "evidence_grade": "B1",
+      "visual_analysis": {
+        "regions": "左侧约170px主导航/项目列表；中左3D视窗；中右属性检查器；最右导演台Agent；底部时间轴区域。",
+        "menus_controls": "导演视角/机位视角切换；导出图片、导出运镜视频、退出编辑；缩放/平移/旋转、天空色、背景图、全景/平面、地面/网格/角色标签等设置。",
+        "operation_chain": "从画布添加导演台节点→用自然语言或手工摆场→切机位/调场景→导出静态分镜参考或运镜视频。",
+        "ux_strengths": "专业参数和自然语言Agent并列，兼顾新手与精调；编辑器用独立模式避免主画布拥挤。",
+        "ux_risks": "横向四栏非常宽；角色身份资产、真实材质、三视图和最终角色一致性未在该图证明。"
+      }
+    },
+    {
+      "id": "mm-23",
+      "file": "23_appsso_skill_marketplace.jpg",
+      "title": "Skill广场",
+      "artifact_type": "hands_on_product_ui",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx3.sinaimg.cn/mw1024/61e9ece0ly4iga3ycga5fj21g30u07wh.jpg",
+      "dimensions": "1024x590",
+      "sha256_16": "35e4a8e3ef65b621",
+      "evidence_grade": "B1",
+      "visual_analysis": {
+        "regions": "全宽卡片网格；顶部分“Skill/我的Skill”、分类筛选与搜索；右上安装Skill/通过Design创建。",
+        "menus_controls": "全部、精选、短剧漫剧、专业影视、动画、商业广告、电商、教育、创意实验、音频音乐、平台工具；卡片含封面、说明、官方认证和使用量。",
+        "operation_chain": "按场景筛选/搜索→查看说明→安装→在项目Agent或输入框调用。",
+        "ux_strengths": "把方法论包装为版本化、可安装资产；适合标准化团队SOP。",
+        "ux_risks": "Skill质量、依赖模型、参数透明度和升级兼容需要治理；卡片下载量不等于输出质量。"
+      }
+    },
+    {
+      "id": "mm-24",
+      "file": "24_appsso_sample_director_grassland.jpg",
+      "title": "3D导演台搭景样片",
+      "artifact_type": "hands_on_output_frame",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx2.sinaimg.cn/mw1024/61e9ece0ly4iga3ybuv2nj215q0n84ly.jpg",
+      "dimensions": "1024x570",
+      "sha256_16": "91d9ce92e7fa4537",
+      "evidence_grade": "B1",
+      "visual_analysis": "草原、河流和两名素体的导演台预演输出；不是最终角色画面或UI。"
+    },
+    {
+      "id": "mm-25",
+      "file": "25_appsso_agent_brief_approval_gate.jpg",
+      "title": "Agent生成Brief与审核门",
+      "artifact_type": "hands_on_product_ui",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx1.sinaimg.cn/mw1024/61e9ece0ly4iga3ybg53kj21g30u0ws9.jpg",
+      "dimensions": "1024x590",
+      "sha256_16": "8fedb1f0c0c1a49d",
+      "evidence_grade": "B1",
+      "visual_analysis": {
+        "regions": "左项目树；中央打开的Brief.md文档节点；右侧Agent逐步解释并显示“1处修改待确认”。",
+        "menus_controls": "已添加文本、问题确认、修改/取消、模型/Skill/自动模式。",
+        "operation_chain": "用户给目标→Agent选择Skill并生成可编辑Brief→关键修改等待人工确认→继续执行。",
+        "ux_strengths": "把计划从聊天变为可审文档；审批是显式状态而非聊天口头确认。",
+        "ux_risks": "长文档和长对话并排占宽；缺少字段化版本差异时，审核大文档仍费时。"
+      }
+    },
+    {
+      "id": "mm-26",
+      "file": "26_appsso_add_node_menu.jpg",
+      "title": "画布新增节点菜单",
+      "artifact_type": "hands_on_product_ui_crop",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx4.sinaimg.cn/mw1024/61e9ece0ly4iga3yb06lbj20q80s8q4e.jpg",
+      "dimensions": "944x1016",
+      "sha256_16": "6014ca5991046416",
+      "evidence_grade": "B1",
+      "visual_analysis": {
+        "regions": "画布左下“+”触发的单层浮层菜单。",
+        "menus_controls": "文本、表格、图片、视频（MiniMax H3）、音频、3D导演台（新）、视频剪辑（新）、ComfyUI工作流（新，含子菜单）。",
+        "operation_chain": "在任意画布位置新增不同媒介或专业编辑器节点。",
+        "ux_strengths": "节点入口集中且符合对象类型；高级能力渐进披露，不塞进主页面。",
+        "ux_risks": "缺少剧集/场次/角色等垂直对象；当类型增多需搜索、最近使用和权限控制。"
+      }
+    },
+    {
+      "id": "mm-27",
+      "file": "27_appsso_product_ad_node_generation.jpg",
+      "title": "产品广告画布、节点工具条与生图卡",
+      "artifact_type": "hands_on_product_ui",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx3.sinaimg.cn/mw1024/61e9ece0ly4iga3ybujrqj21g30u04he.jpg",
+      "dimensions": "1024x590",
+      "sha256_16": "69f97718ec2bd074",
+      "evidence_grade": "B1",
+      "visual_analysis": {
+        "regions": "中央图节点和连接线；选中节点上方悬浮上下文工具条；下方生成参数卡；右侧Agent执行记录。",
+        "menus_controls": "裁剪、高清、涂抹/重绘、更多、存为资产等；生成卡可输入提示词/参考图，选择GPT Image 2、16:9、2K、数量并显示约200积分成本。",
+        "operation_chain": "选中任一素材→局部编辑或创建下游生成卡→手动选模型/规格/数量→批准生成→Agent继续串联。",
+        "ux_strengths": "模型与成本就地可见；上下文工具条减少全局工具栏拥挤；原料与结果用线保留溯源。",
+        "ux_risks": "连接线多时遮挡；工具条图标依赖学习；参数卡浮在画布上会覆盖相邻节点。"
+      }
+    },
+    {
+      "id": "mm-28",
+      "file": "28_appsso_3d_director_timeline_scene.jpg",
+      "title": "3D导演台多人调度与时间轴",
+      "artifact_type": "hands_on_product_ui",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx4.sinaimg.cn/mw1024/61e9ece0ly4iga3ybr08dj21bu0u0k1y.jpg",
+      "dimensions": "1024x642",
+      "sha256_16": "a4a62a21897e1bc5",
+      "evidence_grade": "B1",
+      "visual_analysis": {
+        "regions": "左侧项目树；中部彩色素体、地形、轨迹和标注；中右场景属性；最右Agent；底部多轨时间线。",
+        "menus_controls": "角色/相机/场景工具、缩放、添加路径、自动运镜、手机运镜、导出运镜视频；各角色/镜头以独立轨道和时长块呈现。",
+        "operation_chain": "Agent读自然语言分镜→创建角色和环境→手动/对话迭代位置、姿势、动作和相机→在时间线上校时→导出预演。",
+        "ux_strengths": "把构图、运动和时间统一；标签/轨迹让抽象指令可视化。",
+        "ux_risks": "素体级预演到最终生成之间仍有身份/造型/物理偏差；多角色多轨后需要分组、折叠和冲突检查。"
+      }
+    },
+    {
+      "id": "mm-29",
+      "file": "29_appsso_sample_motion_record.jpg",
+      "title": "音乐视觉样片",
+      "artifact_type": "hands_on_output_frame",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx4.sinaimg.cn/mw1024/61e9ece0ly4iga3ybhn84j215g0my7g3.jpg",
+      "dimensions": "1024x567",
+      "sha256_16": "c4e594d8b6146ec9",
+      "evidence_grade": "B1",
+      "visual_analysis": "最终样片帧，不含UI。"
+    },
+    {
+      "id": "mm-30",
+      "file": "30_appsso_sample_short_drama.jpg",
+      "title": "短剧情样片",
+      "artifact_type": "hands_on_output_frame",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx3.sinaimg.cn/mw1024/61e9ece0ly4iga3ybgls8j215u0nae1t.jpg",
+      "dimensions": "1024x570",
+      "sha256_16": "19c247ddbd9741cf",
+      "evidence_grade": "B1",
+      "visual_analysis": "短剧情样片帧，不证明连续多集角色一致性。"
+    },
+    {
+      "id": "mm-31",
+      "file": "31_appsso_mv_parallel_canvas_workflow.jpg",
+      "title": "一分钟MV的并行画布工作流",
+      "artifact_type": "hands_on_product_ui",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx3.sinaimg.cn/mw1024/61e9ece0ly4iga3ybwt7cj21g30u07i6.jpg",
+      "dimensions": "1024x590",
+      "sha256_16": "8cb2d00ae3d97968",
+      "evidence_grade": "B1",
+      "visual_analysis": {
+        "regions": "画布缩放到18%，多个灰色分组容器沿左上至右下排列，包含歌词/音乐、分镜静帧、视频镜头和重做版本；右侧Agent记录拆分及合并。",
+        "menus_controls": "节点连线、分组、缩放、小地图、Agent任务状态。",
+        "operation_chain": "生成音乐与视觉方向→拆为4个约15秒镜头→并行生成→重做部分镜头→合并60秒MV。",
+        "ux_strengths": "复杂流程全过程可见，分支/重做不覆盖旧结果；适合并行。",
+        "ux_risks": "18%缩放时节点内容不可读，关系线形成“面条图”；需要结构化导航、自动布局、折叠和依赖筛选。"
+      }
+    },
+    {
+      "id": "mm-32",
+      "file": "32_appsso_sample_paper_collage_story.jpg",
+      "title": "纸拼贴剧情样片",
+      "artifact_type": "hands_on_output_frame",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx4.sinaimg.cn/mw1024/61e9ece0ly4iga3ybp569j215m0ncqv5.jpg",
+      "dimensions": "1024x574",
+      "sha256_16": "b743f9c285946b72",
+      "evidence_grade": "B1",
+      "visual_analysis": "风格样片，不含UI。"
+    },
+    {
+      "id": "mm-33",
+      "file": "33_appsso_sample_paper_collage_explainer.jpg",
+      "title": "纸拼贴科普样片",
+      "artifact_type": "hands_on_output_frame",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx2.sinaimg.cn/mw1024/61e9ece0ly4iga3yb8fgsj215e0myqfv.jpg",
+      "dimensions": "1024x568",
+      "sha256_16": "2911cfde02a9e56c",
+      "evidence_grade": "B1",
+      "visual_analysis": "同一风格扩展到新主题的样片证据，不是复用Skill的UI证据。"
+    },
+    {
+      "id": "mm-34",
+      "file": "34_appsso_h3_video_generation_node.jpg",
+      "title": "H3视频生成节点、参考图与参数卡",
+      "artifact_type": "hands_on_product_ui",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx1.sinaimg.cn/mw1024/61e9ece0ly4iga3ybu3asj21g30u0kha.jpg",
+      "dimensions": "1024x590",
+      "sha256_16": "2ca68cf0c4027193",
+      "evidence_grade": "B1",
+      "visual_analysis": {
+        "regions": "左侧分镜图集合与文档；中部视频结果链；前景为生成参数卡。",
+        "menus_controls": "选中视频节点工具条含剪辑、音频分离、存为资产等；生成卡含参考图、提示词、MiniMax H3、全能参考、16:9、2K、4s、x1和约480积分。",
+        "operation_chain": "从已批准分镜选参考图→配置模型/模式/时长/分辨率→确认积分→生成视频→进入剪辑或音频分离。",
+        "ux_strengths": "输入引用、模型参数、成本和输出在局部闭环；非常适合“抽卡—比较—保留”。",
+        "ux_risks": "截图未显示seed、失败重试、变体对比、批量继承参数或首尾帧专用控件。"
+      }
+    },
+    {
+      "id": "mm-35",
+      "file": "35_appsso_sample_animation_explainer.jpg",
+      "title": "动画科普样片",
+      "artifact_type": "hands_on_output_frame",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx4.sinaimg.cn/mw1024/61e9ece0ly4iga3yb6ejxj215q0nc7he.jpg",
+      "dimensions": "1024x573",
+      "sha256_16": "d2c0e69392575c7a",
+      "evidence_grade": "B1",
+      "visual_analysis": "轻科普成片帧，不含UI。"
+    },
+    {
+      "id": "mm-36",
+      "file": "36_appsso_sample_ink_video.jpg",
+      "title": "水墨课程样片",
+      "artifact_type": "hands_on_output_frame",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx4.sinaimg.cn/mw1024/61e9ece0ly4iga3ybzyznj215m0n2nno.jpg",
+      "dimensions": "1024x567",
+      "sha256_16": "def01f73f139f917",
+      "evidence_grade": "B1",
+      "visual_analysis": "由课程/PPT延展的样片帧，不含UI。"
+    },
+    {
+      "id": "mm-37",
+      "file": "37_appsso_course_video_grid.jpg",
+      "title": "课程文本与批量视频网格",
+      "artifact_type": "hands_on_product_ui",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx4.sinaimg.cn/mw1024/61e9ece0ly4iga3ybvzguj21g30u0hdt.jpg",
+      "dimensions": "1024x590",
+      "sha256_16": "bf20face9f4b9155",
+      "evidence_grade": "B1",
+      "visual_analysis": {
+        "regions": "左侧长文本/提示文档；右侧3列视频节点网格，每节点显示文件名与约16秒时长。",
+        "operation_chain": "长文本拆段→批量生成多镜头→在同画布按网格审片。",
+        "ux_strengths": "批量结果同屏便于覆盖检查。",
+        "ux_risks": "缺少显式完成/失败/成本汇总和表格化筛选；仅凭视觉网格难管理数百镜头。"
+      }
+    },
+    {
+      "id": "mm-38",
+      "file": "38_appsso_product_ad_graph_workflow.jpg",
+      "title": "产品广告多分支工作流与生成待确认",
+      "artifact_type": "hands_on_product_ui",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx2.sinaimg.cn/mw1024/61e9ece0ly4iga3ybrk95j21g30u0att.jpg",
+      "dimensions": "1024x590",
+      "sha256_16": "f0eb1cc72a1c48b0",
+      "evidence_grade": "B1",
+      "visual_analysis": {
+        "regions": "中央产品图、文案图、广告构图与多个输出节点形成放射状关系；右Agent并排显示多条生成请求。",
+        "menus_controls": "General Image 2、16:9、2K、参考图缩略条、1/3变体，以及“生成状态待确认”。",
+        "operation_chain": "导入产品多视图→Agent规划多卖点/构图→创建多条待确认生成→并行出图→选中结果继续视频化。",
+        "ux_strengths": "多版本生产与成本审批有可见边界；输入和每个交付物可追溯。",
+        "ux_risks": "放射连线很快拥挤；批量审批需要全选、预算上限和策略化免审，否则右栏产生确认洪泛。"
+      }
+    },
+    {
+      "id": "mm-39",
+      "file": "39_appsso_sample_product_video_a.jpg",
+      "title": "产品广告样片A",
+      "artifact_type": "hands_on_output_frame",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx2.sinaimg.cn/mw1024/61e9ece0ly4iga3yb7kdkj215u0n60x3.jpg",
+      "dimensions": "1024x567",
+      "sha256_16": "f82bacafd83598c8",
+      "evidence_grade": "B1",
+      "visual_analysis": "产品样片，不含UI。"
+    },
+    {
+      "id": "mm-40",
+      "file": "40_appsso_sample_product_video_b.jpg",
+      "title": "产品广告样片B",
+      "artifact_type": "hands_on_output_frame",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx3.sinaimg.cn/mw1024/61e9ece0ly4iga3ybjr7sj215q0n41h9.jpg",
+      "dimensions": "1024x567",
+      "sha256_16": "0a6520e737f207b2",
+      "evidence_grade": "B1",
+      "visual_analysis": "产品样片，不含UI。"
+    },
+    {
+      "id": "mm-41",
+      "file": "41_appsso_video_editor_timeline.jpg",
+      "title": "内置视频编辑器与剪辑Agent",
+      "artifact_type": "hands_on_product_ui",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx2.sinaimg.cn/mw1024/61e9ece0ly4iga3ybf3ujj21g30u0qk6.jpg",
+      "dimensions": "1024x590",
+      "sha256_16": "2dda4241820b814e",
+      "evidence_grade": "B1",
+      "visual_analysis": {
+        "regions": "左素材库，中间播放器，下方多轨时间线，右侧剪辑Agent；顶部导出与退出编辑。",
+        "menus_controls": "媒体、文字、图形、效果、转场；搜索/上传素材；播放、缩放、画幅；时间线工具、字幕；右侧音乐卡点/播客工作室/声音设计/纪录片等Skill。",
+        "operation_chain": "将画布视频送入编辑器→裁切/重排→字幕/转场/效果/声音→Agent协助→导出或退回画布。",
+        "ux_strengths": "编辑器遵循主流NLE心智模型；Agent保留在右侧而不取代手工时间线。",
+        "ux_risks": "截图只显示单视频轨；复杂音频混音、关键帧、调色、字幕批量校正、工程兼容需另验。"
+      }
+    },
+    {
+      "id": "mm-42",
+      "file": "42_appsso_skill_workflow_agent_panel.jpg",
+      "title": "Skill工作流、批量静帧与Agent审阅",
+      "artifact_type": "hands_on_product_ui",
+      "page_url": "https://weibo.com/ttarticle/p/show?id=2309405333942990667840",
+      "image_url": "https://wx1.sinaimg.cn/mw1024/61e9ece0ly4iga3ybm22kj21g30u0qi1.jpg",
+      "dimensions": "1024x590",
+      "sha256_16": "f8c458caed77ceb2",
+      "evidence_grade": "B1",
+      "visual_analysis": {
+        "regions": "左/中画布上是脚本、关键帧和视频列；右Agent说明已生成5张图、列出文件并等待确认。",
+        "menus_controls": "节点“文本编辑/存为资产”等上下文动作；右侧确认按钮、文件清单与继续输入。",
+        "operation_chain": "Skill生成脚本和关键帧→批量静帧审阅→确认后批量动画化→继续合成。",
+        "ux_strengths": "审阅门落在昂贵视频生成前；文件清单提供最小可审计性。",
+        "ux_risks": "缺少缩略图对比评分、批量驳回原因和镜头表字段；对剧集规模仍需要结构化任务中心。"
+      }
+    }
+  ],
+  "non_evidence_supporting_files": {
+    "files": [
+      "02_official_step_agent_mode_background.webp",
+      "03_official_step_canvas_flow_background.webp",
+      "04_official_step_skill_ready_background.webp",
+      "05_official_step_local_index_background.webp",
+      "06_official_step_output_sync_background.webp"
+    ],
+    "directories": ["psd-06/", "psd-07/", "psd-08/", "psd-09/", "psd-10/"],
+    "source_pattern": "https://filecdn.minimax.chat/minimax-hub-landing-page/landing-refresh-20260729/psd-parallax/{directory}/layer-*.webp",
+    "note": "这些是官网视差营销插画的空背景/分层素材，不是产品UI证据；保留仅为复核07-11本地合成图。"
+  },
+  "contact_sheets": [
+    "contact_sheet_real_ui.jpg",
+    "contact_sheet_supporting_marketing.jpg",
+    "contact_sheet_generated_outputs.jpg"
+  ],
+  "thumbnails_directory": "thumbs/"
+}

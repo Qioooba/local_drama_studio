@@ -1,0 +1,23 @@
+.story-workspace { scroll-behavior: smooth; }
+.story-header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.story-stage-nav { display: none; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 16px 0; }
+.story-stage-nav button { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 9px; align-items: center; min-width: 0; min-height: 48px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-raised); color: inherit; text-align: left; }
+.story-stage-nav button.active-stage { border-color: var(--creative, var(--accent)); background: color-mix(in srgb, var(--creative, var(--accent)) 10%, var(--surface-raised)); }
+.story-stage-nav button > span,
+.story-stage-heading > span { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--button-foreground, #fff); font-weight: 700; }
+.story-stage-nav small { grid-column: 2; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.story-main-stage { min-width: 0; }
+.story-stage-section { min-width: 0; margin: 0; padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.story-stage-heading { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 14px; }
+.story-stage-heading h3,
+.story-stage-heading p { margin: 0; }
+.story-stage-heading p { margin-top: 4px; color: var(--muted); }
+.story-inspector-content { display: grid; gap: 14px; font-size: 13px; }
+.story-inspector-label { display: block; margin-bottom: 4px; color: var(--text-muted, var(--muted)); }
+.story-inspector-value { font-size: 14px; font-weight: 700; }
+.story-inspector-section { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
+.story-inspector-list { display: grid; gap: 6px; margin: 0; padding-left: 18px; }
+.story-inspector-links a { color: var(--creative, var(--accent)); text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 960px) { .story-stage-nav { display: grid; } }
+@media (max-width: 700px) { .story-stage-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .story-stage-nav { grid-template-columns: 1fr; } .story-stage-section { padding: 12px; } }

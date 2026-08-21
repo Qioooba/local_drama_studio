@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { archiveStoryAsset, createStoryAsset, listStoryAssets, type StoryAsset } from "../../generated/api";
+import { MediaPicker } from "../media-picker/MediaPicker";
 
 const tabs = [
   { kind: "CHARACTER", label: "角色" },
@@ -53,11 +54,14 @@ export function StoryAssetLibraryPanel({ projectId }: { projectId: string }) {
     </div>
     <details className="story-asset-create"><summary>新建{kindLabels[tab]}资产卡</summary>
       <div className="story-asset-create-grid">
-        <label>Code<input value={code} onChange={(event) => setCode(event.target.value)} placeholder="CHAR_MOTHER" /></label>
+        <label>代码<input value={code} onChange={(event) => setCode(event.target.value)} placeholder="CHAR_MOTHER" /></label>
         <label>名称<input value={name} onChange={(event) => setName(event.target.value)} /></label>
         <label>描述<input value={description} onChange={(event) => setDescription(event.target.value)} /></label>
-        <label>canonical 媒体版本 ID<input value={canonicalMediaVersionId} onChange={(event) => setCanonicalMediaVersionId(event.target.value)} placeholder="粘贴媒体版本 ID（须属于当前项目）" /></label>
-        <button className="primary-action" disabled={!createValid || create.isPending} onClick={() => create.mutate()}>{create.isPending ? "创建中…" : `创建${kindLabels[tab]}资产卡`}</button>
+        <div className="wide">
+          <MediaPicker projectId={projectId} value={canonicalMediaVersionId} onChange={setCanonicalMediaVersionId} disabled={create.isPending} label={`${kindLabels[tab]}主参考选择器`} />
+          <p className="muted">可选。主参考固定到所选的不可变图片版本；普通流程无需复制版本标识。</p>
+        </div>
+        <button type="button" className="primary-action" disabled={!createValid || create.isPending} onClick={() => create.mutate()}>{create.isPending ? "创建中…" : `创建${kindLabels[tab]}资产卡`}</button>
       </div>
     </details>
     {(formError || assets.error) && <p className="inline-error" role="alert">{String(formError ?? assets.error)}</p>}

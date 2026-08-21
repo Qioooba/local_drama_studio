@@ -1,0 +1,2096 @@
+{
+  "started_at": "2026-08-21T13:53:51.667Z",
+  "base_url": "http://127.0.0.1:5173",
+  "total_buttons_tested": 26,
+  "total_inputs_tested": 0,
+  "total_selects_tested": 26,
+  "total_screenshots_taken": 116,
+  "routes_audited": [
+    {
+      "route_id": "01_projects",
+      "name": "项目列表 (Projects)",
+      "url": "/projects",
+      "visited_at": "2026-08-21T13:53:51.669Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "01_projects_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "01_projects_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "01_projects_scroll_2.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "01_projects_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        },
+        {
+          "select_index": 1,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select>…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 900,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "02_models",
+      "name": "全局模型管理 (Models)",
+      "url": "/models",
+      "visited_at": "2026-08-21T13:53:56.215Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "02_models_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "02_models_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "02_models_scroll_2.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "02_models_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 1190,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "03_jobs",
+      "name": "全局任务与队列 (Jobs)",
+      "url": "/jobs",
+      "visited_at": "2026-08-21T13:54:00.537Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "03_jobs_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "03_jobs_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "03_jobs_scroll_2.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 1200,
+          "file": "03_jobs_scroll_3.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "03_jobs_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        },
+        {
+          "select_index": 1,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select aria-label=\"任务项目范围\">…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 1548,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "04_diagnostics",
+      "name": "全局诊断与审计 (Diagnostics)",
+      "url": "/diagnostics",
+      "visited_at": "2026-08-21T13:54:05.838Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "04_diagnostics_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "04_diagnostics_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "04_diagnostics_scroll_2.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "04_diagnostics_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 981,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "05_project_home",
+      "name": "项目总览看板 (ProjectHome)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+      "visited_at": "2026-08-21T13:54:10.104Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "05_project_home_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "05_project_home_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "05_project_home_scroll_2.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "05_project_home_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 1086,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "06_story_workspace",
+      "name": "故事工作区 (Story)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/story",
+      "visited_at": "2026-08-21T13:54:14.786Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "06_story_workspace_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "06_story_workspace_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "06_story_workspace_scroll_2.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "06_story_workspace_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        },
+        {
+          "select_index": 1,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select>…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 1110,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "07_asset_bible",
+      "name": "资产圣经 (AssetBible)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/assets",
+      "visited_at": "2026-08-21T13:54:19.134Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "07_asset_bible_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "07_asset_bible_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "07_asset_bible_scroll_2.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "07_asset_bible_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 900,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "08_qc_policies",
+      "name": "质检策略 (QCPolicies)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/qc-policies",
+      "visited_at": "2026-08-21T13:54:23.289Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "08_qc_policies_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "08_qc_policies_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "08_qc_policies_scroll_2.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 1200,
+          "file": "08_qc_policies_scroll_3.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "08_qc_policies_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        },
+        {
+          "select_index": 1,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select>…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        },
+        {
+          "select_index": 2,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select>…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        },
+        {
+          "select_index": 3,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select>…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 1676,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "09_director_recipes",
+      "name": "导演配方 (DirectorRecipes)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/director-recipes",
+      "visited_at": "2026-08-21T13:54:28.107Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "09_director_recipes_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "09_director_recipes_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "09_director_recipes_scroll_2.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 1200,
+          "file": "09_director_recipes_scroll_3.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "09_director_recipes_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        },
+        {
+          "select_index": 1,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select>…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        },
+        {
+          "select_index": 2,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select>…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        },
+        {
+          "select_index": 3,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select>…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        },
+        {
+          "select_index": 4,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select>…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        },
+        {
+          "select_index": 5,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select>…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        },
+        {
+          "select_index": 6,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select>…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 1477,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "10_production_settings",
+      "name": "生产设置 (ProductionSettings)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/production-settings",
+      "visited_at": "2026-08-21T13:54:32.765Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "10_production_settings_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "10_production_settings_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "10_production_settings_scroll_2.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 1200,
+          "file": "10_production_settings_scroll_3.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "10_production_settings_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 1308,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "11_project_models",
+      "name": "项目模型视图 (ProjectModels)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/models",
+      "visited_at": "2026-08-21T13:54:37.944Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "11_project_models_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "11_project_models_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "11_project_models_scroll_2.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "11_project_models_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 1190,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "12_project_jobs",
+      "name": "项目任务视图 (ProjectJobs)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/jobs",
+      "visited_at": "2026-08-21T13:54:42.267Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "12_project_jobs_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "12_project_jobs_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "12_project_jobs_scroll_2.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 1200,
+          "file": "12_project_jobs_scroll_3.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "12_project_jobs_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        },
+        {
+          "select_index": 1,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select aria-label=\"任务项目范围\">…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 1548,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "13_project_diagnostics",
+      "name": "项目诊断视图 (ProjectDiagnostics)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/diagnostics",
+      "visited_at": "2026-08-21T13:54:47.640Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "13_project_diagnostics_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "13_project_diagnostics_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "13_project_diagnostics_scroll_2.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "13_project_diagnostics_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 981,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "14_media_lab",
+      "name": "媒体实验台 (MediaLab)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/lab",
+      "visited_at": "2026-08-21T13:54:51.843Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "14_media_lab_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "14_media_lab_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "14_media_lab_scroll_2.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "14_media_lab_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 900,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "15_canvas",
+      "name": "高级节点画布 (Canvas)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/canvas",
+      "visited_at": "2026-08-21T13:54:56.009Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "15_canvas_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "15_canvas_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "15_canvas_scroll_2.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 1200,
+          "file": "15_canvas_scroll_3.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "15_canvas_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        },
+        {
+          "select_index": 1,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select aria-label=\"当前分集\">…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 1499,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "16_project_operations",
+      "name": "项目运维与包迁移 (Operations)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/operations",
+      "visited_at": "2026-08-21T13:55:01.420Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "16_project_operations_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "16_project_operations_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "16_project_operations_scroll_2.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "16_project_operations_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 900,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "17_episode_plan",
+      "name": "分集策划台 (EpisodePlan)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/plan",
+      "visited_at": "2026-08-21T13:55:05.586Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "17_episode_plan_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "17_episode_plan_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "17_episode_plan_scroll_2.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 1200,
+          "file": "17_episode_plan_scroll_3.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "17_episode_plan_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 1291,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "18_director_desk",
+      "name": "导演工作台 (DirectorDesk)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/direct",
+      "visited_at": "2026-08-21T13:55:10.334Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "18_director_desk_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "18_director_desk_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "18_director_desk_scroll_2.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "18_director_desk_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 900,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "19_director_desk_shot",
+      "name": "导演工作台指定镜头 (DirectorDesk-Shot)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/direct/020f9248-14b7-4f92-9edd-ee587ffdedf3",
+      "visited_at": "2026-08-21T13:55:14.509Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "19_director_desk_shot_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "19_director_desk_shot_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "19_director_desk_shot_scroll_2.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "19_director_desk_shot_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        },
+        {
+          "select_index": 1,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select>…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        },
+        {
+          "select_index": 2,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select>…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 928,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "20_generation_workbench",
+      "name": "生成工作台 (GenerationWorkbench)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/generation",
+      "visited_at": "2026-08-21T13:55:19.704Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "20_generation_workbench_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "20_generation_workbench_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "20_generation_workbench_scroll_2.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "20_generation_workbench_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        },
+        {
+          "select_index": 1,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select id=\"generation-shot\">…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        },
+        {
+          "select_index": 2,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select disabled id=\"generation-profile\">…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 1036,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "21_generation_workbench_shot",
+      "name": "生成工作台指定镜头 (GenerationWorkbench-Shot)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/generation/020f9248-14b7-4f92-9edd-ee587ffdedf3",
+      "visited_at": "2026-08-21T13:55:24.048Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "21_generation_workbench_shot_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "21_generation_workbench_shot_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "21_generation_workbench_shot_scroll_2.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "21_generation_workbench_shot_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        },
+        {
+          "select_index": 1,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select id=\"generation-shot\">…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        },
+        {
+          "select_index": 2,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select disabled id=\"generation-profile\">…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 1036,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "22_episode_review",
+      "name": "审核中心 (EpisodeReview)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/review",
+      "visited_at": "2026-08-21T13:55:28.389Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "22_episode_review_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "22_episode_review_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "22_episode_review_scroll_2.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 1200,
+          "file": "22_episode_review_scroll_3.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 1800,
+          "file": "22_episode_review_scroll_4.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 2400,
+          "file": "22_episode_review_scroll_5.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "22_episode_review_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        },
+        {
+          "select_index": 1,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select>…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        },
+        {
+          "select_index": 2,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select>…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        },
+        {
+          "select_index": 3,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select aria-label=\"项目筛选\">…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        },
+        {
+          "select_index": 4,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select aria-label=\"集筛选\">…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        },
+        {
+          "select_index": 5,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select aria-label=\"年龄筛选\">…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        },
+        {
+          "select_index": 6,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select aria-label=\"优先级筛选\">…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        },
+        {
+          "select_index": 7,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select aria-label=\"阻塞筛选\">…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        },
+        {
+          "select_index": 8,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select>…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        },
+        {
+          "select_index": 9,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select aria-label=\"播放倍速\">…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        },
+        {
+          "select_index": 10,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select id=\"review-decision\">…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 2744,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "23_audio_workspace",
+      "name": "声音工作区 (Audio)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/audio",
+      "visited_at": "2026-08-21T13:55:34.577Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "23_audio_workspace_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "23_audio_workspace_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "23_audio_workspace_scroll_2.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 1200,
+          "file": "23_audio_workspace_scroll_3.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "23_audio_workspace_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        },
+        {
+          "select_index": 1,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select aria-label=\"角色资产\">…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        },
+        {
+          "select_index": 2,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select aria-label=\"音色版本\">…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 1226,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "24_timeline_workspace",
+      "name": "时间线工作区 (Timeline)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/timeline",
+      "visited_at": "2026-08-21T13:55:39.254Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "24_timeline_workspace_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "24_timeline_workspace_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "24_timeline_workspace_scroll_2.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "24_timeline_workspace_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        },
+        {
+          "select_index": 1,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select>…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 900,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "25_delivery_workspace",
+      "name": "交付工作区 (Delivery)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/delivery",
+      "visited_at": "2026-08-21T13:55:43.434Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "25_delivery_workspace_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "25_delivery_workspace_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "25_delivery_workspace_scroll_2.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "25_delivery_workspace_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        },
+        {
+          "select_index": 1,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select>…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 900,
+        "clientHeight": 900
+      },
+      "issues": []
+    },
+    {
+      "route_id": "26_episode_run",
+      "name": "生产运行工作区 (EpisodeRun)",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/run",
+      "visited_at": "2026-08-21T13:55:47.622Z",
+      "screenshots": [
+        {
+          "type": "full_page",
+          "file": "26_episode_run_full.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 0,
+          "file": "26_episode_run_scroll_1.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 600,
+          "file": "26_episode_run_scroll_2.png"
+        },
+        {
+          "type": "scroll_view",
+          "scroll_y": 1200,
+          "file": "26_episode_run_scroll_3.png"
+        },
+        {
+          "type": "modal_open",
+          "trigger": "搜索命令与实体 Ctrl K",
+          "file": "26_episode_run_btn_open_0_%E6%90%9C%E7%B4%A2%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%AE%9E%E4%BD%93%20Ctrl%20K.png"
+        }
+      ],
+      "buttons_tested": [
+        {
+          "text": "搜索命令与实体 Ctrl K",
+          "status": "CLICK_VERIFIED",
+          "opened_modal": true
+        }
+      ],
+      "inputs_tested": [
+        {
+          "input_index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects_tested": [
+        {
+          "select_index": 0,
+          "options_count": 4,
+          "options": [
+            "所有项目",
+            "director_pydantic",
+            "G2 smoke 2",
+            "G2 smoke"
+          ],
+          "final_value": "20f0ab54-cbfc-4577-96b0-10ce5ef797f0",
+          "status": "ALL_OPTIONS_TESTED"
+        },
+        {
+          "select_index": 1,
+          "error": "elementHandle.isDisabled: Element is not attached to the DOM\nCall log:\n\u001b[2m  - waiting for locator(':scope')\u001b[22m\n\u001b[2m    - locator resolved to <select aria-label=\"人工确认节点\">…</select>\u001b[22m\n",
+          "status": "SELECT_ERROR"
+        }
+      ],
+      "drawers_dialogs_tested": [
+        {
+          "trigger": "搜索命令与实体 Ctrl K",
+          "open_detected": true
+        }
+      ],
+      "layout_metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowPx": 0,
+        "scrollHeight": 1411,
+        "clientHeight": 900
+      },
+      "issues": []
+    }
+  ],
+  "defects_found": [],
+  "finished_at": "2026-08-21T13:55:52.344Z",
+  "console_errors": [],
+  "page_errors": [],
+  "failed_network_requests": []
+}

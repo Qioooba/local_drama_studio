@@ -8,9 +8,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from .api.routes.adapters import router as adapters_router
+from .api.routes.asset_bible import router as asset_bible_router
+from .api.routes.asset_proposals import router as asset_proposals_router
+from .api.routes.character_identity_packs import router as character_identity_packs_router
 from .api.routes.audit import router as audit_router
 from .api.routes.automation import router as automation_router
 from .api.routes.automation_workflows import router as automation_workflows_router
+from .api.routes.beat_replan import router as beat_replan_router
 from .api.routes.canvas import router as canvas_router
 from .api.routes.capacity import router as capacity_router
 from .api.routes.comfy_lab import router as comfy_lab_router
@@ -18,20 +22,29 @@ from .api.routes.configuration import router as configuration_router
 from .api.routes.creative_entries import router as creative_entries_router
 from .api.routes.diagnostics import router as diagnostics_router
 from .api.routes.dialogue import router as dialogue_router
+from .api.routes.director_desk import router as director_desk_router
+from .api.routes.director_recipes import router as director_recipes_router
+from .api.routes.episode_production_runs import router as episode_production_runs_router
 from .api.routes.experiments import router as experiments_router
 from .api.routes.gates import router as gates_router
+from .api.routes.generation_preferences import router as generation_preferences_router
+from .api.routes.generation_estimates import router as generation_estimates_router
 from .api.routes.health import router as health_router
 from .api.routes.imports import router as imports_router
 from .api.routes.jobs import router as jobs_router
 from .api.routes.llm import router as llm_router
 from .api.routes.media import router as media_router
 from .api.routes.production import router as production_router
+from .api.routes.production_freshness import router as production_freshness_router
 from .api.routes.profiles import router as profiles_router
 from .api.routes.project_packages import router as project_packages_router
 from .api.routes.projects import router as project_router
 from .api.routes.prompts import router as prompts_router
+from .api.routes.qc_policies import router as qc_policies_router
 from .api.routes.reviews import router as reviews_router
 from .api.routes.search import router as search_router
+from .api.routes.shot_editing import router as shot_editing_router
+from .api.routes.shot_groups import router as shot_groups_router
 from .api.routes.story_assets import router as story_assets_router
 from .api.routes.timeline import router as timeline_router
 from .api.routes.variants import router as variants_router
@@ -90,27 +103,40 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(audit_router, prefix="/api/v1")
     app.include_router(automation_router, prefix="/api/v1")
     app.include_router(automation_workflows_router, prefix="/api/v1")
+    app.include_router(beat_replan_router, prefix="/api/v1")
     app.include_router(project_router, prefix="/api/v1")
     app.include_router(project_packages_router, prefix="/api/v1")
     app.include_router(configuration_router, prefix="/api/v1")
     app.include_router(creative_entries_router, prefix="/api/v1")
     app.include_router(diagnostics_router, prefix="/api/v1")
+    app.include_router(director_desk_router, prefix="/api/v1")
+    app.include_router(director_recipes_router, prefix="/api/v1")
     app.include_router(dialogue_router, prefix="/api/v1")
     app.include_router(experiments_router, prefix="/api/v1")
+    app.include_router(episode_production_runs_router, prefix="/api/v1")
     app.include_router(gates_router, prefix="/api/v1")
+    app.include_router(generation_preferences_router, prefix="/api/v1")
+    app.include_router(generation_estimates_router, prefix="/api/v1")
     app.include_router(imports_router, prefix="/api/v1")
     app.include_router(jobs_router, prefix="/api/v1")
     app.include_router(llm_router, prefix="/api/v1")
     app.include_router(media_router, prefix="/api/v1")
     app.include_router(production_router, prefix="/api/v1")
+    app.include_router(production_freshness_router, prefix="/api/v1")
     app.include_router(profiles_router, prefix="/api/v1")
     app.include_router(prompts_router, prefix="/api/v1")
+    app.include_router(qc_policies_router, prefix="/api/v1")
     app.include_router(reviews_router, prefix="/api/v1")
     app.include_router(workflows_router, prefix="/api/v1")
     app.include_router(search_router, prefix="/api/v1")
+    app.include_router(shot_editing_router, prefix="/api/v1")
+    app.include_router(shot_groups_router, prefix="/api/v1")
     app.include_router(timeline_router, prefix="/api/v1")
     app.include_router(variants_router, prefix="/api/v1")
     app.include_router(story_assets_router, prefix="/api/v1")
+    app.include_router(asset_bible_router, prefix="/api/v1")
+    app.include_router(asset_proposals_router, prefix="/api/v1")
+    app.include_router(character_identity_packs_router, prefix="/api/v1")
     return app
 
 

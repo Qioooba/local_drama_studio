@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from local_drama.application.storage_operations import StorageOperationService
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
@@ -146,6 +147,17 @@ class MediaService:
             return {"probe_status": "FAIL", "reason": "invalid_ffprobe_json"}
         return {"probe_status": "PASS", "format": payload.get("format", {}), "streams": payload.get("streams", [])}
 
+    def validate_image_upload(self, path: Path) -> None:
+        """Reject extension-only uploads before they enter the immutable catalogue."""
+        probe = self._probe(path, "IMAGE")
+        streams = probe.get("streams") if isinstance(probe, dict) else None
+        image_stream = next(
+            (stream for stream in streams if isinstance(stream, dict) and stream.get("codec_type") == "video" and int(stream.get("width") or 0) > 0 and int(stream.get("height") or 0) > 0),
+            None,
+        ) if isinstance(streams, list) else None
+        if probe.get("probe_status") != "PASS" or image_stream is None:
+            raise DomainRuleError("MEDIA_UPLOAD_INVALID_IMAGE", "上传内容不是可读取的图片")
+
     def import_file(
         self,
         project_id: str,
@@ -159,77 +171,33 @@ class MediaService:
         actor: str = "local-user",
     ) -> dict[str, Any]:
         source = Path(source_path)
-        try:
-            resolved_source = source.resolve(strict=True)
-        except OSError as error:
-            raise DomainRuleError("SOURCE_NOT_FOUND", "导入源文件不存在或无法读取", {"source_path": str(source)}) from error
-        if not resolved_source.is_file() or resolved_source.is_symlink():
-            raise DomainRuleError("INVALID_SOURCE_FILE", "导入源必须是普通本地文件")
-        project_root = self._project_root(project_id)
-        digest, size = _hash_file(resolved_source)
-        kind = media_kind or infer_media_kind(resolved_source)
-        mime = mimetypes.guess_type(resolved_source.name)[0] or "application/octet-stream"
-        with self.database.transaction() as connection:
-            duplicate = connection.execute(
-                """SELECT ma.id AS media_asset_id, mv.id AS media_version_id, mv.rel_path, mv.sha256
-                FROM media_assets ma JOIN media_versions mv ON mv.media_asset_id = ma.id
-                WHERE ma.project_id = ? AND mv.sha256 = ? ORDER BY mv.version_no LIMIT 1""",
-                (project_id, digest),
-            ).fetchone()
-            if duplicate is not None:
-                return {
-                    "duplicate": True,
-                    "media_asset_id": duplicate["media_asset_id"],
-                    "media_version_id": duplicate["media_version_id"],
-                    "rel_path": duplicate["rel_path"],
-                    "sha256": duplicate["sha256"],
-                }
-            rel_path, destination = self._copy_into_project(project_root, resolved_source, resolved_source.name)
-            probe = self._probe(destination, kind)
-            duration_ms, fps_num, fps_den = _video_metadata(probe)
-            asset_id = str(uuid.uuid4())
-            version_id = str(uuid.uuid4())
-            now = _utc_now()
-            connection.execute(
-                """INSERT INTO media_assets
-                (id, project_id, owner_type, owner_id, purpose, media_kind, version_counter, metadata_json,
-                 created_at, updated_at, created_by, revision, schema_version)
-                VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, 1, 'v2')""",
-                (
-                    asset_id,
-                    project_id,
-                    owner_type,
-                    owner_id or project_id,
-                    purpose,
-                    kind,
-                    _json({"source_name": resolved_source.name, "source_path_not_retained": True}),
-                    now,
-                    now,
-                    actor,
-                ),
-            )
-            connection.execute(
-                """INSERT INTO media_versions
-                (id, media_asset_id, version_no, take_no, stage, rel_path, mime_type, byte_size, sha256,
-                source_name, import_source, probe_json, duration_ms, fps_num, fps_den,
-                integrity_status, created_at, updated_at, created_by, revision, schema_version)
-                VALUES (?, ?, 1, 1, ?, ?, ?, ?, ?, ?, 'LOCAL_FILE', ?, ?, ?, ?, 'VERIFIED', ?, ?, ?, 1, 'v2')""",
-                (version_id, asset_id, stage, rel_path, mime, size, digest, resolved_source.name, _json(probe), duration_ms, fps_num, fps_den, now, now, actor),
-            )
-            connection.execute(
-                "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'producer', 'MEDIA_IMPORTED', 'media_asset', ?, ?, ?)",
-                (actor, asset_id, "导入并注册媒体版本", _json({"media_version_id": version_id, "sha256": digest, "media_kind": kind})),
-            )
-        return {
-            "duplicate": False,
-            "media_asset_id": asset_id,
-            "media_version_id": version_id,
-            "rel_path": rel_path,
-            "mime_type": mime,
-            "byte_size": size,
-            "sha256": digest,
-            "probe": probe,
-        }
+        kind = media_kind or infer_media_kind(source)
+        mime = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
+        operations = StorageOperationService(self.database, self.settings)
+        operation = operations.stage_media_ingest(
+            project_id,
+            source,
+            purpose=purpose,
+            owner_type=owner_type,
+            owner_id=owner_id,
+            media_kind=kind,
+            stage=stage,
+            mime_type=mime,
+            actor=actor,
+        )
+        if operation["status"] == "COMMITTED":
+            return operations.finalize_media_ingest(str(operation["id"]))
+        staged = operations.staging_path(str(operation["id"]))
+        probe = self._probe(staged, kind)
+        duration_ms, fps_num, fps_den = _video_metadata(probe)
+        operations.set_media_probe(
+            str(operation["id"]),
+            probe,
+            duration_ms=duration_ms,
+            fps_num=fps_num,
+            fps_den=fps_den,
+        )
+        return operations.finalize_media_ingest(str(operation["id"]))
 
     def create_keyframe_candidate(
         self, source_media_version_id: str, shot_id: str, actor: str = "local-user"
@@ -502,6 +470,36 @@ class MediaService:
         item["probe"] = json.loads(item.pop("probe_json"))
         return item
 
+    def catalogue(self, project_id: str, *, query: str = "", media_kind: str | None = None, limit: int = 40) -> list[dict[str, Any]]:
+        """Return a project-scoped, presentation-safe MediaVersion catalogue."""
+        self._project_root(project_id)
+        normalized_query = query.strip().lower()[:120]
+        normalized_kind = str(media_kind or "").strip().upper() or None
+        if normalized_kind and normalized_kind not in {"IMAGE", "VIDEO", "AUDIO", "DOCUMENT", "OTHER"}:
+            raise DomainRuleError("MEDIA_KIND_INVALID", "媒体类型筛选无效", {"media_kind": media_kind})
+        bounded_limit = max(1, min(int(limit), 100))
+        clauses = ["ma.project_id=?", "mv.integrity_status='VERIFIED'"]
+        parameters: list[Any] = [project_id]
+        if normalized_kind:
+            clauses.append("ma.media_kind=?")
+            parameters.append(normalized_kind)
+        if normalized_query:
+            escaped = normalized_query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            clauses.append("(LOWER(COALESCE(mv.source_name,'')) LIKE ? ESCAPE '\\' OR LOWER(ma.purpose) LIKE ? ESCAPE '\\' OR LOWER(mv.stage) LIKE ? ESCAPE '\\')")
+            parameters.extend([f"%{escaped}%"] * 3)
+        parameters.append(bounded_limit)
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                f"""SELECT mv.id AS media_version_id, mv.media_asset_id, mv.version_no, mv.take_no, mv.stage,
+                mv.source_name, mv.mime_type, mv.byte_size, mv.duration_ms, mv.updated_at,
+                ma.purpose, ma.media_kind
+                FROM media_versions mv JOIN media_assets ma ON ma.id=mv.media_asset_id
+                WHERE {' AND '.join(clauses)}
+                ORDER BY mv.updated_at DESC, mv.id DESC LIMIT ?""",
+                parameters,
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def get_asset(self, media_asset_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
             row = connection.execute("SELECT * FROM media_assets WHERE id=?", (media_asset_id,)).fetchone()
@@ -541,6 +539,12 @@ class MediaService:
         actual_sha256, actual_size = _hash_file(path)
         verified = actual_sha256 == str(item["sha256"]) and actual_size == int(item["byte_size"])
         status = "VERIFIED" if verified else "CORRUPT"
+        if verified and str(item["integrity_status"]) == "CORRUPT":
+            raise DomainRuleError(
+                "MEDIA_INTEGRITY_REPAIR_REQUIRED",
+                "媒体内容已恢复，但 CORRUPT 状态只能通过显式完整性修复命令清除",
+                {"media_version_id": media_version_id, "revision": int(item["revision"])},
+            )
         if str(item["integrity_status"]) != status:
             if connection is not None:
                 connection.execute(
@@ -567,6 +571,54 @@ class MediaService:
             )
         return {**item, "integrity_status": "VERIFIED", "actual_sha256": actual_sha256, "actual_byte_size": actual_size}
 
+    def repair_content_integrity(
+        self, media_version_id: str, *, expected_revision: int, actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Explicitly clear a persisted CORRUPT marker after exact file repair.
+
+        The immutable declared hash and size remain authoritative.  This command
+        never adopts the current bytes or rewrites MediaVersion identity.
+        """
+        item, path = self.content_path(media_version_id)
+        actual_sha256, actual_size = _hash_file(path)
+        if actual_sha256 != str(item["sha256"]) or actual_size != int(item["byte_size"]):
+            raise DomainRuleError(
+                "SOURCE_INTEGRITY_FAILED", "媒体仍与不可变 MediaVersion hash/大小不一致，不能修复状态",
+                {
+                    "media_version_id": media_version_id,
+                    "expected_sha256": str(item["sha256"]), "actual_sha256": actual_sha256,
+                    "expected_byte_size": int(item["byte_size"]), "actual_byte_size": actual_size,
+                },
+            )
+        now = _utc_now()
+        with self.database.transaction() as connection:
+            current = connection.execute(
+                "SELECT revision,integrity_status FROM media_versions WHERE id=?", (media_version_id,),
+            ).fetchone()
+            if current is None:
+                raise DomainRuleError("MEDIA_VERSION_NOT_FOUND", "媒体版本不存在", {"media_version_id": media_version_id})
+            if int(current["revision"]) != expected_revision:
+                raise DomainRuleError(
+                    "REVISION_CONFLICT", "媒体完整性状态已变化，请刷新后重试",
+                    {"expected_revision": expected_revision, "actual_revision": int(current["revision"])},
+                )
+            if str(current["integrity_status"]) != "CORRUPT":
+                raise DomainRuleError("MEDIA_INTEGRITY_REPAIR_NOT_REQUIRED", "媒体当前不是 CORRUPT 状态，无需修复")
+            connection.execute(
+                "UPDATE media_versions SET integrity_status='VERIFIED',revision=revision+1,updated_at=? WHERE id=?",
+                (now, media_version_id),
+            )
+            connection.execute(
+                """INSERT INTO audit_events
+                (actor,role_context,action,subject_type,subject_id,before_revision,after_revision,summary,metadata_redacted_json)
+                VALUES (?,'operator','MEDIA_INTEGRITY_REPAIRED','media_version',?,?,?,'显式确认媒体内容恢复原始 hash/大小',?)""",
+                (actor, media_version_id, expected_revision, expected_revision + 1, _json({
+                    "sha256": actual_sha256, "byte_size": actual_size, "adopted_new_content": False,
+                })),
+            )
+        return {**item, "integrity_status": "VERIFIED", "revision": expected_revision + 1,
+                "actual_sha256": actual_sha256, "actual_byte_size": actual_size, "repaired": True}
+
     def _run_ffmpeg(self, args: list[str]) -> None:
         ffmpeg = self.settings.ffmpeg_path
         if not ffmpeg or not Path(ffmpeg).exists():
@@ -590,6 +642,57 @@ class MediaService:
                 (str(uuid.uuid4()), media_version_id, kind, rel_path, source_sha, preset_hash, now, now),
             )
 
+    def cached_video_thumbnail(
+        self,
+        source: Path,
+        *,
+        cache_namespace: str,
+        source_sha256: str,
+        duration_ms: int | None,
+        size: str = "small",
+        frame: str = "poster",
+    ) -> tuple[Path, str, str, str]:
+        """Create a derived WebP for an already-authorized immutable video.
+
+        Callers remain responsible for resolving the source through their own
+        ownership/path/integrity boundary.  Keeping derivation here makes media
+        versions and episode renders share the same presets, cache root and
+        FFmpeg policy without pretending an episode render is a MediaVersion.
+        """
+        if size not in {"small", "medium"}:
+            raise DomainRuleError("THUMBNAIL_SIZE_UNSUPPORTED", "缩略图 size 仅支持 small 或 medium", {"size": size})
+        normalized_frame = str(frame or "poster").strip().lower()
+        frame_aliases = {"poster": "first", "start": "first", "first_frame": "first", "middle_frame": "middle", "end": "last", "last_frame": "last"}
+        normalized_frame = frame_aliases.get(normalized_frame, normalized_frame)
+        if normalized_frame not in {"first", "middle", "last"}:
+            raise DomainRuleError(
+                "THUMBNAIL_FRAME_UNSUPPORTED",
+                "缩略图 frame 仅支持 first、middle、last（poster 等价于 first）",
+                {"frame": frame},
+            )
+        duration = int(duration_ms or 0)
+        if normalized_frame != "first" and duration <= 0:
+            raise DomainRuleError("THUMBNAIL_FRAME_UNRESOLVED", "视频缺少有效 duration，无法定位缩略图帧")
+        preset = f"thumbnail-v2:{size}:{normalized_frame}"
+        preset_hash = hashlib.sha256(preset.encode()).hexdigest()
+        safe_namespace = re.sub(r"[^A-Za-z0-9._-]+", "_", cache_namespace).strip("._")
+        if not safe_namespace:
+            raise DomainRuleError("THUMBNAIL_CACHE_KEY_INVALID", "缩略图缓存键无效")
+        relative = Path("thumbnails") / safe_namespace / size / f"{source_sha256}_{preset_hash[:16]}.webp"
+        destination = (self.settings.cache_root / relative).resolve()
+        cache_root = self.settings.cache_root.resolve()
+        if not destination.is_relative_to(cache_root):
+            raise DomainRuleError("THUMBNAIL_CACHE_PATH_INVALID", "缩略图缓存路径越界")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if not destination.exists():
+            partial = destination.with_suffix(".partial.webp")
+            scale = "320:-1" if size == "small" else "960:-1"
+            offset_ms = {"first": 0, "middle": duration // 2, "last": max(0, duration - 1)}[normalized_frame]
+            seek = ["-ss", f"{offset_ms / 1000:.3f}"]
+            self._run_ffmpeg([*seek, "-i", str(source), "-frames:v", "1", "-vf", f"scale={scale}", "-c:v", "libwebp", "-y", str(partial)])
+            os.replace(partial, destination)
+        return destination, "image/webp", relative.as_posix(), preset_hash
+
     def thumbnail(self, media_version_id: str, size: str = "small", frame: str = "poster") -> tuple[Path, str]:
         item, source = self.content_path(media_version_id)
         mime_type = str(item["mime_type"]).lower()
@@ -609,6 +712,17 @@ class MediaService:
         if is_image and not is_video and normalized_frame != "first":
             raise DomainRuleError("THUMBNAIL_FRAME_UNSUPPORTED", "图片只有 first/poster 缩略图")
         self.verify_content_integrity(media_version_id)
+        if is_video and not is_image:
+            destination, mime, cached_relative, preset_hash = self.cached_video_thumbnail(
+                source,
+                cache_namespace=media_version_id,
+                source_sha256=str(item["sha256"]),
+                duration_ms=int(item.get("duration_ms") or 0),
+                size=size,
+                frame=normalized_frame,
+            )
+            self._cache_entry(media_version_id, "THUMBNAIL", cached_relative, item["sha256"], preset_hash)
+            return destination, mime
         preset = f"thumbnail-v2:{size}:{normalized_frame}"
         preset_hash = hashlib.sha256(preset.encode()).hexdigest()
         extension = ".webp"
@@ -618,14 +732,7 @@ class MediaService:
         if not destination.exists():
             partial = destination.with_suffix(".partial.webp")
             scale = "320:-1" if size == "small" else "960:-1"
-            seek: list[str] = []
-            if is_video and not is_image:
-                duration_ms = int(item.get("duration_ms") or 0)
-                if normalized_frame != "first" and duration_ms <= 0:
-                    raise DomainRuleError("THUMBNAIL_FRAME_UNRESOLVED", "视频缺少有效 duration，无法定位缩略图帧")
-                offset_ms = {"first": 0, "middle": duration_ms // 2, "last": max(0, duration_ms - 1)}[normalized_frame]
-                seek = ["-ss", f"{offset_ms / 1000:.3f}"]
-            self._run_ffmpeg([*seek, "-i", str(source), "-frames:v", "1", "-vf", f"scale={scale}", "-c:v", "libwebp", "-y", str(partial)])
+            self._run_ffmpeg(["-i", str(source), "-frames:v", "1", "-vf", f"scale={scale}", "-c:v", "libwebp", "-y", str(partial)])
             os.replace(partial, destination)
             self._cache_entry(media_version_id, "THUMBNAIL", relative.as_posix(), item["sha256"], preset_hash)
         return destination, "image/webp"

@@ -28,7 +28,9 @@ export function PostProcessPanel({ videos }: { videos: ReviewInboxItem[] }) {
   // can otherwise race the initial async recipe selection and create a new
   // root recipe instead of an immutable child.
   const selectedForCreate = selected ?? items.find((item) => item.status === "ACTIVE") ?? items[0];
-  const videoIds = useMemo(() => [...new Set(videos.map((item) => item.media_version_id))], [videos]);
+  const videoItems = useMemo(() => [...new Map(videos.map((item) => [item.media_version_id, item])).values()], [videos]);
+  const videoIds = useMemo(() => videoItems.map((item) => item.media_version_id), [videoItems]);
+  const selectedVideo = videoItems.find((item) => item.media_version_id === inputMediaVersionId);
 
   useEffect(() => {
     if (!items.some((item) => item.id === selectedRecipeId)) {
@@ -95,7 +97,7 @@ export function PostProcessPanel({ videos }: { videos: ReviewInboxItem[] }) {
   const error = recipes.error ?? createMutation.error ?? publishMutation.error ?? planMutation.error ?? runMutation.error;
 
   return <section className="panel post-process-panel" aria-labelledby="post-process-title">
-    <div className="panel-heading"><div><p className="eyebrow">FR-PST-001/002 · LOCAL PROCESS</p><h3 id="post-process-title">版本化视频增强与旁路比较</h3></div><span className="status-pill neutral">输入永不覆盖</span></div>
+    <div className="panel-heading"><div><p className="eyebrow">FR-PST-001/002 · 本地后处理</p><h3 id="post-process-title">版本化视频增强与旁路比较</h3></div><span className="status-pill neutral">输入永不覆盖</span></div>
     <div className="post-process-grid">
       <div className="post-process-config">
         <div className="section-title"><span>配方版本</span><small>SCALE → TECHNICAL_QC → ENCODE</small></div>
@@ -110,13 +112,14 @@ export function PostProcessPanel({ videos }: { videos: ReviewInboxItem[] }) {
       </div>
       <div className="post-process-runner">
         <div className="section-title"><span>运行计划</span><small>先预检，后显式执行</small></div>
-        <label htmlFor="enhancement-input">输入视频<select id="enhancement-input" value={inputMediaVersionId} onChange={(event) => { setInputMediaVersionId(event.target.value); setPrepared(null); setCompleted(null); }}><option value="">请选择</option>{videoIds.map((id) => <option key={id} value={id}>VIDEO · {id.slice(0, 12)}</option>)}</select></label>
+        <label htmlFor="enhancement-input">输入视频<select id="enhancement-input" value={inputMediaVersionId} onChange={(event) => { setInputMediaVersionId(event.target.value); setPrepared(null); setCompleted(null); }}><option value="">请选择</option>{videoItems.map((item) => <option key={item.media_version_id} value={item.media_version_id}>{item.episode_code ?? "未分集"} · {item.shot_code ?? "未绑定镜头"} · {item.stage} · {item.decision ?? "未审核"}</option>)}</select></label>
+        {selectedVideo && <details><summary>高级：输入版本技术标识</summary><code>{selectedVideo.media_version_id}</code></details>}
         <div className="post-process-actions"><button type="button" className="secondary" disabled={!inputMediaVersionId || selected?.status !== "ACTIVE" || planMutation.isPending} onClick={() => planMutation.mutate()}>{planMutation.isPending ? "预检中…" : "只读预检增强计划"}</button><button type="button" className="primary-action" disabled={!prepared || runMutation.isPending || Boolean(completed)} onClick={() => runMutation.mutate()}>{runMutation.isPending ? "本机增强中…" : "确认运行并注册新版本"}</button></div>
-        {prepared && !completed && <p className="frame-feedback success"><strong>READY，尚未运行。</strong> Plan <code>{prepared.plan_hash.slice(0, 16)}</code> · 不覆盖输入 · 零网络</p>}
-        {completed && <p className="frame-feedback success"><strong>增强输出已注册：{completed.status}</strong> 输入 <code>{completed.input_sha256.slice(0, 12)}</code> → 输出 <code>{completed.output_sha256?.slice(0, 12)}</code> · QC {String(completed.qc.passed)}</p>}
+        {prepared && !completed && <p className="frame-feedback success"><strong>READY，尚未运行。</strong> Plan <code>{String(prepared.plan_hash ?? "").slice(0, 16) || "—"}</code> · 不覆盖输入 · 零网络</p>}
+        {completed && <p className="frame-feedback success"><strong>增强输出已注册：{completed.status}</strong> 输入 <code>{String(completed.input_sha256 ?? "").slice(0, 12) || "—"}</code> → 输出 <code>{String(completed.output_sha256 ?? "").slice(0, 12) || "—"}</code> · QC {String(completed.qc?.passed ?? "—")}</p>}
       </div>
     </div>
-    {completed?.output_media_version_id && <div className="bypass-compare" aria-label="增强前后旁路比较"><figure><figcaption>原始输入（保留）</figcaption><video controls preload="metadata" src={`/api/v1/media-versions/${encodeURIComponent(completed.input_media_version_id)}/content`} /></figure><figure><figcaption>增强输出（新版本）</figcaption><video controls preload="metadata" src={`/api/v1/media-versions/${encodeURIComponent(completed.output_media_version_id)}/content`} /></figure></div>}
+    {completed?.output_media_version_id && <div className="bypass-compare" aria-label="增强前后旁路比较"><figure><figcaption>原始输入（保留）</figcaption><video controls preload="none" poster={`/api/v1/media-versions/${encodeURIComponent(completed.input_media_version_id)}/thumbnail?size=small&frame=poster`} src={`/api/v1/media-versions/${encodeURIComponent(completed.input_media_version_id)}/content`} /></figure><figure><figcaption>增强输出（新版本）</figcaption><video controls preload="none" poster={`/api/v1/media-versions/${encodeURIComponent(completed.output_media_version_id)}/thumbnail?size=small&frame=poster`} src={`/api/v1/media-versions/${encodeURIComponent(completed.output_media_version_id)}/content`} /></figure></div>}
     {!videos.length && <p className="empty-state">当前项目没有可增强的真实 VIDEO MediaVersion；不会使用示例媒体。</p>}
     {error && <p className="inline-error" role="alert">{error.message}</p>}
   </section>;

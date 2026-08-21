@@ -5,7 +5,7 @@ const trackLabels: Record<string, string> = { DIALOGUE: "对白", BGM: "BGM/音�
 
 export function AudioTrackPanel({ bindings, projectId, episodeId, onBound }: { bindings: AudioBinding[]; projectId: string; episodeId: string; onBound: () => void }) {
   return <section className="panel audio-track-panel" aria-labelledby="audio-track-title">
-    <div className="panel-heading"><div><p className="eyebrow">FR-AUD-002 · AUDIO TRACKS</p><h3 id="audio-track-title">音效、环境与音乐绑定</h3></div><span className="status-pill neutral">按需试听</span></div>
+    <div className="panel-heading"><div><p className="eyebrow">FR-AUD-002 · 音频轨道</p><h3 id="audio-track-title">音效、环境与音乐绑定</h3></div><span className="status-pill neutral">按需试听</span></div>
     <p className="muted">播放器默认不预加载；只有用户明确播放时才读取本地音频。loop、淡入淡出、gain、范围与授权证据均来自持久化绑定。</p>
     {bindings.length === 0 ? <p className="empty-state">当前集没有真实音频绑定。</p> : <div className="configuration-table" role="table" aria-label="分集音频轨道">
       <div className="configuration-row header" role="row"><span>轨道</span><span>范围 / Gain</span><span>播放策略</span><span>授权</span></div>

@@ -1,0 +1,51 @@
+{
+  "schema_version": "g10.upgrade_rollback_rehearsal.v3",
+  "observed_at": "2026-08-20T16:18:01.248334+00:00",
+  "status": "PASS",
+  "scope": "isolated copy of a production pre-migration backup",
+  "source_backup": {
+    "path": "backups/pre_migration_20260817T133828Z.sqlite3",
+    "migration": "0041_character_voice_bindings",
+    "migration_heads": [
+      "0041_character_voice_bindings"
+    ],
+    "integrity": "ok",
+    "bytes": 2174976,
+    "sha256": "bd76083c937c7a1a2062ea7be9d7365001816afe29821f53df7415e7399e54bf"
+  },
+  "upgrade_copy": {
+    "operation": "alembic upgrade heads on isolated copy",
+    "from_migration": "0041_character_voice_bindings",
+    "to_migration": "0048_asset_proposals",
+    "expected_heads": [
+      "0048_asset_proposals"
+    ],
+    "migration": "0048_asset_proposals",
+    "migration_heads": [
+      "0048_asset_proposals"
+    ],
+    "integrity": "ok",
+    "bytes": 2449408,
+    "sha256": "7867b5910b1b823d34e55b4173e5796b902acc7f04dc5ec044e21cb89962deeb"
+  },
+  "restore_copy": {
+    "operation": "restore source backup to a separate copy",
+    "migration": "0041_character_voice_bindings",
+    "migration_heads": [
+      "0041_character_voice_bindings"
+    ],
+    "integrity": "ok",
+    "bytes": 2174976,
+    "sha256": "bd76083c937c7a1a2062ea7be9d7365001816afe29821f53df7415e7399e54bf",
+    "matches_source_sha256": true
+  },
+  "safety": {
+    "production_database_mutated": false,
+    "api_contacted": false,
+    "comfyui_contacted": false,
+    "network_contacted": false,
+    "jobs_created": false,
+    "temporary_directory_retained": "temp/release-rehearsal-20260820T161800Z"
+  },
+  "interpretation": "Current migration upgrade and exact backup restore are verified on isolated copies; this does not authorize final release."
+}

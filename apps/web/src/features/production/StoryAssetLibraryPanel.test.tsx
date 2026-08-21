@@ -5,6 +5,7 @@ import { archiveStoryAsset, createStoryAsset, listStoryAssets, type StoryAsset }
 import { StoryAssetLibraryPanel } from "./StoryAssetLibraryPanel";
 
 vi.mock("../../generated/api", () => ({ archiveStoryAsset: vi.fn(), createStoryAsset: vi.fn(), listStoryAssets: vi.fn() }));
+vi.mock("../media-picker/MediaPicker", () => ({ MediaPicker: ({ onChange, label }: { onChange: (value: string) => void; label: string }) => <button type="button" aria-label={label} onClick={() => onChange("version-9")}>选择 妹妹主参考</button> }));
 
 const character: StoryAsset = { id: "asset-1", project_id: "project-1", kind: "CHARACTER", code: "CHAR_MOTHER", name: "母亲", description: "短发", canonical_media_version_id: null, extra: {}, status: "ACTIVE", revision: 1, created_at: "now", updated_at: "now", created_by: "local-user", schema_version: "v2" };
 const scene: StoryAsset = { ...character, id: "asset-2", kind: "SCENE", code: "SCENE_KITCHEN", name: "厨房", description: "暖光" };
@@ -38,10 +39,10 @@ describe("StoryAssetLibraryPanel", () => {
     renderPanel();
     await screen.findByText("母亲");
     fireEvent.click(screen.getByText("新建角色资产卡"));
-    fireEvent.change(screen.getByLabelText("Code"), { target: { value: "CHAR_SISTER" } });
+    fireEvent.change(screen.getByLabelText("代码"), { target: { value: "CHAR_SISTER" } });
     fireEvent.change(screen.getByLabelText("名称"), { target: { value: "妹妹" } });
     fireEvent.change(screen.getByLabelText("描述"), { target: { value: "马尾" } });
-    fireEvent.change(screen.getByLabelText("canonical 媒体版本 ID"), { target: { value: "version-9" } });
+    fireEvent.click(screen.getByRole("button", { name: "角色主参考选择器" }));
     fireEvent.click(screen.getByRole("button", { name: "创建角色资产卡" }));
     await waitFor(() => expect(createStoryAsset).toHaveBeenCalledWith("project-1", { kind: "CHARACTER", code: "CHAR_SISTER", name: "妹妹", description: "马尾", canonical_media_version_id: "version-9" }));
   });

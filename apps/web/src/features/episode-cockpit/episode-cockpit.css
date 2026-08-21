@@ -1,0 +1,13 @@
+.episode-cockpit { display: grid; gap: 16px; margin-bottom: 18px; }
+.episode-cockpit-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(126px, 1fr)); gap: 10px; }
+.episode-cockpit-stats article { display: grid; gap: 4px; padding: 12px; border: 1px solid var(--line, #d8d4cc); border-radius: 10px; background: color-mix(in srgb, var(--surface, #fff) 94%, var(--accent, #7667d9)); }
+.episode-cockpit-stats article.attention { border-color: #d39a55; background: #fff8ed; }
+.episode-cockpit-stats span { color: var(--muted, #65616b); font-size: 13px; }
+.episode-cockpit-stats strong { font-size: 24px; line-height: 1.15; }
+.episode-cockpit-stats small { font-size: 12px; font-weight: 500; color: var(--muted, #65616b); }
+.episode-cockpit-blockers { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.episode-cockpit-blockers li { display: flex; gap: 7px; align-items: center; padding: 7px 10px; border-radius: 999px; background: #fff3e3; color: #80501d; }
+.episode-cockpit-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.episode-cockpit-actions a { display: inline-flex; gap: 6px; align-items: center; text-decoration: none; }
+.episode-cockpit-actions .primary-action span { min-width: 20px; padding: 1px 6px; border-radius: 999px; background: rgb(255 255 255 / 20%); text-align: center; }
+.episode-cockpit-honesty { margin: 0; font-size: 12px; }

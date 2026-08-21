@@ -5,8 +5,8 @@
     "NFR-TEST-001"
   ],
   "status": "PARTIAL",
-  "observed_at": "2026-08-17T16:20:30.298298+00:00",
-  "git_revision": "82e23e5b02f393409a2514ca471cf05902e014d7",
+  "observed_at": "2026-08-20T12:52:43.640930+00:00",
+  "git_revision": "d5a49a023e571bd94b97056a88d7e7d74ab413b7",
   "deterministic_contracts_passed": true,
   "hard_failures": [],
   "dependencies": {
@@ -24,6 +24,14 @@
     },
     "domain_forbidden_imports": [],
     "application_infrastructure_warnings": [
+      {
+        "file": "apps/api/local_drama/application/asset_multiview.py",
+        "import": "local_drama.infrastructure.database.generation_preference_repository"
+      },
+      {
+        "file": "apps/api/local_drama/application/asset_multiview.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
       {
         "file": "apps/api/local_drama/application/audit.py",
         "import": "local_drama.infrastructure.database.sqlite"
@@ -89,11 +97,31 @@
         "import": "local_drama.infrastructure.database.sqlite"
       },
       {
+        "file": "apps/api/local_drama/application/director_desk.py",
+        "import": "local_drama.infrastructure.database.generation_preference_repository"
+      },
+      {
+        "file": "apps/api/local_drama/application/director_desk.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
         "file": "apps/api/local_drama/application/documents.py",
         "import": "local_drama.infrastructure.database.sqlite"
       },
       {
+        "file": "apps/api/local_drama/application/episode_production_runs.py",
+        "import": "local_drama.infrastructure.adapters"
+      },
+      {
+        "file": "apps/api/local_drama/application/episode_production_runs.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
         "file": "apps/api/local_drama/application/experiments.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/frame_bridges.py",
         "import": "local_drama.infrastructure.database.sqlite"
       },
       {
@@ -247,6 +275,22 @@
         "import": "local_drama.infrastructure.adapters"
       },
       {
+        "file": "apps/api/local_drama/api/routes/asset_bible.py",
+        "import": "local_drama.infrastructure.database.asset_bible_repository"
+      },
+      {
+        "file": "apps/api/local_drama/api/routes/asset_bible.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/api/routes/generation_preferences.py",
+        "import": "local_drama.infrastructure.database.generation_preference_repository"
+      },
+      {
+        "file": "apps/api/local_drama/api/routes/generation_preferences.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
         "file": "apps/api/local_drama/api/routes/profiles.py",
         "import": "local_drama.infrastructure.manifest"
       },
@@ -262,11 +306,11 @@
     "scope": "apps/web/src/**/*.tsx excluding generated client and tests",
     "recommended_limit_lines": 500,
     "warning_limit_lines": 700,
-    "component_count": 52,
+    "component_count": 77,
     "largest_components": [
       {
         "path": "apps/web/src/app/App.tsx",
-        "lines": 393,
+        "lines": 459,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       },
@@ -277,50 +321,50 @@
         "warning_limit_exceeded": false
       },
       {
+        "path": "apps/web/src/features/preferences-v2/GenerationPreferencePanel.tsx",
+        "lines": 349,
+        "recommended_limit_exceeded": false,
+        "warning_limit_exceeded": false
+      },
+      {
         "path": "apps/web/src/features/reviews/ReviewInboxPanel.tsx",
-        "lines": 215,
+        "lines": 245,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       },
       {
-        "path": "apps/web/src/features/status/ReadinessPanels.tsx",
-        "lines": 165,
+        "path": "apps/web/src/pages/DirectorDeskPage.tsx",
+        "lines": 238,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       },
       {
-        "path": "apps/web/src/features/shared/AutomationWorkflowPanel.tsx",
-        "lines": 132,
+        "path": "apps/web/src/pages/AssetBiblePage.tsx",
+        "lines": 224,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       },
       {
-        "path": "apps/web/src/features/profiles/ProfileConfigurationPanel.tsx",
-        "lines": 127,
+        "path": "apps/web/src/features/director-v2/DirectorIntentEditor.tsx",
+        "lines": 197,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       },
       {
-        "path": "apps/web/src/features/generation/PostProcessPanel.tsx",
-        "lines": 123,
+        "path": "apps/web/src/features/director-v2/StagingBoard.tsx",
+        "lines": 196,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       },
       {
-        "path": "apps/web/src/features/production/SubtitleRevisionPanel.tsx",
-        "lines": 108,
+        "path": "apps/web/src/features/episode-review-v2/EpisodeReviewWorkspace.tsx",
+        "lines": 182,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       },
       {
-        "path": "apps/web/src/features/production/DirectorShotEditor.tsx",
-        "lines": 106,
-        "recommended_limit_exceeded": false,
-        "warning_limit_exceeded": false
-      },
-      {
-        "path": "apps/web/src/features/canvas/ProductionCanvasPanel.tsx",
-        "lines": 105,
+        "path": "apps/web/src/features/asset-bible-v2/GenerateMultiViewPanel.tsx",
+        "lines": 179,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       }
@@ -339,9 +383,9 @@
     ],
     "domain_modules_without_direct_test_import": [],
     "domain_rule_coverage_floor_passed": true,
-    "api_test_file_count": 87,
-    "api_test_function_count": 368,
-    "web_test_file_count": 39,
+    "api_test_file_count": 91,
+    "api_test_function_count": 391,
+    "web_test_file_count": 41,
     "coverage_method": "static import inventory; full pytest/Vitest and Playwright remain separate gates"
   },
   "regression_gate": {

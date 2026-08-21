@@ -7,7 +7,7 @@ import { PostProcessPanel } from "./PostProcessPanel";
 vi.mock("../../generated/api", () => ({ createPostProcessRecipe: vi.fn(), listPostProcessRecipes: vi.fn(), planEnhancementRun: vi.fn(), publishPostProcessRecipe: vi.fn(), runEnhancement: vi.fn() }));
 
 const recipe = { id: "recipe-1", code: "enhance", recipe_key: "enhance", title: "Enhance", version_no: 1, parent_recipe_id: null, recipe_hash: "a".repeat(64), status: "ACTIVE" as const, steps: [], capability_contract: {} };
-const video = { media_version_id: "video-1", media_asset_id: "asset-1", project_id: "project-1", media_kind: "VIDEO", stage: "PROXY", decision: null, is_stale: null };
+const video = { media_version_id: "video-1", media_asset_id: "asset-1", project_id: "project-1", episode_code: "EP03", shot_code: "S12", media_kind: "VIDEO", stage: "PROXY", decision: null, is_stale: null };
 
 describe("PostProcessPanel", () => {
   beforeEach(() => {
@@ -20,6 +20,8 @@ describe("PostProcessPanel", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
     render(<QueryClientProvider client={client}><PostProcessPanel videos={[video]} /></QueryClientProvider>);
     const run = await screen.findByRole("button", { name: "确认运行并注册新版本" }) as HTMLButtonElement;
+    expect(screen.getByRole("option", { name: "EP03 · S12 · PROXY · 未审核" })).toBeTruthy();
+    expect(document.body.textContent).not.toContain("VIDEO · video-1");
     expect(run.disabled).toBe(true);
     const plan = screen.getByRole("button", { name: "只读预检增强计划" }) as HTMLButtonElement;
     await waitFor(() => expect(plan.disabled).toBe(false));

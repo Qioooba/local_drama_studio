@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Header, Request
 
 from local_drama.api.schemas.g3 import BreakdownRequest
 from local_drama.api.schemas.llm import LLMProfilePublishRequest, LLMProfileSyncRequest
@@ -39,12 +39,19 @@ async def publish_profile(payload: LLMProfilePublishRequest, request: Request) -
         raise api_error_from_domain(error) from error
 
 
-@router.post("/import-sessions/{session_id}:breakdown-local-llm", operation_id="breakdownWithLocalLLM")
-async def breakdown(session_id: str, payload: BreakdownRequest, request: Request) -> dict[str, object]:
+@router.post("/import-sessions/{session_id}:breakdown-local-llm", status_code=202, operation_id="breakdownWithLocalLLM")
+async def breakdown(
+    session_id: str,
+    payload: BreakdownRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, object]:
     try:
-        if not payload.profile_version_id:
-            raise DomainRuleError("LOCAL_LLM_PROFILE_REQUIRED", "剧本拆解必须显式选择已发布的本地 LLM Profile")
-        return {"draft": service(request).breakdown(session_id, payload.profile_version_id)}
+        return {
+            "job": service(request).enqueue_breakdown(session_id, payload.profile_version_id, idempotency_key or ""),
+            "automatic_apply": False,
+            "requires_human_action": True,
+        }
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

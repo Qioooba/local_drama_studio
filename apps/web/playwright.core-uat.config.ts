@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "../../tests/e2e",
-  testMatch: "core_chain_browser_readonly.spec.ts",
+  testMatch: ["core_chain_browser_readonly.spec.ts", "v2_accessibility_contract_readonly.spec.ts"],
   timeout: 90_000,
   workers: 1,
   reporter: [["line"]],

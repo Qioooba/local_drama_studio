@@ -1,0 +1,47 @@
+.models-page,
+.models-page .ui-tabpanel,
+.models-page .v2-section-grid {
+  min-width: 0;
+}
+
+.models-page-summary {
+  max-width: 88ch;
+}
+
+.models-task-tabs .ui-tabs__list {
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.models-task-tabs .ui-tab {
+  min-height: 44px;
+  flex: 1 1 156px;
+  justify-content: center;
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.models-compatibility-task {
+  align-items: start;
+}
+
+.models-project-required {
+  display: grid;
+  gap: 8px;
+}
+
+.models-project-required h3,
+.models-project-required p {
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+  .models-page-heading {
+    align-items: start;
+  }
+
+  .models-task-tabs .ui-tab {
+    flex-basis: calc(50% - 4px);
+    padding-inline: 10px;
+  }
+}

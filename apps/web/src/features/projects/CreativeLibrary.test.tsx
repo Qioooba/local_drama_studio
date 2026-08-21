@@ -32,7 +32,7 @@ describe("CreativeLibrary", () => {
     renderLibrary();
     fireEvent.click(screen.getByText("新建创作资料"));
     fireEvent.change(screen.getByLabelText("类型"), { target: { value: "VOICE" } });
-    fireEvent.change(screen.getByLabelText("Code"), { target: { value: "VOICE_MOTHER" } });
+    fireEvent.change(screen.getByLabelText("代码"), { target: { value: "VOICE_MOTHER" } });
     fireEvent.change(screen.getByLabelText("标题"), { target: { value: "母亲声音" } });
     fireEvent.change(screen.getByLabelText("初始内容 JSON"), { target: { value: '{"timbre":"warm"}' } });
     fireEvent.change(screen.getByLabelText("建立说明"), { target: { value: "建立声音资料" } });

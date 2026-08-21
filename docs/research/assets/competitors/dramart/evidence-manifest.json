@@ -1,0 +1,39 @@
+{
+  "schema_version": "localdrama.competitor-evidence.v1",
+  "product": "dramart",
+  "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+  "image_count": 4,
+  "contact_sheets": [
+    "contact-sheet-evidence-01.jpg"
+  ],
+  "images": [
+    {
+      "file": "ui-01.png",
+      "width": 1080,
+      "height": 608,
+      "bytes": 161210,
+      "thumbnail": "thumbs-evidence/ui-01-e790de70.jpg"
+    },
+    {
+      "file": "ui-02.png",
+      "width": 1080,
+      "height": 608,
+      "bytes": 380788,
+      "thumbnail": "thumbs-evidence/ui-02-b2cb41b3.jpg"
+    },
+    {
+      "file": "ui-03.png",
+      "width": 1080,
+      "height": 608,
+      "bytes": 399127,
+      "thumbnail": "thumbs-evidence/ui-03-0f26dbd5.jpg"
+    },
+    {
+      "file": "ui-04.png",
+      "width": 1080,
+      "height": 608,
+      "bytes": 147526,
+      "thumbnail": "thumbs-evidence/ui-04-8bb43639.jpg"
+    }
+  ]
+}

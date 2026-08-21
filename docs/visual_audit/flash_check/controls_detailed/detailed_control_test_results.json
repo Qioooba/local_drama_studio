@@ -1,0 +1,3570 @@
+{
+  "tested_at": "2026-08-21T14:00:26.390Z",
+  "routes_count": 26,
+  "buttons_tested_count": 26,
+  "inputs_tested_count": 0,
+  "selects_tested_count": 27,
+  "routes": [
+    {
+      "id": "01_projects",
+      "name": "项目列表",
+      "url": "/projects",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ]
+    },
+    {
+      "id": "02_models",
+      "name": "全局模型管理",
+      "url": "/models",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "03_jobs",
+      "name": "全局任务与队列",
+      "url": "/jobs",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ]
+    },
+    {
+      "id": "04_diagnostics",
+      "name": "全局诊断与审计",
+      "url": "/diagnostics",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "05_project_home",
+      "name": "项目总览看板",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "06_story_workspace",
+      "name": "故事工作区",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/story",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ]
+    },
+    {
+      "id": "07_asset_bible",
+      "name": "资产圣经",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/assets",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "08_qc_policies",
+      "name": "质检策略",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/qc-policies",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ]
+    },
+    {
+      "id": "09_director_recipes",
+      "name": "导演配方",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/director-recipes",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ]
+    },
+    {
+      "id": "10_production_settings",
+      "name": "生产设置",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/production-settings",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 15,
+          "text": "",
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 16,
+          "text": "",
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 17,
+          "text": "",
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 18,
+          "text": "",
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 19,
+          "text": "",
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "11_project_models",
+      "name": "项目模型视图",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/models",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "12_project_jobs",
+      "name": "项目任务视图",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/jobs",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ]
+    },
+    {
+      "id": "13_project_diagnostics",
+      "name": "项目诊断视图",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/diagnostics",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "14_media_lab",
+      "name": "媒体实验台",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/lab",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "15_canvas",
+      "name": "高级节点画布",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/canvas",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ]
+    },
+    {
+      "id": "16_project_operations",
+      "name": "项目运维与包迁移",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/operations",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "17_episode_plan",
+      "name": "分集策划台",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/plan",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "18_director_desk",
+      "name": "导演工作台",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/direct",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "19_director_desk_shot",
+      "name": "导演工作台指定镜头",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/direct/020f9248-14b7-4f92-9edd-ee587ffdedf3",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "options_count": 8,
+          "selected": "BACKWARD",
+          "status": "PASS"
+        },
+        {
+          "index": 2,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ]
+    },
+    {
+      "id": "20_generation_workbench",
+      "name": "生成工作台",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/generation",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ]
+    },
+    {
+      "id": "21_generation_workbench_shot",
+      "name": "生成工作台指定镜头",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/generation/020f9248-14b7-4f92-9edd-ee587ffdedf3",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ]
+    },
+    {
+      "id": "22_episode_review",
+      "name": "审核中心",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/review",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ]
+    },
+    {
+      "id": "23_audio_workspace",
+      "name": "声音工作区",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/audio",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ]
+    },
+    {
+      "id": "24_timeline_workspace",
+      "name": "时间线工作区",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/timeline",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ]
+    },
+    {
+      "id": "25_delivery_workspace",
+      "name": "交付工作区",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/delivery",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ]
+    },
+    {
+      "id": "26_episode_run",
+      "name": "生产运行工作区",
+      "url": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/run",
+      "buttons": [
+        {
+          "index": 0,
+          "text": "搜索命令与实体 Ctrl K",
+          "modal_opened": true,
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "text": "Esc",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 2,
+          "text": "打开 QC 策略创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 3,
+          "text": "打开导演配方创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 4,
+          "text": "打开高级画布创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 5,
+          "text": "打开故事工作区创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 6,
+          "text": "打开模型与能力系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 7,
+          "text": "打开全部项目导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 8,
+          "text": "打开任务与机器系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 9,
+          "text": "打开生产设置创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 10,
+          "text": "打开素材实验室工具",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 11,
+          "text": "打开项目维护系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 12,
+          "text": "打开项目总览导航",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 13,
+          "text": "打开诊断系统",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        },
+        {
+          "index": 14,
+          "text": "打开资产圣经创作",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "inputs": [
+        {
+          "index": 0,
+          "type": "text",
+          "disabled": false,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ],
+      "selects": [
+        {
+          "index": 0,
+          "options_count": 4,
+          "selected": "6cfd101c-2220-4ba6-a768-466f5dc34c95",
+          "status": "PASS"
+        },
+        {
+          "index": 1,
+          "disabled": true,
+          "visible": false,
+          "status": "INSPECTED"
+        }
+      ]
+    }
+  ]
+}

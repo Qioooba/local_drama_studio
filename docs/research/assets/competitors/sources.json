@@ -1,0 +1,256 @@
+{
+  "schema_version": "1.1",
+  "retrieved_at": "2026-08-21 Asia/Shanghai",
+  "classification_legend": {
+    "A": "官方产品、官方文档、官方代码仓库或本次对官方现网页面的直接浏览器截图",
+    "A-": "官方发布稿或高可信媒体所载、可清楚辨认控件的真实产品截图",
+    "B+": "专业媒体/深度实测文章的连续操作截图，来源可靠但非官方文档",
+    "B": "公开视频实操帧或普通媒体截图，可辨认工作流但版本与完整性有限",
+    "C": "宣传拼图、成片样例或无法独立核验的二次转载；不得当作工作台证据"
+  },
+  "products": [
+    {
+      "slug": "bytedance-comic-studio",
+      "name": "字节跳动漫剧创作工具（内测）",
+      "source_pages": ["https://www.aitntnews.com/newDetail.html?newId=28337"],
+      "source_date": "2026-08-18",
+      "evidence": "A-",
+      "files": [
+        {"glob": "ui-01.webp", "class": "true-ui", "meaning": "项目入口与剧本上传；左侧窄导航、中央上传卡、底部推荐入口。"},
+        {"glob": "ui-02.webp", "class": "true-ui", "meaning": "项目规划/剧本规划页；左项目树、中编辑区、下方卡片式分集概览。"},
+        {"glob": "ui-03.webp", "class": "true-ui", "meaning": "资产详情；左资产清单、中角色主图/变体、右描述与出场集数。"},
+        {"glob": "ui-04.webp", "class": "true-ui", "meaning": "单集分镜编辑；左画面、中结构化镜头文本、右资产、底部镜头条，含首尾帧/模式弹层。"},
+        {"glob": "ui-05.webp", "class": "true-ui-crop", "meaning": "导出/资产区域局部，保留用于确认按钮与素材组织，不独立证明完整布局。"}
+      ],
+      "contact_sheet": "contact-sheet.jpg",
+      "thumbnail_dir": "thumbs/"
+    },
+    {
+      "slug": "xiaoyunque",
+      "name": "小云雀短剧 Agent",
+      "source_pages": ["https://www.aitntnews.com/newDetail.html?newId=23268", "https://www.xiaoyunque.com/"],
+      "source_date": "2026-03-19",
+      "evidence": "B+",
+      "files": [
+        {"glob": "01-script-generation.jpeg", "class": "true-ui", "meaning": "短剧 Agent 剧本生成/长文本确认页。"},
+        {"glob": "02-character-storyboard-overview.jpeg", "class": "true-ui-crop", "meaning": "结构化镜头文本与实体高亮局部。"},
+        {"glob": "03-video-linear-workbench.jpeg", "class": "true-ui", "meaning": "资产-脚本-预览-镜头条工作台概览。"},
+        {"glob": "ui-01.webp..ui-13.webp", "class": "output-or-context", "meaning": "文章前半为首页/成片效果/输入样例，不能单独当作编辑器功能证据。"},
+        {"glob": "ui-14.webp..ui-17.webp", "class": "true-ui", "meaning": "Agent 入口、上传/AI 生成剧本、生成中状态。"},
+        {"glob": "ui-18.webp..ui-22.webp", "class": "true-ui", "meaning": "三步式向导：剧本大纲、全局画风/比例、角色场景、角色编辑弹窗、分集列表。"},
+        {"glob": "ui-23.webp..ui-26.webp", "class": "true-ui", "meaning": "单集制作：左资产库、中镜头文本、右预览、底部镜头卡；可逐镜重抽、合并、导出。"},
+        {"glob": "ui-27.webp..ui-33.webp", "class": "output-or-unrelated-demo", "meaning": "成片与辅助实验截图，不用于确认主工作台。"}
+      ],
+      "contact_sheet": "contact-sheet.jpg",
+      "thumbnail_dir": "thumbs/",
+      "note": "同名 JPG 是既有转换副本；原始证据以 WEBP 序列为准。"
+    },
+    {
+      "slug": "nadou-pro",
+      "name": "纳逗 Pro",
+      "source_pages": ["https://nadoupro.iqiyi.com/docs/getting-started"],
+      "evidence": "A",
+      "files": [
+        {"glob": "01-script-agent-workbench.jpeg,02-agent-cost-failure-state.jpeg", "class": "true-ui", "meaning": "剧本 Agent 与费用/失败状态，验证 Agent 对话式入口及错误可见性。"},
+        {"glob": "ui-01.jpg..ui-03.jpg", "class": "true-ui", "meaning": "自由画布、预览/素材库、资产分类。"},
+        {"glob": "ui-04.png", "class": "true-ui", "meaning": "在线多轨剪辑器：左素材、中预览、底部 VIDEO/AUDIO/PIP/STICKER 轨、右检查器。"},
+        {"glob": "ui-05.png..ui-08.jpg", "class": "true-ui", "meaning": "一键拆分镜弹窗、分镜节点、节点类型菜单、小说上传建台。"},
+        {"glob": "ui-09.jpg..ui-15.png", "class": "true-ui", "meaning": "主体库、三视图/多角度、多格图、分镜分组、制片与重生成。"},
+        {"glob": "ui-16.png..ui-17.gif", "class": "true-ui", "meaning": "3D 导演台：层级/物体、中心视口、摄影机与关键帧时间线、属性面板。"},
+        {"glob": "ui-18.gif", "class": "true-ui", "meaning": "最终剪辑/素材回填工作台。"}
+      ],
+      "contact_sheet": "contact-sheet.jpg",
+      "thumbnail_dir": "thumbs/"
+    },
+    {
+      "slug": "tiangong-drama",
+      "name": "天工短剧工作台 / SkyProduction",
+      "source_pages": ["https://www.skyproduction.cn/", "https://www.csdn.net/article/2026-03-31/159696519"],
+      "source_date": "2026-03-31",
+      "evidence": "A-",
+      "files": [
+        {"glob": "01-asset-extraction-workbench.jpeg", "class": "true-ui", "source_asset": "https://i-blog.csdnimg.cn/img_convert/9571b9d47da925dc383b37f8dea4b4e3.png", "meaning": "顶层项目/资产/Agent/分镜/视频/媒资 IA；人设、场景、道具三列资产确认与下一步。"},
+        {"glob": "02-video-generation-workbench.jpeg", "class": "true-ui-crop", "source_asset": "https://i-blog.csdnimg.cn/img_convert/8c9509b129b6c973e543b7a008dc7f1f.png", "meaning": "镜头生成参数与模型弹层，显示 Vidu Q2、可灵 O3、SkyReels V4、1080P、5 秒和批量生成。"}
+      ],
+      "contact_sheet": "contact-sheet.jpg",
+      "thumbnail_dir": "thumbs/"
+    },
+    {
+      "slug": "workrally",
+      "name": "WorkRally",
+      "source_pages": ["https://github.com/Tencent/workrally", "https://www.sohu.com/a/1048668744_116157", "https://workrally.qq.com/"],
+      "source_date": "2026-07-10",
+      "evidence": "A for capability, B+ for screenshots",
+      "files": [
+        {"glob": "ui-01.png..ui-03.jpeg", "class": "marketing", "meaning": "品牌封面与行业数据，不作 UI 证据。"},
+        {"glob": "ui-04.png..ui-06.jpeg", "class": "true-ui", "meaning": "剧本/世界观/角色场景解析、已识别资产卡与进入画布。"},
+        {"glob": "ui-07.png..ui-09.png", "class": "true-ui", "meaning": "角色多视图、资产衍生与镜头文本/故事板。"},
+        {"glob": "ui-10.gif..ui-13.gif", "class": "output-demo", "meaning": "成片结果连续帧，不能证明编辑控件。"},
+        {"glob": "ui-14.png", "class": "true-ui", "meaning": "Skill 市场/开关，包含分镜、三维资产等官方 Skill。"},
+        {"glob": "ui-15.png", "class": "marketing", "meaning": "品牌结尾帧。"}
+      ],
+      "contact_sheet": "contact-sheet.jpg",
+      "thumbnail_dir": "thumbs/"
+    },
+    {
+      "slug": "worksolo-onsolo",
+      "name": "WorkSolo / OnSolo",
+      "source_pages": ["https://www.woshipm.com/ai/6446956.html"],
+      "source_date": "2026-08",
+      "evidence": "B+",
+      "files": [
+        {"glob": "ui-01.png,ui-03.png,ui-13.gif..ui-16.png", "class": "marketing-or-context", "meaning": "品牌与行业图，不用于功能确证。"},
+        {"glob": "ui-02.png,ui-05.gif,ui-07.gif", "class": "true-ui", "meaning": "OnSolo 首页，提供 Story/互动影视/Canvas 三入口与灵感输入。"},
+        {"glob": "ui-04.png", "class": "true-ui", "meaning": "剧本正文与右侧 Agent 对话双栏。"},
+        {"glob": "ui-06.png", "class": "true-ui", "meaning": "互动故事关系图/节点画布。"},
+        {"glob": "ui-08.gif", "class": "output-demo", "meaning": "互动影片播放/章节选择，不是制作工作台。"},
+        {"glob": "ui-09.png", "class": "true-ui", "meaning": "编辑器：左素材、中预览、底时间线、右检查器的专业四区布局。"},
+        {"glob": "ui-10.gif..ui-11.gif", "class": "true-ui-demo", "meaning": "Canvas 入口与节点式创作演示。"},
+        {"glob": "ui-12.png", "class": "content-example", "meaning": "剧本表格示例。"}
+      ],
+      "contact_sheet": "contact-sheet.jpg",
+      "thumbnail_dir": "thumbs/"
+    },
+    {
+      "slug": "seko",
+      "name": "Seko / Seko 2.0",
+      "source_pages": ["https://www.uisdc.com/hangye/seko", "https://www.sensetime.com/kr/news-detail/51170774?categoryId=51172", "https://seko.gongke.net/"],
+      "evidence": "B+ for screenshots, A- for release facts",
+      "files": [
+        {"glob": "ui-01.webp", "class": "true-ui", "meaning": "脚本解析与角色多视图资产。"},
+        {"glob": "ui-02.webp..ui-04.webp", "class": "true-ui", "meaning": "无限画布、节点连线、图像变体与操作浮层。"},
+        {"glob": "ui-05.webp..ui-08.webp", "class": "true-ui", "meaning": "分镜卡、故事板、多镜头生成和镜头控制。"},
+        {"glob": "ui-09.webp", "class": "true-ui", "meaning": "项目/集列表卡片。"},
+        {"glob": "ui-10.png", "class": "true-ui", "meaning": "编辑器：中央竖屏预览、底部连续镜头条、右侧导出/水印面板。"},
+        {"glob": "ui-11.png", "class": "true-ui", "meaning": "Seko 2.0 首页与多智能体入口。"}
+      ],
+      "contact_sheet": "contact-sheet.jpg",
+      "thumbnail_dir": "thumbs/"
+    },
+    {
+      "slug": "libtv",
+      "name": "LibTV",
+      "source_pages": ["https://www.aitntnews.com/newDetail.html?newId=23267", "https://www.liblib.tv/wappro?sourceid=040004"],
+      "evidence": "B+",
+      "files": [
+        {"glob": "ui-01.webp..ui-04.webp", "class": "marketing-or-context", "meaning": "品牌、方法介绍、GitHub/技能清单，不是工作台。"},
+        {"glob": "ui-05.webp..ui-15.webp", "class": "true-ui", "meaning": "暗色无限画布：悬浮新增菜单含文本/图像/视频/音频/脚本/上传；节点参数、模型、变体与连线。"},
+        {"glob": "ui-16.webp,ui-18.webp,ui-22.webp,ui-24.webp..ui-27.webp", "class": "output-example", "meaning": "生成结果对比/成片样例。"},
+        {"glob": "ui-17.webp,ui-19.webp..ui-21.webp,ui-23.webp,ui-28.webp", "class": "true-ui", "meaning": "节点生成、素材库与大规模画布工作流。"},
+        {"glob": "ui-29.webp..ui-30.webp", "class": "context", "meaning": "社交/配置上下文，不用于 UI 推断。"},
+        {"glob": "ui-31.webp..ui-33.webp,ui-35.webp,ui-37.webp", "class": "true-ui", "meaning": "项目首页、资产/角色图、批处理/节点画布。"},
+        {"glob": "ui-34.webp,ui-36.webp,ui-38.webp..ui-39.webp", "class": "output-or-brand", "meaning": "成片与品牌帧。"}
+      ],
+      "contact_sheet": "contact-sheet.jpg",
+      "thumbnail_dir": "thumbs/"
+    },
+    {
+      "slug": "dramart",
+      "name": "Dramart / 火山剧创",
+      "source_pages": ["https://developer.volcengine.com/articles/7622325633040793641"],
+      "source_date": "2026-03-30",
+      "evidence": "A-",
+      "files": [
+        {"glob": "ui-01.png", "class": "ui-in-marketing-composite", "meaning": "剧本解析表单。"},
+        {"glob": "ui-02.png", "class": "ui-in-marketing-composite", "meaning": "角色一致性/多状态资产表。"},
+        {"glob": "ui-03.png", "class": "ui-in-marketing-composite", "meaning": "分镜解析与成片预览，左脚本/资产、中预览、底镜头条。"},
+        {"glob": "ui-04.png", "class": "architecture-graphic", "meaning": "脚本理解/素材生成/分镜解析/策略审片 Agent 闭环，不是可操作界面。"}
+      ],
+      "contact_sheet": "contact-sheet.jpg",
+      "thumbnail_dir": "thumbs/"
+    },
+    {
+      "slug": "wonderclip",
+      "name": "万镜一刻 / WonderClip",
+      "source_pages": ["https://www.geekpark.net/news/367515", "https://university.aliyun.com/action/sdu-ai", "https://www.wonderclip.ai/#/home"],
+      "evidence": "B+ for screenshot, A for capability",
+      "files": [
+        {"glob": "ui-01.png..ui-03.jpg", "class": "marketing-or-output", "meaning": "企业/数字人案例，不作工作台证据。"},
+        {"glob": "ui-04.png", "class": "true-ui", "meaning": "深色无限画布：角色/道具节点连到图像/视频节点，右下参数面板。"},
+        {"glob": "ui-05.png", "class": "marketing", "meaning": "品牌主视觉。"},
+        {"glob": "ui-06.png", "class": "qr", "meaning": "二维码，不是 UI。"}
+      ],
+      "contact_sheet": "contact-sheet.jpg",
+      "thumbnail_dir": "thumbs/",
+      "gap": "公开资料未展示完整分集、音频多轨、审片协作界面。"
+    },
+    {
+      "slug": "wondershare-drama",
+      "name": "万兴剧厂 / ReelMate",
+      "source_pages": ["https://www.reelmate.cn/create/text-to-video", "https://www.reelmate.cn/tools", "https://www.donews.com/news/detail/4/6517875.html"],
+      "evidence": "A for ui-03/ui-04, B+ for ui-02",
+      "files": [
+        {"glob": "01-project-workbench.jpeg", "class": "output-promotion", "meaning": "爆剧/集数播放展示，不是工作台，文件旧名具有误导性。"},
+        {"glob": "02-storyboard-editor.jpeg", "class": "true-ui", "meaning": "剧集信息→出镜主体→分镜规划的批量弹窗；模型、分辨率、时长、数量、首画同出与批量生成。"},
+        {"glob": "ui-03-video-generation-page.png", "class": "true-ui", "meaning": "现网视频生成：左参数表单（文/图/参考生视频、模型、运镜、音效、时长、比例），右资源结果区。"},
+        {"glob": "ui-04-toolbox.png", "class": "true-ui", "meaning": "现网完整 IA 与工具箱：首页/剧本/项目/资产库/工具箱/团队；视频、图片、音频工具卡。"}
+      ],
+      "contact_sheet": "contact-sheet.jpg",
+      "thumbnail_dir": "thumbs/"
+    },
+    {
+      "slug": "dramabuddy",
+      "name": "DramaBuddy / 阅文漫剧助手",
+      "source_pages": ["https://aicomic.yuewen.com/", "https://main.qcloudimg.com/raw/document/product/pdf/1156_65094_cn.pdf", "https://finance.eastmoney.com/a/202607163809286639.html"],
+      "source_date": "official guide updated 2026-03-02; feature release 2026-07-16",
+      "evidence": "A for dashboard, B+ for latest feature claims",
+      "files": [
+        {"glob": "ui-01-dashboard.png", "class": "true-ui", "meaning": "官方指南第19页裁切：左侧个人空间/首页/我的作品/素材库/手册等导航；中部从小说/剧本/分镜三种入口、爆款作品与素材案例。"},
+        {"glob": "official-guide-page-14.png..official-guide-page-19.png", "class": "official-document-pages", "meaning": "腾讯云开通、积分兑换、进入阅文漫剧助手的操作流程；第19页含真实首页。"},
+        {"glob": "raw-01.*..raw-11.*", "class": "official-marketing-or-output", "meaning": "官网角色/场景/成片/品牌素材，不是工作台。"}
+      ],
+      "contact_sheet": "contact-sheet.jpg",
+      "thumbnail_dir": "thumbs/",
+      "gap": "新版无限画布、全景导演台、故事板、动捕视频参考、镜头审核批注尚未找到可公开核验的真实操作截图；仅有官方/主流媒体文字确证，禁止据此臆造布局。"
+    },
+    {
+      "slug": "popomint",
+      "name": "泡漫 / PopoMint",
+      "source_pages": ["https://www.popreels.cn/", "https://www.cnsa.cn/module/download/down.jsp?colID=2019&i_ID=48440"],
+      "source_date": "direct capture 2026-08-21",
+      "evidence": "A",
+      "files": [
+        {"glob": "ui-01-home.png", "class": "true-ui", "meaning": "官方现网全页：左垂直主导航（创作/项目/接单/变现/空间），中核心创建区，右侧充值/销售。"},
+        {"glob": "ui-02-core-workspace.png", "class": "true-ui", "meaning": "核心工作区：剧本创作/短剧制作/一键出海；工作流/转绘/自由画布；上传/粘贴与市场、风格、影调、比例。"},
+        {"glob": "ui-03-creation-type-menu.png", "class": "true-ui", "meaning": "创作类型弹层：短剧/解说漫与剧本模式/分镜模式，证明弹出层式渐进配置。"}
+      ],
+      "contact_sheet": "contact-sheet.jpg",
+      "thumbnail_dir": "thumbs/",
+      "note": "此前搜索结果把官网误判为纯营销页；2026-08-21 直接浏览确认首页即带可操作核心工作区。"
+    },
+    {
+      "slug": "jurilu",
+      "name": "巨日禄",
+      "source_pages": ["https://www.bilibili.com/video/BV1KnrhBvEYf/", "https://www.tahou.com/article/200816633475333125", "https://video.jurilu.com/index"],
+      "source_date": "tutorial published 2026-01-12",
+      "evidence": "B",
+      "files": [
+        {"glob": "source-tutorial.mp4", "class": "public-hands-on-video", "meaning": "2:53 连续操作实录，作为帧截图的母源。"},
+        {"glob": "01-main-workbench.jpeg", "class": "true-ui", "meaning": "脚本/模型/输出配置与批量生成主工作台。"},
+        {"glob": "ui-01.jpg..ui-02.jpg", "class": "true-ui", "meaning": "剧本输入、项目/素材入口。"},
+        {"glob": "ui-03.jpg", "class": "feature-summary-frame", "meaning": "教程字幕列出三维动画/真人动漫等能力，不独立确证控件。"},
+        {"glob": "ui-04.jpg..ui-06.jpg", "class": "true-ui", "meaning": "AI 拆剧本/资产匹配、分镜素材批量卡、场景与资产管理。"}
+      ],
+      "contact_sheet": "contact-sheet.jpg",
+      "thumbnail_dir": "thumbs/",
+      "gap": "未找到官方完整多轨剪辑/音频界面的清晰截图；剪映草稿导出来自教程/文章文字。"
+    },
+    {
+      "slug": "lumenx",
+      "name": "LumenX Studio",
+      "source_pages": ["https://github.com/alibaba/lumenx"],
+      "evidence": "A",
+      "files": [
+        {"glob": "ui-01.jpg", "class": "true-ui", "meaning": "脚本编辑：左导航、中长文本、右结构化参数。"},
+        {"glob": "ui-02.jpg", "class": "true-ui", "meaning": "美术方向：正/负提示词与风格块。"},
+        {"glob": "ui-03.jpg", "class": "true-ui", "meaning": "角色资产与多参考图。"},
+        {"glob": "ui-04.jpg..ui-05.jpg", "class": "true-ui", "meaning": "分镜卡/故事板编排与画面生成。"},
+        {"glob": "ui-06.jpg", "class": "true-ui", "meaning": "Motion/视频镜头任务及状态。"},
+        {"glob": "ui-07.jpg", "class": "true-ui", "meaning": "Playground 总览。"},
+        {"glob": "ui-08.jpg", "class": "true-ui", "meaning": "Assembly/成片合成任务与队列。"}
+      ],
+      "contact_sheet": "contact-sheet.jpg",
+      "thumbnail_dir": "thumbs/"
+    }
+  ]
+}

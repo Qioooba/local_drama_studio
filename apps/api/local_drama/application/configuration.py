@@ -9,6 +9,7 @@ from pathlib import PurePosixPath
 from typing import Any
 
 from local_drama.application.delivery_presets import preset_items, require_preset
+from local_drama.domain.capabilities import normalize_capability
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
 
@@ -273,11 +274,33 @@ class ConfigurationService:
     def bind_profile(
         self, project_id: str, capability: str, profile_version_id: str, confirm_candidate: bool = False, actor: str = "local-user"
     ) -> dict[str, Any]:
+        try:
+            canonical_capability = normalize_capability(capability)
+        except ValueError as error:
+            raise DomainRuleError(
+                "PROFILE_CAPABILITY_INVALID",
+                "绑定 capability 未知或含义不唯一",
+                {"capability": capability},
+            ) from error
         now = _utc_now()
         with self.database.transaction() as connection:
             profile = connection.execute("SELECT id, capability, status FROM execution_profile_versions WHERE id = ?", (profile_version_id,)).fetchone()
             if profile is None:
                 raise DomainRuleError("PROFILE_NOT_FOUND", "Profile 版本不存在")
+            try:
+                profile_capability = normalize_capability(str(profile["capability"]))
+            except ValueError as error:
+                raise DomainRuleError(
+                    "PROFILE_CAPABILITY_INVALID",
+                    "Profile 版本记录了未知或含义不唯一的 capability",
+                    {"profile_version_id": profile_version_id},
+                ) from error
+            if profile_capability != canonical_capability:
+                raise DomainRuleError(
+                    "PROFILE_CAPABILITY_MISMATCH",
+                    "Profile capability 与绑定键不一致",
+                    {"requested": canonical_capability, "profile_capability": profile_capability},
+                )
             if profile["status"] != "PUBLISHED" and not confirm_candidate:
                 raise DomainRuleError("PROFILE_NOT_PUBLISHED", "只有已发布 Profile 才能绑定项目；候选 Profile 不会被静默激活")
             if connection.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone() is None:
@@ -286,16 +309,16 @@ class ConfigurationService:
             binding_status = "ACTIVE" if profile["status"] == "PUBLISHED" else "SELECTED_CANDIDATE"
             connection.execute(
                 "INSERT INTO project_profile_bindings (id, project_id, capability, execution_profile_version_id, status, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'v2') ON CONFLICT(project_id, capability) DO UPDATE SET execution_profile_version_id=excluded.execution_profile_version_id, status=excluded.status, updated_at=excluded.updated_at, revision=project_profile_bindings.revision+1",
-                (binding_id, project_id, capability, profile_version_id, binding_status, now, now, actor),
+                (binding_id, project_id, canonical_capability, profile_version_id, binding_status, now, now, actor),
             )
             connection.execute(
                 "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'producer', 'PROFILE_BOUND', 'project', ?, ?, ?)",
-                (actor, project_id, "绑定本地 Profile", _json({"capability": capability, "profile_version_id": profile_version_id})),
+                (actor, project_id, "绑定本地 Profile", _json({"capability": canonical_capability, "profile_version_id": profile_version_id})),
             )
         return {
             "id": binding_id,
             "project_id": project_id,
-            "capability": capability,
+            "capability": canonical_capability,
             "profile_version_id": profile_version_id,
             "status": binding_status,
             "profile_status": profile["status"],

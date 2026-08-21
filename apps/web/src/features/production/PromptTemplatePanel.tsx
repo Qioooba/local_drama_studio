@@ -19,7 +19,7 @@ export function PromptTemplatePanel({ projectId, shot, profiles }: { projectId: 
   });
   const valid = Boolean(projectId && shotId && title.trim() && templateText.trim() && expandedText.trim() && language.trim() && profileVersionId);
   return <section className="panel prompt-template-panel" aria-labelledby="prompt-template-title">
-    <div className="panel-heading"><div><p className="eyebrow">FR-WRT-004 · FROZEN</p><h3 id="prompt-template-title">关键词与提示词模板</h3></div><span className="status-pill">{prompts.data?.items.length ?? 0} 个 Prompt</span></div>
+    <div className="panel-heading"><div><p className="eyebrow">FR-WRT-004 · 冻结</p><h3 id="prompt-template-title">关键词与提示词模板</h3></div><span className="status-pill">{prompts.data?.items.length ?? 0} 个 Prompt</span></div>
     {!shot ? <p className="empty-state">选择镜头后创建冻结提示词。</p> : <>
       <details><summary>查看原始镜头字段</summary><pre className="prompt-source-fields">{JSON.stringify(sourceFields, null, 2)}</pre></details>
       <div className="prompt-template-grid">
@@ -30,9 +30,9 @@ export function PromptTemplatePanel({ projectId, shot, profiles }: { projectId: 
         <label className="wide">展开结果<textarea value={expandedText} onChange={(event) => setExpandedText(event.target.value)} placeholder="冻结后作为 content_text" /></label>
         <label className="wide">负向词<textarea value={negativeText} onChange={(event) => setNegativeText(event.target.value)} /></label>
       </div>
-      <div className="prompt-template-actions"><span>保存会创建内容 hash 固定的 PromptRevision，不覆盖历史。</span><button className="primary-action" disabled={!valid || create.isPending} onClick={() => create.mutate()}>{create.isPending ? "冻结中…" : "冻结展开结果"}</button></div>
+      <div className="prompt-template-actions"><span>保存会创建内容 hash 固定的 PromptRevision，不覆盖历史。</span><button type="button" className="primary-action" disabled={!valid || create.isPending} onClick={() => create.mutate()}>{create.isPending ? "冻结中…" : "冻结展开结果"}</button></div>
       {create.error && <p className="inline-error" role="alert">{String(create.error)}</p>}
-      <div className="prompt-revision-list">{prompts.data?.items.map((item) => { const structured = item.structured as Record<string, unknown>; return <article key={String(item.id)}><strong>{String(item.title)} · revision {String(item.revision_no)}</strong><span>{String(structured.language)} · profile {String(structured.model_profile_version_id).slice(0, 12)}</span><p>{String(item.content_text)}</p><small>negative: {String(structured.negative_text || "（空）")} · FROZEN · {String(item.content_hash).slice(0, 12)}</small></article>; })}</div>
+      <div className="prompt-revision-list">{prompts.data?.items.map((item) => { const structured = item.structured as Record<string, unknown>; const profile = profiles.find((candidate) => candidate.version_id === structured.model_profile_version_id); return <article key={String(item.id)}><strong>{String(item.title)} · revision {String(item.revision_no)}</strong><span>{String(structured.language)} · {profile ? `${profile.code} · ${profile.title} · v${profile.version_no ?? "已发布"}` : "历史 Profile 版本"}</span><p>{String(item.content_text)}</p><small>negative: {String(structured.negative_text || "（空）")} · FROZEN · 内容 hash {String(item.content_hash).slice(0, 12)}</small>{!profile && <details><summary>高级：历史 Profile 技术标识</summary><code>{String(structured.model_profile_version_id)}</code></details>}</article>; })}</div>
     </>}
   </section>;
 }

@@ -83,6 +83,8 @@ def missing_shot_fields(fields: dict[str, object]) -> list[str]:
                 CameraPlan.from_payload(value)
             except DomainRuleError:
                 missing.append(field)
+        elif field == "composition" and isinstance(value, dict) and not any(value.get(key) for key in ("preset", "framing", "subject_position", "depth_plan")):
+            missing.append(field)
         elif value is None:
             missing.append(field)
         elif isinstance(value, str) and not value.strip() and field not in {"dialogue", "environment"}:

@@ -1,0 +1,99 @@
+{
+  "schema_version": "localdrama.uat-evidence.v1",
+  "evidence_id": "p12-new-routes-uat",
+  "title": "V2 New Routes & Navigation UAT Signoff",
+  "status": "PENDING_UAT",
+  "approved": false,
+  "evidence_kind": "AUTOMATED_PRECHECK",
+  "approval_note": "Route declarations passed the automated pre-check; interactive route UAT and reviewer sign-off are still required.",
+  "executed_at": "2026-08-21T08:00:52.740289+00:00",
+  "total_required_routes": 17,
+  "passed_routes_count": 17,
+  "routes": [
+    {
+      "route": "/projects",
+      "present": true,
+      "status": "PASS"
+    },
+    {
+      "route": "/projects/:projectId",
+      "present": true,
+      "status": "PASS"
+    },
+    {
+      "route": "story",
+      "present": true,
+      "status": "PASS"
+    },
+    {
+      "route": "assets",
+      "present": true,
+      "status": "PASS"
+    },
+    {
+      "route": "canvas",
+      "present": true,
+      "status": "PASS"
+    },
+    {
+      "route": "operations",
+      "present": true,
+      "status": "PASS"
+    },
+    {
+      "route": "episodes/:episodeId/plan",
+      "present": true,
+      "status": "PASS"
+    },
+    {
+      "route": "episodes/:episodeId/direct",
+      "present": true,
+      "status": "PASS"
+    },
+    {
+      "route": "episodes/:episodeId/generation",
+      "present": true,
+      "status": "PASS"
+    },
+    {
+      "route": "episodes/:episodeId/review",
+      "present": true,
+      "status": "PASS"
+    },
+    {
+      "route": "episodes/:episodeId/audio",
+      "present": true,
+      "status": "PASS"
+    },
+    {
+      "route": "episodes/:episodeId/timeline",
+      "present": true,
+      "status": "PASS"
+    },
+    {
+      "route": "episodes/:episodeId/delivery",
+      "present": true,
+      "status": "PASS"
+    },
+    {
+      "route": "episodes/:episodeId/run",
+      "present": true,
+      "status": "PASS"
+    },
+    {
+      "route": "/models",
+      "present": true,
+      "status": "PASS"
+    },
+    {
+      "route": "/jobs",
+      "present": true,
+      "status": "PASS"
+    },
+    {
+      "route": "/diagnostics",
+      "present": true,
+      "status": "PASS"
+    }
+  ]
+}

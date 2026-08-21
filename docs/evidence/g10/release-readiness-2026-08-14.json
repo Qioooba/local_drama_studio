@@ -1,7 +1,7 @@
 {
   "schema_version": "g10.release_audit.read_only.v1",
-  "observed_at": "2026-08-17T16:24:27.065254+00:00",
-  "status": "PASS",
+  "observed_at": "2026-08-20T14:32:45.776960+00:00",
+  "status": "IN_PROGRESS",
   "project_id": "e5eaa01d-d39a-4a63-acbf-026da30b46e7",
   "checks": [
     {
@@ -55,7 +55,7 @@
     },
     {
       "code": "LOCAL_UAT_READONLY_BASELINE",
-      "passed": true,
+      "passed": false,
       "evidence": "docs/evidence/g10/local-uat-readonly-2026-08-14.json"
     },
     {
@@ -148,5 +148,5 @@
     "migrations_run": false,
     "jobs_created": false
   },
-  "exit_decision": "GO for the Windows x64 LOCAL_ONLY source release; user-selected external models and media are not bundled"
+  "exit_decision": "G10 release go/no-go is pending; missing or blocked checks must not be bypassed"
 }

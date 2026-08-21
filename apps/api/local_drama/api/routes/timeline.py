@@ -4,12 +4,13 @@ from collections.abc import Iterator
 from email.utils import formatdate
 from pathlib import Path
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Header, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 
 from local_drama.api.routes.media import _range_headers
 from local_drama.api.schemas.g8 import (
     AudioBindingRequest,
+    ComposeSubmitRequest,
     DeliveryBuildRequest,
     DeliveryReviewRequest,
     DeliveryWithdrawRequest,
@@ -24,6 +25,8 @@ from local_drama.api.schemas.g8 import (
     TimelineRevisionRequest,
     TransitionConstraintRequest,
 )
+from local_drama.application.compose import ComposeService
+from local_drama.application.episode_cockpit import EpisodeCockpitService
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.subtitle_styles import SubtitleStyleTemplateService
 from local_drama.application.timeline import TimelineService
@@ -38,6 +41,14 @@ router = APIRouter(tags=["timeline", "delivery"])
 async def get_episode_timeline_status(episode_id: str, request: Request) -> dict[str, object]:
     try:
         return {"status": TimelineStatusService(request.app.state.database).inspect(episode_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/episodes/{episode_id}/cockpit", operation_id="getEpisodeCockpit")
+async def get_episode_cockpit(episode_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"cockpit": EpisodeCockpitService(request.app.state.database).inspect(episode_id)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -91,6 +102,15 @@ async def get_episode_render_content(render_id: str, request: Request) -> Respon
 @router.head("/episode-renders/{render_id}/content", operation_id="headEpisodeRenderContent")
 async def head_episode_render_content(render_id: str, request: Request) -> Response:
     return await _render_content(render_id, request, head=True)
+
+
+@router.get("/episode-renders/{render_id}/thumbnail", operation_id="getEpisodeRenderThumbnail")
+async def get_episode_render_thumbnail(render_id: str, request: Request, size: str = "medium", frame: str = "poster") -> FileResponse:
+    try:
+        path, mime = service(request).render_thumbnail(render_id, size=size, frame=frame)
+        return FileResponse(path, media_type=mime)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
 
 
 @router.post("/episodes/{episode_id}/timeline-revisions", status_code=201, operation_id="createTimelineRevision")
@@ -257,7 +277,28 @@ async def render_episode(timeline_revision_id: str, request: Request, payload: R
         revision_id = payload.timeline_revision_id if payload else timeline_revision_id
         if revision_id != timeline_revision_id:
             raise DomainRuleError("TIMELINE_REVISION_MISMATCH", "路径和请求体的时间线 revision 不一致")
-        return {"render": service(request).render_episode(timeline_revision_id)}
+        return {"render": service(request).render_episode(timeline_revision_id, force_rerender=payload.force_rerender if payload else False)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/timeline-revisions/{timeline_revision_id}/compose:preflight", operation_id="preflightEpisodeCompose")
+async def preflight_episode_compose(timeline_revision_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"preflight": ComposeService(request.app.state.database, request.app.state.settings).preflight(timeline_revision_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/timeline-revisions/{timeline_revision_id}/compose:submit", status_code=202, operation_id="submitEpisodeCompose")
+async def submit_episode_compose(
+    timeline_revision_id: str, payload: ComposeSubmitRequest, request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, object]:
+    try:
+        return ComposeService(request.app.state.database, request.app.state.settings).submit(
+            timeline_revision_id, force_rerender=payload.force_rerender, idempotency_key=idempotency_key,
+        )
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -265,7 +306,9 @@ async def render_episode(timeline_revision_id: str, request: Request, payload: R
 @router.post("/timeline-revisions/{timeline_revision_id}:render-segmented", status_code=201, operation_id="renderSegmentedEpisode")
 async def render_segmented_episode(timeline_revision_id: str, payload: RenderSegmentedEpisodeRequest, request: Request) -> dict[str, object]:
     try:
-        return {"render": service(request).render_segmented_episode(timeline_revision_id, [segment.model_dump() for segment in payload.segments])}
+        return {"render": service(request).render_segmented_episode(
+            timeline_revision_id, [segment.model_dump() for segment in payload.segments], force_rerender=payload.force_rerender,
+        )}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

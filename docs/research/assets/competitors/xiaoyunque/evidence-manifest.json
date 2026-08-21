@@ -1,0 +1,264 @@
+{
+  "schema_version": "localdrama.competitor-evidence.v1",
+  "product": "xiaoyunque",
+  "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+  "image_count": 36,
+  "contact_sheets": [
+    "contact-sheet-evidence-01.jpg",
+    "contact-sheet-evidence-02.jpg"
+  ],
+  "images": [
+    {
+      "file": "01-script-generation.jpeg",
+      "width": 1080,
+      "height": 734,
+      "bytes": 82198,
+      "thumbnail": "thumbs-evidence/01-script-generation-8b96627a.jpg"
+    },
+    {
+      "file": "02-character-storyboard-overview.jpeg",
+      "width": 1080,
+      "height": 623,
+      "bytes": 77933,
+      "thumbnail": "thumbs-evidence/02-character-storyboard-overview-1cc0d51e.jpg"
+    },
+    {
+      "file": "03-video-linear-workbench.jpeg",
+      "width": 1080,
+      "height": 584,
+      "bytes": 78492,
+      "thumbnail": "thumbs-evidence/03-video-linear-workbench-a6dff1d0.jpg"
+    },
+    {
+      "file": "ui-01.webp",
+      "width": 1080,
+      "height": 713,
+      "bytes": 29088,
+      "thumbnail": "thumbs-evidence/ui-01-7824a598.jpg"
+    },
+    {
+      "file": "ui-02.webp",
+      "width": 829,
+      "height": 468,
+      "bytes": 23612,
+      "thumbnail": "thumbs-evidence/ui-02-0675863e.jpg"
+    },
+    {
+      "file": "ui-03.webp",
+      "width": 1080,
+      "height": 780,
+      "bytes": 93666,
+      "thumbnail": "thumbs-evidence/ui-03-9bb2d15d.jpg"
+    },
+    {
+      "file": "ui-04.webp",
+      "width": 1080,
+      "height": 597,
+      "bytes": 23168,
+      "thumbnail": "thumbs-evidence/ui-04-a178b91a.jpg"
+    },
+    {
+      "file": "ui-05.webp",
+      "width": 825,
+      "height": 466,
+      "bytes": 26698,
+      "thumbnail": "thumbs-evidence/ui-05-ae28872d.jpg"
+    },
+    {
+      "file": "ui-06.webp",
+      "width": 826,
+      "height": 469,
+      "bytes": 21352,
+      "thumbnail": "thumbs-evidence/ui-06-7d874e5d.jpg"
+    },
+    {
+      "file": "ui-07.webp",
+      "width": 830,
+      "height": 459,
+      "bytes": 17880,
+      "thumbnail": "thumbs-evidence/ui-07-45145fed.jpg"
+    },
+    {
+      "file": "ui-08.webp",
+      "width": 830,
+      "height": 466,
+      "bytes": 64862,
+      "thumbnail": "thumbs-evidence/ui-08-a1a7f677.jpg"
+    },
+    {
+      "file": "ui-09.webp",
+      "width": 1080,
+      "height": 601,
+      "bytes": 25038,
+      "thumbnail": "thumbs-evidence/ui-09-5ca501a6.jpg"
+    },
+    {
+      "file": "ui-10.webp",
+      "width": 829,
+      "height": 463,
+      "bytes": 27640,
+      "thumbnail": "thumbs-evidence/ui-10-f96398ae.jpg"
+    },
+    {
+      "file": "ui-11.webp",
+      "width": 829,
+      "height": 469,
+      "bytes": 48646,
+      "thumbnail": "thumbs-evidence/ui-11-79cd647d.jpg"
+    },
+    {
+      "file": "ui-12.webp",
+      "width": 830,
+      "height": 470,
+      "bytes": 47380,
+      "thumbnail": "thumbs-evidence/ui-12-b325ea1d.jpg"
+    },
+    {
+      "file": "ui-13.webp",
+      "width": 830,
+      "height": 466,
+      "bytes": 22220,
+      "thumbnail": "thumbs-evidence/ui-13-64f2ad05.jpg"
+    },
+    {
+      "file": "ui-14.webp",
+      "width": 1080,
+      "height": 713,
+      "bytes": 29634,
+      "thumbnail": "thumbs-evidence/ui-14-a83eced1.jpg"
+    },
+    {
+      "file": "ui-15.webp",
+      "width": 1080,
+      "height": 375,
+      "bytes": 9116,
+      "thumbnail": "thumbs-evidence/ui-15-439588d7.jpg"
+    },
+    {
+      "file": "ui-16.webp",
+      "width": 1080,
+      "height": 297,
+      "bytes": 8350,
+      "thumbnail": "thumbs-evidence/ui-16-ee441bed.jpg"
+    },
+    {
+      "file": "ui-17.webp",
+      "width": 721,
+      "height": 385,
+      "bytes": 5664,
+      "thumbnail": "thumbs-evidence/ui-17-b4ee8e36.jpg"
+    },
+    {
+      "file": "ui-18.webp",
+      "width": 1080,
+      "height": 599,
+      "bytes": 36974,
+      "thumbnail": "thumbs-evidence/ui-18-2bd9fae9.jpg"
+    },
+    {
+      "file": "ui-19.webp",
+      "width": 1080,
+      "height": 775,
+      "bytes": 18052,
+      "thumbnail": "thumbs-evidence/ui-19-13cd50e1.jpg"
+    },
+    {
+      "file": "ui-20.webp",
+      "width": 1080,
+      "height": 565,
+      "bytes": 24044,
+      "thumbnail": "thumbs-evidence/ui-20-eda179a2.jpg"
+    },
+    {
+      "file": "ui-21.webp",
+      "width": 1080,
+      "height": 781,
+      "bytes": 40178,
+      "thumbnail": "thumbs-evidence/ui-21-ffcd8c5c.jpg"
+    },
+    {
+      "file": "ui-22.webp",
+      "width": 1080,
+      "height": 564,
+      "bytes": 14210,
+      "thumbnail": "thumbs-evidence/ui-22-af047f20.jpg"
+    },
+    {
+      "file": "ui-23.webp",
+      "width": 1080,
+      "height": 565,
+      "bytes": 43530,
+      "thumbnail": "thumbs-evidence/ui-23-148eb50e.jpg"
+    },
+    {
+      "file": "ui-24.webp",
+      "width": 1080,
+      "height": 567,
+      "bytes": 56004,
+      "thumbnail": "thumbs-evidence/ui-24-81cbb084.jpg"
+    },
+    {
+      "file": "ui-25.webp",
+      "width": 822,
+      "height": 257,
+      "bytes": 16768,
+      "thumbnail": "thumbs-evidence/ui-25-8a1b6f57.jpg"
+    },
+    {
+      "file": "ui-26.webp",
+      "width": 1080,
+      "height": 568,
+      "bytes": 18284,
+      "thumbnail": "thumbs-evidence/ui-26-30d49e9b.jpg"
+    },
+    {
+      "file": "ui-27.webp",
+      "width": 830,
+      "height": 470,
+      "bytes": 29434,
+      "thumbnail": "thumbs-evidence/ui-27-b78dcd12.jpg"
+    },
+    {
+      "file": "ui-28.webp",
+      "width": 1080,
+      "height": 544,
+      "bytes": 29938,
+      "thumbnail": "thumbs-evidence/ui-28-eb957155.jpg"
+    },
+    {
+      "file": "ui-29.webp",
+      "width": 1080,
+      "height": 559,
+      "bytes": 23390,
+      "thumbnail": "thumbs-evidence/ui-29-e5dca749.jpg"
+    },
+    {
+      "file": "ui-30.webp",
+      "width": 1080,
+      "height": 536,
+      "bytes": 25556,
+      "thumbnail": "thumbs-evidence/ui-30-c255aced.jpg"
+    },
+    {
+      "file": "ui-31.webp",
+      "width": 620,
+      "height": 229,
+      "bytes": 26050,
+      "thumbnail": "thumbs-evidence/ui-31-f5f4b21a.jpg"
+    },
+    {
+      "file": "ui-32.webp",
+      "width": 1080,
+      "height": 554,
+      "bytes": 33064,
+      "thumbnail": "thumbs-evidence/ui-32-27f83898.jpg"
+    },
+    {
+      "file": "ui-33.webp",
+      "width": 1080,
+      "height": 1019,
+      "bytes": 143626,
+      "thumbnail": "thumbs-evidence/ui-33-9418cb08.jpg"
+    }
+  ]
+}

@@ -36,13 +36,13 @@ export function EpisodeSceneRanges({ projectId, episodeId }: { projectId: string
       <div className="scene-range-form">
         <label>场次 code<input aria-label="场次 code" value={sceneCode} onChange={(event) => setSceneCode(event.target.value)} /></label>
         <label>场次标题<input aria-label="场次标题" value={sceneTitle} onChange={(event) => setSceneTitle(event.target.value)} /></label>
-        <button className="secondary" disabled={!sceneCode.trim() || !sceneTitle.trim() || createScene.isPending} onClick={() => createScene.mutate()}>{createScene.isPending ? "创建中…" : "创建母本场次"}</button>
+        <button type="button" className="secondary" disabled={!sceneCode.trim() || !sceneTitle.trim() || createScene.isPending} onClick={() => createScene.mutate()}>{createScene.isPending ? "创建中…" : "创建母本场次"}</button>
         <label>已有母本场次<select aria-label="已有母本场次" value={sceneId} onChange={(event) => setSceneId(event.target.value)}><option value="">请选择</option>{scenes.data?.items.map((item) => <option key={item.id} value={item.id}>{item.code} · {item.title}</option>)}</select></label>
         <label>集内顺序<input aria-label="集内顺序" type="number" min={1} value={ordinal} onChange={(event) => setOrdinal(Number(event.target.value))} /></label>
         <label>来源起点<input aria-label="来源起点" type="number" min={0} value={sourceStart} onChange={(event) => setSourceStart(Number(event.target.value))} /></label>
         <label>来源终点<input aria-label="来源终点" type="number" min={1} value={sourceEnd} onChange={(event) => setSourceEnd(Number(event.target.value))} /></label>
         <label>范围说明<input aria-label="范围说明" value={sourceLabel} onChange={(event) => setSourceLabel(event.target.value)} /></label>
-        <button className="secondary" disabled={!sceneId || ordinal < 1 || sourceStart < 0 || sourceEnd <= sourceStart || bind.isPending} onClick={() => bind.mutate()}>{bind.isPending ? "关联中…" : "关联到当前集"}</button>
+        <button type="button" className="secondary" disabled={!sceneId || ordinal < 1 || sourceStart < 0 || sourceEnd <= sourceStart || bind.isPending} onClick={() => bind.mutate()}>{bind.isPending ? "关联中…" : "关联到当前集"}</button>
       </div>
       {(createScene.error || bind.error) && <p className="inline-error" role="alert">保存失败：{String(createScene.error ?? bind.error)}</p>}
     </details>

@@ -521,7 +521,15 @@ class TimelineService:
     def list_audio_bindings(self, episode_id: str) -> list[dict[str, Any]]:
         self._episode(episode_id)
         with self.database.connect() as connection:
-            rows = connection.execute("SELECT * FROM audio_bindings WHERE episode_id=? ORDER BY start_us, id", (episode_id,)).fetchall()
+            rows = connection.execute(
+                """SELECT ab.*,mv.duration_ms,mv.source_name,ma.purpose,
+                EXISTS(SELECT 1 FROM media_cache_entries mce WHERE mce.media_version_id=ab.media_version_id
+                  AND mce.cache_kind='WAVEFORM' AND mce.status='READY') AS waveform_ready
+                FROM audio_bindings ab JOIN media_versions mv ON mv.id=ab.media_version_id
+                JOIN media_assets ma ON ma.id=mv.media_asset_id
+                WHERE ab.episode_id=? ORDER BY ab.start_us,ab.id""",
+                (episode_id,),
+            ).fetchall()
         items = []
         for row in rows:
             item = dict(row)
@@ -530,6 +538,7 @@ class TimelineService:
             item["license_evidence"] = evidence
             item["authorization_status"] = "VERIFIED_EVIDENCE" if evidence.get("schema_version") == "localdrama.audio-license-evidence.v1" else "LEGACY_INCOMPLETE"
             item["loop_enabled"] = bool(item["loop_enabled"])
+            item["waveform_ready"] = bool(item["waveform_ready"])
             items.append(item)
         return items
 
@@ -1125,7 +1134,7 @@ class TimelineService:
             return False
         return abs(observed - expected_fps) < 0.05
 
-    def render_episode(self, timeline_revision_id: str, *, actor: str = "local-user") -> dict[str, Any]:
+    def render_episode(self, timeline_revision_id: str, *, force_rerender: bool = False, actor: str = "local-user") -> dict[str, Any]:
         """Render the whole episode from its VIDEO timeline items.
 
         Without audio bindings this keeps the historical single-command concat
@@ -1134,6 +1143,7 @@ class TimelineService:
         mixed (volume/loop/fades/adelay), then the final mp4 is muxed.
         """
         timeline = self.get_timeline(timeline_revision_id)
+        self._assert_timeline_renderable(timeline)
         episode = self._episode(str(timeline["episode_id"]))
         video_items = [item for item in timeline["items"] if item["track_type"].upper() == "VIDEO" and item["media_version_id"]]
         if not video_items:
@@ -1147,23 +1157,68 @@ class TimelineService:
                 raise DomainRuleError("TIMELINE_MEDIA_KIND_INVALID", "VIDEO track 只能绑定视频媒体")
             paths.append(path)
             input_snapshot_items.append({"media_version_id": str(media["id"]), "sha256": str(media["sha256"]), "byte_size": int(media["byte_size"]), "start_us": int(item["start_us"]), "end_us": int(item["end_us"]), "track_type": str(item["track_type"]), "parameters": item["parameters"]})
-        project_root = (self.settings.projects_root / episode["root_rel"]).resolve()
-        render_dir = project_root / "05_timelines" / "renders"
-        render_dir.mkdir(parents=True, exist_ok=True)
-        render_path = render_dir / f"episode-{episode['code']}-{uuid.uuid4().hex}.mp4"
         bindings = self._audio_bindings_for_render(str(episode["id"]))
-        execution = self._concat_and_mix(paths, bindings, render_dir, render_path)
         input_snapshot = {"schema_version": "localdrama.episode-render-input.v1", "timeline_revision_id": timeline_revision_id, "timeline_revision_hash": timeline["revision_hash"], "timeline_input_snapshot": timeline["input_snapshot"], "items": input_snapshot_items}
         if bindings:
             input_snapshot["render_mode"] = "MIXED_AUDIO"
             input_snapshot["audio_bindings"] = self._binding_snapshot(bindings)
+        project_root = (self.settings.projects_root / episode["root_rel"]).resolve()
+        if not force_rerender:
+            existing = self._existing_render(timeline_revision_id, input_snapshot, project_root)
+            if existing is not None:
+                return existing
+        render_dir = project_root / "05_timelines" / "renders"
+        render_dir.mkdir(parents=True, exist_ok=True)
+        render_path = render_dir / f"episode-{episode['code']}-{uuid.uuid4().hex}.mp4"
+        execution = self._concat_and_mix(paths, bindings, render_dir, render_path)
         return self._register_render(episode=episode, timeline_revision_id=timeline_revision_id, timeline=timeline, render_path=render_path, project_root=project_root, input_snapshot=input_snapshot, ffmpeg_execution=execution, actor=actor)
+
+    def preflight_episode_render(self, timeline_revision_id: str) -> dict[str, Any]:
+        """Freeze the exact Compose inputs without executing FFmpeg or writing."""
+        timeline = self.get_timeline(timeline_revision_id)
+        self._assert_timeline_renderable(timeline)
+        episode = self._episode(str(timeline["episode_id"]))
+        items: list[dict[str, Any]] = []
+        for item in timeline["items"]:
+            if str(item["track_type"]).upper() != "VIDEO" or not item["media_version_id"]:
+                continue
+            media = self._media_for_episode(str(timeline["episode_id"]), str(item["media_version_id"]))
+            if media["media_kind"] != "VIDEO":
+                raise DomainRuleError("TIMELINE_MEDIA_KIND_INVALID", "VIDEO track 只能绑定视频媒体")
+            # Resolve and integrity-check every source during preflight, but do
+            # not expose workstation paths in the durable job snapshot.
+            _, source_path = self.media.content_path(str(item["media_version_id"]))
+            actual_sha, actual_size = _hash_file(source_path)
+            if not hmac.compare_digest(actual_sha, str(media["sha256"])) or actual_size != int(media["byte_size"]):
+                raise DomainRuleError("SOURCE_INTEGRITY_FAILED", "Compose 输入媒体 hash/size 与不可变 MediaVersion 不一致", {"media_version_id": str(media["id"])})
+            items.append({"media_version_id": str(media["id"]), "sha256": str(media["sha256"]), "byte_size": int(media["byte_size"]), "start_us": int(item["start_us"]), "end_us": int(item["end_us"]), "track_type": str(item["track_type"]), "parameters": item["parameters"]})
+        if not items:
+            raise DomainRuleError("TIMELINE_VIDEO_REQUIRED", "整集渲染至少需要一个 VIDEO item")
+        bindings = self._audio_bindings_for_render(str(episode["id"]))
+        for binding in bindings:
+            _, audio_path = self.media.content_path(str(binding["media_version_id"]))
+            actual_sha, actual_size = _hash_file(audio_path)
+            if not hmac.compare_digest(actual_sha, str(binding["media_sha256"])) or actual_size != int(binding["media_byte_size"]):
+                raise DomainRuleError("SOURCE_INTEGRITY_FAILED", "Compose 音频输入 hash/size 与不可变 MediaVersion 不一致", {"media_version_id": str(binding["media_version_id"])})
+        snapshot: dict[str, Any] = {"schema_version": "localdrama.episode-render-input.v1", "timeline_revision_id": timeline_revision_id, "timeline_revision_hash": timeline["revision_hash"], "timeline_input_snapshot": timeline["input_snapshot"], "items": items}
+        if bindings:
+            snapshot["render_mode"] = "MIXED_AUDIO"
+            snapshot["audio_bindings"] = self._binding_snapshot(bindings)
+        project_root = (self.settings.projects_root / episode["root_rel"]).resolve()
+        existing = self._existing_render(timeline_revision_id, snapshot, project_root)
+        return {
+            "project_id": str(episode["project_id"]), "episode_id": str(episode["id"]),
+            "timeline_revision_id": timeline_revision_id, "compose_fingerprint": _hash(snapshot),
+            "input_snapshot": snapshot, "existing_render": existing,
+            "would_execute_ffmpeg": existing is None, "read_only": True, "writes_performed": 0,
+        }
 
     def render_segmented_episode(
         self,
         timeline_revision_id: str,
         segments: list[dict[str, Any]],
         *,
+        force_rerender: bool = False,
         actor: str = "local-user",
     ) -> dict[str, Any]:
         """Render a long take (P1-9) from pre-generated segment videos.
@@ -1175,6 +1230,7 @@ class TimelineService:
         Episode audio bindings are mixed in exactly like ``render_episode``.
         """
         timeline = self.get_timeline(timeline_revision_id)
+        self._assert_timeline_renderable(timeline)
         episode = self._episode(str(timeline["episode_id"]))
         if not segments:
             raise DomainRuleError("SEGMENT_VIDEOS_REQUIRED", "分段渲染至少需要一个分段视频")
@@ -1200,12 +1256,7 @@ class TimelineService:
                     "continuation": segment.get("continuation"),
                 }
             )
-        project_root = (self.settings.projects_root / episode["root_rel"]).resolve()
-        render_dir = project_root / "05_timelines" / "renders"
-        render_dir.mkdir(parents=True, exist_ok=True)
-        render_path = render_dir / f"episode-{episode['code']}-{uuid.uuid4().hex}.mp4"
         bindings = self._audio_bindings_for_render(str(episode["id"]))
-        execution = self._concat_and_mix(paths, bindings, render_dir, render_path)
         input_snapshot = {
             "schema_version": "localdrama.episode-render-input.v1",
             "render_mode": "SEGMENTED_CONCAT",
@@ -1217,7 +1268,64 @@ class TimelineService:
         }
         if bindings:
             input_snapshot["audio_bindings"] = self._binding_snapshot(bindings)
+        project_root = (self.settings.projects_root / episode["root_rel"]).resolve()
+        if not force_rerender:
+            existing = self._existing_render(timeline_revision_id, input_snapshot, project_root)
+            if existing is not None:
+                return existing
+        render_dir = project_root / "05_timelines" / "renders"
+        render_dir.mkdir(parents=True, exist_ok=True)
+        render_path = render_dir / f"episode-{episode['code']}-{uuid.uuid4().hex}.mp4"
+        execution = self._concat_and_mix(paths, bindings, render_dir, render_path)
         return self._register_render(episode=episode, timeline_revision_id=timeline_revision_id, timeline=timeline, render_path=render_path, project_root=project_root, input_snapshot=input_snapshot, ffmpeg_execution=execution, actor=actor)
+
+    @staticmethod
+    def _assert_timeline_renderable(timeline: dict[str, Any]) -> None:
+        if str(timeline.get("status") or "").upper() == "STALE":
+            raise DomainRuleError(
+                "TIMELINE_STALE",
+                "时间线 revision 已失效；请从当前 selection 创建新的 timeline revision 后再合成",
+                {"timeline_revision_id": str(timeline["id"]), "remediation": "CREATE_NEW_TIMELINE_REVISION"},
+            )
+
+    def _existing_render(
+        self, timeline_revision_id: str, input_snapshot: dict[str, Any], project_root: Path,
+    ) -> dict[str, Any] | None:
+        """Return an intact completed render for the exact current inputs.
+
+        The immutable input snapshot is the compose idempotency fingerprint.
+        Missing/tampered files are never replayed; the caller creates a new
+        version while preserving the damaged historical row for diagnosis.
+        """
+        expected = _hash(input_snapshot)
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """SELECT * FROM episode_render_versions
+                WHERE timeline_revision_id=? AND integrity_status='VERIFIED'
+                ORDER BY created_at DESC,id DESC LIMIT 20""", (timeline_revision_id,),
+            ).fetchall()
+        for row in rows:
+            try:
+                snapshot = json.loads(str(row["input_snapshot_json"] or "{}"))
+            except (TypeError, ValueError):
+                continue
+            if _hash(snapshot) != expected:
+                continue
+            path = (project_root / str(row["rel_path"])).resolve()
+            if not path.is_relative_to(project_root) or path.is_symlink() or not path.is_file():
+                continue
+            digest, size = _hash_file(path)
+            if not hmac.compare_digest(digest, str(row["sha256"])):
+                continue
+            return {
+                "id": str(row["id"]), "episode_id": str(row["episode_id"]),
+                "timeline_revision_id": str(row["timeline_revision_id"]), "rel_path": str(row["rel_path"]),
+                "sha256": digest, "byte_size": size, "probe": json.loads(str(row["probe_json"] or "{}")),
+                "input_snapshot": snapshot, "ffmpeg_command": json.loads(str(row["ffmpeg_command_json"] or "{}")),
+                "execution_log": str(row["execution_log_text"] or ""), "revision": int(row["revision"]),
+                "status": "VERIFIED", "compose_fingerprint": expected, "idempotent_replay": True,
+            }
+        return None
 
     def _audio_bindings_for_render(self, episode_id: str) -> list[dict[str, Any]]:
         """Active audio bindings of an episode with media fingerprints for the render snapshot."""
@@ -1393,7 +1501,7 @@ class TimelineService:
         # delivery gate compares the review's expected_subject_revision with
         # this value; omitting it forced the UI to guess ``1`` and made a
         # future render-revision migration impossible to use safely.
-        return {"id": render_id, "episode_id": episode["id"], "timeline_revision_id": timeline_revision_id, "rel_path": render_path.relative_to(project_root).as_posix(), "sha256": digest, "byte_size": size, "probe": probe, "input_snapshot": input_snapshot, "ffmpeg_command": ffmpeg_command, "execution_log": execution_log, "revision": render_revision, "status": "VERIFIED"}
+        return {"id": render_id, "episode_id": episode["id"], "timeline_revision_id": timeline_revision_id, "rel_path": render_path.relative_to(project_root).as_posix(), "sha256": digest, "byte_size": size, "probe": probe, "input_snapshot": input_snapshot, "compose_fingerprint": _hash(input_snapshot), "ffmpeg_command": ffmpeg_command, "execution_log": execution_log, "revision": render_revision, "status": "VERIFIED"}
 
     def render_content_path(self, episode_render_version_id: str) -> tuple[dict[str, Any], Path]:
         """Resolve a registered episode render through the local project root.
@@ -1426,6 +1534,22 @@ class TimelineService:
         if not hmac.compare_digest(digest, str(row["sha256"])):
             raise DomainRuleError("EPISODE_RENDER_INTEGRITY_FAILED", "整集渲染文件 hash 与登记值不一致")
         return dict(row), render_path
+
+    def render_thumbnail(self, episode_render_version_id: str, size: str = "medium", frame: str = "poster") -> tuple[Path, str]:
+        """Return only a derived poster after the render's path/hash checks pass."""
+        render, source = self.render_content_path(episode_render_version_id)
+        mime_type = str(render.get("mime_type") or "").lower()
+        if not mime_type.startswith("video/"):
+            raise DomainRuleError("THUMBNAIL_UNSUPPORTED", "整集渲染不是可生成海报的视频")
+        destination, mime, _, _ = self.media.cached_video_thumbnail(
+            source,
+            cache_namespace=f"episode-render-{episode_render_version_id}",
+            source_sha256=str(render["sha256"]),
+            duration_ms=int(render.get("duration_ms") or 0),
+            size=size,
+            frame=frame,
+        )
+        return destination, mime
 
     def build_delivery(self, episode_render_version_id: str, target_version_id: str, brand_kit_id: str | None = None, watermark_profile_id: str | None = None, compliance_policy_id: str | None = None, *, actor: str = "local-user") -> dict[str, Any]:
         with self.database.connect() as connection:

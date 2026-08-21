@@ -28,7 +28,7 @@ export function TimelineRevisionPanel({ episodeId, onCreated }: { episodeId: str
     finally { setPending(false); }
   };
   return <section className="panel timeline-revision-panel" aria-labelledby="timeline-revision-title">
-    <div className="panel-heading"><div><p className="eyebrow">FR-TML-001 · LIGHT TIMELINE</p><h3 id="timeline-revision-title">轻量多轨时间线</h3></div><span className="status-pill neutral">VERSIONED</span></div>
+    <div className="panel-heading"><div><p className="eyebrow">FR-TML-001 · 轻量时间线</p><h3 id="timeline-revision-title">轻量多轨时间线</h3></div><span className="status-pill neutral">版本化</span></div>
     <p className="muted">镜头顺序、入出点、轨道和参数保存为不可变 TimelineRevision；输入媒体版本只读引用，不覆盖源文件。</p>
     <label className="subtitle-cues-field">Timeline items JSON（track_type/media_version_id/start_us/end_us）<textarea value={itemsText} onChange={(event) => setItemsText(event.target.value)} rows={8} spellCheck={false} /></label>
     <div className="action-row"><label>保存状态<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="DRAFT">DRAFT</option><option value="FROZEN">FROZEN</option></select></label><button type="button" className="primary-action" onClick={() => void submit()} disabled={pending}>{pending ? "校验并保存中…" : "创建 TimelineRevision"}</button></div>

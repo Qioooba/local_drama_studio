@@ -20,20 +20,39 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+
 ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = ROOT / "data" / "local_drama.sqlite3"
-MIGRATION_HEAD = "0041_character_voice_bindings"
+
+
+def _read_only_connection(path: Path) -> sqlite3.Connection:
+    return sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
 
 
 def _integrity(path: Path) -> str:
-    with sqlite3.connect(path) as connection:
+    if not path.is_file():
+        return "missing"
+    with _read_only_connection(path) as connection:
         return str(connection.execute("PRAGMA integrity_check").fetchone()[0])
 
 
 def _migration_head() -> str | None:
-    with sqlite3.connect(DB_PATH) as connection:
-        row = connection.execute("SELECT version_num FROM alembic_version").fetchone()
+    if not DB_PATH.is_file():
+        return None
+    with _read_only_connection(DB_PATH) as connection:
+        table = connection.execute(
+            "SELECT 1 FROM sqlite_schema WHERE type='table' AND name='alembic_version'"
+        ).fetchone()
+        row = connection.execute("SELECT version_num FROM alembic_version").fetchone() if table else None
     return str(row[0]) if row else None
+
+
+def _expected_migration_heads() -> list[str]:
+    config = Config(str(ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(ROOT / "apps" / "api" / "alembic"))
+    return sorted(ScriptDirectory.from_config(config).get_heads())
 
 
 def _loopback_binding(port: int) -> dict[str, Any]:
@@ -63,14 +82,23 @@ def _run_python_script(name: str) -> dict[str, Any]:
         check=False,
     )
     parsed: dict[str, Any] | None = None
-    for line in reversed((result.stdout or "").splitlines()):
-        stripped = line.strip()
-        if stripped.startswith("{"):
+    stdout = (result.stdout or "").strip()
+    if stdout:
+        try:
+            parsed = json.loads(stdout)
+        except json.JSONDecodeError:
+            pass
+    if parsed is None:
+        for line in reversed(stdout.splitlines()):
+            stripped = line.strip()
+            if not stripped.startswith("{"):
+                continue
             try:
                 parsed = json.loads(stripped)
             except json.JSONDecodeError:
                 parsed = None
-            break
+            if parsed is not None:
+                break
     return {"script": name, "exit_code": result.returncode, "summary": parsed, "stderr_tail": (result.stderr or "").strip()[-500:]}
 
 
@@ -78,8 +106,9 @@ def verify(api_port: int) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
     database_ok = _integrity(DB_PATH) == "ok"
     head = _migration_head()
+    expected_heads = _expected_migration_heads()
     checks.append({"code": "DATABASE_INTEGRITY", "passed": database_ok, "observed": _integrity(DB_PATH)})
-    checks.append({"code": "MIGRATION_HEAD", "passed": head == MIGRATION_HEAD, "observed": head, "expected": MIGRATION_HEAD})
+    checks.append({"code": "MIGRATION_HEAD", "passed": head in expected_heads and len(expected_heads) == 1, "observed": head, "expected": expected_heads})
     backups = _backup_integrity()
     checks.append({"code": "BACKUP_INTEGRITY", "passed": backups["all_ok"], **backups})
     binding = _loopback_binding(api_port)
@@ -91,6 +120,13 @@ def verify(api_port: int) -> dict[str, Any]:
     checks.append({"code": "MASTER_REQUIREMENTS_CLOSURE", "passed": master["exit_code"] == 0, "observed": (master.get("summary") or {}).get("status")})
     release = _run_python_script("scripts/release_audit.py")
     checks.append({"code": "RELEASE_AUDIT", "passed": release["exit_code"] == 0, "observed": (release.get("summary") or {}).get("status")})
+    invariants = _run_python_script("scripts/refactor_invariants.py")
+    checks.append({
+        "code": "REFACTOR_INVARIANTS",
+        "passed": invariants["exit_code"] == 0,
+        "observed": (invariants.get("summary") or {}).get("status"),
+        "summary": (invariants.get("summary") or {}).get("summary"),
+    })
 
     all_passed = all(item["passed"] for item in checks)
     return {

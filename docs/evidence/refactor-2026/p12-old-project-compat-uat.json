@@ -1,0 +1,13 @@
+{
+  "schema_version": "localdrama.uat-evidence.v1",
+  "evidence_id": "p12-old-project-compat-uat",
+  "title": "Old Project Compatibility & Package Import/Export UAT",
+  "status": "PENDING_UAT",
+  "approved": false,
+  "evidence_kind": "AUTOMATED_PRECHECK",
+  "approval_note": "Schema constants passed the automated pre-check; a real legacy project import/export round trip and reviewer sign-off are still required.",
+  "executed_at": "2026-08-21T08:00:53.064602+00:00",
+  "manifest_schema": "localdrama.project-package.v2",
+  "state_schema": "localdrama.project-state.v2",
+  "compatibility_mode": "safe_defaults"
+}

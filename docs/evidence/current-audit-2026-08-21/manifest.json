@@ -1,0 +1,839 @@
+{
+  "schema_version": "localdrama.ui-evidence.v1",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "page_count": 22,
+  "segment_count": 92,
+  "contact_sheet_chunks": [
+    "contact-sheet-01.jpg",
+    "contact-sheet-02.jpg",
+    "contact-sheet-03.jpg",
+    "contact-sheet-04.jpg",
+    "contact-sheet-05.jpg",
+    "contact-sheet-06.jpg"
+  ],
+  "pages": [
+    {
+      "page": "assets-1440",
+      "source": "assets-1440-full.png",
+      "width": 1440,
+      "height": 900,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/assets-1440-seg-01.jpg",
+          "thumbnail": "thumbs/assets-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 900,
+          "segment": "segments/assets-1440-seg-02.jpg",
+          "thumbnail": "thumbs/assets-1440-seg-02.jpg"
+        }
+      ]
+    },
+    {
+      "page": "audio-1440",
+      "source": "audio-1440-full.png",
+      "width": 1425,
+      "height": 2211,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/audio-1440-seg-01.jpg",
+          "thumbnail": "thumbs/audio-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/audio-1440-seg-02.jpg",
+          "thumbnail": "thumbs/audio-1440-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 2160,
+          "segment": "segments/audio-1440-seg-03.jpg",
+          "thumbnail": "thumbs/audio-1440-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2160,
+          "y_end": 2211,
+          "segment": "segments/audio-1440-seg-04.jpg",
+          "thumbnail": "thumbs/audio-1440-seg-04.jpg"
+        }
+      ]
+    },
+    {
+      "page": "canvas-1440",
+      "source": "canvas-1440-full.png",
+      "width": 1425,
+      "height": 1499,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/canvas-1440-seg-01.jpg",
+          "thumbnail": "thumbs/canvas-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/canvas-1440-seg-02.jpg",
+          "thumbnail": "thumbs/canvas-1440-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 1499,
+          "segment": "segments/canvas-1440-seg-03.jpg",
+          "thumbnail": "thumbs/canvas-1440-seg-03.jpg"
+        }
+      ]
+    },
+    {
+      "page": "delivery-1440",
+      "source": "delivery-1440-full.png",
+      "width": 1425,
+      "height": 2110,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/delivery-1440-seg-01.jpg",
+          "thumbnail": "thumbs/delivery-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/delivery-1440-seg-02.jpg",
+          "thumbnail": "thumbs/delivery-1440-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 2110,
+          "segment": "segments/delivery-1440-seg-03.jpg",
+          "thumbnail": "thumbs/delivery-1440-seg-03.jpg"
+        }
+      ]
+    },
+    {
+      "page": "director-recipes-1440",
+      "source": "director-recipes-1440-full.png",
+      "width": 1425,
+      "height": 1477,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/director-recipes-1440-seg-01.jpg",
+          "thumbnail": "thumbs/director-recipes-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/director-recipes-1440-seg-02.jpg",
+          "thumbnail": "thumbs/director-recipes-1440-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 1477,
+          "segment": "segments/director-recipes-1440-seg-03.jpg",
+          "thumbnail": "thumbs/director-recipes-1440-seg-03.jpg"
+        }
+      ]
+    },
+    {
+      "page": "director-shot3-1440",
+      "source": "director-shot3-1440-full.png",
+      "width": 1425,
+      "height": 928,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/director-shot3-1440-seg-01.jpg",
+          "thumbnail": "thumbs/director-shot3-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 928,
+          "segment": "segments/director-shot3-1440-seg-02.jpg",
+          "thumbnail": "thumbs/director-shot3-1440-seg-02.jpg"
+        }
+      ]
+    },
+    {
+      "page": "episode-plan-1440",
+      "source": "episode-plan-1440-full.png",
+      "width": 1425,
+      "height": 7295,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/episode-plan-1440-seg-01.jpg",
+          "thumbnail": "thumbs/episode-plan-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/episode-plan-1440-seg-02.jpg",
+          "thumbnail": "thumbs/episode-plan-1440-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 2160,
+          "segment": "segments/episode-plan-1440-seg-03.jpg",
+          "thumbnail": "thumbs/episode-plan-1440-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2160,
+          "y_end": 2880,
+          "segment": "segments/episode-plan-1440-seg-04.jpg",
+          "thumbnail": "thumbs/episode-plan-1440-seg-04.jpg"
+        },
+        {
+          "index": 5,
+          "y_start": 2880,
+          "y_end": 3600,
+          "segment": "segments/episode-plan-1440-seg-05.jpg",
+          "thumbnail": "thumbs/episode-plan-1440-seg-05.jpg"
+        },
+        {
+          "index": 6,
+          "y_start": 3600,
+          "y_end": 4320,
+          "segment": "segments/episode-plan-1440-seg-06.jpg",
+          "thumbnail": "thumbs/episode-plan-1440-seg-06.jpg"
+        },
+        {
+          "index": 7,
+          "y_start": 4320,
+          "y_end": 5040,
+          "segment": "segments/episode-plan-1440-seg-07.jpg",
+          "thumbnail": "thumbs/episode-plan-1440-seg-07.jpg"
+        },
+        {
+          "index": 8,
+          "y_start": 5040,
+          "y_end": 5760,
+          "segment": "segments/episode-plan-1440-seg-08.jpg",
+          "thumbnail": "thumbs/episode-plan-1440-seg-08.jpg"
+        },
+        {
+          "index": 9,
+          "y_start": 5760,
+          "y_end": 6480,
+          "segment": "segments/episode-plan-1440-seg-09.jpg",
+          "thumbnail": "thumbs/episode-plan-1440-seg-09.jpg"
+        },
+        {
+          "index": 10,
+          "y_start": 6480,
+          "y_end": 7200,
+          "segment": "segments/episode-plan-1440-seg-10.jpg",
+          "thumbnail": "thumbs/episode-plan-1440-seg-10.jpg"
+        },
+        {
+          "index": 11,
+          "y_start": 7200,
+          "y_end": 7295,
+          "segment": "segments/episode-plan-1440-seg-11.jpg",
+          "thumbnail": "thumbs/episode-plan-1440-seg-11.jpg"
+        }
+      ]
+    },
+    {
+      "page": "generation-shot3-1440",
+      "source": "generation-shot3-1440-full.png",
+      "width": 1425,
+      "height": 3910,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/generation-shot3-1440-seg-01.jpg",
+          "thumbnail": "thumbs/generation-shot3-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/generation-shot3-1440-seg-02.jpg",
+          "thumbnail": "thumbs/generation-shot3-1440-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 2160,
+          "segment": "segments/generation-shot3-1440-seg-03.jpg",
+          "thumbnail": "thumbs/generation-shot3-1440-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2160,
+          "y_end": 2880,
+          "segment": "segments/generation-shot3-1440-seg-04.jpg",
+          "thumbnail": "thumbs/generation-shot3-1440-seg-04.jpg"
+        },
+        {
+          "index": 5,
+          "y_start": 2880,
+          "y_end": 3600,
+          "segment": "segments/generation-shot3-1440-seg-05.jpg",
+          "thumbnail": "thumbs/generation-shot3-1440-seg-05.jpg"
+        },
+        {
+          "index": 6,
+          "y_start": 3600,
+          "y_end": 3910,
+          "segment": "segments/generation-shot3-1440-seg-06.jpg",
+          "thumbnail": "thumbs/generation-shot3-1440-seg-06.jpg"
+        }
+      ]
+    },
+    {
+      "page": "global-diagnostics-1440",
+      "source": "global-diagnostics-1440-full.png",
+      "width": 1425,
+      "height": 933,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/global-diagnostics-1440-seg-01.jpg",
+          "thumbnail": "thumbs/global-diagnostics-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 933,
+          "segment": "segments/global-diagnostics-1440-seg-02.jpg",
+          "thumbnail": "thumbs/global-diagnostics-1440-seg-02.jpg"
+        }
+      ]
+    },
+    {
+      "page": "media-lab-1440",
+      "source": "media-lab-1440-full.png",
+      "width": 1440,
+      "height": 900,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/media-lab-1440-seg-01.jpg",
+          "thumbnail": "thumbs/media-lab-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 900,
+          "segment": "segments/media-lab-1440-seg-02.jpg",
+          "thumbnail": "thumbs/media-lab-1440-seg-02.jpg"
+        }
+      ]
+    },
+    {
+      "page": "operations-1440",
+      "source": "operations-1440-full.png",
+      "width": 1425,
+      "height": 7583,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/operations-1440-seg-01.jpg",
+          "thumbnail": "thumbs/operations-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/operations-1440-seg-02.jpg",
+          "thumbnail": "thumbs/operations-1440-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 2160,
+          "segment": "segments/operations-1440-seg-03.jpg",
+          "thumbnail": "thumbs/operations-1440-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2160,
+          "y_end": 2880,
+          "segment": "segments/operations-1440-seg-04.jpg",
+          "thumbnail": "thumbs/operations-1440-seg-04.jpg"
+        },
+        {
+          "index": 5,
+          "y_start": 2880,
+          "y_end": 3600,
+          "segment": "segments/operations-1440-seg-05.jpg",
+          "thumbnail": "thumbs/operations-1440-seg-05.jpg"
+        },
+        {
+          "index": 6,
+          "y_start": 3600,
+          "y_end": 4320,
+          "segment": "segments/operations-1440-seg-06.jpg",
+          "thumbnail": "thumbs/operations-1440-seg-06.jpg"
+        },
+        {
+          "index": 7,
+          "y_start": 4320,
+          "y_end": 5040,
+          "segment": "segments/operations-1440-seg-07.jpg",
+          "thumbnail": "thumbs/operations-1440-seg-07.jpg"
+        },
+        {
+          "index": 8,
+          "y_start": 5040,
+          "y_end": 5760,
+          "segment": "segments/operations-1440-seg-08.jpg",
+          "thumbnail": "thumbs/operations-1440-seg-08.jpg"
+        },
+        {
+          "index": 9,
+          "y_start": 5760,
+          "y_end": 6480,
+          "segment": "segments/operations-1440-seg-09.jpg",
+          "thumbnail": "thumbs/operations-1440-seg-09.jpg"
+        },
+        {
+          "index": 10,
+          "y_start": 6480,
+          "y_end": 7200,
+          "segment": "segments/operations-1440-seg-10.jpg",
+          "thumbnail": "thumbs/operations-1440-seg-10.jpg"
+        },
+        {
+          "index": 11,
+          "y_start": 7200,
+          "y_end": 7583,
+          "segment": "segments/operations-1440-seg-11.jpg",
+          "thumbnail": "thumbs/operations-1440-seg-11.jpg"
+        }
+      ]
+    },
+    {
+      "page": "production-settings-1440",
+      "source": "production-settings-1440-full.png",
+      "width": 1425,
+      "height": 1365,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/production-settings-1440-seg-01.jpg",
+          "thumbnail": "thumbs/production-settings-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1365,
+          "segment": "segments/production-settings-1440-seg-02.jpg",
+          "thumbnail": "thumbs/production-settings-1440-seg-02.jpg"
+        }
+      ]
+    },
+    {
+      "page": "project-diagnostics-1440",
+      "source": "project-diagnostics-1440-full.png",
+      "width": 1425,
+      "height": 933,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/project-diagnostics-1440-seg-01.jpg",
+          "thumbnail": "thumbs/project-diagnostics-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 933,
+          "segment": "segments/project-diagnostics-1440-seg-02.jpg",
+          "thumbnail": "thumbs/project-diagnostics-1440-seg-02.jpg"
+        }
+      ]
+    },
+    {
+      "page": "project-home-1440",
+      "source": "project-home-1440-full.png",
+      "width": 1440,
+      "height": 900,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/project-home-1440-seg-01.jpg",
+          "thumbnail": "thumbs/project-home-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 900,
+          "segment": "segments/project-home-1440-seg-02.jpg",
+          "thumbnail": "thumbs/project-home-1440-seg-02.jpg"
+        }
+      ]
+    },
+    {
+      "page": "project-jobs-1440",
+      "source": "project-jobs-1440-full.png",
+      "width": 1425,
+      "height": 2418,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/project-jobs-1440-seg-01.jpg",
+          "thumbnail": "thumbs/project-jobs-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/project-jobs-1440-seg-02.jpg",
+          "thumbnail": "thumbs/project-jobs-1440-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 2160,
+          "segment": "segments/project-jobs-1440-seg-03.jpg",
+          "thumbnail": "thumbs/project-jobs-1440-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2160,
+          "y_end": 2418,
+          "segment": "segments/project-jobs-1440-seg-04.jpg",
+          "thumbnail": "thumbs/project-jobs-1440-seg-04.jpg"
+        }
+      ]
+    },
+    {
+      "page": "project-models-1440",
+      "source": "project-models-1440-full.png",
+      "width": 1425,
+      "height": 3111,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/project-models-1440-seg-01.jpg",
+          "thumbnail": "thumbs/project-models-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/project-models-1440-seg-02.jpg",
+          "thumbnail": "thumbs/project-models-1440-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 2160,
+          "segment": "segments/project-models-1440-seg-03.jpg",
+          "thumbnail": "thumbs/project-models-1440-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2160,
+          "y_end": 2880,
+          "segment": "segments/project-models-1440-seg-04.jpg",
+          "thumbnail": "thumbs/project-models-1440-seg-04.jpg"
+        },
+        {
+          "index": 5,
+          "y_start": 2880,
+          "y_end": 3111,
+          "segment": "segments/project-models-1440-seg-05.jpg",
+          "thumbnail": "thumbs/project-models-1440-seg-05.jpg"
+        }
+      ]
+    },
+    {
+      "page": "projects-1440",
+      "source": "projects-1440-full.png",
+      "width": 1440,
+      "height": 900,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/projects-1440-seg-01.jpg",
+          "thumbnail": "thumbs/projects-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 900,
+          "segment": "segments/projects-1440-seg-02.jpg",
+          "thumbnail": "thumbs/projects-1440-seg-02.jpg"
+        }
+      ]
+    },
+    {
+      "page": "qc-policies-1440",
+      "source": "qc-policies-1440-full.png",
+      "width": 1425,
+      "height": 1675,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/qc-policies-1440-seg-01.jpg",
+          "thumbnail": "thumbs/qc-policies-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/qc-policies-1440-seg-02.jpg",
+          "thumbnail": "thumbs/qc-policies-1440-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 1675,
+          "segment": "segments/qc-policies-1440-seg-03.jpg",
+          "thumbnail": "thumbs/qc-policies-1440-seg-03.jpg"
+        }
+      ]
+    },
+    {
+      "page": "review-1440",
+      "source": "review-1440-full.png",
+      "width": 1425,
+      "height": 4154,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/review-1440-seg-01.jpg",
+          "thumbnail": "thumbs/review-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/review-1440-seg-02.jpg",
+          "thumbnail": "thumbs/review-1440-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 2160,
+          "segment": "segments/review-1440-seg-03.jpg",
+          "thumbnail": "thumbs/review-1440-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2160,
+          "y_end": 2880,
+          "segment": "segments/review-1440-seg-04.jpg",
+          "thumbnail": "thumbs/review-1440-seg-04.jpg"
+        },
+        {
+          "index": 5,
+          "y_start": 2880,
+          "y_end": 3600,
+          "segment": "segments/review-1440-seg-05.jpg",
+          "thumbnail": "thumbs/review-1440-seg-05.jpg"
+        },
+        {
+          "index": 6,
+          "y_start": 3600,
+          "y_end": 4154,
+          "segment": "segments/review-1440-seg-06.jpg",
+          "thumbnail": "thumbs/review-1440-seg-06.jpg"
+        }
+      ]
+    },
+    {
+      "page": "run-1440",
+      "source": "run-1440-full.png",
+      "width": 1425,
+      "height": 4815,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/run-1440-seg-01.jpg",
+          "thumbnail": "thumbs/run-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/run-1440-seg-02.jpg",
+          "thumbnail": "thumbs/run-1440-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 2160,
+          "segment": "segments/run-1440-seg-03.jpg",
+          "thumbnail": "thumbs/run-1440-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2160,
+          "y_end": 2880,
+          "segment": "segments/run-1440-seg-04.jpg",
+          "thumbnail": "thumbs/run-1440-seg-04.jpg"
+        },
+        {
+          "index": 5,
+          "y_start": 2880,
+          "y_end": 3600,
+          "segment": "segments/run-1440-seg-05.jpg",
+          "thumbnail": "thumbs/run-1440-seg-05.jpg"
+        },
+        {
+          "index": 6,
+          "y_start": 3600,
+          "y_end": 4320,
+          "segment": "segments/run-1440-seg-06.jpg",
+          "thumbnail": "thumbs/run-1440-seg-06.jpg"
+        },
+        {
+          "index": 7,
+          "y_start": 4320,
+          "y_end": 4815,
+          "segment": "segments/run-1440-seg-07.jpg",
+          "thumbnail": "thumbs/run-1440-seg-07.jpg"
+        }
+      ]
+    },
+    {
+      "page": "story-1440",
+      "source": "story-1440-full.png",
+      "width": 1425,
+      "height": 2420,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/story-1440-seg-01.jpg",
+          "thumbnail": "thumbs/story-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/story-1440-seg-02.jpg",
+          "thumbnail": "thumbs/story-1440-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 2160,
+          "segment": "segments/story-1440-seg-03.jpg",
+          "thumbnail": "thumbs/story-1440-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2160,
+          "y_end": 2420,
+          "segment": "segments/story-1440-seg-04.jpg",
+          "thumbnail": "thumbs/story-1440-seg-04.jpg"
+        }
+      ]
+    },
+    {
+      "page": "timeline-1440",
+      "source": "timeline-1440-full.png",
+      "width": 1425,
+      "height": 3663,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 720,
+          "segment": "segments/timeline-1440-seg-01.jpg",
+          "thumbnail": "thumbs/timeline-1440-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 720,
+          "y_end": 1440,
+          "segment": "segments/timeline-1440-seg-02.jpg",
+          "thumbnail": "thumbs/timeline-1440-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1440,
+          "y_end": 2160,
+          "segment": "segments/timeline-1440-seg-03.jpg",
+          "thumbnail": "thumbs/timeline-1440-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2160,
+          "y_end": 2880,
+          "segment": "segments/timeline-1440-seg-04.jpg",
+          "thumbnail": "thumbs/timeline-1440-seg-04.jpg"
+        },
+        {
+          "index": 5,
+          "y_start": 2880,
+          "y_end": 3600,
+          "segment": "segments/timeline-1440-seg-05.jpg",
+          "thumbnail": "thumbs/timeline-1440-seg-05.jpg"
+        },
+        {
+          "index": 6,
+          "y_start": 3600,
+          "y_end": 3663,
+          "segment": "segments/timeline-1440-seg-06.jpg",
+          "thumbnail": "thumbs/timeline-1440-seg-06.jpg"
+        }
+      ]
+    }
+  ]
+}

@@ -46,7 +46,7 @@ class I2VProbePlanService:
             )
             profile = connection.execute(
                 """SELECT id, capability, status, manifest_sha256, revision FROM execution_profile_versions
-                WHERE capability='I2V' ORDER BY CASE status WHEN 'PUBLISHED' THEN 0 ELSE 1 END, version_no DESC LIMIT 1"""
+                WHERE capability='VIDEO_I2V' ORDER BY CASE status WHEN 'PUBLISHED' THEN 0 ELSE 1 END, version_no DESC LIMIT 1"""
             ).fetchone()
         blockers: list[str] = []
         if keyframe is None:

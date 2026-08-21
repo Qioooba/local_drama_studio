@@ -1,0 +1,17 @@
+.reference-version-compare { display: grid; gap: 12px; }
+.reference-compare-selectors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.reference-compare-selectors label { display: grid; gap: 6px; color: var(--text-muted); font-size: 12px; font-weight: 750; }
+.reference-compare-selectors select { width: 100%; min-height: 44px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.reference-compare-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.reference-compare-pane { min-width: 0; margin: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-muted); }
+.reference-compare-pane > p { min-height: 240px; display: grid; place-items: center; margin: 0; padding: 18px; color: var(--text-muted); text-align: center; }
+.reference-compare-error { min-height: 240px; display: grid; place-items: center; align-content: center; gap: 12px; padding: 18px; color: var(--text-muted); text-align: center; }.reference-compare-error p { margin: 0; }.reference-compare-error button { min-height: 44px; }
+.reference-compare-media { aspect-ratio: 4 / 3; display: grid; place-items: center; overflow: hidden; background: #171b19; }
+.reference-compare-media img, .reference-compare-media video { width: 100%; height: 100%; object-fit: contain; }
+.reference-compare-pane dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; padding: 12px; gap: 9px 12px; }
+.reference-compare-pane dl > div { min-width: 0; display: grid; gap: 2px; }
+.reference-compare-pane dt { color: var(--text-muted); font-size: 10px; }
+.reference-compare-pane dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: 12px; }
+.reference-compare-pane code { font-size: 10px; }
+.reference-compare-selectors select:focus-visible { outline: 3px solid var(--creative); outline-offset: 2px; }
+@media (max-width: 760px) { .reference-compare-selectors, .reference-compare-grid { grid-template-columns: 1fr; }.reference-compare-pane dl { grid-template-columns: 1fr 1fr; } }

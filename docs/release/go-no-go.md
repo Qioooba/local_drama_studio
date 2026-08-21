@@ -1,8 +1,11 @@
 # LocalDramaStudio 总体 Go / No-Go（FINAL）
 
 release_status: FINAL
+schema_validation_status: REHEARSAL_REQUIRED
 
-当前决策：**GO — Windows x64 LOCAL_ONLY 本地源码发行版放行**。
+> Schema compatibility addendum（2026-08-20）：本文件的 GO 与 0039/0041 数字是历史发行快照，不证明当前正式数据库已迁移。当前源码的机器可读预期 head 见 `docs/release/migration-contract.json`（现为 `0048_asset_proposals`），0044–0048 操作见 `docs/release/migrations-0044-0048.md`。正式发布必须在隔离副本演练和备份完成后重新记录当次结果。
+
+历史冻结决策（2026-08-17）：**GO — Windows x64 LOCAL_ONLY 本地源码发行版放行**。
 （本文件状态已冻结；该决策由产品负责人 2026-08-17 指示放行，覆盖此前 2026-08-14 冻结的阶段性 NO-GO。上一版 NO-GO 保留为历史记录，见本文件下方“历史决策”一节。）
 
 ## 发布范围
@@ -38,7 +41,7 @@ release_status: FINAL
 G11（增强批次，非 legacy 迁移）已按 `docs/plan/gap-closure-development-plan.md` 实施完毕并归档（`docs/plan/G11-completion-report.md`）。本附注确认：
 
 - **发行边界不变**：仍为 Windows x64 LOCAL_ONLY 源码发行；不捆绑用户模型/音色/媒体；REMOTE transport 保持禁用；多租户/云 Provider/G11 legacy 迁移仍不实施。
-- **链头更新**：正式库迁移至 `0041_character_voice_bindings`（0040/0041 为纯增量表；preflight 备份在 `backups/`）；`release_audit` 保持 PASS/GO，exit_decision 不变。
+- **当时链头快照**：G11 批次当时记录正式库为 `0041_character_voice_bindings`。这不是当前源码 head，也不授权自动迁移正式库；当前版本引用以 `migration-contract.json` 和当次只读数据库检查为准。
 - **交付范围**：P0 五项（故事资产库/拆解草稿应用/多角色 TTS/整剧一键编排/锚点注入）+ P1 七项（交付预设/生产档位/Ref2V 能力位/长镜头分段/剪映导出/BGM 轨/字幕样式模板）+ P2 四项设计文档；API 382 passed、Web 126 tests、7 个 e2e PASS。
 - **留待事项不阻塞发行**：Ref2V 真机跑通、档位落地实际生成、剪映真机导入验证、使用期人工数据链（真实音色/素材/交付签字）——均不改变本发行验收结论。
 - **重新评审触发条件不变**：若未来装入第三方模型/素材、启用 REMOTE、或把使用期数据链纳入发行验收，仍须重新执行许可证、安全和发布评审。

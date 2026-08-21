@@ -1,0 +1,159 @@
+.creative-task-page {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+
+.creative-task-page > .panel-heading,
+.creative-task-page > .muted {
+  margin: 0;
+}
+
+.creative-task-page > .ui-tabs {
+  min-width: 0;
+}
+
+.creative-task-page > .ui-tabs > .ui-tabs__list,
+.episode-review-workspace > .ui-tabs > .ui-tabs__list {
+  position: sticky;
+  z-index: 4;
+  top: 76px;
+  overflow-x: auto;
+  padding: 8px 6px 4px;
+  border: 1px solid var(--border, #d8d2c7);
+  border-radius: 10px 10px 0 0;
+  background: var(--surface, #fffdf8);
+  scrollbar-gutter: stable;
+}
+
+.creative-task-page .ui-tab,
+.episode-review-workspace .ui-tab {
+  min-height: 44px;
+  flex: 1 0 max-content;
+  padding-inline: 14px;
+}
+
+.creative-task-page .ui-tabpanel,
+.episode-review-workspace .ui-tabpanel {
+  min-width: 0;
+  padding-top: 16px;
+}
+
+.creative-task-page .ui-tabpanel > :first-child,
+.episode-review-workspace .ui-tabpanel > :first-child {
+  margin-top: 0;
+}
+
+.creative-task-stage {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--border, #d8d2c7);
+  border-radius: 12px;
+  background: var(--surface, #fffdf8);
+}
+
+.creative-task-loading {
+  min-height: 72px;
+}
+
+.creative-task-command {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border, #d8d2c7);
+  color: var(--text-muted, #666b66);
+}
+
+.creative-task-gateway {
+  display: flex;
+  min-height: 220px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  padding: 24px;
+  border: 1px solid var(--border, #d8d2c7);
+  border-radius: 12px;
+  background: var(--surface, #fffdf8);
+}
+
+.creative-task-gateway h3 {
+  margin: 4px 0 8px;
+}
+
+.creative-task-gateway__actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.creative-task-gateway--drawer {
+  display: grid;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+}
+
+.creative-task-drawer-content {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+}
+
+.creative-task-drawer-content > .panel {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+
+.delivery-workspace-v2 .ui-tabpanel > .panel + .panel,
+.delivery-workspace-v2 .ui-tabpanel > .panel + .post-process-panel {
+  margin-top: 14px;
+}
+
+.delivery-workspace-v2 .delivery-workflow-panel .review-meta {
+  margin-top: 14px;
+}
+
+.episode-run-page-v2 #episode-production-controls {
+  scroll-margin-top: 76px;
+}
+
+@media (max-width: 1024px) {
+  .creative-task-page > .ui-tabs > .ui-tabs__list,
+  .episode-review-workspace > .ui-tabs > .ui-tabs__list {
+    position: static;
+  }
+
+  .creative-task-gateway,
+  .creative-task-command {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .creative-task-gateway__actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 760px) {
+  .creative-task-gateway__actions,
+  .creative-task-gateway__actions > a,
+  .creative-task-command > button {
+    width: 100%;
+  }
+
+  .creative-task-gateway__actions {
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .creative-task-page *,
+  .episode-review-workspace * {
+    scroll-behavior: auto;
+  }
+}

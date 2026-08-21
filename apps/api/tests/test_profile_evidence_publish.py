@@ -24,7 +24,7 @@ def test_profile_publish_requires_complete_real_media_lineage(workspace, databas
         allow_unconfigured_capabilities=True,
     )
     profiles = ProfileService(database, workspace.manifest_path)
-    candidate = next(item for item in profiles.sync_manifest()["profiles"] if item["capability"] == "T2V")
+    candidate = next(item for item in profiles.sync_manifest()["profiles"] if item["capability"] == "VIDEO_T2V")
     workflow_id = str(uuid.uuid4())
     package = workspace.work_root / "workflow.json"
     package.write_text("{}", encoding="utf-8")
@@ -90,7 +90,7 @@ def test_evidence_publish_creates_new_version_when_draft_contract_differs_from_e
         allow_unconfigured_capabilities=True,
     )
     profiles = ProfileService(database, workspace.manifest_path)
-    candidate = next(item for item in profiles.sync_manifest()["profiles"] if item["capability"] == "T2V")
+    candidate = next(item for item in profiles.sync_manifest()["profiles"] if item["capability"] == "VIDEO_T2V")
     workflow_id = str(uuid.uuid4())
     package = workspace.work_root / "workflow.json"
     package.write_text("{}", encoding="utf-8")
@@ -164,7 +164,7 @@ def test_evidence_publish_merges_profile_semantic_slots_with_workflow_slots(work
         allow_unconfigured_capabilities=True,
     )
     profiles = ProfileService(database, workspace.manifest_path)
-    candidate = next(item for item in profiles.sync_manifest()["profiles"] if item["capability"] == "T2V")
+    candidate = next(item for item in profiles.sync_manifest()["profiles"] if item["capability"] == "VIDEO_T2V")
     workflow_id = str(uuid.uuid4())
     now = "2026-08-14T00:00:00+00:00"
     with database.transaction() as connection:
@@ -206,7 +206,7 @@ def test_i2v_publish_rejects_success_evidence_without_approved_first_frame(works
         fps_num=24, fps_den=1, target_duration_ms=60_000, allow_unconfigured_capabilities=True,
     )
     profiles = ProfileService(database, workspace.manifest_path)
-    candidate = next(item for item in profiles.sync_manifest()["profiles"] if item["capability"] == "I2V")
+    candidate = next(item for item in profiles.sync_manifest()["profiles"] if item["capability"] == "VIDEO_I2V")
     workflow_id = str(uuid.uuid4())
     now = "2026-08-13T00:00:00+00:00"
     with database.transaction() as connection:

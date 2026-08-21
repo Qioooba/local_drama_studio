@@ -20,7 +20,7 @@ describe("AuditHistoryPanel", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={queryClient}><AuditHistoryPanel projectId="project-1" /></QueryClientProvider>);
     expect(await screen.findByText("REVIEW_SUBMITTED")).toBeTruthy();
-    expect(screen.getByText(/LOCAL_ONLY/)).toBeTruthy();
+    expect(screen.getByText(/仅本地/)).toBeTruthy();
     await waitFor(() => expect(listAuditEvents).toHaveBeenCalledWith(expect.objectContaining({ project_id: "project-1", cursor: 0, limit: 50 })));
     fireEvent.click(screen.getByRole("button", { name: "更早事件" }));
     await waitFor(() => expect(listAuditEvents).toHaveBeenLastCalledWith(expect.objectContaining({ project_id: "project-1", cursor: 4, limit: 50 })));

@@ -1,0 +1,43 @@
+{
+  "schema_version": "localdrama.uat-evidence.v1",
+  "evidence_id": "p12-package-api-decommission-signoff",
+  "title": "Package API Decommission & Backend Facts Signoff",
+  "status": "PENDING_UAT",
+  "approved": false,
+  "evidence_kind": "AUTOMATED_PRECHECK",
+  "approval_note": "Protected facts were enumerated only; API decommission verification and an accountable reviewer sign-off are still required.",
+  "executed_at": "2026-08-21T08:00:53.066171+00:00",
+  "protected_facts": [
+    {
+      "fact": "reviews",
+      "status": "KEEP",
+      "protected": true
+    },
+    {
+      "fact": "profiles",
+      "status": "KEEP",
+      "protected": true
+    },
+    {
+      "fact": "jobs",
+      "status": "KEEP",
+      "protected": true
+    },
+    {
+      "fact": "audit_events",
+      "status": "KEEP",
+      "protected": true
+    },
+    {
+      "fact": "frame_anchors",
+      "status": "KEEP",
+      "protected": true
+    },
+    {
+      "fact": "timeline_revisions",
+      "status": "KEEP",
+      "protected": true
+    }
+  ],
+  "legacy_surfaces_count": 1
+}

@@ -241,6 +241,294 @@ def test_staged_project_package_import_as_copy_rewrites_identity_and_retains_ret
     assert "small" in thumbnail.parts
 
 
+def test_project_package_roundtrip_preserves_asset_bible_and_preference_history(workspace, database) -> None:
+    source_project = _project(workspace, database)
+    project_id = str(source_project["id"])
+    _, media_version_id = _registered_image(workspace, database, project_id)
+    now = "2026-08-20T00:00:00Z"
+    asset_id, state_id = str(uuid.uuid4()), str(uuid.uuid4())
+    preference_set_id, preference_v1, preference_v2 = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+    with database.transaction() as connection:
+        episode_id = str(connection.execute(
+            "SELECT e.id FROM episodes e JOIN seasons s ON s.id=e.season_id WHERE s.project_id=? ORDER BY e.display_order LIMIT 1",
+            (project_id,),
+        ).fetchone()[0])
+        shot_id = str(connection.execute(
+            "SELECT sh.id FROM shots sh JOIN episodes e ON e.id=sh.episode_id JOIN seasons s ON s.id=e.season_id WHERE s.project_id=? LIMIT 1",
+            (project_id,),
+        ).fetchone()[0])
+        connection.execute(
+            """INSERT INTO story_assets
+            (id,project_id,kind,code,name,description,canonical_media_version_id,extra_json,status,created_at,updated_at,created_by,revision,schema_version)
+            VALUES (?,?,'CHARACTER','CHAR_HERO','Hero','scar',?,'{"palette":"red"}','ACTIVE',?,?, 'author',3,'v2')""",
+            (asset_id, project_id, media_version_id, now, now),
+        )
+        connection.execute(
+            """INSERT INTO story_asset_states
+            (id,project_id,story_asset_id,code,label,state_kind,description,state_json,status,created_at,updated_at,created_by,revision,schema_version)
+            VALUES (?,?,?,'INJURED','Injured','INJURY','act 2','{"severity":2}','ACTIVE',?,?,'author',2,'v1')""",
+            (state_id, project_id, asset_id, now, now),
+        )
+        connection.execute(
+            """INSERT INTO story_asset_references
+            (id,project_id,story_asset_id,asset_state_id,media_version_id,reference_kind,label,priority,is_locked,
+             metadata_json,status,created_at,updated_at,created_by,revision,schema_version)
+            VALUES (?,?,?,?,?,'FRONT','front',10,1,'{"source":"approved"}','ACTIVE',?,?,'author',4,'v1')""",
+            (str(uuid.uuid4()), project_id, asset_id, state_id, media_version_id, now, now),
+        )
+        connection.execute(
+            """INSERT INTO episode_asset_state_bindings
+            (id,episode_id,story_asset_id,asset_state_id,created_at,created_by,revision,schema_version)
+            VALUES (?,?,?,?,?,'author',2,'v1')""",
+            (str(uuid.uuid4()), episode_id, asset_id, state_id, now),
+        )
+        connection.execute(
+            """INSERT INTO shot_asset_bindings
+            (id,shot_id,asset_id,asset_state_id,role_in_shot,created_at,created_by,revision,schema_version)
+            VALUES (?,?,?,?,'main',?,'author',2,'v2')""",
+            (str(uuid.uuid4()), shot_id, asset_id, state_id, now),
+        )
+        connection.execute(
+            """INSERT INTO generation_preference_sets
+            (id,project_id,owner_type,owner_id,capability,current_version_id,status,created_at,updated_at,created_by,revision,schema_version)
+            VALUES (?,?,'PROJECT',?,'T2I',NULL,'ACTIVE',?,?,'director',2,'v1')""",
+            (preference_set_id, project_id, project_id, now, now),
+        )
+        for version_id, version_no, settings in ((preference_v1, 1, {"steps": 20}), (preference_v2, 2, {"steps": 28})):
+            connection.execute(
+                """INSERT INTO generation_preference_versions
+                (id,preference_set_id,version_no,execution_profile_version_id,resolution_mode,settings_json,reason,is_frozen,created_at,created_by,schema_version)
+                VALUES (?,?,?,NULL,'AUTO',?,'director choice',1,?,'director','v1')""",
+                (version_id, preference_set_id, version_no, json.dumps(settings), now),
+            )
+        connection.execute("UPDATE generation_preference_sets SET current_version_id=? WHERE id=?", (preference_v2, preference_set_id))
+
+    service = ProjectPackageService(database, workspace.projects_root, workspace.data_root)
+    exported = service.export(project_id)
+    source = workspace.projects_root / "package_source" / str(exported["rel_path"])
+    inbox = workspace.data_root / "imports" / "project-packages" / "inbox"
+    inbox.mkdir(parents=True)
+    shutil.copy2(source, inbox / "v2-facts.ldspkg")
+    token = str(service.stage_from_inbox("v2-facts.ldspkg")["stage_token"])
+    imported = service.import_as_copy(token, code="package_v2_facts", title="V2 facts")
+
+    assert imported["counts"]["story_assets"] == 1
+    assert imported["counts"]["story_asset_states"] == 1
+    assert imported["counts"]["story_asset_references"] == 1
+    assert imported["counts"]["episode_asset_state_bindings"] == 1
+    assert imported["counts"]["shot_asset_bindings"] == 1
+    assert imported["counts"]["generation_preference_sets"] == 1
+    assert imported["counts"]["generation_preference_versions"] == 2
+    with database.connect() as connection:
+        imported_asset = connection.execute(
+            "SELECT id,canonical_media_version_id,extra_json,revision FROM story_assets WHERE project_id=?",
+            (imported["project_id"],),
+        ).fetchone()
+        assert imported_asset is not None and json.loads(imported_asset["extra_json"]) == {"palette": "red"}
+        assert imported_asset["canonical_media_version_id"] != media_version_id and imported_asset["revision"] == 3
+        reference = connection.execute(
+            "SELECT r.reference_kind,r.metadata_json FROM story_asset_references r WHERE r.project_id=?",
+            (imported["project_id"],),
+        ).fetchone()
+        assert reference["reference_kind"] == "FRONT" and json.loads(reference["metadata_json"])["source"] == "approved"
+        versions = connection.execute(
+            """SELECT v.version_no,v.settings_json,s.current_version_id,v.id FROM generation_preference_versions v
+            JOIN generation_preference_sets s ON s.id=v.preference_set_id WHERE s.project_id=? ORDER BY v.version_no""",
+            (imported["project_id"],),
+        ).fetchall()
+        assert [json.loads(row["settings_json"])["steps"] for row in versions] == [20, 28]
+        assert versions[1]["id"] == versions[1]["current_version_id"]
+
+
+def test_project_package_roundtrip_rewrites_groups_qc_and_director_recipe_refs(workspace, database) -> None:
+    source_project = _project(workspace, database)
+    project_id = str(source_project["id"])
+    now = "2026-08-20T00:00:00Z"
+    scene_id, group_id = str(uuid.uuid4()), str(uuid.uuid4())
+    policy_set_id, policy_version_id = str(uuid.uuid4()), str(uuid.uuid4())
+    recipe_id, recipe_version_id = str(uuid.uuid4()), str(uuid.uuid4())
+    asset_id, proposal_id = str(uuid.uuid4()), str(uuid.uuid4())
+    with database.transaction() as connection:
+        episode_id = str(connection.execute(
+            "SELECT e.id FROM episodes e JOIN seasons s ON s.id=e.season_id WHERE s.project_id=? ORDER BY e.display_order LIMIT 1",
+            (project_id,),
+        ).fetchone()[0])
+        shot_id = str(connection.execute(
+            "SELECT sh.id FROM shots sh JOIN episodes e ON e.id=sh.episode_id JOIN seasons s ON s.id=e.season_id WHERE s.project_id=? LIMIT 1",
+            (project_id,),
+        ).fetchone()[0])
+        connection.execute(
+            "INSERT INTO scenes (id,project_id,code,title,location,time_of_day,created_at,updated_at,created_by) VALUES (?,?,?,?,?,?,?,?,?)",
+            (scene_id, project_id, "SCENE_A", "Scene A", "studio", "night", now, now, "test"),
+        )
+        connection.execute("UPDATE shots SET scene_id=? WHERE id=?", (scene_id, shot_id))
+        connection.execute(
+            """INSERT INTO shot_groups
+            (id,episode_id,scene_id,kind,code,title,order_key,metadata_json,status,created_at,updated_at,created_by,revision,schema_version)
+            VALUES (?,?,?,'BEAT','GROUP_A','Beat A','1','{"mood":"tense"}','ACTIVE',?,?, 'test',2,'v1')""",
+            (group_id, episode_id, scene_id, now, now),
+        )
+        connection.execute(
+            "INSERT INTO shot_group_members (group_id,shot_id,order_key,created_at,created_by) VALUES (?,?, '1',?,'test')",
+            (group_id, shot_id, now),
+        )
+        connection.execute(
+            """INSERT INTO story_assets
+            (id,project_id,kind,code,name,description,canonical_media_version_id,extra_json,status,
+             created_at,updated_at,created_by,revision,schema_version)
+            VALUES (?,?,'CHARACTER','CHAR_A','角色甲','',NULL,'{}','ACTIVE',?,?,'test',1,'v2')""",
+            (asset_id, project_id, now, now),
+        )
+        connection.execute(
+            """INSERT INTO story_asset_proposals
+            (id,project_id,breakdown_draft_id,proposal_key,kind,name,evidence_json,suggested_asset_id,resolved_asset_id,
+             status,decision_note,created_at,updated_at,created_by,revision,schema_version)
+            VALUES (?,?,NULL,'CHARACTER:角色甲','CHARACTER','角色甲','{"scene_count":2}',?,?,'ACCEPTED_MERGE','same',?,?,'test',2,'v2')""",
+            (proposal_id, project_id, asset_id, asset_id, now, now),
+        )
+        connection.execute(
+            """INSERT INTO generation_qc_policy_sets
+            (id,project_id,owner_type,owner_id,stage,current_version_id,status,created_at,updated_at,created_by,revision,schema_version)
+            VALUES (?,?,'PROJECT',?,'VIDEO',NULL,'ACTIVE',?,?,'test',2,'v1')""",
+            (policy_set_id, project_id, project_id, now, now),
+        )
+        policy = {"thresholds": {"continuity": 0.8}}
+        connection.execute(
+            """INSERT INTO generation_qc_policy_versions
+            (id,policy_set_id,version_no,policy_json,max_auto_rerolls,auto_reroll_categories_json,is_frozen,reason,created_at,created_by,schema_version)
+            VALUES (?,?,1,?,2,'["continuity"]',1,'baseline',?,'test','v1')""",
+            (policy_version_id, policy_set_id, json.dumps(policy), now),
+        )
+        connection.execute("UPDATE generation_qc_policy_sets SET current_version_id=? WHERE id=?", (policy_version_id, policy_set_id))
+        recipe = {
+            "aspect_ratio": "9:16",
+            "shot_planning": {"avg_duration_ms": 3000, "dialogue_coverage": "balanced"},
+            "asset_policy": {"character_required_refs": ["FRONT"]},
+            "generation": {"image": {"capability": "T2I"}, "video": {"capability": "I2V"}},
+            "qc_policy_ref": {"policy_version_id": policy_version_id},
+        }
+        canonical = json.dumps(recipe, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        connection.execute(
+            """INSERT INTO director_recipes
+            (id,project_id,code,title,status,created_at,updated_at,created_by,revision,schema_version)
+            VALUES (?,?,'vertical_drama','Vertical Drama','ACTIVE',?,?,'test',1,'v1')""",
+            (recipe_id, project_id, now, now),
+        )
+        connection.execute(
+            """INSERT INTO director_recipe_versions
+            (id,recipe_id,version_no,recipe_json,recipe_hash,reason,is_frozen,created_at,created_by,schema_version)
+            VALUES (?,?,1,?,?,'baseline',1,?,'test','v1')""",
+            (recipe_version_id, recipe_id, canonical, hashlib.sha256(canonical.encode()).hexdigest(), now),
+        )
+        connection.execute(
+            """INSERT INTO project_director_recipe_bindings
+            (project_id,recipe_version_id,reason,created_at,updated_at,created_by,revision,schema_version)
+            VALUES (?,?,'selected',?,?,'test',1,'v1')""",
+            (project_id, recipe_version_id, now, now),
+        )
+
+    service = ProjectPackageService(database, workspace.projects_root, workspace.data_root)
+    exported = service.export(project_id)
+    source = workspace.projects_root / "package_source" / str(exported["rel_path"])
+    inbox = workspace.data_root / "imports" / "project-packages" / "inbox"
+    inbox.mkdir(parents=True)
+    shutil.copy2(source, inbox / "v2-production-policy.ldspkg")
+    token = str(service.stage_from_inbox("v2-production-policy.ldspkg")["stage_token"])
+    imported = service.import_as_copy(token, code="package_policy_copy", title="Policy copy")
+
+    assert imported["counts"]["shot_groups"] == 1
+    assert imported["counts"]["shot_group_members"] == 1
+    assert imported["counts"]["generation_qc_policy_sets"] == 1
+    assert imported["counts"]["generation_qc_policy_versions"] == 1
+    assert imported["counts"]["director_recipes"] == 1
+    assert imported["counts"]["director_recipe_versions"] == 1
+    assert imported["counts"]["project_director_recipe_bindings"] == 1
+    assert imported["counts"]["story_asset_proposals"] == 1
+    with database.connect() as connection:
+        imported_shot = connection.execute(
+            """SELECT sh.scene_id,g.scene_id AS group_scene,m.group_id FROM shots sh
+            JOIN shot_group_members m ON m.shot_id=sh.id JOIN shot_groups g ON g.id=m.group_id
+            JOIN episodes e ON e.id=sh.episode_id JOIN seasons s ON s.id=e.season_id WHERE s.project_id=?""",
+            (imported["project_id"],),
+        ).fetchone()
+        assert imported_shot is not None and imported_shot["scene_id"] == imported_shot["group_scene"]
+        imported_policy = connection.execute(
+            """SELECT s.current_version_id,v.id FROM generation_qc_policy_sets s
+            JOIN generation_qc_policy_versions v ON v.policy_set_id=s.id WHERE s.project_id=?""",
+            (imported["project_id"],),
+        ).fetchone()
+        imported_recipe = connection.execute(
+            """SELECT b.recipe_version_id,v.id,v.recipe_json,v.recipe_hash FROM project_director_recipe_bindings b
+            JOIN director_recipe_versions v ON v.id=b.recipe_version_id WHERE b.project_id=?""",
+            (imported["project_id"],),
+        ).fetchone()
+        assert imported_policy["current_version_id"] == imported_policy["id"]
+        assert imported_recipe["recipe_version_id"] == imported_recipe["id"]
+        rewritten = json.loads(imported_recipe["recipe_json"])
+        assert rewritten["qc_policy_ref"]["policy_version_id"] == imported_policy["id"]
+        assert imported_recipe["recipe_hash"] == hashlib.sha256(
+            json.dumps(rewritten, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        assert imported_policy["id"] != policy_version_id and imported_recipe["id"] != recipe_version_id
+        imported_proposal = connection.execute(
+            "SELECT * FROM story_asset_proposals WHERE project_id=?", (imported["project_id"],),
+        ).fetchone()
+        assert imported_proposal["status"] == "ACCEPTED_MERGE"
+        assert imported_proposal["resolved_asset_id"] == imported_proposal["suggested_asset_id"]
+        assert imported_proposal["resolved_asset_id"] != asset_id
+        assert connection.execute("SELECT COUNT(*) FROM variant_qc_links WHERE policy_version_id=?", (imported_policy["id"],)).fetchone()[0] == 0
+
+
+def test_project_package_import_old_v2_defaults_new_domains_to_empty(workspace, database) -> None:
+    project = _project(workspace, database)
+    service = ProjectPackageService(database, workspace.projects_root, workspace.data_root)
+    exported = service.export(str(project["id"]))
+    source = workspace.projects_root / "package_source" / str(exported["rel_path"])
+    inbox = workspace.data_root / "imports" / "project-packages" / "inbox"
+    inbox.mkdir(parents=True)
+    legacy = inbox / "legacy-v2.ldspkg"
+    with zipfile.ZipFile(source) as archive:
+        contents = {name: archive.read(name) for name in archive.namelist()}
+    state = json.loads(contents["project-state.json"])
+    for key in (
+        "story_assets", "story_asset_proposals", "story_asset_states", "story_asset_references", "episode_asset_state_bindings",
+        "shot_asset_bindings", "generation_preference_sets", "generation_preference_versions",
+        "shot_groups", "shot_group_members", "generation_qc_policy_sets", "generation_qc_policy_versions",
+        "director_recipes", "director_recipe_versions", "project_director_recipe_binding",
+    ):
+        state.pop(key, None)
+    for shot in state["shots"]:
+        shot.pop("scene_id", None)
+    state_bytes = (json.dumps(state, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    manifest = json.loads(contents["package-manifest.json"])
+    entry = next(item for item in manifest["entries"] if item["path"] == "project-state.json")
+    entry.update(byte_size=len(state_bytes), sha256=hashlib.sha256(state_bytes).hexdigest())
+    manifest["state_sha256"] = entry["sha256"]
+    manifest["expanded_bytes"] = sum(item["byte_size"] for item in manifest["entries"])
+    with zipfile.ZipFile(legacy, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name, content in contents.items():
+            if name not in {"project-state.json", "package-manifest.json"}:
+                archive.writestr(name, content)
+        archive.writestr("project-state.json", state_bytes)
+        archive.writestr(
+            "package-manifest.json",
+            (json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode(),
+        )
+
+    token = str(service.stage_from_inbox(legacy.name)["stage_token"])
+    imported = service.import_as_copy(token, code="package_legacy_v2", title="Legacy v2")
+    assert imported["counts"]["story_assets"] == 0
+    assert imported["counts"]["story_asset_proposals"] == 0
+    assert imported["counts"]["story_asset_states"] == 0
+    assert imported["counts"]["generation_preference_sets"] == 0
+    assert imported["counts"]["shot_groups"] == 0
+    assert imported["counts"]["generation_qc_policy_sets"] == 0
+    assert imported["counts"]["director_recipes"] == 0
+    with database.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM story_assets WHERE project_id=?", (imported["project_id"],)).fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM generation_preference_sets WHERE project_id=?", (imported["project_id"],)).fetchone()[0] == 0
+
+
 def test_project_thumbnail_rebuild_endpoint_retries_registered_image_cache(workspace, database) -> None:
     project = _project(workspace, database)
     _registered_image(workspace, database, str(project["id"]))

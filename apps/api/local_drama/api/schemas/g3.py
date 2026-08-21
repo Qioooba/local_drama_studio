@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -24,12 +24,31 @@ class MediaImportRequest(BaseModel):
     stage: str = "IMPORTED"
 
 
+class MediaIntegrityRepairRequest(BaseModel):
+    expected_revision: int = Field(ge=1)
+
+
 class DocumentImportRequest(BaseModel):
     source_path: str = Field(min_length=1)
 
 
 class DocumentImportCommitRequest(BaseModel):
     expected_preview_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+
+
+class SourcePassageResponse(BaseModel):
+    source_document_version_id: str
+    source_start: int
+    source_end: int
+    requested_end: int
+    offset_unit: Literal["UNICODE_CODEPOINT"]
+    text: str
+    text_sha256: str
+    source_text_sha256: str
+    total_character_count: int | None
+    has_more: bool
+    maximum_character_count: int
+    read_only: Literal[True]
 
 
 class BreakdownRequest(BaseModel):

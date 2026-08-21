@@ -1,0 +1,159 @@
+{
+  "schema_version": "localdrama.v2-accessibility-readonly-uat.v1",
+  "observed_at": "2026-08-21T11:27:43.003Z",
+  "mode": "LOCAL_ONLY",
+  "status": "IN_PROGRESS",
+  "routes": [
+    "Projects",
+    "ProjectHome",
+    "AssetBible",
+    "DirectorDesk",
+    "EpisodeRun",
+    "Timeline"
+  ],
+  "isolated_snapshot": true,
+  "writes_performed": 0,
+  "screenshots_created": false,
+  "original_media_requested": false,
+  "fixture_interpretation": "DATA_OR_EMPTY means the real V2 page rendered against the disposable snapshot; HONEST_ERROR_SHELL records an explicit page error/empty shell and does not claim data-path UAT.",
+  "viewports": [
+    {
+      "viewport": "2560x1440",
+      "status": "FAIL",
+      "routes": [
+        {
+          "main_count": 1,
+          "content_heading_count": 5,
+          "unnamed_headings": [],
+          "unlabeled_fields": [],
+          "unnamed_actions": [],
+          "invalid_dialogs": [],
+          "contrast_failures": [],
+          "horizontal_overflow_px": 0,
+          "focus_visible": true,
+          "focused_element": "a",
+          "name": "Projects",
+          "path": "/projects",
+          "fixture_status": "DATA_OR_EMPTY"
+        },
+        {
+          "main_count": 1,
+          "content_heading_count": 8,
+          "unnamed_headings": [],
+          "unlabeled_fields": [],
+          "unnamed_actions": [],
+          "invalid_dialogs": [],
+          "contrast_failures": [
+            {
+              "element": "a",
+              "text": "打开资产圣经",
+              "ratio": 3.27,
+              "required": 4.5
+            },
+            {
+              "element": "a",
+              "text": "打开高级画布",
+              "ratio": 3.27,
+              "required": 4.5
+            }
+          ],
+          "horizontal_overflow_px": 0,
+          "focus_visible": true,
+          "focused_element": "a",
+          "name": "ProjectHome",
+          "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7",
+          "fixture_status": "DATA_OR_EMPTY"
+        },
+        {
+          "main_count": 1,
+          "content_heading_count": 3,
+          "unnamed_headings": [],
+          "unlabeled_fields": [],
+          "unnamed_actions": [],
+          "invalid_dialogs": [],
+          "contrast_failures": [],
+          "horizontal_overflow_px": 0,
+          "focus_visible": true,
+          "focused_element": "a",
+          "name": "AssetBible",
+          "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/assets",
+          "fixture_status": "DATA_OR_EMPTY"
+        },
+        {
+          "main_count": 1,
+          "content_heading_count": 1,
+          "unnamed_headings": [],
+          "unlabeled_fields": [],
+          "unnamed_actions": [],
+          "invalid_dialogs": [],
+          "contrast_failures": [],
+          "horizontal_overflow_px": 0,
+          "focus_visible": true,
+          "focused_element": "a",
+          "name": "DirectorDesk",
+          "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/direct",
+          "fixture_status": "DATA_OR_EMPTY"
+        },
+        {
+          "main_count": 1,
+          "content_heading_count": 3,
+          "unnamed_headings": [],
+          "unlabeled_fields": [],
+          "unnamed_actions": [],
+          "invalid_dialogs": [],
+          "contrast_failures": [
+            {
+              "element": "a",
+              "text": "去处理",
+              "ratio": 3.27,
+              "required": 4.5
+            },
+            {
+              "element": "a",
+              "text": "去处理",
+              "ratio": 3.27,
+              "required": 4.5
+            },
+            {
+              "element": "a",
+              "text": "去检查",
+              "ratio": 3.27,
+              "required": 4.5
+            },
+            {
+              "element": "a",
+              "text": "去检查",
+              "ratio": 3.27,
+              "required": 4.5
+            }
+          ],
+          "horizontal_overflow_px": 0,
+          "focus_visible": true,
+          "focused_element": "a",
+          "name": "EpisodeRun",
+          "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/run",
+          "fixture_status": "DATA_OR_EMPTY"
+        },
+        {
+          "main_count": 1,
+          "content_heading_count": 1,
+          "unnamed_headings": [],
+          "unlabeled_fields": [],
+          "unnamed_actions": [],
+          "invalid_dialogs": [],
+          "contrast_failures": [],
+          "horizontal_overflow_px": 0,
+          "focus_visible": true,
+          "focused_element": "a",
+          "name": "Timeline",
+          "path": "/projects/e5eaa01d-d39a-4a63-acbf-026da30b46e7/episodes/d4db1033-9517-4bd0-958d-4228e0abead1/timeline",
+          "fixture_status": "DATA_OR_EMPTY"
+        }
+      ],
+      "writes": [],
+      "public_requests": [],
+      "original_media_requests": [],
+      "failed_responses": []
+    }
+  ]
+}

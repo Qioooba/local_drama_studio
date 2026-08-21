@@ -1,0 +1,172 @@
+.profile-configuration-panel,
+.workflow-configuration-panel,
+.profile-configuration-panel .profile-editor-layout,
+.profile-configuration-panel .profile-contract-editor {
+  min-width: 0;
+}
+
+.profile-configuration-panel .profile-editor-layout {
+  grid-template-columns: minmax(248px, 0.78fr) minmax(0, 1.7fr);
+}
+
+.profile-configuration-panel .profile-version-choice {
+  min-width: 0;
+  min-height: 68px;
+}
+
+.profile-configuration-panel .profile-version-choice:focus-visible,
+.workflow-configuration-panel button:focus-visible,
+.workflow-configuration-panel input:focus-visible,
+.profile-configuration-panel textarea:focus-visible {
+  outline: 3px solid var(--info);
+  outline-offset: 2px;
+}
+
+.profile-configuration-panel .profile-contract-fields textarea {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.profile-configuration-panel .profile-editor-actions button,
+.workflow-configuration-panel .workflow-actions button,
+.workflow-configuration-panel .revoke-reason-field input {
+  min-height: 44px;
+}
+
+.workflow-configuration-panel .workflow-history {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 12px;
+}
+
+.workflow-configuration-panel .workflow-version {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.workflow-configuration-panel .workflow-version-summary {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.workflow-configuration-panel .workflow-version-summary > span:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.workflow-configuration-panel .workflow-version-summary strong,
+.workflow-configuration-panel .workflow-version-summary small {
+  overflow-wrap: anywhere;
+}
+
+.workflow-configuration-panel .workflow-version-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.workflow-configuration-panel .workflow-version-facts > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.workflow-configuration-panel .workflow-version-facts dt {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.workflow-configuration-panel .workflow-version-facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.workflow-configuration-panel .workflow-version-facts code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.workflow-configuration-panel .workflow-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.workflow-configuration-panel .revoke-reason-field {
+  flex: 1 1 190px;
+  min-width: 0;
+}
+
+.workflow-configuration-panel .workflow-validation-required {
+  color: var(--text-muted);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1100px) {
+  .profile-configuration-panel .profile-editor-layout,
+  .workflow-configuration-panel .workflow-history {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .profile-configuration-panel .profile-version-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .profile-configuration-panel .profile-contract-editor {
+    padding-top: 18px;
+    padding-left: 0;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .profile-configuration-panel .profile-version-list,
+  .profile-configuration-panel .profile-contract-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .profile-configuration-panel .profile-contract-meta,
+  .workflow-configuration-panel .workflow-version-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .profile-configuration-panel .profile-editor-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .profile-configuration-panel .profile-editor-actions .primary-action,
+  .profile-configuration-panel .profile-editor-actions .secondary,
+  .workflow-configuration-panel .workflow-actions > button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .profile-configuration-panel .profile-contract-meta,
+  .workflow-configuration-panel .workflow-version-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

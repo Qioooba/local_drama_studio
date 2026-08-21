@@ -1,0 +1,81 @@
+{
+  "schema_version": "localdrama.competitor-evidence.v1",
+  "product": "worksolo-onsolo",
+  "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+  "image_count": 10,
+  "contact_sheets": [
+    "contact-sheet-evidence-01.jpg"
+  ],
+  "images": [
+    {
+      "file": "ui-01.png",
+      "width": 1080,
+      "height": 463,
+      "bytes": 844271,
+      "thumbnail": "thumbs-evidence/ui-01-e790de70.jpg"
+    },
+    {
+      "file": "ui-02.png",
+      "width": 1080,
+      "height": 501,
+      "bytes": 364147,
+      "thumbnail": "thumbs-evidence/ui-02-b2cb41b3.jpg"
+    },
+    {
+      "file": "ui-03.png",
+      "width": 1080,
+      "height": 501,
+      "bytes": 726927,
+      "thumbnail": "thumbs-evidence/ui-03-0f26dbd5.jpg"
+    },
+    {
+      "file": "ui-04.png",
+      "width": 1080,
+      "height": 501,
+      "bytes": 126362,
+      "thumbnail": "thumbs-evidence/ui-04-8bb43639.jpg"
+    },
+    {
+      "file": "ui-06.png",
+      "width": 1080,
+      "height": 501,
+      "bytes": 159708,
+      "thumbnail": "thumbs-evidence/ui-06-2e2627b1.jpg"
+    },
+    {
+      "file": "ui-09.png",
+      "width": 1080,
+      "height": 501,
+      "bytes": 33486,
+      "thumbnail": "thumbs-evidence/ui-09-608a4177.jpg"
+    },
+    {
+      "file": "ui-12.png",
+      "width": 933,
+      "height": 1005,
+      "bytes": 45605,
+      "thumbnail": "thumbs-evidence/ui-12-07fbce8f.jpg"
+    },
+    {
+      "file": "ui-14.png",
+      "width": 1020,
+      "height": 878,
+      "bytes": 50710,
+      "thumbnail": "thumbs-evidence/ui-14-2de45816.jpg"
+    },
+    {
+      "file": "ui-15.png",
+      "width": 927,
+      "height": 1056,
+      "bytes": 479709,
+      "thumbnail": "thumbs-evidence/ui-15-58f7b27c.jpg"
+    },
+    {
+      "file": "ui-16.png",
+      "width": 1080,
+      "height": 477,
+      "bytes": 242252,
+      "thumbnail": "thumbs-evidence/ui-16-8b3f8e53.jpg"
+    }
+  ]
+}

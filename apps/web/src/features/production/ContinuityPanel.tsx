@@ -31,7 +31,7 @@ function displayValue(value: unknown): string {
 function ShotColumn({ shot, label }: { shot: ContinuityShot | null; label: string }) {
   if (!shot) return <article className="continuity-shot empty"><p className="eyebrow">{label}</p><strong>无相邻镜头</strong><span>已到达当前分集边界</span></article>;
   return <article className={`continuity-shot ${shot.position}`} data-shot-position={shot.position}>
-    <div className="continuity-shot-heading"><div><p className="eyebrow">{label}</p><h4>{shot.code}</h4></div><span className="status-pill">revision {shot.revision.revision_no ?? "—"}{shot.revision.is_frozen ? " · FROZEN" : ""}</span></div>
+    <div className="continuity-shot-heading"><div><p className="eyebrow">{label}</p><h4>{shot.code}</h4></div><span className="status-pill">revision {shot.revision.revision_no ?? "—"}{shot.revision.is_frozen ? " · 已冻结" : ""}</span></div>
     <dl>{Object.entries(facetLabels).map(([key, facetLabel]) => <div key={key} className={shot.missing_facets.includes(key) ? "missing" : ""}><dt>{facetLabel}</dt><dd>{displayValue(shot.facets[key])}</dd></div>)}</dl>
     <div className="continuity-references">
       <small>已选/已批参考 · {shot.references.length}</small>

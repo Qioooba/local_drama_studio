@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import uuid
@@ -9,7 +10,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from local_drama.application.jobs import JobService
 from local_drama.config import Settings
+from local_drama.domain.capabilities import normalize_capability
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.local_llm import LocalLLMClient
@@ -29,6 +32,19 @@ def _stable_id(value: str) -> str:
 
 def _slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")[:100] or "model"
+
+
+def _sha256_json(value: Any) -> str:
+    return hashlib.sha256(_json(value).encode("utf-8")).hexdigest()
+
+
+def _profile_runtime_contract(capability: dict[str, Any], fallback_base_url: str) -> dict[str, str]:
+    """Select only immutable execution fields; readiness probes are volatile."""
+    return {
+        "provider": str(capability.get("provider") or ""),
+        "base_url": str(capability.get("base_url") or fallback_base_url),
+        "model": str(capability.get("model") or ""),
+    }
 
 
 def _validate_breakdown_output(value: dict[str, Any], source_text: str) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -156,10 +172,10 @@ class LocalLLMService:
                 (id, execution_profile_id, version_no, capability, model_bundle_json, input_contract_json,
                  parameter_schema_json, status, manifest_sha256, capability_json, worker_policy,
                  created_at, updated_at, created_by, revision, schema_version)
-                VALUES (?, ?, 1, 'SCRIPT_BREAKDOWN_LLM', ?, ?, ?, ?, NULL, ?, 'ONE_LOCAL_LLM_TASK', ?, ?, ?, 1, 'v2')
+                VALUES (?, ?, 1, 'LLM_STORY_PARSE', ?, ?, ?, ?, NULL, ?, 'ONE_LOCAL_LLM_TASK', ?, ?, ?, 1, 'v2')
                 ON CONFLICT(execution_profile_id, version_no) DO UPDATE SET model_bundle_json=excluded.model_bundle_json,
                 input_contract_json=excluded.input_contract_json, parameter_schema_json=excluded.parameter_schema_json,
-                status=excluded.status, capability_json=excluded.capability_json, updated_at=excluded.updated_at,
+                capability=excluded.capability,status=excluded.status, capability_json=excluded.capability_json, updated_at=excluded.updated_at,
                 revision=execution_profile_versions.revision+1""",
                 (
                     version_id,
@@ -185,7 +201,15 @@ class LocalLLMService:
             row = connection.execute("SELECT id, capability, capability_json FROM execution_profile_versions WHERE id=?", (profile_version_id,)).fetchone()
             if row is None:
                 raise DomainRuleError("PROFILE_NOT_FOUND", "Profile 版本不存在")
-            if "LLM" not in str(row["capability"]).upper():
+            try:
+                profile_capability = normalize_capability(str(row["capability"]))
+            except ValueError as error:
+                raise DomainRuleError(
+                    "PROFILE_CAPABILITY_INVALID",
+                    "Profile capability 不是可识别的 canonical capability",
+                    {"profile_version_id": profile_version_id},
+                ) from error
+            if profile_capability != "LLM_STORY_PARSE":
                 raise DomainRuleError("PROFILE_CAPABILITY_MISMATCH", "Profile 不是本地 LLM 能力")
             capability = json.loads(row["capability_json"] or "{}")
             model = str(capability.get("model") or "")
@@ -202,38 +226,175 @@ class LocalLLMService:
             )
         return {"profile_version_id": profile_version_id, "status": "PUBLISHED", "probe": probe}
 
-    def breakdown(self, session_id: str, profile_version_id: str) -> dict[str, Any]:
+    def _breakdown_context(self, session_id: str, profile_version_id: str) -> tuple[Any, dict[str, Any]]:
         with self.database.connect() as connection:
             row = connection.execute(
                 """SELECT s.project_id, s.source_document_version_id, s.id AS session_id, s.status, v.extracted_text_rel,
-                v.source_document_id FROM import_sessions s JOIN source_document_versions v ON v.id=s.source_document_version_id
-                JOIN execution_profile_versions p ON p.id=? WHERE s.id=? AND p.status='PUBLISHED' AND p.capability LIKE '%LLM%'""",
+                v.source_document_id, v.text_sha256, v.sha256 AS source_sha256
+                FROM import_sessions s JOIN source_document_versions v ON v.id=s.source_document_version_id
+                JOIN execution_profile_versions p ON p.id=? WHERE s.id=? AND p.status='PUBLISHED'
+                AND p.capability='LLM_STORY_PARSE'""",
                 (profile_version_id, session_id),
             ).fetchone()
             profile = connection.execute("SELECT capability_json FROM execution_profile_versions WHERE id=?", (profile_version_id,)).fetchone()
         if row is None or profile is None:
             raise DomainRuleError("LOCAL_LLM_PROFILE_UNAVAILABLE", "所选 Profile 不是已发布的本地 LLM 能力")
+        if str(row["status"]) not in {"COMMITTED", "BREAKDOWN_READY"}:
+            raise DomainRuleError("IMPORT_SESSION_NOT_COMMITTED", "只有已确认 commit 的导入会话可以提交 AI 拆解任务")
         capability = json.loads(profile["capability_json"] or "{}")
         model = capability.get("model")
         if not model:
             raise DomainRuleError("LOCAL_LLM_PROFILE_CONFIG_MISMATCH", "已发布 Profile 未记录显式本地模型")
+        return row, capability
+
+    def enqueue_breakdown(
+        self,
+        session_id: str,
+        profile_version_id: str | None,
+        idempotency_key: str,
+        *,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Persist a local-LLM request as a Job without contacting Ollama.
+
+        The immutable snapshot is deliberately bounded to source/profile facts;
+        no generated scene or shot is materialized by this command.
+        """
+        if not profile_version_id:
+            raise DomainRuleError("LOCAL_LLM_PROFILE_REQUIRED", "剧本拆解必须显式选择已发布的本地 LLM Profile")
+        row, capability = self._breakdown_context(session_id, profile_version_id)
+        model = str(capability["model"])
+        base_url = str(capability.get("base_url") or self.settings.llm_base_url)
+        runtime_contract = _profile_runtime_contract(capability, self.settings.llm_base_url)
+        snapshot = {
+            "schema_version": "localdrama.script-breakdown-job.v1",
+            "import_session_id": session_id,
+            "source_document_version_id": str(row["source_document_version_id"]),
+            "source_sha256": str(row["source_sha256"]),
+            "source_text_sha256": str(row["text_sha256"]),
+            "profile_version_id": profile_version_id,
+            "profile_capability_sha256": _sha256_json(runtime_contract),
+            "model": model,
+            "base_url": base_url,
+            "automatic_apply": False,
+            "requires_human_action": True,
+        }
+        return JobService(self.database, self.settings).create_job(
+            str(row["project_id"]),
+            "SCRIPT_BREAKDOWN_LOCAL_LLM",
+            "IMPORT_SESSION",
+            session_id,
+            "CPU",
+            snapshot,
+            idempotency_key,
+            execution_profile_version_id=profile_version_id,
+            priority=60,
+            # Local model failures require an explicit operator retry; this
+            # prevents a broken prompt/model from being hammered automatically.
+            max_attempts=1,
+            actor=actor,
+        )
+
+    def _assert_job_can_persist(self, job_id: str, session_id: str) -> None:
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT type,subject_type,subject_id,state FROM jobs WHERE id=?",
+                (job_id,),
+            ).fetchone()
+        if row is None:
+            raise DomainRuleError("JOB_NOT_FOUND", "AI 拆解 Job 不存在", {"job_id": job_id})
+        if (
+            str(row["type"]) != "SCRIPT_BREAKDOWN_LOCAL_LLM"
+            or str(row["subject_type"]) != "IMPORT_SESSION"
+            or str(row["subject_id"]) != session_id
+        ):
+            raise DomainRuleError("LOCAL_LLM_JOB_SNAPSHOT_INVALID", "AI 拆解 Job 与导入会话不匹配")
+        if str(row["state"]) == "CANCEL_REQUESTED":
+            raise DomainRuleError("JOB_CANCELLED", "AI 拆解已请求取消；不会保存模型输出")
+        if str(row["state"]) not in {"CLAIMED", "RUNNING"}:
+            raise DomainRuleError("LOCAL_LLM_JOB_NOT_RUNNING", "只有正在执行的 AI 拆解 Job 可以保存草稿")
+
+    def breakdown(
+        self,
+        session_id: str,
+        profile_version_id: str,
+        *,
+        job_id: str | None = None,
+        input_snapshot: dict[str, Any] | None = None,
+        on_progress: Any | None = None,
+    ) -> dict[str, Any]:
+        """Execute the model call; production routes enqueue this via JobService.
+
+        ``job_id`` makes the draft id deterministic so lease recovery cannot
+        duplicate a draft after a crash between persistence and Job completion.
+        """
+        row, capability = self._breakdown_context(session_id, profile_version_id)
+        model = str(capability["model"])
+        base_url = str(capability.get("base_url") or self.settings.llm_base_url)
+        runtime_contract = _profile_runtime_contract(capability, self.settings.llm_base_url)
+        if input_snapshot is not None:
+            expected = {
+                "import_session_id": session_id,
+                "source_document_version_id": str(row["source_document_version_id"]),
+                "source_sha256": str(row["source_sha256"]),
+                "source_text_sha256": str(row["text_sha256"]),
+                "profile_version_id": profile_version_id,
+                "profile_capability_sha256": _sha256_json(runtime_contract),
+                "model": model,
+                "base_url": base_url,
+                "automatic_apply": False,
+                "requires_human_action": True,
+            }
+            if any(input_snapshot.get(key) != value for key, value in expected.items()):
+                raise DomainRuleError("LOCAL_LLM_JOB_SNAPSHOT_STALE", "AI 拆解 Job 的源文本或 Profile 快照已变化")
+        draft_id = _stable_id(f"breakdown-job:{job_id}") if job_id else str(uuid.uuid4())
+        if job_id:
+            self._assert_job_can_persist(job_id, session_id)
+            with self.database.connect() as connection:
+                existing = connection.execute(
+                    "SELECT draft_json,status FROM script_breakdown_drafts WHERE id=?", (draft_id,)
+                ).fetchone()
+            if existing is not None:
+                return {
+                    "id": draft_id,
+                    "status": str(existing["status"]),
+                    "profile_version_id": profile_version_id,
+                    "draft": json.loads(str(existing["draft_json"])),
+                    "idempotent_replay": True,
+                    "automatic_apply": False,
+                    "requires_human_action": True,
+                }
+        if on_progress:
+            on_progress({"phase": "CALLING_LOCAL_LLM", "percent": 20})
         extracted = Path(str(row["extracted_text_rel"]))
         project_root = (self.settings.projects_root / self._project_code(str(row["project_id"]))).resolve()
         text_path = (project_root / extracted).resolve()
         if not text_path.is_relative_to(project_root) or not text_path.is_file():
             raise DomainRuleError("SOURCE_TEXT_NOT_FOUND", "剧本提取文本不在项目目录或不存在")
-        source_text = text_path.read_text(encoding="utf-8")
-        output = self.client(str(model)).chat_json(
+        source_bytes = text_path.read_bytes()
+        if hashlib.sha256(source_bytes).hexdigest() != str(row["text_sha256"]):
+            raise DomainRuleError("SOURCE_TEXT_CHANGED", "剧本提取文本 hash 已变化，拒绝执行旧 Job 快照")
+        source_text = source_bytes.decode("utf-8")
+        output = LocalLLMClient(base_url, model).chat_json(
             "你是本地剧本拆解器。最终答案只输出 JSON 对象，顶层必须包含 scenes、confidence、questions、source_passages。每个 scene 必须包含 scene_no、title、summary、characters、shots；每个 shot 必须包含 shot_no、visual、action、dialogue、duration_seconds。confidence 必须是 {overall:0到1,notes:字符串数组}；questions 是待人工确认的字符串数组；source_passages 是 {scene_no,quote} 数组，每个场次至少一条且 quote 必须逐字复制原文。不得臆造原文不存在的关键事实。",
             source_text,
         )
+        if job_id:
+            self._assert_job_can_persist(job_id, session_id)
+        if on_progress:
+            on_progress({"phase": "VALIDATING_OUTPUT", "percent": 80})
         draft, evidence = _validate_breakdown_output(output, source_text)
-        evidence.update({"schema_version": "localdrama.script-breakdown-evidence.v1", "source": "model_output", "model": model, "profile_version_id": profile_version_id})
-        draft_id = str(uuid.uuid4())
+        evidence.update({"schema_version": "localdrama.script-breakdown-evidence.v1", "source": "model_output", "model": model, "profile_version_id": profile_version_id, "job_id": job_id})
         now = _now()
         with self.database.transaction() as connection:
+            if job_id:
+                persisted_job = connection.execute("SELECT state FROM jobs WHERE id=?", (job_id,)).fetchone()
+                if persisted_job is None or str(persisted_job["state"]) == "CANCEL_REQUESTED":
+                    raise DomainRuleError("JOB_CANCELLED", "AI 拆解已请求取消；不会保存模型输出")
+                if str(persisted_job["state"]) not in {"CLAIMED", "RUNNING"}:
+                    raise DomainRuleError("LOCAL_LLM_JOB_NOT_RUNNING", "AI 拆解 Job 状态已变化，拒绝保存模型输出")
             connection.execute(
-                "INSERT INTO script_breakdown_drafts (id, project_id, source_document_version_id, import_session_id, draft_json, confidence_json, status, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, ?, ?, ?, 'DRAFT_READY', ?, ?, 'local-llm', 1, 'v2')",
+                "INSERT OR IGNORE INTO script_breakdown_drafts (id, project_id, source_document_version_id, import_session_id, draft_json, confidence_json, status, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, ?, ?, ?, 'DRAFT_READY', ?, ?, 'local-llm', 1, 'v2')",
                 (
                     draft_id,
                     row["project_id"],
@@ -247,10 +408,12 @@ class LocalLLMService:
             )
             connection.execute("UPDATE import_sessions SET status='BREAKDOWN_READY', updated_at=?, revision=revision+1 WHERE id=?", (now, session_id))
             connection.execute(
-                "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES ('local-llm', 'producer', 'SCRIPT_BREAKDOWN_COMPLETED', 'script_breakdown_draft', ?, ?, ?)",
-                (draft_id, "本地 LLM 完成剧本拆解", _json({"session_id": session_id, "profile_version_id": profile_version_id, "model": model})),
+                "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, job_id, summary, metadata_redacted_json) VALUES ('local-llm', 'producer', 'SCRIPT_BREAKDOWN_COMPLETED', 'script_breakdown_draft', ?, ?, ?, ?)",
+                (draft_id, job_id, "本地 LLM 完成剧本拆解草稿（等待人工应用）", _json({"session_id": session_id, "profile_version_id": profile_version_id, "model": model, "job_id": job_id, "automatic_apply": False})),
             )
-        return {"id": draft_id, "status": "DRAFT_READY", "profile_version_id": profile_version_id, "draft": draft}
+        if on_progress:
+            on_progress({"phase": "DRAFT_READY", "percent": 95, "draft_id": draft_id})
+        return {"id": draft_id, "status": "DRAFT_READY", "profile_version_id": profile_version_id, "draft": draft, "idempotent_replay": False, "automatic_apply": False, "requires_human_action": True}
 
     def list_breakdown_drafts(self, project_id: str) -> list[dict[str, Any]]:
         with self.database.connect() as connection:

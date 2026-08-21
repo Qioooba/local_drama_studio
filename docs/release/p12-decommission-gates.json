@@ -1,0 +1,48 @@
+{
+  "schema_version": "localdrama.p12-decommission-gates.v2",
+  "legacy_app_forbidden_importers": [
+    "apps/web/src/main.tsx",
+    "apps/web/src/app/router.tsx",
+    "apps/web/src/app/legacyRoute.tsx"
+  ],
+  "required_routes": [
+    "/projects",
+    "/projects/:projectId",
+    "story",
+    "assets",
+    "canvas",
+    "operations",
+    "episodes/:episodeId/plan",
+    "episodes/:episodeId/direct",
+    "episodes/:episodeId/generation",
+    "episodes/:episodeId/review",
+    "episodes/:episodeId/audio",
+    "episodes/:episodeId/timeline",
+    "episodes/:episodeId/delivery",
+    "episodes/:episodeId/run",
+    "/models",
+    "/jobs",
+    "/diagnostics"
+  ],
+  "legacy_surfaces": [
+    {"id": "legacy-query-shell", "path": "apps/web/src/app/App.tsx", "replacement": "V2 router + AppShell"}
+  ],
+  "legacy_api_symbols": [],
+  "retained_query_links": [],
+  "retained_api_callers": [
+    {"path": "apps/web/src/features/episode-review-v2/EpisodeReviewWorkspace.tsx", "symbols": ["getReviewContext"], "reason": "exact media owner and immutable review detail are not present in the episode review inbox/formal-candidate projection"}
+  ],
+  "protected_backend_facts": [
+    "reviews",
+    "profiles",
+    "jobs",
+    "audit_events",
+    "frame_anchors",
+    "timeline_revisions"
+  ],
+  "required_uat_evidence": [
+    "docs/evidence/refactor-2026/p12-new-routes-uat.json",
+    "docs/evidence/refactor-2026/p12-old-project-compat-uat.json",
+    "docs/evidence/refactor-2026/p12-package-api-decommission-signoff.json"
+  ]
+}

@@ -1,0 +1,666 @@
+{
+  "schema_version": "localdrama.ui-evidence.v1",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "page_count": 26,
+  "segment_count": 63,
+  "contact_sheet_chunks": [
+    "contact-sheet-01.jpg",
+    "contact-sheet-02.jpg",
+    "contact-sheet-03.jpg",
+    "contact-sheet-04.jpg"
+  ],
+  "pages": [
+    {
+      "page": "01-projects",
+      "source": "01-projects.jpg",
+      "width": 1440,
+      "height": 900,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/01-projects-seg-01.jpg",
+          "thumbnail": "thumbs/01-projects-seg-01.jpg"
+        }
+      ]
+    },
+    {
+      "page": "02-project-home",
+      "source": "02-project-home.jpg",
+      "width": 1440,
+      "height": 1086,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/02-project-home-seg-01.jpg",
+          "thumbnail": "thumbs/02-project-home-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 900,
+          "y_end": 1086,
+          "segment": "segments/02-project-home-seg-02.jpg",
+          "thumbnail": "thumbs/02-project-home-seg-02.jpg"
+        }
+      ]
+    },
+    {
+      "page": "03-story",
+      "source": "03-story.jpg",
+      "width": 1440,
+      "height": 1110,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/03-story-seg-01.jpg",
+          "thumbnail": "thumbs/03-story-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 900,
+          "y_end": 1110,
+          "segment": "segments/03-story-seg-02.jpg",
+          "thumbnail": "thumbs/03-story-seg-02.jpg"
+        }
+      ]
+    },
+    {
+      "page": "04-assets",
+      "source": "04-assets.jpg",
+      "width": 1440,
+      "height": 900,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/04-assets-seg-01.jpg",
+          "thumbnail": "thumbs/04-assets-seg-01.jpg"
+        }
+      ]
+    },
+    {
+      "page": "05-qc-policies",
+      "source": "05-qc-policies.jpg",
+      "width": 1440,
+      "height": 1675,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/05-qc-policies-seg-01.jpg",
+          "thumbnail": "thumbs/05-qc-policies-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 900,
+          "y_end": 1675,
+          "segment": "segments/05-qc-policies-seg-02.jpg",
+          "thumbnail": "thumbs/05-qc-policies-seg-02.jpg"
+        }
+      ]
+    },
+    {
+      "page": "06-director-recipes",
+      "source": "06-director-recipes.jpg",
+      "width": 1440,
+      "height": 1477,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/06-director-recipes-seg-01.jpg",
+          "thumbnail": "thumbs/06-director-recipes-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 900,
+          "y_end": 1477,
+          "segment": "segments/06-director-recipes-seg-02.jpg",
+          "thumbnail": "thumbs/06-director-recipes-seg-02.jpg"
+        }
+      ]
+    },
+    {
+      "page": "07-production-settings",
+      "source": "07-production-settings.jpg",
+      "width": 1440,
+      "height": 4433,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/07-production-settings-seg-01.jpg",
+          "thumbnail": "thumbs/07-production-settings-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 900,
+          "y_end": 1800,
+          "segment": "segments/07-production-settings-seg-02.jpg",
+          "thumbnail": "thumbs/07-production-settings-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1800,
+          "y_end": 2700,
+          "segment": "segments/07-production-settings-seg-03.jpg",
+          "thumbnail": "thumbs/07-production-settings-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2700,
+          "y_end": 3600,
+          "segment": "segments/07-production-settings-seg-04.jpg",
+          "thumbnail": "thumbs/07-production-settings-seg-04.jpg"
+        },
+        {
+          "index": 5,
+          "y_start": 3600,
+          "y_end": 4433,
+          "segment": "segments/07-production-settings-seg-05.jpg",
+          "thumbnail": "thumbs/07-production-settings-seg-05.jpg"
+        }
+      ]
+    },
+    {
+      "page": "08-project-models",
+      "source": "08-project-models.jpg",
+      "width": 1440,
+      "height": 3175,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/08-project-models-seg-01.jpg",
+          "thumbnail": "thumbs/08-project-models-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 900,
+          "y_end": 1800,
+          "segment": "segments/08-project-models-seg-02.jpg",
+          "thumbnail": "thumbs/08-project-models-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1800,
+          "y_end": 2700,
+          "segment": "segments/08-project-models-seg-03.jpg",
+          "thumbnail": "thumbs/08-project-models-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2700,
+          "y_end": 3175,
+          "segment": "segments/08-project-models-seg-04.jpg",
+          "thumbnail": "thumbs/08-project-models-seg-04.jpg"
+        }
+      ]
+    },
+    {
+      "page": "09-project-jobs",
+      "source": "09-project-jobs.jpg",
+      "width": 1440,
+      "height": 2418,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/09-project-jobs-seg-01.jpg",
+          "thumbnail": "thumbs/09-project-jobs-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 900,
+          "y_end": 1800,
+          "segment": "segments/09-project-jobs-seg-02.jpg",
+          "thumbnail": "thumbs/09-project-jobs-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1800,
+          "y_end": 2418,
+          "segment": "segments/09-project-jobs-seg-03.jpg",
+          "thumbnail": "thumbs/09-project-jobs-seg-03.jpg"
+        }
+      ]
+    },
+    {
+      "page": "10-project-diagnostics",
+      "source": "10-project-diagnostics.jpg",
+      "width": 1440,
+      "height": 981,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/10-project-diagnostics-seg-01.jpg",
+          "thumbnail": "thumbs/10-project-diagnostics-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 900,
+          "y_end": 981,
+          "segment": "segments/10-project-diagnostics-seg-02.jpg",
+          "thumbnail": "thumbs/10-project-diagnostics-seg-02.jpg"
+        }
+      ]
+    },
+    {
+      "page": "11-media-lab",
+      "source": "11-media-lab.jpg",
+      "width": 1440,
+      "height": 900,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/11-media-lab-seg-01.jpg",
+          "thumbnail": "thumbs/11-media-lab-seg-01.jpg"
+        }
+      ]
+    },
+    {
+      "page": "12-canvas",
+      "source": "12-canvas.jpg",
+      "width": 1440,
+      "height": 1499,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/12-canvas-seg-01.jpg",
+          "thumbnail": "thumbs/12-canvas-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 900,
+          "y_end": 1499,
+          "segment": "segments/12-canvas-seg-02.jpg",
+          "thumbnail": "thumbs/12-canvas-seg-02.jpg"
+        }
+      ]
+    },
+    {
+      "page": "13-operations",
+      "source": "13-operations.jpg",
+      "width": 1440,
+      "height": 900,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/13-operations-seg-01.jpg",
+          "thumbnail": "thumbs/13-operations-seg-01.jpg"
+        }
+      ]
+    },
+    {
+      "page": "14-episode-plan",
+      "source": "14-episode-plan.jpg",
+      "width": 1440,
+      "height": 3396,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/14-episode-plan-seg-01.jpg",
+          "thumbnail": "thumbs/14-episode-plan-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 900,
+          "y_end": 1800,
+          "segment": "segments/14-episode-plan-seg-02.jpg",
+          "thumbnail": "thumbs/14-episode-plan-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1800,
+          "y_end": 2700,
+          "segment": "segments/14-episode-plan-seg-03.jpg",
+          "thumbnail": "thumbs/14-episode-plan-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2700,
+          "y_end": 3396,
+          "segment": "segments/14-episode-plan-seg-04.jpg",
+          "thumbnail": "thumbs/14-episode-plan-seg-04.jpg"
+        }
+      ]
+    },
+    {
+      "page": "15-director-chooser",
+      "source": "15-director-chooser.jpg",
+      "width": 1440,
+      "height": 900,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/15-director-chooser-seg-01.jpg",
+          "thumbnail": "thumbs/15-director-chooser-seg-01.jpg"
+        }
+      ]
+    },
+    {
+      "page": "16-director-shot3",
+      "source": "16-director-shot3.jpg",
+      "width": 1440,
+      "height": 928,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/16-director-shot3-seg-01.jpg",
+          "thumbnail": "thumbs/16-director-shot3-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 900,
+          "y_end": 928,
+          "segment": "segments/16-director-shot3-seg-02.jpg",
+          "thumbnail": "thumbs/16-director-shot3-seg-02.jpg"
+        }
+      ]
+    },
+    {
+      "page": "17-generation-shot3",
+      "source": "17-generation-shot3.jpg",
+      "width": 1440,
+      "height": 3891,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/17-generation-shot3-seg-01.jpg",
+          "thumbnail": "thumbs/17-generation-shot3-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 900,
+          "y_end": 1800,
+          "segment": "segments/17-generation-shot3-seg-02.jpg",
+          "thumbnail": "thumbs/17-generation-shot3-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1800,
+          "y_end": 2700,
+          "segment": "segments/17-generation-shot3-seg-03.jpg",
+          "thumbnail": "thumbs/17-generation-shot3-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2700,
+          "y_end": 3600,
+          "segment": "segments/17-generation-shot3-seg-04.jpg",
+          "thumbnail": "thumbs/17-generation-shot3-seg-04.jpg"
+        },
+        {
+          "index": 5,
+          "y_start": 3600,
+          "y_end": 3891,
+          "segment": "segments/17-generation-shot3-seg-05.jpg",
+          "thumbnail": "thumbs/17-generation-shot3-seg-05.jpg"
+        }
+      ]
+    },
+    {
+      "page": "18-review",
+      "source": "18-review.jpg",
+      "width": 1440,
+      "height": 2744,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/18-review-seg-01.jpg",
+          "thumbnail": "thumbs/18-review-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 900,
+          "y_end": 1800,
+          "segment": "segments/18-review-seg-02.jpg",
+          "thumbnail": "thumbs/18-review-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1800,
+          "y_end": 2700,
+          "segment": "segments/18-review-seg-03.jpg",
+          "thumbnail": "thumbs/18-review-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2700,
+          "y_end": 2744,
+          "segment": "segments/18-review-seg-04.jpg",
+          "thumbnail": "thumbs/18-review-seg-04.jpg"
+        }
+      ]
+    },
+    {
+      "page": "19-audio-bottom",
+      "source": "19-audio-bottom.jpg",
+      "width": 1440,
+      "height": 900,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/19-audio-bottom-seg-01.jpg",
+          "thumbnail": "thumbs/19-audio-bottom-seg-01.jpg"
+        }
+      ]
+    },
+    {
+      "page": "19-audio-top",
+      "source": "19-audio-top.jpg",
+      "width": 1440,
+      "height": 900,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/19-audio-top-seg-01.jpg",
+          "thumbnail": "thumbs/19-audio-top-seg-01.jpg"
+        }
+      ]
+    },
+    {
+      "page": "20-timeline",
+      "source": "20-timeline.jpg",
+      "width": 1440,
+      "height": 3092,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/20-timeline-seg-01.jpg",
+          "thumbnail": "thumbs/20-timeline-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 900,
+          "y_end": 1800,
+          "segment": "segments/20-timeline-seg-02.jpg",
+          "thumbnail": "thumbs/20-timeline-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1800,
+          "y_end": 2700,
+          "segment": "segments/20-timeline-seg-03.jpg",
+          "thumbnail": "thumbs/20-timeline-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2700,
+          "y_end": 3092,
+          "segment": "segments/20-timeline-seg-04.jpg",
+          "thumbnail": "thumbs/20-timeline-seg-04.jpg"
+        }
+      ]
+    },
+    {
+      "page": "21-delivery",
+      "source": "21-delivery.jpg",
+      "width": 1440,
+      "height": 924,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/21-delivery-seg-01.jpg",
+          "thumbnail": "thumbs/21-delivery-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 900,
+          "y_end": 924,
+          "segment": "segments/21-delivery-seg-02.jpg",
+          "thumbnail": "thumbs/21-delivery-seg-02.jpg"
+        }
+      ]
+    },
+    {
+      "page": "22-run",
+      "source": "22-run.jpg",
+      "width": 1440,
+      "height": 1411,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/22-run-seg-01.jpg",
+          "thumbnail": "thumbs/22-run-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 900,
+          "y_end": 1411,
+          "segment": "segments/22-run-seg-02.jpg",
+          "thumbnail": "thumbs/22-run-seg-02.jpg"
+        }
+      ]
+    },
+    {
+      "page": "23-global-models",
+      "source": "23-global-models.jpg",
+      "width": 1440,
+      "height": 3175,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/23-global-models-seg-01.jpg",
+          "thumbnail": "thumbs/23-global-models-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 900,
+          "y_end": 1800,
+          "segment": "segments/23-global-models-seg-02.jpg",
+          "thumbnail": "thumbs/23-global-models-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1800,
+          "y_end": 2700,
+          "segment": "segments/23-global-models-seg-03.jpg",
+          "thumbnail": "thumbs/23-global-models-seg-03.jpg"
+        },
+        {
+          "index": 4,
+          "y_start": 2700,
+          "y_end": 3175,
+          "segment": "segments/23-global-models-seg-04.jpg",
+          "thumbnail": "thumbs/23-global-models-seg-04.jpg"
+        }
+      ]
+    },
+    {
+      "page": "24-global-jobs",
+      "source": "24-global-jobs.jpg",
+      "width": 1440,
+      "height": 2418,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/24-global-jobs-seg-01.jpg",
+          "thumbnail": "thumbs/24-global-jobs-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 900,
+          "y_end": 1800,
+          "segment": "segments/24-global-jobs-seg-02.jpg",
+          "thumbnail": "thumbs/24-global-jobs-seg-02.jpg"
+        },
+        {
+          "index": 3,
+          "y_start": 1800,
+          "y_end": 2418,
+          "segment": "segments/24-global-jobs-seg-03.jpg",
+          "thumbnail": "thumbs/24-global-jobs-seg-03.jpg"
+        }
+      ]
+    },
+    {
+      "page": "25-global-diagnostics",
+      "source": "25-global-diagnostics.jpg",
+      "width": 1440,
+      "height": 981,
+      "segments": [
+        {
+          "index": 1,
+          "y_start": 0,
+          "y_end": 900,
+          "segment": "segments/25-global-diagnostics-seg-01.jpg",
+          "thumbnail": "thumbs/25-global-diagnostics-seg-01.jpg"
+        },
+        {
+          "index": 2,
+          "y_start": 900,
+          "y_end": 981,
+          "segment": "segments/25-global-diagnostics-seg-02.jpg",
+          "thumbnail": "thumbs/25-global-diagnostics-seg-02.jpg"
+        }
+      ]
+    }
+  ]
+}

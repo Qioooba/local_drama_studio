@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
@@ -204,6 +205,53 @@ def test_real_local_worker_proxy_thumbnail_and_artifact_registration(workspace, 
     assert thumbnail_result["job"]["id"] == thumbnail["id"]
     assert thumbnail_result["artifact"]["kind"] == "THUMBNAIL"
     assert Path(workspace.work_root / str(thumbnail_result["artifact"]["sandbox_rel_path"])).is_file()
+
+
+def test_local_worker_disk_full_fails_closed_and_releases_lease(workspace, database, monkeypatch) -> None:
+    project = _project(workspace, database, "g5_disk_full")
+    jobs = JobService(database, workspace)
+    job = _create(jobs, str(project["id"]), "disk-full", max_attempts=1)
+    original_write_text = Path.write_text
+
+    def fail_after_partial_write(path: Path, *args: object, **kwargs: object) -> int:
+        written = original_write_text(path, *args, **kwargs)
+        if path.name == ".partial-result.txt":
+            raise OSError(errno.ENOSPC, "simulated disk full")
+        return written
+
+    monkeypatch.setattr(Path, "write_text", fail_after_partial_write)
+    outcome = LocalMediaWorker(database, workspace).run_once("disk-full-worker", ["CPU"])
+
+    assert outcome is not None
+    assert outcome["job"]["id"] == job["id"]
+    assert outcome["error"] == "DISK_FULL"
+    assert outcome["result"]["job_state"] == "FAILED"
+    assert not (workspace.work_root / "jobs" / str(job["id"]) / ".partial-result.txt").exists()
+    assert jobs.get_job(str(job["id"]))["attempts"][0]["error_code"] == "DISK_FULL"
+    with database.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM artifacts WHERE job_attempt_id=?", (outcome["attempt"]["id"],)).fetchone()[0] == 0
+        released = connection.execute("SELECT released_at FROM job_resource_leases WHERE attempt_id=?", (outcome["attempt"]["id"],)).fetchone()
+        assert released is not None and released["released_at"] is not None
+    assert jobs.retry(str(job["id"]))["state"] == "QUEUED"
+
+
+def test_local_worker_oom_is_structured_and_does_not_leave_running_attempt(workspace, database, monkeypatch) -> None:
+    project = _project(workspace, database, "g5_oom")
+    jobs = JobService(database, workspace)
+    job = _create(jobs, str(project["id"]), "oom", max_attempts=1)
+    worker = LocalMediaWorker(database, workspace)
+    monkeypatch.setattr(worker, "_atomic_file", lambda *_args, **_kwargs: (_ for _ in ()).throw(MemoryError()))
+
+    outcome = worker.run_once("oom-worker", ["CPU"])
+
+    assert outcome is not None
+    assert outcome["error"] == "WORKER_OUT_OF_MEMORY"
+    assert outcome["result"]["job_state"] == "FAILED"
+    persisted = jobs.get_job(str(job["id"]))
+    assert persisted["state"] == "FAILED"
+    assert persisted["attempts"][0]["state"] == "FAILED"
+    assert persisted["attempts"][0]["lease_token"] is None
+    assert persisted["attempts"][0]["lease_expires_at"] is None
 
 
 def test_generation_plan_estimate_confirm_lazy_expand_and_cell_cancel(workspace, database) -> None:

@@ -36,4 +36,24 @@ describe("DeliveryWorkflowPanel", () => {
     await waitFor(() => expect(screen.getByText("已下载 2 次")).toBeTruthy());
     expect(screen.getByText("下载审计")).toBeTruthy();
   });
+
+  it("exposes only the actions owned by the selected delivery step", async () => {
+    vi.mocked(listEpisodeDeliveryPackages).mockResolvedValue({ items: [], runtime_contacted: false, network_contacted: false });
+    const props = { episodeId: "episode-1", timelineRevisionId: "timeline-1", renderId: "render-1", targetVersionId: "target-1", deliveryId: "delivery-1" };
+    const { rerender } = render(<DeliveryWorkflowPanel {...props} focus="COMPOSE" />);
+
+    expect(screen.getByRole("button", { name: "登记整集渲染" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "创建交付候选" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "记录人工批准" })).toBeNull();
+
+    rerender(<DeliveryWorkflowPanel {...props} focus="REVIEW" />);
+    expect(screen.getByRole("button", { name: "验证 manifest / SHA" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "记录人工批准" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "登记整集渲染" })).toBeNull();
+
+    rerender(<DeliveryWorkflowPanel {...props} focus="PACKAGE" />);
+    expect(screen.getByRole("button", { name: "复验 manifest / SHA" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "记录人工批准" })).toBeNull();
+    await waitFor(() => expect(listEpisodeDeliveryPackages).toHaveBeenCalledWith("episode-1"));
+  });
 });

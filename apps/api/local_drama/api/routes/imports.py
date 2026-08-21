@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Header, Query, Request
 
-from local_drama.api.schemas.g3 import BreakdownDraftApplyRequest, BreakdownRequest, DocumentImportCommitRequest, DocumentImportRequest
+from local_drama.api.schemas.g3 import BreakdownDraftApplyRequest, BreakdownRequest, DocumentImportCommitRequest, DocumentImportRequest, SourcePassageResponse
 from local_drama.application.breakdown_apply import BreakdownApplyService
 from local_drama.application.documents import DocumentImportService
 from local_drama.application.errors import api_error_from_domain
@@ -39,6 +39,23 @@ async def get_import_session_issues(session_id: str, request: Request) -> dict[s
         raise api_error_from_domain(error) from error
 
 
+@router.get(
+    "/source-document-versions/{source_document_version_id}/passage",
+    response_model=SourcePassageResponse,
+    operation_id="getSourceDocumentPassage",
+)
+async def get_source_document_passage(
+    source_document_version_id: str,
+    request: Request,
+    start: int = Query(ge=0),
+    end: int = Query(gt=0),
+) -> dict[str, object]:
+    try:
+        return service(request).get_passage(source_document_version_id, start, end)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.post("/import-sessions/{session_id}:commit", operation_id="commitImportSession")
 async def commit_import_session(session_id: str, payload: DocumentImportCommitRequest, request: Request) -> dict[str, object]:
     try:
@@ -47,10 +64,19 @@ async def commit_import_session(session_id: str, payload: DocumentImportCommitRe
         raise api_error_from_domain(error) from error
 
 
-@router.post("/import-sessions/{session_id}:request-breakdown", operation_id="requestScriptBreakdown")
-async def request_breakdown(session_id: str, payload: BreakdownRequest, request: Request) -> dict[str, object]:
+@router.post("/import-sessions/{session_id}:request-breakdown", status_code=202, operation_id="requestScriptBreakdown")
+async def request_breakdown(
+    session_id: str,
+    payload: BreakdownRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, object]:
     try:
-        return {"draft": service(request).request_breakdown(session_id, payload.profile_version_id)}
+        return {
+            "job": service(request).request_breakdown(session_id, payload.profile_version_id, idempotency_key or ""),
+            "automatic_apply": False,
+            "requires_human_action": True,
+        }
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

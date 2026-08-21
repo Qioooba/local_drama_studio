@@ -40,3 +40,6 @@ $root/
 apps/web/clicks/
 apps/web/screenshots/
 test-ui-audit/
+test-results/
+minimax-ui-test/
+

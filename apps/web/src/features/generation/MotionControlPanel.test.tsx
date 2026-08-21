@@ -14,7 +14,7 @@ describe("MotionControlPanel", () => {
   it("saves a local immutable control and refreshes the list", async () => {
     render(<MotionControlPanel sourceMediaVersionId="source-1" profileVersionId="profile-1" />);
     await waitFor(() => expect(listMotionControls).toHaveBeenCalledWith("source-1"));
-    fireEvent.change(screen.getByLabelText("subject role"), { target: { value: "face" } });
+    fireEvent.change(screen.getByLabelText("主体角色"), { target: { value: "face" } });
     fireEvent.click(screen.getByRole("button", { name: "保存不可变控制" }));
     await waitFor(() => expect(createMotionControl).toHaveBeenCalledWith("source-1", expect.objectContaining({ subject_role: "face", profile_version_id: "profile-1" })));
     expect((await screen.findByRole("status")).textContent).toContain("源媒体未修改");

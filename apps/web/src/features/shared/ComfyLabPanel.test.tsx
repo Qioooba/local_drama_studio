@@ -17,7 +17,7 @@ describe("ComfyLabPanel", () => {
   });
   it("shows truthful not-configured state and sandbox safety", async () => {
     render(<ComfyLabPanel />);
-    expect(await screen.findByText("ComfyUI Lab")).toBeTruthy();
+    expect(await screen.findByText("ComfyUI 实验室")).toBeTruthy();
     await waitFor(() => expect(screen.getByText("启动配置：未配置")).toBeTruthy());
     expect(screen.getByText(/正式目录写入：否/)).toBeTruthy();
     expect((screen.getByRole("button", { name: "生成 test plan" }) as HTMLButtonElement).disabled).toBe(false);

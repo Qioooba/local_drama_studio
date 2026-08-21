@@ -1,0 +1,32 @@
+{
+  "schema_version": "localdrama.competitor-evidence.v1",
+  "product": "popomint",
+  "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+  "image_count": 3,
+  "contact_sheets": [
+    "contact-sheet-evidence-01.jpg"
+  ],
+  "images": [
+    {
+      "file": "ui-01-home.png",
+      "width": 1280,
+      "height": 720,
+      "bytes": 671607,
+      "thumbnail": "thumbs-evidence/ui-01-home-aff15c85.jpg"
+    },
+    {
+      "file": "ui-02-core-workspace.png",
+      "width": 760,
+      "height": 368,
+      "bytes": 169832,
+      "thumbnail": "thumbs-evidence/ui-02-core-workspace-2a50614b.jpg"
+    },
+    {
+      "file": "ui-03-creation-type-menu.png",
+      "width": 760,
+      "height": 368,
+      "bytes": 168385,
+      "thumbnail": "thumbs-evidence/ui-03-creation-type-menu-eb75f90e.jpg"
+    }
+  ]
+}

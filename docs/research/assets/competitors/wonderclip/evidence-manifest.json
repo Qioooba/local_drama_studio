@@ -1,0 +1,53 @@
+{
+  "schema_version": "localdrama.competitor-evidence.v1",
+  "product": "wonderclip",
+  "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+  "image_count": 6,
+  "contact_sheets": [
+    "contact-sheet-evidence-01.jpg"
+  ],
+  "images": [
+    {
+      "file": "ui-01.png",
+      "width": 1080,
+      "height": 456,
+      "bytes": 595454,
+      "thumbnail": "thumbs-evidence/ui-01-e790de70.jpg"
+    },
+    {
+      "file": "ui-02.jpg",
+      "width": 1080,
+      "height": 723,
+      "bytes": 115463,
+      "thumbnail": "thumbs-evidence/ui-02-62ce8644.jpg"
+    },
+    {
+      "file": "ui-03.jpg",
+      "width": 1206,
+      "height": 638,
+      "bytes": 399212,
+      "thumbnail": "thumbs-evidence/ui-03-dde9b861.jpg"
+    },
+    {
+      "file": "ui-04.png",
+      "width": 2802,
+      "height": 1536,
+      "bytes": 1567693,
+      "thumbnail": "thumbs-evidence/ui-04-8bb43639.jpg"
+    },
+    {
+      "file": "ui-05.png",
+      "width": 1080,
+      "height": 608,
+      "bytes": 734706,
+      "thumbnail": "thumbs-evidence/ui-05-b769ae55.jpg"
+    },
+    {
+      "file": "ui-06.png",
+      "width": 556,
+      "height": 556,
+      "bytes": 24279,
+      "thumbnail": "thumbs-evidence/ui-06-2e2627b1.jpg"
+    }
+  ]
+}

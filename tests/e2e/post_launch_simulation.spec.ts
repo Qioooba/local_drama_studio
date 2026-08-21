@@ -282,7 +282,7 @@ test("creative pipeline: director → keyframe → real H3 I2V generation → QC
   step = "diagnostics-view";
   await page.goto(`/?view=diagnostics&project=${projectId}&episode=${episodeId}`, { waitUntil: "networkidle", timeout: 60_000 });
   await expect(page.getByRole("heading", { name: "本机环境检查" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "ComfyUI Lab" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "ComfyUI 实验室" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "审计历史" })).toBeVisible();
   steps.push("diagnostics view: panels visible");
 

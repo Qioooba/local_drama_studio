@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import re
+import sqlite3
 import uuid
 import zipfile
 from datetime import UTC, datetime
@@ -18,6 +19,11 @@ from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
 
 from .media import DOCUMENT_EXTENSIONS, MediaService
+
+PREVIEW_PARAGRAPH_LIMIT = 20
+PREVIEW_PARAGRAPH_CHARACTER_LIMIT = 1_000
+PREVIEW_TOTAL_CHARACTER_LIMIT = 12_000
+PASSAGE_CHARACTER_LIMIT = 8_000
 
 
 def _utc_now() -> str:
@@ -101,6 +107,7 @@ class DocumentImportService:
         if reusable_session is not None:
             assert existing_version is not None
             session = self.get_session(str(reusable_session["id"]))
+            index_status = self._replace_search_index(project_id, str(existing_version["source_document_id"]), source.stem, text, actor)
             return {
                 "source_document_id": str(existing_version["source_document_id"]),
                 "source_document_version_id": str(existing_version["id"]),
@@ -110,6 +117,7 @@ class DocumentImportService:
                 "preview": session["preview"],
                 "preview_hash": session["preview_hash"],
                 "reused": True,
+                "index_status": index_status,
             }
         source_document_id = str(existing_version["source_document_id"]) if existing_version is not None else str(uuid.uuid4())
         source_version_id = str(existing_version["id"]) if existing_version is not None else str(uuid.uuid4())
@@ -127,7 +135,24 @@ class DocumentImportService:
             partial.write_text(text, encoding="utf-8", newline="")
             partial.replace(text_path)
         paragraphs = [paragraph.strip() for paragraph in re.split(r"\n\s*\n", text) if paragraph.strip()]
-        preview = {"character_count": len(text), "paragraph_count": len(paragraphs), "paragraphs": paragraphs[:20], "requires_llm_confirmation": True}
+        preview_paragraphs: list[str] = []
+        remaining_preview_characters = PREVIEW_TOTAL_CHARACTER_LIMIT
+        for paragraph in paragraphs[:PREVIEW_PARAGRAPH_LIMIT]:
+            if remaining_preview_characters <= 0:
+                break
+            bounded = paragraph[: min(PREVIEW_PARAGRAPH_CHARACTER_LIMIT, remaining_preview_characters)]
+            preview_paragraphs.append(bounded)
+            remaining_preview_characters -= len(bounded)
+        preview = {
+            "character_count": len(text),
+            "paragraph_count": len(paragraphs),
+            "paragraphs": preview_paragraphs,
+            "preview_character_limit": PREVIEW_TOTAL_CHARACTER_LIMIT,
+            "preview_truncated": len(paragraphs) > len(preview_paragraphs)
+            or any(len(original) > len(shown) for original, shown in zip(paragraphs, preview_paragraphs, strict=False)),
+            "offset_unit": "UNICODE_CODEPOINT",
+            "requires_llm_confirmation": True,
+        }
         source_code = f"{_slug(source.stem)}-{digest[:10]}"
         mime = media.get("mime_type", "application/octet-stream")
         with self.database.transaction() as connection:
@@ -141,7 +166,7 @@ class DocumentImportService:
                     (id, source_document_id, version_no, rel_path, source_name, mime_type, byte_size, sha256, text_sha256,
                      extracted_text_rel, parse_status, metadata_json, created_at, updated_at, created_by, revision, schema_version)
                     VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 'PARSED', ?, ?, ?, ?, 1, 'v2')""",
-                    (source_version_id, source_document_id, media["rel_path"], source.name, mime, media["byte_size"], digest, text_hash, text_rel.as_posix(), _json({"media_version_id": media["media_version_id"], "paragraph_count": len(paragraphs)}), now, now, actor),
+                    (source_version_id, source_document_id, media["rel_path"], source.name, mime, media["byte_size"], digest, text_hash, text_rel.as_posix(), _json({"media_version_id": media["media_version_id"], "paragraph_count": len(paragraphs), "character_count": len(text), "offset_unit": "UNICODE_CODEPOINT"}), now, now, actor),
                 )
             connection.execute(
                 """INSERT INTO import_sessions
@@ -155,11 +180,6 @@ class DocumentImportService:
                 VALUES (?, ?, 'DOCUMENT_PREVIEW', 0, ?, ?, 'VALID', ?, ?, ?, 1, 'v2')""",
                 (str(uuid.uuid4()), session_id, len(text), _json({"paragraph_count": len(paragraphs), "source_sha256": digest}), now, now, actor),
             )
-            if existing_version is None:
-                connection.execute(
-                    "INSERT INTO fts_search (project_id, subject_type, subject_id, content) VALUES (?, 'SOURCE_DOCUMENT', ?, ?)",
-                    (project_id, source_document_id, f"{source.stem}\n{text}"),
-                )
             connection.execute(
                 "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'producer', 'SCRIPT_IMPORTED', 'source_document', ?, ?, ?)",
                 (
@@ -169,6 +189,10 @@ class DocumentImportService:
                     _json({"session_id": session_id, "sha256": digest, "media_version_id": media["media_version_id"]}),
                 ),
             )
+        # FTS is a derived read model. Index its large payload outside the
+        # authoritative source/session transaction, and surface failure so a
+        # re-import or explicit search rebuild can retry without losing source.
+        index_status = self._replace_search_index(project_id, source_document_id, source.stem, text, actor)
         result = {
             "source_document_id": source_document_id,
             "source_document_version_id": source_version_id,
@@ -176,9 +200,102 @@ class DocumentImportService:
             "media_version_id": media["media_version_id"],
             "status": "PREVIEW_READY",
             "preview": preview,
+            "index_status": index_status,
         }
         result["preview_hash"] = self.get_session(session_id)["preview_hash"]
         return result
+
+    def _replace_search_index(self, project_id: str, source_document_id: str, title: str, text: str, actor: str) -> str:
+        try:
+            with self.database.transaction() as connection:
+                connection.execute(
+                    "DELETE FROM fts_search WHERE project_id=? AND subject_type='SOURCE_DOCUMENT' AND subject_id=?",
+                    (project_id, source_document_id),
+                )
+                connection.execute(
+                    "INSERT INTO fts_search (project_id,subject_type,subject_id,content) VALUES (?,'SOURCE_DOCUMENT',?,?)",
+                    (project_id, source_document_id, f"{title}\n{text}"),
+                )
+            return "READY"
+        except sqlite3.DatabaseError as error:
+            # The source/version/session transaction has already committed.
+            # Record a bounded, redacted signal when SQLite remains writable;
+            # never delete or rewrite the verified source to hide index failure.
+            try:
+                with self.database.transaction() as connection:
+                    connection.execute(
+                        """INSERT INTO audit_events
+                        (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
+                        VALUES (?,'producer','SOURCE_SEARCH_INDEX_FAILED','source_document',?, '源文本搜索索引失败，可重试重建',?)""",
+                        (actor, source_document_id, _json({"error_type": type(error).__name__})),
+                    )
+            except sqlite3.DatabaseError:
+                pass
+            return "FAILED_RETRYABLE"
+
+    def get_passage(self, source_document_version_id: str, start: int, end: int) -> dict[str, Any]:
+        """Return an exact bounded slice in Unicode-codepoint offsets.
+
+        This is the same unit produced by LocalLLM source quote validation and
+        stored in episode_scene_ranges. UTF-8 byte offsets are never accepted.
+        """
+        if start < 0 or end <= start:
+            raise DomainRuleError("SOURCE_PASSAGE_RANGE_INVALID", "source passage 起止字符范围无效")
+        if end - start > PASSAGE_CHARACTER_LIMIT:
+            raise DomainRuleError(
+                "SOURCE_PASSAGE_TOO_LARGE", f"source passage 单次最多返回 {PASSAGE_CHARACTER_LIMIT} 个 Unicode 字符",
+                {"maximum_character_count": PASSAGE_CHARACTER_LIMIT},
+            )
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """SELECT sdv.id,sdv.extracted_text_rel,sdv.text_sha256,sdv.metadata_json,sd.project_id
+                FROM source_document_versions sdv JOIN source_documents sd ON sd.id=sdv.source_document_id
+                WHERE sdv.id=?""", (source_document_version_id,),
+            ).fetchone()
+        if row is None:
+            raise DomainRuleError("SOURCE_DOCUMENT_VERSION_NOT_FOUND", "源文档版本不存在")
+        project_root = self.media._project_root(str(row["project_id"]))
+        path = (project_root / str(row["extracted_text_rel"])).resolve()
+        if not path.is_relative_to(project_root) or not path.is_file():
+            raise DomainRuleError("IMPORT_EXTRACTED_TEXT_MISSING", "解析后的不可变文本缺失")
+        passage, actual_end, has_more = self._read_passage(path, start, end)
+        metadata = json.loads(str(row["metadata_json"] or "{}"))
+        total = metadata.get("character_count")
+        return {
+            "source_document_version_id": source_document_version_id,
+            "source_start": start,
+            "source_end": actual_end,
+            "requested_end": end,
+            "offset_unit": "UNICODE_CODEPOINT",
+            "text": passage,
+            "text_sha256": hashlib.sha256(passage.encode("utf-8")).hexdigest(),
+            "source_text_sha256": str(row["text_sha256"]),
+            "total_character_count": int(total) if isinstance(total, int) else None,
+            "has_more": has_more,
+            "maximum_character_count": PASSAGE_CHARACTER_LIMIT,
+            "read_only": True,
+        }
+
+    @staticmethod
+    def _read_passage(path: Path, start: int, end: int) -> tuple[str, int, bool]:
+        cursor = 0
+        parts: list[str] = []
+        has_more = False
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            while cursor < end + 1:
+                chunk = handle.read(min(8_192, end + 1 - cursor))
+                if not chunk:
+                    break
+                chunk_end = cursor + len(chunk)
+                overlap_start = max(start, cursor)
+                overlap_end = min(end, chunk_end)
+                if overlap_start < overlap_end:
+                    parts.append(chunk[overlap_start - cursor : overlap_end - cursor])
+                if chunk_end > end:
+                    has_more = True
+                cursor = chunk_end
+        passage = "".join(parts)
+        return passage, start + len(passage), has_more
 
     def get_session(self, session_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
@@ -268,9 +385,17 @@ class DocumentImportService:
         committed = self.get_session(session_id)
         return {**committed, "idempotent": idempotent_race, "source_preserved": True, "commit_snapshot": snapshot}
 
-    def request_breakdown(self, session_id: str, profile_version_id: str | None) -> dict[str, Any]:
-        if not profile_version_id:
-            raise DomainRuleError("LOCAL_LLM_PROFILE_REQUIRED", "剧本拆解必须显式选择已发布的本地 LLM Profile")
+    def request_breakdown(
+        self,
+        session_id: str,
+        profile_version_id: str | None,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        """Queue a durable local-LLM Job; never execute the model in the API."""
         from local_drama.application.local_llm import LocalLLMService
 
-        return LocalLLMService(self.database, self.settings).breakdown(session_id, profile_version_id)
+        return LocalLLMService(self.database, self.settings).enqueue_breakdown(
+            session_id,
+            profile_version_id,
+            idempotency_key,
+        )

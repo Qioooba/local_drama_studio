@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { App } from "./App";
+import { MemoryRouter } from "react-router-dom";
+import { ModelsPage } from "../pages/ModelsPage";
 import type { Profile, ProfileVersionDetail, WorkflowVersionSummary } from "../generated/api";
+
+vi.mock("../features/preferences-v2/GenerationPreferencePanel", () => ({ GenerationPreferencePanel: () => null }));
 
 const published: Profile = {
   id: "prof-1",
@@ -86,6 +89,10 @@ vi.mock("../generated/api", () => ({
   deriveProfileContractVersion: vi.fn(),
   validateProfileContractVersion: vi.fn(),
   publishProfileContractVersion: vi.fn(),
+  validateWorkflowLocal: vi.fn(),
+  publishWorkflowVersion: vi.fn(),
+  revokeWorkflowVersion: vi.fn(),
+  rollbackWorkflowVersion: vi.fn(),
   latestDiagnostics: vi.fn().mockResolvedValue({ run: null }),
   runDiagnostics: vi.fn().mockResolvedValue({ run: { status: "HEALTHY", checks: [] } }),
   listSeasons: vi.fn().mockResolvedValue({ items: [] }),
@@ -107,14 +114,21 @@ vi.mock("../generated/api", () => ({
 
 import * as api from "../generated/api";
 
-function renderProfilesView() {
+function renderProfilesView(path = "/?view=profile-contracts") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[path]}>
+        <ModelsPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
 }
 
 describe("Profile contract editor interactions", () => {
   beforeEach(() => {
-    window.history.replaceState({}, "", "/?view=profiles");
+    vi.clearAllMocks();
+    window.history.replaceState({}, "", "/?view=profile-contracts");
     draftValidation = null;
     validationResult = null;
     vi.mocked(api.listProfiles).mockResolvedValue({ items: [published, draft] });
@@ -129,6 +143,12 @@ describe("Profile contract editor interactions", () => {
       return { validation: validationResult };
     });
     vi.mocked(api.publishProfileContractVersion).mockRejectedValue(new Error("PROFILE_REAL_EVIDENCE_REQUIRED"));
+    vi.mocked(api.validateWorkflowLocal).mockResolvedValue({
+      validation: { id: "wf-validation-1", workflow_version_id: "wf-1", status: "PASS", checks: [] },
+    });
+    vi.mocked(api.publishWorkflowVersion).mockResolvedValue({ workflow_version: workflows[0] });
+    vi.mocked(api.revokeWorkflowVersion).mockResolvedValue({ workflow_version: { ...workflows[0], status: "RETIRED" } });
+    vi.mocked(api.rollbackWorkflowVersion).mockResolvedValue({ workflow_version: workflows[0] });
   });
 
   it("derives an immutable DRAFT and does not overwrite the published source", async () => {
@@ -195,5 +215,53 @@ describe("Profile contract editor interactions", () => {
     expect(await screen.findByText(/契约验证未通过/)).toBeTruthy();
     const publishButton = screen.getByRole("button", { name: "发布已验证版本" }) as HTMLButtonElement;
     expect(publishButton.disabled).toBe(true);
+  });
+
+  it("keeps workflow publish fail-closed until the current version passes validation", async () => {
+    const draftWorkflow = { ...workflows[0], status: "DRAFT", published_at: null };
+    vi.mocked(api.listWorkflowVersions).mockResolvedValue({ items: [draftWorkflow], runtime_contacted: false });
+    vi.mocked(api.publishWorkflowVersion).mockResolvedValue({ workflow_version: { ...draftWorkflow, status: "PUBLISHED" } });
+
+    renderProfilesView("/?view=workflows");
+    expect(await screen.findByRole("heading", { name: "工作流版本、验证与发布证据" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "发布" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "本地验证" }));
+    expect(await screen.findByText(/本地工作流验证：PASS/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "发布" }));
+
+    await waitFor(() => {
+      expect(api.publishWorkflowVersion).toHaveBeenCalledWith("wf-1", "wf-validation-1");
+    });
+  });
+
+  it("does not expose workflow publish after a failed validation", async () => {
+    const draftWorkflow = { ...workflows[0], status: "DRAFT", published_at: null };
+    vi.mocked(api.listWorkflowVersions).mockResolvedValue({ items: [draftWorkflow], runtime_contacted: false });
+    vi.mocked(api.validateWorkflowLocal).mockResolvedValue({
+      validation: { id: "wf-validation-fail", workflow_version_id: "wf-1", status: "FAIL", checks: [] },
+    });
+
+    renderProfilesView("/?view=workflows");
+    fireEvent.click(await screen.findByRole("button", { name: "本地验证" }));
+    expect(await screen.findByText(/本地工作流验证：FAIL/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "发布" })).toBeNull();
+    expect(api.publishWorkflowVersion).not.toHaveBeenCalled();
+  });
+
+  it("requires a written reason before revoking a published workflow", async () => {
+    renderProfilesView("/?view=workflows");
+    const revokeButton = await screen.findByRole("button", { name: "撤销" });
+    expect((revokeButton as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(screen.getByRole("textbox", { name: "撤销原因 fl2va-first-frame v2" }), {
+      target: { value: "本机图定义已被替代" },
+    });
+    expect((revokeButton as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(revokeButton);
+
+    await waitFor(() => {
+      expect(api.revokeWorkflowVersion).toHaveBeenCalledWith("wf-1", "本机图定义已被替代");
+    });
   });
 });

@@ -1,0 +1,60 @@
+{
+  "schema_version": "localdrama.competitor-evidence.v1",
+  "product": "jurilu",
+  "note": "This manifest inventories files only. UI authenticity and evidence grade are assigned in research notes, never inferred from filenames.",
+  "image_count": 7,
+  "contact_sheets": [
+    "contact-sheet-evidence-01.jpg"
+  ],
+  "images": [
+    {
+      "file": "01-main-workbench.jpeg",
+      "width": 1080,
+      "height": 581,
+      "bytes": 38853,
+      "thumbnail": "thumbs-evidence/01-main-workbench-bd181772.jpg"
+    },
+    {
+      "file": "ui-01.jpg",
+      "width": 1280,
+      "height": 720,
+      "bytes": 31749,
+      "thumbnail": "thumbs-evidence/ui-01-6d581444.jpg"
+    },
+    {
+      "file": "ui-02.jpg",
+      "width": 1280,
+      "height": 720,
+      "bytes": 44248,
+      "thumbnail": "thumbs-evidence/ui-02-62ce8644.jpg"
+    },
+    {
+      "file": "ui-03.jpg",
+      "width": 1280,
+      "height": 720,
+      "bytes": 62423,
+      "thumbnail": "thumbs-evidence/ui-03-dde9b861.jpg"
+    },
+    {
+      "file": "ui-04.jpg",
+      "width": 1280,
+      "height": 720,
+      "bytes": 56290,
+      "thumbnail": "thumbs-evidence/ui-04-ad4f5d3a.jpg"
+    },
+    {
+      "file": "ui-05.jpg",
+      "width": 1280,
+      "height": 720,
+      "bytes": 65880,
+      "thumbnail": "thumbs-evidence/ui-05-f5276236.jpg"
+    },
+    {
+      "file": "ui-06.jpg",
+      "width": 1280,
+      "height": 720,
+      "bytes": 51005,
+      "thumbnail": "thumbs-evidence/ui-06-bd08d456.jpg"
+    }
+  ]
+}

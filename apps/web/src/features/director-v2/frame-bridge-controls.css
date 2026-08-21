@@ -1,0 +1,40 @@
+.frame-bridge-controls { display: grid; gap: 11px; padding: 12px; border: 1px solid #d6d0c4; border-radius: 8px; background: #fffdfa; color: #282d29; }
+.frame-bridge-controls.is-stale { border-color: #b38742; background: #fff9ed; }
+.frame-bridge-controls-head { display: flex; align-items: start; justify-content: space-between; gap: 10px; }
+.frame-bridge-controls-head span { color: #737873; font-size: 9px; font-weight: 800; letter-spacing: .1em; }
+.frame-bridge-controls-head h4 { margin: 3px 0 0; font-size: 13px; }
+.frame-bridge-state { display: grid; justify-items: end; gap: 3px; }
+.frame-bridge-state strong { color: #466a61; font-size: 10px; }
+.is-stale .frame-bridge-state strong { color: #79571f; }
+.frame-bridge-state span { font-size: 9px; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.frame-bridge-flow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; }
+.frame-bridge-flow article { min-width: 0; display: grid; grid-template-columns: 44px minmax(0,1fr); gap: 3px 7px; padding: 7px; border: 1px solid #d8d2c7; border-radius: 7px; background: #f2efe8; }
+.frame-bridge-flow article img { grid-row: 1 / 4; width: 44px; height: 44px; object-fit: cover; border-radius: 5px; background: #202421; }
+.frame-bridge-flow small, .frame-bridge-flow span { color: #686e69; font-size: 9px; }
+.frame-bridge-flow strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.frame-bridge-arrow { color: #64706b; font-size: 18px; }
+.frame-bridge-stale, .frame-bridge-conflict { display: grid; gap: 5px; padding: 10px; border: 1px solid #bc8840; border-radius: 7px; background: #fff1d7; }
+.frame-bridge-stale strong, .frame-bridge-conflict strong { color: #704d16; font-size: 11px; }
+.frame-bridge-stale span, .frame-bridge-conflict span { color: #655b4a; font-size: 10px; line-height: 1.5; }
+.frame-bridge-history-note, .frame-bridge-candidate-note { margin: 0; color: #686e69; font-size: 10px; line-height: 1.5; }
+.frame-bridge-history-note { padding-left: 9px; border-left: 3px solid #789288; }
+.frame-candidate-drop-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }.frame-candidate-drop { display: grid; gap: 3px; min-height: 68px; align-content: center; padding: 9px; border: 2px dashed #a7aea8; border-radius: 7px; background: #f7f5ef; text-align: center; }.frame-candidate-drop strong { font-size: 10px; }.frame-candidate-drop span { color: #686e69; font-size: 9px; line-height: 1.4; }.frame-candidate-drop.is-active { border-color: #df623d; background: #fff0e9; }.frame-bridge-drop-dialog { display: grid; gap: 8px; padding: 11px; border: 1px solid #c2775c; border-radius: 7px; background: #fff0e9; }.frame-bridge-drop-dialog > strong { font-size: 11px; }.frame-bridge-drop-dialog > span { color: #655b4a; font-size: 10px; line-height: 1.5; }.frame-bridge-drop-dialog > div { display: flex; justify-content: flex-end; gap: 7px; }.frame-bridge-drop-dialog button { min-height: 36px; padding: 6px 10px; border: 1px solid #b9b1a4; border-radius: 6px; background: #fffdfa; font: inherit; font-size: 10px; font-weight: 750; }.frame-bridge-drop-dialog button.primary { border-color: #cf5532; background: #df623d; color: #202421; }
+.frame-bridge-actions { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 7px; }
+.frame-bridge-source-menu { display: grid; gap: 7px; padding: 9px; border: 1px solid #d8d2c7; border-radius: 7px; background: #f7f4ed; }
+.frame-bridge-source-menu > div:not(.frame-bridge-actions) { display: grid; gap: 2px; }
+.frame-bridge-source-menu > div:not(.frame-bridge-actions) strong { font-size: 10px; }
+.frame-bridge-source-menu > div:not(.frame-bridge-actions) span { color: #686e69; font-size: 9px; }
+.frame-bridge-source-menu > button { min-height: 44px; padding: 7px 9px; border: 1px solid #c6bfb3; border-radius: 6px; background: #f4f1ea; color: #353a36; font: inherit; font-size: 10px; font-weight: 800; cursor: pointer; }
+.frame-bridge-actions button, .frame-bridge-conflict button { min-height: 44px; padding: 7px 9px; border: 1px solid #c6bfb3; border-radius: 6px; background: #f4f1ea; color: #353a36; font: inherit; font-size: 10px; font-weight: 800; cursor: pointer; }
+.frame-bridge-actions button.primary { border-color: #cf5532; background: #df623d; color: #202421; }
+.frame-bridge-actions button:disabled { opacity: .45; cursor: not-allowed; }
+.frame-bridge-conflict { grid-template-columns: minmax(0, 1fr) auto; align-items: center; border-color: #c2775c; background: #fff0e9; }
+.frame-bridge-conflict > div { display: grid; gap: 4px; }
+.frame-bridge-conflict button { border-color: #a84225; background: #a84225; color: white; }
+.frame-bridge-message { margin: 0; color: #17604e; font-size: 10px; }
+.frame-bridge-message.error { color: #a33d20; }
+.frame-bridge-empty { min-height: 120px; place-content: center; place-items: center; text-align: center; }
+.frame-bridge-empty span { color: #686e69; font-size: 10px; }
+.frame-bridge-controls button:focus-visible { outline: 3px solid #f49a79; outline-offset: 2px; }
+@media (max-width: 460px) { .frame-bridge-actions, .frame-candidate-drop-grid { grid-template-columns: 1fr; }.frame-bridge-conflict { grid-template-columns: 1fr; }.frame-bridge-conflict button { width: 100%; }.frame-bridge-controls-head { align-items: start; flex-direction: column; }.frame-bridge-state { justify-items: start; } }
+@media (prefers-reduced-motion: reduce) { .frame-bridge-controls * { transition-duration: .01ms !important; animation-duration: .01ms !important; } }

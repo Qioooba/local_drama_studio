@@ -13,6 +13,7 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
     with database.connect() as connection:
         version = connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
         variant_columns = {row[1] for row in connection.execute("PRAGMA table_info(generation_variants)")}
+        shot_columns = {row[1] for row in connection.execute("PRAGMA table_info(shots)")}
         anchor_columns = {row[1] for row in connection.execute("PRAGMA table_info(frame_anchors)")}
         media_columns = {row[1] for row in connection.execute("PRAGMA table_info(media_versions)")}
         profile_columns = {row[1] for row in connection.execute("PRAGMA table_info(execution_profile_versions)")}
@@ -22,8 +23,9 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         foreign_keys = connection.execute("PRAGMA foreign_keys").fetchone()[0]
         indexes = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
-        assert version == "0041_character_voice_bindings"
-    assert "provider_random_nonce" in variant_columns
+        assert version == "0054_character_identity_pack_hardening"
+    assert {"provider_random_nonce", "director_recipe_version_id", "director_recipe_hash"} <= variant_columns
+    assert {"scene_id", "source_shot_id", "archived_at"} <= shot_columns
     assert {"requested_time_us", "resolved_time_us", "source_sha256", "extraction_method"} <= anchor_columns
     assert "source_artifact_id" in media_columns
     assert {"output_contract_json", "resource_policy_json"} <= profile_columns
@@ -60,6 +62,18 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         "ix_shot_asset_bindings_asset",
         "ix_shot_asset_bindings_shot",
         "ix_character_voice_bindings_project",
+        "ix_director_recipe_versions_recipe",
+        "ix_generation_variants_director_recipe",
+        "ix_shots_scene_order",
+        "ix_shot_groups_episode_order",
+        "ix_generation_qc_policy_resolution",
+        "ix_variant_qc_links_variant_created",
+        "ix_shots_source_shot",
+        "ix_shots_episode_archived_order",
+        "ix_asset_proposals_project_status",
+        "ix_worker_sessions_status_lease",
+        "ix_job_attempts_worker_session",
+        "ix_storage_operations_status_updated",
     } <= indexes
     expected = {
         "projects",
@@ -112,6 +126,17 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         "story_assets",
         "shot_asset_bindings",
         "character_voice_bindings",
+        "director_recipes",
+        "director_recipe_versions",
+        "project_director_recipe_bindings",
+        "shot_groups",
+        "shot_group_members",
+        "generation_qc_policy_sets",
+        "generation_qc_policy_versions",
+        "variant_qc_links",
+        "story_asset_proposals",
+        "worker_sessions",
+        "storage_operations",
     }
     assert expected <= tables
 

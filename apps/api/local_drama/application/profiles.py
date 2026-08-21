@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from local_drama.domain.capabilities import normalize_capability
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.generation_contracts import resolve_camera_plan
 from local_drama.infrastructure.database.sqlite import Database
@@ -166,12 +167,21 @@ class ProfileService:
             for capability, capability_data in capabilities.items():
                 if not isinstance(capability_data, dict):
                     continue
+                try:
+                    canonical_capability = normalize_capability(str(capability))
+                except ValueError as error:
+                    raise DomainRuleError(
+                        "PROFILE_CAPABILITY_INVALID",
+                        "模型 manifest 包含未知或含义不唯一的 capability",
+                        {"manifest_capability": str(capability)},
+                    ) from error
                 route_status = manifest.route_status.get(f"native_{str(capability).lower()}", capability_data.get("status", "UNKNOWN"))
                 profile_code = _code(f"h3-native-{capability}")
                 profile_id = _stable_id(f"profile:{profile_code}")
                 profile_status = "CANDIDATE_BLOCKED" if runtime_status != "AVAILABLE" else "CANDIDATE_UNVERIFIED"
                 capability_contract = {
-                    "capability": capability,
+                    "capability": canonical_capability,
+                    "manifest_capability_alias": str(capability),
                     "route_status": route_status,
                     "manifest_capability": capability_data,
                     "published": False,
@@ -207,7 +217,7 @@ class ProfileService:
                             version_id,
                             profile_id,
                             version_no,
-                            capability,
+                            canonical_capability,
                             _json({"manifest_sha256": manifest.sha256, "artifact_ids": artifact_ids, "route_status": route_status}),
                             _json({"required_inputs": capability_data.get("required_nodes", []), "transport": "LOOPBACK_HTTP"}),
                             _json({"seed": {"required": True, "determinism": "profile_declared"}}),
@@ -230,7 +240,7 @@ class ProfileService:
                         "version_id": version_id,
                         "version_no": version_no,
                         "code": profile_code,
-                        "capability": capability,
+                        "capability": canonical_capability,
                         "status": profile_status,
                         "route_status": route_status,
                         "published": profile_status == "PUBLISHED",
@@ -385,6 +395,14 @@ class ProfileService:
             source = connection.execute("SELECT * FROM execution_profile_versions WHERE id=?", (source_version_id,)).fetchone()
             if source is None:
                 raise DomainRuleError("PROFILE_VERSION_NOT_FOUND", "ExecutionProfileVersion 不存在")
+            try:
+                source_capability = normalize_capability(str(source["capability"]))
+            except ValueError as error:
+                raise DomainRuleError(
+                    "PROFILE_CAPABILITY_INVALID",
+                    "源 Profile capability 未知或含义不唯一",
+                    {"profile_version_id": source_version_id},
+                ) from error
             if int(source["revision"]) != expected_source_revision:
                 raise DomainRuleError(
                     "PROFILE_VERSION_STALE",
@@ -409,7 +427,7 @@ class ProfileService:
                     version_id,
                     source["execution_profile_id"],
                     next_no,
-                    source["capability"],
+                    source_capability,
                     source["runtime_version_id"],
                     source["workflow_version_id"],
                     source["model_bundle_json"],
@@ -619,7 +637,15 @@ class ProfileService:
             ).fetchone()
             if candidate is None:
                 raise DomainRuleError("PROFILE_VERSION_NOT_FOUND", "ExecutionProfileVersion 不存在")
-            if candidate["capability"] not in {"T2V", "I2V"}:
+            try:
+                candidate_capability = normalize_capability(str(candidate["capability"]))
+            except ValueError as error:
+                raise DomainRuleError(
+                    "PROFILE_CAPABILITY_INVALID",
+                    "待发布 Profile capability 未知或含义不唯一",
+                    {"profile_version_id": candidate_version_id},
+                ) from error
+            if candidate_capability not in {"VIDEO_T2V", "VIDEO_I2V"}:
                 raise DomainRuleError("PROFILE_EVIDENCE_CAPABILITY_MISMATCH", "真实证据发布只支持已验证的 T2V 或 I2V capability")
             contract_validation = None
             if candidate["status"] == "DRAFT":
@@ -665,9 +691,9 @@ class ProfileService:
             if not isinstance(workflow_input_slots, dict):
                 raise DomainRuleError("WORKFLOW_INPUT_CONTRACT_INVALID", "Workflow input_slots 契约无效")
             expected_workflow_capability = {
-                "T2V": "H3_T2VA_CANDIDATE",
-                "I2V": "H3_FL2VA_I2V_CANDIDATE",
-            }[str(candidate["capability"])]
+                "VIDEO_T2V": "H3_T2VA_CANDIDATE",
+                "VIDEO_I2V": "H3_FL2VA_I2V_CANDIDATE",
+            }[candidate_capability]
             if workflow_capability != expected_workflow_capability:
                 raise DomainRuleError(
                     "PROFILE_EVIDENCE_CAPABILITY_MISMATCH",
@@ -698,7 +724,7 @@ class ProfileService:
             )
             if not valid:
                 raise DomainRuleError("PROFILE_EVIDENCE_INVALID", "媒体或执行谱系不足以发布 ProfileVersion")
-            if candidate["capability"] == "I2V":
+            if candidate_capability == "VIDEO_I2V":
                 first_frames = [
                     str(item.get("media_version_id"))
                     for item in snapshot.get("media_bindings", [])
@@ -792,7 +818,7 @@ class ProfileService:
                     version_id,
                     candidate["execution_profile_id"],
                     next_no,
-                    candidate["capability"],
+                    candidate_capability,
                     candidate["runtime_version_id"],
                     workflow_version_id,
                     candidate["model_bundle_json"],

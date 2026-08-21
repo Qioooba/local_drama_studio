@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import shutil
 import subprocess
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -13,7 +15,10 @@ from typing import Any
 from local_drama.application.automation_workflows import AutomationWorkflowService
 from local_drama.application.configuration import ConfigurationService
 from local_drama.application.dialogue import DialogueService
+from local_drama.application.episode_front_half_actions import EpisodeFrontHalfActionService
+from local_drama.application.episode_worker_actions import EpisodeWorkerActionService
 from local_drama.application.jobs import JobService
+from local_drama.application.local_llm import LocalLLMService
 from local_drama.application.media import MediaService
 from local_drama.application.timeline import TimelineService
 from local_drama.config import Settings
@@ -180,6 +185,85 @@ class LocalMediaWorker:
         if probe.get("probe_status") != "PASS" or duration_ms is None or duration_ms <= 0:
             raise DomainRuleError("TTS_OUTPUT_INVALID", "SAPI 输出未通过本机 FFprobe")
         return "TTS_AUDIO", output.relative_to(self.settings.work_root).as_posix()
+
+    def _run_compose_job(self, job: dict[str, Any], output_root: Path) -> tuple[str, str]:
+        snapshot = job["input_snapshot"]
+        timeline_revision_id = str(snapshot.get("timeline_revision_id") or "")
+        expected = str(snapshot.get("compose_fingerprint") or "")
+        if job["subject_type"] != "TIMELINE_REVISION" or str(job["subject_id"]) != timeline_revision_id or not expected:
+            raise DomainRuleError("COMPOSE_JOB_SNAPSHOT_INVALID", "Compose Job 缺少不可变 timeline/fingerprint 输入")
+        timeline = TimelineService(self.database, self.settings)
+        current = timeline.preflight_episode_render(timeline_revision_id)
+        if str(current["compose_fingerprint"]) != expected:
+            raise DomainRuleError(
+                "COMPOSE_INPUT_STALE", "Compose 入队后输入已变化；请重新预检并提交",
+                {"expected_fingerprint": expected, "current_fingerprint": current["compose_fingerprint"]},
+            )
+        render = timeline.render_episode(
+            timeline_revision_id, force_rerender=bool(snapshot.get("force_rerender")), actor="compose-worker",
+        )
+        report = {
+            "schema_version": "localdrama.episode-compose-report.v1", "job_id": str(job["id"]),
+            "timeline_revision_id": timeline_revision_id, "compose_fingerprint": expected,
+            "render_version_id": str(render["id"]), "render_sha256": str(render["sha256"]),
+            "idempotent_render_replay": bool(render.get("idempotent_replay")),
+            "local_only": True, "network_contacted": False,
+        }
+        output = output_root / "compose-report.json"
+        self._atomic_file(output, lambda target: target.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"))
+        return "EPISODE_COMPOSE_REPORT", output.relative_to(self.settings.work_root).as_posix()
+
+    def _run_script_breakdown_job(
+        self,
+        job: dict[str, Any],
+        output_root: Path,
+        on_progress: Any,
+    ) -> tuple[str, str]:
+        snapshot = job["input_snapshot"]
+        session_id = str(snapshot.get("import_session_id") or "")
+        profile_version_id = str(snapshot.get("profile_version_id") or "")
+        if (
+            job["subject_type"] != "IMPORT_SESSION"
+            or str(job["subject_id"]) != session_id
+            or str(job.get("execution_profile_version_id") or "") != profile_version_id
+            or snapshot.get("automatic_apply") is not False
+            or snapshot.get("requires_human_action") is not True
+        ):
+            raise DomainRuleError("LOCAL_LLM_JOB_SNAPSHOT_INVALID", "AI 拆解 Job 缺少不可变源/Profile/人工审核安全快照")
+        result = LocalLLMService(self.database, self.settings).breakdown(
+            session_id,
+            profile_version_id,
+            job_id=str(job["id"]),
+            input_snapshot=snapshot,
+            on_progress=on_progress,
+        )
+        scenes = result.get("draft", {}).get("scenes", [])
+        scene_count = len(scenes) if isinstance(scenes, list) else 0
+        shot_count = sum(
+            len(scene.get("shots", []))
+            for scene in scenes
+            if isinstance(scene, dict) and isinstance(scene.get("shots", []), list)
+        )
+        report = {
+            "schema_version": "localdrama.script-breakdown-job-report.v1",
+            "job_id": str(job["id"]),
+            "draft_id": str(result["id"]),
+            "draft_status": str(result["status"]),
+            "scene_count": scene_count,
+            "shot_count": shot_count,
+            "idempotent_replay": bool(result.get("idempotent_replay")),
+            "automatic_apply": False,
+            "requires_human_action": True,
+            "local_only": True,
+            "remote_provider_contacted": False,
+        }
+        output = output_root / "script-breakdown-report.json"
+        self._atomic_file(
+            output,
+            lambda target: target.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"),
+        )
+        on_progress({"phase": "DRAFT_READY", "percent": 100, "draft_id": str(result["id"])})
+        return "SCRIPT_BREAKDOWN_REPORT", output.relative_to(self.settings.work_root).as_posix()
 
     # ------------------------------------------------------------------
     # Declarative automation task executor (AUTOMATION_WORKFLOW_TASK).
@@ -390,8 +474,27 @@ class LocalMediaWorker:
             raise DomainRuleError("AUTOMATION_TASK_PAYLOAD_INVALID", "自动化任务 payload 缺少 action")
         if not episode_id:
             raise DomainRuleError("AUTOMATION_TASK_PAYLOAD_INVALID", "自动化任务 payload 缺少 episode_id")
-        if action == "KEYFRAME_CHECK":
+        managed_front_half = action != "KEYFRAME_CHECK" or bool(payload.get("front_half_managed"))
+        if action in EpisodeFrontHalfActionService.ACTIONS and managed_front_half:
+            # Front-half Jobs never auto-apply/auto-approve creative facts.
+            # The action service emits PASS/SKIPPED for existing authorities
+            # or NEEDS_HITL with bounded evidence for the workflow gate.
+            report, produced_extra = EpisodeFrontHalfActionService(
+                self.database, self.settings,
+            ).run(action, episode_id)
+        elif action == "KEYFRAME_CHECK":
+            # Frozen WHOLE_DRAMA v1 workflows retain their historical
+            # approved_version authority.  New Episode Production snapshots
+            # set front_half_managed and require an explicit ReviewDecision.
             report, produced_extra = self._automation_keyframe_check(episode_id)
+        elif action == "VIDEO_GENERATION":
+            mode_policy = payload.get("mode_policy", {})
+            target_take_count = int(mode_policy.get("target_take_count", 2)) if isinstance(mode_policy, dict) else 2
+            report, produced_extra = EpisodeWorkerActionService(self.database, self.settings).video_generation(
+                episode_id, run_id, task_id, target_take_count=target_take_count,
+            )
+        elif action == "QC":
+            report, produced_extra = EpisodeWorkerActionService(self.database, self.settings).qc(episode_id, run_id, task_id)
         elif action == "TTS_BATCH":
             report, produced_extra = self._automation_tts_batch(episode_id, run_id, task_id)
         elif action == "RENDER":
@@ -435,12 +538,30 @@ class LocalMediaWorker:
             return None
         machine_check = report.get("machine_check", {})
         status = str(machine_check.get("status", "PASS"))
+        produced = report.get("produced", {})
+        dependency_job_ids: list[str] = []
+        if isinstance(produced, dict):
+            for item in produced.get("items", []):
+                if not isinstance(item, dict):
+                    continue
+                candidates = [item, *(item.get("submissions", []) if isinstance(item.get("submissions"), list) else [])]
+                for candidate in candidates:
+                    if isinstance(candidate, dict) and candidate.get("job_id"):
+                        job_id = str(candidate["job_id"])
+                        if job_id not in dependency_job_ids:
+                            dependency_job_ids.append(job_id)
+                for job_id_value in item.get("dependency_job_ids", []) if isinstance(item.get("dependency_job_ids"), list) else []:
+                    job_id = str(job_id_value)
+                    if job_id and job_id not in dependency_job_ids:
+                        dependency_job_ids.append(job_id)
         service = AutomationWorkflowService(self.database)
         try:
             service.step_run(
                 run_id,
                 machine_context={"status": status, "machine_check": machine_check},
                 produced_bytes=produced_bytes,
+                expected_completed_job_id=str(job["id"]),
+                additional_dependency_job_ids=dependency_job_ids,
                 actor="local-user",
             )
         except DomainRuleError as error:
@@ -449,8 +570,14 @@ class LocalMediaWorker:
             return error.code
         return None
 
-    def run_once(self, worker_id: str, channels: list[str] | None = None) -> dict[str, Any] | None:
-        claim = self.jobs.claim(worker_id, channels or ["CPU"])
+    def run_once(
+        self,
+        worker_id: str,
+        channels: list[str] | None = None,
+        *,
+        worker_session_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        claim = self.jobs.claim(worker_id, channels or ["CPU"], worker_session_id=worker_session_id)
         if claim is None:
             return None
         job = claim["job"]
@@ -458,7 +585,14 @@ class LocalMediaWorker:
         attempt_id = str(attempt["id"])
         token = str(attempt["lease_token"])
         try:
-            self.jobs.heartbeat(attempt_id, token, worker_id, progress={"phase": "RUNNING"})
+            initial_lease_seconds = 120 if job["type"] == "SCRIPT_BREAKDOWN_LOCAL_LLM" else 60
+            self.jobs.heartbeat(
+                attempt_id,
+                token,
+                worker_id,
+                progress={"phase": "PREPARING", "percent": 5} if job["type"] == "SCRIPT_BREAKDOWN_LOCAL_LLM" else {"phase": "RUNNING"},
+                lease_seconds=initial_lease_seconds,
+            )
             output_root = self.settings.work_root / "jobs" / str(job["id"])
             report: dict[str, Any] | None = None
             produced_bytes = 0
@@ -471,6 +605,59 @@ class LocalMediaWorker:
                 kind, relative = self._run_media_job(job, output_root)
             elif job["type"] == "TTS_GENERATION":
                 kind, relative = self._run_tts_job(job, output_root)
+            elif job["type"] == "EPISODE_COMPOSE":
+                kind, relative = self._run_compose_job(job, output_root)
+            elif job["type"] == "SCRIPT_BREAKDOWN_LOCAL_LLM":
+                heartbeat_stop = threading.Event()
+                heartbeat_errors: list[BaseException] = []
+                progress_state: dict[str, Any] = {"phase": "PREPARING", "percent": 5}
+                progress_lock = threading.Lock()
+
+                def heartbeat_progress(progress: dict[str, Any]) -> None:
+                    with progress_lock:
+                        progress_state.clear()
+                        progress_state.update(progress)
+                    heartbeat = self.jobs.heartbeat(
+                        attempt_id,
+                        token,
+                        worker_id,
+                        progress=progress,
+                        lease_seconds=120,
+                    )
+                    if heartbeat.get("cancel_requested"):
+                        raise DomainRuleError("JOB_CANCELLED", "AI 拆解已请求取消；不会保存模型输出")
+                    if heartbeat_errors:
+                        raise DomainRuleError("JOB_HEARTBEAT_FAILED", "AI 拆解 Job lease 续期失败")
+
+                def keep_lease_alive() -> None:
+                    while not heartbeat_stop.wait(20.0):
+                        try:
+                            with progress_lock:
+                                current_progress = dict(progress_state)
+                            self.jobs.heartbeat(
+                                attempt_id,
+                                token,
+                                worker_id,
+                                progress=current_progress,
+                                lease_seconds=120,
+                            )
+                        except BaseException as error:
+                            heartbeat_errors.append(error)
+                            return
+
+                heartbeat_thread = threading.Thread(
+                    target=keep_lease_alive,
+                    name=f"script-breakdown-heartbeat-{str(job['id'])[:8]}",
+                    daemon=True,
+                )
+                heartbeat_thread.start()
+                try:
+                    kind, relative = self._run_script_breakdown_job(job, output_root, heartbeat_progress)
+                    if heartbeat_errors:
+                        raise DomainRuleError("JOB_HEARTBEAT_FAILED", "AI 拆解 Job lease 续期失败")
+                finally:
+                    heartbeat_stop.set()
+                    heartbeat_thread.join(timeout=2.0)
             elif job["type"] == "AUTOMATION_WORKFLOW_TASK":
                 kind, relative, report, produced_bytes = self._run_automation_task(job, output_root, worker_id)
             else:
@@ -487,11 +674,33 @@ class LocalMediaWorker:
         except DomainRuleError as error:
             result = self.jobs.complete(attempt_id, token, worker_id, success=False, error_code=error.code, error_detail_redacted=error.message)
             return {"job": job, "attempt": attempt, "result": result, "error": error.code}
+        except OSError as error:
+            disk_full = error.errno in {errno.ENOSPC, getattr(errno, "EDQUOT", -1)}
+            code = "DISK_FULL" if disk_full else "MEDIA_WORKER_IO_FAILED"
+            detail = "本地输出空间不足，worker 已安全终止且未登记产物" if disk_full else "本地媒体 worker 文件操作失败"
+            result = self.jobs.complete(
+                attempt_id, token, worker_id, success=False,
+                error_code=code, error_detail_redacted=detail,
+            )
+            return {"job": job, "attempt": attempt, "result": result, "error": code}
+        except MemoryError:
+            code = "WORKER_OUT_OF_MEMORY"
+            result = self.jobs.complete(
+                attempt_id, token, worker_id, success=False,
+                error_code=code, error_detail_redacted="本地 worker 内存不足，任务已安全终止",
+            )
+            return {"job": job, "attempt": attempt, "result": result, "error": code}
 
-    def run_until_idle(self, worker_id: str, max_jobs: int = 100) -> list[dict[str, Any]]:
+    def run_until_idle(
+        self,
+        worker_id: str,
+        max_jobs: int = 100,
+        *,
+        worker_session_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
         for _ in range(max_jobs):
-            result = self.run_once(worker_id)
+            result = self.run_once(worker_id, worker_session_id=worker_session_id)
             if result is None:
                 break
             results.append(result)

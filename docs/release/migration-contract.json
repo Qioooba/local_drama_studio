@@ -1,0 +1,117 @@
+{
+  "schema_version": "localdrama.release-migration-contract.v1",
+  "expected_heads": [
+    "0054_character_identity_pack_hardening"
+  ],
+  "upgrade_command": ".venv\\\\Scripts\\\\python.exe -m alembic upgrade heads",
+  "rollback_policy": "restore_verified_pre_migration_backup_with_matching_code",
+  "project_package": {
+    "manifest_schema": "localdrama.project-package.v2",
+    "state_schema": "localdrama.project-state.v2",
+    "older_missing_optional_fields": "safe_defaults",
+    "unsupported_schema": "PROJECT_PACKAGE_SCHEMA_UNSUPPORTED"
+  },
+  "release_migrations": [
+    {
+      "revision": "0042_asset_bible_states_references",
+      "facts": [
+        "story_asset_states",
+        "story_asset_references",
+        "episode_asset_state_bindings"
+      ]
+    },
+    {
+      "revision": "0043_generation_preferences",
+      "facts": [
+        "generation_preference_sets",
+        "generation_preference_versions"
+      ]
+    },
+    {
+      "revision": "0044_shot_groups",
+      "facts": [
+        "shots.scene_id",
+        "shot_groups",
+        "shot_group_members"
+      ]
+    },
+    {
+      "revision": "0045_qc_policies",
+      "facts": [
+        "generation_qc_policy_sets",
+        "generation_qc_policy_versions"
+      ]
+    },
+    {
+      "revision": "0046_director_recipes",
+      "facts": [
+        "director_recipes",
+        "director_recipe_versions",
+        "project_director_recipe_bindings"
+      ]
+    },
+    {
+      "revision": "0047_shot_editing",
+      "facts": [
+        "shot_edit_lineage",
+        "shot_revision_archival"
+      ]
+    },
+    {
+      "revision": "0048_asset_proposals",
+      "facts": [
+        "story_asset_proposals"
+      ]
+    },
+    {
+      "revision": "0049_canonical_capabilities",
+      "facts": [
+        "canonical_capabilities",
+        "legacy_aliases"
+      ]
+    },
+    {
+      "revision": "0050_character_identity_packs",
+      "facts": [
+        "character_identity_packs",
+        "character_identity_pack_versions",
+        "character_identity_pack_slots",
+        "shot_asset_bindings.identity_pack_version_id"
+      ]
+    },
+    {
+      "revision": "0051_worker_sessions",
+      "facts": [
+        "worker_sessions",
+        "job_attempts.worker_session_id",
+        "api_worker_version_handshake",
+        "heartbeat_restart_backoff"
+      ]
+    },
+    {
+      "revision": "0052_storage_operations",
+      "facts": [
+        "storage_operations",
+        "staged_media_finalize",
+        "storage_reconciler",
+        "storage_quarantine"
+      ]
+    },
+    {
+      "revision": "0053_canonical_capability_repair",
+      "facts": [
+        "capability_migration_quarantine",
+        "capability_migration_reports",
+        "project_profile_bindings canonical repair"
+      ]
+    },
+    {
+      "revision": "0054_character_identity_pack_hardening",
+      "facts": [
+        "character_identity_pack_approval_provenance",
+        "identity_pack_generation_snapshots",
+        "stale_identity_pack_binding_checks"
+      ]
+    }
+  ]
+}

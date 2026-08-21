@@ -55,7 +55,7 @@ describe("DialogueTTSPanel", () => {
 
   it("shows an honest empty blocked state without mock candidates", () => {
     renderPanel();
-    expect(screen.getByText("TTS PROFILE MISSING")).toBeTruthy();
+    expect(screen.getByText("TTS 配置缺失")).toBeTruthy();
     expect(screen.getByText("当前集没有对白文本 revision；未创建 Mock 候选。")).toBeTruthy();
   });
 

@@ -1,0 +1,14 @@
+.shot-group-create { display: grid; grid-template-columns: 1fr 1.4fr 1fr 1.4fr auto; gap: .75rem; align-items: end; margin: 1rem 0; }
+.shot-group-create label { display: grid; gap: .35rem; }
+.shot-group-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); margin: 1rem 0; }
+.shot-group-card { border: 1px solid var(--line, #d8dee8); border-radius: .75rem; padding: .9rem; background: var(--surface, #fff); }
+.shot-group-card header, .shot-group-card header > div, .shot-group-actions, .shot-group-card li { display: flex; align-items: center; gap: .5rem; }
+.shot-group-card header { justify-content: space-between; }
+.shot-group-card ol { padding-left: 1.5rem; }
+.shot-group-card li { margin: .4rem 0; }
+.shot-group-card li span { flex: 1; }
+.shot-assignment-table { display: grid; gap: .35rem; overflow-x: auto; }
+.shot-assignment-head, .shot-assignment-row { display: grid; grid-template-columns: minmax(100px, .7fr) minmax(130px, 1fr) minmax(180px, 1.4fr) minmax(180px, 1.4fr); gap: .75rem; align-items: center; min-width: 720px; padding: .6rem .75rem; }
+.shot-assignment-head { background: var(--surface-subtle, #f3f5f8); border-radius: .5rem; }
+.shot-assignment-row { border-bottom: 1px solid var(--line, #d8dee8); }
+@media (max-width: 900px) { .shot-group-create { grid-template-columns: 1fr 1fr; } }

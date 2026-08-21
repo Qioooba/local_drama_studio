@@ -27,6 +27,14 @@ from local_drama.domain.errors import DomainRuleError
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def service(request: Request) -> ProjectService:
     settings = request.app.state.settings
     return ProjectService(request.app.state.database, settings.projects_root)
@@ -202,7 +210,7 @@ async def project_health(project_id: str, request: Request) -> dict[str, object]
             elif path.stat().st_size != int(row["byte_size"]):
                 size_mismatch.append(rel)
             else:
-                digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                digest = _sha256_file(path)
                 if digest != str(row["sha256"]):
                     hash_mismatch.append(rel)
         orphan_files: list[str] = []
@@ -354,7 +362,14 @@ async def rebuild_project_thumbnails(project_id: str, request: Request) -> dict[
 @router.post("/shots/{shot_id}/revisions", operation_id="createShotRevision", status_code=201)
 async def create_shot_revision(shot_id: str, payload: ShotRevisionRequest, request: Request) -> dict[str, object]:
     try:
-        return {"shot_revision": service(request).create_shot_revision(shot_id, payload.fields, payload.freeze)}
+        return {
+            "shot_revision": service(request).create_shot_revision(
+                shot_id,
+                payload.fields.model_dump(),
+                payload.freeze,
+                expected_revision_no=payload.expected_revision_no,
+            )
+        }
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

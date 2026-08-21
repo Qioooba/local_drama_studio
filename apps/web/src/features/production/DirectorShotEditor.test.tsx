@@ -116,9 +116,40 @@ describe("DirectorShotEditor", () => {
     fireEvent.change(select, { target: { value: "asset-2" } });
     fireEvent.change(screen.getByLabelText("镜头内角色"), { target: { value: "location" } });
     fireEvent.click(screen.getByRole("button", { name: "绑定到本镜头" }));
+    expect(bindStoryAssetToShot).not.toHaveBeenCalled();
+    expect(screen.getByRole("alertdialog").textContent).toContain("SCENE_KITCHEN");
+    fireEvent.click(screen.getByRole("button", { name: "确认绑定" }));
     await waitFor(() => expect(bindStoryAssetToShot).toHaveBeenCalledWith("shot-1", { asset_id: "asset-2", role_in_shot: "location" }));
     fireEvent.click(screen.getByRole("button", { name: "解绑" }));
     await waitFor(() => expect(unbindStoryAssetFromShot).toHaveBeenCalledWith("binding-1"));
+  });
+
+  it("uses the same confirmation command for semantic card drag and button paths", async () => {
+    const scene = { id: "asset-scene", project_id: "project-1", kind: "SCENE" as const, code: "SCENE_ROOF", name: "天台", description: "", canonical_media_version_id: "image-version", extra: {}, status: "ACTIVE" as const, revision: 1, created_at: "now", updated_at: "now", created_by: "local-user", schema_version: "v2" };
+    vi.mocked(listStoryAssets).mockResolvedValue({ items: [scene] });
+    renderEditor({ id: "shot-1", code: "S001", status: "PRODUCTION_READY", current_revision_id: "revision-1", current_revision: {} }, [], "project-1");
+    const cardButton = await screen.findByRole("button", { name: "选择 SCENE_ROOF 天台" });
+    const dataTransfer = { setData: vi.fn(), getData: vi.fn(), effectAllowed: "none", dropEffect: "none" };
+    fireEvent.dragStart(cardButton.closest("article")!, { dataTransfer });
+    const serialized = vi.mocked(dataTransfer.setData).mock.calls.find(([kind]) => kind === "application/x-localdrama-story-asset")?.[1];
+    dataTransfer.getData.mockReturnValue(String(serialized));
+    fireEvent.drop(screen.getByLabelText("镜头资产拖放槽"), { dataTransfer });
+    expect(bindStoryAssetToShot).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "确认绑定" }));
+    await waitFor(() => expect(bindStoryAssetToShot).toHaveBeenCalledWith("shot-1", { asset_id: "asset-scene", role_in_shot: "main" }));
+    const thumbnail = document.querySelector(".shot-asset-catalogue img") as HTMLImageElement;
+    expect(thumbnail.getAttribute("src")).toContain("/thumbnail?size=small&frame=poster");
+    expect(thumbnail.getAttribute("src")).not.toContain("/content");
+  });
+
+  it("rejects cross-project drops before opening confirmation", async () => {
+    renderEditor({ id: "shot-1", code: "S001", status: "DIRECTED", current_revision_id: "revision-1", current_revision: {} }, [], "project-1");
+    await screen.findByText("本镜头尚未绑定故事资产。");
+    const foreign = { id: "asset-foreign", project_id: "project-2", kind: "CHARACTER", code: "CHAR_OTHER", name: "外部角色", status: "ACTIVE" };
+    fireEvent.drop(screen.getByLabelText("镜头资产拖放槽"), { dataTransfer: { getData: () => JSON.stringify(foreign), dropEffect: "copy" } });
+    expect(screen.getByRole("alert").textContent).toContain("其他项目");
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(bindStoryAssetToShot).not.toHaveBeenCalled();
   });
 
   it("keeps the story asset section hidden without a project", async () => {

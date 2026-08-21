@@ -1,17 +1,19 @@
 from __future__ import annotations
 
+import uuid
 from collections.abc import Iterator
 from email.utils import formatdate, parsedate_to_datetime
 from pathlib import Path
+from urllib.parse import unquote
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 
-from local_drama.api.schemas.g3 import KeyframeCandidateRequest, MediaImportRequest
+from local_drama.api.schemas.g3 import KeyframeCandidateRequest, MediaImportRequest, MediaIntegrityRepairRequest
 from local_drama.api.schemas.motion_controls import MotionControlRequest
 from local_drama.application.contact_sheets import ContactSheetExportService
 from local_drama.application.errors import api_error_from_domain
-from local_drama.application.media import MediaService
+from local_drama.application.media import IMAGE_EXTENSIONS, MediaService
 from local_drama.application.motion_controls import MotionControlService
 from local_drama.domain.errors import DomainRuleError
 
@@ -49,10 +51,80 @@ async def import_media(payload: MediaImportRequest, request: Request) -> dict[st
         raise api_error_from_domain(error) from error
 
 
+@router.get("/projects/{project_id}/media-catalogue", operation_id="listProjectMediaCatalogue")
+async def list_project_media_catalogue(
+    project_id: str,
+    request: Request,
+    q: str = "",
+    media_kind: str | None = None,
+    limit: int = 40,
+) -> dict[str, object]:
+    try:
+        return {"items": service(request).catalogue(project_id, query=q, media_kind=media_kind, limit=limit)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/projects/{project_id}/media:upload", status_code=201, operation_id="uploadProjectMedia")
+async def upload_project_media(project_id: str, request: Request) -> dict[str, object]:
+    """Register one bounded browser upload without accepting a client path."""
+    maximum_bytes = 25 * 1024 * 1024
+    raw_length = request.headers.get("content-length")
+    if raw_length:
+        try:
+            if int(raw_length) > maximum_bytes:
+                raise DomainRuleError("MEDIA_UPLOAD_TOO_LARGE", "上传文件不能超过 25 MB")
+        except ValueError as error:
+            raise api_error_from_domain(DomainRuleError("MEDIA_UPLOAD_LENGTH_INVALID", "上传文件长度无效")) from error
+    filename = unquote(request.headers.get("x-file-name", "upload.bin"))
+    body = await request.body()
+    if not body:
+        raise api_error_from_domain(DomainRuleError("MEDIA_UPLOAD_EMPTY", "请选择非空文件"))
+    if len(body) > maximum_bytes:
+        raise api_error_from_domain(DomainRuleError("MEDIA_UPLOAD_TOO_LARGE", "上传文件不能超过 25 MB"))
+    safe_filename = Path(filename).name[:180] or "upload.bin"
+    if Path(safe_filename).suffix.lower() not in IMAGE_EXTENSIONS:
+        raise api_error_from_domain(DomainRuleError("MEDIA_UPLOAD_TYPE_INVALID", "资产参考上传仅支持图片文件"))
+    temporary_directory = request.app.state.settings.work_root / "picker-uploads" / uuid.uuid4().hex
+    temporary_directory.mkdir(parents=True, exist_ok=False)
+    temporary = temporary_directory / safe_filename
+    try:
+        temporary.write_bytes(body)
+        media_service = service(request)
+        media_service.validate_image_upload(temporary)
+        imported = media_service.import_file(
+            project_id,
+            temporary,
+            purpose="ASSET_REFERENCE",
+            owner_type="PROJECT",
+            owner_id=project_id,
+            media_kind="IMAGE",
+            stage="IMPORTED",
+        )
+        return {"media": imported}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    finally:
+        temporary.unlink(missing_ok=True)
+        temporary_directory.rmdir()
+
+
 @router.get("/media-versions/{media_version_id}", operation_id="getMediaVersion")
 async def get_media_version(media_version_id: str, request: Request) -> dict[str, object]:
     try:
         return {"media_version": service(request).get_version(media_version_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/media-versions/{media_version_id}:repair-integrity", operation_id="repairMediaIntegrity")
+async def repair_media_integrity(
+    media_version_id: str, payload: MediaIntegrityRepairRequest, request: Request,
+) -> dict[str, object]:
+    try:
+        return {"media_version": service(request).repair_content_integrity(
+            media_version_id, expected_revision=payload.expected_revision,
+        )}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

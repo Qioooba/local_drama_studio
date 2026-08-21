@@ -1,0 +1,186 @@
+LocalDramaStudio V2 visual audit — 2026-08-21
+
+Scope
+- Runtime: http://127.0.0.1:5173 with API http://127.0.0.1:3210.
+- Primary viewport: 1280x720. Director Desk additionally sampled at 1024x768, 1440x900 and 1920x1080.
+- Fixture: project e5eaa01d-d39a-4a63-acbf-026da30b46e7, episode d4db1033-9517-4bd0-958d-4228e0abead1, 22 shots.
+- Evidence: docs/research/assets/current-v2-2026-08-21/.
+- 22 full-page originals were split into 80 720px-high review segments. manifest.json records exact sizes; contact-sheet-01.jpg through contact-sheet-05.jpg are the thumbnail review surfaces.
+- Full-page capture can repeat sticky chrome at stitch boundaries. Repeated headers inside contact sheets are capture behavior unless independently confirmed in a normal viewport screenshot.
+
+Release-blocking runtime findings
+
+P0-1 Episode Plan does not render.
+- Route: /projects/{projectId}/episodes/{episodeId}/plan.
+- Visible result after a 2.2s settle: the React Router development error page, not a product error state.
+- Runtime error: TypeError: drafts.data?.find is not a function.
+- Stack origin: apps/web/src/features/episode-plan-v2/SelectedBeatReplanPanel.tsx, selectedDraft lookup.
+- The exact root cause is now code-proven: AIDraftReviewPanel.tsx and SelectedBeatReplanPanel.tsx share ["script-breakdown-drafts", projectId]. The first query caches the endpoint envelope {items,...}; beatReplanApi.ts unwraps the same resource to an array for the second query. TanStack Query reuses the envelope and SelectedBeatReplanPanel calls .find on it.
+- Required gate: one semantic key factory and one canonical envelope for this resource; derive arrays with select. Add a shared-QueryClient composition test. No V2 route may expose the router developer error page; schema-parse API responses and show a recoverable region error with request ID and retry.
+
+P0-2 Director Desk cannot expose all primary regions at ordinary desktop widths.
+- At 1280x720 the document is 1670px wide. Measured regions: global chrome/sidebar consumes roughly 233px; Shot Navigator starts x=233, width=238; Media Stage starts x=471, width=1170; Inspector starts x=1641, width=330.
+- The Inspector begins beyond the reachable normal viewport. The page has horizontal scroll, the Shot Navigator filter/actions have their own horizontal overflow, and Takes extend beyond the right edge.
+- At 1440x900 the Inspector is still not visible in the normal viewport.
+- At 1920x1080 the Inspector remains clipped beyond the Media Stage instead of sharing the available width.
+- At 1024x768 the global navigation becomes a horizontally scrolling top row and the Director workspace also overflows; this is not an adaptive editor layout.
+- Required gate: no page-level horizontal scroll at 1024/1280/1440/1920; all three Director regions must be reachable without horizontal panning, using an icon rail/focus mode and responsive drawers where necessary.
+
+P0-3 Director can open Manual Generation on the wrong shot.
+- DirectorDeskPage currently builds generation?shot=<id>, while GenerationPage only reads the optional path parameter /generation/:shotId and otherwise selects the first shot.
+- From any non-first shot, the visible URL contains the intended query but the generation form targets the first shot. This can waste GPU time and attach a new Variant/Job to the wrong business object.
+- Required gate: typed path builders; an invalid or absent shot cannot silently become a writable first-shot selection; URL, selection, preflight, request payload and persisted Job shot_id must agree.
+
+P0-4 Generation capability names and resolution paths are split.
+- New preferences use LLM_STORY_PARSE / VIDEO_I2V; legacy Profile/worker paths use SCRIPT_BREAKDOWN_LLM / I2V / T2V; Director mixes IMAGE_GENERATION / I2V / VIDEO_FIRST_LAST_FRAME.
+- Required gate: a canonical capability authority, explicit alias/backfill report, and one shared resolver used by settings, Director, manual generation, episode run and worker. No silent fallback.
+
+P0-5 Long-page aggregation is still the dominant V2 pattern.
+- Project Operations: 7284px / 11 review segments.
+- Episode Run: 4815px / 7 segments.
+- Episode Review: 4376px / 7 segments.
+- Manual Generation: 4356px / 7 segments.
+- Timeline: 4255px / 6 segments.
+- Models: 3407px / 5 segments.
+- Story Workspace and Audio: 4 segments each.
+- The migration improved styling and route separation, but several routes still concatenate legacy-grade panels vertically. This preserves implementation inventory, not user task flow.
+- Required gate: production workspaces are viewport-contained. A page gets one primary task, one primary CTA and bounded internal panels. Secondary configuration moves into tabs, drawers, dialogs or dedicated subroutes with deep links.
+
+Cross-page strengths to preserve
+- The dark persistent chrome plus warm low-glare work surface is distinctive and appropriate for long production sessions.
+- Project entry has a clear next action and the Project Home goal cards are much easier to understand than a technical dashboard.
+- Selected and approved are generally kept semantically separate.
+- V2 route structure now follows project and episode context and is deep-linkable.
+- Advanced Canvas and Media Lab are visibly separated from the normal linear flow.
+- Production concepts are real domain concepts: immutable revisions, preflight, local runtime, QC, frame bridge, candidates, review and frozen timeline.
+
+Cross-page UX problems
+- Navigation overload: when an episode is active, the persistent navigation can expose project creation pages, three tools, eight episode stages and system destinations at once. At 1024 it becomes a horizontal scroll strip. Users must parse the whole product before completing one task.
+- Hierarchy overload: page title, eyebrow, status pills, multiple panel headings and technical labels frequently compete at the same visual weight.
+- Mixed language: English implementation terms (Recipe provenance, COMPOSE, LOCAL_ONLY, Profile, Variant, Disposition, plan/diff/apply) appear in primary creator flows. Keep them in advanced/audit details; use Chinese task language in primary UI.
+- Global environment warning is always visually strong. Healthy state should be quiet; blocking state should explain the affected action locally.
+- Forms expose too many low-frequency fields at once. Advanced values need progressive disclosure and inheritance summaries.
+- Empty trailing space in cropped long pages is expected padding, but the real pages still require several screenfuls of uninterrupted vertical reading.
+- System/admin concepts remain mixed with project creative tasks, particularly Project Operations.
+
+Page-by-page review and target disposition
+
+00 Projects — 1280x720, 1 segment
+- Good: clear search/filter, two recent-project cards, one dominant project action, no content overload.
+- Improve: translate “待配置 / 修订” into creator-facing progress; show last meaningful activity and next blocked reason; keep machine health quiet unless blocking.
+- Disposition: retain as top-level entry, polish rather than redesign.
+
+01 Project Home — 1265x1086, 2 segments
+- Good: four goal-oriented entry cards and an episode list make “what next?” concrete.
+- Problem: persistent sidebar already lists almost every project and tool route; episode rows repeat three actions per episode.
+- Target: keep the four entry modes; episode rows get one primary “继续” plus overflow actions; add a compact production-progress strip instead of exposing every stage in the global sidebar.
+
+02 Story Workspace — 1265x2170, 4 segments
+- Good: the four conceptual steps and staged preview/commit semantics are correct.
+- Problem: all steps are physically stacked on one document; import, review, asset resolution and story-bible maintenance compete vertically.
+- Target: viewport workspace with a four-step rail, source/editor center and evidence/review inspector. Keep autosaved draft and explicit commit. Each step owns a URL state.
+
+03 Asset Bible — 1280x720, 1 segment in empty fixture
+- Good: master-detail intent and explicit empty states.
+- Evidence limitation: fixture has no character asset, so populated three-view/state behavior was not visually verified.
+- Target: left entity/state navigator, central visual/reference board, right constraints/voice/usage inspector. Three-view, expression, outfit and episode state are first-class slots, not a long form.
+
+04 QC Policies — 1265x1746, 3 segments
+- Good: Project → Episode → Shot inheritance and “machine evidence is not human approval” are explicit.
+- Problem: advanced threshold governance is a primary navigation page and exposes every category/check box in one long form.
+- Target: absorb overview into Production Settings; edit a policy version in a focused modal/drawer with stage tabs, diff preview and reason. Keep immutable history on a separate tab.
+
+05 Director Recipes — 1265x1477, 3 segments
+- Good: provenance and immutable history.
+- Problem: authoring fields dominate a long page and English provenance terminology leaks into the primary layer.
+- Target: recipe library + detail; “新建版本” opens a dialog/editor. Surface effective recipe near generation actions, not as a mandatory main-navigation destination.
+
+06 Production Settings — 1265x1322, 2 segments
+- Good: best candidate for consolidated project-level configuration; capability, QC, recipe, output and capacity already share one mental model.
+- Target: make this the single project governance destination. Use overview cards with effective values and open scoped dialogs/subroutes for edits. Remove QC and Recipes from always-visible primary navigation.
+
+07 Advanced Canvas — 1265x1495, 3 segments
+- Good: clearly labelled expert tool and tied to real business dependencies.
+- Problem: graph plus detail/configuration still extends below the viewport.
+- Target: full-viewport canvas, floating toolbar, minimap and selection inspector. Persist layout separately from facts. Never make canvas the default novice path.
+
+08 Media Lab — 1280x720, 1 segment
+- Good: bounded single-purpose expert page.
+- Improve: make “experimental / not promoted” status unmistakable and provide a one-click path to register selected output as a MediaVersion.
+- Disposition: retain as expert tool.
+
+09 Project Operations — 1265x7284, 11 segments
+- Critical UX debt: this is a catch-all for adapters, model paths, delivery targets, configuration snapshots, canvas gates, health, search, brand, workspace assets, automations, webhooks, orchestration and authorization.
+- Target: delete this aggregate route as a user-facing page after replacement. Split into Project Settings, Local Runtime, Automation, Delivery Targets, Brand/Compliance and Asset Authorization. Global search belongs in the command palette. Project health becomes a compact overview drawer.
+
+10 Models — 1265x3407, 5 segments
+- Good: capability contract, published immutable version and resolver concepts are correct.
+- Problem: registry, resolution target, publication evidence and override editing appear together in one long technical page.
+- Target: two tabs: Capability Registry and Effective Resolution. Version publication/edit uses a focused dialog. Ordinary creators select intent/quality/cost near the task; provider/workflow IDs live in advanced details.
+
+11 Jobs — 1265x2038, 3 segments
+- Good: durable queue and machine status deserve a separate operational route.
+- Target: compact virtualized table/list with saved filters, live updates and a right-side job detail drawer. Failure recovery is local and action-oriented. Keep raw logs collapsed.
+
+12 Diagnostics — 1265x1815, 3 segments
+- Good: separate operational destination, environment checks and audit history.
+- Target: tabs for Environment, Audit and Event Delivery; virtualize audit rows; link creator-facing errors here by request ID without forcing normal users to browse this page.
+
+13 Episode Plan — 1280x720, runtime error
+- No UX judgment is valid until the page renders. Fix response-shape contract and add route/region error boundaries first.
+- After recovery, target a three-step viewport workspace: source evidence, breakdown review and shot/beat plan. Selected Beat replan should be a modal/drawer showing plan → diff → apply.
+
+14 Director Desk — 1670x764 full-page capture plus breakpoint evidence
+- Good concepts: Shot Navigator, central media, explicit first/current/next Frame Bridge, Takes tray, reroll vs retry, approval state, source drawer and inspector tabs.
+- Critical layout fault: global chrome + 238px Shot Navigator + 1170px Media Stage + 330px Inspector cannot fit. The Inspector is effectively inaccessible.
+- Target at >=1440: 56px focus rail, 240–280px Shot Navigator, minmax(520px,1fr) Media Stage, 360–400px Inspector, 180–220px collapsible Takes tray. The grid must use minmax(0,1fr) and all children min-width:0.
+- Target at 1280: 56px rail, 220px Shot Navigator, flexible stage, Inspector as a 360px overlay drawer or one persistent narrow tab rail; no page horizontal scroll.
+- Target at 1024: global navigation collapses; Shot Navigator and Inspector are mutually exclusive drawers; central stage remains fully usable; Takes becomes a bottom sheet.
+- Local filter/action rows wrap or use an overflow menu, never a horizontal scrollbar.
+
+15 Manual Generation — 1265x4356, 7 segments
+- Good: preflight, immutable branch and explicit intent/capability concepts.
+- Problem: duplicates Director work and exposes the entire advanced pipeline as a seven-screen form.
+- Target: normal generation is an Inspector tab/drawer in Director Desk. Retain a deep-linked Advanced Generation route only for parameter matrices and debugging, with sections as tabs and a sticky preflight summary.
+
+16 Episode Review — 1265x4376, 7 segments
+- Good: distinguishes candidate review, formal delivery selection and render review.
+- Problem: several review modes are concatenated; users repeatedly lose the selected issue/media context while scrolling.
+- Target: review inbox on left, media compare in center, decision/evidence inspector right. Tabs separate Shot Issues, Episode Render and Delivery Selection. “Only unresolved” is the default view.
+
+17 Audio — 1265x2229, 4 segments
+- Good: dialogue, voice authorization and track binding are in the production flow.
+- Target: track/lane workspace with dialogue list, waveform/player and voice/effect inspector. Batch TTS preflight and authorization live in drawers; do not stack every audio tool vertically.
+
+18 Timeline — 1265x4255, 6 segments
+- Good: versioned timeline and frozen input semantics.
+- Problem: a timeline task is represented mostly as vertically repeated cards/forms.
+- Target: full-viewport multitrack timeline with shot strip, audio/subtitle lanes, playhead, zoom and inspector. Revision history, freeze and compose open as dialogs/drawers. Cards can summarize missing media but should not replace timeline manipulation.
+
+19 Delivery — 1265x2110, 3 segments
+- Good: frozen revision, render evidence and non-destructive enhancement are clear.
+- Target: a concise staged checklist/wizard: Preflight → Compose → Review → Package/Export. Optional enhancement opens a side-by-side compare drawer. One sticky primary action reflects the current stage.
+
+20 Episode Run — 1265x4815, 7 segments
+- Good: one-click production is not a black box; stages, blockers, retry and human gates exist.
+- Problem: the cockpit is seven screens tall, so stage status and controls lose context.
+- Target: viewport cockpit with a horizontal/left stage rail, central active-stage details and a right event/blocker drawer. Keep Start/Pause/Resume/Retry Failed sticky. Completed stages collapse to one row.
+
+21 Root Boundary — redirects to Projects, 1280x720
+- Good: legacy root resolves to the V2 projects surface.
+- Required: retain legacy query bookmark contract tests and remove any hidden import of the legacy app bundle.
+
+Target navigation synthesis
+- Global rail: Projects, Search/Commands, Jobs, Local Runtime; Settings/Diagnostics in an overflow/system group.
+- Project context header: project/season/episode breadcrumb, production status, effective model/QC summary.
+- Project-level contextual tabs: Overview, Story, Asset Bible, Production Settings; Canvas/Lab in Tools.
+- Episode stage rail: Plan → Direct → Review → Audio → Timeline → Deliver. Episode Run is a prominent mode/action, not another equal navigation item.
+- Manual Generation is entered from the selected shot and remains deep-linked; it is not a permanent peer to every episode stage.
+- Director focus mode collapses global chrome automatically but retains a visible path back and the command palette.
+
+Design-system implications
+- Preserve the current hybrid dark-chrome/warm-work-surface system. Do not switch to generic pink entertainment UI, glassmorphism or decorative gradients.
+- Use one SVG outline icon family; replace text arrows, multiplication symbols and glyph-based structural controls.
+- Maintain 4px spacing, 40px desktop controls and 44px icon hit targets.
+- All production pages must meet 1024, 1280, 1440 and 1920 no-horizontal-scroll gates; media workbench panels may internally scroll only where clearly bounded.
+- Use progressive disclosure, explicit human gates, fixed-size loading skeletons, localized recovery and visible autosave/conflict state.

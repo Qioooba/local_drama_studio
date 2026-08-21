@@ -10,5 +10,8 @@
     "api:test": "python -m pytest apps/api/tests",
     "api:test:safe": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test_api_safe.ps1",
     "check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check.ps1"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
   }
 }

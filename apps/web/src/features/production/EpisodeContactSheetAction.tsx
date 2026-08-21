@@ -10,7 +10,7 @@ export function EpisodeContactSheetAction({ episodeId }: { episodeId: string | n
         <strong>已选媒体联系表</strong>
         <p className="muted">复制当前集已选原文件并生成 320px WebP 缩略图；不修改 SQLite，也不接触运行时或网络。</p>
       </div>
-      <button className="secondary" disabled={!episodeId || mutation.isPending} onClick={() => mutation.mutate()}>
+      <button type="button" className="secondary" disabled={!episodeId || mutation.isPending} onClick={() => mutation.mutate()}>
         {mutation.isPending ? "校验并导出中…" : "导出联系表"}
       </button>
       {mutation.isError && <p className="inline-error" role="alert">{mutation.error instanceof Error ? mutation.error.message : String(mutation.error)}</p>}

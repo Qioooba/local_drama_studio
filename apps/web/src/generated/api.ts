@@ -13,7 +13,8 @@ export type ContinuityContext = { episode_id: string; selected_shot_id: string; 
 export type CreativeEntry = { id: string; project_id: string; kind: string; code: string; title: string; current_revision_id: string; revision_no: number; content_hash: string; change_note: string; content: Record<string, unknown>; revision: number };
 export type CreativeEntryRevision = { id: string; entry_id: string; revision_no: number; parent_revision_id: string | null; restored_from_revision_id: string | null; content_hash: string; change_note: string; content: Record<string, unknown>; created_at: string };
 export type ScriptBreakdownDraft = { id: string; project_id: string; source_document_version_id: string; import_session_id: string; status: string; source_document_code: string; source_document_title: string; draft: { scenes?: Array<Record<string, unknown>> }; confidence: { profile_version_id?: string; model?: string; confidence?: { overall?: number; notes?: string[] }; questions?: string[]; source_passages?: Array<{ scene_no: number; quote: string; source_start: number; source_end: number }> }; profile_version_id: string | null; evidence_status: 'COMPLETE' | 'LEGACY_INCOMPLETE'; application_status: 'NOT_APPLIED' | 'APPLIED'; automatic_apply: false; requires_human_action: boolean; created_at: string };
-export type DocumentImport = { source_document_id: string; source_document_version_id: string; import_session_id: string; media_version_id: string; status: 'PREVIEW_READY' | 'COMMITTED'; preview_hash: string; reused?: boolean; preview: { character_count: number; paragraph_count: number; paragraphs: string[]; requires_llm_confirmation: true } };
+export type DocumentImport = { source_document_id: string; source_document_version_id: string; import_session_id: string; media_version_id: string; status: 'PREVIEW_READY' | 'COMMITTED'; preview_hash: string; reused?: boolean; index_status: 'READY' | 'FAILED_RETRYABLE'; preview: { character_count: number; paragraph_count: number; paragraphs: string[]; preview_character_limit: number; preview_truncated: boolean; offset_unit: 'UNICODE_CODEPOINT'; requires_llm_confirmation: true } };
+export type SourceDocumentPassage = { source_document_version_id: string; source_start: number; source_end: number; requested_end: number; offset_unit: 'UNICODE_CODEPOINT'; text: string; text_sha256: string; source_text_sha256: string; total_character_count: number | null; has_more: boolean; maximum_character_count: number; read_only: true };
 export type ImportSession = { id: string; project_id: string; source_document_version_id: string; status: 'PREVIEW_READY' | 'COMMITTED'; revision: number; preview_hash: string; preview: { character_count: number; paragraph_count: number; paragraphs: string[]; requires_llm_confirmation: true }; validation: { valid: boolean; issue_count: number }; items: Array<Record<string, unknown>>; source_document_version: Record<string, unknown> };
 export type StoryboardShot = { id: string; code: string; order_key: string; target_duration_ms: number; shot_type: string; status: string; revision: number; current_revision_id: string; current_revision_no: number; is_frozen: number; fields: Record<string, unknown>; display_ordinal: number; timeline_start_ms: number; timeline_end_ms: number };
 export type StoryboardBatchPayload = { ordered_shot_ids: string[]; edits: Array<{ shot_id: string; expected_revision: number; target_duration_ms?: number; shot_type?: string; fields?: Record<string, unknown> }>; copies: Array<{ source_shot_id: string; code: string }> };
@@ -61,6 +62,7 @@ export type VariantInput = { role: string; media_version_id: string; ordinal?: n
 export type GenerationVariantDraft = { intent_id: string; variant_type: string; parent_variant_id?: string | null; branch_reason: string; prompt_revision_id?: string | null; profile_version_id: string; parameter_set?: Record<string, unknown>; seed_policy: string; explicit_seed?: number | null; provider_random_nonce?: string | null; bindings?: VariantInput[] };
 export type GenerationVariant = { id: string; intent_id: string; variant_no: number; variant_type: string; parent_variant_id: string | null; recipe_hash: string; status: string; bindings: Array<Record<string, unknown>>; [key: string]: unknown };
 export type GenerationResourceEstimate = { status: 'DECLARED' | 'PARTIAL' | 'UNKNOWN'; source: 'PROFILE_RESOURCE_POLICY'; per_take: { duration_seconds: number | null; vram_bytes: number | null; disk_bytes: number | null }; policy_keys: { duration_seconds: string | null; vram_bytes: string | null; disk_bytes: string | null }; unknown: string[]; take_count: 1; bounded: true };
+export type GenerationEstimate = { status: 'AVAILABLE' | 'NO_LOCAL_ESTIMATE'; reason: 'SCHEMA_UNAVAILABLE' | 'NO_MATCHING_HISTORY' | 'INSUFFICIENT_SAMPLES' | null; dimensions: { profile_version_id: string; width: number | null; height: number | null; duration_seconds: number | null; frame_count: number | null; steps: number | null; gpu_class: string | null; gpu_hardware_model: null; gpu_hardware_model_known: false }; sample_count: number; minimum_sample_count: number; p50_seconds: number | null; p90_seconds: number | null; evidence: { source: 'LOCAL_SUCCEEDED_JOB_ATTEMPTS'; most_recent_first: true; candidate_limit: number; candidate_count: number; gpu_dimension_source: 'JOB_RESOURCE_LEASE_CLASS_OR_CHANNEL'; gpu_hardware_model_recorded: false }; audit: { read_only: true; writes_performed: 0; query_count: number; query_limit: number }; local_only: true; network_contacted: false };
 export type GenerationVariantPlan = { intent_id: string; status: 'READY'; plan_hash: string; recipe_hash: string; dependencies: Record<string, unknown>; resource_estimate?: GenerationResourceEstimate; would_persist_variant: false; would_create_job: false };
 export type PromptRevision = { id: string; prompt_id: string; revision_no: number; parent_revision_id: string | null; content_text: string; structured: Record<string, unknown>; content_hash: string; status: 'FROZEN'; [key: string]: unknown };
 export type GenerationExperiment = { id: string; intent_id: string; title: string; status: 'DRAFT' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED'; plan_hash: string; cell_count: number; expanded_count: number; remaining_count: number; [key: string]: unknown };
@@ -127,7 +129,7 @@ export type ComfyLabTestRun = { status: 'READY' | 'BLOCKED' | 'QUEUED'; blockers
 export type CanvasNode = { id: string; type: string; shot_id: string; shot_code: string; label: string; state: string; blockers: string[]; take_count: number; variant_count: number; active_job_count: number; thumbnail_media_version_id: string | null; thumbnail_url?: string | null; log_count: number; logs: Array<{ event_id: number; type: string; subject_type: string; subject_id: string; occurred_at: string; payload: Record<string, unknown> }>; position: { x: number; y: number } | null; variant_lineage: Array<{ id: string; variant_no: number; variant_type: string; parent_variant_id: string | null; status: string; is_stale: boolean; branch_reason: string }>; experiment_progress: Array<{ id: string; title: string; status: string; cell_count: number; expanded_count: number; succeeded_count: number; failed_count: number }>; adjacent_constraints: Array<{ id: string; from_shot_id: string; to_shot_id: string; constraint_type: string; compatibility_status: string; enforcement: string; is_stale: boolean }> };
 export type CanvasEdge = { id: string; source: string; target: string; kind: string; status?: string; mutable_by_layout: false };
 export type CanvasGraph = { scope: Record<string, unknown>; nodes: CanvasNode[]; edges: CanvasEdge[]; layout: { positions: Record<string, { x: number; y: number }>; groups: Array<Record<string, unknown>>; viewport: Record<string, number>; revision: number; layout_hash: string | null }; page: { cursor: number; limit: number; returned_shots: number; total_shots: number; next_cursor: number | null }; invariants: { layout_changes_business_dependencies: false; max_visible_nodes: number; lazy: true } };
-export type SearchResult = { project_id: string; subject_type: string; subject_id: string; snippet: string };
+export type SearchResult = { project_id: string; subject_type: string; subject_id: string; label: string; context: string; route: string; snippet: string };
 export type StoryAsset = { id: string; project_id: string; kind: 'CHARACTER' | 'SCENE' | 'PROP' | 'COSTUME'; code: string; name: string; description: string; canonical_media_version_id: string | null; extra: Record<string, unknown>; status: 'ACTIVE' | 'ARCHIVED'; revision: number; created_at: string; updated_at: string; created_by: string; schema_version: string; [key: string]: unknown };
 export type ShotAssetBinding = { binding_id: string; shot_id: string; asset_id: string; name: string; code: string; kind: string; status: string; canonical_media_version_id: string | null; role_in_shot: string; created_at: string; created_by: string; [key: string]: unknown };
 export type StoryAssetCreateRequest = { kind: 'CHARACTER' | 'SCENE' | 'PROP' | 'COSTUME'; code: string; name: string; description?: string; canonical_media_version_id?: string | null; extra?: Record<string, unknown> | null };
@@ -138,6 +140,19 @@ export type CharacterVoiceBindRequest = { character_asset_id: string; voice_prof
 export type CharacterVoiceBinding = { id: string; project_id: string; character_asset_id: string; voice_profile_version_id: string; created_at: string; created_by: string; character: { id: string; code: string; name: string; kind: string; status: string }; voice: { id: string; code: string; title: string; voice_ref: string; status: string }; [key: string]: unknown };
 export type EpisodeTTSBatchRequest = { idempotency_key_prefix: string; emotion?: string; speech_rate?: number };
 export type EpisodeTTSBatchResult = { episode_id: string; submitted: Array<{ line_id: string; code: string; speaker: string; character_asset_id: string; voice_profile_version_id: string; job_id: string; text_revision_id: string }>; skipped: Array<{ line_id: string; code: string; speaker: string; reason: string }>; failed: Array<{ line_id: string; code: string; reason: string }>; counts: { submitted: number; skipped: number; failed: number } };
+export type AssetProposal = { id: string; project_id: string; status: string; revision: number; [key: string]: unknown };
+export type AssetProposalDecisionRequest = { action: 'CREATE_NEW' | 'MERGE_EXISTING' | 'REJECT'; expected_revision: number; target_asset_id?: string | null; new_asset_code?: string | null; decision_note?: string };
+export type FreshnessVersion = { entity_type: string; entity_id: string; revision: number | string | null };
+export type FreshnessReason = { code: string; message: string; source_revision: number | string | null; current_revision: number | string | null; propagated_from?: string | null };
+export type FreshnessItem = { id: string; fact_type: 'VARIANT' | 'FRAME_BRIDGE' | 'TIMELINE'; status: 'CURRENT' | 'STALE'; project_id: string; episode_id: string | null; shot_id: string | null; source: FreshnessVersion | null; current: FreshnessVersion | null; reasons: FreshnessReason[]; remediation_links: Array<{ rel: string; href: string; method: 'GET' | 'POST'; label: string }> };
+export type ProductionFreshnessReport = { scope: { type: 'PROJECT' | 'EPISODE' | 'SHOT'; id: string; project_id: string; episode_id?: string | null; shot_id?: string | null }; summary: { returned: number; stale: number; current: number; truncated: boolean }; items: FreshnessItem[]; audit: { read_only: true; writes_performed: 0; query_count: number; query_limit: number }; local_only: true; network_contacted: false };
+export type DirectorDesk = { project: Record<string, unknown>; episode: Record<string, unknown>; shot_nav: { items: Array<Record<string, unknown>>; total: number; selected_index: number; window_start: number; window_end: number; has_previous: boolean; has_next: boolean }; current_shot: Record<string, unknown>; permissions: { can_edit: boolean; can_generate: boolean; can_approve: boolean }; read_only: boolean; request_shape: 'bounded_director_desk_read_model' };
+export type FrameBridge = { id: string; from_shot_id: string; to_shot_id: string; from_anchor_id: string | null; to_anchor_id: string | null; enforcement: string; compatibility_status: string; boundary_revision: number; revision: number; is_stale: boolean; stale_reason: string | null; locked: boolean; [key: string]: unknown };
+export type EpisodeProductionMode = 'DRAFT' | 'BALANCED' | 'QUALITY';
+export type EpisodeProductionRun = { id: string; episode_id: string; project_id: string; status: string; input_fingerprint: string; production_mode: EpisodeProductionMode; mode_policy: { target_take_count: number; label: string; intent: string }; stages: Array<Record<string, unknown>>; pending_gate: Record<string, unknown> | null; revision: number; [key: string]: unknown };
+export type EpisodeProductionPreflight = { status: 'PASS' | 'BLOCKED'; input_fingerprint: string; tts_enabled: boolean; production_mode: EpisodeProductionMode; mode_policy: { target_take_count: number; label: string; intent: string }; checks: Array<Record<string, unknown>>; blockers: Array<Record<string, unknown>>; would_create_jobs: false; runtime_contacted: false; network_contacted: false; mutated: false; [key: string]: unknown };
+export type ComposePreflight = { project_id: string; episode_id: string; timeline_revision_id: string; compose_fingerprint: string; input_snapshot: Record<string, unknown>; existing_render: Record<string, unknown> | null; would_execute_ffmpeg: boolean; read_only: true; writes_performed: 0 };
+export type ComposeSubmission = { preflight: ComposePreflight; job?: Job; render?: Record<string, unknown>; idempotent_replay?: boolean; [key: string]: unknown };
 
 const instanceTokens = new Map<string, string>();
 
@@ -415,6 +430,10 @@ export async function selectMediaVersion(mediaVersionId: string, selectionType: 
   return requestJson(`/api/v1/media-versions/${encodeURIComponent(mediaVersionId)}:select`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ selection_type: selectionType }) }, baseUrl);
 }
 
+export async function repairMediaIntegrity(mediaVersionId: string, expectedRevision: number, baseUrl = ''): Promise<{ media_version: Record<string, unknown> }> {
+  return requestJson(`/api/v1/media-versions/${encodeURIComponent(mediaVersionId)}:repair-integrity`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expected_revision: expectedRevision }) }, baseUrl);
+}
+
 export async function exportEpisodeContactSheet(episodeId: string, baseUrl = ''): Promise<{ export: ContactSheetExport }> {
   return requestJson(`/api/v1/episodes/${encodeURIComponent(episodeId)}/contact-sheet:export`, { method: 'POST' }, baseUrl);
 }
@@ -485,6 +504,15 @@ export async function createGenerationIntent(payload: { project_id: string; owne
   return requestJson('/api/v1/generation-intents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
+export async function getGenerationEstimate(filters: { profile_version_id: string; width?: number; height?: number; duration_seconds?: number; frame_count?: number; steps?: number; gpu_class?: string; limit?: number }, baseUrl = ''): Promise<GenerationEstimate> {
+  const query = new URLSearchParams({ profile_version_id: filters.profile_version_id });
+  for (const key of ['width', 'height', 'duration_seconds', 'frame_count', 'steps', 'gpu_class', 'limit'] as const) {
+    const value = filters[key];
+    if (value !== undefined) query.set(key, String(value));
+  }
+  return requestJson(`/api/v1/generation-estimates?${query.toString()}`, undefined, baseUrl);
+}
+
 export async function listGenerationIntents(projectId?: string, baseUrl = ''): Promise<{ items: GenerationIntent[] }> {
   const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
   return requestJson(`/api/v1/generation-intents${query}`, undefined, baseUrl);
@@ -537,8 +565,46 @@ export async function listPrompts(projectId: string, ownerType?: string, ownerId
   return requestJson(`/api/v1/prompts?${query.toString()}`, undefined, baseUrl);
 }
 
-export async function listScriptBreakdownDrafts(projectId: string, baseUrl = ''): Promise<{ items: ScriptBreakdownDraft[]; automatic_apply: false; requires_human_action: true }> {
-  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/script-breakdown-drafts`, undefined, baseUrl);
+export type ScriptBreakdownDraftList = { items: ScriptBreakdownDraft[]; automatic_apply: false; requires_human_action: true };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Runtime boundary for a shared React Query cache entry; never trust a TS cast here. */
+export function parseScriptBreakdownDraftList(value: unknown): ScriptBreakdownDraftList {
+  if (!isRecord(value) || !Array.isArray(value.items)) {
+    throw new Error('SCRIPT_BREAKDOWN_CONTRACT_INVALID：响应缺少 items 列表');
+  }
+  value.items.forEach((item, index) => {
+    if (!isRecord(item) || typeof item.id !== 'string' || typeof item.status !== 'string') {
+      throw new Error(`SCRIPT_BREAKDOWN_CONTRACT_INVALID：items[${index}] 缺少 id/status`);
+    }
+    if (typeof item.source_document_title !== 'string' || typeof item.source_document_code !== 'string') {
+      throw new Error(`SCRIPT_BREAKDOWN_CONTRACT_INVALID：items[${index}] 缺少来源文档信息`);
+    }
+    if (!isRecord(item.draft) || (item.draft.scenes !== undefined && !Array.isArray(item.draft.scenes))) {
+      throw new Error(`SCRIPT_BREAKDOWN_CONTRACT_INVALID：items[${index}].draft.scenes 不是列表`);
+    }
+    if (!isRecord(item.confidence)) {
+      throw new Error(`SCRIPT_BREAKDOWN_CONTRACT_INVALID：items[${index}].confidence 不是对象`);
+    }
+    if (item.confidence.questions !== undefined && !Array.isArray(item.confidence.questions)) {
+      throw new Error(`SCRIPT_BREAKDOWN_CONTRACT_INVALID：items[${index}].confidence.questions 不是列表`);
+    }
+    if (item.confidence.source_passages !== undefined && !Array.isArray(item.confidence.source_passages)) {
+      throw new Error(`SCRIPT_BREAKDOWN_CONTRACT_INVALID：items[${index}].confidence.source_passages 不是列表`);
+    }
+  });
+  if (value.automatic_apply !== false || value.requires_human_action !== true) {
+    throw new Error('SCRIPT_BREAKDOWN_CONTRACT_INVALID：人工审核安全标记不一致');
+  }
+  return value as ScriptBreakdownDraftList;
+}
+
+export async function listScriptBreakdownDrafts(projectId: string, baseUrl = ''): Promise<ScriptBreakdownDraftList> {
+  const response = await requestJson<unknown>(`/api/v1/projects/${encodeURIComponent(projectId)}/script-breakdown-drafts`, undefined, baseUrl);
+  return parseScriptBreakdownDraftList(response);
 }
 
 export async function applyScriptBreakdownDraft(draftId: string, payload: { episode_id: string }, baseUrl = ''): Promise<{ apply: { draft_id: string; episode_id: string; created: { scenes: number; shots: number; lines: number }; extracted_characters: Array<{ name: string; scene_count: number }>; applied: true } }> {
@@ -551,6 +617,11 @@ export async function importScriptDocument(projectId: string, sourcePath: string
 
 export async function getImportSession(sessionId: string, baseUrl = ''): Promise<{ session: ImportSession }> {
   return requestJson(`/api/v1/import-sessions/${encodeURIComponent(sessionId)}`, undefined, baseUrl);
+}
+
+export async function getSourceDocumentPassage(sourceDocumentVersionId: string, start: number, end: number, baseUrl = ''): Promise<SourceDocumentPassage> {
+  const query = new URLSearchParams({ start: String(start), end: String(end) });
+  return requestJson(`/api/v1/source-document-versions/${encodeURIComponent(sourceDocumentVersionId)}/passage?${query.toString()}`, undefined, baseUrl);
 }
 
 export async function commitImportSession(sessionId: string, expectedPreviewHash: string, baseUrl = ''): Promise<{ commit: ImportSession & { idempotent: boolean; source_preserved: true } }> {
@@ -1196,4 +1267,93 @@ export async function listShotStoryAssets(shotId: string, baseUrl = ''): Promise
 
 export async function unbindStoryAssetFromShot(bindingId: string, baseUrl = ''): Promise<{ unbound: true; binding_id: string }> {
   return requestJson(`/api/v1/story-asset-bindings/${encodeURIComponent(bindingId)}`, { method: 'DELETE' }, baseUrl);
+}
+
+export async function listAssetProposals(projectId: string, status?: string, baseUrl = ''): Promise<{ items: AssetProposal[] }> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : '';
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/asset-proposals${query}`, undefined, baseUrl);
+}
+
+export async function decideAssetProposal(proposalId: string, payload: AssetProposalDecisionRequest, baseUrl = ''): Promise<{ proposal: AssetProposal }> {
+  return requestJson(`/api/v1/asset-proposals/${encodeURIComponent(proposalId)}:decide`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function getProjectProductionFreshness(projectId: string, limit = 100, baseUrl = ''): Promise<ProductionFreshnessReport> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/production-freshness?limit=${limit}`, undefined, baseUrl);
+}
+
+export async function getEpisodeProductionFreshness(episodeId: string, limit = 100, baseUrl = ''): Promise<ProductionFreshnessReport> {
+  return requestJson(`/api/v1/episodes/${encodeURIComponent(episodeId)}/production-freshness?limit=${limit}`, undefined, baseUrl);
+}
+
+export async function getShotProductionFreshness(shotId: string, limit = 100, baseUrl = ''): Promise<ProductionFreshnessReport> {
+  return requestJson(`/api/v1/shots/${encodeURIComponent(shotId)}/production-freshness?limit=${limit}`, undefined, baseUrl);
+}
+
+export async function getDirectorDesk(projectId: string, episodeId: string, options: { shotId?: string; navRadius?: number } = {}, baseUrl = ''): Promise<DirectorDesk> {
+  const query = new URLSearchParams();
+  if (options.shotId) query.set('shot_id', options.shotId);
+  if (options.navRadius !== undefined) query.set('nav_radius', String(options.navRadius));
+  const suffix = query.size ? `?${query}` : '';
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/episodes/${encodeURIComponent(episodeId)}/director-desk${suffix}`, undefined, baseUrl);
+}
+
+export async function inheritFrameBridge(transitionId: string, payload: { expected_boundary_revision: number; source_anchor_id?: string | null; lock?: boolean | null }, baseUrl = ''): Promise<{ frame_bridge: FrameBridge }> {
+  return requestJson(`/api/v1/frame-bridges/${encodeURIComponent(transitionId)}/inherit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function setFrameBridgeCurrentFrame(transitionId: string, payload: { expected_boundary_revision: number; media_version_id?: string; frame_anchor_id?: string }, baseUrl = ''): Promise<{ frame_bridge: FrameBridge }> {
+  return requestJson(`/api/v1/frame-bridges/${encodeURIComponent(transitionId)}/current-frame`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function setFrameBridgeSourceFrame(transitionId: string, payload: { expected_boundary_revision: number; frame_anchor_id: string }, baseUrl = ''): Promise<{ frame_bridge: FrameBridge }> {
+  return requestJson(`/api/v1/frame-bridges/${encodeURIComponent(transitionId)}/source-frame`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function lockFrameBridge(transitionId: string, expectedBoundaryRevision: number, baseUrl = ''): Promise<{ frame_bridge: FrameBridge }> {
+  return requestJson(`/api/v1/frame-bridges/${encodeURIComponent(transitionId)}/lock`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expected_boundary_revision: expectedBoundaryRevision }) }, baseUrl);
+}
+
+export async function unlockFrameBridge(transitionId: string, expectedBoundaryRevision: number, baseUrl = ''): Promise<{ frame_bridge: FrameBridge }> {
+  return requestJson(`/api/v1/frame-bridges/${encodeURIComponent(transitionId)}/unlock`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expected_boundary_revision: expectedBoundaryRevision }) }, baseUrl);
+}
+
+export async function preflightEpisodeProductionRun(episodeId: string, options: { ttsEnabled?: boolean; productionMode?: EpisodeProductionMode; minFreeDiskBytes?: number } = {}, baseUrl = ''): Promise<{ preflight: EpisodeProductionPreflight }> {
+  const query = new URLSearchParams({ tts_enabled: String(options.ttsEnabled ?? true), production_mode: options.productionMode ?? 'BALANCED' });
+  if (options.minFreeDiskBytes !== undefined) query.set('min_free_disk_bytes', String(options.minFreeDiskBytes));
+  return requestJson(`/api/v1/episodes/${encodeURIComponent(episodeId)}/production-runs/preflight?${query}`, undefined, baseUrl);
+}
+
+export async function startEpisodeProductionRun(episodeId: string, payload: { tts_enabled?: boolean; production_mode?: EpisodeProductionMode; min_free_disk_bytes?: number }, idempotencyKey: string, baseUrl = ''): Promise<{ run: EpisodeProductionRun }> {
+  return requestJson(`/api/v1/episodes/${encodeURIComponent(episodeId)}/production-runs`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function getEpisodeProductionRun(runId: string, includeJobs = false, baseUrl = ''): Promise<{ run: EpisodeProductionRun }> {
+  return requestJson(`/api/v1/episode-production-runs/${encodeURIComponent(runId)}?include_jobs=${includeJobs}`, undefined, baseUrl);
+}
+
+export async function pauseEpisodeProductionRun(runId: string, reason = 'MANUAL_PAUSE', baseUrl = ''): Promise<{ run: EpisodeProductionRun }> {
+  return requestJson(`/api/v1/episode-production-runs/${encodeURIComponent(runId)}/pause`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }) }, baseUrl);
+}
+
+export async function resumeEpisodeProductionRun(runId: string, note: string, baseUrl = ''): Promise<{ run: EpisodeProductionRun }> {
+  return requestJson(`/api/v1/episode-production-runs/${encodeURIComponent(runId)}/resume`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note }) }, baseUrl);
+}
+
+export async function cancelEpisodeProductionRun(runId: string, baseUrl = ''): Promise<{ run: EpisodeProductionRun }> {
+  return requestJson(`/api/v1/episode-production-runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' }, baseUrl);
+}
+
+export async function recoverEpisodeProductionRun(runId: string, baseUrl = ''): Promise<{ run: EpisodeProductionRun; recovery?: Record<string, unknown> }> {
+  return requestJson(`/api/v1/episode-production-runs/${encodeURIComponent(runId)}/recover`, { method: 'POST' }, baseUrl);
+}
+
+export async function preflightEpisodeCompose(timelineRevisionId: string, baseUrl = ''): Promise<{ preflight: ComposePreflight }> {
+  return requestJson(`/api/v1/timeline-revisions/${encodeURIComponent(timelineRevisionId)}/compose:preflight`, undefined, baseUrl);
+}
+
+export async function submitEpisodeCompose(timelineRevisionId: string, payload: { force_rerender?: boolean } = {}, idempotencyKey?: string, baseUrl = ''): Promise<ComposeSubmission> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+  return requestJson(`/api/v1/timeline-revisions/${encodeURIComponent(timelineRevisionId)}/compose:submit`, { method: 'POST', headers, body: JSON.stringify(payload) }, baseUrl);
 }

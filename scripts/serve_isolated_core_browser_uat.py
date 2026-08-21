@@ -9,12 +9,15 @@ accidental mutation cannot reach the production database or project tree.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import sqlite3
 import sys
 from pathlib import Path
 
 import uvicorn
+from alembic import command
+from alembic.config import Config
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -31,6 +34,15 @@ def _backup_database(source: Path, target: Path) -> None:
     source_uri = f"file:{source.resolve().as_posix()}?mode=ro"
     with sqlite3.connect(source_uri, uri=True) as source_connection, sqlite3.connect(target) as target_connection:
         source_connection.backup(target_connection)
+
+
+def _upgrade_snapshot(target: Path) -> None:
+    """Upgrade only the disposable UAT copy to the current application head."""
+    os.environ["LOCAL_DRAMA_DATABASE_URL"] = f"sqlite:///{target.resolve().as_posix()}"
+    config = Config(str(ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(ROOT / "apps" / "api" / "alembic"))
+    config.set_main_option("prepend_sys_path", str(ROOT / "apps" / "api"))
+    command.upgrade(config, "head")
 
 
 def _copy_selected_project(source_db: Path, source_projects: Path, target_projects: Path) -> tuple[str, str, str]:
@@ -92,6 +104,7 @@ def main() -> None:
     settings.ensure_roots()
     _backup_database(source_db, settings.database_path)
     project_id, episode_id, root_rel = _copy_selected_project(source_db, source_projects, settings.projects_root)
+    _upgrade_snapshot(settings.database_path)
     print(
         f"core browser UAT snapshot ready project={project_id} episode={episode_id} "
         f"root_rel={root_rel} port={args.port} source_db={source_db}",

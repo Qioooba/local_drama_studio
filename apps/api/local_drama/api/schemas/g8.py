@@ -57,6 +57,7 @@ class SegmentInputRequest(BaseModel):
 
 class RenderSegmentedEpisodeRequest(BaseModel):
     segments: list[SegmentInputRequest] = Field(min_length=1)
+    force_rerender: bool = False
 
 
 class AudioBindingRequest(BaseModel):
@@ -112,6 +113,11 @@ class EnhancementRunRequest(BaseModel):
 
 class RenderEpisodeRequest(BaseModel):
     timeline_revision_id: str = Field(min_length=1)
+    force_rerender: bool = False
+
+
+class ComposeSubmitRequest(BaseModel):
+    force_rerender: bool = False
 
 
 class DeliveryBuildRequest(BaseModel):
