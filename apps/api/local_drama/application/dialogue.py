@@ -182,6 +182,7 @@ class DialogueService:
         if not powershell:
             return {"status": "UNAVAILABLE", "items": [], "message": "本机未找到 PowerShell/System.Speech runtime", **base}
         script = (
+            "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
             "Add-Type -AssemblyName System.Speech; "
             "$s=New-Object System.Speech.Synthesis.SpeechSynthesizer; "
             "try { $s.GetInstalledVoices() | ForEach-Object { $v=$_.VoiceInfo; "
@@ -194,6 +195,8 @@ class DialogueService:
                 [powershell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=10,
                 check=False,
             )

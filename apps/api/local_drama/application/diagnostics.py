@@ -66,7 +66,8 @@ class DiagnosticService:
         manifest = load_manifest(self.settings.manifest_path)
         runtime = manifest.runtime
         comfy_api = dict(runtime.get("comfyui_api", {}))
-        ffmpeg_path = str(runtime.get("ffmpeg", {}).get("executable", "")) or shutil.which("ffmpeg")
+        manifest_ffmpeg = str(runtime.get("ffmpeg", {}).get("executable", "")).strip()
+        ffmpeg_path = manifest_ffmpeg if (manifest_ffmpeg and Path(manifest_ffmpeg).exists()) else (self.settings.ffmpeg_path or shutil.which("ffmpeg"))
         checks: list[dict[str, Any]] = []
 
         def add(code: str, category: str, status: str, observed: dict[str, Any], remediation: dict[str, Any] | None = None) -> None:
@@ -100,7 +101,8 @@ class DiagnosticService:
         )
         ffmpeg_status, ffmpeg_observed = _run_version(ffmpeg_path)
         add("FFMPEG", "media", ffmpeg_status, ffmpeg_observed, {"action": "安装或配置本机 FFmpeg；不下载"})
-        ffprobe_path = str(runtime.get("ffmpeg", {}).get("executable", "")).replace("ffmpeg.exe", "ffprobe.exe") or shutil.which("ffprobe")
+        manifest_ffprobe = manifest_ffmpeg.replace("ffmpeg.exe", "ffprobe.exe") if manifest_ffmpeg else ""
+        ffprobe_path = manifest_ffprobe if (manifest_ffprobe and Path(manifest_ffprobe).exists()) else (self.settings.ffprobe_path or shutil.which("ffprobe"))
         ffprobe_status, ffprobe_observed = _run_version(ffprobe_path)
         add("FFPROBE", "media", ffprobe_status, ffprobe_observed, {"action": "安装或配置本机 FFprobe；不下载"})
         disk = shutil.disk_usage(self.settings.data_root)

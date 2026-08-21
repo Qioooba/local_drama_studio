@@ -9,6 +9,7 @@ from typing import Any
 from local_drama.domain.errors import DomainRuleError
 
 _MODEL_PICKER_SCRIPT = r"""
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Windows.Forms
 $dialog = New-Object System.Windows.Forms.OpenFileDialog
 $dialog.Title = '选择电脑中的模型文件'
@@ -21,6 +22,7 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
 """
 
 _DOCUMENT_PICKER_SCRIPT = r"""
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Windows.Forms
 $dialog = New-Object System.Windows.Forms.OpenFileDialog
 $dialog.Title = '选择电脑中的剧本文档'
@@ -39,6 +41,8 @@ def _pick_local_file(script: str, unavailable_code: str, failed_code: str) -> di
             ["powershell.exe", "-NoLogo", "-NoProfile", "-STA", "-Command", script],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=300,
             check=False,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),

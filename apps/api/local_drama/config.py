@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -51,21 +52,30 @@ class Settings(BaseModel):
 
     @property
     def manifest_path(self) -> Path:
+        local_in_repo = self.workspace_root / "model_manifest.json"
+        if local_in_repo.exists():
+            return local_in_repo
         return self.workspace_root.parent / "model_manifest.json"
 
     @property
     def ffmpeg_path(self) -> str | None:
         configured = os.environ.get("LOCAL_DRAMA_FFMPEG")
-        if configured:
+        if configured and Path(configured).exists():
             return configured
+        which_path = shutil.which("ffmpeg")
+        if which_path:
+            return which_path
         candidate = Path(r"E:\Tools\ffmpeg\bin\ffmpeg.exe")
         return str(candidate) if candidate.exists() else None
 
     @property
     def ffprobe_path(self) -> str | None:
         configured = os.environ.get("LOCAL_DRAMA_FFPROBE")
-        if configured:
+        if configured and Path(configured).exists():
             return configured
+        which_path = shutil.which("ffprobe")
+        if which_path:
+            return which_path
         candidate = Path(r"E:\Tools\ffmpeg\bin\ffprobe.exe")
         return str(candidate) if candidate.exists() else None
 
