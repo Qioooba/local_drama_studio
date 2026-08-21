@@ -42,4 +42,8 @@ apps/web/screenshots/
 test-ui-audit/
 test-results/
 minimax-ui-test/
+.pytest_tmp*/
+.pt8c/
+tmp_*/
+
 
