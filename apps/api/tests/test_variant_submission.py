@@ -58,6 +58,16 @@ def test_confirmed_variant_and_gpu_job_are_atomic(workspace, database) -> None:
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM generation_variants WHERE intent_id=?", (intent["id"],)).fetchone()[0] == 1
         assert connection.execute("SELECT COUNT(*) FROM jobs WHERE subject_id=?", (submitted["variant"]["id"],)).fetchone()[0] == 1
+        snapshot_row = connection.execute("SELECT input_snapshot_json FROM jobs WHERE id=?", (submitted["job"]["id"],)).fetchone()
+    snapshot = json.loads(str(snapshot_row["input_snapshot_json"]))
+    effective_snapshot = snapshot["execution_snapshot"]["effective_configuration"]
+    assert effective_snapshot["fingerprint"].startswith("sha256:")
+    assert effective_snapshot["effective_settings"]
+
+    stale_plan = VariantPlan(**{**plan.__dict__, "expected_effective_configuration_fingerprint": "sha256:" + "0" * 64})
+    with pytest.raises(DomainRuleError) as stale_configuration:
+        service.preflight_variant(str(intent["id"]), stale_plan)
+    assert stale_configuration.value.code == "CONFIGURATION_CHANGED"
 
     mismatched = VariantPlan(
         variant_type="BASE", parent_variant_id=None, branch_reason="mismatched seed", prompt_revision_id=None,
@@ -67,3 +77,48 @@ def test_confirmed_variant_and_gpu_job_are_atomic(workspace, database) -> None:
     with pytest.raises(DomainRuleError) as error:
         service.preflight_variant(str(intent["id"]), mismatched)
     assert error.value.code == "VARIANT_SEED_SNAPSHOT_MISMATCH"
+
+    unbound = workflows.register_package(
+        "variant_unbound_prompt",
+        "Variant unbound prompt",
+        workflow,
+        {},
+        {"SEED": {"node_id": "1", "input": "seed"}},
+    )
+    with database.transaction() as connection:
+        connection.execute("UPDATE workflow_versions SET status='PUBLISHED' WHERE id=?", (unbound["id"],))
+        connection.execute(
+            "UPDATE execution_profile_versions SET workflow_version_id=?, revision=revision+1 WHERE id=?",
+            (unbound["id"], profile["version_id"]),
+        )
+    with pytest.raises(DomainRuleError) as missing_prompt:
+        service.preflight_variant(str(intent["id"]), plan)
+    assert missing_prompt.value.code == "WORKFLOW_SEMANTIC_BINDING_REQUIRED"
+
+    wrong_tier = workflows.register_package(
+        "variant_wrong_tier",
+        "Variant wrong tier",
+        workflow,
+        {"production_tier": "SCREEN"},
+        {"PROMPT": {"node_id": "1", "input": "prompt"}, "SEED": {"node_id": "1", "input": "seed"}},
+    )
+    with database.transaction() as connection:
+        connection.execute("UPDATE workflow_versions SET status='PUBLISHED' WHERE id=?", (wrong_tier["id"],))
+        connection.execute(
+            "UPDATE execution_profile_versions SET workflow_version_id=?, revision=revision+1 WHERE id=?",
+            (wrong_tier["id"], profile["version_id"]),
+        )
+    tier_plan = VariantPlan(
+        variant_type="BASE",
+        parent_variant_id=None,
+        branch_reason="tier mismatch",
+        prompt_revision_id=None,
+        profile_version_id=str(profile["version_id"]),
+        parameter_set={"PROMPT": "candle", "SEED": 101, "tier": "FAST"},
+        seed_policy="EXPLICIT",
+        explicit_seed=101,
+        bindings=(),
+    )
+    with pytest.raises(DomainRuleError) as tier_mismatch:
+        service.preflight_variant(str(intent["id"]), tier_plan)
+    assert tier_mismatch.value.code == "WORKFLOW_TIER_CONTRACT_MISMATCH"

@@ -7,7 +7,7 @@ vi.mock("../features/projects/CreativeLibrary", () => ({
   CreativeLibrary: ({ projectId }: { projectId: string }) => <div>creative:{projectId}</div>,
 }));
 vi.mock("../features/projects/ScriptImportPanel", () => ({
-  ScriptImportPanel: ({ projectId }: { projectId: string }) => <div>import:{projectId}</div>,
+  ScriptImportPanel: ({ projectId, onDraftReady }: { projectId: string; onDraftReady?: () => void }) => <div>import:{projectId}<button type="button" onClick={onDraftReady}>模拟草稿完成</button></div>,
 }));
 vi.mock("../features/projects/AIDraftReviewPanel", () => ({
   AIDraftReviewPanel: ({ projectId }: { projectId: string }) => <div>review:{projectId}</div>,
@@ -28,18 +28,14 @@ describe("StoryWorkspacePage", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("navigation", { name: "故事工作流阶段" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "从长文原稿到可审核的生产事实" })).toBeTruthy();
-    expect(screen.getByText("creative:project-1")).toBeTruthy();
-    expect(screen.queryByText("import:project-1")).toBeNull();
+    expect(screen.getByRole("navigation", { name: "故事工作流" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "从原稿到可生产的故事事实" })).toBeTruthy();
+    expect(screen.getByText("import:project-1")).toBeTruthy();
+    expect(screen.queryByText("creative:project-1")).toBeNull();
     expect(screen.queryByText("review:project-1")).toBeNull();
     expect(screen.queryByText("assets:project-1")).toBeNull();
 
-    const rail = screen.getByRole("navigation", { name: "工作流步骤" });
-    fireEvent.click(within(rail).getByRole("button", { name: /导入长文/ }));
-    expect(screen.getByText("import:project-1")).toBeTruthy();
-    expect(screen.queryByText("creative:project-1")).toBeNull();
-
+    const rail = screen.getByRole("navigation", { name: "故事工作流" });
     fireEvent.click(within(rail).getByRole("button", { name: /审核拆解/ }));
     expect(screen.getByText("review:project-1")).toBeTruthy();
     expect(screen.queryByText("import:project-1")).toBeNull();
@@ -50,5 +46,19 @@ describe("StoryWorkspacePage", () => {
     render(<MemoryRouter><StoryWorkspacePage /></MemoryRouter>);
     expect(screen.getByRole("alert").textContent).toContain("缺少项目上下文");
     expect(screen.queryByText(/^creative:/)).toBeNull();
+  });
+
+  it("opens the review stage when the import monitor reports a newly completed draft", () => {
+    render(
+      <MemoryRouter initialEntries={["/projects/project-1/story#story-import"]}>
+        <Routes>
+          <Route path="/projects/:projectId/story" element={<StoryWorkspacePage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("import:project-1")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "模拟草稿完成" }));
+    expect(screen.getByText("review:project-1")).toBeTruthy();
+    expect(within(screen.getByRole("navigation", { name: "故事工作流" })).getByRole("button", { name: /审核拆解/ }).getAttribute("aria-current")).toBe("true");
   });
 });

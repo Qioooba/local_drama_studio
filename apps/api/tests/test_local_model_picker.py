@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from local_drama.application import local_picker
+from local_drama.domain.errors import DomainRuleError
 
 
 def test_picker_returns_existing_path_without_copy_or_upload(workspace, monkeypatch) -> None:
@@ -30,3 +33,14 @@ def test_document_picker_returns_supported_local_path(workspace, monkeypatch) ->
         "uploaded": False,
         "copied": False,
     }
+
+
+def test_document_picker_timeout_is_bounded_and_actionable(monkeypatch) -> None:
+    def timeout(*args, **kwargs):
+        raise local_picker.subprocess.TimeoutExpired("powershell.exe", kwargs["timeout"])
+
+    monkeypatch.setattr(local_picker.subprocess, "run", timeout)
+    with pytest.raises(DomainRuleError) as captured:
+        local_picker.pick_local_document_file()
+    assert captured.value.code == "LOCAL_DOCUMENT_PICKER_UNAVAILABLE"
+    assert "已自动关闭" in captured.value.message

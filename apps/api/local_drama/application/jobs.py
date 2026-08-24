@@ -8,6 +8,7 @@ import json
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from time import monotonic
 from typing import Any
 
 from local_drama.config import Settings
@@ -65,6 +66,7 @@ class JobService:
     def __init__(self, database: Database, settings: Settings | None = None) -> None:
         self.database = database
         self.settings = settings
+        self._last_automatic_reconcile_at: float | None = None
 
     def _emit(self, connection: Any, event_type: str, project_id: str, subject_type: str, subject_id: str, payload: dict[str, Any]) -> int:
         cursor = connection.execute(
@@ -89,6 +91,8 @@ class JobService:
             "priority": row["priority"],
             "max_attempts": row["max_attempts"],
             "revision": row["revision"],
+            "created_at": row["created_at"] if "created_at" in row.keys() else None,
+            "updated_at": row["updated_at"] if "updated_at" in row.keys() else None,
             "progress": progress,
             "progress_updated_at": row["progress_updated_at"] if "progress_updated_at" in row.keys() else None,
             "started_at": row["started_at"] if "started_at" in row.keys() else None,
@@ -234,7 +238,14 @@ class JobService:
                 raise DomainRuleError("JOB_NOT_FOUND", "Job 不存在", {"job_id": job_id})
             attempts = connection.execute("SELECT * FROM job_attempts WHERE job_id=? ORDER BY attempt_no", (job_id,)).fetchall()
             dependencies = connection.execute("SELECT depends_on_job_id FROM job_dependencies WHERE job_id=?", (job_id,)).fetchall()
-            artifacts = connection.execute("SELECT * FROM artifacts WHERE job_attempt_id IN (SELECT id FROM job_attempts WHERE job_id=?) ORDER BY created_at", (job_id,)).fetchall()
+            artifacts = connection.execute(
+                """SELECT a.*, mv.id AS promoted_media_version_id
+                FROM artifacts a
+                LEFT JOIN media_versions mv ON mv.source_artifact_id=a.id
+                WHERE a.job_attempt_id IN (SELECT id FROM job_attempts WHERE job_id=?)
+                ORDER BY a.created_at""",
+                (job_id,),
+            ).fetchall()
         artifacts_by_attempt: dict[str, list[dict[str, Any]]] = {}
         for artifact in artifacts:
             artifacts_by_attempt.setdefault(str(artifact["job_attempt_id"]), []).append(dict(artifact))
@@ -337,7 +348,10 @@ class JobService:
         # A worker/API restart has no in-memory queue to restore. Reconcile
         # expired leases before selecting the next durable QUEUED item so an
         # orphaned attempt cannot strand the queue until a manual endpoint call.
-        self.reconcile(now=now, actor="scheduler-restart")
+        observed = monotonic()
+        if self._last_automatic_reconcile_at is None or observed - self._last_automatic_reconcile_at >= 5.0:
+            self.reconcile(now=now, actor="scheduler-restart")
+            self._last_automatic_reconcile_at = observed
         with self.database.transaction() as connection:
             if worker_session_id is not None:
                 session = connection.execute(
@@ -382,6 +396,7 @@ class JobService:
                 "UPDATE jobs SET state='CLAIMED', next_run_at=NULL, started_at=COALESCE(started_at, ?), updated_at=?, revision=revision+1 WHERE id=? AND state='QUEUED'",
                 (now_iso, now_iso, row["id"]),
             )
+            self._sync_experiment_cell_status(connection, str(row["id"]), CLAIMED, now_iso)
             connection.execute(
                 """INSERT INTO job_attempts
                 (id, job_id, attempt_no, state, worker_id, worker_session_id, lease_token, lease_expires_at, heartbeat_at, started_at, created_at, updated_at, created_by, revision, schema_version)
@@ -459,6 +474,8 @@ class JobService:
                 WHERE id=?""",
                 (_json(progress_payload), now_iso, now_iso, row["job_id"]),
             )
+            projected_state = CANCEL_REQUESTED if str(row["job_state"]) == CANCEL_REQUESTED else RUNNING
+            self._sync_experiment_cell_status(connection, str(row["job_id"]), projected_state, now_iso)
             self._emit(connection, "JOB_HEARTBEAT", row["project_id"], "JOB_ATTEMPT", attempt_id, {"job_id": row["job_id"], "progress": progress_payload})
         return {
             "attempt_id": attempt_id,
@@ -498,6 +515,38 @@ class JobService:
                 "sandbox_rel_path": sandbox_rel_path,
             }
 
+    @staticmethod
+    def _sync_experiment_cell_status(connection: Any, job_id: str, state: str, now: str) -> None:
+        """Project a child generation Job state back to its matrix cell."""
+        cell = connection.execute(
+            "SELECT id, experiment_id FROM experiment_cells WHERE job_id=?",
+            (job_id,),
+        ).fetchone()
+        if cell is None:
+            return
+        connection.execute("UPDATE experiment_cells SET status=? WHERE id=?", (state, cell["id"]))
+        if state != SUCCEEDED:
+            return
+        aggregate = connection.execute(
+            """SELECT ge.cell_count,
+            COUNT(ec.id) AS expanded_count,
+            SUM(CASE WHEN ec.status='SUCCEEDED' THEN 1 ELSE 0 END) AS succeeded_count
+            FROM generation_experiments ge
+            LEFT JOIN experiment_cells ec ON ec.experiment_id=ge.id
+            WHERE ge.id=? GROUP BY ge.id""",
+            (cell["experiment_id"],),
+        ).fetchone()
+        if (
+            aggregate is not None
+            and int(aggregate["expanded_count"] or 0) == int(aggregate["cell_count"])
+            and int(aggregate["succeeded_count"] or 0) == int(aggregate["cell_count"])
+        ):
+            connection.execute(
+                """UPDATE generation_experiments SET status='COMPLETED', updated_at=?, revision=revision+1
+                WHERE id=? AND status='CONFIRMED'""",
+                (now, cell["experiment_id"]),
+            )
+
     def complete(
         self,
         attempt_id: str,
@@ -508,6 +557,7 @@ class JobService:
         error_code: str | None = None,
         error_detail_redacted: str | None = None,
         provider_job_id: str | None = None,
+        retryable: bool = True,
     ) -> dict[str, Any]:
         now = _iso(_utc_now())
         with self.database.transaction() as connection:
@@ -525,7 +575,7 @@ class JobService:
                 attempt_state = SUCCEEDED
                 job_state = SUCCEEDED
                 next_run_at = None
-            elif int(row["attempt_no"]) < int(job["max_attempts"]):
+            elif retryable and int(row["attempt_no"]) < int(job["max_attempts"]):
                 attempt_state = FAILED
                 job_state = QUEUED
                 next_run_at = _iso(_utc_now() + timedelta(seconds=min(300, 2 ** int(row["attempt_no"]))))
@@ -533,14 +583,32 @@ class JobService:
                 attempt_state = FAILED
                 job_state = FAILED
                 next_run_at = None
+            existing_progress = _parse_json(str(row["progress_json"] or "{}"))
+            existing_phase = str(existing_progress.get("phase") or "")
+            # Preserve a worker's meaningful completed business phase (for
+            # example DRAFT_READY) instead of hiding it behind the transport
+            # state SUCCEEDED. Generic jobs still receive SUCCEEDED.
+            completed_phase = (
+                existing_phase
+                if attempt_state == SUCCEEDED
+                and int(existing_progress.get("percent") or 0) >= 100
+                and existing_phase not in {"", "QUEUED", "RUNNING", "RETRY_WAITING"}
+                else attempt_state
+            )
+            terminal_progress = {
+                **existing_progress,
+                "phase": completed_phase if job_state != QUEUED else "RETRY_WAITING",
+                **({"percent": 100, "eta_seconds": 0} if attempt_state == SUCCEEDED else {}),
+            }
             connection.execute(
-                "UPDATE job_attempts SET state=?, provider_job_id=?, error_code=?, error_detail_redacted=?, lease_token=NULL, lease_expires_at=NULL, finished_at=?, updated_at=?, revision=revision+1 WHERE id=?",
-                (attempt_state, provider_job_id, error_code, error_detail_redacted, now, now, attempt_id),
+                "UPDATE job_attempts SET state=?, provider_job_id=?, error_code=?, error_detail_redacted=?, progress_json=?, lease_token=NULL, lease_expires_at=NULL, finished_at=?, updated_at=?, revision=revision+1 WHERE id=?",
+                (attempt_state, provider_job_id, error_code, error_detail_redacted, _json(terminal_progress), now, now, attempt_id),
             )
             connection.execute(
-                "UPDATE jobs SET state=?, next_run_at=?, last_error_code=?, last_error_detail_redacted=?, finished_at=?, updated_at=?, revision=revision+1 WHERE id=?",
-                (job_state, next_run_at, error_code, error_detail_redacted, now if job_state in {SUCCEEDED, FAILED, CANCELLED} else None, now, row["job_id"]),
+                "UPDATE jobs SET state=?, next_run_at=?, progress_json=?, progress_updated_at=?, last_error_code=?, last_error_detail_redacted=?, finished_at=?, updated_at=?, revision=revision+1 WHERE id=?",
+                (job_state, next_run_at, _json(terminal_progress), now, error_code, error_detail_redacted, now if job_state in {SUCCEEDED, FAILED, CANCELLED} else None, now, row["job_id"]),
             )
+            self._sync_experiment_cell_status(connection, str(row["job_id"]), job_state, now)
             connection.execute("UPDATE job_resource_leases SET released_at=? WHERE attempt_id=? AND released_at IS NULL", (now, attempt_id))
             self._emit(
                 connection,
@@ -550,6 +618,10 @@ class JobService:
                 attempt_id,
                 {"job_id": row["job_id"], "attempt_state": attempt_state, "job_state": job_state, "error_code": error_code},
             )
+            if job_state in {FAILED, CANCELLED, NEEDS_ATTENTION, ORPHANED}:
+                # Dependency propagation must remain immediate even though
+                # idle polling throttles full lease scans.
+                self._last_automatic_reconcile_at = None
             return {"job_id": row["job_id"], "attempt_id": attempt_id, "attempt_state": attempt_state, "job_state": job_state, "next_run_at": next_run_at}
 
     def recover_provider_success(self, attempt_id: str, provider_job_id: str, actor: str = "reconciler") -> dict[str, Any]:
@@ -572,6 +644,7 @@ class JobService:
             connection.execute(
                 "UPDATE jobs SET state='SUCCEEDED', next_run_at=NULL, last_error_code=NULL, last_error_detail_redacted=NULL, finished_at=?, updated_at=?, revision=revision+1 WHERE id=?", (now, now, row["job_id"])
             )
+            self._sync_experiment_cell_status(connection, str(row["job_id"]), SUCCEEDED, now)
             connection.execute("UPDATE job_resource_leases SET released_at=? WHERE attempt_id=? AND released_at IS NULL", (now, attempt_id))
             self._emit(connection, "JOB_RECOVERED", row["project_id"], "JOB_ATTEMPT", attempt_id, {"job_id": row["job_id"], "provider_job_id": provider_job_id})
             return {"job_id": row["job_id"], "attempt_id": attempt_id, "attempt_state": SUCCEEDED, "job_state": SUCCEEDED, "recovered": True, "actor": actor}
@@ -586,8 +659,11 @@ class JobService:
                 return self._job_response(row)
             target = CANCELLED if row["state"] == QUEUED else CANCEL_REQUESTED
             connection.execute("UPDATE jobs SET state=?, cancel_requested_at=?, updated_at=?, revision=revision+1 WHERE id=?", (target, now, now, job_id))
+            self._sync_experiment_cell_status(connection, job_id, target, now)
             self._emit(connection, "JOB_CANCEL_REQUESTED", row["project_id"], "JOB", job_id, {"state": target})
             updated = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if target == CANCELLED:
+                self._last_automatic_reconcile_at = None
             return self._job_response(updated)
 
     def retry(self, job_id: str, actor: str = "local-user") -> dict[str, Any]:
@@ -601,6 +677,7 @@ class JobService:
             connection.execute(
                 "UPDATE jobs SET state='QUEUED', next_run_at=?, cancel_requested_at=NULL, progress_json='{}', progress_updated_at=NULL, last_error_code=NULL, last_error_detail_redacted=NULL, finished_at=NULL, updated_at=?, revision=revision+1 WHERE id=?", (now, now, job_id)
             )
+            self._sync_experiment_cell_status(connection, job_id, QUEUED, now)
             self._emit(connection, "JOB_REQUEUED", row["project_id"], "JOB", job_id, {"reason": "explicit_retry"})
             updated = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
             return self._job_response(updated)
@@ -652,6 +729,43 @@ class JobService:
                     {"job_id": row["job_id"], "attempt_state": ORPHANED, "job_state": next_job_state, "uncertain_side_effect": uncertain},
                 )
                 recovered.append({"attempt_id": row["id"], "job_id": row["job_id"], "job_state": next_job_state, "uncertain_side_effect": uncertain})
+            blocked_rows = connection.execute(
+                """SELECT j.id AS job_id, j.project_id, dependency.id AS dependency_id,
+                dependency.state AS dependency_state
+                FROM jobs j JOIN job_dependencies d ON d.job_id=j.id
+                JOIN jobs dependency ON dependency.id=d.depends_on_job_id
+                WHERE j.state='QUEUED' AND dependency.state IN ('FAILED','CANCELLED','NEEDS_ATTENTION','ORPHANED')
+                ORDER BY j.created_at, dependency.created_at"""
+            ).fetchall()
+            propagated: set[str] = set()
+            for row in blocked_rows:
+                job_id = str(row["job_id"])
+                if job_id in propagated:
+                    continue
+                propagated.add(job_id)
+                dependency_id = str(row["dependency_id"])
+                dependency_state = str(row["dependency_state"])
+                connection.execute(
+                    """UPDATE jobs SET state='NEEDS_ATTENTION', next_run_at=NULL,
+                    last_error_code='JOB_DEPENDENCY_FAILED', last_error_detail_redacted=?,
+                    updated_at=?, revision=revision+1 WHERE id=? AND state='QUEUED'""",
+                    (f"上游任务 {dependency_id[:12]} 状态为 {dependency_state}", current_iso, job_id),
+                )
+                self._sync_experiment_cell_status(connection, job_id, NEEDS_ATTENTION, current_iso)
+                self._emit(
+                    connection,
+                    "JOB_DEPENDENCY_BLOCKED",
+                    str(row["project_id"]),
+                    "JOB",
+                    job_id,
+                    {"job_id": job_id, "dependency_job_id": dependency_id, "dependency_state": dependency_state, "job_state": NEEDS_ATTENTION},
+                )
+                recovered.append({
+                    "job_id": job_id,
+                    "job_state": NEEDS_ATTENTION,
+                    "dependency_job_id": dependency_id,
+                    "dependency_state": dependency_state,
+                })
         return {"reconciled": len(recovered), "items": recovered, "at": current_iso}
 
     def events(self, *, after_event_id: int = 0, project_id: str | None = None, limit: int = 100) -> list[dict[str, Any]]:

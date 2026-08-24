@@ -3,12 +3,14 @@ from __future__ import annotations
 import hashlib
 import shutil
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, Header, Request
 
 from local_drama.api.schemas.projects import (
     EpisodeSceneRangeRequest,
     ProjectCreateRequest,
+    ProjectEpisodeAppendRequest,
     ProjectPackageDryRunRequest,
     ProjectTemplateCopyRequest,
     ProjectUpdateRequest,
@@ -116,6 +118,19 @@ async def plan_project_creation(payload: ProjectCreateRequest, request: Request)
 async def get_project(project_id: str, request: Request) -> dict[str, object]:
     try:
         return {"project": service(request).get_project(project_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/{project_id}/local-resources", operation_id="listProjectLocalResources")
+async def list_project_local_resources(
+    project_id: str,
+    request: Request,
+    kind: Literal["LUT", "LICENSE_EVIDENCE"],
+    limit: int = 200,
+) -> dict[str, object]:
+    try:
+        return service(request).list_local_resources(project_id, kind, limit=limit)
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -245,6 +260,38 @@ async def project_health(project_id: str, request: Request) -> dict[str, object]
 @router.get("/{project_id}/seasons", operation_id="listSeasons")
 async def list_seasons(project_id: str, request: Request) -> dict[str, object]:
     return {"items": service(request).list_seasons(project_id)}
+
+
+@router.post("/{project_id}/episodes:append", operation_id="appendProjectEpisode", status_code=201)
+async def append_project_episode(project_id: str, payload: ProjectEpisodeAppendRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"append": service(request).append_episode(
+            project_id,
+            season_id=payload.season_id,
+            create_new_season=payload.create_new_season,
+            season_title=payload.season_title,
+            episode_title=payload.episode_title,
+            target_duration_ms=payload.target_duration_ms,
+            request_id=getattr(request.state, "request_id", None),
+        )}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/{project_id}/episode-catalog", operation_id="getProjectEpisodeCatalog")
+async def get_project_episode_catalog(project_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"catalog": service(request).episode_catalog(project_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/{project_id}/creator-setup", operation_id="getProjectCreatorSetup")
+async def get_project_creator_setup(project_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"setup": service(request).creator_setup(project_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
 
 
 @router.get("/{project_id}/scenes", operation_id="listProjectScenes")
@@ -378,5 +425,18 @@ async def create_shot_revision(shot_id: str, payload: ShotRevisionRequest, reque
 async def mark_production_ready(shot_id: str, request: Request) -> dict[str, object]:
     try:
         return {"shot": service(request).mark_shot_production_ready(shot_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/shots/{shot_id}:save-and-ready", operation_id="saveShotRevisionAndMarkReady")
+async def save_and_mark_ready(shot_id: str, payload: ShotRevisionRequest, request: Request) -> dict[str, object]:
+    try:
+        return service(request).save_shot_revision_and_mark_ready(
+            shot_id,
+            payload.fields.model_dump(),
+            freeze=payload.freeze,
+            expected_revision_no=payload.expected_revision_no,
+        )
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error

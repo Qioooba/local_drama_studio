@@ -13,29 +13,40 @@ export type MediaCatalogueItem = {
   media_kind: string;
 };
 
-async function errorMessage(response: Response): Promise<string> {
-  const body = await response.json().catch(() => null) as { error?: { message?: string; code?: string } } | null;
-  return body?.error?.message ?? body?.error?.code ?? `本机 API 请求失败（${response.status}）`;
-}
-
 export async function listProjectMedia(projectId: string, query: string, mediaKind = "IMAGE"): Promise<MediaCatalogueItem[]> {
   const search = new URLSearchParams({ q: query, media_kind: mediaKind, limit: "60" });
-  const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/media-catalogue?${search}`);
-  if (!response.ok) throw new Error(await errorMessage(response));
-  return ((await response.json()) as { items: MediaCatalogueItem[] }).items;
+  return (await requestJson<{ items: MediaCatalogueItem[] }>(`/api/v1/projects/${encodeURIComponent(projectId)}/media-catalogue?${search}`)).items;
 }
 
-export async function uploadProjectImage(projectId: string, file: File): Promise<string> {
-  const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/media:upload`, {
+export async function uploadProjectMediaFile(projectId: string, file: File): Promise<string> {
+  const body = await requestJson<{ media: { media_version_id: string } }>(`/api/v1/projects/${encodeURIComponent(projectId)}/media:upload`, {
     method: "POST",
     headers: { "Content-Type": file.type || "application/octet-stream", "X-File-Name": encodeURIComponent(file.name) },
     body: file,
   });
-  if (!response.ok) throw new Error(await errorMessage(response));
-  const body = await response.json() as { media: { media_version_id: string } };
+  return body.media.media_version_id;
+}
+
+export const uploadProjectImage = uploadProjectMediaFile;
+
+export async function importProjectImagePath(projectId: string, sourcePath: string): Promise<string> {
+  const body = await requestJson<{ media: { media_version_id: string } }>("/api/v1/media:import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      project_id: projectId,
+      source_path: sourcePath,
+      purpose: "ASSET_REFERENCE",
+      owner_type: "PROJECT",
+      owner_id: projectId,
+      media_kind: "IMAGE",
+      stage: "IMPORTED",
+    }),
+  });
   return body.media.media_version_id;
 }
 
 export function mediaThumbnailUrl(mediaVersionId: string): string {
   return `/api/v1/media-versions/${encodeURIComponent(mediaVersionId)}/thumbnail?size=small&frame=poster`;
 }
+import { requestJson } from "../../generated/api";

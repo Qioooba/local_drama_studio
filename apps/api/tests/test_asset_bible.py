@@ -12,7 +12,7 @@ import base64
 import pytest
 from fastapi.testclient import TestClient
 
-from local_drama.application.asset_multiview import AssetDetailService, AssetExpressionService
+from local_drama.application.asset_multiview import AssetDetailService, AssetExpressionService, AssetMultiViewService
 from local_drama.application.commands.asset_bible import AssetBibleCommandService
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
@@ -273,6 +273,7 @@ def test_expression_preflight_uses_real_capability_and_never_queues_when_unavail
     assert response.status_code == 200
     preflight = response.json()["preflight"]
     assert preflight["capability"] == "IMAGE_EXPRESSION"
+    assert "ASSET_EXPRESSION_CAPABILITY_UNAVAILABLE" in {item["code"] for item in preflight["blockers"]}
     assert preflight["ready"] is False
     assert preflight["hero"]["media_version_id"] == hero
     assert preflight["would_create_jobs"] == 0
@@ -303,6 +304,27 @@ def test_expression_slots_freeze_hero_and_use_expression_grid_reference_kind() -
     assert plan.bindings[0].media_version_id == "hero-version-1"
 
 
+def test_multiview_requested_slots_are_unique_canonical_and_reject_unknown_values() -> None:
+    service = object.__new__(AssetMultiViewService)
+    request = service._normalized_request(
+        asset_state_id=None,
+        profile_version_id=None,
+        consistency_strength="HIGH",
+        background="CLEAN",
+        requested_slots=["right", "front", "right"],
+    )
+    assert request["requested_slots"] == ["FRONT", "RIGHT"]
+    with pytest.raises(DomainRuleError) as caught:
+        service._normalized_request(
+            asset_state_id=None,
+            profile_version_id=None,
+            consistency_strength="HIGH",
+            background="CLEAN",
+            requested_slots=["BACK"],
+        )
+    assert caught.value.code == "ASSET_GENERATION_SLOT_INVALID"
+
+
 def test_detail_preflight_is_honest_about_missing_image_edit_profile(workspace, database) -> None:
     _, project, _, _ = _project(workspace, database, "bible_detail_preflight")
     project_id = str(project["id"])
@@ -315,6 +337,7 @@ def test_detail_preflight_is_honest_about_missing_image_edit_profile(workspace, 
     assert response.status_code == 200
     preflight = response.json()["preflight"]
     assert preflight["capability"] == "IMAGE_EDIT"
+    assert "ASSET_DETAIL_CAPABILITY_UNAVAILABLE" in {item["code"] for item in preflight["blockers"]}
     assert preflight["ready"] is False
     assert preflight["would_create_jobs"] == 0
     assert any("IMAGE_EDIT" in blocker["message"] for blocker in preflight["blockers"])

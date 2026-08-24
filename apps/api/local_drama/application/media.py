@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -81,9 +82,10 @@ def _video_metadata(probe: dict[str, Any]) -> tuple[int | None, int | None, int 
 
 
 class MediaService:
-    def __init__(self, database: Database, settings: Settings) -> None:
+    def __init__(self, database: Database, settings: Settings, *, ffmpeg_runner: Callable[[list[str]], None] | None = None) -> None:
         self.database = database
         self.settings = settings
+        self.ffmpeg_runner = ffmpeg_runner
 
     def _project_root(self, project_id: str) -> Path:
         with self.database.connect() as connection:
@@ -105,6 +107,21 @@ class MediaService:
         if not root.is_relative_to(projects_root):
             raise DomainRuleError("PATH_ESCAPE", "项目目录超出受控 projects_root")
         return root
+
+    @staticmethod
+    def _verify_content_size(item: dict[str, Any], source: Path) -> None:
+        """Reject obvious source tampering without hashing on a read endpoint."""
+        expected = int(item.get("byte_size") or 0)
+        try:
+            actual = source.stat().st_size
+        except OSError as error:
+            raise DomainRuleError("SOURCE_INTEGRITY_FAILED", "媒体源文件无法读取") from error
+        if expected > 0 and actual != expected:
+            raise DomainRuleError(
+                "SOURCE_INTEGRITY_FAILED",
+                "媒体源文件大小与不可变登记不一致；派生缓存不会继续提供",
+                {"expected_byte_size": expected, "actual_byte_size": actual},
+            )
 
     def _copy_into_project(self, project_root: Path, source: Path, original_name: str) -> tuple[str, Path]:
         imports = project_root / "00_admin" / "imports"
@@ -169,9 +186,17 @@ class MediaService:
         media_kind: str | None = None,
         stage: str = "IMPORTED",
         actor: str = "local-user",
+        schedule_derivatives: bool = False,
     ) -> dict[str, Any]:
         source = Path(source_path)
-        kind = media_kind or infer_media_kind(source)
+        detected_kind = infer_media_kind(source)
+        kind = str(media_kind or detected_kind).strip().upper()
+        if media_kind is not None and kind != detected_kind:
+            raise DomainRuleError(
+                "MEDIA_KIND_MISMATCH",
+                "声明的媒体类型与文件扩展名不一致",
+                {"requested_kind": kind, "detected_kind": detected_kind, "suffix": source.suffix.lower()},
+            )
         mime = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
         operations = StorageOperationService(self.database, self.settings)
         operation = operations.stage_media_ingest(
@@ -186,7 +211,10 @@ class MediaService:
             actor=actor,
         )
         if operation["status"] == "COMMITTED":
-            return operations.finalize_media_ingest(str(operation["id"]))
+            result = operations.finalize_media_ingest(str(operation["id"]))
+            if schedule_derivatives:
+                result["derivative_jobs"] = self.submit_default_derivatives(str(result["media_version_id"]))
+            return result
         staged = operations.staging_path(str(operation["id"]))
         probe = self._probe(staged, kind)
         duration_ms, fps_num, fps_den = _video_metadata(probe)
@@ -197,7 +225,118 @@ class MediaService:
             fps_num=fps_num,
             fps_den=fps_den,
         )
-        return operations.finalize_media_ingest(str(operation["id"]))
+        result = operations.finalize_media_ingest(str(operation["id"]))
+        if schedule_derivatives:
+            result["derivative_jobs"] = self.submit_default_derivatives(str(result["media_version_id"]))
+        return result
+
+    def submit_derivative(
+        self,
+        media_version_id: str,
+        kind: str,
+        *,
+        size: str = "small",
+        frame: str = "poster",
+    ) -> dict[str, Any]:
+        from local_drama.application.jobs import JobService
+
+        item = self.get_version(media_version_id)
+        normalized_kind = str(kind or "").strip().upper()
+        normalized_size = str(size or "small").strip().lower()
+        normalized_frame = str(frame or "poster").strip().lower()
+        if normalized_kind == "THUMBNAIL":
+            if item["media_kind"] not in {"IMAGE", "VIDEO"}:
+                raise DomainRuleError("THUMBNAIL_UNSUPPORTED", "该媒体类型不支持缩略图")
+            if normalized_size not in {"small", "medium"}:
+                raise DomainRuleError("THUMBNAIL_SIZE_UNSUPPORTED", "缩略图 size 仅支持 small 或 medium")
+        elif normalized_kind == "FILMSTRIP":
+            if item["media_kind"] != "VIDEO":
+                raise DomainRuleError("FILMSTRIP_UNSUPPORTED", "只有视频支持 filmstrip")
+            normalized_size, normalized_frame = "small", "poster"
+        elif normalized_kind == "WAVEFORM":
+            if item["media_kind"] not in {"AUDIO", "VIDEO"}:
+                raise DomainRuleError("WAVEFORM_UNSUPPORTED", "该媒体类型不支持波形")
+            normalized_size, normalized_frame = "small", "poster"
+        elif normalized_kind == "PROXY":
+            if item["media_kind"] != "VIDEO":
+                raise DomainRuleError("PROXY_UNSUPPORTED", "只有视频支持低码率预览 proxy")
+            normalized_size, normalized_frame = "small", "poster"
+        else:
+            raise DomainRuleError("MEDIA_DERIVATIVE_KIND_INVALID", "媒体派生类型无效", {"kind": normalized_kind})
+        snapshot = {
+            "media_version_id": media_version_id,
+            "source_sha256": str(item["sha256"]),
+            "kind": normalized_kind,
+            "size": normalized_size,
+            "frame": normalized_frame,
+        }
+        idempotency_key = f"media-derivative:{media_version_id}:{normalized_kind}:{normalized_size}:{normalized_frame}"
+        return JobService(self.database, self.settings).create_job(
+            str(item["project_id"]),
+            "MEDIA_DERIVATIVE",
+            "MEDIA_VERSION",
+            media_version_id,
+            "CPU",
+            snapshot,
+            idempotency_key,
+            max_attempts=2,
+            actor="system",
+        )
+
+    def submit_default_derivatives(self, media_version_id: str) -> list[dict[str, Any]]:
+        item = self.get_version(media_version_id)
+        kinds = {
+            "IMAGE": ("THUMBNAIL",),
+            "VIDEO": ("THUMBNAIL", "FILMSTRIP"),
+            "AUDIO": ("WAVEFORM",),
+        }.get(str(item["media_kind"]), ())
+        # Profile evidence and motion-control clips are machine inputs rather
+        # than creator playback surfaces.  Avoid doubling their storage while
+        # still proxying imported, generated and enhanced review videos.
+        if str(item["media_kind"]) == "VIDEO" and str(item["stage"]).upper() != "PROXY" and str(item["purpose"]).upper() not in {"PROFILE_EVIDENCE", "MOTION_CONTROL"}:
+            kinds = (*kinds, "PROXY")
+        return [self.submit_derivative(media_version_id, kind) for kind in kinds]
+
+    def backfill_project_derivatives(self, project_id: str, *, cursor: int = 0, limit: int = 50) -> dict[str, Any]:
+        """Submit missing-era default derivative jobs in bounded catalogue pages.
+
+        Job creation is deliberately idempotent.  Re-scanning a page therefore
+        reports existing jobs instead of duplicating work, and the read-only
+        media endpoints remain free of conversion side effects.
+        """
+        self._project_root(project_id)
+        normalized_cursor = max(0, int(cursor))
+        normalized_limit = max(1, min(int(limit), 100))
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """SELECT mv.id FROM media_versions mv
+                JOIN media_assets ma ON ma.id=mv.media_asset_id
+                WHERE ma.project_id=? AND mv.integrity_status='VERIFIED'
+                ORDER BY mv.created_at, mv.id LIMIT ? OFFSET ?""",
+                (project_id, normalized_limit + 1, normalized_cursor),
+            ).fetchall()
+        has_more = len(rows) > normalized_limit
+        page = rows[:normalized_limit]
+        jobs: list[dict[str, Any]] = []
+        submitted = replayed = 0
+        for row in page:
+            for job in self.submit_default_derivatives(str(row["id"])):
+                jobs.append(job)
+                if bool(job.get("idempotent_replay")):
+                    replayed += 1
+                else:
+                    submitted += 1
+        return {
+            "project_id": project_id,
+            "cursor": normalized_cursor,
+            "limit": normalized_limit,
+            "scanned": len(page),
+            "submitted": submitted,
+            "replayed": replayed,
+            "jobs": jobs,
+            "has_more": has_more,
+            "next_cursor": normalized_cursor + len(page) if has_more else None,
+        }
 
     def create_keyframe_candidate(
         self, source_media_version_id: str, shot_id: str, actor: str = "local-user"
@@ -226,7 +365,15 @@ class MediaService:
         if str(shot["project_id"]) != str(source["project_id"]):
             raise DomainRuleError("KEYFRAME_PROJECT_MISMATCH", "关键帧源图片与镜头必须属于同一项目")
         if existing is not None:
-            return {"duplicate": True, **self.get_version(str(existing["id"]))}
+            version = self.get_version(str(existing["id"]))
+            return {
+                "duplicate": True,
+                **version,
+                # Keep first-write and idempotent replay responses on the
+                # same public identifier contract.  Existing consumers also
+                # use the canonical MediaVersion ``id`` field.
+                "media_version_id": str(version["id"]),
+            }
         _, source_path = self.content_path(source_media_version_id)
         project_root = self._project_root(str(source["project_id"]))
         rel_path, destination = self._copy_into_project(project_root, source_path, str(source["source_name"] or source_path.name))
@@ -295,7 +442,12 @@ class MediaService:
                         "UPDATE generation_variants SET status='SUCCEEDED', updated_at=? WHERE id=? AND status!='SUCCEEDED'",
                         (_utc_now(), lineage["subject_id"]),
                     )
-            return {"duplicate": True, **self.get_version(str(existing["id"]))}
+            version = self.get_version(str(existing["id"]))
+            return {
+                "duplicate": True,
+                **version,
+                "media_version_id": str(version["id"]),
+            }
         if row is None:
             raise DomainRuleError("ARTIFACT_NOT_FOUND", "Job artifact 不存在", {"artifact_id": artifact_id})
         if row["status"] != "VERIFIED" or row["attempt_state"] != "SUCCEEDED" or row["job_state"] != "SUCCEEDED":
@@ -312,10 +464,25 @@ class MediaService:
         if actual_sha256 != str(row["sha256"]):
             raise DomainRuleError("ARTIFACT_INTEGRITY_FAILED", "Artifact 文件与已登记 hash 不一致", {"artifact_id": artifact_id})
 
+        detected_kind = infer_media_kind(source)
+        if detected_kind not in {"IMAGE", "VIDEO", "AUDIO"}:
+            raise DomainRuleError(
+                "ARTIFACT_MEDIA_TYPE_UNSUPPORTED",
+                "该产物不是可登记的图片、视频或音频文件",
+                {"artifact_id": artifact_id, "detected_kind": detected_kind, "suffix": source.suffix.lower()},
+            )
+        requested_kind = str(media_kind or detected_kind).strip().upper()
+        if requested_kind != detected_kind:
+            raise DomainRuleError(
+                "ARTIFACT_MEDIA_KIND_MISMATCH",
+                "声明的媒体类型与产物文件类型不一致",
+                {"artifact_id": artifact_id, "requested_kind": requested_kind, "detected_kind": detected_kind},
+            )
+
         project_id = str(row["project_id"])
         project_root = self._project_root(project_id)
         rel_path, destination = self._copy_into_project(project_root, source, source.name)
-        kind = media_kind or infer_media_kind(source)
+        kind = detected_kind
         mime = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
         probe = self._probe(destination, kind)
         duration_ms, fps_num, fps_den = _video_metadata(probe)
@@ -390,6 +557,7 @@ class MediaService:
             raise
         return {
             "duplicate": False,
+            "id": version_id,
             "media_asset_id": asset_id,
             "media_version_id": version_id,
             "source_artifact_id": artifact_id,
@@ -483,6 +651,9 @@ class MediaService:
         if normalized_kind:
             clauses.append("ma.media_kind=?")
             parameters.append(normalized_kind)
+            if normalized_kind in {"IMAGE", "VIDEO", "AUDIO"}:
+                clauses.append("LOWER(mv.mime_type) LIKE ?")
+                parameters.append(f"{normalized_kind.lower()}/%")
         if normalized_query:
             escaped = normalized_query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             clauses.append("(LOWER(COALESCE(mv.source_name,'')) LIKE ? ESCAPE '\\' OR LOWER(ma.purpose) LIKE ? ESCAPE '\\' OR LOWER(mv.stage) LIKE ? ESCAPE '\\')")
@@ -620,6 +791,9 @@ class MediaService:
                 "actual_sha256": actual_sha256, "actual_byte_size": actual_size, "repaired": True}
 
     def _run_ffmpeg(self, args: list[str]) -> None:
+        if self.ffmpeg_runner is not None:
+            self.ffmpeg_runner(args)
+            return
         ffmpeg = self.settings.ffmpeg_path
         if not ffmpeg or not Path(ffmpeg).exists():
             raise DomainRuleError("FFMPEG_UNAVAILABLE", "本机 FFmpeg 不可用")
@@ -693,13 +867,23 @@ class MediaService:
             os.replace(partial, destination)
         return destination, "image/webp", relative.as_posix(), preset_hash
 
-    def thumbnail(self, media_version_id: str, size: str = "small", frame: str = "poster") -> tuple[Path, str]:
+    def thumbnail(self, media_version_id: str, size: str = "small", frame: str = "poster", *, materialize: bool = True) -> tuple[Path, str]:
         item, source = self.content_path(media_version_id)
+        self._verify_content_size(item, source)
         mime_type = str(item["mime_type"]).lower()
-        is_image = item["media_kind"] == "IMAGE" or mime_type.startswith("image/")
-        is_video = item["media_kind"] == "VIDEO" or mime_type.startswith("video/")
+        media_kind = str(item["media_kind"]).upper()
+        is_image = media_kind == "IMAGE" and mime_type.startswith("image/")
+        is_video = media_kind == "VIDEO" and mime_type.startswith("video/")
+        if media_kind in {"IMAGE", "VIDEO"} and not (is_image or is_video):
+            raise DomainRuleError(
+                "MEDIA_KIND_MIME_MISMATCH",
+                "历史媒体的类型与 MIME 不一致，不能生成缩略图；请保留审计并重新登记真实媒体",
+                {"media_kind": media_kind, "mime_type": mime_type},
+            )
         if not is_image and not is_video:
             raise DomainRuleError("THUMBNAIL_UNSUPPORTED", "该媒体类型不支持缩略图")
+        if size not in {"small", "medium"}:
+            raise DomainRuleError("THUMBNAIL_SIZE_UNSUPPORTED", "缩略图 size 仅支持 small 或 medium", {"size": size})
         normalized_frame = str(frame or "poster").strip().lower()
         frame_aliases = {"poster": "first", "start": "first", "first_frame": "first", "middle_frame": "middle", "end": "last", "last_frame": "last"}
         normalized_frame = frame_aliases.get(normalized_frame, normalized_frame)
@@ -711,6 +895,23 @@ class MediaService:
             )
         if is_image and not is_video and normalized_frame != "first":
             raise DomainRuleError("THUMBNAIL_FRAME_UNSUPPORTED", "图片只有 first/poster 缩略图")
+        if not materialize:
+            preset = f"thumbnail-v2:{size}:{normalized_frame}"
+            preset_hash = hashlib.sha256(preset.encode()).hexdigest()
+            if is_video:
+                namespace = re.sub(r"[^A-Za-z0-9._-]+", "_", media_version_id).strip("._")
+                relative = Path("thumbnails") / namespace / size / f"{item['sha256']}_{preset_hash[:16]}.webp"
+            else:
+                relative = Path("thumbnails") / media_version_id / size / f"{item['sha256']}_{preset_hash[:16]}.webp"
+            destination = (self.settings.cache_root / relative).resolve()
+            if not destination.is_relative_to(self.settings.cache_root.resolve()) or not destination.is_file() or destination.is_symlink():
+                raise DomainRuleError(
+                    "MEDIA_DERIVATIVE_NOT_READY",
+                    "缩略图仍在后台生成或尚未提交",
+                    {"media_version_id": media_version_id, "kind": "THUMBNAIL", "size": size, "frame": normalized_frame},
+                    suggested_action="稍后重试，或提交媒体派生任务",
+                )
+            return destination, "image/webp"
         self.verify_content_integrity(media_version_id)
         if is_video and not is_image:
             destination, mime, cached_relative, preset_hash = self.cached_video_thumbnail(
@@ -737,15 +938,20 @@ class MediaService:
             self._cache_entry(media_version_id, "THUMBNAIL", relative.as_posix(), item["sha256"], preset_hash)
         return destination, "image/webp"
 
-    def filmstrip(self, media_version_id: str) -> tuple[Path, str]:
+    def filmstrip(self, media_version_id: str, *, materialize: bool = True) -> tuple[Path, str]:
         item, source = self.content_path(media_version_id)
+        self._verify_content_size(item, source)
         if item["media_kind"] != "VIDEO":
             raise DomainRuleError("FILMSTRIP_UNSUPPORTED", "只有视频支持 filmstrip")
-        self.verify_content_integrity(media_version_id)
         preset = "filmstrip-v1:5x1:320"
         preset_hash = hashlib.sha256(preset.encode()).hexdigest()
         relative = Path("filmstrips") / media_version_id / f"{item['sha256']}_{preset_hash[:16]}.webp"
-        destination = self.settings.cache_root / relative
+        destination = (self.settings.cache_root / relative).resolve()
+        if not materialize:
+            if not destination.is_relative_to(self.settings.cache_root.resolve()) or not destination.is_file() or destination.is_symlink():
+                raise DomainRuleError("MEDIA_DERIVATIVE_NOT_READY", "胶片条仍在后台生成或尚未提交", {"media_version_id": media_version_id, "kind": "FILMSTRIP"}, suggested_action="稍后重试，或提交媒体派生任务")
+            return destination, "image/webp"
+        self.verify_content_integrity(media_version_id)
         destination.parent.mkdir(parents=True, exist_ok=True)
         if not destination.exists():
             partial = destination.with_suffix(".partial.webp")
@@ -754,15 +960,20 @@ class MediaService:
             self._cache_entry(media_version_id, "FILMSTRIP", relative.as_posix(), item["sha256"], preset_hash)
         return destination, "image/webp"
 
-    def waveform(self, media_version_id: str) -> tuple[Path, str]:
+    def waveform(self, media_version_id: str, *, materialize: bool = True) -> tuple[Path, str]:
         item, source = self.content_path(media_version_id)
+        self._verify_content_size(item, source)
         if item["media_kind"] not in {"AUDIO", "VIDEO"}:
             raise DomainRuleError("WAVEFORM_UNSUPPORTED", "该媒体类型不支持波形")
-        self.verify_content_integrity(media_version_id)
         preset = "waveform-v2:640x128"
         preset_hash = hashlib.sha256(preset.encode()).hexdigest()
         relative = Path("waveforms") / media_version_id / f"{item['sha256']}_{preset_hash[:16]}.png"
-        destination = self.settings.cache_root / relative
+        destination = (self.settings.cache_root / relative).resolve()
+        if not materialize:
+            if not destination.is_relative_to(self.settings.cache_root.resolve()) or not destination.is_file() or destination.is_symlink():
+                raise DomainRuleError("MEDIA_DERIVATIVE_NOT_READY", "波形仍在后台生成或尚未提交", {"media_version_id": media_version_id, "kind": "WAVEFORM"}, suggested_action="稍后重试，或提交媒体派生任务")
+            return destination, "image/png"
+        self.verify_content_integrity(media_version_id)
         destination.parent.mkdir(parents=True, exist_ok=True)
         if not destination.exists():
             partial = destination.with_suffix(".partial.png")
@@ -770,6 +981,49 @@ class MediaService:
             os.replace(partial, destination)
             self._cache_entry(media_version_id, "WAVEFORM", relative.as_posix(), item["sha256"], preset_hash)
         return destination, "image/png"
+
+    def proxy(self, media_version_id: str, *, materialize: bool = True) -> tuple[Path, str]:
+        """Return or materialize a creator-facing, seekable local video proxy."""
+        item, source = self.content_path(media_version_id)
+        self._verify_content_size(item, source)
+        if item["media_kind"] != "VIDEO" or not str(item["mime_type"]).lower().startswith("video/"):
+            raise DomainRuleError("PROXY_UNSUPPORTED", "只有真实视频媒体支持低码率预览 proxy")
+        preset = "proxy-v1:h264-crf28-max1280-aac96k"
+        preset_hash = hashlib.sha256(preset.encode()).hexdigest()
+        relative = Path("proxies") / media_version_id / f"{item['sha256']}_{preset_hash[:16]}.mp4"
+        destination = (self.settings.cache_root / relative).resolve()
+        cache_root = self.settings.cache_root.resolve()
+        if not materialize:
+            if not destination.is_relative_to(cache_root) or not destination.is_file() or destination.is_symlink():
+                raise DomainRuleError(
+                    "MEDIA_DERIVATIVE_NOT_READY",
+                    "低码率预览仍在后台生成或尚未提交",
+                    {"media_version_id": media_version_id, "kind": "PROXY"},
+                    suggested_action="稍后重试，或提交媒体派生任务",
+                )
+            return destination, "video/mp4"
+        self.verify_content_integrity(media_version_id)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if not destination.exists():
+            partial = destination.with_suffix(".partial.mp4")
+            self._run_ffmpeg(
+                [
+                    "-i", str(source),
+                    "-map", "0:v:0", "-map", "0:a?",
+                    "-vf", "scale=w=min(1280\\,iw):h=min(1280\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2",
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", "-y", str(partial),
+                ]
+            )
+            probe = self._probe(partial, "VIDEO")
+            if probe.get("probe_status") != "PASS":
+                partial.unlink(missing_ok=True)
+                raise DomainRuleError("MEDIA_PROXY_OUTPUT_INVALID", "低码率预览输出无法通过本机 ffprobe")
+            os.replace(partial, destination)
+        # Reconcile the catalogue even when a valid cache file survived a
+        # database restore or cache-entry cleanup.
+        self._cache_entry(media_version_id, "PROXY", relative.as_posix(), item["sha256"], preset_hash)
+        return destination, "video/mp4"
 
     def audio_qc_metrics(self, media_version_id: str) -> dict[str, float | bool | str]:
         item, source = self.content_path(media_version_id)

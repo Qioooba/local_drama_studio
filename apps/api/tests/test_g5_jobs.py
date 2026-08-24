@@ -107,6 +107,26 @@ def test_persistent_queue_idempotency_dependencies_lease_and_recovery(workspace,
     assert any(event["type"] == "JOB_RECONCILED" for event in events)
 
 
+def test_failed_dependency_moves_downstream_job_out_of_permanent_queue(workspace, database) -> None:
+    project = _project(workspace, database, "g5_dependency_failure")
+    project_id = str(project["id"])
+    service = JobService(database, workspace)
+    upstream = _create(service, project_id, "dependency-upstream", max_attempts=1)
+    downstream = _create(service, project_id, "dependency-downstream", depends_on_job_ids=[str(upstream["id"])])
+    claim = service.claim("dependency-worker", ["CPU"])
+    assert claim is not None and claim["job"]["id"] == upstream["id"]
+    failed = service.complete(
+        str(claim["attempt"]["id"]), str(claim["attempt"]["lease_token"]), "dependency-worker",
+        success=False, error_code="UPSTREAM_TEST_FAILURE", error_detail_redacted="upstream failed",
+    )
+    assert failed["job_state"] == "FAILED"
+    assert service.claim("dependency-worker", ["CPU"]) is None
+    persisted = service.get_job(str(downstream["id"]))
+    assert persisted["state"] == "NEEDS_ATTENTION"
+    assert persisted["last_error_code"] == "JOB_DEPENDENCY_FAILED"
+    assert any(event["type"] == "JOB_DEPENDENCY_BLOCKED" for event in service.events(project_id=project_id))
+
+
 def test_twenty_cpu_jobs_sse_and_artifact_idempotency(workspace, database) -> None:
     project = _project(workspace, database, "g5_scale")
     project_id = str(project["id"])
@@ -178,6 +198,10 @@ def test_jobs_server_pagination_is_bounded_and_cursored(workspace, database) -> 
     last = service.list_jobs_page(str(project["id"]), cursor=int(second["next_cursor"]), limit=100)
     assert len(last["items"]) == 5
     assert last["next_cursor"] is None
+    # Client-side ordering/progress tracking depends on timestamps being present.
+    newest = first["items"][0]
+    assert newest["created_at"]
+    assert newest["updated_at"]
 
 
 def test_real_local_worker_proxy_thumbnail_and_artifact_registration(workspace, database) -> None:
@@ -205,6 +229,106 @@ def test_real_local_worker_proxy_thumbnail_and_artifact_registration(workspace, 
     assert thumbnail_result["job"]["id"] == thumbnail["id"]
     assert thumbnail_result["artifact"]["kind"] == "THUMBNAIL"
     assert Path(workspace.work_root / str(thumbnail_result["artifact"]["sandbox_rel_path"])).is_file()
+
+
+def test_empty_queue_polling_throttles_automatic_reconcile_without_affecting_manual_recovery(workspace, database, monkeypatch) -> None:
+    jobs = JobService(database, workspace)
+    calls = 0
+    original = jobs.reconcile
+
+    def tracked_reconcile(**kwargs):
+        nonlocal calls
+        calls += 1
+        return original(**kwargs)
+
+    monkeypatch.setattr(jobs, "reconcile", tracked_reconcile)
+    assert jobs.claim("idle-worker", ["CPU"]) is None
+    assert jobs.claim("idle-worker", ["CPU"]) is None
+    assert calls == 1
+    jobs.reconcile(actor="manual-test")
+    assert calls == 2
+
+
+def test_worker_ffmpeg_terminates_process_and_converges_cancel_requested_job(workspace, database, monkeypatch) -> None:
+    project = _project(workspace, database, "g5_running_cancel")
+    jobs = JobService(database, workspace)
+    job = _create(
+        jobs,
+        str(project["id"]),
+        "running-cancel",
+        job_type="MEDIA_PROXY",
+        input_snapshot={"media_version_id": "not-read-after-cancel"},
+        max_attempts=1,
+    )
+    worker = LocalMediaWorker(database, workspace)
+
+    def cancel_during_execution(current_job, _output_root):
+        assert jobs.cancel(str(current_job["id"]))["state"] == "CANCEL_REQUESTED"
+        raise DomainRuleError("JOB_CANCELLED", "后台任务已取消，本次媒体输出不会登记")
+
+    monkeypatch.setattr(worker, "_run_media_job", cancel_during_execution)
+    outcome = worker.run_once("cancel-aware-worker", ["CPU"])
+    assert outcome is not None and outcome["error"] == "JOB_CANCELLED"
+    assert outcome["result"]["job_state"] == "CANCELLED"
+    assert jobs.get_job(str(job["id"]))["state"] == "CANCELLED"
+
+    class HangingProcess:
+        returncode = None
+        terminated = False
+
+        def communicate(self, timeout):
+            raise subprocess.TimeoutExpired("ffmpeg", timeout)
+
+        def terminate(self):
+            self.terminated = True
+
+        def wait(self, timeout):
+            self.returncode = -15
+            return self.returncode
+
+        def kill(self):
+            self.returncode = -9
+
+    hanging = HangingProcess()
+    monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: hanging)
+    monkeypatch.setattr(worker, "_cancel_requested", lambda: True)
+    with pytest.raises(DomainRuleError) as cancelled:
+        worker._ffmpeg(["-version"])
+    assert cancelled.value.code == "JOB_CANCELLED"
+    assert hanging.terminated is True
+
+
+def test_worker_progress_parses_ffmpeg_time_and_never_regresses(workspace, database) -> None:
+    project = _project(workspace, database, "g5_monotonic_progress")
+    jobs = JobService(database, workspace)
+    job = _create(jobs, str(project["id"]), "monotonic-progress", max_attempts=1)
+    claim = jobs.claim("progress-worker", ["CPU"])
+    assert claim is not None
+    attempt = claim["attempt"]
+    worker = LocalMediaWorker(database, workspace)
+    worker._active_job_context = (
+        str(attempt["id"]),
+        str(attempt["lease_token"]),
+        "progress-worker",
+    )
+    worker._active_progress = {"phase": "ENCODING", "percent": 10}
+
+    assert worker._ffmpeg_progress_value("out_time_us=2500000\n") == ("processed_ms", 2500)
+    assert worker._ffmpeg_progress_value("progress=continue\n") == ("progress", "continue")
+    assert worker._report_progress({"percent": 64, "processed_ms": 2500}, force=True) is False
+    assert worker._report_progress({"percent": 21, "processed_ms": 1000}, force=True) is False
+
+    persisted = jobs.get_job(str(job["id"]))
+    assert persisted["progress"]["percent"] == 64
+    assert persisted["progress"]["processed_ms"] == 2500
+    jobs.complete(
+        str(attempt["id"]),
+        str(attempt["lease_token"]),
+        "progress-worker",
+        success=False,
+        error_code="TEST_CLEANUP",
+        error_detail_redacted="test cleanup",
+    )
 
 
 def test_local_worker_disk_full_fails_closed_and_releases_lease(workspace, database, monkeypatch) -> None:

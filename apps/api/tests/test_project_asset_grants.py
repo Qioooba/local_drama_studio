@@ -24,6 +24,14 @@ def test_cross_project_asset_grant_freezes_source_and_reports_withdrawal(workspa
     grant = assets.create_grant(str(target_project["id"]), str(authorization["id"]), "DERIVED")
     assert grant["status"] == "ACTIVE"
     assert assets.list_grants(str(target_project["id"]))[0]["usable"] is True
+    revoked_grant = assets.revoke_grant(str(grant["id"]), "验收撤回")
+    assert revoked_grant["status"] == "REVOKED"
+    restored_grant = assets.create_grant(str(target_project["id"]), str(authorization["id"]), "READ_ONLY")
+    assert restored_grant["id"] == grant["id"]
+    assert restored_grant["status"] == "ACTIVE"
+    assert restored_grant["access_mode"] == "READ_ONLY"
+    assert restored_grant["reactivated"] is True
+    assert assets.list_grants(str(target_project["id"]))[0]["usable"] is True
     revoked = assets.revoke_authorization(str(source_project["id"]), str(media["media_version_id"]), "源项目撤回共享")
     assert revoked["authorization_status"] == "REVOKED"
     assert assets.list_authorizations(str(source_project["id"]))[0]["usable"] is False
@@ -33,3 +41,8 @@ def test_cross_project_asset_grant_freezes_source_and_reports_withdrawal(workspa
     with pytest.raises(DomainRuleError) as raised:
         assets.create_grant(str(target_project["id"]), str(authorization["id"]), "READ_ONLY")
     assert raised.value.code == "ASSET_GRANT_SOURCE_REVOKED"
+    restored_authorization = assets.authorize_media_version(str(source_project["id"]), str(media["media_version_id"]))
+    assert restored_authorization["id"] == authorization["id"]
+    assert restored_authorization["authorization_status"] == "AUTHORIZED"
+    assert restored_authorization["reactivated"] is True
+    assert assets.list_authorizations(str(source_project["id"]))[0]["usable"] is True

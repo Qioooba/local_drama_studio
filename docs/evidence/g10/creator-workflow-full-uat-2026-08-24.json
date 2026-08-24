@@ -1,0 +1,85 @@
+{
+  "schema_version": "localdrama.creator-workflow-uat.v1",
+  "observed_at": "2026-08-24T14:48:00Z",
+  "project_id": "988cfe1b-348c-484f-b4e8-60e79cb98a5d",
+  "episode_id": "e9d84e28-c65c-438c-8b48-537fa70aa228",
+  "browser_writes_performed": false,
+  "console_errors": 0,
+  "viewports": [
+    { "width": 1440, "height": 1000 },
+    { "width": 390, "height": 844 }
+  ],
+  "routes": [
+    {
+      "name": "models_creator_capabilities",
+      "path": "/models?project=988cfe1b-348c-484f-b4e8-60e79cb98a5d",
+      "horizontal_overflow": false,
+      "min_visible_button_height_px": 44,
+      "expert_details_open": 0,
+      "creator_text_has_technical_codes": false,
+      "screenshots": [
+        "output/playwright/models-creator-desktop-2026-08-24.png",
+        "output/playwright/models-creator-mobile-390-2026-08-24.png"
+      ]
+    },
+    {
+      "name": "automation_creator_flow",
+      "path": "/projects/988cfe1b-348c-484f-b4e8-60e79cb98a5d/production-settings?view=automation",
+      "horizontal_overflow": false,
+      "min_visible_button_height_px": 44,
+      "expert_details_open": 0,
+      "expert_body_mounted_while_closed": false,
+      "screenshots": [
+        "output/playwright/automation-creator-desktop-2026-08-24.png",
+        "output/playwright/automation-creator-mobile-390-2026-08-24.png"
+      ]
+    },
+    {
+      "name": "shot_generation",
+      "path": "/projects/988cfe1b-348c-484f-b4e8-60e79cb98a5d/episodes/e9d84e28-c65c-438c-8b48-537fa70aa228/generation/f3fddd03-fd39-4dd7-9b1b-f04d4e27b7ea",
+      "horizontal_overflow": false,
+      "min_visible_button_height_px": 44,
+      "breadcrumb": "镜头生成",
+      "screenshots": [
+        "output/playwright/generation-creator-desktop-2026-08-24.png",
+        "output/playwright/generation-creator-mobile-390-2026-08-24.png"
+      ]
+    },
+    {
+      "name": "episode_review",
+      "path": "/projects/988cfe1b-348c-484f-b4e8-60e79cb98a5d/episodes/e9d84e28-c65c-438c-8b48-537fa70aa228/review",
+      "horizontal_overflow": false,
+      "min_visible_button_height_px": 44,
+      "visible_text_has_uuid": false,
+      "visible_text_has_raw_review_codes": false,
+      "has_timecode_textbox": false,
+      "redundant_project_filter_visible": false,
+      "screenshots": [
+        "output/playwright/review-creator-desktop-2026-08-24.png",
+        "output/playwright/review-creator-mobile-390-2026-08-24.png"
+      ]
+    },
+    {
+      "name": "episode_delivery",
+      "path": "/projects/988cfe1b-348c-484f-b4e8-60e79cb98a5d/episodes/e9d84e28-c65c-438c-8b48-537fa70aa228/delivery",
+      "horizontal_overflow": false,
+      "min_visible_button_height_px": 44,
+      "visible_text_has_delivery_codes": false,
+      "automatic_integrity_isolated_copy_explained": true,
+      "screenshots": [
+        "output/playwright/delivery-creator-desktop-2026-08-24.png",
+        "output/playwright/delivery-creator-mobile-390-2026-08-24.png"
+      ]
+    }
+  ],
+  "verification": {
+    "frontend_test_files": 127,
+    "frontend_tests": 485,
+    "frontend_status": "PASS",
+    "delivery_backend_tests": 6,
+    "delivery_backend_status": "PASS",
+    "production_build": "PASS",
+    "bundle_chunks": 42,
+    "largest_bundle_kib": 430.0
+  }
+}

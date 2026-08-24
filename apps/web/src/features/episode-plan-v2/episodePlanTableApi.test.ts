@@ -11,10 +11,10 @@ describe("Episode Plan shot command routes", () => {
     vi.stubGlobal("fetch", fetch);
     await setEpisodePlanShotAssetState("shot-1", "asset-1", "state-1");
     await markEpisodePlanShotReady("shot-1");
-    expect(fetch).toHaveBeenNthCalledWith(1, "/api/v1/shots/shot-1/asset-state-bindings", expect.objectContaining({
+    expect(fetch).toHaveBeenCalledWith("/api/v1/shots/shot-1/asset-state-bindings", expect.objectContaining({
       method: "POST", body: JSON.stringify({ asset_id: "asset-1", asset_state_id: "state-1" }),
     }));
-    expect(fetch).toHaveBeenNthCalledWith(2, "/api/v1/shots/shot-1:mark-production-ready", expect.objectContaining({ method: "POST" }));
+    expect(fetch).toHaveBeenCalledWith("/api/v1/projects/shots/shot-1:mark-production-ready", expect.objectContaining({ method: "POST" }));
   });
 
   it("keeps per-shot partial success instead of pretending a batch is atomic", async () => {

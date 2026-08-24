@@ -27,10 +27,14 @@ export class DirectorIntentApiError extends Error {
   }
 }
 
-export async function saveDirectorIntentRevision(input: SaveDirectorIntentInput): Promise<ShotRevisionWrite> {
-  const response = await fetch(`/api/v1/projects/shots/${encodeURIComponent(input.shotId)}/revisions`, {
+async function writeDirectorIntent(path: string, input: SaveDirectorIntentInput): Promise<ShotRevisionWrite> {
+  const session = await bootstrapLocalSession();
+  const response = await fetch(path, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Local-Instance-Token": session.token,
+    },
     body: JSON.stringify({
       fields: input.fields,
       freeze: input.freeze ?? false,
@@ -69,3 +73,12 @@ export async function saveDirectorIntentRevision(input: SaveDirectorIntentInput)
   const payload = await response.json() as { shot_revision: ShotRevisionWrite };
   return payload.shot_revision;
 }
+
+export async function saveDirectorIntentRevision(input: SaveDirectorIntentInput): Promise<ShotRevisionWrite> {
+  return writeDirectorIntent(`/api/v1/projects/shots/${encodeURIComponent(input.shotId)}/revisions`, input);
+}
+
+export async function saveDirectorIntentAndReady(input: SaveDirectorIntentInput): Promise<ShotRevisionWrite> {
+  return writeDirectorIntent(`/api/v1/projects/shots/${encodeURIComponent(input.shotId)}:save-and-ready`, input);
+}
+import { bootstrapLocalSession } from "../../generated/api";

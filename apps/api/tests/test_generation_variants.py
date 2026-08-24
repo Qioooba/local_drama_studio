@@ -8,8 +8,9 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from local_drama.application.generation import GenerationService
 from local_drama.application.character_identity_packs import CharacterIdentityPackService
+from local_drama.application.experiments import ExperimentService
+from local_drama.application.generation import GenerationService
 from local_drama.application.jobs import JobService
 from local_drama.application.media import MediaService
 from local_drama.application.profiles import ProfileService
@@ -18,6 +19,7 @@ from local_drama.application.prompts import PromptService
 from local_drama.application.reviews import ReviewService
 from local_drama.application.story_assets import StoryAssetService
 from local_drama.application.timeline import TimelineService
+from local_drama.application.worker import LocalMediaWorker
 from local_drama.application.workspace_assets import WorkspaceAssetService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.generation import VariantPlan
@@ -125,7 +127,7 @@ def _plan(
         branch_reason="replay" if parent else "base",
         prompt_revision_id=prompt_revision_id,
         profile_version_id=profile_version_id,
-        parameter_set={"frames": 81, "steps": 20},
+        parameter_set={"frames": 81, "steps": 20, "SEED": seed},
         seed_policy="EXPLICIT",
         explicit_seed=seed,
         bindings=(VariantInput("FIRST_FRAME", media_version_id),),
@@ -152,8 +154,11 @@ def _published_profile(workspace, database) -> str:
                 workflow_version_id,
                 workflow_id,
                 "a" * 64,
-                json.dumps({"1": {"class_type": "LoadImage", "inputs": {"image": ""}}}),
-                json.dumps({"FIRST_FRAME": {"node_id": "1", "input": "image", "type": "image"}}),
+                json.dumps({"1": {"class_type": "LoadImage", "inputs": {"image": "", "seed": 0}}}),
+                json.dumps({
+                    "FIRST_FRAME": {"node_id": "1", "input": "image", "type": "image"},
+                    "SEED": {"node_id": "1", "input": "seed", "type": "integer"},
+                }),
                 now,
                 now,
                 now,
@@ -177,6 +182,24 @@ def _publish_profile_contract(database, profile_version_id: str) -> None:
         )
 
 
+def test_list_profiles_exposes_fixed_workflow_production_tier(workspace, database) -> None:
+    profile_version_id = _published_profile(workspace, database)
+    with database.transaction() as connection:
+        workflow_version_id = connection.execute(
+            "SELECT workflow_version_id FROM execution_profile_versions WHERE id=?",
+            (profile_version_id,),
+        ).fetchone()["workflow_version_id"]
+        connection.execute(
+            "UPDATE workflow_versions SET contract_json=? WHERE id=?",
+            (json.dumps({"production_tier": "fast", "dynamic_production_tiers": False}), workflow_version_id),
+        )
+
+    listed = ProfileService(database, workspace.manifest_path).list_profiles()
+    selected = next(item for item in listed if item["version_id"] == profile_version_id)
+    assert selected["workflow_tier"] == "FAST"
+    assert selected["dynamic_production_tiers"] is False
+
+
 def test_resource_estimate_only_uses_explicit_profile_policy_values() -> None:
     declared = GenerationService._resource_estimate(
         {
@@ -196,6 +219,26 @@ def test_resource_estimate_only_uses_explicit_profile_policy_values() -> None:
     assert unknown["status"] == "UNKNOWN"
     assert unknown["unknown"] == ["duration_seconds", "vram_bytes", "disk_bytes"]
     assert unknown["per_take"] == {"duration_seconds": None, "vram_bytes": None, "disk_bytes": None}
+
+
+def test_input_slots_accepts_legacy_required_inputs_metadata_envelope() -> None:
+    """Pre-slot manifests shipped ``required_inputs`` node lists as metadata.
+
+    The published h3-native-t2v Profile in existing local databases uses this
+    exact shape; contract validation must treat those keys as metadata instead
+    of failing every preflight with PROFILE_INPUT_CONTRACT_INVALID.
+    """
+    legacy = {
+        "required_inputs": ["RHMiniMaxH3DirectTextEncoderLoader", "RHMiniMaxH3T2VATarget"],
+        "transport": "LOOPBACK_HTTP",
+    }
+    assert GenerationService._input_slots(legacy) == {}
+
+    current = {"input_slots": {"FIRST_FRAME": {"min": 1, "max": 1}}, "transport": "LOOPBACK_HTTP"}
+    assert set(GenerationService._input_slots(current)) == {"FIRST_FRAME"}
+
+    with pytest.raises(DomainRuleError, match="带约束的对象"):
+        GenerationService._input_slots({"input_slots": {"FIRST_FRAME": ["not", "an", "object"]}})
 
 
 def _copy_profile_version(database, source_version_id: str, *, status: str = "PUBLISHED") -> str:
@@ -279,6 +322,71 @@ def test_formal_i2v_freezes_current_keyframe_approval_in_binding_and_job_snapsho
     snapshot = json.loads(job["input_snapshot_json"])
     assert snapshot["media_bindings"][0]["source_approval_id"] == approval["id"]
     assert snapshot["recipe_hash"] == submitted["variant"]["recipe_hash"] == preflight["recipe_hash"]
+
+
+def test_experiment_cell_dispatches_real_child_variant_and_tracks_terminal_job(workspace, database) -> None:
+    project = _project(workspace, database, "experiment_dispatch")
+    project_id = str(project["id"])
+    projects = ProjectService(database, workspace.projects_root)
+    season = projects.list_seasons(project_id)[0]
+    episode = projects.list_episodes(str(season["id"]))[0]
+    shot = projects.create_shot(str(episode["id"]), "S001", 4_000)
+    keyframe = _shot_image(workspace, database, project_id, str(shot["id"]), "experiment-dispatch.png")
+    profile_id = _published_profile(workspace, database)
+    reviews = ReviewService(database, workspace)
+    reviews.ensure_templates()
+    template = next(item for item in reviews.templates() if item["code"] == "image_asset")
+    reviews.submit_review(
+        str(keyframe["media_version_id"]),
+        str(template["id"]),
+        "APPROVED",
+        1,
+        [{"item_id": str(item["id"]), "result": "PASS"} for item in template["items"]],
+    )
+    generation = GenerationService(database, workspace)
+    intent = generation.create_intent(project_id, "SHOT", str(shot["id"]), "I2V_PROXY", "matrix base")
+    base_plan = _plan(profile_id, str(keyframe["media_version_id"]), seed=7)
+    base_preflight = generation.preflight_variant(str(intent["id"]), base_plan)
+    base = generation.submit_confirmed_variant(
+        str(intent["id"]), base_plan, str(base_preflight["plan_hash"]), "experiment-base"
+    )
+
+    experiments = ExperimentService(database)
+    experiment = experiments.create_plan(str(intent["id"]), "seed matrix", {"seed": [8]})
+    assert experiment["axes"]["base_variant_id"] == base["variant"]["id"]
+    expanded = experiments.confirm(str(experiment["id"]), str(experiment["plan_hash"]), limit=1)
+    orchestration_job_id = str(expanded["expanded"][0]["job_id"])
+
+    dispatched = LocalMediaWorker(database, workspace).run_once("experiment-worker", ["CPU"])
+    assert dispatched is not None
+    assert dispatched["job"]["id"] == orchestration_job_id
+    assert dispatched["result"]["job_state"] == "SUCCEEDED"
+    assert dispatched["artifact"]["kind"] == "EXPERIMENT_CELL_REPORT"
+    current = experiments.get_plan(str(experiment["id"]))
+    cell = current["cells"][0]
+    assert cell["variant_id"] != base["variant"]["id"]
+    assert cell["job_id"] != orchestration_job_id
+    child = JobService(database, workspace).get_job(str(cell["job_id"]))
+    child_variant = generation.get_variant(str(cell["variant_id"]))
+    assert child["type"] == "GENERATION_VARIANT"
+    assert child["state"] == "QUEUED"
+    assert child_variant["parent_variant_id"] == base["variant"]["id"]
+    assert child_variant["variant_type"] == "RESAMPLE_NEW_SEED"
+    assert child_variant["explicit_seed"] == 8
+
+    jobs = JobService(database, workspace)
+    for _ in range(2):
+        claim = jobs.claim("experiment-gpu", ["GPU_H3"])
+        assert claim is not None
+        jobs.complete(
+            str(claim["attempt"]["id"]),
+            str(claim["attempt"]["lease_token"]),
+            "experiment-gpu",
+            success=True,
+        )
+    completed = experiments.get_plan(str(experiment["id"]))
+    assert completed["status"] == "COMPLETED"
+    assert completed["cells"][0]["status"] == "SUCCEEDED"
 
 
 def test_approved_first_frame_change_previews_and_atomically_propagates_stale(workspace, database) -> None:
@@ -440,7 +548,7 @@ def test_approved_video_winner_change_stales_last_frame_anchor_transition_and_do
                 "variant_type": "BASE",
                 "branch_reason": "must reject stale anchor input",
                 "profile_version_id": profile_id,
-                "parameter_set": {"frames": 81},
+                "parameter_set": {"frames": 81, "SEED": 100},
                 "seed_policy": "EXPLICIT",
                 "explicit_seed": 100,
                 "bindings": [{"role": "FIRST_FRAME", "media_version_id": anchor["extracted_media_version_id"], "ordinal": 0}],
@@ -633,7 +741,7 @@ def test_variant_api_preflight_is_non_persistent_and_hash_gates_creation(workspa
         "branch_reason": "API base",
         "prompt_revision_id": prompt["revision"]["id"],
         "profile_version_id": profile_version_id,
-        "parameter_set": {"frames": 81, "steps": 20},
+        "parameter_set": {"frames": 81, "steps": 20, "SEED": 7},
         "seed_policy": "EXPLICIT",
         "explicit_seed": 7,
         "bindings": [{"role": "FIRST_FRAME", "media_version_id": media_version_id, "ordinal": 0}],
@@ -708,7 +816,7 @@ def test_tampered_variant_input_is_blocked_before_variant_or_job_creation(worksp
         "variant_type": "BASE",
         "branch_reason": "must fail before persistence",
         "profile_version_id": profile_version_id,
-        "parameter_set": {"frames": 81},
+        "parameter_set": {"frames": 81, "SEED": 7},
         "seed_policy": "EXPLICIT",
         "explicit_seed": 7,
         "bindings": [{"role": "FIRST_FRAME", "media_version_id": media_version_id, "ordinal": 0}],
@@ -738,7 +846,7 @@ def test_variant_create_rechecks_integrity_after_successful_preflight(workspace,
         "variant_type": "BASE",
         "branch_reason": "plan then tamper",
         "profile_version_id": profile_version_id,
-        "parameter_set": {"frames": 81},
+        "parameter_set": {"frames": 81, "SEED": 7},
         "seed_policy": "EXPLICIT",
         "explicit_seed": 7,
         "bindings": [{"role": "FIRST_FRAME", "media_version_id": media_version_id, "ordinal": 0}],
@@ -859,13 +967,21 @@ def test_variant_preflight_requires_published_workflow_semantic_binding(workspac
         connection.execute("UPDATE workflow_versions SET node_bindings_json='{}' WHERE id=?", (workflow_version_id,))
     with pytest.raises(DomainRuleError) as error:
         service.preflight_variant(str(intent["id"]), plan)
-    assert error.value.code == "WORKFLOW_SLOT_UNSUPPORTED"
+    assert error.value.code == "WORKFLOW_SEMANTIC_BINDING_REQUIRED"
     assert service.list_variants(str(intent["id"])) == []
 
     with database.transaction() as connection:
         connection.execute(
             "UPDATE workflow_versions SET node_bindings_json=? WHERE id=?",
-            (json.dumps({"FIRST_FRAME": {"node_id": "missing", "input": "image"}}), workflow_version_id),
+            (
+                json.dumps(
+                    {
+                        "FIRST_FRAME": {"node_id": "missing", "input": "image"},
+                        "SEED": {"node_id": "1", "input": "seed"},
+                    }
+                ),
+                workflow_version_id,
+            ),
         )
     with pytest.raises(DomainRuleError) as error:
         service.preflight_variant(str(intent["id"]), plan)
@@ -887,7 +1003,7 @@ def test_variant_derive_plan_proves_resample_and_exact_replay_semantics(workspac
     )
     assert resample["would_persist_variant"] is False
     assert resample["would_create_job"] is False
-    assert resample["diff"]["changed_fields"] == ["explicit_seed"]
+    assert resample["diff"]["changed_fields"] == ["explicit_seed", "parameter_set.SEED"]
     assert resample["draft"]["prompt_revision_id"] == base["prompt_revision_id"]
     assert resample["draft"]["profile_version_id"] == base["capability_profile_version_id"]
     assert len(service.list_variants(str(intent["id"]))) == 1
@@ -1002,7 +1118,10 @@ def test_three_seed_batch_plans_only_seed_diffs_without_persistence(workspace, d
         assert batch["would_persist_variants"] is False
         assert batch["would_create_jobs"] is False
         assert {item["draft"]["explicit_seed"] for item in batch["plans"]} == {8, 9, 10}
-        assert all(item["diff"]["changed_fields"] == ["explicit_seed"] for item in batch["plans"])
+        assert all(
+            item["diff"]["changed_fields"] == ["explicit_seed", "parameter_set.SEED"]
+            for item in batch["plans"]
+        )
         assert len({item["plan_hash"] for item in batch["plans"]}) == 3
         assert len(service.list_variants(str(intent["id"]))) == 1
 
@@ -1044,7 +1163,13 @@ def test_prompt_and_source_branches_only_change_declared_field(workspace, databa
     assert prompt_branch["prompt_revision_id"] == prompt_branch_revision["id"]
     assert PromptService(database).get_revision(prompt_revision_id)["content_text"] == "walk slowly"
 
-    invalid_prompt_branch = VariantPlan(**{**prompt_branch_plan.__dict__, "explicit_seed": 99})
+    invalid_prompt_branch = VariantPlan(
+        **{
+            **prompt_branch_plan.__dict__,
+            "explicit_seed": 99,
+            "parameter_set": {**prompt_branch_plan.parameter_set, "SEED": 99},
+        }
+    )
     with pytest.raises(DomainRuleError) as error:
         service.preflight_variant(str(intent["id"]), invalid_prompt_branch)
     assert error.value.code == "PROMPT_BRANCH_SCOPE_INVALID"
@@ -1210,6 +1335,70 @@ def test_profile_branch_plan_only_changes_published_profile_without_persistence(
         assert counts() == before_counts
 
 
+def test_profile_reroll_readjudicates_camera_plan_to_target_profile(workspace, database) -> None:
+    project = _project(workspace, database, "profile_reroll_camera")
+    project_id = str(project["id"])
+    media_version_id = _image(workspace, database, project_id, "profile-reroll-camera.png")
+    source_profile_id = _published_profile(workspace, database)
+    target_profile_id = _copy_profile_version(database, source_profile_id)
+    camera_schema = json.dumps({
+        "seed": {"required": True, "determinism": "profile_declared"},
+        "capabilities": {"camera": {"support": "PROMPT_FALLBACK", "prompt_fallback": True}},
+    })
+    with database.transaction() as connection:
+        connection.execute(
+            "UPDATE execution_profile_versions SET parameter_schema_json=? WHERE id IN (?,?)",
+            (camera_schema, source_profile_id, target_profile_id),
+        )
+    generation = GenerationService(database, workspace)
+    intent = generation.create_intent(project_id, "SHOT", project_id, "I2V", "camera profile comparison")
+    source_plan = _plan(source_profile_id, media_version_id)
+    source_plan = VariantPlan(
+        **{
+            **source_plan.__dict__,
+            "parameter_set": {
+                **source_plan.parameter_set,
+                "camera_plan": {
+                    "mode": "PROMPT_FALLBACK",
+                    "shot_type": "MEDIUM",
+                    "movement": "PUSH_IN",
+                    "prompt_text": "camera: push in",
+                    "direction": "FORWARD",
+                    "intensity": 0.5,
+                    "curve": "LINEAR",
+                    "profile_version_id": source_profile_id,
+                },
+            },
+        }
+    )
+    parent = generation.create_variant(str(intent["id"]), source_plan)
+
+    result = generation.reroll_variant(
+        str(parent["id"]),
+        reason_code="MODEL_COMPARE",
+        reason_note="target profile camera adjudication",
+        explicit_seed=source_plan.explicit_seed,
+        profile_version_id=target_profile_id,
+        bindings=None,
+        idempotency_key="profile-reroll-camera-target",
+    )
+
+    child = result["variant"]
+    child_parameters = json.loads(str(child["parameter_set_json"]))
+    assert child["variant_type"] == "PROFILE_BRANCH"
+    assert child["capability_profile_version_id"] == target_profile_id
+    assert child_parameters["camera_plan"] == {
+        "mode": "PROMPT_FALLBACK",
+        "shot_type": "MEDIUM",
+        "movement": "PUSH_IN",
+        "prompt_text": "camera: push in",
+        "direction": "FORWARD",
+        "intensity": 0.5,
+        "curve": "LINEAR",
+        "profile_version_id": target_profile_id,
+    }
+    assert result["job"]["execution_profile_version_id"] == target_profile_id
+
 def test_direct_variant_plan_cannot_bypass_resample_profile_or_random_scope(workspace, database) -> None:
     project = _project(workspace, database, "direct_branch_scope")
     project_id = str(project["id"])
@@ -1235,7 +1424,7 @@ def test_direct_variant_plan_cannot_bypass_resample_profile_or_random_scope(work
             "variant_type": "RESAMPLE_NEW_SEED",
             "parent_variant_id": str(base["id"]),
             "branch_reason": "illegal parameter override",
-            "parameter_set": {"frames": 99, "steps": 20},
+            "parameter_set": {"frames": 99, "steps": 20, "SEED": 8},
             "explicit_seed": 8,
         }
     )
@@ -1251,6 +1440,7 @@ def test_direct_variant_plan_cannot_bypass_resample_profile_or_random_scope(work
             "branch_reason": "illegal seed override",
             "profile_version_id": target_profile_id,
             "explicit_seed": 8,
+            "parameter_set": {**base_plan.parameter_set, "SEED": 8},
         }
     )
     with pytest.raises(DomainRuleError) as profile_error:
@@ -1399,6 +1589,7 @@ def test_first_last_preflight_blocks_unprobed_and_incompatible_frames(workspace,
                     {
                         "FIRST_FRAME": {"node_id": "1", "input": "image"},
                         "END_FRAME": {"node_id": "1", "input": "end_image"},
+                        "SEED": {"node_id": "1", "input": "seed"},
                     }
                 ),
                 profile["workflow_version_id"],
@@ -1414,7 +1605,7 @@ def test_first_last_preflight_blocks_unprobed_and_incompatible_frames(workspace,
             branch_reason="first last",
             prompt_revision_id=None,
             profile_version_id=profile_version_id,
-            parameter_set={"frames": 81},
+            parameter_set={"frames": 81, "SEED": 7},
             seed_policy="EXPLICIT",
             explicit_seed=7,
             bindings=(VariantInput("FIRST_FRAME", first_id), VariantInput("END_FRAME", end_id)),
@@ -1446,7 +1637,7 @@ def test_unsupported_first_last_profile_returns_actionable_capability_error(work
         "variant_type": "FIRST_LAST_KEYFRAMES",
         "branch_reason": "unsupported end frame must be actionable",
         "profile_version_id": profile_version_id,
-        "parameter_set": {"frames": 81},
+        "parameter_set": {"frames": 81, "SEED": 7},
         "seed_policy": "EXPLICIT",
         "explicit_seed": 7,
         "bindings": [

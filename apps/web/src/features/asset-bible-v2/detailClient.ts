@@ -1,5 +1,6 @@
 import { createStoryAssetReference, type AssetBibleItem, type StoryAssetReference } from "./api";
 import type { MultiViewBlocker, MultiViewOutput, MultiViewSettings } from "./multiviewClient";
+import { requestJson as generatedRequestJson } from "../../generated/api";
 
 export type DetailKind = "FACE_CLOSEUP" | "COSTUME_DETAIL" | "DISTINCTIVE_DETAIL";
 export type DetailPreflight = {
@@ -15,10 +16,7 @@ export type DetailItem = {
 export type DetailBatch = { intent_id: string; status: string; created_at: string; completed_count: number; failed_count: number; total_count: number; items: DetailItem[] };
 
 async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, init);
-  const body = await response.json().catch(() => null) as { error?: { message?: string; code?: string } } | T | null;
-  if (!response.ok) { const error = (body as { error?: { message?: string; code?: string } } | null)?.error; throw new Error(error?.message ?? error?.code ?? `本地 API 请求失败（${response.status}）`); }
-  return body as T;
+  return generatedRequestJson<T>(`/api/v1${path}`, init);
 }
 export const preflightAssetDetail = (assetId: string, settings: MultiViewSettings): Promise<{ preflight: DetailPreflight }> => requestJson(`/story-assets/${encodeURIComponent(assetId)}/generate-detail:preflight`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) });
 export const submitAssetDetail = (assetId: string, settings: MultiViewSettings, planHash: string) => requestJson(`/story-assets/${encodeURIComponent(assetId)}/generate-detail`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...settings, plan_hash: planHash, idempotency_key: crypto.randomUUID() }) });

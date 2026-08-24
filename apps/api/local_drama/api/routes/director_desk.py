@@ -41,6 +41,24 @@ async def get_director_desk(
         raise api_error_from_domain(error) from error
 
 
+@router.get(
+    "/projects/{project_id}/episodes/{episode_id}/timeline-selections",
+    operation_id="getEpisodeTimelineSelections",
+)
+async def get_episode_timeline_selections(
+    project_id: str,
+    episode_id: str,
+    request: Request,
+    limit: int = Query(default=500, ge=1, le=500),
+) -> dict[str, object]:
+    try:
+        return DirectorDeskReadModelService(request.app.state.database).timeline_selections(
+            project_id=project_id, episode_id=episode_id, limit=limit,
+        )
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.post("/frame-bridges/{transition_id}/inherit", operation_id="inheritFrameBridge")
 async def inherit_frame_bridge(
     transition_id: str, payload: FrameBridgeInheritRequest, request: Request

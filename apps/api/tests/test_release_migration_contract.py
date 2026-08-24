@@ -38,6 +38,9 @@ def test_release_migration_contract_matches_graph_and_package_authority() -> Non
         "0052_storage_operations",
         "0053_canonical_capability_repair",
         "0054_character_identity_pack_hardening",
+        "0055_breakdown_scene_applications",
+        "0056_breakdown_draft_revisions",
+        "0057_provider_connections",
     ]
     graph = {revision.revision for revision in scripts.walk_revisions()}
     assert set(revisions).issubset(graph)

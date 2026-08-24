@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from local_drama.application.dialogue import DialogueService
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
 from local_drama.application.reviews import ReviewService
@@ -40,6 +41,27 @@ def _video(workspace, name: str, color: str = "blue") -> Path:
             "-pix_fmt",
             "yuv420p",
             "-an",
+            "-y",
+            str(output),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return output
+
+
+def _audio(workspace, name: str) -> Path:
+    output = workspace.work_root / name
+    output.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            workspace.ffmpeg_path,
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=1",
+            "-c:a",
+            "pcm_s16le",
             "-y",
             str(output),
         ],
@@ -90,6 +112,11 @@ def test_review_selection_machine_qc_stale_and_batch_invariants(workspace, datab
         checks=_checks(proxy_template),
     )
     assert approved_proxy["decision"] == "APPROVED"
+    assert all(item["media_version_id"] != str(proxy_version["id"]) for item in review_service.inbox(project_id))
+    assert any(
+        item["media_version_id"] == str(proxy_version["id"])
+        for item in review_service.inbox(project_id, include_resolved=True)
+    )
     assert review_service.review_context(str(proxy_version["id"]))["subject_revision"] == 3
     duplicate_approval = review_service.submit_review(
         str(proxy_version["id"]),
@@ -174,6 +201,42 @@ def test_review_api_exposes_real_templates_inbox_context_and_selection(workspace
         assert selected.json()["selection"]["media_version_id"] == version_id
 
 
+def test_review_inbox_resolves_dialogue_text_revision_audio_to_episode_and_shot(workspace, database) -> None:
+    project = _project(workspace, database, "g4_dialogue_audio_lineage")
+    project_id = str(project["id"])
+    projects = ProjectService(database, workspace.projects_root)
+    episode = projects.list_episodes(str(projects.list_seasons(project_id)[0]["id"]))[0]
+    shot = projects.create_shot(str(episode["id"]), "S-AUDIO-001", 1000)
+    line = DialogueService(database, workspace).create_line(
+        str(episode["id"]),
+        code="DL-AUDIO-001",
+        speaker="林默",
+        text="雾港来信。",
+        pronunciation={},
+        shot_id=str(shot["id"]),
+    )
+    text_revision_id = str(line["text_revisions"][-1]["id"])
+    media = MediaService(database, workspace).import_file(
+        project_id,
+        _audio(workspace, "g4-dialogue-lineage.wav"),
+        owner_type="DIALOGUE_TEXT_REVISION",
+        owner_id=text_revision_id,
+        stage="FORMAL",
+    )
+    version_id = str(media["media_version_id"])
+
+    with TestClient(create_app(workspace)) as client:
+        response = client.get(
+            f"/api/v1/reviews/inbox?project_id={project_id}&episode_id={episode['id']}&media_kind=AUDIO"
+        )
+        assert response.status_code == 200
+        item = next(row for row in response.json()["items"] if row["media_version_id"] == version_id)
+        assert item["episode_id"] == str(episode["id"])
+        assert item["episode_code"] == episode["code"]
+        assert item["shot_id"] == str(shot["id"])
+        assert item["shot_code"] == "S-AUDIO-001"
+
+
 def test_review_inbox_cross_project_filters_age_priority_blocking_episode_and_stable_cursor(workspace, database) -> None:
     """FR-REV-001 read model filters before pagination without mutating review state."""
     first = _project(workspace, database, "g4_inbox_first")
@@ -249,3 +312,54 @@ def test_review_inbox_cross_project_filters_age_priority_blocking_episode_and_st
 
         invalid = client.get("/api/v1/reviews/inbox?blocking=UNKNOWN")
         assert invalid.status_code == 422
+
+
+def test_review_inbox_excludes_rejected_by_default_and_includes_when_requested(workspace, database) -> None:
+    project = _project(workspace, database, "g4_rejected_inbox")
+    project_id = str(project["id"])
+    projects = ProjectService(database, workspace.projects_root)
+    season = projects.list_seasons(project_id)[0]
+    episode = projects.list_episodes(str(season["id"]))[0]
+    media_service = MediaService(database, workspace)
+    audio_file = _audio(workspace, "g4-reject-bgm.wav")
+    media = media_service.import_file(
+        project_id,
+        audio_file,
+        owner_type="EPISODE",
+        owner_id=str(episode["id"]),
+        stage="IMPORTED",
+        media_kind="AUDIO",
+    )
+    version_id = str(media["media_version_id"])
+
+    review_service = ReviewService(database, workspace)
+    review_service.ensure_templates()
+    templates = {str(item["code"]): item for item in review_service.templates()}
+    audio_template = templates["audio_mix"]
+
+    # Initially in inbox
+    with TestClient(create_app(workspace)) as client:
+        default_inbox = client.get(f"/api/v1/reviews/inbox?project_id={project_id}").json()["items"]
+        assert any(item["media_version_id"] == version_id for item in default_inbox)
+
+    # Submit REJECTED decision with required comment
+    review_service.submit_review(
+        version_id,
+        template_version_id=str(audio_template["id"]),
+        decision="REJECTED",
+        checks=_checks(audio_template),
+        expected_subject_revision=1,
+        comment="响度低于标准，需要重新生成",
+    )
+
+    with TestClient(create_app(workspace)) as client:
+        # Default inbox should exclude the REJECTED item
+        default_inbox_after = client.get(f"/api/v1/reviews/inbox?project_id={project_id}").json()["items"]
+        assert not any(item["media_version_id"] == version_id for item in default_inbox_after)
+
+        # Explicit include_resolved=true should return it
+        resolved_inbox = client.get(f"/api/v1/reviews/inbox?project_id={project_id}&include_resolved=true").json()["items"]
+        assert any(item["media_version_id"] == version_id for item in resolved_inbox)
+        rejected_item = next(item for item in resolved_inbox if item["media_version_id"] == version_id)
+        assert rejected_item["decision"] == "REJECTED"
+

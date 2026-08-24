@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from scripts.migrate import migrate
 
-HEAD = "0054_character_identity_pack_hardening"
+HEAD = "0057_provider_connections"
 PREVIOUS = "0041_character_voice_bindings"
 
 

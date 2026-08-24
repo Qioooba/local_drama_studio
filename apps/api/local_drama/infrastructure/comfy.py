@@ -19,7 +19,7 @@ LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 class ComfyClient:
-    def __init__(self, base_url: str = "http://127.0.0.1:8188", output_root: Path | None = None, timeout_seconds: float = 10.0) -> None:
+    def __init__(self, base_url: str = "http://127.0.0.1:8188", output_root: Path | None = None, timeout_seconds: float = 30.0) -> None:
         parsed = urlparse(base_url)
         if parsed.scheme not in {"http", "https"} or (parsed.hostname or "").casefold() not in LOOPBACK_HOSTS:
             raise DomainRuleError("LOCAL_ONLY_ENDPOINT_REQUIRED", "ComfyUI client 只允许 loopback endpoint")
@@ -32,12 +32,30 @@ class ComfyClient:
     def _request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
         self._assert_access_allowed(path)
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
-        request = Request(f"{self.base_url}{path}", data=body, method=method, headers={"Content-Type": "application/json"} if body else {})
-        try:
-            with open_local(request, timeout=self.timeout_seconds) as response:
-                raw = response.read()
-        except (HTTPError, URLError, TimeoutError, OSError) as error:
-            raise DomainRuleError("COMFY_LOOPBACK_UNAVAILABLE", "ComfyUI loopback 请求失败", {"reason": type(error).__name__, "path": path}) from error
+        # GETs are idempotent; POST /prompt is only retried when the TCP
+        # connection was refused (the request never reached the server), so a
+        # lost response can never enqueue the same workflow twice.
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            request = Request(f"{self.base_url}{path}", data=body, method=method, headers={"Content-Type": "application/json"} if body else {})
+            try:
+                with open_local(request, timeout=self.timeout_seconds) as response:
+                    raw = response.read()
+                break
+            except HTTPError as error:
+                error_body = ""
+                try:
+                    error_body = error.read().decode("utf-8", errors="replace")
+                except Exception:
+                    pass
+                raise DomainRuleError("COMFY_LOOPBACK_UNAVAILABLE", f"ComfyUI loopback 请求失败 (HTTP {error.code}): {error_body[:300]}", {"reason": "HTTPError", "code": error.code, "path": path, "body": error_body}) from error
+            except (URLError, TimeoutError, OSError) as error:
+                reason = getattr(error, "reason", error)
+                retryable = method == "GET" or isinstance(reason, ConnectionRefusedError)
+                if retryable and attempt < max_attempts:
+                    time.sleep(0.5 * attempt)
+                    continue
+                raise DomainRuleError("COMFY_LOOPBACK_UNAVAILABLE", "ComfyUI loopback 请求失败", {"reason": type(error).__name__, "path": path}) from error
         try:
             return json.loads(raw.decode("utf-8")) if raw else {}
         except json.JSONDecodeError as error:

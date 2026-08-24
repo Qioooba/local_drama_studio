@@ -19,6 +19,7 @@ from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
 
 from .media import DOCUMENT_EXTENSIONS, MediaService
+from .source_text import source_chapters, source_paragraphs
 
 PREVIEW_PARAGRAPH_LIMIT = 20
 PREVIEW_PARAGRAPH_CHARACTER_LIMIT = 1_000
@@ -134,7 +135,9 @@ class DocumentImportService:
             partial = text_path.with_suffix(".partial.txt")
             partial.write_text(text, encoding="utf-8", newline="")
             partial.replace(text_path)
-        paragraphs = [paragraph.strip() for paragraph in re.split(r"\n\s*\n", text) if paragraph.strip()]
+        paragraph_records = source_paragraphs(text)
+        paragraphs = [paragraph.text for paragraph in paragraph_records]
+        chapters = source_chapters(paragraph_records)
         preview_paragraphs: list[str] = []
         remaining_preview_characters = PREVIEW_TOTAL_CHARACTER_LIMIT
         for paragraph in paragraphs[:PREVIEW_PARAGRAPH_LIMIT]:
@@ -147,6 +150,7 @@ class DocumentImportService:
             "character_count": len(text),
             "paragraph_count": len(paragraphs),
             "paragraphs": preview_paragraphs,
+            "chapters": chapters,
             "preview_character_limit": PREVIEW_TOTAL_CHARACTER_LIMIT,
             "preview_truncated": len(paragraphs) > len(preview_paragraphs)
             or any(len(original) > len(shown) for original, shown in zip(paragraphs, preview_paragraphs, strict=False)),
@@ -390,6 +394,10 @@ class DocumentImportService:
         session_id: str,
         profile_version_id: str | None,
         idempotency_key: str,
+        *,
+        target_episode_id: str | None = None,
+        source_paragraph_start: int | None = None,
+        source_paragraph_end: int | None = None,
     ) -> dict[str, Any]:
         """Queue a durable local-LLM Job; never execute the model in the API."""
         from local_drama.application.local_llm import LocalLLMService
@@ -398,4 +406,7 @@ class DocumentImportService:
             session_id,
             profile_version_id,
             idempotency_key,
+            target_episode_id=target_episode_id,
+            source_paragraph_start=source_paragraph_start,
+            source_paragraph_end=source_paragraph_end,
         )

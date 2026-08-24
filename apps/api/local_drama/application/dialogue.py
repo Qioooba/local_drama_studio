@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import uuid
@@ -481,6 +482,121 @@ class DialogueService:
             "candidates": [{**dict(row), "provenance": json.loads(row["provenance_json"])} for row in candidates],
             "selection": dict(selected) if selected else None,
         }
+
+    def publish_local_sapi_profile(
+        self,
+        voice_ref: str,
+        smoke_text: str = "本机语音合成验收通过",
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Publish the built-in Windows SAPI TTS profile only after a real local WAV probe."""
+        voice_ref = voice_ref.strip()
+        smoke_text = smoke_text.strip()
+        if not voice_ref.startswith("sapi:") or not voice_ref.removeprefix("sapi:").strip():
+            raise DomainRuleError("SAPI_VOICE_REF_INVALID", "必须显式选择本机扫描到的 SAPI 音色")
+        discovered = self.discover_local_sapi_voices()
+        voice = next((item for item in discovered.get("items", []) if item.get("voice_ref") == voice_ref), None)
+        if voice is None:
+            raise DomainRuleError("SAPI_VOICE_NOT_DISCOVERED", "所选 SAPI 音色不在本机实时扫描结果中")
+        powershell = shutil.which("powershell.exe") or shutil.which("powershell")
+        if not powershell:
+            raise DomainRuleError("SAPI_RUNTIME_UNAVAILABLE", "找不到 Windows PowerShell，无法执行真实 SAPI 冒烟测试")
+
+        code = "local-tts-windows-sapi"
+        now = _now()
+        provisional_profile_id = str(uuid.uuid5(uuid.NAMESPACE_URL, "local-drama:profile:local-tts-windows-sapi"))
+        with self.database.transaction() as connection:
+            connection.execute(
+                """INSERT INTO execution_profiles
+                (id,code,title,created_at,updated_at,created_by,revision,schema_version)
+                VALUES (?,?,?, ?,?,?,1,'v2') ON CONFLICT(code) DO NOTHING""",
+                (provisional_profile_id, code, "Windows SAPI 本机 TTS", now, now, actor),
+            )
+            profile_row = connection.execute("SELECT id FROM execution_profiles WHERE code=?", (code,)).fetchone()
+        if profile_row is None:
+            raise DomainRuleError("SAPI_PROFILE_CREATE_FAILED", "无法创建本机 SAPI TTS Profile")
+        profile_id = str(profile_row["id"])
+        version_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"local-drama:profile-version:{profile_id}:1"))
+        probe_dir = (self.settings.work_root / "profile-probes" / version_id).resolve()
+        probe_dir.mkdir(parents=True, exist_ok=True)
+        wav_path = probe_dir / "sapi-smoke.wav"
+        env = os.environ.copy()
+        env.update({"LD_SAPI_VOICE": str(voice["name"]), "LD_SAPI_OUTPUT": str(wav_path), "LD_SAPI_TEXT": smoke_text})
+        script = (
+            "Add-Type -AssemblyName System.Speech; "
+            "$s=New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+            "$s.SelectVoice($env:LD_SAPI_VOICE); $s.SetOutputToWaveFile($env:LD_SAPI_OUTPUT); "
+            "$s.Speak($env:LD_SAPI_TEXT); $s.Dispose()"
+        )
+        try:
+            completed = subprocess.run(
+                [powershell, "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+                env=env,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise DomainRuleError("SAPI_SMOKE_TEST_FAILED", "本机 SAPI 冒烟测试无法执行", {"reason": type(error).__name__}) from error
+        if completed.returncode != 0 or not wav_path.is_file() or wav_path.stat().st_size <= 44:
+            raise DomainRuleError("SAPI_SMOKE_TEST_FAILED", "本机 SAPI 未生成可读取的 WAV 冒烟证据")
+        probe = self.media._probe(wav_path, "AUDIO")
+        audio_streams = [item for item in probe.get("streams", []) if isinstance(item, dict) and item.get("codec_type") == "audio"]
+        if probe.get("probe_status") != "PASS" or not audio_streams:
+            raise DomainRuleError("SAPI_SMOKE_TEST_FAILED", "本机 SAPI WAV 未通过 ffprobe 音频校验")
+        digest = hashlib.sha256(wav_path.read_bytes()).hexdigest()
+        evidence = {
+            "runtime": "WINDOWS_SAPI_LOCAL",
+            "voice_ref": voice_ref,
+            "voice": voice,
+            "smoke_sha256": digest,
+            "smoke_byte_size": wav_path.stat().st_size,
+            "smoke_path_rel": wav_path.relative_to(self.settings.work_root).as_posix(),
+            "ffprobe": probe,
+            "network_contacted": False,
+            "validated_at": now,
+        }
+        with self.database.transaction() as connection:
+            connection.execute(
+                """INSERT INTO execution_profile_versions
+                (id,execution_profile_id,version_no,capability,model_bundle_json,input_contract_json,
+                 parameter_schema_json,status,manifest_sha256,capability_json,worker_policy,
+                 created_at,updated_at,created_by,revision,schema_version)
+                VALUES (?,?,1,'TTS',?,?,?,'PUBLISHED',?,?, 'ONE_LOCAL_TTS_TASK',?,?,?,1,'v2')
+                ON CONFLICT(execution_profile_id,version_no) DO UPDATE SET
+                  capability='TTS',model_bundle_json=excluded.model_bundle_json,
+                  input_contract_json=excluded.input_contract_json,parameter_schema_json=excluded.parameter_schema_json,
+                  status='PUBLISHED',manifest_sha256=excluded.manifest_sha256,capability_json=excluded.capability_json,
+                  worker_policy=excluded.worker_policy,updated_at=excluded.updated_at,revision=execution_profile_versions.revision+1""",
+                (
+                    version_id,
+                    profile_id,
+                    _json({"runtime": "WINDOWS_SAPI_LOCAL", "voice_ref": voice_ref}),
+                    _json({"text": "string", "emotion": "string", "speech_rate": "0.5..2.0"}),
+                    _json({"voice_ref": {"const": voice_ref}, "network": {"const": False}}),
+                    digest,
+                    _json(evidence),
+                    now,
+                    now,
+                    actor,
+                ),
+            )
+            actual = connection.execute(
+                "SELECT id FROM execution_profile_versions WHERE execution_profile_id=? AND version_no=1",
+                (profile_id,),
+            ).fetchone()
+            if actual is None:
+                raise DomainRuleError("SAPI_PROFILE_CREATE_FAILED", "无法保存本机 SAPI TTS Profile 版本")
+            version_id = str(actual["id"])
+            connection.execute(
+                """INSERT INTO audit_events
+                (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
+                VALUES (?,'audio_editor','LOCAL_SAPI_TTS_PROFILE_PUBLISHED','execution_profile_version',?,
+                '真实本机 SAPI WAV 冒烟通过后发布 TTS Profile',?)""",
+                (actor, version_id, _json({"voice_ref": voice_ref, "smoke_sha256": digest, "network_contacted": False})),
+            )
+        return {"id": version_id, "code": code, "version_no": 1, "capability": "TTS", "status": "PUBLISHED", "evidence": evidence}
 
     def list_lines(self, episode_id: str) -> list[dict[str, Any]]:
         with self.database.connect() as connection:

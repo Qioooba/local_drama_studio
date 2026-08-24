@@ -67,6 +67,12 @@ def test_bounded_loop_pauses_on_machine_failure_and_requires_human_approval(work
     assert rejected["human_approval_status"] == "REJECTED"
     assert rejected["iteration_count"] == 2
     assert rejected["disk_bytes"] == 40
+    # The first task was approved and therefore QUEUED while the second task
+    # waited at HITL.  Rejecting the run must close both scheduler boundaries;
+    # otherwise a worker that comes online later could execute rejected work.
+    states = {item["id"]: item["state"] for item in JobService(database).list_jobs(project_id)}
+    assert len(states) == 2
+    assert set(states.values()) == {"CANCELLED"}
 
 
 def test_limits_and_declarative_validation(workspace, database) -> None:

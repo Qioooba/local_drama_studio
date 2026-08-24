@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import signal
 import sys
+import threading
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +31,9 @@ def main() -> int:
     parser.add_argument("--api-version")
     parser.add_argument("--status", action="store_true", help="只读输出已持久化 WorkerSession 状态")
     parser.add_argument("--reconcile", action="store_true", help="不启动 worker，仅恢复过期 session/Job lease 与 storage operation")
+    parser.add_argument("--watch", action="store_true", help="常驻轮询本机队列，直到收到停止信号")
+    parser.add_argument("--poll-seconds", type=float, default=1.0, help="常驻模式空队列轮询间隔")
+    parser.add_argument("--stop-file", help="常驻模式的本机停止信号文件")
     args = parser.parse_args()
     settings = Settings.from_env()
     settings.ensure_roots()
@@ -46,14 +51,33 @@ def main() -> int:
         return 0
     if not args.worker_id:
         parser.error("--worker-id is required unless --status or --reconcile is used")
+    stop_requested = threading.Event()
+    stop_file = Path(args.stop_file).resolve() if args.stop_file else None
+    if args.watch and stop_file is None:
+        parser.error("--watch requires --stop-file")
+    if stop_file is not None:
+        stop_file.parent.mkdir(parents=True, exist_ok=True)
+        stop_file.unlink(missing_ok=True)
+
+    def request_stop(_signum: int, _frame: object) -> None:
+        stop_requested.set()
+
+    if args.watch:
+        signal.signal(signal.SIGINT, request_stop)
+        if hasattr(signal, "SIGTERM"):
+            signal.signal(signal.SIGTERM, request_stop)
     result = WorkerSupervisor(database, settings).run_until_idle(
         args.worker_id,
         channels=[item.strip().upper() for item in args.channels.split(",") if item.strip()],
-        max_jobs=args.max_jobs,
+        max_jobs=None if args.watch else args.max_jobs,
         max_restarts=args.max_restarts,
         worker_version=args.worker_version,
         api_version=args.api_version,
+        idle_poll_seconds=args.poll_seconds if args.watch else None,
+        should_stop=(lambda: stop_requested.is_set() or bool(stop_file and stop_file.exists())) if args.watch else None,
     )
+    if stop_file is not None:
+        stop_file.unlink(missing_ok=True)
     # This is the persisted supervisor state, not an inference from a browser
     # tab.  INCOMPATIBLE exits non-zero so launch scripts fail closed.
     print(json.dumps(result, ensure_ascii=False, default=str))

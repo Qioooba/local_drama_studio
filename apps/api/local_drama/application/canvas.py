@@ -38,7 +38,8 @@ class ProductionCanvasService:
             elif normalized == "SHOT":
                 row = connection.execute(
                     """SELECT sh.id, sh.code, sh.code AS title, s.project_id, sh.episode_id FROM shots sh
-                    JOIN episodes e ON e.id=sh.episode_id JOIN seasons s ON s.id=e.season_id WHERE sh.id=?""",
+                    JOIN episodes e ON e.id=sh.episode_id JOIN seasons s ON s.id=e.season_id
+                    WHERE sh.id=? AND sh.archived_at IS NULL""",
                     (scope_id,),
                 ).fetchone()
             else:
@@ -61,12 +62,13 @@ class ProductionCanvasService:
         episode_id = scope_id if scope["scope_type"] == "EPISODE" else str(scope["episode_id"])
         with self.database.connect() as connection:
             if scope["scope_type"] == "SHOT":
-                shots = connection.execute("SELECT * FROM shots WHERE id=?", (scope_id,)).fetchall()
+                shots = connection.execute("SELECT * FROM shots WHERE id=? AND archived_at IS NULL", (scope_id,)).fetchall()
                 total = len(shots)
             else:
-                total = int(connection.execute("SELECT COUNT(*) FROM shots WHERE episode_id=?", (episode_id,)).fetchone()[0])
+                total = int(connection.execute("SELECT COUNT(*) FROM shots WHERE episode_id=? AND archived_at IS NULL", (episode_id,)).fetchone()[0])
                 shots = connection.execute(
-                    """SELECT * FROM shots WHERE episode_id=? ORDER BY CAST(order_key AS REAL), code LIMIT ? OFFSET ?""",
+                    """SELECT * FROM shots WHERE episode_id=? AND archived_at IS NULL
+                    ORDER BY CAST(order_key AS REAL), code LIMIT ? OFFSET ?""",
                     (episode_id, limit, cursor),
                 ).fetchall()
             shot_ids = [str(row["id"]) for row in shots]
@@ -172,7 +174,7 @@ class ProductionCanvasService:
                 edges.append({"id": f"sequence:{previous_timeline}:{timeline_id}", "source": previous_timeline, "target": timeline_id, "kind": "SHOT_SEQUENCE", "mutable_by_layout": False})
             previous_timeline = timeline_id
             for constraint in facts["constraints"]:
-                if str(constraint["from_shot_id"]) == shot_id:
+                if str(constraint["from_shot_id"]) == shot_id and str(constraint["to_shot_id"]) in data:
                     edges.append({"id": f"constraint:{constraint['id']}", "source": timeline_id, "target": f"shot:{constraint['to_shot_id']}:direct", "kind": "TRANSITION_CONSTRAINT", "status": constraint["compatibility_status"], "mutable_by_layout": False})
         layout = self._layout(scope["scope_type"], scope_id)
         for node in nodes:

@@ -7,7 +7,7 @@ import {
   setFrameBridgeSourceFrame,
   type FrameBridgeWrite,
 } from "./frameBridgeClient";
-import { createFrameAnchor } from "../../generated/api";
+import { createFrameAnchor, createShotTransitionConstraint } from "../../generated/api";
 import type { DirectorDeskCandidate, DirectorDeskResponse } from "./types";
 import { frameCandidateIssue, readFrameCandidate, type FrameCandidateTransfer } from "./frameCandidateDrag";
 import "./frame-bridge-controls.css";
@@ -18,11 +18,14 @@ type CurrentCandidate = (Partial<DirectorDeskCandidate> & { media_version_id: st
 export type FrameBridgeControlsProps = {
   frameBridge: FrameBridgeAggregate;
   currentCandidate: CurrentCandidate;
+  currentShotId: string;
+  previousShotId?: string | null;
+  nextShotId?: string | null;
   canEdit?: boolean;
   onChanged?: (result?: FrameBridgeWrite) => void | Promise<void>;
 };
 
-type Operation = "inherit" | "candidate" | "extract-end" | "lock" | "unlock";
+type Operation = "inherit" | "candidate" | "extract-end" | "lock" | "unlock" | "create-previous" | "create-next";
 type DropTarget = "start" | "end";
 
 const LOCKED_ENFORCEMENTS = new Set(["HARD", "LOCKED"]);
@@ -31,7 +34,7 @@ function shortId(value: string | null | undefined) {
   return value ? `${value.slice(0, 8)}…` : "未设置";
 }
 
-export function FrameBridgeControls({ frameBridge, currentCandidate, canEdit = true, onChanged }: FrameBridgeControlsProps) {
+export function FrameBridgeControls({ frameBridge, currentCandidate, currentShotId, previousShotId, nextShotId, canEdit = true, onChanged }: FrameBridgeControlsProps) {
   const boundary = frameBridge.previous;
   const [busy, setBusy] = useState<Operation | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -66,13 +69,25 @@ export function FrameBridgeControls({ frameBridge, currentCandidate, canEdit = t
   }, [currentCandidate, nextBoundary]);
 
   const run = async (operation: Operation, droppedCandidate?: FrameCandidateTransfer) => {
-    if (busy || !canEdit || (operation !== "extract-end" && !boundary)) return;
+    if (busy || !canEdit || (!["extract-end", "create-previous", "create-next"].includes(operation) && !boundary)) return;
     setBusy(operation);
     setMessage(null);
     setConflict(null);
     try {
       let result: FrameBridgeWrite;
-      if (operation === "inherit") {
+      if (operation === "create-previous" || operation === "create-next") {
+        const fromShotId = operation === "create-previous" ? previousShotId : currentShotId;
+        const toShotId = operation === "create-previous" ? currentShotId : nextShotId;
+        if (!fromShotId || !toShotId) return;
+        const created = await createShotTransitionConstraint({
+          from_shot_id: fromShotId,
+          to_shot_id: toShotId,
+          constraint_type: "START_FROM_PREVIOUS_LAST",
+          enforcement: "ADVISORY",
+          note: "Director Desk Frame Bridge",
+        });
+        result = { transition: created.constraint } as unknown as FrameBridgeWrite;
+      } else if (operation === "inherit") {
         if (!boundary) return;
         result = await inheritFrameBridge(boundary.transition_id, boundary.boundary_revision);
       } else if (operation === "candidate") {
@@ -93,7 +108,9 @@ export function FrameBridgeControls({ frameBridge, currentCandidate, canEdit = t
         if (!boundary) return;
         result = await setFrameBridgeLocked(boundary.transition_id, boundary.boundary_revision, operation === "lock");
       }
-      setMessage(operation === "inherit"
+      setMessage(operation === "create-previous" || operation === "create-next"
+        ? `${operation === "create-previous" ? "上游" : "下游"} Frame Bridge 已创建；现在可以设置首尾帧来源。`
+        : operation === "inherit"
         ? `${hasCurrentStart ? "已重新继承" : "已继承"}上一镜尾帧；旧锚点仍保留在历史中。`
         : operation === "candidate"
           ? "已将当前候选帧设为本镜首帧；旧锚点未被删除。"
@@ -136,8 +153,10 @@ export function FrameBridgeControls({ frameBridge, currentCandidate, canEdit = t
 
   if (!boundary) {
     return <section className="frame-bridge-controls frame-bridge-empty" aria-label="Frame Bridge 连贯性操作">
-      <strong>这是本集第一个镜头</strong>
-      <span>没有上一镜边界，因此无需继承首帧。仍可为下一镜提取本镜真实尾帧。</span>
+      <strong>{previousShotId ? "尚未创建上游 Frame Bridge" : "这是本集第一个镜头"}</strong>
+      <span>{previousShotId ? "先创建与上一镜的边界，再继承或指定本镜首帧。" : "没有上一镜边界，因此无需继承首帧。仍可为下一镜提取本镜真实尾帧。"}</span>
+      {previousShotId && <button type="button" disabled={!canEdit || busy !== null} onClick={() => void run("create-previous")}>{busy === "create-previous" ? "正在创建…" : "创建上游 Frame Bridge"}</button>}
+      {nextShotId && !nextBoundary && <button type="button" disabled={!canEdit || busy !== null} onClick={() => void run("create-next")}>{busy === "create-next" ? "正在创建…" : "创建下游 Frame Bridge"}</button>}
       {nextBoundary && dropTarget("end")}
       {nextBoundary && <button type="button" title={endFrameIssue ?? "提取真实视频尾帧并连接下一镜"} disabled={!canEdit || busy !== null || Boolean(endFrameIssue)} onClick={() => void run("extract-end")}>{busy === "extract-end" ? "正在解析真实尾帧…" : "从当前视频提取尾帧"}</button>}
       {endFrameIssue && nextBoundary && <span>尾帧来源不可用：{endFrameIssue}</span>}
@@ -166,6 +185,8 @@ export function FrameBridgeControls({ frameBridge, currentCandidate, canEdit = t
       <span>{staleReason || "上游候选、批准或媒体版本已更新。请重新继承后再锁定。"}</span>
     </aside>}
 
+    {boundary.inheritance_reason && <aside className={`frame-bridge-history-note${boundary.inheritance_recommended ? " recommended" : ""}`}><strong>{boundary.inheritance_recommended ? "建议继承" : "需要导演判断"}</strong> · {boundary.inheritance_reason}</aside>}
+
     <p className="frame-bridge-history-note">继承和重新继承都会创建新的首帧锚点；旧锚点与生产历史不会被覆盖或删除。</p>
 
     <div className="frame-candidate-drop-grid" aria-label="候选帧拖放目标">{dropTarget("start")}{dropTarget("end")}</div>
@@ -173,7 +194,7 @@ export function FrameBridgeControls({ frameBridge, currentCandidate, canEdit = t
     <div className="frame-bridge-source-menu" aria-label="首尾帧来源菜单">
       <div><strong>本镜首帧来源</strong><span>沿用上一镜，或使用当前已验证图片候选。</span></div>
       <div className="frame-bridge-actions">
-      <button type="button" className="primary" disabled={!canEdit || busy !== null || !boundary.previous_end || boundary.previous_end.stale} onClick={() => void run("inherit")}>
+      <button type="button" className={boundary.inheritance_recommended ? "primary" : undefined} title={boundary.inheritance_reason} disabled={!canEdit || busy !== null || !boundary.previous_end || boundary.previous_end.stale} onClick={() => void run("inherit")}>
         {busy === "inherit" ? "继承中…" : hasCurrentStart ? "重新继承上一镜尾帧" : "继承上一镜尾帧"}
       </button>
       <button type="button" title={candidateIssue ?? "将已验证图片候选设置为本镜首帧"} disabled={!canEdit || busy !== null || Boolean(candidateIssue)} onClick={() => void run("candidate")}>
@@ -181,6 +202,7 @@ export function FrameBridgeControls({ frameBridge, currentCandidate, canEdit = t
       </button>
       </div>
       <div><strong>本镜尾帧来源</strong><span>从当前选中的真实视频解析最后一帧，并连接下一镜。</span></div>
+      {nextShotId && !nextBoundary && <button type="button" disabled={!canEdit || busy !== null} onClick={() => void run("create-next")}>{busy === "create-next" ? "正在创建…" : "创建下游 Frame Bridge"}</button>}
       <button type="button" title={endFrameIssue ?? "提取真实视频尾帧并连接下一镜"} disabled={!canEdit || busy !== null || Boolean(endFrameIssue)} onClick={() => void run("extract-end")}>
         {busy === "extract-end" ? "正在解析真实尾帧…" : frameBridge.current_end ? "重新提取当前视频尾帧" : "从当前视频提取尾帧"}
       </button>

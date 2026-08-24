@@ -28,7 +28,7 @@
 .multiview-slot.failed { border-top-color: var(--danger); }
 .multiview-slot-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
 .multiview-slot-head span, .multiview-slot small { color: var(--text-muted); font-size: 10px; }
-.multiview-slot img, .multiview-slot-placeholder { width: 100%; aspect-ratio: 4 / 3; border-radius: 7px; background: #d9d3c8; object-fit: cover; }
+.multiview-slot img, .multiview-slot-placeholder { width: 100%; aspect-ratio: 1; border-radius: 7px; background: #1a1d1c; object-fit: contain; }
 .multiview-slot-placeholder { display: grid; place-items: center; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .multiview-progress { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; color: var(--text-muted); font-size: 11px; }
 .multiview-progress progress { width: 100%; accent-color: var(--running); }
@@ -38,3 +38,4 @@
 @media (max-width: 1100px) { .multiview-slots { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { .multiview-controls { grid-template-columns: 1fr; } .multiview-history > details > summary { grid-template-columns: 1fr auto; } .multiview-history time { grid-column: 1 / -1; } }
 @media (prefers-reduced-motion: reduce) { .multiview-panel * { scroll-behavior: auto; transition: none !important; } }
+.multiview-bind-all{margin:12px 14px 0}

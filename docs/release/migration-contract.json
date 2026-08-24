@@ -1,7 +1,7 @@
 {
   "schema_version": "localdrama.release-migration-contract.v1",
   "expected_heads": [
-    "0054_character_identity_pack_hardening"
+    "0057_provider_connections"
   ],
   "upgrade_command": ".venv\\\\Scripts\\\\python.exe -m alembic upgrade heads",
   "rollback_policy": "restore_verified_pre_migration_backup_with_matching_code",
@@ -111,6 +111,28 @@
         "character_identity_pack_approval_provenance",
         "identity_pack_generation_snapshots",
         "stale_identity_pack_binding_checks"
+      ]
+    },
+    {
+      "revision": "0055_breakdown_scene_applications",
+      "facts": [
+        "script_breakdown_scene_applications",
+        "breakdown_scene_application_idempotency"
+      ]
+    },
+    {
+      "revision": "0056_breakdown_draft_revisions",
+      "facts": [
+        "script_breakdown_draft_revisions",
+        "immutable_breakdown_revision_lineage"
+      ]
+    },
+    {
+      "revision": "0057_provider_connections",
+      "facts": [
+        "provider_connections",
+        "credential_manager_only_secret_storage",
+        "provider_connection_probe_audit"
       ]
     }
   ]

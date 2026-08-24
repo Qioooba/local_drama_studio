@@ -13,7 +13,7 @@ describe("GenerateDetailPanel", () => {
       { id: "p1", version_id: "edit-v1", title: "局部重绘", capability: "IMAGE_EDIT", status: "PUBLISHED", version_no: 3 },
       { id: "p2", version_id: "expr-v1", title: "表情模型", capability: "IMAGE_EXPRESSION", status: "PUBLISHED", version_no: 2 },
     ] } as never);
-    vi.mocked(preflightAssetDetail).mockResolvedValue({ preflight: { asset_id: "asset-1", project_id: "project-1", capability: "IMAGE_EDIT", status: "BLOCKED", ready: false, blockers: [{ code: "ASSET_MULTI_VIEW_CAPABILITY_UNAVAILABLE", message: "当前没有可执行的 IMAGE_EDIT Published Profile", suggested_action: null, details: {} }], hero: { media_version_id: "hero-1" }, profile_resolution: {}, plan_hash: "b".repeat(64), would_create_jobs: 0, would_create_variants: 0 } });
+    vi.mocked(preflightAssetDetail).mockResolvedValue({ preflight: { asset_id: "asset-1", project_id: "project-1", capability: "IMAGE_EDIT", status: "BLOCKED", ready: false, blockers: [{ code: "ASSET_DETAIL_CAPABILITY_UNAVAILABLE", message: "当前没有可执行的 IMAGE_EDIT Published Profile", suggested_action: null, details: {} }], hero: { media_version_id: "hero-1" }, profile_resolution: {}, plan_hash: "b".repeat(64), would_create_jobs: 0, would_create_variants: 0 } });
   });
 
   it("filters semantic profiles to IMAGE_EDIT and keeps submit disabled on a real blocker", async () => {

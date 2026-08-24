@@ -1,6 +1,6 @@
-# -*- coding: utf-8 -*-
 """界面文案本地化：英文 eyebrow/状态徽章/标签 → 中文（保留门禁代码与状态枚举）。"""
-import pathlib, sys
+import pathlib
+import sys
 
 root = pathlib.Path("apps/web/src")
 

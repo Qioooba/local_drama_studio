@@ -14,6 +14,7 @@ import json
 import os
 import signal
 import subprocess
+import sys
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -43,12 +44,23 @@ class ComfyLabService:
         self.settings = settings
         self.sandbox_root = (settings.work_root / "comfy-lab").resolve()
         self.state_path = self.sandbox_root / "session.json"
+        self.configuration_path = self.sandbox_root / "launch-config.json"
         self.captures_root = self.sandbox_root / "captures"
 
+    def _read_configuration_file(self) -> dict[str, Any]:
+        if not self.configuration_path.is_file() or self.configuration_path.is_symlink():
+            return {}
+        try:
+            value = json.loads(self.configuration_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
     def _configuration(self) -> dict[str, Any]:
-        python_raw = os.environ.get("LOCAL_DRAMA_COMFY_DESIGNER_PYTHON", "").strip()
-        root_raw = os.environ.get("LOCAL_DRAMA_COMFY_DESIGNER_ROOT", "").strip()
-        port_raw = os.environ.get("LOCAL_DRAMA_COMFY_DESIGNER_PORT", "8188").strip()
+        saved = self._read_configuration_file()
+        python_raw = os.environ.get("LOCAL_DRAMA_COMFY_DESIGNER_PYTHON", "").strip() or str(saved.get("python_path", "")).strip()
+        root_raw = os.environ.get("LOCAL_DRAMA_COMFY_DESIGNER_ROOT", "").strip() or str(saved.get("root_path", "")).strip()
+        port_raw = os.environ.get("LOCAL_DRAMA_COMFY_DESIGNER_PORT", "").strip() or str(saved.get("port", 8188)).strip()
         try:
             port = int(port_raw)
         except ValueError:
@@ -70,7 +82,91 @@ class ComfyLabService:
             "root": str(root) if root else None,
             "port": port,
             "endpoint": f"http://127.0.0.1:{port}" if port > 0 else None,
+            "source": "ENVIRONMENT" if os.environ.get("LOCAL_DRAMA_COMFY_DESIGNER_PYTHON", "").strip() else "SAVED" if saved else "NONE",
         }
+
+    @staticmethod
+    def _valid_candidate(python: Path, root: Path) -> bool:
+        return bool(
+            python.is_file()
+            and not python.is_symlink()
+            and (root / "main.py").is_file()
+            and not (root / "main.py").is_symlink()
+        )
+
+    def _candidate_roots(self) -> list[Path]:
+        configured = self._configuration()
+        roots: list[Path] = []
+        for raw in (
+            configured.get("root"),
+            os.environ.get("COMFYUI_ROOT"),
+            self.settings.workspace_root / "ComfyUI",
+            self.settings.workspace_root.parent / "ComfyUI",
+            Path("C:/ComfyUI"),
+            Path("D:/ComfyUI"),
+            Path("E:/ComfyUI"),
+            Path("F:/ComfyUI"),
+        ):
+            if not raw:
+                continue
+            path = Path(str(raw)).expanduser().resolve()
+            if path not in roots:
+                roots.append(path)
+        return roots
+
+    def discover(self, *, apply: bool = False) -> dict[str, Any]:
+        candidates: list[dict[str, Any]] = []
+        for root in self._candidate_roots():
+            python_paths = [
+                root / "python_embeded" / "python.exe",
+                root / ".venv" / "Scripts" / "python.exe",
+                root / "venv" / "Scripts" / "python.exe",
+                Path(sys.executable).resolve(),
+            ]
+            for python in python_paths:
+                if self._valid_candidate(python, root):
+                    item = {"python_path": str(python), "root_path": str(root), "port": 8188}
+                    if item not in candidates:
+                        candidates.append(item)
+        applied = False
+        if apply:
+            if not candidates:
+                raise DomainRuleError(
+                    "COMFY_LAB_INSTALLATION_NOT_FOUND",
+                    "没有在有限的常见位置发现可启动的 ComfyUI",
+                    {"searched_roots": [str(path) for path in self._candidate_roots()]},
+                    suggested_action="在高级配置中选择 ComfyUI 根目录和 Python，或把 ComfyUI 放到常见目录",
+                )
+            self.configure(candidates[0]["python_path"], candidates[0]["root_path"], candidates[0]["port"])
+            applied = True
+        return {
+            "status": "CONFIGURED" if applied or self._configuration()["configured"] else "FOUND" if candidates else "NOT_FOUND",
+            "candidates": candidates,
+            "applied": applied,
+            "configuration": self._configuration(),
+            "searched_roots": [str(path) for path in self._candidate_roots()],
+            "runtime_contacted": False,
+            "network_contacted": False,
+        }
+
+    def configure(self, python_path: str, root_path: str, port: int) -> dict[str, Any]:
+        python = Path(python_path).expanduser().resolve()
+        root = Path(root_path).expanduser().resolve()
+        if port < 1024 or port > 65535:
+            raise DomainRuleError("COMFY_LAB_PORT_INVALID", "Designer 端口必须在 1024 到 65535 之间")
+        if not self._valid_candidate(python, root):
+            raise DomainRuleError(
+                "COMFY_LAB_CONFIGURATION_INVALID",
+                "所选路径不是可启动的 ComfyUI 安装",
+                {"python_exists": python.is_file(), "main_exists": (root / "main.py").is_file()},
+                suggested_action="选择包含 main.py 的 ComfyUI 根目录及其可用 Python",
+            )
+        payload = {"schema_version": "localdrama.comfy-lab-launch.v1", "python_path": str(python), "root_path": str(root), "port": port, "updated_at": _now()}
+        self.sandbox_root.mkdir(parents=True, exist_ok=True)
+        partial = self.configuration_path.with_name(f".partial-{uuid.uuid4().hex}.json")
+        partial.write_text(_json(payload) + "\n", encoding="utf-8")
+        os.replace(partial, self.configuration_path)
+        return {**self._configuration(), "persisted": True, "runtime_contacted": False, "network_contacted": False}
 
     def _read_state(self) -> dict[str, Any] | None:
         if not self.state_path.is_file():

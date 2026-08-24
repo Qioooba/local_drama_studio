@@ -47,7 +47,7 @@ export function JobsPage() {
     <div className="v2-page">
       <div className="panel-heading">
         <div><p className="eyebrow">系统区</p><h2>任务与机器</h2></div>
-        <span className="status-pill neutral">SQLite durable queue · LOCAL_ONLY</span>
+        <span className="status-pill neutral">本机持久化队列</span>
       </div>
       <p className="muted">查看真实 Job、Attempt、lease、进度和已验证产物。故障重试保持同一 Job；创作重抽必须回到导演台创建新的 Variant。</p>
       <section className="panel" aria-label="任务范围">
@@ -71,7 +71,7 @@ export function JobsPage() {
         </label>
       </section>
       {jobs.error ? <ErrorState description={`任务读取失败：${String(jobs.error)}`} onRetry={refresh} /> : <>
-        <JobsPanel jobs={jobItems} loading={jobs.isPending} onChanged={refresh} focusJobId={focusJobId} onFocusJob={focusJob} />
+        <JobsPanel jobs={jobItems} loading={jobs.isPending} onChanged={refresh} focusJobId={focusJobId} onFocusJob={focusJob} scopeKey={projectId ?? "all"} capacity={capacity.data?.snapshot} />
         {jobs.hasNextPage ? <button type="button" className="secondary list-more" onClick={() => void jobs.fetchNextPage()} disabled={jobs.isFetchingNextPage}>{jobs.isFetchingNextPage ? "读取中…" : `加载更早任务（已加载 ${jobItems.length}）`}</button> : null}
       </>}
       {capacity.error ? <ErrorState title="无法读取产能" description={String(capacity.error)} onRetry={() => void capacity.refetch()} /> : <CapacitySnapshotPanel snapshot={capacity.data?.snapshot} />}

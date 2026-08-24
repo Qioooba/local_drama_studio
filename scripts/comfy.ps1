@@ -90,9 +90,9 @@ if (-not (Test-Path -LiteralPath $managerConfigPath)) {
 $arguments = @(
   'main.py','--listen','127.0.0.1','--port',"$port",
   '--output-directory',$outputRoot,'--input-directory',$inputRoot,'--temp-directory',$tempRoot,'--user-directory',$userRoot,
-  # The platform's H3 chain uses ComfyUI core + comfy_extras nodes only; the RH
-  # plugin family is excluded (verified to crash on this host) and no custom
-  # nodes are whitelisted.
+  # The supported H3 chain uses ComfyUI core + comfy_extras nodes. The RH
+  # plugin family is deliberately excluded because its Windows INT8 unload
+  # path is a proven c10.dll access-violation source on this host.
   '--disable-all-custom-nodes','--disable-api-nodes'
 )
 if ($env:LOCAL_DRAMA_COMFY_DIAGNOSTIC_FLAGS) {

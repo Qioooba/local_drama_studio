@@ -7,6 +7,7 @@ import json
 from typing import Any
 
 from local_drama.application.ports.generation_preferences import GenerationPreferenceRepository
+from local_drama.application.ports.override_schema import effective_schema
 from local_drama.application.queries.generation_estimates import _dimensions, _gpu_class
 from local_drama.domain.capabilities import normalize_capability
 from local_drama.domain.errors import DomainRuleError
@@ -138,6 +139,16 @@ class GenerationPreferenceQueryService:
         profile_id = str(profile["id"])
         version_no = int(profile.get("version_no", 1))
         settings = preference.get("settings") if preference else None
+        schema = effective_schema(profile)
+        defaults = profile.get("model_bundle", {}).get("defaults") if isinstance(profile.get("model_bundle"), dict) else None
+        if not isinstance(defaults, dict):
+            defaults = {
+                str(key): field.get("default")
+                for key, field in (schema.get("fields", {}) if isinstance(schema.get("fields"), dict) else {}).items()
+                if isinstance(field, dict) and "default" in field
+            }
+        effective_settings = {**defaults, **(settings if isinstance(settings, dict) else {})}
+        setting_sources = {str(key): ("PREFERENCE" if isinstance(settings, dict) and key in settings else "PROFILE_DEFAULT") for key in effective_settings}
         fingerprint = compute_resolution_fingerprint(capability, profile_id, version_no, source, settings)
         return {
             "capability": capability, "profile_version_id": profile_id, "source": source,
@@ -145,17 +156,28 @@ class GenerationPreferenceQueryService:
             "estimated_resources": profile.get("resources", {}), "blocked_reason": None,
             "preference": preference,
             "profile": self._profile_fact(profile),
+            "effective_settings": effective_settings,
+            "setting_sources": setting_sources,
             "recommendation": self._recommendation(profile, capability=capability, automatic=automatic),
             "resolution_fingerprint": fingerprint,
         }
 
     @staticmethod
     def _profile_fact(profile: dict[str, Any]) -> dict[str, Any]:
-        return {
+        schema = effective_schema(profile)
+        bundle = profile.get("model_bundle") if isinstance(profile.get("model_bundle"), dict) else {}
+        fact = {
             "code": str(profile["code"]), "title": str(profile["title"]),
             "version_no": int(profile["version_no"]), "capability": str(profile["capability"]),
             "status": str(profile["status"]), "resources": profile.get("resources", {}),
         }
+        # Keep the compact legacy resolver contract for repositories that do
+        # not expose the new execution fields; the SQLite repository includes
+        # both fields, enabling the richer UI without breaking old adapters.
+        if "override_schema" in profile or "model_bundle" in profile:
+            fact["override_schema"] = schema
+            fact["model_bundle"] = bundle
+        return fact
 
     def _recommendation(self, profile: dict[str, Any], *, capability: str, automatic: bool) -> dict[str, Any]:
         history = self.repository.recent_terminal_attempts(str(profile["id"]), limit=100)

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { fallbackToOriginalVideo, mediaContentUrl, mediaProxyUrl } from "../shared/mediaPlaybackPolicy";
 import "./director-media-stage.css";
 
 export type DirectorStageMedia = {
@@ -25,7 +26,7 @@ export function directorThumbnailUrl(mediaVersionId: string) {
 }
 
 export function directorContentUrl(mediaVersionId: string) {
-  return `/api/v1/media-versions/${encodeURIComponent(mediaVersionId)}/content`;
+  return mediaContentUrl(mediaVersionId);
 }
 
 function formatTime(seconds: number) {
@@ -90,7 +91,7 @@ export function DirectorMediaStage({ media, comparisonMedia = null, label, badge
   return <div className={`director-media-stage${isVideo ? " is-video" : " is-image"} view-${viewMode}${detailZoom ? " detail-zoom" : ""}`}>
     {!media ? <div className="director-stage-empty"><StageIcon name="frame" /><strong>{emptyTitle}</strong><span>{emptyDescription}</span>{onEmptyAction && <button type="button" className="director-button primary" onClick={onEmptyAction}>{emptyActionLabel}</button>}</div>
       : isVideo ? <>
-        <video ref={videoRef} src={directorContentUrl(media.mediaVersionId)} poster={directorThumbnailUrl(media.mediaVersionId)} preload="none" playsInline muted={muted} aria-label={`${label} 视频预览`} onClick={() => void togglePlayback()} onWaiting={() => setLoading(true)} onCanPlay={() => setLoading(false)} onPlaying={() => { setPlaying(true); setLoading(false); }} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)} onLoadedMetadata={(event) => { if (Number.isFinite(event.currentTarget.duration)) setDuration(event.currentTarget.duration); }} onError={() => { setLoading(false); setPlaying(false); setError("视频读取失败；请检查媒体完整性或任务产物。"); }} />
+        <video ref={videoRef} src={mediaProxyUrl(media.mediaVersionId)} data-original-src={directorContentUrl(media.mediaVersionId)} poster={directorThumbnailUrl(media.mediaVersionId)} preload="none" playsInline muted={muted} aria-label={`${label} 视频预览`} onClick={() => void togglePlayback()} onWaiting={() => setLoading(true)} onCanPlay={() => setLoading(false)} onPlaying={() => { setPlaying(true); setLoading(false); }} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)} onLoadedMetadata={(event) => { if (Number.isFinite(event.currentTarget.duration)) setDuration(event.currentTarget.duration); }} onError={(event) => { if (fallbackToOriginalVideo(event)) return; setLoading(false); setPlaying(false); setError("视频读取失败；请检查媒体完整性或任务产物。"); }} />
         {!playing && !loading && !error && <button type="button" className="director-media-stage__center-play" aria-label="播放视频（Space）" onClick={() => void togglePlayback()}><StageIcon name="play" /></button>}
         {loading && <div className="director-media-stage__loading" role="status"><span aria-hidden="true" />正在读取视频 Range…</div>}
         {error && <div className="director-media-stage__error" role="alert"><strong>无法播放当前视频</strong><span>{error}</span><button type="button" onClick={() => { setError(null); videoRef.current?.load(); }}>重新加载</button></div>}

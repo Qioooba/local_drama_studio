@@ -33,6 +33,12 @@ class TimelineStatusService:
                 (SELECT COUNT(*) FROM timeline_items ti WHERE ti.timeline_revision_id=tr.id) AS item_count
                 FROM timeline_revisions tr WHERE tr.episode_id=? ORDER BY tr.revision_no DESC LIMIT 1""", (episode_id,)
             ).fetchone()
+            latest_frozen_timeline = connection.execute(
+                """SELECT tr.id, tr.revision_no, tr.status, tr.created_at,
+                (SELECT COUNT(*) FROM timeline_items ti WHERE ti.timeline_revision_id=tr.id) AS item_count
+                FROM timeline_revisions tr WHERE tr.episode_id=? AND tr.status='FROZEN'
+                ORDER BY tr.revision_no DESC LIMIT 1""", (episode_id,)
+            ).fetchone()
             timeline_count = int(connection.execute("SELECT COUNT(*) FROM timeline_revisions WHERE episode_id=?", (episode_id,)).fetchone()[0])
             subtitle = connection.execute(
                 """SELECT sr.id, sr.revision_no, sr.format, sr.status, sr.created_at, sr.input_snapshot_json,
@@ -51,7 +57,8 @@ class TimelineStatusService:
             render_count = int(connection.execute("SELECT COUNT(*) FROM episode_render_versions WHERE episode_id=?", (episode_id,)).fetchone()[0])
             render_verified_count = int(connection.execute("SELECT COUNT(*) FROM episode_render_versions WHERE episode_id=? AND integrity_status='VERIFIED'", (episode_id,)).fetchone()[0])
             delivery = connection.execute(
-                """SELECT dp.id, dp.status, dp.rel_path, dp.manifest_sha256, dp.created_at
+                """SELECT dp.id, dp.episode_render_version_id, dp.status, dp.rel_path, dp.manifest_sha256, dp.created_at,
+                erv.timeline_revision_id
                 FROM delivery_packages dp JOIN episode_render_versions erv ON erv.id=dp.episode_render_version_id
                 WHERE erv.episode_id=? ORDER BY dp.created_at DESC LIMIT 1""", (episode_id,)
             ).fetchone()
@@ -87,7 +94,7 @@ class TimelineStatusService:
             )
         return {
             "episode": {"id": str(episode["id"]), "code": str(episode["code"]), "title": str(episode["title"]), "project_id": str(episode["project_id"])},
-            "timeline": {"revision_count": timeline_count, "latest": dict(timeline) if timeline else None},
+            "timeline": {"revision_count": timeline_count, "latest": dict(timeline) if timeline else None, "latest_frozen": dict(latest_frozen_timeline) if latest_frozen_timeline else None},
             "subtitles": {"revision_count": subtitle_count, "latest": latest_subtitle},
             "audio": {
                 "binding_count": len(audio_rows),

@@ -66,7 +66,24 @@ class WorkspaceAssetService:
                 (project_id, media_version_id),
             ).fetchone()
             if prior is not None:
-                return {**dict(prior), "duplicate": True}
+                if str(prior["authorization_status"]) == "AUTHORIZED":
+                    return {**dict(prior), "duplicate": True}
+                connection.execute(
+                    """UPDATE workspace_asset_authorizations
+                    SET asset_kind=?, path_rel=?, sha256=?, byte_size=?, authorization_status='AUTHORIZED',
+                        license_status='LOCAL_PROJECT_AUTHORIZED', details_json=?, updated_at=?, revision=revision+1
+                    WHERE id=?""",
+                    (str(row["media_kind"]), str(row["rel_path"]), digest, size,
+                     _json({"purpose": row["purpose"], "source": "project_local_media", "reactivated": True}), now, str(prior["id"])),
+                )
+                connection.execute(
+                    """INSERT INTO audit_events
+                    (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json)
+                    VALUES (?, 'producer', 'WORKSPACE_ASSET_REAUTHORIZED', 'media_version', ?, ?, ?)""",
+                    (actor, media_version_id, "重新授权项目工作区媒体资产", _json({"authorization_id": str(prior["id"]), "sha256": digest, "byte_size": size})),
+                )
+                restored = connection.execute("SELECT * FROM workspace_asset_authorizations WHERE id=?", (str(prior["id"]),)).fetchone()
+                return {**dict(restored), "duplicate": False, "reactivated": True}
             connection.execute(
                 """INSERT INTO workspace_asset_authorizations
                 (id, project_id, media_version_id, asset_kind, path_rel, sha256, byte_size,
@@ -235,8 +252,24 @@ class WorkspaceAssetService:
                 )
         except Exception as error:
             if "UNIQUE" in str(error).upper():
-                with self.database.connect() as connection:
+                with self.database.transaction() as connection:
                     prior = connection.execute("SELECT * FROM project_asset_grants WHERE target_project_id=? AND media_version_id=?", (target_project_id, row["media_version_id"])).fetchone()
+                    if prior is not None and str(prior["status"]) == "REVOKED":
+                        connection.execute(
+                            """UPDATE project_asset_grants
+                            SET source_project_id=?, source_authorization_id=?, source_revision=?,
+                                source_sha256=?, source_byte_size=?, access_mode=?, status='ACTIVE',
+                                withdrawal_reason=NULL, updated_at=?, revision=revision+1
+                            WHERE id=?""",
+                            (source_project_id, authorization_id, int(row["revision"]), str(row["sha256"]), int(row["byte_size"]), access_mode, now, str(prior["id"])),
+                        )
+                        connection.execute(
+                            """INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json)
+                            VALUES (?, 'producer', 'PROJECT_ASSET_GRANT_REACTIVATED', 'project_asset_grant', ?, ?, ?)""",
+                            (actor, str(prior["id"]), "重新激活跨项目工作区资产授权", _json({"source_project_id": source_project_id, "target_project_id": target_project_id, "media_version_id": row["media_version_id"], "access_mode": access_mode})),
+                        )
+                        restored = connection.execute("SELECT * FROM project_asset_grants WHERE id=?", (str(prior["id"]),)).fetchone()
+                        return {**dict(restored), "duplicate": False, "reactivated": True, "impact": [], "usable": True}
                 if prior is not None:
                     return {**dict(prior), "duplicate": True, "impact": []}
             raise

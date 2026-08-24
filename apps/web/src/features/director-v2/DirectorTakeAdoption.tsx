@@ -14,9 +14,20 @@ export function selectionTypeForCandidate(candidate: DirectorDeskCandidate): Dir
 function disabledReason(candidate: DirectorDeskCandidate, currentCandidateId: string | null, pending: boolean) {
   if (candidate.is_stale) return `候选已失效${candidate.stale_reason ? `：${candidate.stale_reason}` : ""}，不能采用`;
   if (!selectionTypeForCandidate(candidate)) return "缺少可用的 selection_type，无法建立可审计的采用记录";
-  if (candidate.selected || candidate.media_version_id === currentCandidateId) return "这个候选当前已采用";
+  if (candidate.media_version_id === currentCandidateId) return "这个候选是当前预览采用项";
+  if (candidate.selected) return "这个候选已是所属阶段的有效选择";
   if (pending) return "正在保存采用结果";
   return null;
+}
+
+function candidateDecisionLabel(candidate: DirectorDeskCandidate, currentCandidateId: string | null) {
+  if (candidate.approved) return "已批准";
+  if (candidate.media_version_id === currentCandidateId) return "当前采用";
+  if (candidate.selected && candidate.stage === "FORMAL") return "正式选择";
+  if (candidate.selected && candidate.stage === "PROXY") return "代理选择";
+  if (candidate.selected && candidate.stage === "KEYFRAME") return "关键帧选择";
+  if (candidate.is_stale) return "已失效";
+  return "待比较";
 }
 
 type Props = {
@@ -157,7 +168,8 @@ export function DirectorTakeAdoption({
     </div>
     {candidates.slice(0, 8).map((candidate, index) => {
       const reason = disabledReason(candidate, currentCandidateId, busy);
-      const current = candidate.selected || candidate.media_version_id === currentCandidateId;
+      const current = candidate.media_version_id === currentCandidateId;
+      const decisionLabel = candidateDecisionLabel(candidate, currentCandidateId);
       const frameIssue = frameCandidateIssue(candidate);
       return <figure
         key={candidate.media_version_id}
@@ -172,12 +184,12 @@ export function DirectorTakeAdoption({
         }}
         onDragEnd={() => { setDraggedId(null); setDropActive(false); }}
       >
-        <button type="button" className="director-take-select" aria-pressed={activeCandidateId === candidate.media_version_id} aria-label={`查看 Take ${candidate.take_no ?? index + 1}，${candidate.approved ? "已批准" : current ? "已采用" : candidate.is_stale ? "已失效" : "待比较"}`} onClick={() => onActivate(candidate.media_version_id)}>
+        <button type="button" className="director-take-select" aria-pressed={activeCandidateId === candidate.media_version_id} aria-label={`查看 Take ${candidate.take_no ?? index + 1} · ${candidate.stage ?? "未分阶段"}，${decisionLabel}`} onClick={() => onActivate(candidate.media_version_id)}>
           <img src={thumbnailUrl(candidate.media_version_id)} alt="" loading="lazy" decoding="async" />
-          <span className="director-take-caption"><span>Take {candidate.take_no ?? index + 1}</span><strong>{candidate.approved ? "已批准" : current ? "已采用" : candidate.is_stale ? "已失效" : "待比较"}</strong></span>
+          <span className="director-take-caption"><span>Take {candidate.take_no ?? index + 1}<small>{candidate.stage ?? "未分阶段"}</small></span><strong>{decisionLabel}</strong></span>
         </button>
         <div className="director-take-actions">
-          <button type="button" disabled={Boolean(reason)} aria-describedby={`adopt-reason-${candidate.media_version_id}`} title={reason ?? "打开采用确认"} onClick={() => requestAdoption(candidate)}>{current ? "已采用" : "采用"}</button>
+          <button type="button" disabled={Boolean(reason)} aria-describedby={`adopt-reason-${candidate.media_version_id}`} title={reason ?? "打开采用确认"} onClick={() => requestAdoption(candidate)}>{current ? "当前采用" : candidate.selected ? `${decisionLabel}已选` : "采用"}</button>
           {renderSecondaryAction?.(candidate)}
         </div>
         <span id={`adopt-reason-${candidate.media_version_id}`} className="director-sr-only">{reason ?? "可采用；按钮和拖拽操作等价"}</span>

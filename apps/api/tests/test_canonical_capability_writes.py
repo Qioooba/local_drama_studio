@@ -115,12 +115,39 @@ def test_local_llm_uses_exact_story_parse_capability_and_repairs_legacy_resync(
     )
     configured = workspace.model_copy(update={"llm_model": "qwen-test"})
     service = LocalLLMService(database, configured)
+    with database.transaction() as connection:
+        connection.execute(
+            """INSERT INTO local_runtimes
+            (id,code,title,transport,base_url,executable_ref,runtime_version,status,details_json,
+             created_at,updated_at,created_by,revision,schema_version)
+            VALUES ('legacy-random-runtime-id','ollama-loopback','legacy runtime','LOOPBACK_HTTP',
+                    'http://127.0.0.1:11434','ollama',NULL,'CANDIDATE_UNVERIFIED','{}',
+                    CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,'test',1,'v2')"""
+        )
+        connection.execute(
+            """INSERT INTO execution_profiles
+            (id,code,title,created_at,updated_at,created_by,revision,schema_version)
+            VALUES ('legacy-random-profile-id','local-llm-ollama-qwen-test','legacy',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,'test',1,'v2')"""
+        )
+        connection.execute(
+            """INSERT INTO execution_profile_versions
+            (id,execution_profile_id,version_no,capability,model_bundle_json,input_contract_json,
+             parameter_schema_json,status,manifest_sha256,capability_json,worker_policy,
+             created_at,updated_at,created_by,revision,schema_version)
+            VALUES ('legacy-random-version-id','legacy-random-profile-id',1,'SCRIPT_BREAKDOWN_LLM','{}','{}','{}',
+                    'CANDIDATE_UNVERIFIED',NULL,'{}','ONE_LOCAL_LLM_TASK',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,'test',1,'v2')"""
+        )
     candidate = service.sync_candidate()
     profile_version_id = str(candidate["profile_version_id"])
+    assert profile_version_id == "legacy-random-version-id"
     with database.connect() as connection:
         assert connection.execute(
             "SELECT capability FROM execution_profile_versions WHERE id=?", (profile_version_id,)
         ).fetchone()[0] == "LLM_STORY_PARSE"
+        model_bundle = json.loads(connection.execute(
+            "SELECT model_bundle_json FROM execution_profile_versions WHERE id=?", (profile_version_id,)
+        ).fetchone()[0])
+        assert model_bundle["runtime_id"] == "legacy-random-runtime-id"
 
     # A stale post-0049 writer is repaired by the canonical ON CONFLICT path.
     with database.transaction() as connection:

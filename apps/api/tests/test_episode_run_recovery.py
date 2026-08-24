@@ -84,6 +84,24 @@ def test_recover_advances_completed_report_once_and_unchanged_success_is_skipped
     assert service.automation.get_run(str(run["id"]))["task_count"] == 2
 
 
+def test_watchdog_advances_stale_run_after_worker_crashes_post_completion(workspace, database) -> None:
+    service, run, _episode_row = _run(workspace, database, "episode_watchdog_advance", current_fingerprint=True)
+    completed_job_id = _complete_with_report(workspace, database, run)
+    stale = (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
+    with database.transaction() as connection:
+        connection.execute(
+            "UPDATE automation_workflow_runs SET updated_at=? WHERE id=?",
+            (stale, run["id"]),
+        )
+
+    result = service.watchdog(stale_seconds=30)
+
+    assert result["recovered_run_ids"] == [run["id"]]
+    recovered = service.automation.get_run(str(run["id"]))
+    assert recovered["task_count"] == 2
+    assert recovered["tasks"][0]["job_id"] == completed_job_id
+
+
 def test_run_projects_eight_creator_stages_and_all_background_stage_codes(workspace, database) -> None:
     service, run, _episode_row = _run(workspace, database, "ep8stage", current_fingerprint=True)
 

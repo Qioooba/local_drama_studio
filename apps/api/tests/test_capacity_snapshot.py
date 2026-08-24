@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from local_drama.application.capacity import CapacitySnapshotService
 from local_drama.application.projects import ProjectService
+from local_drama.application.worker_sessions import WorkerSessionService
 from local_drama.main import create_app
 
 
@@ -25,6 +26,21 @@ def test_capacity_snapshot_is_read_only_and_observed(workspace, database) -> Non
     assert snapshot["network_contacted"] is False
     with database.connect() as connection:
         assert int(connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]) == before_count
+
+
+def test_capacity_counts_live_supervisor_even_when_no_attempt_is_running(workspace, database) -> None:
+    session = WorkerSessionService(database, workspace).start_session(
+        "capacity-worker",
+        worker_version=workspace.app_version,
+        api_version=workspace.app_version,
+        channels=["CPU", "GPU_H3"],
+    )
+    try:
+        snapshot = CapacitySnapshotService(database, workspace).inspect()
+        assert snapshot["active_attempt_count"] == 0
+        assert snapshot["active_worker_count"] == 1
+    finally:
+        WorkerSessionService(database, workspace).stop(str(session["id"]))
 
 
 def test_capacity_snapshot_route_rejects_unknown_project(workspace, database) -> None:

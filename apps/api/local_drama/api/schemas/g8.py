@@ -19,6 +19,10 @@ class TimelineRevisionRequest(BaseModel):
     status: str = Field(default="DRAFT", min_length=1, max_length=24)
 
 
+class TimelineRefreshCommitRequest(BaseModel):
+    expected_plan_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+
+
 class SubtitleCueRequest(BaseModel):
     start_us: int = Field(ge=0)
     end_us: int = Field(gt=0)

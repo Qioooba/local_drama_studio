@@ -26,7 +26,7 @@ describe("StoryAssetLibraryPanel", () => {
   it("shows four tabs and filters cards by the active kind with status badges", async () => {
     renderPanel();
     expect(await screen.findByText("母亲")).toBeTruthy();
-    expect(screen.getByText("CHAR_MOTHER")).toBeTruthy();
+    expect(screen.queryByText("CHAR_MOTHER")).toBeNull();
     expect(screen.getByText("已归档")).toBeTruthy();
     expect(screen.queryByText("厨房")).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: "场景" }));
@@ -39,18 +39,17 @@ describe("StoryAssetLibraryPanel", () => {
     renderPanel();
     await screen.findByText("母亲");
     fireEvent.click(screen.getByText("新建角色资产卡"));
-    fireEvent.change(screen.getByLabelText("代码"), { target: { value: "CHAR_SISTER" } });
     fireEvent.change(screen.getByLabelText("名称"), { target: { value: "妹妹" } });
-    fireEvent.change(screen.getByLabelText("描述"), { target: { value: "马尾" } });
+    fireEvent.change(screen.getByLabelText("补充描述（可选）"), { target: { value: "马尾" } });
     fireEvent.click(screen.getByRole("button", { name: "角色主参考选择器" }));
     fireEvent.click(screen.getByRole("button", { name: "创建角色资产卡" }));
-    await waitFor(() => expect(createStoryAsset).toHaveBeenCalledWith("project-1", { kind: "CHARACTER", code: "CHAR_SISTER", name: "妹妹", description: "马尾", canonical_media_version_id: "version-9" }));
+    await waitFor(() => expect(createStoryAsset).toHaveBeenCalledWith("project-1", { kind: "CHARACTER", code: expect.stringMatching(/^CHAR_/), name: "妹妹", description: "马尾", canonical_media_version_id: "version-9" }));
   });
 
   it("archives an active asset using its current revision", async () => {
     renderPanel();
     fireEvent.click(await screen.findByRole("button", { name: "归档 母亲" }));
-    await waitFor(() => expect(archiveStoryAsset).toHaveBeenCalledWith("asset-1", { expected_revision: 1 }));
+    await waitFor(() => expect(archiveStoryAsset).toHaveBeenCalledWith("asset-1", { expected_revision: 1, reason: "从故事资产库显式归档" }));
     expect((screen.getByRole("button", { name: "归档 父亲" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

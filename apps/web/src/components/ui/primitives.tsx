@@ -12,9 +12,34 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import "./primitives.css";
 
 export type Tone = "neutral" | "info" | "running" | "attention" | "success" | "danger";
+
+let overlayLockDepth = 0;
+let overlayPreviousHtmlOverflow = "";
+let overlayPreviousBodyOverflow = "";
+
+function useOverlayScrollLock(open: boolean) {
+  useEffect(() => {
+    if (!open || typeof document === "undefined") return;
+    if (overlayLockDepth === 0) {
+      overlayPreviousHtmlOverflow = document.documentElement.style.overflow;
+      overlayPreviousBodyOverflow = document.body.style.overflow;
+      document.documentElement.style.overflow = "hidden";
+      document.body.style.overflow = "hidden";
+    }
+    overlayLockDepth += 1;
+    return () => {
+      overlayLockDepth = Math.max(0, overlayLockDepth - 1);
+      if (overlayLockDepth === 0) {
+        document.documentElement.style.overflow = overlayPreviousHtmlOverflow;
+        document.body.style.overflow = overlayPreviousBodyOverflow;
+      }
+    };
+  }, [open]);
+}
 
 export function StatusBadge({ children, tone = "neutral" }: { children?: ReactNode; tone?: Tone }) {
   return <span className={`ui-status-badge ui-status-badge--${tone}`}>{children ?? tone}</span>;
@@ -25,12 +50,14 @@ export function MediaThumb({
   alt,
   emptyLabel = "暂无缩略图",
   aspectRatio = "16 / 9",
+  objectFit = "contain",
   className = "",
 }: {
   src?: string | null;
   alt: string;
   emptyLabel?: string;
   aspectRatio?: CSSProperties["aspectRatio"];
+  objectFit?: CSSProperties["objectFit"];
   className?: string;
 }) {
   const [failed, setFailed] = useState(false);
@@ -61,7 +88,7 @@ export function MediaThumb({
       alt={alt}
       loading="lazy"
       decoding="async"
-      style={{ aspectRatio }}
+      style={{ aspectRatio, objectFit }}
       onError={() => setFailed(true)}
     />
   );
@@ -204,6 +231,7 @@ export function Dialog({
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
+  useOverlayScrollLock(open);
 
   const safeClose = useCallback(() => {
     if (dirtyGuard && !window.confirm("当前有未保存的改动，确定要放弃并关闭吗？")) {
@@ -244,7 +272,7 @@ export function Dialog({
   }, [open, safeClose]);
 
   if (!open) return null;
-  return (
+  return createPortal(
     <div
       className="ui-dialog-backdrop"
       role="presentation"
@@ -266,7 +294,8 @@ export function Dialog({
         <div className="ui-dialog__body">{children}</div>
         {footer ? <footer>{footer}</footer> : null}
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -293,6 +322,7 @@ export function Drawer({
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
+  useOverlayScrollLock(open);
 
   const safeClose = useCallback(() => {
     if (dirtyGuard && !window.confirm("当前有未保存的改动，确定要放弃并关闭吗？")) {
@@ -337,7 +367,7 @@ export function Drawer({
   }, [open, safeClose]);
 
   if (!open) return null;
-  return (
+  return createPortal(
     <div
       className="ui-drawer-backdrop"
       role="presentation"
@@ -366,7 +396,8 @@ export function Drawer({
         <div className="ui-drawer__body">{children}</div>
         {footer ? <footer className="ui-drawer__footer">{footer}</footer> : null}
       </aside>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -377,6 +408,8 @@ export type TabItem = {
   badge?: ReactNode;
   disabled?: boolean;
 };
+
+const TabsIdContext = createContext<string | null>(null);
 
 /** Accessible Compound Tabs with keyboard arrow navigation. */
 export function Tabs({
@@ -392,6 +425,7 @@ export function Tabs({
   ariaLabel?: string;
   children?: ReactNode;
 }) {
+  const tabsId = useId().replace(/:/g, "");
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const enabled = items.filter((item) => !item.disabled);
     const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)')];
@@ -421,6 +455,7 @@ export function Tabs({
   };
 
   return (
+    <TabsIdContext.Provider value={tabsId}>
     <div className="ui-tabs">
       <div
         className="ui-tabs__list"
@@ -435,9 +470,9 @@ export function Tabs({
               key={item.id}
               type="button"
               role="tab"
-              id={`tab-${item.id}`}
+              id={`${tabsId}-tab-${item.id}`}
               aria-selected={isSelected}
-              aria-controls={`tabpanel-${item.id}`}
+              aria-controls={`${tabsId}-tabpanel-${item.id}`}
               tabIndex={isSelected ? 0 : -1}
               disabled={item.disabled}
               className={`ui-tab ${isSelected ? "is-active" : ""}`}
@@ -452,6 +487,7 @@ export function Tabs({
       </div>
       {children}
     </div>
+    </TabsIdContext.Provider>
   );
 }
 
@@ -464,12 +500,14 @@ export function TabPanel({
   selectedId: string;
   children: ReactNode;
 }) {
+  const tabsId = useContext(TabsIdContext);
   if (id !== selectedId) return null;
+  const prefix = tabsId ?? "standalone-tabs";
   return (
     <div
       role="tabpanel"
-      id={`tabpanel-${id}`}
-      aria-labelledby={`tab-${id}`}
+      id={`${prefix}-tabpanel-${id}`}
+      aria-labelledby={`${prefix}-tab-${id}`}
       tabIndex={0}
       className="ui-tabpanel"
     >
@@ -864,6 +902,7 @@ export function CandidateTray({
   onSelect,
   onApprove,
   onReject,
+  aspectRatio = "9 / 16",
   emptyLabel = "暂无候选",
 }: {
   candidates: CandidateItem[];
@@ -871,6 +910,7 @@ export function CandidateTray({
   onSelect: (id: string) => void;
   onApprove?: (id: string) => void;
   onReject?: (id: string) => void;
+  aspectRatio?: CSSProperties["aspectRatio"];
   emptyLabel?: string;
 }) {
   return (
@@ -899,7 +939,8 @@ export function CandidateTray({
                 <MediaThumb
                   src={item.src}
                   alt={item.alt || item.title || "候选"}
-                  aspectRatio="16 / 9"
+                  aspectRatio={aspectRatio}
+                  objectFit="contain"
                 />
                 <div className="ui-candidate-card__meta">
                   <span>{item.title || item.id}</span>
@@ -1117,6 +1158,102 @@ export function ResizablePane({
         onKeyDown={handleKeyDown}
       />
       <div className="ui-resizable-pane__secondary">{secondary}</div>
+    </div>
+  );
+}
+
+/** Accessible VirtualList for efficiently rendering large lists of 50+ items. */
+export function VirtualList<T>({
+  items,
+  itemHeight = 44,
+  height = 400,
+  renderItem,
+  overscan = 5,
+  className = "",
+  keyExtractor,
+  ariaLabel = "虚拟列表",
+}: {
+  items: T[];
+  itemHeight?: number;
+  height?: number | string;
+  renderItem: (item: T, index: number) => ReactNode;
+  overscan?: number;
+  className?: string;
+  keyExtractor?: (item: T, index: number) => string;
+  ariaLabel?: string;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [containerHeight, setContainerHeight] = useState(
+    typeof height === "number" ? height : 400,
+  );
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.height > 0) {
+          setContainerHeight(entry.contentRect.height);
+        }
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const onScroll = useCallback(() => {
+    if (containerRef.current) {
+      setScrollTop(containerRef.current.scrollTop);
+    }
+  }, []);
+
+  const totalCount = items.length;
+  const totalHeight = totalCount * itemHeight;
+
+  const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - overscan);
+  const visibleCount = Math.ceil(containerHeight / itemHeight) + 2 * overscan;
+  const endIndex = Math.min(totalCount, startIndex + visibleCount);
+
+  const visibleItems = useMemo(() => {
+    const slice: Array<{ item: T; index: number; top: number }> = [];
+    for (let i = startIndex; i < endIndex; i++) {
+      slice.push({ item: items[i], index: i, top: i * itemHeight });
+    }
+    return slice;
+  }, [items, startIndex, endIndex, itemHeight]);
+
+  return (
+    <div
+      ref={containerRef}
+      className={`ui-virtual-list ${className}`.trim()}
+      style={{
+        height: typeof height === "number" ? `${height}px` : height,
+        overflowY: "auto",
+        position: "relative",
+      }}
+      onScroll={onScroll}
+      role="list"
+      aria-label={ariaLabel}
+      tabIndex={0}
+    >
+      <div style={{ height: `${totalHeight}px`, width: "100%", position: "relative" }}>
+        {visibleItems.map(({ item, index, top }) => (
+          <div
+            key={keyExtractor ? keyExtractor(item, index) : index}
+            role="listitem"
+            style={{
+              position: "absolute",
+              top: `${top}px`,
+              left: 0,
+              right: 0,
+              height: `${itemHeight}px`,
+            }}
+          >
+            {renderItem(item, index)}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

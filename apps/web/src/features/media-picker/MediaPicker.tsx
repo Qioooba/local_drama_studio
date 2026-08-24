@@ -18,7 +18,7 @@ function readableSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export function MediaPicker({ projectId, value, onChange, disabled = false, label = "选择参考图", mediaKind = "IMAGE", allowUpload = mediaKind === "IMAGE" }: MediaPickerProps) {
+export function MediaPicker({ projectId, value, onChange, disabled = false, label = "选择参考媒体", mediaKind = "IMAGE", allowUpload = true }: MediaPickerProps) {
   const searchId = useId();
   const uploadId = useId();
   const [query, setQuery] = useState("");
@@ -31,9 +31,10 @@ export function MediaPicker({ projectId, value, onChange, disabled = false, labe
   });
   const selected = catalogue.data?.find((item) => item.media_version_id === value);
 
+  const acceptType = mediaKind === "VIDEO" ? "video/*" : mediaKind === "AUDIO" ? "audio/*" : "image/*";
+  const uploadBtnText = mediaKind === "VIDEO" ? "上传视频" : mediaKind === "AUDIO" ? "上传音频" : "上传图片";
   const upload = async (file: File | undefined) => {
     if (!file) return;
-    if (!file.type.startsWith("image/")) { setUploadError("资产参考仅支持图片文件"); return; }
     setUploading(true); setUploadError(null);
     try {
       const mediaVersionId = await uploadProjectImage(projectId, file);
@@ -50,8 +51,8 @@ export function MediaPicker({ projectId, value, onChange, disabled = false, labe
     <div className="media-picker-toolbar">
       <label htmlFor={searchId}>搜索项目媒体</label>
       <input id={searchId} type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="文件名、用途或阶段" disabled={disabled} />
-      {allowUpload && <><label className={`secondary media-picker-upload${disabled || uploading ? " disabled" : ""}`} htmlFor={uploadId}>{uploading ? "上传中…" : "上传图片"}</label>
-      <input id={uploadId} className="media-picker-file" type="file" accept="image/*" disabled={disabled || uploading} onChange={(event) => void upload(event.target.files?.[0])} /></>}
+      {allowUpload && <><label className={`secondary media-picker-upload${disabled || uploading ? " disabled" : ""}`} htmlFor={uploadId}>{uploading ? "上传中…" : uploadBtnText}</label>
+      <input id={uploadId} className="media-picker-file" type="file" accept={acceptType} disabled={disabled || uploading} onChange={(event) => void upload(event.target.files?.[0])} /></>}
     </div>
 
     {catalogue.isLoading && <p className="muted" role="status">正在读取项目媒体库…</p>}

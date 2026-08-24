@@ -34,6 +34,40 @@ def _validate_local_target(spec: dict[str, Any]) -> None:
         raise DomainRuleError("INVALID_DELIVERY_TARGET", "交付目标必须是项目内相对路径")
 
 
+def _activate_project_delivery_target(
+    connection: Any,
+    *,
+    project_id: str,
+    target_id: str,
+    version_id: str,
+    now: str,
+) -> None:
+    """Keep one project-wide current delivery target after every explicit create/select.
+
+    Creating a target is already an explicit user choice. Requiring a second
+    activation click left multiple ACTIVE versions and made the read model
+    ambiguous, so activation is part of the same domain operation.
+    """
+
+    connection.execute(
+        "UPDATE delivery_target_versions SET status='RETIRED', updated_at=?, revision=revision+1 "
+        "WHERE status='ACTIVE' AND id<>? AND delivery_target_id IN (SELECT id FROM delivery_targets WHERE project_id=?)",
+        (now, version_id, project_id),
+    )
+    connection.execute(
+        "UPDATE delivery_target_versions SET status='ACTIVE', updated_at=?, revision=revision+1 WHERE id=? AND status<>'ACTIVE'",
+        (now, version_id),
+    )
+    connection.execute(
+        "UPDATE delivery_targets SET status='INACTIVE', updated_at=?, revision=revision+1 WHERE project_id=? AND id<>? AND status<>'INACTIVE'",
+        (now, project_id, target_id),
+    )
+    connection.execute(
+        "UPDATE delivery_targets SET status='ACTIVE', updated_at=?, revision=revision+1 WHERE id=? AND status<>'ACTIVE'",
+        (now, target_id),
+    )
+
+
 class ConfigurationService:
     def __init__(self, database: Database) -> None:
         self.database = database
@@ -88,9 +122,16 @@ class ConfigurationService:
                 "INSERT INTO delivery_target_versions (id, delivery_target_id, version_no, target_spec_json, status, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, 1, ?, 'ACTIVE', ?, ?, ?, 1, 'v2')",
                 (version_id, target_id, _json(spec), now, now, actor),
             )
+            _activate_project_delivery_target(
+                connection,
+                project_id=project_id,
+                target_id=target_id,
+                version_id=version_id,
+                now=now,
+            )
             connection.execute(
                 "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'producer', 'DELIVERY_TARGET_CREATED', 'delivery_target', ?, ?, ?)",
-                (actor, target_id, "创建本地交付目标", _json({"project_id": project_id, "transport": transport})),
+                (actor, target_id, "创建并启用本地交付目标", _json({"project_id": project_id, "transport": transport, "auto_selected": True})),
             )
         return {
             "id": target_id,
@@ -168,15 +209,18 @@ class ConfigurationService:
             ).fetchone()
             next_version = int(latest["version_no"] or 0) + 1
             connection.execute(
-                "UPDATE delivery_target_versions SET status='RETIRED', updated_at=?, revision=revision+1 WHERE delivery_target_id=? AND status='ACTIVE'",
-                (now, target_id),
-            )
-            connection.execute(
                 """INSERT INTO delivery_target_versions
                 (id, delivery_target_id, version_no, target_spec_json, status,
                  created_at, updated_at, created_by, revision, schema_version)
                 VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?, ?, 1, 'v2')""",
                 (version_id, target_id, next_version, _json(spec), now, now, actor),
+            )
+            _activate_project_delivery_target(
+                connection,
+                project_id=project_id,
+                target_id=target_id,
+                version_id=version_id,
+                now=now,
             )
             if title is not None:
                 connection.execute(
@@ -230,28 +274,12 @@ class ConfigurationService:
             version_spec_json = str(row["version_spec_json"] or "{}")
             if target_transport != "LOCAL_FILESYSTEM":
                 raise DomainRuleError("REMOTE_TRANSPORT_DISABLED", "LOCAL_ONLY 首版只允许 LOCAL_FILESYSTEM 交付")
-            connection.execute(
-                # The project configuration read model exposes exactly one
-                # selected_delivery_target_version_id: a single ACTIVE version
-                # across ALL of the project's targets.  Selecting one version
-                # therefore retires every other ACTIVE version in the project,
-                # not only the versions of the same target.
-                "UPDATE delivery_target_versions SET status='RETIRED', updated_at=?, revision=revision+1 "
-                "WHERE status='ACTIVE' AND delivery_target_id IN (SELECT id FROM delivery_targets WHERE project_id=?)",
-                (now, target_project_id),
-            )
-            connection.execute(
-                "UPDATE delivery_target_versions SET status='ACTIVE', updated_at=?, revision=revision+1 WHERE id=?",
-                (now, version_id),
-            )
-            connection.execute(
-                "UPDATE delivery_targets SET status='ACTIVE', updated_at=?, revision=revision+1 WHERE id=?",
-                (now, target_id),
-            )
-            connection.execute(
-                "UPDATE delivery_targets SET status='INACTIVE', updated_at=?, revision=revision+1 "
-                "WHERE project_id=? AND status='ACTIVE' AND id<>?",
-                (now, target_project_id, target_id),
+            _activate_project_delivery_target(
+                connection,
+                project_id=target_project_id,
+                target_id=target_id,
+                version_id=version_id,
+                now=now,
             )
             connection.execute(
                 """INSERT INTO audit_events

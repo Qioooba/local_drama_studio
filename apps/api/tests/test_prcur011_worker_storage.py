@@ -125,6 +125,34 @@ def test_supervisor_persists_restart_backoff_and_recovers(workspace, database, m
     assert result["status"] == "STOPPED"
     assert result["session"]["restart_count"] == 1
     assert result["session"]["consecutive_failure_count"] == 0
+
+
+def test_supervisor_watch_mode_stays_alive_across_empty_polls(workspace, database, monkeypatch) -> None:
+    calls = 0
+    stop_checks = 0
+
+    def empty_run_once(self, worker_id, channels=None, *, worker_session_id=None):
+        nonlocal calls
+        calls += 1
+        return None
+
+    def should_stop() -> bool:
+        nonlocal stop_checks
+        stop_checks += 1
+        return stop_checks >= 3
+
+    monkeypatch.setattr(LocalMediaWorker, "run_once", empty_run_once)
+    result = WorkerSupervisor(database, workspace, sleep=lambda _seconds: None).run_until_idle(
+        "watch-worker",
+        max_jobs=None,
+        idle_poll_seconds=0.05,
+        should_stop=should_stop,
+    )
+
+    assert calls == 2
+    assert result["processed"] == 0
+    assert result["status"] == "STOPPED"
+    assert result["session"]["status"] == "STOPPED"
     assert calls == 2
 
 

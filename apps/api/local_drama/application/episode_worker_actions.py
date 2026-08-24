@@ -19,6 +19,9 @@ from local_drama.domain.capabilities import VIDEO_GENERATION_CAPABILITIES
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.generation import VariantPlan
 from local_drama.domain.policies import VariantInput
+from local_drama.infrastructure.database.generation_preference_repository import (
+    SqliteGenerationPreferenceRepository,
+)
 from local_drama.infrastructure.database.qc_policy_repository import SqliteQcPolicyRepository
 from local_drama.infrastructure.database.sqlite import Database
 
@@ -26,6 +29,7 @@ from .commands.qc_policies import QcPolicyCommandService
 from .generation import GenerationService
 from .jobs import JobService
 from .media import MediaService, infer_media_kind
+from .queries.generation_preferences import GenerationPreferenceQueryService
 from .queries.qc_policies import QcPolicyQueryService
 from .reviews import ReviewService
 
@@ -166,6 +170,14 @@ class EpisodeWorkerActionService:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    @staticmethod
+    def _promoted_version_id(item: dict[str, Any]) -> str:
+        """Read MediaService's canonical MediaVersion response shape."""
+        version_id = str(item.get("media_version_id") or item.get("id") or "").strip()
+        if not version_id:
+            raise DomainRuleError("MEDIA_PROMOTION_RESPONSE_INVALID", "媒体晋升响应缺少 MediaVersion id")
+        return version_id
+
     def _promote_completed_outputs(self, jobs: list[dict[str, Any]]) -> list[str]:
         promoted: list[str] = []
         with self.database.connect() as connection:
@@ -190,7 +202,7 @@ class EpisodeWorkerActionService:
                     raise
                 continue
             if str(item.get("mime_type") or "").startswith("video/"):
-                promoted.append(str(item["media_version_id"]))
+                promoted.append(self._promoted_version_id(item))
         return promoted
 
     def _approved_keyframe(self, shot_id: str) -> dict[str, Any] | None:
@@ -207,18 +219,47 @@ class EpisodeWorkerActionService:
             ).fetchone()
         return dict(row) if row else None
 
-    def _video_profile(self, project_id: str) -> dict[str, Any] | None:
-        placeholders = ",".join("?" for _ in VIDEO_GENERATION_CAPABILITIES)
+    def _video_profile(self, project_id: str, shot_id: str) -> dict[str, Any]:
+        """Resolve the exact shot-level preference used by the generation UI.
+
+        The legacy project binding is a readiness/configuration fact, but it is
+        not the authoritative per-shot model choice.  Production must use the
+        same shot -> episode -> project preference resolver as Director and the
+        Models workspace; otherwise the UI can display v19 while automation
+        silently submits an older project binding such as v13.
+        """
         with self.database.connect() as connection:
+            resolution = GenerationPreferenceQueryService(
+                SqliteGenerationPreferenceRepository(connection)
+            ).resolve(
+                project_id=project_id,
+                shot_id=shot_id,
+                capability="VIDEO_I2V",
+            )
+            profile_version_id = resolution.get("profile_version_id")
+            if not profile_version_id:
+                raise DomainRuleError(
+                    "VIDEO_PROFILE_RESOLUTION_BLOCKED",
+                    "当前镜头没有可执行的 VIDEO_I2V Profile",
+                    {
+                        "project_id": project_id,
+                        "shot_id": shot_id,
+                        "source": resolution.get("source"),
+                        "blocked_reason": resolution.get("blocked_reason"),
+                    },
+                )
             row = connection.execute(
-                f"""SELECT epv.* FROM project_profile_bindings ppb
-                JOIN execution_profile_versions epv ON epv.id=ppb.execution_profile_version_id
-                WHERE ppb.project_id=? AND ppb.status IN ('ACTIVE','SELECTED_CANDIDATE')
-                AND epv.status='PUBLISHED' AND epv.capability IN ({placeholders})
-                ORDER BY CASE ppb.status WHEN 'ACTIVE' THEN 0 ELSE 1 END,epv.updated_at DESC,epv.id LIMIT 1""",
-                (project_id, *VIDEO_GENERATION_CAPABILITIES),
+                """SELECT * FROM execution_profile_versions
+                WHERE id=? AND status='PUBLISHED'""",
+                (str(profile_version_id),),
             ).fetchone()
-        return dict(row) if row else None
+        if row is None or str(row["capability"]) not in VIDEO_GENERATION_CAPABILITIES:
+            raise DomainRuleError(
+                "VIDEO_PROFILE_RESOLUTION_INVALID",
+                "解析结果没有指向已发布的精确视频 Profile",
+                {"profile_version_id": profile_version_id, "shot_id": shot_id},
+            )
+        return dict(row)
 
     @staticmethod
     def _first_frame_role(profile: dict[str, Any]) -> str | None:
@@ -244,9 +285,10 @@ class EpisodeWorkerActionService:
         keyframe = self._approved_keyframe(shot_id)
         if keyframe is None:
             return {"shot_id": shot_id, "shot_code": str(shot["code"]), "status": "BLOCKED", "code": "APPROVED_KEYFRAME_REQUIRED"}
-        profile = self._video_profile(project_id)
-        if profile is None:
-            return {"shot_id": shot_id, "shot_code": str(shot["code"]), "status": "BLOCKED", "code": "VIDEO_PROFILE_REQUIRED"}
+        try:
+            profile = self._video_profile(project_id, shot_id)
+        except DomainRuleError as error:
+            return {"shot_id": shot_id, "shot_code": str(shot["code"]), "status": "BLOCKED", "code": error.code}
         role = self._first_frame_role(profile)
         if role is None:
             return {"shot_id": shot_id, "shot_code": str(shot["code"]), "status": "BLOCKED", "code": "FIRST_FRAME_SLOT_REQUIRED"}

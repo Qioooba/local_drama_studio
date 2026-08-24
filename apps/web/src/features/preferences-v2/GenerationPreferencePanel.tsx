@@ -11,8 +11,13 @@ import {
   putGenerationPreference,
   resolveGenerationPreference,
 } from "./api";
+import { getProfileVersion } from "../../generated/api";
 import type { GenerationPreference, PreferenceMode, PreferenceOwnerType } from "./types";
 import { RecommendationFacts } from "./RecommendationFacts";
+import { ProfileOverrideFields } from "../model-config/ProfileOverrideFields";
+import { EffectiveConfigurationPreview } from "../model-config/EffectiveConfigurationPreview";
+import { ModelInspectorDrawer } from "../model-config/ModelInspectorDrawer";
+import { CAPABILITY_LABELS, creatorProfileTitle, type CanonicalCapability } from "./canonicalCapabilities";
 import "./preferences.css";
 
 const CAPABILITY_GROUPS = [
@@ -44,13 +49,21 @@ function errorMessage(error: unknown) {
 
 function formatResources(resources: Record<string, unknown>) {
   const entries = Object.entries(resources);
-  return entries.length ? entries.map(([key, value]) => `${key}: ${String(value)}`).join(" · ") : "当前 Profile 未声明资源估算";
+  return entries.length ? entries.map(([key, value]) => `${key}: ${String(value)}`).join(" · ") : "由本机运行时检查";
 }
 
-export function GenerationPreferencePanel() {
+function capabilityLabel(value: string) {
+  return CAPABILITY_LABELS[value as CanonicalCapability] ?? value;
+}
+
+function modeLabel(value: PreferenceMode) {
+  return value === "AUTO" ? "自动推荐" : "固定能力版本";
+}
+
+export function GenerationPreferencePanel({ initialProjectId }: { initialProjectId?: string } = {}) {
   const queryClient = useQueryClient();
   const initial = useMemo(() => new URLSearchParams(window.location.search), []);
-  const [projectId, setProjectId] = useState(initial.get("project") ?? "");
+  const [projectId, setProjectId] = useState(initialProjectId ?? initial.get("project") ?? "");
   const [seasonId, setSeasonId] = useState("");
   const [episodeId, setEpisodeId] = useState(initial.get("episode") ?? "");
   const [shotId, setShotId] = useState(initial.get("shot") ?? "");
@@ -58,11 +71,12 @@ export function GenerationPreferencePanel() {
   const [ownerType, setOwnerType] = useState<PreferenceOwnerType>("PROJECT");
   const [mode, setMode] = useState<PreferenceMode>("AUTO");
   const [profileVersionId, setProfileVersionId] = useState("");
-  const [settingsText, setSettingsText] = useState("{}");
-  const [reason, setReason] = useState("");
+  const [settings, setSettings] = useState<Record<string, unknown>>({});
+  const [auditNote, setAuditNote] = useState("");
   const [expectedRevision, setExpectedRevision] = useState<number | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [conflict, setConflict] = useState<PreferenceApiError | null>(null);
+  const [inspectorVersionId, setInspectorVersionId] = useState<string | null>(null);
 
   const projects = useQuery({ queryKey: ["preference-v2", "projects"], queryFn: listPreferenceProjects });
   const profiles = useQuery({ queryKey: ["preference-v2", "profiles"], queryFn: listPreferenceProfiles });
@@ -122,8 +136,8 @@ export function GenerationPreferencePanel() {
   useEffect(() => {
     setMode(current?.resolution_mode ?? "AUTO");
     setProfileVersionId(current?.execution_profile_version_id ?? "");
-    setSettingsText(JSON.stringify(current?.settings ?? {}, null, 2));
-    setReason(current?.reason ?? "");
+    setSettings(current?.settings ?? {});
+    setAuditNote("");
     setExpectedRevision(current?.revision ?? null);
     setConflict(null);
     setLocalError(null);
@@ -132,19 +146,17 @@ export function GenerationPreferencePanel() {
   const publishedProfiles = (profiles.data ?? []).filter(
     (profile) => profile.status === "PUBLISHED" && profile.capability.toUpperCase() === capability,
   );
-
+  const selectedProfile = publishedProfiles.find((profile) => profile.version_id === profileVersionId) ?? null;
+  const inspector = useQuery({
+    queryKey: ["profile-execution-detail", inspectorVersionId],
+    queryFn: () => getProfileVersion(inspectorVersionId as string),
+    enabled: Boolean(inspectorVersionId),
+  });
+  const resolvedSchema = resolution.data?.profile?.override_schema ?? selectedProfile?.override_schema ?? {};
   const save = useMutation({
     mutationFn: async () => {
       if (!projectId || !ownerId) throw new Error("请先选择完整的偏好作用域");
-      if (mode === "EXPLICIT" && !profileVersionId) throw new Error("EXPLICIT 模式必须选择已发布的 Profile");
-      let settings: Record<string, unknown>;
-      try {
-        const parsed = JSON.parse(settingsText) as unknown;
-        if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") throw new Error();
-        settings = parsed as Record<string, unknown>;
-      } catch {
-        throw new Error("高级设置必须是 JSON 对象");
-      }
+      if (mode === "EXPLICIT" && !profileVersionId) throw new Error("固定版本时必须选择可用生成能力");
       return putGenerationPreference(projectId, {
         owner_type: ownerType,
         owner_id: ownerId,
@@ -152,7 +164,7 @@ export function GenerationPreferencePanel() {
         resolution_mode: mode,
         execution_profile_version_id: mode === "EXPLICIT" ? profileVersionId : null,
         settings,
-        reason: reason.trim(),
+        reason: `${OWNER_LABELS[ownerType]}：${capabilityLabel(capability)}使用${modeLabel(mode)}${auditNote.trim() ? `；补充：${auditNote.trim()}` : ""}`,
         expected_revision: expectedRevision,
       });
     },
@@ -187,26 +199,26 @@ export function GenerationPreferencePanel() {
     <div className="generation-preferences">
       <section className="panel preference-context" aria-labelledby="preference-context-title">
         <div className="panel-heading">
-          <div><p className="eyebrow">生产上下文</p><h3 id="preference-context-title">选择解析目标</h3></div>
-          <span className="status-pill neutral">本机 API</span>
+          <div><p className="eyebrow">创作范围</p><h3 id="preference-context-title">这项能力用在哪里？</h3></div>
+          <span className="status-pill neutral">系统自动解析</span>
         </div>
         <div className="preference-context-grid">
           <label>项目
             <select value={projectId} onChange={(event) => { setProjectId(event.target.value); setSeasonId(""); setEpisodeId(""); setShotId(""); setOwnerType("PROJECT"); }}>
               <option value="">选择项目</option>
-              {(projects.data ?? []).map((item) => <option key={item.id} value={item.id}>{item.code} · {item.title}</option>)}
+              {(projects.data ?? []).map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
             </select>
           </label>
-          <label>季度
+          <label>季
             <select value={seasonId} onChange={(event) => { setSeasonId(event.target.value); setEpisodeId(""); setShotId(""); }} disabled={!projectId || seasons.isPending}>
-              <option value="">无季度</option>
-              {(seasons.data ?? []).map((item) => <option key={item.id} value={item.id}>{item.code} · {item.title}</option>)}
+              <option value="">不限定季</option>
+              {(seasons.data ?? []).map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
             </select>
           </label>
           <label>分集
             <select value={episodeId} onChange={(event) => { setEpisodeId(event.target.value); setShotId(""); }} disabled={!seasonId || episodes.isPending}>
               <option value="">仅项目级</option>
-              {(episodes.data ?? []).map((item) => <option key={item.id} value={item.id}>{item.code} · {item.title}</option>)}
+              {(episodes.data ?? []).map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
             </select>
           </label>
           <label>镜头
@@ -216,9 +228,9 @@ export function GenerationPreferencePanel() {
             </select>
           </label>
           <label className="preference-capability">能力
-            <select value={capability} onChange={(event) => setCapability(event.target.value)}>
+            <select value={capability} onChange={(event) => { setCapability(event.target.value); setProfileVersionId(""); setSettings({}); }}>
               {CAPABILITY_GROUPS.map(([label, capabilities]) => (
-                <optgroup key={label} label={label}>{capabilities.map((item) => <option key={item} value={item}>{item}</option>)}</optgroup>
+                <optgroup key={label} label={label}>{capabilities.map((item) => <option key={item} value={item}>{capabilityLabel(item)}</option>)}</optgroup>
               ))}
             </select>
           </label>
@@ -231,7 +243,7 @@ export function GenerationPreferencePanel() {
       <div className="preference-workspace">
         <section className="panel preference-resolution" aria-labelledby="preference-resolution-title">
           <div className="panel-heading">
-            <div><p className="eyebrow">当前解析结果</p><h3 id="preference-resolution-title">{capability}</h3></div>
+            <div><p className="eyebrow">当前生效结果</p><h3 id="preference-resolution-title">{capabilityLabel(capability)}</h3></div>
             {resolution.data?.blocked_reason
               ? <span className="status-pill state-blocked">阻塞</span>
               : <span className="status-pill state-active">可执行</span>}
@@ -244,15 +256,15 @@ export function GenerationPreferencePanel() {
               <div className={`resolution-summary ${resolution.data.blocked_reason ? "blocked" : "ready"}`}>
                 <span className="resolution-kicker">生效来源</span>
                 <strong>{resolution.data.source === "AUTO" ? "系统自动解析" : OWNER_LABELS[resolution.data.source]}</strong>
-                <span>{resolution.data.profile ? `${resolution.data.profile.code} · v${resolution.data.profile.version_no}` : "无可执行 Profile"}</span>
+                <span>{resolution.data.profile ? `${creatorProfileTitle(resolution.data.profile.title)} · 第 ${resolution.data.profile.version_no} 版` : "没有可用能力版本"}</span>
                 <p>{resolution.data.blocked_reason
-                  ? `BLOCKER · ${resolution.data.blocked_reason}`
-                  : resolution.data.native_support ? "原生能力已确认" : "原生能力未确认"}</p>
+                  ? `需要处理 · ${resolution.data.blocked_reason}`
+                  : resolution.data.native_support ? "本机可直接执行" : "需要兼容工作流"}</p>
               </div>
               <RecommendationFacts resolution={resolution.data} />
               {resolution.data.warnings.map((warning) => <p className="inline-warning" role="status" key={warning}>{warning}</p>)}
               <dl className="resolution-facts">
-                <div><dt>Fallback</dt><dd>{resolution.data.fallback_support ? "显式允许" : "不允许静默回退"}</dd></div>
+                <div><dt>失败时改用其他能力</dt><dd>{resolution.data.fallback_support ? "已明确允许" : "不会擅自切换"}</dd></div>
                 <div><dt>资源估算</dt><dd>{formatResources(resolution.data.estimated_resources)}</dd></div>
               </dl>
             </>
@@ -267,14 +279,14 @@ export function GenerationPreferencePanel() {
                   <span className="inheritance-index">{index + 1}</span>
                   <div><strong>{OWNER_LABELS[level.type]}</strong><small>{level.title}</small></div>
                   {item
-                    ? <div className="inheritance-value"><span className="status-pill neutral">{item.resolution_mode}</span><small>revision {item.revision}</small></div>
+                    ? <div className="inheritance-value"><span className="status-pill neutral">{modeLabel(item.resolution_mode)}</span><small>第 {item.revision} 版</small></div>
                     : <span className="muted">{level.id ? "继承上级" : "未选择"}</span>}
                 </li>
               );
             })}
             <li className={resolution.data?.source === "AUTO" ? "effective" : ""}>
               <span className="inheritance-index">4</span>
-              <div><strong>系统 AUTO</strong><small>仅在三级均未声明时使用</small></div>
+              <div><strong>系统自动推荐</strong><small>仅在上方都没有单独设置时使用</small></div>
               <span className="muted">最后一级</span>
             </li>
           </ol>
@@ -282,8 +294,8 @@ export function GenerationPreferencePanel() {
 
         <form className="panel preference-editor" onSubmit={(event) => { event.preventDefault(); save.mutate(); }} aria-labelledby="preference-editor-title">
           <div className="panel-heading">
-            <div><p className="eyebrow">偏好编辑</p><h3 id="preference-editor-title">配置覆盖层</h3></div>
-            <span className="status-pill neutral">{current ? `revision ${current.revision}` : "新建"}</span>
+            <div><p className="eyebrow">能力选择</p><h3 id="preference-editor-title">设置当前范围的生成能力</h3></div>
+            <span className="status-pill neutral">{current ? `当前第 ${current.revision} 版` : "尚未单独设置"}</span>
           </div>
 
           <fieldset className="scope-selector">
@@ -296,38 +308,51 @@ export function GenerationPreferencePanel() {
           </fieldset>
 
           <fieldset className="mode-selector">
-            <legend>解析模式</legend>
+            <legend>选择方式</legend>
             <label className={mode === "AUTO" ? "selected" : ""}>
-              <input type="radio" name="preference-mode" value="AUTO" checked={mode === "AUTO"} onChange={() => setMode("AUTO")} />
-              <span><strong>AUTO</strong><small>在当前层声明自动选择已发布 Profile；不可固定版本。</small></span>
+              <input type="radio" name="preference-mode" value="AUTO" checked={mode === "AUTO"} onChange={() => { setMode("AUTO"); setSettings({}); }} />
+              <span><strong>自动推荐</strong><small>系统从已发布且用途匹配的能力中选择合适版本。</small></span>
             </label>
             <label className={mode === "EXPLICIT" ? "selected" : ""}>
               <input type="radio" name="preference-mode" value="EXPLICIT" checked={mode === "EXPLICIT"} onChange={() => setMode("EXPLICIT")} />
-              <span><strong>EXPLICIT</strong><small>固定到一个已发布且能力完全匹配的 Profile 版本。</small></span>
+              <span><strong>固定版本</strong><small>始终使用你明确选择的已发布能力版本。</small></span>
             </label>
           </fieldset>
 
           {mode === "EXPLICIT" && (
-            <label className="editor-field">执行 Profile 版本
-              <select value={profileVersionId} onChange={(event) => setProfileVersionId(event.target.value)} required>
-                <option value="">选择已发布 Profile</option>
-                {publishedProfiles.map((profile) => <option key={profile.version_id} value={profile.version_id}>{profile.code} · {profile.title} · v{profile.version_no ?? "?"}</option>)}
-              </select>
-              {publishedProfiles.length === 0 && <small className="field-error">此能力没有已发布 Profile，EXPLICIT 保存会被阻止。</small>}
-            </label>
+            <div className="editor-field-group">
+              <label className="editor-field">生成能力版本
+                <select value={profileVersionId} onChange={(event) => setProfileVersionId(event.target.value)} required>
+                  <option value="">选择可用版本</option>
+                  {publishedProfiles.map((profile) => <option key={profile.version_id} value={profile.version_id}>{creatorProfileTitle(profile.title)} · 第 {profile.version_no ?? "?"} 版</option>)}
+                </select>
+                {publishedProfiles.length === 0 && <small className="field-error">这项用途还没有可用的已发布能力版本。</small>}
+              </label>
+              {selectedProfile ? <button type="button" className="secondary profile-detail-button" onClick={() => setInspectorVersionId(selectedProfile.version_id)}>{inspector.isPending && inspectorVersionId === selectedProfile.version_id ? "读取详情中…" : "查看执行详情"}</button> : null}
+            </div>
           )}
 
-          <label className="editor-field">变更原因
-            <textarea value={reason} onChange={(event) => setReason(event.target.value)} maxLength={1000} placeholder="说明为什么在这一层覆盖模型偏好" />
-            <small>{reason.length}/1000 · 会写入不可变偏好版本</small>
-          </label>
-
-          <details className="advanced-settings">
-            <summary>高级设置 JSON</summary>
-            <label>设置对象
-              <textarea value={settingsText} onChange={(event) => setSettingsText(event.target.value)} spellCheck={false} />
+          <details className="advanced-settings" open={mode === "EXPLICIT" && Object.keys((resolvedSchema.fields as Record<string, unknown> | undefined) ?? {}).length > 0}>
+            <summary>专家：审计备注与运行参数</summary>
+            <label>审计备注（可选）
+              <textarea value={auditNote} onChange={(event) => setAuditNote(event.target.value)} maxLength={1000} placeholder="只在需要说明特殊背景时补充" />
+              <small>{auditNote.length}/1000 · 保存范围、能力和选择方式会由系统自动记录</small>
             </label>
+            {mode === "AUTO" ? <p className="muted">AUTO 模式只保存能力选择，不保存 Profile 专属运行参数；固定版本后可展开对应参数。</p> : <ProfileOverrideFields schema={resolvedSchema} value={settings} scope={ownerType} onChange={setSettings} disabled={save.isPending} />}
+            {mode === "EXPLICIT" && selectedProfile ? <small className="field-help">当前参数来自 {creatorProfileTitle(selectedProfile.title)} v{selectedProfile.version_no ?? "?"} 的声明契约；未知字段不会被静默保存。</small> : null}
           </details>
+
+          {projectId && capability && (
+            <EffectiveConfigurationPreview
+              projectId={projectId}
+              capability={capability}
+              episodeId={episodeId}
+              shotId={shotId}
+              profileVersionId={mode === "EXPLICIT" ? profileVersionId : null}
+              settings={mode === "EXPLICIT" ? settings : {}}
+              enabled={mode === "AUTO" || Boolean(profileVersionId)}
+            />
+          )}
 
           {conflict && (
             <div className="revision-conflict" role="alert">
@@ -342,10 +367,11 @@ export function GenerationPreferencePanel() {
 
           <div className="preference-save-row">
             <button className="primary-action" type="submit" disabled={save.isPending || !ownerId || (mode === "EXPLICIT" && !profileVersionId)}>{save.isPending ? "保存中…" : "保存新版本"}</button>
-            <small>expected_revision: {expectedRevision ?? "null（首次创建）"}</small>
+            <small>{expectedRevision === null ? "首次设置" : `基于第 ${expectedRevision} 版创建，不覆盖历史`}</small>
           </div>
         </form>
       </div>
+      <ModelInspectorDrawer open={Boolean(inspectorVersionId)} profile={inspector.data?.profile_version ?? null} onClose={() => setInspectorVersionId(null)} />
     </div>
   );
 }

@@ -38,7 +38,7 @@ export type EpisodeRunStage = {
   code: "STORY_ANALYSIS" | "ASSET_EXTRACTION" | "ASSET_COMPLETION" | "SHOT_PLANNING" | "SHOT_IMAGE" | "VIDEO" | "AUDIO_SUBTITLE" | "COMPOSE_QC";
   label: string;
   background_stages: Array<"STORY_READY" | "ASSET_READY" | "SHOT_PLAN_READY" | "KEYFRAME_GENERATION" | "VIDEO_GENERATION" | "QC" | "AUDIO" | "TIMELINE" | "EPISODE_COMPOSE" | "HUMAN_REVIEW" | "DELIVERY_READY">;
-  status: "PENDING" | "RUNNING" | "PAUSED" | "BLOCKED" | "COMPLETED";
+  status: "PENDING" | "RUNNING" | "PAUSED" | "BLOCKED" | "COMPLETED" | "CANCELLED";
   completed: number;
   total: number;
   remaining_count: number;
@@ -50,6 +50,7 @@ export type EpisodeRunStage = {
   estimated_remaining_seconds: number | null;
   estimate_status: "NOT_AVAILABLE" | "AVAILABLE";
   jobs?: Array<{ task_id: string; job_id: string | null; job_state: string | null; item_key: string; status: string }>;
+  issues?: Array<{ shot_id: string; shot_code: string; status: string; code: string; job_id: string | null }>;
 };
 
 export type EpisodeProductionRun = {
@@ -67,6 +68,10 @@ export type EpisodeProductionRun = {
   completed_at: string | null;
   updated_at: string | null;
   revision: number;
+  recovery?: {
+    recoverable: boolean;
+    recoverable_jobs: Array<{ task_id: string; job_id: string | null; job_state: string | null }>;
+  };
   local_only: true;
   queue_reused: true;
 };
@@ -74,16 +79,10 @@ export type EpisodeProductionRun = {
 type ErrorEnvelope = { detail?: string | { message?: string }; error?: { message?: string } };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
+  return generatedRequestJson<T>(`/api/v1${path}`, {
     ...init,
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as ErrorEnvelope | null;
-    const detail = typeof payload?.detail === "string" ? payload.detail : payload?.detail?.message;
-    throw new Error(detail ?? payload?.error?.message ?? `请求失败（${response.status}）`);
-  }
-  return response.json() as Promise<T>;
 }
 
 export async function preflightEpisodeRun(episodeId: string, ttsEnabled: boolean, productionMode: EpisodeProductionMode, checkpointPolicy: EpisodeCheckpointPolicy = "ON_EXCEPTION") {
@@ -108,12 +107,12 @@ export async function startEpisodeRun(episodeId: string, ttsEnabled: boolean, pr
 
 export async function getEpisodeRun(runId: string) {
   const payload = await request<{ run: EpisodeProductionRun }>(
-    `/episode-production-runs/${encodeURIComponent(runId)}?include_jobs=false`,
+    `/episode-production-runs/${encodeURIComponent(runId)}?include_jobs=true`,
   );
   return payload.run;
 }
 
-async function command(runId: string, action: "pause" | "resume" | "cancel", body?: object) {
+async function command(runId: string, action: "pause" | "resume" | "cancel" | "recover", body?: object) {
   const payload = await request<{ run: EpisodeProductionRun }>(
     `/episode-production-runs/${encodeURIComponent(runId)}/${action}`,
     { method: "POST", body: body ? JSON.stringify(body) : undefined },
@@ -124,3 +123,5 @@ async function command(runId: string, action: "pause" | "resume" | "cancel", bod
 export const pauseEpisodeRun = (runId: string) => command(runId, "pause", { reason: "CREATOR_PAUSE" });
 export const resumeEpisodeRun = (runId: string) => command(runId, "resume", { note: "创作者确认后继续整集自动生产" });
 export const cancelEpisodeRun = (runId: string) => command(runId, "cancel");
+export const recoverEpisodeRun = (runId: string) => command(runId, "recover");
+import { requestJson as generatedRequestJson } from "../../generated/api";

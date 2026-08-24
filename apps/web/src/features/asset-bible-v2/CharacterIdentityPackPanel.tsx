@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { Dialog, Drawer, StatusBadge } from "../../components/ui";
 import { authorizeWorkspaceAsset } from "../../generated/api";
 import { MediaPicker } from "../media-picker/MediaPicker";
+import { generateMachineCode } from "../shared/autoCode";
 import {
   type CharacterIdentityPack,
   type CharacterIdentityPackVersion,
@@ -72,7 +73,6 @@ export function CharacterIdentityPackPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isCreatingPack, setIsCreatingPack] = useState(false);
-  const [newPackCode, setNewPackCode] = useState("");
   const [newPackName, setNewPackName] = useState("");
   const [pickerSlot, setPickerSlot] = useState<string | null>(null);
   const [pendingMediaId, setPendingMediaId] = useState("");
@@ -164,15 +164,16 @@ export function CharacterIdentityPackPanel({
 
   const handleCreatePack = async (event: FormEvent) => {
     event.preventDefault();
-    if (!newPackCode.trim() || !newPackName.trim()) return;
+    const generatedCode = generateMachineCode("LOOK", newPackName);
+    if (!generatedCode || !newPackName.trim()) return;
     setLoading(true); setError(null);
     try {
       const response = await createCharacterIdentityPack(storyAssetId, {
         project_id: projectId,
-        code: newPackCode.trim(),
+        code: generatedCode,
         name: newPackName.trim(),
       });
-      setIsCreatingPack(false); setNewPackCode(""); setNewPackName("");
+      setIsCreatingPack(false); setNewPackName("");
       await refreshPacks(response.pack.id);
     } catch (requestError) {
       setError(errorText(requestError, "创建身份包失败"));
@@ -298,18 +299,17 @@ export function CharacterIdentityPackPanel({
   return <section className="identity-pack-panel" aria-labelledby={`identity-pack-title-${storyAssetId}`}>
     <header className="identity-pack-header">
       <div>
-        <p className="eyebrow">角色一致性基准</p>
-        <h4 id={`identity-pack-title-${storyAssetId}`}>身份包 · {assetName}</h4>
-        <p className="muted">批准版会冻结三视图媒体与授权快照；生成任务只引用确切版本，不会跟随新版漂移。</p>
+        <p className="eyebrow">角色一致性</p>
+        <h4 id={`identity-pack-title-${storyAssetId}`}>角色参考 · {assetName}</h4>
+        <p className="muted">为不同造型补齐正面与左右侧参考。批准后，后续镜头会稳定沿用这一版外观。</p>
       </div>
-      <button type="button" className="secondary" onClick={() => setIsCreatingPack(true)} disabled={loading || isCreatingPack}>新建身份包</button>
+      <button type="button" className="secondary" onClick={() => { setNewPackName(packs.length === 0 ? "基础造型" : "新造型"); setIsCreatingPack(true); }} disabled={loading || isCreatingPack}>新建造型</button>
     </header>
 
     {isCreatingPack && <form className="identity-pack-create" onSubmit={(event) => void handleCreatePack(event)}>
-      <label>身份包代码<input value={newPackCode} onChange={(event) => setNewPackCode(event.target.value)} placeholder="BASE" required /></label>
-      <label>显示名称<input value={newPackName} onChange={(event) => setNewPackName(event.target.value)} placeholder="基础造型" required /></label>
+      <label>造型名称<input value={newPackName} onChange={(event) => setNewPackName(event.target.value)} placeholder="例如：基础造型、雨夜造型" required /></label>
       <div className="identity-pack-create-actions">
-        <button type="submit" className="primary-action" disabled={loading || !newPackCode.trim() || !newPackName.trim()}>创建草稿</button>
+        <button type="submit" className="primary-action" disabled={loading || !newPackName.trim()}>创建并开始补参考图</button>
         <button type="button" className="secondary" onClick={() => setIsCreatingPack(false)}>取消</button>
       </div>
     </form>}
@@ -318,13 +318,13 @@ export function CharacterIdentityPackPanel({
     {loading && <p className="muted" role="status">正在更新身份包…</p>}
 
     {!loading && packs.length === 0 && <div className="identity-pack-empty">
-      <strong>还没有角色身份包</strong>
-      <p>先建立基础造型或剧情状态身份包，再从项目图片中补齐三视图并人工批准。</p>
+      <strong>还没有角色造型参考</strong>
+      <p>先新建一个基础造型，再从项目图片中补齐正面和左右侧参考。</p>
     </div>}
 
     {packs.length > 0 && <>
       <div className="identity-pack-controls">
-        <label>身份包<select value={selectedPackId ?? ""} onChange={(event) => setSelectedPackId(event.target.value)}>{packs.map((pack) => <option key={pack.id} value={pack.id}>{pack.name} · {pack.code}</option>)}</select></label>
+        <label>造型方案<select value={selectedPackId ?? ""} onChange={(event) => setSelectedPackId(event.target.value)}>{packs.map((pack) => <option key={pack.id} value={pack.id}>{pack.name}</option>)}</select></label>
         <div className="identity-pack-version-bar" role="list" aria-label="身份包版本">
           {versionOptions.map((version) => <button
             key={version.id}
@@ -367,7 +367,7 @@ export function CharacterIdentityPackPanel({
             return <article key={slot.kind} className={`identity-slot-card${slot.required ? " required" : ""}${mediaId ? " filled" : ""}`} data-testid={`slot-${slot.kind}`}>
               <div className="identity-slot-title"><strong>{slot.label}</strong><span>{slot.kind} · {slot.angle}</span></div>
               <div className="identity-slot-preview">
-                {mediaId ? <img src={thumbnailUrl(mediaId)} alt={`${assetName} ${slot.label}参考缩略图`} width="240" height="180" loading="lazy" decoding="async" /> : <div className="identity-slot-empty"><strong>{slot.required ? "必需参考缺失" : "可选参考"}</strong><span>{slot.required ? "选择图片或生成此视角" : "可补充更多身份细节"}</span></div>}
+                {mediaId ? <img src={thumbnailUrl(mediaId)} alt={`${assetName} ${slot.label}参考缩略图`} loading="lazy" decoding="async" /> : <div className="identity-slot-empty"><strong>{slot.required ? "必需参考缺失" : "可选参考"}</strong><span>{slot.required ? "选择图片或生成此视角" : "可补充更多身份细节"}</span></div>}
               </div>
               {mediaId && <div className="identity-slot-evidence"><span>{slotRecord?.integrity_status ?? "VERIFIED"}</span><span>{slotRecord?.authorization_status === "AUTHORIZED" ? "项目授权有效" : slotRecord?.authorization_status === "REVOKED" ? "项目授权已撤回" : "授权状态待校验"}</span><details><summary>版本证据</summary><code>{mediaId}</code></details></div>}
               {editable && <div className="identity-slot-actions">

@@ -29,6 +29,17 @@ def service(request: Request) -> ProjectPackageService:
     return ProjectPackageService(request.app.state.database, settings.projects_root, settings.data_root, settings=settings)
 
 
+@router.get(":inbox", operation_id="listProjectPackageInbox")
+async def list_project_package_inbox(request: Request) -> dict[str, object]:
+    return {
+        "items": service(request).list_inbox_packages(),
+        "read_only": True,
+        "runtime_contacted": False,
+        "network_contacted": False,
+        "mutated": False,
+    }
+
+
 @router.post(":stage", operation_id="stageProjectPackage")
 async def stage_project_package(payload: StageProjectPackageRequest, request: Request) -> dict[str, object]:
     try:

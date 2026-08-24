@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Header, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from local_drama.api.routes.media import _range_headers
 from local_drama.api.schemas.g8 import (
@@ -22,9 +23,11 @@ from local_drama.api.schemas.g8 import (
     RenderSegmentedEpisodeRequest,
     SubtitleRevisionRequest,
     SubtitleStyleTemplateRequest,
+    TimelineRefreshCommitRequest,
     TimelineRevisionRequest,
     TransitionConstraintRequest,
 )
+from local_drama.application.background_operations import BackgroundOperationService
 from local_drama.application.compose import ComposeService
 from local_drama.application.episode_cockpit import EpisodeCockpitService
 from local_drama.application.errors import api_error_from_domain
@@ -55,6 +58,14 @@ async def get_episode_cockpit(episode_id: str, request: Request) -> dict[str, ob
 
 def service(request: Request) -> TimelineService:
     return TimelineService(request.app.state.database, request.app.state.settings)
+
+
+@router.get("/background-operations/{job_id}", operation_id="getBackgroundOperation")
+async def get_background_operation(job_id: str, request: Request) -> dict[str, object]:
+    try:
+        return BackgroundOperationService(request.app.state.database, request.app.state.settings).result(job_id)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
 
 
 def _stream(path: Path, start: int, end: int) -> Iterator[bytes]:
@@ -121,6 +132,26 @@ async def create_timeline_revision(episode_id: str, payload: TimelineRevisionReq
         raise api_error_from_domain(error) from error
 
 
+@router.get("/episodes/{episode_id}/timeline-refresh:plan", operation_id="planEpisodeTimelineRefresh")
+async def plan_episode_timeline_refresh(episode_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"plan": service(request).plan_stale_timeline_refresh(episode_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/episodes/{episode_id}/timeline-refresh:commit", status_code=201, operation_id="commitEpisodeTimelineRefresh")
+async def commit_episode_timeline_refresh(
+    episode_id: str,
+    payload: TimelineRefreshCommitRequest,
+    request: Request,
+) -> dict[str, object]:
+    try:
+        return service(request).commit_stale_timeline_refresh(episode_id, payload.expected_plan_hash)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.get("/timeline-revisions/{timeline_revision_id}", operation_id="getTimelineRevision")
 async def get_timeline_revision(timeline_revision_id: str, request: Request) -> dict[str, object]:
     try:
@@ -162,6 +193,23 @@ async def create_subtitle_revision(episode_id: str, payload: SubtitleRevisionReq
         raise api_error_from_domain(error) from error
 
 
+@router.get("/episodes/{episode_id}/subtitle-draft-plan", operation_id="getEpisodeTTSSubtitleDraftPlan")
+async def get_episode_tts_subtitle_draft_plan(
+    episode_id: str,
+    request: Request,
+    source_document_version_id: str | None = None,
+) -> dict[str, object]:
+    try:
+        return {
+            "plan": service(request).plan_tts_subtitle_draft(
+                episode_id,
+                source_document_version_id=source_document_version_id,
+            )
+        }
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.get("/subtitle-revisions/{subtitle_revision_id}", operation_id="getSubtitleRevision")
 async def get_subtitle_revision(subtitle_revision_id: str, request: Request) -> dict[str, object]:
     try:
@@ -182,6 +230,14 @@ async def bind_episode_audio(episode_id: str, payload: AudioBindingRequest, requ
 async def list_episode_audio(episode_id: str, request: Request) -> dict[str, object]:
     try:
         return {"items": service(request).list_audio_bindings(episode_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.delete("/audio-bindings/{binding_id}", operation_id="unbindEpisodeAudio")
+async def unbind_episode_audio(binding_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"result": service(request).unbind_audio(binding_id)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -258,7 +314,21 @@ async def plan_enhancement(payload: EnhancementPlanRequest, request: Request) ->
 @router.post("/enhancement-runs", status_code=201, operation_id="runEnhancement")
 async def run_enhancement(payload: EnhancementRunRequest, request: Request) -> dict[str, object]:
     try:
-        return {"enhancement": service(request).run_enhancement(**payload.model_dump())}
+        return {"enhancement": await run_in_threadpool(service(request).run_enhancement, **payload.model_dump())}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/enhancement-runs:submit", status_code=202, operation_id="submitEnhancementRun")
+async def submit_enhancement(
+    payload: EnhancementRunRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, object]:
+    try:
+        return BackgroundOperationService(request.app.state.database, request.app.state.settings).submit_enhancement(
+            **payload.model_dump(), idempotency_key=idempotency_key,
+        )
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -277,7 +347,7 @@ async def render_episode(timeline_revision_id: str, request: Request, payload: R
         revision_id = payload.timeline_revision_id if payload else timeline_revision_id
         if revision_id != timeline_revision_id:
             raise DomainRuleError("TIMELINE_REVISION_MISMATCH", "路径和请求体的时间线 revision 不一致")
-        return {"render": service(request).render_episode(timeline_revision_id, force_rerender=payload.force_rerender if payload else False)}
+        return {"render": await run_in_threadpool(service(request).render_episode, timeline_revision_id, force_rerender=payload.force_rerender if payload else False)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -306,9 +376,27 @@ async def submit_episode_compose(
 @router.post("/timeline-revisions/{timeline_revision_id}:render-segmented", status_code=201, operation_id="renderSegmentedEpisode")
 async def render_segmented_episode(timeline_revision_id: str, payload: RenderSegmentedEpisodeRequest, request: Request) -> dict[str, object]:
     try:
-        return {"render": service(request).render_segmented_episode(
+        return {"render": await run_in_threadpool(service(request).render_segmented_episode,
             timeline_revision_id, [segment.model_dump() for segment in payload.segments], force_rerender=payload.force_rerender,
         )}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/timeline-revisions/{timeline_revision_id}/segmented-compose:submit", status_code=202, operation_id="submitSegmentedEpisodeCompose")
+async def submit_segmented_episode_compose(
+    timeline_revision_id: str,
+    payload: RenderSegmentedEpisodeRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, object]:
+    try:
+        return BackgroundOperationService(request.app.state.database, request.app.state.settings).submit_segmented_compose(
+            timeline_revision_id,
+            [segment.model_dump() for segment in payload.segments],
+            force_rerender=payload.force_rerender,
+            idempotency_key=idempotency_key,
+        )
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -360,7 +448,21 @@ async def delete_subtitle_style_template(entry_id: str, request: Request) -> dic
 @router.post("/delivery-packages", status_code=201, operation_id="buildDeliveryPackage")
 async def build_delivery(payload: DeliveryBuildRequest, request: Request) -> dict[str, object]:
     try:
-        return {"delivery": service(request).build_delivery(**payload.model_dump())}
+        return {"delivery": await run_in_threadpool(service(request).build_delivery, **payload.model_dump())}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/delivery-packages:submit", status_code=202, operation_id="submitDeliveryPackageBuild")
+async def submit_delivery(
+    payload: DeliveryBuildRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, object]:
+    try:
+        return BackgroundOperationService(request.app.state.database, request.app.state.settings).submit_delivery(
+            **payload.model_dump(), idempotency_key=idempotency_key,
+        )
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

@@ -16,6 +16,8 @@ from typing import Any
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
 
+_MODEL_FILE_EXTENSIONS = frozenset({".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".gguf", ".onnx", ".tflite", ".mlx"})
+
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
@@ -26,27 +28,41 @@ def _json(value: Any) -> str:
 
 
 def _hash_and_header(path: Path) -> tuple[str, int, dict[str, Any]]:
+    extension = path.suffix.casefold()
+    if extension not in _MODEL_FILE_EXTENSIONS:
+        raise DomainRuleError(
+            "MODEL_ARTIFACT_FORMAT_UNSUPPORTED",
+            "模型文件格式不受支持；请选择 Safetensors、GGUF、ONNX 或已声明的本机模型格式",
+            {"extension": extension or "<none>"},
+        )
     digest = hashlib.sha256()
     size = 0
     with path.open("rb") as source:
-        prefix = source.read(8)
-        if len(prefix) == 8:
-            header_size = struct.unpack("<Q", prefix)[0]
-            header_raw = source.read(header_size)
-            try:
-                header = json.loads(header_raw.decode("utf-8")) if header_raw else {}
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                header = {"parse_status": "INVALID_JSON"}
-        else:
-            header = {"parse_status": "TRUNCATED"}
-        digest.update(prefix)
-        size += len(prefix)
-        if len(prefix) == 8:
-            digest.update(header_raw)
-            size += len(header_raw)
         while chunk := source.read(4 * 1024 * 1024):
             digest.update(chunk)
             size += len(chunk)
+    if extension != ".safetensors":
+        return digest.hexdigest(), size, {
+            "tensor_count": 0,
+            "dtypes": [],
+            "metadata": {"format": extension.removeprefix(".").upper(), "parse_status": "FORMAT_HEADER_NOT_INSPECTED"},
+        }
+    header: dict[str, Any]
+    with path.open("rb") as source:
+        prefix = source.read(8)
+        if len(prefix) != 8:
+            header = {"parse_status": "TRUNCATED"}
+        else:
+            header_size = struct.unpack("<Q", prefix)[0]
+            if header_size <= 0 or header_size > min(100 * 1024 * 1024, max(0, size - 8)):
+                header = {"parse_status": "INVALID_HEADER_SIZE"}
+            else:
+                header_raw = source.read(header_size)
+                try:
+                    parsed = json.loads(header_raw.decode("utf-8")) if header_raw else {}
+                    header = parsed if isinstance(parsed, dict) else {"parse_status": "INVALID_JSON_SHAPE"}
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    header = {"parse_status": "INVALID_JSON"}
     tensors = {key: value for key, value in header.items() if key != "__metadata__" and isinstance(value, dict)}
     dtypes = sorted({str(value.get("dtype")) for value in tensors.values() if value.get("dtype")})
     return digest.hexdigest(), size, {"tensor_count": len(tensors), "dtypes": dtypes, "metadata": header.get("__metadata__", {})}
@@ -114,13 +130,12 @@ class ModelCompatibilityService:
         resolved_root = root.resolve()
         if not resolved_root.is_dir():
             raise DomainRuleError("MODEL_SCAN_ROOT_INVALID", "模型扫描目录不存在、不是目录或为 symlink")
-        extensions = {".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".gguf", ".onnx", ".tflite", ".mlx"}
         files = [
             item
             for item in resolved_root.rglob("*")
             if item.is_file()
             and not item.is_symlink()
-            and item.suffix.casefold() in extensions
+            and item.suffix.casefold() in _MODEL_FILE_EXTENSIONS
             and item.resolve().is_relative_to(resolved_root)
         ]
         files.sort(key=lambda item: item.as_posix().casefold())
@@ -179,6 +194,12 @@ class ModelCompatibilityService:
         resolved = path.resolve()
         if not resolved.is_file() or resolved.is_symlink():
             raise DomainRuleError("MODEL_ARTIFACT_PATH_INVALID", "模型路径缺失、不是文件或为 symlink")
+        if resolved.suffix.casefold() not in _MODEL_FILE_EXTENSIONS:
+            raise DomainRuleError(
+                "MODEL_ARTIFACT_FORMAT_UNSUPPORTED",
+                "模型文件格式不受支持；请选择 Safetensors、GGUF、ONNX 或已声明的本机模型格式",
+                {"extension": resolved.suffix.casefold() or "<none>"},
+            )
         now = _utc_now()
         artifact_id = str(uuid.uuid4())
         with self.database.transaction() as connection:
@@ -277,8 +298,12 @@ class ModelCompatibilityService:
                 (report_id, artifact_id, str(path), sha256, byte_size, _json(header), _json(quantization), license_status, report_status, _json(blockers), now, actor),
             )
             connection.execute(
-                "UPDATE model_artifacts SET sha256=?, size_bytes=?, compatibility_json=?, license_note=?, updated_at=?, revision=revision+1 WHERE id=?",
-                (sha256, byte_size, _json({"quantization": quantization, "report_id": report_id}), license_status, now, artifact_id),
+                """UPDATE model_artifacts
+                SET sha256=?, size_bytes=?, compatibility_json=?, license_note=?,
+                    status=CASE WHEN ?='PASS' THEN 'VERIFIED' ELSE status END,
+                    updated_at=?, revision=revision+1
+                WHERE id=?""",
+                (sha256, byte_size, _json({"quantization": quantization, "report_id": report_id}), license_status, report_status, now, artifact_id),
             )
             connection.execute(
                 """INSERT INTO audit_events

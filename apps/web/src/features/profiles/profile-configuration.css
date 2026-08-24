@@ -28,6 +28,164 @@
   max-width: 100%;
 }
 
+.profile-configuration-panel .profile-contract-meta {
+  align-items: stretch;
+}
+
+.profile-execution-details-button {
+  align-self: end;
+  min-height: 44px;
+}
+
+.model-inspector-drawer {
+  display: grid;
+  gap: 14px;
+}
+
+.model-inspector-intro,
+.model-inspector-component__heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.model-inspector-intro h3 {
+  margin: 4px 0;
+}
+
+.model-inspector-intro p {
+  margin: 0;
+}
+
+.model-inspector-summary,
+.model-inspector-evidence,
+.model-inspector-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.model-inspector-summary > div,
+.model-inspector-evidence > div,
+.model-inspector-facts > div {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.model-inspector-summary dt,
+.model-inspector-evidence dt,
+.model-inspector-facts dt {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.model-inspector-summary dd,
+.model-inspector-evidence dd,
+.model-inspector-facts dd {
+  min-width: 0;
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.model-inspector-components {
+  display: grid;
+  gap: 10px;
+}
+
+.model-inspector-component {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.model-inspector-component__heading > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.model-inspector-component__heading small {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.model-inspector-json-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.model-inspector-json-grid > div {
+  min-width: 0;
+}
+
+.model-inspector-json-grid span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.model-inspector-json-grid pre,
+.model-inspector-path pre {
+  max-height: 260px;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: 11px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.model-inspector-path {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.model-inspector-path summary {
+  cursor: pointer;
+  min-height: 32px;
+  padding-top: 4px;
+}
+
+.model-inspector-path code {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+@media (max-width: 760px) {
+  .model-inspector-summary,
+  .model-inspector-evidence,
+  .model-inspector-facts,
+  .model-inspector-json-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .model-inspector-intro,
+  .model-inspector-component__heading {
+    flex-direction: column;
+  }
+}
+
 .profile-configuration-panel .profile-editor-actions button,
 .workflow-configuration-panel .workflow-actions button,
 .workflow-configuration-panel .revoke-reason-field input {
@@ -38,6 +196,45 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
   gap: 12px;
+}
+
+.workflow-configuration-panel .workflow-create-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.workflow-configuration-panel .workflow-create-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.workflow-configuration-panel .workflow-create-form label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.workflow-configuration-panel .workflow-create-form input,
+.workflow-configuration-panel .workflow-create-form select {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 44px;
+}
+
+.workflow-configuration-panel .workflow-create-form__wide {
+  grid-column: 1 / -1;
 }
 
 .workflow-configuration-panel .workflow-version {
@@ -123,6 +320,49 @@
   overflow-wrap: anywhere;
 }
 
+.profile-evidence-probe {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--selected) 35%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--selected) 5%, var(--surface));
+}
+
+.profile-evidence-probe > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.profile-evidence-probe > div:first-child small,
+.profile-evidence-probe p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.profile-evidence-probe dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.profile-evidence-probe dl div {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.profile-evidence-probe dt,
+.profile-evidence-probe dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.profile-evidence-probe dt { color: var(--text-muted); font-size: 11px; }
+.profile-evidence-probe dd { margin-top: 3px; font-weight: 800; }
+
 @media (max-width: 1100px) {
   .profile-configuration-panel .profile-editor-layout,
   .workflow-configuration-panel .workflow-history {
@@ -162,6 +402,16 @@
   .workflow-configuration-panel .workflow-actions > button {
     width: 100%;
   }
+
+  .workflow-configuration-panel .workflow-create-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workflow-configuration-panel .workflow-create-form__wide {
+    grid-column: auto;
+  }
+
+  .profile-evidence-probe dl { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 480px) {

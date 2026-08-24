@@ -167,6 +167,8 @@ def test_whole_drama_template_expands_episodes_in_order(workspace, database) -> 
     assert run["task_count"] == 1
     assert run["tasks"][0]["job_id"]
     assert run["tasks"][0]["item"]["payload"]["action"] == "KEYFRAME_CHECK"
+    with database.connect() as connection:
+        assert connection.execute("SELECT max_attempts FROM jobs WHERE id=?", (run["tasks"][0]["job_id"],)).fetchone()["max_attempts"] == 2
 
 
 def test_whole_drama_template_errors_and_list(workspace, database) -> None:

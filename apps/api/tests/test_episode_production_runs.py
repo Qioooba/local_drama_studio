@@ -10,6 +10,7 @@ import pytest
 from local_drama.application.automation_workflows import AutomationWorkflowService
 from local_drama.application.breakdown_apply import BreakdownApplyService
 from local_drama.application.documents import DocumentImportService
+from local_drama.application.episode_front_half_actions import EpisodeFrontHalfActionService
 from local_drama.application.episode_production_runs import (
     ACTION_STAGE,
     FRONT_HALF_ACTIONS,
@@ -102,6 +103,41 @@ def _episode(workspace, database, code: str) -> tuple[dict, dict]:
     return project, projects.list_episodes(str(season["id"]))[0]
 
 
+def test_full_preflight_uses_authoritative_asset_completion_gate(
+    workspace, database, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _project, episode = _episode(workspace, database, "full_asset_completion_gate")
+
+    def _missing_completion(
+        self: EpisodeFrontHalfActionService, episode_id: str,
+    ) -> tuple[dict, int]:
+        del self, episode_id
+        return (
+            {
+                "status": "NEEDS_HITL",
+                "machine_check": {
+                    "status": "NEEDS_HITL",
+                    "code": "ASSET_COMPLETION_REQUIRED",
+                    "detail": "角色尚缺三视图身份包",
+                    "missing_asset_ids": ["character-1"],
+                    "human_approval_created": False,
+                },
+            },
+            0,
+        )
+
+    monkeypatch.setattr(EpisodeFrontHalfActionService, "asset_completion", _missing_completion)
+    result = EpisodeProductionRunService(database, workspace).preflight(
+        str(episode["id"]), include_front_half=True,
+    )
+
+    check = next(item for item in result["checks"] if item["code"] == "ASSET_COMPLETION_REQUIRED")
+    assert check["status"] == "BLOCKED"
+    assert check["detail"] == "角色尚缺三视图身份包"
+    assert check["evidence"]["missing_asset_ids"] == ["character-1"]
+    assert "ASSET_COMPLETION_REQUIRED" in {item["code"] for item in result["blockers"]}
+
+
 def _commit_source(workspace, database, project_id: str, source_path: Path) -> dict:
     source_path.write_text("第一场\n\n角色甲走进房间。", encoding="utf-8")
     documents = DocumentImportService(database, workspace)
@@ -145,6 +181,48 @@ def test_front_half_only_start_is_fail_closed_and_idempotent(
         assert connection.execute(
             "SELECT COUNT(*) FROM automation_workflow_run_tasks WHERE run_id=?", (first["id"],),
         ).fetchone()[0] == 1
+
+
+def test_run_view_exposes_exact_shot_issues_from_durable_task_context(
+    workspace, database, tmp_path: Path,
+) -> None:
+    project, episode = _episode(workspace, database, "run_exact_shot_issue")
+    _commit_source(workspace, database, str(project["id"]), tmp_path / "exact-shot.md")
+    service = EpisodeProductionRunService(database, workspace)
+    run = service.start(
+        str(episode["id"]), idempotency_key="exact-shot-issue-run", front_half_only=True,
+    )
+    task_id = str(run["stages"][0]["jobs"][0]["task_id"])
+    context = {
+        "status": "NEEDS_ATTENTION",
+        "machine_check": {
+            "status": "NEEDS_ATTENTION",
+            "blocked_shots": [
+                {
+                    "shot_id": "shot-7",
+                    "shot_code": "SH-007",
+                    "status": "BLOCKED",
+                    "code": "VIDEO_CANDIDATE_REQUIRED",
+                    "job_id": "job-7",
+                }
+            ],
+        },
+    }
+    with database.transaction() as connection:
+        connection.execute(
+            "UPDATE automation_workflow_run_tasks SET machine_context_json=? WHERE id=?",
+            (json.dumps(context, ensure_ascii=False), task_id),
+        )
+
+    refreshed = service.get(str(run["id"]), include_jobs=True)
+    issue = refreshed["stages"][0]["issues"][0]
+    assert issue == {
+        "shot_id": "shot-7",
+        "shot_code": "SH-007",
+        "status": "BLOCKED",
+        "code": "VIDEO_CANDIDATE_REQUIRED",
+        "job_id": "job-7",
+    }
 
 
 def test_real_front_half_worker_reports_and_parks_missing_human_decision(

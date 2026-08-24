@@ -14,7 +14,7 @@ class GenerationPreferencePutRequest(BaseModel):
     resolution_mode: Literal["AUTO", "EXPLICIT"]
     execution_profile_version_id: str | None = Field(default=None, min_length=1, max_length=36)
     settings: dict[str, Any] = Field(default_factory=dict)
-    reason: str = Field(default="", max_length=1000)
+    reason: str = Field(min_length=1, max_length=1000)
     expected_revision: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")

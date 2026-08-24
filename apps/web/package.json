@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 5173",
+    "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "tsc --noEmit && vite build && node scripts/check-bundle-budget.mjs",
     "test": "vitest run",
     "generate:client": "python ../../scripts/generate_client.py"

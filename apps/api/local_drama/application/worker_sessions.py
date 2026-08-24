@@ -364,17 +364,27 @@ class WorkerSupervisor:
         worker_id: str,
         *,
         channels: list[str] | None = None,
-        max_jobs: int = 100,
+        max_jobs: int | None = 100,
         max_restarts: int = 5,
         worker_version: str | None = None,
         api_version: str | None = None,
+        idle_poll_seconds: float | None = None,
+        should_stop: Callable[[], bool] | None = None,
+        recent_result_limit: int = 100,
     ) -> dict[str, Any]:
+        from local_drama.application.comfy_jobs import ComfyGenerationService
+        from local_drama.application.episode_production_runs import EpisodeProductionRunService
         from local_drama.application.storage_operations import StorageOperationService
         from local_drama.application.worker import LocalMediaWorker
 
+        episode_runs = EpisodeProductionRunService(self.database, self.settings)
+        session_reconcile = self.sessions.reconcile()
+        provider_reconcile = ComfyGenerationService(self.database, self.settings).recover_uncertain_successes() if "GPU_H3" in (channels or ["CPU"]) else {"inspected": 0, "recovered": 0, "items": []}
         startup_reconcile = {
-            "worker_sessions": self.sessions.reconcile(),
+            "worker_sessions": session_reconcile,
+            "provider_successes": provider_reconcile,
             "storage_operations": StorageOperationService(self.database, self.settings).reconcile(),
+            "episode_runs": episode_runs.watchdog(stale_seconds=0, actor="worker-startup-watchdog"),
         }
         session = self.sessions.start_session(
             worker_id,
@@ -392,8 +402,14 @@ class WorkerSupervisor:
             }
         session_id = str(session["id"])
         results: list[dict[str, Any]] = []
+        processed = 0
         restarts = 0
+        needs_success_reset = False
         worker = LocalMediaWorker(self.database, self.settings)
+        comfy_worker = ComfyGenerationService(self.database, self.settings)
+        last_episode_watchdog_at = time.monotonic()
+        last_episode_watchdog = startup_reconcile["episode_runs"]
+        last_provider_reconcile = provider_reconcile
         heartbeat_stop = threading.Event()
         heartbeat_errors: list[BaseException] = []
 
@@ -412,14 +428,28 @@ class WorkerSupervisor:
         )
         heartbeat_thread.start()
         try:
-            while len(results) < max(0, max_jobs):
+            while max_jobs is None or processed < max(0, max_jobs):
+                if should_stop is not None and should_stop():
+                    break
                 if heartbeat_errors:
                     raise DomainRuleError("WORKER_SESSION_HEARTBEAT_FAILED", "WorkerSession 后台 heartbeat 失败")
                 self.sessions.heartbeat(session_id)
                 try:
-                    result = worker.run_once(worker_id, channels or ["CPU"], worker_session_id=session_id)
+                    requested_channels = channels or ["CPU"]
+                    result = None
+                    if "GPU_H3" in requested_channels:
+                        result = comfy_worker.run_once(
+                            worker_id,
+                            worker_session_id=session_id,
+                            sleep=self._sleep,
+                        )
+                    if result is None:
+                        local_channels = [channel for channel in requested_channels if channel != "GPU_H3"]
+                        if local_channels:
+                            result = worker.run_once(worker_id, local_channels, worker_session_id=session_id)
                 except Exception as error:
                     restarts += 1
+                    needs_success_reset = True
                     failed = self.sessions.record_failure(session_id, error, exit_code=1)
                     if restarts > max_restarts:
                         self.sessions.stop(session_id, exit_code=1)
@@ -428,20 +458,36 @@ class WorkerSupervisor:
                     self._sleep(max(0.0, (next_restart - _now()).total_seconds()))
                     self.sessions.mark_running(session_id)
                     worker = LocalMediaWorker(self.database, self.settings)
+                    comfy_worker = ComfyGenerationService(self.database, self.settings)
                     continue
-                self.sessions.record_success(session_id)
+                if result is not None or needs_success_reset:
+                    self.sessions.record_success(session_id)
+                    needs_success_reset = False
                 if result is None:
-                    break
+                    if idle_poll_seconds is None:
+                        break
+                    now_monotonic = time.monotonic()
+                    if now_monotonic - last_episode_watchdog_at >= 30.0:
+                        last_episode_watchdog = episode_runs.watchdog()
+                        if "GPU_H3" in requested_channels:
+                            last_provider_reconcile = comfy_worker.recover_uncertain_successes()
+                        last_episode_watchdog_at = now_monotonic
+                    self._sleep(max(0.05, float(idle_poll_seconds)))
+                    continue
+                processed += 1
                 results.append(result)
+                if len(results) > max(1, int(recent_result_limit)):
+                    results.pop(0)
             heartbeat_stop.set()
             heartbeat_thread.join(timeout=2.0)
             stopped = self.sessions.stop(session_id, exit_code=0)
             return {
                 "session": stopped,
-                "processed": len(results),
+                "processed": processed,
                 "results": results,
                 "status": "STOPPED",
                 "startup_reconcile": startup_reconcile,
+                "maintenance": {"episode_runs": last_episode_watchdog, "provider_successes": last_provider_reconcile},
             }
         except Exception:
             heartbeat_stop.set()

@@ -1,4 +1,5 @@
 import type { GenerationResolution } from "./types";
+import { CAPABILITY_LABELS, creatorProfileTitle, type CanonicalCapability } from "./canonicalCapabilities";
 
 const UNKNOWN_REASON: Record<string, string> = {
   SCHEMA_UNAVAILABLE: "本机历史结构不可用",
@@ -14,13 +15,13 @@ export function RecommendationFacts({ resolution }: { resolution: GenerationReso
   return (
     <section className="recommendation-facts" aria-labelledby="recommendation-facts-title">
       <div>
-        <span className="resolution-kicker">生效 Profile</span>
-        <strong id="recommendation-facts-title">{profile.code} · {profile.title} · v{profile.version_no}</strong>
+        <span className="resolution-kicker">生效能力版本</span>
+        <strong id="recommendation-facts-title">{creatorProfileTitle(profile.title)} · 第 {profile.version_no} 版</strong>
       </div>
       <ul aria-label="推荐依据">
-        <li>{profile.capability} 能力精确匹配</li>
-        <li>{profile.status === "PUBLISHED" ? "已发布版本" : `状态 ${profile.status}`}</li>
-        <li>{resolution.native_support ? "原生支持" : "非原生支持"}</li>
+        <li>{CAPABILITY_LABELS[profile.capability as CanonicalCapability] ?? profile.capability} 用途匹配</li>
+        <li>{profile.status === "PUBLISHED" ? "已通过发布检查" : "当前版本不可用"}</li>
+        <li>{resolution.native_support ? "本机可直接执行" : "通过兼容工作流执行"}</li>
       </ul>
       {rate.status === "AVAILABLE" && rate.value !== null ? (
         <p className="recommendation-rate">
@@ -33,7 +34,7 @@ export function RecommendationFacts({ resolution }: { resolution: GenerationReso
           <span>{UNKNOWN_REASON[rate.reason ?? ""] ?? "没有足够的权威本机样本"} · 同维度终态 {rate.terminal_sample_count}/{rate.minimum_sample_count}</span>
         </p>
       )}
-      <small>仅统计相同分辨率、时长/帧数、步数与资源类别的本机成功/失败 attempt；不把 worker 名称当作 GPU 型号。</small>
+      <small>最近成功率只比较相同分辨率、时长、帧数与资源类别的本机任务；数据不足时不会猜测。</small>
     </section>
   );
 }

@@ -11,7 +11,7 @@ const OWNER_WORKSPACES = [
     code: "SET",
     title: "生产设置",
     description: "项目默认、交付目标、品牌、自动化、外发授权与项目包",
-    owns: ["配置快照 / G9", "品牌与健康", "自动化与 Outbox", "资产授权 / 导入导出"],
+    owns: ["配置快照", "品牌与健康", "自动化与发件箱", "资产授权 / 导入导出"],
   },
   {
     id: "models",

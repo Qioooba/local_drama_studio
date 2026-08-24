@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from local_drama.application.g7_readiness import G7ReadinessService
 from local_drama.application.projects import ProjectService
+from local_drama.application.worker import LocalMediaWorker
 from local_drama.application.workspace_assets import WorkspaceAssetService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.main import create_app
@@ -44,6 +45,16 @@ def test_image_content_endpoint_requires_derived_thumbnail(workspace, database) 
     with TestClient(create_app(workspace)) as client:
         response = client.get(f"/api/v1/media-versions/{media['media_version_id']}/content")
         head_response = client.head(f"/api/v1/media-versions/{media['media_version_id']}/content")
+        pending_poster = client.get(f"/api/v1/media-versions/{media['media_version_id']}/thumbnail")
+        submission = client.post(
+            f"/api/v1/media-versions/{media['media_version_id']}/derivatives:submit",
+            params={"kind": "THUMBNAIL", "size": "small", "frame": "poster"},
+        )
+        assert pending_poster.status_code == 409
+        assert pending_poster.json()["error"]["code"] == "MEDIA_DERIVATIVE_NOT_READY"
+        assert submission.status_code == 202
+        outcome = LocalMediaWorker(database, workspace).run_once("thumbnail-policy-worker", ["CPU"])
+        assert outcome is not None and outcome["result"]["job_state"] == "SUCCEEDED"
         poster = client.get(f"/api/v1/media-versions/{media['media_version_id']}/thumbnail")
         assert poster.status_code == 200
         MediaService(database, workspace).content_path(str(media["media_version_id"]))[1].write_bytes(b"tampered-image")
@@ -56,8 +67,8 @@ def test_image_content_endpoint_requires_derived_thumbnail(workspace, database) 
     assert tampered_poster.json()["error"]["code"] == "SOURCE_INTEGRITY_FAILED"
 
 
-def test_image_mime_cannot_bypass_thumbnail_policy_when_media_kind_is_misclassified(workspace, database) -> None:
-    """A mislabeled image still gets a derived read surface, never raw bytes."""
+def test_image_mime_cannot_be_imported_as_document_to_bypass_thumbnail_policy(workspace, database) -> None:
+    """Image bytes cannot enter the workspace under a non-image media kind."""
     project = ProjectService(database, workspace.projects_root).create_project(
         code="thumb_mime_guard", title="Thumbnail MIME guard", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1,
         target_duration_ms=60_000, allow_unconfigured_capabilities=True,
@@ -65,14 +76,9 @@ def test_image_mime_cannot_bypass_thumbnail_policy_when_media_kind_is_misclassif
     source = workspace.work_root / "mime-guard.png"
     subprocess.run([workspace.ffmpeg_path, "-f", "lavfi", "-i", "color=c=blue:s=16x16:d=1", "-frames:v", "1", "-y", str(source)], check=True, capture_output=True)
     from local_drama.application.media import MediaService
-    media = MediaService(database, workspace).import_file(str(project["id"]), source, media_kind="DOCUMENT")
-    with TestClient(create_app(workspace)) as client:
-        raw = client.get(f"/api/v1/media-versions/{media['media_version_id']}/content")
-        thumbnail = client.get(f"/api/v1/media-versions/{media['media_version_id']}/thumbnail?size=small&frame=poster")
-    assert raw.status_code == 409
-    assert raw.json()["error"]["code"] == "IMAGE_CONTENT_REQUIRES_THUMBNAIL"
-    assert thumbnail.status_code == 200
-    assert thumbnail.headers["content-type"].startswith("image/webp")
+    with pytest.raises(DomainRuleError) as raised:
+        MediaService(database, workspace).import_file(str(project["id"]), source, media_kind="DOCUMENT")
+    assert raised.value.code == "MEDIA_KIND_MISMATCH"
 
 
 def test_workspace_asset_authorization_rejects_cross_project_and_tamper(workspace, database) -> None:

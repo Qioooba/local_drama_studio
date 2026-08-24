@@ -29,6 +29,13 @@ class StoryAssetUpdateRequest(BaseModel):
 class StoryAssetArchiveRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=1)
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class StoryAssetRestoreRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+    reason: str = Field(min_length=1, max_length=500)
 
 
 class ShotAssetBindRequest(BaseModel):

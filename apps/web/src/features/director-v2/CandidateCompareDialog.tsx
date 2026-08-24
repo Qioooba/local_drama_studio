@@ -1,13 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DirectorDeskCandidate } from "./types";
+import { fallbackToOriginalVideo, mediaContentUrl, mediaProxyUrl } from "../shared/mediaPlaybackPolicy";
 import "./candidate-compare.css";
 
 function thumbnailUrl(mediaVersionId: string) {
   return `/api/v1/media-versions/${encodeURIComponent(mediaVersionId)}/thumbnail?size=medium&frame=poster`;
-}
-
-function contentUrl(mediaVersionId: string) {
-  return `/api/v1/media-versions/${encodeURIComponent(mediaVersionId)}/content`;
 }
 
 function durationLabel(durationMs: number | null) {
@@ -66,7 +63,7 @@ export function CandidateCompareDialog({ candidates, initialCandidateId, onClose
       <div className="compare-controls"><button type="button" onClick={() => void togglePlayback()} disabled={!selected.some((candidate) => candidate.media_kind === "VIDEO")}>{playing ? "全部暂停" : "全部播放"} <kbd>Space</kbd></button><button type="button" onClick={restart} disabled={!selected.some((candidate) => candidate.media_kind === "VIDEO")}>回到开头</button><span>已选择 {selected.length} / 4</span></div>
       <div className={`compare-grid compare-count-${selected.length}`}>
         {selected.map((candidate, index) => <figure key={candidate.media_version_id}>
-          <div className="compare-media">{candidate.media_kind === "VIDEO" ? <video ref={(node) => { if (node) videoRefs.current.set(candidate.media_version_id, node); else videoRefs.current.delete(candidate.media_version_id); }} src={contentUrl(candidate.media_version_id)} poster={thumbnailUrl(candidate.media_version_id)} preload="none" muted playsInline onPlay={() => setPlaying(true)} onPause={() => { if ([...videoRefs.current.values()].every((video) => video.paused)) setPlaying(false); }} /> : <img src={thumbnailUrl(candidate.media_version_id)} alt={`候选 ${index + 1}`} />}</div>
+          <div className="compare-media">{candidate.media_kind === "VIDEO" ? <video ref={(node) => { if (node) videoRefs.current.set(candidate.media_version_id, node); else videoRefs.current.delete(candidate.media_version_id); }} src={mediaProxyUrl(candidate.media_version_id)} data-original-src={mediaContentUrl(candidate.media_version_id)} poster={thumbnailUrl(candidate.media_version_id)} preload="none" muted playsInline onError={fallbackToOriginalVideo} onPlay={() => setPlaying(true)} onPause={() => { if ([...videoRefs.current.values()].every((video) => video.paused)) setPlaying(false); }} /> : <img src={thumbnailUrl(candidate.media_version_id)} alt={`候选 ${index + 1}`} />}</div>
           <figcaption><strong>Take {candidate.take_no ?? index + 1}</strong><span>{candidate.stage ?? "未知阶段"} · {durationLabel(candidate.duration_ms)}</span><span>{candidate.branch_reason || "原始候选"}</span>{candidate.is_stale && <em>输入已变化：{candidate.stale_reason ?? "需要重新生成"}</em>}</figcaption>
         </figure>)}
         {selected.length === 0 && <div className="compare-empty">至少选择一个候选。最多可同时比较四个。</div>}

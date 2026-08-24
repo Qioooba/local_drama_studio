@@ -108,3 +108,40 @@ def test_unsupported_document_does_not_create_source_or_session(workspace, datab
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM source_documents").fetchone()[0] == 0
         assert connection.execute("SELECT COUNT(*) FROM import_sessions").fetchone()[0] == 0
+
+
+def test_browser_document_upload_streams_into_the_same_preview_contract(workspace, database) -> None:
+    project = _project(workspace, database)
+    with TestClient(create_app(workspace)) as client:
+        uploaded = client.post(
+            f"/api/v1/projects/{project['id']}/imports:upload",
+            content="第一场\n人物进入房间".encode(),
+            headers={"Content-Type": "text/plain", "X-File-Name": "browser-script.txt"},
+        )
+        empty = client.post(
+            f"/api/v1/projects/{project['id']}/imports:upload",
+            content=b"",
+            headers={"Content-Type": "text/plain", "X-File-Name": "empty.txt"},
+        )
+    assert uploaded.status_code == 201, uploaded.text
+    assert uploaded.json()["import"]["status"] == "PREVIEW_READY"
+    assert empty.status_code == 422
+    assert empty.json()["error"]["code"] == "DOCUMENT_UPLOAD_EMPTY"
+
+
+def test_import_preview_exposes_deterministic_chapter_shortcuts(workspace, database) -> None:
+    project = _project(workspace, database)
+    source = workspace.work_root / "chaptered-script.md"
+    source.write_text(
+        "# 第一章 雨夜\n\n林默进入剧院。\n他打开手电。\n\n第二段正文。\n\n第二章 清晨\n\n苏晚来到门口。",
+        encoding="utf-8",
+    )
+
+    imported = DocumentImportService(database, workspace).import_document(str(project["id"]), source)
+
+    assert imported["preview"]["paragraph_count"] == 5
+    assert imported["preview"]["paragraphs"][1] == "林默进入剧院。\n他打开手电。"
+    assert imported["preview"]["chapters"] == [
+        {"title": "第一章 雨夜", "start_paragraph": 1, "end_paragraph": 3},
+        {"title": "第二章 清晨", "start_paragraph": 4, "end_paragraph": 5},
+    ]

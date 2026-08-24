@@ -12,6 +12,7 @@ import shutil
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from local_drama.application.worker_sessions import ACTIVE_SESSION_STATES
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.manifest import load_manifest
@@ -51,10 +52,15 @@ class CapacitySnapshotService:
                 job_params,
             ).fetchone()
             active_attempts = connection.execute(
-                f"""SELECT COUNT(*) AS count, COUNT(DISTINCT worker_id) AS workers
+                f"""SELECT COUNT(*) AS count
                 FROM job_attempts a JOIN jobs j ON j.id=a.job_id
                 WHERE a.state IN ('CLAIMED','RUNNING'){(' AND j.project_id=?' if project_id else '')}""",
                 (project_id,) if project_id else (),
+            ).fetchone()
+            active_workers = connection.execute(
+                f"""SELECT COUNT(DISTINCT worker_id) AS count FROM worker_sessions
+                WHERE status IN ({','.join('?' for _ in ACTIVE_SESSION_STATES)}) AND lease_expires_at>?""",
+                (*ACTIVE_SESSION_STATES, _now().isoformat()),
             ).fetchone()
             gpu_active = connection.execute(
                 f"""SELECT COUNT(*) AS count FROM jobs
@@ -125,7 +131,7 @@ class CapacitySnapshotService:
             "queued_count": int(queued["count"]),
             "oldest_queued_age_seconds": queued_age,
             "active_attempt_count": int(active_attempts["count"]),
-            "active_worker_count": int(active_attempts["workers"]),
+            "active_worker_count": int(active_workers["count"]),
             "gpu_active_count": int(gpu_active["count"]),
             "gpu_concurrency_limit": 1,
             "completed_last_24h": int(completed_24h["count"]),

@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from local_drama.api.schemas.story_assets import ShotAssetBindRequest, StoryAssetArchiveRequest, StoryAssetCreateRequest, StoryAssetUpdateRequest
+from local_drama.api.schemas.story_assets import (
+    ShotAssetBindRequest,
+    StoryAssetArchiveRequest,
+    StoryAssetCreateRequest,
+    StoryAssetRestoreRequest,
+    StoryAssetUpdateRequest,
+)
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.story_assets import StoryAssetService
 from local_drama.domain.errors import DomainRuleError
@@ -50,6 +56,14 @@ async def update_story_asset(asset_id: str, payload: StoryAssetUpdateRequest, re
 async def archive_story_asset(asset_id: str, payload: StoryAssetArchiveRequest, request: Request) -> dict[str, object]:
     try:
         return {"asset": service(request).archive_asset(asset_id, **payload.model_dump())}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/story-assets/{asset_id}:restore", status_code=201, operation_id="restoreStoryAsset")
+async def restore_story_asset(asset_id: str, payload: StoryAssetRestoreRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"asset": service(request).restore_asset(asset_id, **payload.model_dump())}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

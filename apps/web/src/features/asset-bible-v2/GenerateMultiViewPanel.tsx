@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { listProfiles, type Profile } from "../../generated/api";
 import type { StoryAssetReference, StoryAssetState } from "./api";
+import { ProfileExecutionDetailButton } from "../model-config/ProfileExecutionDetailButton";
 import {
   bindMultiViewReference,
   getAssetMultiViewHistory,
@@ -63,10 +64,11 @@ export function GenerateMultiViewPanel({ projectId, assetId, assetKind, assetSta
   const [error, setError] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profilesState, setProfilesState] = useState<"loading" | "ready" | "error">("loading");
+  const [batchBindReport, setBatchBindReport] = useState<{ batchId: string; succeeded: number; failed: Array<{ kind: MultiViewKind; reason: string }> } | null>(null);
 
   useEffect(() => { setBatches(initialBatches); }, [initialBatches]);
   useEffect(() => {
-    setAssetStateId(""); setProfileVersionId(""); setPreflight(null); setBatches(initialBatches); setError(null);
+    setAssetStateId(""); setProfileVersionId(""); setPreflight(null); setBatches(initialBatches); setError(null); setBatchBindReport(null);
   }, [assetId]); // initialBatches is intentionally synchronized by the effect above.
 
   useEffect(() => {
@@ -91,12 +93,24 @@ export function GenerateMultiViewPanel({ projectId, assetId, assetKind, assetSta
     return () => { cancelled = true; };
   }, [projectId]);
 
+  const selectedReferences = assetStateId
+    ? states.find((state) => state.id === assetStateId)?.references ?? []
+    : baseReferences;
+  const allReferences = [...baseReferences, ...states.flatMap((state) => state.references)];
+  const missingViews = useMemo(
+    () => VIEWS.map((view) => view.kind).filter((kind) => !selectedReferences.some((reference) => reference.reference_kind === kind)),
+    [selectedReferences],
+  );
+  const hasHero = selectedReferences.some((reference) => reference.reference_kind === "HERO")
+    || (assetStateId !== "" && baseReferences.some((reference) => reference.reference_kind === "HERO"));
+
   const settings = useMemo<MultiViewSettings>(() => ({
     asset_state_id: assetStateId || null,
     profile_version_id: profileVersionId.trim() || null,
     consistency_strength: consistency,
     background,
-  }), [assetStateId, profileVersionId, consistency, background]);
+    requested_slots: missingViews.length ? missingViews : VIEWS.map((view) => view.kind),
+  }), [assetStateId, profileVersionId, consistency, background, missingViews]);
 
   useEffect(() => { setPreflight(null); }, [settings]);
 
@@ -115,13 +129,6 @@ export function GenerateMultiViewPanel({ projectId, assetId, assetKind, assetSta
     const timer = window.setInterval(() => { void poll(); }, 2000);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [active, assetId]);
-
-  const selectedReferences = assetStateId
-    ? states.find((state) => state.id === assetStateId)?.references ?? []
-    : baseReferences;
-  const allReferences = [...baseReferences, ...states.flatMap((state) => state.references)];
-  const hasHero = selectedReferences.some((reference) => reference.reference_kind === "HERO")
-    || (assetStateId !== "" && baseReferences.some((reference) => reference.reference_kind === "HERO"));
 
   const runPreflight = async () => {
     setBusy("preflight"); setError(null);
@@ -149,6 +156,33 @@ export function GenerateMultiViewPanel({ projectId, assetId, assetKind, assetSta
     finally { setBindingKey(null); }
   };
 
+  const bindableOutputs = (batch: MultiViewBatch) => batch.items.flatMap((item) => {
+    const output = item.outputs.at(-1);
+    if (!output) return [];
+    const alreadyBound = allReferences.some((reference) => reference.reference_kind === item.reference_kind && reference.media_version_id === output.media_version_id && (reference.asset_state_id ?? "") === assetStateId);
+    return alreadyBound ? [] : [{ kind: item.reference_kind, mediaVersionId: output.media_version_id }];
+  });
+
+  const bindBatchOutputs = async (batch: MultiViewBatch) => {
+    const outputs = bindableOutputs(batch);
+    if (!outputs.length) return;
+    setBindingKey(`batch:${batch.intent_id}`);
+    setError(null);
+    const failed: Array<{ kind: MultiViewKind; reason: string }> = [];
+    let succeeded = 0;
+    for (const output of outputs) {
+      try {
+        await bindMultiViewReference(assetId, assetStateId || null, output.kind, output.mediaVersionId);
+        succeeded += 1;
+      } catch (requestError) {
+        failed.push({ kind: output.kind, reason: requestError instanceof Error ? requestError.message : String(requestError) });
+      }
+    }
+    if (succeeded) await onReferencesChanged();
+    setBatchBindReport({ batchId: batch.intent_id, succeeded, failed });
+    setBindingKey(null);
+  };
+
   if (assetKind !== "CHARACTER") return null;
 
   return <section className="panel multiview-panel" aria-labelledby={`multiview-title-${assetId}`}>
@@ -156,7 +190,7 @@ export function GenerateMultiViewPanel({ projectId, assetId, assetKind, assetSta
       <div><p className="eyebrow">角色一致性</p><h4 id={`multiview-title-${assetId}`}>生成 FRONT / LEFT / RIGHT</h4></div>
       <span className={`status-pill ${hasHero ? "state-ready" : "state-blocked"}`}>{hasHero ? "HERO 已就绪" : "缺少 HERO"}</span>
     </div>
-    <p className="muted">一次预检后提交三个独立任务。成功视图可单独绑定；重做会保留此前批次和媒体历史。</p>
+    <p className="muted">默认只生成当前造型仍缺失的视图；每个槽仍是独立任务。成功后可一次回绑全部结果，失败项不会隐藏。</p>
 
     <div className="multiview-controls">
       <label>造型状态<select value={assetStateId} onChange={(event) => setAssetStateId(event.target.value)}><option value="">基础角色</option>{states.map((state) => <option key={state.id} value={state.id}>{state.label}</option>)}</select></label>
@@ -164,8 +198,8 @@ export function GenerateMultiViewPanel({ projectId, assetId, assetKind, assetSta
       <label>背景<select value={background} onChange={(event) => setBackground(event.target.value as typeof background)}><option value="CLEAN">干净背景</option><option value="TRANSPARENT">透明背景</option><option value="ORIGINAL">保留原背景</option></select></label>
     </div>
     <details className="multiview-advanced">
-      <summary>指定能力 Profile（可选）</summary>
-      <label htmlFor={`multiview-profile-${assetId}`}>已发布的三视图 Profile</label>
+      <summary>指定生成模型（可选）</summary>
+      <label htmlFor={`multiview-profile-${assetId}`}>已发布的三视图生成模型</label>
       <select
         id={`multiview-profile-${assetId}`}
         value={profileVersionId}
@@ -173,11 +207,12 @@ export function GenerateMultiViewPanel({ projectId, assetId, assetKind, assetSta
         aria-describedby={`multiview-profile-help-${assetId}`}
         onChange={(event) => setProfileVersionId(event.target.value)}
       >
-        <option value="">AUTO · 按项目偏好解析</option>
-        {profiles.map((profile) => <option key={profile.version_id} value={profile.version_id}>{profile.title} · {profile.code} · v{profile.version_no ?? "?"}</option>)}
+        <option value="">自动使用项目偏好</option>
+        {profiles.map((profile) => <option key={profile.version_id} value={profile.version_id}>{profile.title} · 第 {profile.version_no ?? "?"} 版</option>)}
       </select>
+      <ProfileExecutionDetailButton profileVersionId={profileVersionId} />
       <small id={`multiview-profile-help-${assetId}`} className={`multiview-profile-help${profilesState === "error" ? " is-error" : ""}`} role={profilesState === "loading" ? "status" : profilesState === "error" ? "alert" : undefined}>
-        {profilesState === "loading" && "正在读取已发布的 IMAGE_MULTI_VIEW Profiles…"}
+        {profilesState === "loading" && "正在读取已发布的三视图生成模型…"}
         {profilesState === "error" && "Profile 目录暂不可用；AUTO 仍可运行只读预检，由服务端返回真实解析结果。"}
         {profilesState === "ready" && profiles.length === 0 && "暂无已发布的 IMAGE_MULTI_VIEW Profile；AUTO 仍可运行预检。"}
         {profilesState === "ready" && profiles.length > 0 && "只列出能力匹配且已发布的不可变版本；AUTO 仍为默认。"}
@@ -185,8 +220,8 @@ export function GenerateMultiViewPanel({ projectId, assetId, assetKind, assetSta
     </details>
 
     <div className="multiview-actions">
-      <button type="button" className="secondary" disabled={busy !== null || assetStatus !== "ACTIVE"} onClick={() => void runPreflight()}>{busy === "preflight" ? "预检中…" : "运行只读预检"}</button>
-      <button type="button" className="primary-action" disabled={!preflight?.ready || busy !== null || assetStatus !== "ACTIVE"} onClick={() => void submit()}>{busy === "submit" ? "提交三个任务…" : "确认生成三视图"}</button>
+      <button type="button" className="secondary" disabled={busy !== null || assetStatus !== "ACTIVE" || missingViews.length === 0} onClick={() => void runPreflight()}>{busy === "preflight" ? "预检中…" : missingViews.length ? `预检 ${missingViews.length} 个缺失视图` : "三视图已齐全"}</button>
+      <button type="button" className="primary-action" disabled={!preflight?.ready || busy !== null || assetStatus !== "ACTIVE"} onClick={() => void submit()}>{busy === "submit" ? "提交任务…" : `确认生成 ${preflight?.would_create_jobs ?? missingViews.length} 个缺失视图`}</button>
       {assetStatus !== "ACTIVE" && <small className="blocker-text">归档角色不能生成。</small>}
     </div>
 
@@ -200,6 +235,8 @@ export function GenerateMultiViewPanel({ projectId, assetId, assetKind, assetSta
     <div className="multiview-history" aria-label="三视图生成历史">
       {batches.length === 0 ? <p className="empty-state">尚未提交三视图生成。</p> : batches.map((batch, batchIndex) => <details key={batch.intent_id} open={batchIndex === 0}>
         <summary><span>{batchIndex === 0 ? "最新批次" : `历史批次 ${batches.length - batchIndex}`}</span><span className={`status-pill state-${batch.status.toLowerCase().replaceAll("_", "-")}`}>{batch.completed_count}/{batch.total_count} 完成{batch.failed_count ? ` · ${batch.failed_count} 失败` : ""}</span><time dateTime={batch.created_at}>{new Date(batch.created_at).toLocaleString()}</time></summary>
+        {bindableOutputs(batch).length > 0 && <button type="button" className="primary-action multiview-bind-all" disabled={bindingKey !== null} onClick={() => void bindBatchOutputs(batch)}>{bindingKey === `batch:${batch.intent_id}` ? "正在回绑…" : `一键回绑 ${bindableOutputs(batch).length} 个成功视图`}</button>}
+        {batchBindReport?.batchId === batch.intent_id && <div className={batchBindReport.failed.length ? "multiview-preflight blocked" : "multiview-preflight ready"} role="status"><strong>回绑结果：成功 {batchBindReport.succeeded} · 失败 {batchBindReport.failed.length}</strong>{batchBindReport.failed.map((item) => <span key={item.kind}>{item.kind}：{item.reason}</span>)}</div>}
         <div className="multiview-slots">
           {VIEWS.map((view) => {
             const item = batch.items.find((candidate) => candidate.reference_kind === view.kind);
@@ -210,7 +247,7 @@ export function GenerateMultiViewPanel({ projectId, assetId, assetKind, assetSta
             const percent = percentOf(item);
             return <article className={`multiview-slot${failed ? " failed" : item?.job_state === "SUCCEEDED" ? " succeeded" : ""}`} key={view.kind}>
               <div className="multiview-slot-head"><strong>{view.label}</strong><span>{view.kind} · {view.angle}</span></div>
-              {output ? <img src={thumbnailUrl(output.media_version_id)} alt={`${view.label}生成结果缩略图`} width="240" height="180" loading="lazy" decoding="async" /> : <div className="multiview-slot-placeholder" aria-hidden="true"><span>{percent}%</span></div>}
+              {output ? <img src={thumbnailUrl(output.media_version_id)} alt={`${view.label}生成结果缩略图`} loading="lazy" decoding="async" /> : <div className="multiview-slot-placeholder" aria-hidden="true"><span>{percent}%</span></div>}
               <div className="multiview-progress"><progress value={percent} max="100" aria-label={`${view.label}生成进度`} /><span>{stateLabel(item?.job_state)}</span></div>
               {item?.progress?.phase && <small>{String(item.progress.phase)}{item.progress.node ? ` · ${String(item.progress.node)}` : ""}</small>}
               {item?.error && <p className="inline-error" role="alert">{item.error.detail || item.error.code || "任务失败"}</p>}

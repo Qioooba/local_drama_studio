@@ -10,7 +10,6 @@ import sqlalchemy as sa
 
 from alembic import op
 
-
 revision = "0039_automation_task_jobs"
 down_revision = "0038_outbox_delivery_ledger"
 branch_labels = None

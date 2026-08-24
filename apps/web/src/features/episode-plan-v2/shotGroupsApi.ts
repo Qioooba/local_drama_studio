@@ -3,7 +3,7 @@ export type ShotGroupKind = "BEAT" | "DIALOGUE" | "ACTION" | "MONTAGE" | "CUSTOM
 export type ShotGroupScene = { id: string; code: string; title: string; revision: number };
 export type ShotGroupShot = {
   id: string; code: string; shot_type: string; target_duration_ms: number; status: string;
-  order_key: string; scene_id: string | null; group_id: string | null; revision: number;
+  order_key: string; scene_id: string | null; group_id: string | null; archived_at?: string | null; revision: number;
 };
 export type ShotGroup = {
   id: string; episode_id: string; scene_id: string | null; kind: ShotGroupKind; code: string;
@@ -16,13 +16,10 @@ export type ShotGroupWorkspace = {
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
+  return generatedRequestJson<T>(`/api/v1${path}`, {
     ...init,
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
-  const body = await response.json().catch(() => ({})) as { error?: { message?: string } };
-  if (!response.ok) throw new Error(body.error?.message ?? `请求失败（${response.status}）`);
-  return body as T;
 }
 
 export async function getShotGroupWorkspace(episodeId: string) {
@@ -61,3 +58,4 @@ export async function reorderShotGroups(episodeId: string, groups: ShotGroup[]) 
     })) }),
   });
 }
+import { requestJson as generatedRequestJson } from "../../generated/api";

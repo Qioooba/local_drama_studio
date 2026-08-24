@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sqlite3
 import sys
@@ -68,7 +69,7 @@ PROJECT_CODE = "g2_smoke2"
 
 
 def build_settings(root: Path, port: int) -> Settings:
-    return Settings(
+    settings = Settings(
         data_root=root / "data",
         projects_root=root / "projects",
         work_root=root / "work",
@@ -79,6 +80,17 @@ def build_settings(root: Path, port: int) -> Settings:
         comfy_input_root=ROOT / "work" / "comfy-production" / "input",
         port=port,
     )
+    # Settings is constructed directly (never from_env), so honor the same
+    # extra-origins override the production entry point supports; otherwise a
+    # UI served on any non-default port fails every write with ORIGIN_NOT_ALLOWED.
+    extra = tuple(
+        origin.strip()
+        for origin in os.environ.get("LOCAL_DRAMA_ALLOWED_ORIGINS", "").split(",")
+        if origin.strip()
+    )
+    if extra:
+        settings = settings.model_copy(update={"allowed_origins": tuple(settings.allowed_origins) + extra})
+    return settings
 
 
 def _backup_database(source: Path, target: Path) -> None:

@@ -205,7 +205,7 @@ def test_jianying_export_audio_track_from_audio_items(workspace, database) -> No
         str(episode["id"]),
         [
             {"track_type": "VIDEO", "media_version_id": video["media_version_id"], "start_us": 0, "end_us": 1_000_000, "parameters": {}},
-            {"track_type": "AUDIO", "media_version_id": audio["media_version_id"], "start_us": 200_000, "end_us": 1_200_000, "parameters": {}},
+            {"track_type": "BGM", "media_version_id": audio["media_version_id"], "start_us": 200_000, "end_us": 1_200_000, "parameters": {}},
         ],
         {"source": "jianying-audio-test"},
     )

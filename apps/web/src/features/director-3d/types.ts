@@ -1,5 +1,5 @@
 export type Director3DVector = { x: number; y: number; z: number };
-export type Director3DParticipant = { id: "A" | "B"; label: string; position: Director3DVector; facing_degrees: number };
+export type Director3DParticipant = { id: "A" | "B"; asset_id?: string | null; label: string; position: Director3DVector; facing_degrees: number };
 
 export type Director3DValue = {
   schema_version: "director-staging-3d.v1";
@@ -29,4 +29,3 @@ export type Director3DReferenceExport = {
   staging_3d: Director3DValue;
   prompt_context: string;
 };
-

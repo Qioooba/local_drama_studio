@@ -699,7 +699,10 @@ class AutomationWorkflowService:
                             "network_contacted": False,
                         },
                         f"automation-task:{task_id}",
-                        max_attempts=1,
+                        # One transient local I/O/runtime failure should not
+                        # force a creator to reconstruct the whole workflow;
+                        # persistent failures remain bounded at two attempts.
+                        max_attempts=2,
                         depends_on_job_ids=dependencies,
                         actor=actor,
                     )
@@ -753,14 +756,28 @@ class AutomationWorkflowService:
                 connection.execute("UPDATE automation_workflow_runs SET status='RUNNING',pending_gate_json='{}',human_approval_status='APPROVED',updated_at=?,revision=revision+1 WHERE id=?", (now, run_id))
                 self._event(connection, run_id, "HITL_APPROVED", {"decision": normalized, "note": note, "ai_score_ignored": True}, actor)
             else:
-                for job in gated_jobs:
+                # Rejecting the workflow is terminal for the whole run, not
+                # only for the newest gated task.  An earlier task may have
+                # been approved into QUEUED while no worker was available;
+                # leaving it claimable after the run becomes FAILED lets a
+                # future worker execute work the creator explicitly rejected.
+                linked_jobs = connection.execute(
+                    "SELECT j.id,j.project_id,j.state FROM automation_workflow_run_tasks t "
+                    "JOIN jobs j ON j.id=t.job_id WHERE t.run_id=? "
+                    "AND j.state NOT IN ('SUCCEEDED','FAILED','CANCELLED')",
+                    (run_id,),
+                ).fetchall()
+                for job in linked_jobs:
+                    target = "CANCELLED" if str(job["state"]) in {"QUEUED", "NEEDS_ATTENTION", "ORPHANED"} else "CANCEL_REQUESTED"
                     connection.execute(
-                        "UPDATE jobs SET state='CANCELLED',cancel_requested_at=?,last_error_code='AUTOMATION_HITL_REJECTED',last_error_detail_redacted='human rejected workflow task',finished_at=?,updated_at=?,revision=revision+1 WHERE id=?",
-                        (now, now, now, job["id"]),
+                        "UPDATE jobs SET state=?,cancel_requested_at=?,last_error_code='AUTOMATION_HITL_REJECTED',"
+                        "last_error_detail_redacted='human rejected workflow run',"
+                        "finished_at=CASE WHEN ?='CANCELLED' THEN ? ELSE finished_at END,updated_at=?,revision=revision+1 WHERE id=?",
+                        (target, now, target, now, now, job["id"]),
                     )
-                    self.jobs._emit(connection, "JOB_HITL_REJECTED", str(job["project_id"]), "JOB", str(job["id"]), {"state": "CANCELLED", "run_id": run_id, "decision": normalized})
+                    self.jobs._emit(connection, "JOB_HITL_REJECTED", str(job["project_id"]), "JOB", str(job["id"]), {"state": target, "run_id": run_id, "decision": normalized})
                 connection.execute("UPDATE automation_workflow_runs SET status='FAILED',pending_gate_json='{}',human_approval_status='REJECTED',completed_at=?,updated_at=?,revision=revision+1 WHERE id=?", (now, now, run_id))
-                self._event(connection, run_id, "HITL_REJECTED", {"decision": normalized, "note": note, "ai_score_ignored": True}, actor)
+                self._event(connection, run_id, "HITL_REJECTED", {"decision": normalized, "note": note, "ai_score_ignored": True, "linked_job_count": len(linked_jobs)}, actor)
         return self.get_run(run_id)
 
     def pause_run(self, run_id: str, *, reason: str = "MANUAL_PAUSE", actor: str = "local-user") -> dict[str, Any]:

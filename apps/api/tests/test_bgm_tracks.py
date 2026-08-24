@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from local_drama.application.compose import ComposeService
+from local_drama.application.documents import DocumentImportService
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
 from local_drama.application.timeline import TimelineService
@@ -127,12 +128,12 @@ def test_render_mixes_bgm_audio_stream_with_real_ffmpeg(workspace, database) -> 
     assert 900 <= render["probe"]["duration_ms"] <= 1100
     render_path = project_root / render["rel_path"]
     assert render_path.is_file()
-    # Execution log records all three ffmpeg stages.
+    # Execution log records timeline-duration normalization and all mix stages.
     log = json.loads(render["execution_log"])
-    assert [step["stage"] for step in log["steps"]] == ["concat", "mix", "mux"]
+    assert [step["stage"] for step in log["steps"]] == ["timeline-duration", "concat", "mix", "mux"]
 
 
-def test_render_without_bindings_is_unchanged_single_pass(workspace, database) -> None:
+def test_render_without_bindings_honors_timeline_duration_contract(workspace, database) -> None:
     project, episode = _project_and_episode(workspace, database)
     project_root = workspace.projects_root / str(project["root_rel"])
     video = MediaService(database, workspace).import_file(str(project["id"]), _video(workspace, "plain-video.mp4"), purpose="SHOT_VIDEO", media_kind="VIDEO")
@@ -145,9 +146,9 @@ def test_render_without_bindings_is_unchanged_single_pass(workspace, database) -
     render = service.render_episode(str(timeline["id"]))
     assert render["status"] == "VERIFIED"
     assert "render_mode" not in render["input_snapshot"]
-    # Historical single-command concat: one ffmpeg run, no mix steps.
+    # Timeline items are normalized before concat even when no extra audio is bound.
     log = json.loads(render["execution_log"])
-    assert "steps" not in log
+    assert [step["stage"] for step in log["steps"]] == ["timeline-duration", "concat"]
     assert render["ffmpeg_command"]["args"][:2] == ["-f", "concat"]
     assert "-c:a" in render["ffmpeg_command"]["args"] and "aac" in render["ffmpeg_command"]["args"]
     assert (project_root / render["rel_path"]).is_file()
@@ -167,6 +168,57 @@ def test_render_without_bindings_is_unchanged_single_pass(workspace, database) -
     with pytest.raises(DomainRuleError) as stale:
         service.render_episode(str(timeline["id"]))
     assert stale.value.code == "TIMELINE_STALE"
+
+
+def test_render_extends_short_source_and_burns_selected_subtitle(workspace, database) -> None:
+    project, episode = _project_and_episode(workspace, database)
+    media = MediaService(database, workspace).import_file(
+        str(project["id"]),
+        _video(workspace, "short-subtitle-source.mp4", seconds=0.35),
+        purpose="SHOT_VIDEO",
+        media_kind="VIDEO",
+    )
+    script_path = workspace.work_root / "subtitle-render-script.txt"
+    script_path.write_text("字幕验收", encoding="utf-8")
+    script = DocumentImportService(database, workspace).import_document(str(project["id"]), script_path)
+    service = TimelineService(database, workspace)
+    subtitle = service.create_subtitle_revision(
+        str(episode["id"]),
+        [{"start_us": 0, "end_us": 1_000_000, "text": "字幕验收"}],
+        format="ASS",
+        authority={
+            "text_authority": "SCRIPT",
+            "source_document_version_id": script["source_document_version_id"],
+        },
+    )
+    timeline = service.create_timeline_revision(
+        str(episode["id"]),
+        [
+            {
+                "track_type": "VIDEO",
+                "media_version_id": str(media["media_version_id"]),
+                "start_us": 0,
+                "end_us": 1_200_000,
+                "parameters": {},
+            }
+        ],
+        {"source": "duration-subtitle-test", "subtitle_revision_id": subtitle["id"]},
+    )
+
+    render = service.render_episode(str(timeline["id"]))
+
+    assert 1_150 <= render["probe"]["duration_ms"] <= 1_300
+    assert render["input_snapshot"]["renderer_contract"] == "TIMELINE_DURATION_AND_SUBTITLE_V2"
+    assert render["input_snapshot"]["subtitle_revision"] == {
+        "id": subtitle["id"],
+        "revision_no": subtitle["revision_no"],
+        "format": "ASS",
+        "content_hash": subtitle["content_hash"],
+        "status": "DRAFT",
+    }
+    stages = [step["stage"] for step in json.loads(render["execution_log"])["steps"]]
+    assert stages == ["timeline-duration", "concat", "subtitle"]
+    assert any("subtitles=filename=" in arg for arg in render["ffmpeg_command"]["args"])
 
 
 def test_compose_uses_durable_job_and_reuses_running_and_completed_fingerprint(workspace, database) -> None:

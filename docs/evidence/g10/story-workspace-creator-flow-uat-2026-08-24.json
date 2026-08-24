@@ -1,0 +1,78 @@
+{
+  "schema_version": "localdrama.story-workspace-creator-flow-uat.v1",
+  "observed_at": "2026-08-24T13:20:11.726Z",
+  "status": "PASS",
+  "mode": "READ_ONLY",
+  "database_mutated": false,
+  "expected_flow": [
+    "导入原稿",
+    "审核拆解",
+    "角色建档",
+    "故事圣经（随时维护）"
+  ],
+  "results": [
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "defaultStageIsImport": true,
+      "workflowNavigationCount": 1,
+      "passiveInspectorCount": 0,
+      "importActionVisible": true,
+      "creatorCopyVisible": true,
+      "technicalRequirementVisible": false,
+      "geometry": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "horizontalOverflow": false
+      },
+      "consoleProblems": [],
+      "pageErrors": [],
+      "failedResponses": [],
+      "publicRequests": []
+    },
+    {
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "defaultStageIsImport": true,
+      "workflowNavigationCount": 1,
+      "passiveInspectorCount": 0,
+      "importActionVisible": true,
+      "creatorCopyVisible": true,
+      "technicalRequirementVisible": false,
+      "geometry": {
+        "scrollWidth": 1024,
+        "clientWidth": 1024,
+        "horizontalOverflow": false
+      },
+      "consoleProblems": [],
+      "pageErrors": [],
+      "failedResponses": [],
+      "publicRequests": []
+    },
+    {
+      "viewport": {
+        "width": 768,
+        "height": 900
+      },
+      "defaultStageIsImport": true,
+      "workflowNavigationCount": 1,
+      "passiveInspectorCount": 0,
+      "importActionVisible": true,
+      "creatorCopyVisible": true,
+      "technicalRequirementVisible": false,
+      "geometry": {
+        "scrollWidth": 768,
+        "clientWidth": 768,
+        "horizontalOverflow": false
+      },
+      "consoleProblems": [],
+      "pageErrors": [],
+      "failedResponses": [],
+      "publicRequests": []
+    }
+  ]
+}

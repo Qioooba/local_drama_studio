@@ -27,7 +27,9 @@ import {
   ToastProvider,
   Tooltip,
   useToast,
+  VirtualList,
 } from "./primitives";
+
 
 function ToastTestConsumer() {
   const { showToast } = useToast();
@@ -96,6 +98,9 @@ describe("shared UI primitives", () => {
       </>
     );
     expect(screen.getByRole("dialog")).toHaveAccessibleName("确认");
+    expect(screen.getByRole("dialog").closest(".ui-dialog-backdrop")?.parentElement).toBe(document.body);
+    expect(document.documentElement.style.overflow).toBe("hidden");
+    expect(document.body.style.overflow).toBe("hidden");
     expect(screen.getByRole("button", { name: "关闭" })).toHaveFocus();
     fireEvent.keyDown(window, { key: "Tab", shiftKey: true });
     expect(screen.getByRole("button", { name: "提交" })).toHaveFocus();
@@ -120,6 +125,7 @@ describe("shared UI primitives", () => {
       </Drawer>
     );
     expect(screen.getByRole("dialog")).toHaveAccessibleName("检查器抽屉");
+    expect(screen.getByRole("dialog").closest(".ui-drawer-backdrop")?.parentElement).toBe(document.body);
     expect(screen.getByRole("button", { name: "关闭抽屉" })).toHaveFocus();
 
     // Confirm cancel on dirty guard
@@ -158,6 +164,23 @@ describe("shared UI primitives", () => {
     fireEvent.keyDown(screen.getByRole("tablist"), { key: "ArrowRight" });
     expect(onChange).toHaveBeenCalledWith("bridge");
     expect(screen.getByRole("tab", { name: "镜头桥" })).toHaveFocus();
+  });
+
+  it("creates unique tab and panel ids across repeated tab sets", () => {
+    render(<>
+      <Tabs items={[{ id: "shared", label: "第一组" }]} selectedId="shared" onChange={() => undefined}>
+        <TabPanel id="shared" selectedId="shared">第一面板</TabPanel>
+      </Tabs>
+      <Tabs items={[{ id: "shared", label: "第二组" }]} selectedId="shared" onChange={() => undefined}>
+        <TabPanel id="shared" selectedId="shared">第二面板</TabPanel>
+      </Tabs>
+    </>);
+    const tabs = screen.getAllByRole("tab");
+    const panels = screen.getAllByRole("tabpanel");
+    expect(tabs[0].id).not.toBe(tabs[1].id);
+    expect(panels[0].id).not.toBe(panels[1].id);
+    expect(tabs[0]).toHaveAttribute("aria-controls", panels[0].id);
+    expect(panels[1]).toHaveAttribute("aria-labelledby", tabs[1].id);
   });
 
   it("handles Popover click outside and keyboard dismissal", () => {
@@ -293,4 +316,25 @@ describe("shared UI primitives", () => {
     expect(select).toHaveBeenCalledOnce();
     expect(close).toHaveBeenCalledOnce();
   });
+
+  it("renders virtualized subset for 50+ items and updates on scroll", () => {
+    const items = Array.from({ length: 100 }, (_, i) => ({ id: `item-${i}`, text: `条目 ${i}` }));
+    render(
+      <VirtualList
+        items={items}
+        itemHeight={40}
+        height={200}
+        renderItem={(item) => <div>{item.text}</div>}
+        keyExtractor={(item) => item.id}
+        ariaLabel="测试虚拟列表"
+      />
+    );
+    expect(screen.getByRole("list", { name: "测试虚拟列表" })).toBeInTheDocument();
+    // Verify first items are rendered
+    expect(screen.getByText("条目 0")).toBeInTheDocument();
+    expect(screen.getByText("条目 5")).toBeInTheDocument();
+    // Far items should not be mounted yet
+    expect(screen.queryByText("条目 90")).not.toBeInTheDocument();
+  });
 });
+

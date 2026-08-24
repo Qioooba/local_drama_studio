@@ -57,6 +57,7 @@ class ShotNavigatorItem(BaseModel):
     group_code: str | None = None
     group_title: str | None = None
     thumbnail_media_version_id: str | None = None
+    current_video_media_version_id: str | None = None
     status: str
     continuity_status: str
     job_status: str | None = None

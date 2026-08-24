@@ -6,6 +6,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $runtimeRoot = Join-Path $repoRoot 'runtime'
 $pidPath = Join-Path $runtimeRoot 'api.pid.json'
+$workerStopPath = Join-Path $runtimeRoot 'worker.stop'
 New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
 
 if (Test-Path -LiteralPath $pidPath) {
@@ -41,13 +42,29 @@ if (-not $listener) {
   Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
   throw "LocalDramaStudio API did not bind 127.0.0.1:$Port within 10 seconds."
 }
+$workerArguments = @(
+  'scripts/run_worker.py',
+  '--worker-id', 'local-drama-studio-main',
+  '--channels', 'CPU,GPU_H3',
+  '--watch',
+  '--poll-seconds', '1',
+  '--stop-file', $workerStopPath
+)
+$worker = Start-Process -FilePath $python -ArgumentList $workerArguments -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru
+Start-Sleep -Milliseconds 750
+if ($worker.HasExited) {
+  Stop-Process -Id $listener.ProcessId -Force -ErrorAction SilentlyContinue
+  throw "LocalDramaStudio Worker exited during startup with exit code $($worker.ExitCode)."
+}
 $state = [ordered]@{
   pid = [int]$listener.ProcessId
   launcher_pid = $process.Id
   listener_pid = [int]$listener.ProcessId
+  worker_pid = [int]$worker.Id
   start_time_utc = (Get-Date).ToUniversalTime().ToString('o')
   command = ($arguments -join ' ')
+  worker_command = ($workerArguments -join ' ')
   instance = 'local-drama-studio'
 }
 $state | ConvertTo-Json | Set-Content -LiteralPath $pidPath -Encoding UTF8
-Write-Output "started LocalDramaStudio API PID=$($listener.ProcessId) LAUNCHER=$($process.Id) http://127.0.0.1:$Port"
+Write-Output "started LocalDramaStudio API PID=$($listener.ProcessId) WORKER=$($worker.Id) LAUNCHER=$($process.Id) http://127.0.0.1:$Port"

@@ -26,6 +26,7 @@ class VariantPlanRequest(BaseModel):
     seed_policy: str = Field(min_length=1, max_length=32)
     explicit_seed: int | None = None
     provider_random_nonce: str | None = Field(default=None, min_length=36, max_length=36)
+    expected_effective_configuration_fingerprint: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     bindings: list[VariantInputRequest] = Field(default_factory=list, max_length=100)
 
     def to_domain(self) -> VariantPlan:
@@ -40,6 +41,7 @@ class VariantPlanRequest(BaseModel):
             explicit_seed=self.explicit_seed,
             bindings=tuple(VariantInput(item.role, item.media_version_id, item.ordinal, item.weight) for item in self.bindings),
             provider_random_nonce=self.provider_random_nonce,
+            expected_effective_configuration_fingerprint=self.expected_effective_configuration_fingerprint,
         )
 
 

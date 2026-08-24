@@ -3,12 +3,16 @@ from __future__ import annotations
 import pytest
 
 from local_drama.application.automation_workflows import AutomationWorkflowService
+from local_drama.application.commands.generation_preferences import GenerationPreferenceCommandService
 from local_drama.application.episode_production_runs import EpisodeProductionRunService
 from local_drama.application.episode_worker_actions import EpisodeWorkerActionService
 from local_drama.application.jobs import JobService
 from local_drama.application.projects import ProjectService
 from local_drama.application.worker import LocalMediaWorker
 from local_drama.domain.errors import DomainRuleError
+from local_drama.infrastructure.database.generation_preference_repository import (
+    SqliteGenerationPreferenceRepository,
+)
 
 
 def _episode(workspace, database, code: str) -> tuple[dict, dict]:
@@ -35,6 +39,85 @@ def test_episode_preflight_rejects_unknown_production_mode(workspace, database) 
         service.preflight(str(episode["id"]), production_mode="turbo", min_free_disk_bytes=1)
 
     assert error.value.code == "EPISODE_PRODUCTION_MODE_INVALID"
+
+
+def test_cancelled_run_never_labels_incomplete_stage_as_running() -> None:
+    state = EpisodeProductionRunService._state
+
+    assert state(0, 9, 0, 0, 0, "CANCELLED") == "CANCELLED"
+    assert state(1, 9, 0, 0, 0, "CANCELLED") == "CANCELLED"
+    assert state(9, 9, 0, 0, 0, "CANCELLED") == "COMPLETED"
+
+
+def test_video_action_resolves_shot_preference_instead_of_legacy_project_binding(workspace, database) -> None:
+    project, episode = _episode(workspace, database, "episode_profile_resolution")
+    shot = ProjectService(database, workspace.projects_root).create_shot(str(episode["id"]), "SHOT-001", 4_000)
+    with database.transaction() as connection:
+        for profile_id, version_id, code, timestamp in (
+            ("profile-legacy", "version-legacy", "legacy-i2v", "2026-08-20T00:00:00Z"),
+            ("profile-current", "version-current", "current-i2v", "2026-08-21T00:00:00Z"),
+        ):
+            connection.execute(
+                """INSERT INTO execution_profiles
+                (id,code,title,created_at,updated_at,created_by,revision,schema_version)
+                VALUES (?,?,?,?,?,'test',1,'v2')""",
+                (profile_id, code, code, timestamp, timestamp),
+            )
+            connection.execute(
+                """INSERT INTO execution_profile_versions
+                (id,execution_profile_id,version_no,capability,model_bundle_json,input_contract_json,
+                 parameter_schema_json,status,created_at,updated_at,created_by,revision,schema_version,
+                 capability_json,output_contract_json,resource_policy_json)
+                VALUES (?,?,1,'VIDEO_I2V','{}','{}','{}','PUBLISHED',?,?,'test',1,'v2','{}','{}','{}')""",
+                (version_id, profile_id, timestamp, timestamp),
+            )
+        connection.execute(
+            """INSERT INTO project_profile_bindings
+            (id,project_id,capability,execution_profile_version_id,status,created_at,updated_at,created_by,revision,schema_version)
+            VALUES ('legacy-binding',?,'VIDEO_I2V','version-legacy','ACTIVE','now','now','test',1,'v2')""",
+            (str(project["id"]),),
+        )
+        GenerationPreferenceCommandService(SqliteGenerationPreferenceRepository(connection)).put(
+            project_id=str(project["id"]),
+            owner_type="SHOT",
+            owner_id=str(shot["id"]),
+            capability="VIDEO_I2V",
+            resolution_mode="EXPLICIT",
+            execution_profile_version_id="version-current",
+            reason="the Director explicitly selected the current profile",
+        )
+
+    resolved = EpisodeWorkerActionService(database, workspace)._video_profile(
+        str(project["id"]), str(shot["id"]),
+    )
+
+    assert resolved["id"] == "version-current"
+
+
+def test_episode_preflight_uses_live_comfy_probe_over_stale_registered_status(
+    workspace, database, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _project, episode = _episode(workspace, database, "episode_comfy_message")
+    with database.transaction() as connection:
+        connection.execute(
+            """INSERT INTO local_runtimes
+            (id,code,title,transport,base_url,status,details_json,created_at,updated_at,created_by,revision,schema_version)
+            VALUES (?,?,?,?,?,?,?,?,?,?,1,'v2')""",
+            ("runtime-comfy-blocked", "comfy-uat", "Comfy UAT", "LOOPBACK_HTTP", "http://127.0.0.1:8188", "BLOCKED", "{}", "now", "now", "test"),
+        )
+    monkeypatch.setattr(
+        "local_drama.application.episode_production_runs._probe_loopback",
+        lambda _url: ("PASS", {"status_code": 200, "loopback": True}),
+    )
+
+    preflight = EpisodeProductionRunService(database, workspace).preflight(
+        str(episode["id"]), tts_enabled=False, min_free_disk_bytes=1,
+    )
+    check = next(item for item in preflight["checks"] if item["code"] == "COMFY_ADAPTER_UNAVAILABLE")
+    assert check["blocking"] is False
+    assert check["detail"] == "Comfy adapter 已声明，loopback 实时探测可用（登记状态 BLOCKED）"
+    assert check["evidence"]["registered_runtime_status"] == "BLOCKED"
+    assert check["evidence"]["probe_status"] == "PASS"
 
 
 def test_mode_is_fingerprinted_and_frozen_in_workflow_snapshot(workspace, database) -> None:
@@ -250,3 +333,13 @@ def test_qc_promotes_successful_video_artifacts_before_candidate_lookup(
     assert promoted is True
     assert report["status"] == "PASS"
     assert report["produced"]["items"][0]["media_version_id"] == "video-version"
+
+
+def test_episode_worker_reads_canonical_media_promotion_response_shape(workspace, database) -> None:
+    service = EpisodeWorkerActionService(database, workspace)
+
+    assert service._promoted_version_id({"id": "media-version-1", "mime_type": "video/mp4"}) == "media-version-1"
+    assert service._promoted_version_id({"media_version_id": "media-version-legacy"}) == "media-version-legacy"
+    with pytest.raises(DomainRuleError) as raised:
+        service._promoted_version_id({"mime_type": "video/mp4"})
+    assert raised.value.code == "MEDIA_PROMOTION_RESPONSE_INVALID"

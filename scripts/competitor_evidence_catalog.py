@@ -7,7 +7,6 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 THUMB_SIZE = (320, 180)
 LABEL_HEIGHT = 48

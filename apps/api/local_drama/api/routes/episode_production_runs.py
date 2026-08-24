@@ -22,7 +22,16 @@ def service(request: Request) -> EpisodeProductionRunService:
 @router.get("/episodes/{episode_id}/production-runs/preflight", operation_id="preflightEpisodeProductionRun")
 async def preflight(episode_id: str, request: Request, tts_enabled: bool = True, production_mode: str = "BALANCED", checkpoint_policy: EpisodeCheckpointPolicy = "ON_EXCEPTION", min_free_disk_bytes: int = 5 * 1024 * 1024 * 1024) -> dict[str, object]:
     try:
-        return {"preflight": service(request).preflight(episode_id, tts_enabled=tts_enabled, production_mode=production_mode, checkpoint_policy=checkpoint_policy, min_free_disk_bytes=min_free_disk_bytes)}
+        return {
+            "preflight": service(request).preflight(
+                episode_id,
+                tts_enabled=tts_enabled,
+                production_mode=production_mode,
+                checkpoint_policy=checkpoint_policy,
+                min_free_disk_bytes=min_free_disk_bytes,
+                include_front_half=True,
+            )
+        }
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

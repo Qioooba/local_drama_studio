@@ -53,7 +53,7 @@ export function TimelinePage() {
         {snapshot ? <TimelineComposer projectId={projectId} episodeId={episodeId} status={snapshot} onCreated={() => void status.refetch()} /> : !status.isError ? <p className="empty-state" role="status">正在准备编排与冻结工具…</p> : null}
       </TabPanel>
       <TabPanel id="subtitles" selectedId={activeTask}>
-        <SubtitleRevisionPanel episodeId={episodeId} projectId={projectId} defaultSourceDocumentVersionId={String(snapshot?.subtitles.latest?.source_document_version_id ?? "")} onCreated={() => void status.refetch()} />
+        <SubtitleRevisionPanel episodeId={episodeId} projectId={projectId} defaultSourceDocumentVersionId={String(snapshot?.subtitles.latest?.source_document_version_id ?? "")} autoDeriveTTS={searchParams.get("derive") === "tts"} onCreated={() => void status.refetch()} />
       </TabPanel>
       <TabPanel id="export" selectedId={activeTask}>
         <section className="panel creative-task-stage" aria-labelledby="timeline-export-title">

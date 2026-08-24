@@ -45,11 +45,13 @@ export function AudioPage() {
   });
   if (!projectId || !episodeId) return <p className="inline-error" role="alert">缺少项目或分集上下文。</p>;
   const refreshDialogue = () => {
-    void dialogue.refetch();
-    void voices.refetch();
-    void profiles.refetch();
-    void audioReview.refetch();
-    void queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    void Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["episode", episodeId] }),
+      queryClient.invalidateQueries({ queryKey: ["project", projectId, "voice-profiles"] }),
+      queryClient.invalidateQueries({ queryKey: ["profiles"] }),
+      queryClient.invalidateQueries({ queryKey: ["review-inbox", projectId, episodeId] }),
+      queryClient.invalidateQueries({ queryKey: ["jobs"] }),
+    ]);
   };
   const activeQueries = activeTask === "dialogue"
     ? [dialogue, voices, profiles]

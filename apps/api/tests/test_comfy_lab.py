@@ -57,6 +57,42 @@ def test_comfy_lab_uses_configured_designer_endpoint_not_production_endpoint(wor
     assert result["plan"]["designer_endpoint"] == "http://127.0.0.1:8199"
 
 
+def test_comfy_lab_discovers_and_persists_a_bounded_local_installation(workspace, tmp_path, monkeypatch) -> None:
+    designer_root = tmp_path / "ComfyUI"
+    designer_root.mkdir()
+    (designer_root / "main.py").write_text("# local fixture", encoding="utf-8")
+    python = designer_root / "python_embeded" / "python.exe"
+    python.parent.mkdir()
+    python.write_bytes(b"fixture")
+    monkeypatch.delenv("LOCAL_DRAMA_COMFY_DESIGNER_PYTHON", raising=False)
+    monkeypatch.delenv("LOCAL_DRAMA_COMFY_DESIGNER_ROOT", raising=False)
+
+    service = ComfyLabService(workspace)
+    service._candidate_roots = lambda: [designer_root.resolve()]  # type: ignore[method-assign]
+    discovery = service.discover(apply=True)
+
+    assert discovery["status"] == "CONFIGURED"
+    assert discovery["applied"] is True
+    assert discovery["network_contacted"] is False
+    assert service.status()["launch_configured"] is True
+    saved = json.loads((workspace.work_root / "comfy-lab" / "launch-config.json").read_text(encoding="utf-8"))
+    assert saved["root_path"] == str(designer_root.resolve())
+    assert saved["python_path"] == str(python.resolve())
+
+
+def test_comfy_lab_discovery_fails_honestly_without_scanning_the_whole_machine(workspace, monkeypatch) -> None:
+    monkeypatch.delenv("LOCAL_DRAMA_COMFY_DESIGNER_PYTHON", raising=False)
+    monkeypatch.delenv("LOCAL_DRAMA_COMFY_DESIGNER_ROOT", raising=False)
+    service = ComfyLabService(workspace)
+    service._candidate_roots = lambda: [workspace.workspace_root / "missing-comfy"]  # type: ignore[method-assign]
+
+    with pytest.raises(DomainRuleError) as error:
+        service.discover(apply=True)
+
+    assert error.value.code == "COMFY_LAB_INSTALLATION_NOT_FOUND"
+    assert error.value.details["searched_roots"] == [str((workspace.workspace_root / "missing-comfy").resolve())]
+
+
 def test_comfy_lab_api_exposes_session_and_blocks_unconfigured_start(workspace, monkeypatch) -> None:
     monkeypatch.delenv("LOCAL_DRAMA_COMFY_DESIGNER_PYTHON", raising=False)
     monkeypatch.delenv("LOCAL_DRAMA_COMFY_DESIGNER_ROOT", raising=False)

@@ -532,12 +532,18 @@ def test_project_package_import_old_v2_defaults_new_domains_to_empty(workspace, 
 def test_project_thumbnail_rebuild_endpoint_retries_registered_image_cache(workspace, database) -> None:
     project = _project(workspace, database)
     _registered_image(workspace, database, str(project["id"]))
+    _, legacy_id = _registered_image(workspace, database, str(project["id"]))
+    with database.transaction() as connection:
+        connection.execute("UPDATE media_versions SET mime_type='application/json' WHERE id=?", (legacy_id,))
     with TestClient(create_app(workspace)) as client:
         response = client.post(f"/api/v1/projects/{project['id']}/media-thumbnails:rebuild")
     assert response.status_code == 200, response.text
     rebuild = response.json()["rebuild"]
     assert rebuild["requested"] == 1
     assert rebuild["created"] == 1
+    assert rebuild["failed"] == 0
+    assert rebuild["skipped"] == 1
+    assert rebuild["exclusions"] == [{"media_version_id": legacy_id, "code": "MEDIA_KIND_MIME_MISMATCH"}]
     assert rebuild["pending"] == 0
     assert rebuild["runtime_contacted"] is False and rebuild["network_contacted"] is False
 

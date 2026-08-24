@@ -6,10 +6,7 @@ export type AssetProposal = {
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, { ...init, headers: { "Content-Type": "application/json", ...init?.headers } });
-  const body = await response.json().catch(() => ({})) as { error?: { message?: string } };
-  if (!response.ok) throw new Error(body.error?.message ?? `请求失败（${response.status}）`);
-  return body as T;
+  return generatedRequestJson<T>(`/api/v1${path}`, { ...init, headers: { "Content-Type": "application/json", ...init?.headers } });
 }
 
 export async function listAssetProposals(projectId: string) {
@@ -27,3 +24,4 @@ export async function decideAssetProposal(
     }),
   });
 }
+import { requestJson as generatedRequestJson } from "../../generated/api";

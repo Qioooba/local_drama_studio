@@ -28,6 +28,11 @@ class VoiceProfileRequest(BaseModel):
     provider_profile_version_id: str | None = None
 
 
+class SapiTTSProfilePublishRequest(BaseModel):
+    voice_ref: str = Field(min_length=6)
+    smoke_text: str = Field(default="本机语音合成验收通过", min_length=1, max_length=120)
+
+
 class TTSCandidateRequest(BaseModel):
     voice_profile_version_id: str = Field(min_length=1)
     media_version_id: str = Field(min_length=1)

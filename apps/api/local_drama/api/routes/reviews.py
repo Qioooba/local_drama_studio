@@ -54,6 +54,7 @@ async def review_inbox(
     blocking: str | None = None,
     min_age_days: float | None = None,
     max_age_days: float | None = None,
+    include_resolved: bool = False,
     cursor: int = 0,
     limit: int = 100,
 ) -> dict[str, object]:
@@ -69,6 +70,7 @@ async def review_inbox(
             blocking=blocking,
             min_age_days=min_age_days,
             max_age_days=max_age_days,
+            include_resolved=include_resolved,
         )
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error

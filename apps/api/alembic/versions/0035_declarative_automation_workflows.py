@@ -10,7 +10,6 @@ import sqlalchemy as sa
 
 from alembic import op
 
-
 revision = "0035_declarative_automation_workflows"
 down_revision = "0034_local_automation_webhooks"
 branch_labels = None

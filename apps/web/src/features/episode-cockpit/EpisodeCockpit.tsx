@@ -2,14 +2,15 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { getEpisodeCockpit } from "./api";
 import { useProjectEventInvalidation } from "../events/useProjectEventInvalidation";
+import { queryKeys } from "../../query/queryKeys";
 import "./episode-cockpit.css";
 
 export function EpisodeCockpit({ projectId, episodeId }: { projectId: string; episodeId: string }) {
-  const cockpit = useQuery({ queryKey: ["episode-cockpit", episodeId], queryFn: () => getEpisodeCockpit(episodeId) });
+  const cockpit = useQuery({ queryKey: queryKeys.episodes.cockpit(episodeId), queryFn: () => getEpisodeCockpit(episodeId) });
   useProjectEventInvalidation(
     projectId,
     ["SHOT_REVISION_CREATED", "JOB_QUEUED", "JOB_FINISHED", "JOB_REQUEUED", "ARTIFACT_REGISTERED", "SELECTION_CHANGED", "REVIEW_SUBMITTED"],
-    [["episode-cockpit", episodeId]],
+    [queryKeys.episodes.cockpit(episodeId)],
   );
   if (cockpit.isPending) return <section className="episode-cockpit panel" role="status">正在汇总本集生产事实…</section>;
   if (cockpit.error) return <section className="episode-cockpit panel"><p className="inline-error" role="alert">驾驶舱读取失败：{String(cockpit.error)}</p><button className="secondary" type="button" onClick={() => void cockpit.refetch()}>重试读取</button></section>;

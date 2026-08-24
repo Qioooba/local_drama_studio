@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { AudioBinding, TimelineStatus } from "../../generated/api";
 import type { TimelineShotDraft } from "./types";
 
@@ -21,7 +22,7 @@ export function TimelineTracks({ shots, audio, subtitles, includeAudio, includeS
   const videoClips = shots.map((shot) => { const start = cursor; cursor += shot.durationUs; return { shot, start, end: cursor }; });
   const position = (start: number, end: number) => ({ left: `${(start / duration) * 100}%`, width: `${Math.max(0.8, ((end - start) / duration) * 100)}%` });
 
-  return <section className="timeline-multitrack" aria-label="多轨时间线事实">
+  return <section className="timeline-multitrack" aria-label="多轨时间线事实" style={{ "--timeline-content-width": `${Math.max(1, shots.length) * 80}px` } as CSSProperties}>
     <div className="timeline-time-ruler"><span>00:00</span><span>{(duration / 2_000_000).toFixed(1)}s</span><span>{(duration / 1_000_000).toFixed(1)}s</span></div>
     <div className="timeline-lane"><header><strong>V1</strong><span>视频</span></header><div className="timeline-lane-rail">{videoClips.map(({ shot, start, end }) => <span className={`timeline-fact-clip video${shot.continuityStatus === "STALE" ? " stale" : ""}`} style={position(start, end)} key={shot.shotId} title={`${shot.code} · ${(shot.durationUs / 1_000_000).toFixed(2)}s`}>{shot.code}</span>)}</div></div>
     {(["A1", "A2", "A3"] as const).map((lane) => <div className={`timeline-lane${includeAudio ? "" : " disabled"}`} key={lane}><header><strong>{lane}</strong><span>{laneTitles[lane]}</span></header><div className="timeline-lane-rail">{enriched.filter((item) => audioLane(item) === lane).map((item) => <span className="timeline-fact-clip audio" style={position(item.start_us, item.end_us)} key={item.id} title={`${item.source_name || item.track_type} · ${item.gain_db} dB`}>

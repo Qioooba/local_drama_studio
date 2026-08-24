@@ -83,3 +83,23 @@ def test_shot_group_revision_conflict_is_409(workspace, database) -> None:
         response = client.post(f"/api/v1/shot-groups/{group['id']}:archive", json={"expected_revision": 99})
         assert response.status_code == 409
         assert response.json()["error"]["code"] == "SHOT_GROUP_REVISION_CONFLICT"
+
+
+def test_shot_group_workspace_excludes_archived_shots_and_memberships(workspace, database) -> None:
+    _, episode, _, shots = _episode_context(workspace, database, "shot_group_archived")
+    with TestClient(create_app(workspace)) as client:
+        group = client.post(f"/api/v1/episodes/{episode['id']}/shot-groups", json={
+            "kind": "BEAT", "code": "ACTIVE_ONLY", "title": "仅活动镜头",
+        }).json()["group"]
+        client.put(f"/api/v1/shot-groups/{group['id']}/members", json={
+            "shot_ids": [shots[0]["id"], shots[1]["id"]], "expected_revision": group["revision"],
+        })
+        with database.transaction() as connection:
+            connection.execute(
+                "UPDATE shots SET archived_at='2026-08-22T00:00:00Z' WHERE id=?", (shots[1]["id"],),
+            )
+
+        body = client.get(f"/api/v1/episodes/{episode['id']}/shot-groups").json()["workspace"]
+        assert [shot["id"] for shot in body["shots"]] == [shots[0]["id"]]
+        active_group = next(item for item in body["groups"] if item["id"] == group["id"])
+        assert [member["shot_id"] for member in active_group["members"]] == [shots[0]["id"]]

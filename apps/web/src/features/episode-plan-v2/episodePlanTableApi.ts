@@ -6,16 +6,9 @@ export type EpisodePlanAsset = {
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
+  return generatedRequestJson<T>(`/api/v1${path}`, {
     ...init, headers: { "Content-Type": "application/json", ...init?.headers },
   });
-  const body = await response.json().catch(() => ({})) as { error?: { code?: string; message?: string } };
-  if (!response.ok) {
-    const error = new Error(body.error?.message ?? `请求失败（${response.status}）`) as Error & { code?: string };
-    error.code = body.error?.code;
-    throw error;
-  }
-  return body as T;
 }
 
 export async function getEpisodePlanAssets(projectId: string) {
@@ -29,7 +22,7 @@ export async function setEpisodePlanShotAssetState(shotId: string, assetId: stri
 }
 
 export async function markEpisodePlanShotReady(shotId: string) {
-  return request(`/shots/${shotId}:mark-production-ready`, { method: "POST" });
+  return request(`/projects/shots/${shotId}:mark-production-ready`, { method: "POST" });
 }
 
 export type BatchCommandResult = { shotId: string; ok: boolean; message: string };
@@ -46,3 +39,4 @@ export async function runPerShot(
     }
   }));
 }
+import { requestJson as generatedRequestJson } from "../../generated/api";

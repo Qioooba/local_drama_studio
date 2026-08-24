@@ -5,22 +5,44 @@ import {
   getProfileVersion,
   publishProfileContractVersion,
   publishWorkflowVersion,
+  registerH3I2VCandidateWorkflow,
+  registerWorkflowPackage,
   revokeWorkflowVersion,
   rollbackWorkflowVersion,
+  syncProfiles,
   validateProfileContractVersion,
   validateWorkflowLocal,
+  getJob,
+  listJobs,
   type Profile,
   type ProfileVersionDetail,
   type WorkflowValidation,
   type WorkflowVersionSummary,
 } from "../../generated/api";
 import { queryKeys } from "../../query/queryKeys";
+import { Dialog } from "../../components/ui/primitives";
+import {
+  finalizeI2VEvidenceProbe,
+  finalizeT2IEvidenceProbe,
+  planI2VEvidenceProbe,
+  planT2IEvidenceProbe,
+  submitI2VEvidenceProbe,
+  submitT2IEvidenceProbe,
+  validateProfileEvidenceCompatibility,
+  type I2VEvidenceProbePlan,
+  type T2IEvidenceProbePlan,
+} from "./profileEvidenceClient";
 import "./profile-configuration.css";
+import { ProfileContractEditors } from "./ProfileContractEditors";
+import { ModelInspectorDrawer } from "../model-config/ModelInspectorDrawer";
+import { PRODUCTION_TIER_LABELS, STATUS_LABELS, optionLabel } from "../shared/optionLabels";
 
 type ProfileConfigurationPanelProps =
   | {
       mode: "profile-contracts";
       profiles: Profile[];
+      workflows: WorkflowVersionSummary[];
+      projectId?: string;
       onChanged: () => void;
     }
   | {
@@ -47,7 +69,7 @@ function parseObject(value: string, label: string): Record<string, unknown> {
 
 export function ProfileConfigurationPanel(props: ProfileConfigurationPanelProps) {
   if (props.mode === "profile-contracts") {
-    return <ProfileContractsTask profiles={props.profiles} onChanged={props.onChanged} />;
+    return <ProfileContractsTask profiles={props.profiles} workflows={props.workflows} projectId={props.projectId} onChanged={props.onChanged} />;
   }
   return (
     <WorkflowVersionsTask
@@ -58,7 +80,7 @@ export function ProfileConfigurationPanel(props: ProfileConfigurationPanelProps)
   );
 }
 
-function ProfileContractsTask({ profiles, onChanged }: { profiles: Profile[]; onChanged: () => void }) {
+function ProfileContractsTask({ profiles, workflows, projectId, onChanged }: { profiles: Profile[]; workflows: WorkflowVersionSummary[]; projectId?: string; onChanged: () => void }) {
   const preferredId = profiles.find((item) => item.status === "PUBLISHED")?.version_id ?? profiles[0]?.version_id ?? null;
   const [selectedId, setSelectedId] = useState<string | null>(preferredId);
   const [draftId, setDraftId] = useState<string | null>(null);
@@ -67,6 +89,18 @@ function ProfileContractsTask({ profiles, onChanged }: { profiles: Profile[]; on
   const [outputJson, setOutputJson] = useState("{}");
   const [resourceJson, setResourceJson] = useState("{}");
   const [feedback, setFeedback] = useState<Feedback>(null);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [probePlan, setProbePlan] = useState<I2VEvidenceProbePlan | T2IEvidenceProbePlan | null>(null);
+  const [probeJobId, setProbeJobId] = useState<string | null>(null);
+  const [probeConfirmOpen, setProbeConfirmOpen] = useState(false);
+  const publishedI2VWorkflows = workflows.filter(
+    (item) => item.status === "PUBLISHED" && item.contract.capability === "H3_FL2VA_I2V_CANDIDATE",
+  );
+  const publishedT2IWorkflows = workflows.filter(
+    (item) => item.status === "PUBLISHED" && item.contract.capability === "SDXL_T2I_CANDIDATE",
+  );
+  const preferredEvidenceWorkflowId = publishedI2VWorkflows[0]?.id ?? "";
+  const [evidenceWorkflowId, setEvidenceWorkflowId] = useState(preferredEvidenceWorkflowId);
 
   const selected = profiles.find((item) => item.version_id === selectedId) ?? profiles[0] ?? null;
   const detail = useQuery({
@@ -98,6 +132,25 @@ function ProfileContractsTask({ profiles, onChanged }: { profiles: Profile[]; on
     setResourceJson(JSON.stringify(current.resource_policy, null, 2));
   }, [current]);
 
+  useEffect(() => {
+    setProbePlan(null);
+    setProbeJobId(null);
+    setProbeConfirmOpen(false);
+  }, [current?.id]);
+
+  useEffect(() => {
+    const isImageDraft = Boolean(current && current.status === "DRAFT" && String(current.capability).startsWith("IMAGE_"));
+    if (isImageDraft) {
+      if (evidenceWorkflowId && publishedT2IWorkflows.some((item) => item.id === evidenceWorkflowId)) return;
+      setEvidenceWorkflowId(publishedT2IWorkflows[0]?.id ?? "");
+      setProbePlan(null);
+      return;
+    }
+    if (evidenceWorkflowId && publishedI2VWorkflows.some((item) => item.id === evidenceWorkflowId)) return;
+    setEvidenceWorkflowId(preferredEvidenceWorkflowId);
+    setProbePlan(null);
+  }, [evidenceWorkflowId, preferredEvidenceWorkflowId, publishedI2VWorkflows, publishedT2IWorkflows, current]);
+
   const derive = useMutation({
     mutationFn: async () => {
       if (!current) throw new Error("Profile 版本尚未加载。");
@@ -126,7 +179,7 @@ function ProfileContractsTask({ profiles, onChanged }: { profiles: Profile[]; on
       return validateProfileContractVersion(current.id);
     },
     onSuccess: (data) => {
-      void activeDetail.refetch();
+      void (draftId ? activeDetail.refetch() : detail.refetch());
       setFeedback({
         kind: data.validation.status === "PASS" ? "success" : "error",
         message:
@@ -158,13 +211,115 @@ function ProfileContractsTask({ profiles, onChanged }: { profiles: Profile[]; on
     },
   });
 
+  const isImageEvidence = Boolean(current && String(current.capability).startsWith("IMAGE_"));
+
+  const evidencePlan = useMutation({
+    mutationFn: () => {
+      if (!projectId || !current || !evidenceWorkflowId) throw new Error("真实证据探测需要当前项目、DRAFT Profile 与显式 Workflow 版本。");
+      return isImageEvidence
+        ? planT2IEvidenceProbe(projectId, current.id, evidenceWorkflowId)
+        : planI2VEvidenceProbe(projectId, current.id, evidenceWorkflowId);
+    },
+    onSuccess: ({ plan }) => {
+      setProbePlan(plan);
+      setFeedback({
+        kind: plan.status === "READY" ? "success" : "error",
+        message: plan.status === "READY"
+          ? "证据探测预检 READY；确认后只创建一个本机 GPU_H3 Job。"
+          : `证据探测 BLOCKED：${plan.blockers.join("、")}`,
+      });
+    },
+    onError: (error) => setFeedback({ kind: "error", message: String(error) }),
+  });
+
+  const evidenceCompatibility = useMutation({
+    mutationFn: () => {
+      if (!current) throw new Error("Profile 尚未加载。");
+      return validateProfileEvidenceCompatibility(current.id);
+    },
+    onSuccess: ({ compatibility }) => {
+      setProbePlan(null);
+      setFeedback({
+        kind: compatibility.status === "PASS" ? "success" : "error",
+        message: `Capability 兼容性验证 ${compatibility.status} · ${compatibility.checks.filter((item) => item.passed).length}/${compatibility.checks.length}。请重新预检证据探测。`,
+      });
+    },
+    onError: (error) => setFeedback({ kind: "error", message: String(error) }),
+  });
+
+  const evidenceSubmit = useMutation({
+    mutationFn: () => {
+      if (!projectId || !current || !probePlan || probePlan.status !== "READY") {
+        throw new Error("请先获得 READY 的证据探测计划。");
+      }
+      return isImageEvidence
+        ? submitT2IEvidenceProbe(projectId, current.id, evidenceWorkflowId, probePlan.plan_hash)
+        : submitI2VEvidenceProbe(projectId, current.id, evidenceWorkflowId, probePlan.plan_hash);
+    },
+    onSuccess: ({ job }) => {
+      setProbeConfirmOpen(false);
+      setProbeJobId(job.id);
+      setFeedback({ kind: "success", message: `证据 Job ${job.id.slice(0, 12)}… 已排队；由本机 Supervisor 执行。` });
+    },
+    onError: (error) => setFeedback({ kind: "error", message: String(error) }),
+  });
+
+  const evidenceJob = useQuery({
+    queryKey: ["profile-evidence-job", probeJobId],
+    queryFn: () => getJob(probeJobId!),
+    enabled: Boolean(probeJobId),
+  });
+  const evidenceJobs = useQuery({
+    queryKey: ["profile-evidence-jobs", projectId, current?.id],
+    queryFn: () => listJobs(projectId),
+    enabled: Boolean(projectId && current),
+  });
+  const recoverableEvidenceJobs = (evidenceJobs.data?.items ?? []).filter((job) => (
+    job.type === "PROFILE_EVIDENCE_PROBE"
+    && (!job.subject_id || job.subject_id === current?.id)
+  ));
+
+  const evidenceFinalize = useMutation({
+    mutationFn: () => {
+      if (!projectId || !probeJobId) throw new Error("没有可结束登记的证据 Job。");
+      return isImageEvidence
+        ? finalizeT2IEvidenceProbe(projectId, probeJobId)
+        : finalizeI2VEvidenceProbe(projectId, probeJobId);
+    },
+    onSuccess: (data) => {
+      setFeedback({
+        kind: "success",
+        message: `真实媒体证据已登记；Profile v${data.profile_version.version_no} ${data.profile_version.status}。`,
+      });
+      setSelectedId(data.profile_version.id);
+      setDraftId(null);
+      onChanged();
+    },
+    onError: (error) => setFeedback({ kind: "error", message: String(error) }),
+  });
+
   const isDraft = current?.status === "DRAFT";
+
+  const [syncing, setSyncing] = useState(false);
+  const runManifestSync = async () => {
+    setSyncing(true);
+    setFeedback(null);
+    try {
+      await syncProfiles();
+      setFeedback({ kind: "success", message: "模型清单候选已同步；新能力以 CANDIDATE 版本进入列表。" });
+      onChanged();
+    } catch (error) {
+      setFeedback({ kind: "error", message: `同步模型清单失败：${String(error)}` });
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   return (
     <section className="panel profile-configuration-panel" aria-labelledby="profile-contracts-title">
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">G7 能力配置</p>
+          <p className="eyebrow">能力配置</p>
           <h3 id="profile-contracts-title">本地能力契约与不可变版本</h3>
         </div>
         <span className="status-pill">仅本地</span>
@@ -172,6 +327,13 @@ function ProfileContractsTask({ profiles, onChanged }: { profiles: Profile[]; on
       <p className="muted">
         编辑只会派生新 DRAFT；本地验证不会连接 ComfyUI。执行指纹有变化时，发布必须提供真实成功媒体证据。
       </p>
+
+      <div className="profile-editor-actions">
+        <button type="button" className="secondary" onClick={() => void runManifestSync()} disabled={syncing}>
+          {syncing ? "同步中…" : "同步模型清单候选"}
+        </button>
+        <small>读取本机 model_manifest.json，把新能力登记为 CANDIDATE 版本；不会自动发布。</small>
+      </div>
 
       <div className="profile-editor-layout">
         <aside className="profile-version-list" aria-label="Profile 版本">
@@ -202,9 +364,9 @@ function ProfileContractsTask({ profiles, onChanged }: { profiles: Profile[]; on
             <p className="empty-state">选择或创建 Profile 版本后才能编辑契约。</p>
           ) : detail.isPending || (draftId && activeDetail.isPending) ? (
             <p className="empty-state" role="status">正在读取 Profile 契约…</p>
-          ) : detail.error || activeDetail.error ? (
+          ) : detail.error || (draftId ? activeDetail.error : null) ? (
             <div className="inline-error" role="alert">
-              Profile 契约读取失败：{String(detail.error ?? activeDetail.error)}
+              Profile 契约读取失败：{String(detail.error ?? (draftId ? activeDetail.error : null))}
             </div>
           ) : !current ? (
             <p className="empty-state">当前版本没有可编辑的契约事实。</p>
@@ -215,30 +377,10 @@ function ProfileContractsTask({ profiles, onChanged }: { profiles: Profile[]; on
                 <span><small>能力</small><strong>{current.capability}</strong></span>
                 <span><small>状态</small><strong>{current.status}</strong></span>
                 <span><small>契约 hash</small><code title={String(current.contract_hash ?? "")}>{String(current.contract_hash ?? "").slice(0, 12) || "—"}</code></span>
+                <button type="button" className="secondary profile-execution-details-button" onClick={() => setInspectorOpen(true)}>查看执行详情</button>
               </div>
 
-              <div className="profile-contract-fields">
-                <label>
-                  输入契约
-                  <textarea value={inputJson} onChange={(event) => setInputJson(event.target.value)} spellCheck={false} />
-                  <small>声明 transport 与语义输入槽；只允许本地 transport。</small>
-                </label>
-                <label>
-                  参数 Schema
-                  <textarea value={parameterJson} onChange={(event) => setParameterJson(event.target.value)} spellCheck={false} />
-                  <small>必须明确 seed 与 determinism。</small>
-                </label>
-                <label>
-                  输出契约
-                  <textarea value={outputJson} onChange={(event) => setOutputJson(event.target.value)} spellCheck={false} />
-                  <small>必须声明 media_kind；容器、编码按能力补充。</small>
-                </label>
-                <label>
-                  资源策略
-                  <textarea value={resourceJson} onChange={(event) => setResourceJson(event.target.value)} spellCheck={false} />
-                  <small>GPU heavy 并发必须为 1。</small>
-                </label>
-              </div>
+              <ProfileContractEditors capability={current.capability} inputJson={inputJson} parameterJson={parameterJson} outputJson={outputJson} resourceJson={resourceJson} onInputChange={setInputJson} onParameterChange={setParameterJson} onOutputChange={setOutputJson} onResourceChange={setResourceJson} />
 
               {current.validation ? (
                 <div className={`profile-validation ${current.validation.status === "PASS" ? "passed" : "failed"}`}>
@@ -256,6 +398,95 @@ function ProfileContractsTask({ profiles, onChanged }: { profiles: Profile[]; on
                 <p className={feedback.kind === "error" ? "inline-error" : "review-success"} role={feedback.kind === "error" ? "alert" : "status"}>
                   {feedback.message}
                 </p>
+              ) : null}
+
+              {isDraft && (current.capability === "VIDEO_I2V" || String(current.capability).startsWith("IMAGE_")) ? (
+                <section className="profile-evidence-probe" aria-label={isImageEvidence ? "T2I 真实媒体证据发布" : "I2V 真实媒体证据发布"}>
+                  <div>
+                    <strong>{isImageEvidence ? "T2I 真实媒体证据发布" : "I2V 真实媒体证据发布"}</strong>
+                    <small>
+                      {isImageEvidence
+                        ? "执行指纹变化时：预检 → 明确确认 → 单个本机 GPU Job → VERIFIED 图片 → 发布新版本。"
+                        : "执行指纹变化时：预检 → 明确确认 → 单个本机 GPU Job → VERIFIED 视频 → 发布新版本。"}
+                    </small>
+                  </div>
+                  {!projectId ? <p className="inline-error">请从具体项目的 Models 页面进入，证据不能跨项目猜测。</p> : null}
+                  <label>
+                    验证工作流版本
+                    <select
+                      aria-label="验证工作流版本"
+                      value={evidenceWorkflowId}
+                      onChange={(event) => {
+                        setEvidenceWorkflowId(event.target.value);
+                        setProbePlan(null);
+                      }}
+                    >
+                      <option value="">{isImageEvidence ? "请选择已发布的图像生成工作流" : "请选择已发布的首帧生成工作流"}</option>
+                      {(isImageEvidence ? publishedT2IWorkflows : publishedI2VWorkflows).map((workflow) => (
+                        <option key={workflow.id} value={workflow.id}>
+                          {workflow.title} · 第 {workflow.version_no} 版{workflow.contract.production_tier ? ` · ${optionLabel(PRODUCTION_TIER_LABELS, String(workflow.contract.production_tier))}` : " · 未冻结档位"}
+                        </option>
+                      ))}
+                    </select>
+                    <small>证据与发布会冻结此精确 Workflow；不会沿用 Profile 中的旧版本或静默选择最新项。</small>
+                  </label>
+                  {probePlan ? (
+                    <dl>
+                      <div><dt>预检</dt><dd>{probePlan.status}</dd></div>
+                      {isImageEvidence ? null : (
+                        <div><dt>首帧</dt><dd>{(probePlan as I2VEvidenceProbePlan).snapshot.approved_keyframe?.media_version_id.slice(0, 12) ?? "缺失"}</dd></div>
+                      )}
+                      <div><dt>Workflow</dt><dd>{probePlan.snapshot.workflow?.id.slice(0, 12) ?? "缺失"}</dd></div>
+                    </dl>
+                  ) : null}
+                  {probeJobId ? (
+                    <p role="status">Job {probeJobId.slice(0, 12)}… · {evidenceJob.data?.job.state ?? (evidenceJob.isPending ? "读取中" : "待刷新")}</p>
+                  ) : null}
+                  <label>
+                    验证任务（恢复）
+                    <select value={probeJobId ?? ""} onChange={(event) => setProbeJobId(event.target.value || null)} disabled={!projectId || evidenceJobs.isLoading}>
+                      <option value="">{evidenceJobs.isLoading ? "正在读取项目验证任务…" : "选择此模型配置的验证任务"}</option>
+                      {probeJobId && !recoverableEvidenceJobs.some((job) => job.id === probeJobId) ? <option value={probeJobId}>当前会话任务 · {probeJobId.slice(0, 12)}</option> : null}
+                      {recoverableEvidenceJobs.map((job) => <option key={job.id} value={job.id}>{optionLabel(STATUS_LABELS, job.state)} · 任务 {job.id.slice(0, 12)}{job.finished_at ? ` · ${new Date(job.finished_at).toLocaleString()}` : ""}</option>)}
+                    </select>
+                    <small>页面刷新后可恢复；最终发布仍由服务端核对 Profile、执行指纹、首帧与 VERIFIED 产物。</small>
+                  </label>
+                  {evidenceJob.error ? <p className="inline-error" role="alert">证据 Job 读取失败：{String(evidenceJob.error)}</p> : null}
+                  <div className="profile-editor-actions">
+                    <button type="button" className="secondary" disabled={evidenceCompatibility.isPending} onClick={() => evidenceCompatibility.mutate()}>
+                      {evidenceCompatibility.isPending ? "验证中…" : "验证 capability 兼容性"}
+                    </button>
+                    <button type="button" className="secondary" disabled={!projectId || evidencePlan.isPending || evidenceSubmit.isPending} onClick={() => evidencePlan.mutate()}>
+                      {evidencePlan.isPending ? "预检中…" : "预检真实证据探测"}
+                    </button>
+                    <button type="button" className="secondary" disabled={probePlan?.status !== "READY" || evidenceSubmit.isPending || Boolean(probeJobId)} onClick={() => setProbeConfirmOpen(true)}>
+                      {evidenceSubmit.isPending ? "提交中…" : "确认并排队单次 Job"}
+                    </button>
+                    <button type="button" className="secondary" disabled={!probeJobId || evidenceJob.isFetching} onClick={() => void evidenceJob.refetch()}>
+                      {evidenceJob.isFetching ? "刷新中…" : "刷新证据 Job"}
+                    </button>
+                    <button type="button" className="primary-action" disabled={evidenceJob.data?.job.state !== "SUCCEEDED" || evidenceFinalize.isPending} onClick={() => evidenceFinalize.mutate()}>
+                      {evidenceFinalize.isPending ? "登记发布中…" : "登记证据并发布"}
+                    </button>
+                  </div>
+                  {projectId && probeJobId ? <a href={`/projects/${projectId}/jobs?job=${encodeURIComponent(probeJobId)}`}>打开 Job 详情</a> : null}
+                  <Dialog
+                    open={probeConfirmOpen}
+                    title="确认创建真实媒体证据 Job"
+                    onClose={() => setProbeConfirmOpen(false)}
+                    footer={(
+                      <>
+                        <button type="button" className="secondary" onClick={() => setProbeConfirmOpen(false)}>取消</button>
+                        <button type="button" className="primary-action" disabled={evidenceSubmit.isPending} onClick={() => evidenceSubmit.mutate()}>
+                          {evidenceSubmit.isPending ? "排队中…" : "确认并排队"}
+                        </button>
+                      </>
+                    )}
+                  >
+                    <p>将以当前 DRAFT Profile、{isImageEvidence ? "已发布的 SDXL T2I Workflow" : "已批准首帧和 Published Workflow"}创建一个本机 GPU_H3 证据 Job。</p>
+                    <p className="muted">只创建一次；关闭或取消不会提交任务。</p>
+                  </Dialog>
+                </section>
               ) : null}
 
               <div className="profile-editor-actions">
@@ -286,6 +517,7 @@ function ProfileContractsTask({ profiles, onChanged }: { profiles: Profile[]; on
           )}
         </div>
       </div>
+      <ModelInspectorDrawer open={inspectorOpen} profile={current ?? null} onClose={() => setInspectorOpen(false)} />
     </section>
   );
 }
@@ -303,16 +535,118 @@ function WorkflowVersionsTask({
   const [validations, setValidations] = useState<Record<string, WorkflowValidation>>({});
   const [revokeReasons, setRevokeReasons] = useState<Record<string, string>>({});
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [showH3Create, setShowH3Create] = useState(false);
+  const h3Code = "h3_fl2va_i2v_fast";
+  const [h3Title, setH3Title] = useState("H3 FL2VA I2V · FAST");
+  const h3Prompt = "由生成任务在运行时注入提示词";
+  const h3Seed = "107";
+  const [h3Tier, setH3Tier] = useState("FAST");
+  const [showT2ICreate, setShowT2ICreate] = useState(false);
+  const t2iCode = "sdxl-turbo-t2i-keyframe";
+  const [t2iTitle, setT2ITitle] = useState("SDXL Turbo T2I · KEYFRAME");
+  const t2iPrompt = "由生成任务在运行时注入提示词";
+  const t2iSeed = "260826";
+
+  const createSdxlT2IWorkflow = async () => {
+    const code = t2iCode.trim();
+    const title = t2iTitle.trim();
+    const prompt = t2iPrompt.trim();
+    const seed = Number(t2iSeed);
+    if (!code || !title || !prompt || !Number.isSafeInteger(seed) || seed < 0) {
+      setFeedback({ kind: "error", message: "创建 SDXL T2I 工作流需要 code、标题、占位提示词和非负整数 seed。" });
+      return;
+    }
+    setBusyAction("create:sdxl-t2i");
+    setFeedback(null);
+    try {
+      const workflow: Record<string, unknown> = {
+        "1": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "sdxl_turbo_fp16.safetensors" } },
+        "2": { class_type: "CLIPTextEncode", inputs: { text: prompt, clip: ["1", 1] } },
+        "3": { class_type: "EmptyLatentImage", inputs: { width: 480, height: 852, batch_size: 1 } },
+        "4": {
+          class_type: "KSampler",
+          inputs: { seed, steps: 4, cfg: 1.0, sampler_name: "euler", scheduler: "simple", denoise: 1.0, model: ["1", 0], positive: ["2", 0], negative: ["2", 0], latent_image: ["3", 0] },
+        },
+        "5": { class_type: "VAEDecode", inputs: { samples: ["4", 0], vae: ["1", 2] } },
+        "6": { class_type: "SaveImage", inputs: { filename_prefix: "local_drama/t2i_keyframe", images: ["5", 0] } },
+      };
+      const contract = {
+        capability: "SDXL_T2I_CANDIDATE",
+        input_slots: {},
+        local_only: true,
+        production_tier: "KEYFRAME",
+        requires_explicit_validation: true,
+      };
+      const node_bindings = {
+        PROMPT: { node_id: "2", input: "text" },
+        SEED: { node_id: "4", input: "seed" },
+        OUTPUT_PREFIX: { node_id: "6", input: "filename_prefix" },
+      };
+      const runtime_contract = { transport: "LOOPBACK_HTTP", worker_policy: "ONE_H3_WORKER_ONE_GPU_TASK" };
+      const result = await registerWorkflowPackage({ code, title, workflow, contract, node_bindings, runtime_contract });
+      setFeedback({
+        kind: "success",
+        message: `${result.workflow_version.code} v${result.workflow_version.version_no} 已创建为候选；PROMPT、SEED 与 OUTPUT_PREFIX 为运行时语义绑定。`,
+      });
+      setShowT2ICreate(false);
+      onChanged();
+    } catch (error) {
+      setFeedback({ kind: "error", message: `SDXL T2I 工作流创建失败：${String(error)}` });
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const createH3I2VWorkflow = async () => {
+    const code = h3Code.trim();
+    const title = h3Title.trim();
+    const prompt = h3Prompt.trim();
+    const seed = Number(h3Seed);
+    if (!code || !title || !prompt || !Number.isSafeInteger(seed) || seed < 0) {
+      setFeedback({ kind: "error", message: "创建 H3 I2V 工作流需要 code、标题、占位提示词和非负整数 seed。" });
+      return;
+    }
+    setBusyAction("create:h3-i2v");
+    setFeedback(null);
+    try {
+      const result = await registerH3I2VCandidateWorkflow({
+        code,
+        title,
+        prompt,
+        seed,
+        first_frame: "runtime/first-frame.png",
+        aspect_ratio: "9:16",
+        filename_prefix: "local_drama/h3_i2v",
+        sigma_points: 20,
+        acceleration: "off",
+        tier: h3Tier,
+      });
+      setFeedback({
+        kind: "success",
+        message: `${result.workflow_version.code} v${result.workflow_version.version_no} 已创建为候选；PROMPT、SEED、FRAME_COUNT、OUTPUT_PREFIX 与 FIRST_FRAME 均为运行时语义绑定。`,
+      });
+      setShowH3Create(false);
+      onChanged();
+    } catch (error) {
+      setFeedback({ kind: "error", message: `H3 I2V 工作流创建失败：${String(error)}` });
+    } finally {
+      setBusyAction(null);
+    }
+  };
 
   const validateWorkflow = async (workflow: WorkflowVersionSummary) => {
     setBusyAction(`validate:${workflow.id}`);
     setFeedback(null);
     try {
       const result = await validateWorkflowLocal(workflow.id);
-      setValidations((current) => ({ ...current, [workflow.id]: result.validation }));
+      const validation = {
+        ...result.validation,
+        id: String(result.validation.id ?? result.validation.validation_id ?? ""),
+      };
+      setValidations((current) => ({ ...current, [workflow.id]: validation }));
       setFeedback({
-        kind: result.validation.status === "PASS" ? "success" : "error",
-        message: `${workflow.code} v${workflow.version_no} 本地工作流验证：${result.validation.status}`,
+        kind: validation.status === "PASS" ? "success" : "error",
+        message: `${workflow.code} v${workflow.version_no} 本地工作流验证：${validation.status}`,
       });
     } catch (error) {
       setFeedback({ kind: "error", message: `工作流验证失败：${String(error)}` });
@@ -382,7 +716,7 @@ function WorkflowVersionsTask({
     <section className="panel workflow-configuration-panel" aria-labelledby="workflow-versions-title">
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">G7 工作流历史</p>
+          <p className="eyebrow">工作流历史</p>
           <h3 id="workflow-versions-title">工作流版本、验证与发布证据</h3>
         </div>
         <span className="status-pill neutral">本地验证 · 显式变更</span>
@@ -390,6 +724,53 @@ function WorkflowVersionsTask({
       <p className="muted">
         这里操作同一套权威 Workflow Version API。本地验证不会连接 ComfyUI；发布、撤销和回滚都必须由用户显式触发，并保留对应验证或原因。
       </p>
+
+      <div className="workflow-create-toolbar">
+        <button type="button" className="primary-action" onClick={() => setShowH3Create((current) => !current)} disabled={busyAction !== null}>
+          {showH3Create ? "收起创建表单" : "创建 H3 首帧工作流"}
+        </button>
+        <button type="button" className="secondary" onClick={() => setShowT2ICreate((current) => !current)} disabled={busyAction !== null}>
+          {showT2ICreate ? "收起 T2I 表单" : "创建 SDXL T2I 工作流"}
+        </button>
+        <small>创建后仍需本地验证和显式发布；不会在此步骤运行 ComfyUI。</small>
+      </div>
+
+      {showH3Create ? (
+        <form
+          className="workflow-create-form"
+          aria-label="创建 H3 首帧工作流"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void createH3I2VWorkflow();
+          }}
+        >
+          <label>显示标题<input value={h3Title} onChange={(event) => setH3Title(event.target.value)} /></label>
+          <label>生产档位<select value={h3Tier} onChange={(event) => setH3Tier(event.target.value)}><option value="FAST">极速粗筛（速度优先）</option><option value="DRAFT">日常生成（主力候选）</option><option value="SCREEN">候选精筛（质量优先）</option><option value="PRODUCTION">正式成片</option><option value="MASTER">关键镜头精制</option></select></label>
+          <div className="workflow-create-form__wide workflow-auto-facts"><strong>系统自动配置验证参数</strong><span>技术标识：{h3Code}</span><span>验证 Seed：{h3Seed}</span><small>占位提示词、帧数、输出前缀和首帧语义槽由系统模板注入，真实生成时会被镜头内容替换。</small></div>
+          <div className="workflow-create-form__wide profile-editor-actions">
+            <button type="submit" className="primary-action" disabled={busyAction !== null}>{busyAction === "create:h3-i2v" ? "创建中…" : "创建候选版本"}</button>
+            <button type="button" className="secondary" onClick={() => setShowH3Create(false)} disabled={busyAction !== null}>取消</button>
+          </div>
+        </form>
+      ) : null}
+
+      {showT2ICreate ? (
+        <form
+          className="workflow-create-form"
+          aria-label="创建 SDXL T2I 工作流"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void createSdxlT2IWorkflow();
+          }}
+        >
+          <label>显示标题<input value={t2iTitle} onChange={(event) => setT2ITitle(event.target.value)} /></label>
+          <div className="workflow-create-form__wide workflow-auto-facts"><strong>系统自动配置验证参数</strong><span>技术标识：{t2iCode}</span><span>验证 Seed：{t2iSeed}</span><small>系统按 SDXL Turbo 模板注入提示词、输出前缀、竖屏尺寸与采样步数；真实生成时会替换占位内容。</small></div>
+          <div className="workflow-create-form__wide profile-editor-actions">
+            <button type="submit" className="primary-action" disabled={busyAction !== null}>{busyAction === "create:sdxl-t2i" ? "创建中…" : "创建候选版本"}</button>
+            <button type="button" className="secondary" onClick={() => setShowT2ICreate(false)} disabled={busyAction !== null}>取消</button>
+          </div>
+        </form>
+      ) : null}
 
       {feedback ? (
         <p className={feedback.kind === "error" ? "inline-error" : "review-success"} role={feedback.kind === "error" ? "alert" : "status"}>

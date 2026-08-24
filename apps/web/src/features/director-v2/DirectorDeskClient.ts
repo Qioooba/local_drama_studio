@@ -1,8 +1,17 @@
 /** Stable hand-written Director Desk facade; kept outside generated OpenAPI output. */
+import { bootstrapLocalSession } from "../../generated/api";
 import type { DirectorDeskResponse, RerollReasonCode, RerollResult } from "./types";
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, init);
+  const method = (init?.method ?? "GET").toUpperCase();
+  let securedInit = init;
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    const session = await bootstrapLocalSession();
+    const headers = new Headers(init?.headers);
+    headers.set("X-Local-Instance-Token", session.token);
+    securedInit = { ...init, headers };
+  }
+  const response = await fetch(path, securedInit);
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
     try {
@@ -52,11 +61,23 @@ export async function approveFormalCandidate(projectId: string, mediaVersionId: 
   });
 }
 
-export function rerollDirectorCandidate(parentVariantId: string, reasonCode: RerollReasonCode, reasonNote?: string) {
+export function rerollDirectorCandidate(
+  parentVariantId: string,
+  reasonCode: RerollReasonCode,
+  reasonNote?: string,
+  explicitSeed?: number,
+  profileVersionId?: string,
+) {
   const idempotencyKey = globalThis.crypto?.randomUUID?.() ?? `director-reroll-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return requestJson<RerollResult>(`/api/v1/generation/variants/${encodeURIComponent(parentVariantId)}/reroll`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ reason_code: reasonCode, reason_note: reasonNote || undefined, idempotency_key: idempotencyKey }),
+    body: JSON.stringify({
+      reason_code: reasonCode,
+      reason_note: reasonNote || undefined,
+      explicit_seed: explicitSeed,
+      profile_version_id: profileVersionId,
+      idempotency_key: idempotencyKey,
+    }),
   });
 }

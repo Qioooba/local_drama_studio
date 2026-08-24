@@ -42,7 +42,7 @@ export function EpisodeRunPage() {
 
   if (!projectId || !episodeId) return <p className="inline-error" role="alert">缺少项目或分集上下文。</p>;
   return <div className="v2-page creative-task-page episode-run-page-v2">
-    <div className="panel-heading"><div><p className="eyebrow">本集生产</p><h2>运行、关卡与失效处置</h2></div><span className="status-pill neutral">本机持久化事实</span></div>
+    <div className="panel-heading"><div><p className="eyebrow">本集生产</p><h2>运行、关卡与失效处置</h2></div><span className="status-pill neutral">可暂停 · 可恢复</span></div>
     <p className="muted">一次只处理一个生产任务；运行控制、只读关卡事实与 stale 影响保持各自唯一 owner。</p>
     <Tabs items={RUN_TABS} selectedId={activeView} onChange={selectView} ariaLabel="整集生产任务">
       <TabPanel id="run" selectedId={activeView}>

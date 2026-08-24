@@ -37,7 +37,11 @@ export type GenerationResolution = {
     capability: string;
     status: string;
     resources: Record<string, unknown>;
+    override_schema?: Record<string, unknown>;
+    model_bundle?: Record<string, unknown>;
   } | null;
+  effective_settings?: Record<string, unknown>;
+  setting_sources?: Record<string, string>;
   recommendation: {
     selection_reason: "AUTO_NEWEST_PUBLISHED_EXACT_CAPABILITY" | "EXPLICIT_PUBLISHED_VERSION";
     facts: {
@@ -71,6 +75,8 @@ export type ProfileOption = {
   version_no?: number;
   capability: string;
   status: string;
+  override_schema?: Record<string, unknown>;
+  model_bundle?: Record<string, unknown>;
 };
 
 export type PreferencePutPayload = {

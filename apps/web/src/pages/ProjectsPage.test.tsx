@@ -34,6 +34,11 @@ describe("ProjectsPage recent projects", () => {
     for (const card of document.querySelectorAll(".project-card")) {
       expect(within(card as HTMLElement).getAllByRole("link")).toHaveLength(1);
     }
+    const draftCard = screen.getByText("Third").closest(".project-card") as HTMLElement;
+    expect(within(draftCard).getByText("草稿")).toBeTruthy();
+    expect(within(draftCard).getByRole("link", { name: "Third：打开项目概览" })).toBeTruthy();
+    expect(within(screen.getByText("Fourth").closest(".project-card") as HTMLElement).getByRole("link", { name: "Fourth：打开项目概览" })).toBeTruthy();
+    expect(within(screen.getByText("Oldest").closest(".project-card") as HTMLElement).getByRole("link", { name: "Oldest：打开项目概览" })).toBeTruthy();
 
     fireEvent.change(screen.getByRole("textbox", { name: "搜索项目" }), { target: { value: "oldest" } });
     await waitFor(() => expect(document.querySelectorAll(".project-card")).toHaveLength(1));

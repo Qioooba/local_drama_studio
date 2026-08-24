@@ -386,7 +386,7 @@ class TimelineExportService:
             }
             if track_type == "VIDEO":
                 video_segments.append(segment)
-            elif track_type == "AUDIO":
+            elif track_type in {"AUDIO", "DIALOGUE", "BGM", "SFX", "MUSIC", "ENVIRONMENT"}:
                 audio_segments.append(segment)
             else:
                 raise DomainRuleError("TIMELINE_TRACK_TYPE_UNSUPPORTED", f"剪映导出不支持的轨道类型：{track_type}")
@@ -524,7 +524,7 @@ class TimelineExportService:
                 if media_version_id in media_entries:
                     continue
                 track_type = str(item["track_type"]).upper()
-                if track_type not in {"VIDEO", "AUDIO"}:
+                if track_type not in {"VIDEO", "AUDIO", "DIALOGUE", "BGM", "SFX", "MUSIC", "ENVIRONMENT"}:
                     raise DomainRuleError("TIMELINE_TRACK_TYPE_UNSUPPORTED", f"剪映导出不支持的轨道类型：{track_type}")
                 kind = "video" if track_type == "VIDEO" else "audio"
                 _, source_path = self.media.content_path(media_version_id)

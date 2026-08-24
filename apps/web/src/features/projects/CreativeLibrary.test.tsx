@@ -32,11 +32,10 @@ describe("CreativeLibrary", () => {
     renderLibrary();
     fireEvent.click(screen.getByText("新建创作资料"));
     fireEvent.change(screen.getByLabelText("类型"), { target: { value: "VOICE" } });
-    fireEvent.change(screen.getByLabelText("代码"), { target: { value: "VOICE_MOTHER" } });
     fireEvent.change(screen.getByLabelText("标题"), { target: { value: "母亲声音" } });
-    fireEvent.change(screen.getByLabelText("初始内容 JSON"), { target: { value: '{"timbre":"warm"}' } });
+    fireEvent.change(screen.getByLabelText("音色"), { target: { value: "warm" } });
     fireEvent.change(screen.getByLabelText("建立说明"), { target: { value: "建立声音资料" } });
     fireEvent.click(screen.getByRole("button", { name: "建立并保存 revision 1" }));
-    await waitFor(() => expect(createCreativeEntry).toHaveBeenCalledWith({ project_id: "project-1", kind: "VOICE", code: "VOICE_MOTHER", title: "母亲声音", content: { timbre: "warm" }, change_note: "建立声音资料" }));
+    await waitFor(() => expect(createCreativeEntry).toHaveBeenCalledWith(expect.objectContaining({ project_id: "project-1", kind: "VOICE", code: expect.stringMatching(/^VOICE_/), title: "母亲声音", content: expect.objectContaining({ timbre: "warm" }), change_note: "建立声音资料" })));
   });
 });

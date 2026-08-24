@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -243,6 +244,30 @@ def test_shot_binding_and_stale_detection(workspace, database) -> None:
     assert packs_on_shot_after[0]["is_stale"] is True
 
 
+def test_unbound_shot_character_exposes_approved_pack_choices(workspace, database) -> None:
+    ctx = _setup_character_and_media(workspace, database)
+    pack_svc = CharacterIdentityPackService(database)
+    pack, approved = _create_approved_pack(ctx, database, code="INITIAL_BINDING")
+    shot_id = _create_shot(database, ctx["project_id"], "S_INITIAL_BINDING")
+    StoryAssetService(database, workspace).bind_asset_to_shot(
+        shot_id, str(ctx["character"]["id"]), "main",
+    )
+
+    item = pack_svc.get_shot_character_packs(shot_id)[0]
+
+    assert item["identity_pack_version_id"] is None
+    assert item["approved_versions"] == [
+        {
+            "pack_id": str(pack["id"]),
+            "pack_name": "INITIAL_BINDING",
+            "pack_code": "INITIAL_BINDING",
+            "version_id": str(approved["id"]),
+            "version_no": 1,
+            "status": "APPROVED",
+        }
+    ]
+
+
 def test_character_identity_pack_http_endpoints(workspace, database) -> None:
     ctx = _setup_character_and_media(workspace, database)
     with TestClient(create_app(workspace)) as client:
@@ -293,6 +318,22 @@ def test_character_identity_pack_http_endpoints(workspace, database) -> None:
         )
         assert approve_resp.status_code == 200
         assert approve_resp.json()["version"]["status"] == "APPROVED"
+
+        # Suffix actions must be declared before the generic version GET.
+        # Otherwise Starlette consumes ``<uuid>:compare`` as a version id.
+        v2_resp = client.post(
+            f"/api/v1/character-identity-packs/{pack_id}/versions",
+            params={"from_version_id": v1_id},
+        )
+        assert v2_resp.status_code == 201
+        v2_id = v2_resp.json()["version"]["id"]
+        compare_resp = client.get(
+            f"/api/v1/character-identity-pack-versions/{v1_id}:compare",
+            params={"target_version_id": v2_id},
+        )
+        assert compare_resp.status_code == 200
+        assert compare_resp.json()["comparison"]["base"]["id"] == v1_id
+        assert compare_resp.json()["comparison"]["target"]["id"] == v2_id
 
 
 def test_approval_requires_human_comment_complete_unique_views_and_authorizations(workspace, database) -> None:

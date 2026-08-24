@@ -9,6 +9,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from ipaddress import ip_address
+from urllib.parse import urlsplit
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -46,6 +47,33 @@ def _is_loopback_client(request: Request) -> bool:
         return True
     try:
         return bool(host and ip_address(host).is_loopback)
+    except ValueError:
+        return False
+
+
+def _is_allowed_write_origin(origin: str, allowed_origins: set[str]) -> bool:
+    """Accept configured origins and HTTP origins served on literal loopback.
+
+    The Vite development server may choose another free port when its preferred
+    port is occupied.  Port drift must not turn an otherwise valid local UI into
+    a read-only application.  Hostname matching remains deliberately narrow:
+    only ``localhost`` and literal loopback IP addresses are accepted here;
+    LAN origins still require explicit configuration.
+    """
+
+    if origin in allowed_origins:
+        return True
+    try:
+        parsed = urlsplit(origin)
+        if parsed.scheme != "http" or not parsed.hostname or parsed.username or parsed.password:
+            return False
+        if parsed.path or parsed.query or parsed.fragment:
+            return False
+        # Accessing ``port`` also rejects malformed/non-numeric port values.
+        _ = parsed.port
+        if parsed.hostname.casefold() == "localhost":
+            return True
+        return ip_address(parsed.hostname).is_loopback
     except ValueError:
         return False
 
@@ -173,7 +201,7 @@ class LocalOriginMiddleware(BaseHTTPMiddleware):
                 },
                 headers={"X-Request-Id": request_id, **SECURITY_REJECTION_HEADERS},
             )
-        if state_changing and origin and origin not in self.allowed_origins:
+        if state_changing and origin and not _is_allowed_write_origin(origin, self.allowed_origins):
             request_id, _trace_id = _ensure_request_context(request)
             _log_request("request.rejected", request, status_code=403, error="ORIGIN_NOT_ALLOWED")
             return JSONResponse(
@@ -188,7 +216,7 @@ class LocalOriginMiddleware(BaseHTTPMiddleware):
                         # local UI and avoids leaking untrusted request data.
                         "details": {},
                         "retryable": False,
-                        "suggested_action": "从 LocalDramaStudio 页面发起请求或配置受控本机 origin",
+                        "suggested_action": "从 LocalDramaStudio 页面发起请求，或用环境变量 LOCAL_DRAMA_ALLOWED_ORIGINS 登记受控本机 origin 后重启服务",
                     }
                 },
                 headers={"X-Request-Id": request_id, **SECURITY_REJECTION_HEADERS},

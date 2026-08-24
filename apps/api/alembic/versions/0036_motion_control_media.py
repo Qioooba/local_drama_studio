@@ -4,7 +4,6 @@ import sqlalchemy as sa
 
 from alembic import op
 
-
 revision = "0036_motion_control_media"
 down_revision = "0035_declarative_automation_workflows"
 branch_labels = None

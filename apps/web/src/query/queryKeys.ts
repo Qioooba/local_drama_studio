@@ -13,11 +13,13 @@ export const queryKeys = {
     details: () => ["projects", "detail"] as const,
     detail: (projectId: string) => ["projects", "detail", projectId] as const,
     health: (projectId: string) => ["projects", "detail", projectId, "health"] as const,
+    creatorSetup: (projectId: string) => ["projects", "detail", projectId, "creator-setup"] as const,
   },
   seasons: {
     all: ["seasons"] as const,
     lists: () => ["seasons", "list"] as const,
     list: (projectId: string) => ["seasons", "list", { projectId }] as const,
+    catalog: (projectId: string) => ["seasons", "catalog", { projectId }] as const,
     detail: (seasonId: string) => ["seasons", "detail", seasonId] as const,
   },
   episodes: {
@@ -25,6 +27,7 @@ export const queryKeys = {
     lists: () => ["episodes", "list"] as const,
     list: (seasonId: string, limit?: number) => ["episodes", "list", { seasonId, ...(limit === undefined ? {} : { limit }) }] as const,
     detail: (episodeId: string) => ["episodes", "detail", episodeId] as const,
+    cockpit: (episodeId: string) => ["episodes", "detail", episodeId, "cockpit"] as const,
   },
   assetBible: {
     all: ["asset-bible"] as const,

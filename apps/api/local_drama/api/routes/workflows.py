@@ -53,15 +53,29 @@ async def register_h3_candidate(payload: H3CandidateWorkflowRequest, request: Re
             filename_prefix=payload.filename_prefix,
             sigma_points=payload.sigma_points,
             acceleration=payload.acceleration,
+            lora_strength=payload.lora_strength,
+            native_audio=payload.native_audio,
             tier=payload.tier,
         )
         bindings = {
             "PROMPT": {"node_id": "8", "input": "prompt"},
             "SEED": {"node_id": "5", "input": "noise_seed"},
             "FRAME_COUNT": {"node_id": "8", "input": "length"},
+            "SIGMA_POINTS": {"node_id": "7", "input": "steps"},
             "OUTPUT_PREFIX": {"node_id": "14", "input": "filename_prefix"},
         }
-        contract = {"capability": "H3_T2VA_CANDIDATE", "requires_explicit_validation": True, "local_only": True}
+        contract = {
+            "capability": "H3_T2VA_CANDIDATE",
+            "requires_explicit_validation": True,
+            "local_only": True,
+            "production_tier": payload.tier.upper() if payload.tier else None,
+            "runtime_overrides": {
+                "sigma_points": payload.sigma_points,
+                "acceleration": payload.acceleration,
+                "lora_strength": payload.lora_strength if payload.acceleration == "TURBO_LORA" else None,
+                "native_audio": payload.native_audio,
+            },
+        }
         runtime_contract = {"transport": "LOOPBACK_HTTP", "worker_policy": "ONE_H3_WORKER_ONE_GPU_TASK", "candidate": True}
         version = workflow_service(request).register_package(payload.code, payload.title, workflow, contract, bindings, runtime_contract)
         return {"workflow_version": version, "candidate_assets": H3WorkflowFactory(request.app.state.settings).candidate_assets()}
@@ -82,6 +96,8 @@ async def register_h3_i2v_candidate(payload: H3I2VCandidateWorkflowRequest, requ
             filename_prefix=payload.filename_prefix,
             sigma_points=payload.sigma_points,
             acceleration=payload.acceleration,
+            lora_strength=payload.lora_strength,
+            native_audio=payload.native_audio,
             tier=payload.tier,
         )
         bindings = {
@@ -89,9 +105,22 @@ async def register_h3_i2v_candidate(payload: H3I2VCandidateWorkflowRequest, requ
             "PROMPT": {"node_id": "7", "input": "prompt"},
             "SEED": {"node_id": "8", "input": "noise_seed"},
             "FRAME_COUNT": {"node_id": "7", "input": "length"},
+            "SIGMA_POINTS": {"node_id": "10", "input": "steps"},
             "OUTPUT_PREFIX": {"node_id": "16", "input": "filename_prefix"},
         }
-        contract = {"capability": "H3_FL2VA_I2V_CANDIDATE", "input_slots": {"FIRST_FRAME": {"min": 1, "max": 1}}, "requires_explicit_validation": True, "local_only": True}
+        contract = {
+            "capability": "H3_FL2VA_I2V_CANDIDATE",
+            "input_slots": {"FIRST_FRAME": {"min": 1, "max": 1}},
+            "requires_explicit_validation": True,
+            "local_only": True,
+            "production_tier": payload.tier.upper() if payload.tier else None,
+            "runtime_overrides": {
+                "sigma_points": payload.sigma_points,
+                "acceleration": payload.acceleration,
+                "lora_strength": payload.lora_strength if payload.acceleration == "TURBO_LORA" else None,
+                "native_audio": payload.native_audio,
+            },
+        }
         runtime_contract = {"transport": "LOOPBACK_HTTP", "worker_policy": "ONE_H3_WORKER_ONE_GPU_TASK", "candidate": True}
         version = workflow_service(request).register_package(payload.code, payload.title, workflow, contract, bindings, runtime_contract)
         return {"workflow_version": version, "candidate_assets": factory.candidate_assets()}

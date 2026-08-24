@@ -54,17 +54,33 @@ class SqliteGenerationPreferenceRepository:
         return str(row["episode_id"]) if row else None
 
     def profile(self, profile_version_id: str) -> dict[str, Any] | None:
-        row = self.connection.execute(
-            """SELECT v.id, v.version_no, v.capability, v.status, v.capability_json, p.code, p.title
-            FROM execution_profile_versions v JOIN execution_profiles p ON p.id=v.execution_profile_id
-            WHERE v.id=?""",
-            (profile_version_id,),
-        ).fetchone()
+        try:
+            row = self.connection.execute(
+                """SELECT v.id, v.version_no, v.capability, v.status, v.capability_json,
+                v.model_bundle_json, v.parameter_schema_json, p.code, p.title
+                FROM execution_profile_versions v JOIN execution_profiles p ON p.id=v.execution_profile_id
+                WHERE v.id=?""",
+                (profile_version_id,),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            # Keep the resolver usable against the compact legacy test/read
+            # schema, which predates model bundle columns.
+            row = self.connection.execute(
+                """SELECT v.id, v.version_no, v.capability, v.status, v.capability_json, p.code, p.title
+                FROM execution_profile_versions v JOIN execution_profiles p ON p.id=v.execution_profile_id
+                WHERE v.id=?""",
+                (profile_version_id,),
+            ).fetchone()
         if row is None:
             return None
         item = dict(row)
         capability_json = json.loads(str(item.pop("capability_json") or "{}"))
         item["resources"] = capability_json.get("resources", {})
+        bundle = json.loads(str(item.pop("model_bundle_json", "{}") or "{}"))
+        parameter_schema = json.loads(str(item.pop("parameter_schema_json", "{}") or "{}"))
+        item["model_bundle"] = bundle if isinstance(bundle, dict) else {}
+        item["parameter_schema"] = parameter_schema if isinstance(parameter_schema, dict) else {}
+        item["override_schema"] = item["model_bundle"].get("override_schema") or item["parameter_schema"].get("override_schema") or {}
         return item
 
     def auto_profile(self, capability: str) -> dict[str, Any] | None:

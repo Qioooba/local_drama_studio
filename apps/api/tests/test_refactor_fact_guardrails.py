@@ -64,8 +64,13 @@ def _published_profile(workspace, database) -> str:
                 workflow_version_id,
                 workflow_id,
                 "b" * 64,
-                json.dumps({"1": {"class_type": "LoadImage", "inputs": {"image": ""}}}),
-                json.dumps({"FIRST_FRAME": {"node_id": "1", "input": "image", "type": "image"}}),
+                json.dumps({"1": {"class_type": "LoadImage", "inputs": {"image": "", "seed": 0}}}),
+                json.dumps(
+                    {
+                        "FIRST_FRAME": {"node_id": "1", "input": "image", "type": "image"},
+                        "SEED": {"node_id": "1", "input": "seed", "type": "integer"},
+                    }
+                ),
                 now,
                 now,
                 now,
@@ -85,7 +90,7 @@ def _variant_plan(profile_version_id: str, media_version_id: str, *, seed: int =
         branch_reason=branch_reason,
         prompt_revision_id=None,
         profile_version_id=profile_version_id,
-        parameter_set={"frames": 81, "steps": 20},
+        parameter_set={"frames": 81, "steps": 20, "SEED": seed},
         seed_policy="EXPLICIT",
         explicit_seed=seed,
         bindings=(VariantInput("FIRST_FRAME", media_version_id),),

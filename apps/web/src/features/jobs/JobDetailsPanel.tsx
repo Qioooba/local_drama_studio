@@ -2,13 +2,40 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getJob, promoteJobArtifactToMedia, type JobArtifact } from "../../generated/api";
 import { queryKeys } from "../../query/queryKeys";
+import { MEDIA_PURPOSE_LABELS, MEDIA_PURPOSE_OPTIONS } from "../shared/formOptions";
+import { MEDIA_STAGE_LABELS } from "../shared/optionLabels";
+
+function artifactMediaKind(artifact: JobArtifact): "IMAGE" | "VIDEO" | "AUDIO" | null {
+  const suffix = artifact.sandbox_rel_path.toLowerCase().split("?")[0];
+  if (/\.(png|jpe?g|webp|gif|bmp|tiff?)$/.test(suffix)) return "IMAGE";
+  if (/\.(mp4|mov|mkv|webm|avi|m4v)$/.test(suffix)) return "VIDEO";
+  if (/\.(wav|mp3|m4a|aac|flac|ogg|opus)$/.test(suffix)) return "AUDIO";
+  return null;
+}
+
+function progressText(state: string, progress: Record<string, unknown>) {
+  if (state === "SUCCEEDED") return "SUCCEEDED · 100%";
+  if (["FAILED", "CANCELLED", "NEEDS_ATTENTION", "ORPHANED"].includes(state)) return state;
+  const phase = String(progress.phase ?? state ?? "RUNNING");
+  const numeric = Number(progress.percent);
+  if (!Number.isFinite(numeric)) return phase;
+  const percent = Math.max(0, Math.min(100, Math.round(numeric)));
+  const stepNumeric = Number(progress.step_percent);
+  const step = Number.isFinite(stepNumeric) ? ` · 当前编码步骤 ${Math.max(0, Math.min(100, Math.round(stepNumeric)))}%` : "";
+  return `${phase} · 总体 ${percent}%${step}`;
+}
 
 export function JobDetailsPanel({ jobId, onChanged }: { jobId: string | null; onChanged?: () => void }) {
-  const detail = useQuery({ queryKey: queryKeys.jobs.detail(jobId ?? "missing"), queryFn: () => getJob(jobId as string), enabled: Boolean(jobId) });
+  const detail = useQuery({
+    queryKey: queryKeys.jobs.detail(jobId ?? "missing"),
+    queryFn: () => getJob(jobId as string),
+    enabled: Boolean(jobId),
+    refetchOnMount: "always",
+    refetchInterval: 3000,
+  });
   const [busy, setBusy] = useState<string | null>(null);
-  const [kind, setKind] = useState<"IMAGE" | "VIDEO" | "AUDIO">("VIDEO");
   const [stage, setStage] = useState<"KEYFRAME" | "PROXY" | "FORMAL" | "TIMELINE">("PROXY");
-  const [purpose, setPurpose] = useState("GENERATED_OUTPUT");
+  const [purpose, setPurpose] = useState<(typeof MEDIA_PURPOSE_OPTIONS)[number]>("GENERATED_OUTPUT");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   if (!jobId) return null;
@@ -16,15 +43,51 @@ export function JobDetailsPanel({ jobId, onChanged }: { jobId: string | null; on
   const promote = async (artifact: JobArtifact) => {
     setBusy(artifact.id); setError(null); setMessage(null);
     try {
-      const result = await promoteJobArtifactToMedia(artifact.id, { purpose: purpose.trim() || "GENERATED_OUTPUT", media_kind: kind, stage });
+      const detectedKind = artifactMediaKind(artifact);
+      if (!detectedKind) throw new Error("该产物不是可登记的图片、视频或音频文件");
+      const result = await promoteJobArtifactToMedia(artifact.id, { purpose, media_kind: detectedKind, stage });
       setMessage(`产物已登记为媒体版本：${String(result.media.media_version_id ?? result.media.id ?? "已完成").slice(0, 16)}`);
       await detail.refetch();
       onChanged?.();
     } catch (caught) { setError(String(caught)); }
     finally { setBusy(null); }
   };
+  const hasAttemptError = Boolean(job?.attempts?.some((attempt) => attempt.error_code));
   return <section className="panel job-details-panel" aria-labelledby="job-details-title">
-    <div className="panel-heading"><div><p className="eyebrow">FR-JOB-005 · 产物谱系</p><h3 id="job-details-title">任务详情与产物登记</h3></div><span className="status-pill neutral">不可变媒体</span></div>
-    {detail.isPending ? <p className="empty-state">正在读取任务尝试与产物…</p> : detail.error ? <p className="inline-error" role="alert">任务详情读取失败：{String(detail.error)}</p> : job && <><div className="review-meta"><span>Job：{job.id.slice(0, 16)}…</span><span>状态：{job.state}</span><span>输入快照：{JSON.stringify(job.input_snapshot ?? {}).slice(0, 120)}</span></div><div className="field-grid"><label>登记媒体类型<select value={kind} onChange={(event) => setKind(event.target.value as typeof kind)}><option value="VIDEO">VIDEO</option><option value="IMAGE">IMAGE</option><option value="AUDIO">AUDIO</option></select></label><label>登记阶段<select value={stage} onChange={(event) => setStage(event.target.value as typeof stage)}><option value="PROXY">PROXY</option><option value="KEYFRAME">KEYFRAME</option><option value="FORMAL">FORMAL</option><option value="TIMELINE">TIMELINE</option></select></label><label>媒体用途<input value={purpose} onChange={(event) => setPurpose(event.target.value)} /></label></div><div className="job-attempt-list">{job.attempts?.length ? job.attempts.map((attempt) => <article className="job-attempt" key={String(attempt.id)}><div><strong>Attempt {String(attempt.attempt_no ?? "?")}</strong><span>{String(attempt.state ?? "UNKNOWN")}</span></div>{(attempt.artifacts ?? []).length ? <div className="artifact-list">{(attempt.artifacts ?? []).map((artifact) => <div className="artifact-row" key={artifact.id}><span>{artifact.kind} · {artifact.status} · {String(artifact.sha256 ?? "").slice(0, 12) || "—"}…</span><button className="secondary" type="button" onClick={() => void promote(artifact)} disabled={busy !== null || artifact.status !== "VERIFIED"}>{busy === artifact.id ? "登记中…" : "登记为媒体版本"}</button></div>)}</div> : <small className="muted">该尝试暂无已验证产物。</small>}</article>) : <p className="empty-state">该任务还没有 Attempt。</p>}</div>{message && <p className="review-success" role="status">{message}</p>}{error && <p className="inline-error" role="alert">产物登记失败：{error}</p>}</>}
+    <div className="panel-heading"><div><p className="eyebrow">任务产物谱系</p><h3 id="job-details-title">任务详情与产物登记</h3></div><span className="status-pill neutral">不可变媒体</span></div>
+    {detail.isPending ? <p className="empty-state">正在读取任务尝试与产物…</p> : detail.error ? <p className="inline-error" role="alert">任务详情读取失败：{String(detail.error)}</p> : job && <>
+      <div className="review-meta job-detail-meta">
+        <span>Job：{job.id.slice(0, 16)}…</span>
+        <span className="job-state-meta">状态 <span className={`status-pill state-${job.state.toLowerCase()}`}>{job.state}</span></span>
+      </div>
+      <details className="job-input-snapshot">
+        <summary>查看输入快照</summary>
+        <pre><code>{JSON.stringify(job.input_snapshot ?? {}, null, 2)}</code></pre>
+      </details>
+      {job.progress && Object.keys(job.progress).length > 0 && <p className="muted" role="status">当前进度：{progressText(job.state, job.progress)}</p>}
+      {job.last_error_code && !hasAttemptError && <p className="inline-error" role="alert"><strong>{job.last_error_code}</strong>{job.last_error_detail_redacted ? `：${job.last_error_detail_redacted}` : ""}</p>}
+      <div className="field-grid">
+        <div className="field-fact"><span>登记媒体类型</span><strong>由产物文件自动识别</strong></div>
+        <label>登记阶段<select value={stage} onChange={(event) => setStage(event.target.value as typeof stage)}>{(["PROXY", "KEYFRAME", "FORMAL", "TIMELINE"] as const).map((value) => <option key={value} value={value}>{MEDIA_STAGE_LABELS[value]}</option>)}</select></label>
+        <label>媒体用途<select value={purpose} onChange={(event) => setPurpose(event.target.value as typeof purpose)}>{MEDIA_PURPOSE_OPTIONS.map((value) => <option key={value} value={value}>{MEDIA_PURPOSE_LABELS[value]}</option>)}</select></label>
+      </div>
+      <div className="job-attempt-list">
+        {job.attempts?.length ? job.attempts.map((attempt) => {
+          const attemptState = String(attempt.state ?? "UNKNOWN");
+          return <article className="job-attempt" key={String(attempt.id)}>
+            <div><strong>Attempt {String(attempt.attempt_no ?? "?")}</strong><span className={`status-pill state-${attemptState.toLowerCase()}`}>{attemptState}</span></div>
+            {attempt.progress && Object.keys(attempt.progress).length > 0 && <small className="muted">进度：{progressText(attemptState, attempt.progress)}</small>}
+            {attempt.error_code && <small className="inline-error"><strong>{attempt.error_code}</strong>{attempt.error_detail_redacted ? `：${attempt.error_detail_redacted}` : ""}</small>}
+            {(attempt.artifacts ?? []).length ? <div className="artifact-list">{(attempt.artifacts ?? []).map((artifact) => {
+              const detectedKind = artifactMediaKind(artifact);
+              const promoted = Boolean(artifact.promoted_media_version_id);
+              return <div className="artifact-row" key={artifact.id}><span>{artifact.kind} · {artifact.status} · {String(artifact.sha256 ?? "").slice(0, 12) || "—"}…{detectedKind ? ` · ${detectedKind}` : " · 非媒体产物"}</span><button className="secondary" type="button" onClick={() => void promote(artifact)} disabled={busy !== null || artifact.status !== "VERIFIED" || !detectedKind || promoted}>{busy === artifact.id ? "登记中…" : promoted && detectedKind ? `已登记为 ${detectedKind} 媒体版本` : detectedKind ? `登记为 ${detectedKind} 媒体版本` : "不可登记为媒体"}</button></div>;
+            })}</div> : <small className="muted">该尝试暂无已验证产物。</small>}
+          </article>;
+        }) : <p className="empty-state">该任务还没有 Attempt。</p>}
+      </div>
+      {message && <p className="review-success" role="status">{message}</p>}
+      {error && <p className="inline-error" role="alert">产物登记失败：{error}</p>}
+    </>}
   </section>;
 }

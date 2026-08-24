@@ -142,14 +142,15 @@ async def register_artifact(attempt_id: str, payload: ArtifactRegisterRequest, r
 @router.post("/artifacts/{artifact_id}:promote-media", status_code=201, operation_id="promoteJobArtifactToMedia")
 async def promote_artifact(artifact_id: str, payload: ArtifactPromoteRequest, request: Request) -> dict[str, object]:
     try:
-        return {
-            "media": MediaService(request.app.state.database, request.app.state.settings).promote_job_artifact(
-                artifact_id,
-                purpose=payload.purpose,
-                media_kind=payload.media_kind,
-                stage=payload.stage,
-            )
-        }
+        media_service = MediaService(request.app.state.database, request.app.state.settings)
+        media = media_service.promote_job_artifact(
+            artifact_id,
+            purpose=payload.purpose,
+            media_kind=payload.media_kind,
+            stage=payload.stage,
+        )
+        media["derivative_jobs"] = media_service.submit_default_derivatives(str(media["media_version_id"]))
+        return {"media": media}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

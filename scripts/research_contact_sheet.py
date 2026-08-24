@@ -6,7 +6,6 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-
 DEFAULT_SEGMENT_HEIGHT = 720
 THUMB_SIZE = (320, 180)
 LABEL_HEIGHT = 34

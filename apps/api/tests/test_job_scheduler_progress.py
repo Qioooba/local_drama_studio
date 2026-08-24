@@ -61,6 +61,14 @@ def test_progress_and_attempt_logs_survive_service_recreation(workspace, databas
         assert logs.status_code == 200
         assert any(item["type"] == "JOB_HEARTBEAT" for item in logs.json()["items"])
 
+    result = jobs.complete(str(attempt["id"]), str(attempt["lease_token"]), "progress-worker", success=True)
+    assert result["job_state"] == "SUCCEEDED"
+    completed = jobs.get_job(str(job["id"]))
+    assert completed["progress"]["phase"] == "SUCCEEDED"
+    assert completed["progress"]["percent"] == 100
+    assert completed["attempts"][0]["progress"]["phase"] == "SUCCEEDED"
+    assert completed["attempts"][0]["progress"]["percent"] == 100
+
 
 def test_gpu_heavy_resource_is_exclusive_but_cpu_is_independent(workspace, database) -> None:
     project = _project(workspace, database, "scheduler_resources")

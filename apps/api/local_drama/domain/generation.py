@@ -37,6 +37,7 @@ class VariantPlan:
     explicit_seed: int | None
     bindings: tuple[VariantInput, ...]
     provider_random_nonce: str | None = None
+    expected_effective_configuration_fingerprint: str | None = None
 
     def validate(self, *, variant_id: str, ancestors: set[str], allowed_roles: set[str]) -> None:
         if self.variant_type not in VALID_VARIANT_TYPES:

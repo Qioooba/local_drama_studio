@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
 from local_drama.application.dialogue import DialogueService
@@ -46,6 +48,54 @@ def test_local_sapi_voice_discovery_is_read_only(workspace, database, monkeypatc
         assert int(connection.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0]) == before
 
 
+def test_publish_local_sapi_profile_requires_real_wav_probe(workspace, database, monkeypatch) -> None:
+    def fake_run(*_args, **kwargs):
+        if "env" not in kwargs:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps([{"name": "Microsoft Huihui Desktop", "culture": "zh-CN", "gender": "Female", "age": "Adult"}]),
+                stderr="",
+            )
+        output = Path(kwargs["env"]["LD_SAPI_OUTPUT"])
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"RIFF" + b"\x00" * 256)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("local_drama.application.dialogue.shutil.which", lambda _name: "powershell.exe")
+    monkeypatch.setattr("local_drama.application.dialogue.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "local_drama.application.dialogue.MediaService._probe",
+        lambda *_args, **_kwargs: {"probe_status": "PASS", "streams": [{"codec_type": "audio", "codec_name": "pcm_s16le"}], "format": {"duration": "0.25"}},
+    )
+    service = DialogueService(database, workspace)
+    published = service.publish_local_sapi_profile("sapi:Microsoft Huihui Desktop", "验收短句")
+    replay = service.publish_local_sapi_profile("sapi:Microsoft Huihui Desktop", "验收短句")
+    assert published["status"] == "PUBLISHED"
+    assert published["capability"] == "TTS"
+    assert len(published["evidence"]["smoke_sha256"]) == 64
+    assert published["evidence"]["network_contacted"] is False
+    assert replay["id"] == published["id"]
+    with database.connect() as connection:
+        row = connection.execute("SELECT capability,status,capability_json FROM execution_profile_versions WHERE id=?", (published["id"],)).fetchone()
+    assert row is not None and row["capability"] == "TTS" and row["status"] == "PUBLISHED"
+    assert json.loads(row["capability_json"])["smoke_sha256"] == published["evidence"]["smoke_sha256"]
+
+
+def test_publish_local_sapi_profile_rejects_unscanned_voice(workspace, database, monkeypatch) -> None:
+    monkeypatch.setattr(
+        DialogueService,
+        "discover_local_sapi_voices",
+        lambda _self: {"status": "AVAILABLE", "items": [], "message": None, "runtime_contacted": True, "network_contacted": False, "mutated": False},
+    )
+    service = DialogueService(database, workspace)
+    try:
+        service.publish_local_sapi_profile("sapi:Not Installed")
+    except Exception as error:  # domain code is the contract under test
+        assert getattr(error, "code", None) == "SAPI_VOICE_NOT_DISCOVERED"
+    else:
+        raise AssertionError("undiscovered voice must fail closed")
+
+
 def _published_sapi_profile(database) -> str:
     with database.transaction() as connection:
         connection.execute("INSERT INTO execution_profiles (id,code,title) VALUES ('sapi-tts','sapi-local-tts','Windows SAPI local TTS')")
@@ -62,6 +112,12 @@ def _published_sapi_profile(database) -> str:
 
 
 def test_real_windows_sapi_job_artifact_promotion_and_formal_candidate(workspace, database) -> None:
+    discovery = DialogueService(database, workspace).discover_local_sapi_voices()
+    expected_voice = "Microsoft Huihui Desktop"
+    if discovery["status"] != "AVAILABLE" or expected_voice not in {
+        str(item["name"]) for item in discovery["items"]
+    }:
+        pytest.skip(f"real Windows SAPI voice unavailable: {discovery['status']}")
     project = ProjectService(database, workspace.projects_root).create_project(
         code="real_sapi_tts",
         title="Real SAPI TTS",
@@ -128,7 +184,14 @@ def test_real_windows_sapi_job_artifact_promotion_and_formal_candidate(workspace
         assert premature.json()["error"]["code"] == "TTS_JOB_NOT_FINALIZABLE"
     worker_result = LocalMediaWorker(database, workspace).run_once("sapi-real-worker", ["CPU"])
     assert worker_result is not None
-    assert worker_result["result"]["job_state"] == "SUCCEEDED"
+    with database.connect() as connection:
+        worker_error = connection.execute(
+            "SELECT error_detail_redacted FROM job_attempts WHERE id=?", (worker_result["attempt"]["id"],)
+        ).fetchone()
+    assert worker_result["result"]["job_state"] == "SUCCEEDED", {
+        "code": worker_result.get("error"),
+        "detail": worker_error["error_detail_redacted"] if worker_error else None,
+    }
     assert worker_result["artifact"]["kind"] == "TTS_AUDIO"
     output = workspace.work_root / str(worker_result["artifact"]["sandbox_rel_path"])
     assert output.is_file() and output.stat().st_size > 44

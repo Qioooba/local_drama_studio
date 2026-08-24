@@ -1,91 +1,181 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { commitStoryboardBatch, getStoryboardWorkspace, planStoryboardBatch, type StoryboardWorkspace } from "../../generated/api";
-import { StoryboardBatchWorkbench } from "./StoryboardBatchWorkbench";
+import { getStoryboardWorkspace, planStoryboardBatch } from "../../generated/api";
+import { getShotEditContext, planShotEdit } from "../episode-plan-v2/shotEditingApi";
 import { getShotGroupWorkspace } from "../episode-plan-v2/shotGroupsApi";
-import { getEpisodePlanAssets, runPerShot } from "../episode-plan-v2/episodePlanTableApi";
-import { getShotEditContext } from "../episode-plan-v2/shotEditingApi";
+import { getEpisodePlanAssets } from "../episode-plan-v2/episodePlanTableApi";
+import { getDirectorRecipeBinding } from "../recipes-v2/api";
+import { StoryboardBatchWorkbench, storyboardDraftKey } from "./StoryboardBatchWorkbench";
 
-vi.mock("../../generated/api", () => ({ commitStoryboardBatch: vi.fn(), getStoryboardWorkspace: vi.fn(), planStoryboardBatch: vi.fn() }));
-vi.mock("../episode-plan-v2/shotGroupsApi", () => ({ getShotGroupWorkspace: vi.fn() }));
-vi.mock("../episode-plan-v2/shotEditingApi", () => ({ commitShotEdit: vi.fn(), getShotEditContext: vi.fn(), planShotEdit: vi.fn() }));
-vi.mock("../episode-plan-v2/episodePlanTableApi", () => ({
-  getEpisodePlanAssets: vi.fn(), markEpisodePlanShotReady: vi.fn(),
-  runPerShot: vi.fn(), setEpisodePlanShotAssetState: vi.fn(),
+vi.mock("../../generated/api", () => ({
+  getStoryboardWorkspace: vi.fn(),
+  planStoryboardBatch: vi.fn(),
+  commitStoryboardBatch: vi.fn(),
 }));
-const shot = (id: string, code: string, duration: number, revision = 1) => ({ id, code, order_key: "1", target_duration_ms: duration, shot_type: "OTHER", status: "DRAFT", revision, current_revision_id: `r-${id}`, current_revision_no: 1, is_frozen: 0, fields: { action: `${code} 动作` }, display_ordinal: 1, timeline_start_ms: 0, timeline_end_ms: duration });
-const workspace: StoryboardWorkspace = { episode: { id: "ep-1", title: "第一集" }, items: [shot("a", "SH-001", 1000), shot("b", "SH-002", 2000)], views: ["TABLE", "STORYBOARD", "TIMELINE"], identity_invariant: "stable", total_duration_ms: 3000 };
-const renderPanel = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><StoryboardBatchWorkbench episodeId="ep-1" /></QueryClientProvider>);
 
-describe("StoryboardBatchWorkbench", () => {
+vi.mock("../episode-plan-v2/shotEditingApi", () => ({
+  getShotEditContext: vi.fn(),
+  planShotEdit: vi.fn(),
+  commitShotEdit: vi.fn(),
+}));
+
+vi.mock("../episode-plan-v2/shotGroupsApi", () => ({
+  getShotGroupWorkspace: vi.fn(),
+}));
+
+vi.mock("../episode-plan-v2/episodePlanTableApi", () => ({
+  getEpisodePlanAssets: vi.fn(),
+  markEpisodePlanShotReady: vi.fn(),
+  setEpisodePlanShotAssetState: vi.fn(),
+  runPerShot: vi.fn(),
+}));
+
+vi.mock("../recipes-v2/api", () => ({
+  getDirectorRecipeBinding: vi.fn(),
+}));
+
+const shots = [
+  { id: "shot-1", code: "SH-001", target_duration_ms: 3000, shot_type: "MEDIUM", status: "DRAFT", revision: 2, fields: { action: "turn" } },
+  { id: "shot-2", code: "SH-002", target_duration_ms: 2000, shot_type: "WIDE", status: "DRAFT", revision: 1, fields: {} },
+];
+
+function renderWorkbench(projectId?: string) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <StoryboardBatchWorkbench episodeId="episode-1" projectId={projectId} />
+    </QueryClientProvider>,
+  );
+}
+
+describe("StoryboardBatchWorkbench creator-safe structure editing", () => {
   beforeEach(() => {
-    vi.mocked(getStoryboardWorkspace).mockReset().mockResolvedValue({ storyboard: workspace });
-    vi.mocked(planStoryboardBatch).mockReset().mockResolvedValue({ plan: { ordered_shot_ids: ["b", "a"], edits: [{ shot_id: "a", expected_revision: 1, target_duration_ms: 4500, shot_type: "OTHER" }], copies: [], plan_hash: "f".repeat(64), valid: true, issues: [], summary: { reordered: 2, edited: 1, copied: 0 }, runtime_contacted: false, network_contacted: false } });
-    vi.mocked(commitStoryboardBatch).mockReset().mockResolvedValue({ result: { plan_hash: "f".repeat(64), changed_shot_ids: ["a"], copied_shot_ids: [], storyboard: workspace } });
-    vi.mocked(getShotGroupWorkspace).mockReset().mockResolvedValue({ episode: { id: "ep-1", code: "E01", title: "第一集", project_id: "p-1" }, scenes: [], shots: [], groups: [] });
-    vi.mocked(getShotEditContext).mockReset().mockResolvedValue({ episode_id: "ep-1", ordering_token: "token", items: [] });
-    vi.mocked(getEpisodePlanAssets).mockReset().mockResolvedValue([]);
-    vi.mocked(runPerShot).mockReset();
+    window.localStorage.clear();
+    Element.prototype.scrollIntoView = vi.fn();
+    vi.mocked(getStoryboardWorkspace).mockResolvedValue({
+      storyboard: { items: shots, views: ["TABLE", "STORYBOARD", "TIMELINE"], identity_invariant: "stable", total_duration_ms: 5000 },
+    } as never);
+    vi.mocked(getShotEditContext).mockResolvedValue({
+      episode_id: "episode-1",
+      ordering_token: "order-token",
+      items: shots.map(({ id, code, target_duration_ms, revision }, index) => ({ id, code, target_duration_ms, revision, order_key: String(index + 1) })),
+    });
+    vi.mocked(getShotGroupWorkspace).mockResolvedValue({
+      episode: { id: "episode-1", code: "EP01", title: "Episode 1", project_id: "project-1" },
+      groups: [], scenes: [], shots: [],
+    });
+    vi.mocked(getEpisodePlanAssets).mockResolvedValue([]);
+    vi.mocked(planShotEdit).mockResolvedValue({
+      plan_hash: "plan-hash",
+      valid: true,
+      issues: [],
+      summary: { reordered: false, split: 1 },
+      effects: { timeline: "STALE", selected_results: "UNCHANGED", asset_bindings: "COPIED" },
+      ordered_shot_ids: ["shot-1", "shot-2"],
+    });
+    vi.mocked(planStoryboardBatch).mockResolvedValue({
+      plan: {
+        ordered_shot_ids: ["shot-1", "shot-2"], edits: [], copies: [], plan_hash: "e".repeat(64), valid: true, issues: [],
+        summary: { reordered: 0, edited: 0, copied: 0 }, runtime_contacted: false, network_contacted: false,
+      },
+    } as never);
   });
-  it("switches all three views and displays content", async () => {
-    renderPanel();
+
+  it("uses an inline ratio preview, automatic child codes, autosave, and undo", async () => {
+    renderWorkbench();
     await screen.findByText("SH-001");
-    fireEvent.click(screen.getByRole("button", { name: "故事板" }));
-    expect(screen.getByText("SH-001 动作")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "时间线" }));
-    expect(screen.getByText("1000 ms")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "全宽结构编排" }));
+    expect(screen.getByRole("heading", { name: "重排、拆分与复制" })).toBeTruthy();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "拆分镜头" }), { target: { value: "shot-1" } });
+    const ratio = screen.getByLabelText("拆分比例") as HTMLInputElement;
+    expect(ratio.value).toBe("50");
+    expect(screen.getByText("第一段编号").parentElement?.textContent).toContain("SH-001-A");
+    expect(screen.getByText("第二段编号").parentElement?.textContent).toContain("SH-001-B");
+    expect(screen.queryByLabelText("第一段编号")).toBeNull();
+
+    fireEvent.change(ratio, { target: { value: "70" } });
+    expect(screen.getByText("2.10 秒")).toBeTruthy();
+    expect(screen.getByText("0.90 秒")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "加入拆分计划" }));
+    await waitFor(() => expect(window.localStorage.getItem(storyboardDraftKey("episode-1"))).toContain('"first_duration_ms":2100'));
+
+    fireEvent.click(screen.getByRole("button", { name: "预览重排 / 拆分" }));
+    await waitFor(() => expect(planShotEdit).toHaveBeenCalledWith("episode-1", expect.objectContaining({
+      ordering_token: "order-token",
+      splits: [expect.objectContaining({ shot_id: "shot-1", first_code: "SH-001-A", second_code: "SH-001-B", first_duration_ms: 2100 })],
+    })));
+
+    fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+    expect(screen.getByRole("button", { name: "预览重排 / 拆分" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "重做" })).toHaveProperty("disabled", false);
   });
 
-  it("edits while freezing the expected revision into explicit commit via drawer", async () => {
-    renderPanel();
-    await screen.findByText("SH-001");
-    const editBtns = screen.getAllByRole("button", { name: "编辑详情" });
-    fireEvent.click(editBtns[0]);
-    fireEvent.change(screen.getByLabelText("SH-001 时长"), { target: { value: "4500" } });
-    fireEvent.click(screen.getByRole("button", { name: "关闭抽屉" }));
+  it("restores a revision-matched episode draft without leaking it into server state", async () => {
+    window.localStorage.setItem(storyboardDraftKey("episode-1"), JSON.stringify({
+      version: 1,
+      episodeId: "episode-1",
+      sourceRevisions: { "shot-1": 2, "shot-2": 1 },
+      orderedIds: ["shot-1", "shot-2"],
+      edits: { "shot-1": { target_duration_ms: "4200", shot_type: "CLOSEUP" } },
+      copies: [],
+      pendingReorder: null,
+      splits: [],
+      copySource: "",
+      copyCode: "",
+      splitSource: "",
+      splitAt: "",
+      splitCodes: { first: "", second: "" },
+      savedAt: "2026-08-24T00:00:00Z",
+    }));
+    renderWorkbench();
 
-    fireEvent.click(screen.getByRole("button", { name: "重排、拆分与复制" }));
-    fireEvent.click(screen.getByRole("button", { name: "校验字段 / 复制计划" }));
-    await waitFor(() => expect(planStoryboardBatch).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: "确认字段 / 复制" }));
-    await waitFor(() => expect(commitStoryboardBatch).toHaveBeenCalled());
-    expect(vi.mocked(commitStoryboardBatch).mock.calls[0][1].ordered_shot_ids).toEqual(["a", "b"]);
-    expect(vi.mocked(commitStoryboardBatch).mock.calls[0][1].edits[0]).toMatchObject({ shot_id: "a", expected_revision: 1, target_duration_ms: 4500 });
+    expect(await screen.findByText("已恢复本集尚未提交的分镜编辑计划。")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "编辑详情" })[0]);
+    expect((screen.getByLabelText("SH-001 时长") as HTMLInputElement).value).toBe("4200");
+    expect((screen.getByLabelText("SH-001 类型") as HTMLSelectElement).value).toBe("CLOSEUP");
   });
 
-  it("reports per-shot Production Ready partial success without claiming atomicity", async () => {
-    vi.mocked(runPerShot).mockResolvedValue([
-      { shotId: "a", ok: true, message: "已提交" },
-      { shotId: "b", ok: false, message: "缺少导演字段" },
-    ]);
-    renderPanel();
+  it("applies the bound Director Recipe to selected draft edits with immutable provenance", async () => {
+    vi.mocked(getDirectorRecipeBinding).mockResolvedValue({
+      id: "recipe-version-4",
+      recipe_id: "recipe-1",
+      recipe_version_id: "recipe-version-4",
+      project_id: "project-1",
+      code: "DRAMA_FAST",
+      title: "快节奏",
+      version_no: 4,
+      recipe_hash: "f".repeat(64),
+      reason: "approved",
+      is_frozen: true,
+      created_at: "2026-08-24T00:00:00Z",
+      created_by: "local-user",
+      revision: 1,
+      recipe: {
+        aspect_ratio: "9:16",
+        shot_planning: { avg_duration_ms: 3600, dialogue_coverage: "CLOSEUP_INTIMATE" },
+        asset_policy: { character_required_refs: [] },
+        generation: { image: { capability: "IMAGE_CHARACTER" }, video: { capability: "VIDEO_I2V" } },
+        qc_policy_ref: { policy_version_id: "qc-1" },
+      },
+    });
+    renderWorkbench("project-1");
     await screen.findByText("SH-001");
     fireEvent.click(screen.getByLabelText("选择 SH-001"));
-    fireEvent.click(screen.getByLabelText("选择 SH-002"));
     fireEvent.click(screen.getByRole("button", { name: "批量操作" }));
-    fireEvent.click(screen.getByRole("button", { name: "批量 Production Ready" }));
-    expect(await screen.findByText("批量结果：成功 1 · 失败 1")).toBeTruthy();
-    expect(screen.getByText("SH-002：缺少导演字段")).toBeTruthy();
-    expect(runPerShot).toHaveBeenCalledWith(["a", "b"], expect.any(Function));
-  });
-
-  it("applies a shot type to the selected set and includes every expected revision in the preview", async () => {
-    renderPanel();
-    await screen.findByText("SH-001");
-    fireEvent.click(screen.getByLabelText("选择 SH-001"));
-    fireEvent.click(screen.getByLabelText("选择 SH-002"));
-    fireEvent.click(screen.getByRole("button", { name: "批量操作" }));
-    fireEvent.change(screen.getByLabelText("批量镜头类型"), { target: { value: "MEDIUM" } });
-    fireEvent.click(screen.getByRole("button", { name: "应用到所选镜头草稿" }));
-    fireEvent.click(screen.getByRole("button", { name: "关闭抽屉" }));
-
-    fireEvent.click(screen.getByRole("button", { name: "重排、拆分与复制" }));
+    expect(await screen.findByText(/DRAMA_FAST v4/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "套用到所选镜头草稿" }));
+    fireEvent.click(screen.getByRole("button", { name: "全宽结构编排" }));
     fireEvent.click(screen.getByRole("button", { name: "校验字段 / 复制计划" }));
-    await waitFor(() => expect(planStoryboardBatch).toHaveBeenCalled());
-    expect(vi.mocked(planStoryboardBatch).mock.calls[0][1].edits).toEqual([
-      { shot_id: "a", expected_revision: 1, target_duration_ms: 1000, shot_type: "MEDIUM" },
-      { shot_id: "b", expected_revision: 1, target_duration_ms: 2000, shot_type: "MEDIUM" },
-    ]);
+
+    await waitFor(() => expect(planStoryboardBatch).toHaveBeenCalledWith("episode-1", expect.objectContaining({
+      edits: [expect.objectContaining({
+        shot_id: "shot-1",
+        target_duration_ms: 3600,
+        shot_type: "CLOSEUP",
+        fields: { director_recipe_application: expect.objectContaining({ recipe_version_id: "recipe-version-4", recipe_hash: "f".repeat(64), version_no: 4 }) },
+      })],
+    })));
   });
 });

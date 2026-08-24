@@ -36,6 +36,37 @@ def test_registers_user_model_absolute_path_without_copying_or_uploading(workspa
     assert path.read_bytes() == original_hash
 
 
+def test_rejects_non_model_file_before_artifact_registration_and_reports_legacy_reference_as_422(workspace, database) -> None:
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="reject_txt_model", title="Reject txt model", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1,
+        target_duration_ms=60_000, allow_unconfigured_capabilities=True,
+    )
+    path = workspace.work_root / "not-a-model.txt"
+    path.write_text("this is evidence, not a model", encoding="utf-8")
+    with TestClient(create_app(workspace)) as client:
+        before = database.connect().execute("SELECT COUNT(*) FROM model_artifacts").fetchone()[0]
+        rejected = client.post(
+            f"/api/v1/projects/{project['id']}/model-artifacts",
+            json={"code": "not-a-model", "kind": "T2V", "machine_path_ref": str(path)},
+        )
+        assert rejected.status_code == 422, rejected.text
+        assert rejected.json()["error"]["code"] == "MODEL_ARTIFACT_FORMAT_UNSUPPORTED"
+        after = database.connect().execute("SELECT COUNT(*) FROM model_artifacts").fetchone()[0]
+        assert after == before
+
+        with database.transaction() as connection:
+            connection.execute(
+                "INSERT INTO model_artifacts (id,runtime_id,code,kind,machine_path_ref,license_note,compatibility_json,status,created_at,updated_at,created_by,revision,schema_version) VALUES (?,?,?,?,?,?,?,'CANDIDATE',?,?,?,?, 'v2')",
+                ("legacy-txt-artifact", None, "legacy-txt", "T2V", str(path), "legacy", "{}", "now", "now", "test", 1),
+            )
+        legacy = client.post(
+            f"/api/v1/projects/{project['id']}/model-compatibility-report",
+            json={"model_artifact_id": "legacy-txt-artifact", "required_capability": "T2V"},
+        )
+        assert legacy.status_code == 422, legacy.text
+        assert legacy.json()["error"]["code"] == "MODEL_ARTIFACT_FORMAT_UNSUPPORTED"
+
+
 def test_model_report_hashes_user_supplied_safetensors_without_bundling_or_license_block(workspace, database) -> None:
     ProjectService(database, workspace.projects_root).create_project(
         code="model_report", title="Model report", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1,
@@ -56,6 +87,8 @@ def test_model_report_hashes_user_supplied_safetensors_without_bundling_or_licen
     assert report["license_status"] == "UNVERIFIED_NO_LOCAL_LICENSE_EVIDENCE"
     assert report["license_risk"] == "USER_RESPONSIBILITY_UNKNOWN"
     assert report["distribution_scope"] == "REFERENCE_ONLY_NOT_BUNDLED"
+    with database.connect() as connection:
+        assert connection.execute("SELECT status FROM model_artifacts WHERE id=?", (artifact_id,)).fetchone()[0] == "VERIFIED"
 
 
 def test_model_report_rejects_missing_artifact(workspace, database) -> None:
@@ -121,6 +154,8 @@ def test_model_capability_mismatch_is_hard_blocked_for_unicode_space_long_local_
         assert mismatch_report["report_status"] == "BLOCKED"
         assert "MODEL_CAPABILITY_MISMATCH" in mismatch_report["blockers"]
         assert mismatch_report["capability"] == {"required": "T2V", "declared": ["I2V", "VIDEO"], "status": "MISMATCH", "passed": False}
+        with database.connect() as connection:
+            assert connection.execute("SELECT status FROM model_artifacts WHERE id=?", (artifact["id"],)).fetchone()[0] == "CANDIDATE"
 
         compatible = client.post(
             f"/api/v1/projects/{project['id']}/model-compatibility-report",

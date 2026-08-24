@@ -163,7 +163,10 @@ class StoryAssetService:
             raise DomainRuleError("STORY_ASSET_NOT_FOUND", "故事资产不存在", {"asset_id": asset_id})
         return self._asset(row)
 
-    def archive_asset(self, asset_id: str, expected_revision: int, actor: str = "local-user") -> dict[str, Any]:
+    def archive_asset(self, asset_id: str, expected_revision: int, reason: str, actor: str = "local-user") -> dict[str, Any]:
+        reason = reason.strip()
+        if not reason:
+            raise DomainRuleError("STORY_ASSET_ARCHIVE_REASON_REQUIRED", "归档资产必须填写原因")
         now = _now()
         with self.database.transaction() as connection:
             row = connection.execute("SELECT * FROM story_assets WHERE id=?", (asset_id,)).fetchone()
@@ -181,7 +184,32 @@ class StoryAssetService:
             connection.execute(
                 """INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,before_revision,after_revision,summary,metadata_redacted_json)
                 VALUES (?,'writer','STORY_ASSET_ARCHIVED','story_asset',?,?,?,'归档故事资产卡（保留绑定关系）',?)""",
-                (actor, asset_id, expected_revision, expected_revision + 1, _json({"project_id": str(row["project_id"]), "kind": str(row["kind"]), "code": str(row["code"])})),
+                (actor, asset_id, expected_revision, expected_revision + 1, _json({"project_id": str(row["project_id"]), "kind": str(row["kind"]), "code": str(row["code"]), "reason": reason})),
+            )
+        return self.get_asset(asset_id)
+
+    def restore_asset(self, asset_id: str, expected_revision: int, reason: str, actor: str = "local-user") -> dict[str, Any]:
+        reason = reason.strip()
+        if not reason:
+            raise DomainRuleError("STORY_ASSET_RESTORE_REASON_REQUIRED", "恢复资产必须填写原因")
+        now = _now()
+        with self.database.transaction() as connection:
+            row = connection.execute("SELECT * FROM story_assets WHERE id=?", (asset_id,)).fetchone()
+            if row is None:
+                raise DomainRuleError("STORY_ASSET_NOT_FOUND", "故事资产不存在", {"asset_id": asset_id})
+            if int(row["revision"]) != expected_revision:
+                raise DomainRuleError(
+                    "STORY_ASSET_REVISION_CONFLICT",
+                    "故事资产已被其他操作修改，请刷新后重试",
+                    {"expected_revision": expected_revision, "actual_revision": int(row["revision"])}
+                )
+            if str(row["status"]) != "ARCHIVED":
+                raise DomainRuleError("STORY_ASSET_NOT_ARCHIVED", "只有已归档资产可以恢复")
+            connection.execute("UPDATE story_assets SET status='ACTIVE',updated_at=?,revision=revision+1 WHERE id=?", (now, asset_id))
+            connection.execute(
+                """INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,before_revision,after_revision,summary,metadata_redacted_json)
+                VALUES (?,'writer','STORY_ASSET_RESTORED','story_asset',?,?,?,'恢复故事资产卡',?)""",
+                (actor, asset_id, expected_revision, expected_revision + 1, _json({"project_id": str(row["project_id"]), "kind": str(row["kind"]), "code": str(row["code"]), "reason": reason})),
             )
         return self.get_asset(asset_id)
 

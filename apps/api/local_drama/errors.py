@@ -53,3 +53,31 @@ async def api_error_handler(request: Request, exc: Exception) -> JSONResponse:
         content={"error": body.model_dump()},
         headers={"X-Request-Id": request_id or ""},
     )
+
+
+async def validation_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    from fastapi.exceptions import RequestValidationError
+
+    if not isinstance(exc, RequestValidationError):
+        raise exc
+    request_id = getattr(request.state, "request_id", None)
+    errors = exc.errors()
+    messages: list[str] = []
+    for err in errors:
+        loc = [str(part) for part in err.get("loc", []) if part != "body"]
+        field_name = ".".join(loc)
+        msg = err.get("msg", "验证失败")
+        messages.append(f"{field_name}: {msg}" if field_name else msg)
+    combined = "；".join(messages) or "请求参数校验失败"
+    body = ErrorBody(
+        code="VALIDATION_ERROR",
+        message=f"参数校验失败: {combined}",
+        request_id=request_id,
+        details={"errors": errors},
+        retryable=False,
+    )
+    return JSONResponse(
+        status_code=422,
+        content={"error": body.model_dump()},
+        headers={"X-Request-Id": request_id or ""},
+    )

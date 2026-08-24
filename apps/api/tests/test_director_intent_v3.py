@@ -235,3 +235,40 @@ def test_ready_audit_outbox_and_invalid_transition_emit_nothing(workspace, datab
             connection.execute("SELECT COUNT(*) FROM audit_events WHERE subject_id=?", (shot["id"],)).fetchone()[0],
             connection.execute("SELECT COUNT(*) FROM outbox_events WHERE subject_id=?", (shot["id"],)).fetchone()[0],
         ) == event_counts
+
+
+def test_save_and_ready_is_atomic_for_revision_status_and_events(workspace, database) -> None:
+    _project, _episode, shot, service = _project_and_shot(workspace, database, "director_v3_atomic_ready")
+    complete = {
+        field: "" if field in {"dialogue", "environment"} else 4_000 if field == "target_duration_ms" else field
+        for field in REQUIRED_SHOT_FIELDS
+    }
+    profile_id = _published_camera_profile(workspace, database, "NATIVE")
+    complete["camera_plan"] = {
+        "mode": "NATIVE", "shot_type": "CLOSEUP", "movement": "PUSH_IN", "prompt_text": "",
+        "direction": "FORWARD", "intensity": 0.5, "curve": "EASE_IN_OUT", "profile_version_id": profile_id,
+    }
+    service.create_shot_revision(str(shot["id"]), complete, expected_revision_no=1)
+    changed = {**complete, "subject_action": "原子保存后的动作"}
+    with TestClient(create_app(workspace)) as client:
+        stale = client.post(
+            f"/api/v1/projects/shots/{shot['id']}:save-and-ready",
+            json={"fields": changed, "expected_revision_no": 1},
+        )
+        assert stale.status_code == 409
+        with database.connect() as connection:
+            assert connection.execute("SELECT COUNT(*) FROM shot_revisions WHERE shot_id=?", (shot["id"],)).fetchone()[0] == 2
+            assert connection.execute("SELECT status FROM shots WHERE id=?", (shot["id"],)).fetchone()["status"] == "DIRECTED"
+        saved = client.post(
+            f"/api/v1/projects/shots/{shot['id']}:save-and-ready",
+            json={"fields": changed, "freeze": True, "expected_revision_no": 2},
+        )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["shot_revision"]["revision_no"] == 3
+    assert saved.json()["shot_revision"]["is_frozen"] is True
+    assert saved.json()["shot"]["status"] == "READY"
+    with database.connect() as connection:
+        current = connection.execute("SELECT status,current_revision_id FROM shots WHERE id=?", (shot["id"],)).fetchone()
+        assert current["status"] == "READY" and current["current_revision_id"] == saved.json()["shot_revision"]["id"]
+        actions = [row["action"] for row in connection.execute("SELECT action FROM audit_events WHERE subject_id=?", (shot["id"],)).fetchall()]
+    assert "SHOT_REVISION_CREATED" in actions and "SHOT_MARKED_PRODUCTION_READY" in actions

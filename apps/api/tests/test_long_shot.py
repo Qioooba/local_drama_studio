@@ -7,10 +7,12 @@ from pathlib import Path
 
 import pytest
 
+from local_drama.application.background_operations import BackgroundOperationService
 from local_drama.application.long_shot import grid_frame_count, plan_segments
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
 from local_drama.application.timeline import TimelineService
+from local_drama.application.worker import LocalMediaWorker
 from local_drama.domain.errors import DomainRuleError
 
 FPS = 24.0
@@ -127,13 +129,22 @@ def test_render_segmented_episode_concats_two_real_videos(workspace, database) -
         [{"track_type": "VIDEO", "media_version_id": str(first["media_version_id"]), "start_us": 0, "end_us": 1_000_000, "parameters": {}}],
         {"source": "long-shot-test"},
     )
-    render = TimelineService(database, workspace).render_segmented_episode(
+    segments = [
+        {"media_version_id": str(first["media_version_id"]), "segment_no": 1, "start_seconds": 0.0, "end_seconds": 1.0, "frames": 24, "continuation": None},
+        {"media_version_id": str(second["media_version_id"]), "segment_no": 2, "start_seconds": 1.0, "end_seconds": 2.0, "frames": 24, "continuation": {"from_segment_no": 1, "mode": "LAST_FRAME_TO_FIRST_FRAME", "shared_frame_count": 1}},
+    ]
+    submission = BackgroundOperationService(database, workspace).submit_segmented_compose(
         str(timeline["id"]),
-        [
-            {"media_version_id": str(first["media_version_id"]), "segment_no": 1, "start_seconds": 0.0, "end_seconds": 1.0, "frames": 24, "continuation": None},
-            {"media_version_id": str(second["media_version_id"]), "segment_no": 2, "start_seconds": 1.0, "end_seconds": 2.0, "frames": 24, "continuation": {"from_segment_no": 1, "mode": "LAST_FRAME_TO_FIRST_FRAME", "shared_frame_count": 1}},
-        ],
+        segments,
     )
+    assert submission["job"]["type"] == "SEGMENTED_EPISODE_COMPOSE"
+    replay = BackgroundOperationService(database, workspace).submit_segmented_compose(str(timeline["id"]), segments)
+    assert replay["job"]["id"] == submission["job"]["id"] and replay["idempotent_replay"] is True
+    outcome = LocalMediaWorker(database, workspace).run_once("segmented-compose-worker", ["CPU"])
+    assert outcome is not None and outcome["result"]["job_state"] == "SUCCEEDED"
+    operation = BackgroundOperationService(database, workspace).result(str(submission["job"]["id"]))
+    assert operation["result_type"] == "EPISODE_RENDER"
+    render = operation["result"]
     assert render["status"] == "VERIFIED"
     assert render["revision"] == 1
     assert render["input_snapshot"]["schema_version"] == "localdrama.episode-render-input.v1"

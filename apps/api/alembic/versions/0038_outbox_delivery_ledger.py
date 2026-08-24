@@ -4,7 +4,6 @@ import sqlalchemy as sa
 
 from alembic import op
 
-
 revision = "0038_outbox_delivery_ledger"
 down_revision = "0037_job_progress_scheduler"
 branch_labels = None

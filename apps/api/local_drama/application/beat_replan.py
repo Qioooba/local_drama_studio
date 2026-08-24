@@ -204,7 +204,9 @@ class BeatReplanService:
             raise DomainRuleError("BREAKDOWN_DRAFT_NOT_FOUND", "AI 拆解草稿不存在或不属于当前项目")
         if str(draft["status"]) not in {"DRAFT_READY", "APPLIED"}:
             raise DomainRuleError("BREAKDOWN_DRAFT_NOT_READY", "AI 拆解草稿尚未准备好供人工审核")
-        payload = json.loads(str(draft["draft_json"]))
+        from local_drama.application.breakdown_revisions import load_effective_breakdown_draft
+
+        payload, _effective_revision = load_effective_breakdown_draft(connection, draft)
         scenes = payload.get("scenes", []) if isinstance(payload, dict) else []
         scene = next((item for item in scenes if int(item.get("scene_no", -1)) == proposal_scene_no), None)
         if not isinstance(scene, dict):

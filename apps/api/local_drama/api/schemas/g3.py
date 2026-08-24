@@ -53,10 +53,31 @@ class SourcePassageResponse(BaseModel):
 
 class BreakdownRequest(BaseModel):
     profile_version_id: str | None = None
+    episode_id: str | None = Field(default=None, min_length=1)
+    source_paragraph_start: int | None = Field(default=None, ge=1)
+    source_paragraph_end: int | None = Field(default=None, ge=1)
 
 
 class BreakdownDraftApplyRequest(BaseModel):
     episode_id: str = Field(min_length=1)
+    scene_nos: list[int] | None = Field(default=None, min_length=1, max_length=500)
+
+
+class BreakdownDraftShotRevisionInput(BaseModel):
+    shot_no: int = Field(ge=1)
+    visual: str = Field(default="", max_length=4000)
+    action: str = Field(default="", max_length=4000)
+    dialogue: Any = ""
+    duration_seconds: float = Field(gt=0, le=3600)
+
+
+class BreakdownDraftSceneRevisionRequest(BaseModel):
+    expected_revision: int = Field(ge=1)
+    change_note: str = Field(min_length=2, max_length=500)
+    title: str = Field(min_length=1, max_length=200)
+    summary: str = Field(default="", max_length=4000)
+    characters: list[str] = Field(default_factory=list, max_length=100)
+    shots: list[BreakdownDraftShotRevisionInput] = Field(min_length=1, max_length=500)
 
 
 class ProfileBindingRequest(BaseModel):
@@ -68,6 +89,17 @@ class ProfileBindingRequest(BaseModel):
 class ProfileEvidencePublishRequest(BaseModel):
     media_version_id: str = Field(min_length=1)
     workflow_version_id: str = Field(min_length=1)
+
+
+class I2VEvidenceProbeSubmitRequest(BaseModel):
+    profile_version_id: str = Field(min_length=1)
+    workflow_version_id: str = Field(min_length=1)
+    plan_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+
+class I2VEvidenceProbeFinalizeRequest(BaseModel):
+    job_id: str = Field(min_length=1)
 
 
 class ProfileContractDraftRequest(BaseModel):

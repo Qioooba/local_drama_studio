@@ -11,6 +11,7 @@ import { PromptTemplatePanel } from "../features/production/PromptTemplatePanel"
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { Drawer, TabPanel, Tabs } from "../components/ui";
 import { routes } from "../app/routeRegistry";
+import { STATUS_LABELS, optionLabel } from "../features/shared/optionLabels";
 import "./episode-plan.css";
 
 type PlanTask = "storyboard" | "scenes" | "source" | "prompts";
@@ -133,7 +134,7 @@ export function EpisodePlanPage() {
         {/* Tab 3: source evidence only; AI draft ownership remains in Story. */}
         <TabPanel id="source" selectedId={activeTab}>
           <ErrorBoundary projectId={projectId} fallbackTitle="原文定位异常">
-            <div className="subpanel episode-plan-source">
+            <div className="subpanel episode-plan-source" id="plan-source">
               <div className="section-title">
                 <span>故事原稿与段落引用</span>
                 <Link
@@ -188,7 +189,7 @@ export function EpisodePlanPage() {
                   <option value="">请选择镜头</option>
                   {shots.map((shot, index) => (
                     <option key={String(shot.id)} value={String(shot.id)}>
-                      {String(shot.code ?? `镜头 ${index + 1}`)} · {String(shot.status ?? "未导演")}
+                      {String(shot.code ?? `镜头 ${index + 1}`)} · {optionLabel(STATUS_LABELS, typeof shot.status === "string" ? shot.status : undefined, "未导演")}
                     </option>
                   ))}
                 </select>

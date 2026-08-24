@@ -38,9 +38,12 @@ def api_error_from_domain(error: DomainRuleError) -> ApiError:
         "SHOT_GROUP_CODE_EXISTS",
         "SHOT_EDIT_PLAN_STALE",
         "BEAT_REPLAN_PLAN_STALE",
+        "TIMELINE_REFRESH_PLAN_STALE",
         "SHOT_REVISION_CONFLICT",
         "ASSET_PROPOSAL_REVISION_CONFLICT",
         "ASSET_PROPOSAL_ALREADY_DECIDED",
+        "MEDIA_DERIVATIVE_NOT_READY",
+        "CONFIGURATION_CHANGED",
     }:
         status = 409
     else:

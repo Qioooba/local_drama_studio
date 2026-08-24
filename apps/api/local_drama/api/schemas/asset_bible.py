@@ -83,6 +83,7 @@ class AssetMultiViewPreflightRequest(BaseModel):
     profile_version_id: str | None = Field(default=None, min_length=1, max_length=36)
     consistency_strength: str = Field(default="HIGH", pattern=r"^(LOW|MEDIUM|HIGH)$")
     background: str = Field(default="CLEAN", pattern=r"^(CLEAN|TRANSPARENT|ORIGINAL)$")
+    requested_slots: list[str] | None = Field(default=None, min_length=1, max_length=16)
 
 
 class AssetMultiViewSubmitRequest(AssetMultiViewPreflightRequest):

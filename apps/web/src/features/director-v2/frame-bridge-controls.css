@@ -9,7 +9,7 @@
 .frame-bridge-state span { font-size: 9px; font-variant-numeric: tabular-nums; letter-spacing: 0; }
 .frame-bridge-flow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; }
 .frame-bridge-flow article { min-width: 0; display: grid; grid-template-columns: 44px minmax(0,1fr); gap: 3px 7px; padding: 7px; border: 1px solid #d8d2c7; border-radius: 7px; background: #f2efe8; }
-.frame-bridge-flow article img { grid-row: 1 / 4; width: 44px; height: 44px; object-fit: cover; border-radius: 5px; background: #202421; }
+.frame-bridge-flow article img { grid-row: 1 / 4; width: 44px; height: 44px; object-fit: contain; border-radius: 5px; background: #202421; }
 .frame-bridge-flow small, .frame-bridge-flow span { color: #686e69; font-size: 9px; }
 .frame-bridge-flow strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .frame-bridge-arrow { color: #64706b; font-size: 18px; }

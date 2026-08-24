@@ -15,12 +15,9 @@ export type BeatReplanPlan = {
   scope: { selected_group_only: boolean; outside_group_shots_touched: number };
 };
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
+  return generatedRequestJson<T>(`/api/v1${path}`, {
     ...init, headers: { "Content-Type": "application/json", ...init?.headers },
   });
-  const body = await response.json().catch(() => ({})) as { error?: { message?: string } };
-  if (!response.ok) throw new Error(body.error?.message ?? `请求失败（${response.status}）`);
-  return body as T;
 }
 
 type PlanInput = { draft_id: string; proposal_scene_no: number; expected_group_revision: number };
@@ -41,3 +38,4 @@ export async function applyBeatReplan(
     method: "POST", body: JSON.stringify(input),
   })).apply;
 }
+import { requestJson as generatedRequestJson } from "../../generated/api";

@@ -51,7 +51,8 @@ describe("ReferenceVersionCompare", () => {
     const video = container.querySelector("video") as HTMLVideoElement;
     expect(video.getAttribute("preload")).toBe("none");
     expect(video.getAttribute("poster")).toContain("/thumbnail?size=medium&frame=poster");
-    expect(video.getAttribute("src")).toContain("/content");
+    expect(video.getAttribute("src")).toContain("/proxy");
+    expect(video.dataset.originalSrc).toContain("/content");
     expect(container.textContent).not.toContain("rel_path");
   });
 

@@ -1,0 +1,87 @@
+{
+  "schema_version": "localdrama.project-create-wizard-uat.v2",
+  "observed_at": "2026-08-24T13:20:12.891Z",
+  "status": "PASS",
+  "mode": "AUTOMATIC_PREFLIGHT_NO_CREATE",
+  "database_mutated": false,
+  "screenshots_captured": false,
+  "expected_flow": [
+    "作品信息",
+    "创作方式",
+    "确认创建"
+  ],
+  "automatic_fields": [
+    "project_code",
+    "resolution",
+    "fps",
+    "subtitle_language",
+    "production_plan_code",
+    "delivery_target_code",
+    "delivery_path"
+  ],
+  "results": [
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "technicalIdCollapsed": true,
+      "recommendedFormatSelected": true,
+      "writingFirstSelected": true,
+      "automaticPreflight": true,
+      "finalCreateClicked": false,
+      "geometry": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "horizontalOverflow": false
+      },
+      "minControlHeight": 44,
+      "consoleProblems": [],
+      "pageErrors": [],
+      "failedResponses": [],
+      "publicRequests": []
+    },
+    {
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "technicalIdCollapsed": true,
+      "recommendedFormatSelected": true,
+      "writingFirstSelected": true,
+      "automaticPreflight": true,
+      "finalCreateClicked": false,
+      "geometry": {
+        "scrollWidth": 1280,
+        "clientWidth": 1280,
+        "horizontalOverflow": false
+      },
+      "minControlHeight": 44,
+      "consoleProblems": [],
+      "pageErrors": [],
+      "failedResponses": [],
+      "publicRequests": []
+    },
+    {
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "technicalIdCollapsed": true,
+      "recommendedFormatSelected": true,
+      "writingFirstSelected": true,
+      "automaticPreflight": true,
+      "finalCreateClicked": false,
+      "geometry": {
+        "scrollWidth": 1024,
+        "clientWidth": 1024,
+        "horizontalOverflow": false
+      },
+      "minControlHeight": 44,
+      "consoleProblems": [],
+      "pageErrors": [],
+      "failedResponses": [],
+      "publicRequests": []
+    }
+  ]
+}

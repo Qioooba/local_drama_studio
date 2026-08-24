@@ -9,6 +9,7 @@ import type {
   SeasonOption,
   ShotOption,
 } from "./types";
+import { bootstrapLocalSession } from "../../generated/api";
 
 const API_ROOT = "/api/v1";
 
@@ -31,7 +32,15 @@ export class PreferenceApiError extends Error implements ApiFailure {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_ROOT}${path}`, init);
+  const method = (init?.method ?? "GET").toUpperCase();
+  let securedInit = init;
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    const session = await bootstrapLocalSession();
+    const headers = new Headers(init?.headers);
+    headers.set("X-Local-Instance-Token", session.token);
+    securedInit = { ...init, headers };
+  }
+  const response = await fetch(`${API_ROOT}${path}`, securedInit);
   const body = await response.json().catch(() => null) as {
     error?: {
       code?: string;

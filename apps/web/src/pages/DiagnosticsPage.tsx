@@ -8,6 +8,18 @@ import { getDiagnostics, listProjects, runDiagnostics } from "../generated/api";
 import { queryKeys } from "../query/queryKeys";
 import "./system-workspaces.css";
 
+const DIAGNOSTIC_RUN_TIMEOUT_MS = 10_000;
+
+function diagnosticRequestWithTimeout<T>(request: Promise<T>, timeoutMessage: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(timeoutMessage)), DIAGNOSTIC_RUN_TIMEOUT_MS);
+    request.then(
+      (value) => { window.clearTimeout(timer); resolve(value); },
+      (error) => { window.clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
 const DIAGNOSTIC_TABS = [
   { id: "env", label: "本机环境检查" },
   { id: "audit", label: "审计历史" },
@@ -37,8 +49,8 @@ export function DiagnosticsPage() {
   };
 
   const projects = useQuery({ queryKey: queryKeys.projects.list({ limit: 100 }), queryFn: () => listProjects({ limit: 100 }) });
-  const diagnostics = useQuery({ queryKey: queryKeys.diagnostics.current(), queryFn: () => getDiagnostics() });
-  const run = useMutation({ mutationFn: () => runDiagnostics(), onSuccess: () => void diagnostics.refetch() });
+  const diagnostics = useQuery({ queryKey: queryKeys.diagnostics.current(), queryFn: () => diagnosticRequestWithTimeout(getDiagnostics(), "诊断记录读取超时，请重试"), retry: false });
+  const run = useMutation({ mutationFn: () => diagnosticRequestWithTimeout(runDiagnostics(), "诊断超时，请重试"), onSuccess: () => void diagnostics.refetch() });
 
   return (
     <div className="v2-page diagnostics-page">
@@ -64,7 +76,7 @@ export function DiagnosticsPage() {
               <p className="eyebrow">显式检查</p>
               <h3 id="diagnostics-local-title">本机环境检查</h3>
             </div>
-            <button type="button" className="secondary" onClick={() => run.mutate()} disabled={run.isPending}>
+            <button type="button" className="primary-action" onClick={() => run.mutate()} disabled={run.isPending}>
               {run.isPending ? "检查中…" : "运行诊断"}
             </button>
           </div>

@@ -72,9 +72,24 @@ describe("CharacterIdentityPackPanel", () => {
   it("renders an actionable empty state without manufacturing an approved pack", async () => {
     vi.mocked(client.listCharacterIdentityPacks).mockResolvedValue({ items: [] });
     render(<CharacterIdentityPackPanel projectId="prj-1" storyAssetId="char-1" assetName="主角林远" />);
-    expect(await screen.findByText("还没有角色身份包")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "新建身份包" })).toBeTruthy();
+    expect(await screen.findByText("还没有角色造型参考")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "新建造型" })).toBeTruthy();
     expect(client.approveCharacterIdentityPackVersion).not.toHaveBeenCalled();
+  });
+
+  it("creates a named look with a system-generated code instead of asking the creator for one", async () => {
+    vi.mocked(client.listCharacterIdentityPacks).mockResolvedValue({ items: [] });
+    vi.mocked(client.createCharacterIdentityPack).mockResolvedValue({ pack: basePack });
+    render(<CharacterIdentityPackPanel projectId="prj-1" storyAssetId="char-1" assetName="主角林远" />);
+    fireEvent.click(await screen.findByRole("button", { name: "新建造型" }));
+    expect(screen.queryByLabelText("身份包代码")).toBeNull();
+    fireEvent.change(screen.getByLabelText("造型名称"), { target: { value: "雨夜造型" } });
+    fireEvent.click(screen.getByRole("button", { name: "创建并开始补参考图" }));
+    await waitFor(() => expect(client.createCharacterIdentityPack).toHaveBeenCalledWith("char-1", {
+      project_id: "prj-1",
+      code: expect.stringMatching(/^LOOK_/),
+      name: "雨夜造型",
+    }));
   });
 
   it("shows every missing required view and keeps approval fail-closed", async () => {

@@ -52,7 +52,7 @@ export function legacyCompatibilityLinks(search: string): CompatibilityLink[] {
     const episode = `/projects/${segment(projectId)}/episodes/${segment(episodeId)}`;
     links.push({ to: `${episode}/plan`, label: "打开分集策划" });
     links.push({ to: shotId ? `${episode}/direct/${segment(shotId)}` : `${episode}/direct`, label: "打开导演工作台" });
-    links.push({ to: shotId ? `${episode}/generation/${segment(shotId)}` : `${episode}/generation`, label: "打开手动生成" });
+    links.push({ to: shotId ? `${episode}/generation/${segment(shotId)}` : `${episode}/generation`, label: "打开镜头生成" });
     links.push({ to: `${episode}/review`, label: "打开本集审核" });
     links.push({ to: `${episode}/audio`, label: "打开声音工作区" });
     links.push({ to: `${episode}/timeline`, label: "打开时间线" });

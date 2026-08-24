@@ -35,9 +35,10 @@ async function writeFrameBridge(
   command: "inherit" | "current-frame" | "source-frame" | "lock" | "unlock",
   payload: Record<string, unknown>,
 ): Promise<FrameBridgeWrite> {
+  const session = await bootstrapLocalSession();
   const response = await fetch(`/api/v1/frame-bridges/${encodeURIComponent(transitionId)}/${command}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Local-Instance-Token": session.token },
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
@@ -110,3 +111,4 @@ export function setFrameBridgeSourceFrame(transitionId: string, expectedBoundary
     frame_anchor_id: frameAnchorId,
   });
 }
+import { bootstrapLocalSession } from "../../generated/api";

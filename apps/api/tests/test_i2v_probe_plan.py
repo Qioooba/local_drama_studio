@@ -27,7 +27,7 @@ def test_i2v_probe_plan_is_read_only_and_freezes_approved_evidence(workspace, da
         str(project["id"]), source, purpose="KEYFRAME", owner_type="SHOT", owner_id=str(shot["id"]),
         media_kind="IMAGE", stage="KEYFRAME",
     )
-    ProfileService(database, workspace.manifest_path).sync_manifest()
+    profile_sync = ProfileService(database, workspace.manifest_path).sync_manifest()
     workflow_id = str(uuid.uuid4())
     now = "2026-08-13T00:00:00Z"
     with database.transaction() as connection:
@@ -60,3 +60,40 @@ def test_i2v_probe_plan_is_read_only_and_freezes_approved_evidence(workspace, da
     assert ready["would_create_job"] is False
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
+
+    candidate_profile_id = next(
+        str(item["version_id"]) for item in profile_sync["profiles"] if item["capability"] == "VIDEO_I2V"
+    )
+    explicit_workflow_id = str(uuid.uuid4())
+    with database.transaction() as connection:
+        explicit_parent = str(uuid.uuid4())
+        connection.execute(
+            "INSERT INTO workflows (id, code, title, created_at, updated_at, created_by, revision, schema_version) VALUES (?, 'probe_i2v_fast', 'Probe I2V FAST', ?, ?, 'test', 1, 'v2')",
+            (explicit_parent, now, now),
+        )
+        connection.execute(
+            """INSERT INTO workflow_versions
+            (id, workflow_id, version_no, content_hash, content_json, contract_json, node_bindings_json,
+            runtime_contract_json, status, published_at, created_at, updated_at, created_by, revision, schema_version)
+            VALUES (?, ?, 1, ?, '{}', ?, ?, '{}', 'PUBLISHED', ?, ?, ?, 'test', 1, 'v2')""",
+            (
+                explicit_workflow_id,
+                explicit_parent,
+                "b" * 64,
+                json.dumps({"capability": "H3_FL2VA_I2V_CANDIDATE", "production_tier": "FAST"}),
+                json.dumps({role: {} for role in ("PROMPT", "SEED", "FIRST_FRAME", "OUTPUT_PREFIX")}),
+                now,
+                now,
+                now,
+            ),
+        )
+        connection.execute(
+            "UPDATE execution_profile_versions SET status='DRAFT', workflow_version_id=? WHERE id=?",
+            (workflow_id, candidate_profile_id),
+        )
+    explicit = I2VProbePlanService(database).plan(
+        str(project["id"]), candidate_profile_id, explicit_workflow_id
+    )
+    assert explicit["snapshot"]["workflow"]["id"] == explicit_workflow_id
+    assert explicit["snapshot"]["workflow_selection"] == "EXPLICIT"
+    assert explicit["plan_hash"] != ready["plan_hash"]

@@ -54,12 +54,29 @@ class ExperimentService:
             raise DomainRuleError("EXPERIMENT_TOO_LARGE", "实验矩阵超过 10000 个 cell，必须拆分计划")
         now = _now()
         experiment_id = str(uuid.uuid4())
-        plan = {"axes": axes, "axis_order": list(axes), "cell_count": cell_count}
+        # Freeze the exact source Variant when the matrix is authored.  An
+        # experiment without this anchor is only a collection of parameters;
+        # resolving "the latest Variant" later would make retries and delayed
+        # workers silently execute different creative inputs.
+        base_variant_id: str | None = None
         estimate = resource_estimate or {"cpu_seconds_per_cell": 1, "disk_bytes_per_cell": 0, "gpu_slots": 0}
         with self.database.transaction() as connection:
             intent = connection.execute("SELECT * FROM generation_intents WHERE id=?", (intent_id,)).fetchone()
             if intent is None:
                 raise DomainRuleError("GENERATION_INTENT_NOT_FOUND", "GenerationIntent 不存在")
+            base_variant = connection.execute(
+                """SELECT id FROM generation_variants
+                WHERE intent_id=? ORDER BY created_at DESC, variant_no DESC, id DESC LIMIT 1""",
+                (intent_id,),
+            ).fetchone()
+            if base_variant is not None:
+                base_variant_id = str(base_variant["id"])
+            plan = {
+                "axes": axes,
+                "axis_order": list(axes),
+                "cell_count": cell_count,
+                "base_variant_id": base_variant_id,
+            }
             connection.execute(
                 """INSERT INTO generation_experiments
                 (id, intent_id, title, axis_definitions_json, cell_count, max_parallel, resource_estimate_json, status, plan_hash, created_at, updated_at, created_by, revision, schema_version)
@@ -175,7 +192,12 @@ class ExperimentService:
                     "GENERATION_INTENT",
                     str(plan["intent_id"]),
                     "CPU",
-                    {"experiment_id": experiment_id, "cell_key": cell_key, "parameters": values},
+                    {
+                        "experiment_id": experiment_id,
+                        "cell_key": cell_key,
+                        "parameters": values,
+                        "base_variant_id": plan["axes"].get("base_variant_id"),
+                    },
                     key,
                     max_attempts=3,
                 )

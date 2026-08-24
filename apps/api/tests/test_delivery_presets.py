@@ -154,20 +154,14 @@ def test_create_from_preset_rejects_missing_project(workspace, database) -> None
     assert response.json()["error"]["code"] == "PROJECT_NOT_FOUND"
 
 
-def test_preset_target_can_be_selected_and_appears_in_configuration_snapshot(workspace, database) -> None:
-    """Preset-created targets participate in the normal explicit selection flow:
-    select_delivery_target_version → project configuration snapshot shows the
-    preset spec as the selected delivery target."""
+def test_preset_target_is_automatically_current_and_appears_in_configuration_snapshot(workspace, database) -> None:
+    """Choosing a preset is sufficient: creation also makes it current."""
     project = _project(workspace, database)
     project_id = str(project["id"])
     service = ConfigurationService(database)
     target = service.create_delivery_target_from_preset(project_id, "XIAOHONGSHU_3_4", "小红书交付")
     snapshot_before = service.inspect_project_configuration(project_id)
     assert snapshot_before["selected_delivery_target_version_id"] == target["version_id"]
-    selected = service.select_delivery_target_version(project_id, target["version_id"])
-    assert selected["version_id"] == target["version_id"]
-    assert selected["spec"]["width"] == 1080
-    assert selected["spec"]["height"] == 1440
     snapshot = service.inspect_project_configuration(project_id)
     assert snapshot["selected_delivery_target_version_id"] == target["version_id"]
     selected_item = next(

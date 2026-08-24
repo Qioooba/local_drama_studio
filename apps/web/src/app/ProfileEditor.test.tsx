@@ -1,11 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ModelsPage } from "../pages/ModelsPage";
 import type { Profile, ProfileVersionDetail, WorkflowVersionSummary } from "../generated/api";
 
 vi.mock("../features/preferences-v2/GenerationPreferencePanel", () => ({ GenerationPreferencePanel: () => null }));
+vi.mock("../features/profiles/profileEvidenceClient", () => ({
+  planI2VEvidenceProbe: vi.fn(),
+  validateProfileEvidenceCompatibility: vi.fn(),
+  submitI2VEvidenceProbe: vi.fn(),
+  finalizeI2VEvidenceProbe: vi.fn(),
+}));
 
 const published: Profile = {
   id: "prof-1",
@@ -110,9 +116,11 @@ vi.mock("../generated/api", () => ({
   getProductionCanvas: vi.fn(),
   preflightProductionCanvasRun: vi.fn(),
   saveProductionCanvasLayout: vi.fn(),
+  getJob: vi.fn(),
 }));
 
 import * as api from "../generated/api";
+import * as evidence from "../features/profiles/profileEvidenceClient";
 
 function renderProfilesView(path = "/?view=profile-contracts") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -120,6 +128,19 @@ function renderProfilesView(path = "/?view=profile-contracts") {
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
         <ModelsPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+function renderProjectProfilesView() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={["/projects/project-1/models?view=profile-contracts"]}>
+        <Routes>
+          <Route path="/projects/:projectId/models" element={<ModelsPage />} />
+        </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -149,6 +170,7 @@ describe("Profile contract editor interactions", () => {
     vi.mocked(api.publishWorkflowVersion).mockResolvedValue({ workflow_version: workflows[0] });
     vi.mocked(api.revokeWorkflowVersion).mockResolvedValue({ workflow_version: { ...workflows[0], status: "RETIRED" } });
     vi.mocked(api.rollbackWorkflowVersion).mockResolvedValue({ workflow_version: workflows[0] });
+    vi.mocked(api.getJob).mockResolvedValue({ job: { id: "job-evidence-1", state: "QUEUED" } as never });
   });
 
   it("derives an immutable DRAFT and does not overwrite the published source", async () => {
@@ -186,6 +208,18 @@ describe("Profile contract editor interactions", () => {
     await waitFor(() => expect(publishButton.disabled).toBe(false));
   });
 
+  it("refreshes the selected existing DRAFT after validation without querying an empty temporary draft id", async () => {
+    renderProfilesView();
+    fireEvent.click(await screen.findByRole("button", { name: /h3-native-i2v I2V · v5 DRAFT/ }));
+    await screen.findByText("运行本地契约验证");
+    fireEvent.click(screen.getByRole("button", { name: "运行本地契约验证" }));
+
+    expect(await screen.findByText(/本地契约验证 PASS/)).toBeTruthy();
+    await waitFor(() => expect(api.getProfileVersion).toHaveBeenCalledWith("v-draft"));
+    expect(vi.mocked(api.getProfileVersion).mock.calls.some(([id]) => !id)).toBe(false);
+    expect(screen.queryByText(/Profile 契约读取失败/)).toBeNull();
+  });
+
   it("explains the real-evidence requirement when a contract publish is refused", async () => {
     renderProfilesView();
     await screen.findByRole("button", { name: "保存为新 DRAFT" });
@@ -199,6 +233,49 @@ describe("Profile contract editor interactions", () => {
     await waitFor(() => expect(api.publishProfileContractVersion).toHaveBeenCalled());
     expect(await screen.findByText(/PROFILE_REAL_EVIDENCE_REQUIRED/)).toBeTruthy();
     expect(await screen.findByText(/必须转入真实媒体证据发布/)).toBeTruthy();
+  });
+
+  it("uses an accessible confirmation dialog before queuing one real I2V evidence job", async () => {
+    const videoDraft = { ...draft, capability: "VIDEO_I2V" };
+    const videoDraftDetail = {
+      ...draftDetail,
+      capability: "VIDEO_I2V",
+      validation: { id: "att-video", status: "PASS" as const, contract_hash: draftDetail.contract_hash, checks: [{ code: "CONTRACT", passed: true }] },
+    };
+    vi.mocked(api.listProfiles).mockResolvedValue({ items: [videoDraft] });
+    vi.mocked(api.getProfileVersion).mockResolvedValue({ profile_version: videoDraftDetail });
+    vi.mocked(evidence.planI2VEvidenceProbe).mockResolvedValue({
+      plan: {
+        status: "READY",
+        blockers: [],
+        plan_hash: "plan-hash",
+        snapshot: {
+          approved_keyframe: { media_version_id: "media-first-frame" },
+          workflow: { id: "workflow-v2", content_hash: "workflow-hash" },
+          candidate_profile: { id: "v-draft", execution_fingerprint: "fingerprint" },
+          semantic_inputs: {},
+        },
+        confirmation_required: true,
+      },
+    });
+    vi.mocked(evidence.submitI2VEvidenceProbe).mockResolvedValue({
+      job: { id: "job-evidence-1", state: "QUEUED" },
+      plan: await vi.mocked(evidence.planI2VEvidenceProbe)("project-1", "v-draft", "wf-1").then((item) => item.plan),
+    });
+
+    renderProjectProfilesView();
+    expect((await screen.findByRole("combobox", { name: "验证工作流版本" }) as HTMLSelectElement).value).toBe("wf-1");
+    fireEvent.click(await screen.findByRole("button", { name: "预检真实证据探测" }));
+    await waitFor(() => expect(evidence.planI2VEvidenceProbe).toHaveBeenCalledWith("project-1", "v-draft", "wf-1"));
+    expect(await screen.findByText(/证据探测预检 READY/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "确认并排队单次 Job" }));
+    const dialog = await screen.findByRole("dialog", { name: "确认创建真实媒体证据 Job" });
+    expect(dialog).toBeTruthy();
+    expect(evidence.submitI2VEvidenceProbe).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "确认并排队" }));
+    await waitFor(() => expect(evidence.submitI2VEvidenceProbe).toHaveBeenCalledWith("project-1", "v-draft", "wf-1", "plan-hash"));
+    expect(await screen.findByText(/证据 Job job-evidence/)).toBeTruthy();
+    expect((screen.getByRole("combobox", { name: /验证任务（恢复）/ }) as HTMLSelectElement).value).toBe("job-evidence-1");
   });
 
   it("shows a failed validation and keeps publish disabled", async () => {

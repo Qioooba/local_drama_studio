@@ -2,6 +2,8 @@
  * Client for Character Identity Pack Versioning and Slot Management (PR-CUR-007).
  */
 
+import { requestJson as generatedRequestJson } from "../../generated/api";
+
 export interface CharacterIdentityPackSlot {
   id: string;
   pack_version_id: string;
@@ -82,6 +84,14 @@ export interface ShotCharacterPackBinding {
   bound_version_status?: string | null;
   bound_slots?: Record<string, string>;
   latest_approved_version_id?: string | null;
+  approved_versions: Array<{
+    pack_id: string;
+    pack_name: string;
+    pack_code: string;
+    version_id: string;
+    version_no: number;
+    status: string;
+  }>;
   is_stale: boolean;
   stale_reason?: string | null;
 }
@@ -111,12 +121,7 @@ export interface IdentityPackVersionImpact {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, init);
-  const body = (await response.json().catch(() => null)) as { error?: { message?: string; code?: string } } | null;
-  if (!response.ok) {
-    throw new Error(body?.error?.message ?? body?.error?.code ?? `本机 API 请求失败（${response.status}）`);
-  }
-  return body as T;
+  return generatedRequestJson<T>(`/api/v1${path}`, init);
 }
 
 export function listCharacterIdentityPacks(storyAssetId: string): Promise<{ items: CharacterIdentityPack[] }> {

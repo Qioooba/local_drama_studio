@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import json
+import subprocess
 
 from fastapi.testclient import TestClient
 
 from local_drama.application.canvas import ProductionCanvasService
 from local_drama.application.g8_readiness import G8ReadinessService
 from local_drama.application.g9_readiness import G9ReadinessService
+from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
+from local_drama.application.timeline import TimelineService
 from local_drama.application.timeline_status import TimelineStatusService
 from local_drama.main import create_app
 
@@ -57,6 +60,81 @@ def test_g8_readiness_is_read_only_and_reports_formal_exit_blockers(workspace, d
         response = client.get(f"/api/v1/projects/{project['id']}/gates/g8?episode_id={episode['id']}")
     assert response.status_code == 200
     assert response.json()["readiness"]["next_required_action"] == "THREE_REAL_SHOTS"
+
+
+def test_g8_counts_timeline_shots_for_generation_variant_owned_videos(workspace, database) -> None:
+    service = ProjectService(database, workspace.projects_root)
+    project = service.create_project(code="g8_variant_video", title="G8 variant video", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1, target_duration_ms=3000, allow_unconfigured_capabilities=True)
+    season = service.list_seasons(str(project["id"]))[0]
+    episode = service.list_episodes(str(season["id"]))[0]
+    shots = [service.create_shot(str(episode["id"]), f"SHOT_{index:03d}", 1000, "MEDIUM") for index in range(1, 4)]
+    source = workspace.work_root / "g8-variant-video.mp4"
+    subprocess.run(
+        [workspace.ffmpeg_path, "-f", "lavfi", "-i", "color=c=navy:s=160x90:d=1", "-pix_fmt", "yuv420p", "-an", "-y", str(source)],
+        check=True, capture_output=True,
+    )
+    media_ids: list[str] = []
+    for shot in shots:
+        imported = MediaService(database, workspace).import_file(
+            str(project["id"]), source, purpose="CANDIDATE", owner_type="SHOT", owner_id=str(shot["id"]), media_kind="VIDEO", stage="PROXY",
+        )
+        media_ids.append(str(imported["media_version_id"]))
+        with database.transaction() as connection:
+            connection.execute(
+                "UPDATE media_assets SET owner_type='GENERATION_VARIANT',owner_id=? WHERE id=(SELECT media_asset_id FROM media_versions WHERE id=?)",
+                (f"variant-{shot['id']}", imported["media_version_id"]),
+            )
+    timeline_service = TimelineService(database, workspace)
+    video_items = [
+        {"track_type": "VIDEO", "media_version_id": media_id, "start_us": index * 1_000_000, "end_us": (index + 1) * 1_000_000, "parameters": {"shot_id": str(shots[index]["id"]), "shot_code": str(shots[index]["code"])}}
+        for index, media_id in enumerate(media_ids)
+    ]
+    timeline_service.create_timeline_revision(
+        str(episode["id"]),
+        video_items,
+        {"schema_version": "test"}, status="FROZEN",
+    )
+
+    result = G8ReadinessService(database).inspect(str(project["id"]), str(episode["id"]))
+    assert result["checks"][0]["passed"] is True
+    assert result["checks"][0]["count"] == 3
+    assert result["next_required_action"] == "DIALOGUE_BGM_SFX"
+
+    audio_source = workspace.work_root / "g8-timeline-audio.wav"
+    subprocess.run(
+        [workspace.ffmpeg_path, "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-y", str(audio_source)],
+        check=True, capture_output=True,
+    )
+    audio = MediaService(database, workspace).import_file(
+        str(project["id"]), audio_source, purpose="G8_AUDIO", owner_type="EPISODE", owner_id=str(episode["id"]), media_kind="AUDIO", stage="FORMAL",
+    )
+    project_root = workspace.projects_root / str(project["root_rel"])
+    license_path = project_root / "00_admin" / "licenses" / "g8-audio.json"
+    license_path.parent.mkdir(parents=True, exist_ok=True)
+    license_path.write_text('{"owner":"test"}', encoding="utf-8")
+    bindings = [
+        timeline_service.bind_audio(
+            str(episode["id"]), str(audio["media_version_id"]), track_type, 0, 1_000_000,
+            license_evidence_path_rel="00_admin/licenses/g8-audio.json",
+        )
+        for track_type in ("DIALOGUE", "BGM", "SFX")
+    ]
+    # Merely creating episode bindings must not claim that the already-frozen
+    # revision rendered them.
+    bindings_only = G8ReadinessService(database).inspect(str(project["id"]), str(episode["id"]))
+    assert bindings_only["checks"][1]["passed"] is False
+
+    timeline_service.create_timeline_revision(
+        str(episode["id"]),
+        [*video_items, *[
+            {"track_type": binding["track_type"], "media_version_id": binding["media_version_id"], "start_us": 0, "end_us": 1_000_000, "parameters": {"audio_binding_id": binding["id"]}}
+            for binding in bindings
+        ]],
+        {"schema_version": "test-with-audio"}, status="FROZEN",
+    )
+    timeline_audio = G8ReadinessService(database).inspect(str(project["id"]), str(episode["id"]))
+    assert timeline_audio["checks"][1]["passed"] is True
+    assert timeline_audio["checks"][1]["observed_tracks"] == ["BGM", "DIALOGUE", "SFX"]
 
 
 def test_g9_readiness_separates_production_facts_from_scale_fixture(workspace, database) -> None:

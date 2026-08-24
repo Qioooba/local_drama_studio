@@ -1,5 +1,6 @@
 import { createStoryAssetReference, type AssetBibleItem, type StoryAssetReference } from "./api";
 import type { MultiViewBlocker, MultiViewOutput, MultiViewSettings } from "./multiviewClient";
+import { requestJson as generatedRequestJson } from "../../generated/api";
 
 export type ExpressionKind = "NEUTRAL" | "HAPPY" | "SAD" | "ANGRY" | "SURPRISED" | "FEARFUL" | "DISGUSTED" | "DETERMINED" | "CRYING";
 export type ExpressionPreflight = {
@@ -17,13 +18,7 @@ export type ExpressionBatch = {
 };
 
 async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, init);
-  const body = await response.json().catch(() => null) as { error?: { message?: string; code?: string } } | T | null;
-  if (!response.ok) {
-    const error = (body as { error?: { message?: string; code?: string } } | null)?.error;
-    throw new Error(error?.message ?? error?.code ?? `本地 API 请求失败（${response.status}）`);
-  }
-  return body as T;
+  return generatedRequestJson<T>(`/api/v1${path}`, init);
 }
 
 export function preflightAssetExpression(assetId: string, settings: MultiViewSettings): Promise<{ preflight: ExpressionPreflight }> {

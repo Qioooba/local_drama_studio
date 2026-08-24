@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import {
   archiveStoryAsset,
   createStoryAsset,
+  restoreStoryAsset,
 } from "../generated/api";
 import { createStoryAssetReference, createStoryAssetState, getAssetBible } from "../features/asset-bible-v2/api";
 import { GenerateMultiViewPanel } from "../features/asset-bible-v2/GenerateMultiViewPanel";
@@ -14,8 +15,9 @@ import { SceneBiblePanel, type SceneReferenceKind } from "../features/asset-bibl
 import { AssetUsagePanel } from "../features/asset-bible-v2/AssetUsagePanel";
 import { ReferenceVersionCompare } from "../features/asset-bible-v2/ReferenceVersionCompare";
 import { MediaPicker } from "../features/media-picker/MediaPicker";
-import { EmptyState, ErrorState, MediaThumb, Skeleton, StatusBadge } from "../components/ui";
+import { Dialog, EmptyState, ErrorState, MediaThumb, Skeleton, StatusBadge } from "../components/ui";
 import { queryKeys } from "../query/queryKeys";
+import { generateAssetCode, generateMachineCode } from "../features/shared/autoCode";
 
 const KIND_TABS = [
   { kind: "CHARACTER", label: "角色" },
@@ -42,6 +44,13 @@ const REF_KIND_LABELS: Record<string, string> = {
 };
 
 const KIND_LABELS: Record<string, string> = { CHARACTER: "角色", SCENE: "场景", PROP: "道具", COSTUME: "服装" };
+const STATE_KIND_LABELS: Record<string, string> = { CUSTOM: "其他剧情状态", OUTFIT: "服装变化", INJURY: "伤势变化", EMOTION: "情绪变化", TIME_OF_DAY: "时段变化", WEATHER: "天气变化", LIGHTING: "光线变化" };
+const REFERENCE_KINDS_BY_ASSET: Record<string, string[]> = {
+  CHARACTER: ["HERO", "FRONT", "LEFT", "RIGHT", "BACK", "THREE_VIEW_SHEET", "FULL_BODY", "CLOSEUP", "EXPRESSION_GRID", "OTHER"],
+  SCENE: ["HERO", "SCENE_WIDE", "SCENE_REVERSE", "PANORAMA", "LIGHTING_REFERENCE", "OTHER"],
+  PROP: ["HERO", "FRONT", "LEFT", "RIGHT", "BACK", "FULL_BODY", "CLOSEUP", "OTHER"],
+  COSTUME: ["HERO", "FRONT", "LEFT", "RIGHT", "BACK", "THREE_VIEW_SHEET", "FULL_BODY", "CLOSEUP", "OTHER"],
+};
 
 function thumbnailUrl(mediaVersionId: string): string {
   return `/api/v1/media-versions/${encodeURIComponent(mediaVersionId)}/thumbnail?size=small&frame=poster`;
@@ -52,16 +61,17 @@ export function AssetBiblePage() {
   const client = useQueryClient();
   const [tab, setTab] = useState<(typeof KIND_TABS)[number]["kind"]>("CHARACTER");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [newCode, setNewCode] = useState("");
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
-  const [stateCode, setStateCode] = useState("");
   const [stateLabel, setStateLabel] = useState("");
   const [stateKind, setStateKind] = useState("CUSTOM");
   const [referenceVersionId, setReferenceVersionId] = useState("");
   const [referenceKind, setReferenceKind] = useState("HERO");
   const [referenceStateId, setReferenceStateId] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [lifecycleAction, setLifecycleAction] = useState<{ mode: "ARCHIVE" | "RESTORE"; id: string; revision: number; name: string } | null>(null);
+  const [lifecycleReason, setLifecycleReason] = useState("");
+  const [lifecycleMessage, setLifecycleMessage] = useState<string | null>(null);
 
   const assets = useQuery({
     queryKey: queryKeys.assetBible.overview(projectId as string),
@@ -71,6 +81,13 @@ export function AssetBiblePage() {
   const bible = assets.data?.bible;
   const visible = (bible?.items ?? []).filter((item) => item.asset.kind === tab);
   const selected = selectedId ? visible.find((item) => item.asset.id === selectedId) ?? null : visible[0] ?? null;
+  const allowedReferenceKinds = REFERENCE_KINDS_BY_ASSET[selected?.asset.kind ?? tab] ?? ["HERO", "OTHER"];
+
+  useEffect(() => {
+    setReferenceVersionId("");
+    setReferenceKind("HERO");
+    setReferenceStateId("");
+  }, [selected?.asset.id]);
 
   const refresh = async () => {
     await client.invalidateQueries({ queryKey: queryKeys.assetBible.project(projectId as string) });
@@ -78,24 +95,31 @@ export function AssetBiblePage() {
   };
 
   const create = useMutation({
-    mutationFn: () => createStoryAsset(projectId as string, { kind: tab, code: newCode, name: newName, description: newDescription }),
+    mutationFn: () => createStoryAsset(projectId as string, { kind: tab, code: generateAssetCode(tab, newName), name: newName.trim(), description: newDescription.trim() }),
     onSuccess: async (result) => {
-      setNewCode(""); setNewName(""); setNewDescription(""); setFormError(null);
+      setNewName(""); setNewDescription(""); setFormError(null);
       setSelectedId(result.asset.id);
+      setLifecycleMessage("资产已创建。沿准备路径添加主参考并补齐缺失视图后，即可用于镜头生产。");
       await refresh();
     },
     onError: (error) => setFormError(String(error)),
   });
 
   const archive = useMutation({
-    mutationFn: (item: { id: string; revision: number }) => archiveStoryAsset(item.id, { expected_revision: item.revision }),
-    onSuccess: async () => { await refresh(); },
+    mutationFn: (item: { id: string; revision: number; reason: string }) => archiveStoryAsset(item.id, { expected_revision: item.revision, reason: item.reason }),
+    onSuccess: async () => { setLifecycleAction(null); setLifecycleReason(""); setLifecycleMessage("资产已归档；全部绑定与版本历史保留，可在此恢复。"); await refresh(); },
+    onError: (error) => setFormError(String(error)),
+  });
+
+  const restore = useMutation({
+    mutationFn: (item: { id: string; revision: number; reason: string }) => restoreStoryAsset(item.id, { expected_revision: item.revision, reason: item.reason }),
+    onSuccess: async () => { setLifecycleAction(null); setLifecycleReason(""); setLifecycleMessage("资产已恢复为启用状态；历史 revision 未被覆盖。"); await refresh(); },
     onError: (error) => setFormError(String(error)),
   });
 
   const addState = useMutation({
-    mutationFn: () => createStoryAssetState(selected!.asset.id, { code: stateCode.trim(), label: stateLabel.trim(), state_kind: stateKind }),
-    onSuccess: async () => { setStateCode(""); setStateLabel(""); setFormError(null); await refresh(); },
+    mutationFn: () => createStoryAssetState(selected!.asset.id, { code: generateMachineCode(stateKind, stateLabel), label: stateLabel.trim(), state_kind: stateKind }),
+    onSuccess: async () => { setStateLabel(""); setFormError(null); await refresh(); },
     onError: (error) => setFormError(String(error)),
   });
 
@@ -105,10 +129,10 @@ export function AssetBiblePage() {
     onError: (error) => setFormError(String(error)),
   });
 
-  const createValid = Boolean(newCode.trim() && newName.trim());
-  const stateDisabledReason = addState.isPending ? "状态正在创建，请稍候" : !stateCode.trim() ? "请填写状态代码" : !stateLabel.trim() ? "请填写显示名称" : null;
+  const createValid = Boolean(newName.trim());
+  const stateDisabledReason = addState.isPending ? "状态正在创建，请稍候" : !stateLabel.trim() ? "请填写状态名称" : null;
   const referenceDisabledReason = addReference.isPending ? "参考正在绑定，请稍候" : !referenceVersionId.trim() ? "请先从项目媒体中选择图片" : null;
-  const createDisabledReason = create.isPending ? "资产正在创建，请稍候" : !newCode.trim() ? "请填写资产代码" : !newName.trim() ? "请填写资产名称" : null;
+  const createDisabledReason = create.isPending ? "资产正在创建，请稍候" : !newName.trim() ? "请填写资产名称" : null;
   const chooseSceneReference = (kind: SceneReferenceKind) => {
     setReferenceKind(kind);
     document.getElementById("asset-reference-picker")?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -135,10 +159,10 @@ export function AssetBiblePage() {
               <button key={item.asset.id} type="button" className={`bible-asset-row${selected?.asset.id === item.asset.id ? " selected" : ""}`} onClick={() => setSelectedId(item.asset.id)}>
                 <MediaThumb className="bible-asset-thumbnail" src={item.asset.canonical_media_version_id ? thumbnailUrl(item.asset.canonical_media_version_id) : null} alt={`${item.asset.name} 资产缩略图`} emptyLabel="无图" />
                 <span className="bible-asset-name">{item.asset.name}</span>
-                <code>{item.asset.code}</code>
+                <small>{KIND_LABELS[item.asset.kind] ?? item.asset.kind}</small>
               </button>
             ))}
-            {visible.length === 0 && <EmptyState title={`还没有${KIND_LABELS[tab] ?? "此类"}资产`} description="使用右侧的新建入口建立第一项资产；已有媒体可在创建后绑定为参考。" />}
+            {visible.length === 0 && <EmptyState title={`还没有${KIND_LABELS[tab] ?? "此类"}资产`} description="使用页面中的“新建资产”区域建立第一项资产；已有媒体可在创建后绑定为参考。" />}
           </div>
         </aside>
 
@@ -152,9 +176,31 @@ export function AssetBiblePage() {
               </div>
               <div className="v2-actions">
                 <StatusBadge tone={selected.asset.status === "ARCHIVED" ? "neutral" : "success"}>{selected.asset.status === "ARCHIVED" ? "已归档" : "启用中"}</StatusBadge>
-                <button type="button" className="secondary" disabled={selected.asset.status === "ARCHIVED" || archive.isPending} title={selected.asset.status === "ARCHIVED" ? "资产已经归档" : archive.isPending ? "正在归档，请稍候" : undefined} onClick={() => archive.mutate({ id: selected.asset.id, revision: selected.asset.revision })}>归档</button>
+                {selected.asset.status === "ARCHIVED"
+                  ? <button type="button" className="secondary" disabled={restore.isPending} onClick={() => { setLifecycleAction({ mode: "RESTORE", id: selected.asset.id, revision: selected.asset.revision, name: selected.asset.name }); setLifecycleReason(""); setLifecycleMessage(null); setFormError(null); }}>恢复资产</button>
+                  : <button type="button" className="secondary" disabled={archive.isPending} title={archive.isPending ? "正在归档，请稍候" : undefined} onClick={() => { setLifecycleAction({ mode: "ARCHIVE", id: selected.asset.id, revision: selected.asset.revision, name: selected.asset.name }); setLifecycleReason(""); setLifecycleMessage(null); setFormError(null); }}>归档</button>}
               </div>
             </div>
+            {lifecycleMessage && <p className="review-success" role="status">{lifecycleMessage}</p>}
+
+            {(() => {
+              const hasHero = selected.base_references.some((reference) => reference.reference_kind === "HERO");
+              const missing = selected.readiness.missing;
+              const nextAction = !hasHero
+                ? { label: "选择主参考", target: "asset-reference-picker" }
+                : missing.length && selected.asset.kind === "CHARACTER"
+                  ? { label: `生成 ${missing.length} 个缺失视图`, target: `multiview-title-${selected.asset.id}` }
+                  : missing.length
+                    ? { label: "补充缺失参考", target: "asset-reference-picker" }
+                    : null;
+              return <section className="asset-readiness-path" aria-label="资产生产准备路径">
+                <div><span className="status-pill state-ready">1</span><strong>资产已建档</strong><small>系统标识已生成</small></div>
+                <div className={hasHero ? "complete" : "current"}><span className="status-pill">2</span><strong>主参考</strong><small>{hasHero ? "已绑定 HERO" : "下一步"}</small></div>
+                <div className={!hasHero ? "pending" : missing.length ? "current" : "complete"}><span className="status-pill">3</span><strong>生产参考</strong><small>{missing.length ? `缺 ${missing.map((kind) => REF_KIND_LABELS[kind] ?? kind).join("、")}` : "已齐全"}</small></div>
+                <div className={missing.length ? "pending" : "complete"}><span className="status-pill">4</span><strong>可用于生产</strong><small>{selected.readiness.level}</small></div>
+                {nextAction && <button type="button" className="primary-action" onClick={() => document.getElementById(nextAction.target)?.scrollIntoView({ behavior: "smooth", block: "start" })}>{nextAction.label}</button>}
+              </section>;
+            })()}
 
             <div className="bible-main-visual">
               {selected.base_references.length > 0 || selected.states.some((s) => s.references.length > 0) ? (
@@ -218,15 +264,14 @@ export function AssetBiblePage() {
                 onReferencesChanged={refresh}
               />}
               <section className="panel" id="asset-reference-picker">
-                <div className="panel-heading"><div><p className="eyebrow">造型状态</p><h4>States</h4></div></div>
+                <div className="panel-heading"><div><p className="eyebrow">造型状态</p><h4>剧情中的外观变化</h4></div></div>
                 {selected.states.length === 0 ? <EmptyState title="还没有造型状态" description="状态用于区分服装、伤势、情绪、日夜或光线，不会覆盖基础资产。" /> : (
-                  <ul className="bible-state-list">{selected.states.map((state) => <li key={state.id}><strong>{state.label}</strong><code>{state.code}</code><span className="muted">{state.state_kind}</span><StatusBadge>{state.references.length} 参考</StatusBadge></li>)}</ul>
+                  <ul className="bible-state-list">{selected.states.map((state) => <li key={state.id}><strong>{state.label}</strong><span className="muted">{STATE_KIND_LABELS[state.state_kind] ?? "其他剧情状态"}</span><StatusBadge>{state.references.length} 张参考</StatusBadge></li>)}</ul>
                 )}
                 <details className="story-asset-create"><summary>新增剧情状态</summary><div className="bible-create-grid">
-                  <label>状态代码<input value={stateCode} onChange={(event) => setStateCode(event.target.value)} placeholder="INJURED" /></label>
-                  <label>显示名称<input value={stateLabel} onChange={(event) => setStateLabel(event.target.value)} placeholder="受伤" /></label>
-                  <label>状态类型<select value={stateKind} onChange={(event) => setStateKind(event.target.value)}><option value="CUSTOM">自定义</option><option value="OUTFIT">服装</option><option value="INJURY">伤势</option><option value="EMOTION">情绪</option><option value="TIME_OF_DAY">时段</option><option value="WEATHER">天气</option><option value="LIGHTING">光线</option></select></label>
-                  <button className="secondary" type="button" disabled={Boolean(stateDisabledReason)} title={stateDisabledReason ?? undefined} onClick={() => addState.mutate()}>{addState.isPending ? "创建中…" : "创建状态"}</button>
+                  <label>变化类型<select value={stateKind} onChange={(event) => setStateKind(event.target.value)}><option value="OUTFIT">服装变化</option><option value="INJURY">伤势变化</option><option value="EMOTION">情绪变化</option><option value="TIME_OF_DAY">时段变化</option><option value="WEATHER">天气变化</option><option value="LIGHTING">光线变化</option><option value="CUSTOM">其他剧情状态</option></select></label>
+                  <label>状态名称<input value={stateLabel} onChange={(event) => setStateLabel(event.target.value)} placeholder="例如：雨夜湿发、战损服装" /></label>
+                  <button className="secondary" type="button" disabled={Boolean(stateDisabledReason)} title={stateDisabledReason ?? undefined} onClick={() => addState.mutate()}>{addState.isPending ? "创建中…" : "添加剧情状态"}</button>
                 </div></details>
               </section>
               <section className="panel">
@@ -234,19 +279,18 @@ export function AssetBiblePage() {
                 <p className="muted">选择结果固定到不可变媒体版本，后续更新不会改变历史生成输入。列表只读取低分辨率缩略图；HERO 默认锁定。</p>
                 <MediaPicker projectId={projectId as string} value={referenceVersionId} onChange={setReferenceVersionId} disabled={addReference.isPending} label="资产参考图选择器" />
                 <div className="bible-create-grid">
-                  <label>参考类型<select value={referenceKind} onChange={(event) => setReferenceKind(event.target.value)}>{Object.entries(REF_KIND_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                  <label>参考类型<select value={referenceKind} onChange={(event) => setReferenceKind(event.target.value)}>{allowedReferenceKinds.map((value) => <option key={value} value={value}>{REF_KIND_LABELS[value] ?? value}</option>)}</select></label>
                   <label>绑定状态<select value={referenceStateId} onChange={(event) => setReferenceStateId(event.target.value)}><option value="">基础参考</option>{selected.states.map((state) => <option key={state.id} value={state.id}>{state.label}</option>)}</select></label>
                   <button className="primary-action" type="button" disabled={Boolean(referenceDisabledReason)} title={referenceDisabledReason ?? undefined} onClick={() => addReference.mutate()}>{addReference.isPending ? "绑定中…" : "添加参考"}</button>
                 </div>
               </section>
               <section className="panel">
-                <div className="panel-heading"><div><p className="eyebrow">准备度</p><h4>Readiness</h4></div></div>
-                <p className="muted">级别：{selected.readiness.level}</p>
+                <div className="panel-heading"><div><p className="eyebrow">准备度</p><h4>生产准备情况</h4></div></div>
                 {selected.readiness.missing.length > 0 ? <p className="blocker-text">缺参考：{selected.readiness.missing.map((kind) => REF_KIND_LABELS[kind] ?? kind).join("、")}</p> : <p className="approved-text">参考图齐全</p>}
               </section>
               {selected.voice && (
                 <section className="panel">
-                  <div className="panel-heading"><div><p className="eyebrow">声音</p><h4>Voice</h4></div></div>
+                  <div className="panel-heading"><div><p className="eyebrow">声音</p><h4>角色声音</h4></div></div>
                   <p className="muted">{selected.voice.voice_title}</p>
                 </section>
               )}
@@ -262,10 +306,10 @@ export function AssetBiblePage() {
         <aside className="bible-create" aria-label="新建资产">
           <details className="story-asset-create"><summary>新建{KIND_LABELS[tab] ?? tab}资产</summary>
             <div className="bible-create-grid">
-              <label>代码<input value={newCode} onChange={(event) => setNewCode(event.target.value)} placeholder={`CHAR_${tab.slice(0, 3).toUpperCase()}`} /></label>
-              <label>名称<input value={newName} onChange={(event) => setNewName(event.target.value)} /></label>
-              <label className="wide">描述<input value={newDescription} onChange={(event) => setNewDescription(event.target.value)} /></label>
+              <label>名称<input value={newName} onChange={(event) => setNewName(event.target.value)} placeholder={`例如：${tab === "CHARACTER" ? "女主角阿宁" : tab === "SCENE" ? "深夜便利店" : tab === "PROP" ? "旧录音机" : "雨夜外套"}`} /></label>
+              <label className="wide">补充描述（可选）<textarea value={newDescription} onChange={(event) => setNewDescription(event.target.value)} placeholder="补充外观、用途或在剧情中的作用" /></label>
               <button type="button" className="primary-action" disabled={!createValid || create.isPending} title={createDisabledReason ?? undefined} onClick={() => create.mutate()}>{create.isPending ? "创建中…" : "创建资产"}</button>
+              {!createValid && <small className="muted">填写名称即可，系统会自动生成内部标识。</small>}
             </div>
           </details>
           {formError && <p className="inline-error" role="alert">{String(formError)}</p>}
@@ -275,6 +319,15 @@ export function AssetBiblePage() {
       <div className="v2-actions">
         <Link className="secondary v2-inline-link" to={`/projects/${projectId}`}>返回项目总览</Link>
       </div>
+      <Dialog
+        open={Boolean(lifecycleAction)}
+        title={`${lifecycleAction?.mode === "RESTORE" ? "恢复" : "归档"}资产：${lifecycleAction?.name ?? ""}`}
+        onClose={() => { if (!archive.isPending && !restore.isPending) { setLifecycleAction(null); setLifecycleReason(""); } }}
+        footer={<><button type="button" className="secondary" onClick={() => { setLifecycleAction(null); setLifecycleReason(""); }} disabled={archive.isPending || restore.isPending}>取消</button><button type="button" className={lifecycleAction?.mode === "ARCHIVE" ? "danger" : "primary-action"} disabled={!lifecycleReason.trim() || archive.isPending || restore.isPending} onClick={() => { if (!lifecycleAction || !lifecycleReason.trim()) return; const payload = { id: lifecycleAction.id, revision: lifecycleAction.revision, reason: lifecycleReason.trim() }; if (lifecycleAction.mode === "ARCHIVE") archive.mutate(payload); else restore.mutate(payload); }}>{archive.isPending || restore.isPending ? "处理中…" : lifecycleAction?.mode === "RESTORE" ? "确认恢复" : "确认归档"}</button></>}
+      >
+        <p>{lifecycleAction?.mode === "ARCHIVE" ? "归档会停止该资产参与新的镜头绑定，但保留历史绑定、参考、状态和审计记录。" : "恢复会让资产重新参与新的镜头绑定，不会覆盖归档前后的 revision 历史。"}</p>
+        <label>{lifecycleAction?.mode === "ARCHIVE" ? "归档原因" : "恢复原因"}<textarea autoFocus value={lifecycleReason} onChange={(event) => setLifecycleReason(event.target.value)} rows={3} maxLength={500} /></label>
+      </Dialog>
     </div>
   );
 }

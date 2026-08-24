@@ -8,7 +8,7 @@ vi.mock("../../generated/api", () => ({ createVideoAnnotation: vi.fn(), listVide
 
 function renderPanel() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  return render(<QueryClientProvider client={client}><VideoAnnotations mediaVersionId="video-1" durationMs={1_000} /></QueryClientProvider>);
+  return render(<QueryClientProvider client={client}><VideoAnnotations mediaVersionId="video-1" durationMs={1_000} currentTimeMs={500} /></QueryClientProvider>);
 }
 
 describe("VideoAnnotations", () => {
@@ -20,13 +20,12 @@ describe("VideoAnnotations", () => {
     } });
   });
 
-  it("requires a note, bounds the timecode, and submits an explicit issue category", async () => {
+  it("captures the player time automatically and submits a creator-facing issue category", async () => {
     renderPanel();
-    const submit = screen.getByRole("button", { name: "保存标记" });
+    const submit = screen.getByRole("button", { name: "标记播放器当前画面" });
     expect(submit.hasAttribute("disabled")).toBe(true);
-    fireEvent.change(screen.getByLabelText("时间码（毫秒）"), { target: { value: "500" } });
     fireEvent.change(screen.getByLabelText("问题分类"), { target: { value: "FLICKER" } });
-    fireEvent.change(screen.getByLabelText("问题备注"), { target: { value: "亮度跳变" } });
+    fireEvent.change(screen.getByLabelText("问题描述"), { target: { value: "亮度跳变" } });
     fireEvent.click(submit);
     await waitFor(() => expect(createVideoAnnotation).toHaveBeenCalledWith("video-1", { timecode_ms: 500, category: "FLICKER", comment: "亮度跳变" }));
   });
@@ -37,12 +36,12 @@ describe("VideoAnnotations", () => {
       snapshot_media_version_id: null, rework_job_id: "job-1", created_at: "now", created_by: "tester", schema_version: "v2",
     }] });
     renderPanel();
-    expect((await screen.findByText("00:00.125 · MOTION")).textContent).toContain("MOTION");
+    expect((await screen.findByText("00:00.125 · 动作或运镜")).textContent).toContain("动作或运镜");
     expect(screen.getByText("动作断裂")).toBeTruthy();
-    expect(screen.getByText(/返工 job-1/)).toBeTruthy();
+    expect(screen.getByText(/已关联返工/)).toBeTruthy();
   });
 
-  it("can copy the current player time into a marker and seek to existing markers", async () => {
+  it("seeks the player to an existing marker without exposing millisecond input", async () => {
     const onSeek = vi.fn();
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
     vi.mocked(listVideoAnnotations).mockResolvedValueOnce({ items: [{
@@ -50,9 +49,8 @@ describe("VideoAnnotations", () => {
       snapshot_media_version_id: null, rework_job_id: null, created_at: "now", created_by: "tester", schema_version: "v2",
     }] });
     render(<QueryClientProvider client={client}><VideoAnnotations mediaVersionId="video-1" durationMs={1_000} currentTimeMs={638} onSeek={onSeek} /></QueryClientProvider>);
-    fireEvent.click(screen.getByRole("button", { name: "使用播放器当前时间" }));
-    expect(screen.getByLabelText("时间码（毫秒）")).toHaveProperty("value", "638");
-    fireEvent.click(await screen.findByRole("button", { name: "00:00.125 · MOTION" }));
+    expect(screen.queryByLabelText("时间码（毫秒）")).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "00:00.125 · 动作或运镜" }));
     expect(onSeek).toHaveBeenCalledWith(125);
   });
 });

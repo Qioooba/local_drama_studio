@@ -30,7 +30,7 @@ const MATRIX: Record<string, AuditItem> = {
   "../features/shared/OutboxDeliveryPanel#OutboxDeliveryPanel": { status: "SYSTEM_OR_TOOL", target: "/projects/:projectId/operations", safeToRemoveFromLegacyApp: true, authority: "explicit outbox delivery" },
   "../features/shared/AutomationPanel#AutomationPanel": { status: "SYSTEM_OR_TOOL", target: "/projects/:projectId/operations", safeToRemoveFromLegacyApp: true, authority: "AutomationClient/Webhook/Delivery" },
   "../features/shared/AutomationWorkflowPanel#AutomationWorkflowPanel": { status: "SYSTEM_OR_TOOL", target: "/projects/:projectId/operations", safeToRemoveFromLegacyApp: true, authority: "AutomationWorkflow/Run" },
-  "../features/shared/ComfyLabPanel#ComfyLabPanel": { status: "SYSTEM_OR_TOOL", target: "/projects/:projectId/lab", safeToRemoveFromLegacyApp: true },
+  "../features/shared/ComfyLabPanel#ComfyLabPanel": { status: "SYSTEM_OR_TOOL", target: "/lab", safeToRemoveFromLegacyApp: true },
   "../features/shared/AuditHistoryPanel#AuditHistoryPanel": { status: "SYSTEM_OR_TOOL", target: "/diagnostics", safeToRemoveFromLegacyApp: true },
   "../features/shared/BrandKitPanel#BrandKitPanel": { status: "EQUIVALENT_V2", target: "/projects/:projectId/operations", safeToRemoveFromLegacyApp: true, authority: "BrandKit/WatermarkProfile/CompliancePolicy" },
   "../features/production/ContinuityPanel#ContinuityPanel": { status: "EQUIVALENT_V2", target: "episodes/:episodeId/direct/:shotId continuity inspector", safeToRemoveFromLegacyApp: true },

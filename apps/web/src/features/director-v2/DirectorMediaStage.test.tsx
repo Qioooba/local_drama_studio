@@ -12,13 +12,25 @@ describe("DirectorMediaStage", () => {
     expect(image.src).not.toContain("/content");
   });
 
-  it("uses Range content for video and a thumbnail-only poster", () => {
+  it("uses the proxy first, retains a Range fallback and keeps a thumbnail-only poster", () => {
     render(<DirectorMediaStage label="S02" media={{ mediaVersionId: "video 1", mediaKind: "VIDEO", durationMs: 2500 }} />);
     const video = screen.getByLabelText("S02 视频预览") as HTMLVideoElement;
-    expect(video.getAttribute("src")).toBe("/api/v1/media-versions/video%201/content");
+    expect(video.getAttribute("src")).toBe("/api/v1/media-versions/video%201/proxy");
+    expect(video.dataset.originalSrc).toBe("/api/v1/media-versions/video%201/content");
     expect(video.getAttribute("poster")).toContain("/thumbnail?size=medium&frame=poster");
     expect(video.getAttribute("preload")).toBe("none");
     expect(screen.getByText("0:00 / 0:02")).toBeTruthy();
+  });
+
+  it("falls back once to immutable original content when a historical proxy is not ready", () => {
+    vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => undefined);
+    render(<DirectorMediaStage label="S02" media={{ mediaVersionId: "video", mediaKind: "VIDEO" }} />);
+    const video = screen.getByLabelText("S02 视频预览") as HTMLVideoElement;
+    fireEvent.error(video);
+    expect(video.getAttribute("src")).toBe("/api/v1/media-versions/video/content");
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.error(video);
+    expect(screen.getByRole("alert").textContent).toContain("无法播放当前视频");
   });
 
   it("toggles playback with Space but ignores input focus", async () => {

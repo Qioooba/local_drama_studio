@@ -23,7 +23,7 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         foreign_keys = connection.execute("PRAGMA foreign_keys").fetchone()[0]
         indexes = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
-        assert version == "0054_character_identity_pack_hardening"
+        assert version == "0057_provider_connections"
     assert {"provider_random_nonce", "director_recipe_version_id", "director_recipe_hash"} <= variant_columns
     assert {"scene_id", "source_shot_id", "archived_at"} <= shot_columns
     assert {"requested_time_us", "resolved_time_us", "source_sha256", "extraction_method"} <= anchor_columns
@@ -74,6 +74,7 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         "ix_worker_sessions_status_lease",
         "ix_job_attempts_worker_session",
         "ix_storage_operations_status_updated",
+        "ix_provider_connections_kind_status",
     } <= indexes
     expected = {
         "projects",
@@ -126,6 +127,7 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         "story_assets",
         "shot_asset_bindings",
         "character_voice_bindings",
+        "provider_connections",
         "director_recipes",
         "director_recipe_versions",
         "project_director_recipe_bindings",

@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { importModelLicenseEvidence, type ModelCompatibilitySnapshot } from "../../generated/api";
+import { ProjectLocalResourceSelect } from "../shared/ProjectLocalResourceSelect";
+import { LOCAL_MODEL_KIND_LABELS } from "../shared/formOptions";
 
 export function ModelLicenseEvidenceForm({ projectId, reports, onImported }: { projectId: string; reports: ModelCompatibilitySnapshot["reports"]; onImported: () => void }) {
   const [expanded, setExpanded] = useState(false);
@@ -39,8 +41,8 @@ export function ModelLicenseEvidenceForm({ projectId, reports, onImported }: { p
     <button className="secondary" type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>{expanded ? "收起用户授权记录" : "可选：记录用户授权信息"}</button>
     {expanded && <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
       <div className="field-grid">
-        <label>模型 Artifact<select value={artifactId} onChange={(event) => setArtifactId(event.target.value)} required><option value="">显式选择</option>{reports.map((item) => <option key={item.artifact_id} value={item.artifact_id}>{item.code} · {item.kind}</option>)}</select></label>
-        <label>项目内 JSON 证据路径<input value={evidencePath} onChange={(event) => setEvidencePath(event.target.value)} placeholder="00_admin/licenses/h3-video-vae.json" required /></label>
+        <label>模型文件<select value={artifactId} onChange={(event) => setArtifactId(event.target.value)} required><option value="">请选择模型</option>{reports.map((item) => <option key={item.artifact_id} value={item.artifact_id}>{item.code} · {LOCAL_MODEL_KIND_LABELS[item.kind] ?? "本机模型"}</option>)}</select></label>
+        <ProjectLocalResourceSelect projectId={projectId} kind="LICENSE_EVIDENCE" value={evidencePath} onChange={setEvidencePath} label="项目内许可证证据" required emptyLabel="请选择证据文件" />
         <label>许可证名称<input value={licenseName} onChange={(event) => setLicenseName(event.target.value)} placeholder="以真实许可证文件为准" required /></label>
         <label>授权状态<select value={licenseStatus} onChange={(event) => setLicenseStatus(event.target.value)} required><option value="">显式选择</option><option value="LOCAL_LICENSE_VERIFIED">本地许可证已核验</option><option value="USER_OWNED">用户拥有授权</option></select></label>
       </div>

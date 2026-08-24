@@ -78,6 +78,31 @@ def test_g9_lazy_canvas_layout_is_separate_from_dependencies_and_preflights(work
         assert next_page["nodes"][0]["shot_code"] == "S021"
 
 
+def test_g9_canvas_excludes_archived_shots_from_counts_nodes_and_edges(workspace, database) -> None:
+    projects = ProjectService(database, workspace.projects_root)
+    project = projects.create_project(code="g9_active_only", title="G9 active only", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1, target_duration_ms=60_000, allow_unconfigured_capabilities=True)
+    season = projects.list_seasons(str(project["id"]))[0]
+    episode = projects.list_episodes(str(season["id"]))[0]
+    active = projects.create_shot(str(episode["id"]), "S_ACTIVE", 1000)
+    archived = projects.create_shot(str(episode["id"]), "S_ARCHIVED", 1000)
+    with database.transaction() as connection:
+        connection.execute("UPDATE shots SET archived_at='2026-08-23T00:00:00Z' WHERE id=?", (str(archived["id"]),))
+        connection.execute(
+            """INSERT INTO shot_transition_constraints
+            (id, from_shot_id, to_shot_id, constraint_type, enforcement, compatibility_status, note, created_at, updated_at, created_by, revision, schema_version)
+            VALUES ('constraint-g9-archived', ?, ?, 'POSE_CONTINUITY', 'HARD', 'PASS', 'must not dangle', '2026-08-23T00:00:00Z', '2026-08-23T00:00:00Z', 'test', 1, 'v2')""",
+            (str(active["id"]), str(archived["id"])),
+        )
+
+    from local_drama.application.canvas import ProductionCanvasService
+
+    graph = ProductionCanvasService(database).graph("EPISODE", str(episode["id"]))
+    assert graph["page"]["total_shots"] == 1
+    assert graph["page"]["returned_shots"] == 1
+    assert {node["shot_id"] for node in graph["nodes"]} == {str(active["id"])}
+    assert all(str(archived["id"]) not in edge["source"] and str(archived["id"]) not in edge["target"] for edge in graph["edges"])
+
+
 def test_g9_canvas_node_detail_aggregates_real_lineage_experiment_and_constraints(workspace, database) -> None:
     projects = ProjectService(database, workspace.projects_root)
     project = projects.create_project(code="g9_detail", title="G9 detail", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1, target_duration_ms=60_000, allow_unconfigured_capabilities=True)

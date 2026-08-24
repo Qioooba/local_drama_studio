@@ -44,7 +44,7 @@ class ShotGroupService:
                 (episode["project_id"],),
             ).fetchall()
             shot_rows = connection.execute(
-                "SELECT * FROM shots WHERE episode_id=? ORDER BY order_key, code, id", (episode_id,),
+                "SELECT * FROM shots WHERE episode_id=? AND archived_at IS NULL ORDER BY order_key, code, id", (episode_id,),
             ).fetchall()
             group_rows = connection.execute(
                 "SELECT * FROM shot_groups WHERE episode_id=? ORDER BY order_key, code, id", (episode_id,),
@@ -52,7 +52,9 @@ class ShotGroupService:
             member_rows = connection.execute(
                 """SELECT m.group_id, m.shot_id, m.order_key
                 FROM shot_group_members m JOIN shot_groups g ON g.id=m.group_id
-                WHERE g.episode_id=? ORDER BY m.group_id, m.order_key, m.shot_id""",
+                JOIN shots sh ON sh.id=m.shot_id
+                WHERE g.episode_id=? AND sh.archived_at IS NULL
+                ORDER BY m.group_id, m.order_key, m.shot_id""",
                 (episode_id,),
             ).fetchall()
 

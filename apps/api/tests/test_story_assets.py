@@ -100,13 +100,13 @@ def test_archive_keeps_bindings_but_blocks_new_bindings(workspace, database) -> 
     service = StoryAssetService(database, workspace)
     asset = service.create_asset(str(project["id"]), "CHARACTER", "CHAR_MOTHER", "母亲")
     service.bind_asset_to_shot(str(shot["id"]), str(asset["id"]), "main")
-    archived = service.archive_asset(str(asset["id"]), 1)
+    archived = service.archive_asset(str(asset["id"]), 1, "测试归档")
     assert archived["status"] == "ARCHIVED"
     with pytest.raises(DomainRuleError) as bound_after:
         service.bind_asset_to_shot(str(shot["id"]), str(asset["id"]), "guest")
     assert bound_after.value.code == "STORY_ASSET_ARCHIVED"
     with pytest.raises(DomainRuleError) as twice:
-        service.archive_asset(str(asset["id"]), 2)
+        service.archive_asset(str(asset["id"]), 2, "重复归档")
     assert twice.value.code == "STORY_ASSET_ALREADY_ARCHIVED"
     bindings = service.list_shot_assets(str(shot["id"]))
     assert len(bindings) == 1
@@ -164,7 +164,7 @@ def test_audit_events_persisted(workspace, database) -> None:
             "SELECT action,subject_type FROM audit_events WHERE subject_type='shot_asset_binding' AND subject_id=?",
             (binding["binding_id"],),
         ).fetchone()
-        archived_after = service.archive_asset(str(asset["id"]), 1)
+        archived_after = service.archive_asset(str(asset["id"]), 1, "并发归档")
         archived = connection.execute(
             "SELECT action,subject_type FROM audit_events WHERE subject_type='story_asset' AND subject_id=? AND action='STORY_ASSET_ARCHIVED'",
             (archived_after["id"],),
@@ -224,7 +224,11 @@ def test_story_asset_api_full_flow(workspace, database) -> None:
         shot_bindings = client.get(f"/api/v1/shots/{shot['id']}/story-asset-bindings")
         archived = client.post(
             f"/api/v1/story-assets/{created.json()['asset']['id']}:archive",
-            json={"expected_revision": 2},
+            json={"expected_revision": 2, "reason": "验收归档"},
+        )
+        restored = client.post(
+            f"/api/v1/story-assets/{created.json()['asset']['id']}:restore",
+            json={"expected_revision": 3, "reason": "验收恢复"},
         )
         unbound = client.delete(f"/api/v1/story-asset-bindings/{bound.json()['binding']['binding_id']}")
         after_unbind = client.get(f"/api/v1/shots/{shot['id']}/story-asset-bindings")
@@ -248,6 +252,8 @@ def test_story_asset_api_full_flow(workspace, database) -> None:
     assert shot_bindings.json()["items"][0]["asset_id"] == created.json()["asset"]["id"]
     assert archived.status_code == 201
     assert archived.json()["asset"]["status"] == "ARCHIVED"
+    assert restored.status_code == 201
+    assert restored.json()["asset"]["status"] == "ACTIVE"
     assert unbound.status_code == 200
     assert unbound.json()["unbound"] is True
     assert after_unbind.status_code == 200

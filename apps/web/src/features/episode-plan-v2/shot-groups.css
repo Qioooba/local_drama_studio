@@ -1,5 +1,6 @@
-.shot-group-create { display: grid; grid-template-columns: 1fr 1.4fr 1fr 1.4fr auto; gap: .75rem; align-items: end; margin: 1rem 0; }
-.shot-group-create label { display: grid; gap: .35rem; }
+.shot-group-create { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) auto; gap: .75rem; align-items: end; margin: 1rem 0; }
+.shot-group-create label { display: grid; gap: .35rem; font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.shot-group-create select, .shot-group-create input, .shot-group-create button { min-height: 40px; }
 .shot-group-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); margin: 1rem 0; }
 .shot-group-card { border: 1px solid var(--line, #d8dee8); border-radius: .75rem; padding: .9rem; background: var(--surface, #fff); }
 .shot-group-card header, .shot-group-card header > div, .shot-group-actions, .shot-group-card li { display: flex; align-items: center; gap: .5rem; }

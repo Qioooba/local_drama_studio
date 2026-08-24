@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from typing import Any
@@ -35,6 +36,71 @@ class DirectorDeskReadModelService:
 
     def __init__(self, database: Database) -> None:
         self.database = database
+
+    def timeline_selections(self, project_id: str, episode_id: str, limit: int = 500) -> dict[str, Any]:
+        """Return the episode's timeline selection facts in one bounded read.
+
+        Timeline composition needs only ordered shot labels, the current selected
+        video and continuity status. Reusing the full Director Desk projection
+        page by page caused up to ten sequential aggregate requests.
+        """
+        bounded_limit = max(1, min(int(limit), 500))
+        with self.database.connect() as connection:
+            context = connection.execute(
+                """SELECT 1 FROM projects p JOIN seasons se ON se.project_id=p.id
+                JOIN episodes e ON e.season_id=se.id WHERE p.id=? AND e.id=?""",
+                (project_id, episode_id),
+            ).fetchone()
+            if context is None:
+                raise DomainRuleError(
+                    "EPISODE_NOT_FOUND", "分集不存在或不属于当前项目",
+                    {"project_id": project_id, "episode_id": episode_id},
+                )
+            total = int(connection.execute(
+                "SELECT COUNT(*) FROM shots WHERE episode_id=? AND archived_at IS NULL", (episode_id,),
+            ).fetchone()[0])
+            rows = connection.execute(
+                """WITH continuity AS (
+                  SELECT shot_id,
+                  CASE WHEN MAX(is_stale)=1 THEN 'STALE'
+                       WHEN MAX(is_conflict)=1 THEN 'CONFLICT'
+                       WHEN MAX(is_attention)=1 THEN 'ATTENTION' ELSE 'OK' END continuity_status
+                  FROM (
+                    SELECT to_shot_id shot_id,is_stale,
+                    CASE WHEN compatibility_status IN ('BLOCKED','CONFLICT','INCOMPATIBLE') THEN 1 ELSE 0 END is_conflict,
+                    CASE WHEN compatibility_status IN ('WARNING','ATTENTION') THEN 1 ELSE 0 END is_attention
+                    FROM shot_transition_constraints
+                    UNION ALL
+                    SELECT from_shot_id,is_stale,
+                    CASE WHEN compatibility_status IN ('BLOCKED','CONFLICT','INCOMPATIBLE') THEN 1 ELSE 0 END,
+                    CASE WHEN compatibility_status IN ('WARNING','ATTENTION') THEN 1 ELSE 0 END
+                    FROM shot_transition_constraints
+                  ) GROUP BY shot_id
+                )
+                SELECT s.id,s.code,s.order_key,s.status,s.target_duration_ms,
+                (SELECT se.media_version_id
+                 FROM selections se
+                 JOIN media_versions mv ON mv.id=se.media_version_id
+                 JOIN media_assets ma ON ma.id=mv.media_asset_id
+                 LEFT JOIN generation_variants gv ON ma.owner_type='GENERATION_VARIANT' AND ma.owner_id=gv.id
+                 LEFT JOIN generation_intents gi ON gi.id=gv.intent_id
+                 WHERE ma.media_kind='VIDEO' AND mv.mime_type LIKE 'video/%'
+                   AND se.selection_type IN ('FORMAL_SELECTION','PROXY_WINNER')
+                   AND ((ma.owner_type='SHOT' AND ma.owner_id=s.id)
+                     OR (gi.owner_type='SHOT' AND gi.owner_id=s.id))
+                 ORDER BY CASE se.selection_type WHEN 'FORMAL_SELECTION' THEN 2 ELSE 1 END DESC,
+                          se.created_at DESC,se.id DESC LIMIT 1) current_video_media_version_id,
+                COALESCE(c.continuity_status,'MISSING') continuity_status
+                FROM shots s LEFT JOIN continuity c ON c.shot_id=s.id
+                WHERE s.episode_id=? AND s.archived_at IS NULL
+                ORDER BY CAST(s.order_key AS REAL),s.code,s.id LIMIT ?""",
+                (episode_id, bounded_limit),
+            ).fetchall()
+        return {
+            "items": [dict(row) for row in rows], "total": total,
+            "has_more": total > len(rows), "limit": bounded_limit,
+            "read_only": True, "request_shape": "bounded_timeline_selection_read_model",
+        }
 
     def get(self, project_id: str, episode_id: str, shot_id: str | None, nav_radius: int = 12) -> dict[str, Any]:
         radius = max(2, min(int(nav_radius), 25))
@@ -89,6 +155,9 @@ class DirectorDeskReadModelService:
             assets, asset_states = self._assets(connection, episode_id, shot_id)
             active_jobs = self._active_jobs(connection, shot_id, media["variant_ids"])
             source_context = self._source_context(connection, episode_id, shot["scene_id"], revision_fields)
+            intent_suggestions = self._intent_suggestions(
+                connection, episode_id, shot_id, shot["scene_id"], source_context, revision_fields,
+            )
             review_summary, qc_summary = self._quality(connection, media["current_media"])
             preferences = self._preferences(connection, project_id, episode_id, shot_id)
             blockers = self._blockers(
@@ -118,6 +187,7 @@ class DirectorDeskReadModelService:
                     "is_frozen": bool(shot["is_frozen"]), "fields": revision_fields,
                 },
                 "source_context": source_context,
+                "intent_suggestions": intent_suggestions,
                 "assets": assets,
                 "asset_states": asset_states,
                 "selected_variant": media["selected_variant"],
@@ -146,6 +216,19 @@ class DirectorDeskReadModelService:
                WHERE gm.shot_id=s.id AND g.status='ACTIVE' ORDER BY g.order_key,g.code,g.id LIMIT 1) AS group_code,
               (SELECT g.title FROM shot_group_members gm JOIN shot_groups g ON g.id=gm.group_id
                WHERE gm.shot_id=s.id AND g.status='ACTIVE' ORDER BY g.order_key,g.code,g.id LIMIT 1) AS group_title,
+              (SELECT se.media_version_id
+               FROM selections se
+               JOIN media_versions selected_mv ON selected_mv.id=se.media_version_id
+               JOIN media_assets selected_ma ON selected_ma.id=selected_mv.media_asset_id
+               LEFT JOIN generation_variants selected_gv
+                 ON selected_ma.owner_type='GENERATION_VARIANT' AND selected_ma.owner_id=selected_gv.id
+               LEFT JOIN generation_intents selected_gi ON selected_gi.id=selected_gv.intent_id
+               WHERE selected_ma.media_kind='VIDEO' AND selected_mv.mime_type LIKE 'video/%'
+                 AND se.selection_type IN ('FORMAL_SELECTION','PROXY_WINNER')
+                 AND ((selected_ma.owner_type='SHOT' AND selected_ma.owner_id=s.id)
+                   OR (selected_gi.owner_type='SHOT' AND selected_gi.owner_id=s.id))
+               ORDER BY CASE se.selection_type WHEN 'FORMAL_SELECTION' THEN 2 ELSE 1 END DESC,
+                        se.created_at DESC,se.id DESC LIMIT 1) AS current_video_media_version_id,
               ROW_NUMBER() OVER (ORDER BY CAST(s.order_key AS REAL),s.code,s.id)-1 AS idx,
               COUNT(*) OVER () AS total
               FROM shots s LEFT JOIN scenes sc ON sc.id=s.scene_id
@@ -198,7 +281,8 @@ class DirectorDeskReadModelService:
                 "id": row["id"], "code": row["code"], "order_key": row["order_key"],
                 "scene_id": row["scene_id"], "scene_code": row["scene_code"], "scene_title": row["scene_title"],
                 "group_id": row["group_id"], "group_code": row["group_code"], "group_title": row["group_title"],
-                "thumbnail_media_version_id": row["thumbnail_media_version_id"], "status": row["status"],
+                "thumbnail_media_version_id": row["thumbnail_media_version_id"],
+                "current_video_media_version_id": row["current_video_media_version_id"], "status": row["status"],
                 "continuity_status": row["continuity_status"], "job_status": row["job_status"],
             })
         start = int(rows[0]["idx"]) if rows else 0
@@ -224,6 +308,7 @@ class DirectorDeskReadModelService:
               WHERE selected_gi.owner_type='SHOT' AND selected_gi.owner_id=?
             )
             SELECT gv.id,gv.intent_id,gv.variant_no,gv.variant_type,gv.parent_variant_id,gv.branch_reason,
+            gv.seed_policy,gv.explicit_seed,gv.capability_profile_version_id,
             gv.status,gv.is_stale,gv.stale_reason,gi.purpose,ma.id AS media_asset_id,ma.media_kind,
             mv.id AS media_version_id,mv.version_no,mv.take_no,mv.stage,mv.rel_path,mv.mime_type,mv.duration_ms,
             mv.integrity_status,mv.created_at,
@@ -340,7 +425,7 @@ class DirectorDeskReadModelService:
         if not scene_id or not _table_exists(connection, "episode_scene_ranges"):
             return {"scene_id": scene_id, "source_range": None, "source_text": fields.get("source_text") or fields.get("source_passage")}
         row = connection.execute(
-            """SELECT sc.id AS scene_id,sc.code AS scene_code,sc.title AS scene_title,sc.location,sc.time_of_day,
+            """SELECT sc.id AS scene_id,sc.code AS scene_code,sc.title AS scene_title,sc.location,sc.time_of_day,sc.revision AS scene_revision,
             esr.ordinal,esr.source_start,esr.source_end,esr.source_label
             FROM scenes sc LEFT JOIN episode_scene_ranges esr ON esr.scene_id=sc.id AND esr.episode_id=?
             WHERE sc.id=?""", (episode_id, scene_id)
@@ -350,9 +435,182 @@ class DirectorDeskReadModelService:
             "source_text": fields.get("source_text") or fields.get("source_passage"),
         }
 
+    def _intent_suggestions(
+        self,
+        connection: sqlite3.Connection,
+        episode_id: str,
+        shot_id: str,
+        scene_id: str | None,
+        source_context: dict[str, Any],
+        fields: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Return grounded, opt-in Director suggestions without mutating authority."""
+        scene = source_context.get("source_range") if isinstance(source_context.get("source_range"), dict) else {}
+        suggestion_sources = fields.get("suggestion_sources") if isinstance(fields.get("suggestion_sources"), dict) else {}
+        scene_parts = [str(value).strip() for value in (scene.get("location"), scene.get("time_of_day")) if value]
+        environment = None
+        if scene_parts:
+            scene_label = " · ".join(
+                str(value).strip() for value in (scene.get("scene_code"), scene.get("scene_title")) if value
+            ) or "当前场景"
+            source_revision = str(scene.get("scene_revision") or "")
+            adopted = suggestion_sources.get("environment") if isinstance(suggestion_sources.get("environment"), dict) else {}
+            stale = bool(adopted and str(adopted.get("source_revision") or "") != source_revision)
+            environment = {
+                "value": "；".join(scene_parts),
+                "source_label": scene_label,
+                "source_kind": "SCENE",
+                "source_revision": source_revision,
+                "stale": stale,
+                "stale_reason": "场景资料已更新，请重新采用并复核环境。" if stale else None,
+            }
+
+        previous = connection.execute(
+            """WITH ordered AS (
+              SELECT s.id,s.code,s.scene_id,sr.id AS revision_id,sr.revision_no,sr.fields_json,
+                     ROW_NUMBER() OVER (ORDER BY CAST(s.order_key AS REAL),s.code,s.id) AS idx
+              FROM shots s LEFT JOIN shot_revisions sr ON sr.id=s.current_revision_id
+              WHERE s.episode_id=? AND s.archived_at IS NULL
+            ), current AS (SELECT idx FROM ordered WHERE id=?)
+            SELECT id,code,scene_id,revision_id,revision_no,fields_json FROM ordered
+            WHERE idx=(SELECT idx-1 FROM current)""",
+            (episode_id, shot_id),
+        ).fetchone()
+        continuity: dict[str, Any] | None = None
+        if previous is not None:
+            source_revision = str(previous["revision_id"] or "")
+            adopted = suggestion_sources.get("continuity") if isinstance(suggestion_sources.get("continuity"), dict) else {}
+            stale = bool(adopted and str(adopted.get("source_revision") or "") != source_revision)
+            same_scene = bool(scene_id and previous["scene_id"] == scene_id)
+            if not same_scene:
+                continuity = {
+                    "value": None,
+                    "source_label": str(previous["code"]),
+                    "source_kind": "PREVIOUS_SHOT",
+                    "eligible": False,
+                    "reason": "上一镜不在同一场景，未自动建议继承。",
+                    "source_revision": source_revision,
+                    "stale": stale,
+                    "stale_reason": "上一镜版本已更新，原连续性继承需要重新复核。" if stale else None,
+                }
+            else:
+                previous_fields = _json(previous["fields_json"], {})
+                performance = previous_fields.get("performance") if isinstance(previous_fields.get("performance"), dict) else {}
+                inherited_parts = []
+                if previous_fields.get("continuity"):
+                    inherited_parts.append(str(previous_fields["continuity"]).strip())
+                if previous_fields.get("environment"):
+                    inherited_parts.append(f"环境：{str(previous_fields['environment']).strip()}")
+                if performance.get("blocking_summary"):
+                    inherited_parts.append(f"站位：{str(performance['blocking_summary']).strip()}")
+                inherited_parts = list(dict.fromkeys(item for item in inherited_parts if item))
+                continuity = {
+                    "value": "；".join(inherited_parts) or None,
+                    "source_label": str(previous["code"]),
+                    "source_kind": "PREVIOUS_SHOT",
+                    "eligible": bool(inherited_parts),
+                    "reason": None if inherited_parts else "同场上一镜尚未记录可继承的环境或连续性状态。",
+                    "source_revision": source_revision,
+                    "stale": stale,
+                    "stale_reason": "上一镜版本已更新，原连续性继承需要重新复核。" if stale else None,
+                }
+        elif fields.get("continuity") is None:
+            continuity = {
+                "value": None,
+                "source_label": None,
+                "source_kind": "PREVIOUS_SHOT",
+                "eligible": False,
+                "reason": "当前是本集第一镜，没有上一镜状态。",
+                "source_revision": "",
+                "stale": False,
+                "stale_reason": None,
+            }
+        script = self._script_intent_suggestion(connection, episode_id, shot_id, scene_id, suggestion_sources)
+        return {"environment": environment, "continuity": continuity, "script": script}
+
+    @staticmethod
+    def _script_intent_suggestion(
+        connection: sqlite3.Connection,
+        episode_id: str,
+        shot_id: str,
+        scene_id: str | None,
+        suggestion_sources: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        if not scene_id or not _table_exists(connection, "script_breakdown_scene_applications"):
+            return None
+        application = connection.execute(
+            """SELECT a.scene_no,a.breakdown_draft_revision_id,d.draft_json AS model_draft_json,
+            r.draft_json AS revision_draft_json,sd.title AS source_document_title
+            FROM script_breakdown_scene_applications a
+            JOIN script_breakdown_drafts d ON d.id=a.breakdown_draft_id
+            LEFT JOIN script_breakdown_draft_revisions r ON r.id=a.breakdown_draft_revision_id
+            JOIN source_document_versions sdv ON sdv.id=d.source_document_version_id
+            JOIN source_documents sd ON sd.id=sdv.source_document_id
+            WHERE a.episode_id=? AND a.created_scene_id=?
+            ORDER BY a.created_at DESC,a.id DESC LIMIT 1""",
+            (episode_id, scene_id),
+        ).fetchone()
+        if application is None:
+            return None
+        ordinal_row = connection.execute(
+            """WITH ordered AS (
+              SELECT id,ROW_NUMBER() OVER (ORDER BY CAST(order_key AS REAL),code,id) AS ordinal
+              FROM shots WHERE episode_id=? AND scene_id=? AND archived_at IS NULL
+            ) SELECT ordinal FROM ordered WHERE id=?""",
+            (episode_id, scene_id, shot_id),
+        ).fetchone()
+        if ordinal_row is None:
+            return None
+        payload = _json(application["revision_draft_json"] or application["model_draft_json"], {})
+        scenes = payload.get("scenes") if isinstance(payload, dict) else None
+        scene = next(
+            (item for item in (scenes or []) if isinstance(item, dict) and int(item.get("scene_no", 0)) == int(application["scene_no"])),
+            None,
+        )
+        if not isinstance(scene, dict):
+            return None
+        shot_no = int(ordinal_row["ordinal"])
+        shot = next(
+            (item for item in (scene.get("shots") or []) if isinstance(item, dict) and int(item.get("shot_no", 0)) == shot_no),
+            None,
+        )
+        if not isinstance(shot, dict):
+            return None
+        action = str(shot.get("action") or "").strip()
+        visual = str(shot.get("visual") or "").strip()
+        summary = str(scene.get("summary") or "").strip()
+        dialogue = shot.get("dialogue")
+        if not any((action, visual, summary, dialogue)):
+            return None
+        fingerprint_payload = {
+            "scene_no": int(application["scene_no"]),
+            "shot_no": shot_no,
+            "action": action,
+            "visual": visual,
+            "summary": summary,
+            "dialogue": dialogue,
+        }
+        fingerprint = hashlib.sha256(
+            json.dumps(fingerprint_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        adopted = suggestion_sources.get("script") if isinstance(suggestion_sources.get("script"), dict) else {}
+        stale = bool(adopted and str(adopted.get("source_fingerprint") or "") != fingerprint)
+        creative_intent = "；".join(dict.fromkeys(part for part in (visual, summary) if part))
+        return {
+            "subject_action": action,
+            "creative_intent": creative_intent,
+            "dialogue": dialogue,
+            "source_label": f"{application['source_document_title']} · 场 {application['scene_no']} 镜 {shot_no}",
+            "source_kind": "APPLIED_BREAKDOWN_DRAFT",
+            "source_revision_id": application["breakdown_draft_revision_id"],
+            "source_fingerprint": fingerprint,
+            "stale": stale,
+            "stale_reason": "剧本拆解来源已变化，请重新采用并复核镜头意图。" if stale else None,
+        }
+
     def _frame_bridge(self, connection: sqlite3.Connection, episode_id: str, shot_id: str) -> dict[str, Any]:
         adjacent = connection.execute(
-            """WITH ordered AS (SELECT id,code,ROW_NUMBER() OVER (ORDER BY CAST(order_key AS REAL),code,id) idx
+            """WITH ordered AS (SELECT id,code,scene_id,ROW_NUMBER() OVER (ORDER BY CAST(order_key AS REAL),code,id) idx
             FROM shots WHERE episode_id=? AND archived_at IS NULL),
             current AS (SELECT idx FROM ordered WHERE id=?) SELECT id,code,idx-(SELECT idx FROM current) delta FROM ordered
             WHERE idx BETWEEN (SELECT idx FROM current)-1 AND (SELECT idx FROM current)+1 ORDER BY idx""",
@@ -371,12 +629,29 @@ class DirectorDeskReadModelService:
                 return None
             previous_end = self._anchor(connection, constraint["from_anchor_id"], constraint)
             current_start = self._anchor(connection, constraint["to_anchor_id"], constraint, inherited_from=previous_end)
+            same_scene = bool(from_row["scene_id"] and from_row["scene_id"] == to_row["scene_id"])
+            conflict = str(constraint["compatibility_status"]).upper() in {"BLOCKED", "CONFLICT", "INCOMPATIBLE"}
+            stale = bool(constraint["is_stale"] or (previous_end and previous_end["stale"]) or (current_start and current_start["stale"]))
+            inheritance_recommended = bool(same_scene and previous_end and not current_start and not stale and not conflict)
+            if not same_scene:
+                inheritance_reason = "相邻镜头不属于同一场景，不建议默认继承；仍可由导演显式选择。"
+            elif not previous_end:
+                inheritance_reason = "同场上一镜尚无可继承尾帧。"
+            elif stale:
+                inheritance_reason = "同场来源已失效，请先刷新尾帧事实。"
+            elif conflict:
+                inheritance_reason = "同场边界存在冲突，不建议继承。"
+            elif current_start:
+                inheritance_reason = "本镜已有首帧；如需替换请显式重新继承。"
+            else:
+                inheritance_reason = "同场连续镜且上一镜尾帧有效，建议继承后复核再锁定。"
             return {
                 "transition_id": constraint["id"], "boundary_revision": int(constraint["boundary_revision"]),
                 "from_shot_id": from_row["id"], "from_shot_code": from_row["code"],
                 "to_shot_id": to_row["id"], "to_shot_code": to_row["code"], "enforcement": constraint["enforcement"],
                 "compatibility": constraint["compatibility_status"], "stale": bool(constraint["is_stale"]),
                 "stale_reason": constraint["stale_reason"], "previous_end": previous_end, "current_start": current_start,
+                "inheritance_recommended": inheritance_recommended, "inheritance_reason": inheritance_reason,
             }
 
         previous = boundary(by_delta.get(-1), by_delta.get(0))

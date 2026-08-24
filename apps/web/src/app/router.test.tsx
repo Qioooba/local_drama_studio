@@ -17,8 +17,11 @@ import { MediaLabPage } from "../pages/MediaLabPage";
 vi.mock("../generated/api", () => ({
   listProjects: () => ({ items: [] }),
   getProjectHealth: () => ({ project_id: "p", status: "OK", root_exists: true, database_integrity: "ok", media: { referenced_count: 0, missing: [], size_mismatch: [], hash_mismatch: [] }, orphan_files: [], orphan_count: 0, disk: { free_bytes: 0, total_bytes: 0 }, blockers: [], runtime_contacted: false, network_contacted: false, mutated: false }),
+  getProjectCreatorSetup: () => ({ setup: { project_id: "proj-1", milestones: { episode_count: { ready: false, count: 0 }, production_plan_count: { ready: false, count: 0 }, published_profile_binding_count: { ready: false, count: 0 }, reviewable_story_draft_count: { ready: false, count: 0 }, active_story_asset_count: { ready: false, count: 0 }, shot_intent_count: { ready: false, count: 0 }, shot_generation_job_count: { ready: false, count: 0 } }, operations: { worker_ready: false, active_worker_count: 0 }, completed_count: 0, total_count: 7, observed_at: "2026-08-24T00:00:00Z", read_only: true, runtime_contacted: false, network_contacted: false, mutated: false } }),
   listSeasons: () => ({ items: [] }),
   listEpisodes: () => ({ items: [] }),
+  getProjectEpisodeCatalog: () => ({ catalog: { project_id: "proj-1", seasons: [], read_only: true, runtime_contacted: false, network_contacted: false, mutated: false } }),
+  getStoryboardWorkspace: () => ({ storyboard: { episode: { id: "ep-9", title: "第九集" }, items: [], views: ["TABLE"], identity_invariant: "stable", total_duration_ms: 0 } }),
   listDialogueLines: () => ({ items: [] }),
   listEpisodeAudioBindings: () => ({ items: [] }),
   getEpisodeProduction: () => ({
@@ -29,6 +32,14 @@ vi.mock("../generated/api", () => ({
   reviewInbox: () => ({ items: [] }),
   getEpisodeTimelineStatus: () => ({ status: undefined }),
 }));
+
+vi.mock("../features/episode-cockpit/api", () => ({ getEpisodeCockpit: () => Promise.resolve({
+  episode: { id: "ep-9", code: "EP09", title: "第九集", project_id: "proj-1" },
+  shots: { total: 2, directed: 1, with_candidates: 1, remaining_generation: 0, selected: 1, approved: 0, failed: 0, stale: 0 },
+  jobs: { failed: 0 }, bridges: { total: 1, ready: 1, stale: 0 }, audio: { bindings: 0, verified: 0 },
+  qc: { candidate_versions: 1, checked: 0, passed: 0, failed: 0 }, blockers: [{ code: "UNDIRECTED_SHOTS", count: 1, label: "仍有镜头未完成导演意图" }],
+  observed_at: "2026-08-24T00:00:00Z", read_only: true, mutated: false,
+}) }));
 
 vi.mock("../features/episode-run-v2/EpisodeRunPanel", () => ({
   EpisodeRunPanel: ({ projectId, episodeId }: { projectId: string; episodeId: string }) => <section aria-label="整集生产工作台">{projectId}/{episodeId}</section>,
@@ -61,6 +72,7 @@ vi.mock("../features/director-v2/DirectorDeskClient", () => ({
       scene_id: null,
       group_id: null,
       thumbnail_media_version_id: null,
+      current_video_media_version_id: null,
       status: "DRAFT",
       continuity_status: "PENDING",
       job_status: null,
@@ -123,7 +135,6 @@ function renderAt(path: string) {
           { index: true, element: <ProjectHomePage /> },
           { path: "assets", element: <AssetBiblePage /> },
           { path: "production-settings", element: <ProductionSettingsPage /> },
-          { path: "lab", element: <MediaLabPage /> },
           { path: "episodes/:episodeId/plan", element: <EpisodePlanPage /> },
           { path: "episodes/:episodeId/direct/:shotId?", element: <DirectorDeskPage /> },
           { path: "episodes/:episodeId/run", element: <EpisodeRunPage /> },
@@ -132,6 +143,7 @@ function renderAt(path: string) {
           { path: "episodes/:episodeId/timeline", element: <TimelinePage /> },
         ],
       },
+      { path: "/lab", element: <AppShell />, children: [{ index: true, element: <MediaLabPage /> }] },
     ],
     { initialEntries: [path] },
   );
@@ -201,7 +213,7 @@ describe("V2 router foundation", () => {
   });
 
   it("deep-links into the expert material lab without mixing it into formal production", async () => {
-    renderAt("/projects/proj-1/lab");
+    renderAt("/lab?project=proj-1");
     expect(await screen.findByRole("heading", { name: "素材实验室" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "本地素材实验沙盒" })).toBeTruthy();
     expect(screen.getByText(/不会自动进入正式资产/)).toBeTruthy();

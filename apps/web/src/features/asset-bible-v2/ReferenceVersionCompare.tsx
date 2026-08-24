@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getAssetReferenceMediaVersion, type AssetReferenceMediaVersion, type StoryAssetReference, type StoryAssetState } from "./api";
+import { fallbackToOriginalVideo, mediaContentUrl, mediaProxyUrl } from "../shared/mediaPlaybackPolicy";
 import "./reference-version-compare.css";
 
 const KIND_LABELS: Record<string, string> = {
@@ -17,10 +18,6 @@ type SemanticVersion = {
 
 function thumbnailUrl(id: string) {
   return `/api/v1/media-versions/${encodeURIComponent(id)}/thumbnail?size=medium&frame=poster`;
-}
-
-function contentUrl(id: string) {
-  return `/api/v1/media-versions/${encodeURIComponent(id)}/content`;
 }
 
 function formatBytes(value: number) {
@@ -43,8 +40,8 @@ function VersionPane({ side, item, loading, error, onRetry }: { side: "A" | "B";
   return <article className="reference-compare-pane" aria-label={`参考版本 ${side}`}>
     <div className="reference-compare-media">
       {isVideo
-        ? <video controls preload="none" poster={thumbnailUrl(item.id)} src={contentUrl(item.id)} aria-label={`版本 ${side} 视频，按播放后才读取内容`} />
-        : <img src={thumbnailUrl(item.id)} alt={`版本 ${side} 参考缩略图`} width="480" height="360" loading="lazy" decoding="async" />}
+        ? <video controls preload="none" poster={thumbnailUrl(item.id)} src={mediaProxyUrl(item.id)} data-original-src={mediaContentUrl(item.id)} onError={fallbackToOriginalVideo} aria-label={`版本 ${side} 视频，按播放后优先读取低码率 proxy`} />
+        : <img src={thumbnailUrl(item.id)} alt={`版本 ${side} 参考缩略图`} loading="lazy" decoding="async" />}
     </div>
     <dl>
       <div><dt>不可变版本</dt><dd>v{item.version_no}{item.take_no ? ` · Take ${item.take_no}` : ""}</dd></div>

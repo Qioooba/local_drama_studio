@@ -6,17 +6,18 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 
 from .api.routes.adapters import router as adapters_router
 from .api.routes.asset_bible import router as asset_bible_router
 from .api.routes.asset_proposals import router as asset_proposals_router
-from .api.routes.character_identity_packs import router as character_identity_packs_router
 from .api.routes.audit import router as audit_router
 from .api.routes.automation import router as automation_router
 from .api.routes.automation_workflows import router as automation_workflows_router
 from .api.routes.beat_replan import router as beat_replan_router
 from .api.routes.canvas import router as canvas_router
 from .api.routes.capacity import router as capacity_router
+from .api.routes.character_identity_packs import router as character_identity_packs_router
 from .api.routes.comfy_lab import router as comfy_lab_router
 from .api.routes.configuration import router as configuration_router
 from .api.routes.creative_entries import router as creative_entries_router
@@ -27,8 +28,8 @@ from .api.routes.director_recipes import router as director_recipes_router
 from .api.routes.episode_production_runs import router as episode_production_runs_router
 from .api.routes.experiments import router as experiments_router
 from .api.routes.gates import router as gates_router
-from .api.routes.generation_preferences import router as generation_preferences_router
 from .api.routes.generation_estimates import router as generation_estimates_router
+from .api.routes.generation_preferences import router as generation_preferences_router
 from .api.routes.health import router as health_router
 from .api.routes.imports import router as imports_router
 from .api.routes.jobs import router as jobs_router
@@ -37,6 +38,8 @@ from .api.routes.media import router as media_router
 from .api.routes.production import router as production_router
 from .api.routes.production_freshness import router as production_freshness_router
 from .api.routes.profiles import router as profiles_router
+from .api.routes.provider_connections import router as provider_connections_router
+from .api.routes.effective_configuration import router as effective_configuration_router
 from .api.routes.project_packages import router as project_packages_router
 from .api.routes.projects import router as project_router
 from .api.routes.prompts import router as prompts_router
@@ -49,11 +52,11 @@ from .api.routes.story_assets import router as story_assets_router
 from .api.routes.timeline import router as timeline_router
 from .api.routes.variants import router as variants_router
 from .api.routes.workflows import router as workflows_router
-from .application.local_llm import LocalLLMService
 from .application.profiles import ProfileService
 from .application.reviews import ReviewService
 from .config import Settings
-from .errors import ApiError, api_error_handler
+from .domain.errors import DomainRuleError
+from .errors import ApiError, api_error_handler, validation_error_handler
 from .infrastructure.database.sqlite import Database
 from .infrastructure.manifest import ManifestValidationError
 from .middleware import LocalOriginMiddleware, RequestContextMiddleware
@@ -69,12 +72,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             with app.state.database.connect() as connection:
                 connection.execute("SELECT 1 FROM local_runtimes LIMIT 1")
             app.state.manifest_sync = ProfileService(app.state.database, settings.manifest_path).sync_manifest(actor="startup")
-            app.state.llm_sync = LocalLLMService(app.state.database, settings).sync_candidate(actor="startup")
+            # Starting the API must remain local and deterministic. LLM discovery,
+            # probing, candidate synchronization, and publishing are explicit user
+            # actions because they can contact a loopback or remote model service.
+            app.state.llm_sync = None
             app.state.review_templates = ReviewService(app.state.database, settings).ensure_templates(actor="startup")
         else:
             app.state.manifest_sync = None
-    except (sqlite3.Error, ManifestValidationError):
+            app.state.llm_sync = None
+    except (sqlite3.Error, ManifestValidationError, DomainRuleError):
         app.state.manifest_sync = None
+        app.state.llm_sync = None
     yield
 
 
@@ -95,6 +103,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(LocalOriginMiddleware, allowed_origins=resolved.allowed_origins)
     app.add_exception_handler(ApiError, api_error_handler)
+    app.add_exception_handler(RequestValidationError, validation_error_handler)
     app.include_router(health_router, prefix="/api/v1")
     app.include_router(canvas_router, prefix="/api/v1")
     app.include_router(comfy_lab_router, prefix="/api/v1")
@@ -124,6 +133,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(production_router, prefix="/api/v1")
     app.include_router(production_freshness_router, prefix="/api/v1")
     app.include_router(profiles_router, prefix="/api/v1")
+    app.include_router(provider_connections_router, prefix="/api/v1")
+    app.include_router(effective_configuration_router, prefix="/api/v1")
     app.include_router(prompts_router, prefix="/api/v1")
     app.include_router(qc_policies_router, prefix="/api/v1")
     app.include_router(reviews_router, prefix="/api/v1")

@@ -39,10 +39,12 @@ describe("MediaPicker", () => {
   });
 
   it("uploads an image and selects the returned version", async () => {
-    const fetch = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ media: { media_version_id: "uploaded-version" } }), { status: 201 }))
-      .mockResolvedValue(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+    const fetch = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/session/bootstrap")) return new Response(JSON.stringify({ token: "local-token", mode: "LOCAL_ONLY" }), { status: 200 });
+      if (url.includes("/media:upload")) return new Response(JSON.stringify({ media: { media_version_id: "uploaded-version" } }), { status: 201 });
+      return new Response(JSON.stringify({ items: [] }), { status: 200 });
+    });
     vi.stubGlobal("fetch", fetch);
     const onChange = renderPicker();
     const input = await screen.findByLabelText("上传图片");
@@ -59,7 +61,7 @@ describe("MediaPicker", () => {
     render(<QueryClientProvider client={client}><MediaPicker projectId="project-1" mediaKind="AUDIO" allowUpload={false} value="" onChange={vi.fn()} label="音频选择器" /></QueryClientProvider>);
     expect(await screen.findByRole("radio", { name: /dialogue-preview\.wav/ })).toBeTruthy();
     expect(document.querySelector(".media-picker-card img")).toBeNull();
-    expect(fetch).toHaveBeenCalledWith(expect.stringContaining("media_kind=AUDIO"));
+    expect(String(fetch.mock.calls[0]?.[0])).toContain("media_kind=AUDIO");
     expect(String(fetch.mock.calls[0]?.[0])).not.toContain("/content");
   });
 });

@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { DirectorIntentApiError, saveDirectorIntentRevision, type ShotRevisionWrite } from "./directorIntentClient";
-import { StagingBoard, type StagingBoardValue } from "./StagingBoard";
+import { DirectorIntentApiError, saveDirectorIntentAndReady, saveDirectorIntentRevision, type ShotRevisionWrite } from "./directorIntentClient";
+import { StagingBoard, suggestEyeLineFromStaging, type StagingBoardValue } from "./StagingBoard";
 import { LazyDirector3DSpike } from "../director-3d/LazyDirector3DSpike";
 import type { Director3DValue } from "../director-3d/types";
+import { markShotProductionReady, resolveProfileCameraPlan, type Profile } from "../../generated/api";
+import { ProfileExecutionDetailButton } from "../model-config/ProfileExecutionDetailButton";
+import { CAMERA_CURVES, CAMERA_DIRECTION_LABELS, CAMERA_DIRECTIONS, CAMERA_MOVEMENTS, COMPOSITIONS, SHOT_TYPES } from "../shared/directorOptions";
+import { EmotionPicker, EyeLineControl, MicroExpressionSelect } from "./DirectorPerformanceControls";
 import "./director-intent-editor.css";
 
 export type DirectorIntentV3 = {
@@ -44,6 +48,7 @@ export type DirectorIntentV3 = {
   transition_plan: Record<string, unknown> | null;
   sound_plan: Record<string, unknown> | null;
   creative_intent: string;
+  suggestion_sources: Record<string, Record<string, unknown>>;
   staging: StagingBoardValue | null;
   staging_3d: Director3DValue | null;
 };
@@ -54,25 +59,20 @@ export type DirectorIntentEditorProps = {
   currentRevision: { id: string; revision_no: number; is_frozen: boolean; fields: Record<string, unknown> } | null;
   targetDurationMs?: number;
   shotType?: string | null;
+  shotStatus?: string | null;
+  cameraProfiles?: Profile[];
+  stagingParticipants?: Array<{ id: string; label: string }>;
+  intentSuggestions?: {
+    environment: { value: string; source_label: string; source_revision?: string; stale?: boolean; stale_reason?: string | null } | null;
+    continuity: { value: string | null; source_label: string | null; eligible: boolean; reason: string | null; source_revision?: string; stale?: boolean; stale_reason?: string | null } | null;
+    script?: { subject_action: string; creative_intent: string; dialogue: unknown; source_label: string; source_revision_id: string | null; source_fingerprint: string; stale: boolean; stale_reason: string | null } | null;
+  };
   blockers?: Array<string | { code?: string; message: string; blocking?: boolean }>;
   canEdit?: boolean;
   onSaved?: (revision: ShotRevisionWrite) => void | Promise<void>;
   onReloadRequested?: () => void;
   keyboardShortcutsEnabled?: boolean;
 };
-
-const SHOT_TYPES = [
-  ["ESTABLISHING", "大全景"], ["WIDE", "全景"], ["MEDIUM", "中景"], ["MEDIUM_CLOSE", "中近景"],
-  ["CLOSEUP", "近景"], ["EXTREME_CLOSEUP", "特写"], ["POV", "POV"], ["INSERT", "插入"],
-] as const;
-const COMPOSITIONS = [
-  ["CENTER", "居中"], ["LEFT_THIRD", "左三分"], ["RIGHT_THIRD", "右三分"], ["SYMMETRY", "对称"],
-  ["OVER_SHOULDER", "过肩"], ["TWO_SHOT", "双人"], ["LOW_ANGLE", "低机位"], ["HIGH_ANGLE", "高机位"],
-] as const;
-const MOVEMENTS = [
-  ["STATIC", "固定"], ["PUSH_IN", "推进"], ["PULL_OUT", "拉远"], ["PAN", "摇摄"], ["TILT", "俯仰"],
-  ["TRUCK", "横移"], ["PEDESTAL", "升降"], ["ZOOM", "变焦"], ["ORBIT", "环绕"], ["ROLL", "滚转"],
-] as const;
 
 const DRAFT_STORAGE_PREFIX = "local-drama:director-intent-draft:v1";
 const DRAFT_SCHEMA_VERSION = "director-intent.v3";
@@ -167,21 +167,24 @@ export function normalizeDirectorIntent(fields: Record<string, unknown>, fallbac
     dialogue: Array.isArray(fields.dialogue) || typeof fields.dialogue === "string" ? fields.dialogue : null,
     environment: text(fields.environment), continuity: text(fields.continuity), transition_plan: Object.keys(object(fields.transition_plan)).length ? object(fields.transition_plan) : null,
     sound_plan: Object.keys(object(fields.sound_plan)).length ? object(fields.sound_plan) : null, creative_intent: text(fields.creative_intent) ?? "",
+    suggestion_sources: Object.fromEntries(Object.entries(object(fields.suggestion_sources)).filter((entry): entry is [string, Record<string, unknown>] => Boolean(entry[1] && typeof entry[1] === "object" && !Array.isArray(entry[1])))),
     staging: fields.staging && typeof fields.staging === "object" ? fields.staging as StagingBoardValue : null,
     staging_3d: fields.staging_3d && typeof fields.staging_3d === "object" ? fields.staging_3d as Director3DValue : null,
   };
 }
 
 function ChoiceGrid({ label, value, options, onChange }: { label: string; value: string | null; options: ReadonlyArray<readonly [string, string]>; onChange: (value: string) => void }) {
-  return <fieldset className="intent-choice-field"><legend>{label}</legend><div className="intent-choice-grid">{options.map(([code, title]) => <button key={code} type="button" className={value === code ? "selected" : ""} aria-pressed={value === code} onClick={() => onChange(code)}><strong>{title}</strong><small>{code}</small></button>)}</div></fieldset>;
+  return <fieldset className="intent-choice-field"><legend>{label}</legend><div className="intent-choice-grid">{options.map(([code, title]) => <button key={code} type="button" title={`${title} · ${code}`} className={value === code ? "selected" : ""} aria-pressed={value === code} onClick={() => onChange(code)}><strong>{title}</strong><small>{code}</small></button>)}</div></fieldset>;
 }
 
-export function DirectorIntentEditor({ shotId, shotCode, currentRevision, targetDurationMs, shotType, blockers = [], canEdit = true, onSaved, onReloadRequested, keyboardShortcutsEnabled = true }: DirectorIntentEditorProps) {
+export function DirectorIntentEditor({ shotId, shotCode, currentRevision, targetDurationMs, shotType, shotStatus, cameraProfiles = [], stagingParticipants = [], intentSuggestions, blockers = [], canEdit = true, onSaved, onReloadRequested, keyboardShortcutsEnabled = true }: DirectorIntentEditorProps) {
   const initial = useMemo(() => normalizeDirectorIntent(currentRevision?.fields ?? {}, { shotType, targetDurationMs }), [currentRevision?.id, shotType, targetDurationMs]);
   const [draft, setDraft] = useState(initial);
   const [baseline, setBaseline] = useState(JSON.stringify(initial));
   const [freeze, setFreeze] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [markingReady, setMarkingReady] = useState(false);
+  const [resolvingCamera, setResolvingCamera] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [conflict, setConflict] = useState<{ message: string; currentRevisionNo?: number } | null>(null);
   const [draftCandidate, setDraftCandidate] = useState<DraftCandidate | null>(null);
@@ -201,19 +204,39 @@ export function DirectorIntentEditor({ shotId, shotCode, currentRevision, target
   const changeComposition = (value: Partial<DirectorIntentV3["composition"]>) => change("composition", { ...draft.composition, ...value });
   const changePerformance = (value: Partial<DirectorIntentV3["performance"]>) => change("performance", { ...draft.performance, ...value });
   const changeCamera = (value: Partial<DirectorIntentV3["camera_plan"]>) => change("camera_plan", { ...draft.camera_plan, ...value });
+  const stagingEyeLine = useMemo(() => draft.staging ? suggestEyeLineFromStaging(draft.staging) : null, [draft.staging]);
+  const stagingEyeLineSource = draft.suggestion_sources.staging_eye_line;
+  const stagingEyeLineStale = Boolean(stagingEyeLine && stagingEyeLineSource && stagingEyeLineSource.source_fingerprint !== stagingEyeLine.source_fingerprint);
+  const adoptScriptSuggestion = () => {
+    const suggestion = intentSuggestions?.script;
+    if (!suggestion) return;
+    setDraft((old) => ({
+      ...old,
+      subject_action: suggestion.subject_action || old.subject_action,
+      creative_intent: suggestion.creative_intent || old.creative_intent,
+      dialogue: Array.isArray(suggestion.dialogue) || typeof suggestion.dialogue === "string" ? suggestion.dialogue : old.dialogue,
+      suggestion_sources: { ...old.suggestion_sources, script: { source_fingerprint: suggestion.source_fingerprint, source_revision_id: suggestion.source_revision_id, source_label: suggestion.source_label } },
+    }));
+    setMessage(null);
+  };
 
-  const localMissing = useMemo(() => {
+  const semanticMissing = useMemo(() => {
     const items: string[] = [];
     if (!draft.shot_type) items.push("请选择景别");
     if (!draft.composition.preset) items.push("请选择构图");
     if (!draft.subject_action.trim()) items.push("补充画面或主体动作");
     if (!draft.performance.emotion) items.push("补充表演情绪");
     if (!draft.camera_plan.movement) items.push("请选择运镜");
+    if (!draft.camera_plan.profile_version_id) items.push("选择已发布的运镜 Profile");
+    else if (!new Set(["NATIVE", "PROMPT_FALLBACK"]).has(draft.camera_plan.mode)) items.push("当前 Profile 不支持所选运镜，请调整运镜或更换 Profile");
     if (!Number.isFinite(draft.target_duration_ms) || draft.target_duration_ms <= 0) items.push("时长必须大于 0 秒");
     if (!draft.creative_intent.trim()) items.push("补充创作意图");
-    if (dirty) items.push("镜头意图尚未保存");
     return items;
-  }, [draft, dirty]);
+  }, [draft]);
+  const localMissing = useMemo(
+    () => dirty ? [...semanticMissing, "镜头意图尚未保存"] : semanticMissing,
+    [dirty, semanticMissing],
+  );
   const serverMissing = blockers.filter((item) => typeof item === "string" || item.blocking !== false).map((item) => typeof item === "string" ? item : item.message);
   const missing = [...new Set([...localMissing, ...serverMissing])];
 
@@ -275,6 +298,63 @@ export function DirectorIntentEditor({ shotId, shotCode, currentRevision, target
     } finally { setSaving(false); }
   }, [canEdit, currentRevision?.revision_no, dirty, draft, freeze, onSaved, saving, shotId]);
 
+  const resolveCamera = useCallback(async () => {
+    if (!draft.camera_plan.profile_version_id || !draft.shot_type || !draft.camera_plan.movement || resolvingCamera) return;
+    setResolvingCamera(true); setMessage(null);
+    try {
+      const result = await resolveProfileCameraPlan(draft.camera_plan.profile_version_id, {
+        shot_type: draft.shot_type,
+        movement: draft.camera_plan.movement,
+        direction: draft.camera_plan.direction,
+        intensity: draft.camera_plan.intensity,
+        curve: draft.camera_plan.curve,
+        prompt_text: draft.camera_plan.prompt_text,
+      });
+      changeCamera(result.resolution.camera_plan);
+      setMessage(`运镜能力已裁决：${result.resolution.camera_plan.mode}`);
+    } catch (error) {
+      setMessage(`运镜裁决失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally { setResolvingCamera(false); }
+  }, [draft.camera_plan, draft.shot_type, resolvingCamera]);
+
+  // Auto-resolve the camera capability whenever the structured camera fields
+  // change, so the director is not forced to click a manual resolve button.
+  // Only kicks in when the mode is still UNSUPPORTED (i.e. a field has been
+  // changed and the previous resolution is no longer authoritative).
+  useEffect(() => {
+    if (draft.camera_plan.mode !== "UNSUPPORTED") return;
+    if (!draft.camera_plan.profile_version_id || !draft.shot_type || !draft.camera_plan.movement) return;
+    const timer = window.setTimeout(() => { void resolveCamera(); }, DRAFT_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [draft.camera_plan, draft.shot_type, resolveCamera]);
+
+  const saveAndReady = useCallback(async () => {
+    if (!canEdit || saving || markingReady || !currentRevision?.revision_no) return;
+    setMessage(null); setConflict(null);
+    try {
+      if (dirty) {
+        setSaving(true); setMarkingReady(true);
+        const revision = await saveDirectorIntentAndReady({ shotId, fields: draft as unknown as Record<string, unknown>, expectedRevisionNo: currentRevision.revision_no, freeze });
+        try { clearShotDrafts(shotId); setStorageError(null); }
+        catch { setStorageError("服务端保存成功，但浏览器未能清理本地草稿记录，可在下次提示时丢弃。"); }
+        setDraftCandidate(null);
+        setBaseline(JSON.stringify(draft));
+        setMessage(`已原子保存 revision ${revision.revision_no}${revision.is_frozen ? "（已冻结）" : ""}，镜头已标记 Production Ready`);
+        await onSaved?.(revision);
+      } else if (shotStatus === "DIRECTED" && semanticMissing.length === 0) {
+        setMarkingReady(true);
+        await markShotProductionReady(shotId);
+        setMessage("镜头已标记 Production Ready");
+        await onSaved?.({ id: currentRevision.id, shot_id: shotId, revision_no: currentRevision.revision_no, is_frozen: currentRevision.is_frozen, fields: currentRevision.fields });
+      }
+    } catch (error) {
+      if (error instanceof DirectorIntentApiError && error.status === 409) {
+        const current = error.details?.current_revision_no;
+        setConflict({ message: error.message, currentRevisionNo: typeof current === "number" ? current : undefined });
+      } else setMessage(`保存并就绪失败，未写入新 revision：${error instanceof Error ? error.message : String(error)}`);
+    } finally { setSaving(false); setMarkingReady(false); }
+  }, [canEdit, currentRevision, dirty, draft, freeze, markingReady, onSaved, saving, semanticMissing.length, shotId, shotStatus]);
+
   useEffect(() => {
     if (!dirty) return;
     const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
@@ -306,16 +386,47 @@ export function DirectorIntentEditor({ shotId, shotCode, currentRevision, target
       {storageError && <p className="intent-message error" role="alert">{storageError}</p>}
       <ChoiceGrid label="景别" value={draft.shot_type} options={SHOT_TYPES} onChange={(value) => { change("shot_type", value); changeCamera({ shot_type: value, mode: "UNSUPPORTED" }); }} />
       <ChoiceGrid label="构图" value={draft.composition.preset} options={COMPOSITIONS} onChange={(preset) => changeComposition({ preset })} />
-      <div className="intent-section"><h4>画面与动作</h4><label>主体动作<textarea value={draft.subject_action} onChange={(event) => change("subject_action", event.target.value)} placeholder="谁在做什么？动作从哪里开始、在哪里结束？" /></label><label>画面创作意图<textarea value={draft.creative_intent} onChange={(event) => change("creative_intent", event.target.value)} placeholder="这一镜要让观众感受到什么？" /></label></div>
-      <div className="intent-section"><h4>表演与情绪</h4><div className="intent-fields-2"><label>情绪<input value={draft.performance.emotion ?? ""} onChange={(event) => changePerformance({ emotion: event.target.value || null })} placeholder="克制、慌张、决绝…" /></label><label>强度 <output>{Math.round((draft.performance.intensity ?? .5) * 100)}%</output><input type="range" min="0" max="1" step="0.05" value={draft.performance.intensity ?? .5} onChange={(event) => changePerformance({ intensity: Number(event.target.value) })} /></label></div><label>身体动作<textarea value={draft.performance.body_action ?? ""} onChange={(event) => changePerformance({ body_action: event.target.value || null })} /></label><div className="intent-fields-2"><label>面部动作<input value={draft.performance.facial_action ?? ""} onChange={(event) => changePerformance({ facial_action: event.target.value || null })} /></label><label>视线<input value={draft.performance.eye_line ?? ""} onChange={(event) => changePerformance({ eye_line: event.target.value || null })} /></label></div></div>
-      <details className="intent-section"><summary>2D 站位预演</summary><StagingBoard value={draft.staging ?? undefined} disabled={!canEdit || currentRevision.is_frozen} onChange={(staging, output) => setDraft((old) => ({ ...old, staging, performance: { ...old.performance, blocking_summary: output.blocking_summary }, camera_plan: { ...old.camera_plan, ...output.camera_plan, mode: "PROMPT_FALLBACK" } }))} /></details>
-      <details className="intent-section"><summary>可选 3D 导演预演</summary><LazyDirector3DSpike value={draft.staging_3d ?? undefined} disabled={!canEdit || currentRevision.is_frozen} onChange={(staging_3d, output) => setDraft((old) => ({ ...old, staging_3d, composition: { ...old.composition, ...output.director_intent_patch.composition }, performance: { ...old.performance, ...output.director_intent_patch.performance }, camera_plan: { ...old.camera_plan, ...output.camera_plan, mode: "PROMPT_FALLBACK" } }))} /></details>
-      <div className="intent-section"><h4>运镜</h4><ChoiceGrid label="运动方式" value={draft.camera_plan.movement} options={MOVEMENTS} onChange={(movement) => changeCamera({ movement, mode: "UNSUPPORTED" })} /><div className="intent-fields-2"><label>方向<select value={draft.camera_plan.direction} onChange={(event) => changeCamera({ direction: event.target.value, mode: "UNSUPPORTED" })}>{["FORWARD", "BACKWARD", "LEFT", "RIGHT", "UP", "DOWN", "CLOCKWISE", "COUNTERCLOCKWISE"].map((value) => <option key={value}>{value}</option>)}</select></label><label>强度 <output>{Math.round(draft.camera_plan.intensity * 100)}%</output><input type="range" min="0" max="1" step="0.05" value={draft.camera_plan.intensity} onChange={(event) => changeCamera({ intensity: Number(event.target.value), mode: "UNSUPPORTED" })} /></label></div><details><summary>高级参数 · 原始枚举</summary><div className="intent-fields-2"><label>Curve<select value={draft.camera_plan.curve} onChange={(event) => changeCamera({ curve: event.target.value, mode: "UNSUPPORTED" })}>{["LINEAR", "EASE_IN", "EASE_OUT", "EASE_IN_OUT"].map((value) => <option key={value}>{value}</option>)}</select></label><label>Mode<input readOnly value={draft.camera_plan.mode} /></label></div><label>Prompt fallback<textarea value={draft.camera_plan.prompt_text} onChange={(event) => changeCamera({ prompt_text: event.target.value, mode: "UNSUPPORTED" })} /></label></details></div>
-      <div className="intent-section"><h4>时长与环境</h4><div className="intent-duration"><input aria-label="目标时长（秒）" type="number" min="0.1" max="600" step="0.1" value={draft.target_duration_ms / 1000} onChange={(event) => change("target_duration_ms", Math.round(Number(event.target.value) * 1000))} /><span>秒</span></div><label>环境<textarea value={draft.environment ?? ""} onChange={(event) => change("environment", event.target.value || null)} /></label><label>连续性<textarea value={draft.continuity ?? ""} onChange={(event) => change("continuity", event.target.value || null)} /></label></div>
+      <div className="intent-section"><h4>画面与动作</h4>
+        {intentSuggestions?.script && <aside className={`intent-inheritance-suggestion ${intentSuggestions.script.stale ? "is-stale" : ""}`} role={intentSuggestions.script.stale ? "alert" : undefined}><div><strong>{intentSuggestions.script.stale ? "剧本来源已更新" : "剧本拆解建议"}</strong><span>来源：{intentSuggestions.script.source_label}</span><p>{[intentSuggestions.script.subject_action, intentSuggestions.script.creative_intent].filter(Boolean).join("；")}</p>{intentSuggestions.script.stale_reason && <p>{intentSuggestions.script.stale_reason}</p>}</div><button type="button" disabled={!canEdit || currentRevision.is_frozen || (!intentSuggestions.script.stale && draft.suggestion_sources.script?.source_fingerprint === intentSuggestions.script.source_fingerprint)} onClick={adoptScriptSuggestion}>{intentSuggestions.script.stale ? "重新采用并复核" : draft.suggestion_sources.script?.source_fingerprint === intentSuggestions.script.source_fingerprint ? "已采用" : "采用到本镜"}</button></aside>}
+        <label>主体动作<textarea value={draft.subject_action} onChange={(event) => change("subject_action", event.target.value)} placeholder="谁在做什么？动作从哪里开始、在哪里结束？" /></label><label>画面创作意图<textarea value={draft.creative_intent} onChange={(event) => change("creative_intent", event.target.value)} placeholder="这一镜要让观众感受到什么？" /></label></div>
+      <div className="intent-section"><h4>表演与情绪</h4>
+        <EmotionPicker value={draft.performance.emotion} intensity={draft.performance.intensity ?? .5} disabled={!canEdit || currentRevision.is_frozen} onChange={changePerformance} />
+        <label>身体动作<textarea value={draft.performance.body_action ?? ""} disabled={!canEdit || currentRevision.is_frozen} onChange={(event) => changePerformance({ body_action: event.target.value || null })} placeholder="保留创作自由：描述姿态、动作节奏与停顿" /></label>
+        <MicroExpressionSelect value={draft.performance.facial_action} disabled={!canEdit || currentRevision.is_frozen} onChange={(facial_action) => changePerformance({ facial_action })} />
+        <EyeLineControl value={draft.performance.eye_line} disabled={!canEdit || currentRevision.is_frozen} onChange={(eye_line) => changePerformance({ eye_line })} />
+        {stagingEyeLine && <aside className={`intent-inheritance-suggestion ${stagingEyeLineStale ? "is-stale" : ""}`} role={stagingEyeLineStale ? "alert" : undefined}><div><strong>{stagingEyeLineStale ? "站位已变化，视线建议需复核" : "根据 2D 站位建议视线"}</strong><span>{stagingEyeLine.reason}</span></div><button type="button" disabled={!canEdit || currentRevision.is_frozen || (!stagingEyeLineStale && draft.performance.eye_line === stagingEyeLine.value && stagingEyeLineSource?.source_fingerprint === stagingEyeLine.source_fingerprint)} onClick={() => setDraft((old) => ({ ...old, performance: { ...old.performance, eye_line: stagingEyeLine.value }, suggestion_sources: { ...old.suggestion_sources, staging_eye_line: { source_fingerprint: stagingEyeLine.source_fingerprint, source_label: `${stagingEyeLine.subject_label}→${stagingEyeLine.target_label}` } } }))}>{stagingEyeLineStale ? "按新站位更新" : "采用视线建议"}</button></aside>}
+      </div>
+      <details className="intent-section"><summary>2D 站位预演</summary><StagingBoard value={draft.staging ?? undefined} participantOptions={stagingParticipants} disabled={!canEdit || currentRevision.is_frozen} onChange={(staging, output) => setDraft((old) => ({ ...old, staging, performance: { ...old.performance, blocking_summary: output.blocking_summary }, camera_plan: { ...old.camera_plan, ...output.camera_plan, mode: "PROMPT_FALLBACK" } }))} /></details>
+      <details className="intent-section"><summary>可选 3D 导演预演</summary><LazyDirector3DSpike value={draft.staging_3d ?? undefined} participantOptions={stagingParticipants} disabled={!canEdit || currentRevision.is_frozen} onChange={(staging_3d, output) => setDraft((old) => ({ ...old, staging_3d, composition: { ...old.composition, ...output.director_intent_patch.composition }, performance: { ...old.performance, ...output.director_intent_patch.performance }, camera_plan: { ...old.camera_plan, ...output.camera_plan, mode: "PROMPT_FALLBACK" } }))} /></details>
+      <div className="intent-section">
+        <h4>运镜</h4>
+        <ChoiceGrid label="运动方式" value={draft.camera_plan.movement} options={CAMERA_MOVEMENTS} onChange={(movement) => changeCamera({ movement, mode: "UNSUPPORTED" })} />
+        <div className="intent-fields-2">
+          <label>方向<select value={draft.camera_plan.direction} onChange={(event) => changeCamera({ direction: event.target.value, mode: "UNSUPPORTED" })}>{CAMERA_DIRECTIONS.map((value) => <option key={value} value={value}>{CAMERA_DIRECTION_LABELS[value]}</option>)}</select></label>
+          <label>强度 <output>{Math.round(draft.camera_plan.intensity * 100)}%</output><input aria-label="运镜强度" type="range" min="0" max="1" step="0.05" value={draft.camera_plan.intensity} onChange={(event) => changeCamera({ intensity: Number(event.target.value), mode: "UNSUPPORTED" })} /></label>
+        </div>
+        <label>已发布运镜配置<select aria-label="已发布运镜配置" value={draft.camera_plan.profile_version_id ?? ""} onChange={(event) => changeCamera({ profile_version_id: event.target.value || null, mode: "UNSUPPORTED" })}><option value="">请选择</option>{cameraProfiles.map((profile) => <option key={profile.version_id} value={profile.version_id}>{profile.title} · 第 {profile.version_no ?? "?"} 版</option>)}</select></label><ProfileExecutionDetailButton profileVersionId={draft.camera_plan.profile_version_id} />
+        <button type="button" className="intent-resolve-camera" disabled={resolvingCamera || !draft.camera_plan.profile_version_id || !draft.shot_type || !draft.camera_plan.movement} onClick={() => void resolveCamera()}>{resolvingCamera ? "裁决中…" : "立即重新裁决运镜"}</button>
+        <small className="intent-resolve-hint">运镜字段变更后自动按已发布配置裁决；仅在需要强制刷新时点击。</small>
+        <details>
+          <summary>高级：缓动与兼容方式</summary>
+          <div className="intent-fields-2">
+            <label>运动节奏<select value={draft.camera_plan.curve} onChange={(event) => changeCamera({ curve: event.target.value, mode: "UNSUPPORTED" })}>{CAMERA_CURVES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <div className="intent-camera-resolution"><span>系统采用方式</span><strong>{draft.camera_plan.mode === "NATIVE" ? "模型原生运镜" : draft.camera_plan.mode === "PROMPT_FALLBACK" ? "提示词兼容运镜" : "等待系统裁决"}</strong></div>
+          </div>
+          {draft.camera_plan.mode === "PROMPT_FALLBACK" && <label>兼容运镜补充描述<textarea value={draft.camera_plan.prompt_text} onChange={(event) => changeCamera({ prompt_text: event.target.value, mode: "UNSUPPORTED" })} placeholder="只补充预设无法表达的镜头运动；通常无需填写" /><small>系统会先按所选运镜生成描述，仅在确有特殊路径时补充。</small></label>}
+        </details>
+      </div>
+      <div className="intent-section"><h4>时长与环境</h4><div className="intent-duration"><input aria-label="目标时长（秒）" type="number" min="0.1" max="600" step="0.1" value={draft.target_duration_ms / 1000} onChange={(event) => change("target_duration_ms", Math.round(Number(event.target.value) * 1000))} /><span>秒</span></div>
+        {intentSuggestions?.environment && <aside className={`intent-inheritance-suggestion ${intentSuggestions.environment.stale ? "is-stale" : ""}`} role={intentSuggestions.environment.stale ? "alert" : undefined}><div><strong>{intentSuggestions.environment.stale ? "场景资料已更新" : "场景环境建议"}</strong><span>来源：{intentSuggestions.environment.source_label}</span><p>{intentSuggestions.environment.value}</p>{intentSuggestions.environment.stale_reason && <p>{intentSuggestions.environment.stale_reason}</p>}</div><button type="button" disabled={!canEdit || currentRevision.is_frozen || (!intentSuggestions.environment.stale && draft.environment === intentSuggestions.environment.value)} onClick={() => setDraft((old) => ({ ...old, environment: intentSuggestions.environment!.value, suggestion_sources: { ...old.suggestion_sources, environment: { source_revision: intentSuggestions.environment!.source_revision, source_label: intentSuggestions.environment!.source_label } } }))}>{intentSuggestions.environment.stale ? "重新采用并复核" : draft.environment === intentSuggestions.environment.value ? "已采用" : "采用建议"}</button></aside>}
+        <label>环境差异与补充<textarea value={draft.environment ?? ""} onChange={(event) => change("environment", event.target.value || null)} placeholder="采用场景建议后，可补充本镜特有的天气、光线或空间变化" /></label>
+        {intentSuggestions?.continuity && <aside className={`intent-inheritance-suggestion ${intentSuggestions.continuity.eligible ? "" : "unavailable"} ${intentSuggestions.continuity.stale ? "is-stale" : ""}`} role={intentSuggestions.continuity.stale ? "alert" : undefined}><div><strong>{intentSuggestions.continuity.stale ? "上一镜已更新" : "前后镜连续性建议"}</strong><span>{intentSuggestions.continuity.source_label ? `来源：${intentSuggestions.continuity.source_label}` : "基于镜头顺序检查"}</span>{intentSuggestions.continuity.value ? <p>{intentSuggestions.continuity.value}</p> : <p>{intentSuggestions.continuity.reason}</p>}{intentSuggestions.continuity.stale_reason && <p>{intentSuggestions.continuity.stale_reason}</p>}</div>{intentSuggestions.continuity.value && <button type="button" disabled={!canEdit || currentRevision.is_frozen || (!intentSuggestions.continuity.stale && draft.continuity === intentSuggestions.continuity.value)} onClick={() => setDraft((old) => ({ ...old, continuity: intentSuggestions.continuity!.value, suggestion_sources: { ...old.suggestion_sources, continuity: { source_revision: intentSuggestions.continuity!.source_revision, source_label: intentSuggestions.continuity!.source_label } } }))}>{intentSuggestions.continuity.stale ? "重新继承并复核" : draft.continuity === intentSuggestions.continuity.value ? "已采用" : "继承并复核"}</button>}</aside>}
+        <label>连续性变化<textarea value={draft.continuity ?? ""} onChange={(event) => change("continuity", event.target.value || null)} placeholder="记录服装、伤势、持物、位置或动作承接的变化" /></label>
+      </div>
       <aside className={`intent-ready ${missing.length ? "blocked" : "ready"}`}><div><strong>Production Ready</strong><span>{missing.length ? `还有 ${missing.length} 项需要处理` : "导演意图已满足当前生产门槛"}</span></div>{missing.length > 0 && <ul>{missing.map((item) => <li key={item}>{item}</li>)}</ul>}</aside>
       {conflict && <div className="intent-conflict" role="alert"><strong>保存冲突</strong><span>{conflict.message}{conflict.currentRevisionNo ? `（服务端已到 revision ${conflict.currentRevisionNo}）` : ""}</span><button type="button" onClick={onReloadRequested}>刷新最新版本</button></div>}
-      {message && <p className={message.startsWith("保存失败") ? "intent-message error" : "intent-message"} role="status">{message}</p>}
+      {message && <p className={message.includes("失败") ? "intent-message error" : "intent-message"} role={message.includes("失败") ? "alert" : "status"}>{message}</p>}
     </div>
-    <footer className="intent-editor-actions"><label><input type="checkbox" checked={freeze} disabled={!canEdit} onChange={(event) => setFreeze(event.target.checked)} />保存后冻结</label><button type="button" className="intent-discard" disabled={!dirty || saving} onClick={() => { setDraft(JSON.parse(baseline) as DirectorIntentV3); setMessage(null); try { if (storageKey) window.localStorage.removeItem(storageKey); } catch { setStorageError("修改已在表单中放弃，但浏览器未能清理本地草稿。"); } }}>放弃修改</button><button type="button" className="intent-save" disabled={!canEdit || !dirty || saving} onClick={() => void save()}>{saving ? "保存中…" : `保存 revision ${currentRevision.revision_no + 1}`}<kbd>Ctrl S</kbd></button></footer>
+    <footer className="intent-editor-actions"><label><input type="checkbox" checked={freeze} disabled={!canEdit} onChange={(event) => setFreeze(event.target.checked)} />保存后冻结</label><button type="button" className="intent-discard" disabled={!dirty || saving} onClick={() => { setDraft(JSON.parse(baseline) as DirectorIntentV3); setMessage(null); try { if (storageKey) window.localStorage.removeItem(storageKey); } catch { setStorageError("修改已在表单中放弃，但浏览器未能清理本地草稿。"); } }}>放弃修改</button><button type="button" className="intent-save" disabled={!canEdit || !dirty || saving} onClick={() => void save()}>{saving ? "保存中…" : `仅保存 revision ${currentRevision.revision_no + 1}`}<kbd>Ctrl S</kbd></button><button type="button" className="intent-save-and-ready" title={semanticMissing.length ? semanticMissing.join("；") : undefined} disabled={!canEdit || saving || markingReady || shotStatus !== "DIRECTED" || semanticMissing.length > 0} onClick={() => void saveAndReady()}>{markingReady ? "处理中…" : shotStatus === "READY" ? "已 Production Ready" : "保存并就绪"}</button></footer>
   </section>;
 }

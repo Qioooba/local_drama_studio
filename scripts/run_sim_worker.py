@@ -94,8 +94,16 @@ def main() -> None:
     cpu_results: list[dict[str, object]] = []
     gpu_results: list[dict[str, object]] = []
     while True:
-        cpu_results = LocalMediaWorker(database, settings).run_until_idle(args.worker_id, args.max_jobs)
-        gpu_results = _drain_gpu(database, settings, args.worker_id)
+        # One transient Comfy/SQLite hiccup must not kill the supervisor loop:
+        # record the failure and keep draining on the next iteration.
+        try:
+            cpu_results = LocalMediaWorker(database, settings).run_until_idle(args.worker_id, args.max_jobs)
+        except Exception as error:  # noqa: BLE001 - supervisor boundary
+            print(json.dumps({"worker_id": args.worker_id, "error": f"cpu_drain: {type(error).__name__}: {error}"}, ensure_ascii=False), flush=True)
+        try:
+            gpu_results = _drain_gpu(database, settings, args.worker_id)
+        except Exception as error:  # noqa: BLE001 - supervisor boundary
+            print(json.dumps({"worker_id": args.worker_id, "error": f"gpu_drain: {type(error).__name__}: {error}"}, ensure_ascii=False), flush=True)
         if not args.loop:
             break
         time.sleep(5)

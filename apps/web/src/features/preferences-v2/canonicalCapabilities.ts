@@ -97,10 +97,10 @@ export const CAPABILITY_ALIASES: Record<string, CanonicalCapability> = {
 };
 
 export const CAPABILITY_LABELS: Record<CanonicalCapability, string> = {
-  LLM_STORY_PARSE: "剧本结构化拆解 (LLM)",
-  LLM_EPISODE_PLAN: "分集策划与镜头规划 (LLM)",
-  LLM_STORYBOARD: "分镜脚本细化 (LLM)",
-  LLM_PROMPT_REWRITE: "导演提示词重写 (LLM)",
+  LLM_STORY_PARSE: "剧本结构化拆解",
+  LLM_EPISODE_PLAN: "分集策划与镜头规划",
+  LLM_STORYBOARD: "分镜脚本细化",
+  LLM_PROMPT_REWRITE: "导演提示词重写",
 
   IMAGE_CONCEPT: "概念图/设定图生成",
   IMAGE_CHARACTER: "角色立绘/设定图",
@@ -109,18 +109,18 @@ export const CAPABILITY_LABELS: Record<CanonicalCapability, string> = {
   IMAGE_MULTI_VIEW: "角色三视图生成",
   IMAGE_EXPRESSION: "角色多表情生成",
 
-  VIDEO_T2V: "文生视频 (T2V)",
-  VIDEO_I2V: "图生视频 (I2V)",
+  VIDEO_T2V: "文字生成视频",
+  VIDEO_I2V: "图片生成视频",
   VIDEO_FIRST_FRAME: "首帧驱动视频",
   VIDEO_FIRST_LAST_FRAME: "首尾帧过渡视频",
   VIDEO_REFERENCE: "参考角色动作视频",
   VIDEO_MOTION_CONTROL: "运动轨迹控制视频",
 
-  TTS: "台词语音合成 (TTS)",
+  TTS: "台词语音合成",
   VOICE_CLONE: "角色声音克隆",
-  LIPSYNC: "对口型语音同步 (Lip Sync)",
-  AUDIO_SFX: "动作音效生成 (SFX)",
-  AUDIO_MUSIC: "配乐与背景音乐 (BGM)",
+  LIPSYNC: "对口型语音同步",
+  AUDIO_SFX: "动作音效生成",
+  AUDIO_MUSIC: "配乐与背景音乐",
 
   FRAME_EXTRACT: "高精度关键帧提取",
   UPSCALE_IMAGE: "图像超分辨率超分",
@@ -133,6 +133,16 @@ export const CAPABILITY_LABELS: Record<CanonicalCapability, string> = {
   QC_CONTINUITY: "镜头连贯性质检",
   QC_AUDIO: "音频音画同步质检",
 };
+
+export function creatorProfileTitle(title: string) {
+  return title.replace(/\s+Profile\b/gi, "").trim();
+}
+
+export function canonicalCapabilityLabel(value: string) {
+  const cleaned = (value || "").trim().toUpperCase();
+  const canonical = CAPABILITY_ALIASES[cleaned] ?? cleaned;
+  return CAPABILITY_LABELS[canonical as CanonicalCapability] ?? value;
+}
 
 export function normalizeCapability(name: string): CanonicalCapability {
   const cleaned = (name || "").trim().toUpperCase();

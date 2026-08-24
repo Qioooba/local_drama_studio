@@ -17,7 +17,7 @@ data/
 .playwright-cli/
 .tmp_collect.txt
 temp/
-projects/
+/projects/
 output/
 apps/web/output/
 apps/web/test-results/
@@ -46,6 +46,5 @@ deepseek-ui-audit/
 .pytest_tmp*/
 .pt8c/
 tmp_*/
-
 
 

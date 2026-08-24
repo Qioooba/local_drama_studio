@@ -22,7 +22,7 @@ describe("PromptTemplatePanel", () => {
     renderPanel();
     fireEvent.change(screen.getByLabelText("标题"), { target: { value: "主镜提示词" } });
     fireEvent.change(screen.getByLabelText("语言"), { target: { value: "en" } });
-    fireEvent.change(screen.getByLabelText("模型 Profile"), { target: { value: "profile-v1" } });
+    fireEvent.change(screen.getByLabelText("模型配置"), { target: { value: "profile-v1" } });
     fireEvent.change(screen.getByLabelText("模板"), { target: { value: "{subject_action}, cinematic" } });
     fireEvent.change(screen.getByLabelText("展开结果"), { target: { value: "turn, cinematic" } });
     fireEvent.change(screen.getByLabelText("负向词"), { target: { value: "flicker" } });
@@ -36,5 +36,29 @@ describe("PromptTemplatePanel", () => {
   it("keeps freeze disabled until every explicit field is selected", () => {
     renderPanel();
     expect((screen.getByRole("button", { name: "冻结展开结果" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("renders explicit fallbacks for legacy prompts without language or profile identity", async () => {
+    vi.mocked(listPrompts).mockResolvedValue({ items: [{ id: "legacy", title: "旧提示词", revision_no: 1, content_text: "legacy", content_hash: "b".repeat(64), structured: {}, status: "FROZEN" }] });
+    renderPanel();
+    expect(await screen.findByText("语言未记录 · 历史 Profile 版本")).toBeTruthy();
+    fireEvent.click(screen.getByText("高级：历史 Profile 技术标识"));
+    expect(screen.getByText("未记录")).toBeTruthy();
+    expect(document.body.textContent).not.toContain("undefined");
+  });
+
+  it("reuses another shot's frozen prompt only after an explicit apply action", async () => {
+    vi.mocked(listPrompts).mockImplementation(async (_projectId, ownerType) => ownerType ? { items: [] } : { items: [{
+      id: "reuse-1", owner_type: "SHOT", owner_id: "shot-2", purpose: "GENERATION_TEMPLATE", title: "同场角色近景",
+      revision_no: 2, content_text: "mother close-up, warm light", content_hash: "c".repeat(64), status: "FROZEN",
+      structured: { template_text: "{character}, close-up", expanded_text: "mother close-up, warm light", negative_text: "flicker", language: "en", model_profile_version_id: "profile-v1" },
+    }] });
+    renderPanel();
+    expect((screen.getByLabelText("展开结果") as HTMLTextAreaElement).value).toBe("");
+    fireEvent.click(await screen.findByRole("button", { name: "采用为当前草稿" }));
+    expect((screen.getByLabelText("展开结果") as HTMLTextAreaElement).value).toBe("mother close-up, warm light");
+    expect((screen.getByLabelText("负向词") as HTMLTextAreaElement).value).toBe("flicker");
+    expect((screen.getByLabelText("语言") as HTMLSelectElement).value).toBe("en");
+    expect(createPrompt).not.toHaveBeenCalled();
   });
 });

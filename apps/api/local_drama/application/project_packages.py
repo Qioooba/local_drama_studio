@@ -87,6 +87,22 @@ class ProjectPackageService:
             backups_root=self.projects_root.parent / "backups",
         )
 
+    def list_inbox_packages(self) -> list[dict[str, Any]]:
+        """List importable packages without accepting an arbitrary client path."""
+        inbox = self.staging_root / "inbox"
+        inbox.mkdir(parents=True, exist_ok=True)
+        items: list[dict[str, Any]] = []
+        for package in sorted(inbox.iterdir(), key=lambda item: item.name.casefold()):
+            if not package.is_file() or package.suffix.lower() != ".ldspkg" or _is_reparse(package):
+                continue
+            stat_result = package.stat()
+            items.append({
+                "name": package.name,
+                "byte_size": stat_result.st_size,
+                "modified_at": datetime.fromtimestamp(stat_result.st_mtime, UTC).isoformat().replace("+00:00", "Z"),
+            })
+        return items
+
     def _rebuild_thumbnails(self, media_version_ids: list[str]) -> dict[str, Any]:
         """Materialize small derived thumbnails for imported IMAGE/VIDEO versions."""
         created: list[str] = []
@@ -108,11 +124,20 @@ class ProjectPackageService:
         self._project(project_id)
         with self.database.connect() as connection:
             rows = connection.execute(
-                """SELECT mv.id FROM media_versions mv JOIN media_assets ma ON ma.id=mv.media_asset_id
+                """SELECT mv.id,mv.mime_type,ma.media_kind FROM media_versions mv JOIN media_assets ma ON ma.id=mv.media_asset_id
                 WHERE ma.project_id=? AND ma.media_kind IN ('IMAGE','VIDEO') ORDER BY mv.created_at,mv.id""",
                 (project_id,),
             ).fetchall()
-        result = self._rebuild_thumbnails([str(row["id"]) for row in rows])
+        eligible: list[str] = []
+        exclusions: list[dict[str, str]] = []
+        for row in rows:
+            kind = str(row["media_kind"]).upper()
+            mime = str(row["mime_type"] or "").lower()
+            if (kind == "IMAGE" and mime.startswith("image/")) or (kind == "VIDEO" and mime.startswith("video/")):
+                eligible.append(str(row["id"]))
+            else:
+                exclusions.append({"media_version_id": str(row["id"]), "code": "MEDIA_KIND_MIME_MISMATCH"})
+        result = {**self._rebuild_thumbnails(eligible), "skipped": len(exclusions), "exclusions": exclusions}
         with self.database.transaction() as connection:
             connection.execute(
                 """INSERT INTO audit_events

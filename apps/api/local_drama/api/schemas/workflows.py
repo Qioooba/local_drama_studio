@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class WorkflowPackageRequest(BaseModel):
@@ -37,8 +37,18 @@ class H3CandidateWorkflowRequest(BaseModel):
     aspect_ratio: str = "16:9"
     filename_prefix: str = "local_drama/h3_candidate"
     sigma_points: int = Field(default=50, ge=2, le=1000)
-    acceleration: str = "off"
+    acceleration: str = "OFF"
+    lora_strength: float = Field(default=1.0, ge=0.0, le=2.0)
+    native_audio: bool = True
     tier: str | None = Field(default=None, description="P1-7 生产档位（FAST/DRAFT/SCREEN/PRODUCTION/MASTER）；提供时覆盖分辨率与帧数")
+
+    @field_validator("acceleration")
+    @classmethod
+    def normalize_acceleration(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if normalized not in {"OFF", "TURBO_LORA"}:
+            raise ValueError("acceleration 仅支持 OFF / TURBO_LORA")
+        return normalized
 
 
 class H3I2VCandidateWorkflowRequest(H3CandidateWorkflowRequest):

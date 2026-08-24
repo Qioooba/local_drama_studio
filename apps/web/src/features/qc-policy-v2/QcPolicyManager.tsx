@@ -37,9 +37,16 @@ export function QcPolicyManager({ projectId, initialEpisodeId = "", initialShotI
   const ownerId = ownerType === "PROJECT" ? projectId : ownerType === "EPISODE" ? episodeId : shotId;
   const current = useMemo(() => findPolicy(policies.data ?? [], ownerType, ownerId, stage), [ownerId, ownerType, policies.data, stage]);
   const currentKey = current ? `${current.policy_version_id}:${current.revision}` : `new:${ownerType}:${ownerId}:${stage}`;
+  const loadEditor = (source: QcPolicy | undefined, nextNotice: string | null = null) => {
+    setThresholds(source?.policy.thresholds ?? {});
+    setMaxRerolls(source?.max_auto_rerolls ?? 0);
+    setAutoCategories(source?.auto_reroll_categories ?? []);
+    setReason("");
+    setExpectedRevision(source?.revision ?? null);
+    setNotice(nextNotice);
+  };
   useEffect(() => {
-    const savedThresholds = current?.policy.thresholds ?? {};
-    setThresholds(savedThresholds); setMaxRerolls(current?.max_auto_rerolls ?? 0); setAutoCategories(current?.auto_reroll_categories ?? []); setReason(""); setExpectedRevision(current?.revision ?? null); setNotice(null);
+    loadEditor(current);
   }, [currentKey]);
 
   const save = useMutation({
@@ -55,6 +62,12 @@ export function QcPolicyManager({ projectId, initialEpisodeId = "", initialShotI
   });
   const toggleThreshold = (category: QcCategory, enabled: boolean) => setThresholds((old) => { const next = { ...old }; if (enabled) next[category] = .8; else delete next[category]; return next; });
   const toggleAuto = (category: QcCategory, enabled: boolean) => setAutoCategories((old) => enabled ? [...new Set([...old, category])] : old.filter((item) => item !== category));
+  const adjustThreshold = (category: QcCategory, direction: number) => setThresholds((old) => ({ ...old, [category]: Math.max(0, Math.min(1, Number(((old[category] ?? .8) + direction * .05).toFixed(2)))) }));
+  const setRerollLimit = (value: number) => { const next = Math.max(0, Math.min(10, Math.round(value))); setMaxRerolls(next); if (!next) setAutoCategories([]); };
+  const refreshEditor = async () => {
+    const refreshed = await policies.refetch();
+    loadEditor(findPolicy(refreshed.data ?? [], ownerType, ownerId, stage), "已从持久化版本重新载入，未保存修改已放弃。");
+  };
   const hierarchy = (["PROJECT", "EPISODE", "SHOT"] as QcOwnerType[]).map((type) => ({ type, id: type === "PROJECT" ? projectId : type === "EPISODE" ? episodeId : shotId }));
 
   const initialPending = seasons.isPending || policies.isPending || resolution.isPending;
@@ -63,7 +76,7 @@ export function QcPolicyManager({ projectId, initialEpisodeId = "", initialShotI
   if (initialErrors.length > 0) return <section className="panel" role="alert"><div className="panel-heading"><div><p className="eyebrow">读取失败</p><h3>QC 策略暂时无法打开</h3></div></div><p className="muted">已保留页面上下文，没有写入任何策略。{initialErrors.map(message).join("；")}</p><button type="button" className="secondary" onClick={() => void Promise.all([seasons.refetch(), policies.refetch(), resolution.refetch()])}>重新读取</button></section>;
 
   return <div className="qc-policy-manager">
-    <section className="panel qc-context" aria-labelledby="qc-context-title"><div className="panel-heading"><div><p className="eyebrow">0045 · QC POLICY</p><h3 id="qc-context-title">生产范围与继承解析</h3></div><span className="status-pill neutral">Project → Episode → Shot</span></div>
+    <section className="panel qc-context" aria-labelledby="qc-context-title"><div className="panel-heading"><div><p className="eyebrow">质量策略</p><h3 id="qc-context-title">生产范围与继承解析</h3></div><span className="status-pill neutral">项目 → 分集 → 镜头</span></div>
       <div className="qc-context-grid"><label>季度<select value={seasonId} onChange={(e) => { setSeasonId(e.target.value); setEpisodeId(""); setShotId(""); }}><option value="">选择季度</option>{seasons.data?.map((item) => <option key={item.id} value={item.id}>{item.code} · {item.title}</option>)}</select></label><label>分集<select value={episodeId} onChange={(e) => { setEpisodeId(e.target.value); setShotId(""); }}><option value="">仅项目级</option>{episodes.data?.map((item) => <option key={item.id} value={item.id}>{item.code} · {item.title}</option>)}</select></label><label>镜头<select value={shotId} onChange={(e) => setShotId(e.target.value)}><option value="">仅分集级</option>{shots.data?.map((item) => <option key={item.id} value={item.id}>{item.code}</option>)}</select></label></div>
       <div className="qc-stage-tabs" role="tablist" aria-label="QC 阶段">{STAGES.map(([id, label]) => <button type="button" role="tab" aria-selected={stage === id} className={stage === id ? "selected" : ""} key={id} onClick={() => setStage(id)}>{label}<small>{id}</small></button>)}</div>
     </section>
@@ -74,14 +87,14 @@ export function QcPolicyManager({ projectId, initialEpisodeId = "", initialShotI
       </section>
       <form className="panel qc-editor" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}><div className="panel-heading"><div><p className="eyebrow">版本化编辑</p><h3>{OWNER_LABEL[ownerType]} · {stage}</h3></div><span className="status-pill neutral">{current ? `revision ${current.revision}` : "新策略"}</span></div>
         <fieldset className="qc-owner"><legend>写入层级</legend>{(["PROJECT", "EPISODE", "SHOT"] as QcOwnerType[]).map((type) => { const disabledReason = type === "EPISODE" && !episodeId ? "请先选择分集" : type === "SHOT" && !shotId ? "请先选择镜头" : null; return <button type="button" key={type} disabled={Boolean(disabledReason)} title={disabledReason ?? undefined} aria-pressed={ownerType === type} className={ownerType === type ? "selected" : ""} onClick={() => setOwnerType(type)}>{OWNER_LABEL[type]}</button>; })}</fieldset>
-        <fieldset className="qc-thresholds"><legend>检查类别与通过阈值</legend>{CATEGORIES.map(([id, label]) => { const active = thresholds[id] !== undefined; return <div key={id}><label><input type="checkbox" checked={active} onChange={(e) => toggleThreshold(id, e.target.checked)} />{label}<small>{id}</small></label><label className="threshold-value"><span className="sr-only">{label}阈值</span><input type="number" min="0" max="1" step="0.05" value={thresholds[id] ?? .8} disabled={!active} onChange={(e) => setThresholds((old) => ({ ...old, [id]: Math.max(0, Math.min(1, Number(e.target.value))) }))} /><output>{Math.round((thresholds[id] ?? .8) * 100)}%</output></label></div>; })}</fieldset>
-        <label className="qc-reroll-limit">最大自动重抽次数 <output>{maxRerolls}</output><input type="range" min="0" max="10" step="1" value={maxRerolls} onChange={(e) => { const next = Number(e.target.value); setMaxRerolls(next); if (!next) setAutoCategories([]); }} /><small>0 表示任何失败都进入人工门禁；系统绝不会无限重抽。</small></label>
+        <fieldset className="qc-thresholds"><legend>检查类别与通过阈值</legend>{CATEGORIES.map(([id, label]) => { const active = thresholds[id] !== undefined; return <div key={id}><label><input type="checkbox" checked={active} onChange={(e) => toggleThreshold(id, e.target.checked)} />{label}<small>{id}</small></label><label className="threshold-value"><span className="sr-only">{label}阈值</span><input type="number" min="0" max="1" step="0.05" value={thresholds[id] ?? .8} disabled={!active} onKeyDown={(e) => { if (["ArrowUp", "ArrowRight"].includes(e.key)) { e.preventDefault(); adjustThreshold(id, 1); } else if (["ArrowDown", "ArrowLeft"].includes(e.key)) { e.preventDefault(); adjustThreshold(id, -1); } }} onChange={(e) => setThresholds((old) => ({ ...old, [id]: Math.max(0, Math.min(1, Number(e.target.value))) }))} /><output>{Math.round((thresholds[id] ?? .8) * 100)}%</output></label></div>; })}</fieldset>
+        <label className="qc-reroll-limit">最大自动重抽次数 <output>{maxRerolls}</output><input type="range" min="0" max="10" step="1" value={maxRerolls} onKeyDown={(e) => { if (["ArrowUp", "ArrowRight"].includes(e.key)) { e.preventDefault(); setRerollLimit(maxRerolls + 1); } else if (["ArrowDown", "ArrowLeft"].includes(e.key)) { e.preventDefault(); setRerollLimit(maxRerolls - 1); } else if (e.key === "Home") { e.preventDefault(); setRerollLimit(0); } else if (e.key === "End") { e.preventDefault(); setRerollLimit(10); } }} onChange={(e) => setRerollLimit(Number(e.target.value))} /><small>0 表示任何失败都进入人工门禁；系统绝不会无限重抽。</small></label>
         <fieldset className="qc-auto-categories" disabled={maxRerolls === 0}><legend>允许自动重抽的失败类别</legend>{CATEGORIES.map(([id, label]) => <label key={id}><input type="checkbox" checked={autoCategories.includes(id)} onChange={(e) => toggleAuto(id, e.target.checked)} />{label}</label>)}</fieldset>
         <label>变更原因<textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="为什么调整阈值或自动重抽范围？" /></label>
         {notice && <p className={notice.startsWith("已创建") ? "qc-notice success" : "qc-notice error"} role="status">{notice}</p>}
-        <div className="qc-actions"><button type="button" className="secondary" onClick={() => void policies.refetch()}>刷新版本</button><button type="submit" className="primary-action" disabled={save.isPending || !ownerId} title={save.isPending ? "正在创建不可变策略版本" : !ownerId ? "请先选择完整的写入范围" : undefined}>{save.isPending ? "保存中…" : current ? `创建 v${current.version_no + 1}` : "创建策略 v1"}</button></div>
+        <div className="qc-actions"><button type="button" className="secondary" onClick={() => void refreshEditor()}>刷新版本</button><button type="submit" className="primary-action" disabled={save.isPending || !ownerId} title={save.isPending ? "正在创建不可变策略版本" : !ownerId ? "请先选择完整的写入范围" : undefined}>{save.isPending ? "保存中…" : current ? `创建 v${current.version_no + 1}` : "创建策略 v1"}</button></div>
       </form>
     </div>
-    <section className="panel qc-dispositions" aria-labelledby="qc-dispositions-title"><div className="panel-heading"><div><p className="eyebrow">机器决定的含义</p><h3 id="qc-dispositions-title">Disposition 不是人工批准</h3></div><span className="status-pill state-warning">机器证据 ≠ 人工批准</span></div><div>{[["PASS", "机器检查通过", "只证明本次检查通过，候选仍需人工选择/批准。"], ["ATTENTION", "需要显式确认", "机器提示风险；UI 必须让人确认，不静默批准。"], ["AUTO_REROLL_ALLOWED", "允许有限重抽", "仅对允许类别且未达到上限创建子 Variant。"], ["WAITING_GATE", "等待人工门禁", "达到上限或类别不可自动修复，停止自动流程。"]].map(([code, title, copy]) => <article key={code}><code>{code}</code><strong>{title}</strong><p>{copy}</p></article>)}</div></section>
+    <section className="panel qc-dispositions" aria-labelledby="qc-dispositions-title"><div className="panel-heading"><div><p className="eyebrow">机器决定的含义</p><h3 id="qc-dispositions-title">Disposition 不是人工批准</h3></div><span className="status-pill state-warning">机器证据 ≠ 人工批准</span></div><div>{[["PASS", "机器检查通过", "只证明本次检查通过，候选仍需人工选择/批准。"], ["ATTENTION", "需要显式确认", "机器提示风险；UI 必须让人确认，不静默批准。"], ["AUTO_REROLL_ALLOWED", "允许有限重抽", "仅对允许类别且未达到上限创建子 Variant。"], ["WAITING_GATE", "等待人工门禁", "达到上限或类别不可自动修复，停止自动流程。"]].map(([code, title, copy]) => <article key={code} className={`qc-disposition-card disposition-${code.toLowerCase()}`}><code>{code}</code><strong>{title}</strong><p>{copy}</p></article>)}</div></section>
   </div>;
 }

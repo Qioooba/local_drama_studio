@@ -43,7 +43,7 @@ describe("P12 creation entry migration", () => {
     expect(await screen.findByText("场次范围 episode-1")).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "提示词快照" }));
     expect(await screen.findByText("提示词 S012 · 主图模型")).toBeTruthy();
-    expect(screen.getByRole("option", { name: "S012 · DIRECTED" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "S012 · 已完成导演设计" })).toBeTruthy();
     expect(screen.queryByText("opaque-shot-id")).toBeNull();
     expect(screen.queryByText("opaque-version")).toBeNull();
   });

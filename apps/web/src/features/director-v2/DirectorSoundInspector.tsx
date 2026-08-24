@@ -35,7 +35,7 @@ export function DirectorSoundInspector({ projectId, episodeId, shotCode, dialogu
 
   return <section className="director-sound-inspector" aria-labelledby="director-sound-title">
     <div className="director-section-head"><strong id="director-sound-title">{shotCode} · 声音事实</strong><Link to={`/projects/${projectId}/episodes/${episodeId}/audio`}>打开声音工作区</Link></div>
-    <label>台词 / 旁白<textarea readOnly value={dialogue} /></label>
+    <div className="director-sound-copy"><strong>台词 / 旁白</strong><p>{dialogue || "本镜没有台词或旁白"}</p></div>
     <p className="director-help">台词来自当前镜头 revision。音色是项目级角色绑定；BGM / SFX 是分集时间范围绑定，当前没有镜头级声音写入命令。</p>
     {loading && <p className="director-sound-state" role="status">正在读取真实声音绑定…</p>}
     {error && <p className="director-sound-state error" role="alert">声音事实读取失败：{error instanceof Error ? error.message : String(error)}</p>}

@@ -22,7 +22,7 @@ describe("EpisodeSceneRanges", () => {
   it("creates a project-level master scene explicitly", async () => {
     renderPanel();
     fireEvent.click(screen.getByText("管理母本场次与范围"));
-    fireEvent.change(screen.getByLabelText("场次 code"), { target: { value: "SC-002" } });
+    await waitFor(() => expect(screen.getByText("场次编号").parentElement?.textContent).toContain("SC-002"));
     fireEvent.change(screen.getByLabelText("场次标题"), { target: { value: "续场" } });
     fireEvent.click(screen.getByRole("button", { name: "创建母本场次" }));
     await waitFor(() => expect(createProjectScene).toHaveBeenCalledWith("project-1", { code: "SC-002", title: "续场" }));

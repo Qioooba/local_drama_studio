@@ -5,11 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sqlite3
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from local_drama.application.override_schema import default_override_schema
 from local_drama.domain.capabilities import normalize_capability
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.generation_contracts import resolve_camera_plan
@@ -31,6 +33,57 @@ def _json(value: Any) -> str:
 
 def _code(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")[:120]
+
+
+_EXECUTION_COMPONENT_ROLES = {
+    "PRIMARY_MODEL",
+    "TEXT_ENCODER",
+    "VIDEO_VAE",
+    "AUDIO_VAE",
+    "LORA",
+    "CONTROLNET",
+    "UPSCALER",
+    "TTS_ENGINE",
+    "VOICE_MODEL",
+}
+
+
+def _parse_json(value: Any, fallback: Any) -> Any:
+    if isinstance(value, (dict, list)):
+        return value
+    if value is None:
+        return fallback
+    try:
+        return json.loads(str(value))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return fallback
+
+
+def _artifact_role(kind: Any, code: Any) -> str:
+    """Map manifest/model-artifact labels to the stable UI execution roles."""
+
+    raw = f"{kind or ''} {code or ''}".upper().replace("-", "_").replace(" ", "_")
+    if raw in _EXECUTION_COMPONENT_ROLES:
+        return raw
+    if "TEXT_ENCODER" in raw or "TEXTENCODER" in raw or "CLIP" in raw:
+        return "TEXT_ENCODER"
+    if "AUDIO_VAE" in raw or "AUDIOVAE" in raw:
+        return "AUDIO_VAE"
+    if "VIDEO_VAE" in raw or "VIDEOVAE" in raw or raw.endswith("_VAE"):
+        return "VIDEO_VAE"
+    if "LORA" in raw:
+        return "LORA"
+    if "CONTROLNET" in raw:
+        return "CONTROLNET"
+    if "UPSCAL" in raw:
+        return "UPSCALER"
+    if "TTS" in raw:
+        return "TTS_ENGINE"
+    if "VOICE" in raw:
+        return "VOICE_MODEL"
+    if "UNET" in raw or "DIT" in raw or "CHECKPOINT" in raw or "MODEL" in raw:
+        return "PRIMARY_MODEL"
+    return str(kind or code or "UNKNOWN").upper()
 
 
 # Profile contracts are user-editable JSON, but they are not a secret store or
@@ -218,7 +271,14 @@ class ProfileService:
                             profile_id,
                             version_no,
                             canonical_capability,
-                            _json({"manifest_sha256": manifest.sha256, "artifact_ids": artifact_ids, "route_status": route_status}),
+                            _json({
+                                "schema_version": "localdrama.execution-profile-bundle.v1",
+                                "manifest_sha256": manifest.sha256,
+                                "runtime_id": runtime_id,
+                                "artifact_ids": artifact_ids,
+                                "route_status": route_status,
+                                "override_schema": default_override_schema(canonical_capability),
+                            }),
                             _json({"required_inputs": capability_data.get("required_nodes", []), "transport": "LOOPBACK_HTTP"}),
                             _json({"seed": {"required": True, "determinism": "profile_declared"}}),
                             profile_status,
@@ -263,14 +323,28 @@ class ProfileService:
             rows = connection.execute(
                 """SELECT p.id, p.code, p.title, v.id AS version_id, v.version_no, v.capability,
                 v.status, v.manifest_sha256, v.capability_json, v.worker_policy,
-                v.output_contract_json, v.resource_policy_json, v.revision
+                v.output_contract_json, v.resource_policy_json, v.revision,
+                v.model_bundle_json, v.parameter_schema_json,
+                w.contract_json AS workflow_contract_json
                 FROM execution_profiles p JOIN execution_profile_versions v
-                ON v.execution_profile_id = p.id ORDER BY p.code, v.version_no DESC"""
+                ON v.execution_profile_id = p.id
+                LEFT JOIN workflow_versions w ON w.id = v.workflow_version_id
+                ORDER BY p.code, v.version_no DESC"""
             ).fetchall()
         result = []
         for row in rows:
             item = dict(row)
             item["capability_contract"] = json.loads(item.pop("capability_json"))
+            item["model_bundle"] = _parse_json(item.pop("model_bundle_json"), {})
+            parameter_schema = _parse_json(item.pop("parameter_schema_json"), {})
+            item["override_schema"] = item["model_bundle"].get("override_schema") if isinstance(item["model_bundle"], dict) else None
+            if not isinstance(item["override_schema"], dict):
+                item["override_schema"] = parameter_schema.get("override_schema") if isinstance(parameter_schema, dict) else None
+            if not isinstance(item["override_schema"], dict):
+                item["override_schema"] = default_override_schema(str(item["capability"]))
+            workflow_contract = json.loads(str(item.pop("workflow_contract_json") or "{}"))
+            item["workflow_tier"] = str(workflow_contract.get("production_tier") or "").strip().upper() or None
+            item["dynamic_production_tiers"] = workflow_contract.get("dynamic_production_tiers") is True
             result.append(item)
         return result
 
@@ -302,6 +376,202 @@ class ProfileService:
         }
         return hashlib.sha256(_json(payload).encode("utf-8")).hexdigest()
 
+    def _execution_detail(self, connection: Any, row: Any) -> dict[str, Any]:
+        """Build the local, read-only execution view for a Profile version.
+
+        Older manifest syncs only persisted ``artifact_ids``.  Newer bundles
+        may carry component roles, but the API normalizes both shapes so the
+        UI never has to infer model files from a raw JSON blob.
+        """
+
+        bundle = _parse_json(row["model_bundle_json"], {})
+        if not isinstance(bundle, dict):
+            bundle = {}
+        parameter_schema = _parse_json(row["parameter_schema_json"], {})
+        if not isinstance(parameter_schema, dict):
+            parameter_schema = {}
+
+        runtime_id = str(row["runtime_version_id"] or bundle.get("runtime_id") or "").strip()
+        runtime_payload: dict[str, Any] | None = None
+        if runtime_id:
+            runtime_row = connection.execute(
+                """SELECT id, code, title, transport, base_url, executable_ref,
+                runtime_version, status, details_json, revision FROM local_runtimes WHERE id=?""",
+                (runtime_id,),
+            ).fetchone()
+            if runtime_row is not None:
+                runtime_payload = {
+                    "id": str(runtime_row["id"]),
+                    "code": str(runtime_row["code"]),
+                    "title": str(runtime_row["title"]),
+                    "transport": str(runtime_row["transport"]),
+                    "base_url": runtime_row["base_url"],
+                    "executable_ref": runtime_row["executable_ref"],
+                    "version": runtime_row["runtime_version"],
+                    "status": str(runtime_row["status"]),
+                    "details": _parse_json(runtime_row["details_json"], {}),
+                    "revision": int(runtime_row["revision"]),
+                }
+        if runtime_payload is None and runtime_id:
+            runtime_payload = {"id": runtime_id, "status": "UNKNOWN"}
+
+        workflow_payload: dict[str, Any] | None = None
+        workflow_id = str(row["workflow_version_id"] or bundle.get("workflow_version_id") or "").strip()
+        if workflow_id:
+            workflow_row = connection.execute(
+                """SELECT wv.id, wv.workflow_id, w.code, w.title, wv.version_no,
+                wv.content_hash, wv.status, wv.contract_json, wv.revision
+                FROM workflow_versions wv JOIN workflows w ON w.id=wv.workflow_id
+                WHERE wv.id=?""",
+                (workflow_id,),
+            ).fetchone()
+            if workflow_row is not None:
+                workflow_payload = {
+                    "id": str(workflow_row["id"]),
+                    "workflow_id": str(workflow_row["workflow_id"]),
+                    "code": str(workflow_row["code"]),
+                    "title": str(workflow_row["title"]),
+                    "version_no": int(workflow_row["version_no"]),
+                    "content_hash": str(workflow_row["content_hash"]),
+                    "status": str(workflow_row["status"]),
+                    "contract": _parse_json(workflow_row["contract_json"], {}),
+                    "revision": int(workflow_row["revision"]),
+                }
+        if workflow_payload is None and workflow_id:
+            workflow_payload = {"id": workflow_id, "status": "UNKNOWN"}
+
+        raw_components = bundle.get("components")
+        component_specs: list[dict[str, Any]] = []
+        if isinstance(raw_components, list):
+            component_specs = [dict(item) for item in raw_components if isinstance(item, dict)]
+        if not component_specs:
+            artifact_ids = bundle.get("artifact_ids")
+            if isinstance(artifact_ids, list):
+                component_specs = [{"artifact_id": str(item)} for item in artifact_ids if str(item).strip()]
+
+        artifact_ids = [str(item.get("artifact_id")) for item in component_specs if str(item.get("artifact_id") or "").strip()]
+        artifact_by_id: dict[str, Any] = {}
+        if artifact_ids:
+            placeholders = ",".join("?" for _ in artifact_ids)
+            artifact_rows = connection.execute(
+                f"""SELECT id, runtime_id, code, kind, machine_path_ref, sha256, size_bytes,
+                compatibility_json, status, manifest_sha256, revision FROM model_artifacts
+                WHERE id IN ({placeholders})""",
+                artifact_ids,
+            ).fetchall()
+            artifact_by_id = {str(item["id"]): item for item in artifact_rows}
+
+        components: list[dict[str, Any]] = []
+        for spec in component_specs:
+            artifact_id = str(spec.get("artifact_id") or "").strip()
+            artifact = artifact_by_id.get(artifact_id)
+            if artifact is None:
+                components.append(
+                    {
+                        "artifact_id": artifact_id or None,
+                        "role": str(spec.get("role") or "UNKNOWN").upper(),
+                        "purpose": spec.get("purpose"),
+                        "title": str(spec.get("title") or artifact_id or "缺失模型组件"),
+                        "status": "MISSING",
+                        "required": bool(spec.get("required", True)),
+                    }
+                )
+                continue
+            role = str(spec.get("role") or _artifact_role(artifact["kind"], artifact["code"])).upper()
+            compatibility = _parse_json(artifact["compatibility_json"], {})
+            components.append(
+                {
+                    "artifact_id": str(artifact["id"]),
+                    "role": role,
+                    "purpose": spec.get("purpose"),
+                    "title": str(spec.get("title") or artifact["code"]),
+                    "code": str(artifact["code"]),
+                    "kind": str(artifact["kind"]),
+                    "status": str(artifact["status"]),
+                    "available": str(artifact["status"]).upper() in {"AVAILABLE", "VERIFIED", "READY", "PUBLISHED"},
+                    "required": bool(spec.get("required", True)),
+                    "machine_path": str(artifact["machine_path_ref"]),
+                    "sha256": artifact["sha256"],
+                    "size_bytes": artifact["size_bytes"],
+                    "manifest_sha256": artifact["manifest_sha256"],
+                    "compatibility": compatibility if isinstance(compatibility, dict) else {},
+                    "revision": int(artifact["revision"]),
+                }
+            )
+
+        remote_model = bundle.get("model") or bundle.get("model_ref")
+        if remote_model and not components:
+            components.append(
+                {
+                    "artifact_id": None,
+                    "role": "REMOTE_MODEL",
+                    "title": str(remote_model),
+                    "model": str(remote_model),
+                    "status": "CONFIGURED",
+                    "required": True,
+                }
+            )
+
+        provider_connection: dict[str, Any] | None = None
+        provider_connection_id = str(bundle.get("provider_connection_id") or "").strip()
+        if provider_connection_id:
+            try:
+                provider_row = connection.execute(
+                    "SELECT id, title, provider_kind, protocol, base_url, model, status, revision FROM provider_connections WHERE id=?",
+                    (provider_connection_id,),
+                ).fetchone()
+            except sqlite3.OperationalError:
+                provider_row = None
+            if provider_row is not None:
+                provider_connection = {
+                    "id": str(provider_row["id"]),
+                    "title": str(provider_row["title"]),
+                    "provider_kind": str(provider_row["provider_kind"]),
+                    "protocol": str(provider_row["protocol"]),
+                    "base_url": str(provider_row["base_url"]),
+                    "model": provider_row["model"],
+                    "status": str(provider_row["status"]),
+                    "revision": int(provider_row["revision"]),
+                }
+
+        defaults = bundle.get("defaults")
+        if not isinstance(defaults, dict):
+            defaults = parameter_schema.get("defaults") if isinstance(parameter_schema.get("defaults"), dict) else {}
+        override_schema = bundle.get("override_schema")
+        if not isinstance(override_schema, dict):
+            override_schema = parameter_schema.get("override_schema")
+        if not isinstance(override_schema, dict):
+            override_schema = default_override_schema(str(row["capability"] or ""))
+
+        worker_policy = _parse_json(row["worker_policy"], None)
+        if worker_policy is None:
+            worker_policy = row["worker_policy"]
+        execution_fingerprint = self._execution_fingerprint(row)
+        model_bundle_fingerprint = hashlib.sha256(_json(bundle).encode("utf-8")).hexdigest()
+        workflow_fingerprint = workflow_payload.get("content_hash") if workflow_payload else None
+        return {
+            "schema_version": "localdrama.profile-execution-detail.v1",
+            "runtime": runtime_payload,
+            "workflow": workflow_payload,
+            "components": components,
+            "provider_connection_id": bundle.get("provider_connection_id"),
+            "provider_connection": provider_connection,
+            "provider": bundle.get("provider"),
+            "model": bundle.get("model"),
+            "defaults": defaults,
+            "override_schema": override_schema,
+            "worker_policy": worker_policy,
+            "model_bundle": bundle,
+            "fingerprints": {
+                "execution": execution_fingerprint,
+                "model_bundle": f"sha256:{model_bundle_fingerprint}",
+                "workflow": f"sha256:{workflow_fingerprint}" if workflow_fingerprint else None,
+                "manifest": row["manifest_sha256"],
+            },
+            "read_only": True,
+            "local_only": True,
+        }
+
     def get_version(self, profile_version_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
             row = connection.execute(
@@ -311,6 +581,7 @@ class ProfileService:
             ).fetchone()
             if row is None:
                 raise DomainRuleError("PROFILE_VERSION_NOT_FOUND", "ExecutionProfileVersion 不存在")
+            execution = self._execution_detail(connection, row)
             validation = connection.execute(
                 """SELECT id, contract_hash, status, checks_json, created_at FROM profile_validation_attestations
                 WHERE profile_version_id=? ORDER BY created_at DESC LIMIT 1""",
@@ -326,9 +597,11 @@ class ProfileService:
             "capability": str(row["capability"]),
             "status": str(row["status"]),
             "revision": int(row["revision"]),
+            "model_bundle": _parse_json(row["model_bundle_json"], {}),
             **payload,
             "capability_contract": json.loads(str(row["capability_json"] or "{}")),
             "contract_hash": self._contract_hash(payload),
+            "execution": execution,
             "validation": ({**dict(validation), "checks": json.loads(str(validation["checks_json"]))} if validation else None),
         }
 
@@ -645,8 +918,12 @@ class ProfileService:
                     "待发布 Profile capability 未知或含义不唯一",
                     {"profile_version_id": candidate_version_id},
                 ) from error
-            if candidate_capability not in {"VIDEO_T2V", "VIDEO_I2V"}:
-                raise DomainRuleError("PROFILE_EVIDENCE_CAPABILITY_MISMATCH", "真实证据发布只支持已验证的 T2V 或 I2V capability")
+            image_capability = candidate_capability.startswith("IMAGE_")
+            if candidate_capability not in {"VIDEO_T2V", "VIDEO_I2V"} and not image_capability:
+                raise DomainRuleError(
+                    "PROFILE_EVIDENCE_CAPABILITY_MISMATCH",
+                    "真实证据发布只支持已验证的 T2V、I2V 或 IMAGE_* capability",
+                )
             contract_validation = None
             if candidate["status"] == "DRAFT":
                 contract_payload = self._contract_payload(candidate)
@@ -693,8 +970,10 @@ class ProfileService:
             expected_workflow_capability = {
                 "VIDEO_T2V": "H3_T2VA_CANDIDATE",
                 "VIDEO_I2V": "H3_FL2VA_I2V_CANDIDATE",
-            }[candidate_capability]
-            if workflow_capability != expected_workflow_capability:
+            }.get(candidate_capability)
+            if expected_workflow_capability is None and image_capability:
+                expected_workflow_capability = "SDXL_T2I_CANDIDATE"
+            if expected_workflow_capability is None or workflow_capability != expected_workflow_capability:
                 raise DomainRuleError(
                     "PROFILE_EVIDENCE_CAPABILITY_MISMATCH",
                     "Workflow capability 与待发布 Profile capability 不一致",
@@ -704,7 +983,7 @@ class ProfileService:
                 """SELECT mv.id AS media_version_id, mv.integrity_status, mv.source_artifact_id,
                 mv.source_job_attempt_id, ma.media_kind, ma.project_id, a.status AS artifact_status,
                 ja.state AS attempt_state, j.state AS job_state, j.subject_type, j.subject_id,
-                j.input_snapshot_json
+                j.input_snapshot_json, j.execution_profile_version_id
                 FROM media_versions mv JOIN media_assets ma ON ma.id=mv.media_asset_id
                 JOIN artifacts a ON a.id=mv.source_artifact_id
                 JOIN job_attempts ja ON ja.id=mv.source_job_attempt_id AND ja.id=a.job_attempt_id
@@ -714,16 +993,26 @@ class ProfileService:
             if evidence is None:
                 raise DomainRuleError("PROFILE_EVIDENCE_LINEAGE_REQUIRED", "Profile 发布需要完整 Artifact/Attempt/Job 媒体谱系")
             snapshot = json.loads(str(evidence["input_snapshot_json"]))
+            execution_snapshot = snapshot.get("execution_snapshot", {})
+            frozen_profile_id = execution_snapshot.get("profile_version_id") if isinstance(execution_snapshot, dict) else None
+            frozen_fingerprint = execution_snapshot.get("profile_execution_fingerprint") if isinstance(execution_snapshot, dict) else None
+            required_media_kind = "IMAGE" if image_capability else "VIDEO"
             valid = (
                 evidence["integrity_status"] == "VERIFIED"
                 and evidence["artifact_status"] == "VERIFIED"
                 and evidence["attempt_state"] == "SUCCEEDED"
                 and evidence["job_state"] == "SUCCEEDED"
-                and evidence["media_kind"] == "VIDEO"
+                and evidence["media_kind"] == required_media_kind
                 and snapshot.get("workflow_version_id") == workflow_version_id
+                and evidence["execution_profile_version_id"] == candidate_version_id
+                and frozen_profile_id == candidate_version_id
+                and frozen_fingerprint == self._execution_fingerprint(candidate)
             )
             if not valid:
-                raise DomainRuleError("PROFILE_EVIDENCE_INVALID", "媒体或执行谱系不足以发布 ProfileVersion")
+                raise DomainRuleError(
+                    "PROFILE_EVIDENCE_INVALID",
+                    "媒体或执行谱系不足以发布 ProfileVersion；证据必须由当前候选 Profile 与执行指纹真实产生",
+                )
             if candidate_capability == "VIDEO_I2V":
                 first_frames = [
                     str(item.get("media_version_id"))
@@ -772,11 +1061,22 @@ class ProfileService:
             version_id = str(uuid.uuid4())
             contract = json.loads(str(candidate["capability_json"]))
             manifest_capability = dict(contract.get("manifest_capability", {}))
+            workflow_content = json.loads(str(workflow["content_json"] or "{}"))
+            required_workflow_nodes = sorted({
+                str(node.get("class_type"))
+                for node in workflow_content.values()
+                if isinstance(node, dict) and node.get("class_type")
+            }) if isinstance(workflow_content, dict) else []
+            uses_core_h3 = "MiniMaxH3ImageToVideo" in required_workflow_nodes
             manifest_capability.update(
                 {
                     "status": "playable_success_verified",
                     "playable_success_verified_in_this_run": True,
                     "blocking_evidence": None,
+                    "node_family": "comfy_extras.MiniMaxH3ImageToVideo" if uses_core_h3 else manifest_capability.get("node_family"),
+                    "required_nodes": required_workflow_nodes,
+                    "workflow": str(workflow["package_rel_path"]),
+                    "workflow_sha256": str(workflow["content_hash"]),
                 }
             )
             contract.update(

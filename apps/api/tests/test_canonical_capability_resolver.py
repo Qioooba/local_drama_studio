@@ -15,6 +15,7 @@ from local_drama.domain.capabilities import (
     CANONICAL_CAPABILITIES,
     normalize_capability,
 )
+from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.generation_preference_repository import (
     SqliteGenerationPreferenceRepository,
 )
@@ -119,6 +120,23 @@ def test_canonical_capabilities_inventory_and_normalization() -> None:
         normalize_capability("UNKNOWN_MODEL_ABC")
 
 
+def test_generation_preference_requires_audit_reason(memory_db: sqlite3.Connection) -> None:
+    repo = SqliteGenerationPreferenceRepository(memory_db)
+    service = GenerationPreferenceCommandService(repo)
+    memory_db.execute("INSERT INTO projects VALUES ('proj-1', 'P1', '测试项目')")
+
+    with pytest.raises(DomainRuleError, match="必须填写变更原因") as error:
+        service.put(
+            project_id="proj-1",
+            owner_type="PROJECT",
+            owner_id="proj-1",
+            capability="TTS",
+            resolution_mode="AUTO",
+            reason="   ",
+        )
+    assert error.value.code == "GENERATION_PREFERENCE_REASON_REQUIRED"
+
+
 def test_shot_explicit_compatible_resolution(memory_db: sqlite3.Connection) -> None:
     repo = SqliteGenerationPreferenceRepository(memory_db)
     cmd_service = GenerationPreferenceCommandService(repo)
@@ -144,6 +162,7 @@ def test_shot_explicit_compatible_resolution(memory_db: sqlite3.Connection) -> N
         capability="i2v",
         resolution_mode="EXPLICIT",
         execution_profile_version_id="pv-1",
+        reason="pin verified I2V profile",
     )
 
     # Resolve for shot
@@ -217,6 +236,7 @@ def test_hierarchy_inheritance_shot_episode_project_auto(memory_db: sqlite3.Conn
         capability="TTS",
         resolution_mode="EXPLICIT",
         execution_profile_version_id="pv-proj",
+        reason="set project TTS default",
     )
 
     # Resolve from shot-1: inherits from PROJECT
@@ -236,6 +256,7 @@ def test_hierarchy_inheritance_shot_episode_project_auto(memory_db: sqlite3.Conn
         capability="TTS",
         resolution_mode="EXPLICIT",
         execution_profile_version_id="pv-ep",
+        reason="override episode TTS profile",
     )
 
     # Resolve from shot-1: now resolves from EPISODE

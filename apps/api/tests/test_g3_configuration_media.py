@@ -122,12 +122,21 @@ def test_real_media_probe_range_thumbnail_and_production_read_model(workspace, d
     project_service = ProjectService(database, workspace.projects_root)
     episode = project_service.list_episodes(str(project_service.list_seasons(project_id)[0]["id"]))[0]
     shot = project_service.create_shot(str(episode["id"]), "S001", 1000)
+    archived_shot = project_service.create_shot(str(episode["id"]), "S_ARCHIVED", 1000)
+    with database.transaction() as connection:
+        connection.execute("UPDATE shots SET archived_at='2026-08-22T00:00:00Z' WHERE id=?", (str(archived_shot["id"]),))
     production = ProductionReadModelService(database).episode(str(episode["id"]))
+    assert [item["id"] for item in production["items"]] == [str(shot["id"])]
     assert production["items"][0]["blockers"]
     assert production["request_shape"] == "bounded_cursor_read_model"
     assert production["page"]["cursor"] == 0
     page = ProductionReadModelService(database).episode(str(episode["id"]), limit=1, cursor=1)
     assert page["page"]["cursor"] == 1
+    # GET is now read-only; materialization belongs to the durable derivative
+    # worker (covered in test_media_derivative_jobs).  This test prewarms the
+    # cache so it can continue exercising Range and presentation reads.
+    MediaService(database, workspace).thumbnail(str(media["media_version_id"]), "small", "first")
+    MediaService(database, workspace).filmstrip(str(media["media_version_id"]))
     with TestClient(create_app(workspace)) as client:
         paged_production = client.get(f"/api/v1/episodes/{episode['id']}/production", params={"cursor": 0, "limit": 1})
         assert paged_production.status_code == 200
@@ -183,6 +192,7 @@ def test_real_media_probe_range_thumbnail_and_production_read_model(workspace, d
         capture_output=True,
     )
     audio = MediaService(database, workspace).import_file(project_id, audio_source)
+    MediaService(database, workspace).waveform(str(audio["media_version_id"]))
     with TestClient(create_app(workspace)) as client:
         waveform = client.get(f"/api/v1/media-versions/{audio['media_version_id']}/waveform")
         assert waveform.status_code == 200
@@ -313,6 +323,9 @@ def test_video_thumbnail_frame_parameter_resolves_distinct_local_frames(workspac
     )
     media = MediaService(database, workspace).import_file(str(project["id"]), source, media_kind="VIDEO")
     version_id = str(media["media_version_id"])
+    media_service = MediaService(database, workspace)
+    for frame in ("first", "poster", "middle", "last"):
+        media_service.thumbnail(version_id, "small", frame)
     with TestClient(create_app(workspace)) as client:
         first = client.get(f"/api/v1/media-versions/{version_id}/thumbnail?size=small&frame=first")
         poster = client.get(f"/api/v1/media-versions/{version_id}/thumbnail?size=small&frame=poster")

@@ -14,13 +14,19 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
+import threading
 import uuid
+from collections import deque
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
+from queue import Empty, Queue
+from time import monotonic
+from typing import Any, Callable
 
 from local_drama.application.media import MediaService, _hash_file
+from local_drama.application.director_desk import DirectorDeskReadModelService
 from local_drama.application.subtitle_styles import DEFAULT_SUBTITLE_STYLE, validate_style
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
@@ -94,6 +100,8 @@ class TimelineService:
         self.database = database
         self.settings = settings
         self.media = MediaService(database, settings)
+        self.cancel_check: Callable[[], bool] | None = None
+        self.progress_callback: Callable[[dict[str, Any]], None] | None = None
 
     def _episode(self, episode_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
@@ -220,6 +228,350 @@ class TimelineService:
             "input_snapshot": json.loads(row["input_snapshot_json"]),
             "items": [{**dict(item), "parameters": json.loads(item["parameters_json"])} for item in items],
         }
+
+    def plan_tts_subtitle_draft(
+        self,
+        episode_id: str,
+        *,
+        source_document_version_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Build a read-only subtitle draft from current TTS selections.
+
+        Dialogue revisions remain the text authority.  Selected TTS media only
+        contributes timing evidence; this method never creates a subtitle
+        revision and never treats synthesized/ASR text as authoritative.
+        """
+        episode = self._episode(episode_id)
+        with self.database.connect() as connection:
+            shots = connection.execute(
+                "SELECT id,code,order_key,target_duration_ms FROM shots WHERE episode_id=? ORDER BY CAST(order_key AS REAL),code,id",
+                (episode_id,),
+            ).fetchall()
+            lines = connection.execute(
+                """SELECT dl.id,dl.code,dl.speaker,dl.shot_id,
+                    dtr.id AS text_revision_id,dtr.revision_no AS text_revision_no,dtr.text,dtr.text_hash,
+                    dcs.id AS selection_id,dcs.source_text_revision_id,
+                    tc.id AS tts_candidate_id,tc.media_version_id,tc.candidate_kind,
+                    mv.duration_ms,mv.sha256 AS media_sha256,mv.integrity_status
+                FROM dialogue_lines dl
+                JOIN dialogue_text_revisions dtr ON dtr.id=(
+                    SELECT latest.id FROM dialogue_text_revisions latest
+                    WHERE latest.dialogue_line_id=dl.id ORDER BY latest.revision_no DESC LIMIT 1
+                )
+                LEFT JOIN dialogue_candidate_selections dcs ON dcs.id=(
+                    SELECT latest_selection.id FROM dialogue_candidate_selections latest_selection
+                    WHERE latest_selection.dialogue_line_id=dl.id
+                    ORDER BY latest_selection.created_at DESC,latest_selection.id DESC LIMIT 1
+                )
+                LEFT JOIN tts_candidates tc ON tc.id=dcs.tts_candidate_id
+                LEFT JOIN media_versions mv ON mv.id=tc.media_version_id
+                LEFT JOIN shots shot ON shot.id=dl.shot_id
+                WHERE dl.episode_id=?
+                ORDER BY CASE WHEN shot.id IS NULL THEN 1 ELSE 0 END,
+                    CAST(shot.order_key AS REAL),shot.code,dl.code,dl.id""",
+                (episode_id,),
+            ).fetchall()
+            applied_sources = connection.execute(
+                """SELECT DISTINCT draft.source_document_version_id
+                FROM script_breakdown_scene_applications application
+                JOIN script_breakdown_drafts draft ON draft.id=application.breakdown_draft_id
+                WHERE application.episode_id=?
+                ORDER BY draft.source_document_version_id""",
+                (episode_id,),
+            ).fetchall()
+
+        source_candidates = [str(row["source_document_version_id"]) for row in applied_sources]
+        requested_source = str(source_document_version_id or "").strip()
+        resolved_source = requested_source or (source_candidates[0] if len(source_candidates) == 1 else "")
+        blockers: list[dict[str, Any]] = []
+        warnings: list[dict[str, Any]] = []
+        if not resolved_source:
+            blockers.append(
+                {
+                    "code": "SUBTITLE_SOURCE_REQUIRED" if not source_candidates else "SUBTITLE_SOURCE_AMBIGUOUS",
+                    "message": "请选择本集采用的已解析剧本文档版本。" if not source_candidates else "本集应用了多个剧本文档版本，请明确选择字幕权威。",
+                }
+            )
+
+        source_text = ""
+        authority_snapshot: dict[str, Any] | None = None
+        if resolved_source:
+            try:
+                source_text, authority_snapshot = self._subtitle_authority(
+                    episode,
+                    {"text_authority": "SCRIPT", "source_document_version_id": resolved_source},
+                )
+            except DomainRuleError as error:
+                blockers.append({"code": error.code, "message": error.message})
+
+        shot_start_us: dict[str, int] = {}
+        shot_duration_us: dict[str, int] = {}
+        elapsed_us = 0
+        for shot in shots:
+            shot_id = str(shot["id"])
+            duration_us = max(100_000, int(shot["target_duration_ms"]) * 1000)
+            shot_start_us[shot_id] = elapsed_us
+            shot_duration_us[shot_id] = duration_us
+            elapsed_us += duration_us
+
+        cues: list[dict[str, Any]] = []
+        missing: list[dict[str, Any]] = []
+        evidence: list[dict[str, Any]] = []
+        per_shot_cursor: dict[str, int] = {}
+        previous_end = 0
+        normalized_source, _ = _normalized_text_with_offsets(source_text) if source_text else ("", [])
+        source_cursor = 0
+        for row in lines:
+            line_id = str(row["id"])
+            if not row["selection_id"]:
+                missing.append({"line_id": line_id, "code": str(row["code"]), "reason": "TTS_SELECTION_MISSING", "message": "尚未采用 TTS 候选"})
+                continue
+            if str(row["source_text_revision_id"] or "") != str(row["text_revision_id"]):
+                missing.append({"line_id": line_id, "code": str(row["code"]), "reason": "TTS_SELECTION_STALE", "message": "采用候选对应旧文本 revision"})
+                continue
+            if not row["media_version_id"] or str(row["integrity_status"] or "") != "VERIFIED":
+                missing.append({"line_id": line_id, "code": str(row["code"]), "reason": "TTS_MEDIA_UNVERIFIED", "message": "采用候选缺少已验证音频"})
+                continue
+
+            text = str(row["text"]).strip()
+            normalized_text, _ = _normalized_text_with_offsets(text)
+            if normalized_source:
+                match_start = normalized_source.find(normalized_text, source_cursor)
+                if match_start < 0:
+                    blockers.append(
+                        {
+                            "code": "SUBTITLE_SCRIPT_AUTHORITY_MISMATCH",
+                            "message": f"{row['code']} 的当前对白文本无法按顺序在所选剧本中定位。",
+                            "line_id": line_id,
+                        }
+                    )
+                else:
+                    source_cursor = match_start + len(normalized_text)
+
+            shot_id = str(row["shot_id"] or "")
+            local_cursor = per_shot_cursor.get(shot_id, 0)
+            intended_start = shot_start_us.get(shot_id, previous_end) + local_cursor
+            start_us = max(previous_end, intended_start)
+            media_duration_us = max(0, int(row["duration_ms"] or 0) * 1000)
+            cps_duration_us = max(500_000, (len(text) * 1_000_000 + 24) // 25)
+            duration_us = max(media_duration_us, cps_duration_us)
+            end_us = start_us + duration_us
+            per_shot_cursor[shot_id] = max(0, end_us - shot_start_us.get(shot_id, start_us))
+            previous_end = end_us
+            cues.append({"start_us": start_us, "end_us": end_us, "text": text})
+            evidence.append(
+                {
+                    "line_id": line_id,
+                    "line_code": str(row["code"]),
+                    "speaker": str(row["speaker"]),
+                    "shot_id": shot_id or None,
+                    "text_revision_id": str(row["text_revision_id"]),
+                    "text_revision_no": int(row["text_revision_no"]),
+                    "text_hash": str(row["text_hash"]),
+                    "selection_id": str(row["selection_id"]),
+                    "tts_candidate_id": str(row["tts_candidate_id"]),
+                    "media_version_id": str(row["media_version_id"]),
+                    "media_sha256": str(row["media_sha256"]),
+                    "media_duration_ms": int(row["duration_ms"] or 0) or None,
+                    "timing_basis": "SELECTED_TTS_MEDIA_EXTENDED_FOR_CPS" if duration_us > media_duration_us else "SELECTED_TTS_MEDIA",
+                }
+            )
+
+        if not lines:
+            blockers.append({"code": "DIALOGUE_LINES_REQUIRED", "message": "本集还没有对白文本。"})
+        elif not cues:
+            blockers.append({"code": "CURRENT_TTS_SELECTIONS_REQUIRED", "message": "至少需要一条对应当前对白文本、媒体已验证的 TTS 采用结果。"})
+        if missing:
+            warnings.append({"code": "TTS_SELECTIONS_INCOMPLETE", "message": f"{len(missing)} 条对白未进入草稿；可先补齐采用结果，或审阅现有条目。"})
+
+        ready = bool(cues and authority_snapshot and not blockers)
+        status = "BLOCKED" if not ready else "PARTIAL" if missing else "READY"
+        return {
+            "episode_id": episode_id,
+            "status": status,
+            "ready_to_load": ready,
+            "source_document_version_id": resolved_source or None,
+            "source_document_candidates": source_candidates,
+            "authority": authority_snapshot,
+            "cues": cues,
+            "evidence": evidence,
+            "missing": missing,
+            "blockers": blockers,
+            "warnings": warnings,
+            "summary": {"dialogue_count": len(lines), "cue_count": len(cues), "missing_count": len(missing), "duration_us": previous_end},
+            "text_authority": "SCRIPT",
+            "timing_authority": "SELECTED_TTS_MEDIA",
+            "requires_human_review": True,
+            "would_create_revision": False,
+            "read_only": True,
+            "runtime_contacted": False,
+            "network_contacted": False,
+            "mutated": False,
+        }
+
+    def plan_stale_timeline_refresh(self, episode_id: str) -> dict[str, Any]:
+        """Recheck current upstream facts before replacing a stale timeline.
+
+        The plan hashes exact current selections, durations, active audio and
+        latest subtitle facts.  It reads and hashes local media but performs no
+        database writes and never freezes a revision by itself.
+        """
+        episode = self._episode(episode_id)
+        with self.database.connect() as connection:
+            latest = connection.execute(
+                "SELECT id,revision_no,revision_hash,status FROM timeline_revisions WHERE episode_id=? ORDER BY revision_no DESC LIMIT 1",
+                (episode_id,),
+            ).fetchone()
+            subtitle = connection.execute(
+                "SELECT id,revision_no,content_hash,status FROM subtitle_revisions WHERE episode_id=? ORDER BY revision_no DESC LIMIT 1",
+                (episode_id,),
+            ).fetchone()
+        selections = DirectorDeskReadModelService(self.database).timeline_selections(
+            str(episode["project_id"]), episode_id, limit=500,
+        )
+        blockers: list[dict[str, Any]] = []
+        warnings: list[dict[str, Any]] = []
+        if latest is None:
+            blockers.append({"code": "TIMELINE_REVISION_REQUIRED", "message": "本集还没有可恢复的时间线 revision。"})
+        elif str(latest["status"]).upper() != "STALE":
+            blockers.append({"code": "TIMELINE_NOT_STALE", "message": "最新时间线并未失效；请在时间线工作台完成普通编辑或冻结。"})
+        if selections["has_more"]:
+            blockers.append({"code": "TIMELINE_SHOT_LIMIT_EXCEEDED", "message": "本集镜头超过 500 个安全上限，请先拆分分集。"})
+        if not selections["items"]:
+            blockers.append({"code": "TIMELINE_SHOTS_REQUIRED", "message": "本集没有可编排镜头。"})
+
+        video_items: list[dict[str, Any]] = []
+        cursor_us = 0
+        selected_videos: list[dict[str, Any]] = []
+        for index, item in enumerate(selections["items"]):
+            media_version_id = str(item.get("current_video_media_version_id") or "")
+            shot_id = str(item["id"])
+            if not media_version_id:
+                blockers.append({"code": "TIMELINE_VIDEO_SELECTION_MISSING", "message": f"{item['code']} 尚未采用视频。", "shot_id": shot_id})
+                continue
+            continuity = str(item.get("continuity_status") or "MISSING")
+            if continuity == "CONFLICT":
+                blockers.append({"code": "TIMELINE_CONTINUITY_CONFLICT", "message": f"{item['code']} 存在连续性冲突。", "shot_id": shot_id})
+            elif continuity in {"STALE", "ATTENTION"}:
+                warnings.append({"code": "TIMELINE_CONTINUITY_REVIEW", "message": f"{item['code']} 的连续性状态为 {continuity}，冻结后仍建议人工复核。", "shot_id": shot_id})
+            try:
+                media, path = self.media.content_path(media_version_id)
+                actual_sha, actual_size = _hash_file(path)
+                if (
+                    str(media["project_id"]) != str(episode["project_id"])
+                    or str(media["media_kind"]) != "VIDEO"
+                    or not hmac.compare_digest(actual_sha, str(media["sha256"]))
+                    or actual_size != int(media["byte_size"])
+                ):
+                    raise DomainRuleError("SOURCE_INTEGRITY_FAILED", "采用视频的项目、类型或完整性不符合冻结要求")
+            except DomainRuleError as error:
+                blockers.append({"code": error.code, "message": f"{item['code']}：{error.message}", "shot_id": shot_id})
+                continue
+            duration_us = max(100_000, int(item["target_duration_ms"]) * 1000)
+            video_items.append(
+                {
+                    "track_type": "VIDEO",
+                    "media_version_id": media_version_id,
+                    "start_us": cursor_us,
+                    "end_us": cursor_us + duration_us,
+                    "parameters": {"shot_id": shot_id, "shot_code": str(item["code"]), "transition_in": "CUT"},
+                }
+            )
+            selected_videos.append({"shot_id": shot_id, "media_version_id": media_version_id, "sha256": str(media["sha256"])})
+            cursor_us += duration_us
+
+        audio_bindings = self._audio_bindings_for_render(episode_id)
+        audio_items: list[dict[str, Any]] = []
+        for binding in audio_bindings:
+            try:
+                _, path = self.media.content_path(str(binding["media_version_id"]))
+                actual_sha, actual_size = _hash_file(path)
+                if not hmac.compare_digest(actual_sha, str(binding["media_sha256"])) or actual_size != int(binding["media_byte_size"]):
+                    raise DomainRuleError("SOURCE_INTEGRITY_FAILED", "活动音轨完整性校验失败")
+            except DomainRuleError as error:
+                blockers.append({"code": error.code, "message": f"音轨 {str(binding['id'])[:12]}：{error.message}", "audio_binding_id": str(binding["id"])})
+                continue
+            audio_items.append(
+                {
+                    "track_type": str(binding["track_type"]),
+                    "media_version_id": str(binding["media_version_id"]),
+                    "start_us": int(binding["start_us"]),
+                    "end_us": int(binding["end_us"]),
+                    "parameters": {
+                        "audio_binding_id": str(binding["id"]),
+                        "gain_db": float(binding["gain_db"]),
+                        "loop_enabled": bool(binding["loop_enabled"]),
+                        "fade_in_us": int(binding["fade_in_us"]),
+                        "fade_out_us": int(binding["fade_out_us"]),
+                    },
+                }
+            )
+
+        source_timeline = dict(latest) if latest is not None else None
+        subtitle_snapshot = (
+            {"id": str(subtitle["id"]), "revision_no": int(subtitle["revision_no"]), "content_hash": str(subtitle["content_hash"]), "status": str(subtitle["status"])}
+            if subtitle is not None else None
+        )
+        snapshot = {
+            "schema_version": "localdrama.timeline-stale-refresh-plan.v1",
+            "episode_id": episode_id,
+            "source_timeline": source_timeline,
+            "selected_videos": selected_videos,
+            "audio_bindings": self._binding_snapshot(audio_bindings),
+            "subtitle_revision": subtitle_snapshot,
+            "items": [*video_items, *audio_items],
+        }
+        plan_hash = _hash(snapshot)
+        return {
+            "episode_id": episode_id,
+            "status": "READY" if not blockers else "BLOCKED",
+            "plan_hash": plan_hash,
+            "source_timeline": source_timeline,
+            "summary": {"shot_count": len(selections["items"]), "video_count": len(video_items), "audio_count": len(audio_items), "subtitle_count": 1 if subtitle else 0, "duration_us": cursor_us},
+            "items": [*video_items, *audio_items],
+            "selected_videos": selected_videos,
+            "audio_binding_ids": [str(binding["id"]) for binding in audio_bindings],
+            "subtitle_revision_id": str(subtitle["id"]) if subtitle else None,
+            "blockers": blockers,
+            "warnings": warnings,
+            "would_create_status": "FROZEN",
+            "requires_confirmation": True,
+            "read_only": True,
+            "runtime_contacted": False,
+            "network_contacted": False,
+            "mutated": False,
+        }
+
+    def commit_stale_timeline_refresh(self, episode_id: str, expected_plan_hash: str, actor: str = "local-user") -> dict[str, Any]:
+        plan = self.plan_stale_timeline_refresh(episode_id)
+        if not hmac.compare_digest(str(plan["plan_hash"]), str(expected_plan_hash)):
+            raise DomainRuleError("TIMELINE_REFRESH_PLAN_STALE", "当前采用、音轨或字幕已变化，请重新预检后确认")
+        if plan["status"] != "READY":
+            raise DomainRuleError("TIMELINE_REFRESH_BLOCKED", "当前事实仍不足以创建新的冻结时间线", {"blockers": plan["blockers"]})
+        source = plan["source_timeline"] or {}
+        revision = self.create_timeline_revision(
+            episode_id,
+            plan["items"],
+            {
+                "schema_version": "localdrama.timeline-editor.v2",
+                "source": "DELIVERY_STALE_REFRESH",
+                "refresh_plan_hash": plan["plan_hash"],
+                "refreshed_from_timeline_revision_id": source.get("id"),
+                "refreshed_from_timeline_revision_hash": source.get("revision_hash"),
+                "selected_videos": plan["selected_videos"],
+                "audio_binding_ids": plan["audio_binding_ids"],
+                "subtitle_revision_id": plan["subtitle_revision_id"],
+                "requires_human_confirmation": True,
+            },
+            status="FROZEN",
+            actor=actor,
+        )
+        with self.database.transaction() as connection:
+            connection.execute(
+                "INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json) VALUES (?,'producer','TIMELINE_STALE_REFRESH_COMMITTED','timeline_revision',?,'基于当前采用事实复检并创建新的冻结时间线',?)",
+                (actor, str(revision["id"]), _json({"episode_id": episode_id, "source_timeline_revision_id": source.get("id"), "plan_hash": plan["plan_hash"]})),
+            )
+        return {"timeline": revision, "plan_hash": plan["plan_hash"], "source_timeline_revision_id": source.get("id"), "mutated": True}
 
     def create_subtitle_revision(
         self,
@@ -517,6 +869,22 @@ class TimelineService:
         result["authorization_status"] = "VERIFIED_EVIDENCE" if evidence.get("schema_version") == "localdrama.audio-license-evidence.v1" else "LEGACY_INCOMPLETE"
         result["loop_enabled"] = bool(result["loop_enabled"])
         return result
+
+    def unbind_audio(self, binding_id: str, actor: str = "local-user") -> dict[str, Any]:
+        """Remove only the episode-to-media relationship, preserving media and audit history."""
+        binding = self.get_audio_binding(binding_id)
+        with self.database.transaction() as connection:
+            connection.execute("DELETE FROM audio_bindings WHERE id=?", (binding_id,))
+            connection.execute(
+                "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'producer', 'AUDIO_BINDING_REMOVED', 'audio_binding', ?, ?, ?)",
+                (
+                    actor,
+                    binding_id,
+                    "移除本地音频轨道绑定",
+                    _json({"episode_id": binding["episode_id"], "media_version_id": binding["media_version_id"], "track_type": binding["track_type"]}),
+                ),
+            )
+        return {"id": binding_id, "status": "UNBOUND", "media_version_id": binding["media_version_id"]}
 
     def list_audio_bindings(self, episode_id: str) -> list[dict[str, Any]]:
         self._episode(episode_id)
@@ -1158,7 +1526,23 @@ class TimelineService:
             paths.append(path)
             input_snapshot_items.append({"media_version_id": str(media["id"]), "sha256": str(media["sha256"]), "byte_size": int(media["byte_size"]), "start_us": int(item["start_us"]), "end_us": int(item["end_us"]), "track_type": str(item["track_type"]), "parameters": item["parameters"]})
         bindings = self._audio_bindings_for_render(str(episode["id"]))
-        input_snapshot = {"schema_version": "localdrama.episode-render-input.v1", "timeline_revision_id": timeline_revision_id, "timeline_revision_hash": timeline["revision_hash"], "timeline_input_snapshot": timeline["input_snapshot"], "items": input_snapshot_items}
+        input_snapshot = {
+            "schema_version": "localdrama.episode-render-input.v1",
+            "renderer_contract": "TIMELINE_DURATION_AND_SUBTITLE_V2",
+            "timeline_revision_id": timeline_revision_id,
+            "timeline_revision_hash": timeline["revision_hash"],
+            "timeline_input_snapshot": timeline["input_snapshot"],
+            "items": input_snapshot_items,
+        }
+        subtitle = self._subtitle_for_render(timeline, str(episode["id"]))
+        if subtitle is not None:
+            input_snapshot["subtitle_revision"] = {
+                "id": str(subtitle["id"]),
+                "revision_no": int(subtitle["revision_no"]),
+                "format": str(subtitle["format"]),
+                "content_hash": str(subtitle["content_hash"]),
+                "status": str(subtitle["status"]),
+            }
         if bindings:
             input_snapshot["render_mode"] = "MIXED_AUDIO"
             input_snapshot["audio_bindings"] = self._binding_snapshot(bindings)
@@ -1170,7 +1554,14 @@ class TimelineService:
         render_dir = project_root / "05_timelines" / "renders"
         render_dir.mkdir(parents=True, exist_ok=True)
         render_path = render_dir / f"episode-{episode['code']}-{uuid.uuid4().hex}.mp4"
-        execution = self._concat_and_mix(paths, bindings, render_dir, render_path)
+        execution = self._concat_and_mix(
+            paths,
+            bindings,
+            render_dir,
+            render_path,
+            video_items=video_items,
+            subtitle=subtitle,
+        )
         return self._register_render(episode=episode, timeline_revision_id=timeline_revision_id, timeline=timeline, render_path=render_path, project_root=project_root, input_snapshot=input_snapshot, ffmpeg_execution=execution, actor=actor)
 
     def preflight_episode_render(self, timeline_revision_id: str) -> dict[str, Any]:
@@ -1200,7 +1591,23 @@ class TimelineService:
             actual_sha, actual_size = _hash_file(audio_path)
             if not hmac.compare_digest(actual_sha, str(binding["media_sha256"])) or actual_size != int(binding["media_byte_size"]):
                 raise DomainRuleError("SOURCE_INTEGRITY_FAILED", "Compose 音频输入 hash/size 与不可变 MediaVersion 不一致", {"media_version_id": str(binding["media_version_id"])})
-        snapshot: dict[str, Any] = {"schema_version": "localdrama.episode-render-input.v1", "timeline_revision_id": timeline_revision_id, "timeline_revision_hash": timeline["revision_hash"], "timeline_input_snapshot": timeline["input_snapshot"], "items": items}
+        snapshot: dict[str, Any] = {
+            "schema_version": "localdrama.episode-render-input.v1",
+            "renderer_contract": "TIMELINE_DURATION_AND_SUBTITLE_V2",
+            "timeline_revision_id": timeline_revision_id,
+            "timeline_revision_hash": timeline["revision_hash"],
+            "timeline_input_snapshot": timeline["input_snapshot"],
+            "items": items,
+        }
+        subtitle = self._subtitle_for_render(timeline, str(episode["id"]))
+        if subtitle is not None:
+            snapshot["subtitle_revision"] = {
+                "id": str(subtitle["id"]),
+                "revision_no": int(subtitle["revision_no"]),
+                "format": str(subtitle["format"]),
+                "content_hash": str(subtitle["content_hash"]),
+                "status": str(subtitle["status"]),
+            }
         if bindings:
             snapshot["render_mode"] = "MIXED_AUDIO"
             snapshot["audio_bindings"] = self._binding_snapshot(bindings)
@@ -1211,6 +1618,54 @@ class TimelineService:
             "timeline_revision_id": timeline_revision_id, "compose_fingerprint": _hash(snapshot),
             "input_snapshot": snapshot, "existing_render": existing,
             "would_execute_ffmpeg": existing is None, "read_only": True, "writes_performed": 0,
+        }
+
+    def preflight_segmented_episode_render(self, timeline_revision_id: str, segments: list[dict[str, Any]]) -> dict[str, Any]:
+        timeline = self.get_timeline(timeline_revision_id)
+        self._assert_timeline_renderable(timeline)
+        episode = self._episode(str(timeline["episode_id"]))
+        if not segments:
+            raise DomainRuleError("SEGMENT_VIDEOS_REQUIRED", "分段渲染至少需要一个分段视频")
+        ordered = sorted(segments, key=lambda segment: int(segment.get("segment_no", 0)))
+        snapshot_items: list[dict[str, Any]] = []
+        for index, segment in enumerate(ordered, start=1):
+            media_version_id = str(segment["media_version_id"])
+            media = self._media_for_episode(str(episode["id"]), media_version_id)
+            if media["media_kind"] != "VIDEO":
+                raise DomainRuleError("SEGMENT_MEDIA_KIND_INVALID", "分段渲染的媒体必须是视频", {"segment_no": int(segment.get("segment_no", index))})
+            snapshot_items.append({
+                "segment_no": int(segment.get("segment_no", index)),
+                "media_version_id": str(media["id"]),
+                "sha256": str(media["sha256"]),
+                "byte_size": int(media["byte_size"]),
+                "start_seconds": segment.get("start_seconds"),
+                "end_seconds": segment.get("end_seconds"),
+                "frames": segment.get("frames"),
+                "continuation": segment.get("continuation"),
+            })
+        bindings = self._audio_bindings_for_render(str(episode["id"]))
+        input_snapshot = {
+            "schema_version": "localdrama.episode-render-input.v1",
+            "render_mode": "SEGMENTED_CONCAT",
+            "segments": snapshot_items,
+            "timeline_revision_id": timeline_revision_id,
+            "timeline_revision_hash": timeline["revision_hash"],
+            "timeline_input_snapshot": timeline["input_snapshot"],
+            "items": snapshot_items,
+        }
+        if bindings:
+            input_snapshot["audio_bindings"] = self._binding_snapshot(bindings)
+        project_root = (self.settings.projects_root / episode["root_rel"]).resolve()
+        existing = self._existing_render(timeline_revision_id, input_snapshot, project_root)
+        return {
+            "project_id": str(episode["project_id"]),
+            "episode_id": str(episode["id"]),
+            "timeline_revision_id": timeline_revision_id,
+            "compose_fingerprint": _hash(input_snapshot),
+            "input_snapshot": input_snapshot,
+            "existing_render": existing,
+            "read_only": True,
+            "writes_performed": 0,
         }
 
     def render_segmented_episode(
@@ -1359,6 +1814,19 @@ class TimelineService:
             for binding in bindings
         ]
 
+    def _subtitle_for_render(self, timeline: dict[str, Any], episode_id: str) -> dict[str, Any] | None:
+        subtitle_revision_id = str(timeline.get("input_snapshot", {}).get("subtitle_revision_id") or "").strip()
+        if not subtitle_revision_id:
+            return None
+        subtitle = self.get_subtitles(subtitle_revision_id)
+        if str(subtitle["episode_id"]) != episode_id:
+            raise DomainRuleError(
+                "TIMELINE_SUBTITLE_EPISODE_MISMATCH",
+                "时间线引用的字幕 revision 不属于当前集",
+                {"subtitle_revision_id": subtitle_revision_id},
+            )
+        return subtitle
+
     def _concat_videos(self, paths: list[Path], output_path: Path) -> dict[str, Any]:
         concat_list = output_path.parent / f".partial-{uuid.uuid4().hex}.concat.txt"
         escaped_paths = [path.as_posix().replace("'", "'\\''") for path in paths]
@@ -1371,7 +1839,124 @@ class TimelineService:
         finally:
             concat_list.unlink(missing_ok=True)
 
-    def _concat_and_mix(self, paths: list[Path], bindings: list[dict[str, Any]], render_dir: Path, render_path: Path) -> dict[str, Any]:
+    def _concat_timeline_videos(
+        self,
+        paths: list[Path],
+        video_items: list[dict[str, Any]],
+        render_dir: Path,
+        output_path: Path,
+    ) -> dict[str, Any]:
+        """Honor every timeline item's explicit duration before concatenation.
+
+        Source generations often have provider-defined durations that differ
+        from the editor's immutable ``end_us - start_us``.  Each source is
+        therefore trimmed or extended by holding its last frame.  A silent
+        audio stream is added when the source has none so concat always sees a
+        stable stream layout.
+        """
+        normalized: list[Path] = []
+        steps: list[dict[str, Any]] = []
+        try:
+            first_probe = self._probe(paths[0])
+            first_video = next(
+                (stream for stream in first_probe.get("streams", []) if stream.get("codec_type") == "video"),
+                None,
+            )
+            if first_video is None:
+                raise DomainRuleError("TIMELINE_VIDEO_STREAM_REQUIRED", "时间线源文件缺少视频流")
+            width = int(first_video.get("width") or 0)
+            height = int(first_video.get("height") or 0)
+            if width <= 0 or height <= 0:
+                raise DomainRuleError("TIMELINE_VIDEO_DIMENSIONS_INVALID", "时间线源视频尺寸无效")
+
+            for index, (path, item) in enumerate(zip(paths, video_items, strict=True)):
+                duration_seconds = (int(item["end_us"]) - int(item["start_us"])) / 1_000_000
+                if duration_seconds <= 0:
+                    raise DomainRuleError("TIMELINE_ITEM_DURATION_INVALID", "时间线视频项时长必须大于 0")
+                clip_path = render_dir / f".partial-{uuid.uuid4().hex}.timeline-clip.mp4"
+                probe = self._probe(path)
+                has_audio = any(stream.get("codec_type") == "audio" for stream in probe.get("streams", []))
+                video_filter = (
+                    f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                    f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,"
+                    f"tpad=stop_mode=clone:stop_duration={duration_seconds:.6f},"
+                    f"trim=duration={duration_seconds:.6f},setpts=PTS-STARTPTS"
+                )
+                args = ["-i", str(path)]
+                if has_audio:
+                    args += [
+                        "-map", "0:v:0", "-map", "0:a:0", "-vf", video_filter,
+                        "-af", f"apad,atrim=duration={duration_seconds:.6f},asetpts=PTS-STARTPTS",
+                    ]
+                else:
+                    args += [
+                        "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+                        "-map", "0:v:0", "-map", "1:a:0", "-vf", video_filter,
+                    ]
+                args += [
+                    "-t", f"{duration_seconds:.6f}", "-c:v", "libx264", "-preset", "veryfast",
+                    "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
+                    "-y", str(clip_path),
+                ]
+                execution = self._run_ffmpeg(args, timeout=900)
+                normalized.append(clip_path)
+                steps.append(
+                    {
+                        "stage": "timeline-duration",
+                        "item_index": index,
+                        "duration_us": int(item["end_us"]) - int(item["start_us"]),
+                        "stdout_tail": execution["stdout_tail"],
+                        "stderr_tail": execution["stderr_tail"],
+                    }
+                )
+            concat_execution = self._concat_videos(normalized, output_path)
+            return {
+                **concat_execution,
+                "steps": [
+                    *steps,
+                    {
+                        "stage": "concat",
+                        "stdout_tail": concat_execution["stdout_tail"],
+                        "stderr_tail": concat_execution["stderr_tail"],
+                    },
+                ],
+            }
+        finally:
+            for clip_path in normalized:
+                clip_path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _subtitle_filter_path(path: Path) -> str:
+        value = path.resolve().as_posix()
+        return value.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'").replace("[", "\\[").replace("]", "\\]")
+
+    def _burn_subtitle(self, video_path: Path, subtitle: dict[str, Any], output_path: Path) -> dict[str, Any]:
+        suffix = "." + str(subtitle["format"]).lower()
+        subtitle_path = output_path.parent / f".partial-{uuid.uuid4().hex}{suffix}"
+        subtitle_path.write_text(str(subtitle["content_text"]), encoding="utf-8", newline="")
+        try:
+            filter_spec = f"subtitles=filename='{self._subtitle_filter_path(subtitle_path)}'"
+            return self._run_ffmpeg(
+                [
+                    "-i", str(video_path), "-map", "0:v:0", "-map", "0:a?", "-vf", filter_spec,
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "copy",
+                    "-movflags", "+faststart", "-y", str(output_path),
+                ],
+                timeout=900,
+            )
+        finally:
+            subtitle_path.unlink(missing_ok=True)
+
+    def _concat_and_mix(
+        self,
+        paths: list[Path],
+        bindings: list[dict[str, Any]],
+        render_dir: Path,
+        render_path: Path,
+        *,
+        video_items: list[dict[str, Any]] | None = None,
+        subtitle: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Concat videos and, when bindings exist, mix + mux the audio tracks.
 
         Without bindings the concat output IS the final render (identical
@@ -1379,32 +1964,59 @@ class TimelineService:
         bindings the concat goes to a partial file, the audio is mixed and the
         final mp4 is muxed with the mixed track.
         """
-        if not bindings:
+        if not bindings and not subtitle and video_items is None:
             return self._concat_videos(paths, render_path)
         concat_out = render_dir / f".partial-{uuid.uuid4().hex}.mp4"
-        concat_execution = self._concat_videos(paths, concat_out)
+        concat_execution = (
+            self._concat_timeline_videos(paths, video_items, render_dir, concat_out)
+            if video_items is not None
+            else self._concat_videos(paths, concat_out)
+        )
+        current_video = concat_out
+        subtitle_out: Path | None = None
+        subtitle_execution: dict[str, Any] | None = None
+        if subtitle is not None:
+            subtitle_out = render_dir / f".partial-{uuid.uuid4().hex}.subtitled.mp4"
+            subtitle_execution = self._burn_subtitle(current_video, subtitle, subtitle_out)
+            current_video = subtitle_out
         mixed_wav = render_dir / f".partial-{uuid.uuid4().hex}.mix.wav"
         try:
-            video_duration = self._probe(concat_out)["duration_ms"] / 1000
+            video_duration = self._probe(current_video)["duration_ms"] / 1000
             if video_duration <= 0:
                 raise DomainRuleError("RENDER_DURATION_INVALID", "整集渲染时长无效，无法混音")
-            mix_execution = self._mix_audio(concat_out, bindings, mixed_wav, video_duration)
-            mux_args = ["-i", str(concat_out), "-i", str(mixed_wav), "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-y", str(render_path)]
-            mux_execution = self._run_ffmpeg(mux_args, timeout=900)
+            if bindings:
+                mix_execution = self._mix_audio(current_video, bindings, mixed_wav, video_duration)
+                mux_args = ["-i", str(current_video), "-i", str(mixed_wav), "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-y", str(render_path)]
+                mux_execution = self._run_ffmpeg(mux_args, timeout=900)
+            else:
+                mix_execution = None
+                mux_args = subtitle_execution["args"] if subtitle_execution is not None else concat_execution["args"]
+                shutil.move(str(current_video), str(render_path))
+                mux_execution = subtitle_execution or concat_execution
         finally:
             concat_out.unlink(missing_ok=True)
+            if subtitle_out is not None:
+                subtitle_out.unlink(missing_ok=True)
             mixed_wav.unlink(missing_ok=True)
+        detailed_steps = list(concat_execution.get("steps", []))
+        if not detailed_steps:
+            detailed_steps.append({"stage": "concat", "stdout_tail": concat_execution["stdout_tail"], "stderr_tail": concat_execution["stderr_tail"]})
+        if subtitle_execution is not None:
+            detailed_steps.append({"stage": "subtitle", "stdout_tail": subtitle_execution["stdout_tail"], "stderr_tail": subtitle_execution["stderr_tail"]})
+        if mix_execution is not None:
+            detailed_steps.extend(
+                [
+                    {"stage": "mix", "stdout_tail": mix_execution["stdout_tail"], "stderr_tail": mix_execution["stderr_tail"]},
+                    {"stage": "mux", "stdout_tail": mux_execution["stdout_tail"], "stderr_tail": mux_execution["stderr_tail"]},
+                ]
+            )
         return {
             "executable": mux_execution["executable"],
             "args": mux_args,
             "returncode": mux_execution["returncode"],
             "stdout_tail": mux_execution["stdout_tail"],
             "stderr_tail": mux_execution["stderr_tail"],
-            "steps": [
-                {"stage": "concat", "stdout_tail": concat_execution["stdout_tail"], "stderr_tail": concat_execution["stderr_tail"]},
-                {"stage": "mix", "stdout_tail": mix_execution["stdout_tail"], "stderr_tail": mix_execution["stderr_tail"]},
-                {"stage": "mux", "stdout_tail": mux_execution["stdout_tail"], "stderr_tail": mux_execution["stderr_tail"]},
-            ],
+            "steps": detailed_steps,
         }
 
     def _mix_audio(self, video_path: Path, bindings: list[dict[str, Any]], output_path: Path, video_duration_seconds: float) -> dict[str, Any]:
@@ -1451,7 +2063,11 @@ class TimelineService:
             chains.append(chain)
             mix_inputs.append(f"[a{index}]")
             input_index += 1
-        filter_complex = ";".join(chains) + f";{''.join(mix_inputs)}amix=inputs={len(mix_inputs)}:duration=longest:normalize=0[mix];[mix]apad[mixout]"
+        filter_complex = (
+            ";".join(chains)
+            + f";{''.join(mix_inputs)}amix=inputs={len(mix_inputs)}:duration=longest:normalize=0[mix]"
+            + ";[mix]apad,loudnorm=I=-16:TP=-2:LRA=11,aresample=48000[mixout]"
+        )
         return self._run_ffmpeg(
             [*args, "-filter_complex", filter_complex, "-map", "[mixout]", "-t", f"{video_duration_seconds:.3f}", "-c:a", "pcm_s16le", "-y", str(output_path)],
             timeout=900,
@@ -1669,6 +2285,19 @@ class TimelineService:
             if partial_dir.exists():
                 shutil.rmtree(partial_dir, ignore_errors=True)
         file_hash, byte_size = _hash_file(destination)
+        delivery_manifest_files = [
+            {"rel_path": destination.relative_to(project_root).as_posix(), "sha256": file_hash, "byte_size": byte_size}
+        ]
+        delivered_watermark = destination_dir / f"{render['episode_code']}.watermark.txt"
+        if delivered_watermark.is_file():
+            watermark_hash, watermark_size = _hash_file(delivered_watermark)
+            delivery_manifest_files.append(
+                {
+                    "rel_path": delivered_watermark.relative_to(project_root).as_posix(),
+                    "sha256": watermark_hash,
+                    "byte_size": watermark_size,
+                }
+            )
         timeline_input = json.loads(str(render["input_snapshot_json"] or "{}"))
         with self.database.connect() as connection:
             subtitle = connection.execute(
@@ -1697,7 +2326,7 @@ class TimelineService:
             "licenses": {"audio": [{"media_version_id": item["media_version_id"], "status": item["source_license_status"], "evidence": item["license_evidence"]} for item in audio_snapshot], "model": "USER_SUPPLIED_LOCAL_REFERENCE_ONLY"},
             "controls": {"brand_kit": brand_snapshot, "watermark_profile": watermark_snapshot, "compliance_policy": compliance_snapshot, "machine_preflight": machine_preflight},
             "review_responsibility": {"machine_preflight": "PASS", "human_review": "PENDING", "platform_review": "PENDING"},
-            "files": [{"rel_path": destination.relative_to(project_root).as_posix(), "sha256": file_hash, "byte_size": byte_size}],
+            "files": delivery_manifest_files,
         }
         manifest_hash = _hash(manifest)
         manifest_path = destination_dir / "manifest.json"
@@ -1705,7 +2334,11 @@ class TimelineService:
         now = _now()
         with self.database.transaction() as connection:
             connection.execute("INSERT INTO delivery_packages (id, episode_render_version_id, target_version_id, rel_path, status, manifest_sha256, brand_kit_id, watermark_profile_id, compliance_policy_id, machine_preflight_status, machine_preflight_json, human_review_status, platform_review_status, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, ?, 'VERIFIED', ?, ?, ?, ?, 'PASS', ?, 'PENDING', 'PENDING', ?, ?, ?, 1, 'v3')", (package_id, episode_render_version_id, target_version_id, destination_dir.relative_to(project_root).as_posix(), manifest_hash, brand["id"] if brand else None, watermark["id"] if watermark else None, compliance["id"] if compliance else None, _json(machine_preflight), now, now, actor))
-            connection.execute("INSERT INTO delivery_files (id, delivery_package_id, rel_path, sha256, byte_size) VALUES (?, ?, ?, ?, ?)", (str(uuid.uuid4()), package_id, destination.relative_to(project_root).as_posix(), file_hash, byte_size))
+            for delivery_file in delivery_manifest_files:
+                connection.execute(
+                    "INSERT INTO delivery_files (id, delivery_package_id, rel_path, sha256, byte_size) VALUES (?, ?, ?, ?, ?)",
+                    (str(uuid.uuid4()), package_id, delivery_file["rel_path"], delivery_file["sha256"], delivery_file["byte_size"]),
+                )
             connection.execute("INSERT INTO delivery_files (id, delivery_package_id, rel_path, sha256, byte_size) VALUES (?, ?, ?, ?, ?)", (str(uuid.uuid4()), package_id, manifest_path.relative_to(project_root).as_posix(), hashlib.sha256(manifest_path.read_bytes()).hexdigest(), manifest_path.stat().st_size))
             connection.execute("INSERT INTO delivery_events (id, delivery_package_id, action, manifest_sha256, note, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, 'BUILT', ?, ?, ?, ?, ?, 1, 'v3')", (str(uuid.uuid4()), package_id, manifest_hash, "local filesystem delivery built; machine preflight PASS; human/platform review remains separate", now, now, actor))
         return {"id": package_id, "status": "VERIFIED", "rel_path": destination_dir.relative_to(project_root).as_posix(), "manifest_sha256": manifest_hash, "files": manifest["files"], "controls": manifest["controls"], "machine_preflight": machine_preflight, "human_review_status": "PENDING", "platform_review_status": "PENDING"}
@@ -1835,6 +2468,7 @@ class TimelineService:
         root_valid = root.is_dir() and not root.is_symlink() and root.is_relative_to(self.settings.projects_root.resolve())
         manifest_payload: dict[str, Any] | None = None
         manifest_path: Path | None = None
+        verification_source: Path | None = None
         for file in files:
             rel_path = Path(str(file["rel_path"]))
             safe_rel = not rel_path.is_absolute() and ".." not in rel_path.parts
@@ -1842,6 +2476,8 @@ class TimelineService:
             safe_file = safe_rel and root_valid and path.is_relative_to(root) and not path.is_symlink() and path.is_file()
             actual = hashlib.sha256(path.read_bytes()).hexdigest() if safe_file else None
             actual_size = path.stat().st_size if safe_file else None
+            if safe_file and verification_source is None and not str(file["rel_path"]).lower().endswith("manifest.json"):
+                verification_source = path
             item = {"rel_path": str(file["rel_path"]), "expected_sha256": str(file["sha256"]), "actual_sha256": actual, "expected_byte_size": int(file["byte_size"]), "actual_byte_size": actual_size, "ok": bool(safe_file and actual == str(file["sha256"]) and actual_size == int(file["byte_size"]))}
             checks.append(item)
             if str(file["rel_path"]).lower().endswith("manifest.json") and safe_file:
@@ -1863,9 +2499,24 @@ class TimelineService:
         ok = bool(checks) and all(item["ok"] for item in checks) and manifest_ok
         prior_status = str(package["status"])
         next_status = ("WITHDRAWN" if prior_status == "WITHDRAWN" else "VERIFIED") if ok else "CORRUPT"
+        self_test_passed = False
+        if ok and verification_source is not None:
+            original = verification_source.read_bytes()
+            with tempfile.TemporaryDirectory(prefix="localdrama-delivery-integrity-") as temp_dir:
+                isolated_copy = Path(temp_dir) / verification_source.name
+                isolated_copy.write_bytes(original + b"\0")
+                self_test_passed = not hmac.compare_digest(
+                    hashlib.sha256(isolated_copy.read_bytes()).hexdigest(),
+                    hashlib.sha256(original).hexdigest(),
+                )
         now = _now()
         with self.database.transaction() as connection:
             connection.execute("UPDATE delivery_packages SET status=?, updated_at=?, revision=revision+1 WHERE id=?", (next_status, now, package_id))
+            if self_test_passed:
+                connection.execute(
+                    "INSERT INTO delivery_events (id, delivery_package_id, action, manifest_sha256, note, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, 'VERIFY', ?, ?, ?, ?, ?, 1, 'v3')",
+                    (str(uuid.uuid4()), package_id, str(package["manifest_sha256"] or ""), _json({"ok": False, "self_test": "ISOLATED_TEMP_COPY", "official_files_mutated": False, "temporary_copy_removed": True}), now, now, "local-system"),
+                )
             connection.execute("INSERT INTO delivery_events (id, delivery_package_id, action, manifest_sha256, note, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, 'VERIFY', ?, ?, ?, ?, ?, 1, 'v3')", (str(uuid.uuid4()), package_id, str(package["manifest_sha256"] or ""), _json({"ok": ok, "previous_status": prior_status, "manifest_hash": manifest_actual_hash}), now, now, "local-user"))
         return {"id": package_id, "status": next_status, "checks": checks, "manifest_check": {"ok": manifest_ok, "expected_sha256": package["manifest_sha256"], "actual_sha256": manifest_actual_hash}, "machine_preflight_status": package["machine_preflight_status"], "human_review_status": package["human_review_status"], "platform_review_status": package["platform_review_status"], "withdrawn_reason": package["withdrawn_reason"]}
 
@@ -1912,24 +2563,189 @@ class TimelineService:
             updated = connection.execute("SELECT * FROM delivery_packages WHERE id=?", (package_id,)).fetchone()
         return {"id": package_id, "status": str(updated["status"]), "machine_preflight_status": str(updated["machine_preflight_status"]), "human_review_status": str(updated["human_review_status"]), "platform_review_status": str(updated["platform_review_status"]), "reviewer_type": reviewer_type, "decision": decision, "note": note.strip()}
 
+    def _ffmpeg_expected_duration_ms(self, args: list[str]) -> int | None:
+        """Infer a defensible current-step duration from frozen FFmpeg input.
+
+        Explicit ``-t`` is authoritative. Otherwise normal media inputs use
+        FFprobe duration, while a concat manifest sums its immutable files.
+        Unknown generators/filters deliberately remain indeterminate.
+        """
+        explicit: list[int] = []
+        for index, value in enumerate(args[:-1]):
+            if value != "-t":
+                continue
+            try:
+                explicit.append(max(0, round(float(args[index + 1]) * 1000)))
+            except (TypeError, ValueError):
+                continue
+        if explicit:
+            return explicit[-1] or None
+
+        durations: list[int] = []
+        for index, value in enumerate(args[:-1]):
+            if value != "-i":
+                continue
+            candidate = Path(args[index + 1])
+            if not candidate.is_file():
+                continue
+            if candidate.suffix.lower() == ".txt" and "concat" in args:
+                total = 0
+                try:
+                    for line in candidate.read_text(encoding="utf-8").splitlines():
+                        match = re.fullmatch(r"file '(.+)'", line.strip())
+                        if not match:
+                            continue
+                        source = Path(match.group(1).replace("'\\''", "'"))
+                        if source.is_file():
+                            total += int(self._probe(source).get("duration_ms") or 0)
+                except (OSError, DomainRuleError):
+                    total = 0
+                if total > 0:
+                    durations.append(total)
+                continue
+            try:
+                duration = int(self._probe(candidate).get("duration_ms") or 0)
+            except DomainRuleError:
+                duration = 0
+            if duration > 0:
+                durations.append(duration)
+        return max(durations) if durations else None
+
+    @staticmethod
+    def _ffmpeg_progress_value(line: str) -> tuple[str, int | str] | None:
+        key, separator, raw_value = line.strip().partition("=")
+        if not separator:
+            return None
+        if key in {"out_time_us", "out_time_ms"}:
+            try:
+                return "processed_ms", max(0, int(raw_value) // 1000)
+            except ValueError:
+                return None
+        if key == "progress":
+            return "progress", raw_value
+        return None
+
     def _run_ffmpeg(self, args: list[str], *, timeout: int) -> dict[str, Any]:
         ffmpeg = self.settings.ffmpeg_path
         if not ffmpeg or not Path(ffmpeg).is_file():
             raise DomainRuleError("FFMPEG_UNAVAILABLE", "本机 FFmpeg 不可用")
         try:
-            # FFmpeg emits localized/UTF-8 diagnostics even on Windows where
-            # the process default code page may be GBK.  Pin decoding and
-            # replace malformed bytes so a valid local render cannot fail
-            # while Python is merely collecting stderr (especially for
-            # Chinese/space-containing delivery paths).
-            result = subprocess.run([ffmpeg, *args], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, check=False)
-        except (OSError, subprocess.TimeoutExpired) as error:
+            process = subprocess.Popen(
+                [ffmpeg, "-hide_banner", "-nostats", "-progress", "pipe:1", *args],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+            )
+            deadline = monotonic() + timeout
+            process_stdout = getattr(process, "stdout", None)
+            process_stderr = getattr(process, "stderr", None)
+            if not hasattr(process_stdout, "readline") or not hasattr(process_stderr, "readline"):
+                while True:
+                    try:
+                        stdout_tail, stderr_tail = process.communicate(timeout=min(1.0, max(0.1, deadline - monotonic())))
+                        break
+                    except subprocess.TimeoutExpired:
+                        if self.cancel_check is not None and self.cancel_check():
+                            process.terminate()
+                            try:
+                                process.wait(timeout=3)
+                            except subprocess.TimeoutExpired:
+                                process.kill()
+                                process.wait(timeout=3)
+                            raise DomainRuleError("JOB_CANCELLED", "后台任务已取消，本次 FFmpeg 输出不会登记") from None
+                        if monotonic() >= deadline:
+                            process.terminate()
+                            try:
+                                process.wait(timeout=3)
+                            except subprocess.TimeoutExpired:
+                                process.kill()
+                                process.wait(timeout=3)
+                            raise DomainRuleError("FFMPEG_EXECUTION_TIMEOUT", "本地 FFmpeg 执行超时") from None
+                stdout_tail = stdout_tail or ""
+                stderr_tail = stderr_tail or ""
+                if process.returncode != 0:
+                    raise DomainRuleError("FFMPEG_EXECUTION_FAILED", "本地 FFmpeg 执行失败", {"stderr_redacted": stderr_tail[-500:]})
+                return {
+                    "executable": str(ffmpeg), "args": args, "returncode": process.returncode,
+                    "stdout_tail": stdout_tail[-2000:], "stderr_tail": stderr_tail[-4000:],
+                }
+
+            messages: Queue[tuple[str, str]] = Queue()
+            stdout_lines: deque[str] = deque(maxlen=160)
+            stderr_lines: deque[str] = deque(maxlen=240)
+
+            def pump(stream: Any, channel: str) -> None:
+                for line in iter(stream.readline, ""):
+                    messages.put((channel, line))
+                messages.put((channel, ""))
+
+            readers = [
+                threading.Thread(target=pump, args=(process_stdout, "stdout"), daemon=True),
+                threading.Thread(target=pump, args=(process_stderr, "stderr"), daemon=True),
+            ]
+            for reader in readers:
+                reader.start()
+            expected_ms = self._ffmpeg_expected_duration_ms(args)
+            processed_ms = 0
+            open_streams = 2
+            while True:
+                try:
+                    channel, line = messages.get(timeout=0.2)
+                    if not line:
+                        open_streams -= 1
+                    elif channel == "stdout":
+                        stdout_lines.append(line)
+                        parsed = self._ffmpeg_progress_value(line)
+                        if parsed and parsed[0] == "processed_ms":
+                            processed_ms = max(processed_ms, int(parsed[1]))
+                        if parsed and parsed[0] == "progress" and self.progress_callback is not None:
+                            payload: dict[str, Any] = {
+                                "phase": "ENCODING",
+                                "processed_ms": processed_ms,
+                            }
+                            if expected_ms and expected_ms > 0:
+                                payload.update(
+                                    {
+                                        "total_ms": expected_ms,
+                                        "step_percent": min(100, round(processed_ms * 100 / expected_ms)),
+                                    }
+                                )
+                            self.progress_callback(payload)
+                    else:
+                        stderr_lines.append(line)
+                except Empty:
+                    pass
+                if self.cancel_check is not None and self.cancel_check():
+                    raise DomainRuleError("JOB_CANCELLED", "后台任务已取消，本次 FFmpeg 输出不会登记")
+                if monotonic() >= deadline:
+                    raise DomainRuleError("FFMPEG_EXECUTION_TIMEOUT", "本地 FFmpeg 执行超时")
+                if process.poll() is not None and open_streams <= 0:
+                    break
+            process.wait(timeout=3)
+            for reader in readers:
+                reader.join(timeout=1)
+            stdout_tail = "".join(stdout_lines)
+            stderr_tail = "".join(stderr_lines)
+        except DomainRuleError:
+            process_state = getattr(process, "poll", lambda: getattr(process, "returncode", None))() if "process" in locals() else 0
+            if "process" in locals() and process_state is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=3)
+            raise
+        except OSError as error:
             raise DomainRuleError("FFMPEG_EXECUTION_FAILED", "本地 FFmpeg 执行失败", {"reason": type(error).__name__}) from error
-        stdout_tail = result.stdout or ""
-        stderr_tail = result.stderr or ""
-        if result.returncode != 0:
+        stdout_tail = stdout_tail or ""
+        stderr_tail = stderr_tail or ""
+        if process.returncode != 0:
             raise DomainRuleError("FFMPEG_EXECUTION_FAILED", "本地 FFmpeg 执行失败", {"stderr_redacted": stderr_tail[-500:]})
-        return {"executable": str(ffmpeg), "args": args, "returncode": result.returncode, "stdout_tail": stdout_tail[-2000:], "stderr_tail": stderr_tail[-4000:]}
+        return {"executable": str(ffmpeg), "args": args, "returncode": process.returncode, "stdout_tail": stdout_tail[-2000:], "stderr_tail": stderr_tail[-4000:]}
 
     def _probe(self, path: Path) -> dict[str, Any]:
         ffprobe = self.settings.ffprobe_path

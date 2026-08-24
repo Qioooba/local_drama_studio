@@ -30,10 +30,7 @@ export type AssetReferenceMediaVersion = {
 };
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, init);
-  const body = await response.json().catch(() => null) as { error?: { message?: string; code?: string } } | null;
-  if (!response.ok) throw new Error(body?.error?.message ?? body?.error?.code ?? `本机 API 请求失败（${response.status}）`);
-  return body as T;
+  return generatedRequestJson<T>(`/api/v1${path}`, init);
 }
 
 export function getAssetBible(projectId: string): Promise<{ bible: AssetBible }> {
@@ -51,3 +48,4 @@ export function createStoryAssetState(assetId: string, payload: { code: string; 
 export function createStoryAssetReference(assetId: string, payload: { media_version_id: string; reference_kind: string; asset_state_id?: string | null; label?: string; priority?: number; is_locked?: boolean }): Promise<{ reference: StoryAssetReference }> {
   return requestJson(`/story-assets/${encodeURIComponent(assetId)}/references`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
 }
+import { requestJson as generatedRequestJson } from "../../generated/api";

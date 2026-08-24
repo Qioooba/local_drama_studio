@@ -21,12 +21,9 @@ export type ShotEditPlan = {
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
+  return generatedRequestJson<T>(`/api/v1${path}`, {
     ...init, headers: { "Content-Type": "application/json", ...init?.headers },
   });
-  const body = await response.json().catch(() => ({})) as { error?: { message?: string } };
-  if (!response.ok) throw new Error(body.error?.message ?? `请求失败（${response.status}）`);
-  return body as T;
 }
 
 export async function getShotEditContext(episodeId: string) {
@@ -44,3 +41,4 @@ export async function commitShotEdit(episodeId: string, payload: ShotEditPayload
     method: "POST", body: JSON.stringify({ ...payload, expected_plan_hash: planHash }),
   });
 }
+import { requestJson as generatedRequestJson } from "../../generated/api";

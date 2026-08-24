@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import uuid
 from datetime import UTC, datetime
@@ -297,6 +298,79 @@ class ProjectService:
         if row is None:
             raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
         return dict(row)
+
+    def list_local_resources(self, project_id: str, kind: str, *, limit: int = 200) -> dict[str, Any]:
+        """List safe project-relative resources for user-facing pickers.
+
+        This is intentionally read-only and purpose-scoped.  It never returns an
+        absolute machine path and never follows directory or file symlinks.
+        """
+        project = self.get_project(project_id)
+        normalized_kind = str(kind or "").strip().upper()
+        policies: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
+            "LUT": ((".",), frozenset({".cube"})),
+            "LICENSE_EVIDENCE": (("00_admin/licenses",), frozenset({".json", ".txt", ".md", ".pdf"})),
+        }
+        if normalized_kind not in policies:
+            raise DomainRuleError(
+                "PROJECT_LOCAL_RESOURCE_KIND_INVALID",
+                "项目资源用途无效",
+                {"kind": normalized_kind, "allowed": sorted(policies)},
+            )
+        bounded_limit = max(1, min(int(limit), 500))
+        projects_root = self.projects_root.resolve()
+        project_root = (projects_root / str(project["root_rel"])).resolve()
+        if project_root.is_symlink() or not project_root.is_dir() or not project_root.is_relative_to(projects_root):
+            raise DomainRuleError("PROJECT_ROOT_INVALID", "项目目录不存在或不安全", {"project_id": project_id})
+
+        relative_roots, allowed_suffixes = policies[normalized_kind]
+        resources: list[dict[str, Any]] = []
+        truncated = False
+        for relative_root in relative_roots:
+            scan_root = (project_root / relative_root).resolve()
+            if not scan_root.is_relative_to(project_root) or not scan_root.is_dir() or scan_root.is_symlink():
+                continue
+            for current, directory_names, file_names in os.walk(scan_root, followlinks=False):
+                current_path = Path(current)
+                directory_names[:] = sorted(
+                    name for name in directory_names if not (current_path / name).is_symlink()
+                )
+                for file_name in sorted(file_names):
+                    candidate = current_path / file_name
+                    if candidate.suffix.lower() not in allowed_suffixes or candidate.is_symlink():
+                        continue
+                    resolved = candidate.resolve()
+                    if not resolved.is_relative_to(project_root) or not resolved.is_file():
+                        continue
+                    try:
+                        byte_size = resolved.stat().st_size
+                    except OSError:
+                        continue
+                    resources.append({
+                        "path_rel": resolved.relative_to(project_root).as_posix(),
+                        "name": resolved.name,
+                        "suffix": resolved.suffix.lower(),
+                        "byte_size": byte_size,
+                    })
+                    if len(resources) >= bounded_limit:
+                        truncated = True
+                        break
+                if truncated:
+                    break
+            if truncated:
+                break
+        resources.sort(key=lambda item: (str(item["name"]).casefold(), str(item["path_rel"]).casefold()))
+        return {
+            "project_id": project_id,
+            "kind": normalized_kind,
+            "items": resources,
+            "truncated": truncated,
+            "limit": bounded_limit,
+            "read_only": True,
+            "runtime_contacted": False,
+            "network_contacted": False,
+            "mutated": False,
+        }
 
     def copy_as_template(
         self,
@@ -602,6 +676,218 @@ class ProjectService:
         with self.database.connect() as connection:
             rows = connection.execute("SELECT * FROM seasons WHERE project_id = ? ORDER BY display_order", (project_id,)).fetchall()
         return [dict(row) for row in rows]
+
+    def append_episode(
+        self,
+        project_id: str,
+        *,
+        season_id: str | None,
+        create_new_season: bool,
+        season_title: str | None,
+        episode_title: str,
+        target_duration_ms: int,
+        actor: str = "local-user",
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Append one episode, optionally creating its season, as one transaction."""
+        normalized_episode_title = episode_title.strip()
+        normalized_season_title = (season_title or "").strip()
+        if not normalized_episode_title or len(normalized_episode_title) > 200:
+            raise DomainRuleError("INVALID_EPISODE_TITLE", "分集标题必须是 1—200 个字符")
+        if target_duration_ms <= 0 or target_duration_ms > 86_400_000:
+            raise DomainRuleError("INVALID_TARGET_DURATION", "目标时长必须大于 0 且不超过 24 小时")
+        if create_new_season == bool(season_id):
+            raise DomainRuleError("SEASON_TARGET_REQUIRED", "必须选择已有季度，或明确新建季度（二选一）")
+
+        now = _utc_now()
+        created_season = False
+        with self.database.transaction() as connection:
+            project = connection.execute("SELECT id,status FROM projects WHERE id=?", (project_id,)).fetchone()
+            if project is None:
+                raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
+            if str(project["status"]) == "ARCHIVED":
+                raise DomainRuleError("PROJECT_ARCHIVED", "归档项目不能追加季度或分集；请先恢复项目")
+
+            if create_new_season:
+                next_season_number = int(connection.execute(
+                    "SELECT COALESCE(MAX(number),0)+1 FROM seasons WHERE project_id=?", (project_id,),
+                ).fetchone()[0])
+                next_season_order = int(connection.execute(
+                    "SELECT COALESCE(MAX(display_order),0)+1 FROM seasons WHERE project_id=?", (project_id,),
+                ).fetchone()[0])
+                season_id = str(uuid.uuid4())
+                season_code = f"SEASON_{next_season_number:03d}"
+                resolved_season_title = normalized_season_title or f"第 {next_season_number} 季"
+                connection.execute(
+                    """INSERT INTO seasons (id,project_id,number,display_order,code,title,created_at,updated_at,created_by)
+                    VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (season_id, project_id, next_season_number, next_season_order, season_code, resolved_season_title, now, now, actor),
+                )
+                created_season = True
+            else:
+                season = connection.execute(
+                    "SELECT id,code,title FROM seasons WHERE id=? AND project_id=?", (season_id, project_id),
+                ).fetchone()
+                if season is None:
+                    raise DomainRuleError("SEASON_NOT_FOUND", "所选季度不存在或不属于当前项目", {"season_id": season_id})
+                season_code = str(season["code"])
+                resolved_season_title = str(season["title"] or season_code)
+
+            assert season_id is not None
+            next_episode_number = int(connection.execute(
+                "SELECT COALESCE(MAX(number),0)+1 FROM episodes WHERE season_id=?", (season_id,),
+            ).fetchone()[0])
+            next_episode_order = int(connection.execute(
+                "SELECT COALESCE(MAX(display_order),0)+1 FROM episodes WHERE season_id=?", (season_id,),
+            ).fetchone()[0])
+            existing_episode_codes = [str(row[0]) for row in connection.execute(
+                "SELECT e.code FROM episodes e JOIN seasons s ON s.id=e.season_id WHERE s.project_id=?", (project_id,),
+            ).fetchall()]
+            numbered_codes = [int(code.removeprefix("EPISODE_")) for code in existing_episode_codes
+                              if code.startswith("EPISODE_") and code.removeprefix("EPISODE_").isdigit()]
+            global_episode_number = max(numbered_codes, default=0) + 1
+            episode_id = str(uuid.uuid4())
+            episode_code = f"EPISODE_{global_episode_number:03d}"
+            connection.execute(
+                """INSERT INTO episodes (id,season_id,number,display_order,code,title,narrative_status,
+                production_status,target_duration_ms,source_range_json,created_at,updated_at,created_by)
+                VALUES (?,?,?,?,?,?,'OUTLINE','NOT_STARTED',?,'{}',?,?,?)""",
+                (episode_id, season_id, next_episode_number, next_episode_order, episode_code,
+                 normalized_episode_title, target_duration_ms, now, now, actor),
+            )
+            connection.execute("UPDATE projects SET updated_at=?,revision=revision+1 WHERE id=?", (now, project_id))
+            connection.execute(
+                """INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,request_id,summary,metadata_redacted_json)
+                VALUES (?,'producer','PROJECT_EPISODE_APPENDED','episode',?,?,?,?)""",
+                (actor, episode_id, request_id, f"追加分集 {episode_code}", _json({"project_id": project_id, "season_id": season_id, "season_created": created_season})),
+            )
+            connection.execute(
+                """INSERT INTO outbox_events (type,project_id,subject_type,subject_id,payload_json)
+                VALUES ('project.changed',?,'episode',?,?)""",
+                (project_id, episode_id, _json({"action": "EPISODE_APPENDED", "season_created": created_season})),
+            )
+
+        return {
+            "project_id": project_id,
+            "season_created": created_season,
+            "season": {"id": season_id, "code": season_code, "title": resolved_season_title},
+            "episode": self.get_episode(episode_id),
+        }
+
+    def episode_catalog(self, project_id: str) -> dict[str, Any]:
+        """Return the complete season/episode navigation catalog in one bounded read."""
+        with self.database.connect() as connection:
+            if connection.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone() is None:
+                raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
+            rows = connection.execute(
+                """SELECT s.id AS season_id,s.code AS season_code,s.title AS season_title,
+                s.number AS season_number,s.display_order AS season_display_order,
+                e.id AS episode_id,e.code AS episode_code,e.title AS episode_title,
+                e.number AS episode_number,e.display_order AS episode_display_order,
+                e.production_status,e.target_duration_ms
+                FROM seasons s LEFT JOIN episodes e ON e.season_id=s.id
+                WHERE s.project_id=?
+                ORDER BY s.display_order,s.number,s.id,e.display_order,e.number,e.id""",
+                (project_id,),
+            ).fetchall()
+        seasons: list[dict[str, Any]] = []
+        by_id: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            season_id = str(row["season_id"])
+            season = by_id.get(season_id)
+            if season is None:
+                season = {
+                    "id": season_id,
+                    "code": str(row["season_code"]),
+                    "title": str(row["season_title"]),
+                    "number": row["season_number"],
+                    "display_order": row["season_display_order"],
+                    "episodes": [],
+                }
+                seasons.append(season)
+                by_id[season_id] = season
+            if row["episode_id"] is not None:
+                season["episodes"].append({
+                    "id": str(row["episode_id"]),
+                    "code": str(row["episode_code"]),
+                    "title": str(row["episode_title"]),
+                    "number": row["episode_number"],
+                    "display_order": row["episode_display_order"],
+                    "production_status": str(row["production_status"]),
+                    "target_duration_ms": row["target_duration_ms"],
+                })
+        return {
+            "project_id": project_id,
+            "seasons": seasons,
+            "read_only": True,
+            "runtime_contacted": False,
+            "network_contacted": False,
+            "mutated": False,
+        }
+
+    def creator_setup(self, project_id: str) -> dict[str, Any]:
+        """Return truthful first-production milestones without loading full collections."""
+        now = datetime.now(UTC).isoformat()
+        with self.database.connect() as connection:
+            if connection.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone() is None:
+                raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
+            row = connection.execute(
+                """WITH target(project_id, observed_at) AS (VALUES (?, ?))
+                SELECT
+                  (SELECT COUNT(*) FROM episodes e JOIN seasons s ON s.id=e.season_id
+                   WHERE s.project_id=target.project_id) AS episode_count,
+                  (SELECT COUNT(*) FROM project_plan_bindings ppb
+                   JOIN production_plan_versions ppv ON ppv.id=ppb.production_plan_version_id
+                   WHERE ppb.project_id=target.project_id AND ppv.status='ACTIVE') AS production_plan_count,
+                  (SELECT COUNT(*) FROM project_profile_bindings ppb
+                   JOIN execution_profile_versions epv ON epv.id=ppb.execution_profile_version_id
+                   WHERE ppb.project_id=target.project_id AND ppb.status='ACTIVE' AND epv.status='PUBLISHED') AS published_profile_binding_count,
+                  (SELECT COUNT(*) FROM script_breakdown_drafts sbd
+                   WHERE sbd.project_id=target.project_id AND sbd.status IN ('DRAFT_READY','APPLIED')) AS reviewable_story_draft_count,
+                  (SELECT COUNT(*) FROM story_assets sa
+                   WHERE sa.project_id=target.project_id AND sa.status='ACTIVE') AS active_story_asset_count,
+                  (SELECT COUNT(*) FROM generation_intents gi
+                   JOIN shots sh ON gi.owner_type='SHOT' AND gi.owner_id=sh.id
+                   JOIN episodes e ON e.id=sh.episode_id JOIN seasons s ON s.id=e.season_id
+                   WHERE gi.project_id=target.project_id AND s.project_id=target.project_id) AS shot_intent_count,
+                  (SELECT COUNT(*) FROM jobs j
+                   JOIN generation_variants gv ON j.subject_type='GENERATION_VARIANT' AND j.subject_id=gv.id
+                   JOIN generation_intents gi ON gi.id=gv.intent_id AND gi.owner_type='SHOT'
+                   JOIN shots sh ON sh.id=gi.owner_id JOIN episodes e ON e.id=sh.episode_id
+                   JOIN seasons s ON s.id=e.season_id
+                   WHERE j.project_id=target.project_id AND gi.project_id=target.project_id
+                     AND s.project_id=target.project_id) AS shot_generation_job_count,
+                  (SELECT COUNT(*) FROM worker_sessions ws
+                   WHERE ws.status IN ('STARTING','RUNNING','BACKING_OFF','DRAINING')
+                     AND ws.lease_expires_at>target.observed_at) AS active_worker_count
+                FROM target""",
+                (project_id, now),
+            ).fetchone()
+        counts = {key: int(row[key]) for key in row.keys()}
+        milestone_keys = (
+            "episode_count",
+            "production_plan_count",
+            "published_profile_binding_count",
+            "reviewable_story_draft_count",
+            "active_story_asset_count",
+            "shot_intent_count",
+            "shot_generation_job_count",
+        )
+        return {
+            "project_id": project_id,
+            "milestones": {key: {"ready": counts[key] > 0, "count": counts[key]} for key in milestone_keys},
+            "operations": {
+                "worker_ready": counts["active_worker_count"] > 0,
+                "active_worker_count": counts["active_worker_count"],
+            },
+            "completed_count": sum(counts[key] > 0 for key in milestone_keys),
+            "total_count": len(milestone_keys),
+            "observed_at": now,
+            "read_only": True,
+            "runtime_contacted": False,
+            "network_contacted": False,
+            "mutated": False,
+        }
 
     def create_scene(
         self,
@@ -1035,6 +1321,75 @@ class ProjectService:
                 "CameraPlan 与当前 Published Profile capability contract 不一致，请重新裁决",
                 {"profile_version_id": profile_version_id},
             )
+
+    def save_shot_revision_and_mark_ready(
+        self,
+        shot_id: str,
+        fields: dict[str, object],
+        *,
+        freeze: bool = False,
+        expected_revision_no: int | None = None,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Atomically persist Director intent and transition the same revision to READY."""
+        normalized = normalize_director_intent_v3(fields)
+        validate_director_intent_v3_payload(normalized)
+        camera_plan = CameraPlan.from_payload(normalized["camera_plan"])
+        self._assert_camera_profile_resolution(camera_plan)
+        validate_shot_ready(normalized)
+        now = _utc_now()
+        revision_id = str(uuid.uuid4())
+        with self.database.transaction() as connection:
+            shot = connection.execute(
+                """SELECT s.*,se.project_id FROM shots s JOIN episodes e ON e.id=s.episode_id
+                JOIN seasons se ON se.id=e.season_id WHERE s.id=?""",
+                (shot_id,),
+            ).fetchone()
+            if shot is None:
+                raise DomainRuleError("SHOT_NOT_FOUND", "镜头不存在", {"shot_id": shot_id})
+            require_transition(VALID_SHOT_TRANSITIONS, str(shot["status"]), "READY", "Shot")
+            current = int(connection.execute("SELECT COALESCE(MAX(revision_no), 0) FROM shot_revisions WHERE shot_id=?", (shot_id,)).fetchone()[0])
+            if expected_revision_no is not None and current != expected_revision_no:
+                raise DomainRuleError(
+                    "REVISION_CONFLICT",
+                    "镜头导演意图已被其他编辑更新，请刷新后重试",
+                    {"shot_id": shot_id, "expected_revision_no": expected_revision_no, "current_revision_no": current},
+                )
+            revision_no = current + 1
+            connection.execute(
+                """INSERT INTO shot_revisions (id,shot_id,revision_no,fields_json,is_frozen,created_at,updated_at,created_by)
+                VALUES (?,?,?,?,?,?,?,?)""",
+                (revision_id, shot_id, revision_no, _json(normalized), int(freeze), now, now, actor),
+            )
+            connection.execute(
+                "UPDATE shots SET current_revision_id=?,status='READY',revision=revision+1,updated_at=? WHERE id=?",
+                (revision_id, now, shot_id),
+            )
+            revision_event = {"shot_id": shot_id, "revision_id": revision_id, "revision_no": revision_no, "schema_version": "director-intent.v3", "is_frozen": bool(freeze)}
+            ready_event = {"shot_id": shot_id, "revision_id": revision_id, "from_status": str(shot["status"]), "to_status": "READY", "atomic_save": True}
+            connection.execute(
+                """INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
+                VALUES (?,'director','SHOT_REVISION_CREATED','shot',?,'镜头导演意图 revision 已创建',?)""",
+                (actor, shot_id, _json(revision_event)),
+            )
+            connection.execute(
+                """INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
+                VALUES (?,'director','SHOT_MARKED_PRODUCTION_READY','shot',?,'镜头保存并标记 Production Ready',?)""",
+                (actor, shot_id, _json(ready_event)),
+            )
+            connection.execute(
+                "INSERT INTO outbox_events (type,project_id,subject_type,subject_id,payload_json) VALUES ('SHOT_REVISION_CREATED',?,'SHOT',?,?)",
+                (shot["project_id"], shot_id, _json(revision_event)),
+            )
+            connection.execute(
+                "INSERT INTO outbox_events (type,project_id,subject_type,subject_id,payload_json) VALUES ('SHOT_PRODUCTION_READY',?,'SHOT',?,?)",
+                (shot["project_id"], shot_id, _json(ready_event)),
+            )
+        ReviewService(self.database).mark_stale_for_owner(shot_id, "shot_revision_changed")
+        return {
+            "shot_revision": {"id": revision_id, "shot_id": shot_id, "revision_no": revision_no, "fields": normalized, "is_frozen": freeze},
+            "shot": self.get_shot(shot_id),
+        }
 
     def mark_shot_production_ready(self, shot_id: str, *, actor: str = "local-user") -> dict[str, Any]:
         with self.database.transaction() as connection:

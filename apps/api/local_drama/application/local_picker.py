@@ -8,6 +8,8 @@ from typing import Any
 
 from local_drama.domain.errors import DomainRuleError
 
+_PICKER_TIMEOUT_SECONDS = 60
+
 _MODEL_PICKER_SCRIPT = r"""
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Windows.Forms
@@ -43,11 +45,16 @@ def _pick_local_file(script: str, unavailable_code: str, failed_code: str) -> di
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=300,
+            timeout=_PICKER_TIMEOUT_SECONDS,
             check=False,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
-    except (OSError, subprocess.TimeoutExpired) as error:
+    except subprocess.TimeoutExpired as error:
+        raise DomainRuleError(
+            unavailable_code,
+            f"本机文件选择器在 {_PICKER_TIMEOUT_SECONDS} 秒内没有返回，已自动关闭；可以重试或直接粘贴绝对路径",
+        ) from error
+    except OSError as error:
         raise DomainRuleError(unavailable_code, "无法打开本机文件选择器") from error
     if completed.returncode != 0:
         raise DomainRuleError(failed_code, "本机文件选择器执行失败")

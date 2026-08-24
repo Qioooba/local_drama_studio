@@ -18,7 +18,7 @@ describe("GenerateExpressionPanel", () => {
     ] } as never);
     vi.mocked(preflightAssetExpression).mockResolvedValue({ preflight: {
       asset_id: "asset-1", project_id: "project-1", capability: "IMAGE_EXPRESSION", status: "BLOCKED", ready: false,
-      blockers: [{ code: "ASSET_MULTI_VIEW_CAPABILITY_UNAVAILABLE", message: "当前没有可执行的 IMAGE_EXPRESSION Published Profile", suggested_action: null, details: {} }],
+      blockers: [{ code: "ASSET_EXPRESSION_CAPABILITY_UNAVAILABLE", message: "当前没有可执行的 IMAGE_EXPRESSION Published Profile", suggested_action: null, details: {} }],
       hero: { media_version_id: "hero-1" }, profile_resolution: {}, plan_hash: "a".repeat(64), would_create_jobs: 0, would_create_variants: 0,
     } });
   });

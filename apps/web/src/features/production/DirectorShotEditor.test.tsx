@@ -1,10 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { bindStoryAssetToShot, createShotRevision, listShotStoryAssets, listStoryAssets, markShotProductionReady, resolveProfileCameraPlan, unbindStoryAssetFromShot } from "../../generated/api";
+import { bindStoryAssetToShot, createShotRevision, createStoryAsset, listShotStoryAssets, listStoryAssets, markShotProductionReady, resolveProfileCameraPlan, unbindStoryAssetFromShot } from "../../generated/api";
+import { bindShotCharacterPack, getShotCharacterPacks } from "../asset-bible-v2/identityPackClient";
 import { DirectorShotEditor } from "./DirectorShotEditor";
 
-vi.mock("../../generated/api", () => ({ bindStoryAssetToShot: vi.fn(), createShotRevision: vi.fn(), listShotStoryAssets: vi.fn(), listStoryAssets: vi.fn(), markShotProductionReady: vi.fn(), resolveProfileCameraPlan: vi.fn(), unbindStoryAssetFromShot: vi.fn() }));
+vi.mock("../../generated/api", () => ({ bindStoryAssetToShot: vi.fn(), createShotRevision: vi.fn(), createStoryAsset: vi.fn(), listShotStoryAssets: vi.fn(), listStoryAssets: vi.fn(), markShotProductionReady: vi.fn(), resolveProfileCameraPlan: vi.fn(), unbindStoryAssetFromShot: vi.fn() }));
+vi.mock("../asset-bible-v2/identityPackClient", () => ({ bindShotCharacterPack: vi.fn(), getShotCharacterPacks: vi.fn() }));
 
 function renderEditor(shot: Record<string, unknown>, profiles: Array<{ id: string; code: string; title: string; version_id: string; capability: string; status: string }> = [], projectId?: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -16,19 +18,22 @@ function renderEditor(shot: Record<string, unknown>, profiles: Array<{ id: strin
 describe("DirectorShotEditor", () => {
   beforeEach(() => {
     vi.mocked(createShotRevision).mockReset().mockResolvedValue({ shot_revision: { id: "revision-2" } });
+    vi.mocked(createStoryAsset).mockReset().mockResolvedValue({ asset: { id: "asset-new", project_id: "project-1", kind: "CHARACTER", code: "CHAR_YOUNG", name: "少年", description: "", canonical_media_version_id: null, extra: {}, status: "ACTIVE", revision: 1, created_at: "now", updated_at: "now", created_by: "local-user", schema_version: "v2" } });
     vi.mocked(markShotProductionReady).mockReset().mockResolvedValue({ shot: { id: "shot-1", status: "READY" } });
     vi.mocked(resolveProfileCameraPlan).mockReset();
     vi.mocked(listStoryAssets).mockReset().mockResolvedValue({ items: [] });
     vi.mocked(listShotStoryAssets).mockReset().mockResolvedValue({ items: [] });
     vi.mocked(bindStoryAssetToShot).mockReset().mockResolvedValue({ binding: { binding_id: "binding-1", shot_id: "shot-1", asset_id: "asset-1", name: "母亲", code: "CHAR_MOTHER", kind: "CHARACTER", status: "ACTIVE", canonical_media_version_id: null, role_in_shot: "main", created_at: "now", created_by: "local-user" } });
     vi.mocked(unbindStoryAssetFromShot).mockReset().mockResolvedValue({ unbound: true, binding_id: "binding-1" });
+    vi.mocked(getShotCharacterPacks).mockReset().mockResolvedValue({ items: [] });
+    vi.mocked(bindShotCharacterPack).mockReset().mockResolvedValue({ binding: { shot_id: "shot-1", story_asset_id: "asset-1", identity_pack_version_id: "pack-version-1" } });
   });
 
   it("shows exact missing fields and saves a new frozen revision", async () => {
     const onChanged = renderEditor({ id: "shot-1", code: "S001", status: "DRAFT", current_revision_id: "revision-1", current_revision: {} });
     expect(screen.getByRole("status").textContent).toContain("还缺 7 项");
     fireEvent.change(screen.getByLabelText("景别"), { target: { value: "CLOSEUP" } });
-    fireEvent.change(screen.getByLabelText("时长"), { target: { value: "4000" } });
+    fireEvent.change(screen.getByLabelText("时长（秒）"), { target: { value: "4" } });
     fireEvent.click(screen.getByRole("button", { name: "保存新 revision" }));
     await waitFor(() => expect(createShotRevision).toHaveBeenCalled());
     expect(vi.mocked(createShotRevision).mock.calls[0][0]).toBe("shot-1");
@@ -90,14 +95,14 @@ describe("DirectorShotEditor", () => {
     fireEvent.change(screen.getByLabelText("运动"), { target: { value: "PUSH_IN" } });
     fireEvent.click(screen.getByRole("button", { name: "按 Profile 裁决运镜能力" }));
     expect(await screen.findByText(/显式 Prompt 降级/)).toBeTruthy();
-    expect((screen.getByLabelText("Prompt 降级文本") as HTMLTextAreaElement).value).toBe("camera: PUSH_IN");
+    expect((screen.getByLabelText("兼容运镜补充描述") as HTMLTextAreaElement).value).toBe("camera: PUSH_IN");
   });
 
   it("offers the blueprint camera vocabulary including zoom", () => {
     renderEditor({ id: "shot-1", code: "S001", status: "DRAFT", current_revision_id: "revision-1", current_revision: {} });
-    expect(screen.getByRole("option", { name: "ZOOM" })).toBeTruthy();
-    expect(screen.getByRole("option", { name: "ORBIT" })).toBeTruthy();
-    expect(screen.getByRole("option", { name: "ROLL" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "变焦" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "环绕" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "滚转" })).toBeTruthy();
   });
 
   it("binds and unbinds story assets when a project is provided", async () => {
@@ -117,11 +122,57 @@ describe("DirectorShotEditor", () => {
     fireEvent.change(screen.getByLabelText("镜头内角色"), { target: { value: "location" } });
     fireEvent.click(screen.getByRole("button", { name: "绑定到本镜头" }));
     expect(bindStoryAssetToShot).not.toHaveBeenCalled();
-    expect(screen.getByRole("alertdialog").textContent).toContain("SCENE_KITCHEN");
+    expect(screen.getByRole("dialog").textContent).toContain("SCENE_KITCHEN");
     fireEvent.click(screen.getByRole("button", { name: "确认绑定" }));
     await waitFor(() => expect(bindStoryAssetToShot).toHaveBeenCalledWith("shot-1", { asset_id: "asset-2", role_in_shot: "location" }));
     fireEvent.click(screen.getByRole("button", { name: "解绑" }));
+    expect(unbindStoryAssetFromShot).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog").textContent).toContain("确认解绑 母亲");
+    fireEvent.click(screen.getByRole("button", { name: "确认解绑" }));
     await waitFor(() => expect(unbindStoryAssetFromShot).toHaveBeenCalledWith("binding-1"));
+  });
+
+  it("allows the first approved identity-pack version to be bound to a character", async () => {
+    vi.mocked(listStoryAssets).mockResolvedValue({ items: [
+      { id: "asset-1", project_id: "project-1", kind: "CHARACTER", code: "CHAR_MOTHER", name: "母亲", description: "", canonical_media_version_id: null, extra: {}, status: "ACTIVE", revision: 1, created_at: "now", updated_at: "now", created_by: "local-user", schema_version: "v2" },
+    ] });
+    vi.mocked(listShotStoryAssets).mockResolvedValue({ items: [
+      { binding_id: "binding-1", shot_id: "shot-1", asset_id: "asset-1", name: "母亲", code: "CHAR_MOTHER", kind: "CHARACTER", status: "ACTIVE", canonical_media_version_id: null, role_in_shot: "main", created_at: "now", created_by: "local-user" },
+    ] });
+    vi.mocked(getShotCharacterPacks).mockResolvedValue({ items: [{
+      shot_id: "shot-1",
+      story_asset_id: "asset-1",
+      asset_state_id: null,
+      identity_pack_version_id: null,
+      character_name: "母亲",
+      character_code: "CHAR_MOTHER",
+      approved_versions: [{ pack_id: "pack-1", pack_name: "基础造型", pack_code: "BASE", version_id: "pack-version-1", version_no: 1, status: "APPROVED" }],
+      is_stale: false,
+    }] });
+    renderEditor({ id: "shot-1", code: "S001", status: "DIRECTED", current_revision_id: "revision-1", current_revision: {} }, [], "project-1");
+
+    const select = await screen.findByLabelText("身份包版本 CHAR_MOTHER");
+    expect((select as HTMLSelectElement).value).toBe("");
+    fireEvent.change(select, { target: { value: "pack-version-1" } });
+
+    await waitFor(() => expect(bindShotCharacterPack).toHaveBeenCalledWith("shot-1", {
+      story_asset_id: "asset-1",
+      pack_version_id: "pack-version-1",
+    }));
+  });
+
+  it("creates a missing story asset in place and immediately binds it to the shot", async () => {
+    renderEditor({ id: "shot-1", code: "S001", status: "DIRECTED", current_revision_id: "revision-1", current_revision: {} }, [], "project-1");
+    await screen.findByText("本镜头尚未绑定故事资产。");
+    fireEvent.click(screen.getByText("资产库里没有？就地创建并绑定"));
+    fireEvent.change(screen.getByLabelText("新资产名称"), { target: { value: "少年" } });
+    expect(screen.getByText(/^CHAR_/)).toBeTruthy();
+    expect(screen.queryByLabelText("新资产编号")).toBeNull();
+    fireEvent.change(screen.getByLabelText("镜头内角色"), { target: { value: "secondary" } });
+    fireEvent.click(screen.getByRole("button", { name: "创建并绑定到本镜头" }));
+
+    await waitFor(() => expect(createStoryAsset).toHaveBeenCalledWith("project-1", expect.objectContaining({ kind: "CHARACTER", name: "少年" })));
+    expect(bindStoryAssetToShot).toHaveBeenCalledWith("shot-1", { asset_id: "asset-new", role_in_shot: "secondary" });
   });
 
   it("uses the same confirmation command for semantic card drag and button paths", async () => {
@@ -148,7 +199,7 @@ describe("DirectorShotEditor", () => {
     const foreign = { id: "asset-foreign", project_id: "project-2", kind: "CHARACTER", code: "CHAR_OTHER", name: "外部角色", status: "ACTIVE" };
     fireEvent.drop(screen.getByLabelText("镜头资产拖放槽"), { dataTransfer: { getData: () => JSON.stringify(foreign), dropEffect: "copy" } });
     expect(screen.getByRole("alert").textContent).toContain("其他项目");
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(bindStoryAssetToShot).not.toHaveBeenCalled();
   });
 

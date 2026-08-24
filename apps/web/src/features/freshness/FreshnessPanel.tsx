@@ -33,6 +33,56 @@ const revisionText = (version: FreshnessVersion | null) => version
   ? `${version.entity_type} · ${version.entity_id} · rev ${version.revision ?? "未知"}`
   : "未记录";
 
+type FreshnessGroup = {
+  item: FreshnessItem;
+  factCount: number;
+  factIds: Set<string>;
+  sourceVersions: Set<string>;
+  currentVersions: Set<string>;
+};
+
+const versionKey = (version: FreshnessVersion | null) => version
+  ? [version.entity_type, version.entity_id, version.revision ?? null]
+  : null;
+
+const compactVersionKey = (version: FreshnessVersion | null) => JSON.stringify(versionKey(version));
+
+// One remediation action repairs the active shot/timeline concern once. Historical
+// revisions remain counted as evidence, but must not become dozens of identical
+// action cards. Keep different reason families and remediation routes separate.
+const groupKey = (item: FreshnessItem) => JSON.stringify({
+  factType: item.fact_type,
+  status: item.status,
+  projectId: item.project_id,
+  episodeId: item.episode_id,
+  shotId: item.shot_id,
+  reasons: [...new Set(item.reasons.map((reason) => reason.code))].sort(),
+  remediations: item.remediation_links.map((action) => [action.rel, action.href, action.method]).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
+});
+
+export function groupFreshnessItems(items: FreshnessItem[]): FreshnessGroup[] {
+  const grouped = new Map<string, FreshnessGroup>();
+  items.forEach((item) => {
+    const key = groupKey(item);
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.factCount += 1;
+      existing.factIds.add(item.id);
+      existing.sourceVersions.add(compactVersionKey(item.source));
+      existing.currentVersions.add(compactVersionKey(item.current));
+    } else {
+      grouped.set(key, {
+        item,
+        factCount: 1,
+        factIds: new Set([item.id]),
+        sourceVersions: new Set([compactVersionKey(item.source)]),
+        currentVersions: new Set([compactVersionKey(item.current)]),
+      });
+    }
+  });
+  return [...grouped.values()];
+}
+
 function remediationHref(item: FreshnessItem, rel: string, backendHref: string) {
   if (backendHref.startsWith("/projects/")) return backendHref;
   if (rel === "create-timeline-revision" && item.episode_id) return `/projects/${item.project_id}/episodes/${item.episode_id}/timeline`;
@@ -50,6 +100,9 @@ export function FreshnessPanel({ projectId, scopeType, scopeId, initialLimit = 5
   const key = queryKeys.freshness.report(scopeType, scopeId, limit);
   const report = useQuery({ queryKey: key, queryFn: () => getProductionFreshness(scopeType, scopeId, limit), enabled: Boolean(scopeId) });
   useProjectEventInvalidation(projectId, FRESHNESS_EVENTS, [queryKeys.freshness.scope(scopeType, scopeId)]);
+  const groups = groupFreshnessItems(report.data?.items ?? []);
+  const staleGroups = groups.filter(({ item }) => item.status === "STALE").length;
+  const currentGroups = groups.length - staleGroups;
 
   return <section className="panel freshness-panel" aria-labelledby={`freshness-title-${scopeType.toLowerCase()}`}>
     <div className="panel-heading freshness-panel__heading">
@@ -64,15 +117,17 @@ export function FreshnessPanel({ projectId, scopeType, scopeId, initialLimit = 5
     {report.isError && <div className="inline-error" role="alert">读取失败：{report.error instanceof Error ? report.error.message : String(report.error)}</div>}
     {report.data && <>
       <div className="freshness-summary" aria-label="Freshness 汇总">
-        <div className={report.data.summary.stale ? "attention" : ""}><span>需要更新</span><strong>{report.data.summary.stale}</strong></div>
-        <div><span>当前有效</span><strong>{report.data.summary.current}</strong></div>
-        <div><span>已返回</span><strong>{report.data.summary.returned}<small> / limit {report.data.audit.query_limit}</small></strong></div>
+        <div className={staleGroups ? "attention" : ""}><span>待处置分组</span><strong>{staleGroups}<small> / {report.data.summary.stale} 条事实</small></strong></div>
+        <div><span>当前有效分组</span><strong>{currentGroups}<small> / {report.data.summary.current} 条事实</small></strong></div>
+        <div><span>处置对象</span><strong>{groups.length}<small> 组</small></strong></div>
+        <div><span>已返回原始事实</span><strong>{report.data.summary.returned}<small> / limit {report.data.audit.query_limit}</small></strong></div>
       </div>
       {report.data.summary.truncated && <p className="freshness-limit-note" role="note">结果已达到 limit；可提高“报告上限”继续查看，不代表未显示条目有效。</p>}
-      {report.data.items.length === 0 ? <p className="empty-state">当前范围没有可评估的 Variant、Frame Bridge 或 Timeline 条目。</p> : <div className="freshness-list">
-        {report.data.items.map((item) => <details className={`freshness-item freshness-item--${item.status.toLowerCase()}`} key={`${item.fact_type}:${item.id}`} open={item.status === "STALE"}>
-          <summary><span><strong>{factLabel(item.fact_type)}</strong><small>{item.shot_id ? `镜头 ${item.shot_id}` : item.id}</small></span><span className={`status-pill state-${item.status.toLowerCase()}`}>{item.status}</span></summary>
+      {groups.length === 0 ? <p className="empty-state">当前范围没有可评估的 Variant、Frame Bridge 或 Timeline 条目。</p> : <div className="freshness-list">
+        {groups.map(({ item, factCount, factIds, sourceVersions, currentVersions }) => <details className={`freshness-item freshness-item--${item.status.toLowerCase()}`} key={groupKey(item)} open={item.status === "STALE"}>
+          <summary><span><strong>{factLabel(item.fact_type)}</strong><small>{item.shot_id ? `镜头 ${item.shot_id}` : item.id}</small></span><span className="freshness-item__summary-status">{factCount > 1 && <span className="freshness-count" aria-label={`包含 ${factCount} 条原始事实`}>{factCount} 条事实</span>}<span className={`status-pill state-${item.status.toLowerCase()}`}>{item.status}</span></span></summary>
           <div className="freshness-item__body">
+            {factCount > 1 && <p className="freshness-current-note">已把 {factCount} 条历史事实聚合为一次处置；涉及 {factIds.size} 个事实对象、{sourceVersions.size} 组生成时来源与 {currentVersions.size} 组当前来源。下方展示一条代表证据，原始事实仍完整保留。</p>}
             {item.reasons.length ? <ul className="freshness-reasons">{item.reasons.map((reason, index) => <li key={`${reason.code}:${index}`}><strong>{reasonLabel(reason.code)}</strong><span>{reason.message}</span>{(reason.source_revision != null || reason.current_revision != null) && <small>原因 revision：{reason.source_revision ?? "未知"} → {reason.current_revision ?? "未知"}</small>}</li>)}</ul> : <p className="freshness-current-note">当前未发现上游变化。</p>}
             <dl className="freshness-versions"><div><dt>生成时来源</dt><dd>{revisionText(item.source)}</dd></div><div><dt>当前来源</dt><dd>{revisionText(item.current)}</dd></div></dl>
             {item.remediation_links.length > 0 && <nav className="freshness-actions" aria-label={`${factLabel(item.fact_type)} 处置入口`}>{item.remediation_links.map((action) => <Link className="secondary" key={action.rel} to={remediationHref(item, action.rel, action.href)}>{action.label}</Link>)}</nav>}

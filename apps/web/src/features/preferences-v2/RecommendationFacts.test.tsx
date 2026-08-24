@@ -26,7 +26,8 @@ function resolution(status: "AVAILABLE" | "UNKNOWN"): GenerationResolution {
 describe("RecommendationFacts", () => {
   it("shows semantic profile identity and authoritative same-dimension rate without UUID", () => {
     const { container } = render(<RecommendationFacts resolution={resolution("AVAILABLE")} />);
-    expect(screen.getByText("wan-i2v · Wan Image to Video · v3")).toBeTruthy();
+    expect(screen.getByText("Wan Image to Video · 第 3 版")).toBeTruthy();
+    expect(screen.getByText(/图片生成视频.*用途匹配/)).toBeTruthy();
     expect(screen.getByText("最近同维度成功率 75%")).toBeTruthy();
     expect(screen.getByText("成功 3 / 终态 4")).toBeTruthy();
     expect(container.textContent).not.toContain("uuid-must-not-be-rendered");

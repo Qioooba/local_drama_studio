@@ -6,7 +6,7 @@ export type TimelineShotDraft = {
   mediaVersionId: string;
   durationUs: number;
   transition: "CUT" | "DISSOLVE" | "FADE";
-  selectionSource: "CURRENT_MEDIA" | "SELECTION_READ_MODEL" | "MISSING";
+  selectionSource: "CURRENT_MEDIA" | "SELECTION_READ_MODEL" | "MANUAL" | "MISSING";
   continuityStatus: string;
 };
 

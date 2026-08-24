@@ -4,6 +4,7 @@ import uuid
 from collections.abc import Iterator
 from email.utils import formatdate, parsedate_to_datetime
 from pathlib import Path
+from typing import Literal
 from urllib.parse import unquote
 
 from fastapi import APIRouter, Request, Response
@@ -13,7 +14,7 @@ from local_drama.api.schemas.g3 import KeyframeCandidateRequest, MediaImportRequ
 from local_drama.api.schemas.motion_controls import MotionControlRequest
 from local_drama.application.contact_sheets import ContactSheetExportService
 from local_drama.application.errors import api_error_from_domain
-from local_drama.application.media import IMAGE_EXTENSIONS, MediaService
+from local_drama.application.media import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, MediaService
 from local_drama.application.motion_controls import MotionControlService
 from local_drama.domain.errors import DomainRuleError
 
@@ -36,8 +37,16 @@ async def export_episode_contact_sheet(episode_id: str, request: Request) -> dic
 @router.post("/media:import", status_code=201, operation_id="importMedia")
 async def import_media(payload: MediaImportRequest, request: Request) -> dict[str, object]:
     try:
+        media_service = service(request)
+        if payload.media_kind == "IMAGE":
+            source = Path(payload.source_path)
+            if source.suffix.lower() not in IMAGE_EXTENSIONS:
+                raise DomainRuleError("MEDIA_UPLOAD_TYPE_INVALID", "资产参考导入仅支持图片文件")
+            if source.is_file() and source.stat().st_size > 25 * 1024 * 1024:
+                raise DomainRuleError("MEDIA_UPLOAD_TOO_LARGE", "导入图片不能超过 25 MB")
+            media_service.validate_image_upload(source)
         return {
-            "media": service(request).import_file(
+            "media": media_service.import_file(
                 payload.project_id,
                 payload.source_path,
                 purpose=payload.purpose,
@@ -45,6 +54,7 @@ async def import_media(payload: MediaImportRequest, request: Request) -> dict[st
                 owner_id=payload.owner_id,
                 media_kind=payload.media_kind,
                 stage=payload.stage,
+                schedule_derivatives=True,
             )
         }
     except DomainRuleError as error:
@@ -67,46 +77,73 @@ async def list_project_media_catalogue(
 
 @router.post("/projects/{project_id}/media:upload", status_code=201, operation_id="uploadProjectMedia")
 async def upload_project_media(project_id: str, request: Request) -> dict[str, object]:
-    """Register one bounded browser upload without accepting a client path."""
-    maximum_bytes = 25 * 1024 * 1024
+    """Register one bounded browser upload for images, videos, or audio without accepting a client path."""
+    filename = unquote(request.headers.get("x-file-name", "upload.bin"))
+    safe_filename = Path(filename).name[:180] or "upload.bin"
+    suffix = Path(safe_filename).suffix.lower()
+    
+    if suffix in IMAGE_EXTENSIONS:
+        media_kind = "IMAGE"
+        purpose = "ASSET_REFERENCE"
+        maximum_bytes = 25 * 1024 * 1024
+    elif suffix in VIDEO_EXTENSIONS:
+        media_kind = "VIDEO"
+        purpose = "VIDEO_REFERENCE"
+        maximum_bytes = 100 * 1024 * 1024
+    elif suffix in AUDIO_EXTENSIONS:
+        media_kind = "AUDIO"
+        purpose = "AUDIO_REFERENCE"
+        maximum_bytes = 50 * 1024 * 1024
+    else:
+        raise api_error_from_domain(DomainRuleError("MEDIA_UPLOAD_TYPE_INVALID", "媒体上传仅支持常见图片、视频或音频文件"))
+
     raw_length = request.headers.get("content-length")
     if raw_length:
         try:
             if int(raw_length) > maximum_bytes:
-                raise DomainRuleError("MEDIA_UPLOAD_TOO_LARGE", "上传文件不能超过 25 MB")
+                max_mb = maximum_bytes // (1024 * 1024)
+                raise DomainRuleError("MEDIA_UPLOAD_TOO_LARGE", f"上传文件不能超过 {max_mb} MB")
         except ValueError as error:
             raise api_error_from_domain(DomainRuleError("MEDIA_UPLOAD_LENGTH_INVALID", "上传文件长度无效")) from error
-    filename = unquote(request.headers.get("x-file-name", "upload.bin"))
-    body = await request.body()
-    if not body:
-        raise api_error_from_domain(DomainRuleError("MEDIA_UPLOAD_EMPTY", "请选择非空文件"))
-    if len(body) > maximum_bytes:
-        raise api_error_from_domain(DomainRuleError("MEDIA_UPLOAD_TOO_LARGE", "上传文件不能超过 25 MB"))
-    safe_filename = Path(filename).name[:180] or "upload.bin"
-    if Path(safe_filename).suffix.lower() not in IMAGE_EXTENSIONS:
-        raise api_error_from_domain(DomainRuleError("MEDIA_UPLOAD_TYPE_INVALID", "资产参考上传仅支持图片文件"))
+
     temporary_directory = request.app.state.settings.work_root / "picker-uploads" / uuid.uuid4().hex
     temporary_directory.mkdir(parents=True, exist_ok=False)
     temporary = temporary_directory / safe_filename
     try:
-        temporary.write_bytes(body)
+        received_bytes = 0
+        with temporary.open("xb") as destination:
+            async for chunk in request.stream():
+                if not chunk:
+                    continue
+                received_bytes += len(chunk)
+                if received_bytes > maximum_bytes:
+                    max_mb = maximum_bytes // (1024 * 1024)
+                    raise DomainRuleError("MEDIA_UPLOAD_TOO_LARGE", f"上传文件不能超过 {max_mb} MB")
+                destination.write(chunk)
+        if received_bytes == 0:
+            raise DomainRuleError("MEDIA_UPLOAD_EMPTY", "请选择非空文件")
         media_service = service(request)
-        media_service.validate_image_upload(temporary)
+        if media_kind == "IMAGE":
+            media_service.validate_image_upload(temporary)
         imported = media_service.import_file(
             project_id,
             temporary,
-            purpose="ASSET_REFERENCE",
+            purpose=purpose,
             owner_type="PROJECT",
             owner_id=project_id,
-            media_kind="IMAGE",
+            media_kind=media_kind,
             stage="IMPORTED",
+            schedule_derivatives=True,
         )
         return {"media": imported}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
     finally:
         temporary.unlink(missing_ok=True)
-        temporary_directory.rmdir()
+        try:
+            temporary_directory.rmdir()
+        except OSError:
+            pass
 
 
 @router.get("/media-versions/{media_version_id}", operation_id="getMediaVersion")
@@ -273,7 +310,13 @@ async def _content(media_version_id: str, request: Request, head: bool = False) 
                 {"thumbnail_path": f"/api/v1/media-versions/{media_version_id}/thumbnail?size=small&frame=poster"},
                 suggested_action="改用 /thumbnail?size=small&frame=poster",
             )
-        selected = _range_headers(request, path, etag=f'"{item["sha256"]}"')
+        return _range_response(request, path, str(item["mime_type"]), etag=f'"{item["sha256"]}"', head=head)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+def _range_response(request: Request, path: Path, mime_type: str, *, etag: str, head: bool = False) -> Response:
+        selected = _range_headers(request, path, etag=etag)
         if isinstance(selected, Response):
             return selected
         start, end, status = selected
@@ -281,17 +324,15 @@ async def _content(media_version_id: str, request: Request, head: bool = False) 
         headers = {
             "Accept-Ranges": "bytes",
             "Content-Length": str(end - start + 1),
-            "Content-Type": item["mime_type"],
-            "ETag": f'"{item["sha256"]}"',
+            "Content-Type": mime_type,
+            "ETag": etag,
             "Last-Modified": formatdate(stat.st_mtime, usegmt=True),
         }
         if status == 206:
             headers["Content-Range"] = f"bytes {start}-{end}/{stat.st_size}"
         if head:
             return Response(status_code=status, headers=headers)
-        return StreamingResponse(_stream(path, start, end), status_code=status, headers=headers, media_type=item["mime_type"])
-    except DomainRuleError as error:
-        raise api_error_from_domain(error) from error
+        return StreamingResponse(_stream(path, start, end), status_code=status, headers=headers, media_type=mime_type)
 
 
 @router.get("/media-versions/{media_version_id}/content", operation_id="getMediaContent")
@@ -304,10 +345,28 @@ async def head_content(media_version_id: str, request: Request) -> Response:
     return await _content(media_version_id, request, head=True)
 
 
+async def _proxy(media_version_id: str, request: Request, head: bool = False) -> Response:
+    try:
+        path, mime = service(request).proxy(media_version_id, materialize=False)
+        return _range_response(request, path, mime, etag=f'"proxy-{path.stem}"', head=head)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/media-versions/{media_version_id}/proxy", operation_id="getMediaProxy")
+async def get_proxy(media_version_id: str, request: Request) -> Response:
+    return await _proxy(media_version_id, request)
+
+
+@router.head("/media-versions/{media_version_id}/proxy", operation_id="headMediaProxy")
+async def head_proxy(media_version_id: str, request: Request) -> Response:
+    return await _proxy(media_version_id, request, head=True)
+
+
 @router.get("/media-versions/{media_version_id}/thumbnail", operation_id="getMediaThumbnail")
 async def thumbnail(media_version_id: str, request: Request, size: str = "small", frame: str = "poster") -> FileResponse:
     try:
-        path, mime = service(request).thumbnail(media_version_id, size, frame)
+        path, mime = service(request).thumbnail(media_version_id, size, frame, materialize=False)
         return FileResponse(path, media_type=mime)
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
@@ -316,7 +375,7 @@ async def thumbnail(media_version_id: str, request: Request, size: str = "small"
 @router.get("/media-versions/{media_version_id}/filmstrip", operation_id="getMediaFilmstrip")
 async def filmstrip(media_version_id: str, request: Request) -> FileResponse:
     try:
-        path, mime = service(request).filmstrip(media_version_id)
+        path, mime = service(request).filmstrip(media_version_id, materialize=False)
         return FileResponse(path, media_type=mime)
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
@@ -325,7 +384,31 @@ async def filmstrip(media_version_id: str, request: Request) -> FileResponse:
 @router.get("/media-versions/{media_version_id}/waveform", operation_id="getMediaWaveform")
 async def waveform(media_version_id: str, request: Request) -> FileResponse:
     try:
-        path, mime = service(request).waveform(media_version_id)
+        path, mime = service(request).waveform(media_version_id, materialize=False)
         return FileResponse(path, media_type=mime)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/media-versions/{media_version_id}/derivatives:submit", status_code=202, operation_id="submitMediaDerivative")
+async def submit_media_derivative(
+    media_version_id: str,
+    request: Request,
+    kind: Literal["THUMBNAIL", "FILMSTRIP", "WAVEFORM", "PROXY"],
+    size: str = "small",
+    frame: str = "poster",
+) -> dict[str, object]:
+    try:
+        return {"job": service(request).submit_derivative(media_version_id, kind, size=size, frame=frame)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/projects/{project_id}/media-derivatives:backfill", status_code=202, operation_id="backfillProjectMediaDerivatives")
+async def backfill_project_media_derivatives(
+    project_id: str, request: Request, cursor: int = 0, limit: int = 50,
+) -> dict[str, object]:
+    try:
+        return {"backfill": service(request).backfill_project_derivatives(project_id, cursor=cursor, limit=limit)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error

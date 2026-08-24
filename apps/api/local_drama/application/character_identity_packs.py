@@ -888,10 +888,32 @@ class CharacterIdentityPackService:
                 WHERE b.shot_id = ?""",
                 (shot_id,),
             ).fetchall()
+            story_asset_ids = sorted({str(row["story_asset_id"]) for row in rows})
+            approved_rows = (
+                connection.execute(
+                    """SELECT p.story_asset_id,p.id AS pack_id,p.name AS pack_name,p.code AS pack_code,
+                    v.id AS version_id,v.version_no,v.status
+                    FROM character_identity_packs p
+                    JOIN character_identity_pack_versions v ON v.id=p.current_version_id
+                    WHERE p.status='ACTIVE' AND v.status='APPROVED'
+                    AND p.story_asset_id IN ({})
+                    ORDER BY p.story_asset_id,p.updated_at DESC,p.id""".format(
+                        ",".join("?" for _ in story_asset_ids)
+                    ),
+                    tuple(story_asset_ids),
+                ).fetchall()
+                if story_asset_ids
+                else []
+            )
+        approved_by_asset: dict[str, list[dict[str, Any]]] = {}
+        for approved in approved_rows:
+            item = dict(approved)
+            approved_by_asset.setdefault(str(item.pop("story_asset_id")), []).append(item)
         result = []
         for r in rows:
             d = dict(r)
             d["bound_slots"] = json.loads(d.pop("bound_slots_json") or "{}") if d.get("bound_slots_json") else {}
+            d["approved_versions"] = approved_by_asset.get(str(d["story_asset_id"]), [])
             # Stale check: if a newer approved version exists for the pack
             d["is_stale"] = bool(
                 d["identity_pack_version_id"]

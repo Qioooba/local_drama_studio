@@ -270,6 +270,55 @@ class H3WorkflowFactory:
         if not filename_prefix or Path(filename_prefix).is_absolute() or ".." in Path(filename_prefix).parts:
             raise DomainRuleError("H3_OUTPUT_PREFIX_INVALID", "H3 输出 prefix 必须是相对路径")
 
+    @staticmethod
+    def _normalize_acceleration(value: str) -> str:
+        normalized = str(value or "OFF").strip().upper()
+        if normalized not in {"OFF", "TURBO_LORA"}:
+            raise DomainRuleError("H3_ACCELERATION_UNSUPPORTED", "H3 加速方式仅支持 OFF / TURBO_LORA", {"acceleration": value})
+        return normalized
+
+    @staticmethod
+    def _apply_runtime_overrides(
+        workflow: dict[str, Any],
+        *,
+        assets: dict[str, str],
+        acceleration: str,
+        lora_strength: float,
+        native_audio: bool,
+        audio_vae_node: str,
+        audio_decode_node: str,
+        create_video_node: str,
+        audio_required: bool = False,
+    ) -> None:
+        """Bind user-visible H3 settings into the immutable Comfy graph."""
+        normalized = H3WorkflowFactory._normalize_acceleration(acceleration)
+        if normalized == "TURBO_LORA":
+            if not 0.0 <= float(lora_strength) <= 2.0:
+                raise DomainRuleError("H3_LORA_STRENGTH_INVALID", "H3 LoRA 强度必须在 0—2 之间", {"lora_strength": lora_strength})
+            lora_node_id = str(max((int(node_id) for node_id in workflow if str(node_id).isdigit()), default=0) + 1)
+            workflow[lora_node_id] = {
+                "class_type": "LoraLoaderModelOnly",
+                "inputs": {
+                    "model": ["1", 0],
+                    "lora_name": assets["turbo_lora_name"],
+                    "strength_model": float(lora_strength),
+                },
+            }
+            model_ref = [lora_node_id, 0]
+            for node in workflow.values():
+                if not isinstance(node, dict) or not isinstance(node.get("inputs"), dict):
+                    continue
+                if node.get("class_type") in {"BasicScheduler", "BasicGuider"} and node["inputs"].get("model") == ["1", 0]:
+                    node["inputs"]["model"] = model_ref
+        if not native_audio:
+            if audio_required:
+                raise DomainRuleError("H3_NATIVE_AUDIO_REQUIRED", "当前 H3 原生参考视频节点要求 Audio VAE，暂不支持关闭原生音频")
+            workflow.pop(audio_vae_node, None)
+            workflow.pop(audio_decode_node, None)
+            create = workflow.get(create_video_node)
+            if isinstance(create, dict) and isinstance(create.get("inputs"), dict):
+                create["inputs"].pop("audio", None)
+
     def build_t2va(
         self,
         prompt: str,
@@ -280,6 +329,8 @@ class H3WorkflowFactory:
         filename_prefix: str = "local_drama/h3_proxy",
         sigma_points: int = 50,
         acceleration: str = "off",
+        lora_strength: float = 1.0,
+        native_audio: bool = True,
         tier: str | None = None,
     ) -> dict[str, Any]:
         """Compile the native MiniMax H3 T2V graph (core comfy_extras nodes).
@@ -303,7 +354,7 @@ class H3WorkflowFactory:
             width, height = resolved["width"], resolved["height"]
             length = resolved["frames"]
         steps = int(sigma_points)
-        return {
+        workflow = {
             "1": {"class_type": "UNETLoader", "inputs": {"unet_name": assets["fl2va_unet_name"], "weight_dtype": "default"}},
             "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": assets["text_encoder_name"], "type": "minimax", "device": "default"}},
             "3": {"class_type": "VAELoader", "inputs": {"vae_name": assets["video_vae_name"]}},
@@ -319,6 +370,17 @@ class H3WorkflowFactory:
             "13": {"class_type": "CreateVideo", "inputs": {"images": ["11", 0], "fps": 24.0, "audio": ["12", 0], "bit_depth": 8}},
             "14": {"class_type": "SaveVideo", "inputs": {"video": ["13", 0], "filename_prefix": filename_prefix, "format": "mp4", "codec": "h264"}},
         }
+        self._apply_runtime_overrides(
+            workflow,
+            assets=assets,
+            acceleration=acceleration,
+            lora_strength=lora_strength,
+            native_audio=native_audio,
+            audio_vae_node="4",
+            audio_decode_node="12",
+            create_video_node="13",
+        )
+        return workflow
 
     def build_fl2va(
         self,
@@ -331,6 +393,8 @@ class H3WorkflowFactory:
         filename_prefix: str = "local_drama/h3_i2v_proxy",
         sigma_points: int = 50,
         acceleration: str = "off",
+        lora_strength: float = 1.0,
+        native_audio: bool = True,
         tier: str | None = None,
     ) -> dict[str, Any]:
         """Compile the native MiniMax H3 first-frame FL2VA graph.
@@ -354,7 +418,7 @@ class H3WorkflowFactory:
             width, height = resolved["width"], resolved["height"]
             length = resolved["frames"]
         steps = int(sigma_points)
-        return {
+        workflow = {
             "1": {"class_type": "UNETLoader", "inputs": {"unet_name": assets["fl2va_unet_name"], "weight_dtype": "default"}},
             "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": assets["text_encoder_name"], "type": "minimax", "device": "default"}},
             "3": {"class_type": "VAELoader", "inputs": {"vae_name": assets["video_vae_name"]}},
@@ -372,6 +436,17 @@ class H3WorkflowFactory:
             "15": {"class_type": "CreateVideo", "inputs": {"images": ["13", 0], "fps": 24.0, "audio": ["14", 0], "bit_depth": 8}},
             "16": {"class_type": "SaveVideo", "inputs": {"video": ["15", 0], "filename_prefix": filename_prefix, "format": "mp4", "codec": "h264"}},
         }
+        self._apply_runtime_overrides(
+            workflow,
+            assets=assets,
+            acceleration=acceleration,
+            lora_strength=lora_strength,
+            native_audio=native_audio,
+            audio_vae_node="4",
+            audio_decode_node="14",
+            create_video_node="15",
+        )
+        return workflow
 
     def build_ref2va(
         self,
@@ -385,6 +460,8 @@ class H3WorkflowFactory:
         filename_prefix: str = "local_drama/h3_ref2v_proxy",
         sigma_points: int = 50,
         acceleration: str = "off",
+        lora_strength: float = 1.0,
+        native_audio: bool = True,
         tier: str | None = None,
     ) -> dict[str, Any]:
         """Compile the native MiniMax H3 Ref2V graph (P1-8, capability-gated).
@@ -447,7 +524,7 @@ class H3WorkflowFactory:
             width, height = resolved["width"], resolved["height"]
             length = resolved["frames"]
         steps = int(sigma_points)
-        return {
+        workflow = {
             "1": {"class_type": "UNETLoader", "inputs": {"unet_name": assets["ref2va_unet_name"], "weight_dtype": "default"}},
             "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": assets["text_encoder_name"], "type": "minimax", "device": "default"}},
             "3": {"class_type": "VAELoader", "inputs": {"vae_name": assets["video_vae_name"]}},
@@ -468,3 +545,15 @@ class H3WorkflowFactory:
             "15": {"class_type": "CreateVideo", "inputs": {"images": ["13", 0], "fps": 24.0, "audio": ["14", 0], "bit_depth": 8}},
             "16": {"class_type": "SaveVideo", "inputs": {"video": ["15", 0], "filename_prefix": filename_prefix, "format": "mp4", "codec": "h264"}},
         }
+        self._apply_runtime_overrides(
+            workflow,
+            assets=assets,
+            acceleration=acceleration,
+            lora_strength=lora_strength,
+            native_audio=native_audio,
+            audio_vae_node="4",
+            audio_decode_node="14",
+            create_video_node="15",
+            audio_required=True,
+        )
+        return workflow

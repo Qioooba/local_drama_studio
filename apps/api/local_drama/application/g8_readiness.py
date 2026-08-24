@@ -43,10 +43,12 @@ class G8ReadinessService:
             timeline = connection.execute(
                 """SELECT tr.id, tr.revision_no, tr.status,
                 (SELECT COUNT(*) FROM timeline_items ti WHERE ti.timeline_revision_id=tr.id) AS item_count,
-                (SELECT COUNT(DISTINCT ma.owner_id) FROM timeline_items ti
+                (SELECT COUNT(DISTINCT sh.id) FROM timeline_items ti
                    JOIN media_versions mv ON mv.id=ti.media_version_id
                    JOIN media_assets ma ON ma.id=mv.media_asset_id
-                  WHERE ti.timeline_revision_id=tr.id AND ti.track_type='VIDEO' AND ma.owner_type='SHOT') AS shot_count
+                   JOIN shots sh ON sh.id=json_extract(ti.parameters_json,'$.shot_id') AND sh.episode_id=tr.episode_id
+                  WHERE ti.timeline_revision_id=tr.id AND ti.track_type='VIDEO'
+                    AND ma.media_kind='VIDEO' AND mv.mime_type LIKE 'video/%') AS shot_count
                 FROM timeline_revisions tr WHERE tr.episode_id=? ORDER BY tr.revision_no DESC LIMIT 1""",
                 (eid,),
             ).fetchone()
@@ -60,8 +62,12 @@ class G8ReadinessService:
             )
             subtitle_count = int(connection.execute("SELECT COUNT(*) FROM subtitle_revisions WHERE episode_id=?", (eid,)).fetchone()[0])
             audio_rows = connection.execute(
-                "SELECT track_type, source_license_status, license_evidence_json FROM audio_bindings WHERE episode_id=?", (eid,)
-            ).fetchall()
+                """SELECT ti.track_type,ab.source_license_status,ab.license_evidence_json
+                   FROM timeline_items ti
+                   JOIN audio_bindings ab ON ab.id=json_extract(ti.parameters_json,'$.audio_binding_id')
+                  WHERE ti.timeline_revision_id=? AND ti.track_type IN ('DIALOGUE','BGM','SFX')""",
+                (timeline_id,),
+            ).fetchall() if timeline_id else []
             audio_tracks = {str(row["track_type"]).upper() for row in audio_rows}
             declared_audio = sum(
                 1
@@ -71,9 +77,11 @@ class G8ReadinessService:
             )
             render = connection.execute(
                 """SELECT erv.id, erv.integrity_status, erv.timeline_revision_id
-                   FROM episode_render_versions erv WHERE erv.episode_id=? ORDER BY erv.created_at DESC LIMIT 1""",
-                (eid,),
-            ).fetchone()
+                   FROM episode_render_versions erv
+                  WHERE erv.episode_id=? AND erv.timeline_revision_id=?
+                  ORDER BY erv.created_at DESC LIMIT 1""",
+                (eid, timeline_id),
+            ).fetchone() if timeline_id else None
             render_id = str(render["id"]) if render else None
             render_approval = connection.execute(
                 """SELECT id FROM review_decisions
@@ -85,10 +93,17 @@ class G8ReadinessService:
             delivery = connection.execute(
                 """SELECT dp.id, dp.status FROM delivery_packages dp
                    JOIN episode_render_versions erv ON erv.id=dp.episode_render_version_id
-                  WHERE erv.episode_id=? ORDER BY dp.created_at DESC LIMIT 1""",
-                (eid,),
-            ).fetchone()
+                  WHERE erv.id=? ORDER BY dp.created_at DESC LIMIT 1""",
+                (render_id,),
+            ).fetchone() if render_id else None
             verified_delivery = bool(delivery and str(delivery["status"]) == "VERIFIED")
+            tamper_event = connection.execute(
+                """SELECT id FROM delivery_events
+                   WHERE delivery_package_id=? AND action='VERIFY' AND json_valid(note)=1
+                     AND json_extract(note,'$.ok')=0
+                   ORDER BY created_at DESC,id DESC LIMIT 1""",
+                (str(delivery["id"]),),
+            ).fetchone() if delivery else None
 
         checks = [
             {
@@ -96,15 +111,15 @@ class G8ReadinessService:
                 "passed": timeline_shots >= 3,
                 "count": timeline_shots,
                 "required": 3,
-                "detail": "timeline 中真实 SHOT-owned VIDEO 至少 3 个" if timeline_shots < 3 else "已发现 3 个以上真实镜头",
+                "detail": "timeline 中带真实 shot_id 且媒体类型为 VIDEO 的镜头至少 3 个" if timeline_shots < 3 else "已发现 3 个以上真实视频镜头",
             },
             {
-                "code": "DIALOGUE_ENVIRONMENT_SFX_MUSIC",
-                "passed": {"DIALOGUE", "ENVIRONMENT", "SFX", "MUSIC"}.issubset(audio_tracks),
+                "code": "DIALOGUE_BGM_SFX",
+                "passed": {"DIALOGUE", "BGM", "SFX"}.issubset(audio_tracks),
                 "count": len(audio_rows),
-                "required_tracks": ["DIALOGUE", "ENVIRONMENT", "SFX", "MUSIC"],
+                "required_tracks": ["DIALOGUE", "BGM", "SFX"],
                 "observed_tracks": sorted(audio_tracks),
-                "detail": f"四类用户选择的本地音轨必须真实绑定；{declared_audio} 条含用户授权记录，缺失记录仅提示风险",
+                "detail": f"最新时间线必须实际引用规范化的对白、BGM、SFX 三类本地音轨（环境归入 SFX，音乐归入 BGM）；{declared_audio} 条含用户授权记录",
             },
             {
                 "code": "SUBTITLES",
@@ -122,19 +137,19 @@ class G8ReadinessService:
                 "code": "APPROVED_EPISODE_RENDER",
                 "passed": bool(render and str(render["integrity_status"]) == "VERIFIED" and render_approval),
                 "count": 1 if render_approval else 0,
-                "detail": "整集 render 必须通过机器完整性并存在真实批准决定",
+                "detail": "最新冻结时间线的整集 render 必须通过机器完整性并存在真实批准决定",
             },
             {
                 "code": "VERIFIED_DELIVERY",
                 "passed": verified_delivery,
                 "count": 1 if verified_delivery else 0,
-                "detail": "delivery manifest/hash verify 必须为 VERIFIED",
+                "detail": "当前时间线对应 render 的 delivery manifest/hash verify 必须为 VERIFIED",
             },
             {
                 "code": "TAMPER_DETECTION",
-                "passed": verified_delivery,
-                "count": 1 if verified_delivery else 0,
-                "detail": "正式验收需记录改 1 字节后 verify=CORRUPT；当前无真实 delivery 样本" if not verified_delivery else "由已验证 delivery 进入篡改回归",
+                "passed": bool(tamper_event),
+                "count": 1 if tamper_event else 0,
+                "detail": "交付包校验通过后，系统会在隔离临时副本上自动执行破坏检测；正式文件不会被修改" if not tamper_event else "系统已在隔离临时副本上完成破坏检测并清理副本",
             },
         ]
         first_blocker = next((str(check["code"]) for check in checks if not check["passed"]), None)
@@ -149,6 +164,7 @@ class G8ReadinessService:
                 "timeline_revision_id": timeline_id,
                 "render_id": render_id,
                 "delivery_id": str(delivery["id"]) if delivery else None,
+                "tamper_event_id": str(tamper_event["id"]) if tamper_event else None,
                 "audio_tracks": sorted(audio_tracks),
                 "subtitle_revision_count": subtitle_count,
             },

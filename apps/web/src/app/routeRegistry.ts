@@ -33,9 +33,10 @@ const encode = (val: string) => encodeURIComponent(val.trim());
 /** Type-safe URL builders for all V2 application routes. */
 export const routes = {
   projects: () => "/projects",
-  models: () => "/models",
+  models: (projectId?: string | null) => (projectId ? `/models?project=${encode(projectId)}` : "/models"),
   jobs: (projectId?: string | null) => (projectId ? `/jobs?project=${encode(projectId)}` : "/jobs"),
   diagnostics: (projectId?: string | null) => (projectId ? `/diagnostics?project=${encode(projectId)}` : "/diagnostics"),
+  mediaLab: (projectId?: string | null) => (projectId ? `/lab?project=${encode(projectId)}` : "/lab"),
 
   projectHome: (projectId: string) => `/projects/${encode(projectId)}`,
   story: (projectId: string) => `/projects/${encode(projectId)}/story`,
@@ -45,10 +46,9 @@ export const routes = {
   directorRecipes: (projectId: string) => `/projects/${encode(projectId)}/director-recipes`,
   productionSettings: (projectId: string) => `/projects/${encode(projectId)}/production-settings`,
   settings: (projectId: string) => `/projects/${encode(projectId)}/production-settings`,
-  projectModels: (projectId: string) => `/projects/${encode(projectId)}/models`,
-  projectJobs: (projectId: string) => `/projects/${encode(projectId)}/jobs`,
-  projectDiagnostics: (projectId: string) => `/projects/${encode(projectId)}/diagnostics`,
-  mediaLab: (projectId: string) => `/projects/${encode(projectId)}/lab`,
+  projectModels: (projectId: string) => `/models?project=${encode(projectId)}`,
+  projectJobs: (projectId: string) => `/jobs?project=${encode(projectId)}`,
+  projectDiagnostics: (projectId: string) => `/diagnostics?project=${encode(projectId)}`,
   canvas: (projectId: string, episodeId?: string | null) =>
     `/projects/${encode(projectId)}/canvas${episodeId ? `?episode=${encode(episodeId)}` : ""}`,
   operations: (projectId: string) => `/projects/${encode(projectId)}/operations`,
@@ -81,6 +81,7 @@ export const ROUTE_REGISTRY: Record<string, RouteMetadata> = {
   models: { id: "models", scope: "GLOBAL", title: "模型配置", pathPattern: "/models" },
   jobs: { id: "jobs", scope: "GLOBAL", title: "任务队列", pathPattern: "/jobs" },
   diagnostics: { id: "diagnostics", scope: "GLOBAL", title: "诊断与审计", pathPattern: "/diagnostics" },
+  mediaLab: { id: "mediaLab", scope: "GLOBAL", title: "素材实验室", pathPattern: "/lab" },
 
   projectHome: { id: "projectHome", scope: "PROJECT", title: "项目总览", pathPattern: "/projects/:projectId", parentRouteId: "projects" },
   story: { id: "story", scope: "PROJECT", title: "故事工作区", pathPattern: "/projects/:projectId/story", parentRouteId: "projectHome" },
@@ -92,15 +93,14 @@ export const ROUTE_REGISTRY: Record<string, RouteMetadata> = {
   projectModels: { id: "projectModels", scope: "PROJECT", title: "模型配置", pathPattern: "/projects/:projectId/models", parentRouteId: "projectHome" },
   projectJobs: { id: "projectJobs", scope: "PROJECT", title: "任务队列", pathPattern: "/projects/:projectId/jobs", parentRouteId: "projectHome" },
   projectDiagnostics: { id: "projectDiagnostics", scope: "PROJECT", title: "诊断与审计", pathPattern: "/projects/:projectId/diagnostics", parentRouteId: "projectHome" },
-  mediaLab: { id: "mediaLab", scope: "PROJECT", title: "媒体实验室", pathPattern: "/projects/:projectId/lab", parentRouteId: "projectHome" },
   canvas: { id: "canvas", scope: "PROJECT", title: "高级画布", pathPattern: "/projects/:projectId/canvas", parentRouteId: "projectHome" },
   operations: { id: "operations", scope: "PROJECT", title: "项目运营与工具", pathPattern: "/projects/:projectId/operations", parentRouteId: "projectHome" },
 
   episodePlan: { id: "episodePlan", scope: "EPISODE", title: "分集策划", pathPattern: "/projects/:projectId/episodes/:episodeId/plan", parentRouteId: "projectHome" },
   directorDesk: { id: "directorDesk", scope: "EPISODE", title: "导演工作台", pathPattern: "/projects/:projectId/episodes/:episodeId/direct", featureFlag: "DIRECTOR_DESK_V2", parentRouteId: "episodePlan" },
   directorDeskShot: { id: "directorDeskShot", scope: "EPISODE", title: "导演工作台", pathPattern: "/projects/:projectId/episodes/:episodeId/direct/:shotId", featureFlag: "DIRECTOR_DESK_V2", parentRouteId: "directorDesk" },
-  generation: { id: "generation", scope: "EPISODE", title: "手动生成", pathPattern: "/projects/:projectId/episodes/:episodeId/generation", parentRouteId: "episodePlan" },
-  generationShot: { id: "generationShot", scope: "EPISODE", title: "手动生成", pathPattern: "/projects/:projectId/episodes/:episodeId/generation/:shotId", parentRouteId: "generation" },
+  generation: { id: "generation", scope: "EPISODE", title: "镜头生成", pathPattern: "/projects/:projectId/episodes/:episodeId/generation", parentRouteId: "episodePlan" },
+  generationShot: { id: "generationShot", scope: "EPISODE", title: "镜头生成", pathPattern: "/projects/:projectId/episodes/:episodeId/generation/:shotId", parentRouteId: "generation" },
   episodeReview: { id: "episodeReview", scope: "EPISODE", title: "本集审核", pathPattern: "/projects/:projectId/episodes/:episodeId/review", parentRouteId: "episodePlan" },
   audio: { id: "audio", scope: "EPISODE", title: "声音工作区", pathPattern: "/projects/:projectId/episodes/:episodeId/audio", parentRouteId: "episodePlan" },
   timeline: { id: "timeline", scope: "EPISODE", title: "时间线", pathPattern: "/projects/:projectId/episodes/:episodeId/timeline", parentRouteId: "episodePlan" },
@@ -116,10 +116,15 @@ export function parseRouteContext(pathname: string): RouteContext {
   if (clean === "/models") return { routeId: "models", scope: "GLOBAL", projectId: null, episodeId: null, shotId: null };
   if (clean === "/jobs") return { routeId: "jobs", scope: "GLOBAL", projectId: null, episodeId: null, shotId: null };
   if (clean === "/diagnostics") return { routeId: "diagnostics", scope: "GLOBAL", projectId: null, episodeId: null, shotId: null };
+  if (clean === "/lab") return { routeId: "mediaLab", scope: "GLOBAL", projectId: null, episodeId: null, shotId: null };
 
   const episodeMatch = clean.match(/^\/projects\/([^/]+)\/episodes\/([^/]+)\/(plan|direct|generation|review|audio|timeline|delivery|run)(?:\/([^/]+))?$/);
   if (episodeMatch) {
     const [, projectId, episodeId, action, shotId] = episodeMatch;
+    const decodedProjectId = safeDecodeRouteSegment(projectId);
+    const decodedEpisodeId = safeDecodeRouteSegment(episodeId);
+    const decodedShotId = shotId ? safeDecodeRouteSegment(shotId) : null;
+    if (decodedProjectId === null || decodedEpisodeId === null || (shotId && decodedShotId === null)) return emptyRouteContext();
     let routeId: string;
     if (action === "direct") routeId = shotId ? "directorDeskShot" : "directorDesk";
     else if (action === "generation") routeId = shotId ? "generationShot" : "generation";
@@ -133,15 +138,17 @@ export function parseRouteContext(pathname: string): RouteContext {
     return {
       routeId,
       scope: "EPISODE",
-      projectId: decodeURIComponent(projectId),
-      episodeId: decodeURIComponent(episodeId),
-      shotId: shotId ? decodeURIComponent(shotId) : null,
+      projectId: decodedProjectId,
+      episodeId: decodedEpisodeId,
+      shotId: decodedShotId,
     };
   }
 
-  const projectMatch = clean.match(/^\/projects\/([^/]+)(?:\/(story|assets|qc-policies|director-recipes|production-settings|settings|models|jobs|diagnostics|lab|canvas|operations))?$/);
+  const projectMatch = clean.match(/^\/projects\/([^/]+)(?:\/(story|assets|qc-policies|director-recipes|production-settings|settings|models|jobs|diagnostics|canvas|operations))?$/);
   if (projectMatch) {
     const [, projectId, sub] = projectMatch;
+    const decodedProjectId = safeDecodeRouteSegment(projectId);
+    if (decodedProjectId === null) return emptyRouteContext();
     let routeId = "projectHome";
     if (sub === "story") routeId = "story";
     else if (sub === "assets") routeId = "assets";
@@ -151,20 +158,31 @@ export function parseRouteContext(pathname: string): RouteContext {
     else if (sub === "models") routeId = "projectModels";
     else if (sub === "jobs") routeId = "projectJobs";
     else if (sub === "diagnostics") routeId = "projectDiagnostics";
-    else if (sub === "lab") routeId = "mediaLab";
     else if (sub === "canvas") routeId = "canvas";
     else if (sub === "operations") routeId = "operations";
 
     return {
       routeId,
       scope: "PROJECT",
-      projectId: decodeURIComponent(projectId),
+      projectId: decodedProjectId,
       episodeId: null,
       shotId: null,
     };
   }
 
+  return emptyRouteContext();
+}
+
+function emptyRouteContext(): RouteContext {
   return { routeId: null, scope: null, projectId: null, episodeId: null, shotId: null };
+}
+
+function safeDecodeRouteSegment(value: string): string | null {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
 }
 
 /** Validate whether current route parameters match expected entity ownership without silent cross-project leak. */
@@ -192,10 +210,11 @@ export function validateRouteOwnership(
 export function buildBreadcrumbs(options: {
   pathname: string;
   projectTitle?: string | null;
+  seasonTitle?: string | null;
   episodeTitle?: string | null;
   shotCode?: string | null;
 }): BreadcrumbItem[] {
-  const { pathname, projectTitle, episodeTitle, shotCode } = options;
+  const { pathname, projectTitle, seasonTitle, episodeTitle, shotCode } = options;
   const context = parseRouteContext(pathname);
   const items: BreadcrumbItem[] = [];
 
@@ -218,7 +237,7 @@ export function buildBreadcrumbs(options: {
   }
 
   if (context.projectId && context.episodeId) {
-    const epLabel = episodeTitle || "分集策划";
+    const epLabel = [seasonTitle, episodeTitle].filter(Boolean).join(" / ") || "分集策划";
     if (context.routeId === "episodePlan") {
       items.push({ label: epLabel, isCurrent: true });
       return items;

@@ -1,0 +1,52 @@
+{
+  "schema_version": "creator-ux-uat.v1",
+  "date": "2026-08-24",
+  "project_id": "988cfe1b-348c-484f-b4e8-60e79cb98a5d",
+  "write_actions_performed": false,
+  "routes": [
+    {
+      "path": "/projects/988cfe1b-348c-484f-b4e8-60e79cb98a5d/production-settings?view=delivery",
+      "desktop": {
+        "viewport": [929, 917],
+        "horizontal_overflow": false,
+        "minimum_visible_button_height_px": 44,
+        "open_details": [],
+        "technical_primary_fields_found": [],
+        "primary_headings": [
+          "作品准备发布到哪里？",
+          "发布时使用什么视觉标记？",
+          "项目健康检查",
+          "业务画布与生产效率门禁"
+        ]
+      },
+      "mobile": {
+        "viewport": [390, 844],
+        "horizontal_overflow": false,
+        "minimum_visible_button_height_px": 44
+      },
+      "screenshots": [
+        "output/playwright/delivery-settings-desktop-2026-08-24.png",
+        "output/playwright/delivery-settings-mobile-390-2026-08-24.png"
+      ]
+    },
+    {
+      "path": "/projects/988cfe1b-348c-484f-b4e8-60e79cb98a5d/assets",
+      "viewport": [390, 844],
+      "new_asset_visible_labels": ["名称", "补充描述（可选）"],
+      "visible_code_inputs": 0,
+      "horizontal_overflow": false,
+      "minimum_visible_button_height_px": 44,
+      "console_errors": 0,
+      "screenshots": ["output/playwright/asset-create-mobile-390-2026-08-24.png"]
+    }
+  ],
+  "automated_regression": {
+    "web_test_files_passed": 126,
+    "web_tests_passed": 484,
+    "api_targeted_tests_passed": 9,
+    "typescript": "PASS",
+    "vite_build": "PASS",
+    "bundle_budget": "PASS",
+    "largest_bundle_kib": 430.0
+  }
+}

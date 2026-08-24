@@ -967,6 +967,7 @@ class ReviewService:
         blocking: str | None = None,
         min_age_days: float | None = None,
         max_age_days: float | None = None,
+        include_resolved: bool = False,
     ) -> list[dict[str, Any]]:
         page = self.inbox_page(
             project_id,
@@ -979,6 +980,7 @@ class ReviewService:
             blocking=blocking,
             min_age_days=min_age_days,
             max_age_days=max_age_days,
+            include_resolved=include_resolved,
         )
         return cast(list[dict[str, Any]], page["items"])
 
@@ -995,6 +997,7 @@ class ReviewService:
         blocking: str | None = None,
         min_age_days: float | None = None,
         max_age_days: float | None = None,
+        include_resolved: bool = False,
     ) -> dict[str, Any]:
         """Return the immutable review-inbox read model.
 
@@ -1020,7 +1023,10 @@ class ReviewService:
         if episode_id:
             where.append("e.id=?")
             params.append(episode_id)
-        where.append("(rd.id IS NULL OR rd.decision != 'APPROVED' OR rd.is_stale=1)")
+        if not include_resolved:
+            # REJECTED is a terminal human decision, not pending work. It remains
+            # queryable with include_resolved=true and through audit/history.
+            where.append("(rd.id IS NULL OR rd.decision IN ('NEEDS_CHANGES', 'VOIDED') OR (rd.is_stale=1 AND rd.decision != 'REJECTED'))")
 
         normalized_age = (age or "ALL").strip().upper()
         if normalized_age not in {"ALL", "NEW", "AGING", "OLD", "0-1D", "1-7D", "7D+"}:
@@ -1097,7 +1103,9 @@ class ReviewService:
                 mv.sha256, ma.project_id, ma.media_kind, ma.selected_version_id, ma.approved_version_id,
                 mv.integrity_status, mv.created_at, mv.duration_ms, mv.fps_num, mv.fps_den,
                 p.code AS project_code, p.title AS project_title,
-                s.id AS shot_id, s.code AS shot_code, e.id AS episode_id, e.code AS episode_code,
+                COALESCE(s.id, generation_shot.id, dialogue_shot.id) AS shot_id,
+                COALESCE(s.code, generation_shot.code, dialogue_shot.code) AS shot_code,
+                e.id AS episode_id, e.code AS episode_code,
                 e.number AS episode_number, se.id AS season_id, se.code AS season_code,
                 rd.id AS review_id, rd.decision, rd.is_stale, rd.created_at AS reviewed_at,
                 {inbox_at_expr} AS inbox_at, {age_hours_expr} AS age_hours, ({age_hours_expr}/24.0) AS age_days,
@@ -1107,7 +1115,20 @@ class ReviewService:
                 FROM media_versions mv JOIN media_assets ma ON ma.id=mv.media_asset_id
                 JOIN projects p ON p.id=ma.project_id
                 LEFT JOIN shots s ON ma.owner_type='SHOT' AND ma.owner_id=s.id
-                LEFT JOIN episodes e ON e.id=s.episode_id OR (ma.owner_type='EPISODE' AND ma.owner_id=e.id)
+                LEFT JOIN generation_variants generation_variant
+                  ON ma.owner_type='GENERATION_VARIANT' AND ma.owner_id=generation_variant.id
+                LEFT JOIN generation_intents generation_intent
+                  ON generation_intent.id=generation_variant.intent_id
+                LEFT JOIN shots generation_shot
+                  ON generation_intent.owner_type='SHOT' AND generation_intent.owner_id=generation_shot.id
+                LEFT JOIN dialogue_text_revisions media_dialogue_revision
+                  ON ma.owner_type='DIALOGUE_TEXT_REVISION' AND ma.owner_id=media_dialogue_revision.id
+                LEFT JOIN dialogue_lines media_dialogue_line
+                  ON media_dialogue_line.id=media_dialogue_revision.dialogue_line_id
+                LEFT JOIN shots dialogue_shot
+                  ON dialogue_shot.id=media_dialogue_line.shot_id
+                LEFT JOIN episodes e ON e.id=COALESCE(s.episode_id, generation_shot.episode_id, media_dialogue_line.episode_id)
+                  OR (ma.owner_type='EPISODE' AND ma.owner_id=e.id)
                 LEFT JOIN seasons se ON se.id=e.season_id
                 LEFT JOIN review_decisions rd ON rd.id=(SELECT r2.id FROM review_decisions r2 WHERE r2.subject_type='MEDIA_VERSION' AND r2.subject_id=mv.id ORDER BY r2.created_at DESC LIMIT 1)
                 LEFT JOIN machine_check_runs mc ON mc.id=(SELECT m2.id FROM machine_check_runs m2 WHERE m2.subject_type='MEDIA_VERSION' AND m2.subject_id=mv.id ORDER BY m2.created_at DESC LIMIT 1)

@@ -53,4 +53,21 @@ describe("DirectorTakeAdoption", () => {
     expect(screen.getByText(/缺少可用的 selection_type/)).toBeTruthy();
     expect(screen.getAllByRole("button", { name: "采用" }).every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
   });
+
+  it("distinguishes the current preview choice from another stage's active selection", () => {
+    render(<DirectorTakeAdoption
+      candidates={[
+        candidate(1, { stage: "PROXY", selected: true }),
+        candidate(2, { stage: "FORMAL", selected: true }),
+      ]}
+      activeCandidateId="media-1"
+      currentCandidateId="media-1"
+      onActivate={vi.fn()}
+      onAdopt={vi.fn()}
+    />);
+    expect(screen.getByRole("button", { name: "查看 Take 1 · PROXY，当前采用" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "查看 Take 2 · FORMAL，正式选择" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "当前采用" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "正式选择已选" }).hasAttribute("disabled")).toBe(true);
+  });
 });

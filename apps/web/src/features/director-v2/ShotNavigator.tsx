@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { commitShotEdit, getShotEditContext, planShotEdit, type ShotReorderCommand } from "../episode-plan-v2/shotEditingApi";
+import { persistDirectorBatch, readDirectorBatch } from "./directorBatchState";
 import type { DirectorDeskShotNavItem } from "./types";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -19,6 +20,9 @@ type ShotNavigatorProps = {
   selectedId?: string;
   projectId: string;
   episodeId: string;
+  totalShots?: number;
+  windowStart?: number;
+  windowEnd?: number;
   canEdit?: boolean;
   onChanged?: () => void | Promise<void>;
 };
@@ -31,7 +35,7 @@ function FrameIcon() {
   return <svg aria-hidden="true" focusable="false" viewBox="0 0 20 20"><rect x="3.5" y="4" width="13" height="12" rx="2" /><path d="m6 13 3-3 2 2 2-2 2 3" /></svg>;
 }
 
-export function ShotNavigator({ shots, selectedId, projectId, episodeId, canEdit = false, onChanged }: ShotNavigatorProps) {
+export function ShotNavigator({ shots, selectedId, projectId, episodeId, totalShots = shots.length, windowStart = 0, windowEnd = shots.length, canEdit = false, onChanged }: ShotNavigatorProps) {
   const [query, setQuery] = useState("");
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedShots, setSelectedShots] = useState<Set<string>>(() => new Set());
@@ -40,7 +44,16 @@ export function ShotNavigator({ shots, selectedId, projectId, episodeId, canEdit
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const navigate = useNavigate();
   const filter = searchParams.get("filter") ?? "all";
+  const batchSelectionParam = searchParams.get("batch") ?? "";
+  const batchDoneParam = searchParams.get("batchDone") ?? "";
   const reorderEnabled = canEdit && filter === "all" && query.trim() === "" && !selectionOnly;
+
+  useEffect(() => {
+    if (!batchSelectionParam) return;
+    const restored = readDirectorBatch(batchSelectionParam, episodeId, batchDoneParam)
+      .shotIds.filter((id) => shots.some((shot) => shot.id === id));
+    if (restored.length) setSelectedShots(new Set(restored));
+  }, [batchDoneParam, batchSelectionParam, episodeId, shots]);
 
   const filtered = useMemo(() => shots.filter((shot) => {
     if (selectionOnly && !selectedShots.has(shot.id)) return false;
@@ -107,10 +120,20 @@ export function ShotNavigator({ shots, selectedId, projectId, episodeId, canEdit
     return next;
   });
   const selectedVisible = filtered.filter((shot) => selectedShots.has(shot.id));
+  const selectedForBatch = shots.filter((shot) => selectedShots.has(shot.id));
+  const startBatch = () => {
+    if (!selectedForBatch.length) return;
+    const next = new URLSearchParams(searchParams);
+    next.set("batch", persistDirectorBatch(episodeId, selectedForBatch.map((shot) => shot.id)));
+    next.set("batchIndex", "0");
+    next.delete("batchDone");
+    navigate(`/projects/${projectId}/episodes/${episodeId}/direct/${selectedForBatch[0].id}?${next.toString()}`);
+  };
 
   return (
     <aside className="director-shot-nav" aria-label="镜头导航">
-      <div className="director-zone-title"><div><span>镜头导航</span><strong>{shots.length} 镜</strong></div></div>
+      <div className="director-zone-title"><div><span>镜头导航</span><strong>{shots.length === totalShots ? `${totalShots} 镜` : `${windowStart + 1}–${windowEnd} / ${totalShots} 镜`}</strong></div></div>
+      {shots.length !== totalShots && <small className="director-nav-window-note">当前为所选镜头附近的有界窗口；切换镜头会自动加载相邻范围。</small>}
       <label className="director-search"><span className="sr-only">搜索镜头</span><input type="search" value={query} onChange={(event) => { setQuery(event.target.value); setSelectionOnly(false); }} placeholder="搜索镜号或内容" /></label>
       <div className="director-nav-filters" aria-label="筛选镜头">{[["all", "全部"], ["failed", "失败"], ["stale", "已过期"], ["review", "待审"]].map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value && !selectionOnly} onClick={() => chooseFilter(value)}>{label}</button>)}</div>
       <div className="director-shot-bulk" aria-label="批量镜头动作">
@@ -119,7 +142,7 @@ export function ShotNavigator({ shots, selectedId, projectId, episodeId, canEdit
         <button type="button" aria-pressed={selectionOnly} onClick={() => setSelectionOnly((value) => !value)} disabled={selectedShots.size === 0}>仅看所选</button>
         <strong>{selectedShots.size} 已选</strong>
         {selectedShots.size > 0 && <div className="director-shot-bulk-actions">
-          <button type="button" onClick={() => navigate(`/projects/${projectId}/episodes/${episodeId}/direct/${selectedVisible[0]?.id ?? [...selectedShots][0]}`)}>逐镜处理</button>
+          <button type="button" onClick={startBatch}>逐镜处理</button>
           <Link to={`/projects/${projectId}/episodes/${episodeId}/review`}>审核入口</Link>
           <Link to={`/projects/${projectId}/episodes/${episodeId}/run`}>生产入口</Link>
         </div>}
@@ -127,7 +150,7 @@ export function ShotNavigator({ shots, selectedId, projectId, episodeId, canEdit
         {reorderMutation.error && <p role="alert">排序失败：{reorderMutation.error instanceof Error ? reorderMutation.error.message : String(reorderMutation.error)}</p>}
       </div>
       <div className="director-shot-list" aria-busy={reorderMutation.isPending}>
-        {grouped.map((group) => <section className="director-scene-group" key={group.key} aria-label={group.label}><h3><span>{group.label}</span><small>{group.shots.length} 镜</small></h3>{group.shots.map((shot) => {
+        {grouped.map((group) => <section className="director-scene-group" key={`${group.key}-${group.shots[0]?.id ?? "empty"}`} aria-label={group.label}><h3><span>{group.label}</span><small>{group.shots.length} 镜</small></h3>{group.shots.map((shot) => {
           const status = STATUS_LABELS[shot.status] ?? shot.status;
           const shotIndex = shots.findIndex((item) => item.id === shot.id);
           return (

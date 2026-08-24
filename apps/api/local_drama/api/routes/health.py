@@ -8,6 +8,10 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
+from local_drama.application.diagnostics import _probe_loopback
+from local_drama.application.worker_sessions import ACTIVE_SESSION_STATES, WorkerSessionService
+from local_drama.infrastructure.manifest import load_manifest
+
 router = APIRouter(tags=["health"])
 
 
@@ -70,9 +74,14 @@ async def ready(request: Request) -> HealthCheck:
 async def dependencies(request: Request) -> HealthCheck:
     settings = request.app.state.settings
     ffmpeg = os.environ.get("LOCAL_DRAMA_FFMPEG") or shutil.which("ffmpeg")
+    manifest = load_manifest(settings.manifest_path)
+    comfy_api = dict(manifest.runtime.get("comfyui_api", {}))
+    comfy_probe, comfy_observed = _probe_loopback(comfy_api.get("base_url"))
+    comfy_status = "ready" if comfy_probe == "PASS" else f"blocked:{comfy_observed.get('reason', 'unavailable')}"
     database = request.app.state.database
     database_status = "not_configured" if not database.exists else "unreadable"
     profile_status = "not_configured"
+    worker_status = "not_running"
     if database.exists:
         try:
             with database.connect() as connection:
@@ -80,15 +89,33 @@ async def dependencies(request: Request) -> HealthCheck:
                 profiles = connection.execute("SELECT COUNT(*) FROM execution_profile_versions").fetchone()[0]
                 database_status = "ok" if version else "migration_pending"
                 profile_status = "synced_candidates" if profiles else "not_synced"
+            sessions = WorkerSessionService(database, settings).list_sessions(limit=20)
+            active = next(
+                (
+                    item for item in sessions
+                    if item["effective_status"] in ACTIVE_SESSION_STATES
+                    and item["compatible"]
+                ),
+                None,
+            )
+            if active is not None:
+                worker_status = f"ready:{','.join(active['supported_channels'])}"
         except sqlite3.Error:
             database_status = "unreadable"
+    dependencies_ready = (
+        bool(ffmpeg)
+        and database_status == "ok"
+        and comfy_probe == "PASS"
+        and worker_status.startswith("ready:")
+    )
     return HealthCheck(
-        status="HEALTHY" if ffmpeg and database_status == "ok" else "DEGRADED",
+        status="HEALTHY" if dependencies_ready else "DEGRADED",
         checks={
             "ffmpeg": "discovered" if ffmpeg else "not_found",
             "database": database_status,
-            "comfy_designer": "loopback_only_not_started",
+            "comfy_designer": comfy_status,
             "production_profiles": profile_status,
+            "worker_supervisor": worker_status,
             "network_scope": settings.mode,
         },
     )

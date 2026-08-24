@@ -1,13 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ApiRequestError,
+  appendProjectEpisode,
   bindEpisodeAudio,
   buildDeliveryPackage,
+  commitEpisodeTimelineRefresh,
   createPostProcessRecipe,
   createShotTransitionConstraint,
   createSubtitleRevision,
   createTimelineRevision,
   createDeliveryTargetVersion,
+  planEpisodeTimelineRefresh,
   getDeliveryPackage,
   listDeliveryPackageFiles,
   listEpisodeDeliveryPackages,
@@ -19,6 +22,8 @@ import {
   dryRunDiagnosticFix,
   scanLocalModelRegistry,
   getPostProcessRecipe,
+  getProjectCreatorSetup,
+  getProjectEpisodeCatalog,
   listPostProcessRecipes,
   planEnhancementRun,
   publishPostProcessRecipe,
@@ -26,6 +31,7 @@ import {
   resolveProfileCameraPlan,
   reviewInbox,
   reviewInboxPage,
+  requestJson,
   runEnhancement,
   submitGenerationVariant,
   verifyDeliveryPackage,
@@ -60,6 +66,64 @@ describe("generated G8 timeline client", () => {
     );
     const mutation = fetchMock.mock.calls.find(([path]) => path === "/api/v1/episodes/episode%2F1/timeline-revisions");
     expect(new Headers(mutation?.[1]?.headers).get("X-Local-Instance-Token")).toBe("test-token");
+  });
+
+  it("preflights and commits stale timeline refresh with the exact plan hash", async () => {
+    await planEpisodeTimelineRefresh("episode/1");
+    await commitEpisodeTimelineRefresh("episode/1", "plan/hash");
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/episodes/episode%2F1/timeline-refresh:plan", undefined);
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/episodes/episode%2F1/timeline-refresh:commit", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ expected_plan_hash: "plan/hash" }),
+    }));
+  });
+
+  it("loads the global season and episode context with one project catalog request", async () => {
+    await getProjectEpisodeCatalog("project/one");
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/projects/project%2Fone/episode-catalog", undefined);
+  });
+
+  it("loads first-production milestones through one read-only setup request", async () => {
+    await getProjectCreatorSetup("project/one");
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/projects/project%2Fone/creator-setup", undefined);
+  });
+
+  it("appends one project episode through the encoded transactional structure endpoint", async () => {
+    const payload = { season_id: "season-1", create_new_season: false, episode_title: "追加篇", target_duration_ms: 60_000 };
+    await appendProjectEpisode("project/one", payload);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/projects/project%2Fone/episodes:append",
+      expect.objectContaining({ method: "POST", body: JSON.stringify(payload) }),
+    );
+  });
+
+  it("rebootstraps and retries one rejected write after the local API process restarts", async () => {
+    let bootstrapCalls = 0;
+    let mutationCalls = 0;
+    fetchMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.endsWith("/session/bootstrap")) {
+        bootstrapCalls += 1;
+        return { ok: true, headers: { get: () => null }, json: async () => ({ token: bootstrapCalls === 1 ? "old-token" : "new-token", mode: "LOCAL_ONLY" }) };
+      }
+      mutationCalls += 1;
+      const token = new Headers(init?.headers).get("X-Local-Instance-Token");
+      if (mutationCalls === 1) {
+        expect(token).toBe("old-token");
+        return {
+          ok: false,
+          status: 403,
+          headers: { get: () => "request-old" },
+          json: async () => ({ error: { code: "CSRF_TOKEN_REQUIRED", message: "instance token expired" } }),
+        };
+      }
+      expect(token).toBe("new-token");
+      return { ok: true, headers: { get: () => null }, json: async () => ({ saved: true }) };
+    });
+
+    await expect(requestJson<{ saved: boolean }>("/api/v1/test-write", { method: "POST" }, "http://127.0.0.1:3999")).resolves.toEqual({ saved: true });
+    expect(bootstrapCalls).toBe(2);
+    expect(mutationCalls).toBe(2);
   });
 
   it("posts subtitle and authorized audio bindings through encoded episode paths", async () => {
@@ -172,10 +236,10 @@ describe("generated G8 timeline client", () => {
   });
 
   it("encodes cross-project review inbox filters before requesting a page", async () => {
-    await reviewInbox("project/1", "", { media_kind: "VIDEO", episode_id: "episode/2", age: "OLD", priority: "HIGH", blocking: "BLOCKED", min_age_days: 7, max_age_days: 30 });
+    await reviewInbox("project/1", "", { media_kind: "VIDEO", episode_id: "episode/2", age: "OLD", priority: "HIGH", blocking: "BLOCKED", min_age_days: 7, max_age_days: 30, include_resolved: true });
     await reviewInboxPage("project/1", 20, 10, "VIDEO", "OLD", "HIGH", "BLOCKED", "episode/2");
     expect(fetchMock.mock.calls.map(([path]) => path).filter((path) => !String(path).endsWith("/session/bootstrap"))).toEqual([
-      "/api/v1/reviews/inbox?project_id=project%2F1&media_kind=VIDEO&episode_id=episode%2F2&age=OLD&priority=HIGH&blocking=BLOCKED&min_age_days=7&max_age_days=30",
+      "/api/v1/reviews/inbox?project_id=project%2F1&media_kind=VIDEO&episode_id=episode%2F2&age=OLD&priority=HIGH&blocking=BLOCKED&min_age_days=7&max_age_days=30&include_resolved=true",
       "/api/v1/reviews/inbox?project_id=project%2F1&media_kind=VIDEO&age=OLD&priority=HIGH&blocking=BLOCKED&episode_id=episode%2F2&cursor=20&limit=10",
     ]);
   });

@@ -43,23 +43,30 @@ def test_project_configuration_snapshot_rejects_unknown_project(workspace, datab
     assert response.json()["error"]["code"] == "PROJECT_NOT_FOUND"
 
 
-def test_selecting_one_target_version_resolves_project_wide_single_active(workspace, database) -> None:
-    """Explicit target selection retires ACTIVE versions across ALL project
-    targets so the configuration read model exposes a single selected id."""
+def test_creating_or_selecting_a_target_keeps_one_project_wide_current_version(workspace, database) -> None:
+    """Create is the user's choice, so activation must not require a second click."""
     project = ProjectService(database, workspace.projects_root).create_project(
         code="target_selection_project", title="Target selection", episode_count=1, aspect_ratio="16:9",
         fps_num=24, fps_den=1, target_duration_ms=60_000, allow_unconfigured_capabilities=True,
     )
     project_id = str(project["id"])
     service = ConfigurationService(database)
-    service.create_delivery_target(project_id, "first-target", "First", "LOCAL_FILESYSTEM", {"path_rel": "06_delivery/first"})
+    first = service.create_delivery_target(project_id, "first-target", "First", "LOCAL_FILESYSTEM", {"path_rel": "06_delivery/first"})
     second = service.create_delivery_target(project_id, "second-target", "Second", "LOCAL_FILESYSTEM", {"path_rel": "06_delivery/second"})
-    ambiguous = service.inspect_project_configuration(project_id)
-    assert ambiguous["selected_delivery_target_version_id"] is None  # two ACTIVE versions
-    selected = service.select_delivery_target_version(project_id, second["version_id"])
-    assert selected["version_id"] == second["version_id"]
+    after_create = service.inspect_project_configuration(project_id)
+    assert after_create["selected_delivery_target_version_id"] == second["version_id"]
+    selected = service.select_delivery_target_version(project_id, first["version_id"])
+    assert selected["version_id"] == first["version_id"]
     resolved = service.inspect_project_configuration(project_id)
-    assert resolved["selected_delivery_target_version_id"] == second["version_id"]
+    assert resolved["selected_delivery_target_version_id"] == first["version_id"]
+    newer_second = service.create_delivery_target_version(
+        project_id,
+        second["id"],
+        {"path_rel": "06_delivery/second-v2", "width": 1080, "height": 1920, "fps": 30},
+        title="Second vertical",
+    )
+    after_new_version = service.inspect_project_configuration(project_id)
+    assert after_new_version["selected_delivery_target_version_id"] == newer_second["version_id"]
     with database.connect() as connection:
         active = connection.execute(
             "SELECT COUNT(*) FROM delivery_target_versions WHERE delivery_target_id IN "

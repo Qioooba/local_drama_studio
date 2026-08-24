@@ -1,0 +1,193 @@
+.local-llm-configuration-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.llm-config-layout {
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) minmax(360px, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .llm-config-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.llm-form-container,
+.llm-status-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.llm-form-container .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.llm-form-container .form-group input,
+.llm-form-container .form-group select {
+  padding: 8px 12px;
+  border: 1px solid var(--border, #333);
+  border-radius: 6px;
+  background: var(--surface, #1e1e1e);
+  color: var(--text, #fff);
+}
+
+.key-hint {
+  color: var(--text-muted, #888);
+  font-size: 12px;
+}
+
+.outbound-guard-card {
+  border: 2px solid #ef4444;
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(239, 68, 68, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.outbound-guard-header {
+  color: #f87171;
+  font-size: 14px;
+}
+
+.outbound-guard-body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text, #fff);
+}
+
+.outbound-confirm-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #f87171;
+  cursor: pointer;
+  margin-top: 4px;
+}
+
+.llm-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.probe-overview-card,
+.runtime-info-card {
+  border: 1px solid var(--border, #333);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--surface-muted, #181818);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.probe-overview-card h4,
+.runtime-info-card h4 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.probe-level-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.probe-level-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--surface, #222);
+  border: 1px solid var(--border-subtle, #2a2a2a);
+}
+
+.probe-level-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.probe-level-title small {
+  color: var(--text-muted, #888);
+  font-size: 11px;
+}
+
+.probe-badge {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.probe-badge.pending {
+  background: #374151;
+  color: #9ca3af;
+}
+
+.probe-badge.pass {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.4);
+}
+
+.probe-badge.fail {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.sample-output-box {
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 8px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.sample-output-box pre {
+  margin: 4px 0 0 0;
+  font-size: 11px;
+  color: #10b981;
+}
+
+.runtime-facts {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin: 0;
+}
+
+.runtime-facts > div {
+  padding: 8px;
+  background: var(--surface, #222);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.runtime-facts dt {
+  font-size: 11px;
+  color: var(--text-muted, #888);
+}
+
+.runtime-facts dd {
+  margin: 0;
+  font-size: 12px;
+}

@@ -1,5 +1,5 @@
 import { Suspense, lazy, type ReactNode } from "react";
-import { Navigate, createBrowserRouter } from "react-router-dom";
+import { Navigate, createBrowserRouter, useLocation, useParams } from "react-router-dom";
 import { LegacyRouteBoundary } from "./legacyRoute";
 import { AppShell } from "../layouts/AppShell";
 import { FeatureFlagRoute } from "./featureFlags";
@@ -28,6 +28,14 @@ const ProjectOperationsPage = lazy(() => import("../pages/ProjectOperationsPage"
 const GenerationPage = lazy(() => import("../pages/GenerationPage").then((module) => ({ default: module.GenerationPage })));
 
 const page = (content: ReactNode) => <Suspense fallback={<main className="route-loading" role="status">正在载入工作区…</main>}>{content}</Suspense>;
+
+export function ProjectSystemRouteRedirect({ workspace }: { workspace: "models" | "jobs" | "diagnostics" | "lab" }) {
+  const { projectId } = useParams();
+  const location = useLocation();
+  const search = new URLSearchParams(location.search);
+  if (projectId) search.set("project", projectId);
+  return <Navigate to={{ pathname: `/${workspace}`, search: search.toString() ? `?${search.toString()}` : "", hash: location.hash }} replace />;
+}
 
 /**
  * V2 route contract (see docs/xinjihua/02_架构与前后端重构规格.md §5).
@@ -59,10 +67,10 @@ export const router = createBrowserRouter([
       { path: "director-recipes", element: page(<DirectorRecipesPage />) },
       { path: "production-settings", element: page(<ProductionSettingsPage />) },
       { path: "settings", element: <Navigate to="production-settings" replace /> },
-      { path: "models", element: page(<ModelsPage />) },
-      { path: "jobs", element: page(<JobsPage />) },
-      { path: "diagnostics", element: page(<DiagnosticsPage />) },
-      { path: "lab", element: page(<MediaLabPage />) },
+      { path: "models", element: <ProjectSystemRouteRedirect workspace="models" /> },
+      { path: "jobs", element: <ProjectSystemRouteRedirect workspace="jobs" /> },
+      { path: "diagnostics", element: <ProjectSystemRouteRedirect workspace="diagnostics" /> },
+      { path: "lab", element: <ProjectSystemRouteRedirect workspace="lab" /> },
       { path: "canvas", element: page(<CanvasPage />) },
       { path: "operations", element: page(<ProjectOperationsPage />) },
       { path: "episodes/:episodeId/plan", element: page(<EpisodePlanPage />) },
@@ -84,6 +92,7 @@ export const router = createBrowserRouter([
       { path: "/models", element: page(<ModelsPage />) },
       { path: "/jobs", element: page(<JobsPage />) },
       { path: "/diagnostics", element: page(<DiagnosticsPage />) },
+      { path: "/lab", element: page(<MediaLabPage />) },
     ],
   },
   { path: "*", element: <Navigate to="/" replace /> },

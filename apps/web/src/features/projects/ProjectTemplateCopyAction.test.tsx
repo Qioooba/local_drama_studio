@@ -15,10 +15,11 @@ describe("ProjectTemplateCopyAction", () => {
     render(<QueryClientProvider client={client}><ProjectTemplateCopyAction project={{ id: "source", code: "source", title: "Source", status: "ACTIVE", revision: 3 }} onCopied={onCopied} /></QueryClientProvider>);
     fireEvent.click(screen.getByRole("button", { name: "复制为新剧模板" }));
     expect(screen.getByText(/不复制媒体、角色授权资产、BrandKit、任务、审核或交付历史/)).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("新项目 code"), { target: { value: "clean_copy" } });
+    const generatedCode = screen.getByText("新项目标识").parentElement?.querySelector("strong")?.textContent;
+    expect(generatedCode).toMatch(/^source_copy_/);
     fireEvent.change(screen.getByLabelText("新项目标题"), { target: { value: "干净副本" } });
     fireEvent.click(screen.getByRole("button", { name: "确认复制" }));
-    await waitFor(() => expect(copyProjectTemplate).toHaveBeenCalledWith("source", { code: "clean_copy", title: "干净副本" }));
+    await waitFor(() => expect(copyProjectTemplate).toHaveBeenCalledWith("source", { code: generatedCode, title: "干净副本" }));
     expect(onCopied).toHaveBeenCalledWith(copied);
   });
 });

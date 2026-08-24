@@ -19,6 +19,70 @@
   width: 100%;
 }
 
+.director-desk.batch-mode {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+.director-batchbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid #4d4038;
+  background: #28221f;
+}
+
+.director-batchbar > div,
+.director-batch-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.director-batchbar span {
+  color: #ff8a62;
+  font-weight: 800;
+}
+
+.director-batchbar small {
+  color: #bcb1ab;
+}
+
+@media (max-width: 900px) {
+  .director-batchbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .director-main-grid,
+  .director-stage,
+  .director-stage-toolbar {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .director-stage-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .director-stage-toolbar > div:first-child { min-width: 0; }
+  .director-stage-toolbar h2 { max-width: 100%; }
+
+  .director-stepper {
+    width: 100%;
+    justify-content: center;
+    flex-shrink: 1;
+  }
+}
+
 .director-contextbar {
   min-height: 58px;
   display: flex;
@@ -47,6 +111,9 @@
 }
 
 .director-contextbar nav a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
   color: #dce3e0;
   text-decoration: none;
 }
@@ -70,7 +137,7 @@
 }
 
 .director-button {
-  min-height: 38px;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -182,7 +249,15 @@
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.55);
-  z-index: 60;
+  z-index: 0;
+}
+
+/* Drawer content and its scrim share the drawer container's stacking context.
+   Keep the content above the full-viewport scrim so clicks inside the drawer
+   reach controls instead of immediately closing it. */
+.director-shot-nav-inner, .director-inspector {
+  position: relative;
+  z-index: 1;
 }
 
 .director-shot-nav, .director-inspector {
@@ -196,7 +271,8 @@
 }
 
 .director-shot-nav {
-  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   border-right: 1px solid #cfc9bd;
 }
 
@@ -250,13 +326,14 @@
 
 .director-nav-filters {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 2px 12px 8px;
-  overflow-x: auto;
+  overflow-x: visible;
 }
 
 .director-nav-filters button {
-  min-height: 32px;
+  min-height: 36px;
   padding: 4px 9px;
   border: 1px solid #cfc9bd;
   border-radius: 999px;
@@ -274,9 +351,17 @@
 }
 
 .director-shot-list {
+  flex: 1 1 auto;
+  width: 100%;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 6px 8px 14px;
+  box-sizing: border-box;
+}
+
+.director-scene-group, .director-shot-row {
+  min-width: 0;
 }
 
 .director-scene-group > h3 {
@@ -479,7 +564,8 @@
   height: 100%;
   min-height: 48px;
   border-radius: inherit;
-  object-fit: cover;
+  object-fit: contain;
+  background: #181b19;
 }
 
 .director-shot-copy {
@@ -581,8 +667,8 @@
 }
 
 .director-stepper a, .director-stepper button {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
   border: 1px solid #47514e;
@@ -724,7 +810,7 @@
 }
 
 .director-text-button {
-  min-height: 38px;
+  min-height: 44px;
   border: 0;
   background: transparent;
   color: #e9633b;
@@ -1024,7 +1110,7 @@
 
 .director-takes-strip {
   position: relative;
-  min-height: 128px;
+  min-height: 142px;
   display: flex;
   gap: 8px;
   overflow-x: auto;
@@ -1037,7 +1123,7 @@
 }
 
 .director-take {
-  flex: 0 0 170px;
+  flex: 0 0 160px;
   margin: 0;
   overflow: hidden;
   border: 1px solid #3c4642;
@@ -1055,9 +1141,9 @@
 
 .director-take img {
   width: 100%;
-  height: 82px;
+  height: 96px;
   display: block;
-  object-fit: cover;
+  object-fit: contain;
   background: #0b0f0e;
 }
 
@@ -1292,6 +1378,52 @@
   box-shadow: inset 0 0 0 1px #e9633b;
 }
 
+.director-branch-options {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid #d7d0c4;
+  border-radius: 8px;
+}
+
+.director-branch-options legend {
+  padding: 0 5px;
+  color: #535951;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.director-branch-options label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  min-height: 44px;
+  padding: 8px;
+  border-radius: 6px;
+  background: #f7f4ee;
+  cursor: pointer;
+}
+
+.director-branch-options label.disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.director-branch-options input {
+  margin-top: 3px;
+}
+
+.director-branch-options span {
+  display: grid;
+  gap: 2px;
+}
+
+.director-branch-options small {
+  color: #676c67;
+}
+
 .director-dialog-actions {
   display: flex;
   justify-content: flex-end;
@@ -1379,6 +1511,14 @@
   }
 }
 
+@media (min-width: 1081px) and (max-width: 1280px) {
+  /* The navigator is a permanent column in this range; exposing its drawer
+     switch would change aria-expanded without changing anything on screen. */
+  .desk-nav-toggle {
+    display: none !important;
+  }
+}
+
 @media (max-width: 1280px) {
   .director-main-grid {
     grid-template-columns: 240px minmax(0, 1fr);
@@ -1389,7 +1529,7 @@
     gap: 4px;
   }
   .director-text-button {
-    min-height: 30px;
+    min-height: 44px;
     align-self: flex-end;
   }
   .director-inspector-container {
@@ -1492,7 +1632,8 @@
 .director-shot-choice h2 { margin: 3px 0 6px; }
 .director-shot-choice p { color: var(--text-muted); }
 .director-shot-choice nav { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
-.director-shot-choice nav a { display: grid; gap: 4px; min-height: 64px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-raised); color: inherit; text-decoration: none; }
+.director-shot-choice nav a { display: grid; align-content: center; gap: 4px; min-height: 64px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-raised); color: inherit; text-decoration: none; }
 .director-shot-choice nav a:hover,
 .director-shot-choice nav a:focus-visible { border-color: var(--creative, var(--accent)); }
 .director-shot-choice nav small { color: var(--text-muted); }
+.director-shot-choice > a.secondary { justify-self: start; width: max-content; }

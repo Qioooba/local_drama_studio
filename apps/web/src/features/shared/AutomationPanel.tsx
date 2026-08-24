@@ -7,9 +7,9 @@ import {
   listWebhookSubscriptions,
   retryWebhookDelivery,
 } from "../../generated/api";
+import { generateMachineCode } from "./autoCode";
 
 export function AutomationPanel({ projectId }: { projectId?: string | null }) {
-  const [code, setCode] = useState("local-automation");
   const [title, setTitle] = useState("本机自动化");
   const [token, setToken] = useState("");
   const [endpoint, setEndpoint] = useState("http://127.0.0.1:8765/hooks/local-drama");
@@ -25,7 +25,8 @@ export function AutomationPanel({ projectId }: { projectId?: string | null }) {
     try { await action(); } catch (caught) { setError(String(caught)); } finally { setBusy(false); }
   };
   const createClient = () => void run(async () => {
-    const response = await createAutomationClient({ code: code.trim(), title: title.trim(), project_id: projectId ?? undefined, scopes: ["read", "plan", "submit", "review", "delivery"] });
+    const code = generateMachineCode("automation-client", title).toLowerCase().replace(/_/g, "-");
+    const response = await createAutomationClient({ code, title: title.trim(), project_id: projectId ?? undefined, scopes: ["read", "plan", "submit", "review", "delivery"] });
     setToken(response.client.token ?? "");
     setMessage("Client 已创建。token 只在此刻显示一次，请复制到本机自动化脚本；服务端只保存 hash。");
   });
@@ -51,14 +52,18 @@ export function AutomationPanel({ projectId }: { projectId?: string | null }) {
     const deliveryResponse = await listWebhookDeliveries(token.trim(), { subscription_id: subscriptionId || undefined, limit: 100 });
     setDeliveries(deliveryResponse.items);
   });
+  const copyToken = () => void run(async () => {
+    await navigator.clipboard.writeText(token);
+    setMessage("token 已复制到剪贴板；请立即粘贴到本机自动化脚本中。");
+  });
 
   return <section className="panel automation-panel" aria-labelledby="automation-title">
-    <div className="panel-heading"><div><p className="eyebrow">FR-AUT-002 · 本机自动化</p><h3 id="automation-title">本机自动化 API / Webhook</h3></div><span className="status-pill neutral">仅回环</span></div>
+    <div className="panel-heading"><div><p className="eyebrow">本机自动化</p><h3 id="automation-title">自动化接口与回调</h3></div><span className="status-pill neutral">仅回环</span></div>
     <p className="muted">UI 和自动化脚本使用同一条 command。token、scope、HMAC 签名、指数退避和死信都在本机持久化；没有公网出站，也不能绕过人工审核。</p>
-    <div className="field-grid"><label>客户端代码<input value={code} onChange={(event) => setCode(event.target.value)} /></label><label>标题<input value={title} onChange={(event) => setTitle(event.target.value)} /></label></div>
-    <button className="secondary" type="button" onClick={createClient} disabled={busy || !code.trim() || !title.trim()}>创建本机 client（显示一次 token）</button>
-    {token && <label>当前 token（仅内存保留，离开页面需重新创建）<input value={token} onChange={(event) => setToken(event.target.value)} spellCheck={false} /></label>}
-    <div className="field-grid"><label>回环端点<input value={endpoint} onChange={(event) => setEndpoint(event.target.value)} /></label><label>订阅 ID（可选）<input value={subscriptionId} onChange={(event) => setSubscriptionId(event.target.value)} /></label></div>
+    <div className="field-grid"><label>接口名称<input value={title} onChange={(event) => setTitle(event.target.value)} /><small>机器代码由名称自动生成。</small></label></div>
+    <button className="secondary" type="button" onClick={createClient} disabled={busy || !title.trim()}>创建本机接口凭据</button>
+    {token && <div className="one-time-secret" role="status"><span>当前 token（仅显示一次）</span><code>{token}</code><button type="button" className="secondary" onClick={copyToken} disabled={busy}>复制 token</button><small>离开页面后无法再次查看；服务端只保存不可逆摘要。</small></div>}
+    <div className="field-grid"><label>回环端点<input value={endpoint} onChange={(event) => setEndpoint(event.target.value)} /></label><label>订阅（可选）<select value={subscriptionId} onChange={(event) => setSubscriptionId(event.target.value)}><option value="">全部订阅 / 创建新订阅</option>{subscriptions.map((item) => <option key={item.id} value={item.id}>{item.endpoint_url}</option>)}</select></label></div>
     <div className="button-row"><button className="secondary" type="button" onClick={createSubscription} disabled={busy || !token.trim() || !endpoint.trim()}>创建签名订阅</button><button className="secondary" type="button" onClick={refresh} disabled={busy || !token.trim()}>刷新状态</button><button className="primary-action" type="button" onClick={deliver} disabled={busy || !token.trim()}>投递待处理事件</button></div>
     {subscriptions.length > 0 && <div className="review-meta"><span>订阅：{subscriptions.length}</span><span>当前回调：{subscriptions.find((item) => item.id === subscriptionId)?.endpoint_url ?? "未选择"}</span></div>}
     {deliveries.length > 0 && <div className="table-wrap"><table><caption className="sr-only">Webhook delivery 状态</caption><thead><tr><th>event</th><th>状态</th><th>尝试</th><th>操作</th></tr></thead><tbody>{deliveries.slice(0, 12).map((delivery) => <tr key={delivery.id}><td>{delivery.event_id}</td><td>{delivery.status}{delivery.last_error ? ` · ${delivery.last_error}` : ""}</td><td>{delivery.attempt_count}</td><td>{delivery.status === "DEAD_LETTER" && <button className="secondary" type="button" onClick={() => retry(delivery.id)} disabled={busy}>显式重试</button>}</td></tr>)}</tbody></table></div>}

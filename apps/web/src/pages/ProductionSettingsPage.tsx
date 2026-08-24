@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ProductionSettingsOverview } from "../features/production-settings-v2/ProductionSettingsOverview";
+import { MediaDerivativeMaintenancePanel } from "../features/production-settings-v2/MediaDerivativeMaintenancePanel";
 import { FreshnessPanel } from "../features/freshness/FreshnessPanel";
 import { TabPanel, Tabs } from "../components/ui";
 import { ProjectAssetGrantPanel } from "../features/projects/ProjectAssetGrantPanel";
@@ -30,6 +32,7 @@ export function ProductionSettingsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [integrationToolsOpen, setIntegrationToolsOpen] = useState(false);
   const requestedView = searchParams.get("view");
   const activeTab = SETTINGS_TABS.some((item) => item.id === requestedView) ? requestedView! : "overview";
   const setActiveTab = (view: string) => {
@@ -68,13 +71,13 @@ export function ProductionSettingsPage() {
     <div className="v2-page production-settings-page">
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">Project Settings</p>
+          <p className="eyebrow">项目设置</p>
           <h2>生产设置与项目配置</h2>
         </div>
-        <span className="status-pill">项目级事实真值</span>
+        <span className="status-pill">仅影响当前项目</span>
       </div>
       <p className="muted">
-        集中管理项目生效默认、覆盖来源、交付规格、自动化与资产授权；具体配置由各自版本化模块管理，不生成第二套业务事实。
+        集中管理当前项目的默认能力、交付规格、自动化和资产授权。系统会保留版本与来源，避免同一设置在多个页面重复维护。
       </p>
 
       <div className="system-workspace-tabs">
@@ -106,9 +109,21 @@ export function ProductionSettingsPage() {
 
       <TabPanel id="automation" selectedId={activeTab}>
         <section className="v2-section-grid" aria-label="自动化与外发">
-          <AutomationPanel projectId={projectId} />
           <AutomationWorkflowPanel projectId={projectId} />
-          <OutboxDeliveryPanel projectId={projectId} />
+          <details
+            className="automation-integration-tools"
+            open={integrationToolsOpen}
+            onToggle={(event) => setIntegrationToolsOpen(event.currentTarget.open)}
+          >
+            <summary>
+              <span>专家：本机脚本接口与回调</span>
+              <small>只有接入外部脚本、Webhook 或调试事件投递时才需要</small>
+            </summary>
+            {integrationToolsOpen && <div className="automation-integration-body">
+              <AutomationPanel projectId={projectId} />
+              <OutboxDeliveryPanel projectId={projectId} />
+            </div>}
+          </details>
         </section>
       </TabPanel>
 
@@ -124,6 +139,7 @@ export function ProductionSettingsPage() {
             }}
           />
           <ProjectAssetGrantPanel projectId={projectId} />
+          <MediaDerivativeMaintenancePanel projectId={projectId} />
           <ProjectPackageAction projectId={projectId} onImported={(importedId) => navigate(`/projects/${importedId}`)} />
           {project.data && (
             <ProjectTemplateCopyAction

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from local_drama.api.schemas.comfy_lab import ComfyLabCaptureRequest, ComfyLabTestRunRequest
+from local_drama.api.schemas.comfy_lab import ComfyLabCaptureRequest, ComfyLabConfigureRequest, ComfyLabDiscoverRequest, ComfyLabTestRunRequest
 from local_drama.application.comfy_lab import ComfyLabService
 from local_drama.application.errors import api_error_from_domain
 from local_drama.domain.errors import DomainRuleError
@@ -22,6 +22,22 @@ async def status(request: Request) -> dict[str, object]:
 @router.get("/comfy-lab/session", operation_id="getComfyLabSession")
 async def session(request: Request) -> dict[str, object]:
     return service(request).session()
+
+
+@router.post("/comfy-lab:discover", operation_id="discoverComfyLab")
+async def discover(payload: ComfyLabDiscoverRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"discovery": service(request).discover(apply=payload.apply)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.put("/comfy-lab/configuration", operation_id="configureComfyLab")
+async def configure(payload: ComfyLabConfigureRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"configuration": service(request).configure(payload.python_path, payload.root_path, payload.port)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
 
 
 @router.post("/comfy-lab:start", operation_id="startComfyLab")

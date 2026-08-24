@@ -10,10 +10,13 @@ describe("routeRegistry", () => {
   it("builds correct typed route URLs", () => {
     expect(routes.projects()).toBe("/projects");
     expect(routes.models()).toBe("/models");
+    expect(routes.models("p-123")).toBe("/models?project=p-123");
     expect(routes.jobs()).toBe("/jobs");
     expect(routes.jobs("p-123")).toBe("/jobs?project=p-123");
     expect(routes.diagnostics()).toBe("/diagnostics");
     expect(routes.diagnostics("p-123")).toBe("/diagnostics?project=p-123");
+    expect(routes.mediaLab()).toBe("/lab");
+    expect(routes.mediaLab("p-123")).toBe("/lab?project=p-123");
 
     expect(routes.projectHome("proj-001")).toBe("/projects/proj-001");
     expect(routes.story("proj-001")).toBe("/projects/proj-001/story");
@@ -21,10 +24,9 @@ describe("routeRegistry", () => {
     expect(routes.qcPolicies("proj-001")).toBe("/projects/proj-001/qc-policies");
     expect(routes.directorRecipes("proj-001")).toBe("/projects/proj-001/director-recipes");
     expect(routes.productionSettings("proj-001")).toBe("/projects/proj-001/production-settings");
-    expect(routes.projectModels("proj-001")).toBe("/projects/proj-001/models");
-    expect(routes.projectJobs("proj-001")).toBe("/projects/proj-001/jobs");
-    expect(routes.projectDiagnostics("proj-001")).toBe("/projects/proj-001/diagnostics");
-    expect(routes.mediaLab("proj-001")).toBe("/projects/proj-001/lab");
+    expect(routes.projectModels("proj-001")).toBe("/models?project=proj-001");
+    expect(routes.projectJobs("proj-001")).toBe("/jobs?project=proj-001");
+    expect(routes.projectDiagnostics("proj-001")).toBe("/diagnostics?project=proj-001");
     expect(routes.canvas("proj-001")).toBe("/projects/proj-001/canvas");
     expect(routes.canvas("proj-001", "ep-1")).toBe("/projects/proj-001/canvas?episode=ep-1");
     expect(routes.operations("proj-001")).toBe("/projects/proj-001/operations");
@@ -74,6 +76,13 @@ describe("routeRegistry", () => {
     expect(parseRouteContext("/projects/proj-999/jobs").routeId).toBe("projectJobs");
     expect(parseRouteContext("/projects/proj-999/diagnostics").routeId).toBe("projectDiagnostics");
     expect(parseRouteContext("/projects/proj-999/settings").routeId).toBe("productionSettings");
+    expect(parseRouteContext("/lab")).toEqual({
+      routeId: "mediaLab",
+      scope: "GLOBAL",
+      projectId: null,
+      episodeId: null,
+      shotId: null,
+    });
 
     expect(parseRouteContext("/projects/proj-999/episodes/ep-03/direct/shot-77")).toEqual({
       routeId: "directorDeskShot",
@@ -100,6 +109,18 @@ describe("routeRegistry", () => {
     });
   });
 
+  it("fails closed for malformed percent-encoded route segments", () => {
+    expect(() => parseRouteContext("/projects/%E0%A4%A/story")).not.toThrow();
+    expect(parseRouteContext("/projects/%E0%A4%A/story")).toEqual({
+      routeId: null,
+      scope: null,
+      projectId: null,
+      episodeId: null,
+      shotId: null,
+    });
+    expect(parseRouteContext("/projects/p1/episodes/e1/direct/%E0%A4%A").routeId).toBeNull();
+  });
+
   it("validates route ownership preventing cross-project context leaks", () => {
     const ctx = parseRouteContext("/projects/proj-100/episodes/ep-01/plan");
     expect(validateRouteOwnership(ctx, "proj-100", "ep-01")).toEqual({ valid: true });
@@ -111,6 +132,7 @@ describe("routeRegistry", () => {
     const crumbs = buildBreadcrumbs({
       pathname: "/projects/proj-100/episodes/ep-01/direct/shot-12",
       projectTitle: "大唐双龙传",
+      seasonTitle: "S01 · 第一季",
       episodeTitle: "第1集 启程",
       shotCode: "S12-全景打斗",
     });
@@ -118,7 +140,7 @@ describe("routeRegistry", () => {
     expect(crumbs).toHaveLength(5);
     expect(crumbs[0]).toEqual({ label: "项目列表", to: "/projects" });
     expect(crumbs[1]).toEqual({ label: "大唐双龙传", to: "/projects/proj-100" });
-    expect(crumbs[2]).toEqual({ label: "第1集 启程", to: "/projects/proj-100/episodes/ep-01/plan" });
+    expect(crumbs[2]).toEqual({ label: "S01 · 第一季 / 第1集 启程", to: "/projects/proj-100/episodes/ep-01/plan" });
     expect(crumbs[3]).toEqual({ label: "导演工作台", to: "/projects/proj-100/episodes/ep-01/direct" });
     expect(crumbs[4]).toEqual({ label: "S12-全景打斗", isCurrent: true });
   });

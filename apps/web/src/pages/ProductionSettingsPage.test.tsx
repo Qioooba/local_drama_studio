@@ -16,6 +16,9 @@ vi.mock("../generated/api", () => ({
 vi.mock("../features/production-settings-v2/ProductionSettingsOverview", () => ({
   ProductionSettingsOverview: ({ projectId }: { projectId: string }) => <div>ProductionSettingsOverview {projectId}</div>,
 }));
+vi.mock("../features/production-settings-v2/MediaDerivativeMaintenancePanel", () => ({
+  MediaDerivativeMaintenancePanel: () => <div>MediaDerivativeMaintenancePanel</div>,
+}));
 
 vi.mock("../features/freshness/FreshnessPanel", () => ({
   FreshnessPanel: ({ projectId }: { projectId: string }) => <div>FreshnessPanel {projectId}</div>,
@@ -74,14 +77,18 @@ describe("ProductionSettingsPage tabbed structure", () => {
 
     // Switch to automation tab
     fireEvent.click(screen.getByText(/自动化与外发/i));
+    expect(await screen.findByText("AutomationWorkflowPanel")).toBeTruthy();
+    expect(screen.queryByText("AutomationPanel")).toBeNull();
+    expect(screen.queryByText("OutboxDeliveryPanel")).toBeNull();
+    fireEvent.click(screen.getByText("专家：本机脚本接口与回调"));
     expect(await screen.findByText("AutomationPanel")).toBeTruthy();
-    expect(screen.getByText("AutomationWorkflowPanel")).toBeTruthy();
     expect(screen.getByText("OutboxDeliveryPanel")).toBeTruthy();
 
     // Switch to assets tab
     fireEvent.click(screen.getByText(/授权与项目包/i));
     expect(await screen.findByText("WorkspaceAssetAuthorizationPanel")).toBeTruthy();
     expect(screen.getByText("ProjectAssetGrantPanel")).toBeTruthy();
+    expect(screen.getByText("MediaDerivativeMaintenancePanel")).toBeTruthy();
     expect(screen.getByText("ProjectPackageAction")).toBeTruthy();
     expect(screen.getByText("ProjectTemplateCopyAction")).toBeTruthy();
   });

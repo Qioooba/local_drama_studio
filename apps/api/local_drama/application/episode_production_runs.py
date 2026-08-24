@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +25,7 @@ from local_drama.infrastructure.database.sqlite import Database
 
 from .automation_workflows import AutomationWorkflowService
 from .capacity import CapacitySnapshotService
+from .diagnostics import _probe_loopback
 from .episode_front_half_actions import EpisodeFrontHalfActionService
 from .jobs import JobService
 
@@ -171,7 +172,7 @@ class EpisodeProductionRunService:
                 WHERE ppb.project_id=?""",
                 (project_id,),
             ).fetchall()
-            runtimes = connection.execute("SELECT code,status,transport FROM local_runtimes ORDER BY code").fetchall()
+            runtimes = connection.execute("SELECT code,status,transport,base_url FROM local_runtimes ORDER BY code").fetchall()
             models = connection.execute("SELECT code,machine_path_ref,status FROM model_artifacts ORDER BY code").fetchall()
             dialogue_count = int(connection.execute("SELECT COUNT(*) FROM dialogue_lines WHERE episode_id=?", (episode_id,)).fetchone()[0])
             voice_count = int(connection.execute(
@@ -243,6 +244,20 @@ class EpisodeProductionRunService:
         adapter = AdapterContractRegistry(self.settings).inspect()
         comfy_contract = next((item for item in adapter["contracts"] if item["kind"] == "COMFY"), None)
         comfy_runtime = next((row for row in runtimes if "comfy" in str(row["code"]).casefold()), None)
+        comfy_contract_status = str(comfy_contract["status"]) if comfy_contract else "MISSING"
+        comfy_runtime_status = str(comfy_runtime["status"]) if comfy_runtime else "MISSING"
+        comfy_base_url = str(comfy_runtime["base_url"]) if comfy_runtime and comfy_runtime["base_url"] else None
+        comfy_probe_status, comfy_probe_evidence = _probe_loopback(comfy_base_url)
+        comfy_ok = comfy_contract_status == "DECLARED" and bool(comfy_runtime) and comfy_probe_status == "PASS"
+        if comfy_contract_status != "DECLARED":
+            comfy_message = f"Comfy adapter contract 状态为 {comfy_contract_status}，需 DECLARED"
+        elif not comfy_runtime:
+            comfy_message = "Comfy 本地 runtime 未登记"
+        elif comfy_probe_status != "PASS":
+            reason = str(comfy_probe_evidence.get("reason") or "不可达")
+            comfy_message = f"Comfy 本地 loopback 实时探测为 {comfy_probe_status}（{reason}）"
+        else:
+            comfy_message = f"Comfy adapter 已声明，loopback 实时探测可用（登记状态 {comfy_runtime_status}）"
         capacity = CapacitySnapshotService(self.database, self.settings).inspect(project_id)
         gpu_ok = capacity["gpu"].get("source") != "UNAVAILABLE" and bool(capacity["gpu"].get("name") or capacity["gpu"].get("total_bytes"))
         project_root = (self.settings.projects_root / str(episode["root_rel"])).resolve()
@@ -277,13 +292,41 @@ class EpisodeProductionRunService:
             self._check("ASSET_REFERENCE_REQUIREMENTS_MISSING", "生效资产状态与参考图", not missing_required_references, "生效角色状态满足 Director Recipe 的参考图要求" if not missing_required_references else "部分镜头的生效角色状态缺少 Recipe 要求的已验证参考图", {"required_character_refs": required_character_refs, "missing": missing_required_references, "director_recipe_version_id": str(recipe["id"]) if recipe else None, "director_recipe_hash": str(recipe["recipe_hash"]) if recipe else None}),
             self._check("PROFILE_CAPABILITY_MISSING", "生成 Profile 能力", bool(valid_profiles), "已绑定发布的视频生成 Profile" if valid_profiles else "项目缺少 ACTIVE/PUBLISHED 视频生成 Profile", {"profile_version_ids": [str(row["id"]) for row in valid_profiles]}),
             self._check("LOCAL_MODEL_FILES_MISSING", "本地模型文件", bool(usable_models), "已发现可用的本地模型文件" if usable_models else "未发现状态有效且文件存在的本地模型", {"declared_model_refs": sorted(declared_model_refs), "usable_model_codes": [str(row["code"]) for row in usable_models]}),
-            self._check("COMFY_ADAPTER_UNAVAILABLE", "Comfy/Adapter", bool(comfy_contract and comfy_contract["status"] == "DECLARED" and comfy_runtime and str(comfy_runtime["status"]) in {"ACTIVE", "READY", "AVAILABLE"}), "Comfy 本地 adapter 与 runtime 已声明可用" if comfy_runtime else "Comfy 本地 runtime 未就绪", {"contract_status": comfy_contract["status"] if comfy_contract else "MISSING", "runtime_status": str(comfy_runtime["status"]) if comfy_runtime else "MISSING"}),
+            self._check("COMFY_ADAPTER_UNAVAILABLE", "Comfy/Adapter", comfy_ok, comfy_message, {"contract_status": comfy_contract_status, "registered_runtime_status": comfy_runtime_status, "probe_status": comfy_probe_status, "probe": comfy_probe_evidence}),
             self._check("GPU_CAPACITY_UNAVAILABLE", "GPU/容量", gpu_ok, "本机 GPU 容量信息可用" if gpu_ok else "本地 manifest 未提供 GPU 容量", {"gpu": capacity["gpu"], "gpu_active_count": capacity["gpu_active_count"], "gpu_concurrency_limit": capacity["gpu_concurrency_limit"]}),
             self._check("DISK_SPACE_LOW", "磁盘", isinstance(free_bytes, int) and free_bytes >= required_free_bytes, "可用磁盘空间满足冻结输出估算与运行阈值" if isinstance(free_bytes, int) and free_bytes >= required_free_bytes else "可用磁盘空间低于冻结输出估算/阈值或无法读取", {"free_bytes": free_bytes, "required_free_bytes": required_free_bytes, "operator_min_free_bytes": min_free_disk_bytes, "estimated_output_bytes": estimated_output_bytes, "disk_bytes_per_take": disk_per_take, "take_count": len(shots) * int(mode_policy["target_take_count"]), "estimate_source": "FROZEN_PROFILE_RESOURCE_POLICY" if disk_per_take is not None else "UNKNOWN"}),
             self._check("FFMPEG_UNAVAILABLE", "FFmpeg", bool(ffmpeg_ref and Path(ffmpeg_ref).is_file()), "FFmpeg 可执行文件存在" if ffmpeg_ref else "未配置 FFmpeg", {"executable_ref": str(ffmpeg_ref) if ffmpeg_ref else None}),
         ]
         if tts_enabled:
             checks.append(self._check("TTS_CONFIGURATION_MISSING", "TTS", dialogue_count == 0 or voice_count > 0, "TTS 未发现阻塞项" if dialogue_count == 0 or voice_count > 0 else "存在对白但未绑定有效角色音色", {"dialogue_count": dialogue_count, "voice_binding_count": voice_count}))
+        front_half_snapshot: dict[str, Any] | None = None
+        if include_front_half:
+            # A normal Episode Production Run executes ASSET_COMPLETION before
+            # shot generation.  Use that exact authoritative projection as a
+            # launch gate as well; otherwise the coarse canonical-reference
+            # checks above can pass and the completed run later regresses to a
+            # permanently pending asset stage.
+            front_service = EpisodeFrontHalfActionService(self.database, self.settings)
+            asset_completion_report, _ = front_service.asset_completion(episode_id)
+            asset_completion_check = dict(asset_completion_report.get("machine_check") or {})
+            asset_completion_ok = str(asset_completion_check.get("status") or "") in {"PASS", "SKIPPED"}
+            checks.append(
+                self._check(
+                    "ASSET_COMPLETION_REQUIRED",
+                    "角色三视图身份包与镜头绑定",
+                    asset_completion_ok,
+                    str(
+                        asset_completion_check.get("detail")
+                        or "角色资产缺少已批准三视图身份包，或镜头未绑定当前生效版本"
+                    ),
+                    asset_completion_check,
+                )
+            )
+            # Source/draft/proposal/pack revisions are creative inputs too.
+            # Freezing them prevents crash recovery from silently continuing
+            # against a different human-reviewed front-half state.
+            front_half_snapshot = front_service.snapshot(episode_id)
+
         blockers = [item for item in checks if item["blocking"]]
         # Capacity and free disk are intentionally excluded: they are launch
         # gates, not creative inputs.  A retry with the same idempotency key
@@ -323,12 +366,7 @@ class EpisodeProductionRunService:
         }
         if _include_checkpoint_in_fingerprint:
             fingerprint_source["checkpoint_policy"] = checkpoint_policy
-        front_half_snapshot: dict[str, Any] | None = None
         if include_front_half:
-            # Source/draft/proposal/pack revisions are creative inputs too.
-            # Freezing them prevents crash recovery from silently continuing
-            # against a different human-reviewed front-half state.
-            front_half_snapshot = EpisodeFrontHalfActionService(self.database, self.settings).snapshot(episode_id)
             fingerprint_source["front_half"] = front_half_snapshot
         fingerprint = hashlib.sha256(_canonical(fingerprint_source).encode("utf-8")).hexdigest()
         return {
@@ -510,12 +548,17 @@ class EpisodeProductionRunService:
 
     @staticmethod
     def _state(completed: int, total: int, running: int, failed: int, hitl: int, run_status: str) -> str:
+        if total > 0 and completed >= total:
+            return "COMPLETED"
+        # A terminally cancelled run must never make partially completed or
+        # untouched stages look active.  Job/fact counts remain visible, while
+        # the stage label truthfully communicates that no work is running.
+        if run_status == "CANCELLED":
+            return "CANCELLED"
         if failed:
             return "BLOCKED"
         if hitl:
             return "PAUSED"
-        if total > 0 and completed >= total:
-            return "COMPLETED"
         if running or completed:
             return "PAUSED" if run_status == "PAUSED_HITL" else "RUNNING"
         return "PENDING"
@@ -631,6 +674,29 @@ class EpisodeProductionRunService:
             }
             if include_jobs:
                 stage_view["jobs"] = [{"task_id": item["id"], "job_id": item.get("job_id"), "job_state": item.get("job_state"), "item_key": item["item_key"], "status": item["status"]} for item in stage_tasks]
+                issues: list[dict[str, Any]] = []
+                for task in stage_tasks:
+                    context = task.get("machine_context", {})
+                    check = context.get("machine_check", {}) if isinstance(context, dict) else {}
+                    if not isinstance(check, dict):
+                        continue
+                    for key in ("blocked_shots", "attention_shots", "incomplete_shots", "missing_required_references"):
+                        values = check.get(key, [])
+                        if not isinstance(values, list):
+                            continue
+                        for value in values:
+                            if not isinstance(value, dict) or not value.get("shot_id"):
+                                continue
+                            issue = {
+                                "shot_id": str(value["shot_id"]),
+                                "shot_code": str(value.get("shot_code") or "镜头"),
+                                "status": str(value.get("status") or "BLOCKED"),
+                                "code": str(value.get("code") or key.upper()),
+                                "job_id": str(value["job_id"]) if value.get("job_id") else task.get("job_id"),
+                            }
+                            if issue not in issues:
+                                issues.append(issue)
+                stage_view["issues"] = issues[:100]
             stages.append(stage_view)
         recoverable_jobs = [
             {"task_id": item["id"], "job_id": item.get("job_id"), "job_state": item.get("job_state")}
@@ -666,6 +732,50 @@ class EpisodeProductionRunService:
 
     def get(self, run_id: str, *, include_jobs: bool = False) -> dict[str, Any]:
         return self._view(self.automation.get_run(run_id), include_jobs=include_jobs)
+
+    def watchdog(
+        self,
+        *,
+        stale_seconds: int = 30,
+        limit: int = 20,
+        actor: str = "episode-run-watchdog",
+    ) -> dict[str, Any]:
+        """Converge stale active episode runs without replaying valid work.
+
+        The durable worker calls this only on startup and bounded idle
+        intervals. Generic automation runs are ignored: an episode workflow is
+        recognized through the same frozen metadata gate used by ``recover``.
+        """
+        cutoff = (datetime.now(UTC) - timedelta(seconds=max(0, stale_seconds))).isoformat()
+        bounded_limit = max(1, min(int(limit), 100))
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """SELECT id FROM automation_workflow_runs
+                WHERE status='RUNNING' AND updated_at<=?
+                ORDER BY updated_at ASC,id ASC LIMIT ?""",
+                (cutoff, bounded_limit),
+            ).fetchall()
+        recovered: list[str] = []
+        skipped: list[str] = []
+        errors: list[dict[str, str]] = []
+        for row in rows:
+            run_id = str(row["id"])
+            try:
+                self.recover(run_id, actor=actor)
+                recovered.append(run_id)
+            except DomainRuleError as error:
+                if error.code == "EPISODE_PRODUCTION_RUN_NOT_FOUND":
+                    skipped.append(run_id)
+                else:
+                    errors.append({"run_id": run_id, "code": error.code})
+        return {
+            "scanned": len(rows),
+            "recovered_run_ids": recovered,
+            "skipped_non_episode_run_ids": skipped,
+            "errors": errors,
+            "stale_seconds": max(0, stale_seconds),
+            "bounded": True,
+        }
 
     def pause(self, run_id: str, *, reason: str, actor: str = "local-user") -> dict[str, Any]:
         self._episode_id_for_run(self.automation.get_run(run_id))
@@ -727,6 +837,11 @@ class EpisodeProductionRunService:
         )
         current_fingerprint = str(current_preflight["input_fingerprint"])
         lease_reconcile = JobService(self.database, self.settings).reconcile(actor="episode-run-recovery")
+        lease_requeued = {
+            str(item.get("job_id"))
+            for item in lease_reconcile.get("items", [])
+            if isinstance(item, dict) and str(item.get("job_state")) == "QUEUED"
+        }
         refreshed: list[str] = []
         requeued: list[str] = []
         skipped: list[str] = []
@@ -750,6 +865,8 @@ class EpisodeProductionRunService:
                 payload = item.get("payload", {}) if isinstance(item, dict) else {}
                 task_fingerprint = str(payload.get("input_fingerprint") or old_fingerprint)
                 job_state = str(task["job_state"])
+                if job_state == "QUEUED" and str(task["job_id"]) in lease_requeued:
+                    requeued.append(str(task["job_id"]))
                 if job_state == "SUCCEEDED":
                     if task_fingerprint == current_fingerprint:
                         skipped.append(str(task["id"]))

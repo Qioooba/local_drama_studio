@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shutil
 import sys
 import tempfile
 import time
@@ -55,11 +56,53 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _configuration_fingerprint(settings: dict[str, Any]) -> str:
+    payload = json.dumps(settings, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def _checks(template: dict[str, Any]) -> list[dict[str, str]]:
     return [{"item_id": str(item["id"]), "result": "PASS"} for item in template["items"]]
 
 
-def run(keyframe: Path, server: str, comfy_output_root: Path, comfy_input_root: Path, timeout_seconds: int, sigma_points: int) -> dict[str, Any]:
+def _execution_evidence(compiled: dict[str, Any]) -> dict[str, Any]:
+    workflow = compiled.get("workflow") if isinstance(compiled.get("workflow"), dict) else {}
+    nodes = []
+    for node_id, node in workflow.items():
+        if not isinstance(node, dict):
+            continue
+        class_type = str(node.get("class_type", ""))
+        if class_type in {
+            "UNETLoader",
+            "CLIPLoader",
+            "VAELoader",
+            "BasicScheduler",
+            "BasicGuider",
+            "LoraLoaderModelOnly",
+            "VAEDecodeAudio",
+            "CreateVideo",
+            "SaveVideo",
+        }:
+            nodes.append({"id": str(node_id), "class_type": class_type, "inputs": node.get("inputs", {})})
+    return {
+        "compiled_workflow_sha256": compiled.get("compiled_hash"),
+        "runtime_overrides": compiled.get("runtime_overrides", {}),
+        "nodes": nodes,
+    }
+
+
+def run(
+    keyframe: Path,
+    server: str,
+    comfy_output_root: Path,
+    comfy_input_root: Path,
+    timeout_seconds: int,
+    sigma_points: int,
+    acceleration: str,
+    native_audio: bool,
+    lora_strength: float,
+    artifact_output: Path | None,
+) -> dict[str, Any]:
     source = keyframe.resolve(strict=True)
     if not source.is_file() or source.is_symlink():
         raise ValueError("keyframe must be a regular local file")
@@ -117,6 +160,9 @@ def run(keyframe: Path, server: str, comfy_output_root: Path, comfy_input_root: 
             aspect_ratio="auto",
             filename_prefix="h3_platform_uat/SHOT_001",
             sigma_points=sigma_points,
+            acceleration=acceleration,
+            native_audio=native_audio,
+            lora_strength=lora_strength,
         )
         workflows = WorkflowService(database, settings)
         version = workflows.register_package(
@@ -131,6 +177,24 @@ def run(keyframe: Path, server: str, comfy_output_root: Path, comfy_input_root: 
         validation = workflows.validate_against_comfy(str(version["id"]), client)
         published = workflows.publish(str(version["id"]), str(validation["validation_id"]))
         jobs = JobService(database, settings)
+        effective_settings = {
+            "production_tier": "DRAFT",
+            "sigma_points": sigma_points,
+            "acceleration": acceleration,
+            "lora_strength": lora_strength,
+            "native_audio": native_audio,
+            "take_count": 1,
+        }
+        effective_configuration = {
+            "schema_version": "localdrama.effective-configuration-snapshot.v1",
+            "fingerprint": _configuration_fingerprint(effective_settings),
+            "profile_version_id": None,
+            "effective_settings": effective_settings,
+            "setting_sources": {key: "UAT_REQUEST" for key in effective_settings},
+            "blocking_errors": [],
+            "warnings": [],
+            "runtime_status": "READY",
+        }
         job = jobs.create_job(
             project_id,
             "I2V",
@@ -141,6 +205,7 @@ def run(keyframe: Path, server: str, comfy_output_root: Path, comfy_input_root: 
                 "workflow_version_id": str(version["id"]),
                 "semantic_inputs": {},
                 "media_bindings": [{"role": "FIRST_FRAME", "media_version_id": str(media["media_version_id"]), "ordinal": 0}],
+                "execution_snapshot": {"effective_configuration": effective_configuration},
             },
             "h3-platform-uat-20260816",
         )
@@ -177,14 +242,27 @@ def run(keyframe: Path, server: str, comfy_output_root: Path, comfy_input_root: 
         with database.connect() as connection:
             integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
         artifact_path = (settings.work_root / str(artifact["sandbox_rel_path"])).resolve()
+        preserved_artifact = None
+        if artifact_output is not None and artifact_path.is_file():
+            artifact_output.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(artifact_path, artifact_output)
+            preserved_artifact = str(artifact_output.resolve())
         return {
             "schema_version": "g10.h3_comfy_job_uat.v1",
             "status": "PARTIAL",
             "runtime": {"endpoint": server, "endpoint_local": True, "network_contacted": False, "production_database_contacted": False},
             "source": {"path": str(source), "sha256": _sha256(source), "bytes": source.stat().st_size},
             "workflow": {"id": version["id"], "status": published["status"], "validation": validation},
+            "effective_configuration": effective_configuration,
+            "execution": _execution_evidence(submission["compiled"]),
             "job": {"id": job["id"], "attempt_id": attempt_id, "prompt_id": submission["prompt_id"], "poll_states": poll_states},
-            "artifact": {**artifact, "path": str(artifact_path), "exists": artifact_path.is_file(), "sha256": _sha256(artifact_path) if artifact_path.is_file() else None},
+            "artifact": {
+                **artifact,
+                "path": str(artifact_path),
+                "preserved_path": preserved_artifact,
+                "exists": artifact_path.is_file(),
+                "sha256": _sha256(artifact_path) if artifact_path.is_file() else None,
+            },
             "platform_pipeline": {"promoted_media_version_id": media_id, "machine_qc": machine, "human_decision": approved["decision"], "selection": committed},
             "isolated": {"project_id": project_id, "shot_id": shot_id, "database_integrity": integrity, "runtime_contacted": True, "network_contacted": False, "production_mutated": False},
             "limitations": ["隔离项目已跑通平台 Job→Artifact→Media→QC→审核→选择，但未进入正式整集交付包/下载审计；整体保持 PARTIAL。"],
@@ -199,10 +277,25 @@ def main() -> int:
     parser.add_argument("--comfy-input-root", type=Path, required=True)
     parser.add_argument("--timeout-seconds", type=int, default=900)
     parser.add_argument("--sigma-points", type=int, default=10)
+    parser.add_argument("--acceleration", choices=("OFF", "TURBO_LORA"), default="OFF")
+    parser.add_argument("--native-audio", choices=("on", "off"), default="on")
+    parser.add_argument("--lora-strength", type=float, default=0.6)
+    parser.add_argument("--artifact-output", type=Path, default=None)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
-        payload = run(args.keyframe, args.server, args.comfy_output_root.resolve(), args.comfy_input_root.resolve(), args.timeout_seconds, args.sigma_points)
+        payload = run(
+            args.keyframe,
+            args.server,
+            args.comfy_output_root.resolve(),
+            args.comfy_input_root.resolve(),
+            args.timeout_seconds,
+            args.sigma_points,
+            args.acceleration,
+            args.native_audio == "on",
+            args.lora_strength,
+            args.artifact_output.resolve() if args.artifact_output else None,
+        )
         exit_code = 0
     except Exception as error:  # noqa: BLE001 - UAT must leave a truthful redacted record on runtime failure.
         payload = {

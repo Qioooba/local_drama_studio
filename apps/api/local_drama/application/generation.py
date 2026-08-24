@@ -17,6 +17,7 @@ from local_drama.domain.policies import VariantInput
 from local_drama.infrastructure.database.sqlite import Database
 
 from .character_identity_packs import CharacterIdentityPackService
+from .effective_configuration import EffectiveConfigurationService
 from .jobs import JobService
 from .media import MediaService
 from .prompt_anchors import character_anchor_line, character_anchor_rows
@@ -33,6 +34,21 @@ def _canonical(value: object) -> str:
 
 def _digest(value: object) -> str:
     return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
+
+
+# Keys that pre-slot manifests attached to input contracts as transport/runtime
+# metadata.  They are never semantic slots, so the legacy direct-slot fallback
+# must skip them instead of failing contract validation on old Profiles.
+_LEGACY_INPUT_CONTRACT_METADATA = frozenset(
+    {
+        "transport",
+        "local_only",
+        "requires_explicit_validation",
+        "required_inputs",
+        "required_nodes",
+        "provider_kind",
+    }
+)
 
 
 def _character_anchor_lines(connection: Any, intent_row: Any) -> list[str]:
@@ -79,6 +95,55 @@ class GenerationService:
             "output_bytes_per_take",
         ),
     }
+
+    def _retarget_camera_plan(self, parameter_set: dict[str, Any], profile_version_id: str) -> bool:
+        """Re-adjudicate a frozen camera intent when a Profile branch changes model.
+
+        The creative camera semantics remain unchanged. Only the capability-derived
+        mode/prompt and the immutable ProfileVersion authority may change.
+        """
+        payload = parameter_set.get("camera_plan")
+        if payload is None:
+            return False
+        camera_plan = CameraPlan.from_payload(payload)
+        if camera_plan.profile_version_id == profile_version_id:
+            return False
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT status,parameter_schema_json FROM execution_profile_versions WHERE id=?",
+                (profile_version_id,),
+            ).fetchone()
+        if row is None:
+            raise DomainRuleError("PROFILE_VERSION_NOT_FOUND", "目标 ProfileVersion 不存在")
+        if str(row["status"]) != "PUBLISHED":
+            raise DomainRuleError("PROFILE_NOT_PUBLISHED", "Profile branch 只能使用已发布 ProfileVersion")
+        try:
+            parameter_schema = json.loads(str(row["parameter_schema_json"] or "{}"))
+        except (TypeError, json.JSONDecodeError) as error:
+            raise DomainRuleError("PROFILE_PARAMETER_SCHEMA_INVALID", "目标 Profile 参数 Schema 无效") from error
+        capabilities = parameter_schema.get("capabilities", {}) if isinstance(parameter_schema, dict) else {}
+        camera_contract = capabilities.get("camera", {}) if isinstance(capabilities, dict) else {}
+        support = str(camera_contract.get("support", "UNSUPPORTED")) if isinstance(camera_contract, dict) else "UNSUPPORTED"
+        if support not in {"NATIVE", "PROMPT_FALLBACK", "UNSUPPORTED"}:
+            raise DomainRuleError("PROFILE_CAMERA_CONTRACT_INVALID", "目标 Profile camera capability support 无效")
+        fallback = support == "PROMPT_FALLBACK" and camera_contract.get("prompt_fallback") is True
+        if support == "PROMPT_FALLBACK" and not fallback:
+            raise DomainRuleError("PROFILE_CAMERA_FALLBACK_INVALID", "目标 Profile 的 Camera prompt fallback 未显式声明")
+        resolved = resolve_camera_plan(
+            native_supported=support == "NATIVE",
+            prompt_fallback_supported=fallback,
+            shot_type=camera_plan.shot_type,
+            movement=camera_plan.movement,
+            prompt_text=camera_plan.prompt_text,
+            direction=camera_plan.direction,
+            intensity=camera_plan.intensity,
+            curve=camera_plan.curve,
+            profile_version_id=profile_version_id,
+        )
+        if resolved.mode == "UNSUPPORTED":
+            raise DomainRuleError("CAMERA_PLAN_UNSUPPORTED", "目标 Profile 不支持父候选的结构化运镜，不能创建模型分支")
+        parameter_set["camera_plan"] = resolved.to_dict()
+        return True
 
     @classmethod
     def _resource_estimate(cls, resource_policy: dict[str, Any]) -> dict[str, Any]:
@@ -196,7 +261,9 @@ class GenerationService:
         The blueprint has used both the current ``{"input_slots": {...}}``
         envelope and the older direct-slot form in fixtures.  Supporting both
         here keeps old local Profiles readable while still validating every
-        slot instead of dropping an unknown shape.
+        slot instead of dropping an unknown shape.  Pre-slot manifests also
+        attached non-slot metadata (e.g. ``required_inputs`` node lists next
+        to ``transport``); those keys are metadata, never slots.
         """
         if not isinstance(input_contract, dict):
             raise DomainRuleError("PROFILE_INPUT_CONTRACT_INVALID", "Profile input contract 必须是对象")
@@ -205,7 +272,7 @@ class GenerationService:
             slots = {
                 str(key): value
                 for key, value in input_contract.items()
-                if str(key) not in {"transport", "local_only", "requires_explicit_validation"}
+                if str(key) not in _LEGACY_INPUT_CONTRACT_METADATA
             }
         if not isinstance(slots, dict):
             raise DomainRuleError("PROFILE_INPUT_CONTRACT_INVALID", "Profile input_slots 契约无效")
@@ -359,7 +426,7 @@ class GenerationService:
             if not profile["workflow_version_id"]:
                 raise DomainRuleError("PROFILE_WORKFLOW_REQUIRED", "生成 Profile 必须冻结一个已发布 WorkflowVersion")
             workflow = connection.execute(
-                "SELECT status, content_hash, content_json, node_bindings_json, revision FROM workflow_versions WHERE id=?",
+                "SELECT status, content_hash, content_json, contract_json, node_bindings_json, revision FROM workflow_versions WHERE id=?",
                 (profile["workflow_version_id"],),
             ).fetchone()
             if workflow is None:
@@ -372,6 +439,35 @@ class GenerationService:
             workflow_content = json.loads(workflow["content_json"] or "{}")
             if not isinstance(workflow_content, dict):
                 raise DomainRuleError("WORKFLOW_BINDING_INVALID", "Workflow content 契约无效")
+            workflow_contract = json.loads(workflow["contract_json"] or "{}")
+            if not isinstance(workflow_contract, dict):
+                raise DomainRuleError("WORKFLOW_CONTRACT_INVALID", "Workflow contract 契约无效")
+            required_semantic_roles: set[str] = set()
+            if isinstance(plan.parameter_set.get("PROMPT"), str) and str(plan.parameter_set["PROMPT"]).strip():
+                required_semantic_roles.add("PROMPT")
+            if plan.seed_policy == "EXPLICIT":
+                required_semantic_roles.add("SEED")
+            missing_semantic_roles = sorted(required_semantic_roles - set(workflow_bindings))
+            if missing_semantic_roles:
+                raise DomainRuleError(
+                    "WORKFLOW_SEMANTIC_BINDING_REQUIRED",
+                    "当前 Workflow 未绑定生成请求中的关键语义输入，禁止用模板默认值执行",
+                    {"missing_roles": missing_semantic_roles, "workflow_version_id": profile["workflow_version_id"]},
+                )
+            requested_tier = str(plan.parameter_set.get("tier") or "").strip().upper()
+            if requested_tier:
+                frozen_tier = str(workflow_contract.get("production_tier") or "").strip().upper()
+                dynamic_tiers = workflow_contract.get("dynamic_production_tiers") is True
+                if not dynamic_tiers and frozen_tier != requested_tier:
+                    raise DomainRuleError(
+                        "WORKFLOW_TIER_CONTRACT_MISMATCH",
+                        "当前 Workflow 未冻结所选生产档位，禁止显示一个档位却执行另一套帧数/采样参数",
+                        {
+                            "requested_tier": requested_tier,
+                            "workflow_tier": frozen_tier or None,
+                            "workflow_version_id": profile["workflow_version_id"],
+                        },
+                    )
             # Keep the exact execution authority in the immutable plan/job
             # snapshot.  A profile id alone is not enough for replay: the
             # local model bundle, runtime and workflow bytes must be
@@ -861,9 +957,11 @@ class GenerationService:
             if plan.variant_type == "PROFILE_BRANCH":
                 if parent is None:
                     raise DomainRuleError("PROFILE_BRANCH_PARENT_REQUIRED", "Profile branch 必须引用父 Variant")
+                expected_parameters = json.loads(parent["parameter_set_json"])
+                self._retarget_camera_plan(expected_parameters, plan.profile_version_id)
                 parent_snapshot = {
                     "prompt_revision_id": parent["prompt_revision_id"],
-                    "parameter_set": json.loads(parent["parameter_set_json"]),
+                    "parameter_set": expected_parameters,
                     "seed_policy": parent["seed_policy"],
                     "explicit_seed": parent["explicit_seed"],
                     "provider_random_nonce": parent["provider_random_nonce"],
@@ -878,7 +976,10 @@ class GenerationService:
                     "bindings": sorted((item.role, item.media_version_id, item.ordinal, item.weight) for item in plan.bindings),
                 }
                 if parent_snapshot != branch_snapshot:
-                    raise DomainRuleError("PROFILE_BRANCH_SCOPE_INVALID", "Profile branch 必须且只能改变 ProfileVersion")
+                    raise DomainRuleError(
+                        "PROFILE_BRANCH_SCOPE_INVALID",
+                        "Profile branch 只能改变 ProfileVersion，并允许同一 CameraPlan 语义按目标 Profile 重新裁决",
+                    )
                 if plan.profile_version_id == parent["capability_profile_version_id"]:
                     raise DomainRuleError("PROFILE_BRANCH_UNCHANGED", "Profile branch 必须使用不同的 ProfileVersion")
             if plan.variant_type == "RESUBMIT_PROVIDER_RANDOM":
@@ -906,6 +1007,46 @@ class GenerationService:
                 (intent["project_id"],),
             ).fetchone()
             identity_pack_snapshot = CharacterIdentityPackService.generation_snapshot_for_intent(connection, intent)
+            intent_project_id = str(intent["project_id"])
+            intent_owner_type = str(intent["owner_type"] or "")
+            intent_owner_id = str(intent["owner_id"] or "")
+            profile_capability = str(profile["capability"])
+            valid_episode_id = None
+            valid_shot_id = None
+            if intent_owner_type == "EPISODE":
+                owner = connection.execute(
+                    "SELECT e.id FROM episodes e JOIN seasons s ON s.id=e.season_id WHERE e.id=? AND s.project_id=?",
+                    (intent_owner_id, intent_project_id),
+                ).fetchone()
+                valid_episode_id = intent_owner_id if owner is not None else None
+            elif intent_owner_type == "SHOT":
+                owner = connection.execute(
+                    """SELECT sh.id FROM shots sh JOIN episodes e ON e.id=sh.episode_id
+                    JOIN seasons s ON s.id=e.season_id WHERE sh.id=? AND s.project_id=?""",
+                    (intent_owner_id, intent_project_id),
+                ).fetchone()
+                valid_shot_id = intent_owner_id if owner is not None else None
+
+        effective_configuration = EffectiveConfigurationService(
+            self.database, self.settings.manifest_path,
+        ).resolve(
+            project_id=intent_project_id,
+            episode_id=valid_episode_id,
+            shot_id=valid_shot_id,
+            capability_code=profile_capability,
+            requested_profile_version_id=plan.profile_version_id,
+            run_overrides=self._runtime_overrides(plan.parameter_set),
+        )
+        expected_fingerprint = plan.expected_effective_configuration_fingerprint
+        if expected_fingerprint and not hmac.compare_digest(expected_fingerprint, str(effective_configuration["fingerprint"])):
+            raise DomainRuleError(
+                "CONFIGURATION_CHANGED",
+                "有效配置在预检后发生变化，请重新预检",
+                {
+                    "expected_effective_configuration_fingerprint": expected_fingerprint,
+                    "current_effective_configuration_fingerprint": effective_configuration["fingerprint"],
+                },
+            )
         dependencies = {
             "intent_id": intent_id,
             "project_id": str(intent["project_id"]),
@@ -944,8 +1085,41 @@ class GenerationService:
                 for (role, ordinal), approval_id in sorted(approval_dependencies.items())
             ],
             "identity_pack_snapshot": identity_pack_snapshot,
+            "effective_configuration": {
+                "schema_version": "localdrama.effective-configuration-snapshot.v1",
+                "fingerprint": effective_configuration["fingerprint"],
+                "profile_version_id": effective_configuration.get("profile_version_id"),
+                "effective_settings": effective_configuration.get("effective_settings", {}),
+                "setting_sources": effective_configuration.get("setting_sources", {}),
+                "blocking_errors": effective_configuration.get("blocking_errors", []),
+                "warnings": effective_configuration.get("warnings", []),
+                "runtime_status": effective_configuration.get("runtime_status", "UNKNOWN"),
+                "override_schema_version": (
+                    (effective_configuration.get("profile") or {}).get("override_schema", {}).get("schema_version")
+                    if isinstance(effective_configuration.get("profile"), dict)
+                    and isinstance((effective_configuration.get("profile") or {}).get("override_schema"), dict)
+                    else None
+                ),
+            },
         }
         return ancestors, allowed_roles, dependencies
+
+    @staticmethod
+    def _runtime_overrides(parameter_set: dict[str, Any]) -> dict[str, Any]:
+        """Extract only declared runtime overrides from a Variant parameter set."""
+        overrides: dict[str, Any] = {}
+        declared = parameter_set.get("runtime_overrides")
+        if isinstance(declared, dict):
+            overrides.update(declared)
+        for key in ("production_tier", "sigma_points", "acceleration", "lora_strength", "native_audio", "take_count"):
+            if key in parameter_set:
+                overrides[key] = parameter_set[key]
+        # Generation UI historically called the H3 tier field ``tier``. Keep
+        # that wire spelling compatible while the effective-config contract is
+        # canonicalized to production_tier.
+        if "production_tier" not in overrides and "tier" in parameter_set:
+            overrides["production_tier"] = parameter_set["tier"]
+        return overrides
 
     def _disk_gate(self, dependencies: dict[str, Any]) -> dict[str, Any]:
         required = dependencies["resource_estimate"]["per_take"].get("disk_bytes")
@@ -999,6 +1173,7 @@ class GenerationService:
             "seed_policy": plan.seed_policy,
             "explicit_seed": plan.explicit_seed,
             "provider_random_nonce": plan.provider_random_nonce,
+            "expected_effective_configuration_fingerprint": plan.expected_effective_configuration_fingerprint,
             "bindings": [GenerationService._binding_dict(binding) for binding in plan.bindings],
         }
 
@@ -1011,6 +1186,7 @@ class GenerationService:
             "seed_policy": plan.seed_policy,
             "explicit_seed": plan.explicit_seed,
             "provider_random_nonce": plan.provider_random_nonce,
+            "expected_effective_configuration_fingerprint": plan.expected_effective_configuration_fingerprint,
             "bindings": [GenerationService._binding_dict(binding) for binding in plan.bindings],
         }
 
@@ -1030,15 +1206,19 @@ class GenerationService:
             evidence_recipe["style_context_hash"] = style_context_hash
             plan_evidence["style_context_hash"] = style_context_hash
         disk_gate = self._disk_gate(dependencies)
+        effective_snapshot = dependencies.get("effective_configuration", {})
+        configuration_blockers = list(effective_snapshot.get("blocking_errors", [])) if isinstance(effective_snapshot, dict) else []
+        blockers = ([disk_gate] if disk_gate["blocking"] else []) + configuration_blockers
         result = {
             "intent_id": intent_id,
-            "status": "BLOCKED" if disk_gate["blocking"] else "READY",
+            "status": "BLOCKED" if blockers else "READY",
             "plan_hash": _digest(plan_evidence),
             "recipe_hash": _digest(evidence_recipe),
             "dependencies": dependencies,
             "resource_estimate": dependencies["resource_estimate"],
             "disk_gate": disk_gate,
-            "blockers": [disk_gate] if disk_gate["blocking"] else [],
+            "blockers": blockers,
+            "effective_configuration": effective_snapshot,
             "would_persist_variant": False,
             "would_create_job": False,
             "reproducibility": {
@@ -1139,6 +1319,9 @@ class GenerationService:
         if operation != "PROFILE_BRANCH" and profile_version_id is not None:
             raise DomainRuleError("VARIANT_DERIVATION_SCOPE_INVALID", "只有 Profile branch 可以覆盖 ProfileVersion")
         parameter_set = json.loads(str(parent["parameter_set_json"]))
+        camera_retargeted = False
+        if operation == "PROFILE_BRANCH":
+            camera_retargeted = self._retarget_camera_plan(parameter_set, target_profile_version_id)
         if operation in {"RESAMPLE_NEW_SEED", "EXACT_REPLAY"} and "SEED" in parameter_set:
             parameter_set["SEED"] = target_seed
         plan = VariantPlan(
@@ -1199,7 +1382,7 @@ class GenerationService:
             "EXACT_REPLAY": [],
             "PROMPT_BRANCH": ["prompt_revision_id"],
             "SOURCE_IMAGE_BRANCH": ["bindings.FIRST_FRAME[0]"],
-            "PROFILE_BRANCH": ["profile_version_id"],
+            "PROFILE_BRANCH": ["profile_version_id"] + (["parameter_set.camera_plan.resolution"] if camera_retargeted else []),
         }[operation]
         before: dict[str, Any] = {"explicit_seed": parent_seed}
         after: dict[str, Any] = {"explicit_seed": target_seed}
@@ -1248,6 +1431,8 @@ class GenerationService:
             preserved.remove("bindings")
         elif operation == "PROFILE_BRANCH":
             preserved.remove("profile_version_id")
+            if camera_retargeted:
+                preserved.remove("parameter_set")
         return {
             **preflight,
             "operation": operation,
@@ -1337,6 +1522,8 @@ class GenerationService:
         profile_changed = target_profile != parent_profile
         parent_seed = int(parent["explicit_seed"]) if parent.get("explicit_seed") is not None else None
         parameter_set = json.loads(str(parent["parameter_set_json"]))
+        if profile_changed:
+            self._retarget_camera_plan(parameter_set, target_profile)
         seed_policy = str(parent["seed_policy"])
         provider_random_nonce = parent.get("provider_random_nonce")
 
@@ -1618,6 +1805,7 @@ class GenerationService:
                     "model_bundle_hash": dependencies["model_bundle_hash"],
                     "manifest_sha256": dependencies["profile_manifest_sha256"],
                     "snapshot_hash": dependencies["profile_execution_snapshot_hash"],
+                    "effective_configuration": dependencies["effective_configuration"],
                 },
                 "semantic_inputs": semantic_inputs,
                 "media_bindings": media_bindings_snapshot,

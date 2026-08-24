@@ -45,3 +45,32 @@
     padding-inline: 10px;
   }
 }
+.models-quickstart { display: grid; gap: 14px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.models-quickstart-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.models-quickstart-heading h3 { margin: 2px 0 0; }
+.models-quickstart ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+.models-quickstart li { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 8px 10px; min-width: 0; padding: 13px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-muted); }
+.models-quickstart li > span { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 50%; color: #fff; background: var(--selected); font-weight: 800; }
+.models-quickstart li > div { display: grid; align-content: start; gap: 4px; min-width: 0; }
+.models-quickstart li small { color: var(--text-muted); line-height: 1.5; }
+.models-expert-tools { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.models-expert-tools > summary { display: flex; gap: 6px 16px; align-items: center; justify-content: space-between; min-height: 44px; padding: 10px 14px; color: var(--text-muted); cursor: pointer; }
+.models-expert-tools > summary span { color: var(--text); font-weight: 750; }
+.models-expert-tools > summary small { max-width: 62ch; text-align: right; }
+.models-expert-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 0 14px 14px; }
+.models-expert-options button { display: grid; gap: 4px; min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-muted); color: var(--text); text-align: left; cursor: pointer; }
+.models-expert-options button span { color: var(--text-muted); font-size: 11px; line-height: 1.45; }
+.models-expert-options button.selected { border-color: var(--selected); box-shadow: inset 3px 0 var(--selected); background: color-mix(in srgb, var(--selected) 7%, var(--surface)); }
+.models-back-to-creator { display: flex; justify-content: flex-start; }
+@media (max-width: 1024px) { .models-quickstart ol { grid-template-columns: 1fr; } }
+@media (max-width: 640px) {
+  .models-quickstart-heading,
+  .models-expert-tools > summary { align-items: flex-start; flex-direction: column; }
+  .models-expert-tools > summary small { text-align: left; }
+  .models-expert-options { grid-template-columns: 1fr; }
+}
+.models-project-picker { display: grid; grid-template-columns: minmax(120px, 180px) minmax(240px, 420px); align-items: center; gap: 6px 12px; margin-top: 14px; }
+.models-project-picker small { grid-column: 2; color: var(--text-muted); }
+.llm-preset-facts, .workflow-auto-facts { display: grid; gap: 5px; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-muted); }
+.llm-preset-facts span, .workflow-auto-facts span, .workflow-auto-facts small { color: var(--text-muted); }
+@media (max-width: 640px) { .models-project-picker { grid-template-columns: 1fr; } .models-project-picker small { grid-column: auto; } }

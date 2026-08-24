@@ -58,4 +58,28 @@ describe("FreshnessPanel", () => {
     expect(events).not.toContain("JOB_HEARTBEAT");
     expect(keys).toEqual([queryKeys.freshness.scope("EPISODE", "e1")]);
   });
+
+  it("groups historical revisions into one remediation while retaining raw evidence counts", async () => {
+    const duplicate = { ...response.items[0], id: "v2" };
+    const distinctRevision = {
+      ...response.items[0],
+      id: "v3",
+      source: { ...response.items[0].source, revision: 3 },
+      reasons: [{ ...response.items[0].reasons[0], source_revision: 3 }],
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      ...response,
+      summary: { returned: 3, stale: 3, current: 0, truncated: false },
+      items: [response.items[0], duplicate, distinctRevision],
+    }), { status: 200 }));
+    setup();
+
+    expect(await screen.findByLabelText("包含 3 条原始事实")).toBeTruthy();
+    expect(screen.getByText("3 条事实")).toBeTruthy();
+    expect(screen.getByText(/3 条历史事实聚合为一次处置/)).toBeTruthy();
+    expect(screen.getByText(/2 组生成时来源/)).toBeTruthy();
+    expect(screen.getByText(/\/ 3 条事实/)).toBeTruthy();
+    expect(screen.getAllByText("资产参考已变化")).toHaveLength(1);
+    expect(screen.getAllByRole("link", { name: "仅重生成当前镜" })).toHaveLength(1);
+  });
 });

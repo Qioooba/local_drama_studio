@@ -63,8 +63,21 @@ def _driving_profile(workspace, database) -> str:
                 workflow_version_id,
                 workflow_id,
                 hashlib.sha256(workflow_version_id.encode()).hexdigest(),
-                json.dumps({"1": {"class_type": "LoadVideo", "inputs": {"video": ""}}, "2": {"class_type": "LoadImage", "inputs": {"image": ""}}}),
-                json.dumps({"DRIVING_VIDEO": {"node_id": "1", "input": "video"}, "CHARACTER_REFERENCE": {"node_id": "2", "input": "image"}}),
+                json.dumps(
+                    {
+                        "1": {"class_type": "LoadVideo", "inputs": {"video": ""}},
+                        "2": {"class_type": "LoadImage", "inputs": {"image": ""}},
+                        "3": {"class_type": "GenerationInputs", "inputs": {"prompt": "", "seed": 0}},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "DRIVING_VIDEO": {"node_id": "1", "input": "video"},
+                        "CHARACTER_REFERENCE": {"node_id": "2", "input": "image"},
+                        "PROMPT": {"node_id": "3", "input": "prompt"},
+                        "SEED": {"node_id": "3", "input": "seed"},
+                    }
+                ),
                 now,
                 now,
                 now,

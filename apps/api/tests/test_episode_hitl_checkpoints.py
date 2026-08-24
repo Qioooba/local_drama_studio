@@ -186,6 +186,9 @@ def test_checkpoint_policy_api_defaults_and_rejects_unknown_values(workspace, da
         )
         assert defaulted.status_code == 200
         assert defaulted.json()["preflight"]["checkpoint_policy"] == "ON_EXCEPTION"
+        assert "ASSET_COMPLETION_REQUIRED" in {
+            item["code"] for item in defaulted.json()["preflight"]["checks"]
+        }
         invalid_query = client.get(
             f"/api/v1/episodes/{episode['id']}/production-runs/preflight",
             params={"checkpoint_policy": "EVERYTHING"},

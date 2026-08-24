@@ -47,6 +47,7 @@ def _digest(value: object) -> str:
 
 
 class AssetMultiViewService:
+    CAPABILITY_BLOCKER_CODE = "ASSET_MULTI_VIEW_CAPABILITY_UNAVAILABLE"
     CAPABILITY = CAPABILITY
     SPECS = VIEW_SPECS
     PURPOSE = "ASSET_MULTI_VIEW"
@@ -71,13 +72,17 @@ class AssetMultiViewService:
         profile_version_id: str | None = None,
         consistency_strength: str = "HIGH",
         background: str = "CLEAN",
+        requested_slots: list[str] | None = None,
     ) -> dict[str, Any]:
         request = self._normalized_request(
             asset_state_id=asset_state_id,
             profile_version_id=profile_version_id,
             consistency_strength=consistency_strength,
             background=background,
+            requested_slots=requested_slots,
         )
+        requested = set(request["requested_slots"])
+        selected_specs = [spec for spec in self.SPECS if spec[0] in requested]
         with self.database.connect() as connection:
             asset = connection.execute("SELECT * FROM story_assets WHERE id=?", (asset_id,)).fetchone()
             if asset is None:
@@ -118,7 +123,7 @@ class AssetMultiViewService:
             if not selected_profile_id or profile is None or capability_reason is not None or input_role is None:
                 blockers.append(
                     self._blocker(
-                        "ASSET_MULTI_VIEW_CAPABILITY_UNAVAILABLE",
+                        self.CAPABILITY_BLOCKER_CODE,
                         f"当前没有可执行的 {self.CAPABILITY} Published Profile",
                         f"在模型与能力中发布支持 HERO 图像语义输入的 {self.CAPABILITY} Profile",
                         reason=capability_reason or "NO_COMPATIBLE_PROFILE",
@@ -140,7 +145,7 @@ class AssetMultiViewService:
                 "profile_revision": int(profile["revision"]) if profile is not None else None,
                 "input_role": input_role,
                 "settings": request,
-                "views": [item[0] for item in self.SPECS],
+                "views": [item[0] for item in selected_specs],
             }
             return {
                 "asset_id": asset_id,
@@ -155,14 +160,15 @@ class AssetMultiViewService:
                     "profile_version_id": str(selected_profile_id) if selected_profile_id else None,
                     "input_role": input_role,
                 },
+                "requested_slots": request["requested_slots"],
                 "views": [
                     {"reference_kind": self._output_reference_kind(kind), "yaw_deg": yaw, "semantic_output": kind}
-                    for kind, yaw, _prompt in self.SPECS
+                    for kind, yaw, _prompt in selected_specs
                 ],
                 "plan_hash": _digest(authority),
                 "would_persist_intent": False,
-                "would_create_variants": 0 if blockers else len(self.SPECS),
-                "would_create_jobs": 0 if blockers else len(self.SPECS),
+                "would_create_variants": 0 if blockers else len(selected_specs),
+                "would_create_jobs": 0 if blockers else len(selected_specs),
             }
 
     def submit(
@@ -175,6 +181,7 @@ class AssetMultiViewService:
         profile_version_id: str | None = None,
         consistency_strength: str = "HIGH",
         background: str = "CLEAN",
+        requested_slots: list[str] | None = None,
     ) -> dict[str, Any]:
         if not idempotency_key.strip() or len(idempotency_key) > 200:
             raise DomainRuleError("IDEMPOTENCY_KEY_REQUIRED", f"{self.CAPABILITY} 提交必须提供 1—200 字符 Idempotency-Key")
@@ -184,6 +191,7 @@ class AssetMultiViewService:
             profile_version_id=profile_version_id,
             consistency_strength=consistency_strength,
             background=background,
+            requested_slots=requested_slots,
         )
         if not preflight["ready"]:
             first = preflight["blockers"][0]
@@ -199,6 +207,7 @@ class AssetMultiViewService:
             "profile_version_id": profile_version_id,
             "consistency_strength": consistency_strength,
             "background": background,
+            "requested_slots": preflight["requested_slots"],
         }
         replay = self._idempotent_replay(str(preflight["project_id"]), idempotency_key, request_snapshot)
         if replay is not None:
@@ -214,6 +223,12 @@ class AssetMultiViewService:
             self.PURPOSE,
             f"Generate traceable {self.CAPABILITY} candidates from the frozen HERO reference",
         )
+        selected_kinds = {str(item["semantic_output"]) for item in preflight["views"]}
+        selected_specs = [
+            (index, kind, yaw, prompt)
+            for index, (kind, yaw, prompt) in enumerate(self.SPECS)
+            if kind in selected_kinds
+        ]
         plans = [
             self._variant_plan(
                 kind=kind,
@@ -225,9 +240,9 @@ class AssetMultiViewService:
                 asset_state_id=asset_state_id,
                 consistency_strength=consistency_strength,
                 background=background,
-                seed_index=index,
+                seed_index=seed_index,
             )
-            for index, (kind, yaw, prompt) in enumerate(self.SPECS)
+            for seed_index, kind, yaw, prompt in selected_specs
         ]
         # Validate every independent slot before the first queue write. Runtime failures are
         # intentionally independent and remain visible as partial completion.
@@ -239,7 +254,7 @@ class AssetMultiViewService:
                 str(plan_result["plan_hash"]),
                 f"{idempotency_key}:{kind.lower()}",
             )
-            for (kind, _yaw, _prompt), plan, plan_result in zip(self.SPECS, plans, planned, strict=True)
+            for (_seed_index, kind, _yaw, _prompt), plan, plan_result in zip(selected_specs, plans, planned, strict=True)
         ]
         with self.database.transaction() as connection:
             connection.execute("UPDATE generation_intents SET status='QUEUED', updated_at=CURRENT_TIMESTAMP WHERE id=?", (intent["id"],))
@@ -247,28 +262,39 @@ class AssetMultiViewService:
                 """INSERT INTO audit_events
                 (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
                 VALUES ('local-user','producer',?,'generation_intent',?,?,?)""",
-                (self.AUDIT_ACTION, intent["id"], f"提交 {self.CAPABILITY} 独立候选任务", _canonical({"asset_id": asset_id, "hero_media_version_id": hero["media_version_id"], "plan_hash": plan_hash})),
+                (self.AUDIT_ACTION, intent["id"], f"提交 {self.CAPABILITY} 独立候选任务", _canonical({"asset_id": asset_id, "hero_media_version_id": hero["media_version_id"], "plan_hash": plan_hash, "requested_slots": sorted(selected_kinds)})),
             )
         result = {
             "intent": self.generation.get_intent(str(intent["id"])),
             "items": [
                 {"reference_kind": kind, "variant": item["variant"], "job": item["job"]}
-                for (kind, _yaw, _prompt), item in zip(self.SPECS, submitted, strict=True)
+                for (_seed_index, kind, _yaw, _prompt), item in zip(selected_specs, submitted, strict=True)
             ],
             "idempotent_replay": False,
         }
         self._store_idempotency(str(preflight["project_id"]), idempotency_key, request_snapshot, result)
         return result
 
-    @staticmethod
-    def _normalized_request(*, asset_state_id: str | None, profile_version_id: str | None, consistency_strength: str, background: str) -> dict[str, Any]:
+    def _normalized_request(self, *, asset_state_id: str | None, profile_version_id: str | None, consistency_strength: str, background: str, requested_slots: list[str] | None) -> dict[str, Any]:
         strength = consistency_strength.strip().upper()
         backdrop = background.strip().upper()
         if strength not in {"LOW", "MEDIUM", "HIGH"}:
             raise DomainRuleError("ASSET_MULTI_VIEW_CONSISTENCY_INVALID", "一致性强度必须是 LOW、MEDIUM 或 HIGH")
         if backdrop not in {"CLEAN", "TRANSPARENT", "ORIGINAL"}:
             raise DomainRuleError("ASSET_MULTI_VIEW_BACKGROUND_INVALID", "背景必须是 CLEAN、TRANSPARENT 或 ORIGINAL")
-        return {"asset_state_id": asset_state_id, "profile_version_id": profile_version_id, "consistency_strength": strength, "background": backdrop}
+        available = {kind for kind, _yaw, _prompt in self.SPECS}
+        raw_slots = requested_slots if requested_slots is not None else [kind for kind, _yaw, _prompt in self.SPECS]
+        normalized_slots = list(dict.fromkeys(str(item).strip().upper() for item in raw_slots))
+        invalid = [slot for slot in normalized_slots if slot not in available]
+        if not normalized_slots or invalid:
+            raise DomainRuleError(
+                "ASSET_GENERATION_SLOT_INVALID",
+                "请求的生成槽不属于当前能力",
+                {"requested_slots": normalized_slots, "available_slots": sorted(available), "invalid_slots": invalid},
+            )
+        requested = set(normalized_slots)
+        slots = [kind for kind, _yaw, _prompt in self.SPECS if kind in requested]
+        return {"asset_state_id": asset_state_id, "profile_version_id": profile_version_id, "consistency_strength": strength, "background": backdrop, "requested_slots": slots}
 
     @staticmethod
     def _hero(connection: Any, asset_id: str, asset_state_id: str | None) -> Any:
@@ -373,6 +399,7 @@ class AssetMultiViewService:
 
 
 class AssetExpressionService(AssetMultiViewService):
+    CAPABILITY_BLOCKER_CODE = "ASSET_EXPRESSION_CAPABILITY_UNAVAILABLE"
     CAPABILITY = "IMAGE_EXPRESSION"
     PURPOSE = "ASSET_EXPRESSION_GRID"
     OUTPUT_REFERENCE_KIND = "EXPRESSION_GRID"
@@ -393,6 +420,7 @@ class AssetExpressionService(AssetMultiViewService):
 
 
 class AssetDetailService(AssetMultiViewService):
+    CAPABILITY_BLOCKER_CODE = "ASSET_DETAIL_CAPABILITY_UNAVAILABLE"
     CAPABILITY = "IMAGE_EDIT"
     PURPOSE = "ASSET_CLOSEUP_DETAIL"
     PROMPT_PREFIX = "character detail study, preserve exact identity, materials, colors and outfit"

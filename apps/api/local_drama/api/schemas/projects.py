@@ -60,6 +60,22 @@ class ProjectUpdateRequest(BaseModel):
     expected_revision: int = Field(ge=1)
 
 
+class ProjectEpisodeAppendRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    season_id: str | None = Field(default=None, min_length=1, max_length=64)
+    create_new_season: bool = False
+    season_title: str | None = Field(default=None, max_length=200)
+    episode_title: str = Field(min_length=1, max_length=200)
+    target_duration_ms: int = Field(gt=0, le=86_400_000)
+
+    @model_validator(mode="after")
+    def validate_season_target(self) -> "ProjectEpisodeAppendRequest":
+        if self.create_new_season == bool(self.season_id):
+            raise ValueError("必须选择已有季度，或明确新建季度（二选一）")
+        return self
+
+
 class ProjectTemplateCopyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

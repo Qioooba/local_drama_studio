@@ -58,6 +58,11 @@ const draftItem1: ScriptBreakdownDraft = {
   source_document_version_id: "ver-1",
   import_session_id: "sess-1",
   status: "DRAFT_READY",
+  revision: 1,
+  model_draft_sha256: "a".repeat(64),
+  effective_draft_revision_id: null,
+  effective_draft_revision_no: 0,
+  human_edited: false,
   source_document_code: "DOC_001",
   source_document_title: "第一幕草稿",
   draft: {
@@ -86,6 +91,11 @@ const draftItem2: ScriptBreakdownDraft = {
   source_document_version_id: "ver-2",
   import_session_id: "sess-2",
   status: "DRAFT_READY",
+  revision: 1,
+  model_draft_sha256: "b".repeat(64),
+  effective_draft_revision_id: null,
+  effective_draft_revision_no: 0,
+  human_edited: false,
   source_document_code: "DOC_002",
   source_document_title: "第二幕草稿",
   draft: {
@@ -178,7 +188,7 @@ describe("Episode Plan Data Contract & Shared QueryClient Integration", () => {
     );
 
     expect(await screen.findByText("只重排选定 Beat")).toBeTruthy();
-    expect(screen.getByText(/第一幕草稿 · DRAFT_READY/)).toBeTruthy();
+    expect(screen.getByText(/第一幕草稿 · 草稿待审核/)).toBeTruthy();
   });
 
   it("mounts SelectedBeatReplanPanel first then AIDraftReviewPanel without cache collision", async () => {
@@ -199,7 +209,7 @@ describe("Episode Plan Data Contract & Shared QueryClient Integration", () => {
     );
 
     expect(await screen.findByText("只重排选定 Beat")).toBeTruthy();
-    expect(await screen.findByText(/第一幕草稿 · DRAFT_READY/)).toBeTruthy();
+    expect(await screen.findByText(/第一幕草稿 · 草稿待审核/)).toBeTruthy();
 
     rerender(
       <QueryClientProvider client={client}>
@@ -238,9 +248,9 @@ describe("Episode Plan Data Contract & Shared QueryClient Integration", () => {
     expect(await screen.findByText("2 份")).toBeTruthy();
     expect(screen.getByText("第一幕草稿")).toBeTruthy();
     expect(screen.getByText("第二幕草稿")).toBeTruthy();
-    expect(screen.getByText(/相遇节拍 · r1/)).toBeTruthy();
-    expect(screen.getByText(/第一幕草稿 · DRAFT_READY/)).toBeTruthy();
-    expect(screen.getByText(/第二幕草稿 · DRAFT_READY/)).toBeTruthy();
+    expect(screen.getByText(/相遇节拍 · 第 1 次修订/)).toBeTruthy();
+    expect(screen.getByText(/第一幕草稿 · 草稿待审核/)).toBeTruthy();
+    expect(screen.getByText(/第二幕草稿 · 草稿待审核/)).toBeTruthy();
   });
 
   it("handles empty items safely in both panels", async () => {
@@ -299,6 +309,50 @@ describe("Episode Plan Data Contract & Shared QueryClient Integration", () => {
 
     expect(await screen.findByText(/DRAFT_READY · NOT_APPLIED/)).toBeTruthy();
     expect(screen.getByText("第一幕草稿")).toBeTruthy();
+  });
+
+  it("refreshes storyboard, shot editing, and prompt-tool shot caches after applying a Beat replan", async () => {
+    vi.mocked(listScriptBreakdownDrafts).mockResolvedValue({
+      items: [draftItem1], automatic_apply: false, requires_human_action: true,
+    });
+    vi.mocked(planBeatReplan).mockResolvedValue({
+      episode_id: "ep-1", group_id: "group-1", group_code: "BEAT_01", group_title: "相遇节拍",
+      group_revision: 1, draft_id: "draft-1", proposal_scene_no: 1, plan_hash: "p".repeat(64),
+      valid: true, issues: [], diff: [],
+      summary: { KEEP: 1, ADD: 0, MODIFY: 0, DELETE: 0, PROTECTED: 0 },
+      scope: { selected_group_only: true, outside_group_shots_touched: 0 },
+    });
+    vi.mocked(applyBeatReplan).mockResolvedValue({
+      group_revision: 2, created_shot_ids: [], modified_shot_ids: [], archived_shot_ids: [],
+      protected_shot_ids: [], historical_variants_deleted: 0,
+    });
+    const client = createTestQueryClient();
+    const storyboardKey = ["storyboard", "ep-1"];
+    const editKey = ["shot-edit-context", "ep-1"];
+    const productionKey = ["episode", "ep-1", "production", "prompt-tools"];
+    client.setQueryData(storyboardKey, { stale: true });
+    client.setQueryData(editKey, { stale: true });
+    client.setQueryData(productionKey, { stale: true });
+
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter><SelectedBeatReplanPanel projectId="project-1" episodeId="ep-1" /></MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByText("只重排选定 Beat");
+    await screen.findByRole("option", { name: /第一幕草稿 · 草稿待审核/ });
+    fireEvent.change(screen.getByLabelText("选定剧情段落"), { target: { value: "group-1" } });
+    fireEvent.change(screen.getByLabelText("AI 拆解草稿"), { target: { value: "draft-1" } });
+    expect(await screen.findByRole("option", { name: /1 · 开场对峙/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "生成差异预览" }));
+    expect(await screen.findByText("范围外触碰 0")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "确认应用以上差异" }));
+    await waitFor(() => expect(applyBeatReplan).toHaveBeenCalled());
+    await waitFor(() => {
+      expect(client.getQueryState(storyboardKey)?.isInvalidated).toBe(true);
+      expect(client.getQueryState(editKey)?.isInvalidated).toBe(true);
+      expect(client.getQueryState(productionKey)?.isInvalidated).toBe(true);
+    });
   });
 });
 

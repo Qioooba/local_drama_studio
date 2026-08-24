@@ -8,9 +8,11 @@ from fastapi.testclient import TestClient
 
 from local_drama.application.configuration import ConfigurationService
 from local_drama.application.documents import DocumentImportService
+from local_drama.application.g8_readiness import G8ReadinessService
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
 from local_drama.application.timeline import TimelineService
+from local_drama.application.worker import LocalMediaWorker
 from local_drama.main import create_app
 
 
@@ -235,21 +237,35 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
         )
         assert stale_plan.status_code == 422
         assert stale_plan.json()["error"]["code"] == "ENHANCEMENT_PLAN_STALE"
-        enhancement = client.post(
-            "/api/v1/enhancement-runs",
+        enhancement_submission = client.post(
+            "/api/v1/enhancement-runs:submit",
             json={"input_media_version_id": video_id, "recipe_id": recipe.json()["recipe"]["id"], "parameters": {"purpose": "local-fixture"}, "plan_hash": enhancement_plan.json()["plan"]["plan_hash"]},
         )
-        assert enhancement.status_code == 201, enhancement.text
-        assert enhancement.json()["enhancement"]["status"] == "SUCCEEDED"
-        assert enhancement.json()["enhancement"]["qc"]["passed"] is True
-        assert set(enhancement.json()["enhancement"]["qc"]["before"]) == {"duration_ms", "video", "audio"}
-        assert "filename" not in json.dumps(enhancement.json()["enhancement"]["qc"])
-        assert enhancement.json()["enhancement"]["bypass_comparison"]["input_preserved"] is True
-        trace = enhancement.json()["enhancement"]["execution_snapshot"]["step_trace"]
+        assert enhancement_submission.status_code == 202, enhancement_submission.text
+        enhancement_job_id = enhancement_submission.json()["job"]["id"]
+        assert enhancement_submission.json()["job"]["type"] == "VIDEO_ENHANCEMENT"
+        enhancement_replay = client.post(
+            "/api/v1/enhancement-runs:submit",
+            json={"input_media_version_id": video_id, "recipe_id": recipe.json()["recipe"]["id"], "parameters": {"purpose": "local-fixture"}, "plan_hash": enhancement_plan.json()["plan"]["plan_hash"]},
+        )
+        assert enhancement_replay.json()["job"]["id"] == enhancement_job_id
+        assert enhancement_replay.json()["idempotent_replay"] is True
+        enhancement_work = LocalMediaWorker(database, workspace).run_once("g8-enhancement-worker", ["CPU"])
+        assert enhancement_work is not None and enhancement_work["result"]["job_state"] == "SUCCEEDED"
+        enhancement_operation = client.get(f"/api/v1/background-operations/{enhancement_job_id}")
+        assert enhancement_operation.status_code == 200, enhancement_operation.text
+        assert enhancement_operation.json()["result_type"] == "ENHANCEMENT"
+        enhancement = enhancement_operation.json()["result"]
+        assert enhancement["status"] == "SUCCEEDED"
+        assert enhancement["qc"]["passed"] is True
+        assert set(enhancement["qc"]["before"]) == {"duration_ms", "video", "audio"}
+        assert "filename" not in json.dumps(enhancement["qc"])
+        assert enhancement["bypass_comparison"]["input_preserved"] is True
+        trace = enhancement["execution_snapshot"]["step_trace"]
         assert [step["kind"] for step in trace] == ["SCALE", "TECHNICAL_QC", "ENCODE"]
-        assert trace[0]["input_sha256"] == enhancement.json()["enhancement"]["input_sha256"]
+        assert trace[0]["input_sha256"] == enhancement["input_sha256"]
         assert trace[0]["output_sha256"] == trace[1]["input_sha256"] == trace[1]["output_sha256"] == trace[2]["input_sha256"]
-        assert trace[2]["output_sha256"] == enhancement.json()["enhancement"]["output_sha256"]
+        assert trace[2]["output_sha256"] == enhancement["output_sha256"]
 
         derived = client.post(
             "/api/v1/post-process-recipes",
@@ -294,9 +310,19 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
         assert render_review.status_code == 201, render_review.text
         assert render_review.json()["review"]["subject_type"] == "EPISODE_RENDER_VERSION"
         target = ConfigurationService(database).create_delivery_target(project_id, "g8-local", "G8 local", "LOCAL_FILESYSTEM", {"path_rel": "06_delivery/g8"})
-        delivery_response = client.post("/api/v1/delivery-packages", json={"episode_render_version_id": render["id"], "target_version_id": target["version_id"]})
-        assert delivery_response.status_code == 201, delivery_response.text
-        delivery = delivery_response.json()["delivery"]
+        delivery_submission = client.post("/api/v1/delivery-packages:submit", json={"episode_render_version_id": render["id"], "target_version_id": target["version_id"]})
+        assert delivery_submission.status_code == 202, delivery_submission.text
+        delivery_job_id = delivery_submission.json()["job"]["id"]
+        assert delivery_submission.json()["job"]["type"] == "DELIVERY_BUILD"
+        delivery_replay = client.post("/api/v1/delivery-packages:submit", json={"episode_render_version_id": render["id"], "target_version_id": target["version_id"]})
+        assert delivery_replay.json()["job"]["id"] == delivery_job_id
+        assert delivery_replay.json()["idempotent_replay"] is True
+        delivery_work = LocalMediaWorker(database, workspace).run_once("g8-delivery-worker", ["CPU"])
+        assert delivery_work is not None and delivery_work["result"]["job_state"] == "SUCCEEDED"
+        delivery_operation = client.get(f"/api/v1/background-operations/{delivery_job_id}")
+        assert delivery_operation.status_code == 200, delivery_operation.text
+        assert delivery_operation.json()["result_type"] == "DELIVERY"
+        delivery = delivery_operation.json()["result"]
         assert delivery["status"] == "VERIFIED"
         assert client.get(f"/api/v1/delivery-packages/{delivery['id']}:verify").json()["delivery"]["status"] == "VERIFIED"
         observed = client.get(f"/api/v1/episodes/{episode['id']}/timeline-status")
@@ -316,11 +342,26 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
         assert status["runtime_contacted"] is False and status["network_contacted"] is False and status["mutated"] is False
 
         delivery_file = workspace.projects_root / str(project["root_rel"]) / str(delivery["rel_path"]) / "EPISODE_001.mp4"
+        automatic_readiness = G8ReadinessService(database).inspect(project_id, str(episode["id"]))
+        automatic_tamper_check = next(item for item in automatic_readiness["checks"] if item["code"] == "TAMPER_DETECTION")
+        assert automatic_tamper_check["passed"] is True
+        with database.connect() as connection:
+            self_test = connection.execute(
+                "SELECT note FROM delivery_events WHERE delivery_package_id=? AND action='VERIFY' AND json_extract(note,'$.self_test')='ISOLATED_TEMP_COPY' ORDER BY created_at DESC LIMIT 1",
+                (delivery["id"],),
+            ).fetchone()
+        assert self_test is not None
+        assert json.loads(str(self_test["note"]))["official_files_mutated"] is False
+
         with delivery_file.open("ab") as changed:
             changed.write(b"tamper")
         corrupted = client.get(f"/api/v1/delivery-packages/{delivery['id']}:verify")
         assert corrupted.status_code == 200
         assert corrupted.json()["delivery"]["status"] == "CORRUPT"
+        tamper_readiness = G8ReadinessService(database).inspect(project_id, str(episode["id"]))
+        tamper_check = next(item for item in tamper_readiness["checks"] if item["code"] == "TAMPER_DETECTION")
+        assert tamper_check["passed"] is True
+        assert tamper_readiness["evidence"]["tamper_event_id"]
         corrupt_review = client.post(
             f"/api/v1/delivery-packages/{delivery['id']}:review",
             json={"reviewer_type": "HUMAN", "decision": "APPROVED", "note": "不应批准已篡改文件"},
@@ -481,6 +522,7 @@ def test_brand_watermark_and_compliance_versions_bind_delivery_without_auto_revi
         assert item["controls"]["brand_kit"]["version_no"] == 1
         assert item["controls"]["watermark_profile"]["version_no"] == 1
         assert item["controls"]["compliance_policy"]["version_no"] == 2
+        assert any(str(file["rel_path"]).endswith(".watermark.txt") for file in item["files"])
         controls = client.get(f"/api/v1/projects/{project_id}/brand-controls")
         assert controls.status_code == 200
         assert controls.json()["watermark_profiles"][0]["status"] == "ACTIVE"
@@ -494,6 +536,12 @@ def test_brand_watermark_and_compliance_versions_bind_delivery_without_auto_revi
         platform_review = client.post(f"/api/v1/delivery-packages/{item['id']}:review", json={"reviewer_type": "PLATFORM", "decision": "APPROVED", "note": "平台规则人工确认"})
         assert platform_review.status_code == 200, platform_review.text
         assert platform_review.json()["delivery"]["platform_review_status"] == "APPROVED"
+        watermark_path = workspace.projects_root / str(project["root_rel"]) / str(item["rel_path"]) / f"{episode['code']}.watermark.txt"
+        with watermark_path.open("ab") as changed:
+            changed.write(b"tamper")
+        watermark_corrupt = client.get(f"/api/v1/delivery-packages/{item['id']}:verify")
+        assert watermark_corrupt.status_code == 200
+        assert watermark_corrupt.json()["delivery"]["status"] == "CORRUPT"
 
 
 def _delivery_render_fixture(workspace, database, client, *, approve: bool) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:

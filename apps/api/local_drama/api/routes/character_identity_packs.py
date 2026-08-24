@@ -84,14 +84,6 @@ async def create_version(pack_id: str, request: Request, from_version_id: str | 
         raise api_error_from_domain(error) from error
 
 
-@router.get("/character-identity-pack-versions/{pack_version_id}", operation_id="getCharacterIdentityPackVersion")
-async def get_version(pack_version_id: str, request: Request) -> dict[str, object]:
-    try:
-        return {"version": service(request).get_version(pack_version_id)}
-    except DomainRuleError as error:
-        raise api_error_from_domain(error) from error
-
-
 @router.put("/character-identity-pack-versions/{pack_version_id}/slots", operation_id="setCharacterIdentityPackSlot")
 async def set_slot(pack_version_id: str, payload: SetSlotRequest, request: Request) -> dict[str, object]:
     try:
@@ -152,6 +144,17 @@ async def retire_version(
 ) -> dict[str, object]:
     try:
         return {"version": service(request).retire_pack_version(pack_version_id, payload.reason)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+# Keep the catch-all GET route after the suffix action routes.  Starlette
+# matches routes in declaration order; if this is declared first it consumes
+# ``<uuid>:compare`` as the version id and the real compare route is unreachable.
+@router.get("/character-identity-pack-versions/{pack_version_id}", operation_id="getCharacterIdentityPackVersion")
+async def get_version(pack_version_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"version": service(request).get_version(pack_version_id)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

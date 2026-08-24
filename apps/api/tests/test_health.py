@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from local_drama.application.worker_sessions import WorkerSessionService
 from local_drama.config import Settings
 from local_drama.main import create_app
 
@@ -49,6 +50,66 @@ def test_ready_reports_g2_database_boundary(tmp_path: Path) -> None:
     with TestClient(create_app(settings)) as client:
         payload = client.get("/api/v1/health/ready").json()
     assert payload["checks"]["database"] == "not_configured_until_g2"
+
+
+def test_dependencies_report_live_loopback_probe(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from local_drama.api.routes import health
+
+    settings = Settings(
+        data_root=tmp_path / "data",
+        projects_root=tmp_path / "projects",
+        work_root=tmp_path / "work",
+        cache_root=tmp_path / "cache",
+        logs_root=tmp_path / "logs",
+        backups_root=tmp_path / "backups",
+    )
+    monkeypatch.setattr(health, "_probe_loopback", lambda _url: ("PASS", {"loopback": True}))
+    monkeypatch.setattr(health.shutil, "which", lambda executable: f"/test/{executable}" if executable == "ffmpeg" else None)
+    with TestClient(create_app(settings)) as client:
+        payload = client.get("/api/v1/health/dependencies").json()
+    assert payload["checks"]["comfy_designer"] == "ready"
+
+
+def test_dependencies_fail_closed_when_loopback_is_unavailable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from local_drama.api.routes import health
+
+    settings = Settings(
+        data_root=tmp_path / "data",
+        projects_root=tmp_path / "projects",
+        work_root=tmp_path / "work",
+        cache_root=tmp_path / "cache",
+        logs_root=tmp_path / "logs",
+        backups_root=tmp_path / "backups",
+    )
+    monkeypatch.setattr(health, "_probe_loopback", lambda _url: ("BLOCKED", {"reason": "ConnectionRefusedError"}))
+    with TestClient(create_app(settings)) as client:
+        payload = client.get("/api/v1/health/dependencies").json()
+    assert payload["status"] == "DEGRADED"
+    assert payload["checks"]["comfy_designer"] == "blocked:ConnectionRefusedError"
+
+
+def test_dependencies_only_claim_worker_ready_for_live_compatible_session(
+    monkeypatch: pytest.MonkeyPatch,
+    workspace,
+    database,
+) -> None:
+    from local_drama.api.routes import health
+
+    monkeypatch.setattr(health, "_probe_loopback", lambda _url: ("PASS", {"loopback": True}))
+    monkeypatch.setattr(health.shutil, "which", lambda executable: f"/test/{executable}" if executable == "ffmpeg" else None)
+    session = WorkerSessionService(database, workspace).start_session(
+        "health-worker",
+        worker_version=workspace.app_version,
+        api_version=workspace.app_version,
+        channels=["CPU", "GPU_H3"],
+    )
+    try:
+        with TestClient(create_app(workspace)) as client:
+            payload = client.get("/api/v1/health/dependencies").json()
+        assert payload["checks"]["worker_supervisor"] == "ready:CPU,GPU_H3"
+        assert payload["status"] == "HEALTHY"
+    finally:
+        WorkerSessionService(database, workspace).stop(str(session["id"]))
 
 
 def test_untrusted_origin_is_rejected_for_writes(tmp_path: Path) -> None:
@@ -100,3 +161,39 @@ def test_trusted_origin_requires_valid_instance_token_for_writes(tmp_path: Path)
     # valid token crossed the CSRF boundary without mutating any state.
     assert accepted_boundary.status_code == 405
     assert bootstrap.headers["Cache-Control"] == "no-store"
+
+
+def test_loopback_dev_origin_remains_writable_when_frontend_port_drifts(tmp_path: Path) -> None:
+    settings = Settings(
+        data_root=tmp_path / "data",
+        projects_root=tmp_path / "projects",
+        work_root=tmp_path / "work",
+        cache_root=tmp_path / "cache",
+        logs_root=tmp_path / "logs",
+        backups_root=tmp_path / "backups",
+    )
+    origin = "http://127.0.0.1:5175"
+    with TestClient(create_app(settings)) as client:
+        bootstrap = client.get("/api/v1/session/bootstrap", headers={"Origin": origin})
+        accepted_boundary = client.post(
+            "/api/v1/system/contract",
+            headers={"Origin": origin, "X-Local-Instance-Token": bootstrap.json()["token"]},
+        )
+    assert accepted_boundary.status_code == 405
+
+
+def test_lookalike_or_non_http_local_origins_are_rejected(tmp_path: Path) -> None:
+    settings = Settings(
+        data_root=tmp_path / "data",
+        projects_root=tmp_path / "projects",
+        work_root=tmp_path / "work",
+        cache_root=tmp_path / "cache",
+        logs_root=tmp_path / "logs",
+        backups_root=tmp_path / "backups",
+    )
+    with TestClient(create_app(settings)) as client:
+        lookalike = client.post("/api/v1/system/contract", headers={"Origin": "http://localhost.evil.example:5175"})
+        non_http = client.post("/api/v1/system/contract", headers={"Origin": "https://127.0.0.1:5175"})
+    assert lookalike.status_code == 403
+    assert non_http.status_code == 403
+    assert lookalike.json()["error"]["code"] == "ORIGIN_NOT_ALLOWED"

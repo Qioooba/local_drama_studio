@@ -31,13 +31,13 @@ describe("ProjectOperationsPage migration index", () => {
       "/projects/project-1/production-settings",
     );
     expect(screen.getByRole("link", { name: /模型与能力/ }).getAttribute("href")).toBe(
-      "/projects/project-1/models",
+      "/models?project=project-1",
     );
     expect(screen.getByRole("link", { name: /任务队列/ }).getAttribute("href")).toBe(
-      "/projects/project-1/jobs",
+      "/jobs?project=project-1",
     );
     expect(screen.getByRole("link", { name: /诊断与审计/ }).getAttribute("href")).toBe(
-      "/projects/project-1/diagnostics",
+      "/diagnostics?project=project-1",
     );
     expect(screen.queryByText("AutomationWorkflowPanel")).toBeNull();
     expect(screen.getAllByText("打开唯一 owner")).toHaveLength(4);

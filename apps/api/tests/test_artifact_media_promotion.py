@@ -45,11 +45,15 @@ def test_verified_success_artifact_promotes_once_with_lineage(workspace, databas
     media = service.get_version(str(promoted["media_version_id"]))
     assert promoted["duplicate"] is False
     assert replay["duplicate"] is True
+    assert promoted["id"] == promoted["media_version_id"]
     assert replay["id"] == promoted["media_version_id"]
+    assert replay["media_version_id"] == promoted["media_version_id"]
     assert media["source_artifact_id"] == artifact["id"]
     assert media["source_job_attempt_id"] == attempt["id"]
     assert media["stage"] == "PROXY"
     assert media["sha256"] == artifact["sha256"]
+    detail_artifact = jobs.get_job(str(job["id"]))["attempts"][0]["artifacts"][0]
+    assert detail_artifact["promoted_media_version_id"] == promoted["media_version_id"]
 
     with TestClient(create_app(workspace)) as client:
         response = client.post(f"/api/v1/artifacts/{artifact['id']}:promote-media", json={"media_kind": "VIDEO"})
@@ -88,3 +92,44 @@ def test_artifact_promotion_rejects_tamper_and_non_success(workspace, database) 
         raise AssertionError("tampered artifact must not promote")
     except Exception as error:
         assert getattr(error, "code", None) == "ARTIFACT_INTEGRITY_FAILED"
+
+
+def test_artifact_promotion_rejects_non_media_and_kind_override(workspace, database) -> None:
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="artifact_type_gate",
+        title="Artifact type gate",
+        episode_count=1,
+        aspect_ratio="16:9",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=60000,
+        allow_unconfigured_capabilities=True,
+    )
+    jobs = JobService(database, workspace)
+    jobs.create_job(str(project["id"]), "SCRIPT_BREAKDOWN_LOCAL_LLM", "PROJECT", str(project["id"]), "CPU", {}, "artifact-type-1")
+    claim = jobs.claim("type-gate-worker", ["CPU"])
+    assert claim is not None
+    report = workspace.work_root / "breakdown-report.json"
+    report.write_text('{"status":"DRAFT_READY"}', encoding="utf-8")
+    report_artifact = jobs.register_artifact(str(claim["attempt"]["id"]), "SCRIPT_BREAKDOWN_REPORT", "breakdown-report.json")
+    jobs.complete(str(claim["attempt"]["id"]), str(claim["attempt"]["lease_token"]), "type-gate-worker", success=True)
+
+    service = MediaService(database, workspace)
+    try:
+        service.promote_job_artifact(str(report_artifact["id"]), media_kind="VIDEO")
+        raise AssertionError("JSON report must not be promoted as media")
+    except Exception as error:
+        assert getattr(error, "code", None) == "ARTIFACT_MEDIA_TYPE_UNSUPPORTED"
+
+    jobs.create_job(str(project["id"]), "IMAGE_GENERATION", "PROJECT", str(project["id"]), "CPU", {}, "artifact-type-2")
+    claim = jobs.claim("type-gate-worker", ["CPU"])
+    assert claim is not None
+    image = workspace.work_root / "frame.png"
+    image.write_bytes(b"image-placeholder")
+    image_artifact = jobs.register_artifact(str(claim["attempt"]["id"]), "COMFY_OUTPUT", "frame.png")
+    jobs.complete(str(claim["attempt"]["id"]), str(claim["attempt"]["lease_token"]), "type-gate-worker", success=True)
+    try:
+        service.promote_job_artifact(str(image_artifact["id"]), media_kind="VIDEO")
+        raise AssertionError("extension-derived image must not be overridden as video")
+    except Exception as error:
+        assert getattr(error, "code", None) == "ARTIFACT_MEDIA_KIND_MISMATCH"

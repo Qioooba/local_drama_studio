@@ -1,14 +1,16 @@
 import type { QcPolicy, QcPolicyPut, QcPolicyResolution, QcScopeOption, QcStage } from "./types";
+import { ApiRequestError, requestJson as generatedRequestJson } from "../../generated/api";
 
 export class QcPolicyApiError extends Error {
   constructor(public status: number, public code: string, message: string, public details: Record<string, unknown> = {}) { super(message); this.name = "QcPolicyApiError"; }
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, init);
-  const body = await response.json().catch(() => null) as { error?: { code?: string; message?: string; details?: Record<string, unknown> } } | null;
-  if (!response.ok) throw new QcPolicyApiError(response.status, body?.error?.code ?? `HTTP_${response.status}`, body?.error?.message ?? "QC Policy 请求失败", body?.error?.details);
-  return body as T;
+  try { return await generatedRequestJson<T>(`/api/v1${path}`, init); }
+  catch (error) {
+    if (error instanceof ApiRequestError) throw new QcPolicyApiError(error.status, error.code, error.message);
+    throw error;
+  }
 }
 
 export async function listQcPolicies(projectId: string) {
@@ -26,4 +28,3 @@ export async function putQcPolicy(projectId: string, payload: QcPolicyPut) {
 export async function listQcSeasons(projectId: string) { return (await request<{ items: QcScopeOption[] }>(`/projects/${encodeURIComponent(projectId)}/seasons`)).items; }
 export async function listQcEpisodes(seasonId: string) { return (await request<{ items: QcScopeOption[] }>(`/projects/seasons/${encodeURIComponent(seasonId)}/episodes`)).items; }
 export async function listQcShots(episodeId: string) { return (await request<{ items: QcScopeOption[] }>(`/projects/episodes/${encodeURIComponent(episodeId)}/shots`)).items; }
-

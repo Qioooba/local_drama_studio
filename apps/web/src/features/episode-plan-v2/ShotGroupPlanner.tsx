@@ -5,6 +5,7 @@ import {
   reorderShotGroups, replaceShotGroupMembers, type ShotGroup, type ShotGroupKind, type ShotGroupShot,
 } from "./shotGroupsApi";
 import "./shot-groups.css";
+import { nextOrdinalCode } from "../shared/autoCode";
 
 const KINDS: Array<{ value: ShotGroupKind; label: string }> = [
   { value: "BEAT", label: "节拍" }, { value: "DIALOGUE", label: "对白" },
@@ -18,16 +19,16 @@ export function ShotGroupPlanner({ episodeId }: { episodeId: string }) {
   const query = useQuery({ queryKey: key, queryFn: () => getShotGroupWorkspace(episodeId) });
   const refresh = () => queryClient.invalidateQueries({ queryKey: key });
   const mutation = useMutation({ mutationFn: (work: () => Promise<unknown>) => work(), onSuccess: refresh });
-  const [code, setCode] = useState("");
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState<ShotGroupKind>("BEAT");
   const [sceneId, setSceneId] = useState("");
   const workspace = query.data;
   const activeGroups = useMemo(() => workspace?.groups.filter((group) => group.status === "ACTIVE") ?? [], [workspace]);
+  const code = nextOrdinalCode(kind, activeGroups.map((group) => group.code));
 
   const submitGroup = () => mutation.mutate(async () => {
-    await createShotGroup(episodeId, { kind, code: code.trim(), title: title.trim(), scene_id: sceneId || null });
-    setCode(""); setTitle("");
+    await createShotGroup(episodeId, { kind, code, title: title.trim(), scene_id: sceneId || null });
+    setTitle("");
   });
   const moveGroup = (index: number, offset: number) => {
     const target = index + offset;
@@ -60,14 +61,14 @@ export function ShotGroupPlanner({ episodeId }: { episodeId: string }) {
   if (!workspace) return null;
   const shotById = new Map(workspace.shots.map((shot) => [shot.id, shot]));
   return <section className="subpanel shot-group-planner" aria-labelledby="shot-groups-title">
-    <div className="panel-heading"><div><p className="eyebrow">0044 · 连续镜头组</p><h4 id="shot-groups-title">场景归属与镜头组编排</h4></div><span className="status-pill">{activeGroups.length} 组 · {workspace.shots.length} 镜</span></div>
+    <div className="panel-heading"><div><p className="eyebrow">连续镜头组</p><h4 id="shot-groups-title">场景归属与镜头组编排</h4></div><span className="status-pill">{activeGroups.length} 组 · {workspace.shots.length} 镜</span></div>
     <p className="muted">未知场景保持为空；分组只组织镜头，不删除候选和生产历史。上移/下移按钮提供键盘可用的排序替代。</p>
     <form className="shot-group-create" onSubmit={(event) => { event.preventDefault(); submitGroup(); }}>
-      <label>编号<input value={code} maxLength={80} onChange={(event) => setCode(event.target.value)} placeholder="BEAT-01" /></label>
+      <div className="field-fact"><span>编号</span><strong>{code}</strong><small>按类型和现有分组自动生成</small></div>
       <label>标题<input value={title} maxLength={200} onChange={(event) => setTitle(event.target.value)} placeholder="开场冲突" /></label>
       <label>类型<select value={kind} onChange={(event) => setKind(event.target.value as ShotGroupKind)}>{KINDS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
       <label>场景<select value={sceneId} onChange={(event) => setSceneId(event.target.value)}><option value="">暂不确定</option>{workspace.scenes.map((scene) => <option key={scene.id} value={scene.id}>{scene.code} · {scene.title}</option>)}</select></label>
-      <button type="button" disabled={!code.trim() || !title.trim() || mutation.isPending}>创建分组</button>
+      <button type="submit" className="primary-action" disabled={!title.trim() || mutation.isPending}>{mutation.isPending ? "创建中…" : "创建分组"}</button>
     </form>
     {mutation.error && <p className="error-text" role="alert">{String(mutation.error)}</p>}
     <div className="shot-group-grid">
@@ -81,7 +82,7 @@ export function ShotGroupPlanner({ episodeId }: { episodeId: string }) {
       <div className="shot-assignment-head" role="row"><strong>镜头</strong><strong>类型 / 时长</strong><strong>场景</strong><strong>连续镜头组</strong></div>
       {workspace.shots.map((shot) => <div className="shot-assignment-row" role="row" key={shot.id}>
         <strong>{shot.code}</strong><span>{shot.shot_type} · {(shot.target_duration_ms / 1000).toFixed(1)}s</span>
-        <select aria-label={`${shot.code} 场景`} value={shot.scene_id ?? ""} disabled={mutation.isPending} onChange={(event) => mutation.mutate(() => assignShotScene(shot, event.target.value || null))}><option value="">未确定</option>{workspace.scenes.map((scene) => <option key={scene.id} value={scene.id}>{scene.code} · {scene.title}</option>)}</select>
+        <select aria-label={`${shot.code} 场景`} value={shot.scene_id ?? ""} disabled={mutation.isPending} onChange={(event) => { const nextSceneId = event.currentTarget.value || null; mutation.mutate(() => assignShotScene(shot, nextSceneId)); }}><option value="">未确定</option>{workspace.scenes.map((scene) => <option key={scene.id} value={scene.id}>{scene.code} · {scene.title}</option>)}</select>
         <select aria-label={`${shot.code} 分组`} value={shot.group_id ?? ""} disabled={mutation.isPending} onChange={(event) => setMembership(shot, event.target.value)}><option value="">未分组</option>{activeGroups.map((group) => <option key={group.id} value={group.id}>{group.code} · {group.title}</option>)}</select>
       </div>)}
       {!workspace.shots.length && <p className="empty-state">当前分集尚无镜头。</p>}

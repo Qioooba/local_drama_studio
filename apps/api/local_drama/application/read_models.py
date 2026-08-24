@@ -41,7 +41,7 @@ class ProductionReadModelService:
                 (SELECT COUNT(*) FROM jobs j WHERE j.subject_id=s.id AND j.state IN ('QUEUED','CLAIMED','RUNNING','CANCEL_REQUESTED')) AS running_job_count,
                 (SELECT COUNT(*) FROM selections se JOIN media_assets ma ON ma.id=se.media_asset_id WHERE ma.owner_id=s.id) AS selected_media_count
                 FROM shots s LEFT JOIN shot_revisions sr ON sr.id=s.current_revision_id
-                WHERE s.episode_id=? {filter_sql} ORDER BY CAST(s.order_key AS REAL), s.code LIMIT ? OFFSET ?""",
+                WHERE s.episode_id=? AND s.archived_at IS NULL {filter_sql} ORDER BY CAST(s.order_key AS REAL), s.code LIMIT ? OFFSET ?""",
                 params,
             ).fetchall()
             binding = connection.execute(
@@ -102,7 +102,7 @@ class ProductionReadModelService:
                 SUM(CASE WHEN status='READY' THEN 0 ELSE 1 END) AS blocked_count,
                 (SELECT COUNT(*) FROM media_assets ma JOIN shots s ON s.id=ma.owner_id WHERE s.episode_id=?) AS media_asset_count,
                 (SELECT COUNT(*) FROM jobs j JOIN shots s ON s.id=j.subject_id WHERE s.episode_id=? AND j.state IN ('QUEUED','CLAIMED','RUNNING','CANCEL_REQUESTED')) AS running_job_count
-                FROM shots WHERE episode_id=?""",
+                FROM shots WHERE episode_id=? AND archived_at IS NULL""",
                 (episode_id, episode_id, episode_id),
             ).fetchone()
         return {"episode_id": episode_id, **dict(row)}

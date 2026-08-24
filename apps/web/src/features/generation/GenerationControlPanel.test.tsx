@@ -5,6 +5,7 @@ import { getGenerationEstimate, getRef2VaCapability, listProductionTiers } from 
 import { GenerationControlPanel } from "./GenerationControlPanel";
 
 vi.mock("../../generated/api", () => ({ getGenerationEstimate: vi.fn(), getRef2VaCapability: vi.fn(), listProductionTiers: vi.fn() }));
+vi.mock("../media-picker/ProjectMediaVersionSelect", () => ({ ProjectMediaVersionSelect: ({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) => <label>{label}<select value={value} onChange={(event) => onChange(event.target.value)}><option value="">选择</option><option value="local-video">local-video.mp4</option></select></label> }));
 
 const tiers = [
   { code: "FAST", label: "极速粗筛", frames: 107, resolution: { "9:16": [480, 832], "16:9": [864, 480] }, denoise: 0.95, steps: 20, cfg: 1.0, default_takes: 2, duration_seconds: 4.458 },
@@ -27,13 +28,35 @@ describe("GenerationControlPanel multimodal contracts", () => {
     vi.mocked(getGenerationEstimate).mockReset().mockResolvedValue({ status: "NO_LOCAL_ESTIMATE", reason: "NO_MATCHING_HISTORY", dimensions: { profile_version_id: "profile-v1", width: 864, height: 480, duration_seconds: 7.292, frame_count: 175, steps: 20, gpu_class: null, gpu_hardware_model: null, gpu_hardware_model_known: false }, sample_count: 0, minimum_sample_count: 3, p50_seconds: null, p90_seconds: null, evidence: { source: "LOCAL_SUCCEEDED_JOB_ATTEMPTS", most_recent_first: true, candidate_limit: 100, candidate_count: 0, gpu_dimension_source: "JOB_RESOURCE_LEASE_CLASS_OR_CHANNEL", gpu_hardware_model_recorded: false }, audit: { read_only: true, writes_performed: 0, query_count: 1, query_limit: 100 }, local_only: true, network_contacted: false });
   });
 
-  it("exposes immutable driving/reference bindings with semantic role and weight", () => {
+  it("exposes immutable driving/reference bindings with semantic role and weight", async () => {
     const onReferenceBindingsChange = vi.fn();
-    render(<GenerationControlPanel timedDirections="[]" performanceBindings="[]" referenceBindings="[]" motionMasks="[]" onTimedDirectionsChange={vi.fn()} onPerformanceBindingsChange={vi.fn()} onReferenceBindingsChange={onReferenceBindingsChange} onMotionMasksChange={vi.fn()} />);
-    const field = screen.getAllByRole("textbox")[2];
-    fireEvent.change(field, { target: { value: '[{"role":"DRIVING_VIDEO","media_version_id":"local-video","ordinal":0,"weight":0.7}]' } });
-    expect(onReferenceBindingsChange).toHaveBeenCalledWith('[{"role":"DRIVING_VIDEO","media_version_id":"local-video","ordinal":0,"weight":0.7}]');
-    expect(screen.getByText(/数量、顺序、媒体类型和 weight/)).toBeTruthy();
+    const { rerender } = render(<GenerationControlPanel projectId="project-1" timedDirections="[]" performanceBindings="[]" referenceBindings="[]" motionMasks="[]" onTimedDirectionsChange={vi.fn()} onPerformanceBindingsChange={vi.fn()} onReferenceBindingsChange={onReferenceBindingsChange} onMotionMasksChange={vi.fn()} />);
+    await screen.findByText(/H3_REF2VA_CANDIDATE/);
+    fireEvent.click(screen.getByRole("button", { name: "添加媒体绑定" }));
+    const added = onReferenceBindingsChange.mock.calls.at(-1)?.[0] as string;
+    rerender(<GenerationControlPanel projectId="project-1" timedDirections="[]" performanceBindings="[]" referenceBindings={added} motionMasks="[]" onTimedDirectionsChange={vi.fn()} onPerformanceBindingsChange={vi.fn()} onReferenceBindingsChange={onReferenceBindingsChange} onMotionMasksChange={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("媒体用途"), { target: { value: "DRIVING_VIDEO" } });
+    const roleUpdated = onReferenceBindingsChange.mock.calls.at(-1)?.[0] as string;
+    rerender(<GenerationControlPanel projectId="project-1" timedDirections="[]" performanceBindings="[]" referenceBindings={roleUpdated} motionMasks="[]" onTimedDirectionsChange={vi.fn()} onPerformanceBindingsChange={vi.fn()} onReferenceBindingsChange={onReferenceBindingsChange} onMotionMasksChange={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("项目媒体版本"), { target: { value: "local-video" } });
+    expect(JSON.parse(onReferenceBindingsChange.mock.calls.at(-1)?.[0])).toEqual([{ role: "DRIVING_VIDEO", media_version_id: "local-video", ordinal: 0, weight: 1 }]);
+    expect(screen.getByText(/无需复制或手输 ID/)).toBeTruthy();
+  });
+
+  it("serializes timed directions from native structured controls", () => {
+    const onTimedDirectionsChange = vi.fn();
+    const { rerender } = render(<GenerationControlPanel timedDirections="[]" performanceBindings="[]" referenceBindings="[]" motionMasks="[]" onTimedDirectionsChange={onTimedDirectionsChange} onPerformanceBindingsChange={vi.fn()} onReferenceBindingsChange={vi.fn()} onMotionMasksChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "添加运镜节点" }));
+    const added = onTimedDirectionsChange.mock.calls.at(-1)?.[0] as string;
+    rerender(<GenerationControlPanel timedDirections={added} performanceBindings="[]" referenceBindings="[]" motionMasks="[]" onTimedDirectionsChange={onTimedDirectionsChange} onPerformanceBindingsChange={vi.fn()} onReferenceBindingsChange={vi.fn()} onMotionMasksChange={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("时间（秒）"), { target: { value: "1.2" } });
+    const timeUpdated = onTimedDirectionsChange.mock.calls.at(-1)?.[0] as string;
+    expect(JSON.parse(timeUpdated)).toEqual([{ time_us: 1_200_000, direction: "PAN_LEFT", strength: 0.5 }]);
+    rerender(<GenerationControlPanel timedDirections={timeUpdated} performanceBindings="[]" referenceBindings="[]" motionMasks="[]" onTimedDirectionsChange={onTimedDirectionsChange} onPerformanceBindingsChange={vi.fn()} onReferenceBindingsChange={vi.fn()} onMotionMasksChange={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("方向"), { target: { value: "DOLLY_IN" } });
+    expect(JSON.parse(onTimedDirectionsChange.mock.calls.at(-1)?.[0])).toEqual([{ time_us: 1_200_000, direction: "DOLLY_IN", strength: 0.5 }]);
+    expect(screen.queryByText(/TimedDirection JSON/)).toBeNull();
+    expect(screen.queryByText(/微秒/)).toBeNull();
   });
 
   it("renders the production tier selector from GET /production-tiers and shows the summary", async () => {
@@ -47,6 +70,27 @@ describe("GenerationControlPanel multimodal contracts", () => {
     expect(summary.textContent).toContain("480×832");
     expect(summary.textContent).toContain("864×480");
     expect(summary.textContent).toContain("8");
+  });
+
+  it("only offers the production tier allowed by a fixed workflow contract", async () => {
+    render(
+      <GenerationControlPanel
+        timedDirections="[]"
+        performanceBindings="[]"
+        referenceBindings="[]"
+        motionMasks="[]"
+        onTimedDirectionsChange={vi.fn()}
+        onPerformanceBindingsChange={vi.fn()}
+        onReferenceBindingsChange={vi.fn()}
+        onMotionMasksChange={vi.fn()}
+        tier=""
+        onTierChange={vi.fn()}
+        allowedTierCodes={["FAST"]}
+      />,
+    );
+    const select = (await screen.findByLabelText(/生产档位/)) as HTMLSelectElement;
+    expect([...select.options].map((option) => option.value)).toEqual(["", "FAST"]);
+    expect(screen.getByText(/当前工作流固定档位：FAST/)).toBeTruthy();
   });
 
   it("reports the selected tier through onTierChange", async () => {

@@ -27,8 +27,10 @@ class Settings(BaseModel):
     comfy_base_url: str = "http://127.0.0.1:8188"
     comfy_output_root: Path | None = REPO_ROOT / "work" / "comfy-production" / "output"
     comfy_input_root: Path | None = REPO_ROOT / "work" / "comfy-production" / "input"
+    llm_provider: str = "OLLAMA_LOOPBACK"
     llm_base_url: str = "http://127.0.0.1:11434"
     llm_model: str | None = None
+    llm_api_key: str | None = None
     allowed_origins: tuple[str, ...] = (
         "http://127.0.0.1:3210",
         "http://localhost:3210",
@@ -90,12 +92,38 @@ class Settings(BaseModel):
     @classmethod
     def from_env(cls) -> "Settings":
         values: dict[str, Any] = {}
-        for field_name in ("host", "environment", "mode", "comfy_base_url", "llm_base_url", "llm_model"):
+        for field_name in ("host", "environment", "mode", "comfy_base_url", "llm_provider", "llm_base_url", "llm_model", "llm_api_key"):
             env_name = f"LOCAL_DRAMA_{field_name.upper()}"
             if env_name in os.environ:
                 values[field_name] = os.environ[env_name]
+        # Support alternative/convenience environment variable aliases for OpenAI compatibility
+        if "LOCAL_DRAMA_OPENAI_COMPAT_BASE_URL" in os.environ and "llm_base_url" not in values:
+            values["llm_base_url"] = os.environ["LOCAL_DRAMA_OPENAI_COMPAT_BASE_URL"]
+            values.setdefault("llm_provider", "OPENAI_COMPAT")
+        if "LOCAL_DRAMA_OPENAI_COMPAT_MODEL" in os.environ and "llm_model" not in values:
+            values["llm_model"] = os.environ["LOCAL_DRAMA_OPENAI_COMPAT_MODEL"]
+            values.setdefault("llm_provider", "OPENAI_COMPAT")
+        if "LOCAL_DRAMA_OPENAI_COMPAT_API_KEY" in os.environ and "llm_api_key" not in values:
+            values["llm_api_key"] = os.environ["LOCAL_DRAMA_OPENAI_COMPAT_API_KEY"]
+        elif "DEEPSEEK_API_KEY" in os.environ and "llm_api_key" not in values:
+            values["llm_api_key"] = os.environ["DEEPSEEK_API_KEY"]
+        elif "OPENAI_API_KEY" in os.environ and "llm_api_key" not in values:
+            values["llm_api_key"] = os.environ["OPENAI_API_KEY"]
+
         if "LOCAL_DRAMA_PORT" in os.environ:
             values["port"] = int(os.environ["LOCAL_DRAMA_PORT"])
+        if "LOCAL_DRAMA_ALLOWED_ORIGINS" in os.environ:
+            # Comma-separated list of additional allowed origins (e.g. a LAN
+            # origin like http://192.168.1.120:5173 for cross-machine dev
+            # access). Appends to the loopback defaults; never replaces them.
+            extra = tuple(
+                origin.strip()
+                for origin in os.environ["LOCAL_DRAMA_ALLOWED_ORIGINS"].split(",")
+                if origin.strip()
+            )
+            if extra:
+                defaults = cls.model_fields["allowed_origins"].default
+                values["allowed_origins"] = tuple(defaults) + extra
         if "LOCAL_DRAMA_COMFY_OUTPUT_ROOT" in os.environ:
             values["comfy_output_root"] = Path(os.environ["LOCAL_DRAMA_COMFY_OUTPUT_ROOT"])
         else:

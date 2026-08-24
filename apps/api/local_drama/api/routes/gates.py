@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
+from local_drama.api.schemas.g3 import I2VEvidenceProbeFinalizeRequest, I2VEvidenceProbeSubmitRequest
 from local_drama.api.schemas.g7 import (
     BrandKitRequest,
     CompliancePolicyRequest,
@@ -20,6 +21,7 @@ from local_drama.application.i2v_probe import I2VProbePlanService
 from local_drama.application.local_picker import pick_local_document_file, pick_local_model_file
 from local_drama.application.model_compatibility import ModelCompatibilityService
 from local_drama.application.network_e2e import NetworkE2EService
+from local_drama.application.t2i_probe import T2IProbePlanService
 from local_drama.application.workspace_assets import WorkspaceAssetService
 from local_drama.domain.errors import DomainRuleError
 
@@ -27,7 +29,7 @@ router = APIRouter(tags=["phase-gates"])
 
 
 @router.post("/system/dialogs:model-file", operation_id="pickLocalModelFile")
-async def pick_model_file() -> dict[str, object]:
+def pick_model_file() -> dict[str, object]:
     try:
         return {"selection": pick_local_model_file()}
     except DomainRuleError as error:
@@ -35,7 +37,7 @@ async def pick_model_file() -> dict[str, object]:
 
 
 @router.post("/system/dialogs:document-file", operation_id="pickLocalDocumentFile")
-async def pick_document_file() -> dict[str, object]:
+def pick_document_file() -> dict[str, object]:
     try:
         return {"selection": pick_local_document_file()}
     except DomainRuleError as error:
@@ -59,9 +61,87 @@ async def get_g6_readiness(project_id: str, request: Request) -> dict[str, objec
 
 
 @router.get("/projects/{project_id}/gates/g6/i2v-probe-plan", operation_id="planG6I2VProbe")
-async def plan_g6_i2v_probe(project_id: str, request: Request) -> dict[str, object]:
+async def plan_g6_i2v_probe(
+    project_id: str,
+    request: Request,
+    profile_version_id: str | None = None,
+    workflow_version_id: str | None = None,
+) -> dict[str, object]:
     try:
-        return {"plan": I2VProbePlanService(request.app.state.database).plan(project_id)}
+        return {
+            "plan": I2VProbePlanService(request.app.state.database).plan(
+                project_id, profile_version_id, workflow_version_id
+            )
+        }
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/projects/{project_id}/gates/g6/i2v-probe:submit", status_code=201, operation_id="submitG6I2VEvidenceProbe")
+async def submit_g6_i2v_probe(
+    project_id: str, payload: I2VEvidenceProbeSubmitRequest, request: Request,
+) -> dict[str, object]:
+    try:
+        return I2VProbePlanService(request.app.state.database, request.app.state.settings).submit(
+            project_id,
+            payload.profile_version_id,
+            payload.workflow_version_id,
+            payload.plan_hash,
+            payload.idempotency_key,
+        )
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/projects/{project_id}/gates/g6/i2v-probe:finalize", operation_id="finalizeG6I2VEvidenceProbe")
+async def finalize_g6_i2v_probe(
+    project_id: str, payload: I2VEvidenceProbeFinalizeRequest, request: Request,
+) -> dict[str, object]:
+    try:
+        return I2VProbePlanService(request.app.state.database, request.app.state.settings).finalize(project_id, payload.job_id)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/projects/{project_id}/gates/g6/t2i-probe-plan", operation_id="planG6T2IProbe")
+async def plan_g6_t2i_probe(
+    project_id: str,
+    request: Request,
+    profile_version_id: str | None = None,
+    workflow_version_id: str | None = None,
+) -> dict[str, object]:
+    try:
+        return {
+            "plan": T2IProbePlanService(request.app.state.database).plan(
+                project_id, profile_version_id, workflow_version_id
+            )
+        }
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/projects/{project_id}/gates/g6/t2i-probe:submit", status_code=201, operation_id="submitG6T2IEvidenceProbe")
+async def submit_g6_t2i_probe(
+    project_id: str, payload: I2VEvidenceProbeSubmitRequest, request: Request,
+) -> dict[str, object]:
+    try:
+        return T2IProbePlanService(request.app.state.database, request.app.state.settings).submit(
+            project_id,
+            payload.profile_version_id,
+            payload.workflow_version_id,
+            payload.plan_hash,
+            payload.idempotency_key,
+        )
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/projects/{project_id}/gates/g6/t2i-probe:finalize", operation_id="finalizeG6T2IEvidenceProbe")
+async def finalize_g6_t2i_probe(
+    project_id: str, payload: I2VEvidenceProbeFinalizeRequest, request: Request,
+) -> dict[str, object]:
+    try:
+        return T2IProbePlanService(request.app.state.database, request.app.state.settings).finalize(project_id, payload.job_id)
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
