@@ -140,6 +140,10 @@ class MediaService:
             raise
         return rel.as_posix(), destination
 
+    def probe_output(self, path: Path, kind: str) -> dict[str, Any]:
+        """Public ffprobe capability for worker handlers (single _probe impl)."""
+        return self._probe(path, kind)
+
     def _probe(self, path: Path, kind: str) -> dict[str, Any]:
         if kind not in {"IMAGE", "VIDEO", "AUDIO"}:
             return {"probe_status": "NOT_APPLICABLE"}

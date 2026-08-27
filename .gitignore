@@ -69,3 +69,6 @@ apps/api/.b06*/
 apps/api/.nav*/
 
 
+
+# ad-hoc pytest capture logs
+pytest_*.txt

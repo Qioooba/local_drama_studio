@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 import time
 from pathlib import Path
+from typing import Any
 
 # WinError 5 (ERROR_ACCESS_DENIED) and WinError 32 (ERROR_SHARING_VIOLATION)
 # are the two transient rename failures Windows reports while another handle
@@ -46,3 +47,20 @@ def replace_path(source: Path, destination: Path) -> None:
             if attempt >= _ATTEMPTS - 1 or not _is_transient_rename_error(error):
                 raise
             time.sleep(_BACKOFF_SECONDS[min(attempt, len(_BACKOFF_SECONDS) - 1)])
+
+
+def write_atomic(path: Path, writer: Any) -> None:
+    """Write *path* through a partial sibling plus one atomic rename.
+
+    ``writer`` receives the partial path and must create the file; the reader
+    side never observes a half-written artifact.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    partial = path.with_name(f".partial-{path.name}")
+    try:
+        writer(partial)
+        replace_path(partial, path)
+    except Exception:
+        if partial.exists():
+            partial.unlink()
+        raise

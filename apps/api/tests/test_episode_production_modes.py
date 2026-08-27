@@ -8,7 +8,7 @@ from local_drama.application.episode_production_runs import EpisodeProductionRun
 from local_drama.application.episode_worker_actions import EpisodeWorkerActionService
 from local_drama.application.jobs import JobService
 from local_drama.application.projects import ProjectService
-from local_drama.application.worker import LocalMediaWorker
+from local_drama.application.worker_handlers.automation_task import advance_automation_run
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.generation_preference_repository import (
     SqliteGenerationPreferenceRepository,
@@ -282,8 +282,10 @@ def test_qc_automation_task_waits_for_every_video_child_job(workspace, database)
         "machine_check": {"status": "PASS", "ok": True},
         "produced": {"items": [{"status": "SUBMITTED", "submissions": [{"job_id": child["id"]} for child in children]}]},
     }
-    worker = LocalMediaWorker(database, workspace)
-    assert worker._advance_automation_run(jobs.get_job(video_job_id), report, 0) is None
+    assert advance_automation_run(
+        jobs.get_job(video_job_id), report, 0,
+        workflow_steps=AutomationWorkflowService(database),
+    ) is None
 
     advanced = automation.get_run(str(run["id"]))
     qc_job_id = str(advanced["tasks"][1]["job_id"])

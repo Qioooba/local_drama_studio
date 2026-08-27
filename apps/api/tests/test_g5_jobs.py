@@ -262,11 +262,13 @@ def test_worker_ffmpeg_terminates_process_and_converges_cancel_requested_job(wor
     )
     worker = LocalMediaWorker(database, workspace)
 
-    def cancel_during_execution(current_job, _output_root):
+    def cancel_during_execution(current_job, _output_root, **_ports):
         assert jobs.cancel(str(current_job["id"]))["state"] == "CANCEL_REQUESTED"
         raise DomainRuleError("JOB_CANCELLED", "后台任务已取消，本次媒体输出不会登记")
 
-    monkeypatch.setattr(worker, "_run_media_job", cancel_during_execution)
+    # The MEDIA_* business flow lives in worker_handlers since §13.2; patch it
+    # where the runner resolves it at dispatch time.
+    monkeypatch.setattr("local_drama.application.worker.run_media_job", cancel_during_execution)
     outcome = worker.run_once("cancel-aware-worker", ["CPU"])
     assert outcome is not None and outcome["error"] == "JOB_CANCELLED"
     assert outcome["result"]["job_state"] == "CANCELLED"

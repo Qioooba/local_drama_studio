@@ -9,6 +9,8 @@ import pytest
 
 from local_drama.application.automation_workflows import AutomationWorkflowService
 from local_drama.application.breakdown_apply import BreakdownApplyService
+from local_drama.application.configuration import ConfigurationService
+from local_drama.application.dialogue import DialogueService
 from local_drama.application.documents import DocumentImportService
 from local_drama.application.episode_front_half_actions import EpisodeFrontHalfActionService
 from local_drama.application.episode_production_runs import (
@@ -19,9 +21,13 @@ from local_drama.application.episode_production_runs import (
 )
 from local_drama.application.episode_worker_actions import EpisodeWorkerActionService
 from local_drama.application.jobs import JobService
+from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
+from local_drama.application.timeline import TimelineService
 from local_drama.application.worker import LocalMediaWorker
+from local_drama.application.worker_handlers.automation_task import run_automation_task
 from local_drama.domain.errors import DomainRuleError
+from local_drama.infrastructure.filesystem.atomic import write_atomic
 
 
 def test_stage_definitions_and_front_half_action_mapping() -> None:
@@ -457,10 +463,24 @@ def test_every_front_half_action_has_a_real_idempotent_worker_handler(
     )
     job = JobService(database, workspace).get_job(str(run["tasks"][0]["job_id"]))
     output_root = workspace.work_root / "front-half-handler-tests" / action.lower()
-    worker = LocalMediaWorker(database, workspace)
 
-    first = worker._run_automation_task(job, output_root, "handler-test")
-    second = worker._run_automation_task(job, output_root, "handler-test")
+    def execute_automation() -> tuple[str, str, dict, int]:
+        return run_automation_task(
+            job,
+            output_root,
+            worker_id="handler-test",
+            work_root=workspace.work_root,
+            database=database,
+            front_half_actions_factory=lambda: EpisodeFrontHalfActionService(database, workspace),
+            episode_worker_actions_factory=lambda: EpisodeWorkerActionService(database, workspace),
+            dialogue_factory=lambda: DialogueService(database, workspace, jobs=JobService(database, workspace), media=MediaService(database, workspace)),
+            configuration_factory=lambda: ConfigurationService(database),
+            timeline_factory=lambda: TimelineService(database, workspace),
+            atomic_writer=write_atomic,
+        )
+
+    first = execute_automation()
+    second = execute_automation()
 
     assert first[0] == second[0] == "AUTOMATION_TASK_REPORT"
     assert first[2]["action"] == second[2]["action"] == action
