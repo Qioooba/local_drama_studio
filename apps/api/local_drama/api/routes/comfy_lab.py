@@ -3,10 +3,20 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 from local_drama.api.schemas.comfy_lab import (
+    ComfyLabCaptureCreatedEnvelope,
+    ComfyLabCaptureDetailEnvelope,
+    ComfyLabCapturePromotedEnvelope,
     ComfyLabCaptureRequest,
+    ComfyLabCapturesPage,
+    ComfyLabConfigureEnvelope,
     ComfyLabConfigureRequest,
     ComfyLabDiscoverRequest,
+    ComfyLabDiscoveryEnvelope,
+    ComfyLabLifecycleEnvelope,
     ComfyLabPromoteRequest,
+    ComfyLabSessionResponse,
+    ComfyLabStatusEnvelope,
+    ComfyLabTestRunEnvelope,
     ComfyLabTestRunRequest,
 )
 from local_drama.application.comfy_lab import ComfyLabService
@@ -21,17 +31,17 @@ def service(request: Request) -> ComfyLabService:
     return ComfyLabService(request.app.state.settings)
 
 
-@router.get("/comfy-lab/status", operation_id="getComfyLabStatus")
+@router.get("/comfy-lab/status", operation_id="getComfyLabStatus", response_model=ComfyLabStatusEnvelope)
 async def status(request: Request) -> dict[str, object]:
     return {"status": service(request).status()}
 
 
-@router.get("/comfy-lab/session", operation_id="getComfyLabSession")
+@router.get("/comfy-lab/session", operation_id="getComfyLabSession", response_model=ComfyLabSessionResponse)
 async def session(request: Request) -> dict[str, object]:
     return service(request).session()
 
 
-@router.post("/comfy-lab:discover", operation_id="discoverComfyLab")
+@router.post("/comfy-lab:discover", operation_id="discoverComfyLab", response_model=ComfyLabDiscoveryEnvelope)
 async def discover(payload: ComfyLabDiscoverRequest, request: Request) -> dict[str, object]:
     try:
         return {"discovery": service(request).discover(apply=payload.apply)}
@@ -39,7 +49,7 @@ async def discover(payload: ComfyLabDiscoverRequest, request: Request) -> dict[s
         raise api_error_from_domain(error) from error
 
 
-@router.put("/comfy-lab/configuration", operation_id="configureComfyLab")
+@router.put("/comfy-lab/configuration", operation_id="configureComfyLab", response_model=ComfyLabConfigureEnvelope)
 async def configure(payload: ComfyLabConfigureRequest, request: Request) -> dict[str, object]:
     try:
         return {"configuration": service(request).configure(payload.python_path, payload.root_path, payload.port)}
@@ -47,7 +57,14 @@ async def configure(payload: ComfyLabConfigureRequest, request: Request) -> dict
         raise api_error_from_domain(error) from error
 
 
-@router.post("/comfy-lab:start", operation_id="startComfyLab")
+# Lifecycle responses omit branch-specific keys (e.g. idempotent_replay only on
+# replay); exclude_unset keeps absence honest instead of serializing nulls.
+@router.post(
+    "/comfy-lab:start",
+    operation_id="startComfyLab",
+    response_model=ComfyLabLifecycleEnvelope,
+    response_model_exclude_unset=True,
+)
 async def start(request: Request) -> dict[str, object]:
     try:
         return {"status": service(request).start()}
@@ -55,7 +72,12 @@ async def start(request: Request) -> dict[str, object]:
         raise api_error_from_domain(error) from error
 
 
-@router.post("/comfy-lab:stop", operation_id="stopComfyLab")
+@router.post(
+    "/comfy-lab:stop",
+    operation_id="stopComfyLab",
+    response_model=ComfyLabLifecycleEnvelope,
+    response_model_exclude_unset=True,
+)
 async def stop(request: Request) -> dict[str, object]:
     try:
         return {"status": service(request).stop()}
@@ -63,7 +85,12 @@ async def stop(request: Request) -> dict[str, object]:
         raise api_error_from_domain(error) from error
 
 
-@router.post("/comfy-lab:restart", operation_id="restartComfyLab")
+@router.post(
+    "/comfy-lab:restart",
+    operation_id="restartComfyLab",
+    response_model=ComfyLabLifecycleEnvelope,
+    response_model_exclude_unset=True,
+)
 async def restart(request: Request) -> dict[str, object]:
     try:
         return {"status": service(request).restart()}
@@ -71,7 +98,12 @@ async def restart(request: Request) -> dict[str, object]:
         raise api_error_from_domain(error) from error
 
 
-@router.post("/comfy-lab/workflow:capture", status_code=201, operation_id="captureComfyLabWorkflow")
+@router.post(
+    "/comfy-lab/workflow:capture",
+    status_code=201,
+    operation_id="captureComfyLabWorkflow",
+    response_model=ComfyLabCaptureCreatedEnvelope,
+)
 async def capture(payload: ComfyLabCaptureRequest, request: Request) -> dict[str, object]:
     try:
         return {"capture": service(request).capture(payload.workflow, payload.title)}
@@ -79,12 +111,12 @@ async def capture(payload: ComfyLabCaptureRequest, request: Request) -> dict[str
         raise api_error_from_domain(error) from error
 
 
-@router.get("/comfy-lab/captures", operation_id="listComfyLabCaptures")
+@router.get("/comfy-lab/captures", operation_id="listComfyLabCaptures", response_model=ComfyLabCapturesPage)
 async def list_captures(request: Request) -> dict[str, object]:
     return {"items": service(request).list_captures(), "runtime_contacted": False}
 
 
-@router.get("/comfy-lab/captures/{capture_id}", operation_id="getComfyLabCapture")
+@router.get("/comfy-lab/captures/{capture_id}", operation_id="getComfyLabCapture", response_model=ComfyLabCaptureDetailEnvelope)
 async def get_capture(capture_id: str, request: Request) -> dict[str, object]:
     try:
         return {"capture": service(request).get_capture(capture_id), "runtime_contacted": False}
@@ -92,7 +124,12 @@ async def get_capture(capture_id: str, request: Request) -> dict[str, object]:
         raise api_error_from_domain(error) from error
 
 
-@router.post("/comfy-lab/captures/{capture_id}:promote", status_code=201, operation_id="promoteComfyLabCapture")
+@router.post(
+    "/comfy-lab/captures/{capture_id}:promote",
+    status_code=201,
+    operation_id="promoteComfyLabCapture",
+    response_model=ComfyLabCapturePromotedEnvelope,
+)
 async def promote_capture(capture_id: str, payload: ComfyLabPromoteRequest, request: Request) -> dict[str, object]:
     try:
         capture = service(request).promotable_capture(capture_id)
@@ -105,7 +142,12 @@ async def promote_capture(capture_id: str, payload: ComfyLabPromoteRequest, requ
         raise api_error_from_domain(error) from error
 
 
-@router.post("/comfy-lab/test-runs", operation_id="createComfyLabTestRun")
+@router.post(
+    "/comfy-lab/test-runs",
+    operation_id="createComfyLabTestRun",
+    response_model=ComfyLabTestRunEnvelope,
+    response_model_exclude_unset=True,
+)
 async def test_run(payload: ComfyLabTestRunRequest, request: Request) -> dict[str, object]:
     try:
         return {"test_run": service(request).test_run(payload.workflow, capture_id=payload.capture_id, execute=payload.execute)}

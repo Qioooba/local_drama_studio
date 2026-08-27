@@ -177,9 +177,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Getcomfylabstatus"
+                  "$ref": "#/components/schemas/ComfyLabStatusEnvelope"
                 }
               }
             }
@@ -200,9 +198,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Getcomfylabsession"
+                  "$ref": "#/components/schemas/ComfyLabSessionResponse"
                 }
               }
             }
@@ -233,9 +229,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Discovercomfylab"
+                  "$ref": "#/components/schemas/ComfyLabDiscoveryEnvelope"
                 }
               }
             }
@@ -276,9 +270,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Configurecomfylab"
+                  "$ref": "#/components/schemas/ComfyLabConfigureEnvelope"
                 }
               }
             }
@@ -309,9 +301,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Startcomfylab"
+                  "$ref": "#/components/schemas/ComfyLabLifecycleEnvelope"
                 }
               }
             }
@@ -332,9 +322,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Stopcomfylab"
+                  "$ref": "#/components/schemas/ComfyLabLifecycleEnvelope"
                 }
               }
             }
@@ -355,9 +343,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Restartcomfylab"
+                  "$ref": "#/components/schemas/ComfyLabLifecycleEnvelope"
                 }
               }
             }
@@ -388,9 +374,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Capturecomfylabworkflow"
+                  "$ref": "#/components/schemas/ComfyLabCaptureCreatedEnvelope"
                 }
               }
             }
@@ -421,9 +405,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Listcomfylabcaptures"
+                  "$ref": "#/components/schemas/ComfyLabCapturesPage"
                 }
               }
             }
@@ -455,9 +437,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Getcomfylabcapture"
+                  "$ref": "#/components/schemas/ComfyLabCaptureDetailEnvelope"
                 }
               }
             }
@@ -509,9 +489,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Promotecomfylabcapture"
+                  "$ref": "#/components/schemas/ComfyLabCapturePromotedEnvelope"
                 }
               }
             }
@@ -552,9 +530,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Createcomfylabtestrun"
+                  "$ref": "#/components/schemas/ComfyLabTestRunEnvelope"
                 }
               }
             }
@@ -24791,6 +24767,206 @@
         ],
         "title": "CharacterVoiceBindRequest"
       },
+      "ComfyLabCaptureCreated": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "CAPTURED",
+            "title": "Status"
+          },
+          "capture_id": {
+            "type": "string",
+            "title": "Capture Id"
+          },
+          "content_hash": {
+            "type": "string",
+            "title": "Content Hash"
+          },
+          "sandbox_rel_path": {
+            "type": "string",
+            "title": "Sandbox Rel Path"
+          },
+          "formal_project_write": {
+            "type": "boolean",
+            "title": "Formal Project Write"
+          },
+          "runtime_contacted": {
+            "type": "boolean",
+            "title": "Runtime Contacted"
+          },
+          "network_contacted": {
+            "type": "boolean",
+            "title": "Network Contacted"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "status",
+          "capture_id",
+          "content_hash",
+          "sandbox_rel_path",
+          "formal_project_write",
+          "runtime_contacted",
+          "network_contacted"
+        ],
+        "title": "ComfyLabCaptureCreated"
+      },
+      "ComfyLabCaptureCreatedEnvelope": {
+        "properties": {
+          "capture": {
+            "$ref": "#/components/schemas/ComfyLabCaptureCreated"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "capture"
+        ],
+        "title": "ComfyLabCaptureCreatedEnvelope"
+      },
+      "ComfyLabCaptureDetail": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "localdrama.comfy-lab-capture.v1",
+            "title": "Schema Version"
+          },
+          "capture_id": {
+            "type": "string",
+            "title": "Capture Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "content_hash": {
+            "type": "string",
+            "title": "Content Hash"
+          },
+          "workflow": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Workflow"
+          },
+          "formal_project_write": {
+            "type": "boolean",
+            "title": "Formal Project Write"
+          },
+          "local_only": {
+            "type": "boolean",
+            "title": "Local Only"
+          },
+          "test_evidence": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Evidence"
+          },
+          "sandbox_rel_path": {
+            "type": "string",
+            "title": "Sandbox Rel Path"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "schema_version",
+          "capture_id",
+          "title",
+          "content_hash",
+          "workflow",
+          "formal_project_write",
+          "local_only",
+          "sandbox_rel_path"
+        ],
+        "title": "ComfyLabCaptureDetail"
+      },
+      "ComfyLabCaptureDetailEnvelope": {
+        "properties": {
+          "capture": {
+            "$ref": "#/components/schemas/ComfyLabCaptureDetail"
+          },
+          "runtime_contacted": {
+            "type": "boolean",
+            "title": "Runtime Contacted"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "capture",
+          "runtime_contacted"
+        ],
+        "title": "ComfyLabCaptureDetailEnvelope"
+      },
+      "ComfyLabCaptureItem": {
+        "properties": {
+          "capture_id": {
+            "type": "string",
+            "title": "Capture Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "content_hash": {
+            "type": "string",
+            "title": "Content Hash"
+          },
+          "sandbox_rel_path": {
+            "type": "string",
+            "title": "Sandbox Rel Path"
+          },
+          "test_evidence": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Evidence"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "capture_id",
+          "title",
+          "content_hash",
+          "sandbox_rel_path"
+        ],
+        "title": "ComfyLabCaptureItem"
+      },
+      "ComfyLabCapturePromotedEnvelope": {
+        "properties": {
+          "workflow_version": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Workflow Version"
+          },
+          "source_capture_id": {
+            "type": "string",
+            "title": "Source Capture Id"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "workflow_version",
+          "source_capture_id"
+        ],
+        "title": "ComfyLabCapturePromotedEnvelope"
+      },
       "ComfyLabCaptureRequest": {
         "properties": {
           "title": {
@@ -24811,6 +24987,103 @@
           "workflow"
         ],
         "title": "ComfyLabCaptureRequest"
+      },
+      "ComfyLabCapturesPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ComfyLabCaptureItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "runtime_contacted": {
+            "type": "boolean",
+            "title": "Runtime Contacted"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "items",
+          "runtime_contacted"
+        ],
+        "title": "ComfyLabCapturesPage"
+      },
+      "ComfyLabConfiguration": {
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "python": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Python"
+          },
+          "root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root"
+          },
+          "port": {
+            "type": "integer",
+            "title": "Port"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "ENVIRONMENT",
+              "SAVED",
+              "NONE"
+            ],
+            "title": "Source"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "configured",
+          "port",
+          "source"
+        ],
+        "title": "ComfyLabConfiguration"
+      },
+      "ComfyLabConfigureEnvelope": {
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/ComfyLabConfigureResponse"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "configuration"
+        ],
+        "title": "ComfyLabConfigureEnvelope"
       },
       "ComfyLabConfigureRequest": {
         "properties": {
@@ -24841,6 +25114,83 @@
         ],
         "title": "ComfyLabConfigureRequest"
       },
+      "ComfyLabConfigureResponse": {
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "python": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Python"
+          },
+          "root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root"
+          },
+          "port": {
+            "type": "integer",
+            "title": "Port"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "ENVIRONMENT",
+              "SAVED",
+              "NONE"
+            ],
+            "title": "Source"
+          },
+          "persisted": {
+            "type": "boolean",
+            "title": "Persisted"
+          },
+          "runtime_contacted": {
+            "type": "boolean",
+            "title": "Runtime Contacted"
+          },
+          "network_contacted": {
+            "type": "boolean",
+            "title": "Network Contacted"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "configured",
+          "port",
+          "source",
+          "persisted",
+          "runtime_contacted",
+          "network_contacted"
+        ],
+        "title": "ComfyLabConfigureResponse"
+      },
       "ComfyLabDiscoverRequest": {
         "properties": {
           "apply": {
@@ -24851,6 +25201,219 @@
         },
         "type": "object",
         "title": "ComfyLabDiscoverRequest"
+      },
+      "ComfyLabDiscoveryCandidate": {
+        "properties": {
+          "python_path": {
+            "type": "string",
+            "title": "Python Path"
+          },
+          "root_path": {
+            "type": "string",
+            "title": "Root Path"
+          },
+          "port": {
+            "type": "integer",
+            "title": "Port"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "python_path",
+          "root_path",
+          "port"
+        ],
+        "title": "ComfyLabDiscoveryCandidate"
+      },
+      "ComfyLabDiscoveryEnvelope": {
+        "properties": {
+          "discovery": {
+            "$ref": "#/components/schemas/ComfyLabDiscoveryResponse"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "discovery"
+        ],
+        "title": "ComfyLabDiscoveryEnvelope"
+      },
+      "ComfyLabDiscoveryResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "CONFIGURED",
+              "FOUND",
+              "NOT_FOUND"
+            ],
+            "title": "Status"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/ComfyLabDiscoveryCandidate"
+            },
+            "type": "array",
+            "title": "Candidates"
+          },
+          "applied": {
+            "type": "boolean",
+            "title": "Applied"
+          },
+          "configuration": {
+            "$ref": "#/components/schemas/ComfyLabConfiguration"
+          },
+          "searched_roots": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Searched Roots"
+          },
+          "runtime_contacted": {
+            "type": "boolean",
+            "title": "Runtime Contacted"
+          },
+          "network_contacted": {
+            "type": "boolean",
+            "title": "Network Contacted"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "status",
+          "candidates",
+          "applied",
+          "configuration",
+          "searched_roots",
+          "runtime_contacted",
+          "network_contacted"
+        ],
+        "title": "ComfyLabDiscoveryResponse"
+      },
+      "ComfyLabLifecycleEnvelope": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ComfyLabLifecycleResponse"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "ComfyLabLifecycleEnvelope"
+      },
+      "ComfyLabLifecycleResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "RUNNING",
+              "STOPPED",
+              "STARTING"
+            ],
+            "title": "Status"
+          },
+          "pid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pid"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "launch_configured": {
+            "type": "boolean",
+            "title": "Launch Configured"
+          },
+          "sandbox_root": {
+            "type": "string",
+            "title": "Sandbox Root"
+          },
+          "formal_project_write": {
+            "type": "boolean",
+            "title": "Formal Project Write"
+          },
+          "local_only": {
+            "type": "boolean",
+            "title": "Local Only"
+          },
+          "network_contacted": {
+            "type": "boolean",
+            "title": "Network Contacted"
+          },
+          "stale_state": {
+            "type": "boolean",
+            "title": "Stale State"
+          },
+          "runtime_contacted": {
+            "type": "boolean",
+            "title": "Runtime Contacted"
+          },
+          "idempotent_replay": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotent Replay"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "status",
+          "launch_configured",
+          "sandbox_root",
+          "formal_project_write",
+          "local_only",
+          "network_contacted",
+          "stale_state",
+          "runtime_contacted"
+        ],
+        "title": "ComfyLabLifecycleResponse"
       },
       "ComfyLabPromoteRequest": {
         "properties": {
@@ -24889,6 +25452,228 @@
         ],
         "title": "ComfyLabPromoteRequest"
       },
+      "ComfyLabSessionDesigner": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "const": "WORKFLOW_DESIGNER",
+            "title": "Role"
+          },
+          "production_isolation": {
+            "type": "boolean",
+            "title": "Production Isolation"
+          },
+          "capture_target": {
+            "type": "string",
+            "const": "COMFY_LAB_SANDBOX_ONLY",
+            "title": "Capture Target"
+          },
+          "formal_project_write": {
+            "type": "boolean",
+            "title": "Formal Project Write"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "role",
+          "production_isolation",
+          "capture_target",
+          "formal_project_write"
+        ],
+        "title": "ComfyLabSessionDesigner"
+      },
+      "ComfyLabSessionResponse": {
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/ComfyLabStatusResponse"
+          },
+          "designer": {
+            "$ref": "#/components/schemas/ComfyLabSessionDesigner"
+          },
+          "runtime_contacted": {
+            "type": "boolean",
+            "title": "Runtime Contacted"
+          },
+          "network_contacted": {
+            "type": "boolean",
+            "title": "Network Contacted"
+          },
+          "mutated": {
+            "type": "boolean",
+            "title": "Mutated"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "session",
+          "designer",
+          "runtime_contacted",
+          "network_contacted",
+          "mutated"
+        ],
+        "title": "ComfyLabSessionResponse"
+      },
+      "ComfyLabStatusEnvelope": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ComfyLabStatusResponse"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "ComfyLabStatusEnvelope"
+      },
+      "ComfyLabStatusResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "RUNNING",
+              "STOPPED",
+              "STARTING"
+            ],
+            "title": "Status"
+          },
+          "pid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pid"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "launch_configured": {
+            "type": "boolean",
+            "title": "Launch Configured"
+          },
+          "sandbox_root": {
+            "type": "string",
+            "title": "Sandbox Root"
+          },
+          "formal_project_write": {
+            "type": "boolean",
+            "title": "Formal Project Write"
+          },
+          "local_only": {
+            "type": "boolean",
+            "title": "Local Only"
+          },
+          "network_contacted": {
+            "type": "boolean",
+            "title": "Network Contacted"
+          },
+          "stale_state": {
+            "type": "boolean",
+            "title": "Stale State"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "status",
+          "launch_configured",
+          "sandbox_root",
+          "formal_project_write",
+          "local_only",
+          "network_contacted",
+          "stale_state"
+        ],
+        "title": "ComfyLabStatusResponse"
+      },
+      "ComfyLabTestPlan": {
+        "properties": {
+          "content_hash": {
+            "type": "string",
+            "title": "Content Hash"
+          },
+          "sandbox_root": {
+            "type": "string",
+            "title": "Sandbox Root"
+          },
+          "designer_endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Designer Endpoint"
+          },
+          "formal_project_write": {
+            "type": "boolean",
+            "title": "Formal Project Write"
+          },
+          "local_only": {
+            "type": "boolean",
+            "title": "Local Only"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "content_hash",
+          "sandbox_root",
+          "formal_project_write",
+          "local_only"
+        ],
+        "title": "ComfyLabTestPlan"
+      },
+      "ComfyLabTestRunEnvelope": {
+        "properties": {
+          "test_run": {
+            "$ref": "#/components/schemas/ComfyLabTestRunResponse"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "test_run"
+        ],
+        "title": "ComfyLabTestRunEnvelope"
+      },
       "ComfyLabTestRunRequest": {
         "properties": {
           "workflow": {
@@ -24924,6 +25709,123 @@
         },
         "type": "object",
         "title": "ComfyLabTestRunRequest"
+      },
+      "ComfyLabTestRunResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "READY",
+              "BLOCKED",
+              "PASS"
+            ],
+            "title": "Status"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blockers"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/ComfyLabTestPlan"
+          },
+          "would_contact_comfyui": {
+            "type": "boolean",
+            "title": "Would Contact Comfyui"
+          },
+          "network_contacted": {
+            "type": "boolean",
+            "title": "Network Contacted"
+          },
+          "capture_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capture Id"
+          },
+          "content_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Hash"
+          },
+          "prompt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Id"
+          },
+          "runtime_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Status"
+          },
+          "tested_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tested At"
+          },
+          "designer_endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Designer Endpoint"
+          },
+          "formal_project_write": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Formal Project Write"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "status",
+          "plan",
+          "would_contact_comfyui",
+          "network_contacted"
+        ],
+        "title": "ComfyLabTestRunResponse"
       },
       "CommitProjectPackageRequest": {
         "properties": {
