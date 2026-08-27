@@ -250,3 +250,14 @@ async def recover_attempt(attempt_id: str, payload: ComfyWorkerRequest, request:
         return {"result": comfy_service(request).recover_attempt(attempt_id, str(row["provider_job_id"]))}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
+
+
+# Direct ComfyUI control endpoints (system-stats/queue/interrupt/submit-next/
+# attempt poll/recover) are worker/expert internals consumed by engineering
+# verification flows, not by creator-facing product UI. Keep them fully
+# functional while removing them from the public OpenAPI document
+# (design §13.2 / §11.1: no provider internals in the normal product surface).
+for _route in router.routes:
+    _path = getattr(_route, "path", "")
+    if _path.startswith("/comfy"):
+        _route.include_in_schema = False
