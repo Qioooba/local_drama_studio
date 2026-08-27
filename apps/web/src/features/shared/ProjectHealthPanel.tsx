@@ -1,8 +1,0 @@
-import { useQuery } from "@tanstack/react-query";
-import { getProjectHealth } from "../../generated/api";
-
-export function ProjectHealthPanel({ projectId }: { projectId: string }) {
-  const health = useQuery({ queryKey: ["project-health", projectId], queryFn: () => getProjectHealth(projectId), enabled: Boolean(projectId) });
-  const data = health.data;
-  return <section className="panel project-health-panel" aria-labelledby="project-health-title"><div className="panel-heading"><div><p className="eyebrow">维护与诊断</p><h3 id="project-health-title">项目健康检查</h3></div><span className={`status-pill${data?.status === "HEALTHY" ? "" : " neutral"}`}>{health.isPending ? "读取中…" : data?.status ?? "不可用"}</span></div>{health.error ? <p className="inline-error" role="alert">健康检查失败：{String(health.error)}</p> : data && <><div className="configuration-grid capacity-grid"><div className="configuration-card"><small>媒体引用</small><strong>{data.media.referenced_count}</strong><span>缺失 {data.media.missing.length} · 尺寸不符 {data.media.size_mismatch.length} · hash 不符 {data.media.hash_mismatch.length}</span></div><div className="configuration-card"><small>孤儿文件</small><strong>{data.orphan_count}</strong><span>仅扫描项目根目录</span></div><div className="configuration-card"><small>数据库</small><strong>{data.database_integrity}</strong><span>SQLite 完整性检查</span></div><div className="configuration-card"><small>磁盘可用</small><strong>{Math.round(data.disk.free_bytes / 1024 / 1024 / 1024)} GB</strong><span>本地项目盘</span></div></div>{data.blockers.length > 0 && <p className="review-guidance">阻塞项：{data.blockers.join("、")}</p>}<p className="muted">只读检查：不接触 runtime/network，不移动模型或媒体。</p></>}</section>;
-}

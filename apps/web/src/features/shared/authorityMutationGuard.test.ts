@@ -3,7 +3,7 @@ import directorDesk from "../../pages/DirectorDeskPage.tsx?raw";
 import episodeReview from "../episode-review-v2/EpisodeReviewWorkspace.tsx?raw";
 import directorIntent from "../director-v2/DirectorIntentEditor.tsx?raw";
 import frameBridge from "../director-v2/FrameBridgeControls.tsx?raw";
-import generationWorkbench from "../generation/GenerationWorkbench.tsx?raw";
+import shotGenerationInspector from "../director-v2/ShotGenerationInspector.tsx?raw";
 import timelineEditor from "../edit-v2/EpisodeEditWorkspace.tsx?raw";
 import legacyDirectorRevision from "../production/DirectorShotEditor.tsx?raw";
 
@@ -18,7 +18,7 @@ const AUTHORITY_SURFACES: Record<string, string> = {
   "EpisodeReview selection/approval": episodeReview,
   "Director immutable revision": directorIntent,
   "Frame Bridge anchors/lock": frameBridge,
-  "Generation result": generationWorkbench,
+  "Generation result": shotGenerationInspector,
   "Timeline compose revision": timelineEditor,
   "Legacy immutable shot revision": legacyDirectorRevision,
 };

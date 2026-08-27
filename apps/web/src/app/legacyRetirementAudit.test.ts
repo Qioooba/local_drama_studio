@@ -5,8 +5,11 @@ type Status = "EQUIVALENT_V2" | "MISSING_V2" | "SYSTEM_OR_TOOL" | "SHELL_INFRA";
 type AuditItem = { status: Status; target: string; safeToRemoveFromLegacyApp: boolean; authority?: string };
 
 /**
- * Historical P12 migration inventory. Components remain reusable; this only
- * proves every former legacy-shell dependency now has a V2 owner.
+ * Historical P12 migration inventory. Every former legacy-shell dependency
+ * now has a V2 owner; several listed components have since been physically
+ * removed from the tree under §13.1 (e.g. GenerationWorkbench,
+ * ProjectHealthPanel, PromptTemplatePanel) while this matrix keeps recording
+ * which owner took over their authority.
  */
 const MATRIX: Record<string, AuditItem> = {
   "../features/generation/GenerationWorkbench#GenerationWorkbench": { status: "EQUIVALENT_V2", target: "episodes/:episodeId/generation", safeToRemoveFromLegacyApp: true, authority: "GenerationIntent/Variant/Job" },
