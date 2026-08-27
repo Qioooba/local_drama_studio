@@ -39,7 +39,7 @@ test.afterAll(() => {
     observed_at: new Date().toISOString(),
     mode: "LOCAL_ONLY",
     project_id: projectId,
-    scope: ["image candidate grid", "image review inbox", "image A/B thumbnail compare", "keyboard candidate navigation"],
+    scope: ["V2 review inbox", "image A/B thumbnail compare", "keyboard candidate navigation"],
     status: passed ? "PASS" : "IN_PROGRESS",
     isolated_snapshot: true,
     production_database_touched: false,
@@ -51,7 +51,7 @@ test.afterAll(() => {
     screenshots_created: false,
     viewports: results,
     interpretation:
-      "Real React review surfaces (ImageCandidateGrid + ReviewInboxPanel) were exercised at 1440x900/1280x800/1024x768 against an isolated SQLite snapshot seeded with two real local PNG PROXY image candidates. Only size=small derived thumbnails are requested; original /content is never fetched; no mutation controls were clicked.",
+      "The V2 EpisodeReviewWorkspace and ReviewInboxPanel were exercised at 1440x900/1280x800/1024x768 against an isolated SQLite snapshot seeded with two real local PNG PROXY image candidates. Only size=small derived thumbnails are requested; original /content is never fetched; no mutation controls were clicked.",
   };
   fs.mkdirSync(path.dirname(evidencePath()), { recursive: true });
   fs.writeFileSync(evidencePath(), `${JSON.stringify(output, null, 2)}\n`, "utf8");
@@ -59,6 +59,7 @@ test.afterAll(() => {
 
 for (const viewport of viewports) {
   test(`reviews real image candidates safely at ${viewport.name}`, async ({ page }) => {
+    test.skip(!episodeId, "IMAGE_UAT_EPISODE_ID is required for the V2 episode review route");
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     const consoleErrors: string[] = [];
     const pageErrors: string[] = [];
@@ -81,15 +82,14 @@ for (const viewport of viewports) {
       if (pathname.startsWith("/api/") && request.method() !== "GET") writes.push(`${request.method()} ${pathname}`);
     });
 
-    const base = `/?view=reviews&project=${projectId}${episodeId ? `&episode=${episodeId}` : ""}`;
-    await page.goto(base, { waitUntil: "networkidle", timeout: 45000 });
+    const reviewUrl = `/projects/${projectId}/episodes/${episodeId}/review`;
+    await page.goto(reviewUrl, { waitUntil: "networkidle", timeout: 45000 });
 
-    // The image candidate grid renders from the review inbox items.
-    await expect(page.getByRole("heading", { name: "图片候选缩略图网格" })).toBeVisible();
+    // The V2 review inbox owns candidate navigation and comparison.
     await expect(page.getByRole("heading", { name: "媒体版本审核与选择" })).toBeVisible();
 
-    // Both seeded PROXY IMAGE candidates must be listed as cards.
-    const cards = page.locator("button.image-candidate-card");
+    // Both seeded PROXY IMAGE candidates must be listed in the review inbox.
+    const cards = page.getByRole("list", { name: "待审核媒体版本" }).locator("button.review-row");
     const cardCount = await cards.count();
     expect(cardCount).toBeGreaterThanOrEqual(2);
 
@@ -103,8 +103,8 @@ for (const viewport of viewports) {
     await cards.first().focus();
     await page.keyboard.press("ArrowRight");
     await page.waitForTimeout(500);
-    const pressedSecond = await cards.nth(1).getAttribute("aria-pressed");
-    expect(pressedSecond).toBe("true");
+    const selectedSecond = await cards.nth(1).getAttribute("aria-current");
+    expect(selectedSecond).toBe("true");
 
     const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     const result: ViewportResult = {

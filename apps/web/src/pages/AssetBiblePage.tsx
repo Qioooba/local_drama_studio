@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   archiveStoryAsset,
   createStoryAsset,
@@ -15,7 +15,7 @@ import { SceneBiblePanel, type SceneReferenceKind } from "../features/asset-bibl
 import { AssetUsagePanel } from "../features/asset-bible-v2/AssetUsagePanel";
 import { ReferenceVersionCompare } from "../features/asset-bible-v2/ReferenceVersionCompare";
 import { MediaPicker } from "../features/media-picker/MediaPicker";
-import { Dialog, EmptyState, ErrorState, MediaThumb, Skeleton, StatusBadge } from "../components/ui";
+import { ConceptGuide, Dialog, EmptyState, ErrorState, MediaThumb, Skeleton, StatusBadge } from "../components/ui";
 import { queryKeys } from "../query/queryKeys";
 import { generateAssetCode, generateMachineCode } from "../features/shared/autoCode";
 
@@ -59,8 +59,20 @@ function thumbnailUrl(mediaVersionId: string): string {
 export function AssetBiblePage() {
   const { projectId } = useParams();
   const client = useQueryClient();
-  const [tab, setTab] = useState<(typeof KIND_TABS)[number]["kind"]>("CHARACTER");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedKind = searchParams.get("kind");
+  const tab: (typeof KIND_TABS)[number]["kind"] = KIND_TABS.some((item) => item.kind === requestedKind)
+    ? requestedKind as (typeof KIND_TABS)[number]["kind"]
+    : "CHARACTER";
+  const selectedId = searchParams.get("asset");
+  const setAssetContext = (kind: (typeof KIND_TABS)[number]["kind"], assetId?: string | null) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (kind === "CHARACTER") next.delete("kind"); else next.set("kind", kind);
+      if (assetId) next.set("asset", assetId); else next.delete("asset");
+      return next;
+    }, { replace: true });
+  };
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [stateLabel, setStateLabel] = useState("");
@@ -98,7 +110,7 @@ export function AssetBiblePage() {
     mutationFn: () => createStoryAsset(projectId as string, { kind: tab, code: generateAssetCode(tab, newName), name: newName.trim(), description: newDescription.trim() }),
     onSuccess: async (result) => {
       setNewName(""); setNewDescription(""); setFormError(null);
-      setSelectedId(result.asset.id);
+      setAssetContext(tab, result.asset.id);
       setLifecycleMessage("资产已创建。沿准备路径添加主参考并补齐缺失视图后，即可用于镜头生产。");
       await refresh();
     },
@@ -113,7 +125,7 @@ export function AssetBiblePage() {
 
   const restore = useMutation({
     mutationFn: (item: { id: string; revision: number; reason: string }) => restoreStoryAsset(item.id, { expected_revision: item.revision, reason: item.reason }),
-    onSuccess: async () => { setLifecycleAction(null); setLifecycleReason(""); setLifecycleMessage("资产已恢复为启用状态；历史 revision 未被覆盖。"); await refresh(); },
+    onSuccess: async () => { setLifecycleAction(null); setLifecycleReason(""); setLifecycleMessage("资料已恢复为启用状态；历史版本未被覆盖。"); await refresh(); },
     onError: (error) => setFormError(String(error)),
   });
 
@@ -141,22 +153,24 @@ export function AssetBiblePage() {
   return (
     <div className="v2-page">
       <div className="panel-heading">
-        <div><p className="eyebrow">资产圣经</p><h3>角色 / 场景 / 道具 / 服装</h3></div>
-        <StatusBadge tone={assets.isPending ? "running" : "neutral"}>{bible?.asset_count ?? "…"} 项资产</StatusBadge>
+        <div><p className="eyebrow">创作资料库</p><h3>角色、场景、道具与服装</h3></div>
+        <StatusBadge tone={assets.isPending ? "running" : "neutral"}>{bible?.asset_count ?? "…"} 项资料</StatusBadge>
       </div>
+      <p className="muted">集中保存会在多个镜头中重复使用的角色外观、场景、道具和服装参考，避免同一对象在不同镜头里变样。</p>
+      <ConceptGuide title="角色与场景库名词说明" items={[{ term: "主参考", description: "最能代表角色或场景标准外观的一张图，后续生成会优先以它为准。" }, { term: "生产参考", description: "正面、侧面、全身、表情等补充视图，帮助模型从不同角度保持一致。" }, { term: "剧情状态", description: "同一角色或场景在雨夜、受伤、换装等剧情节点下的外观变化，不会覆盖基础资料。" }]} />
 
       {assets.isPending && <section className="panel"><Skeleton label="正在读取资产、状态、参考与使用情况" lines={5} /></section>}
-      {assets.error && <><ErrorState title="资产圣经暂时无法打开" description={assets.error instanceof Error ? assets.error.message : String(assets.error)} onRetry={() => void assets.refetch()} /><Link className="secondary v2-inline-link" to={`/projects/${projectId}`}>返回项目总览</Link></>}
+      {assets.error && <><ErrorState title="角色与场景库暂时无法打开" description={assets.error instanceof Error ? assets.error.message : String(assets.error)} onRetry={() => void assets.refetch()} /><Link className="secondary v2-inline-link" to={`/projects/${projectId}`}>返回项目总览</Link></>}
       {!assets.isPending && !assets.error && <div className="bible-layout">
         <aside className="bible-list" aria-label="资产列表">
           <div className="bible-tabs" role="tablist" aria-label="资产类别">
             {KIND_TABS.map((item) => (
-              <button key={item.kind} type="button" role="tab" aria-selected={tab === item.kind} className={tab === item.kind ? "selected" : ""} onClick={() => { setTab(item.kind); setSelectedId(null); }}>{item.label}</button>
+              <button key={item.kind} type="button" role="tab" aria-selected={tab === item.kind} className={tab === item.kind ? "selected" : ""} onClick={() => setAssetContext(item.kind)}>{item.label}</button>
             ))}
           </div>
           <div className="bible-asset-list">
             {visible.map((item) => (
-              <button key={item.asset.id} type="button" className={`bible-asset-row${selected?.asset.id === item.asset.id ? " selected" : ""}`} onClick={() => setSelectedId(item.asset.id)}>
+              <button key={item.asset.id} type="button" className={`bible-asset-row${selected?.asset.id === item.asset.id ? " selected" : ""}`} onClick={() => setAssetContext(tab, item.asset.id)}>
                 <MediaThumb className="bible-asset-thumbnail" src={item.asset.canonical_media_version_id ? thumbnailUrl(item.asset.canonical_media_version_id) : null} alt={`${item.asset.name} 资产缩略图`} emptyLabel="无图" />
                 <span className="bible-asset-name">{item.asset.name}</span>
                 <small>{KIND_LABELS[item.asset.kind] ?? item.asset.kind}</small>
@@ -195,9 +209,9 @@ export function AssetBiblePage() {
                     : null;
               return <section className="asset-readiness-path" aria-label="资产生产准备路径">
                 <div><span className="status-pill state-ready">1</span><strong>资产已建档</strong><small>系统标识已生成</small></div>
-                <div className={hasHero ? "complete" : "current"}><span className="status-pill">2</span><strong>主参考</strong><small>{hasHero ? "已绑定 HERO" : "下一步"}</small></div>
+                <div className={hasHero ? "complete" : "current"}><span className="status-pill">2</span><strong>主参考</strong><small>{hasHero ? "已选择并锁定" : "下一步"}</small></div>
                 <div className={!hasHero ? "pending" : missing.length ? "current" : "complete"}><span className="status-pill">3</span><strong>生产参考</strong><small>{missing.length ? `缺 ${missing.map((kind) => REF_KIND_LABELS[kind] ?? kind).join("、")}` : "已齐全"}</small></div>
-                <div className={missing.length ? "pending" : "complete"}><span className="status-pill">4</span><strong>可用于生产</strong><small>{selected.readiness.level}</small></div>
+                <div className={missing.length ? "pending" : "complete"}><span className="status-pill">4</span><strong>可用于生产</strong><small>{missing.length ? "仍需补充" : "准备完成"}</small></div>
                 {nextAction && <button type="button" className="primary-action" onClick={() => document.getElementById(nextAction.target)?.scrollIntoView({ behavior: "smooth", block: "start" })}>{nextAction.label}</button>}
               </section>;
             })()}
@@ -213,7 +227,7 @@ export function AssetBiblePage() {
                   ))}
                 </div>
               ) : (
-                <div className="bible-empty-visual"><EmptyState title="还没有参考图" description={selected.asset.kind === "CHARACTER" ? "先添加主参考（HERO），再生成三视图。" : "从项目媒体中选择一张低分辨率参考缩略图。"} /></div>
+                <div className="bible-empty-visual"><EmptyState title="还没有参考图" description={selected.asset.kind === "CHARACTER" ? "先添加一张主参考，再补充或生成正面、侧面等视图。" : "从项目媒体中选择一张能代表标准外观的参考图。"} /></div>
               )}
             </div>
 
@@ -276,7 +290,7 @@ export function AssetBiblePage() {
               </section>
               <section className="panel">
                 <div className="panel-heading"><div><p className="eyebrow">参考图</p><h4>选择或上传项目图片</h4></div></div>
-                <p className="muted">选择结果固定到不可变媒体版本，后续更新不会改变历史生成输入。列表只读取低分辨率缩略图；HERO 默认锁定。</p>
+                <p className="muted">选中后会固定到当前媒体版本，今后更新图片也不会改变历史生成结果。列表只读取低分辨率缩略图；主参考会自动锁定，避免误换。</p>
                 <MediaPicker projectId={projectId as string} value={referenceVersionId} onChange={setReferenceVersionId} disabled={addReference.isPending} label="资产参考图选择器" />
                 <div className="bible-create-grid">
                   <label>参考类型<select value={referenceKind} onChange={(event) => setReferenceKind(event.target.value)}>{allowedReferenceKinds.map((value) => <option key={value} value={value}>{REF_KIND_LABELS[value] ?? value}</option>)}</select></label>
@@ -325,7 +339,7 @@ export function AssetBiblePage() {
         onClose={() => { if (!archive.isPending && !restore.isPending) { setLifecycleAction(null); setLifecycleReason(""); } }}
         footer={<><button type="button" className="secondary" onClick={() => { setLifecycleAction(null); setLifecycleReason(""); }} disabled={archive.isPending || restore.isPending}>取消</button><button type="button" className={lifecycleAction?.mode === "ARCHIVE" ? "danger" : "primary-action"} disabled={!lifecycleReason.trim() || archive.isPending || restore.isPending} onClick={() => { if (!lifecycleAction || !lifecycleReason.trim()) return; const payload = { id: lifecycleAction.id, revision: lifecycleAction.revision, reason: lifecycleReason.trim() }; if (lifecycleAction.mode === "ARCHIVE") archive.mutate(payload); else restore.mutate(payload); }}>{archive.isPending || restore.isPending ? "处理中…" : lifecycleAction?.mode === "RESTORE" ? "确认恢复" : "确认归档"}</button></>}
       >
-        <p>{lifecycleAction?.mode === "ARCHIVE" ? "归档会停止该资产参与新的镜头绑定，但保留历史绑定、参考、状态和审计记录。" : "恢复会让资产重新参与新的镜头绑定，不会覆盖归档前后的 revision 历史。"}</p>
+        <p>{lifecycleAction?.mode === "ARCHIVE" ? "归档会停止该资料参与新的镜头绑定，但保留历史绑定、参考、状态和操作记录。" : "恢复会让资料重新参与新的镜头绑定，不会覆盖归档前后的历史版本。"}</p>
         <label>{lifecycleAction?.mode === "ARCHIVE" ? "归档原因" : "恢复原因"}<textarea autoFocus value={lifecycleReason} onChange={(event) => setLifecycleReason(event.target.value)} rows={3} maxLength={500} /></label>
       </Dialog>
     </div>

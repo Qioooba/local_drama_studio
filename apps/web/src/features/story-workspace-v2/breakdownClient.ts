@@ -40,6 +40,7 @@ export interface BreakdownSubmission {
 }
 
 export interface ProbeLocalLLMParams {
+  provider_connection_id?: string;
   provider?: string;
   base_url?: string;
   model?: string;
@@ -50,6 +51,7 @@ export interface ProbeLocalLLMParams {
 }
 
 export interface SyncLocalLLMProfileParams {
+  provider_connection_id?: string;
   model?: string;
   capability?: string;
   provider?: string;

@@ -1,16 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DirectorIntentApiError, saveDirectorIntentAndReady, saveDirectorIntentRevision } from "./directorIntentClient";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DirectorIntentEditor } from "./DirectorIntentEditor";
-import { markShotProductionReady } from "../../generated/api";
+import { ApiRequestError, markShotReadyV2, putShotDraftV2 } from "../../generated/api";
 
-vi.mock("./directorIntentClient", async (loadOriginal) => {
-  const original = await loadOriginal<typeof import("./directorIntentClient")>();
-  return { ...original, saveDirectorIntentAndReady: vi.fn(), saveDirectorIntentRevision: vi.fn() };
-});
 vi.mock("../../generated/api", async (loadOriginal) => {
   const original = await loadOriginal<typeof import("../../generated/api")>();
-  return { ...original, markShotProductionReady: vi.fn(), resolveProfileCameraPlan: vi.fn() };
+  return { ...original, markShotReadyV2: vi.fn(), putShotDraftV2: vi.fn(), resolveProfileCameraPlan: vi.fn() };
 });
 
 const baseFields = {
@@ -33,12 +28,13 @@ const readyFields = {
 };
 
 describe("DirectorIntentEditor local draft buffer", () => {
+  afterEach(() => vi.restoreAllMocks());
   beforeEach(() => {
     window.localStorage.clear();
     vi.clearAllMocks();
-    vi.mocked(saveDirectorIntentRevision).mockResolvedValue({ id: "revision-2", shot_id: "shot-1", revision_no: 2, is_frozen: false, fields: {} });
-    vi.mocked(saveDirectorIntentAndReady).mockResolvedValue({ id: "revision-2", shot_id: "shot-1", revision_no: 2, is_frozen: false, fields: {} });
-    vi.mocked(markShotProductionReady).mockResolvedValue({} as Awaited<ReturnType<typeof markShotProductionReady>>);
+    const result = { shot_revision: { id: "revision-2", shot_id: "shot-1", revision_no: 2, is_frozen: false, fields: {} }, shot: { id: "shot-1", status: "DIRECTED", current_revision_id: "revision-2", revision: 2, updated_at: "now" } };
+    vi.mocked(putShotDraftV2).mockResolvedValue(result);
+    vi.mocked(markShotReadyV2).mockResolvedValue({ ...result, shot: { ...result.shot, status: "READY" } });
   });
 
   it("offers recovery without silently replacing the authoritative revision", () => {
@@ -55,8 +51,8 @@ describe("DirectorIntentEditor local draft buffer", () => {
     render(<DirectorIntentEditor {...props(1)} />);
     fireEvent.change(screen.getByLabelText("主体动作"), { target: { value: "待保存动作" } });
     await waitFor(() => expect(window.localStorage.getItem(key(1))).not.toBeNull(), { timeout: 1_500 });
-    fireEvent.click(screen.getByRole("button", { name: /保存 revision 2/ }));
-    await waitFor(() => expect(saveDirectorIntentRevision).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: /仅保存为第 2 版/ }));
+    await waitFor(() => expect(putShotDraftV2).toHaveBeenCalled());
     expect(window.localStorage.getItem(key(1))).toBeNull();
   });
 
@@ -64,19 +60,19 @@ describe("DirectorIntentEditor local draft buffer", () => {
     window.localStorage.setItem(key(1), stored(1, "旧 revision 动作"));
     render(<DirectorIntentEditor {...props(2)} />);
     expect(screen.getByText("发现过期的本地草稿")).toBeTruthy();
-    expect(screen.getByText(/基于 revision 1.*当前为 revision 2.*不会自动套用/)).toBeTruthy();
+    expect(screen.getByText(/草稿基于第 1 版.*当前为第 2 版.*不会自动套用/)).toBeTruthy();
     expect((screen.getByLabelText("主体动作") as HTMLTextAreaElement).value).toBe("服务端动作");
     fireEvent.click(screen.getByRole("button", { name: "显式迁移并复核" }));
     expect((screen.getByLabelText("主体动作") as HTMLTextAreaElement).value).toBe("旧 revision 动作");
-    expect(screen.getByText(/已显式迁移 revision 1/)).toBeTruthy();
+    expect(screen.getByText(/已迁移基于第 1 版/)).toBeTruthy();
   });
 
   it("keeps a 409 draft and marks it stale after the authoritative revision reloads", async () => {
-    vi.mocked(saveDirectorIntentRevision).mockRejectedValueOnce(new DirectorIntentApiError("revision conflict", 409, "REVISION_CONFLICT", { current_revision_no: 2 }));
+    vi.mocked(putShotDraftV2).mockRejectedValueOnce(new ApiRequestError("revision conflict", 409, "REVISION_CONFLICT", null, false, null, { current_revision_no: 2 }));
     const { rerender } = render(<DirectorIntentEditor {...props(1)} />);
     fireEvent.change(screen.getByLabelText("主体动作"), { target: { value: "冲突中的本地动作" } });
     await waitFor(() => expect(window.localStorage.getItem(key(1))).not.toBeNull(), { timeout: 1_500 });
-    fireEvent.click(screen.getByRole("button", { name: /保存 revision 2/ }));
+    fireEvent.click(screen.getByRole("button", { name: /仅保存为第 2 版/ }));
     expect(await screen.findByText("保存冲突")).toBeTruthy();
     expect(window.localStorage.getItem(key(1))).not.toBeNull();
     rerender(<DirectorIntentEditor {...props(2)} />);
@@ -90,7 +86,7 @@ describe("DirectorIntentEditor local draft buffer", () => {
     fireEvent.change(screen.getByLabelText("主体动作"), { target: { value: "仍可编辑" } });
     expect((await screen.findByRole("alert", {}, { timeout: 1_500 })).textContent).toContain("本地草稿写入失败");
     expect((screen.getByLabelText("主体动作") as HTMLTextAreaElement).value).toBe("仍可编辑");
-    expect((screen.getByRole("button", { name: /保存 revision 2/ }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: /仅保存为第 2 版/ }) as HTMLButtonElement).disabled).toBe(false);
     setItem.mockRestore();
   });
 
@@ -106,19 +102,18 @@ describe("DirectorIntentEditor local draft buffer", () => {
     render(<DirectorIntentEditor {...props(1)} shotStatus="DIRECTED" currentRevision={{ ...revision(1), fields: readyFields }} />);
     fireEvent.change(screen.getByLabelText("主体动作"), { target: { value: "完成后的导演动作" } });
     fireEvent.click(screen.getByRole("button", { name: "保存并就绪" }));
-    await waitFor(() => expect(saveDirectorIntentAndReady).toHaveBeenCalledTimes(1));
-    expect(saveDirectorIntentRevision).not.toHaveBeenCalled();
-    expect(markShotProductionReady).not.toHaveBeenCalled();
-    expect(await screen.findByText(/镜头已标记 Production Ready/)).toBeTruthy();
+    await waitFor(() => expect(markShotReadyV2).toHaveBeenCalledTimes(1));
+    expect(putShotDraftV2).not.toHaveBeenCalled();
+    expect(await screen.findByText(/镜头已标记为可进入生产/)).toBeTruthy();
   });
 
   it("keeps the draft unsaved when the atomic ready gate changes", async () => {
-    vi.mocked(saveDirectorIntentAndReady).mockRejectedValueOnce(new Error("门禁刚刚变化"));
+    vi.mocked(markShotReadyV2).mockRejectedValueOnce(new Error("门禁刚刚变化"));
     render(<DirectorIntentEditor {...props(1)} shotStatus="DIRECTED" currentRevision={{ ...revision(1), fields: readyFields }} />);
     fireEvent.change(screen.getByLabelText("主体动作"), { target: { value: "已保存但门禁变化" } });
     fireEvent.click(screen.getByRole("button", { name: "保存并就绪" }));
-    expect(await screen.findByText(/保存并就绪失败，未写入新 revision：门禁刚刚变化/)).toBeTruthy();
-    expect(saveDirectorIntentRevision).not.toHaveBeenCalled();
+    expect(await screen.findByText(/保存并就绪失败，未写入新版本：门禁刚刚变化/)).toBeTruthy();
+    expect(putShotDraftV2).not.toHaveBeenCalled();
     expect(screen.getByText("未保存")).toBeTruthy();
   });
 
@@ -156,9 +151,8 @@ describe("DirectorIntentEditor local draft buffer", () => {
     fireEvent.click(screen.getByRole("button", { name: "重新采用并复核" }));
     expect((screen.getByLabelText("主体动作") as HTMLTextAreaElement).value).toBe("阿宁拆开旧信");
     expect((screen.getByLabelText("画面创作意图") as HTMLTextAreaElement).value).toBe("旧信特写；迟疑被打破");
-    fireEvent.click(screen.getByRole("button", { name: /保存 revision 2/ }));
-    await waitFor(() => expect(saveDirectorIntentRevision).toHaveBeenCalledWith(expect.objectContaining({
-      shotId: "shot-1",
+    fireEvent.click(screen.getByRole("button", { name: /仅保存为第 2 版/ }));
+    await waitFor(() => expect(putShotDraftV2).toHaveBeenCalledWith("shot-1", expect.objectContaining({
       fields: expect.objectContaining({
         suggestion_sources: expect.objectContaining({
           script: expect.objectContaining({ source_fingerprint: "f".repeat(64), source_revision_id: "draft-revision-3" }),

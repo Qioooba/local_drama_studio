@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Header, Request
+from fastapi.responses import FileResponse
 
 from local_drama.api.schemas.projects import (
     EpisodeSceneRangeRequest,
@@ -16,14 +17,14 @@ from local_drama.api.schemas.projects import (
     ProjectUpdateRequest,
     SceneCreateRequest,
     ShotCreateRequest,
-    ShotRevisionRequest,
     StoryboardBatchCommitRequest,
     StoryboardBatchPlanRequest,
 )
+from local_drama.api.uploading import receive_bounded_upload
 from local_drama.application.configuration import ConfigurationService
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.project_packages import ProjectPackageService
-from local_drama.application.projects import ProjectService
+from local_drama.application.projects import PROJECT_RESOURCE_POLICIES, ProjectService
 from local_drama.domain.errors import DomainRuleError
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -91,25 +92,27 @@ async def create_project(
 @router.post(":plan", operation_id="planProjectCreation")
 async def plan_project_creation(payload: ProjectCreateRequest, request: Request) -> dict[str, object]:
     try:
-        return {"plan": service(request).plan_project_creation(
-            code=payload.code,
-            title=payload.title,
-            episode_count=payload.episode_count,
-            aspect_ratio=payload.aspect_ratio,
-            fps_num=payload.fps.numerator if payload.fps else None,
-            fps_den=payload.fps.denominator if payload.fps else None,
-            target_duration_ms=payload.target_duration_ms,
-            allow_unconfigured_capabilities=payload.allow_unconfigured_capabilities,
-            season_count=payload.season_count,
-            width=payload.width,
-            height=payload.height,
-            primary_language=payload.primary_language,
-            subtitle_mode=payload.subtitle_mode,
-            subtitle_language=payload.subtitle_language,
-            production_plan=payload.production_plan.model_dump() if payload.production_plan else None,
-            profile_bindings=[item.model_dump() for item in payload.profile_bindings],
-            delivery_target=payload.delivery_target.model_dump() if payload.delivery_target else None,
-        )}
+        return {
+            "plan": service(request).plan_project_creation(
+                code=payload.code,
+                title=payload.title,
+                episode_count=payload.episode_count,
+                aspect_ratio=payload.aspect_ratio,
+                fps_num=payload.fps.numerator if payload.fps else None,
+                fps_den=payload.fps.denominator if payload.fps else None,
+                target_duration_ms=payload.target_duration_ms,
+                allow_unconfigured_capabilities=payload.allow_unconfigured_capabilities,
+                season_count=payload.season_count,
+                width=payload.width,
+                height=payload.height,
+                primary_language=payload.primary_language,
+                subtitle_mode=payload.subtitle_mode,
+                subtitle_language=payload.subtitle_language,
+                production_plan=payload.production_plan.model_dump() if payload.production_plan else None,
+                profile_bindings=[item.model_dump() for item in payload.profile_bindings],
+                delivery_target=payload.delivery_target.model_dump() if payload.delivery_target else None,
+            )
+        }
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -131,6 +134,23 @@ async def list_project_local_resources(
 ) -> dict[str, object]:
     try:
         return service(request).list_local_resources(project_id, kind, limit=limit)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/{project_id}/local-resources:upload", status_code=201, operation_id="uploadProjectLocalResource")
+async def upload_project_local_resource(project_id: str, request: Request, kind: Literal["LUT", "LICENSE_EVIDENCE"]) -> dict[str, object]:
+    _relative_root, suffixes = PROJECT_RESOURCE_POLICIES[kind]
+    try:
+        async with receive_bounded_upload(
+            request,
+            work_group="project-resource-uploads",
+            allowed_suffixes=suffixes,
+            maximum_bytes=request.app.state.settings.uploads.project_resource_mb * 1024 * 1024,
+            default_filename="resource.bin",
+            error_prefix="PROJECT_RESOURCE_UPLOAD",
+        ) as (temporary, safe_filename, _received_bytes):
+            return {"resource": service(request).import_local_resource(project_id, kind, temporary, safe_filename)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -191,6 +211,15 @@ async def dry_run_project_package(project_id: str, payload: ProjectPackageDryRun
         raise api_error_from_domain(error) from error
 
 
+@router.get("/{project_id}/packages:download", operation_id="downloadProjectPackage")
+async def download_project_package(project_id: str, rel_path: str, request: Request) -> FileResponse:
+    try:
+        path = package_service(request).export_download_path(project_id, rel_path)
+        return FileResponse(path, media_type="application/vnd.local-drama.project-package", filename=path.name)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.post("/{project_id}:restore", operation_id="restoreProject")
 async def restore_project(project_id: str, request: Request) -> dict[str, object]:
     try:
@@ -238,13 +267,24 @@ async def project_health(project_id: str, request: Request) -> dict[str, object]
                     orphan_files.append(rel)
         integrity = request.app.state.database.integrity_check()
         disk = shutil.disk_usage(root if root.exists() else projects_root)
-        blockers = ([] if root.exists() else ["PROJECT_ROOT_MISSING"]) + ([] if integrity == "ok" else ["DATABASE_INTEGRITY_FAILED"]) + (["MEDIA_MISSING"] if missing else []) + (["MEDIA_SIZE_MISMATCH"] if size_mismatch else []) + (["MEDIA_HASH_MISMATCH"] if hash_mismatch else [])
+        blockers = (
+            ([] if root.exists() else ["PROJECT_ROOT_MISSING"])
+            + ([] if integrity == "ok" else ["DATABASE_INTEGRITY_FAILED"])
+            + (["MEDIA_MISSING"] if missing else [])
+            + (["MEDIA_SIZE_MISMATCH"] if size_mismatch else [])
+            + (["MEDIA_HASH_MISMATCH"] if hash_mismatch else [])
+        )
         return {
             "project_id": project_id,
             "status": "HEALTHY" if not blockers else "BLOCKED",
             "root_exists": root.exists(),
             "database_integrity": integrity,
-            "media": {"referenced_count": len(referenced), "missing": missing[:100], "size_mismatch": size_mismatch[:100], "hash_mismatch": hash_mismatch[:100]},
+            "media": {
+                "referenced_count": len(referenced),
+                "missing": missing[:100],
+                "size_mismatch": size_mismatch[:100],
+                "hash_mismatch": hash_mismatch[:100],
+            },
             "orphan_files": orphan_files[:100],
             "orphan_count": len(orphan_files),
             "disk": {"free_bytes": disk.free, "total_bytes": disk.total},
@@ -265,15 +305,17 @@ async def list_seasons(project_id: str, request: Request) -> dict[str, object]:
 @router.post("/{project_id}/episodes:append", operation_id="appendProjectEpisode", status_code=201)
 async def append_project_episode(project_id: str, payload: ProjectEpisodeAppendRequest, request: Request) -> dict[str, object]:
     try:
-        return {"append": service(request).append_episode(
-            project_id,
-            season_id=payload.season_id,
-            create_new_season=payload.create_new_season,
-            season_title=payload.season_title,
-            episode_title=payload.episode_title,
-            target_duration_ms=payload.target_duration_ms,
-            request_id=getattr(request.state, "request_id", None),
-        )}
+        return {
+            "append": service(request).append_episode(
+                project_id,
+                season_id=payload.season_id,
+                create_new_season=payload.create_new_season,
+                season_title=payload.season_title,
+                episode_title=payload.episode_title,
+                target_duration_ms=payload.target_duration_ms,
+                request_id=getattr(request.state, "request_id", None),
+            )
+        }
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -331,7 +373,11 @@ async def list_episode_scene_ranges(episode_id: str, request: Request) -> dict[s
 @router.post("/episodes/{episode_id}/scene-ranges", operation_id="bindEpisodeSceneRange", status_code=201)
 async def bind_episode_scene_range(episode_id: str, payload: EpisodeSceneRangeRequest, request: Request) -> dict[str, object]:
     try:
-        return {"range": service(request).bind_episode_scene_range(episode_id, payload.scene_id, payload.ordinal, payload.source_start, payload.source_end, payload.source_label)}
+        return {
+            "range": service(request).bind_episode_scene_range(
+                episode_id, payload.scene_id, payload.ordinal, payload.source_start, payload.source_end, payload.source_label
+            )
+        }
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -401,42 +447,10 @@ async def create_shot(project_id: str, episode_id: str, payload: ShotCreateReque
 async def rebuild_project_thumbnails(project_id: str, request: Request) -> dict[str, object]:
     settings = request.app.state.settings
     try:
-        return {"rebuild": ProjectPackageService(request.app.state.database, settings.projects_root, settings.data_root, settings=settings).rebuild_project_thumbnails(project_id)}
-    except DomainRuleError as error:
-        raise api_error_from_domain(error) from error
-
-
-@router.post("/shots/{shot_id}/revisions", operation_id="createShotRevision", status_code=201)
-async def create_shot_revision(shot_id: str, payload: ShotRevisionRequest, request: Request) -> dict[str, object]:
-    try:
         return {
-            "shot_revision": service(request).create_shot_revision(
-                shot_id,
-                payload.fields.model_dump(),
-                payload.freeze,
-                expected_revision_no=payload.expected_revision_no,
-            )
+            "rebuild": ProjectPackageService(
+                request.app.state.database, settings.projects_root, settings.data_root, settings=settings
+            ).rebuild_project_thumbnails(project_id)
         }
-    except DomainRuleError as error:
-        raise api_error_from_domain(error) from error
-
-
-@router.post("/shots/{shot_id}:mark-production-ready", operation_id="markShotProductionReady")
-async def mark_production_ready(shot_id: str, request: Request) -> dict[str, object]:
-    try:
-        return {"shot": service(request).mark_shot_production_ready(shot_id)}
-    except DomainRuleError as error:
-        raise api_error_from_domain(error) from error
-
-
-@router.post("/shots/{shot_id}:save-and-ready", operation_id="saveShotRevisionAndMarkReady")
-async def save_and_mark_ready(shot_id: str, payload: ShotRevisionRequest, request: Request) -> dict[str, object]:
-    try:
-        return service(request).save_shot_revision_and_mark_ready(
-            shot_id,
-            payload.fields.model_dump(),
-            freeze=payload.freeze,
-            expected_revision_no=payload.expected_revision_no,
-        )
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error

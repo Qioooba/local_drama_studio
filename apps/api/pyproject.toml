@@ -16,6 +16,11 @@ dependencies = [
   "httpx>=0.27,<1",
 ]
 
+[project.scripts]
+local-drama-api = "local_drama.entrypoints.api:main"
+local-drama-worker = "local_drama.entrypoints.worker:main"
+local-drama-maintenance = "local_drama.entrypoints.maintenance:main"
+
 [project.optional-dependencies]
 dev = [
   "pytest>=8,<9",

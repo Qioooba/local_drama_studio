@@ -1,13 +1,13 @@
-import type { DirectorDeskCandidate } from "./types";
+import type { ShotStudioCandidate } from "../../generated/api";
 
 export const FRAME_CANDIDATE_MIME = "application/x-director-frame-candidate";
 
 export type FrameCandidateTransfer = {
   media_version_id: string;
-  media_kind?: DirectorDeskCandidate["media_kind"];
-  integrity_status?: DirectorDeskCandidate["integrity_status"];
-  is_stale?: DirectorDeskCandidate["is_stale"];
-  stale_reason?: DirectorDeskCandidate["stale_reason"];
+  media_kind?: ShotStudioCandidate["media_kind"];
+  integrity_status?: ShotStudioCandidate["integrity_status"];
+  is_stale?: ShotStudioCandidate["is_stale"];
+  stale_reason?: ShotStudioCandidate["stale_reason"];
 };
 
 export function frameCandidateIssue(candidate: FrameCandidateTransfer) {

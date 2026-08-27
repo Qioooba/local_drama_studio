@@ -22,7 +22,7 @@ from typing import Any
 import yaml  # type: ignore[import-untyped]
 
 ROOT = Path(__file__).resolve().parents[1]
-PYTHON_LOCK = ROOT / "apps" / "api" / "requirements.lock"
+PYTHON_LOCK = ROOT / "apps" / "api" / "requirements-runtime.lock"
 PNPM_LOCK = ROOT / "pnpm-lock.yaml"
 WEB_NODE_MODULES = ROOT / "apps" / "web" / "node_modules"
 NODE_MODULES = ROOT / "node_modules" / ".pnpm"
@@ -124,7 +124,7 @@ def _python_packages() -> list[dict[str, Any]]:
                 "downloadLocation": "NOASSERTION",
                 "licenseConcluded": _python_license(name),
                 "licenseDeclared": _python_license(name),
-                "sourceInfo": "apps/api/requirements.lock",
+                "sourceInfo": "apps/api/requirements-runtime.lock",
                 "externalRefs": [{"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": f"pkg:pypi/{name.lower()}@{version}"}],
             }
         )
@@ -244,7 +244,7 @@ def generate(final: bool = False) -> dict[str, Any]:
         "creationInfo": {"created": datetime.now(UTC).isoformat(), "creators": ["Tool: LocalDramaStudio offline SBOM generator"]},
         "completeness": "LOCKFILES_PLUS_LOCAL_METADATA;TARGET_RUNTIME_LICENSES_RESOLVED" if final else "LOCKFILES_PLUS_LOCAL_METADATA;FINAL_LICENSE_REVIEW_REQUIRED",
         "comment": "Final offline inventory for the Windows x64 platform package. User-selected external models and media are not bundled." if final else "Generated without network access. Package inventory and lockfile integrity are captured, but release_status remains DRAFT until final license/provenance/runtime review.",
-        "source_lockfiles": ["apps/api/requirements.lock", "pnpm-lock.yaml"],
+        "source_lockfiles": ["apps/api/requirements-runtime.lock", "pnpm-lock.yaml"],
         "lockfile_sha256": lock_hash,
         "package_count": len(packages),
         "license_summary": {

@@ -7,24 +7,30 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request
 
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.network_policy import parse_runtime_endpoint
 from local_drama.infrastructure.local_http import open_local
-
-LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 class ComfyClient:
-    def __init__(self, base_url: str = "http://127.0.0.1:8188", output_root: Path | None = None, timeout_seconds: float = 30.0) -> None:
+    def __init__(
+        self,
+        base_url: str = "http://127.0.0.1:8188",
+        output_root: Path | None = None,
+        timeout_seconds: float = 30.0,
+        *,
+        allow_private_network: bool = False,
+    ) -> None:
         parsed = urlparse(base_url)
-        if parsed.scheme not in {"http", "https"} or (parsed.hostname or "").casefold() not in LOOPBACK_HOSTS:
-            raise DomainRuleError("LOCAL_ONLY_ENDPOINT_REQUIRED", "ComfyUI client 只允许 loopback endpoint")
         if parsed.username or parsed.password or parsed.query or parsed.fragment:
             raise DomainRuleError("LOCAL_ONLY_ENDPOINT_AMBIGUOUS", "ComfyUI loopback endpoint 不得携带凭据、query 或 fragment")
+        if parse_runtime_endpoint(base_url, allow_private_network=allow_private_network) is None:
+            raise DomainRuleError("LOCAL_ONLY_ENDPOINT_REQUIRED", "ComfyUI client 只允许 loopback 或受控私网 endpoint")
         self.base_url = base_url.rstrip("/")
         self.output_root = output_root.resolve() if output_root else None
         self.timeout_seconds = timeout_seconds
@@ -55,7 +61,14 @@ class ComfyClient:
                 if retryable and attempt < max_attempts:
                     time.sleep(0.5 * attempt)
                     continue
-                raise DomainRuleError("COMFY_LOOPBACK_UNAVAILABLE", "ComfyUI loopback 请求失败", {"reason": type(error).__name__, "path": path}) from error
+                # Pollers must distinguish "process gone" (connection refused)
+                # from "event loop blocked by a long decode" (timeout): only the
+                # first may immediately close a running attempt.
+                raise DomainRuleError(
+                    "COMFY_LOOPBACK_UNAVAILABLE",
+                    "ComfyUI loopback 请求失败",
+                    {"reason": type(error).__name__, "cause": type(reason).__name__, "path": path},
+                ) from error
         try:
             return json.loads(raw.decode("utf-8")) if raw else {}
         except json.JSONDecodeError as error:
@@ -85,14 +98,28 @@ class ComfyClient:
             payload["extra_data"] = extra_data
         result = self._request("POST", "/prompt", payload)
         if result.get("error") or not result.get("prompt_id"):
-            # Provider payloads may contain local paths, node input text or
-            # credentials.  Keep the API error stable and intentionally
-            # discard that response detail.
-            raise DomainRuleError("COMFY_PROMPT_REJECTED", "ComfyUI 拒绝 workflow", {"provider_response": "rejected"})
+            # Keep actionable node/type evidence while never forwarding node
+            # values, paths, prompts or provider traceback text.
+            node_errors = []
+            for node_id, item in (result.get("node_errors") or {}).items():
+                if not isinstance(item, dict):
+                    continue
+                error_types = [str(error.get("type")) for error in item.get("errors", []) if isinstance(error, dict) and error.get("type")]
+                node_errors.append({"node_id": str(node_id), "class_type": str(item.get("class_type") or "UNKNOWN"), "error_types": error_types[:8]})
+            raise DomainRuleError(
+                "COMFY_PROMPT_REJECTED",
+                "ComfyUI 拒绝 workflow",
+                {"provider_response": "rejected", "node_errors": node_errors[:32]},
+            )
         return dict(result)
 
     def queue(self) -> dict[str, Any]:
         return dict(self._request("GET", "/queue"))
+
+    def delete_pending(self, prompt_id: str) -> dict[str, Any]:
+        if not prompt_id:
+            raise DomainRuleError("COMFY_PROMPT_ID_REQUIRED", "Comfy prompt_id 不能为空")
+        return dict(self._request("POST", "/queue", {"delete": [prompt_id]}))
 
     def history(self, prompt_id: str) -> dict[str, Any]:
         if not prompt_id:
@@ -136,7 +163,13 @@ class ComfyClient:
             raise DomainRuleError("COMFY_OUTPUT_EMPTY", "Comfy history 没有可收集输出")
         return outputs
 
-    def websocket_events(self, prompt_id: str, client_id: str, timeout_seconds: float = 30.0) -> list[dict[str, Any]]:
+    def websocket_events(
+        self,
+        prompt_id: str,
+        client_id: str,
+        timeout_seconds: float = 30.0,
+        on_event: Callable[[dict[str, Any]], None] | None = None,
+    ) -> list[dict[str, Any]]:
         self._assert_access_allowed("/ws")
         try:
             from websockets.sync.client import connect
@@ -155,6 +188,8 @@ class ComfyClient:
                     item = json.loads(message)
                     if isinstance(item, dict):
                         events.append(item)
+                        if on_event is not None:
+                            on_event(item)
                         if item.get("type") == "executing" and item.get("data", {}).get("prompt_id") == prompt_id and item.get("data", {}).get("node") is None:
                             break
         except Exception as error:

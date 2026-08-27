@@ -22,7 +22,7 @@ export async function setEpisodePlanShotAssetState(shotId: string, assetId: stri
 }
 
 export async function markEpisodePlanShotReady(shotId: string) {
-  return request(`/projects/shots/${shotId}:mark-production-ready`, { method: "POST" });
+  return markShotReadyV2(shotId);
 }
 
 export type BatchCommandResult = { shotId: string; ok: boolean; message: string };
@@ -39,4 +39,4 @@ export async function runPerShot(
     }
   }));
 }
-import { requestJson as generatedRequestJson } from "../../generated/api";
+import { markShotReadyV2, requestJson as generatedRequestJson } from "../../generated/api";

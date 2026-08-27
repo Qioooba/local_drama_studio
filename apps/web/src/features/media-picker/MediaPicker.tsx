@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { listProjectMedia, mediaThumbnailUrl, uploadProjectImage, type MediaCatalogueItem } from "./mediaPickerClient";
+import { listProjectMedia, mediaThumbnailUrl, uploadProjectMediaFile, type MediaCatalogueItem } from "./mediaPickerClient";
+import { fallbackToOriginalVideo, mediaContentUrl, mediaProxyUrl } from "../shared/mediaPlaybackPolicy";
 import "./media-picker.css";
 
 type MediaPickerProps = {
@@ -37,7 +38,7 @@ export function MediaPicker({ projectId, value, onChange, disabled = false, labe
     if (!file) return;
     setUploading(true); setUploadError(null);
     try {
-      const mediaVersionId = await uploadProjectImage(projectId, file);
+      const mediaVersionId = await uploadProjectMediaFile(projectId, file);
       onChange(mediaVersionId);
       await catalogue.refetch();
     } catch (error) {
@@ -57,7 +58,7 @@ export function MediaPicker({ projectId, value, onChange, disabled = false, labe
 
     {catalogue.isLoading && <p className="muted" role="status">正在读取项目媒体库…</p>}
     {(catalogue.error || uploadError) && <p className="inline-error" role="alert">{String(uploadError ?? catalogue.error)}</p>}
-    {!catalogue.isLoading && !catalogue.error && catalogue.data?.length === 0 && <p className="empty-state">没有匹配的{mediaKind === "VIDEO" ? "视频" : mediaKind === "AUDIO" ? "音频" : "图片"}。{allowUpload ? "可以直接上传一张新参考图。" : "请先在媒体导入或生成流程登记媒体。"}</p>}
+    {!catalogue.isLoading && !catalogue.error && catalogue.data?.length === 0 && <p className="empty-state">没有匹配的{mediaKind === "VIDEO" ? "视频" : mediaKind === "AUDIO" ? "音频" : "图片"}。{allowUpload ? "可以直接从当前电脑上传。" : "请先在媒体导入或生成流程登记媒体。"}</p>}
     {catalogue.data && catalogue.data.length > 0 && <div className="media-picker-grid" role="radiogroup" aria-label={`项目${mediaKind === "VIDEO" ? "视频" : mediaKind === "AUDIO" ? "音频" : "图片"}版本`}>
       {catalogue.data.map((item) => <button
         type="button"
@@ -78,5 +79,6 @@ export function MediaPicker({ projectId, value, onChange, disabled = false, labe
       <strong>已选择：</strong>{selected ? `${selected.source_name || `未命名${mediaKind === "AUDIO" ? "音频" : mediaKind === "VIDEO" ? "视频" : "图片"}`} · 不可变版本 ${selected.version_no}` : "已选择的不可变媒体版本"}
       <details><summary>高级：查看版本标识</summary><code>{value}</code></details>
     </div>}
+    {value && <div className="media-picker-preview" aria-label="已选媒体预览">{mediaKind === "VIDEO" && <video controls preload="none" playsInline poster={`/api/v1/media-versions/${encodeURIComponent(value)}/thumbnail?size=medium&frame=poster`} src={mediaProxyUrl(value)} data-original-src={mediaContentUrl(value)} onError={fallbackToOriginalVideo} />}{mediaKind === "AUDIO" && <audio controls preload="metadata" src={mediaContentUrl(value)} />}{mediaKind === "IMAGE" && <img src={`/api/v1/media-versions/${encodeURIComponent(value)}/thumbnail?size=medium&frame=poster`} alt={selected?.source_name ? `${selected.source_name} 预览` : "已选图片预览"} />}</div>}
   </div>;
 }

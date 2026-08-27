@@ -213,6 +213,28 @@ export function Tooltip({
   );
 }
 
+export function ConceptGuide({
+  title = "名词说明",
+  items,
+}: {
+  title?: string;
+  items: Array<{ term: string; description: string }>;
+}) {
+  return (
+    <details className="ui-concept-guide">
+      <summary>{title}</summary>
+      <dl>
+        {items.map((item) => (
+          <div key={item.term}>
+            <dt>{item.term}</dt>
+            <dd>{item.description}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
+}
+
 export function Dialog({
   open,
   title,

@@ -21,6 +21,7 @@ import json
 import platform
 import shutil
 import sys
+import tempfile
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -267,7 +268,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     parser.add_argument("--root", type=Path, default=ROOT / "temp" / f"nfr-comp-{stamp}")
-    parser.add_argument("--destination-parent", type=Path, default=Path(r"E:\AI\Temp"))
+    parser.add_argument("--destination-parent", type=Path, default=Path(tempfile.gettempdir()))
     parser.add_argument(
         "--output",
         type=Path,

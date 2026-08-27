@@ -26,23 +26,13 @@ def test_episode_cockpit_reports_persisted_shot_facts_without_mutation(workspace
         connection.execute("UPDATE shots SET status='PLANNED',current_revision_id=NULL WHERE id=?", (undirected["id"],))
 
     with TestClient(create_app(workspace)) as client:
-        response = client.get(f"/api/v1/episodes/{episode['id']}/cockpit")
+        response = client.get(f"/api/v2/episodes/{episode['id']}/production/overview")
+        retired = client.get(f"/api/v1/episodes/{episode['id']}/cockpit")
 
     assert response.status_code == 200
-    cockpit = response.json()["cockpit"]
-    assert cockpit["shots"] == {
-        "total": 2,
-        "directed": 1,
-        "with_candidates": 0,
-        "remaining_generation": 1,
-        "selected": 0,
-        "approved": 0,
-        "failed": 0,
-        "stale": 0,
-    }
-    assert cockpit["bridges"] == {"total": 0, "ready": 0, "stale": 0}
-    assert cockpit["audio"] == {"bindings": 0, "verified": 0}
-    assert cockpit["qc"] == {"candidate_versions": 0, "checked": 0, "passed": 0, "failed": 0}
-    assert cockpit["blockers"][0]["code"] == "UNDIRECTED_SHOTS"
-    assert cockpit["read_only"] is True
-    assert cockpit["mutated"] is False
+    cockpit = response.json()["overview"]
+    assert cockpit["shot_count"] == 2
+    assert cockpit["attention_count"] == 2
+    assert cockpit["state_counts"] == {"BLOCKED": 2}
+    assert response.json()["read_only"] is True
+    assert retired.status_code == 404

@@ -566,13 +566,7 @@ These were requested for context and map to the same backend surface.
   `content_text = expanded_text`, structured `source_fields/template_text/expanded_text/negative_text/language/model_profile_version_id`.
 - Listing shows `{title} · revision {n}`, `FROZEN · 内容 hash {slice}`; helper `保存会创建内容 hash 固定的 PromptRevision，不覆盖历史。`
 
-## D. `production/StoryAssetLibraryPanel.tsx`
-- Header: eyebrow `G11 P0-1/2 · 资产卡`, h3 `故事资产库`, pill `{n} 项`.
-- Tabs `角色/场景/道具/服装`; cards show thumbnail/`无参考图`, `{name}`, `{code}`, description/`无描述`,
-  pill `已归档`/`启用中`, kind label, `归档` button.
-- `新建{kind}资产卡` details: `代码` (placeholder `CHAR_MOTHER`), `名称`, `描述`, optional MediaPicker
-  (`{kind}主参考选择器`; `可选。主参考固定到所选的不可变图片版本；普通流程无需复制版本标识。`),
-  button `创建{kind}资产卡` → `POST /api/v1/projects/{project_id}/story-assets`.
+旧 `production/StoryAssetLibraryPanel.tsx` 已由本表前文描述的 V2 `AssetBiblePage` 完整接管并退役，不再维护第二套资产创建与归档界面。
 
 ---
 

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://localdramastudio.local/schemas/config.v1.json",
+  "title": "LocalDramaStudio machine configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "instance_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", "default": "default"},
+    "environment": {"type": "string", "default": "production"},
+    "install_profile": {"enum": ["DESKTOP", "SERVER"], "default": "DESKTOP"},
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {"enum": ["LOCAL_ONLY", "LAN_SERVICE"], "default": "LOCAL_ONLY"},
+        "host": {"type": "string", "default": "127.0.0.1"},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535, "default": 3210},
+        "allowed_origins": {"type": "array", "items": {"type": "string"}, "default": []},
+        "trusted_lan_unauthenticated": {"type": "boolean", "default": false}
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "data_root": {"type": "string"},
+        "projects_root": {"type": "string"},
+        "work_root": {"type": "string"},
+        "cache_root": {"type": "string"},
+        "logs_root": {"type": "string"},
+        "backups_root": {"type": "string"}
+      }
+    },
+    "tools": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ffmpeg": {"type": ["string", "null"]},
+        "ffprobe": {"type": ["string", "null"]},
+        "fallback_dirs": {"type": "array", "items": {"type": "string"}, "default": []}
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "comfy_base_url": {"type": "string", "default": "http://127.0.0.1:8188"},
+        "llm_provider": {"type": "string", "default": "OLLAMA_LOOPBACK"},
+        "llm_base_url": {"type": "string", "default": "http://127.0.0.1:11434"},
+        "llm_model": {"type": ["string", "null"]},
+        "model_library_roots": {"type": "array", "items": {"type": "string"}, "default": []},
+        "worker_channels": {"type": "array", "items": {"type": "string"}, "default": ["CPU", "GPU_H3"]}
+      }
+    },
+    "frontend_dist": {"type": ["string", "null"]},
+    "model_manifest": {"type": ["string", "null"]}
+  }
+}

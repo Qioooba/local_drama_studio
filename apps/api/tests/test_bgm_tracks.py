@@ -15,6 +15,7 @@ from local_drama.application.projects import ProjectService
 from local_drama.application.timeline import TimelineService
 from local_drama.application.worker import LocalMediaWorker
 from local_drama.domain.errors import DomainRuleError
+from local_drama.infrastructure.database.audio_repository import SqliteAudioWorkspaceRepository
 
 
 def _video(workspace, name: str, seconds: float = 1.0) -> Path:
@@ -62,41 +63,33 @@ def _license_evidence(project_root: Path) -> Path:
 
 
 def _bind(workspace, database, project_root: Path, episode_id: str, audio_media_version_id: str, track_type: str, **kwargs) -> dict[str, object]:
-    return TimelineService(database, workspace).bind_audio(
-        episode_id,
-        audio_media_version_id,
-        track_type,
-        kwargs.get("start_us", 0),
-        kwargs.get("end_us", 1_000_000),
-        gain_db=kwargs.get("gain_db", 0.0),
-        license_evidence_path_rel=str(_license_evidence(project_root).relative_to(project_root).as_posix()),
-        loop_enabled=kwargs.get("loop_enabled", False),
-        fade_in_us=kwargs.get("fade_in_us", 0),
-        fade_out_us=kwargs.get("fade_out_us", 0),
-    )
+    repository = SqliteAudioWorkspaceRepository(database, workspace)
+    mix_revision = repository.workspace(episode_id)["mix_revision"]
+    result = repository.create_track(episode_id, {
+        "media_version_id": audio_media_version_id, "track_kind": track_type,
+        "start_us": kwargs.get("start_us", 0), "end_us": kwargs.get("end_us", 1_000_000),
+        "gain_db": kwargs.get("gain_db", 0.0), "license_status": "VERIFIED_LOCAL",
+        "license_evidence_path_rel": str(_license_evidence(project_root).relative_to(project_root).as_posix()),
+        "loop_enabled": kwargs.get("loop_enabled", False), "fade_in_us": kwargs.get("fade_in_us", 0),
+        "fade_out_us": kwargs.get("fade_out_us", 0), "expected_mix_revision": mix_revision,
+        "idempotency_key": f"bgm-test:{track_type}:{mix_revision}",
+    }, actor="test")
+    return {**result, "track_type": result["track_kind"]}
 
 
-def test_track_type_validation_and_legacy_normalization(workspace, database) -> None:
+def test_track_type_validation_accepts_only_canonical_post_mix_kinds(workspace, database) -> None:
     project, episode = _project_and_episode(workspace, database)
     project_root = workspace.projects_root / str(project["root_rel"])
     audio = MediaService(database, workspace).import_file(str(project["id"]), _audio(workspace, "bgm.wav"), purpose="AUDIO", media_kind="AUDIO")
 
     canonical = _bind(workspace, database, project_root, str(episode["id"]), str(audio["media_version_id"]), "BGM")
     assert canonical["track_type"] == "BGM"
-    dialogue = _bind(workspace, database, project_root, str(episode["id"]), str(audio["media_version_id"]), "DIALOGUE")
-    assert dialogue["track_type"] == "DIALOGUE"
     sfx = _bind(workspace, database, project_root, str(episode["id"]), str(audio["media_version_id"]), "SFX")
     assert sfx["track_type"] == "SFX"
-
-    # Legacy aliases stay accepted and are normalized on storage.
-    music = _bind(workspace, database, project_root, str(episode["id"]), str(audio["media_version_id"]), "MUSIC")
-    assert music["track_type"] == "BGM"
-    environment = _bind(workspace, database, project_root, str(episode["id"]), str(audio["media_version_id"]), "ENVIRONMENT")
-    assert environment["track_type"] == "SFX"
-
-    with pytest.raises(DomainRuleError) as error:
-        _bind(workspace, database, project_root, str(episode["id"]), str(audio["media_version_id"]), "FOO")
-    assert error.value.code == "AUDIO_TRACK_TYPE_UNSUPPORTED"
+    for unsupported in ("DIALOGUE", "MUSIC", "ENVIRONMENT", "FOO"):
+        with pytest.raises(DomainRuleError) as error:
+            _bind(workspace, database, project_root, str(episode["id"]), str(audio["media_version_id"]), unsupported)
+        assert error.value.code == "AUDIO_TRACK_KIND_UNSUPPORTED"
 
 
 def test_render_mixes_bgm_audio_stream_with_real_ffmpeg(workspace, database) -> None:

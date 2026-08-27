@@ -46,9 +46,9 @@ MAX_ITERATIONS = 100_000
 MAX_TASKS = 100_000
 MAX_DISK_BYTES = 1 << 50
 
-# Built-in workflow templates.  The code is also the workflow code, so a
-# project can hold at most one workflow per template (create_workflow enforces
-# AUTOMATION_WORKFLOW_CODE_EXISTS).
+# Built-in workflow templates. Each expansion is an immutable version. A
+# source fingerprint makes an unchanged re-expansion idempotent while a changed
+# episode set creates a new version and retires the previous ACTIVE version.
 AUTOMATION_TEMPLATES: dict[str, dict[str, str]] = {
     "WHOLE_DRAMA": {
         "title": "整剧一键编排",
@@ -212,6 +212,8 @@ class AutomationWorkflowService:
         max_disk_bytes: int,
         human_gate: str = "ON_CONDITION",
         repeat_batch: bool = False,
+        template_code: str | None = None,
+        source_fingerprint: str | None = None,
         actor: str = "local-user",
     ) -> dict[str, Any]:
         normalized_code = _require_nonempty(code, "AUTOMATION_WORKFLOW_INVALID", "workflow code", 120)
@@ -233,17 +235,28 @@ class AutomationWorkflowService:
         with self.database.transaction() as connection:
             if connection.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone() is None:
                 raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
-            if connection.execute("SELECT 1 FROM automation_workflows WHERE project_id=? AND code=?", (project_id, normalized_code)).fetchone():
-                raise DomainRuleError("AUTOMATION_WORKFLOW_CODE_EXISTS", "同一项目内 workflow code 已存在", {"code": normalized_code})
+            latest = connection.execute(
+                "SELECT * FROM automation_workflows WHERE project_id=? AND code=? ORDER BY version_no DESC LIMIT 1",
+                (project_id, normalized_code),
+            ).fetchone()
+            if latest is not None and str(latest["plan_hash"]) == plan_hash and (source_fingerprint is None or str(latest["source_fingerprint"] or "") == source_fingerprint):
+                replay = self._workflow_view(latest)
+                replay["idempotent_replay"] = True
+                return replay
+            version_no = int(latest["version_no"]) + 1 if latest is not None else 1
+            connection.execute(
+                "UPDATE automation_workflows SET status='ARCHIVED',updated_at=?,revision=revision+1 WHERE project_id=? AND code=? AND status='ACTIVE'",
+                (now, project_id, normalized_code),
+            )
             connection.execute(
                 """INSERT INTO automation_workflows
-                (id,project_id,code,title,mode,definition_json,plan_hash,status,created_at,updated_at,created_by,revision,schema_version)
-                VALUES (?,?,?,?,?,?,?,'ACTIVE',?,?,?,1,'v1')""",
-                (workflow_id, project_id, normalized_code, normalized_title, definition["mode"], _json(definition), plan_hash, now, now, actor),
+                (id,project_id,code,title,mode,definition_json,plan_hash,status,created_at,updated_at,created_by,revision,schema_version,version_no,template_code,source_fingerprint)
+                VALUES (?,?,?,?,?,?,?,'ACTIVE',?,?,?,1,'v2',?,?,?)""",
+                (workflow_id, project_id, normalized_code, normalized_title, definition["mode"], _json(definition), plan_hash, now, now, actor, version_no, template_code, source_fingerprint),
             )
             connection.execute(
                 "INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json) VALUES (?,'producer','AUTOMATION_WORKFLOW_CREATED','automation_workflow',?,?,?)",
-                (actor, workflow_id, "创建声明式有限自动化 workflow", _json({"project_id": project_id, "plan_hash": plan_hash, "max_iterations": max_iterations, "max_tasks": max_tasks, "max_disk_bytes": max_disk_bytes, "ai_approval_allowed": False})),
+                (actor, workflow_id, "创建声明式有限自动化 workflow 版本", _json({"project_id": project_id, "plan_hash": plan_hash, "version_no": version_no, "template_code": template_code, "source_fingerprint": source_fingerprint, "max_iterations": max_iterations, "max_tasks": max_tasks, "max_disk_bytes": max_disk_bytes, "ai_approval_allowed": False})),
             )
         return self.get_workflow(workflow_id)
 
@@ -295,6 +308,7 @@ class AutomationWorkflowService:
             )
         task_cap = len(batch_items) + 1  # one extra step lets the final advance observe batch exhaustion as SUCCEEDED
         estimated_disk = min(MAX_DISK_BYTES, max(1, len(episodes)) * _TEMPLATE_EPISODE_DISK_BYTES)
+        source_fingerprint = _hash({"template_code": normalized_code, "template_revision": 1, "episodes": episodes, "actions": ["KEYFRAME_CHECK", "TTS_BATCH", "RENDER", "DELIVERY"]})
         return self.create_workflow(
             project_id,
             code=normalized_code,
@@ -311,6 +325,8 @@ class AutomationWorkflowService:
             max_disk_bytes=estimated_disk,
             human_gate="ON_CONDITION",
             repeat_batch=False,
+            template_code=normalized_code,
+            source_fingerprint=source_fingerprint,
             actor=actor,
         )
 
@@ -336,6 +352,9 @@ class AutomationWorkflowService:
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "revision": int(row["revision"]),
+            "version_no": int(row["version_no"]),
+            "template_code": row["template_code"],
+            "source_fingerprint": row["source_fingerprint"],
             "local_only": True,
             "network_contacted": False,
             "ai_approval_allowed": False,
@@ -491,7 +510,9 @@ class AutomationWorkflowService:
                     raise DomainRuleError("IDEMPOTENCY_PAYLOAD_MISMATCH", "相同 Idempotency-Key 不能复用不同 workflow plan")
                 replay = cast(dict[str, Any], json.loads(str(prior["response_json"])))
                 replay["idempotent_replay"] = True
-                return self.get_run(str(replay["id"]))
+                existing = self.get_run(str(replay["id"]))
+                existing["idempotent_replay"] = True
+                return existing
             connection.execute(
                 """INSERT INTO automation_workflow_runs
                 (id,workflow_id,project_id,status,plan_hash,iteration_count,task_count,disk_bytes,max_iterations,max_tasks,max_disk_bytes,pending_gate_json,machine_context_json,ai_scores_json,human_approval_status,started_at,created_at,updated_at,created_by,revision,schema_version)

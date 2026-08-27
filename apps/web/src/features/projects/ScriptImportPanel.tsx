@@ -1,10 +1,12 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { routes } from "../../app/routeRegistry";
 import {
   cancelJob,
   commitImportSession,
   getProjectConfiguration,
+  getClientCapabilities,
   importScriptDocument,
   uploadScriptDocument,
   listEpisodes,
@@ -43,6 +45,7 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
     queryKey: queryKeys.productionSettings.section(projectId, "configuration"),
     queryFn: () => getProjectConfiguration(projectId),
   });
+  const clientCapabilities = useQuery({ queryKey: ["client-capabilities"], queryFn: () => getClientCapabilities(), staleTime: Infinity });
   const seasons = useQuery({
     queryKey: queryKeys.seasons.list(projectId),
     queryFn: () => listSeasons(projectId),
@@ -134,8 +137,8 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
       if (result.selection.selected && result.selection.path) changePath(result.selection.path);
     } catch (reason) {
       setError(controller.signal.aborted
-        ? "文件选择器长时间没有返回，页面已恢复可操作；请重试、直接粘贴绝对路径，或直接点击上方“选择文档上传”。"
-        : `选择器失败：${String(reason)}。建议直接点击上方“选择文档上传”或粘贴绝对路径。`);
+        ? "Windows 服务端文件选择器长时间没有返回，页面已恢复可操作；请重试，或直接点击上方“选择本地文档”上传。"
+        : `Windows 服务端文件选择器失败：${String(reason)}。建议直接点击上方“选择本地文档”上传。`);
     } finally {
       window.clearTimeout(timeout);
       setPending(null);
@@ -296,13 +299,13 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
         </div>
       </div>
 
-      <details className="script-server-path-details" style={{ marginBottom: "12px" }}>
+      {clientCapabilities.data?.capabilities.server_file_dialogs && <details className="script-server-path-details" style={{ marginBottom: "12px" }}>
         <summary style={{ cursor: "pointer", color: "#9ca3af", fontSize: "13px" }}>
-          高级：从本机共享目录导入
+          高级：从 Windows 服务端目录导入
         </summary>
         <div style={{ marginTop: "8px" }}>
           <label>
-            电脑中的文档绝对路径
+            Windows 服务端中的文档绝对路径
             <span className="inline-control">
               <strong className="selected-path" aria-label="已选择文档路径" title={path}>{path || "尚未选择文档"}</strong>
               <button
@@ -332,7 +335,7 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
             </button>
           </div>
         </div>
-      </details>
+      </details>}
 
       <p className="muted">
         系统不会修改原文档。请先预览并选择正文范围，确认后再建立可追溯的项目副本。
@@ -475,7 +478,7 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
                 </button>
                 {!isLLMPass && !projectConfiguration.isPending && (
                   <span className="breakdown-runtime-warning" role="status">
-                    尚未准备故事拆解模型。<Link to={`/models?project=${encodeURIComponent(projectId)}`}>前往模型与能力完成准备</Link>。
+                    尚未准备故事拆解模型。<Link to={routes.settings(projectId, "capabilities")}>前往项目能力完成绑定</Link>。
                   </span>
                 )}
               </div>
@@ -495,7 +498,7 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
           <small>刷新恢复 · 取消 · 失败后显式重试</small>
         </div>
         <p className="muted">
-          拆解会在本机后台持续运行，关闭页面也不会丢失。若长时间没有进展，请到“任务与机器”查看并恢复运行环境。
+          拆解会在 Windows 服务端后台持续运行，关闭客户端页面也不会丢失。若长时间没有进展，请到“任务与机器”查看并恢复运行环境。
         </p>
         {breakdownJobQuery.isPending ? <p className="empty-state">正在读取已持久化任务…</p> : null}
         {breakdownJobQuery.error ? (
@@ -537,7 +540,7 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
                   ) : null}
                   {state === "CANCEL_REQUESTED" ? <p className="muted">正在等待本地 Ollama 调用返回；取消会在草稿持久化前再次检查。</p> : null}
                   <div className="breakdown-job-actions">
-                    <Link className="secondary v2-inline-link" to={`/projects/${projectId}/jobs?job=${encodeURIComponent(job.id)}`}>查看 Job 详情</Link>
+                    <Link className="secondary v2-inline-link" to={`${routes.systemJobs(projectId)}&job=${encodeURIComponent(job.id)}`}>查看任务详情</Link>
                     {canCancel ? (
                       <button type="button" className="secondary" disabled={jobAction !== null} onClick={() => void mutateJob(job, "cancel")}>
                         {jobAction === `cancel:${job.id}` ? "取消中…" : "取消任务"}
@@ -554,7 +557,7 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
             })}
           </div>
         ) : !breakdownJobQuery.isPending && !breakdownJobQuery.error ? (
-          <p className="empty-state">当前项目还没有 AI 拆解 Job。</p>
+          <p className="empty-state">当前项目还没有 AI 拆解任务。</p>
         ) : null}
       </section>
       {error && (

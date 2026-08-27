@@ -155,10 +155,12 @@ def _published_profile(workspace, database) -> str:
                 workflow_id,
                 "a" * 64,
                 json.dumps({"1": {"class_type": "LoadImage", "inputs": {"image": "", "seed": 0}}}),
-                json.dumps({
-                    "FIRST_FRAME": {"node_id": "1", "input": "image", "type": "image"},
-                    "SEED": {"node_id": "1", "input": "seed", "type": "integer"},
-                }),
+                json.dumps(
+                    {
+                        "FIRST_FRAME": {"node_id": "1", "input": "image", "type": "image"},
+                        "SEED": {"node_id": "1", "input": "seed", "type": "integer"},
+                    }
+                ),
                 now,
                 now,
                 now,
@@ -173,9 +175,7 @@ def _published_profile(workspace, database) -> str:
 
 def _publish_profile_contract(database, profile_version_id: str) -> None:
     with database.transaction() as connection:
-        workflow_version_id = connection.execute(
-            "SELECT id FROM workflow_versions WHERE created_by='test' ORDER BY created_at DESC LIMIT 1"
-        ).fetchone()["id"]
+        workflow_version_id = connection.execute("SELECT id FROM workflow_versions WHERE created_by='test' ORDER BY created_at DESC LIMIT 1").fetchone()["id"]
         connection.execute(
             "UPDATE execution_profile_versions SET status='PUBLISHED', workflow_version_id=?, input_contract_json=?, revision=revision+1 WHERE id=?",
             (workflow_version_id, json.dumps({"input_slots": {"FIRST_FRAME": {"min": 1, "max": 1}}}), profile_version_id),
@@ -288,35 +288,40 @@ def test_formal_i2v_freezes_current_keyframe_approval_in_binding_and_job_snapsho
     reviews.ensure_templates()
     template = next(item for item in reviews.templates() if item["code"] == "image_asset")
     approval = reviews.submit_review(
-        str(keyframe["media_version_id"]), str(template["id"]), "APPROVED", 1,
+        str(keyframe["media_version_id"]),
+        str(template["id"]),
+        "APPROVED",
+        1,
         [{"item_id": str(item["id"]), "result": "PASS"} for item in template["items"]],
     )
     preflight = generation.preflight_variant(str(intent["id"]), plan)
     assert preflight["resource_estimate"]["status"] == "UNKNOWN"
     assert preflight["resource_estimate"]["source"] == "PROFILE_RESOURCE_POLICY"
     assert preflight["resource_estimate"]["per_take"] == {"duration_seconds": None, "vram_bytes": None, "disk_bytes": None}
-    assert preflight["dependencies"]["approvals"] == [
-        {"role": "FIRST_FRAME", "ordinal": 0, "source_approval_id": approval["id"]}
-    ]
-    assert preflight["recipe_hash"] == hashlib.sha256(
-        json.dumps(
-            {"execution": generation._execution_recipe(plan), "approvals": preflight["dependencies"]["approvals"]},
-            ensure_ascii=False, sort_keys=True, separators=(",", ":"),
-        ).encode()
-    ).hexdigest()
+    assert preflight["dependencies"]["approvals"] == [{"role": "FIRST_FRAME", "ordinal": 0, "source_approval_id": approval["id"]}]
+    assert (
+        preflight["recipe_hash"]
+        == hashlib.sha256(
+            json.dumps(
+                {"execution": generation._execution_recipe(plan), "approvals": preflight["dependencies"]["approvals"]},
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+    )
     planned = generation.create_variant(str(intent["id"]), plan)
     with database.connect() as connection:
-        planned_binding = connection.execute(
-            "SELECT source_approval_id FROM variant_input_bindings WHERE variant_id=?", (planned["id"],)
-        ).fetchone()
+        planned_binding = connection.execute("SELECT source_approval_id FROM variant_input_bindings WHERE variant_id=?", (planned["id"],)).fetchone()
     assert planned_binding["source_approval_id"] == approval["id"]
     submitted = generation.submit_confirmed_variant(
-        str(intent["id"]), plan, str(preflight["plan_hash"]), "i2v-approval-snapshot",
+        str(intent["id"]),
+        plan,
+        str(preflight["plan_hash"]),
+        "i2v-approval-snapshot",
     )
     with database.connect() as connection:
-        binding = connection.execute(
-            "SELECT source_approval_id FROM variant_input_bindings WHERE variant_id=?", (submitted["variant"]["id"],)
-        ).fetchone()
+        binding = connection.execute("SELECT source_approval_id FROM variant_input_bindings WHERE variant_id=?", (submitted["variant"]["id"],)).fetchone()
         job = connection.execute("SELECT input_snapshot_json FROM jobs WHERE id=?", (submitted["job"]["id"],)).fetchone()
     assert binding["source_approval_id"] == approval["id"]
     snapshot = json.loads(job["input_snapshot_json"])
@@ -347,9 +352,7 @@ def test_experiment_cell_dispatches_real_child_variant_and_tracks_terminal_job(w
     intent = generation.create_intent(project_id, "SHOT", str(shot["id"]), "I2V_PROXY", "matrix base")
     base_plan = _plan(profile_id, str(keyframe["media_version_id"]), seed=7)
     base_preflight = generation.preflight_variant(str(intent["id"]), base_plan)
-    base = generation.submit_confirmed_variant(
-        str(intent["id"]), base_plan, str(base_preflight["plan_hash"]), "experiment-base"
-    )
+    base = generation.submit_confirmed_variant(str(intent["id"]), base_plan, str(base_preflight["plan_hash"]), "experiment-base")
 
     experiments = ExperimentService(database)
     experiment = experiments.create_plan(str(intent["id"]), "seed matrix", {"seed": [8]})
@@ -398,9 +401,7 @@ def test_approved_first_frame_change_previews_and_atomically_propagates_stale(wo
     first_shot = projects.create_shot(str(episode["id"]), "S001", 1000)
     second_shot = projects.create_shot(str(episode["id"]), "S002", 1000)
     old_frame = _shot_image(workspace, database, project_id, str(second_shot["id"]), "old-frame.png")
-    new_frame = MediaService(database, workspace).derive_version(
-        str(old_frame["media_asset_id"]), str(old_frame["media_version_id"]), "KEYFRAME"
-    )
+    new_frame = MediaService(database, workspace).derive_version(str(old_frame["media_asset_id"]), str(old_frame["media_version_id"]), "KEYFRAME")
     profile_id = _published_profile(workspace, database)
     generation = GenerationService(database, workspace)
     intent = generation.create_intent(project_id, "SHOT", str(second_shot["id"]), "I2V", "continuity dependency")
@@ -415,9 +416,7 @@ def test_approved_first_frame_change_previews_and_atomically_propagates_stale(wo
 
     initial = reviews.preview_approval_impact(str(old_frame["media_version_id"]))
     assert initial["would_mark_stale"] is False
-    reviews.submit_review(
-        str(old_frame["media_version_id"]), str(template["id"]), "APPROVED", 1, checks
-    )
+    reviews.submit_review(str(old_frame["media_version_id"]), str(template["id"]), "APPROVED", 1, checks)
     with TestClient(create_app(workspace)) as client:
         preview = client.get(f"/api/v1/media-versions/{new_frame['id']}/approval-impact")
     assert preview.status_code == 200, preview.text
@@ -429,18 +428,14 @@ def test_approved_first_frame_change_previews_and_atomically_propagates_stale(wo
         reviews.submit_review(str(new_frame["id"]), str(template["id"]), "APPROVED", 2, checks)
     assert missing_confirmation.value.code == "CONTINUITY_IMPACT_CONFIRMATION_REQUIRED"
     with pytest.raises(DomainRuleError) as stale_confirmation:
-        reviews.submit_review(
-            str(new_frame["id"]), str(template["id"]), "APPROVED", 2, checks, continuity_plan_hash="0" * 64
-        )
+        reviews.submit_review(str(new_frame["id"]), str(template["id"]), "APPROVED", 2, checks, continuity_plan_hash="0" * 64)
     assert stale_confirmation.value.code == "CONTINUITY_IMPACT_STALE"
     with database.connect() as connection:
         assert connection.execute("SELECT is_stale FROM shot_transition_constraints WHERE id=?", (transition["id"],)).fetchone()[0] == 0
         assert connection.execute("SELECT is_stale FROM generation_variants WHERE id=?", (variant["id"],)).fetchone()[0] == 0
         assert connection.execute("SELECT COUNT(*) FROM review_decisions WHERE subject_id=?", (new_frame["id"],)).fetchone()[0] == 0
 
-    result = reviews.submit_review(
-        str(new_frame["id"]), str(template["id"]), "APPROVED", 2, checks, continuity_plan_hash=str(impact["plan_hash"])
-    )
+    result = reviews.submit_review(str(new_frame["id"]), str(template["id"]), "APPROVED", 2, checks, continuity_plan_hash=str(impact["plan_hash"]))
     assert result["continuity_impact"]["would_mark_stale"] is True
     with database.connect() as connection:
         constraint = connection.execute(
@@ -489,9 +484,7 @@ def test_approved_video_winner_change_stales_last_frame_anchor_transition_and_do
     first_shot = projects.create_shot(str(episode["id"]), "S001", 1000)
     second_shot = projects.create_shot(str(episode["id"]), "S002", 1000)
     old_video = _shot_video(workspace, database, project_id, str(first_shot["id"]), "old-winner.mp4")
-    new_video = MediaService(database, workspace).derive_version(
-        str(old_video["media_asset_id"]), str(old_video["media_version_id"]), "PROXY"
-    )
+    new_video = MediaService(database, workspace).derive_version(str(old_video["media_asset_id"]), str(old_video["media_version_id"]), "PROXY")
     timeline = TimelineService(database, workspace)
     anchor = timeline.create_frame_anchor(str(old_video["media_version_id"]), source_time_us=500_000, role_hint="LAST_FRAME")
     transition = timeline.create_transition_constraint(
@@ -572,10 +565,13 @@ def test_approved_video_winner_change_stales_last_frame_anchor_transition_and_do
     assert stale_transition.json()["error"]["code"] == "FRAME_ANCHOR_STALE"
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM generation_variants WHERE intent_id=?", (intent["id"],)).fetchone()[0] == 1
-        assert connection.execute(
-            "SELECT COUNT(*) FROM shot_transition_constraints WHERE from_shot_id=? AND to_shot_id=?",
-            (first_shot["id"], second_shot["id"]),
-        ).fetchone()[0] == 1
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM shot_transition_constraints WHERE from_shot_id=? AND to_shot_id=?",
+                (first_shot["id"], second_shot["id"]),
+            ).fetchone()[0]
+            == 1
+        )
 
 
 def test_variant_lineage_requires_same_intent_and_exact_replay_snapshot(workspace, database) -> None:
@@ -662,16 +658,12 @@ def test_failed_generation_job_retry_adds_attempt_not_variant_or_take(workspace,
 
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM generation_variants WHERE intent_id=?", (intent["id"],)).fetchone()[0] == 1
-        assert connection.execute(
-            "SELECT COUNT(*) FROM jobs WHERE subject_type='GENERATION_VARIANT' AND subject_id=?", (variant["id"],)
-        ).fetchone()[0] == 1
-        attempts = connection.execute(
-            "SELECT attempt_no, state FROM job_attempts WHERE job_id=? ORDER BY attempt_no", (job["id"],)
-        ).fetchall()
+        assert connection.execute("SELECT COUNT(*) FROM jobs WHERE subject_type='GENERATION_VARIANT' AND subject_id=?", (variant["id"],)).fetchone()[0] == 1
+        attempts = connection.execute("SELECT attempt_no, state FROM job_attempts WHERE job_id=? ORDER BY attempt_no", (job["id"],)).fetchall()
         assert [(row["attempt_no"], row["state"]) for row in attempts] == [(1, "FAILED"), (2, "SUCCEEDED")]
-        source_asset_id = connection.execute(
-            "SELECT media_asset_id FROM media_versions WHERE id=?", (variant["bindings"][0]["media_version_id"],)
-        ).fetchone()[0]
+        source_asset_id = connection.execute("SELECT media_asset_id FROM media_versions WHERE id=?", (variant["bindings"][0]["media_version_id"],)).fetchone()[
+            0
+        ]
         assert connection.execute("SELECT COUNT(*) FROM media_versions WHERE media_asset_id=?", (source_asset_id,)).fetchone()[0] == 1
 
 
@@ -685,9 +677,7 @@ def test_submitted_variant_freezes_workflow_and_local_model_execution_snapshot(w
     intent = generation.create_intent(project_id, "SHOT", project_id, "I2V", "freeze execution authority")
     plan = _plan(profile_version_id, media_version_id)
     preflight = generation.preflight_variant(str(intent["id"]), plan)
-    submitted = generation.submit_confirmed_variant(
-        str(intent["id"]), plan, str(preflight["plan_hash"]), "execution-snapshot-submit"
-    )
+    submitted = generation.submit_confirmed_variant(str(intent["id"]), plan, str(preflight["plan_hash"]), "execution-snapshot-submit")
 
     snapshot = submitted["job"]["input_snapshot"]["execution_snapshot"]
     assert snapshot["workflow_version_id"] == preflight["dependencies"]["workflow_version_id"]
@@ -779,12 +769,20 @@ def test_camera_plan_must_match_profile_and_is_frozen_in_job_snapshot(workspace,
         row = connection.execute("SELECT parameter_schema_json FROM execution_profile_versions WHERE id=?", (profile_version_id,)).fetchone()
         schema = json.loads(row["parameter_schema_json"] or "{}")
         schema.setdefault("capabilities", {})["camera"] = {"support": "NATIVE"}
-        connection.execute("UPDATE execution_profile_versions SET parameter_schema_json=?, revision=revision+1 WHERE id=?", (json.dumps(schema), profile_version_id))
+        connection.execute(
+            "UPDATE execution_profile_versions SET parameter_schema_json=?, revision=revision+1 WHERE id=?", (json.dumps(schema), profile_version_id)
+        )
     generation = GenerationService(database, workspace)
     intent = generation.create_intent(project_id, "SHOT", project_id, "I2V", "camera snapshot")
     camera = {
-        "mode": "NATIVE", "shot_type": "CLOSEUP", "movement": "PUSH_IN", "prompt_text": "",
-        "direction": "FORWARD", "intensity": 0.5, "curve": "LINEAR", "profile_version_id": profile_version_id,
+        "mode": "NATIVE",
+        "shot_type": "CLOSEUP",
+        "movement": "PUSH_IN",
+        "prompt_text": "",
+        "direction": "FORWARD",
+        "intensity": 0.5,
+        "curve": "LINEAR",
+        "profile_version_id": profile_version_id,
     }
     base = _plan(profile_version_id, media_version_id)
     plan = VariantPlan(**{**base.__dict__, "parameter_set": {**base.parameter_set, "camera_plan": camera}})
@@ -806,9 +804,7 @@ def test_tampered_variant_input_is_blocked_before_variant_or_job_creation(worksp
     project_id = str(project["id"])
     media_version_id = _image(workspace, database, project_id, "tampered-input.png")
     profile_version_id = _published_profile(workspace, database)
-    intent = GenerationService(database, workspace).create_intent(
-        project_id, "SHOT", project_id, "I2V", "reject corrupted source"
-    )
+    intent = GenerationService(database, workspace).create_intent(project_id, "SHOT", project_id, "I2V", "reject corrupted source")
     media, source_path = MediaService(database, workspace).content_path(media_version_id)
     source_path.write_bytes(source_path.read_bytes() + b"tamper")
     payload = {
@@ -838,9 +834,7 @@ def test_variant_create_rechecks_integrity_after_successful_preflight(workspace,
     project_id = str(project["id"])
     media_version_id = _image(workspace, database, project_id, "tampered-after-plan.png")
     profile_version_id = _published_profile(workspace, database)
-    intent = GenerationService(database, workspace).create_intent(
-        project_id, "SHOT", project_id, "I2V", "recheck plan input at commit"
-    )
+    intent = GenerationService(database, workspace).create_intent(project_id, "SHOT", project_id, "I2V", "recheck plan input at commit")
     payload = {
         "intent_id": intent["id"],
         "variant_type": "BASE",
@@ -866,9 +860,10 @@ def test_variant_create_rechecks_integrity_after_successful_preflight(workspace,
         assert connection.execute("SELECT integrity_status FROM media_versions WHERE id=?", (media_version_id,)).fetchone()[0] == "CORRUPT"
         assert connection.execute("SELECT COUNT(*) FROM generation_variants WHERE intent_id=?", (intent["id"],)).fetchone()[0] == 0
         assert connection.execute("SELECT COUNT(*) FROM jobs WHERE subject_id=?", (intent["id"],)).fetchone()[0] == 0
-        assert connection.execute(
-            "SELECT COUNT(*) FROM audit_events WHERE action='GENERATION_VARIANT_CREATED' AND subject_id=?", (intent["id"],)
-        ).fetchone()[0] == 0
+        assert (
+            connection.execute("SELECT COUNT(*) FROM audit_events WHERE action='GENERATION_VARIANT_CREATED' AND subject_id=?", (intent["id"],)).fetchone()[0]
+            == 0
+        )
 
 
 def test_tampered_video_is_blocked_before_frame_anchor_artifact(workspace, database) -> None:
@@ -891,15 +886,11 @@ def test_tampered_video_is_blocked_before_frame_anchor_artifact(workspace, datab
     assert blocked.json()["error"]["code"] == "SOURCE_INTEGRITY_FAILED"
     assert blocked.json()["error"]["details"]["expected_sha256"] == media["sha256"]
     with database.connect() as connection:
-        assert connection.execute(
-            "SELECT integrity_status FROM media_versions WHERE id=?", (video["media_version_id"],)
-        ).fetchone()[0] == "CORRUPT"
-        assert connection.execute(
-            "SELECT COUNT(*) FROM frame_anchors WHERE source_media_version_id=?", (video["media_version_id"],)
-        ).fetchone()[0] == 0
-        assert connection.execute(
-            "SELECT COUNT(*) FROM media_assets WHERE purpose='FRAME_ANCHOR' AND owner_id=?", (video["media_version_id"],)
-        ).fetchone()[0] == 0
+        assert connection.execute("SELECT integrity_status FROM media_versions WHERE id=?", (video["media_version_id"],)).fetchone()[0] == "CORRUPT"
+        assert connection.execute("SELECT COUNT(*) FROM frame_anchors WHERE source_media_version_id=?", (video["media_version_id"],)).fetchone()[0] == 0
+        assert (
+            connection.execute("SELECT COUNT(*) FROM media_assets WHERE purpose='FRAME_ANCHOR' AND owner_id=?", (video["media_version_id"],)).fetchone()[0] == 0
+        )
 
 
 @pytest.mark.parametrize("tampered_role", ["source", "extracted"])
@@ -936,9 +927,7 @@ def test_transition_validation_rechecks_existing_anchor_files(workspace, databas
     assert blocker["reason"] == "SOURCE_INTEGRITY_FAILED"
     with database.connect() as connection:
         assert connection.execute("SELECT integrity_status FROM media_versions WHERE id=?", (tampered_id,)).fetchone()[0] == "CORRUPT"
-        assert connection.execute(
-            "SELECT compatibility_status FROM shot_transition_constraints WHERE id=?", (transition["id"],)
-        ).fetchone()[0] == "BLOCKED"
+        assert connection.execute("SELECT compatibility_status FROM shot_transition_constraints WHERE id=?", (transition["id"],)).fetchone()[0] == "BLOCKED"
 
 
 def test_variant_preflight_requires_published_workflow_semantic_binding(workspace, database) -> None:
@@ -958,12 +947,8 @@ def test_variant_preflight_requires_published_workflow_semantic_binding(workspac
     assert service.list_variants(str(intent["id"])) == []
 
     with database.transaction() as connection:
-        workflow_version_id = connection.execute(
-            "SELECT id FROM workflow_versions WHERE created_by='test' ORDER BY created_at DESC LIMIT 1"
-        ).fetchone()["id"]
-        connection.execute(
-            "UPDATE execution_profile_versions SET workflow_version_id=? WHERE id=?", (workflow_version_id, profile_version_id)
-        )
+        workflow_version_id = connection.execute("SELECT id FROM workflow_versions WHERE created_by='test' ORDER BY created_at DESC LIMIT 1").fetchone()["id"]
+        connection.execute("UPDATE execution_profile_versions SET workflow_version_id=? WHERE id=?", (workflow_version_id, profile_version_id))
         connection.execute("UPDATE workflow_versions SET node_bindings_json='{}' WHERE id=?", (workflow_version_id,))
     with pytest.raises(DomainRuleError) as error:
         service.preflight_variant(str(intent["id"]), plan)
@@ -998,9 +983,7 @@ def test_variant_derive_plan_proves_resample_and_exact_replay_semantics(workspac
     intent = service.create_intent(project_id, "SHOT", project_id, "I2V", "derive semantics")
     base = service.create_variant(str(intent["id"]), _plan(profile_version_id, media_version_id))
 
-    resample = service.derive_variant_plan(
-        str(base["id"]), "RESAMPLE_NEW_SEED", explicit_seed=8, branch_reason="new movement"
-    )
+    resample = service.derive_variant_plan(str(base["id"]), "RESAMPLE_NEW_SEED", explicit_seed=8, branch_reason="new movement")
     assert resample["would_persist_variant"] is False
     assert resample["would_create_job"] is False
     assert resample["diff"]["changed_fields"] == ["explicit_seed", "parameter_set.SEED"]
@@ -1118,10 +1101,7 @@ def test_three_seed_batch_plans_only_seed_diffs_without_persistence(workspace, d
         assert batch["would_persist_variants"] is False
         assert batch["would_create_jobs"] is False
         assert {item["draft"]["explicit_seed"] for item in batch["plans"]} == {8, 9, 10}
-        assert all(
-            item["diff"]["changed_fields"] == ["explicit_seed", "parameter_set.SEED"]
-            for item in batch["plans"]
-        )
+        assert all(item["diff"]["changed_fields"] == ["explicit_seed", "parameter_set.SEED"] for item in batch["plans"])
         assert len({item["plan_hash"] for item in batch["plans"]}) == 3
         assert len(service.list_variants(str(intent["id"]))) == 1
 
@@ -1139,19 +1119,13 @@ def test_prompt_and_source_branches_only_change_declared_field(workspace, databa
     first_media_id = _image(workspace, database, project_id, "branch-first.png")
     second_media_id = _image(workspace, database, project_id, "branch-second.png")
     profile_version_id = _published_profile(workspace, database)
-    prompt = PromptService(database).create_prompt(
-        project_id, "SHOT", project_id, "I2V", "Shot prompt", "walk slowly", {"camera": "STATIC"}
-    )
+    prompt = PromptService(database).create_prompt(project_id, "SHOT", project_id, "I2V", "Shot prompt", "walk slowly", {"camera": "STATIC"})
     prompt_revision_id = str(prompt["revision"]["id"])
     service = GenerationService(database, workspace)
     intent = service.create_intent(project_id, "SHOT", project_id, "I2V", "branch semantics")
-    base = service.create_variant(
-        str(intent["id"]), _plan(profile_version_id, first_media_id, prompt_revision_id=prompt_revision_id)
-    )
+    base = service.create_variant(str(intent["id"]), _plan(profile_version_id, first_media_id, prompt_revision_id=prompt_revision_id))
 
-    prompt_branch_revision = PromptService(database).branch_revision(
-        prompt_revision_id, "walk quickly", {"camera": "STATIC"}
-    )
+    prompt_branch_revision = PromptService(database).branch_revision(prompt_revision_id, "walk quickly", {"camera": "STATIC"})
     prompt_branch_plan = VariantPlan(
         **{
             **_plan(profile_version_id, first_media_id, parent=str(base["id"]), prompt_revision_id=str(prompt_branch_revision["id"])).__dict__,
@@ -1198,9 +1172,7 @@ def test_prompt_and_source_derive_plan_api_enforces_scope_before_creation(worksp
     child_prompt = prompt_service.branch_revision(parent_prompt_id, "walk quickly")
     generation = GenerationService(database, workspace)
     intent = generation.create_intent(project_id, "SHOT", project_id, "I2V", "branch plans")
-    base = generation.create_variant(
-        str(intent["id"]), _plan(profile_version_id, first_media_id, prompt_revision_id=parent_prompt_id)
-    )
+    base = generation.create_variant(str(intent["id"]), _plan(profile_version_id, first_media_id, prompt_revision_id=parent_prompt_id))
 
     with TestClient(create_app(workspace)) as client:
         _publish_profile_contract(database, profile_version_id)
@@ -1215,9 +1187,7 @@ def test_prompt_and_source_derive_plan_api_enforces_scope_before_creation(worksp
         assert prompt_response.status_code == 200
         prompt_plan = prompt_response.json()["plan"]
         assert prompt_plan["diff"]["changed_fields"] == ["prompt_revision_id"]
-        prompt_created = client.post(
-            "/api/v1/generation-variants", json={**prompt_plan["draft"], "plan_hash": prompt_plan["plan_hash"]}
-        )
+        prompt_created = client.post("/api/v1/generation-variants", json={**prompt_plan["draft"], "plan_hash": prompt_plan["plan_hash"]})
         assert prompt_created.status_code == 201
 
         source_response = client.post(
@@ -1231,9 +1201,7 @@ def test_prompt_and_source_derive_plan_api_enforces_scope_before_creation(worksp
         assert source_response.status_code == 200
         source_plan = source_response.json()["plan"]
         assert source_plan["diff"]["changed_fields"] == ["bindings.FIRST_FRAME[0]"]
-        source_created = client.post(
-            "/api/v1/generation-variants", json={**source_plan["draft"], "plan_hash": source_plan["plan_hash"]}
-        )
+        source_created = client.post("/api/v1/generation-variants", json={**source_plan["draft"], "plan_hash": source_plan["plan_hash"]})
         assert source_created.status_code == 201
 
         count = len(generation.list_variants(str(intent["id"])))
@@ -1300,10 +1268,7 @@ def test_profile_branch_plan_only_changes_published_profile_without_persistence(
             "parameter_set": json.loads(str(base["parameter_set_json"])),
             "seed_policy": base["seed_policy"],
             "explicit_seed": base["explicit_seed"],
-            "bindings": [
-                {"role": item["role"], "media_version_id": item["media_version_id"], "ordinal": item["ordinal"]}
-                for item in base["bindings"]
-            ],
+            "bindings": [{"role": item["role"], "media_version_id": item["media_version_id"], "ordinal": item["ordinal"]} for item in base["bindings"]],
             "provider_random_nonce": base["provider_random_nonce"],
         }
         for field in plan["diff"]["preserved_fields"]:
@@ -1341,10 +1306,12 @@ def test_profile_reroll_readjudicates_camera_plan_to_target_profile(workspace, d
     media_version_id = _image(workspace, database, project_id, "profile-reroll-camera.png")
     source_profile_id = _published_profile(workspace, database)
     target_profile_id = _copy_profile_version(database, source_profile_id)
-    camera_schema = json.dumps({
-        "seed": {"required": True, "determinism": "profile_declared"},
-        "capabilities": {"camera": {"support": "PROMPT_FALLBACK", "prompt_fallback": True}},
-    })
+    camera_schema = json.dumps(
+        {
+            "seed": {"required": True, "determinism": "profile_declared"},
+            "capabilities": {"camera": {"support": "PROMPT_FALLBACK", "prompt_fallback": True}},
+        }
+    )
     with database.transaction() as connection:
         connection.execute(
             "UPDATE execution_profile_versions SET parameter_schema_json=? WHERE id IN (?,?)",
@@ -1398,6 +1365,182 @@ def test_profile_reroll_readjudicates_camera_plan_to_target_profile(workspace, d
         "profile_version_id": target_profile_id,
     }
     assert result["job"]["execution_profile_version_id"] == target_profile_id
+
+
+def test_v2_shot_generation_reroll_enforces_scope_and_idempotency(workspace, database) -> None:
+    project = _project(workspace, database, "v2_shot_reroll")
+    project_id = str(project["id"])
+    projects = ProjectService(database, workspace.projects_root)
+    season = projects.list_seasons(project_id)[0]
+    episode = projects.list_episodes(str(season["id"]))[0]
+    shot = projects.create_shot(str(episode["id"]), "SHOT-001", 4_000)
+    other_shot = projects.create_shot(str(episode["id"]), "SHOT-002", 4_000)
+    media_version_id = _image(workspace, database, project_id, "v2-shot-reroll.png")
+    profile_id = _published_profile(workspace, database)
+    generation = GenerationService(database, workspace)
+    intent = generation.create_intent(project_id, "SHOT", str(shot["id"]), "I2V", "v2 shot reroll")
+    plan = _plan(profile_id, media_version_id)
+    parent = generation.create_variant(str(intent["id"]), plan)
+    payload = {
+        "operation": "REROLL",
+        "stage_code": "VIDEO",
+        "parent_variant_id": str(parent["id"]),
+        "reason_code": "COMPOSITION_FIX",
+        "explicit_seed": 891,
+        "idempotency_key": "v2-shot-reroll-command",
+    }
+
+    with TestClient(create_app(workspace)) as client:
+        rejected = client.post(f"/api/v2/shots/{other_shot['id']}/generations", json=payload)
+        assert rejected.status_code == 422
+        assert rejected.json()["error"]["code"] == "SHOT_VARIANT_SCOPE_MISMATCH"
+
+        first = client.post(f"/api/v2/shots/{shot['id']}/generations", json=payload)
+        assert first.status_code == 201, first.text
+        replay = client.post(f"/api/v2/shots/{shot['id']}/generations", json=payload)
+        assert replay.status_code == 201, replay.text
+        assert replay.json() == first.json()
+        assert first.json()["reroll"] == {"retry": False, "parent_variant_id": parent["id"]}
+        assert first.json()["variant"]["status"] == "QUEUED"
+        assert first.json()["job"]["state"] == "QUEUED"
+        with database.connect() as connection:
+            canonical_job = connection.execute(
+                """SELECT subject_kind,scope_project_id,scope_episode_id,scope_shot_id,stage_code
+                FROM jobs WHERE id=?""",
+                (first.json()["job"]["id"],),
+            ).fetchone()
+        assert dict(canonical_job) == {
+            "subject_kind": "GENERATION_VARIANT",
+            "scope_project_id": project_id,
+            "scope_episode_id": episode["id"],
+            "scope_shot_id": shot["id"],
+            "stage_code": "VIDEO",
+        }
+
+        paths = client.get("/api/v1/openapi.json").json()["paths"]
+        assert paths["/api/v2/shots/{shot_id}/generations"]["post"]["operationId"] == "submitShotGenerationV2"
+
+
+def test_v2_shot_base_generation_preflight_submit_scope_revision_and_idempotency(workspace, database) -> None:
+    project = _project(workspace, database, "v2_shot_base")
+    project_id = str(project["id"])
+    projects = ProjectService(database, workspace.projects_root)
+    season = projects.list_seasons(project_id)[0]
+    episode = projects.list_episodes(str(season["id"]))[0]
+    shot = projects.create_shot(str(episode["id"]), "SHOT-001", 4_000)
+    other_shot = projects.create_shot(str(episode["id"]), "SHOT-002", 4_000)
+    media_version_id = _image(workspace, database, project_id, "v2-shot-base.png")
+    profile_id = _published_profile(workspace, database)
+    intent = GenerationService(database, workspace).create_intent(
+        project_id,
+        "SHOT",
+        str(shot["id"]),
+        "I2V",
+        "v2 shot base",
+    )
+    preflight_payload = {
+        "operation": "BASE",
+        "stage_code": "VIDEO",
+        "intent_id": str(intent["id"]),
+        "variant_type": "BASE",
+        "parent_variant_id": None,
+        "branch_reason": "first shot candidate",
+        "prompt_revision_id": None,
+        "profile_version_id": profile_id,
+        "parameter_set": {"frames": 81, "steps": 20, "SEED": 7},
+        "seed_policy": "EXPLICIT",
+        "explicit_seed": 7,
+        "bindings": [{"role": "FIRST_FRAME", "media_version_id": media_version_id, "ordinal": 0}],
+        "expected_shot_revision": int(shot["revision"]),
+    }
+
+    def counts() -> tuple[int, int]:
+        with database.connect() as connection:
+            return (
+                int(connection.execute("SELECT COUNT(*) FROM generation_variants WHERE intent_id=?", (intent["id"],)).fetchone()[0]),
+                int(connection.execute("SELECT COUNT(*) FROM jobs WHERE project_id=?", (project_id,)).fetchone()[0]),
+            )
+
+    with TestClient(create_app(workspace)) as client:
+        before = counts()
+        rejected_scope = client.post(
+            f"/api/v2/shots/{other_shot['id']}/generations:preflight",
+            json=preflight_payload,
+        )
+        assert rejected_scope.status_code == 422
+        assert rejected_scope.json()["error"]["code"] == "SHOT_GENERATION_INTENT_SCOPE_MISMATCH"
+
+        preflight_response = client.post(
+            f"/api/v2/shots/{shot['id']}/generations:preflight",
+            json=preflight_payload,
+        )
+        assert preflight_response.status_code == 200, preflight_response.text
+        preflight = preflight_response.json()["preflight"]
+        assert preflight["status"] == "READY"
+        assert preflight["shot_id"] == shot["id"]
+        assert preflight["shot_revision"] == shot["revision"]
+        assert preflight["would_persist_variant"] is False
+        assert preflight["would_create_job"] is False
+        assert len(preflight["plan_hash"]) == 64
+        assert len(preflight["variant_plan_hash"]) == 64
+        assert counts() == before
+
+        submit_payload = {
+            **preflight_payload,
+            "plan_hash": preflight["plan_hash"],
+            "idempotency_key": "v2-shot-base-command",
+        }
+        first = client.post(f"/api/v2/shots/{shot['id']}/generations", json=submit_payload)
+        assert first.status_code == 201, first.text
+        assert first.json()["operation"] == "BASE"
+        assert first.json()["idempotent_replay"] is False
+        assert first.json()["variant"]["status"] == "QUEUED"
+        assert first.json()["job"]["state"] == "QUEUED"
+
+        replay = client.post(f"/api/v2/shots/{shot['id']}/generations", json=submit_payload)
+        assert replay.status_code == 201, replay.text
+        assert replay.json()["idempotent_replay"] is True
+        assert replay.json()["variant"] == first.json()["variant"]
+        assert replay.json()["job"] == first.json()["job"]
+        assert counts() == (before[0] + 1, before[1] + 1)
+
+        mismatched = client.post(
+            f"/api/v2/shots/{shot['id']}/generations",
+            json={**submit_payload, "explicit_seed": 8, "parameter_set": {**submit_payload["parameter_set"], "SEED": 8}},
+        )
+        assert mismatched.status_code == 409
+        assert mismatched.json()["error"]["code"] == "IDEMPOTENCY_PAYLOAD_MISMATCH"
+        assert counts() == (before[0] + 1, before[1] + 1)
+
+        mismatched_stage = client.post(
+            f"/api/v2/shots/{shot['id']}/generations",
+            json={**submit_payload, "stage_code": "SHOT_IMAGE"},
+        )
+        assert mismatched_stage.status_code == 409
+        assert mismatched_stage.json()["error"]["code"] == "IDEMPOTENCY_PAYLOAD_MISMATCH"
+        assert counts() == (before[0] + 1, before[1] + 1)
+
+        stale_preflight = client.post(
+            f"/api/v2/shots/{shot['id']}/generations:preflight",
+            json=preflight_payload,
+        ).json()["preflight"]
+        with database.transaction() as connection:
+            connection.execute("UPDATE shots SET revision=revision+1 WHERE id=?", (shot["id"],))
+        stale_submit = client.post(
+            f"/api/v2/shots/{shot['id']}/generations",
+            json={
+                **preflight_payload,
+                "plan_hash": stale_preflight["plan_hash"],
+                "idempotency_key": "v2-shot-base-stale-command",
+            },
+        )
+        assert stale_submit.status_code == 409
+        assert stale_submit.json()["error"]["code"] == "SHOT_REVISION_CONFLICT"
+        assert counts() == (before[0] + 1, before[1] + 1)
+
+        paths = client.get("/api/v1/openapi.json").json()["paths"]
+        assert paths["/api/v2/shots/{shot_id}/generations:preflight"]["post"]["operationId"] == "preflightShotGenerationV2"
+
 
 def test_direct_variant_plan_cannot_bypass_resample_profile_or_random_scope(workspace, database) -> None:
     project = _project(workspace, database, "direct_branch_scope")
@@ -1575,9 +1718,7 @@ def test_first_last_preflight_blocks_unprobed_and_incompatible_frames(workspace,
     wrong_end_id = _real_image(workspace, database, project_id, "end-wrong.png", "90x160")
     profile_version_id = _published_profile(workspace, database)
     with database.transaction() as connection:
-        profile = connection.execute(
-            "SELECT workflow_version_id FROM execution_profile_versions WHERE id=?", (profile_version_id,)
-        ).fetchone()
+        profile = connection.execute("SELECT workflow_version_id FROM execution_profile_versions WHERE id=?", (profile_version_id,)).fetchone()
         connection.execute(
             "UPDATE execution_profile_versions SET input_contract_json=? WHERE id=?",
             (json.dumps({"input_slots": {"FIRST_FRAME": {"min": 1, "max": 1}, "END_FRAME": {"min": 1, "max": 1}}}), profile_version_id),
@@ -1629,9 +1770,7 @@ def test_unsupported_first_last_profile_returns_actionable_capability_error(work
     first_id = _real_image(workspace, database, project_id, "unsupported-first.png", "160x90")
     end_id = _real_image(workspace, database, project_id, "unsupported-end.png", "160x90")
     profile_version_id = _published_profile(workspace, database)
-    intent = GenerationService(database, workspace).create_intent(
-        project_id, "SHOT", project_id, "I2V", "require explicit first-last support"
-    )
+    intent = GenerationService(database, workspace).create_intent(project_id, "SHOT", project_id, "I2V", "require explicit first-last support")
     payload = {
         "intent_id": intent["id"],
         "variant_type": "FIRST_LAST_KEYFRAMES",
@@ -1673,9 +1812,7 @@ def test_transition_constraint_rejects_cross_project_shots(workspace, database) 
     second_shot = project_service.create_shot(str(second_episode["id"]), "S001", 1000)
 
     with pytest.raises(DomainRuleError) as error:
-        TimelineService(database, workspace).create_transition_constraint(
-            str(first_shot["id"]), str(second_shot["id"]), "LAST_TO_FIRST"
-        )
+        TimelineService(database, workspace).create_transition_constraint(str(first_shot["id"]), str(second_shot["id"]), "LAST_TO_FIRST")
     assert error.value.code == "TRANSITION_PROJECT_MISMATCH"
 
 
@@ -1686,14 +1823,10 @@ def test_advanced_variant_modes_require_profile_capabilities_and_semantic_roles(
     assert missing.value.code == "PROFILE_VARIANT_UNSUPPORTED"
 
     with pytest.raises(DomainRuleError) as role_missing:
-        GenerationService._validate_variant_capability(
-            "VIDEO_EXTEND", {"video_extend": {"enabled": True, "support": "NATIVE"}}, {"FIRST_FRAME"}
-        )
+        GenerationService._validate_variant_capability("VIDEO_EXTEND", {"video_extend": {"enabled": True, "support": "NATIVE"}}, {"FIRST_FRAME"})
     assert role_missing.value.code == "VARIANT_INPUT_ROLE_REQUIRED"
 
-    GenerationService._validate_variant_capability(
-        "MOTION_CONTROL", {"motion_path": {"enabled": True, "support": "NATIVE"}}, {"MOTION_PATH"}
-    )
+    GenerationService._validate_variant_capability("MOTION_CONTROL", {"motion_path": {"enabled": True, "support": "NATIVE"}}, {"MOTION_PATH"})
 
 
 def test_media_dependency_freezes_source_revision_and_lineage_metadata(workspace, database) -> None:
@@ -1771,10 +1904,7 @@ def test_generation_freezes_exact_identity_pack_in_variant_and_job_then_tracks_s
         "用于生成快照验证",
     )
     assets = WorkspaceAssetService(database, workspace)
-    views = {
-        slot_kind: _image(workspace, database, project_id, f"identity-{slot_kind.lower()}.png")
-        for slot_kind in ("FRONT", "LEFT", "RIGHT")
-    }
+    views = {slot_kind: _image(workspace, database, project_id, f"identity-{slot_kind.lower()}.png") for slot_kind in ("FRONT", "LEFT", "RIGHT")}
     for media_version_id in views.values():
         assets.authorize_media_version(project_id, media_version_id)
 

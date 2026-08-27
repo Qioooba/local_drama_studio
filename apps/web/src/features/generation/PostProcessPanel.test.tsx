@@ -28,7 +28,7 @@ describe("PostProcessPanel", () => {
     const plan = screen.getByRole("button", { name: "只读预检增强计划" }) as HTMLButtonElement;
     await waitFor(() => expect(plan.disabled).toBe(false));
     fireEvent.click(plan);
-    await screen.findByText(/READY，尚未运行/);
+    await screen.findByText(/预检通过，尚未运行/);
     expect(run.disabled).toBe(false);
     fireEvent.click(run);
     await waitFor(() => expect(submitEnhancementRun).toHaveBeenCalledWith({ input_media_version_id: "video-1", recipe_id: "recipe-1", parameters: { requested_from: "POST_PROCESS_PANEL" }, plan_hash: "b".repeat(64) }));
@@ -49,7 +49,7 @@ describe("PostProcessPanel", () => {
     vi.mocked(createPostProcessRecipe).mockResolvedValue({ recipe: { ...recipe, id: "recipe-2", code: "enhance@v2", version_no: 2, parent_recipe_id: "recipe-1", status: "DRAFT" } });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
     render(<QueryClientProvider client={client}><PostProcessPanel videos={[video]} /></QueryClientProvider>);
-    fireEvent.click(await screen.findByRole("button", { name: "派生 DRAFT 新版本" }));
+    fireEvent.click(await screen.findByRole("button", { name: "派生新的草稿版本" }));
     await waitFor(() => expect(createPostProcessRecipe).toHaveBeenCalledWith(expect.objectContaining({ code: "enhance", parent_recipe_id: "recipe-1" })));
     expect(publishPostProcessRecipe).not.toHaveBeenCalled();
   });
@@ -66,7 +66,7 @@ describe("PostProcessPanel", () => {
     fireEvent.change(await screen.findByRole("combobox", { name: "项目调色文件（可选）" }), { target: { value: "00_admin/color/cinema.cube" } });
     expect(screen.getByText(/当前编辑尚未形成不可变版本/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "只读预检增强计划" })).toHaveProperty("disabled", true);
-    fireEvent.click(screen.getByRole("button", { name: "派生 DRAFT 新版本" }));
+    fireEvent.click(screen.getByRole("button", { name: "派生新的草稿版本" }));
     await waitFor(() => expect(createPostProcessRecipe).toHaveBeenCalledWith(expect.objectContaining({ steps: expect.arrayContaining([{ kind: "DENOISE", strength: 1, executor_ref: "builtin:ffmpeg" }, { kind: "STABILIZE", mode: "DESHAKE", executor_ref: "builtin:ffmpeg" }, { kind: "LUT_3D", path_rel: "00_admin/color/cinema.cube", executor_ref: "builtin:ffmpeg" }]) })));
   });
 
@@ -80,7 +80,7 @@ describe("PostProcessPanel", () => {
     await waitFor(() => expect((recipes as HTMLSelectElement).value).toBe(""));
     fireEvent.change(screen.getByRole("textbox", { name: "标题" }), { target: { value: "UAT New Root" } });
     expect(screen.getByText("配方技术标识").parentElement?.textContent).toContain("recipe-uat-new-root");
-    fireEvent.click(screen.getByRole("button", { name: "创建 DRAFT v1" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建第 1 版草稿" }));
     await waitFor(() => expect(createPostProcessRecipe).toHaveBeenCalledWith(expect.objectContaining({ code: "recipe-uat-new-root", parent_recipe_id: undefined })));
   });
 });

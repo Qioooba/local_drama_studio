@@ -1,18 +1,25 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Body, Header, Request
+from starlette.concurrency import run_in_threadpool
 
 from local_drama.api.schemas.g3 import BreakdownRequest
 from local_drama.api.schemas.llm import LLMProbeRequest, LLMProfilePublishRequest, LLMProfileSyncRequest, VideoPromptExpandRequest
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.local_llm import LocalLLMService
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.network_policy import endpoint_is_remote
+from local_drama.platform.contracts import SecretRef
 
 router = APIRouter(tags=["local-llm"])
 
 
 def service(request: Request) -> LocalLLMService:
-    return LocalLLMService(request.app.state.database, request.app.state.settings)
+    return LocalLLMService(
+        request.app.state.database,
+        request.app.state.settings,
+        request.app.state.platform.secret_store,
+    )
 
 
 @router.get("/local-llm/status", operation_id="getLocalLLMStatus")
@@ -39,7 +46,7 @@ async def probe_llm(
         resolved_provider = (payload.provider or request.app.state.settings.llm_provider or "OLLAMA_LOOPBACK").strip().upper()
         resolved_base_url = (payload.base_url or request.app.state.settings.llm_base_url).strip()
         parsed = urlparse(resolved_base_url)
-        is_remote = (parsed.hostname or "").casefold() not in {"127.0.0.1", "localhost", "::1"}
+        is_remote = endpoint_is_remote(resolved_base_url)
         if resolved_provider == "OPENAI_COMPAT" and is_remote and not payload.allow_remote_outbound:
             raise DomainRuleError("OUTBOUND_CONFIRMATION_REQUIRED", "数据将离开本机：测试远程 LLM 连接需要显式确认出境安全许可")
 
@@ -48,6 +55,7 @@ async def probe_llm(
             provider=payload.provider,
             base_url=payload.base_url,
             api_key=payload.api_key,
+            provider_connection_id=payload.provider_connection_id,
         )
         probe = client.probe(load_test=payload.load_test)
         if payload.remember_api_key:
@@ -60,17 +68,15 @@ async def probe_llm(
                 raise DomainRuleError("LLM_API_KEY_REQUIRED", "安全保存 DeepSeek 凭据需要输入 API Key")
             if probe.get("status") != "PASS" or int(probe.get("probe_level_passed") or 0) < 4:
                 raise DomainRuleError("LLM_CREDENTIAL_NOT_VERIFIED", "只有通过四级连接验证的 DeepSeek API Key 才能安全保存")
-            from local_drama.infrastructure.windows_credentials import write_deepseek_api_key
-
             try:
-                write_deepseek_api_key(payload.api_key)
+                request.app.state.platform.secret_store.put(SecretRef("DeepSeekAPI", "default"), payload.api_key)
             except (OSError, ValueError) as error:
                 raise DomainRuleError(
                     "LLM_CREDENTIAL_STORE_FAILED",
-                    "DeepSeek 验证通过，但无法安全保存到 Windows 凭据管理器",
+                    "DeepSeek 验证通过，但无法安全保存到操作系统凭据库",
                 ) from error
             probe["secret_persisted"] = True
-            probe["credential_store"] = "WINDOWS_CREDENTIAL_MANAGER"
+            probe["credential_store"] = request.app.state.platform.secret_store.name
         return {"probe": probe}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
@@ -91,6 +97,7 @@ async def submit_llm_probe(
             api_key=payload.api_key,
             load_test=payload.load_test,
             allow_remote_outbound=payload.allow_remote_outbound,
+            provider_connection_id=payload.provider_connection_id,
         )}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
@@ -119,6 +126,7 @@ async def sync_profile(
                 api_key=payload.api_key,
                 allow_remote_outbound=payload.allow_remote_outbound,
                 probe_job_id=payload.probe_job_id,
+                provider_connection_id=payload.provider_connection_id,
             )
         }
     except DomainRuleError as error:
@@ -150,12 +158,15 @@ async def expand_video_prompt(
 ) -> dict[str, object]:
     try:
         return {
-            "plan": service(request).expand_video_prompt(
+            "plan": await run_in_threadpool(
+                service(request).expand_video_prompt,
                 payload.profile_version_id,
                 payload.story,
                 api_key=payload.api_key,
                 remember_api_key=payload.remember_api_key,
                 allow_remote_outbound=payload.allow_remote_outbound,
+                language=payload.language,
+                output_spec=payload.output_spec,
             )
         }
     except DomainRuleError as error:

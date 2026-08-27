@@ -111,6 +111,25 @@ class EpisodeProductionRunService:
         return mode, dict(policy)
 
     @staticmethod
+    def _resolved_mode_policies(profiles: list[Any]) -> dict[str, dict[str, Any]]:
+        configured: list[int] = []
+        for profile in profiles:
+            try:
+                policy = json.loads(str(profile["resource_policy_json"] or "{}"))
+            except (TypeError, ValueError):
+                policy = {}
+            value = policy.get("default_takes") if isinstance(policy, dict) else None
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and 1 <= int(value) <= 16:
+                configured.append(int(value))
+        base = max(configured) if configured else int(PRODUCTION_MODE_POLICIES["BALANCED"]["target_take_count"])
+        source = "PROFILE_RESOURCE_POLICY" if configured else "SAFE_FALLBACK"
+        return {
+            "DRAFT": {"target_take_count": max(1, round(base / 2)), "label": "草稿", "intent": "快速验证叙事与节奏", "source": source},
+            "BALANCED": {"target_take_count": base, "label": "平衡", "intent": "使用已绑定视频 Profile 的默认候选数", "source": source},
+            "QUALITY": {"target_take_count": min(16, max(base + 1, base * 2)), "label": "精品", "intent": "在 Profile 默认候选数上扩大选择空间", "source": source},
+        }
+
+    @staticmethod
     def _checkpoint_policy(checkpoint_policy: str) -> str:
         policy = str(checkpoint_policy or "").strip().upper()
         if policy not in CHECKPOINT_POLICIES:
@@ -231,6 +250,8 @@ class EpisodeProductionRunService:
             if cap in VIDEO_GENERATION_CAPABILITIES:
                 video_profiles.append(row)
         valid_profiles = [row for row in video_profiles if str(row["binding_status"]) == "ACTIVE" and str(row["status"]) in {"ACTIVE", "PUBLISHED"}]
+        available_mode_policies = self._resolved_mode_policies(valid_profiles)
+        mode_policy = dict(available_mode_policies[production_mode])
         declared_model_refs: set[str] = set()
         for profile in valid_profiles:
             try:
@@ -247,7 +268,14 @@ class EpisodeProductionRunService:
         comfy_contract_status = str(comfy_contract["status"]) if comfy_contract else "MISSING"
         comfy_runtime_status = str(comfy_runtime["status"]) if comfy_runtime else "MISSING"
         comfy_base_url = str(comfy_runtime["base_url"]) if comfy_runtime and comfy_runtime["base_url"] else None
-        comfy_probe_status, comfy_probe_evidence = _probe_loopback(comfy_base_url)
+        if self.settings.allows_private_network:
+            comfy_probe_status, comfy_probe_evidence = _probe_loopback(
+                comfy_base_url,
+                allow_private_network=True,
+            )
+        else:
+            # Preserve the narrow local-only probe seam for callers and tests.
+            comfy_probe_status, comfy_probe_evidence = _probe_loopback(comfy_base_url)
         comfy_ok = comfy_contract_status == "DECLARED" and bool(comfy_runtime) and comfy_probe_status == "PASS"
         if comfy_contract_status != "DECLARED":
             comfy_message = f"Comfy adapter contract 状态为 {comfy_contract_status}，需 DECLARED"
@@ -337,6 +365,7 @@ class EpisodeProductionRunService:
             "tts_enabled": tts_enabled,
             "production_mode": production_mode,
             "mode_policy": mode_policy,
+            "available_mode_policies": available_mode_policies,
             "shots": [{"id": str(row["id"]), "revision_id": row["current_revision_id"], "status": str(row["status"])} for row in shots],
             "assets": [{"shot_id": str(row["shot_id"]), "id": str(row["id"]), "canonical_media_version_id": row["canonical_media_version_id"], "status": str(row["status"])} for row in bindings],
             "asset_states": [{"shot_id": str(row["shot_id"]), "asset_id": str(row["id"]), "state_id": row["effective_asset_state_id"], "state_status": row["effective_state_status"]} for row in bindings],
@@ -378,6 +407,7 @@ class EpisodeProductionRunService:
             "tts_enabled": tts_enabled,
             "production_mode": production_mode,
             "mode_policy": mode_policy,
+            "available_mode_policies": available_mode_policies,
             "checkpoint_policy": checkpoint_policy,
             "include_front_half": include_front_half,
             "front_half_snapshot": front_half_snapshot,
@@ -727,7 +757,7 @@ class EpisodeProductionRunService:
                 "recoverable_jobs": recoverable_jobs,
             },
             "local_only": True,
-            "queue_reused": True,
+            "queue_reused": True, "idempotent_replay": bool(run.get("idempotent_replay", False)),
         }
 
     def get(self, run_id: str, *, include_jobs: bool = False) -> dict[str, Any]:

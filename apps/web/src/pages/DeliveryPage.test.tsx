@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commitEpisodeTimelineRefresh, getEpisodeTimelineStatus, getG8Readiness, getProjectConfiguration, planEpisodeTimelineRefresh, reviewInbox } from "../generated/api";
@@ -54,20 +54,23 @@ describe("DeliveryPage (009F)", () => {
     expect(screen.queryByText(/DeliveryWorkflowPanel/)).toBeNull();
     expect(screen.queryByText("EpisodeContactSheetAction")).toBeNull();
 
-    fireEvent.click(screen.getByRole("tab", { name: "2 合成候选" }));
+    const progress = screen.getByRole("navigation", { name: "交付进度" });
+    expect(progress.querySelector('[aria-current="step"]')?.textContent).toContain("交付检查");
+
+    fireEvent.click(within(progress).getByRole("button", { name: /合成候选/ }));
     expect(screen.getByText("DeliveryWorkflowPanel COMPOSE")).toBeTruthy();
     expect(screen.queryByText("G8ReadinessPanel")).toBeNull();
 
-    fireEvent.click(screen.getByRole("tab", { name: "3 审核成片" }));
+    fireEvent.click(within(progress).getByRole("button", { name: /审核成片/ }));
     expect(screen.getByText("DeliveryWorkflowPanel REVIEW")).toBeTruthy();
     expect(screen.queryByText("DeliveryWorkflowPanel COMPOSE")).toBeNull();
 
-    fireEvent.click(screen.getByRole("tab", { name: "4 打包交付" }));
+    fireEvent.click(within(progress).getByRole("button", { name: /打包交付/ }));
     expect(screen.getByText("DeliveryWorkflowPanel PACKAGE")).toBeTruthy();
     expect(screen.getByText("EpisodeContactSheetAction")).toBeTruthy();
     expect(await screen.findByText("PostProcessPanel")).toBeTruthy();
     expect(screen.queryByText("DeliveryWorkflowPanel REVIEW")).toBeNull();
-    expect(screen.getByRole("link", { name: "返回时间线" }).getAttribute("href")).toBe("/projects/project-1/episodes/ep-1/timeline");
+    expect(screen.getByRole("link", { name: "返回编辑" }).getAttribute("href")).toBe("/projects/project-1/episodes/ep-1/post/edit");
   });
 
   it("restores a staged delivery task from the URL", () => {
@@ -95,7 +98,7 @@ describe("DeliveryPage (009F)", () => {
     const next = await screen.findByRole("button", { name: "继续到合成候选" }) as HTMLButtonElement;
     expect(next.disabled).toBe(true);
     expect(await screen.findByText(/尚无可用的冻结时间线/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "打开时间线并冻结" }).getAttribute("href")).toBe("/projects/project-1/episodes/ep-1/timeline");
+    expect(screen.getByRole("link", { name: "打开编辑并冻结" }).getAttribute("href")).toBe("/projects/project-1/episodes/ep-1/post/edit");
   });
 
   it("opens compose from preflight only after required inputs are present", async () => {

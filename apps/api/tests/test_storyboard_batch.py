@@ -5,16 +5,26 @@ from fastapi.testclient import TestClient
 
 from local_drama.application.projects import ProjectService
 from local_drama.domain.errors import DomainRuleError
+from local_drama.infrastructure.database.shot_studio_command_repository import shot_studio_command_service
 from local_drama.main import create_app
 
 
 def _episode(workspace, database):
     service = ProjectService(database, workspace.projects_root)
-    project = service.create_project(code="batch", title="分镜批量台", episode_count=1, aspect_ratio=None, fps_num=None, fps_den=None, target_duration_ms=60_000, allow_unconfigured_capabilities=True)
+    project = service.create_project(
+        code="batch",
+        title="分镜批量台",
+        episode_count=1,
+        aspect_ratio=None,
+        fps_num=None,
+        fps_den=None,
+        target_duration_ms=60_000,
+        allow_unconfigured_capabilities=True,
+    )
     season = service.list_seasons(str(project["id"]))[0]
     episode = service.list_episodes(str(season["id"]))[0]
     shots = [service.create_shot(str(episode["id"]), f"SH-{index:03d}", index * 1_000, "OTHER") for index in range(1, 4)]
-    service.create_shot_revision(str(shots[0]["id"]), {"action": "开门", "dialogue": "谁？"})
+    shot_studio_command_service(database).save_draft_revision(str(shots[0]["id"]), {"action": "开门", "dialogue": "谁？"})
     return service, episode, service.list_shots(str(episode["id"]))
 
 
@@ -25,7 +35,15 @@ def test_batch_reorder_edit_and_copy_keep_identity_and_history(workspace, databa
     original_revision_ids = {str(shot["id"]): str(shot["current_revision_id"]) for shot in shots}
     payload = {
         "ordered_shot_ids": list(reversed(original_ids)),
-        "edits": [{"shot_id": original_ids[0], "expected_revision": int(shots[0]["revision"]), "target_duration_ms": 4_500, "shot_type": "CLOSE_UP", "fields": {"action": "推门进入"}}],
+        "edits": [
+            {
+                "shot_id": original_ids[0],
+                "expected_revision": int(shots[0]["revision"]),
+                "target_duration_ms": 4_500,
+                "shot_type": "CLOSE_UP",
+                "fields": {"action": "推门进入"},
+            }
+        ],
         "copies": [{"source_shot_id": original_ids[0], "code": "SH-004"}],
     }
     plan = service.plan_storyboard_batch(episode_id, payload)

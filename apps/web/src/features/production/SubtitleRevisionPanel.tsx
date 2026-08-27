@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createSubtitleRevision, getEpisodeTTSSubtitleDraftPlan, listScriptBreakdownDrafts, listSubtitleStyleTemplates, saveSubtitleStyleTemplate, type TTSSubtitleDraftPlan } from "../../generated/api";
+import { createSubtitleRevision, getEpisodeTTSSubtitleDraftPlan, getProjectConfiguration, listScriptBreakdownDrafts, listSubtitleStyleTemplates, saveSubtitleStyleTemplate, type TTSSubtitleDraftPlan } from "../../generated/api";
+import { resolutionFromPlan } from "../shared/effectiveDefaults";
 
 type CueDraft = { start_us: number; end_us: number; text: string; style?: Record<string, unknown> };
 
@@ -18,6 +19,7 @@ export function SubtitleRevisionPanel({ episodeId, projectId = "", defaultSource
   const [styleExpanded, setStyleExpanded] = useState(false);
   const [templates, setTemplates] = useState<Array<{ id: string; code: string; title: string }>>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [availableFonts, setAvailableFonts] = useState<string[]>([defaultStyle.font]);
   const [templateName, setTemplateName] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,10 +33,31 @@ export function SubtitleRevisionPanel({ episodeId, projectId = "", defaultSource
 
   useEffect(() => {
     if (!projectId) return;
-    void listSubtitleStyleTemplates(projectId)
-      .then((result) => setTemplates(result.items.map((item) => ({ id: item.id, code: item.code, title: item.title }))))
+    void Promise.all([listSubtitleStyleTemplates(projectId), getProjectConfiguration(projectId)])
+      .then(([result, configuration]) => {
+        setTemplates(result.items.map((item) => ({ id: item.id, code: item.code, title: item.title })));
+        const current = result.items[0];
+        if (current) {
+          const content = current.content;
+          setSelectedTemplateId(current.id);
+          setStyle({ font: String(content.font ?? defaultStyle.font), size: Number(content.size ?? defaultStyle.size), color: String(content.color ?? defaultStyle.color), position: String(content.position ?? defaultStyle.position) as SubtitleStyle["position"], outline: Number(content.outline ?? defaultStyle.outline) });
+        } else {
+          const resolution = resolutionFromPlan(configuration.configuration.production_plan?.plan);
+          setStyle((old) => ({ ...old, size: Math.min(72, Math.max(28, Math.round(resolution.height * 0.035))) }));
+        }
+        const subtitleMode = String(configuration.configuration.production_plan?.plan?.subtitle_mode ?? "");
+        if (["BURN_IN", "BOTH"].includes(subtitleMode)) setFormat("ASS");
+      })
       .catch(() => setTemplates([]));
   }, [projectId]);
+
+  useEffect(() => {
+    const candidates = ["Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", "SimHei", "SimSun", "Arial", "system-ui"];
+    const fontSet = document.fonts;
+    const detected = fontSet ? candidates.filter((font) => fontSet.check(`16px "${font}"`)) : candidates;
+    setAvailableFonts(detected.length ? detected : ["system-ui"]);
+    setStyle((old) => detected.includes(old.font) ? old : { ...old, font: detected[0] ?? "system-ui" });
+  }, []);
 
   useEffect(() => {
     setSourceDocumentVersionId(defaultSourceDocumentVersionId);
@@ -202,7 +225,7 @@ export function SubtitleRevisionPanel({ episodeId, projectId = "", defaultSource
     <button className="secondary" type="button" aria-expanded={styleExpanded} onClick={() => setStyleExpanded((value) => !value)}>{styleExpanded ? "收起字幕样式" : "字幕样式模板（字体/字号/颜色/位置/描边）"}</button>
     {styleExpanded && <div className="subtitle-style-editor">
       <div className="field-grid">
-        <label>字体<select value={style.font} onChange={(event) => setStyle({ ...style, font: event.target.value })}><option value="Microsoft YaHei">微软雅黑（推荐）</option><option value="SimHei">黑体</option><option value="SimSun">宋体</option><option value="Arial">Arial</option><option value="Noto Sans CJK SC">Noto Sans 简体中文</option><option value="Source Han Sans SC">思源黑体</option></select></label>
+        <label>字体<select value={style.font} onChange={(event) => setStyle({ ...style, font: event.target.value })}>{availableFonts.map((font) => <option value={font} key={font}>{font}</option>)}</select><small>仅显示当前浏览器检测到的本机字体</small></label>
         <label>字号（8—160）<input type="number" min="8" max="160" value={style.size} onChange={(event) => { const raw = event.target.value; if (raw === "") return; const n = Number(raw.replace(/^(-?)0+(?=\d)/, "$1")); setStyle({ ...style, size: Number.isFinite(n) ? Math.min(160, Math.max(8, n)) : style.size }); }} /></label>
         <label>颜色<input type="color" value={style.color} onChange={(event) => setStyle({ ...style, color: event.target.value.toUpperCase() })} /><output>{style.color}</output></label>
         <label>位置<select value={style.position} onChange={(event) => setStyle({ ...style, position: event.target.value as SubtitleStyle["position"] })}><option value="BOTTOM">底部</option><option value="CENTER">居中</option><option value="TOP">顶部</option></select></label>

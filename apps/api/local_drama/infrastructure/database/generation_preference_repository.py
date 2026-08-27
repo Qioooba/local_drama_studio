@@ -75,6 +75,7 @@ class SqliteGenerationPreferenceRepository:
             return None
         item = dict(row)
         capability_json = json.loads(str(item.pop("capability_json") or "{}"))
+        item["capability_contract"] = capability_json if isinstance(capability_json, dict) else {}
         item["resources"] = capability_json.get("resources", {})
         bundle = json.loads(str(item.pop("model_bundle_json", "{}") or "{}"))
         parameter_schema = json.loads(str(item.pop("parameter_schema_json", "{}") or "{}"))

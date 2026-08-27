@@ -67,7 +67,7 @@ export function SceneBiblePanel({ item, onChanged, onChooseReference }: {
 
   return (
     <section className="scene-bible-panel panel" aria-label="场景专项资产圣经">
-      <div className="panel-heading"><div><p className="eyebrow">Scene Bible</p><h4>日夜状态与空间参考</h4></div><StatusBadge>{sceneFacts.length} 使用场景 · {item.usage.shot_count} 镜头</StatusBadge></div>
+      <div className="panel-heading"><div><p className="eyebrow">场景资料</p><h4>日夜状态与空间参考</h4></div><StatusBadge>{sceneFacts.length} 使用场景 · {item.usage.shot_count} 镜头</StatusBadge></div>
       <p className="muted">同一场景以状态区分日景/夜景；参考槽绑定不可变媒体版本，只显示低分辨率缩略图。</p>
 
       <div className="scene-period-grid" aria-label="日夜状态">
@@ -94,8 +94,8 @@ export function SceneBiblePanel({ item, onChanged, onChooseReference }: {
       </div>
 
       <div className="scene-usage" aria-label="场景和镜头使用情况">
-        <div><strong>Used scenes</strong>{sceneFacts.length > 0 ? <ul>{sceneFacts.map((scene) => <li key={`${scene.code}-${scene.title}`}><span>{scene.code}{scene.title ? ` · ${scene.title}` : ""}</span><small>{scene.shots} 镜</small></li>)}</ul> : <p className="muted">{item.usage.shot_count > 0 ? "已绑定镜头，但这些镜头尚未提供场景归属事实。" : "尚未用于任何场景。"}</p>}</div>
-        <div><strong>Used shots</strong>{item.usage.shots.length > 0 ? <ul>{item.usage.shots.map((shot, index) => <li key={textFact(shot.binding_id) ?? `${textFact(shot.shot_code)}-${index}`}><span>{textFact(shot.shot_code) ?? "未编号镜头"}</span><small>{[textFact(shot.episode_code), textFact(shot.scene_code), textFact(shot.role_in_shot)].filter(Boolean).join(" · ") || "已绑定"}</small></li>)}</ul> : <p className="muted">尚未用于任何镜头。</p>}</div>
+        <div><strong>使用场景</strong>{sceneFacts.length > 0 ? <ul>{sceneFacts.map((scene) => <li key={`${scene.code}-${scene.title}`}><span>{scene.code}{scene.title ? ` · ${scene.title}` : ""}</span><small>{scene.shots} 镜</small></li>)}</ul> : <p className="muted">{item.usage.shot_count > 0 ? "已绑定镜头，但这些镜头尚未提供场景归属信息。" : "尚未用于任何场景。"}</p>}</div>
+        <div><strong>使用镜头</strong>{item.usage.shots.length > 0 ? <ul>{item.usage.shots.map((shot, index) => <li key={textFact(shot.binding_id) ?? `${textFact(shot.shot_code)}-${index}`}><span>{textFact(shot.shot_code) ?? "未编号镜头"}</span><small>{[textFact(shot.episode_code), textFact(shot.scene_code), textFact(shot.role_in_shot)].filter(Boolean).join(" · ") || "已绑定"}</small></li>)}</ul> : <p className="muted">尚未用于任何镜头。</p>}</div>
       </div>
     </section>
   );

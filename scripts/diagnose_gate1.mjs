@@ -1,4 +1,8 @@
 import { chromium } from "playwright";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 async function main() {
   const browser = await chromium.launch({ headless: false, slowMo: 100 });
@@ -8,7 +12,7 @@ async function main() {
   await page.waitForTimeout(2000);
 
   const input = page.locator("label:has-text('电脑中的文档绝对路径') input").first();
-  await input.fill("F:\\AI_Projects\\h3\\local_drama_studio\\docs\\evidence\\ui-uat-2026-08-22\\sample_novel.txt");
+  await input.fill(path.join(ROOT, "docs", "evidence", "ui-uat-2026-08-22", "sample_novel.txt"));
   
   await page.locator("button:has-text('建立源版本并解析预览')").click();
   await page.waitForTimeout(2000);

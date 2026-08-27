@@ -158,15 +158,16 @@ def test_evidence_publish_creates_new_version_when_draft_contract_differs_from_e
 
     full: dict[str, dict[str, object]] = {
         "input_contract": {"transport": "LOOPBACK_HTTP", "input_slots": {}},
-            "parameter_schema": {
-                "seed": {"required": True, "determinism": "profile_declared"},
-                "capabilities": {
-                    "extend": {"support": "UNSUPPORTED", "required_inputs": []},
-                    "V2V": {"support": "UNSUPPORTED", "required_inputs": []},
-                    "reference": {"support": "UNSUPPORTED", "required_inputs": []},
-                    "motion": {"support": "UNSUPPORTED", "required_inputs": []},
-                },
+        "parameter_schema": {
+            "seed": {"required": True, "determinism": "profile_declared"},
+            "capabilities": {
+                "camera": {"support": "PROMPT_FALLBACK", "required_inputs": [], "prompt_fallback": True},
+                "extend": {"support": "UNSUPPORTED", "required_inputs": []},
+                "V2V": {"support": "UNSUPPORTED", "required_inputs": []},
+                "reference": {"support": "UNSUPPORTED", "required_inputs": []},
+                "motion": {"support": "UNSUPPORTED", "required_inputs": []},
             },
+        },
         "output_contract": {"media_kind": "VIDEO", "container": "mp4", "codec": "h264"},
         "resource_policy": {"gpu_heavy_concurrency": 1, "worker_policy": "ONE_H3_WORKER_ONE_GPU_TASK"},
     }

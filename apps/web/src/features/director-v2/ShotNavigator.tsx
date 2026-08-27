@@ -3,7 +3,9 @@ import { useMutation } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { commitShotEdit, getShotEditContext, planShotEdit, type ShotReorderCommand } from "../episode-plan-v2/shotEditingApi";
 import { persistDirectorBatch, readDirectorBatch } from "./directorBatchState";
-import type { DirectorDeskShotNavItem } from "./types";
+import type { ShotStudioShotNavItem } from "../../generated/api";
+import { routes } from "../../app/routeRegistry";
+import { MediaThumbnail } from "../shared/MediaThumbnail";
 
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: "草稿",
@@ -16,7 +18,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 type ShotNavigatorProps = {
-  shots: DirectorDeskShotNavItem[];
+  shots: ShotStudioShotNavItem[];
   selectedId?: string;
   projectId: string;
   episodeId: string;
@@ -65,7 +67,7 @@ export function ShotNavigator({ shots, selectedId, projectId, episodeId, totalSh
     return true;
   }), [filter, query, selectedShots, selectionOnly, shots]);
 
-  const grouped = filtered.reduce<Array<{ key: string; label: string; shots: DirectorDeskShotNavItem[] }>>((groups, shot) => {
+  const grouped = filtered.reduce<Array<{ key: string; label: string; shots: ShotStudioShotNavItem[] }>>((groups, shot) => {
     const key = shot.scene_id ?? "ungrouped";
     const current = groups.at(-1);
     if (current?.key === key) current.shots.push(shot);
@@ -119,7 +121,6 @@ export function ShotNavigator({ shots, selectedId, projectId, episodeId, totalSh
     if (next.has(shotId)) next.delete(shotId); else next.add(shotId);
     return next;
   });
-  const selectedVisible = filtered.filter((shot) => selectedShots.has(shot.id));
   const selectedForBatch = shots.filter((shot) => selectedShots.has(shot.id));
   const startBatch = () => {
     if (!selectedForBatch.length) return;
@@ -127,7 +128,7 @@ export function ShotNavigator({ shots, selectedId, projectId, episodeId, totalSh
     next.set("batch", persistDirectorBatch(episodeId, selectedForBatch.map((shot) => shot.id)));
     next.set("batchIndex", "0");
     next.delete("batchDone");
-    navigate(`/projects/${projectId}/episodes/${episodeId}/direct/${selectedForBatch[0].id}?${next.toString()}`);
+    navigate(`${routes.shotStudio(projectId, episodeId, selectedForBatch[0].id)}?${next.toString()}`);
   };
 
   return (
@@ -143,8 +144,8 @@ export function ShotNavigator({ shots, selectedId, projectId, episodeId, totalSh
         <strong>{selectedShots.size} 已选</strong>
         {selectedShots.size > 0 && <div className="director-shot-bulk-actions">
           <button type="button" onClick={startBatch}>逐镜处理</button>
-          <Link to={`/projects/${projectId}/episodes/${episodeId}/review`}>审核入口</Link>
-          <Link to={`/projects/${projectId}/episodes/${episodeId}/run`}>生产入口</Link>
+          <Link to={routes.postReview(projectId, episodeId)}>审核入口</Link>
+          <Link to={routes.episodeProduction(projectId, episodeId)}>生产入口</Link>
         </div>}
         <small>{reorderEnabled ? "拖动手柄或用上下按钮提交正式排序。" : "筛选/搜索时暂停排序；批量入口不会伪造批量提交。"}</small>
         {reorderMutation.error && <p role="alert">排序失败：{reorderMutation.error instanceof Error ? reorderMutation.error.message : String(reorderMutation.error)}</p>}
@@ -170,8 +171,8 @@ export function ShotNavigator({ shots, selectedId, projectId, episodeId, totalSh
                 <button type="button" aria-label={`上移镜头 ${shot.code}`} disabled={!reorderEnabled || shotIndex <= 0 || reorderMutation.isPending} onClick={() => moveRelative(shot.id, -1)}>↑</button>
                 <button type="button" aria-label={`下移镜头 ${shot.code}`} disabled={!reorderEnabled || shotIndex >= shots.length - 1 || reorderMutation.isPending} onClick={() => moveRelative(shot.id, 1)}>↓</button>
               </div>
-              <Link className={`director-shot-card${selectedId === shot.id ? " selected" : ""}`} aria-current={selectedId === shot.id ? "true" : undefined} to={`/projects/${projectId}/episodes/${episodeId}/direct/${shot.id}`}>
-                <span className="director-shot-thumb">{shot.thumbnail_media_version_id ? <img src={thumbnailUrl(shot.thumbnail_media_version_id)} alt="" loading="lazy" decoding="async" /> : <FrameIcon />}</span>
+              <Link className={`director-shot-card${selectedId === shot.id ? " selected" : ""}`} aria-current={selectedId === shot.id ? "true" : undefined} to={routes.shotStudio(projectId, episodeId, shot.id)}>
+                <span className="director-shot-thumb">{shot.thumbnail_media_version_id ? <MediaThumbnail src={thumbnailUrl(shot.thumbnail_media_version_id)} alt="" fallbackLabel="镜头缩略图待生成" loading="lazy" decoding="async" /> : <FrameIcon />}</span>
                 <span className="director-shot-copy"><span><strong>{shot.code}</strong><small>{shot.job_status ?? shot.continuity_status}</small></span><span>{shot.group_code ? `${shot.group_code} · ${shot.group_title ?? "镜头组"}` : shot.scene_code ? `${shot.scene_code} · ${shot.scene_title ?? "场景"}` : "镜头生产单元"}</span><small className={`shot-state state-${shot.status.toLowerCase()}`}>{status}</small></span>
               </Link>
             </div>

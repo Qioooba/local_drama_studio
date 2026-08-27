@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import mimetypes
-import os
 import re
 import shutil
 import subprocess
@@ -19,6 +18,7 @@ from local_drama.application.storage_operations import StorageOperationService
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.infrastructure.filesystem.atomic import replace_path
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".avi"}
@@ -133,7 +133,7 @@ class MediaService:
         try:
             with source.open("rb") as input_file, partial.open("wb") as output_file:
                 shutil.copyfileobj(input_file, output_file, length=1024 * 1024)
-            os.replace(partial, destination)
+            replace_path(partial, destination)
         except OSError:
             if partial.exists():
                 partial.unlink()
@@ -407,7 +407,8 @@ class MediaService:
         except Exception:
             destination.unlink(missing_ok=True)
             raise
-        return {"duplicate": False, **self.get_version(version_id)}
+        version = self.get_version(version_id)
+        return {"duplicate": False, **version, "media_version_id": str(version["id"])}
 
     def promote_job_artifact(
         self,
@@ -864,7 +865,7 @@ class MediaService:
             offset_ms = {"first": 0, "middle": duration // 2, "last": max(0, duration - 1)}[normalized_frame]
             seek = ["-ss", f"{offset_ms / 1000:.3f}"]
             self._run_ffmpeg([*seek, "-i", str(source), "-frames:v", "1", "-vf", f"scale={scale}", "-c:v", "libwebp", "-y", str(partial)])
-            os.replace(partial, destination)
+            replace_path(partial, destination)
         return destination, "image/webp", relative.as_posix(), preset_hash
 
     def thumbnail(self, media_version_id: str, size: str = "small", frame: str = "poster", *, materialize: bool = True) -> tuple[Path, str]:
@@ -934,7 +935,7 @@ class MediaService:
             partial = destination.with_suffix(".partial.webp")
             scale = "320:-1" if size == "small" else "960:-1"
             self._run_ffmpeg(["-i", str(source), "-frames:v", "1", "-vf", f"scale={scale}", "-c:v", "libwebp", "-y", str(partial)])
-            os.replace(partial, destination)
+            replace_path(partial, destination)
             self._cache_entry(media_version_id, "THUMBNAIL", relative.as_posix(), item["sha256"], preset_hash)
         return destination, "image/webp"
 
@@ -956,7 +957,7 @@ class MediaService:
         if not destination.exists():
             partial = destination.with_suffix(".partial.webp")
             self._run_ffmpeg(["-i", str(source), "-vf", "fps=1/2,scale=320:-1,tile=5x1", "-frames:v", "1", "-c:v", "libwebp", "-y", str(partial)])
-            os.replace(partial, destination)
+            replace_path(partial, destination)
             self._cache_entry(media_version_id, "FILMSTRIP", relative.as_posix(), item["sha256"], preset_hash)
         return destination, "image/webp"
 
@@ -978,7 +979,7 @@ class MediaService:
         if not destination.exists():
             partial = destination.with_suffix(".partial.png")
             self._run_ffmpeg(["-i", str(source), "-filter_complex", "showwavespic=s=640x128:colors=0x2dd4bf", "-frames:v", "1", "-y", str(partial)])
-            os.replace(partial, destination)
+            replace_path(partial, destination)
             self._cache_entry(media_version_id, "WAVEFORM", relative.as_posix(), item["sha256"], preset_hash)
         return destination, "image/png"
 
@@ -1019,7 +1020,7 @@ class MediaService:
             if probe.get("probe_status") != "PASS":
                 partial.unlink(missing_ok=True)
                 raise DomainRuleError("MEDIA_PROXY_OUTPUT_INVALID", "低码率预览输出无法通过本机 ffprobe")
-            os.replace(partial, destination)
+            replace_path(partial, destination)
         # Reconcile the catalogue even when a valid cache file survived a
         # database restore or cache-entry cleanup.
         self._cache_entry(media_version_id, "PROXY", relative.as_posix(), item["sha256"], preset_hash)

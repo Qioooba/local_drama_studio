@@ -23,6 +23,6 @@ def test_release_database_probes_match_dynamic_alembic_head(tmp_path: Path, monk
     monkeypatch.setattr(verify_release, "DB_PATH", database)
 
     expected = verify_release._expected_migration_heads()
-    assert expected == ["0057_provider_connections"]
+    assert expected == ["0063_audio_mix_drafts"]
     assert verify_release._migration_head() == expected[0]
     assert verify_release._integrity(database) == "ok"

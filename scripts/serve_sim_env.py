@@ -40,9 +40,6 @@ from local_drama.application.media import MediaService  # type: ignore[import-no
 from local_drama.application.profiles import (
     ProfileService,  # type: ignore[import-not-found]
 )
-from local_drama.application.projects import (
-    ProjectService,  # type: ignore[import-not-found]
-)
 from local_drama.application.reviews import (
     ReviewService,  # type: ignore[import-not-found]
 )
@@ -55,6 +52,9 @@ from local_drama.domain.generation_contracts import (
 )
 from local_drama.infrastructure.comfy import (
     ComfyClient,  # type: ignore[import-not-found]
+)
+from local_drama.infrastructure.database.shot_studio_command_repository import (
+    shot_studio_command_service,  # type: ignore[import-not-found]
 )
 from local_drama.infrastructure.database.sqlite import (
     Database,  # type: ignore[import-not-found]
@@ -89,7 +89,9 @@ def build_settings(root: Path, port: int) -> Settings:
         if origin.strip()
     )
     if extra:
-        settings = settings.model_copy(update={"allowed_origins": tuple(settings.allowed_origins) + extra})
+        settings = settings.model_copy(
+            update={"allowed_origins": tuple(settings.allowed_origins) + extra}
+        )
     return settings
 
 
@@ -98,13 +100,23 @@ def _backup_database(source: Path, target: Path) -> None:
     if target.exists():
         target.unlink()
     source_uri = f"file:{source.resolve().as_posix()}?mode=ro"
-    with sqlite3.connect(source_uri, uri=True) as source_connection, sqlite3.connect(target) as target_connection:
+    with (
+        sqlite3.connect(source_uri, uri=True) as source_connection,
+        sqlite3.connect(target) as target_connection,
+    ):
         source_connection.backup(target_connection)
 
 
-def _snapshot_project(source_db: Path, source_projects: Path, target_projects: Path) -> tuple[str, str]:
-    with sqlite3.connect(f"file:{source_db.resolve().as_posix()}?mode=ro", uri=True) as connection:
-        row = connection.execute("SELECT id, root_rel FROM projects WHERE code=? ORDER BY updated_at DESC LIMIT 1", (PROJECT_CODE,)).fetchone()
+def _snapshot_project(
+    source_db: Path, source_projects: Path, target_projects: Path
+) -> tuple[str, str]:
+    with sqlite3.connect(
+        f"file:{source_db.resolve().as_posix()}?mode=ro", uri=True
+    ) as connection:
+        row = connection.execute(
+            "SELECT id, root_rel FROM projects WHERE code=? ORDER BY updated_at DESC LIMIT 1",
+            (PROJECT_CODE,),
+        ).fetchone()
         if row is None:
             raise RuntimeError(f"SIM_PROJECT_MISSING: {PROJECT_CODE}")
         project_id, root_rel = str(row[0]), str(row[1])
@@ -117,9 +129,13 @@ def _snapshot_project(source_db: Path, source_projects: Path, target_projects: P
     return project_id, root_rel
 
 
-def _publish_native_i2v_workflow(database: Database, settings: Settings, server: str, keyframe_rel: str) -> dict[str, Any]:
+def _publish_native_i2v_workflow(
+    database: Database, settings: Settings, server: str, keyframe_rel: str
+) -> dict[str, Any]:
     factory = H3WorkflowFactory(settings)
-    prompt = "固定广角镜头，细雨中的北方乡村老屋，保持空间方向和道具连续，克制的单一动作。"
+    prompt = (
+        "固定广角镜头，细雨中的北方乡村老屋，保持空间方向和道具连续，克制的单一动作。"
+    )
     workflow = factory.build_fl2va(
         prompt,
         first_frame=keyframe_rel,
@@ -134,23 +150,34 @@ def _publish_native_i2v_workflow(database: Database, settings: Settings, server:
         "sim_native_i2v",
         "Simulation native I2V",
         workflow,
-        {"capability": "H3_FL2VA_I2V_CANDIDATE", "input_slots": {"FIRST_FRAME": {"min": 1, "max": 1}}},
+        {
+            "capability": "H3_FL2VA_I2V_CANDIDATE",
+            "input_slots": {"FIRST_FRAME": {"min": 1, "max": 1}},
+        },
         {"FIRST_FRAME": {"node_id": "5", "input": "image"}},
         {"local_only": True, "network_policy": "LOOPBACK_ONLY"},
     )
     client = ComfyClient(server, settings.comfy_output_root)
     validation = workflows.validate_against_comfy(str(version["id"]), client)
     if validation["status"] != "PASS":
-        raise RuntimeError(f"SIM_WORKFLOW_VALIDATION_FAILED: {json.dumps(validation, ensure_ascii=False)[:1000]}")
+        raise RuntimeError(
+            f"SIM_WORKFLOW_VALIDATION_FAILED: {json.dumps(validation, ensure_ascii=False)[:1000]}"
+        )
     published = workflows.publish(str(version["id"]), str(validation["validation_id"]))
-    return {"workflow_version_id": str(version["id"]), "published_status": published["status"]}
+    return {
+        "workflow_version_id": str(version["id"]),
+        "published_status": published["status"],
+    }
 
 
 def _create_i2v_profile_candidate(database: Database, workflow_version_id: str) -> str:
     profile_id = f"sim-i2v-{uuid.uuid4().hex[:8]}"
     version_id = f"{profile_id}-v1"
     with database.transaction() as connection:
-        connection.execute("INSERT INTO execution_profiles (id,code,title) VALUES (?,?,?)", (profile_id, "sim-native-i2v", "Simulation native I2V profile"))
+        connection.execute(
+            "INSERT INTO execution_profiles (id,code,title) VALUES (?,?,?)",
+            (profile_id, "sim-native-i2v", "Simulation native I2V profile"),
+        )
         connection.execute(
             """INSERT INTO execution_profile_versions
             (id, execution_profile_id, version_no, capability, runtime_version_id, workflow_version_id,
@@ -162,12 +189,20 @@ def _create_i2v_profile_candidate(database: Database, workflow_version_id: str) 
                 version_id,
                 profile_id,
                 workflow_version_id,
-                json.dumps({"model_ref": "minimax_h3_fl2va_pruned_int8_convrot.safetensors", "provider_kind": "LOCAL_COMFY", "network_allowed": False}),
+                json.dumps(
+                    {
+                        "model_ref": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+                        "provider_kind": "LOCAL_COMFY",
+                        "network_allowed": False,
+                    }
+                ),
                 json.dumps(
                     {
                         "transport": "LOOPBACK_HTTP",
                         "input_slots": {"FIRST_FRAME": {"min": 1, "max": 1}},
-                        "media_kinds": {"FIRST_FRAME": {"media_kind": "IMAGE", "required": True}},
+                        "media_kinds": {
+                            "FIRST_FRAME": {"media_kind": "IMAGE", "required": True}
+                        },
                         "capabilities": {"seed": {"determinism": "EXPLICIT"}},
                     }
                 ),
@@ -179,16 +214,47 @@ def _create_i2v_profile_candidate(database: Database, workflow_version_id: str) 
                             "camera": {"support": "NATIVE", "prompt_fallback": False},
                             "extend": {"support": "UNSUPPORTED", "required_inputs": []},
                             "V2V": {"support": "UNSUPPORTED", "required_inputs": []},
-                            "reference": {"support": "UNSUPPORTED", "required_inputs": []},
-                            "motion": {"support": "NATIVE", "required_inputs": [], "enabled": True, "operations": ["MOTION_BRUSH"]},
-                            "motion_mask": {"enabled": True, "support": "NATIVE", "required_inputs": [], "operations": ["MOTION_BRUSH"]},
-                            "inpaint": {"enabled": True, "support": "NATIVE", "required_inputs": [], "operations": ["INPAINT"]},
-                            "outpaint": {"enabled": True, "support": "NATIVE", "required_inputs": [], "operations": ["OUTPAINT"]},
+                            "reference": {
+                                "support": "UNSUPPORTED",
+                                "required_inputs": [],
+                            },
+                            "motion": {
+                                "support": "NATIVE",
+                                "required_inputs": [],
+                                "enabled": True,
+                                "operations": ["MOTION_BRUSH"],
+                            },
+                            "motion_mask": {
+                                "enabled": True,
+                                "support": "NATIVE",
+                                "required_inputs": [],
+                                "operations": ["MOTION_BRUSH"],
+                            },
+                            "inpaint": {
+                                "enabled": True,
+                                "support": "NATIVE",
+                                "required_inputs": [],
+                                "operations": ["INPAINT"],
+                            },
+                            "outpaint": {
+                                "enabled": True,
+                                "support": "NATIVE",
+                                "required_inputs": [],
+                                "operations": ["OUTPAINT"],
+                            },
                         },
                     }
                 ),
-                json.dumps({"media_kind": "VIDEO", "container": "mp4", "codec": "h264"}),
-                json.dumps({"channel": "GPU_H3", "gpu_heavy_concurrency": 1, "worker_policy": "ONE_H3_WORKER_ONE_GPU_TASK"}),
+                json.dumps(
+                    {"media_kind": "VIDEO", "container": "mp4", "codec": "h264"}
+                ),
+                json.dumps(
+                    {
+                        "channel": "GPU_H3",
+                        "gpu_heavy_concurrency": 1,
+                        "worker_policy": "ONE_H3_WORKER_ONE_GPU_TASK",
+                    }
+                ),
                 None,
                 json.dumps({"provider_kind": "LOCAL_COMFY", "network_allowed": False}),
                 "ONE_H3_WORKER_ONE_GPU_TASK",
@@ -243,7 +309,11 @@ def _run_evidence_job(
             break
         time.sleep(5)
     if not result or result.get("status") != "SUCCEEDED":
-        raise RuntimeError(json.dumps({"poll_states": poll_states, "result": result}, ensure_ascii=False))
+        raise RuntimeError(
+            json.dumps(
+                {"poll_states": poll_states, "result": result}, ensure_ascii=False
+            )
+        )
     artifact = result["artifacts"][0]
     promoted = MediaService(database, settings).promote_job_artifact(
         str(artifact["id"]), purpose="SHOT_VIDEO", media_kind="VIDEO", stage="FORMAL"
@@ -258,7 +328,9 @@ def _run_evidence_job(
     }
 
 
-def _publish_native_t2v_workflow(database: Database, settings: Settings, server: str) -> dict[str, Any]:
+def _publish_native_t2v_workflow(
+    database: Database, settings: Settings, server: str
+) -> dict[str, Any]:
     factory = H3WorkflowFactory(settings)
     prompt = "细雨中的北方乡村老屋，一名女子缓步走进院子，保持空间方向和道具连续。"
     workflow = factory.build_t2va(
@@ -286,16 +358,24 @@ def _publish_native_t2v_workflow(database: Database, settings: Settings, server:
     client = ComfyClient(server, settings.comfy_output_root)
     validation = workflows.validate_against_comfy(str(version["id"]), client)
     if validation["status"] != "PASS":
-        raise RuntimeError(f"SIM_T2V_WORKFLOW_VALIDATION_FAILED: {json.dumps(validation, ensure_ascii=False)[:1000]}")
+        raise RuntimeError(
+            f"SIM_T2V_WORKFLOW_VALIDATION_FAILED: {json.dumps(validation, ensure_ascii=False)[:1000]}"
+        )
     published = workflows.publish(str(version["id"]), str(validation["validation_id"]))
-    return {"workflow_version_id": str(version["id"]), "published_status": published["status"]}
+    return {
+        "workflow_version_id": str(version["id"]),
+        "published_status": published["status"],
+    }
 
 
 def _create_t2v_profile_candidate(database: Database, workflow_version_id: str) -> str:
     profile_id = f"sim-t2v-{uuid.uuid4().hex[:8]}"
     version_id = f"{profile_id}-v1"
     with database.transaction() as connection:
-        connection.execute("INSERT INTO execution_profiles (id,code,title) VALUES (?,?,?)", (profile_id, "sim-native-t2v", "Simulation native T2V profile"))
+        connection.execute(
+            "INSERT INTO execution_profiles (id,code,title) VALUES (?,?,?)",
+            (profile_id, "sim-native-t2v", "Simulation native T2V profile"),
+        )
         connection.execute(
             """INSERT INTO execution_profile_versions
             (id, execution_profile_id, version_no, capability, runtime_version_id, workflow_version_id,
@@ -307,7 +387,13 @@ def _create_t2v_profile_candidate(database: Database, workflow_version_id: str) 
                 version_id,
                 profile_id,
                 workflow_version_id,
-                json.dumps({"model_ref": "minimax_h3_fl2va_pruned_int8_convrot.safetensors", "provider_kind": "LOCAL_COMFY", "network_allowed": False}),
+                json.dumps(
+                    {
+                        "model_ref": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+                        "provider_kind": "LOCAL_COMFY",
+                        "network_allowed": False,
+                    }
+                ),
                 json.dumps(
                     {
                         "transport": "LOOPBACK_HTTP",
@@ -323,16 +409,47 @@ def _create_t2v_profile_candidate(database: Database, workflow_version_id: str) 
                             "camera": {"support": "NATIVE", "prompt_fallback": False},
                             "extend": {"support": "UNSUPPORTED", "required_inputs": []},
                             "V2V": {"support": "UNSUPPORTED", "required_inputs": []},
-                            "reference": {"support": "UNSUPPORTED", "required_inputs": []},
-                            "motion": {"support": "NATIVE", "required_inputs": [], "enabled": True, "operations": ["MOTION_BRUSH"]},
-                            "motion_mask": {"enabled": True, "support": "NATIVE", "required_inputs": [], "operations": ["MOTION_BRUSH"]},
-                            "inpaint": {"enabled": True, "support": "NATIVE", "required_inputs": [], "operations": ["INPAINT"]},
-                            "outpaint": {"enabled": True, "support": "NATIVE", "required_inputs": [], "operations": ["OUTPAINT"]},
+                            "reference": {
+                                "support": "UNSUPPORTED",
+                                "required_inputs": [],
+                            },
+                            "motion": {
+                                "support": "NATIVE",
+                                "required_inputs": [],
+                                "enabled": True,
+                                "operations": ["MOTION_BRUSH"],
+                            },
+                            "motion_mask": {
+                                "enabled": True,
+                                "support": "NATIVE",
+                                "required_inputs": [],
+                                "operations": ["MOTION_BRUSH"],
+                            },
+                            "inpaint": {
+                                "enabled": True,
+                                "support": "NATIVE",
+                                "required_inputs": [],
+                                "operations": ["INPAINT"],
+                            },
+                            "outpaint": {
+                                "enabled": True,
+                                "support": "NATIVE",
+                                "required_inputs": [],
+                                "operations": ["OUTPAINT"],
+                            },
                         },
                     }
                 ),
-                json.dumps({"media_kind": "VIDEO", "container": "mp4", "codec": "h264"}),
-                json.dumps({"channel": "GPU_H3", "gpu_heavy_concurrency": 1, "worker_policy": "ONE_H3_WORKER_ONE_GPU_TASK"}),
+                json.dumps(
+                    {"media_kind": "VIDEO", "container": "mp4", "codec": "h264"}
+                ),
+                json.dumps(
+                    {
+                        "channel": "GPU_H3",
+                        "gpu_heavy_concurrency": 1,
+                        "worker_policy": "ONE_H3_WORKER_ONE_GPU_TASK",
+                    }
+                ),
                 None,
                 json.dumps({"provider_kind": "LOCAL_COMFY", "network_allowed": False}),
                 "ONE_H3_WORKER_ONE_GPU_TASK",
@@ -344,7 +461,14 @@ def _create_t2v_profile_candidate(database: Database, workflow_version_id: str) 
     return version_id
 
 
-def _seed_g11(database: Database, settings: Settings, project_id: str, root_rel: str, shot_id: str, keyframe_id: str) -> dict[str, Any]:
+def _seed_g11(
+    database: Database,
+    settings: Settings,
+    project_id: str,
+    root_rel: str,
+    shot_id: str,
+    keyframe_id: str,
+) -> dict[str, Any]:
     """Seed G11 story assets, shot bindings, character-voice bindings and a breakdown draft.
 
     Every seeded row goes through the real services (StoryAssetService /
@@ -365,12 +489,36 @@ def _seed_g11(database: Database, settings: Settings, project_id: str, root_rel:
     result: dict[str, Any] = {"assets": {}, "voice": {}, "draft": {}}
     assets = StoryAssetService(database, settings)
     mother = assets.create_asset(
-        project_id, "CHARACTER", "mother", "母亲", "中年女性，面容温和，身着素色棉衣", canonical_media_version_id=keyframe_id, actor="sim-operator"
+        project_id,
+        "CHARACTER",
+        "mother",
+        "母亲",
+        "中年女性，面容温和，身着素色棉衣",
+        canonical_media_version_id=keyframe_id,
+        actor="sim-operator",
     )
-    scene = assets.create_asset(project_id, "SCENE", "old-house", "老屋", "北方乡村老屋，土墙木窗，暖色灯光", actor="sim-operator")
-    assets.create_asset(project_id, "PROP", "letter", "信件", "泛黄的信封与信纸", actor="sim-operator")
-    assets.create_asset(project_id, "COSTUME", "cotton-coat", "素色棉衣", "母亲常穿的素色棉衣", actor="sim-operator")
-    binding = assets.bind_asset_to_shot(shot_id, str(mother["id"]), "main", actor="sim-operator")
+    scene = assets.create_asset(
+        project_id,
+        "SCENE",
+        "old-house",
+        "老屋",
+        "北方乡村老屋，土墙木窗，暖色灯光",
+        actor="sim-operator",
+    )
+    assets.create_asset(
+        project_id, "PROP", "letter", "信件", "泛黄的信封与信纸", actor="sim-operator"
+    )
+    assets.create_asset(
+        project_id,
+        "COSTUME",
+        "cotton-coat",
+        "素色棉衣",
+        "母亲常穿的素色棉衣",
+        actor="sim-operator",
+    )
+    binding = assets.bind_asset_to_shot(
+        shot_id, str(mother["id"]), "main", actor="sim-operator"
+    )
     result["assets"] = {
         "mother_asset_id": str(mother["id"]),
         "scene_asset_id": str(scene["id"]),
@@ -385,19 +533,40 @@ def _seed_g11(database: Database, settings: Settings, project_id: str, root_rel:
         profile_version_id = f"sapi-g11-{uuid.uuid4()}"
         now = datetime.now(UTC).isoformat()
         with database.transaction() as connection:
-            connection.execute("INSERT INTO execution_profiles (id,code,title) VALUES (?,?,?)", (profile_version_id, "sapi-local-g11", "Windows SAPI local TTS (G11 sim)"))
+            connection.execute(
+                "INSERT INTO execution_profiles (id,code,title) VALUES (?,?,?)",
+                (
+                    profile_version_id,
+                    "sapi-local-g11",
+                    "Windows SAPI local TTS (G11 sim)",
+                ),
+            )
             connection.execute(
                 """INSERT INTO execution_profile_versions
                 (id,execution_profile_id,version_no,capability,model_bundle_json,input_contract_json,
                  parameter_schema_json,output_contract_json,resource_policy_json,status,created_at,updated_at,created_by,revision,schema_version)
                 VALUES (?,?,1,'TTS_SAPI_LOCAL','{}','{}','{}','{}','{}','PUBLISHED',?,?,?,1,'v2')""",
-                (f"{profile_version_id}-v1", profile_version_id, now, now, "sim-operator"),
+                (
+                    f"{profile_version_id}-v1",
+                    profile_version_id,
+                    now,
+                    now,
+                    "sim-operator",
+                ),
             )
         project_root = settings.projects_root / root_rel
         evidence = project_root / "00_admin" / "g11-voice-license.json"
         evidence.parent.mkdir(parents=True, exist_ok=True)
         evidence.write_text(
-            json.dumps({"schema_version": "g11.voice-license.v1", "voice": voice["name"], "scope": "isolated G11 sim UAT", "user_owned": True}, ensure_ascii=False),
+            json.dumps(
+                {
+                    "schema_version": "g11.voice-license.v1",
+                    "voice": voice["name"],
+                    "scope": "isolated G11 sim UAT",
+                    "user_owned": True,
+                },
+                ensure_ascii=False,
+            ),
             encoding="utf-8",
         )
         voice_profile = dialogue.create_voice_profile(
@@ -410,10 +579,22 @@ def _seed_g11(database: Database, settings: Settings, project_id: str, root_rel:
             provider_profile_version_id=f"{profile_version_id}-v1",
             actor="sim-operator",
         )
-        dialogue.bind_character_voice(project_id, str(mother["id"]), str(voice_profile["id"]), actor="sim-operator")
-        result["voice"] = {"voice_name": voice["name"], "voice_profile_version_id": str(voice_profile["id"]), "character_asset_id": str(mother["id"])}
+        dialogue.bind_character_voice(
+            project_id,
+            str(mother["id"]),
+            str(voice_profile["id"]),
+            actor="sim-operator",
+        )
+        result["voice"] = {
+            "voice_name": voice["name"],
+            "voice_profile_version_id": str(voice_profile["id"]),
+            "character_asset_id": str(mother["id"]),
+        }
     else:
-        result["voice"] = {"status": "SAPI_UNAVAILABLE", "detail": voices.get("message")}
+        result["voice"] = {
+            "status": "SAPI_UNAVAILABLE",
+            "detail": voices.get("message"),
+        }
 
     with database.connect() as connection:
         doc = connection.execute(
@@ -421,7 +602,8 @@ def _seed_g11(database: Database, settings: Settings, project_id: str, root_rel:
             (project_id,),
         ).fetchone()
         session = connection.execute(
-            "SELECT id FROM import_sessions WHERE project_id=? AND status='COMMITTED' ORDER BY created_at DESC LIMIT 1", (project_id,)
+            "SELECT id FROM import_sessions WHERE project_id=? AND status='COMMITTED' ORDER BY created_at DESC LIMIT 1",
+            (project_id,),
         ).fetchone()
     if doc is not None and session is not None:
         draft_id, now = str(uuid.uuid4()), datetime.now(UTC).isoformat()
@@ -432,28 +614,60 @@ def _seed_g11(database: Database, settings: Settings, project_id: str, root_rel:
                     "title": "读信",
                     "summary": "母亲在老屋灯下读信",
                     "characters": ["母亲"],
-                    "shots": [{"shot_no": 1, "visual": "近景", "action": "展开信纸", "dialogue": "母亲：先喝口热水，天亮以前我们一起想办法。", "duration_seconds": 4}],
+                    "shots": [
+                        {
+                            "shot_no": 1,
+                            "visual": "近景",
+                            "action": "展开信纸",
+                            "dialogue": "母亲：先喝口热水，天亮以前我们一起想办法。",
+                            "duration_seconds": 4,
+                        }
+                    ],
                 }
             ]
         }
-        confidence = {"source": "model_output", "confidence": {"overall": 0.9, "notes": ["simulation seed"]}, "source_passages": []}
+        confidence = {
+            "source": "model_output",
+            "confidence": {"overall": 0.9, "notes": ["simulation seed"]},
+            "source_passages": [],
+        }
         with database.transaction() as connection:
             connection.execute(
                 """INSERT INTO script_breakdown_drafts (id,project_id,source_document_version_id,import_session_id,draft_json,confidence_json,status,created_at,updated_at,created_by,revision,schema_version)
                 VALUES (?,?,?,?,?,?,'DRAFT_READY',?,?,'local-llm',1,'v2')""",
-                (draft_id, project_id, str(doc["version_id"]), str(session["id"]), json.dumps(draft, ensure_ascii=False), json.dumps(confidence, ensure_ascii=False), now, now),
+                (
+                    draft_id,
+                    project_id,
+                    str(doc["version_id"]),
+                    str(session["id"]),
+                    json.dumps(draft, ensure_ascii=False),
+                    json.dumps(confidence, ensure_ascii=False),
+                    now,
+                    now,
+                ),
             )
-        result["draft"] = {"draft_id": draft_id, "scene_count": 1, "shot_count": 1, "line_count": 1}
+        result["draft"] = {
+            "draft_id": draft_id,
+            "scene_count": 1,
+            "shot_count": 1,
+            "line_count": 1,
+        }
     return result
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", type=Path, required=True, help="isolated writable root")
+    parser.add_argument(
+        "--root", type=Path, required=True, help="isolated writable root"
+    )
     parser.add_argument("--port", type=int, default=3225)
     parser.add_argument("--server", default="http://127.0.0.1:8188")
     parser.add_argument("--timeout-seconds", type=int, default=1500)
-    parser.add_argument("--serve-only", action="store_true", help="serve an already-prepared sim root without re-preparing")
+    parser.add_argument(
+        "--serve-only",
+        action="store_true",
+        help="serve an already-prepared sim root without re-preparing",
+    )
     args = parser.parse_args()
 
     root = args.root.resolve()
@@ -464,12 +678,16 @@ def main() -> None:
         if not (root / "data" / "local_drama.sqlite3").is_file():
             raise RuntimeError(f"SIM_ROOT_INVALID: {root}")
         print(f"sim env serving existing root {root} port={args.port}", flush=True)
-        uvicorn.run(create_app(settings), host="127.0.0.1", port=args.port, log_level="warning")
+        uvicorn.run(
+            create_app(settings), host="127.0.0.1", port=args.port, log_level="warning"
+        )
         return
     if not PRODUCTION_DB.is_file():
         raise RuntimeError(f"SIM_PRODUCTION_DB_MISSING: {PRODUCTION_DB}")
     _backup_database(PRODUCTION_DB, settings.database_path)
-    project_id, root_rel = _snapshot_project(PRODUCTION_DB, PRODUCTION_PROJECTS, settings.projects_root)
+    project_id, root_rel = _snapshot_project(
+        PRODUCTION_DB, PRODUCTION_PROJECTS, settings.projects_root
+    )
     migrate(settings.database_path)
     database = Database(settings.database_path)
 
@@ -486,37 +704,71 @@ def main() -> None:
             (project_id,),
         ).fetchone()
     if keyframe is None or shot is None:
-        raise RuntimeError(f"SIM_PREREQUISITES_MISSING keyframe={keyframe is not None} shot={shot is not None}")
+        raise RuntimeError(
+            f"SIM_PREREQUISITES_MISSING keyframe={keyframe is not None} shot={shot is not None}"
+        )
     keyframe_id = str(keyframe["media_version_id"])
     shot_id = str(shot["id"])
 
-    workflow = _publish_native_i2v_workflow(database, settings, args.server, "sim-keyframe.png")
-    candidate_version_id = _create_i2v_profile_candidate(database, workflow["workflow_version_id"])
+    workflow = _publish_native_i2v_workflow(
+        database, settings, args.server, "sim-keyframe.png"
+    )
+    candidate_version_id = _create_i2v_profile_candidate(
+        database, workflow["workflow_version_id"]
+    )
     profiles = ProfileService(database, settings)
     validation = profiles.validate_contract_version(candidate_version_id)
     if validation["status"] != "PASS":
-        raise RuntimeError(f"SIM_PROFILE_VALIDATION_FAILED: {json.dumps(validation, ensure_ascii=False)[:800]}")
+        raise RuntimeError(
+            f"SIM_PROFILE_VALIDATION_FAILED: {json.dumps(validation, ensure_ascii=False)[:800]}"
+        )
     compatibility = profiles.validate_compatibility(candidate_version_id)
     if compatibility["status"] != "PASS":
-        raise RuntimeError(f"SIM_PROFILE_COMPATIBILITY_FAILED: {json.dumps(compatibility, ensure_ascii=False)[:800]}")
+        raise RuntimeError(
+            f"SIM_PROFILE_COMPATIBILITY_FAILED: {json.dumps(compatibility, ensure_ascii=False)[:800]}"
+        )
     evidence = _run_evidence_job(
-        database, settings, workflow["workflow_version_id"], project_id, shot_id, args.server, args.timeout_seconds,
-        media_bindings=[{"role": "FIRST_FRAME", "media_version_id": keyframe_id, "ordinal": 0}],
+        database,
+        settings,
+        workflow["workflow_version_id"],
+        project_id,
+        shot_id,
+        args.server,
+        args.timeout_seconds,
+        media_bindings=[
+            {"role": "FIRST_FRAME", "media_version_id": keyframe_id, "ordinal": 0}
+        ],
     )
-    published = profiles.publish_from_evidence(candidate_version_id, evidence["media_version_id"], workflow["workflow_version_id"])
+    published = profiles.publish_from_evidence(
+        candidate_version_id,
+        evidence["media_version_id"],
+        workflow["workflow_version_id"],
+    )
     published_profile_version_id = str(published["id"])
 
     # T2V ("one-sentence video") native chain: publish workflow + evidence profile.
     t2v_workflow = _publish_native_t2v_workflow(database, settings, args.server)
-    t2v_candidate = _create_t2v_profile_candidate(database, t2v_workflow["workflow_version_id"])
+    t2v_candidate = _create_t2v_profile_candidate(
+        database, t2v_workflow["workflow_version_id"]
+    )
     t2v_validation = profiles.validate_contract_version(t2v_candidate)
     if t2v_validation["status"] != "PASS":
-        raise RuntimeError(f"SIM_T2V_PROFILE_VALIDATION_FAILED: {json.dumps(t2v_validation, ensure_ascii=False)[:800]}")
+        raise RuntimeError(
+            f"SIM_T2V_PROFILE_VALIDATION_FAILED: {json.dumps(t2v_validation, ensure_ascii=False)[:800]}"
+        )
     t2v_compatibility = profiles.validate_compatibility(t2v_candidate)
     if t2v_compatibility["status"] != "PASS":
-        raise RuntimeError(f"SIM_T2V_PROFILE_COMPATIBILITY_FAILED: {json.dumps(t2v_compatibility, ensure_ascii=False)[:800]}")
+        raise RuntimeError(
+            f"SIM_T2V_PROFILE_COMPATIBILITY_FAILED: {json.dumps(t2v_compatibility, ensure_ascii=False)[:800]}"
+        )
     t2v_evidence = _run_evidence_job(
-        database, settings, t2v_workflow["workflow_version_id"], project_id, shot_id, args.server, args.timeout_seconds,
+        database,
+        settings,
+        t2v_workflow["workflow_version_id"],
+        project_id,
+        shot_id,
+        args.server,
+        args.timeout_seconds,
         job_type="T2V",
         semantic_inputs={
             "PROMPT": "细雨中的北方乡村老屋，一名女子缓步走进院子，保持空间方向和道具连续。",
@@ -526,7 +778,11 @@ def main() -> None:
         },
         media_bindings=[],
     )
-    t2v_published = profiles.publish_from_evidence(t2v_candidate, t2v_evidence["media_version_id"], t2v_workflow["workflow_version_id"])
+    t2v_published = profiles.publish_from_evidence(
+        t2v_candidate,
+        t2v_evidence["media_version_id"],
+        t2v_workflow["workflow_version_id"],
+    )
     t2v_profile_version_id = str(t2v_published["id"])
 
     # Seed a real motion control on the approved keyframe through the motion
@@ -557,7 +813,6 @@ def main() -> None:
 
     # Give the shot a structured CameraPlan resolved against the published profile
     # so the UI generation preflight is enabled (real service round-trip).
-    project_service = ProjectService(database, settings.projects_root)
     with database.connect() as connection:
         current = connection.execute(
             "SELECT fields_json FROM shot_revisions WHERE id=(SELECT current_revision_id FROM shots WHERE id=?)",
@@ -576,7 +831,9 @@ def main() -> None:
         profile_version_id=published_profile_version_id,
     )
     fields["camera_plan"] = plan.to_dict()
-    project_service.create_shot_revision(shot_id, fields, freeze=True)
+    shot_studio_command_service(database).save_draft_revision(
+        shot_id, fields, freeze=True
+    )
 
     # The new shot revision marks the shot-owned keyframe approval stale (correct
     # propagation).  Re-approve the keyframe through the real review service so
@@ -588,9 +845,20 @@ def main() -> None:
             "SELECT ma.revision FROM media_assets ma JOIN media_versions mv ON mv.media_asset_id=ma.id WHERE mv.id=?",
             (keyframe_id,),
         ).fetchone()[0]
-    image_template = next(item for item in reviews.templates() if item["code"] == "image_asset")
-    review_checks = [{"item_id": str(item["id"]), "result": "PASS"} for item in image_template["items"]]
-    reviews.submit_review(keyframe_id, str(image_template["id"]), "APPROVED", int(asset_revision), review_checks)
+    image_template = next(
+        item for item in reviews.templates() if item["code"] == "image_asset"
+    )
+    review_checks = [
+        {"item_id": str(item["id"]), "result": "PASS"}
+        for item in image_template["items"]
+    ]
+    reviews.submit_review(
+        keyframe_id,
+        str(image_template["id"]),
+        "APPROVED",
+        int(asset_revision),
+        review_checks,
+    )
 
     with database.connect() as connection:
         integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
@@ -605,7 +873,9 @@ def main() -> None:
         f"g11={json.dumps(g11, ensure_ascii=False)} integrity={integrity} port={args.port}",
         flush=True,
     )
-    uvicorn.run(create_app(settings), host="127.0.0.1", port=args.port, log_level="warning")
+    uvicorn.run(
+        create_app(settings), host="127.0.0.1", port=args.port, log_level="warning"
+    )
 
 
 if __name__ == "__main__":

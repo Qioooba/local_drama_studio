@@ -239,6 +239,6 @@ describe("AIDraftReviewPanel", () => {
   it("does not invent suggestions for an empty production project", async () => {
     vi.mocked(listScriptBreakdownDrafts).mockResolvedValue({ automatic_apply: false, requires_human_action: true, items: [] });
     renderPanel();
-    expect(await screen.findByText(/不会显示模拟建议/)).toBeTruthy();
+    expect(await screen.findByText(/不会用模拟建议填充/)).toBeTruthy();
   });
 });

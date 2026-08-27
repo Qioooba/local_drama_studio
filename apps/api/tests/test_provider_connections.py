@@ -2,15 +2,23 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-import local_drama.application.provider_connections as provider_connections
 from local_drama.main import create_app
 
 
 def test_provider_connection_metadata_never_returns_secret_in_list(workspace, database, monkeypatch) -> None:
     secrets: dict[str, str] = {}
-    monkeypatch.setattr(provider_connections, "read_provider_secret", lambda connection_id: secrets.get(connection_id))
-    monkeypatch.setattr(provider_connections, "write_provider_secret", lambda connection_id, value: secrets.__setitem__(connection_id, value))
-    monkeypatch.setattr(provider_connections, "delete_provider_secret", lambda connection_id: secrets.pop(connection_id, None) is not None)
+    monkeypatch.setattr(
+        "local_drama.platform.windows.credentials.WindowsCredentialStore.get",
+        lambda _store, ref: secrets.get(ref.key),
+    )
+    monkeypatch.setattr(
+        "local_drama.platform.windows.credentials.WindowsCredentialStore.put",
+        lambda _store, ref, value: secrets.__setitem__(ref.key, value),
+    )
+    monkeypatch.setattr(
+        "local_drama.platform.windows.credentials.WindowsCredentialStore.delete",
+        lambda _store, ref: secrets.pop(ref.key, None) is not None,
+    )
 
     with TestClient(create_app(workspace)) as client:
         created = client.post(

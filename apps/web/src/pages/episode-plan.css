@@ -9,3 +9,6 @@
 .episode-plan-source .section-title { align-items: center; gap: 12px; flex-wrap: wrap; }
 .episode-plan-source .section-title .secondary { margin-left: auto; font-size: 12.5px; }
 @media (max-width: 840px) { .episode-plan-flow { grid-template-columns: 1fr; } .episode-plan-actions { justify-content: flex-start; flex-wrap: wrap; } }
+.episode-plan-source-drawer { display: grid; gap: 16px; }
+.episode-plan-source-drawer > .muted { margin: 0; }
+.episode-plan-source-drawer > .v2-inline-link { justify-self: start; }

@@ -1,11 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { bindStoryAssetToShot, createShotRevision, createStoryAsset, listShotStoryAssets, listStoryAssets, markShotProductionReady, resolveProfileCameraPlan, unbindStoryAssetFromShot } from "../../generated/api";
+import { bindStoryAssetToShot, createStoryAsset, listShotStoryAssets, listStoryAssets, markShotReadyV2, putShotDraftV2, resolveProfileCameraPlan, unbindStoryAssetFromShot } from "../../generated/api";
 import { bindShotCharacterPack, getShotCharacterPacks } from "../asset-bible-v2/identityPackClient";
 import { DirectorShotEditor } from "./DirectorShotEditor";
 
-vi.mock("../../generated/api", () => ({ bindStoryAssetToShot: vi.fn(), createShotRevision: vi.fn(), createStoryAsset: vi.fn(), listShotStoryAssets: vi.fn(), listStoryAssets: vi.fn(), markShotProductionReady: vi.fn(), resolveProfileCameraPlan: vi.fn(), unbindStoryAssetFromShot: vi.fn() }));
+vi.mock("../../generated/api", () => ({ bindStoryAssetToShot: vi.fn(), putShotDraftV2: vi.fn(), createStoryAsset: vi.fn(), listShotStoryAssets: vi.fn(), listStoryAssets: vi.fn(), markShotReadyV2: vi.fn(), resolveProfileCameraPlan: vi.fn(), unbindStoryAssetFromShot: vi.fn() }));
 vi.mock("../asset-bible-v2/identityPackClient", () => ({ bindShotCharacterPack: vi.fn(), getShotCharacterPacks: vi.fn() }));
 
 function renderEditor(shot: Record<string, unknown>, profiles: Array<{ id: string; code: string; title: string; version_id: string; capability: string; status: string }> = [], projectId?: string) {
@@ -17,9 +17,9 @@ function renderEditor(shot: Record<string, unknown>, profiles: Array<{ id: strin
 
 describe("DirectorShotEditor", () => {
   beforeEach(() => {
-    vi.mocked(createShotRevision).mockReset().mockResolvedValue({ shot_revision: { id: "revision-2" } });
+    vi.mocked(putShotDraftV2).mockReset().mockResolvedValue({ shot_revision: { id: "revision-2", shot_id: "shot-1", revision_no: 2, fields: {}, is_frozen: true }, shot: { id: "shot-1", status: "DIRECTED", current_revision_id: "revision-2", revision: 2, updated_at: "now" } });
     vi.mocked(createStoryAsset).mockReset().mockResolvedValue({ asset: { id: "asset-new", project_id: "project-1", kind: "CHARACTER", code: "CHAR_YOUNG", name: "少年", description: "", canonical_media_version_id: null, extra: {}, status: "ACTIVE", revision: 1, created_at: "now", updated_at: "now", created_by: "local-user", schema_version: "v2" } });
-    vi.mocked(markShotProductionReady).mockReset().mockResolvedValue({ shot: { id: "shot-1", status: "READY" } });
+    vi.mocked(markShotReadyV2).mockReset().mockResolvedValue({ shot_revision: { id: "revision-2", shot_id: "shot-1", revision_no: 2, fields: {}, is_frozen: true }, shot: { id: "shot-1", status: "READY", current_revision_id: "revision-2", revision: 3, updated_at: "now" } });
     vi.mocked(resolveProfileCameraPlan).mockReset();
     vi.mocked(listStoryAssets).mockReset().mockResolvedValue({ items: [] });
     vi.mocked(listShotStoryAssets).mockReset().mockResolvedValue({ items: [] });
@@ -34,20 +34,20 @@ describe("DirectorShotEditor", () => {
     expect(screen.getByRole("status").textContent).toContain("还缺 7 项");
     fireEvent.change(screen.getByLabelText("景别"), { target: { value: "CLOSEUP" } });
     fireEvent.change(screen.getByLabelText("时长（秒）"), { target: { value: "4" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存新 revision" }));
-    await waitFor(() => expect(createShotRevision).toHaveBeenCalled());
-    expect(vi.mocked(createShotRevision).mock.calls[0][0]).toBe("shot-1");
-    expect(vi.mocked(createShotRevision).mock.calls[0][2]).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "保存新版本" }));
+    await waitFor(() => expect(putShotDraftV2).toHaveBeenCalled());
+    expect(vi.mocked(putShotDraftV2).mock.calls[0][0]).toBe("shot-1");
+    expect(vi.mocked(putShotDraftV2).mock.calls[0][1].freeze).toBe(true);
     expect(onChanged).toHaveBeenCalled();
   });
 
   it("enables Production Ready only for a complete directed revision", async () => {
     const fields = { shot_type: "CLOSEUP", composition: "center", subject_action: "turn", camera_plan: { mode: "NATIVE", shot_type: "CLOSEUP", movement: "PUSH_IN", prompt_text: "", direction: "FORWARD", intensity: 0.5, curve: "LINEAR", profile_version_id: "profile-v1" }, target_duration_ms: 4000, dialogue: "", environment: "", continuity: "same", creative_intent: "focus" };
     renderEditor({ id: "shot-1", code: "S001", status: "DIRECTED", current_revision_id: "revision-2", current_revision: fields, production_readiness: { state: "DIRECTED", blockers: [] } });
-    const button = screen.getByRole("button", { name: "标记 Production Ready" }) as HTMLButtonElement;
+    const button = screen.getByRole("button", { name: "标记为可进入生产" }) as HTMLButtonElement;
     await waitFor(() => expect(button.disabled).toBe(false));
     fireEvent.click(button);
-    await waitFor(() => expect(markShotProductionReady).toHaveBeenCalledWith("shot-1"));
+    await waitFor(() => expect(markShotReadyV2).toHaveBeenCalledWith("shot-1", { expected_revision_no: undefined }));
   });
 
   it("uses the published Profile to resolve structured camera capability", async () => {
@@ -61,9 +61,9 @@ describe("DirectorShotEditor", () => {
     );
     fireEvent.change(screen.getByLabelText("景别"), { target: { value: "CLOSEUP" } });
     fireEvent.change(screen.getByLabelText("运动"), { target: { value: "PUSH_IN" } });
-    fireEvent.click(screen.getByRole("button", { name: "按 Profile 裁决运镜能力" }));
+    fireEvent.click(screen.getByRole("button", { name: "按生成配置检查运镜能力" }));
     await waitFor(() => expect(resolveProfileCameraPlan).toHaveBeenCalledWith("profile-v1", expect.objectContaining({ shot_type: "CLOSEUP", movement: "PUSH_IN" })));
-    expect(await screen.findByText(/原生参数映射/)).toBeTruthy();
+    expect(await screen.findByText(/模型原生支持/)).toBeTruthy();
   });
 
   it("keeps Production Ready blocked when the published Profile does not support camera", async () => {
@@ -78,9 +78,9 @@ describe("DirectorShotEditor", () => {
       [{ id: "profile", code: "local-i2v", title: "本地 I2V", version_id: "profile-v1", capability: "I2V", status: "PUBLISHED" }],
     );
     fireEvent.change(screen.getByLabelText("运动"), { target: { value: "ORBIT" } });
-    fireEvent.click(screen.getByRole("button", { name: "按 Profile 裁决运镜能力" }));
-    expect(await screen.findByText(/当前未裁决或 Profile 不支持/)).toBeTruthy();
-    expect((screen.getByRole("button", { name: "标记 Production Ready" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "按生成配置检查运镜能力" }));
+    expect(await screen.findByText(/当前生成配置不支持/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "标记为可进入生产" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("renders the explicit prompt when the Profile only supports prompt fallback", async () => {
@@ -93,8 +93,8 @@ describe("DirectorShotEditor", () => {
       [{ id: "profile", code: "local-i2v", title: "本地 I2V", version_id: "profile-v1", capability: "I2V", status: "PUBLISHED" }],
     );
     fireEvent.change(screen.getByLabelText("运动"), { target: { value: "PUSH_IN" } });
-    fireEvent.click(screen.getByRole("button", { name: "按 Profile 裁决运镜能力" }));
-    expect(await screen.findByText(/显式 Prompt 降级/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "按生成配置检查运镜能力" }));
+    expect(await screen.findByText(/提示词兼容/)).toBeTruthy();
     expect((screen.getByLabelText("兼容运镜补充描述") as HTMLTextAreaElement).value).toBe("camera: PUSH_IN");
   });
 

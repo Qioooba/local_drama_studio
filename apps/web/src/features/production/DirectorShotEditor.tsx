@@ -1,13 +1,14 @@
 import { getShotCharacterPacks, bindShotCharacterPack } from "../asset-bible-v2/identityPackClient";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { bindStoryAssetToShot, createShotRevision, createStoryAsset, listShotStoryAssets, listStoryAssets, markShotProductionReady, resolveProfileCameraPlan, unbindStoryAssetFromShot, type CameraPlan, type Profile } from "../../generated/api";
+import { bindStoryAssetToShot, createStoryAsset, listShotStoryAssets, listStoryAssets, markShotReadyV2, putShotDraftV2, resolveProfileCameraPlan, unbindStoryAssetFromShot, type CameraPlan, type Profile } from "../../generated/api";
 import { readStoryAssetTransfer, STORY_ASSET_MIME, storyAssetDropIssue, type StoryAssetTransfer } from "./storyAssetDrag";
 import { Dialog } from "../../components/ui/primitives";
 import { CAMERA_CURVES, CAMERA_DIRECTION_LABELS, CAMERA_DIRECTIONS, CAMERA_MOVEMENTS, COMPOSITIONS, SHOT_ASSET_ROLES, SHOT_TYPES } from "../shared/directorOptions";
 import { generateAssetCode } from "../shared/autoCode";
 import { canonicalCapabilityLabel } from "../preferences-v2/canonicalCapabilities";
 import { ProfileExecutionDetailButton } from "../model-config/ProfileExecutionDetailButton";
+import { statusLabel } from "../shared/optionLabels";
 
 const labels: Record<string, string> = { shot_type: "景别", composition: "构图", subject_action: "主体动作", camera_plan: "镜头运动", target_duration_ms: "时长", dialogue: "对白", environment: "环境", continuity: "连续性", creative_intent: "创作意图" };
 const requiredNonEmpty = ["shot_type", "composition", "subject_action", "camera_plan", "target_duration_ms", "continuity", "creative_intent"];
@@ -192,24 +193,25 @@ export function DirectorShotEditor({ shot, profiles = [], onChanged, projectId }
     mutationFn: () => resolveProfileCameraPlan(String(camera.profile_version_id), { shot_type: fields.shot_type, movement: camera.movement, direction: camera.direction, intensity: camera.intensity, curve: camera.curve, prompt_text: camera.prompt_text }),
     onSuccess: ({ resolution }) => setCamera(resolution.camera_plan),
   });
-  const save = useMutation({ mutationFn: () => createShotRevision(String(shot?.id), { ...fields, target_duration_ms: Number(fields.target_duration_ms), ...(cameraResolved ? { camera_plan: camera } : {}) }, freeze), onSuccess: onChanged });
-  const ready = useMutation({ mutationFn: () => markShotProductionReady(String(shot?.id)), onSuccess: onChanged });
+  const expectedRevisionNo = typeof current.revision_no === "number" ? current.revision_no : undefined;
+  const save = useMutation({ mutationFn: () => putShotDraftV2(String(shot?.id), { fields: { ...fields, target_duration_ms: Number(fields.target_duration_ms), ...(cameraResolved ? { camera_plan: camera } : {}) }, freeze, expected_revision_no: expectedRevisionNo }), onSuccess: onChanged });
+  const ready = useMutation({ mutationFn: () => markShotReadyV2(String(shot?.id), { expected_revision_no: expectedRevisionNo }), onSuccess: onChanged });
   if (!shot) return <section className="panel director-editor"><p className="empty-state">选择镜头后编辑导演分镜。</p></section>;
   return <section className="panel director-editor" aria-labelledby="director-editor-title">
-    <div className="panel-heading"><div><p className="eyebrow">不可变镜头修订</p><h3 id="director-editor-title">导演分镜字段</h3></div><span className="status-pill">{String(shot.code)} · {readiness?.state ?? String(shot.status)}</span></div>
+    <div className="panel-heading"><div><p className="eyebrow">不可变镜头版本</p><h3 id="director-editor-title">导演分镜字段</h3></div><span className="status-pill">{String(shot.code)} · {statusLabel(readiness?.state ?? String(shot.status))}</span></div>
     <div className="director-grid">
       <label>{labels.shot_type}<select value={fields.shot_type ?? ""} onChange={(event) => update("shot_type", event.target.value)}><option value="">请选择</option>{SHOT_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <label>{labels.composition}<select value={fields.composition ?? ""} onChange={(event) => update("composition", event.target.value)}><option value="">请选择</option>{fields.composition && !COMPOSITIONS.some(([value]) => value === fields.composition) && <option value={fields.composition}>历史构图（旧数据）</option>}{COMPOSITIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <label>{labels.subject_action}<textarea value={fields.subject_action ?? ""} onChange={(event) => update("subject_action", event.target.value)} placeholder="描述人物或物体在这一镜中的动作" /></label>
-      <fieldset className="camera-plan-editor"><legend>{labels.camera_plan} · CameraPlan</legend>
+      <fieldset className="camera-plan-editor"><legend>{labels.camera_plan}计划</legend>
         <label>已发布模型配置<select value={camera.profile_version_id ?? ""} onChange={(event) => updateCamera({ profile_version_id: event.target.value || null })}><option value="">请选择</option>{publishedProfiles.map((profile) => <option value={profile.version_id} key={profile.version_id}>{profile.title} · {canonicalCapabilityLabel(profile.capability)}</option>)}</select></label><ProfileExecutionDetailButton profileVersionId={camera.profile_version_id} />
         <label>运动<select value={camera.movement} onChange={(event) => updateCamera({ movement: event.target.value })}><option value="">请选择</option>{CAMERA_MOVEMENTS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label>方向<select value={camera.direction} onChange={(event) => updateCamera({ direction: event.target.value })}>{CAMERA_DIRECTIONS.map((value) => <option key={value} value={value}>{CAMERA_DIRECTION_LABELS[value]}</option>)}</select></label>
         <label>运镜强度 <span>{Math.round(camera.intensity * 100)}%</span><input aria-label="运镜强度" type="range" min="0" max="1" step="0.1" value={camera.intensity} onChange={(event) => updateCamera({ intensity: Number(event.target.value) })} /></label>
         <label>运动节奏<select value={camera.curve} onChange={(event) => updateCamera({ curve: event.target.value })}>{CAMERA_CURVES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         {camera.mode === "PROMPT_FALLBACK" && <label>兼容运镜补充描述<textarea value={camera.prompt_text} onChange={(event) => updateCamera({ prompt_text: event.target.value })} placeholder="通常无需填写；只补充预设无法表达的特殊路径" /></label>}
-        <button type="button" className="secondary" disabled={resolve.isPending || !camera.profile_version_id || !fields.shot_type || !camera.movement} onClick={() => resolve.mutate()}>{resolve.isPending ? "裁决中…" : "按 Profile 裁决运镜能力"}</button>
-        <p className={`camera-resolution ${cameraRunnable ? "ready" : "blocked"}`}><strong>{camera.mode}</strong>{camera.mode === "NATIVE" ? "原生参数映射，可进入生产" : camera.mode === "PROMPT_FALLBACK" ? "显式 Prompt 降级，可进入生产" : "当前未裁决或 Profile 不支持，禁止进入生产"}</p>
+        <button type="button" className="secondary" disabled={resolve.isPending || !camera.profile_version_id || !fields.shot_type || !camera.movement} onClick={() => resolve.mutate()}>{resolve.isPending ? "判断中…" : "按生成配置检查运镜能力"}</button>
+        <p className={`camera-resolution ${cameraRunnable ? "ready" : "blocked"}`}><strong>{camera.mode === "NATIVE" ? "模型原生支持" : camera.mode === "PROMPT_FALLBACK" ? "提示词兼容" : "等待检查"}</strong>{camera.mode === "NATIVE" ? "，可进入生产" : camera.mode === "PROMPT_FALLBACK" ? "，可进入生产" : "；当前生成配置不支持时不能进入生产"}</p>
         {resolve.error && <p className="inline-error" role="alert">{resolve.error.message}</p>}
       </fieldset>
       <label>时长（秒）<input type="number" min="0.1" max="600" step="0.1" value={fields.target_duration_ms ? Number(fields.target_duration_ms) / 1000 : ""} onChange={(event) => update("target_duration_ms", String(Math.round(Number(event.target.value) * 1000)))} /></label>
@@ -219,8 +221,8 @@ export function DirectorShotEditor({ shot, profiles = [], onChanged, projectId }
       <label>{labels.creative_intent}<textarea value={fields.creative_intent ?? ""} onChange={(event) => update("creative_intent", event.target.value)} /></label>
     </div>
     {projectId && shot && <ShotAssetSection projectId={projectId} shotId={String(shot.id)} />}
-    <div className="director-actions"><label className="checkbox-row"><input type="checkbox" checked={freeze} onChange={(event) => setFreeze(event.target.checked)} />保存时冻结 revision</label><button type="button" className="secondary" disabled={save.isPending} onClick={() => save.mutate()}>{save.isPending ? "保存中…" : "保存新 revision"}</button><button type="button" className="primary-action" disabled={ready.isPending || missing.length > 0 || shot.status !== "DIRECTED"} onClick={() => ready.mutate()}>{ready.isPending ? "校验中…" : "标记 Production Ready"}</button></div>
-    <p className={missing.length ? "review-guidance" : "review-success"} role="status">{missing.length ? `还缺 ${missing.length} 项：${missing.map((key) => labels[key]).join("、")}` : shot.status === "DIRECTED" ? "九项字段完整，结构化运镜已通过 Profile 裁决，可显式标记 Production Ready。" : `九项字段完整；当前状态 ${readiness?.state ?? String(shot.status)}。`}</p>
+    <div className="director-actions"><label className="checkbox-row"><input type="checkbox" checked={freeze} onChange={(event) => setFreeze(event.target.checked)} />保存时冻结版本</label><button type="button" className="secondary" disabled={save.isPending} onClick={() => save.mutate()}>{save.isPending ? "保存中…" : "保存新版本"}</button><button type="button" className="primary-action" disabled={ready.isPending || missing.length > 0 || shot.status !== "DIRECTED"} onClick={() => ready.mutate()}>{ready.isPending ? "校验中…" : "标记为可进入生产"}</button></div>
+    <p className={missing.length ? "review-guidance" : "review-success"} role="status">{missing.length ? `还缺 ${missing.length} 项：${missing.map((key) => labels[key]).join("、")}` : shot.status === "DIRECTED" ? "九项字段完整，结构化运镜已通过生成配置检查，可以标记为可进入生产。" : "九项字段完整；当前状态已由服务器记录。"}</p>
     {readiness?.blockers && readiness.blockers.length > 0 && <p className="muted">服务端阻塞：{readiness.blockers.join("、")}</p>}
     {(save.error || ready.error) && <p className="inline-error" role="alert">{String(save.error ?? ready.error)}</p>}
   </section>;

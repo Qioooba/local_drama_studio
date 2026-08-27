@@ -1,146 +1,117 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  getEpisodeTimelineStatus,
-  getReviewContext,
-  listFormalSelectionCandidates,
-  listReviewTemplates,
-  reviewInbox,
-  selectMediaVersion,
+  createReviewDecisionV2,
+  getEpisodePostOverviewV2,
+  listEpisodeReviewTargetsV2,
+  revokeReviewDecisionV2,
+  type EpisodeReviewTarget,
 } from "../../generated/api";
-import { getShotGroupWorkspace } from "../episode-plan-v2/shotGroupsApi";
 import { EpisodeReviewWorkspace } from "./EpisodeReviewWorkspace";
 
 vi.mock("../../generated/api", () => ({
-  getEpisodeTimelineStatus: vi.fn(),
-  getReviewContext: vi.fn(),
-  listFormalSelectionCandidates: vi.fn(),
-  listReviewTemplates: vi.fn(),
-  reviewInbox: vi.fn(),
-  runMachineCheck: vi.fn(),
-  selectMediaVersion: vi.fn(),
-  submitReview: vi.fn(),
-}));
-vi.mock("../episode-plan-v2/shotGroupsApi", () => ({ getShotGroupWorkspace: vi.fn() }));
-vi.mock("../production/EpisodeReviewPanel", () => ({ EpisodeReviewPanel: () => <div>EpisodeReviewPanel</div> }));
-vi.mock("../reviews/FormalSelectionPanel", () => ({ FormalSelectionPanel: () => <div>FormalSelectionPanel</div> }));
-vi.mock("../reviews/ReviewInboxPanel", () => ({
-  ReviewInboxPanel: ({ selectedVersionId, onSelect, onPromote }: { selectedVersionId: string | null; onSelect: (id: string) => void; onPromote: (id: string, type: string) => void }) => <div>ReviewInboxPanel<span>selected-media:{selectedVersionId}</span><button onClick={() => onSelect("media-1")}>select-media-1</button><button onClick={() => onPromote("media-1", "FORMAL_SELECTION")}>promote-media-1</button></div>,
+  createReviewDecisionV2: vi.fn(),
+  getEpisodePostOverviewV2: vi.fn(),
+  listEpisodeReviewTargetsV2: vi.fn(),
+  revokeReviewDecisionV2: vi.fn(),
 }));
 
-describe("EpisodeReviewWorkspace (009C)", () => {
+const mediaTarget: EpisodeReviewTarget = {
+  target_kind: "MEDIA_VERSION",
+  target_id: "media-1",
+  project_id: "project-1",
+  episode_id: "episode-1",
+  shot_id: "shot-1",
+  label: "S001",
+  media_kind: "IMAGE",
+  stage: "KEYFRAME",
+  duration_ms: null,
+  subject_revision: 3,
+  integrity_status: "VERIFIED",
+  machine_status: "PASS",
+  template_version_id: "template-image",
+  template_code: "image_asset",
+  template_items: [{ id: "identity", label: "人物身份", required: true }],
+  latest_decision_id: null,
+  latest_decision: null,
+  latest_decision_revision: null,
+  latest_decision_stale: false,
+  blocker_codes: [],
+  allowed_actions: ["SUBMIT_REVIEW_DECISION"],
+  created_at: "2026-08-26T00:00:00+00:00",
+};
+
+function mount(path = "/") {
+  return render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter initialEntries={[path]}><EpisodeReviewWorkspace projectId="project-1" episodeId="episode-1" /></MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+describe("EpisodeReviewWorkspace v2", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(reviewInbox).mockResolvedValue({ items: [{ media_version_id: "media-1", shot_code: "S001", stage: "VIDEO", media_kind: "VIDEO", is_blocked: 0, is_stale: false, machine_status: "PASS" }] } as never);
-    vi.mocked(listReviewTemplates).mockResolvedValue({ items: [] } as never);
-    vi.mocked(getEpisodeTimelineStatus).mockResolvedValue({ status: { renders: { latest: { id: "render-1" } } } } as never);
-    vi.mocked(listFormalSelectionCandidates).mockResolvedValue({ items: [] } as never);
-    vi.mocked(getShotGroupWorkspace).mockResolvedValue({ shots: [] } as never);
-    vi.mocked(getReviewContext).mockResolvedValue({} as never);
-    vi.mocked(selectMediaVersion).mockResolvedValue({} as never);
+    vi.mocked(getEpisodePostOverviewV2).mockResolvedValue({
+      overview: {
+        episode_id: "episode-1", project_id: "project-1", episode_code: "EP01", episode_title: "第一集", next_action: "OPEN_REVIEW",
+        review: { state: "ATTENTION", target_count: 1, pending_count: 1, blocked_count: 0, stale_count: 0, approved_render_id: null },
+        audio: { state: "EMPTY", dialogue_line_count: 0, adopted_tts_count: 0, binding_count: 0, verified_license_count: 0 },
+        edit: { state: "EMPTY", timeline_revision_count: 0, latest_timeline_id: null, latest_timeline_revision_no: null, latest_timeline_status: null, frozen_timeline_id: null, subtitle_revision_count: 0, latest_subtitle_id: null },
+        delivery: { state: "EMPTY", render_count: 0, verified_render_count: 0, latest_render_id: null, latest_render_revision: null, latest_render_integrity: null, package_count: 0, latest_package_id: null, latest_package_status: null },
+        blockers: [], allowed_actions: ["OPEN_REVIEW"],
+      }, read_only: true, request_shape: "episode_post_overview_v2",
+    });
+    vi.mocked(listEpisodeReviewTargetsV2).mockImplementation(async (_episode, options) => {
+      const resolved = options ?? {};
+      return {
+        items: resolved.targetKinds?.[0] === "EPISODE_RENDER_VERSION" ? [] : [mediaTarget],
+        cursor: 0, limit: 100, total: resolved.targetKinds?.[0] === "EPISODE_RENDER_VERSION" ? 0 : 1,
+        next_cursor: null, target_kinds: resolved.targetKinds ?? [], include_resolved: Boolean(resolved.includeResolved),
+        read_only: true, request_shape: "bounded_episode_review_targets_v2",
+      };
+    });
+    vi.mocked(createReviewDecisionV2).mockResolvedValue({ decision: {
+      id: "decision-1", target_kind: "MEDIA_VERSION", target_id: "media-1", decision: "APPROVED",
+      subject_revision: 3, revision: 1, is_stale: false, created_at: "now", updated_at: "now", idempotent_replay: false,
+    } });
+    vi.mocked(revokeReviewDecisionV2).mockResolvedValue({ decision: {
+      id: "decision-1", target_kind: "MEDIA_VERSION", target_id: "media-1", decision: "VOIDED",
+      subject_revision: 3, revision: 2, is_stale: true, created_at: "now", updated_at: "later", idempotent_replay: false,
+    } });
   });
 
-  it("conditionally mounts Shot, Render, and Delivery owners and lazily opens formal selection", async () => {
-    render(
-      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <MemoryRouter><EpisodeReviewWorkspace projectId="project-1" episodeId="episode-1" /></MemoryRouter>
-      </QueryClientProvider>
-    );
-
-    expect(await screen.findByText("ReviewInboxPanel")).toBeTruthy();
-    expect(screen.queryByText("EpisodeReviewPanel")).toBeNull();
-    expect(screen.queryByText("FormalSelectionPanel")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "采用已批准成片" }));
-    expect(await screen.findByText("FormalSelectionPanel")).toBeTruthy();
-    expect(screen.getByRole("dialog", { name: "采用已批准成片" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "关闭抽屉" }));
-    expect(screen.queryByText("FormalSelectionPanel")).toBeNull();
-
-    fireEvent.click(screen.getByRole("tab", { name: /整集成片/ }));
-    expect(screen.getByText("EpisodeReviewPanel")).toBeTruthy();
-    expect(screen.queryByText("ReviewInboxPanel")).toBeNull();
-
-    fireEvent.click(screen.getByRole("tab", { name: /交付交接/ }));
-    expect(screen.getByRole("link", { name: "进入交付工作区" }).getAttribute("href")).toBe("/projects/project-1/episodes/episode-1/delivery");
-    expect(screen.queryByText("EpisodeReviewPanel")).toBeNull();
+  it("loads a bounded typed queue and switches target kinds", async () => {
+    mount();
+    expect(await screen.findByRole("button", { name: /S001/ })).toBeTruthy();
+    expect(screen.getByText("人物身份 *")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "整集成片" }));
+    expect(await screen.findByText("当前筛选下没有待处理目标。")).toBeTruthy();
+    expect(listEpisodeReviewTargetsV2).toHaveBeenLastCalledWith("episode-1", {
+      targetKinds: ["EPISODE_RENDER_VERSION"], includeResolved: false, limit: 100,
+    });
   });
 
-  it("restores Render review from the URL", async () => {
-    render(
-      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <MemoryRouter initialEntries={["/?view=render"]}><EpisodeReviewWorkspace projectId="project-1" episodeId="episode-1" /></MemoryRouter>
-      </QueryClientProvider>
-    );
-
-    expect(await screen.findByText("EpisodeReviewPanel")).toBeTruthy();
-    expect(screen.queryByText("ReviewInboxPanel")).toBeNull();
+  it("restores an exact typed target deep link", async () => {
+    mount("/?targetKind=MEDIA_VERSION&targetId=media-1");
+    expect((await screen.findByRole("button", { name: /S001/ })).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("revision 3")).toBeTruthy();
   });
 
-  it("restores the exact review candidate from the URL", async () => {
-    vi.mocked(reviewInbox).mockResolvedValue({ items: [
-      { media_version_id: "media-1", shot_code: "S001", stage: "VIDEO", media_kind: "VIDEO", is_blocked: 0, is_stale: false, machine_status: "PASS" },
-      { media_version_id: "media-2", shot_code: "S002", stage: "KEYFRAME", media_kind: "IMAGE", is_blocked: 0, is_stale: false, machine_status: "NOT_RUN" },
-    ] } as never);
-    render(
-      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <MemoryRouter initialEntries={["/?media=media-2"]}><EpisodeReviewWorkspace projectId="project-1" episodeId="episode-1" /></MemoryRouter>
-      </QueryClientProvider>
-    );
-
-    expect(await screen.findByText("selected-media:media-2")).toBeTruthy();
-    expect(getReviewContext).toHaveBeenCalledWith("media-2");
-  });
-
-  it("does not let a stale cached first row overwrite a requested media deep link", async () => {
-    let resolveInbox!: (value: Awaited<ReturnType<typeof reviewInbox>>) => void;
-    vi.mocked(reviewInbox).mockReturnValue(new Promise((resolve) => { resolveInbox = resolve; }));
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    client.setQueryData(["reviews", "inbox", "project-1", "episode-1"], { items: [
-      { media_version_id: "media-1", shot_code: "S001", stage: "VIDEO", media_kind: "VIDEO", is_blocked: 0, is_stale: false, machine_status: "PASS" },
-    ] });
-    render(
-      <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={["/?media=media-2"]}><EpisodeReviewWorkspace projectId="project-1" episodeId="episode-1" /></MemoryRouter>
-      </QueryClientProvider>
-    );
-
-    expect(await screen.findByRole("status")).toBeTruthy();
-    expect(screen.queryByText("ReviewInboxPanel")).toBeNull();
-    resolveInbox({ items: [
-      { media_version_id: "media-1", shot_code: "S001", stage: "VIDEO", media_kind: "VIDEO", is_blocked: 0, is_stale: false, machine_status: "PASS" },
-      { media_version_id: "media-2", shot_code: "S002", stage: "KEYFRAME", media_kind: "IMAGE", is_blocked: 0, is_stale: false, machine_status: "NOT_RUN" },
-    ] } as never);
-    expect(await screen.findByText("selected-media:media-2")).toBeTruthy();
-  });
-
-  it("initializes selection from the URL before a fresh cached list can choose its first row", async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
-    client.setQueryData(["reviews", "inbox", "project-1", "episode-1"], { items: [
-      { media_version_id: "media-1", shot_code: "S001", stage: "VIDEO", media_kind: "VIDEO", is_blocked: 0, is_stale: false, machine_status: "PASS" },
-      { media_version_id: "media-2", shot_code: "S002", stage: "KEYFRAME", media_kind: "IMAGE", is_blocked: 0, is_stale: false, machine_status: "NOT_RUN" },
-    ] });
-    render(
-      <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={["/?media=media-2"]}><EpisodeReviewWorkspace projectId="project-1" episodeId="episode-1" /></MemoryRouter>
-      </QueryClientProvider>
-    );
-
-    expect(await screen.findByText("selected-media:media-2")).toBeTruthy();
-    expect(screen.queryByText("selected-media:media-1")).toBeNull();
-  });
-
-  it("confirms that a formal selection record was saved", async () => {
-    render(
-      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <MemoryRouter><EpisodeReviewWorkspace projectId="project-1" episodeId="episode-1" /></MemoryRouter>
-      </QueryClientProvider>
-    );
-
-    fireEvent.click(await screen.findByRole("button", { name: "promote-media-1" }));
-    expect((await screen.findByRole("status")).textContent).toContain("已保存正式采用版本");
-    expect(selectMediaVersion).toHaveBeenCalledWith("media-1", "FORMAL_SELECTION");
+  it("requires the structured checklist before approving and writes through v2", async () => {
+    mount();
+    const save = await screen.findByRole("button", { name: "保存批准" });
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "人物身份 *" }));
+    expect((save as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(save);
+    await waitFor(() => expect(createReviewDecisionV2).toHaveBeenCalled());
+    expect(vi.mocked(createReviewDecisionV2).mock.calls[0][0]).toMatchObject({
+      target_kind: "MEDIA_VERSION", target_id: "media-1", template_version_id: "template-image",
+      expected_revision: 3, decision: "APPROVED", checks: [{ item_id: "identity", result: "PASS" }],
+    });
+    expect(await screen.findByText("审核决定已保存并写入审计记录。")).toBeTruthy();
   });
 });

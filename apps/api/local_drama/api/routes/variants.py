@@ -6,7 +6,6 @@ from local_drama.api.schemas.variants import (
     VariantCreateRequest,
     VariantDeriveRequest,
     VariantPlanRequest,
-    VariantRerollRequest,
     VariantSeedBatchRequest,
     VariantSubmitRequest,
 )
@@ -14,35 +13,12 @@ from local_drama.application.errors import api_error_from_domain
 from local_drama.application.generation import GenerationService
 from local_drama.application.prompt_anchors import PromptAnchorService
 from local_drama.domain.errors import DomainRuleError
-from local_drama.domain.policies import VariantInput
 
 router = APIRouter(tags=["generation-variants"])
 
 
 def service(request: Request) -> GenerationService:
     return GenerationService(request.app.state.database, request.app.state.settings)
-
-
-@router.post("/generation/variants/{variant_id}/reroll", status_code=201, operation_id="rerollGenerationVariant")
-async def reroll_variant(variant_id: str, payload: VariantRerollRequest, request: Request) -> dict[str, object]:
-    """Create and queue a new creative child Variant; never mutate the parent."""
-    try:
-        bindings = None
-        if payload.bindings is not None:
-            bindings = tuple(
-                VariantInput(item.role, item.media_version_id, item.ordinal, item.weight) for item in payload.bindings
-            )
-        return service(request).reroll_variant(
-            variant_id,
-            reason_code=payload.reason_code,
-            reason_note=payload.reason_note,
-            explicit_seed=payload.explicit_seed,
-            profile_version_id=payload.profile_version_id,
-            bindings=bindings,
-            idempotency_key=payload.idempotency_key,
-        )
-    except DomainRuleError as error:
-        raise api_error_from_domain(error) from error
 
 
 @router.post("/generation-variants/{variant_id}:derive-plan", operation_id="deriveGenerationVariantPlan")
@@ -82,9 +58,7 @@ async def plan_variant(payload: VariantPlanRequest, request: Request) -> dict[st
 @router.post("/generation-variants", status_code=201, operation_id="createGenerationVariant")
 async def create_variant(payload: VariantCreateRequest, request: Request) -> dict[str, object]:
     try:
-        return {
-            "variant": service(request).create_confirmed_variant(payload.intent_id, payload.to_domain(), payload.plan_hash)
-        }
+        return {"variant": service(request).create_confirmed_variant(payload.intent_id, payload.to_domain(), payload.plan_hash)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

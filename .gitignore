@@ -47,4 +47,25 @@ deepseek-ui-audit/
 .pt8c/
 tmp_*/
 
+# build/incremental artifacts
+*.tsbuildinfo
+
+# local dev database (never commit)
+apps/api/local_drama.db
+
+# UI audit screenshot batches
+gui-test-screenshots/
+
+# locked/unreadable legacy session temp dirs
+.p*/
+.pytest-tmp-*/
+.tb/
+.ts/
+.tsel/
+.tu/
+.tv/
+.tmp/
+apps/api/.b06*/
+apps/api/.nav*/
+
 

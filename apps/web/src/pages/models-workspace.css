@@ -50,7 +50,7 @@
 .models-quickstart-heading h3 { margin: 2px 0 0; }
 .models-quickstart ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
 .models-quickstart li { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 8px 10px; min-width: 0; padding: 13px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-muted); }
-.models-quickstart li > span { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 50%; color: #fff; background: var(--selected); font-weight: 800; }
+.models-quickstart li > span { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 50%; color: #071916; background: var(--selected); font-weight: 850; }
 .models-quickstart li > div { display: grid; align-content: start; gap: 4px; min-width: 0; }
 .models-quickstart li small { color: var(--text-muted); line-height: 1.5; }
 .models-expert-tools { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }

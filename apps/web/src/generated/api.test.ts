@@ -2,13 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ApiRequestError,
   appendProjectEpisode,
-  bindEpisodeAudio,
   buildDeliveryPackage,
   commitEpisodeTimelineRefresh,
   createPostProcessRecipe,
   createShotTransitionConstraint,
   createSubtitleRevision,
   createTimelineRevision,
+  createEpisodeTimelineDraftV2,
   createDeliveryTargetVersion,
   planEpisodeTimelineRefresh,
   getDeliveryPackage,
@@ -23,6 +23,7 @@ import {
   scanLocalModelRegistry,
   getPostProcessRecipe,
   getProjectCreatorSetup,
+  getEpisodeEditWorkspaceV2,
   getProjectEpisodeCatalog,
   listPostProcessRecipes,
   planEnhancementRun,
@@ -36,6 +37,7 @@ import {
   submitGenerationVariant,
   verifyDeliveryPackage,
   withdrawDeliveryPackage,
+  freezeEpisodeTimelineV2,
 } from "./api";
 
 describe("generated G8 timeline client", () => {
@@ -66,6 +68,17 @@ describe("generated G8 timeline client", () => {
     );
     const mutation = fetchMock.mock.calls.find(([path]) => path === "/api/v1/episodes/episode%2F1/timeline-revisions");
     expect(new Headers(mutation?.[1]?.headers).get("X-Local-Instance-Token")).toBe("test-token");
+  });
+
+  it("uses the typed Edit v2 aggregate and separate draft/freeze commands", async () => {
+    await getEpisodeEditWorkspaceV2("episode/1", { historyLimit: 12 });
+    await createEpisodeTimelineDraftV2("episode/1", { clips: [{ shot_id: "shot-1", media_version_id: "media-1", duration_us: 1_000_000 }], expected_latest_revision_id: null, expected_upstream_fingerprint: "a".repeat(64), idempotency_key: "draft-1" });
+    await freezeEpisodeTimelineV2("timeline/1", { expected_latest_revision_id: "timeline/1", expected_upstream_fingerprint: "a".repeat(64), idempotency_key: "freeze-1" });
+    expect(fetchMock.mock.calls.map(([path]) => path).filter((path) => !String(path).endsWith("/session/bootstrap"))).toEqual([
+      "/api/v2/episodes/episode%2F1/post/edit?history_limit=12",
+      "/api/v2/episodes/episode%2F1/post/edit/timeline-drafts",
+      "/api/v2/post/edit/timeline-revisions/timeline%2F1:freeze",
+    ]);
   });
 
   it("preflights and commits stale timeline refresh with the exact plan hash", async () => {
@@ -126,16 +139,14 @@ describe("generated G8 timeline client", () => {
     expect(mutationCalls).toBe(2);
   });
 
-  it("posts subtitle and authorized audio bindings through encoded episode paths", async () => {
+  it("posts subtitles through encoded episode paths", async () => {
     await createSubtitleRevision("episode/1", {
       cues: [{ start_us: 0, end_us: 500_000, text: "local" }],
       authority: { text_authority: "SCRIPT", source_document_version_id: "script-v1" },
       format: "SRT",
     });
-    await bindEpisodeAudio("episode/1", { media_version_id: "audio/1", track_type: "DIALOGUE", start_us: 0, end_us: 500_000, source_license_status: "USER_OWNED", license_evidence_path_rel: "00_admin/audio-license.json" });
     const calls = fetchMock.mock.calls.filter(([path]) => !String(path).endsWith("/session/bootstrap"));
     expect(calls[0][0]).toBe("/api/v1/episodes/episode%2F1/subtitle-revisions");
-    expect(calls[1][0]).toBe("/api/v1/episodes/episode%2F1/audio-bindings");
   });
 
   it("uses explicit render and delivery endpoints without hidden requests", async () => {

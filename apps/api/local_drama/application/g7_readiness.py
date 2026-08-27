@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import hashlib
-import ipaddress
 import json
 from typing import Any
 from urllib.parse import urlsplit
 
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.network_policy import is_loopback_host
 from local_drama.infrastructure.database.sqlite import Database
 
 
@@ -16,12 +16,7 @@ def _is_loopback_url(value: str | None) -> bool:
     if not value:
         return False
     parsed = urlsplit(value)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        return False
-    try:
-        return ipaddress.ip_address(parsed.hostname).is_loopback
-    except ValueError:
-        return parsed.hostname.lower() == "localhost"
+    return parsed.scheme in {"http", "https"} and is_loopback_host(parsed.hostname)
 
 
 class G7ReadinessService:

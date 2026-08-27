@@ -50,7 +50,7 @@ export function ProfileOverrideFields({
     return Object.entries(raw as Record<string, unknown>).filter(([, item]) => item && typeof item === "object" && !Array.isArray(item)) as Array<[string, OverrideField]>;
   }, [schema]);
 
-  if (!fields.length) return <p className="muted">当前 Profile 没有声明可覆盖的运行参数。</p>;
+  if (!fields.length) return <p className="muted">当前生成配置没有可调整的运行参数。</p>;
 
   return (
     <div className="profile-override-fields">

@@ -4,8 +4,7 @@ import episodeReview from "../episode-review-v2/EpisodeReviewWorkspace.tsx?raw";
 import directorIntent from "../director-v2/DirectorIntentEditor.tsx?raw";
 import frameBridge from "../director-v2/FrameBridgeControls.tsx?raw";
 import generationWorkbench from "../generation/GenerationWorkbench.tsx?raw";
-import timelineComposer from "../timeline-v2/TimelineComposer.tsx?raw";
-import formalSelection from "../reviews/FormalSelectionPanel.tsx?raw";
+import timelineEditor from "../edit-v2/EpisodeEditWorkspace.tsx?raw";
 import legacyDirectorRevision from "../production/DirectorShotEditor.tsx?raw";
 
 /**
@@ -20,8 +19,7 @@ const AUTHORITY_SURFACES: Record<string, string> = {
   "Director immutable revision": directorIntent,
   "Frame Bridge anchors/lock": frameBridge,
   "Generation result": generationWorkbench,
-  "Timeline compose revision": timelineComposer,
-  "Formal delivery selection": formalSelection,
+  "Timeline compose revision": timelineEditor,
   "Legacy immutable shot revision": legacyDirectorRevision,
 };
 

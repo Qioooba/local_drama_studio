@@ -79,8 +79,8 @@ def _resolve_executable(env_name: str, command: str, fallback: str | None = None
 
 
 def _run_ffmpeg_smoke(root: Path) -> dict[str, Any]:
-    ffmpeg = _resolve_executable("LOCAL_DRAMA_FFMPEG", "ffmpeg", r"E:\Tools\ffmpeg\bin\ffmpeg.exe")
-    ffprobe = _resolve_executable("LOCAL_DRAMA_FFPROBE", "ffprobe", r"E:\Tools\ffmpeg\bin\ffprobe.exe")
+    ffmpeg = _resolve_executable("LOCAL_DRAMA_FFMPEG", "ffmpeg")
+    ffprobe = _resolve_executable("LOCAL_DRAMA_FFPROBE", "ffprobe")
     output = root / "ffmpeg-smoke.mp4"
     status, version, returncode, error = _run(ffmpeg, ["-version"])
     if status != "PASS":
@@ -265,7 +265,7 @@ def _execute_comfy_smoke(base_url: str, manifest: dict[str, Any], root: Path) ->
     input_name = f"{token}.png"
     source = root / input_name
     # FFmpeg writes a tiny deterministic PNG; this does not read user media.
-    ffmpeg = _resolve_executable("LOCAL_DRAMA_FFMPEG", "ffmpeg", r"E:\Tools\ffmpeg\bin\ffmpeg.exe")
+    ffmpeg = _resolve_executable("LOCAL_DRAMA_FFMPEG", "ffmpeg")
     status, _, _, error = _run(ffmpeg, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:s=8x8", "-frames:v", "1", "-y", str(source)])
     if status != "PASS" or not source.is_file() or not input_root.is_dir():
         return {"generation_smoke": "BLOCKED", "generation_reason": error or "local_input_root_missing", "runtime_mutated": False}

@@ -48,6 +48,28 @@ export function planI2VEvidenceProbe(projectId: string, profileVersionId: string
   );
 }
 
+export function prepareI2VEvidenceKeyframe(projectId: string, sourceMediaVersionId: string) {
+  return requestJson<{
+    approved_keyframe: {
+      media_version_id: string;
+      shot_id: string;
+      approval_id: string;
+      source_media_version_id: string;
+      reused: boolean;
+    };
+  }>(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/gates/g6/i2v-probe-keyframe:prepare`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source_media_version_id: sourceMediaVersionId,
+        confirm_review_checks: true,
+      }),
+    },
+  );
+}
+
 export function validateProfileEvidenceCompatibility(profileVersionId: string) {
   return requestJson<{ compatibility: { id: string; status: "PASS" | "FAIL"; checks: Array<{ code: string; passed: boolean }> } }>(
     `/api/v1/profile-versions/${encodeURIComponent(profileVersionId)}:validate-compatibility`,

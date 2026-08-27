@@ -9,10 +9,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from local_drama.application.export_archives import materialize_verified_export_archive
 from local_drama.application.media import MediaService
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.infrastructure.filesystem.atomic import replace_path
 
 
 def _canonical(value: object) -> bytes:
@@ -265,6 +267,20 @@ class TimelineExportService:
             f"不支持的导出格式：{format}；支持 standard/otio/edl/jianying",
         )
 
+    def download_archive(self, timeline_revision_id: str, rel_path: str) -> Path:
+        revision, _items = self._snapshot(timeline_revision_id)
+        project_root = (self.settings.projects_root / str(revision["root_rel"])).resolve()
+        allowed = (project_root / "05_timelines" / str(revision["episode_code"]) / "exports").resolve()
+        candidate = (project_root / rel_path).resolve()
+        if candidate.parent != allowed or not candidate.name.startswith(("timeline-v", "jianying-v")):
+            raise DomainRuleError("TIMELINE_EXPORT_DOWNLOAD_NOT_ALLOWED", "只能下载当前时间线已注册的导出")
+        try:
+            export_hash = str(json.loads((candidate / "manifest.json").read_text(encoding="utf-8"))["export_hash"])
+        except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+            raise DomainRuleError("TIMELINE_EXPORT_TAMPERED", "时间线导出 manifest 无效") from error
+        self._verify_existing(candidate, export_hash)
+        return materialize_verified_export_archive(candidate)
+
     def _export_standard(self, timeline_revision_id: str) -> dict[str, Any]:
         revision, raw_items = self._snapshot(timeline_revision_id)
         if not revision["fps_num"] or not revision["fps_den"]:
@@ -319,7 +335,7 @@ class TimelineExportService:
             ]
             manifest = {**identity, "export_hash": export_hash, "files": files, "database_mutated": False}
             (partial / "manifest.json").write_bytes(_canonical(manifest) + b"\n")
-            os.replace(partial, final)
+            replace_path(partial, final)
         except Exception:
             shutil.rmtree(partial, ignore_errors=True)
             raise
@@ -567,7 +583,7 @@ class TimelineExportService:
                 "media_copy": "BUNDLED",
             }
             (partial / "manifest.json").write_bytes(_canonical(manifest) + b"\n")
-            os.replace(partial, final)
+            replace_path(partial, final)
         except Exception:
             shutil.rmtree(partial, ignore_errors=True)
             raise

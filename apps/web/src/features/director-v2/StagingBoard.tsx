@@ -191,8 +191,8 @@ export function StagingBoard({ value, defaultValue, disabled = false, participan
 
   return <section className="staging-board" aria-labelledby={titleId}>
     <header className="staging-board__header">
-      <div><span>2D STAGING BOARD</span><h3 id={titleId}>{board.scene.label}</h3></div>
-      <p>拖动站位与摄影机，方向键可微调；输出会同步为 DirectorIntent V3 补丁。</p>
+      <div><span>二维站位板</span><h3 id={titleId}>{board.scene.label}</h3></div>
+      <p>拖动角色站位与摄影机，方向键可微调；结果会同步到当前镜头的导演设计。</p>
     </header>
 
     <div className="staging-board__workspace">
@@ -205,7 +205,7 @@ export function StagingBoard({ value, defaultValue, disabled = false, participan
           <rect className="staging-board__room" x="1" y="1" width="98" height="62" rx="1.2" />
           <rect className="staging-board__grid" x="1" y="1" width="98" height="62" rx="1.2" fill={`url(#${titleId}-grid)`} />
           <line className="staging-board__axis" x1={board.axis.start.x} y1={board.axis.start.y} x2={board.axis.end.x} y2={board.axis.end.y} />
-          <text className="staging-board__axis-label" x={(board.axis.start.x + board.axis.end.x) / 2} y={(board.axis.start.y + board.axis.end.y) / 2 - 1.4}>180° AXIS</text>
+          <text className="staging-board__axis-label" x={(board.axis.start.x + board.axis.end.x) / 2} y={(board.axis.start.y + board.axis.end.y) / 2 - 1.4}>180° 轴线</text>
           {(["AXIS_START", "AXIS_END"] as const).map((id, index) => { const point = index ? board.axis.end : board.axis.start; return <g key={id} className={`staging-board__axis-handle${selection === id ? " is-selected" : ""}`} role="button" tabIndex={disabled ? -1 : 0} aria-label={`180度轴线${index ? "终点" : "起点"}`} transform={`translate(${point.x} ${point.y})`} onPointerDown={beginDrag(id)} onKeyDown={keyboardMove(id)}><circle className="staging-board__hit-target" r="4.2" /><circle r="1.55" /><path d="M-1 0H1M0-1V1" /></g>; })}
           {board.participants.map((participant) => <g key={participant.id}>
             <line className={`staging-board__motion staging-board__motion--${participant.id.toLowerCase()}`} x1={participant.position.x} y1={participant.position.y} x2={participant.movement_target.x} y2={participant.movement_target.y} markerEnd={`url(#${titleId}-arrow)`} />
@@ -218,7 +218,7 @@ export function StagingBoard({ value, defaultValue, disabled = false, participan
           <g className={`staging-board__camera-target${selection === "CAMERA_TARGET" ? " is-selected" : ""}`} role="button" tabIndex={disabled ? -1 : 0} aria-label={`摄影机朝向目标，位置 ${describePoint(board.camera.target)}`} transform={`translate(${board.camera.target.x} ${board.camera.target.y})`} onPointerDown={beginDrag("CAMERA_TARGET")} onKeyDown={keyboardMove("CAMERA_TARGET")}><circle className="staging-board__hit-target" r="4.2" /><circle r="1.7" /><path d="M-2.8 0H2.8M0-2.8V2.8" /></g>
           <line className="staging-board__motion staging-board__motion--camera" x1={board.camera.position.x} y1={board.camera.position.y} x2={board.camera.movement_target.x} y2={board.camera.movement_target.y} markerEnd={`url(#${titleId}-arrow)`} />
           <g className={`staging-board__movement-target staging-board__movement-target--camera${selection === "CAMERA_MOVE" ? " is-selected" : ""}`} role="button" tabIndex={disabled ? -1 : 0} aria-label={`摄影机运动终点，位置 ${describePoint(board.camera.movement_target)}`} transform={`translate(${board.camera.movement_target.x} ${board.camera.movement_target.y})`} onPointerDown={beginDrag("CAMERA_MOVE")} onKeyDown={keyboardMove("CAMERA_MOVE")}><circle className="staging-board__hit-target" r="4.2" /><circle r="1.8" /><path d="M-1.1 0H1.1M0-1.1V1.1" /></g>
-          <g className={`staging-board__camera${selection === "CAMERA" ? " is-selected" : ""}`} role="button" tabIndex={disabled ? -1 : 0} aria-label={`摄影机，位置 ${describePoint(board.camera.position)}`} transform={`translate(${board.camera.position.x} ${board.camera.position.y})`} onPointerDown={beginDrag("CAMERA")} onKeyDown={keyboardMove("CAMERA")}><circle className="staging-board__hit-target" r="4.2" /><path d="M0-3.5L3.6 3H-3.6Z" /><text y="6">CAM</text></g>
+          <g className={`staging-board__camera${selection === "CAMERA" ? " is-selected" : ""}`} role="button" tabIndex={disabled ? -1 : 0} aria-label={`摄影机，位置 ${describePoint(board.camera.position)}`} transform={`translate(${board.camera.position.x} ${board.camera.position.y})`} onPointerDown={beginDrag("CAMERA")} onKeyDown={keyboardMove("CAMERA")}><circle className="staging-board__hit-target" r="4.2" /><path d="M0-3.5L3.6 3H-3.6Z" /><text y="6">摄影机</text></g>
         </svg>
         <div className="staging-board__legend" aria-label="图例"><span><i className="actor-a" />角色 A</span><span><i className="actor-b" />角色 B</span><span><i className="camera" />摄影机</span><span><i className="axis" />180°轴线</span></div>
       </div>
@@ -236,7 +236,7 @@ export function StagingBoard({ value, defaultValue, disabled = false, participan
           <p className="staging-board__hint">在画布中分别拖动摄影机、朝向目标和运动终点。</p>
           <details><summary>高级坐标</summary><div className="staging-board__fields"><label>朝向目标 X<input type="number" min="3" max="97" value={board.camera.target.x} disabled={disabled} onChange={(event) => { const next = cloneValue(board); next.camera.target.x = clamp(Number(event.target.value)); commit(next); }} /></label><label>朝向目标 Y<input type="number" min="3" max="61" value={board.camera.target.y} disabled={disabled} onChange={(event) => { const next = cloneValue(board); next.camera.target.y = clamp(Number(event.target.value), 3, 61); commit(next); }} /></label></div><div className="staging-board__fields"><label>运动终点 X<input type="number" min="3" max="97" value={board.camera.movement_target.x} disabled={disabled} onChange={(event) => { const next = cloneValue(board); next.camera.movement_target.x = clamp(Number(event.target.value)); commit(next); }} /></label><label>运动终点 Y<input type="number" min="3" max="61" value={board.camera.movement_target.y} disabled={disabled} onChange={(event) => { const next = cloneValue(board); next.camera.movement_target.y = clamp(Number(event.target.value), 3, 61); commit(next); }} /></label></div></details>
         </> : <p className="staging-board__hint">拖动轴线端点以建立 180° 规则。</p>}
-        <details><summary>结构化输出</summary><dl><div><dt>Blocking</dt><dd>{output.blocking_summary}</dd></div><div><dt>Camera</dt><dd>{output.camera_plan.movement} · {output.camera_plan.direction} · {Math.round(output.camera_plan.intensity * 100)}%</dd></div></dl></details>
+        <details><summary>高级：结构化输出</summary><dl><div><dt>角色调度</dt><dd>{output.blocking_summary}</dd></div><div><dt>摄影机计划</dt><dd>{output.camera_plan.movement} · {output.camera_plan.direction} · {Math.round(output.camera_plan.intensity * 100)}%</dd></div></dl></details>
       </aside>
     </div>
   </section>;

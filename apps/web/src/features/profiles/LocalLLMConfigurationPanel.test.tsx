@@ -77,13 +77,13 @@ describe("LocalLLMConfigurationPanel", () => {
     });
   });
 
-  it("renders presets and switches to DeepSeek configuration", async () => {
+  it("uses an unregistered remote runtime as editable custom configuration", async () => {
     renderWithClient(<LocalLLMConfigurationPanel />);
-    expect(screen.getByText("LLM 模型与远程 Provider 管理")).toBeInTheDocument();
+    expect(screen.getByText("大语言模型（LLM）与服务连接管理")).toBeInTheDocument();
     expect(screen.getByLabelText("预设模板 (Preset)")).toBeInTheDocument();
-    expect(await screen.findByText(/https:\/\/api\.deepseek\.com · deepseek-v4-flash-vision-exp/)).toBeInTheDocument();
-    expect(screen.queryByLabelText("Base URL")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Model 名称")).not.toBeInTheDocument();
+    await waitFor(() => expect((screen.getByLabelText("预设模板 (Preset)") as HTMLSelectElement).value).toBe("custom"));
+    expect(screen.getByLabelText("Base URL")).toHaveValue("https://api.deepseek.com");
+    expect(screen.getByLabelText("Model 名称")).toHaveValue("deepseek-v4-flash-vision-exp");
   });
 
   it("starts from the registered loopback runtime instead of a remote preset", async () => {

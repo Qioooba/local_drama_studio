@@ -27,6 +27,9 @@ export function GenerateExpressionPanel({ projectId, assetId, assetStatus, state
   const [batches, setBatches] = useState(initialBatches);
   const [busy, setBusy] = useState<"preflight" | "submit" | string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedSlots, setSelectedSlots] = useState<ExpressionKind[]>(SLOTS.map((slot) => slot.kind));
+  const [consistency, setConsistency] = useState<MultiViewSettings["consistency_strength"]>("HIGH");
+  const [background, setBackground] = useState<MultiViewSettings["background"]>("CLEAN");
   useEffect(() => { setBatches(initialBatches); }, [initialBatches]);
   useEffect(() => { setAssetStateId(""); setProfileVersionId(""); setPreflight(null); setError(null); }, [assetId]);
   useEffect(() => {
@@ -36,7 +39,7 @@ export function GenerateExpressionPanel({ projectId, assetId, assetStatus, state
     }).catch(() => { if (!cancelled) setProfiles([]); });
     return () => { cancelled = true; };
   }, [projectId]);
-  const settings = useMemo<MultiViewSettings>(() => ({ asset_state_id: assetStateId || null, profile_version_id: profileVersionId || null, consistency_strength: "HIGH", background: "CLEAN" }), [assetStateId, profileVersionId]);
+  const settings = useMemo<MultiViewSettings>(() => ({ asset_state_id: assetStateId || null, profile_version_id: profileVersionId || null, consistency_strength: consistency, background, requested_slots: selectedSlots }), [assetStateId, background, consistency, profileVersionId, selectedSlots]);
   useEffect(() => { setPreflight(null); }, [settings]);
   const active = batches.some(isExpressionBatchActive);
   useEffect(() => {
@@ -63,13 +66,15 @@ export function GenerateExpressionPanel({ projectId, assetId, assetStatus, state
   };
 
   return <section className="panel multiview-panel" aria-labelledby={`expression-title-${assetId}`}>
-    <div className="panel-heading"><div><p className="eyebrow">角色表情</p><h4 id={`expression-title-${assetId}`}>生成表情九宫格</h4></div><span className={`status-pill ${hasHero ? "state-ready" : "state-blocked"}`}>{hasHero ? "HERO 已就绪" : "缺少 HERO"}</span></div>
-    <p className="muted">九个表情是独立 Variant 与 Job；单槽失败不会丢失成功结果。提交冻结当前 HERO、状态和 IMAGE_EXPRESSION Profile。</p>
+    <div className="panel-heading"><div><p className="eyebrow">角色表情</p><h4 id={`expression-title-${assetId}`}>生成表情九宫格</h4></div><span className={`status-pill ${hasHero ? "state-ready" : "state-blocked"}`}>{hasHero ? "主参考已就绪" : "缺少主参考"}</span></div>
+    <p className="muted">九个表情会分别生成并保留各自历史，单项失败不会丢失其他成功结果。提交时会固定当前主参考、剧情状态和生成配置版本。</p>
     <div className="multiview-controls">
       <label>造型状态<select value={assetStateId} onChange={(event) => setAssetStateId(event.target.value)}><option value="">基础角色</option>{states.map((state) => <option value={state.id} key={state.id}>{state.label}</option>)}</select></label>
       <label>生成模型配置<select aria-label="表情生成模型配置" value={profileVersionId} onChange={(event) => setProfileVersionId(event.target.value)}><option value="">自动使用项目偏好</option>{profiles.map((profile) => <option value={profile.version_id} key={profile.version_id}>{profile.title} · 第 {profile.version_no ?? "?"} 版</option>)}</select></label><ProfileExecutionDetailButton profileVersionId={profileVersionId} />
+      <label>一致性<select value={consistency} onChange={(event) => setConsistency(event.target.value as typeof consistency)}><option value="HIGH">高</option><option value="MEDIUM">中</option><option value="LOW">低</option></select></label><label>背景<select value={background} onChange={(event) => setBackground(event.target.value as typeof background)}><option value="CLEAN">干净背景</option><option value="TRANSPARENT">透明背景</option><option value="ORIGINAL">保留原背景</option></select></label>
     </div>
-    <div className="multiview-actions"><button className="secondary" type="button" disabled={busy !== null || assetStatus !== "ACTIVE"} onClick={() => void runPreflight()}>{busy === "preflight" ? "预检中…" : "运行只读预检"}</button><button className="primary-action" type="button" disabled={!preflight?.ready || busy !== null} onClick={() => void submit()}>{busy === "submit" ? "提交中…" : "确认生成九个独立槽"}</button></div>
+    <fieldset><legend>本批次表情槽</legend><div className="action-row">{SLOTS.map((slot) => <label key={slot.kind}><input type="checkbox" checked={selectedSlots.includes(slot.kind)} onChange={(event) => setSelectedSlots((current) => event.target.checked ? [...current, slot.kind] : current.filter((item) => item !== slot.kind))} />{slot.label}</label>)}</div></fieldset>
+    <div className="multiview-actions"><button className="secondary" type="button" disabled={busy !== null || assetStatus !== "ACTIVE" || selectedSlots.length === 0} onClick={() => void runPreflight()}>{busy === "preflight" ? "预检中…" : `预检 ${selectedSlots.length} 个表情槽`}</button><button className="primary-action" type="button" disabled={!preflight?.ready || busy !== null} onClick={() => void submit()}>{busy === "submit" ? "提交中…" : `确认生成 ${selectedSlots.length} 个独立槽`}</button></div>
     {preflight && <div className={`multiview-preflight ${preflight.ready ? "ready" : "blocked"}`} role="status"><strong>{preflight.ready ? `预检通过 · 将创建 ${preflight.would_create_jobs} 个任务` : `预检阻挡 · ${preflight.blockers.length} 项`}</strong>{preflight.blockers.map((item) => <div className="multiview-blocker" key={item.code}><span>{item.message}</span><code>{item.code}</code></div>)}</div>}
     {error && <p className="inline-error" role="alert">{error}</p>}
     <div className="multiview-history" aria-label="表情九宫格生成历史">{batches.length === 0 ? <p className="empty-state">尚未提交表情九宫格生成。</p> : batches.map((batch, index) => <details key={batch.intent_id} open={index === 0}><summary><span>{index === 0 ? "最新批次" : `历史批次 ${batches.length - index}`}</span><span className={`status-pill state-${batch.status.toLowerCase()}`}>{batch.completed_count}/{batch.total_count} 完成{batch.failed_count ? ` · ${batch.failed_count} 失败` : ""}</span></summary><div className="multiview-slots">{SLOTS.map((slot) => {

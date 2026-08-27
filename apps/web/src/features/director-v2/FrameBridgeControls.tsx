@@ -1,19 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  FrameBridgeApiError,
-  inheritFrameBridge,
-  setFrameBridgeCurrentFrame,
-  setFrameBridgeLocked,
-  setFrameBridgeSourceFrame,
-  type FrameBridgeWrite,
-} from "./frameBridgeClient";
-import { createFrameAnchor, createShotTransitionConstraint } from "../../generated/api";
-import type { DirectorDeskCandidate, DirectorDeskResponse } from "./types";
+  ApiRequestError,
+  createFrameAnchor,
+  createShotTransitionConstraint,
+  inheritFrameBridgeV2,
+  setFrameBridgeCurrentFrameV2,
+  setFrameBridgeLockV2,
+  setFrameBridgeSourceFrameV2,
+  type FrameBridge,
+  type ShotStudio,
+  type ShotStudioCandidate,
+} from "../../generated/api";
 import { frameCandidateIssue, readFrameCandidate, type FrameCandidateTransfer } from "./frameCandidateDrag";
 import "./frame-bridge-controls.css";
 
-type FrameBridgeAggregate = DirectorDeskResponse["current_shot"]["frame_bridge"];
-type CurrentCandidate = (Partial<DirectorDeskCandidate> & { media_version_id: string }) | null;
+type FrameBridgeAggregate = ShotStudio["current_shot"]["frame_bridge"];
+type CurrentCandidate = (Partial<ShotStudioCandidate> & { media_version_id: string }) | null;
+type FrameBridgeWrite = FrameBridge;
 
 export type FrameBridgeControlsProps = {
   frameBridge: FrameBridgeAggregate;
@@ -32,6 +35,10 @@ const LOCKED_ENFORCEMENTS = new Set(["HARD", "LOCKED"]);
 
 function shortId(value: string | null | undefined) {
   return value ? `${value.slice(0, 8)}…` : "未设置";
+}
+
+function commandKey(transitionId: string, operation: string, revision: number, source = "none") {
+  return `shot-studio:frame-bridge:${transitionId}:${operation}:${revision}:${source}`;
 }
 
 export function FrameBridgeControls({ frameBridge, currentCandidate, currentShotId, previousShotId, nextShotId, canEdit = true, onChanged }: FrameBridgeControlsProps) {
@@ -89,24 +96,43 @@ export function FrameBridgeControls({ frameBridge, currentCandidate, currentShot
         result = { transition: created.constraint } as unknown as FrameBridgeWrite;
       } else if (operation === "inherit") {
         if (!boundary) return;
-        result = await inheritFrameBridge(boundary.transition_id, boundary.boundary_revision);
+        result = (await inheritFrameBridgeV2(boundary.transition_id, {
+          expected_boundary_revision: boundary.boundary_revision,
+          idempotency_key: commandKey(boundary.transition_id, operation, boundary.boundary_revision, boundary.previous_end?.anchor_id),
+        })).frame_bridge;
       } else if (operation === "candidate") {
         const candidate = droppedCandidate ?? currentCandidate;
         if (!boundary || !candidate || frameCandidateIssue(candidate)) return;
         if (candidate.media_kind === "VIDEO") {
           const extracted = await createFrameAnchor(candidate.media_version_id, { position_mode: "FIRST_FRAME", role_hint: "FIRST_FRAME" });
-          result = await setFrameBridgeCurrentFrame(boundary.transition_id, boundary.boundary_revision, { frameAnchorId: extracted.frame_anchor.id });
+          result = (await setFrameBridgeCurrentFrameV2(boundary.transition_id, {
+            expected_boundary_revision: boundary.boundary_revision,
+            frame_anchor_id: extracted.frame_anchor.id,
+            idempotency_key: commandKey(boundary.transition_id, operation, boundary.boundary_revision, extracted.frame_anchor.id),
+          })).frame_bridge;
         } else {
-          result = await setFrameBridgeCurrentFrame(boundary.transition_id, boundary.boundary_revision, { mediaVersionId: candidate.media_version_id });
+          result = (await setFrameBridgeCurrentFrameV2(boundary.transition_id, {
+            expected_boundary_revision: boundary.boundary_revision,
+            media_version_id: candidate.media_version_id,
+            idempotency_key: commandKey(boundary.transition_id, operation, boundary.boundary_revision, candidate.media_version_id),
+          })).frame_bridge;
         }
       } else if (operation === "extract-end") {
         const candidate = droppedCandidate ?? currentCandidate;
         if (!candidate || !nextBoundary || frameCandidateIssue(candidate) || candidate.media_kind !== "VIDEO") return;
         const extracted = await createFrameAnchor(candidate.media_version_id, { position_mode: "LAST_FRAME", role_hint: "LAST_FRAME" });
-        result = await setFrameBridgeSourceFrame(nextBoundary.transition_id, nextBoundary.boundary_revision, extracted.frame_anchor.id);
+        result = (await setFrameBridgeSourceFrameV2(nextBoundary.transition_id, {
+          expected_boundary_revision: nextBoundary.boundary_revision,
+          frame_anchor_id: extracted.frame_anchor.id,
+          idempotency_key: commandKey(nextBoundary.transition_id, operation, nextBoundary.boundary_revision, extracted.frame_anchor.id),
+        })).frame_bridge;
       } else {
         if (!boundary) return;
-        result = await setFrameBridgeLocked(boundary.transition_id, boundary.boundary_revision, operation === "lock");
+        result = (await setFrameBridgeLockV2(boundary.transition_id, {
+          expected_boundary_revision: boundary.boundary_revision,
+          locked: operation === "lock",
+          idempotency_key: commandKey(boundary.transition_id, operation, boundary.boundary_revision),
+        })).frame_bridge;
       }
       setMessage(operation === "create-previous" || operation === "create-next"
         ? `${operation === "create-previous" ? "上游" : "下游"} Frame Bridge 已创建；现在可以设置首尾帧来源。`
@@ -119,7 +145,7 @@ export function FrameBridgeControls({ frameBridge, currentCandidate, currentShot
           : operation === "lock" ? "Frame Bridge 已锁定。" : "Frame Bridge 已解除锁定。");
       await onChanged?.(result);
     } catch (error) {
-      if (error instanceof FrameBridgeApiError && error.status === 409) {
+      if (error instanceof ApiRequestError && error.status === 409) {
         const actual = error.details?.actual_boundary_revision;
         setConflict({ message: error.message, actualRevision: typeof actual === "number" ? actual : undefined });
       } else {

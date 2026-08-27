@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
-import { createModelCompatibilityReport, pickLocalModelFile, registerLocalModelReference, scanLocalModelRegistry, type ModelRegistryScanItem } from "../../generated/api";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { createModelCompatibilityReport, getClientCapabilities, listModelLibraryRoots, pickLocalModelFile, registerLocalModelReference, scanLocalModelRegistry, type ModelRegistryScanItem } from "../../generated/api";
 import { generateMachineCode } from "../shared/autoCode";
 
 const MODEL_USES = [
@@ -30,6 +31,9 @@ export function LocalModelReferenceForm({ projectId, onRegistered }: { projectId
   const [scanning, setScanning] = useState(false);
   const [scanItems, setScanItems] = useState<ModelRegistryScanItem[]>([]);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
+  const capabilities = useQuery({ queryKey: ["client-capabilities"], queryFn: () => getClientCapabilities(), staleTime: Infinity });
+  const modelRoots = useQuery({ queryKey: ["model-library-roots"], queryFn: () => listModelLibraryRoots(), staleTime: 30_000 });
+  useEffect(() => { if (!scanDir && modelRoots.data?.items[0]?.path) setScanDir(modelRoots.data.items[0].path); }, [modelRoots.data?.items, scanDir]);
   const selectedUse = MODEL_USES.find((item) => item.kind === kind);
   const code = useMemo(() => generateMachineCode("MODEL", modelStem(path)), [path]);
 
@@ -43,7 +47,7 @@ export function LocalModelReferenceForm({ projectId, onRegistered }: { projectId
       });
       const result = await createModelCompatibilityReport(projectId, registered.artifact.id, selectedUse.capability);
       const capabilityStatus = result.report.capability?.status ?? "NOT_REQUESTED";
-      setMessage(`已引用本机模型，未复制或上传权重；用途检查：${capabilityStatus}；兼容性：${result.report.report_status}`);
+      setMessage(`已引用服务端模型，未复制或上传权重；用途检查：${capabilityStatus}；兼容性：${result.report.report_status}`);
       onRegistered();
     } catch (error) {
       setMessage(`登记失败：${String(error)}`);
@@ -96,30 +100,26 @@ export function LocalModelReferenceForm({ projectId, onRegistered }: { projectId
     }
   };
 
+  const serverDialogs = capabilities.data?.capabilities.server_file_dialogs ?? false;
   return <div className="model-license-import local-model-reference-form">
-    <button className="primary-action" type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>{expanded ? "收起模型添加" : "添加电脑里的模型"}</button>
+    <button className="primary-action" type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>{expanded ? "收起模型添加" : "添加服务端模型"}</button>
     {expanded && <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
       <div className="local-model-primary-fields">
         <label>这个模型用来做什么？<select value={kind} onChange={(event) => setKind(event.target.value)} required><option value="">请选择用途</option>{MODEL_USES.map((item) => <option key={item.kind} value={item.kind}>{item.label}</option>)}</select></label>
-        <div className="local-model-file-choice">
+        {serverDialogs && <div className="local-model-file-choice">
           <span>模型文件</span>
-          <button className="secondary" type="button" onClick={() => { void browse(); }}>{path ? "重新选择文件" : "从电脑选择文件"}</button>
+          <button className="secondary" type="button" onClick={() => { void browse(); }}>{path ? "重新选择文件" : "从服务器桌面选择"}</button>
           <strong>{path ? modelStem(path) : "尚未选择"}</strong>
           {path && <small title={path}>{path}</small>}
-        </div>
+        </div>}
       </div>
 
       <details className="local-model-network-details" open={showScanner} onToggle={(event) => setShowScanner(event.currentTarget.open)}>
-        <summary>通过局域网使用工作站上的模型</summary>
+        <summary>从服务端模型库选择</summary>
         <div className="local-model-network-scan">
-          <p className="muted">只有在当前浏览器不在模型工作站上时才需要这里。填写工作站上的模型文件夹，系统会列出可选文件。</p>
+          <p className="muted">模型权重不经过浏览器传输。管理员先配置服务端模型库，任何电脑上的浏览器都只从受控目录选择。</p>
           <div className="inline-control">
-            <input
-              aria-label="工作站模型文件夹"
-              value={scanDir}
-              onChange={(e) => setScanDir(e.target.value)}
-              placeholder="例如 E:\\AI\\Models"
-            />
+            {modelRoots.data?.items.length ? <select aria-label="服务端模型库" value={scanDir} onChange={(event) => setScanDir(event.target.value)}>{modelRoots.data.items.map((root) => <option key={root.id} value={root.path}>{root.label}</option>)}</select> : serverDialogs ? <input aria-label="服务器模型文件夹" value={scanDir} onChange={(event) => setScanDir(event.target.value)} placeholder="例如 E:\\AI\\Models" /> : <span className="review-guidance">尚未配置服务端模型库。请管理员设置 <code>LOCAL_DRAMA_MODEL_LIBRARY_ROOTS</code> 后重启。</span>}
             <button
               type="button"
               className="secondary"
@@ -147,7 +147,7 @@ export function LocalModelReferenceForm({ projectId, onRegistered }: { projectId
       </details>
 
       {path && <details className="local-model-technical-details"><summary>技术信息</summary><p>系统标识 <code>{code}</code></p><p>将自动检查：{selectedUse?.label ?? "选择用途后显示"}</p></details>}
-      <p className="muted">系统只读取文件信息和兼容性，不复制、不上传模型权重。用途选好后，类型和检查项会自动匹配。</p>
+      <p className="muted">系统只在 Windows 服务端读取模型文件信息和兼容性，不把权重发送到浏览器。</p>
       <button className="primary-action" type="submit" disabled={pending || !path || !kind}>{pending ? "正在检查模型…" : "添加并检查模型"}</button>
       {message && <p className={message.startsWith("登记失败") ? "inline-error" : "review-success"} role="status">{message}</p>}
     </form>}

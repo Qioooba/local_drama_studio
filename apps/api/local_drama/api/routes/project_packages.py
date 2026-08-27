@@ -5,6 +5,7 @@ from typing import Literal
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from local_drama.api.uploading import receive_bounded_upload
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.project_packages import ProjectPackageService
 from local_drama.domain.errors import DomainRuleError
@@ -38,6 +39,19 @@ async def list_project_package_inbox(request: Request) -> dict[str, object]:
         "network_contacted": False,
         "mutated": False,
     }
+
+
+@router.post(":upload", status_code=201, operation_id="uploadProjectPackage")
+async def upload_project_package(request: Request) -> dict[str, object]:
+    try:
+        async with receive_bounded_upload(
+            request, work_group="project-package-uploads", allowed_suffixes=frozenset({".ldspkg"}),
+            maximum_bytes=request.app.state.settings.uploads.project_package_mb * 1024 * 1024,
+            default_filename="project.ldspkg", error_prefix="PROJECT_PACKAGE_UPLOAD",
+        ) as (temporary, safe_filename, _received_bytes):
+            return {"package": service(request).import_browser_upload(temporary, safe_filename)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
 
 
 @router.post(":stage", operation_id="stageProjectPackage")

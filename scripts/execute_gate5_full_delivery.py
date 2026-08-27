@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 # Add project root to sys.path
-root = Path(r"F:\AI_Projects\h3\local_drama_studio")
+root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / "apps" / "api"))
 
 from local_drama.config import Settings

@@ -14,7 +14,7 @@ describe("Episode Plan shot command routes", () => {
     expect(fetch).toHaveBeenCalledWith("/api/v1/shots/shot-1/asset-state-bindings", expect.objectContaining({
       method: "POST", body: JSON.stringify({ asset_id: "asset-1", asset_state_id: "state-1" }),
     }));
-    expect(fetch).toHaveBeenCalledWith("/api/v1/projects/shots/shot-1:mark-production-ready", expect.objectContaining({ method: "POST" }));
+    expect(fetch).toHaveBeenCalledWith("/api/v2/shots/shot-1:mark-ready", expect.objectContaining({ method: "POST" }));
   });
 
   it("keeps per-shot partial success instead of pretending a batch is atomic", async () => {

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, act } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -275,7 +275,7 @@ describe("shared UI primitives", () => {
     fireEvent.click(screen.getByRole("button", { name: "选用" }));
     expect(approveCandidate).toHaveBeenCalledWith("cand-1");
 
-    const { rerender } = render(
+    render(
       <StickyCommandBar dirty={true} onSave={save} statusSummary="3 项变动待提交" />
     );
     expect(screen.getByText("未保存改动")).toBeInTheDocument();
@@ -337,4 +337,3 @@ describe("shared UI primitives", () => {
     expect(screen.queryByText("条目 90")).not.toBeInTheDocument();
   });
 });
-

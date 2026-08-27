@@ -139,15 +139,15 @@ export function AutomationWorkflowPanel({ projectId }: { projectId: string }) {
       return;
     }
 
-    let targetWorkflow = templateWorkflow;
-    if (!targetWorkflow) {
-      const created = await createAutomationWorkflowFromTemplate(projectId, {
-        template_code: templateCode,
-        title: templateTitle.trim(),
-      });
-      targetWorkflow = created.workflow;
-      setWorkflows((items) => [created.workflow, ...items.filter((item) => item.id !== created.workflow.id)]);
-    }
+    // Re-expand against the current episode set every time. The server returns
+    // the same immutable version when the source fingerprint is unchanged and
+    // creates a new version when project contents changed.
+    const created = await createAutomationWorkflowFromTemplate(projectId, {
+      template_code: templateCode,
+      title: templateTitle.trim(),
+    });
+    const targetWorkflow = created.workflow;
+    setWorkflows((items) => [created.workflow, ...items.filter((item) => item.id !== created.workflow.id && item.status === "ACTIVE")]);
 
     const planned = await planAutomationWorkflow(targetWorkflow.id);
     setWorkflowId(targetWorkflow.id);
@@ -272,7 +272,7 @@ export function AutomationWorkflowPanel({ projectId }: { projectId: string }) {
           <label>已有流程
             <select aria-label="已有流程" value={workflowId ?? ""} onChange={(event) => selectExistingWorkflow(event.target.value)}>
               <option value="">选择已有流程</option>
-              {workflows.map((item) => <option key={item.id} value={item.id}>{item.title} · {optionLabel(WORKFLOW_MODE_LABELS, item.mode)}</option>)}
+              {workflows.map((item) => <option key={item.id} value={item.id}>{item.title} · v{item.version_no ?? 1} · {optionLabel(WORKFLOW_MODE_LABELS, item.mode)}</option>)}
             </select>
           </label>
           <div className="button-row"><button className="secondary" type="button" onClick={() => void execute(refreshExistingWorkflows)} disabled={busy}>刷新流程状态</button></div>

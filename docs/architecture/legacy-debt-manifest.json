@@ -1,0 +1,4546 @@
+{
+  "schema_version": "localdrama.architecture-debt.v1",
+  "policy": "allow-list; entries may be removed but no new id may be introduced",
+  "categories": {
+    "concrete_database_dependencies": [
+      {
+        "id": "apps/api/local_drama/application/asset_multiview.py:24",
+        "file": "apps/api/local_drama/application/asset_multiview.py",
+        "line": 24,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/asset_proposals.py:11",
+        "file": "apps/api/local_drama/application/asset_proposals.py",
+        "line": 11,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/audit.py:19",
+        "file": "apps/api/local_drama/application/audit.py",
+        "line": 19,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/automation.py:25",
+        "file": "apps/api/local_drama/application/automation.py",
+        "line": 25,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/automation_workflows.py:20",
+        "file": "apps/api/local_drama/application/automation_workflows.py",
+        "line": 20,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/background_operations.py:20",
+        "file": "apps/api/local_drama/application/background_operations.py",
+        "line": 20,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/beat_replan.py:11",
+        "file": "apps/api/local_drama/application/beat_replan.py",
+        "line": 11,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/breakdown_apply.py:29",
+        "file": "apps/api/local_drama/application/breakdown_apply.py",
+        "line": 29,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/breakdown_revisions.py:18",
+        "file": "apps/api/local_drama/application/breakdown_revisions.py",
+        "line": 18,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/capacity.py:17",
+        "file": "apps/api/local_drama/application/capacity.py",
+        "line": 17,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/character_identity_packs.py:18",
+        "file": "apps/api/local_drama/application/character_identity_packs.py",
+        "line": 18,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/comfy_jobs.py:24",
+        "file": "apps/api/local_drama/application/comfy_jobs.py",
+        "line": 24,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/compose.py:12",
+        "file": "apps/api/local_drama/application/compose.py",
+        "line": 12,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/configuration.py:14",
+        "file": "apps/api/local_drama/application/configuration.py",
+        "line": 14,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/contact_sheets.py:16",
+        "file": "apps/api/local_drama/application/contact_sheets.py",
+        "line": 16,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/creative_entries.py:14",
+        "file": "apps/api/local_drama/application/creative_entries.py",
+        "line": 14,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/diagnostics.py:20",
+        "file": "apps/api/local_drama/application/diagnostics.py",
+        "line": 20,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/documents.py:19",
+        "file": "apps/api/local_drama/application/documents.py",
+        "line": 19,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/effective_configuration.py:16",
+        "file": "apps/api/local_drama/application/effective_configuration.py",
+        "line": 16,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_front_half_actions.py:20",
+        "file": "apps/api/local_drama/application/episode_front_half_actions.py",
+        "line": 20,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_production_runs.py:24",
+        "file": "apps/api/local_drama/application/episode_production_runs.py",
+        "line": 24,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_worker_actions.py:26",
+        "file": "apps/api/local_drama/application/episode_worker_actions.py",
+        "line": 26,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/experiments.py:15",
+        "file": "apps/api/local_drama/application/experiments.py",
+        "line": 15,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/g6_readiness.py:8",
+        "file": "apps/api/local_drama/application/g6_readiness.py",
+        "line": 8,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/g7_readiness.py:12",
+        "file": "apps/api/local_drama/application/g7_readiness.py",
+        "line": 12,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/g8_readiness.py:16",
+        "file": "apps/api/local_drama/application/g8_readiness.py",
+        "line": 16,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/g9_readiness.py:12",
+        "file": "apps/api/local_drama/application/g9_readiness.py",
+        "line": 12,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/generation.py:18",
+        "file": "apps/api/local_drama/application/generation.py",
+        "line": 18,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/i2v_probe.py:16",
+        "file": "apps/api/local_drama/application/i2v_probe.py",
+        "line": 16,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/jobs.py:16",
+        "file": "apps/api/local_drama/application/jobs.py",
+        "line": 16,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/local_llm.py:22",
+        "file": "apps/api/local_drama/application/local_llm.py",
+        "line": 22,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/media.py:21",
+        "file": "apps/api/local_drama/application/media.py",
+        "line": 21,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/model_compatibility.py:17",
+        "file": "apps/api/local_drama/application/model_compatibility.py",
+        "line": 17,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/motion_controls.py:20",
+        "file": "apps/api/local_drama/application/motion_controls.py",
+        "line": 20,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/network_e2e.py:26",
+        "file": "apps/api/local_drama/application/network_e2e.py",
+        "line": 26,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/one_sentence_video_runs.py:32",
+        "file": "apps/api/local_drama/application/one_sentence_video_runs.py",
+        "line": 32,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/outbox_delivery.py:23",
+        "file": "apps/api/local_drama/application/outbox_delivery.py",
+        "line": 23,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/profiles.py:18",
+        "file": "apps/api/local_drama/application/profiles.py",
+        "line": 18,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/project_packages.py:20",
+        "file": "apps/api/local_drama/application/project_packages.py",
+        "line": 20,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/projects.py:20",
+        "file": "apps/api/local_drama/application/projects.py",
+        "line": 20,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/prompt_anchors.py:21",
+        "file": "apps/api/local_drama/application/prompt_anchors.py",
+        "line": 21,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/prompts.py:12",
+        "file": "apps/api/local_drama/application/prompts.py",
+        "line": 12,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/provider_connections.py:16",
+        "file": "apps/api/local_drama/application/provider_connections.py",
+        "line": 16,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/reviews.py:15",
+        "file": "apps/api/local_drama/application/reviews.py",
+        "line": 15,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/shot_editing.py:11",
+        "file": "apps/api/local_drama/application/shot_editing.py",
+        "line": 11,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/shot_groups.py:10",
+        "file": "apps/api/local_drama/application/shot_groups.py",
+        "line": 10,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/storage_operations.py:26",
+        "file": "apps/api/local_drama/application/storage_operations.py",
+        "line": 26,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/story_assets.py:13",
+        "file": "apps/api/local_drama/application/story_assets.py",
+        "line": 13,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/subtitle_styles.py:33",
+        "file": "apps/api/local_drama/application/subtitle_styles.py",
+        "line": 33,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/t2i_probe.py:14",
+        "file": "apps/api/local_drama/application/t2i_probe.py",
+        "line": 14,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/timeline_exports.py:16",
+        "file": "apps/api/local_drama/application/timeline_exports.py",
+        "line": 16,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/timeline_status.py:10",
+        "file": "apps/api/local_drama/application/timeline_status.py",
+        "line": 10,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/visual_labs.py:12",
+        "file": "apps/api/local_drama/application/visual_labs.py",
+        "line": 12,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker.py:33",
+        "file": "apps/api/local_drama/application/worker.py",
+        "line": 33,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker_sessions.py:16",
+        "file": "apps/api/local_drama/application/worker_sessions.py",
+        "line": 16,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/workflow_runtime.py:17",
+        "file": "apps/api/local_drama/application/workflow_runtime.py",
+        "line": 17,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/workflows.py:18",
+        "file": "apps/api/local_drama/application/workflows.py",
+        "line": 18,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/workspace_assets.py:14",
+        "file": "apps/api/local_drama/application/workspace_assets.py",
+        "line": 14,
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      }
+    ],
+    "cross_service_construction": [
+      {
+        "id": "apps/api/local_drama/application/asset_multiview.py:68:GenerationService",
+        "file": "apps/api/local_drama/application/asset_multiview.py",
+        "line": 68,
+        "service": "GenerationService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/asset_multiview.py:104:GenerationPreferenceQueryService",
+        "file": "apps/api/local_drama/application/asset_multiview.py",
+        "line": 104,
+        "service": "GenerationPreferenceQueryService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/automation_workflows.py:95:JobService",
+        "file": "apps/api/local_drama/application/automation_workflows.py",
+        "line": 95,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/background_operations.py:31:TimelineService",
+        "file": "apps/api/local_drama/application/background_operations.py",
+        "line": 31,
+        "service": "TimelineService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/background_operations.py:32:JobService",
+        "file": "apps/api/local_drama/application/background_operations.py",
+        "line": 32,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/comfy_jobs.py:39:JobService",
+        "file": "apps/api/local_drama/application/comfy_jobs.py",
+        "line": 39,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/comfy_jobs.py:40:MediaService",
+        "file": "apps/api/local_drama/application/comfy_jobs.py",
+        "line": 40,
+        "service": "MediaService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/comfy_jobs.py:41:WorkflowService",
+        "file": "apps/api/local_drama/application/comfy_jobs.py",
+        "line": 41,
+        "service": "WorkflowService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/commands/qc_policies.py:63:QcPolicyQueryService",
+        "file": "apps/api/local_drama/application/commands/qc_policies.py",
+        "line": 63,
+        "service": "QcPolicyQueryService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/compose.py:19:TimelineService",
+        "file": "apps/api/local_drama/application/compose.py",
+        "line": 19,
+        "service": "TimelineService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/compose.py:20:JobService",
+        "file": "apps/api/local_drama/application/compose.py",
+        "line": 20,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/documents.py:78:MediaService",
+        "file": "apps/api/local_drama/application/documents.py",
+        "line": 78,
+        "service": "MediaService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/documents.py:405:LocalLLMService",
+        "file": "apps/api/local_drama/application/documents.py",
+        "line": 405,
+        "service": "LocalLLMService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/effective_configuration.py:59:GenerationPreferenceQueryService",
+        "file": "apps/api/local_drama/application/effective_configuration.py",
+        "line": 59,
+        "service": "GenerationPreferenceQueryService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/effective_configuration.py:99:ProfileService",
+        "file": "apps/api/local_drama/application/effective_configuration.py",
+        "line": 99,
+        "service": "ProfileService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_production_runs.py:86:AutomationWorkflowService",
+        "file": "apps/api/local_drama/application/episode_production_runs.py",
+        "line": 86,
+        "service": "AutomationWorkflowService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_production_runs.py:337:EpisodeFrontHalfActionService",
+        "file": "apps/api/local_drama/application/episode_production_runs.py",
+        "line": 337,
+        "service": "EpisodeFrontHalfActionService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_production_runs.py:661:EpisodeFrontHalfActionService",
+        "file": "apps/api/local_drama/application/episode_production_runs.py",
+        "line": 661,
+        "service": "EpisodeFrontHalfActionService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_production_runs.py:289:CapacitySnapshotService",
+        "file": "apps/api/local_drama/application/episode_production_runs.py",
+        "line": 289,
+        "service": "CapacitySnapshotService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_production_runs.py:444:EpisodeFrontHalfActionService",
+        "file": "apps/api/local_drama/application/episode_production_runs.py",
+        "line": 444,
+        "service": "EpisodeFrontHalfActionService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_production_runs.py:869:JobService",
+        "file": "apps/api/local_drama/application/episode_production_runs.py",
+        "line": 869,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_worker_actions.py:52:GenerationService",
+        "file": "apps/api/local_drama/application/episode_worker_actions.py",
+        "line": 52,
+        "service": "GenerationService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_worker_actions.py:53:JobService",
+        "file": "apps/api/local_drama/application/episode_worker_actions.py",
+        "line": 53,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_worker_actions.py:54:MediaService",
+        "file": "apps/api/local_drama/application/episode_worker_actions.py",
+        "line": 54,
+        "service": "MediaService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_worker_actions.py:55:ReviewService",
+        "file": "apps/api/local_drama/application/episode_worker_actions.py",
+        "line": 55,
+        "service": "ReviewService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_worker_actions.py:232:GenerationPreferenceQueryService",
+        "file": "apps/api/local_drama/application/episode_worker_actions.py",
+        "line": 232,
+        "service": "GenerationPreferenceQueryService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_worker_actions.py:79:QcPolicyCommandService",
+        "file": "apps/api/local_drama/application/episode_worker_actions.py",
+        "line": 79,
+        "service": "QcPolicyCommandService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_worker_actions.py:418:QcPolicyCommandService",
+        "file": "apps/api/local_drama/application/episode_worker_actions.py",
+        "line": 418,
+        "service": "QcPolicyCommandService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_worker_actions.py:67:QcPolicyQueryService",
+        "file": "apps/api/local_drama/application/episode_worker_actions.py",
+        "line": 67,
+        "service": "QcPolicyQueryService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/experiments.py:35:JobService",
+        "file": "apps/api/local_drama/application/experiments.py",
+        "line": 35,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/generation.py:184:MediaService",
+        "file": "apps/api/local_drama/application/generation.py",
+        "line": 184,
+        "service": "MediaService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/generation.py:1051:EffectiveConfigurationService",
+        "file": "apps/api/local_drama/application/generation.py",
+        "line": 1051,
+        "service": "EffectiveConfigurationService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/generation.py:1713:JobService",
+        "file": "apps/api/local_drama/application/generation.py",
+        "line": 1713,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/generation.py:1793:JobService",
+        "file": "apps/api/local_drama/application/generation.py",
+        "line": 1793,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/generation.py:2082:JobService",
+        "file": "apps/api/local_drama/application/generation.py",
+        "line": 2082,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/i2v_probe.py:48:MediaService",
+        "file": "apps/api/local_drama/application/i2v_probe.py",
+        "line": 48,
+        "service": "MediaService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/i2v_probe.py:82:ProjectService",
+        "file": "apps/api/local_drama/application/i2v_probe.py",
+        "line": 82,
+        "service": "ProjectService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/i2v_probe.py:102:ReviewService",
+        "file": "apps/api/local_drama/application/i2v_probe.py",
+        "line": 102,
+        "service": "ReviewService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/i2v_probe.py:289:JobService",
+        "file": "apps/api/local_drama/application/i2v_probe.py",
+        "line": 289,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/i2v_probe.py:305:JobService",
+        "file": "apps/api/local_drama/application/i2v_probe.py",
+        "line": 305,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/i2v_probe.py:323:MediaService",
+        "file": "apps/api/local_drama/application/i2v_probe.py",
+        "line": 323,
+        "service": "MediaService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/i2v_probe.py:327:ProfileService",
+        "file": "apps/api/local_drama/application/i2v_probe.py",
+        "line": 327,
+        "service": "ProfileService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/local_llm.py:956:JobService",
+        "file": "apps/api/local_drama/application/local_llm.py",
+        "line": 956,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/local_llm.py:969:JobService",
+        "file": "apps/api/local_drama/application/local_llm.py",
+        "line": 969,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/local_llm.py:1653:JobService",
+        "file": "apps/api/local_drama/application/local_llm.py",
+        "line": 1653,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/local_llm.py:890:ProviderConnectionService",
+        "file": "apps/api/local_drama/application/local_llm.py",
+        "line": 890,
+        "service": "ProviderConnectionService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/local_llm.py:930:ProviderConnectionService",
+        "file": "apps/api/local_drama/application/local_llm.py",
+        "line": 930,
+        "service": "ProviderConnectionService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/local_llm.py:1120:ProviderConnectionService",
+        "file": "apps/api/local_drama/application/local_llm.py",
+        "line": 1120,
+        "service": "ProviderConnectionService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/local_llm.py:1398:ProviderConnectionService",
+        "file": "apps/api/local_drama/application/local_llm.py",
+        "line": 1398,
+        "service": "ProviderConnectionService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/local_llm.py:1314:ProviderConnectionService",
+        "file": "apps/api/local_drama/application/local_llm.py",
+        "line": 1314,
+        "service": "ProviderConnectionService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/media.py:201:StorageOperationService",
+        "file": "apps/api/local_drama/application/media.py",
+        "line": 201,
+        "service": "StorageOperationService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/media.py:274:JobService",
+        "file": "apps/api/local_drama/application/media.py",
+        "line": 274,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/motion_controls.py:48:MediaService",
+        "file": "apps/api/local_drama/application/motion_controls.py",
+        "line": 48,
+        "service": "MediaService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/one_sentence_video_runs.py:61:ProfileService",
+        "file": "apps/api/local_drama/application/one_sentence_video_runs.py",
+        "line": 61,
+        "service": "ProfileService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/one_sentence_video_runs.py:62:ProjectService",
+        "file": "apps/api/local_drama/application/one_sentence_video_runs.py",
+        "line": 62,
+        "service": "ProjectService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/one_sentence_video_runs.py:64:GenerationService",
+        "file": "apps/api/local_drama/application/one_sentence_video_runs.py",
+        "line": 64,
+        "service": "GenerationService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/one_sentence_video_runs.py:65:PromptService",
+        "file": "apps/api/local_drama/application/one_sentence_video_runs.py",
+        "line": 65,
+        "service": "PromptService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/one_sentence_video_runs.py:66:JobService",
+        "file": "apps/api/local_drama/application/one_sentence_video_runs.py",
+        "line": 66,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/one_sentence_video_runs.py:67:MediaService",
+        "file": "apps/api/local_drama/application/one_sentence_video_runs.py",
+        "line": 67,
+        "service": "MediaService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/one_sentence_video_runs.py:68:ReviewService",
+        "file": "apps/api/local_drama/application/one_sentence_video_runs.py",
+        "line": 68,
+        "service": "ReviewService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/one_sentence_video_runs.py:69:WorkflowService",
+        "file": "apps/api/local_drama/application/one_sentence_video_runs.py",
+        "line": 69,
+        "service": "WorkflowService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/one_sentence_video_runs.py:70:LocalLLMService",
+        "file": "apps/api/local_drama/application/one_sentence_video_runs.py",
+        "line": 70,
+        "service": "LocalLLMService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/project_packages.py:132:MediaService",
+        "file": "apps/api/local_drama/application/project_packages.py",
+        "line": 132,
+        "service": "MediaService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/projects.py:1368:ReviewService",
+        "file": "apps/api/local_drama/application/projects.py",
+        "line": 1368,
+        "service": "ReviewService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/reviews.py:105:MediaService",
+        "file": "apps/api/local_drama/application/reviews.py",
+        "line": 105,
+        "service": "MediaService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/subtitle_styles.py:103:CreativeEntryService",
+        "file": "apps/api/local_drama/application/subtitle_styles.py",
+        "line": 103,
+        "service": "CreativeEntryService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/t2i_probe.py:164:JobService",
+        "file": "apps/api/local_drama/application/t2i_probe.py",
+        "line": 164,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/t2i_probe.py:180:JobService",
+        "file": "apps/api/local_drama/application/t2i_probe.py",
+        "line": 180,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/t2i_probe.py:201:MediaService",
+        "file": "apps/api/local_drama/application/t2i_probe.py",
+        "line": 201,
+        "service": "MediaService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/t2i_probe.py:204:ProfileService",
+        "file": "apps/api/local_drama/application/t2i_probe.py",
+        "line": 204,
+        "service": "ProfileService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/timeline_exports.py:85:MediaService",
+        "file": "apps/api/local_drama/application/timeline_exports.py",
+        "line": 85,
+        "service": "MediaService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/visual_labs.py:484:GenerationService",
+        "file": "apps/api/local_drama/application/visual_labs.py",
+        "line": 484,
+        "service": "GenerationService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/visual_labs.py:491:GenerationService",
+        "file": "apps/api/local_drama/application/visual_labs.py",
+        "line": 491,
+        "service": "GenerationService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker.py:59:JobService",
+        "file": "apps/api/local_drama/application/worker.py",
+        "line": 59,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker.py:60:MediaService",
+        "file": "apps/api/local_drama/application/worker.py",
+        "line": 60,
+        "service": "MediaService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker.py:135:TimelineService",
+        "file": "apps/api/local_drama/application/worker.py",
+        "line": 135,
+        "service": "TimelineService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker.py:810:BackgroundOperationService",
+        "file": "apps/api/local_drama/application/worker.py",
+        "line": 810,
+        "service": "BackgroundOperationService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker.py:954:DialogueService",
+        "file": "apps/api/local_drama/application/worker.py",
+        "line": 954,
+        "service": "DialogueService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker.py:1042:DialogueService",
+        "file": "apps/api/local_drama/application/worker.py",
+        "line": 1042,
+        "service": "DialogueService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker.py:1182:AutomationWorkflowService",
+        "file": "apps/api/local_drama/application/worker.py",
+        "line": 1182,
+        "service": "AutomationWorkflowService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker.py:493:GenerationService",
+        "file": "apps/api/local_drama/application/worker.py",
+        "line": 493,
+        "service": "GenerationService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker.py:858:LocalLLMService",
+        "file": "apps/api/local_drama/application/worker.py",
+        "line": 858,
+        "service": "LocalLLMService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker.py:1004:ConfigurationService",
+        "file": "apps/api/local_drama/application/worker.py",
+        "line": 1004,
+        "service": "ConfigurationService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker.py:1107:EpisodeFrontHalfActionService",
+        "file": "apps/api/local_drama/application/worker.py",
+        "line": 1107,
+        "service": "EpisodeFrontHalfActionService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker.py:401:LocalLLMService",
+        "file": "apps/api/local_drama/application/worker.py",
+        "line": 401,
+        "service": "LocalLLMService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker.py:1118:EpisodeWorkerActionService",
+        "file": "apps/api/local_drama/application/worker.py",
+        "line": 1118,
+        "service": "EpisodeWorkerActionService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker.py:1122:EpisodeWorkerActionService",
+        "file": "apps/api/local_drama/application/worker.py",
+        "line": 1122,
+        "service": "EpisodeWorkerActionService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker_sessions.py:276:JobService",
+        "file": "apps/api/local_drama/application/worker_sessions.py",
+        "line": 276,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker_sessions.py:359:WorkerSessionService",
+        "file": "apps/api/local_drama/application/worker_sessions.py",
+        "line": 359,
+        "service": "WorkerSessionService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker_sessions.py:380:EpisodeProductionRunService",
+        "file": "apps/api/local_drama/application/worker_sessions.py",
+        "line": 380,
+        "service": "EpisodeProductionRunService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker_sessions.py:409:ComfyGenerationService",
+        "file": "apps/api/local_drama/application/worker_sessions.py",
+        "line": 409,
+        "service": "ComfyGenerationService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker_sessions.py:382:ComfyGenerationService",
+        "file": "apps/api/local_drama/application/worker_sessions.py",
+        "line": 382,
+        "service": "ComfyGenerationService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker_sessions.py:386:StorageOperationService",
+        "file": "apps/api/local_drama/application/worker_sessions.py",
+        "line": 386,
+        "service": "StorageOperationService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker_sessions.py:461:ComfyGenerationService",
+        "file": "apps/api/local_drama/application/worker_sessions.py",
+        "line": 461,
+        "service": "ComfyGenerationService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      }
+    ],
+    "routes_without_response_model": [
+      {
+        "id": "apps/api/local_drama/api/routes/adapters.py:getAdapterContracts",
+        "file": "apps/api/local_drama/api/routes/adapters.py",
+        "line": 11,
+        "operation_id": "getAdapterContracts",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/asset_bible.py:getAssetBible",
+        "file": "apps/api/local_drama/api/routes/asset_bible.py",
+        "line": 76,
+        "operation_id": "getAssetBible",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/asset_bible.py:getAssetBibleDetail",
+        "file": "apps/api/local_drama/api/routes/asset_bible.py",
+        "line": 84,
+        "operation_id": "getAssetBibleDetail",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/asset_bible.py:preflightAssetMultiView",
+        "file": "apps/api/local_drama/api/routes/asset_bible.py",
+        "line": 92,
+        "operation_id": "preflightAssetMultiView",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/asset_bible.py:submitAssetMultiView",
+        "file": "apps/api/local_drama/api/routes/asset_bible.py",
+        "line": 100,
+        "operation_id": "submitAssetMultiView",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/asset_bible.py:preflightAssetExpression",
+        "file": "apps/api/local_drama/api/routes/asset_bible.py",
+        "line": 108,
+        "operation_id": "preflightAssetExpression",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/asset_bible.py:submitAssetExpression",
+        "file": "apps/api/local_drama/api/routes/asset_bible.py",
+        "line": 116,
+        "operation_id": "submitAssetExpression",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/asset_bible.py:preflightAssetDetail",
+        "file": "apps/api/local_drama/api/routes/asset_bible.py",
+        "line": 124,
+        "operation_id": "preflightAssetDetail",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/asset_bible.py:submitAssetDetail",
+        "file": "apps/api/local_drama/api/routes/asset_bible.py",
+        "line": 132,
+        "operation_id": "submitAssetDetail",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/asset_bible.py:createStoryAssetState",
+        "file": "apps/api/local_drama/api/routes/asset_bible.py",
+        "line": 140,
+        "operation_id": "createStoryAssetState",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/asset_bible.py:updateStoryAssetState",
+        "file": "apps/api/local_drama/api/routes/asset_bible.py",
+        "line": 149,
+        "operation_id": "updateStoryAssetState",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/asset_bible.py:archiveStoryAssetState",
+        "file": "apps/api/local_drama/api/routes/asset_bible.py",
+        "line": 157,
+        "operation_id": "archiveStoryAssetState",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/asset_bible.py:listStoryAssetReferences",
+        "file": "apps/api/local_drama/api/routes/asset_bible.py",
+        "line": 165,
+        "operation_id": "listStoryAssetReferences",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/asset_bible.py:createStoryAssetReference",
+        "file": "apps/api/local_drama/api/routes/asset_bible.py",
+        "line": 173,
+        "operation_id": "createStoryAssetReference",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/asset_bible.py:updateStoryAssetReference",
+        "file": "apps/api/local_drama/api/routes/asset_bible.py",
+        "line": 182,
+        "operation_id": "updateStoryAssetReference",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/asset_bible.py:archiveStoryAssetReference",
+        "file": "apps/api/local_drama/api/routes/asset_bible.py",
+        "line": 190,
+        "operation_id": "archiveStoryAssetReference",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/asset_bible.py:setEpisodeAssetState",
+        "file": "apps/api/local_drama/api/routes/asset_bible.py",
+        "line": 198,
+        "operation_id": "setEpisodeAssetState",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/asset_bible.py:setShotAssetState",
+        "file": "apps/api/local_drama/api/routes/asset_bible.py",
+        "line": 206,
+        "operation_id": "setShotAssetState",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/asset_proposals.py:listAssetProposals",
+        "file": "apps/api/local_drama/api/routes/asset_proposals.py",
+        "line": 12,
+        "operation_id": "listAssetProposals",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/asset_proposals.py:decideAssetProposal",
+        "file": "apps/api/local_drama/api/routes/asset_proposals.py",
+        "line": 17,
+        "operation_id": "decideAssetProposal",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/audit.py:exportAuditProof",
+        "file": "apps/api/local_drama/api/routes/audit.py",
+        "line": 13,
+        "operation_id": "exportAuditProof",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/audit.py:listAuditEvents",
+        "file": "apps/api/local_drama/api/routes/audit.py",
+        "line": 37,
+        "operation_id": "listAuditEvents",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/automation.py:createAutomationClient",
+        "file": "apps/api/local_drama/api/routes/automation.py",
+        "line": 18,
+        "operation_id": "createAutomationClient",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/automation.py:createWebhookSubscription",
+        "file": "apps/api/local_drama/api/routes/automation.py",
+        "line": 26,
+        "operation_id": "createWebhookSubscription",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/automation.py:listWebhookSubscriptions",
+        "file": "apps/api/local_drama/api/routes/automation.py",
+        "line": 34,
+        "operation_id": "listWebhookSubscriptions",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/automation.py:deliverWebhookEvents",
+        "file": "apps/api/local_drama/api/routes/automation.py",
+        "line": 42,
+        "operation_id": "deliverWebhookEvents",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/automation.py:listWebhookDeliveries",
+        "file": "apps/api/local_drama/api/routes/automation.py",
+        "line": 50,
+        "operation_id": "listWebhookDeliveries",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/automation.py:retryWebhookDelivery",
+        "file": "apps/api/local_drama/api/routes/automation.py",
+        "line": 58,
+        "operation_id": "retryWebhookDelivery",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/automation_workflows.py:createAutomationWorkflow",
+        "file": "apps/api/local_drama/api/routes/automation_workflows.py",
+        "line": 25,
+        "operation_id": "createAutomationWorkflow",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/automation_workflows.py:createAutomationWorkflowFromTemplate",
+        "file": "apps/api/local_drama/api/routes/automation_workflows.py",
+        "line": 33,
+        "operation_id": "createAutomationWorkflowFromTemplate",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/automation_workflows.py:listAutomationWorkflowTemplates",
+        "file": "apps/api/local_drama/api/routes/automation_workflows.py",
+        "line": 41,
+        "operation_id": "listAutomationWorkflowTemplates",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/automation_workflows.py:listAutomationWorkflows",
+        "file": "apps/api/local_drama/api/routes/automation_workflows.py",
+        "line": 46,
+        "operation_id": "listAutomationWorkflows",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/automation_workflows.py:getAutomationWorkflow",
+        "file": "apps/api/local_drama/api/routes/automation_workflows.py",
+        "line": 54,
+        "operation_id": "getAutomationWorkflow",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/automation_workflows.py:planAutomationWorkflow",
+        "file": "apps/api/local_drama/api/routes/automation_workflows.py",
+        "line": 62,
+        "operation_id": "planAutomationWorkflow",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/automation_workflows.py:startAutomationWorkflowRun",
+        "file": "apps/api/local_drama/api/routes/automation_workflows.py",
+        "line": 70,
+        "operation_id": "startAutomationWorkflowRun",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/automation_workflows.py:listAutomationWorkflowRuns",
+        "file": "apps/api/local_drama/api/routes/automation_workflows.py",
+        "line": 83,
+        "operation_id": "listAutomationWorkflowRuns",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/automation_workflows.py:getAutomationWorkflowRun",
+        "file": "apps/api/local_drama/api/routes/automation_workflows.py",
+        "line": 91,
+        "operation_id": "getAutomationWorkflowRun",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/automation_workflows.py:stepAutomationWorkflowRun",
+        "file": "apps/api/local_drama/api/routes/automation_workflows.py",
+        "line": 99,
+        "operation_id": "stepAutomationWorkflowRun",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/automation_workflows.py:resumeAutomationWorkflowRun",
+        "file": "apps/api/local_drama/api/routes/automation_workflows.py",
+        "line": 107,
+        "operation_id": "resumeAutomationWorkflowRun",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/automation_workflows.py:pauseAutomationWorkflowRun",
+        "file": "apps/api/local_drama/api/routes/automation_workflows.py",
+        "line": 115,
+        "operation_id": "pauseAutomationWorkflowRun",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/automation_workflows.py:cancelAutomationWorkflowRun",
+        "file": "apps/api/local_drama/api/routes/automation_workflows.py",
+        "line": 123,
+        "operation_id": "cancelAutomationWorkflowRun",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/beat_replan.py:planSelectedBeatReplan",
+        "file": "apps/api/local_drama/api/routes/beat_replan.py",
+        "line": 21,
+        "operation_id": "planSelectedBeatReplan",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/beat_replan.py:applySelectedBeatReplan",
+        "file": "apps/api/local_drama/api/routes/beat_replan.py",
+        "line": 36,
+        "operation_id": "applySelectedBeatReplan",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/capacity.py:getCapacitySnapshot",
+        "file": "apps/api/local_drama/api/routes/capacity.py",
+        "line": 13,
+        "operation_id": "getCapacitySnapshot",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/character_identity_packs.py:listCharacterIdentityPacks",
+        "file": "apps/api/local_drama/api/routes/character_identity_packs.py",
+        "line": 48,
+        "operation_id": "listCharacterIdentityPacks",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/character_identity_packs.py:createCharacterIdentityPack",
+        "file": "apps/api/local_drama/api/routes/character_identity_packs.py",
+        "line": 56,
+        "operation_id": "createCharacterIdentityPack",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/character_identity_packs.py:getCharacterIdentityPack",
+        "file": "apps/api/local_drama/api/routes/character_identity_packs.py",
+        "line": 72,
+        "operation_id": "getCharacterIdentityPack",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/character_identity_packs.py:createCharacterIdentityPackVersion",
+        "file": "apps/api/local_drama/api/routes/character_identity_packs.py",
+        "line": 80,
+        "operation_id": "createCharacterIdentityPackVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/character_identity_packs.py:setCharacterIdentityPackSlot",
+        "file": "apps/api/local_drama/api/routes/character_identity_packs.py",
+        "line": 88,
+        "operation_id": "setCharacterIdentityPackSlot",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/character_identity_packs.py:removeCharacterIdentityPackSlot",
+        "file": "apps/api/local_drama/api/routes/character_identity_packs.py",
+        "line": 104,
+        "operation_id": "removeCharacterIdentityPackSlot",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/character_identity_packs.py:approveCharacterIdentityPackVersion",
+        "file": "apps/api/local_drama/api/routes/character_identity_packs.py",
+        "line": 112,
+        "operation_id": "approveCharacterIdentityPackVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/character_identity_packs.py:compareCharacterIdentityPackVersions",
+        "file": "apps/api/local_drama/api/routes/character_identity_packs.py",
+        "line": 120,
+        "operation_id": "compareCharacterIdentityPackVersions",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/character_identity_packs.py:getCharacterIdentityPackVersionImpact",
+        "file": "apps/api/local_drama/api/routes/character_identity_packs.py",
+        "line": 132,
+        "operation_id": "getCharacterIdentityPackVersionImpact",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/character_identity_packs.py:retireCharacterIdentityPackVersion",
+        "file": "apps/api/local_drama/api/routes/character_identity_packs.py",
+        "line": 140,
+        "operation_id": "retireCharacterIdentityPackVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/character_identity_packs.py:getCharacterIdentityPackVersion",
+        "file": "apps/api/local_drama/api/routes/character_identity_packs.py",
+        "line": 155,
+        "operation_id": "getCharacterIdentityPackVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/character_identity_packs.py:bindShotCharacterIdentityPack",
+        "file": "apps/api/local_drama/api/routes/character_identity_packs.py",
+        "line": 163,
+        "operation_id": "bindShotCharacterIdentityPack",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/character_identity_packs.py:getShotCharacterIdentityPacks",
+        "file": "apps/api/local_drama/api/routes/character_identity_packs.py",
+        "line": 177,
+        "operation_id": "getShotCharacterIdentityPacks",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/comfy_lab.py:getComfyLabStatus",
+        "file": "apps/api/local_drama/api/routes/comfy_lab.py",
+        "line": 25,
+        "operation_id": "getComfyLabStatus",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/comfy_lab.py:getComfyLabSession",
+        "file": "apps/api/local_drama/api/routes/comfy_lab.py",
+        "line": 30,
+        "operation_id": "getComfyLabSession",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/comfy_lab.py:discoverComfyLab",
+        "file": "apps/api/local_drama/api/routes/comfy_lab.py",
+        "line": 35,
+        "operation_id": "discoverComfyLab",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/comfy_lab.py:configureComfyLab",
+        "file": "apps/api/local_drama/api/routes/comfy_lab.py",
+        "line": 43,
+        "operation_id": "configureComfyLab",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/comfy_lab.py:startComfyLab",
+        "file": "apps/api/local_drama/api/routes/comfy_lab.py",
+        "line": 51,
+        "operation_id": "startComfyLab",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/comfy_lab.py:stopComfyLab",
+        "file": "apps/api/local_drama/api/routes/comfy_lab.py",
+        "line": 59,
+        "operation_id": "stopComfyLab",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/comfy_lab.py:restartComfyLab",
+        "file": "apps/api/local_drama/api/routes/comfy_lab.py",
+        "line": 67,
+        "operation_id": "restartComfyLab",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/comfy_lab.py:captureComfyLabWorkflow",
+        "file": "apps/api/local_drama/api/routes/comfy_lab.py",
+        "line": 75,
+        "operation_id": "captureComfyLabWorkflow",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/comfy_lab.py:listComfyLabCaptures",
+        "file": "apps/api/local_drama/api/routes/comfy_lab.py",
+        "line": 83,
+        "operation_id": "listComfyLabCaptures",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/comfy_lab.py:getComfyLabCapture",
+        "file": "apps/api/local_drama/api/routes/comfy_lab.py",
+        "line": 88,
+        "operation_id": "getComfyLabCapture",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/comfy_lab.py:promoteComfyLabCapture",
+        "file": "apps/api/local_drama/api/routes/comfy_lab.py",
+        "line": 96,
+        "operation_id": "promoteComfyLabCapture",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/comfy_lab.py:createComfyLabTestRun",
+        "file": "apps/api/local_drama/api/routes/comfy_lab.py",
+        "line": 109,
+        "operation_id": "createComfyLabTestRun",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/configuration.py:listDeliveryPresets",
+        "file": "apps/api/local_drama/api/routes/configuration.py",
+        "line": 14,
+        "operation_id": "listDeliveryPresets",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/configuration.py:getProjectConfiguration",
+        "file": "apps/api/local_drama/api/routes/configuration.py",
+        "line": 22,
+        "operation_id": "getProjectConfiguration",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/configuration.py:bindProductionPlan",
+        "file": "apps/api/local_drama/api/routes/configuration.py",
+        "line": 30,
+        "operation_id": "bindProductionPlan",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/configuration.py:createDeliveryTarget",
+        "file": "apps/api/local_drama/api/routes/configuration.py",
+        "line": 38,
+        "operation_id": "createDeliveryTarget",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/configuration.py:createDeliveryTargetFromPreset",
+        "file": "apps/api/local_drama/api/routes/configuration.py",
+        "line": 50,
+        "operation_id": "createDeliveryTargetFromPreset",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/configuration.py:createDeliveryTargetVersion",
+        "file": "apps/api/local_drama/api/routes/configuration.py",
+        "line": 62,
+        "operation_id": "createDeliveryTargetVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/configuration.py:selectDeliveryTargetVersion",
+        "file": "apps/api/local_drama/api/routes/configuration.py",
+        "line": 78,
+        "operation_id": "selectDeliveryTargetVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/creative_entries.py:listCreativeEntries",
+        "file": "apps/api/local_drama/api/routes/creative_entries.py",
+        "line": 18,
+        "operation_id": "listCreativeEntries",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/creative_entries.py:createCreativeEntry",
+        "file": "apps/api/local_drama/api/routes/creative_entries.py",
+        "line": 23,
+        "operation_id": "createCreativeEntry",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/creative_entries.py:getCreativeEntry",
+        "file": "apps/api/local_drama/api/routes/creative_entries.py",
+        "line": 31,
+        "operation_id": "getCreativeEntry",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/creative_entries.py:createCreativeEntryRevision",
+        "file": "apps/api/local_drama/api/routes/creative_entries.py",
+        "line": 39,
+        "operation_id": "createCreativeEntryRevision",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/creative_entries.py:compareCreativeEntryRevisions",
+        "file": "apps/api/local_drama/api/routes/creative_entries.py",
+        "line": 47,
+        "operation_id": "compareCreativeEntryRevisions",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/creative_entries.py:restoreCreativeEntryRevision",
+        "file": "apps/api/local_drama/api/routes/creative_entries.py",
+        "line": 55,
+        "operation_id": "restoreCreativeEntryRevision",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/diagnostics.py:getDiagnostics",
+        "file": "apps/api/local_drama/api/routes/diagnostics.py",
+        "line": 13,
+        "operation_id": "getDiagnostics",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/diagnostics.py:runDiagnostics",
+        "file": "apps/api/local_drama/api/routes/diagnostics.py",
+        "line": 19,
+        "operation_id": "runDiagnostics",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/diagnostics.py:getLatestDiagnostics",
+        "file": "apps/api/local_drama/api/routes/diagnostics.py",
+        "line": 24,
+        "operation_id": "getLatestDiagnostics",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/diagnostics.py:dryRunDiagnosticFix",
+        "file": "apps/api/local_drama/api/routes/diagnostics.py",
+        "line": 29,
+        "operation_id": "dryRunDiagnosticFix",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/dialogue.py:createDialogueLine",
+        "file": "apps/api/local_drama/api/routes/dialogue.py",
+        "line": 35,
+        "operation_id": "createDialogueLine",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/dialogue.py:listDialogueLines",
+        "file": "apps/api/local_drama/api/routes/dialogue.py",
+        "line": 43,
+        "operation_id": "listDialogueLines",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/dialogue.py:getDialogueLine",
+        "file": "apps/api/local_drama/api/routes/dialogue.py",
+        "line": 51,
+        "operation_id": "getDialogueLine",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/dialogue.py:createDialogueTextRevision",
+        "file": "apps/api/local_drama/api/routes/dialogue.py",
+        "line": 59,
+        "operation_id": "createDialogueTextRevision",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/dialogue.py:createVoiceProfileVersion",
+        "file": "apps/api/local_drama/api/routes/dialogue.py",
+        "line": 67,
+        "operation_id": "createVoiceProfileVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/dialogue.py:listVoiceProfileVersions",
+        "file": "apps/api/local_drama/api/routes/dialogue.py",
+        "line": 75,
+        "operation_id": "listVoiceProfileVersions",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/dialogue.py:discoverLocalSapiVoices",
+        "file": "apps/api/local_drama/api/routes/dialogue.py",
+        "line": 83,
+        "operation_id": "discoverLocalSapiVoices",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/dialogue.py:publishLocalSapiTTSProfile",
+        "file": "apps/api/local_drama/api/routes/dialogue.py",
+        "line": 88,
+        "operation_id": "publishLocalSapiTTSProfile",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/dialogue.py:registerTTSCandidate",
+        "file": "apps/api/local_drama/api/routes/dialogue.py",
+        "line": 96,
+        "operation_id": "registerTTSCandidate",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/dialogue.py:selectTTSCandidate",
+        "file": "apps/api/local_drama/api/routes/dialogue.py",
+        "line": 104,
+        "operation_id": "selectTTSCandidate",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/dialogue.py:submitTTSJob",
+        "file": "apps/api/local_drama/api/routes/dialogue.py",
+        "line": 112,
+        "operation_id": "submitTTSJob",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/dialogue.py:finalizeTTSJob",
+        "file": "apps/api/local_drama/api/routes/dialogue.py",
+        "line": 125,
+        "operation_id": "finalizeTTSJob",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/dialogue.py:bindCharacterVoice",
+        "file": "apps/api/local_drama/api/routes/dialogue.py",
+        "line": 133,
+        "operation_id": "bindCharacterVoice",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/dialogue.py:listCharacterVoiceBindings",
+        "file": "apps/api/local_drama/api/routes/dialogue.py",
+        "line": 141,
+        "operation_id": "listCharacterVoiceBindings",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/dialogue.py:unbindCharacterVoice",
+        "file": "apps/api/local_drama/api/routes/dialogue.py",
+        "line": 149,
+        "operation_id": "unbindCharacterVoice",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/dialogue.py:submitEpisodeTTSBatch",
+        "file": "apps/api/local_drama/api/routes/dialogue.py",
+        "line": 157,
+        "operation_id": "submitEpisodeTTSBatch",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/director_desk.py:getEpisodeTimelineSelections",
+        "file": "apps/api/local_drama/api/routes/director_desk.py",
+        "line": 16,
+        "operation_id": "getEpisodeTimelineSelections",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/director_recipes.py:listDirectorRecipes",
+        "file": "apps/api/local_drama/api/routes/director_recipes.py",
+        "line": 30,
+        "operation_id": "listDirectorRecipes",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/director_recipes.py:getDirectorRecipe",
+        "file": "apps/api/local_drama/api/routes/director_recipes.py",
+        "line": 38,
+        "operation_id": "getDirectorRecipe",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/director_recipes.py:createDirectorRecipe",
+        "file": "apps/api/local_drama/api/routes/director_recipes.py",
+        "line": 46,
+        "operation_id": "createDirectorRecipe",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/director_recipes.py:createDirectorRecipeVersion",
+        "file": "apps/api/local_drama/api/routes/director_recipes.py",
+        "line": 54,
+        "operation_id": "createDirectorRecipeVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/director_recipes.py:getProjectDirectorRecipeBinding",
+        "file": "apps/api/local_drama/api/routes/director_recipes.py",
+        "line": 62,
+        "operation_id": "getProjectDirectorRecipeBinding",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/director_recipes.py:bindProjectDirectorRecipe",
+        "file": "apps/api/local_drama/api/routes/director_recipes.py",
+        "line": 70,
+        "operation_id": "bindProjectDirectorRecipe",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/effective_configuration.py:resolveEffectiveConfiguration",
+        "file": "apps/api/local_drama/api/routes/effective_configuration.py",
+        "line": 14,
+        "operation_id": "resolveEffectiveConfiguration",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/experiments.py:createGenerationIntent",
+        "file": "apps/api/local_drama/api/routes/experiments.py",
+        "line": 20,
+        "operation_id": "createGenerationIntent",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/experiments.py:listGenerationIntents",
+        "file": "apps/api/local_drama/api/routes/experiments.py",
+        "line": 28,
+        "operation_id": "listGenerationIntents",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/experiments.py:getGenerationIntent",
+        "file": "apps/api/local_drama/api/routes/experiments.py",
+        "line": 33,
+        "operation_id": "getGenerationIntent",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/experiments.py:createGenerationExperiment",
+        "file": "apps/api/local_drama/api/routes/experiments.py",
+        "line": 41,
+        "operation_id": "createGenerationExperiment",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/experiments.py:getGenerationExperiment",
+        "file": "apps/api/local_drama/api/routes/experiments.py",
+        "line": 49,
+        "operation_id": "getGenerationExperiment",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/experiments.py:estimateGenerationExperiment",
+        "file": "apps/api/local_drama/api/routes/experiments.py",
+        "line": 57,
+        "operation_id": "estimateGenerationExperiment",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/experiments.py:confirmGenerationExperiment",
+        "file": "apps/api/local_drama/api/routes/experiments.py",
+        "line": 65,
+        "operation_id": "confirmGenerationExperiment",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/experiments.py:expandGenerationExperiment",
+        "file": "apps/api/local_drama/api/routes/experiments.py",
+        "line": 80,
+        "operation_id": "expandGenerationExperiment",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/experiments.py:cancelExperimentCell",
+        "file": "apps/api/local_drama/api/routes/experiments.py",
+        "line": 88,
+        "operation_id": "cancelExperimentCell",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/experiments.py:cancelRemainingGenerationExperiment",
+        "file": "apps/api/local_drama/api/routes/experiments.py",
+        "line": 96,
+        "operation_id": "cancelRemainingGenerationExperiment",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:pickLocalModelFile",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 52,
+        "operation_id": "pickLocalModelFile",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:pickLocalDocumentFile",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 64,
+        "operation_id": "pickLocalDocumentFile",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:listModelLibraryRoots",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 76,
+        "operation_id": "listModelLibraryRoots",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:scanLocalModelRegistry",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 83,
+        "operation_id": "scanLocalModelRegistry",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:getG6Readiness",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 98,
+        "operation_id": "getG6Readiness",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:planG6I2VProbe",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 106,
+        "operation_id": "planG6I2VProbe",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:prepareG6I2VEvidenceKeyframe",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 127,
+        "operation_id": "prepareG6I2VEvidenceKeyframe",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:submitG6I2VEvidenceProbe",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 146,
+        "operation_id": "submitG6I2VEvidenceProbe",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:finalizeG6I2VEvidenceProbe",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 162,
+        "operation_id": "finalizeG6I2VEvidenceProbe",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:planG6T2IProbe",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 172,
+        "operation_id": "planG6T2IProbe",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:submitG6T2IEvidenceProbe",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 189,
+        "operation_id": "submitG6T2IEvidenceProbe",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:finalizeG6T2IEvidenceProbe",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 205,
+        "operation_id": "finalizeG6T2IEvidenceProbe",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:getG7Readiness",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 215,
+        "operation_id": "getG7Readiness",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:getG8Readiness",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 223,
+        "operation_id": "getG8Readiness",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:getG9Readiness",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 231,
+        "operation_id": "getG9Readiness",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:getModelCompatibility",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 239,
+        "operation_id": "getModelCompatibility",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:registerLocalModelReference",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 247,
+        "operation_id": "registerLocalModelReference",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:runG7NetworkE2E",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 262,
+        "operation_id": "runG7NetworkE2E",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:authorizeWorkspaceAsset",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 270,
+        "operation_id": "authorizeWorkspaceAsset",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:listProjectAssetGrantCandidates",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 278,
+        "operation_id": "listProjectAssetGrantCandidates",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:revokeWorkspaceAssetAuthorization",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 286,
+        "operation_id": "revokeWorkspaceAssetAuthorization",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:listWorkspaceAssetAuthorizations",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 294,
+        "operation_id": "listWorkspaceAssetAuthorizations",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:listProjectAssetGrants",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 302,
+        "operation_id": "listProjectAssetGrants",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:createProjectAssetGrant",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 310,
+        "operation_id": "createProjectAssetGrant",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:revokeProjectAssetGrant",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 318,
+        "operation_id": "revokeProjectAssetGrant",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:createBrandKit",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 326,
+        "operation_id": "createBrandKit",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:listBrandControls",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 334,
+        "operation_id": "listBrandControls",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:createWatermarkProfile",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 343,
+        "operation_id": "createWatermarkProfile",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:createCompliancePolicy",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 351,
+        "operation_id": "createCompliancePolicy",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:createModelCompatibilityReport",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 359,
+        "operation_id": "createModelCompatibilityReport",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/gates.py:importModelLicenseEvidence",
+        "file": "apps/api/local_drama/api/routes/gates.py",
+        "line": 370,
+        "operation_id": "importModelLicenseEvidence",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/generation_preferences.py:getGenerationPreferences",
+        "file": "apps/api/local_drama/api/routes/generation_preferences.py",
+        "line": 35,
+        "operation_id": "getGenerationPreferences",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/generation_preferences.py:putGenerationPreference",
+        "file": "apps/api/local_drama/api/routes/generation_preferences.py",
+        "line": 54,
+        "operation_id": "putGenerationPreference",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/health.py:bootstrapLocalSession",
+        "file": "apps/api/local_drama/api/routes/health.py",
+        "line": 61,
+        "operation_id": "bootstrapLocalSession",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/health.py:getClientCapabilities",
+        "file": "apps/api/local_drama/api/routes/health.py",
+        "line": 75,
+        "operation_id": "getClientCapabilities",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/health.py:systemContract",
+        "file": "apps/api/local_drama/api/routes/health.py",
+        "line": 161,
+        "operation_id": "systemContract",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/imports.py:importScriptDocument",
+        "file": "apps/api/local_drama/api/routes/imports.py",
+        "line": 29,
+        "operation_id": "importScriptDocument",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/imports.py:uploadScriptDocument",
+        "file": "apps/api/local_drama/api/routes/imports.py",
+        "line": 37,
+        "operation_id": "uploadScriptDocument",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/imports.py:getImportSession",
+        "file": "apps/api/local_drama/api/routes/imports.py",
+        "line": 59,
+        "operation_id": "getImportSession",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/imports.py:getImportSessionIssues",
+        "file": "apps/api/local_drama/api/routes/imports.py",
+        "line": 67,
+        "operation_id": "getImportSessionIssues",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/imports.py:commitImportSession",
+        "file": "apps/api/local_drama/api/routes/imports.py",
+        "line": 92,
+        "operation_id": "commitImportSession",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/imports.py:requestScriptBreakdown",
+        "file": "apps/api/local_drama/api/routes/imports.py",
+        "line": 100,
+        "operation_id": "requestScriptBreakdown",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/imports.py:applyScriptBreakdownDraft",
+        "file": "apps/api/local_drama/api/routes/imports.py",
+        "line": 124,
+        "operation_id": "applyScriptBreakdownDraft",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/imports.py:reviseScriptBreakdownDraftScene",
+        "file": "apps/api/local_drama/api/routes/imports.py",
+        "line": 140,
+        "operation_id": "reviseScriptBreakdownDraftScene",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/jobs.py:createJob",
+        "file": "apps/api/local_drama/api/routes/jobs.py",
+        "line": 35,
+        "operation_id": "createJob",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/jobs.py:listJobs",
+        "file": "apps/api/local_drama/api/routes/jobs.py",
+        "line": 44,
+        "operation_id": "listJobs",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/jobs.py:getJob",
+        "file": "apps/api/local_drama/api/routes/jobs.py",
+        "line": 49,
+        "operation_id": "getJob",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/jobs.py:listJobAttempts",
+        "file": "apps/api/local_drama/api/routes/jobs.py",
+        "line": 57,
+        "operation_id": "listJobAttempts",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/jobs.py:listJobAttemptLogs",
+        "file": "apps/api/local_drama/api/routes/jobs.py",
+        "line": 65,
+        "operation_id": "listJobAttemptLogs",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/jobs.py:claimJob",
+        "file": "apps/api/local_drama/api/routes/jobs.py",
+        "line": 73,
+        "operation_id": "claimJob",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/jobs.py:heartbeatJobAttempt",
+        "file": "apps/api/local_drama/api/routes/jobs.py",
+        "line": 81,
+        "operation_id": "heartbeatJobAttempt",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/jobs.py:completeJobAttempt",
+        "file": "apps/api/local_drama/api/routes/jobs.py",
+        "line": 93,
+        "operation_id": "completeJobAttempt",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/jobs.py:cancelJob",
+        "file": "apps/api/local_drama/api/routes/jobs.py",
+        "line": 103,
+        "operation_id": "cancelJob",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/jobs.py:retryJob",
+        "file": "apps/api/local_drama/api/routes/jobs.py",
+        "line": 111,
+        "operation_id": "retryJob",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/jobs.py:cloneJob",
+        "file": "apps/api/local_drama/api/routes/jobs.py",
+        "line": 119,
+        "operation_id": "cloneJob",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/jobs.py:reconcileJobs",
+        "file": "apps/api/local_drama/api/routes/jobs.py",
+        "line": 127,
+        "operation_id": "reconcileJobs",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/jobs.py:registerJobArtifact",
+        "file": "apps/api/local_drama/api/routes/jobs.py",
+        "line": 135,
+        "operation_id": "registerJobArtifact",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/jobs.py:promoteJobArtifactToMedia",
+        "file": "apps/api/local_drama/api/routes/jobs.py",
+        "line": 143,
+        "operation_id": "promoteJobArtifactToMedia",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/jobs.py:streamEvents",
+        "file": "apps/api/local_drama/api/routes/jobs.py",
+        "line": 159,
+        "operation_id": "streamEvents",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/jobs.py:deliverOutboxEvents",
+        "file": "apps/api/local_drama/api/routes/jobs.py",
+        "line": 178,
+        "operation_id": "deliverOutboxEvents",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/llm.py:getLocalLLMStatus",
+        "file": "apps/api/local_drama/api/routes/llm.py",
+        "line": 26,
+        "operation_id": "getLocalLLMStatus",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/llm.py:probeLocalLLM",
+        "file": "apps/api/local_drama/api/routes/llm.py",
+        "line": 40,
+        "operation_id": "probeLocalLLM",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/llm.py:submitLocalLLMProbe",
+        "file": "apps/api/local_drama/api/routes/llm.py",
+        "line": 86,
+        "operation_id": "submitLocalLLMProbe",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/llm.py:getLocalLLMProbeResult",
+        "file": "apps/api/local_drama/api/routes/llm.py",
+        "line": 107,
+        "operation_id": "getLocalLLMProbeResult",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/llm.py:syncLocalLLMProfile",
+        "file": "apps/api/local_drama/api/routes/llm.py",
+        "line": 115,
+        "operation_id": "syncLocalLLMProfile",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/llm.py:publishLocalLLMProfile",
+        "file": "apps/api/local_drama/api/routes/llm.py",
+        "line": 137,
+        "operation_id": "publishLocalLLMProfile",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/llm.py:expandVideoPrompt",
+        "file": "apps/api/local_drama/api/routes/llm.py",
+        "line": 155,
+        "operation_id": "expandVideoPrompt",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/llm.py:breakdownWithLocalLLM",
+        "file": "apps/api/local_drama/api/routes/llm.py",
+        "line": 177,
+        "operation_id": "breakdownWithLocalLLM",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/llm.py:listScriptBreakdownDrafts",
+        "file": "apps/api/local_drama/api/routes/llm.py",
+        "line": 199,
+        "operation_id": "listScriptBreakdownDrafts",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/media.py:exportEpisodeContactSheet",
+        "file": "apps/api/local_drama/api/routes/media.py",
+        "line": 29,
+        "operation_id": "exportEpisodeContactSheet",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/media.py:downloadEpisodeContactSheet",
+        "file": "apps/api/local_drama/api/routes/media.py",
+        "line": 38,
+        "operation_id": "downloadEpisodeContactSheet",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/media.py:importMedia",
+        "file": "apps/api/local_drama/api/routes/media.py",
+        "line": 47,
+        "operation_id": "importMedia",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/media.py:listProjectMediaCatalogue",
+        "file": "apps/api/local_drama/api/routes/media.py",
+        "line": 74,
+        "operation_id": "listProjectMediaCatalogue",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/media.py:uploadProjectMedia",
+        "file": "apps/api/local_drama/api/routes/media.py",
+        "line": 88,
+        "operation_id": "uploadProjectMedia",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/media.py:getMediaVersion",
+        "file": "apps/api/local_drama/api/routes/media.py",
+        "line": 138,
+        "operation_id": "getMediaVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/media.py:repairMediaIntegrity",
+        "file": "apps/api/local_drama/api/routes/media.py",
+        "line": 146,
+        "operation_id": "repairMediaIntegrity",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/media.py:createKeyframeCandidate",
+        "file": "apps/api/local_drama/api/routes/media.py",
+        "line": 158,
+        "operation_id": "createKeyframeCandidate",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/media.py:createMotionControl",
+        "file": "apps/api/local_drama/api/routes/media.py",
+        "line": 168,
+        "operation_id": "createMotionControl",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/media.py:listMotionControls",
+        "file": "apps/api/local_drama/api/routes/media.py",
+        "line": 184,
+        "operation_id": "listMotionControls",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/media.py:getMediaAsset",
+        "file": "apps/api/local_drama/api/routes/media.py",
+        "line": 196,
+        "operation_id": "getMediaAsset",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/media.py:listMediaAssetVersions",
+        "file": "apps/api/local_drama/api/routes/media.py",
+        "line": 204,
+        "operation_id": "listMediaAssetVersions",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/media.py:clearMediaSelection",
+        "file": "apps/api/local_drama/api/routes/media.py",
+        "line": 212,
+        "operation_id": "clearMediaSelection",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/media.py:getMediaContent",
+        "file": "apps/api/local_drama/api/routes/media.py",
+        "line": 327,
+        "operation_id": "getMediaContent",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/media.py:getMediaProxy",
+        "file": "apps/api/local_drama/api/routes/media.py",
+        "line": 345,
+        "operation_id": "getMediaProxy",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/media.py:getMediaThumbnail",
+        "file": "apps/api/local_drama/api/routes/media.py",
+        "line": 355,
+        "operation_id": "getMediaThumbnail",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/media.py:getMediaFilmstrip",
+        "file": "apps/api/local_drama/api/routes/media.py",
+        "line": 364,
+        "operation_id": "getMediaFilmstrip",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/media.py:getMediaWaveform",
+        "file": "apps/api/local_drama/api/routes/media.py",
+        "line": 373,
+        "operation_id": "getMediaWaveform",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/media.py:submitMediaDerivative",
+        "file": "apps/api/local_drama/api/routes/media.py",
+        "line": 382,
+        "operation_id": "submitMediaDerivative",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/media.py:backfillProjectMediaDerivatives",
+        "file": "apps/api/local_drama/api/routes/media.py",
+        "line": 396,
+        "operation_id": "backfillProjectMediaDerivatives",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/one_sentence_video_runs.py:planOneSentenceVideoRun",
+        "file": "apps/api/local_drama/api/routes/one_sentence_video_runs.py",
+        "line": 24,
+        "operation_id": "planOneSentenceVideoRun",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/one_sentence_video_runs.py:listOneSentenceVideoRuns",
+        "file": "apps/api/local_drama/api/routes/one_sentence_video_runs.py",
+        "line": 36,
+        "operation_id": "listOneSentenceVideoRuns",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/one_sentence_video_runs.py:getOneSentenceVideoRun",
+        "file": "apps/api/local_drama/api/routes/one_sentence_video_runs.py",
+        "line": 44,
+        "operation_id": "getOneSentenceVideoRun",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/one_sentence_video_runs.py:commitOneSentenceVideoRun",
+        "file": "apps/api/local_drama/api/routes/one_sentence_video_runs.py",
+        "line": 52,
+        "operation_id": "commitOneSentenceVideoRun",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/one_sentence_video_runs.py:resumeOneSentenceVideoRun",
+        "file": "apps/api/local_drama/api/routes/one_sentence_video_runs.py",
+        "line": 60,
+        "operation_id": "resumeOneSentenceVideoRun",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/one_sentence_video_runs.py:cancelOneSentenceVideoRun",
+        "file": "apps/api/local_drama/api/routes/one_sentence_video_runs.py",
+        "line": 68,
+        "operation_id": "cancelOneSentenceVideoRun",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/one_sentence_video_runs.py:retryOneSentenceVideoRun",
+        "file": "apps/api/local_drama/api/routes/one_sentence_video_runs.py",
+        "line": 76,
+        "operation_id": "retryOneSentenceVideoRun",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/one_sentence_video_runs.py:rerollOneSentenceVideoImages",
+        "file": "apps/api/local_drama/api/routes/one_sentence_video_runs.py",
+        "line": 84,
+        "operation_id": "rerollOneSentenceVideoImages",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/one_sentence_video_runs.py:selectOneSentenceVideoImageCandidate",
+        "file": "apps/api/local_drama/api/routes/one_sentence_video_runs.py",
+        "line": 104,
+        "operation_id": "selectOneSentenceVideoImageCandidate",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/platform.py:getPlatformCapabilities",
+        "file": "apps/api/local_drama/api/routes/platform.py",
+        "line": 9,
+        "operation_id": "getPlatformCapabilities",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/profiles.py:getModelManifest",
+        "file": "apps/api/local_drama/api/routes/profiles.py",
+        "line": 21,
+        "operation_id": "getModelManifest",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/profiles.py:listProfiles",
+        "file": "apps/api/local_drama/api/routes/profiles.py",
+        "line": 29,
+        "operation_id": "listProfiles",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/profiles.py:getProfileVersion",
+        "file": "apps/api/local_drama/api/routes/profiles.py",
+        "line": 37,
+        "operation_id": "getProfileVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/profiles.py:resolveProfileCameraPlan",
+        "file": "apps/api/local_drama/api/routes/profiles.py",
+        "line": 45,
+        "operation_id": "resolveProfileCameraPlan",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/profiles.py:deriveProfileContractVersion",
+        "file": "apps/api/local_drama/api/routes/profiles.py",
+        "line": 55,
+        "operation_id": "deriveProfileContractVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/profiles.py:validateProfileContractVersion",
+        "file": "apps/api/local_drama/api/routes/profiles.py",
+        "line": 74,
+        "operation_id": "validateProfileContractVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/profiles.py:publishProfileContractVersion",
+        "file": "apps/api/local_drama/api/routes/profiles.py",
+        "line": 82,
+        "operation_id": "publishProfileContractVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/profiles.py:validateProfileCompatibility",
+        "file": "apps/api/local_drama/api/routes/profiles.py",
+        "line": 90,
+        "operation_id": "validateProfileCompatibility",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/profiles.py:retireProfileVersion",
+        "file": "apps/api/local_drama/api/routes/profiles.py",
+        "line": 98,
+        "operation_id": "retireProfileVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/profiles.py:syncProfiles",
+        "file": "apps/api/local_drama/api/routes/profiles.py",
+        "line": 106,
+        "operation_id": "syncProfiles",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/profiles.py:publishProfileVersionFromEvidence",
+        "file": "apps/api/local_drama/api/routes/profiles.py",
+        "line": 116,
+        "operation_id": "publishProfileVersionFromEvidence",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/profiles.py:bindProjectProfile",
+        "file": "apps/api/local_drama/api/routes/profiles.py",
+        "line": 132,
+        "operation_id": "bindProjectProfile",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/project_packages.py:listProjectPackageInbox",
+        "file": "apps/api/local_drama/api/routes/project_packages.py",
+        "line": 34,
+        "operation_id": "listProjectPackageInbox",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/project_packages.py:uploadProjectPackage",
+        "file": "apps/api/local_drama/api/routes/project_packages.py",
+        "line": 45,
+        "operation_id": "uploadProjectPackage",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/project_packages.py:stageProjectPackage",
+        "file": "apps/api/local_drama/api/routes/project_packages.py",
+        "line": 58,
+        "operation_id": "stageProjectPackage",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/project_packages.py:dryRunStagedProjectPackage",
+        "file": "apps/api/local_drama/api/routes/project_packages.py",
+        "line": 66,
+        "operation_id": "dryRunStagedProjectPackage",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/project_packages.py:commitStagedProjectPackage",
+        "file": "apps/api/local_drama/api/routes/project_packages.py",
+        "line": 74,
+        "operation_id": "commitStagedProjectPackage",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:listProjects",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 52,
+        "operation_id": "listProjects",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:createProject",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 60,
+        "operation_id": "createProject",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:planProjectCreation",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 93,
+        "operation_id": "planProjectCreation",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:getProject",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 121,
+        "operation_id": "getProject",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:listProjectLocalResources",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 129,
+        "operation_id": "listProjectLocalResources",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:uploadProjectLocalResource",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 142,
+        "operation_id": "uploadProjectLocalResource",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:updateProject",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 159,
+        "operation_id": "updateProject",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:activateProject",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 167,
+        "operation_id": "activateProject",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:pauseProject",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 175,
+        "operation_id": "pauseProject",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:archiveProject",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 183,
+        "operation_id": "archiveProject",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:copyProjectTemplate",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 191,
+        "operation_id": "copyProjectTemplate",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:exportProjectPackage",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 199,
+        "operation_id": "exportProjectPackage",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:dryRunProjectPackage",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 207,
+        "operation_id": "dryRunProjectPackage",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:downloadProjectPackage",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 215,
+        "operation_id": "downloadProjectPackage",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:restoreProject",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 224,
+        "operation_id": "restoreProject",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:projectHealth",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 232,
+        "operation_id": "projectHealth",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:listSeasons",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 301,
+        "operation_id": "listSeasons",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:appendProjectEpisode",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 306,
+        "operation_id": "appendProjectEpisode",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:getProjectEpisodeCatalog",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 324,
+        "operation_id": "getProjectEpisodeCatalog",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:getProjectCreatorSetup",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 332,
+        "operation_id": "getProjectCreatorSetup",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:listProjectScenes",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 340,
+        "operation_id": "listProjectScenes",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:createProjectScene",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 345,
+        "operation_id": "createProjectScene",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:listEpisodes",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 353,
+        "operation_id": "listEpisodes",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:getEpisode",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 358,
+        "operation_id": "getEpisode",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:listEpisodeSceneRanges",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 366,
+        "operation_id": "listEpisodeSceneRanges",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:bindEpisodeSceneRange",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 374,
+        "operation_id": "bindEpisodeSceneRange",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:reorderEpisode",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 386,
+        "operation_id": "reorderEpisode",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:listShots",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 399,
+        "operation_id": "listShots",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:getStoryboardWorkspace",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 404,
+        "operation_id": "getStoryboardWorkspace",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:planStoryboardBatch",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 412,
+        "operation_id": "planStoryboardBatch",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:commitStoryboardBatch",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 420,
+        "operation_id": "commitStoryboardBatch",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:getShot",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 430,
+        "operation_id": "getShot",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:createShot",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 438,
+        "operation_id": "createShot",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/projects.py:rebuildProjectThumbnails",
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "line": 447,
+        "operation_id": "rebuildProjectThumbnails",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/prompts.py:createPrompt",
+        "file": "apps/api/local_drama/api/routes/prompts.py",
+        "line": 18,
+        "operation_id": "createPrompt",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/prompts.py:listPrompts",
+        "file": "apps/api/local_drama/api/routes/prompts.py",
+        "line": 26,
+        "operation_id": "listPrompts",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/prompts.py:branchPromptRevision",
+        "file": "apps/api/local_drama/api/routes/prompts.py",
+        "line": 31,
+        "operation_id": "branchPromptRevision",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/prompts.py:getPromptRevision",
+        "file": "apps/api/local_drama/api/routes/prompts.py",
+        "line": 39,
+        "operation_id": "getPromptRevision",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/provider_connections.py:listProviderConnections",
+        "file": "apps/api/local_drama/api/routes/provider_connections.py",
+        "line": 27,
+        "operation_id": "listProviderConnections",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/provider_connections.py:createProviderConnection",
+        "file": "apps/api/local_drama/api/routes/provider_connections.py",
+        "line": 35,
+        "operation_id": "createProviderConnection",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/provider_connections.py:getProviderConnection",
+        "file": "apps/api/local_drama/api/routes/provider_connections.py",
+        "line": 43,
+        "operation_id": "getProviderConnection",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/provider_connections.py:updateProviderConnection",
+        "file": "apps/api/local_drama/api/routes/provider_connections.py",
+        "line": 51,
+        "operation_id": "updateProviderConnection",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/provider_connections.py:revealProviderSecret",
+        "file": "apps/api/local_drama/api/routes/provider_connections.py",
+        "line": 59,
+        "operation_id": "revealProviderSecret",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/provider_connections.py:replaceProviderSecret",
+        "file": "apps/api/local_drama/api/routes/provider_connections.py",
+        "line": 69,
+        "operation_id": "replaceProviderSecret",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/provider_connections.py:deleteProviderSecret",
+        "file": "apps/api/local_drama/api/routes/provider_connections.py",
+        "line": 77,
+        "operation_id": "deleteProviderSecret",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/provider_connections.py:deleteProviderConnection",
+        "file": "apps/api/local_drama/api/routes/provider_connections.py",
+        "line": 85,
+        "operation_id": "deleteProviderConnection",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/provider_connections.py:probeProviderConnection",
+        "file": "apps/api/local_drama/api/routes/provider_connections.py",
+        "line": 93,
+        "operation_id": "probeProviderConnection",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/qc_policies.py:getQcPolicies",
+        "file": "apps/api/local_drama/api/routes/qc_policies.py",
+        "line": 35,
+        "operation_id": "getQcPolicies",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/qc_policies.py:putQcPolicy",
+        "file": "apps/api/local_drama/api/routes/qc_policies.py",
+        "line": 51,
+        "operation_id": "putQcPolicy",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/qc_policies.py:decideVariantQcDisposition",
+        "file": "apps/api/local_drama/api/routes/qc_policies.py",
+        "line": 59,
+        "operation_id": "decideVariantQcDisposition",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/qc_policies.py:attachVariantQcChild",
+        "file": "apps/api/local_drama/api/routes/qc_policies.py",
+        "line": 67,
+        "operation_id": "attachVariantQcChild",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/reviews.py:listReviewTemplates",
+        "file": "apps/api/local_drama/api/routes/reviews.py",
+        "line": 21,
+        "operation_id": "listReviewTemplates",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/reviews.py:createReviewTemplateVersion",
+        "file": "apps/api/local_drama/api/routes/reviews.py",
+        "line": 26,
+        "operation_id": "createReviewTemplateVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/reviews.py:getReviewInbox",
+        "file": "apps/api/local_drama/api/routes/reviews.py",
+        "line": 40,
+        "operation_id": "getReviewInbox",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/reviews.py:previewMediaApprovalImpact",
+        "file": "apps/api/local_drama/api/routes/reviews.py",
+        "line": 73,
+        "operation_id": "previewMediaApprovalImpact",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/reviews.py:listReviews",
+        "file": "apps/api/local_drama/api/routes/reviews.py",
+        "line": 81,
+        "operation_id": "listReviews",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/reviews.py:runMachineCheck",
+        "file": "apps/api/local_drama/api/routes/reviews.py",
+        "line": 86,
+        "operation_id": "runMachineCheck",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/search.py:searchAll",
+        "file": "apps/api/local_drama/api/routes/search.py",
+        "line": 16,
+        "operation_id": "searchAll",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/search.py:rebuildSearch",
+        "file": "apps/api/local_drama/api/routes/search.py",
+        "line": 21,
+        "operation_id": "rebuildSearch",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/shot_editing.py:getShotEditingContext",
+        "file": "apps/api/local_drama/api/routes/shot_editing.py",
+        "line": 18,
+        "operation_id": "getShotEditingContext",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/shot_editing.py:planShotEdit",
+        "file": "apps/api/local_drama/api/routes/shot_editing.py",
+        "line": 26,
+        "operation_id": "planShotEdit",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/shot_editing.py:commitShotEdit",
+        "file": "apps/api/local_drama/api/routes/shot_editing.py",
+        "line": 36,
+        "operation_id": "commitShotEdit",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/shot_groups.py:getShotGroupWorkspace",
+        "file": "apps/api/local_drama/api/routes/shot_groups.py",
+        "line": 25,
+        "operation_id": "getShotGroupWorkspace",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/shot_groups.py:assignShotScene",
+        "file": "apps/api/local_drama/api/routes/shot_groups.py",
+        "line": 33,
+        "operation_id": "assignShotScene",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/shot_groups.py:createShotGroup",
+        "file": "apps/api/local_drama/api/routes/shot_groups.py",
+        "line": 43,
+        "operation_id": "createShotGroup",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/shot_groups.py:updateShotGroup",
+        "file": "apps/api/local_drama/api/routes/shot_groups.py",
+        "line": 53,
+        "operation_id": "updateShotGroup",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/shot_groups.py:archiveShotGroup",
+        "file": "apps/api/local_drama/api/routes/shot_groups.py",
+        "line": 63,
+        "operation_id": "archiveShotGroup",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/shot_groups.py:replaceShotGroupMembers",
+        "file": "apps/api/local_drama/api/routes/shot_groups.py",
+        "line": 73,
+        "operation_id": "replaceShotGroupMembers",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/shot_groups.py:reorderShotGroups",
+        "file": "apps/api/local_drama/api/routes/shot_groups.py",
+        "line": 83,
+        "operation_id": "reorderShotGroups",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/story_assets.py:createStoryAsset",
+        "file": "apps/api/local_drama/api/routes/story_assets.py",
+        "line": 24,
+        "operation_id": "createStoryAsset",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/story_assets.py:listStoryAssets",
+        "file": "apps/api/local_drama/api/routes/story_assets.py",
+        "line": 32,
+        "operation_id": "listStoryAssets",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/story_assets.py:getStoryAsset",
+        "file": "apps/api/local_drama/api/routes/story_assets.py",
+        "line": 40,
+        "operation_id": "getStoryAsset",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/story_assets.py:updateStoryAsset",
+        "file": "apps/api/local_drama/api/routes/story_assets.py",
+        "line": 48,
+        "operation_id": "updateStoryAsset",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/story_assets.py:archiveStoryAsset",
+        "file": "apps/api/local_drama/api/routes/story_assets.py",
+        "line": 56,
+        "operation_id": "archiveStoryAsset",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/story_assets.py:restoreStoryAsset",
+        "file": "apps/api/local_drama/api/routes/story_assets.py",
+        "line": 64,
+        "operation_id": "restoreStoryAsset",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/story_assets.py:bindStoryAssetToShot",
+        "file": "apps/api/local_drama/api/routes/story_assets.py",
+        "line": 72,
+        "operation_id": "bindStoryAssetToShot",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/story_assets.py:listShotStoryAssets",
+        "file": "apps/api/local_drama/api/routes/story_assets.py",
+        "line": 80,
+        "operation_id": "listShotStoryAssets",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/story_assets.py:unbindStoryAssetFromShot",
+        "file": "apps/api/local_drama/api/routes/story_assets.py",
+        "line": 88,
+        "operation_id": "unbindStoryAssetFromShot",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:getEpisodeTimelineStatus",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 42,
+        "operation_id": "getEpisodeTimelineStatus",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:getBackgroundOperation",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 54,
+        "operation_id": "getBackgroundOperation",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:getEpisodeRenderContent",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 99,
+        "operation_id": "getEpisodeRenderContent",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:getEpisodeRenderThumbnail",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 109,
+        "operation_id": "getEpisodeRenderThumbnail",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:createTimelineRevision",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 118,
+        "operation_id": "createTimelineRevision",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:planEpisodeTimelineRefresh",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 126,
+        "operation_id": "planEpisodeTimelineRefresh",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:commitEpisodeTimelineRefresh",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 134,
+        "operation_id": "commitEpisodeTimelineRefresh",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:getTimelineRevision",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 146,
+        "operation_id": "getTimelineRevision",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:exportTimelineRevision",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 154,
+        "operation_id": "exportTimelineRevision",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:downloadTimelineExport",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 171,
+        "operation_id": "downloadTimelineExport",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:createSubtitleRevision",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 182,
+        "operation_id": "createSubtitleRevision",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:getEpisodeTTSSubtitleDraftPlan",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 198,
+        "operation_id": "getEpisodeTTSSubtitleDraftPlan",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:getSubtitleRevision",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 215,
+        "operation_id": "getSubtitleRevision",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:createFrameAnchor",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 223,
+        "operation_id": "createFrameAnchor",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:getFrameAnchor",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 231,
+        "operation_id": "getFrameAnchor",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:createShotTransitionConstraint",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 239,
+        "operation_id": "createShotTransitionConstraint",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:validateShotTransitionConstraint",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 247,
+        "operation_id": "validateShotTransitionConstraint",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:createPostProcessRecipe",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 255,
+        "operation_id": "createPostProcessRecipe",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:listPostProcessRecipes",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 263,
+        "operation_id": "listPostProcessRecipes",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:getPostProcessRecipe",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 268,
+        "operation_id": "getPostProcessRecipe",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:publishPostProcessRecipe",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 276,
+        "operation_id": "publishPostProcessRecipe",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:planEnhancementRun",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 284,
+        "operation_id": "planEnhancementRun",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:runEnhancement",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 292,
+        "operation_id": "runEnhancement",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:submitEnhancementRun",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 300,
+        "operation_id": "submitEnhancementRun",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:getEnhancementRun",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 314,
+        "operation_id": "getEnhancementRun",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:renderEpisode",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 322,
+        "operation_id": "renderEpisode",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:preflightEpisodeCompose",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 333,
+        "operation_id": "preflightEpisodeCompose",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:submitEpisodeCompose",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 341,
+        "operation_id": "submitEpisodeCompose",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:renderSegmentedEpisode",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 354,
+        "operation_id": "renderSegmentedEpisode",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:submitSegmentedEpisodeCompose",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 364,
+        "operation_id": "submitSegmentedEpisodeCompose",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:listSubtitleStyleTemplates",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 386,
+        "operation_id": "listSubtitleStyleTemplates",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:saveSubtitleStyleTemplate",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 394,
+        "operation_id": "saveSubtitleStyleTemplate",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:getSubtitleStyleTemplate",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 410,
+        "operation_id": "getSubtitleStyleTemplate",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:deleteSubtitleStyleTemplate",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 418,
+        "operation_id": "deleteSubtitleStyleTemplate",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:buildDeliveryPackage",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 426,
+        "operation_id": "buildDeliveryPackage",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:submitDeliveryPackageBuild",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 434,
+        "operation_id": "submitDeliveryPackageBuild",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:listEpisodeDeliveryPackages",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 448,
+        "operation_id": "listEpisodeDeliveryPackages",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:verifyDeliveryPackage",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 456,
+        "operation_id": "verifyDeliveryPackage",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:verifyDeliveryPackagePost",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 464,
+        "operation_id": "verifyDeliveryPackagePost",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:downloadDeliveryPackage",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 472,
+        "operation_id": "downloadDeliveryPackage",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:listDeliveryPackageFiles",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 481,
+        "operation_id": "listDeliveryPackageFiles",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:withdrawDeliveryPackage",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 489,
+        "operation_id": "withdrawDeliveryPackage",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:reviewDeliveryPackage",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 497,
+        "operation_id": "reviewDeliveryPackage",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/timeline.py:getDeliveryPackage",
+        "file": "apps/api/local_drama/api/routes/timeline.py",
+        "line": 505,
+        "operation_id": "getDeliveryPackage",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/variants.py:deriveGenerationVariantPlan",
+        "file": "apps/api/local_drama/api/routes/variants.py",
+        "line": 25,
+        "operation_id": "deriveGenerationVariantPlan",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/variants.py:deriveGenerationVariantSeedBatch",
+        "file": "apps/api/local_drama/api/routes/variants.py",
+        "line": 43,
+        "operation_id": "deriveGenerationVariantSeedBatch",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/variants.py:planGenerationVariant",
+        "file": "apps/api/local_drama/api/routes/variants.py",
+        "line": 51,
+        "operation_id": "planGenerationVariant",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/variants.py:createGenerationVariant",
+        "file": "apps/api/local_drama/api/routes/variants.py",
+        "line": 59,
+        "operation_id": "createGenerationVariant",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/variants.py:submitGenerationVariant",
+        "file": "apps/api/local_drama/api/routes/variants.py",
+        "line": 67,
+        "operation_id": "submitGenerationVariant",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/variants.py:listGenerationVariants",
+        "file": "apps/api/local_drama/api/routes/variants.py",
+        "line": 80,
+        "operation_id": "listGenerationVariants",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/variants.py:getGenerationVariant",
+        "file": "apps/api/local_drama/api/routes/variants.py",
+        "line": 88,
+        "operation_id": "getGenerationVariant",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/variants.py:getGenerationVariantLineage",
+        "file": "apps/api/local_drama/api/routes/variants.py",
+        "line": 96,
+        "operation_id": "getGenerationVariantLineage",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/variants.py:getShotPromptAnchor",
+        "file": "apps/api/local_drama/api/routes/variants.py",
+        "line": 104,
+        "operation_id": "getShotPromptAnchor",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/visual_labs.py:listVisualLabs",
+        "file": "apps/api/local_drama/api/routes/visual_labs.py",
+        "line": 39,
+        "operation_id": "listVisualLabs",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/visual_labs.py:createVisualLab",
+        "file": "apps/api/local_drama/api/routes/visual_labs.py",
+        "line": 44,
+        "operation_id": "createVisualLab",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/visual_labs.py:getVisualLab",
+        "file": "apps/api/local_drama/api/routes/visual_labs.py",
+        "line": 49,
+        "operation_id": "getVisualLab",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/visual_labs.py:createVisualLabNode",
+        "file": "apps/api/local_drama/api/routes/visual_labs.py",
+        "line": 54,
+        "operation_id": "createVisualLabNode",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/visual_labs.py:reviseVisualLabNode",
+        "file": "apps/api/local_drama/api/routes/visual_labs.py",
+        "line": 59,
+        "operation_id": "reviseVisualLabNode",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/visual_labs.py:moveVisualLabNodes",
+        "file": "apps/api/local_drama/api/routes/visual_labs.py",
+        "line": 64,
+        "operation_id": "moveVisualLabNodes",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/visual_labs.py:saveVisualLabViewport",
+        "file": "apps/api/local_drama/api/routes/visual_labs.py",
+        "line": 69,
+        "operation_id": "saveVisualLabViewport",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/visual_labs.py:duplicateVisualLabNodes",
+        "file": "apps/api/local_drama/api/routes/visual_labs.py",
+        "line": 74,
+        "operation_id": "duplicateVisualLabNodes",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/visual_labs.py:deleteVisualLabNodes",
+        "file": "apps/api/local_drama/api/routes/visual_labs.py",
+        "line": 79,
+        "operation_id": "deleteVisualLabNodes",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/visual_labs.py:deleteVisualLabNode",
+        "file": "apps/api/local_drama/api/routes/visual_labs.py",
+        "line": 84,
+        "operation_id": "deleteVisualLabNode",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/visual_labs.py:createVisualLabEdge",
+        "file": "apps/api/local_drama/api/routes/visual_labs.py",
+        "line": 89,
+        "operation_id": "createVisualLabEdge",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/visual_labs.py:deleteVisualLabEdge",
+        "file": "apps/api/local_drama/api/routes/visual_labs.py",
+        "line": 94,
+        "operation_id": "deleteVisualLabEdge",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/visual_labs.py:snapshotVisualLab",
+        "file": "apps/api/local_drama/api/routes/visual_labs.py",
+        "line": 99,
+        "operation_id": "snapshotVisualLab",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/visual_labs.py:listVisualLabSnapshots",
+        "file": "apps/api/local_drama/api/routes/visual_labs.py",
+        "line": 104,
+        "operation_id": "listVisualLabSnapshots",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/visual_labs.py:preflightVisualLabSnapshotRestore",
+        "file": "apps/api/local_drama/api/routes/visual_labs.py",
+        "line": 109,
+        "operation_id": "preflightVisualLabSnapshotRestore",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/visual_labs.py:restoreVisualLabSnapshot",
+        "file": "apps/api/local_drama/api/routes/visual_labs.py",
+        "line": 114,
+        "operation_id": "restoreVisualLabSnapshot",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/visual_labs.py:preflightVisualLabNodeRun",
+        "file": "apps/api/local_drama/api/routes/visual_labs.py",
+        "line": 119,
+        "operation_id": "preflightVisualLabNodeRun",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/visual_labs.py:runVisualLabNode",
+        "file": "apps/api/local_drama/api/routes/visual_labs.py",
+        "line": 124,
+        "operation_id": "runVisualLabNode",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/visual_labs.py:preflightVisualLabPromotion",
+        "file": "apps/api/local_drama/api/routes/visual_labs.py",
+        "line": 129,
+        "operation_id": "preflightVisualLabPromotion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/visual_labs.py:promoteVisualLabCandidate",
+        "file": "apps/api/local_drama/api/routes/visual_labs.py",
+        "line": 134,
+        "operation_id": "promoteVisualLabCandidate",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflow_runtime.py:listRuntimeEnvironments",
+        "file": "apps/api/local_drama/api/routes/workflow_runtime.py",
+        "line": 32,
+        "operation_id": "listRuntimeEnvironments",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflow_runtime.py:createRuntimeEnvironment",
+        "file": "apps/api/local_drama/api/routes/workflow_runtime.py",
+        "line": 37,
+        "operation_id": "createRuntimeEnvironment",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflow_runtime.py:getRuntimeEnvironment",
+        "file": "apps/api/local_drama/api/routes/workflow_runtime.py",
+        "line": 42,
+        "operation_id": "getRuntimeEnvironment",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflow_runtime.py:createRuntimeEnvironmentVersion",
+        "file": "apps/api/local_drama/api/routes/workflow_runtime.py",
+        "line": 47,
+        "operation_id": "createRuntimeEnvironmentVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflow_runtime.py:validateRuntimeEnvironmentVersion",
+        "file": "apps/api/local_drama/api/routes/workflow_runtime.py",
+        "line": 52,
+        "operation_id": "validateRuntimeEnvironmentVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflow_runtime.py:publishRuntimeEnvironmentVersion",
+        "file": "apps/api/local_drama/api/routes/workflow_runtime.py",
+        "line": 57,
+        "operation_id": "publishRuntimeEnvironmentVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflow_runtime.py:getRuntimeInstanceStatus",
+        "file": "apps/api/local_drama/api/routes/workflow_runtime.py",
+        "line": 62,
+        "operation_id": "getRuntimeInstanceStatus",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflow_runtime.py:startRuntimeInstance",
+        "file": "apps/api/local_drama/api/routes/workflow_runtime.py",
+        "line": 67,
+        "operation_id": "startRuntimeInstance",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflow_runtime.py:stopRuntimeInstance",
+        "file": "apps/api/local_drama/api/routes/workflow_runtime.py",
+        "line": 72,
+        "operation_id": "stopRuntimeInstance",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflow_runtime.py:createWorkflowAppContract",
+        "file": "apps/api/local_drama/api/routes/workflow_runtime.py",
+        "line": 77,
+        "operation_id": "createWorkflowAppContract",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflow_runtime.py:getWorkflowAppContract",
+        "file": "apps/api/local_drama/api/routes/workflow_runtime.py",
+        "line": 82,
+        "operation_id": "getWorkflowAppContract",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflow_runtime.py:publishWorkflowAppContract",
+        "file": "apps/api/local_drama/api/routes/workflow_runtime.py",
+        "line": 87,
+        "operation_id": "publishWorkflowAppContract",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflow_runtime.py:bindWorkflowRuntime",
+        "file": "apps/api/local_drama/api/routes/workflow_runtime.py",
+        "line": 92,
+        "operation_id": "bindWorkflowRuntime",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:listWorkflowDefinitions",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 48,
+        "operation_id": "listWorkflowDefinitions",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:instantiateWorkflowDefinition",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 56,
+        "operation_id": "instantiateWorkflowDefinition",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:registerWorkflowPackage",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 77,
+        "operation_id": "registerWorkflowPackage",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:registerH3CandidateWorkflow",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 85,
+        "operation_id": "registerH3CandidateWorkflow",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:registerH3I2VCandidateWorkflow",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 101,
+        "operation_id": "registerH3I2VCandidateWorkflow",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:getH3CandidateRuntimeLayout",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 119,
+        "operation_id": "getH3CandidateRuntimeLayout",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:listProductionTiers",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 128,
+        "operation_id": "listProductionTiers",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:getRef2VaCapability",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 134,
+        "operation_id": "getRef2VaCapability",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:getWorkflowVersion",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 143,
+        "operation_id": "getWorkflowVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:listWorkflowVersions",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 151,
+        "operation_id": "listWorkflowVersions",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:compileWorkflowInputs",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 156,
+        "operation_id": "compileWorkflowInputs",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:validateWorkflowLocal",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 164,
+        "operation_id": "validateWorkflowLocal",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:publishWorkflowVersion",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 172,
+        "operation_id": "publishWorkflowVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:rollbackWorkflowVersion",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 180,
+        "operation_id": "rollbackWorkflowVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:revokeWorkflowVersion",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 188,
+        "operation_id": "revokeWorkflowVersion",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:getComfySystemStats",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 196,
+        "operation_id": "getComfySystemStats",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:getComfyQueue",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 204,
+        "operation_id": "getComfyQueue",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:interruptComfy",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 212,
+        "operation_id": "interruptComfy",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:submitNextComfyJob",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 220,
+        "operation_id": "submitNextComfyJob",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:pollComfyAttempt",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 228,
+        "operation_id": "pollComfyAttempt",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:interruptComfyAttempt",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 236,
+        "operation_id": "interruptComfyAttempt",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/api/routes/workflows.py:recoverComfyAttempt",
+        "file": "apps/api/local_drama/api/routes/workflows.py",
+        "line": 244,
+        "operation_id": "recoverComfyAttempt",
+        "owner": "legacy-api",
+        "remove_by_slice": 8
+      }
+    ]
+  }
+}

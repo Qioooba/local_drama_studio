@@ -1,7 +1,9 @@
 import os
+from pathlib import Path
 
-MATRIX_PATH = r"F:\AI_Projects\h3\local_drama_studio\docs\evidence\ui-uat-2026-08-22\CONTROL_STATE_MATRIX.md"
-PROGRESS_PATH = r"F:\AI_Projects\h3\local_drama_studio\docs\evidence\ui-uat-2026-08-22\PROGRESS.md"
+EVIDENCE_ROOT = Path(__file__).resolve().parents[1] / "docs" / "evidence" / "ui-uat-2026-08-22"
+MATRIX_PATH = EVIDENCE_ROOT / "CONTROL_STATE_MATRIX.md"
+PROGRESS_PATH = EVIDENCE_ROOT / "PROGRESS.md"
 
 with open(MATRIX_PATH, "r", encoding="utf-8", errors="replace") as f:
     text = f.read()

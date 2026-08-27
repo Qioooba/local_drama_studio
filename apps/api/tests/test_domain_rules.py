@@ -104,10 +104,10 @@ def test_comfy_access_guard_blocks_before_network(monkeypatch) -> None:
 def test_diagnostics_comfy_guard_skips_urlopen(monkeypatch) -> None:
     monkeypatch.setenv("LOCAL_DRAMA_COMFY_ACCESS", "disabled")
 
-    def unexpected_urlopen(*args, **kwargs):
-        raise AssertionError("urlopen must not run while ComfyUI access is disabled")
+    def unexpected_open_local(*args, **kwargs):
+        raise AssertionError("HTTP transport must not run while ComfyUI access is disabled")
 
-    monkeypatch.setattr(diagnostics, "urlopen", unexpected_urlopen)
+    monkeypatch.setattr(diagnostics, "open_local", unexpected_open_local)
     status, observed = diagnostics._probe_loopback("http://127.0.0.1:8188")
     assert status == "BLOCKED"
     assert observed == {"reason": "access_disabled"}

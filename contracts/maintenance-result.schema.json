@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://localdramastudio.local/schemas/maintenance-result.v1.json",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "operation", "status", "observed_at", "mutated"],
+  "properties": {
+    "schema_version": {"const": "localdrama.maintenance-result.v1"},
+    "operation": {"type": "string"},
+    "status": {"enum": ["PASS", "FAIL", "BLOCKED"]},
+    "observed_at": {"type": "string"},
+    "mutated": {"type": "boolean"},
+    "details": {"type": "object"},
+    "error": {"type": ["object", "null"]}
+  }
+}

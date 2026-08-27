@@ -97,6 +97,7 @@ def test_g7_readiness_accepts_compatibility_attestation_carried_into_published_v
             "V2V": {"support": "UNSUPPORTED", "required_inputs": []},
             "reference": {"support": "UNSUPPORTED", "required_inputs": []},
             "motion": {"support": "NATIVE", "required_inputs": []},
+            "camera": {"support": "UNSUPPORTED", "required_inputs": []},
         }},
         {"media_kind": "VIDEO", "container": "mp4", "codec": "h264"},
         {"gpu_heavy_concurrency": 1, "worker_policy": "ONE_H3_WORKER_ONE_GPU_TASK"},

@@ -10,15 +10,13 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
+from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.network_policy import parse_runtime_endpoint
 from local_drama.infrastructure.database.sqlite import Database
-from local_drama.infrastructure.local_llm import LOOPBACK_HOSTS, LocalLLMClient
-from local_drama.infrastructure.windows_credentials import (
-    delete_provider_secret,
-    read_deepseek_api_key,
-    read_provider_secret,
-    write_provider_secret,
-)
+from local_drama.infrastructure.local_llm import LocalLLMClient
+from local_drama.platform import create_platform_services
+from local_drama.platform.contracts import SecretRef, SecretStore
 
 
 def _now() -> str:
@@ -49,10 +47,10 @@ def _safe_code(value: str) -> str:
     return normalized
 
 
-def _secret_value(row: Any) -> str | None:
+def _secret_value(row: Any, secret_store: SecretStore) -> str | None:
     source = str(row["credential_source"] or "NONE").upper()
-    if source == "WINDOWS_CREDENTIAL_MANAGER":
-        return read_provider_secret(str(row["id"]))
+    if source in {"OS_SECRET_STORE", "WINDOWS_CREDENTIAL_MANAGER"}:
+        return secret_store.get(SecretRef("ProviderConnection", str(row["id"])))
     if source == "ENVIRONMENT":
         variable = str(row["environment_variable_name"] or "").strip()
         return os.environ.get(variable) if variable else None
@@ -60,19 +58,38 @@ def _secret_value(row: Any) -> str | None:
 
 
 class ProviderConnectionService:
-    def __init__(self, database: Database) -> None:
+    def __init__(
+        self,
+        database: Database,
+        settings: Settings | None = None,
+        secret_store: SecretStore | None = None,
+    ) -> None:
         self.database = database
+        self.settings = settings or Settings()
+        self.secret_store = secret_store or create_platform_services(self.settings).secret_store
 
-    @staticmethod
-    def _validate_url(provider_kind: str, base_url: str) -> str:
+    def _read_secret(self, row: Any) -> str | None:
+        return _secret_value(row, self.secret_store)
+
+    def _put_secret(self, connection_id: str, secret: str) -> None:
+        self.secret_store.put(SecretRef("ProviderConnection", connection_id), secret)
+
+    def _delete_secret(self, connection_id: str) -> bool:
+        return self.secret_store.delete(SecretRef("ProviderConnection", connection_id))
+
+    def _validate_url(self, provider_kind: str, base_url: str) -> str:
         value = base_url.strip().rstrip("/")
         parsed = urlparse(value)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise DomainRuleError("PROVIDER_BASE_URL_INVALID", "Provider Base URL 必须是 http 或 https 地址")
         if parsed.username or parsed.password or parsed.query or parsed.fragment:
             raise DomainRuleError("PROVIDER_BASE_URL_AMBIGUOUS", "Provider Base URL 不得携带凭据、query 或 fragment")
-        if provider_kind.upper() in {"OLLAMA", "OLLAMA_LOOPBACK"} and (parsed.hostname or "").casefold() not in LOOPBACK_HOSTS:
-            raise DomainRuleError("LOCAL_ONLY_ENDPOINT_REQUIRED", "Ollama 连接只允许 loopback 地址")
+        if provider_kind.upper() in {"OLLAMA", "OLLAMA_LOOPBACK"} and parse_runtime_endpoint(
+            value,
+            allow_private_network=self.settings.allows_private_network,
+            schemes=frozenset({"http"}),
+        ) is None:
+            raise DomainRuleError("LOCAL_ONLY_ENDPOINT_REQUIRED", "Ollama 连接只允许 loopback 或受控私网地址")
         return value
 
     @staticmethod
@@ -90,13 +107,15 @@ class ProviderConnectionService:
         exists = connection.execute("SELECT id FROM provider_connections WHERE code='deepseek-main' LIMIT 1").fetchone()
         if exists is not None:
             return
-        legacy_secret = read_deepseek_api_key()
+        legacy_secret = self.secret_store.get(SecretRef("DeepSeekAPI", "default"))
         legacy_env_name = next((name for name in ("DEEPSEEK_API_KEY", "OPENAI_API_KEY") if os.environ.get(name)), None)
         if not legacy_secret and not legacy_env_name:
             return
         connection_id = "pc_deepseek_main"
         now = _now()
-        credential_source = "ENVIRONMENT" if legacy_env_name else "WINDOWS_CREDENTIAL_MANAGER"
+        credential_source = "ENVIRONMENT" if legacy_env_name else (
+            "OS_SECRET_STORE"
+        )
         connection.execute(
             """INSERT INTO provider_connections
             (id, code, title, provider_kind, protocol, base_url, model, credential_source,
@@ -114,7 +133,7 @@ class ProviderConnectionService:
         )
         if legacy_secret:
             try:
-                write_provider_secret(connection_id, legacy_secret)
+                self._put_secret(connection_id, legacy_secret)
             except (OSError, ValueError):
                 # Keep the old target readable; the UI will show the new row as
                 # configured only after the operator explicitly replaces it.
@@ -123,12 +142,11 @@ class ProviderConnectionService:
                     (connection_id,),
                 )
 
-    @staticmethod
-    def _public(row: Any, secret: str | None = None) -> dict[str, Any]:
+    def _public(self, row: Any, secret: str | None = None) -> dict[str, Any]:
         value = secret if secret is not None else None
         if secret is None:
             try:
-                value = _secret_value(row)
+                value = self._read_secret(row)
             except (OSError, ValueError):
                 value = None
         return {
@@ -168,6 +186,31 @@ class ProviderConnectionService:
             raise DomainRuleError("PROVIDER_CONNECTION_NOT_FOUND", "Provider Connection 不存在")
         return self._public(row)
 
+    def resolve_for_execution(self, connection_id: str) -> dict[str, Any]:
+        """Resolve the exact connection selected by an immutable Profile.
+
+        The secret crosses only this internal execution boundary. It is never
+        included in API responses or audit metadata.
+        """
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT * FROM provider_connections WHERE id=?", (connection_id,)).fetchone()
+        if row is None:
+            raise DomainRuleError("PROVIDER_CONNECTION_NOT_FOUND", "Profile 引用的 Provider Connection 不存在")
+        if str(row["status"]).upper() != "ACTIVE":
+            raise DomainRuleError("PROVIDER_CONNECTION_INACTIVE", "Profile 引用的 Provider Connection 当前未启用")
+        try:
+            secret = self._read_secret(row)
+        except (OSError, ValueError) as error:
+            raise DomainRuleError("PROVIDER_SECRET_READ_FAILED", "无法读取 Profile 所选 Provider 的密钥") from error
+        return {
+            "id": str(row["id"]),
+            "provider_kind": str(row["provider_kind"]),
+            "protocol": str(row["protocol"]),
+            "base_url": str(row["base_url"]),
+            "model": row["model"],
+            "secret": secret,
+        }
+
     def create(
         self,
         *,
@@ -184,7 +227,7 @@ class ProviderConnectionService:
         normalized_kind, protocol = self._provider_kind(provider_kind)
         normalized_url = self._validate_url(normalized_kind, base_url)
         source = credential_source.strip().upper()
-        if source not in {"NONE", "WINDOWS_CREDENTIAL_MANAGER", "ENVIRONMENT"}:
+        if source not in {"NONE", "OS_SECRET_STORE", "WINDOWS_CREDENTIAL_MANAGER", "ENVIRONMENT"}:
             raise DomainRuleError("PROVIDER_CREDENTIAL_SOURCE_INVALID", "不支持的凭据来源")
         if source == "ENVIRONMENT" and not environment_variable_name:
             raise DomainRuleError("PROVIDER_ENVIRONMENT_VARIABLE_REQUIRED", "环境变量凭据来源必须提供变量名")
@@ -207,7 +250,9 @@ class ProviderConnectionService:
                         normalized_url,
                         model.strip() if model and model.strip() else None,
                         source,
-                        f"LocalDramaStudio/ProviderConnection/{connection_id}" if source == "WINDOWS_CREDENTIAL_MANAGER" else None,
+                        f"LocalDramaStudio/ProviderConnection/{connection_id}"
+                        if source in {"OS_SECRET_STORE", "WINDOWS_CREDENTIAL_MANAGER"}
+                        else None,
                         environment_variable_name.strip() if environment_variable_name else None,
                         now,
                         now,
@@ -252,7 +297,7 @@ class ProviderConnectionService:
         if row is None:
             raise DomainRuleError("PROVIDER_CONNECTION_NOT_FOUND", "Provider Connection 不存在")
         try:
-            secret = _secret_value(row)
+            secret = self._read_secret(row)
         except (OSError, ValueError) as error:
             raise DomainRuleError("PROVIDER_SECRET_READ_FAILED", "无法读取 Provider 密钥") from error
         if not secret:
@@ -271,10 +316,10 @@ class ProviderConnectionService:
             row = connection.execute("SELECT * FROM provider_connections WHERE id=?", (connection_id,)).fetchone()
             if row is None:
                 raise DomainRuleError("PROVIDER_CONNECTION_NOT_FOUND", "Provider Connection 不存在")
-            if str(row["credential_source"]).upper() != "WINDOWS_CREDENTIAL_MANAGER":
-                raise DomainRuleError("PROVIDER_SECRET_SOURCE_READ_ONLY", "只有 Windows Credential Manager 来源支持在应用内替换")
+            if str(row["credential_source"]).upper() not in {"OS_SECRET_STORE", "WINDOWS_CREDENTIAL_MANAGER"}:
+                raise DomainRuleError("PROVIDER_SECRET_SOURCE_READ_ONLY", "只有操作系统安全凭据库来源支持在应用内替换")
             try:
-                write_provider_secret(connection_id, secret)
+                self._put_secret(connection_id, secret)
             except (OSError, ValueError) as error:
                 raise DomainRuleError("PROVIDER_SECRET_STORE_FAILED", "无法安全保存 Provider 密钥") from error
             now = _now()
@@ -291,10 +336,10 @@ class ProviderConnectionService:
             row = connection.execute("SELECT * FROM provider_connections WHERE id=?", (connection_id,)).fetchone()
             if row is None:
                 raise DomainRuleError("PROVIDER_CONNECTION_NOT_FOUND", "Provider Connection 不存在")
-            if str(row["credential_source"]).upper() != "WINDOWS_CREDENTIAL_MANAGER":
+            if str(row["credential_source"]).upper() not in {"OS_SECRET_STORE", "WINDOWS_CREDENTIAL_MANAGER"}:
                 raise DomainRuleError("PROVIDER_SECRET_SOURCE_READ_ONLY", "环境变量来源不能由应用删除")
             try:
-                delete_provider_secret(connection_id)
+                self._delete_secret(connection_id)
             except (OSError, ValueError) as error:
                 raise DomainRuleError("PROVIDER_SECRET_DELETE_FAILED", "无法从 Windows Credential Manager 删除密钥") from error
             now = _now()
@@ -317,9 +362,9 @@ class ProviderConnectionService:
             ).fetchone()
             if reference is not None:
                 raise DomainRuleError("PROVIDER_CONNECTION_IN_USE", "该连接仍被 Profile 引用，请先停用引用或改绑其他连接")
-            if str(row["credential_source"]).upper() == "WINDOWS_CREDENTIAL_MANAGER":
+            if str(row["credential_source"]).upper() in {"OS_SECRET_STORE", "WINDOWS_CREDENTIAL_MANAGER"}:
                 try:
-                    delete_provider_secret(connection_id)
+                    self._delete_secret(connection_id)
                 except (OSError, ValueError) as error:
                     raise DomainRuleError("PROVIDER_SECRET_DELETE_FAILED", "无法从 Windows Credential Manager 删除密钥") from error
             connection.execute("DELETE FROM provider_connections WHERE id=?", (connection_id,))
@@ -337,9 +382,15 @@ class ProviderConnectionService:
         resolved_model = (model or row["model"] or "").strip()
         if not resolved_model:
             raise DomainRuleError("PROVIDER_MODEL_REQUIRED", "连通性测试需要模型名称")
-        secret = _secret_value(row)
+        secret = self._read_secret(row)
         provider = "OLLAMA_LOOPBACK" if str(row["protocol"]).upper() == "OLLAMA" else "OPENAI_COMPAT"
-        client = LocalLLMClient(str(row["base_url"]), resolved_model, provider=provider, api_key=secret)
+        client = LocalLLMClient(
+            str(row["base_url"]),
+            resolved_model,
+            provider=provider,
+            api_key=secret,
+            allow_private_network=self.settings.allows_private_network,
+        )
         try:
             result = client.probe(load_test=load_test)
             status = "OK" if result.get("status") == "PASS" else "FAILED"

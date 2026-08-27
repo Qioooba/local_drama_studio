@@ -6,8 +6,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DiagnosticsPage } from "./DiagnosticsPage";
 import { JobsPage } from "./JobsPage";
 import { ModelsPage } from "./ModelsPage";
+import { SystemWorkflowsPage } from "./SystemWorkflowsPage";
 import { AppShell } from "../layouts/AppShell";
 import { queryKeys } from "../query/queryKeys";
+import { notifyDraftDirty } from "../features/drafts/draftGuard";
 
 const api = vi.hoisted(() => ({
   getCapacitySnapshot: vi.fn(), getDiagnostics: vi.fn(), getEpisodeTimelineStatus: vi.fn(), getProjectCreatorSetup: vi.fn(), getProjectEpisodeCatalog: vi.fn(), getStoryboardWorkspace: vi.fn(), listAuditEvents: vi.fn(), listEpisodes: vi.fn(), listJobsPage: vi.fn(), listProfiles: vi.fn(), listProjects: vi.fn(), listSeasons: vi.fn(), listWorkflowVersions: vi.fn(), runDiagnostics: vi.fn(),
@@ -16,15 +18,14 @@ const api = vi.hoisted(() => ({
 vi.mock("../generated/api", async (importOriginal) => ({ ...(await importOriginal<typeof import("../generated/api")>()), ...api }));
 vi.mock("../features/jobs/JobDetailsPanel", () => ({ JobDetailsPanel: () => null }));
 vi.mock("../features/status-v2/LocalRuntimeIndicator", () => ({ LocalRuntimeIndicator: () => <span>本机运行时</span> }));
-vi.mock("../features/episode-cockpit/api", () => ({ getEpisodeCockpit: () => Promise.resolve({
-  episode: { id: "episode-1", code: "E01", title: "第一集", project_id: "project-1" },
-  shots: { total: 2, directed: 1, with_candidates: 1, remaining_generation: 0, selected: 1, approved: 0, failed: 1, stale: 0 },
-  jobs: { failed: 1 }, bridges: { total: 1, ready: 1, stale: 0 }, audio: { bindings: 2, verified: 1 },
-  qc: { candidate_versions: 1, checked: 1, passed: 0, failed: 1 }, blockers: [{ code: "UNDIRECTED_SHOTS", count: 1, label: "仍有镜头未完成导演意图" }, { code: "FAILED_SHOTS", count: 1, label: "失败镜头需要处理" }],
-  observed_at: "2026-08-24T00:00:00Z", read_only: true, mutated: false,
-}) }));
 vi.mock("../features/preferences-v2/GenerationPreferencePanel", () => ({
   GenerationPreferencePanel: () => <section aria-label="生成偏好任务">生成偏好单任务面板</section>,
+}));
+vi.mock("../features/model-config/RuntimeEnvironmentsPanel", () => ({
+  RuntimeEnvironmentsPanel: () => <section aria-label="运行环境">运行环境面板</section>,
+}));
+vi.mock("../features/shared/ComfyLabPanel", () => ({
+  ComfyLabPanel: () => <section aria-label="Comfy 开发工具">Comfy 开发工具</section>,
 }));
 
 function mount(node: React.ReactNode, path = "/") {
@@ -64,7 +65,7 @@ describe("V2 system workspaces", () => {
 
   it("renders real jobs and capacity and preserves project scope in the URL", async () => {
     mount(<JobsPage />);
-    expect(await screen.findByText("GENERATION_VARIANT")).toBeInTheDocument();
+    expect(await screen.findByText("生成镜头候选")).toBeInTheDocument();
     expect(screen.getByText("本机队列产能快照")).toBeInTheDocument();
     fireEvent.change(screen.getByRole("combobox", { name: "任务项目范围" }), { target: { value: "project-1" } });
     await waitFor(() => expect(api.listJobsPage).toHaveBeenLastCalledWith("project-1", 0, 100));
@@ -78,10 +79,10 @@ describe("V2 system workspaces", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
 
-    expect(await screen.findByText("GENERATION_VARIANT")).toBeInTheDocument();
+    expect(await screen.findByText("生成镜头候选")).toBeInTheDocument();
     await waitFor(() => expect(api.listJobsPage).toHaveBeenLastCalledWith("project-1", 0, 100));
     expect(screen.getByRole("combobox", { name: "任务项目范围" })).toHaveValue("project-1");
-    fireEvent.click(screen.getByRole("button", { name: "详情 · 产物" }));
+    fireEvent.click(screen.getByRole("button", { name: "查看详情和产物" }));
     expect(await screen.findByRole("dialog", { name: "任务详情与产物" })).toBeInTheDocument();
     await waitFor(() => expect(router.state.location.search).toBe("?job=job-1"));
     fireEvent.click(screen.getByRole("button", { name: "关闭抽屉" }));
@@ -97,43 +98,31 @@ describe("V2 system workspaces", () => {
     await waitFor(() => expect(api.listAuditEvents).toHaveBeenCalled());
   });
 
-  it("loads real profile and workflow facts instead of a legacy placeholder", async () => {
+  it("keeps system capability publishing separate from project capability binding", async () => {
     mount(<ModelsPage />);
-    expect(await screen.findByText(/先告诉系统项目需要图像、视频、声音或故事拆解能力/)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "模型、连接与运行契约" })).toBeInTheDocument();
+    expect(screen.getByText(/项目只绑定这里已经发布的版本/)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "从项目要完成的创作任务开始" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "生成偏好任务" })).toBeInTheDocument();
     expect(screen.getByText("专家工具：执行契约与工作流版本")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "生成偏好任务" })).not.toBeInTheDocument();
     expect(api.listProfiles).not.toHaveBeenCalled();
     expect(api.listWorkflowVersions).not.toHaveBeenCalled();
   });
 
-  it("restores the Models task from view, preserves scope, and unmounts inactive tasks", async () => {
+  it("gives workflow publishing its own system owner instead of nesting it in Models", async () => {
     const router = createMemoryRouter(
-      [{ path: "/models", element: <ModelsPage /> }],
-      { initialEntries: ["/models?project=project-1&view=workflows"] },
+      [{ path: "/system/workflows", element: <SystemWorkflowsPage /> }],
+      { initialEntries: ["/system/workflows"] },
     );
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
 
-    expect(await screen.findByRole("heading", { name: "工作流版本、验证与发布证据" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "本地能力契约与不可变版本" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "工作流与运行环境" })).toBeInTheDocument();
+    expect(screen.getByText(/项目只能消费已发布且兼容的版本/)).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "运行环境" })).toBeInTheDocument();
+    expect(screen.getByText("开发者：Comfy 工作流捕获与本机测试")).toBeInTheDocument();
     expect(api.listWorkflowVersions).toHaveBeenCalledOnce();
     expect(api.listProfiles).not.toHaveBeenCalled();
-
-    expect(screen.getByText("专家工具：执行契约与工作流版本").closest("details")).toHaveAttribute("open");
-    fireEvent.click(screen.getByRole("button", { name: "返回创作能力配置" }));
-    expect(await screen.findByRole("region", { name: "生成偏好任务" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "工作流版本、验证与发布证据" })).not.toBeInTheDocument();
-    expect(router.state.location.search).toContain("project=project-1");
-    expect(router.state.location.search).toContain("view=preferences");
-
-    fireEvent.click(screen.getByText("专家工具：执行契约与工作流版本"));
-    fireEvent.click(screen.getByRole("button", { name: /Profile 契约/ }));
-    expect(await screen.findByRole("heading", { name: "本地能力契约与不可变版本" })).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "生成偏好任务" })).not.toBeInTheDocument();
-    expect(router.state.location.search).toContain("project=project-1");
-    expect(router.state.location.search).toContain("view=profile-contracts");
-    await waitFor(() => expect(api.listProfiles).toHaveBeenCalledOnce());
   });
 
   it("keeps system pages inside the common AppShell", async () => {
@@ -141,12 +130,14 @@ describe("V2 system workspaces", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
     expect(await screen.findByRole("link", { name: "返回项目列表" })).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "项目导航" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "任务与机器", level: 2 })).toBeInTheDocument();
     const projectNavigation = screen.getByRole("navigation", { name: "项目导航" });
-    const systemNavigation = within(projectNavigation).getByText("系统区").nextElementSibling;
-    expect(systemNavigation).toHaveClass("sidebar-system-links");
-    expect(within(systemNavigation as HTMLElement).getByRole("link", { name: "任务与机器" })).toBeVisible();
+    expect(projectNavigation).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "任务与机器", level: 2 })).toBeInTheDocument();
+    expect(within(projectNavigation).getByRole("link", { name: "首页" })).toBeVisible();
+    expect(within(projectNavigation).getByRole("link", { name: "故事" })).toBeVisible();
+    expect(within(projectNavigation).getByRole("link", { name: "资产" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "打开任务中心" })).toBeVisible();
+    expect(within(projectNavigation).queryByText("系统区")).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("combobox", { name: "当前项目" })).toHaveValue("project-1"));
   });
 
@@ -172,52 +163,44 @@ describe("V2 system workspaces", () => {
     expect(screen.getByRole("option", { name: "刚创建的项目" })).toBeInTheDocument();
   });
 
-  it("keeps season, episode, and shot context in the shell and preserves the current task", async () => {
+  it("keeps only project and episode context in the shell and preserves the current stage", async () => {
     const router = createMemoryRouter(
       [{ path: "/projects/:projectId", element: <AppShell />, children: [
-        { path: "episodes/:episodeId/direct/:shotId?", element: <div>导演内容</div> },
+        { path: "episodes/:episodeId/studio/:shotId?", element: <div>镜头工作台内容</div> },
       ] }],
-      { initialEntries: ["/projects/project-1/episodes/episode-1/direct/shot-1"] },
+      { initialEntries: ["/projects/project-1/episodes/episode-1/studio/shot-1"] },
     );
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
 
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "当前季度" })).toHaveValue("season-1"));
-    expect(screen.getByRole("combobox", { name: "当前分集" })).toHaveValue("episode-1");
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "当前镜头" })).toHaveValue("shot-1"));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "当前分集" })).toHaveValue("episode-1"));
+    expect(screen.queryByRole("combobox", { name: "当前季度" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "当前镜头" })).not.toBeInTheDocument();
     const projectNav = screen.getByRole("navigation", { name: "项目导航" });
-    expect(await within(projectNav).findByRole("link", { name: /生产设置.*1 待办/ })).toBeInTheDocument();
-    expect(within(projectNav).getByRole("link", { name: /导演台.*1\/2/ })).toBeInTheDocument();
-    expect(within(projectNav).getByRole("link", { name: /镜头生成.*1 失败/ })).toBeInTheDocument();
-    expect(within(projectNav).getByRole("link", { name: /声音.*1\/2/ })).toBeInTheDocument();
-    expect(within(projectNav).getByRole("link", { name: /时间线.*未创建/ })).toBeInTheDocument();
-    expect(within(projectNav).getByRole("link", { name: /交付.*未创建/ })).toBeInTheDocument();
+    expect(within(projectNav).getByRole("link", { name: "策划" })).toBeInTheDocument();
+    expect(within(projectNav).getByRole("link", { name: "镜头" })).toBeInTheDocument();
+    expect(within(projectNav).getByRole("link", { name: "生产" })).toBeInTheDocument();
+    expect(within(projectNav).getByRole("link", { name: "后期" })).toBeInTheDocument();
+    expect(within(projectNav).getByRole("link", { name: "交付" })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "当前位置" })).toHaveTextContent("北方小院");
     expect(screen.getByRole("navigation", { name: "当前位置" })).toHaveTextContent("第一季 / 第一集");
 
-    fireEvent.change(screen.getByRole("combobox", { name: "当前镜头" }), { target: { value: "shot-2" } });
-    await waitFor(() => expect(router.state.location.pathname).toBe("/projects/project-1/episodes/episode-1/direct/shot-2"));
-
     fireEvent.change(screen.getByRole("combobox", { name: "当前分集" }), { target: { value: "episode-2" } });
-    await waitFor(() => expect(router.state.location.pathname).toBe("/projects/project-1/episodes/episode-2/direct"));
-
-    fireEvent.change(screen.getByRole("combobox", { name: "当前季度" }), { target: { value: "season-2" } });
-    await waitFor(() => expect(router.state.location.pathname).toBe("/projects/project-1/episodes/episode-3/direct"));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/projects/project-1/episodes/episode-2/studio"));
   });
 
-  it("announces a stale frozen timeline globally and links to the explicit recovery flow", async () => {
+  it("does not poll episode timeline status globally outside its post-production owner", async () => {
     api.getEpisodeTimelineStatus.mockResolvedValue({ status: { episode: { id: "episode-1", code: "E01", title: "第一集", project_id: "project-1" }, timeline: { revision_count: 2, latest: { id: "timeline-2", status: "STALE" } }, subtitles: { revision_count: 1, latest: {} }, audio: { binding_count: 1, verified_local_count: 1 }, renders: { count: 0, verified_count: 0, latest: null }, delivery: { count: 0, verified_count: 0, latest: null }, observed_at: "2026-08-24T00:00:00Z", read_only: true, runtime_contacted: false, network_contacted: false, mutated: false } });
     const router = createMemoryRouter(
-      [{ path: "/projects/:projectId", element: <AppShell />, children: [{ path: "episodes/:episodeId/timeline", element: <div>时间线内容</div> }] }],
-      { initialEntries: ["/projects/project-1/episodes/episode-1/timeline"] },
+      [{ path: "/projects/:projectId", element: <AppShell />, children: [{ path: "episodes/:episodeId/post/edit", element: <div>剪辑内容</div> }] }],
+      { initialEntries: ["/projects/project-1/episodes/episode-1/post/edit"] },
     );
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
 
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("本集冻结时间线已过期");
-    expect(within(alert).getByRole("link", { name: "同步、复检并重新冻结" })).toHaveAttribute("href", "/projects/project-1/episodes/episode-1/delivery");
-    expect(within(screen.getByRole("navigation", { name: "项目导航" })).getByRole("link", { name: /时间线.*已过期/ })).toBeInTheDocument();
+    expect(await screen.findByText("剪辑内容")).toBeInTheDocument();
+    expect(api.getEpisodeTimelineStatus).not.toHaveBeenCalled();
+    expect(screen.queryByText("本集冻结时间线已过期")).not.toBeInTheDocument();
   });
 
   it("uses one compact navigation drawer with Escape and focus return", async () => {
@@ -231,17 +214,14 @@ describe("V2 system workspaces", () => {
     expect(trigger).toHaveAttribute("aria-expanded", "true");
     expect(navigation).toHaveClass("mobile-open");
     expect(document.body.style.overflow).toBe("hidden");
-    expect(document.documentElement.style.overflow).toBe("hidden");
-    expect(document.activeElement).toBe(screen.getByRole("link", { name: "任务与机器" }));
     fireEvent.keyDown(window, { key: "Escape" });
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     expect(navigation).not.toHaveClass("mobile-open");
     expect(document.activeElement).toBe(trigger);
     expect(document.body.style.overflow).toBe("");
-    expect(document.documentElement.style.overflow).toBe("");
   });
 
-  it("keeps global workspaces separate and system recovery links visible", async () => {
+  it("keeps the canonical project stages compact and system recovery in the top bar", async () => {
     const router = createMemoryRouter(
       [{ path: "/projects/:projectId", element: <AppShell />, children: [{ index: true, element: <div>项目内容</div> }] }],
       { initialEntries: ["/projects/project-1"] },
@@ -250,8 +230,35 @@ describe("V2 system workspaces", () => {
     render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
     expect(await screen.findByText("项目内容")).toBeInTheDocument();
     const navigation = screen.getByRole("navigation", { name: "项目导航" });
-    expect(within(navigation).getByText("工作空间")).toBeInTheDocument();
-    expect(within(navigation).getByText("创作区")).toBeInTheDocument();
-    expect(within(navigation).getByRole("link", { name: "模型与能力" })).toBeVisible();
+    expect(within(navigation).getByText("项目")).toBeInTheDocument();
+    expect(within(navigation).getByText("项目工具")).toBeInTheDocument();
+    expect(within(navigation).getByRole("link", { name: "设置" })).toBeVisible();
+    expect(within(navigation).getByRole("link", { name: "Visual Lab" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "打开任务中心" })).toBeVisible();
+    expect(within(navigation).queryByRole("link", { name: "模型与能力" })).not.toBeInTheDocument();
+  });
+
+  it("offers save, discard, and cancel before leaving an entity draft", async () => {
+    const save = vi.fn(() => true);
+    const discard = vi.fn(() => true);
+    const router = createMemoryRouter(
+      [{ path: "/projects/:projectId", element: <AppShell />, children: [
+        { index: true, element: <button type="button" onClick={() => notifyDraftDirty(true, { save, discard })}>修改草稿</button> },
+        { path: "story", element: <div>故事内容</div> },
+      ] }],
+      { initialEntries: ["/projects/project-1"] },
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
+
+    fireEvent.click(await screen.findByRole("button", { name: "修改草稿" }));
+    fireEvent.click(screen.getByRole("link", { name: "故事" }));
+    expect(await screen.findByRole("dialog", { name: "当前页面有未保存内容" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "取消切换" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "放弃并切换" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "保存并切换" }));
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(discard).not.toHaveBeenCalled();
+    expect(await screen.findByText("故事内容")).toBeInTheDocument();
   });
 });

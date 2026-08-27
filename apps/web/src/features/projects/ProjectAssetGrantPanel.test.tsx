@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createProjectAssetGrant, listProjectAssetGrantCandidates, listProjectAssetGrants, revokeProjectAssetGrant } from "../../generated/api";
+import { listProjectAssetGrantCandidates, listProjectAssetGrants, revokeProjectAssetGrant } from "../../generated/api";
 import { ProjectAssetGrantPanel } from "./ProjectAssetGrantPanel";
 
 vi.mock("../../generated/api", () => ({

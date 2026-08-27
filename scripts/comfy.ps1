@@ -18,6 +18,8 @@ $stdoutPath = Join-Path $logsRoot 'comfy-production.stdout.log'
 $stderrPath = Join-Path $logsRoot 'comfy-production.stderr.log'
 $managerConfigDir = Join-Path $userRoot '__manager'
 $managerConfigPath = Join-Path $managerConfigDir 'config.ini'
+$extraModelRoot = $env:LOCAL_DRAMA_COMFY_EXTRA_MODEL_ROOT
+$extraModelConfigPath = Join-Path $sandboxRoot 'extra_model_paths.yaml'
 $port = if ($env:LOCAL_DRAMA_COMFY_PORT) { [int]$env:LOCAL_DRAMA_COMFY_PORT } else { 8188 }
 
 function Get-ListenerProcess {
@@ -71,6 +73,9 @@ if ([string]::IsNullOrWhiteSpace($python) -or [string]::IsNullOrWhiteSpace($comf
   throw 'start requires LOCAL_DRAMA_COMFY_PYTHON and LOCAL_DRAMA_COMFY_ROOT; no hidden ComfyUI path is assumed'
 }
 if (-not (Test-Path -LiteralPath $python) -or -not (Test-Path -LiteralPath (Join-Path $comfyRoot 'main.py'))) { throw 'configured ComfyUI python/root does not exist' }
+if (-not [string]::IsNullOrWhiteSpace($extraModelRoot) -and -not (Test-Path -LiteralPath $extraModelRoot -PathType Container)) {
+  throw 'LOCAL_DRAMA_COMFY_EXTRA_MODEL_ROOT must reference an existing directory'
+}
 $existing = Get-ListenerProcess
 if ($null -ne $existing) { Write-Output "COMFY_ALREADY_RUNNING PID=$($existing.ProcessId) PORT=$port"; exit 0 }
 
@@ -95,6 +100,24 @@ $arguments = @(
   # path is a proven c10.dll access-violation source on this host.
   '--disable-all-custom-nodes','--disable-api-nodes'
 )
+if (-not [string]::IsNullOrWhiteSpace($extraModelRoot)) {
+  $normalizedExtraModelRoot = $extraModelRoot.Replace('\\', '/')
+  @(
+    'local_drama_external_models:',
+    "  base_path: $normalizedExtraModelRoot",
+    '  checkpoints: checkpoints',
+    '  configs: configs',
+    '  vae: vae',
+    '  clip: clip',
+    '  clip_vision: clip_vision',
+    '  text_encoders: text_encoders',
+    '  diffusion_models: diffusion_models',
+    '  loras: loras',
+    '  audio_encoders: audio_encoders',
+    '  audio_models: audio_models'
+  ) | Set-Content -LiteralPath $extraModelConfigPath -Encoding UTF8
+  $arguments += @('--extra-model-paths-config', $extraModelConfigPath)
+}
 if ($env:LOCAL_DRAMA_COMFY_DIAGNOSTIC_FLAGS) {
   $allowedDiagnosticFlags = @(
     '--disable-dynamic-vram','--disable-cuda-malloc','--disable-smart-memory',

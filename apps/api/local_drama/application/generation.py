@@ -13,6 +13,7 @@ from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.generation import VariantPlan
 from local_drama.domain.generation_contracts import CameraPlan, MotionMask, PerformanceBinding, TimedDirection, resolve_camera_plan
+from local_drama.domain.generation_planning import effective_configuration_snapshot, frozen_generation_contract
 from local_drama.domain.policies import VariantInput
 from local_drama.infrastructure.database.sqlite import Database
 
@@ -63,12 +64,7 @@ def _character_anchor_lines(connection: Any, intent_row: Any) -> list[str]:
     if str(intent_row["owner_type"]) != "SHOT" or not intent_row["owner_id"]:
         return []
     rows = character_anchor_rows(connection, str(intent_row["owner_id"]))
-    return [
-        character_anchor_line(
-            str(item["name"]), str(item.get("description") or ""), item.get("canonical_media_version_id") or None
-        )
-        for item in rows
-    ]
+    return [character_anchor_line(str(item["name"]), str(item.get("description") or ""), item.get("canonical_media_version_id") or None) for item in rows]
 
 
 class GenerationService:
@@ -245,7 +241,15 @@ class GenerationService:
             "VIDEO_EXTEND": {"SOURCE_VIDEO"},
             "VIDEO_TO_VIDEO": {"SOURCE_VIDEO"},
             "MOTION_CONTROL": {"MOTION_PATH", "MASK"},
-            "PERFORMANCE_DRIVEN": {"DRIVING_VIDEO", "POSE_SEQUENCE", "POSE_REFERENCE", "AUDIO_GUIDE", "FACE_REFERENCE", "CHARACTER_REFERENCE", "CHARACTER_DRIVING"},
+            "PERFORMANCE_DRIVEN": {
+                "DRIVING_VIDEO",
+                "POSE_SEQUENCE",
+                "POSE_REFERENCE",
+                "AUDIO_GUIDE",
+                "FACE_REFERENCE",
+                "CHARACTER_REFERENCE",
+                "CHARACTER_DRIVING",
+            },
         }
         if not roles.intersection(role_requirements.get(variant_type, set())):
             raise DomainRuleError(
@@ -269,11 +273,7 @@ class GenerationService:
             raise DomainRuleError("PROFILE_INPUT_CONTRACT_INVALID", "Profile input contract 必须是对象")
         slots = input_contract.get("input_slots")
         if slots is None:
-            slots = {
-                str(key): value
-                for key, value in input_contract.items()
-                if str(key) not in _LEGACY_INPUT_CONTRACT_METADATA
-            }
+            slots = {str(key): value for key, value in input_contract.items() if str(key) not in _LEGACY_INPUT_CONTRACT_METADATA}
         if not isinstance(slots, dict):
             raise DomainRuleError("PROFILE_INPUT_CONTRACT_INVALID", "Profile input_slots 契约无效")
         for role, spec in slots.items():
@@ -395,12 +395,95 @@ class GenerationService:
             raise DomainRuleError("GENERATION_INTENT_NOT_FOUND", "GenerationIntent 不存在", {"intent_id": intent_id})
         return dict(row)
 
+    def create_shot_intent(
+        self,
+        shot_id: str,
+        *,
+        purpose: str,
+        creative_goal: str,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        """Create a Shot-owned intent as an audited, idempotent v2 command."""
+        if purpose not in {"T2I", "I2V_PROXY", "T2V", "R2V"}:
+            raise DomainRuleError("SHOT_GENERATION_PURPOSE_INVALID", "Shot 生成目标不受支持")
+        normalized_goal = creative_goal.strip()
+        if not normalized_goal:
+            raise DomainRuleError("SHOT_GENERATION_GOAL_REQUIRED", "Shot 生成目标不能为空")
+        payload_hash = _digest({"purpose": purpose, "creative_goal": normalized_goal})
+        command_scope = f"shot-generation-intent:create:{shot_id}"
+        now = _now()
+        with self.database.transaction() as connection:
+            shot = connection.execute(
+                """SELECT sh.id,se.project_id FROM shots sh JOIN episodes e ON e.id=sh.episode_id
+                JOIN seasons se ON se.id=e.season_id WHERE sh.id=? AND sh.archived_at IS NULL""",
+                (shot_id,),
+            ).fetchone()
+            if shot is None:
+                raise DomainRuleError("SHOT_NOT_FOUND", "镜头不存在", {"shot_id": shot_id})
+            existing = connection.execute(
+                """SELECT payload_hash,response_json FROM command_idempotencies
+                WHERE scope=? AND idempotency_key=?""",
+                (command_scope, idempotency_key),
+            ).fetchone()
+            if existing is not None:
+                if not hmac.compare_digest(str(existing["payload_hash"]), payload_hash):
+                    raise DomainRuleError(
+                        "IDEMPOTENCY_PAYLOAD_MISMATCH",
+                        "相同 Idempotency-Key 已用于不同 Shot 生成目标",
+                    )
+                replay = json.loads(str(existing["response_json"]))
+                replay["idempotent_replay"] = True
+                return replay
+            intent_id = str(uuid.uuid4())
+            project_id = str(shot["project_id"])
+            connection.execute(
+                """INSERT INTO generation_intents
+                (id,project_id,owner_type,owner_id,purpose,creative_goal,status,created_at,updated_at,created_by)
+                VALUES (?,?,'SHOT',?,?,?,'DRAFT',?,?,'local-user')""",
+                (intent_id, project_id, shot_id, purpose, normalized_goal, now, now),
+            )
+            result = {
+                "id": intent_id,
+                "project_id": project_id,
+                "owner_type": "SHOT",
+                "owner_id": shot_id,
+                "purpose": purpose,
+                "creative_goal": normalized_goal,
+                "status": "DRAFT",
+                "created_at": now,
+                "idempotent_replay": False,
+            }
+            connection.execute(
+                """INSERT INTO audit_events
+                (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
+                VALUES ('local-user','producer','SHOT_GENERATION_INTENT_CREATED','generation_intent',?,?,?)""",
+                (
+                    intent_id,
+                    "建立镜头生成目标",
+                    _canonical({"shot_id": shot_id, "purpose": purpose}),
+                ),
+            )
+            connection.execute(
+                """INSERT INTO outbox_events
+                (type,project_id,subject_type,subject_id,payload_json)
+                VALUES ('SHOT_GENERATION_INTENT_CREATED',?,'SHOT',?,?)""",
+                (
+                    project_id,
+                    shot_id,
+                    _canonical({"intent_id": intent_id, "purpose": purpose}),
+                ),
+            )
+            connection.execute(
+                """INSERT INTO command_idempotencies
+                (scope,idempotency_key,payload_hash,response_json) VALUES (?,?,?,?)""",
+                (command_scope, idempotency_key, payload_hash, _canonical(result)),
+            )
+        return result
+
     def list_intents(self, project_id: str | None = None) -> list[dict[str, Any]]:
         with self.database.connect() as connection:
             if project_id:
-                rows = connection.execute(
-                    "SELECT * FROM generation_intents WHERE project_id=? ORDER BY created_at, id", (project_id,)
-                ).fetchall()
+                rows = connection.execute("SELECT * FROM generation_intents WHERE project_id=? ORDER BY created_at, id", (project_id,)).fetchall()
             else:
                 rows = connection.execute("SELECT * FROM generation_intents ORDER BY created_at, id").fetchall()
         return [dict(row) for row in rows]
@@ -408,9 +491,7 @@ class GenerationService:
     def list_variants(self, intent_id: str) -> list[dict[str, Any]]:
         self.get_intent(intent_id)
         with self.database.connect() as connection:
-            rows = connection.execute(
-                "SELECT id FROM generation_variants WHERE intent_id=? ORDER BY variant_no", (intent_id,)
-            ).fetchall()
+            rows = connection.execute("SELECT id FROM generation_variants WHERE intent_id=? ORDER BY variant_no", (intent_id,)).fetchall()
         return [self.get_variant(str(row["id"])) for row in rows]
 
     def _plan_context(self, intent_id: str, plan: VariantPlan) -> tuple[set[str], set[str], dict[str, Any]]:
@@ -433,67 +514,13 @@ class GenerationService:
                 raise DomainRuleError("WORKFLOW_VERSION_NOT_FOUND", "Profile 引用的 WorkflowVersion 不存在")
             if workflow["status"] != "PUBLISHED":
                 raise DomainRuleError("WORKFLOW_NOT_PUBLISHED", "生成 Profile 不能引用未发布 WorkflowVersion")
-            workflow_bindings = json.loads(workflow["node_bindings_json"] or "{}")
-            if not isinstance(workflow_bindings, dict):
-                raise DomainRuleError("WORKFLOW_BINDING_INVALID", "Workflow semantic binding 契约无效")
-            workflow_content = json.loads(workflow["content_json"] or "{}")
-            if not isinstance(workflow_content, dict):
-                raise DomainRuleError("WORKFLOW_BINDING_INVALID", "Workflow content 契约无效")
-            workflow_contract = json.loads(workflow["contract_json"] or "{}")
-            if not isinstance(workflow_contract, dict):
-                raise DomainRuleError("WORKFLOW_CONTRACT_INVALID", "Workflow contract 契约无效")
-            required_semantic_roles: set[str] = set()
-            if isinstance(plan.parameter_set.get("PROMPT"), str) and str(plan.parameter_set["PROMPT"]).strip():
-                required_semantic_roles.add("PROMPT")
-            if plan.seed_policy == "EXPLICIT":
-                required_semantic_roles.add("SEED")
-            missing_semantic_roles = sorted(required_semantic_roles - set(workflow_bindings))
-            if missing_semantic_roles:
-                raise DomainRuleError(
-                    "WORKFLOW_SEMANTIC_BINDING_REQUIRED",
-                    "当前 Workflow 未绑定生成请求中的关键语义输入，禁止用模板默认值执行",
-                    {"missing_roles": missing_semantic_roles, "workflow_version_id": profile["workflow_version_id"]},
-                )
-            requested_tier = str(plan.parameter_set.get("tier") or "").strip().upper()
-            if requested_tier:
-                frozen_tier = str(workflow_contract.get("production_tier") or "").strip().upper()
-                dynamic_tiers = workflow_contract.get("dynamic_production_tiers") is True
-                if not dynamic_tiers and frozen_tier != requested_tier:
-                    raise DomainRuleError(
-                        "WORKFLOW_TIER_CONTRACT_MISMATCH",
-                        "当前 Workflow 未冻结所选生产档位，禁止显示一个档位却执行另一套帧数/采样参数",
-                        {
-                            "requested_tier": requested_tier,
-                            "workflow_tier": frozen_tier or None,
-                            "workflow_version_id": profile["workflow_version_id"],
-                        },
-                    )
-            # Keep the exact execution authority in the immutable plan/job
-            # snapshot.  A profile id alone is not enough for replay: the
-            # local model bundle, runtime and workflow bytes must be
-            # auditable even if a newer profile is later published.
-            try:
-                model_bundle = json.loads(profile["model_bundle_json"] or "{}")
-            except (TypeError, json.JSONDecodeError) as error:
-                raise DomainRuleError("PROFILE_MODEL_BUNDLE_INVALID", "Profile model bundle 快照无效") from error
-            if not isinstance(model_bundle, dict):
-                raise DomainRuleError("PROFILE_MODEL_BUNDLE_INVALID", "Profile model bundle 必须是对象")
-            if plan.seed_policy == "EXPLICIT" and "SEED" in workflow_bindings:
-                semantic_seed = plan.parameter_set.get("SEED")
-                if semantic_seed != plan.explicit_seed:
-                    raise DomainRuleError(
-                        "VARIANT_SEED_SNAPSHOT_MISMATCH",
-                        "Variant 显式 seed 必须与实际 Workflow SEED 语义输入一致",
-                        {"explicit_seed": plan.explicit_seed, "semantic_seed": semantic_seed},
-                    )
-            input_contract = json.loads(profile["input_contract_json"] or "{}")
-            parameter_schema = json.loads(profile["parameter_schema_json"] or "{}")
-            try:
-                resource_policy = json.loads(profile["resource_policy_json"] or "{}")
-            except (TypeError, json.JSONDecodeError) as error:
-                raise DomainRuleError("PROFILE_RESOURCE_POLICY_INVALID", "Profile resource policy 快照无效") from error
-            if not isinstance(resource_policy, dict):
-                raise DomainRuleError("PROFILE_RESOURCE_POLICY_INVALID", "Profile resource policy 必须是对象")
+            frozen_contract = frozen_generation_contract(profile, workflow, plan)
+            workflow_bindings = frozen_contract.workflow_bindings
+            workflow_content = frozen_contract.workflow_content
+            model_bundle = frozen_contract.model_bundle
+            input_contract = frozen_contract.input_contract
+            parameter_schema = frozen_contract.parameter_schema
+            resource_policy = frozen_contract.resource_policy
             resource_estimate = self._resource_estimate(resource_policy)
             input_slots = self._input_slots(input_contract)
             seed_contract = parameter_schema.get("seed", {}) if isinstance(parameter_schema, dict) else {}
@@ -759,9 +786,7 @@ class GenerationService:
                         None,
                     )
                     if visual is None:
-                        raise DomainRuleError(
-                            "FRAME_DIMENSIONS_REQUIRED", "首尾/关键帧必须先完成可验证的宽高 probe", {"role": binding.role}
-                        )
+                        raise DomainRuleError("FRAME_DIMENSIONS_REQUIRED", "首尾/关键帧必须先完成可验证的宽高 probe", {"role": binding.role})
                     visual_dimensions[(binding.role, binding.ordinal)] = (int(visual["width"]), int(visual["height"]))
                 if str(intent["purpose"]) in {"I2V_PROXY", "I2V_FORMAL"} and binding.role == "FIRST_FRAME":
                     approval = connection.execute(
@@ -828,14 +853,10 @@ class GenerationService:
             for role in counts:
                 workflow_binding = workflow_bindings.get(role)
                 if not isinstance(workflow_binding, dict) or not workflow_binding.get("node_id") or not workflow_binding.get("input"):
-                    raise DomainRuleError(
-                        "WORKFLOW_SLOT_UNSUPPORTED", "已发布 Workflow 未声明该语义输入槽", {"role": role}
-                    )
+                    raise DomainRuleError("WORKFLOW_SLOT_UNSUPPORTED", "已发布 Workflow 未声明该语义输入槽", {"role": role})
                 node = workflow_content.get(str(workflow_binding["node_id"]))
                 if not isinstance(node, dict) or not isinstance(node.get("inputs"), dict):
-                    raise DomainRuleError(
-                        "WORKFLOW_BINDING_INVALID", "Workflow semantic binding 指向不存在或无 inputs 的节点", {"role": role}
-                    )
+                    raise DomainRuleError("WORKFLOW_BINDING_INVALID", "Workflow semantic binding 指向不存在或无 inputs 的节点", {"role": role})
             ancestors: set[str] = set()
             parent = None
             current = plan.parent_variant_id
@@ -1028,7 +1049,8 @@ class GenerationService:
                 valid_shot_id = intent_owner_id if owner is not None else None
 
         effective_configuration = EffectiveConfigurationService(
-            self.database, self.settings.manifest_path,
+            self.database,
+            self.settings.manifest_path,
         ).resolve(
             project_id=intent_project_id,
             episode_id=valid_episode_id,
@@ -1081,26 +1103,10 @@ class GenerationService:
             "prompt_revision_hash": prompt_revision["content_hash"] if prompt_revision is not None else None,
             "media": sorted(media_dependencies, key=lambda item: str(item["id"])),
             "approvals": [
-                {"role": role, "ordinal": ordinal, "source_approval_id": approval_id}
-                for (role, ordinal), approval_id in sorted(approval_dependencies.items())
+                {"role": role, "ordinal": ordinal, "source_approval_id": approval_id} for (role, ordinal), approval_id in sorted(approval_dependencies.items())
             ],
             "identity_pack_snapshot": identity_pack_snapshot,
-            "effective_configuration": {
-                "schema_version": "localdrama.effective-configuration-snapshot.v1",
-                "fingerprint": effective_configuration["fingerprint"],
-                "profile_version_id": effective_configuration.get("profile_version_id"),
-                "effective_settings": effective_configuration.get("effective_settings", {}),
-                "setting_sources": effective_configuration.get("setting_sources", {}),
-                "blocking_errors": effective_configuration.get("blocking_errors", []),
-                "warnings": effective_configuration.get("warnings", []),
-                "runtime_status": effective_configuration.get("runtime_status", "UNKNOWN"),
-                "override_schema_version": (
-                    (effective_configuration.get("profile") or {}).get("override_schema", {}).get("schema_version")
-                    if isinstance(effective_configuration.get("profile"), dict)
-                    and isinstance((effective_configuration.get("profile") or {}).get("override_schema"), dict)
-                    else None
-                ),
-            },
+            "effective_configuration": effective_configuration_snapshot(effective_configuration),
         }
         return ancestors, allowed_roles, dependencies
 
@@ -1197,9 +1203,7 @@ class GenerationService:
         evidence_recipe = {"execution": execution_recipe, "approvals": dependencies.get("approvals", [])}
         with self.database.connect() as connection:
             intent = connection.execute("SELECT project_id FROM generation_intents WHERE id=?", (intent_id,)).fetchone()
-            style_context = (
-                build_generation_style_context(connection, str(intent["project_id"])) if intent is not None else None
-            )
+            style_context = build_generation_style_context(connection, str(intent["project_id"])) if intent is not None else None
         plan_evidence: dict[str, Any] = {"intent_id": intent_id, "recipe": recipe, "dependencies": dependencies}
         if style_context is not None:
             style_context_hash = str(style_context["context_hash"])
@@ -1280,7 +1284,9 @@ class GenerationService:
                 raise DomainRuleError("VARIANT_DERIVATION_SCOPE_INVALID", "分支操作不能覆盖 seed")
             target_seed = int(parent_seed) if parent_seed is not None else None
         parent_bindings = tuple(
-            VariantInput(str(item["role"]), str(item["media_version_id"]), int(item["ordinal"]), float(item["weight"]) if item.get("weight") is not None else None)
+            VariantInput(
+                str(item["role"]), str(item["media_version_id"]), int(item["ordinal"]), float(item["weight"]) if item.get("weight") is not None else None
+            )
             for item in parent["bindings"]
         )
         target_prompt_revision_id = str(parent["prompt_revision_id"]) if parent.get("prompt_revision_id") else None
@@ -1301,9 +1307,7 @@ class GenerationService:
             if not any(item.role == "FIRST_FRAME" and item.ordinal == 0 for item in parent_bindings):
                 raise DomainRuleError("SOURCE_BRANCH_FIRST_FRAME_REQUIRED", "父 Variant 没有 FIRST_FRAME ordinal 0")
             bindings = tuple(
-                VariantInput(item.role, first_frame_media_version_id, item.ordinal, item.weight)
-                if item.role == "FIRST_FRAME" and item.ordinal == 0
-                else item
+                VariantInput(item.role, first_frame_media_version_id, item.ordinal, item.weight) if item.role == "FIRST_FRAME" and item.ordinal == 0 else item
                 for item in parent_bindings
             )
         elif operation == "PROFILE_BRANCH":
@@ -1402,9 +1406,7 @@ class GenerationService:
             after = {"prompt_revision_id": target_prompt_revision_id}
         elif operation == "SOURCE_IMAGE_BRANCH":
             before = {
-                "first_frame_media_version_id": next(
-                    item.media_version_id for item in parent_bindings if item.role == "FIRST_FRAME" and item.ordinal == 0
-                )
+                "first_frame_media_version_id": next(item.media_version_id for item in parent_bindings if item.role == "FIRST_FRAME" and item.ordinal == 0)
             }
             after = {"first_frame_media_version_id": first_frame_media_version_id}
         elif operation == "PROFILE_BRANCH":
@@ -1516,9 +1518,9 @@ class GenerationService:
         target_bindings = parent_bindings if bindings is None else bindings
         parent_profile = str(parent["capability_profile_version_id"])
         target_profile = profile_version_id or parent_profile
-        bindings_changed = tuple(
-            sorted((item.role, item.media_version_id, item.ordinal, item.weight) for item in target_bindings)
-        ) != tuple(sorted((item.role, item.media_version_id, item.ordinal, item.weight) for item in parent_bindings))
+        bindings_changed = tuple(sorted((item.role, item.media_version_id, item.ordinal, item.weight) for item in target_bindings)) != tuple(
+            sorted((item.role, item.media_version_id, item.ordinal, item.weight) for item in parent_bindings)
+        )
         profile_changed = target_profile != parent_profile
         parent_seed = int(parent["explicit_seed"]) if parent.get("explicit_seed") is not None else None
         parameter_set = json.loads(str(parent["parameter_set_json"]))
@@ -1566,10 +1568,7 @@ class GenerationService:
 
     @staticmethod
     def _variant_matches_plan(variant: dict[str, Any], plan: VariantPlan) -> bool:
-        frozen_bindings = sorted(
-            (str(item["role"]), str(item["media_version_id"]), int(item["ordinal"]), item.get("weight"))
-            for item in variant["bindings"]
-        )
+        frozen_bindings = sorted((str(item["role"]), str(item["media_version_id"]), int(item["ordinal"]), item.get("weight")) for item in variant["bindings"])
         planned_bindings = sorted((item.role, item.media_version_id, item.ordinal, item.weight) for item in plan.bindings)
         return (
             str(variant["parent_variant_id"] or "") == str(plan.parent_variant_id or "")
@@ -1580,10 +1579,207 @@ class GenerationService:
             and frozen_bindings == planned_bindings
         )
 
-    def _reroll_idempotent_replay(self, parent: dict[str, Any], plan: VariantPlan, idempotency_key: str) -> dict[str, Any] | None:
+    @staticmethod
+    def _variant_fully_matches_plan(variant: dict[str, Any], plan: VariantPlan) -> bool:
+        """Compare every persisted execution input for command replay recovery."""
+        try:
+            frozen_parameters = json.loads(str(variant["parameter_set_json"]))
+        except (KeyError, TypeError, json.JSONDecodeError):
+            return False
+        return (
+            GenerationService._variant_matches_plan(variant, plan)
+            and (str(variant["prompt_revision_id"]) if variant.get("prompt_revision_id") else None) == plan.prompt_revision_id
+            and frozen_parameters == plan.parameter_set
+            and str(variant["seed_policy"]) == plan.seed_policy
+            and (str(variant["provider_random_nonce"]) if variant.get("provider_random_nonce") else None) == plan.provider_random_nonce
+        )
+
+    @staticmethod
+    def _validate_shot_base_plan(plan: VariantPlan) -> None:
+        if plan.variant_type != "BASE" or plan.parent_variant_id is not None:
+            raise DomainRuleError(
+                "SHOT_BASE_PLAN_INVALID",
+                "Shot 基础生成必须使用无父候选的 BASE 计划",
+            )
+
+    def _shot_generation_scope(
+        self,
+        shot_id: str,
+        intent_id: str,
+        *,
+        expected_shot_revision: int | None = None,
+    ) -> dict[str, Any]:
         with self.database.connect() as connection:
             row = connection.execute(
-                """SELECT j.id, j.subject_id FROM jobs j
+                """SELECT gi.id AS intent_id,gi.project_id,gi.owner_type,gi.owner_id,
+                s.revision AS shot_revision,s.episode_id
+                FROM generation_intents gi
+                LEFT JOIN shots s ON s.id=gi.owner_id AND gi.owner_type='SHOT'
+                WHERE gi.id=?""",
+                (intent_id,),
+            ).fetchone()
+        if row is None:
+            raise DomainRuleError(
+                "GENERATION_INTENT_NOT_FOUND",
+                "GenerationIntent 不存在",
+                {"intent_id": intent_id},
+            )
+        if str(row["owner_type"]) != "SHOT" or str(row["owner_id"]) != shot_id or row["shot_revision"] is None:
+            raise DomainRuleError(
+                "SHOT_GENERATION_INTENT_SCOPE_MISMATCH",
+                "生成意图不属于当前镜头",
+                {"shot_id": shot_id, "intent_id": intent_id},
+            )
+        current_revision = int(row["shot_revision"])
+        if expected_shot_revision is not None and current_revision != expected_shot_revision:
+            raise DomainRuleError(
+                "SHOT_REVISION_CONFLICT",
+                "镜头已发生变化，请重新执行生成预检",
+                {
+                    "shot_id": shot_id,
+                    "expected_revision": expected_shot_revision,
+                    "current_revision": current_revision,
+                },
+            )
+        return {
+            "intent_id": str(row["intent_id"]),
+            "project_id": str(row["project_id"]),
+            "shot_id": shot_id,
+            "shot_revision": current_revision,
+            "episode_id": str(row["episode_id"]),
+        }
+
+    def preflight_shot_base_variant(
+        self,
+        shot_id: str,
+        intent_id: str,
+        plan: VariantPlan,
+        expected_shot_revision: int,
+        stage_code: str,
+    ) -> dict[str, Any]:
+        """Produce a read-only, shot-scoped confirmation token for BASE generation."""
+        self._validate_shot_base_plan(plan)
+        if stage_code not in {"SHOT_IMAGE", "VIDEO"}:
+            raise DomainRuleError("SHOT_GENERATION_STAGE_INVALID", "Shot 生成阶段必须是 SHOT_IMAGE 或 VIDEO")
+        scope = self._shot_generation_scope(
+            shot_id,
+            intent_id,
+            expected_shot_revision=expected_shot_revision,
+        )
+        variant_preflight = self.preflight_variant(intent_id, plan)
+        variant_plan_hash = str(variant_preflight["plan_hash"])
+        outer_plan_hash = _digest(
+            {
+                "shot_id": shot_id,
+                "shot_revision": scope["shot_revision"],
+                "intent_id": intent_id,
+                "stage_code": stage_code,
+                "variant_plan_hash": variant_plan_hash,
+            }
+        )
+        return {
+            **variant_preflight,
+            "shot_id": shot_id,
+            "shot_revision": scope["shot_revision"],
+            "variant_plan_hash": variant_plan_hash,
+            "plan_hash": outer_plan_hash,
+        }
+
+    def _shot_base_idempotent_replay(
+        self,
+        intent_id: str,
+        plan: VariantPlan,
+        idempotency_key: str,
+        stage_code: str,
+    ) -> dict[str, Any] | None:
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """SELECT j.id,j.subject_id,j.stage_code
+                FROM jobs j
+                JOIN generation_variants gv ON gv.id=j.subject_id
+                WHERE gv.intent_id=? AND j.idempotency_key=?
+                  AND j.subject_type='GENERATION_VARIANT'
+                ORDER BY j.created_at,j.id LIMIT 1""",
+                (intent_id, idempotency_key),
+            ).fetchone()
+        if row is None:
+            return None
+        variant = self.get_variant(str(row["subject_id"]))
+        if not self._variant_fully_matches_plan(variant, plan) or str(row["stage_code"]) != stage_code:
+            raise DomainRuleError(
+                "IDEMPOTENCY_PAYLOAD_MISMATCH",
+                "相同 Idempotency-Key 已用于不同 Shot 基础生成请求",
+            )
+        job = JobService(self.database).get_job(str(row["id"]))
+        job["idempotent_replay"] = True
+        return {"variant": variant, "job": job, "idempotent_replay": True}
+
+    def submit_shot_base_variant(
+        self,
+        shot_id: str,
+        intent_id: str,
+        plan: VariantPlan,
+        *,
+        expected_shot_revision: int,
+        stage_code: str,
+        plan_hash: str,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        """Submit a BASE variant under the URL Shot and recover exact command replays."""
+        self._validate_shot_base_plan(plan)
+        # Owner scope is always enforced, while a successful replay deliberately
+        # survives later Shot revisions: clients may safely retry a lost response.
+        scope = self._shot_generation_scope(shot_id, intent_id)
+        replay = self._shot_base_idempotent_replay(intent_id, plan, idempotency_key, stage_code)
+        if replay is not None:
+            return replay
+        preflight = self.preflight_shot_base_variant(
+            shot_id,
+            intent_id,
+            plan,
+            expected_shot_revision,
+            stage_code,
+        )
+        if not hmac.compare_digest(str(preflight["plan_hash"]), plan_hash):
+            raise DomainRuleError(
+                "VARIANT_PLAN_STALE",
+                "Shot 生成计划已变化，请重新执行 preflight",
+                {"current_plan_hash": preflight["plan_hash"]},
+            )
+        try:
+            result = self.submit_confirmed_variant(
+                intent_id,
+                plan,
+                str(preflight["variant_plan_hash"]),
+                idempotency_key,
+                job_scope={
+                    "subject_kind": "GENERATION_VARIANT",
+                    "scope_project_id": scope["project_id"],
+                    "scope_episode_id": scope["episode_id"],
+                    "scope_shot_id": shot_id,
+                    "stage_code": stage_code,
+                },
+            )
+        except DomainRuleError as error:
+            if error.code != "IDEMPOTENCY_PAYLOAD_MISMATCH":
+                raise
+            replay = self._shot_base_idempotent_replay(intent_id, plan, idempotency_key, stage_code)
+            if replay is None:
+                raise
+            return replay
+        result["idempotent_replay"] = False
+        return result
+
+    def _reroll_idempotent_replay(
+        self,
+        parent: dict[str, Any],
+        plan: VariantPlan,
+        idempotency_key: str,
+        expected_stage_code: str | None = None,
+    ) -> dict[str, Any] | None:
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """SELECT j.id,j.subject_id,j.stage_code FROM jobs j
                 JOIN generation_intents gi ON gi.project_id=j.project_id
                 WHERE gi.id=? AND j.idempotency_key=? AND j.subject_type='GENERATION_VARIANT'
                 ORDER BY j.created_at, j.id LIMIT 1""",
@@ -1592,7 +1788,7 @@ class GenerationService:
         if row is None:
             return None
         variant = self.get_variant(str(row["subject_id"]))
-        if not self._variant_matches_plan(variant, plan):
+        if not self._variant_matches_plan(variant, plan) or (expected_stage_code is not None and str(row["stage_code"]) != expected_stage_code):
             raise DomainRuleError("IDEMPOTENCY_PAYLOAD_MISMATCH", "相同 Idempotency-Key 已用于不同 reroll 请求")
         job = JobService(self.database).get_job(str(row["id"]))
         job["idempotent_replay"] = True
@@ -1608,6 +1804,7 @@ class GenerationService:
         profile_version_id: str | None,
         bindings: tuple[VariantInput, ...] | None,
         idempotency_key: str,
+        job_scope: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Create a child Variant and Job; this is never an attempt retry."""
         parent = self.get_variant(parent_variant_id)
@@ -1619,13 +1816,18 @@ class GenerationService:
             profile_version_id=profile_version_id,
             bindings=bindings,
         )
-        replay = self._reroll_idempotent_replay(parent, plan, idempotency_key)
+        expected_stage_code = job_scope.get("stage_code") if job_scope else None
+        replay = self._reroll_idempotent_replay(parent, plan, idempotency_key, expected_stage_code)
         if replay is not None:
             return replay
         preflight = self.preflight_variant(str(parent["intent_id"]), plan)
         try:
             result = self.submit_confirmed_variant(
-                str(parent["intent_id"]), plan, str(preflight["plan_hash"]), idempotency_key
+                str(parent["intent_id"]),
+                plan,
+                str(preflight["plan_hash"]),
+                idempotency_key,
+                job_scope=job_scope,
             )
         except DomainRuleError as error:
             # SQLite serializes the write transaction.  If two identical calls
@@ -1634,33 +1836,87 @@ class GenerationService:
             # result after its transaction rolls back.
             if error.code != "IDEMPOTENCY_PAYLOAD_MISMATCH":
                 raise
-            replay = self._reroll_idempotent_replay(parent, plan, idempotency_key)
+            replay = self._reroll_idempotent_replay(parent, plan, idempotency_key, expected_stage_code)
             if replay is None:
                 raise
             return replay
         result["reroll"] = {"retry": False, "parent_variant_id": parent_variant_id}
         return result
 
+    def reroll_shot_variant(
+        self,
+        shot_id: str,
+        parent_variant_id: str,
+        *,
+        reason_code: str,
+        reason_note: str | None,
+        explicit_seed: int | None,
+        profile_version_id: str | None,
+        idempotency_key: str,
+        stage_code: str,
+    ) -> dict[str, Any]:
+        """Scope a creative reroll to the Shot Studio subject in the URL."""
+        with self.database.connect() as connection:
+            owner = connection.execute(
+                """SELECT gi.owner_type,gi.owner_id,gi.project_id,s.episode_id FROM generation_variants gv
+                JOIN generation_intents gi ON gi.id=gv.intent_id
+                LEFT JOIN shots s ON s.id=gi.owner_id AND gi.owner_type='SHOT'
+                WHERE gv.id=?""",
+                (parent_variant_id,),
+            ).fetchone()
+        if owner is None:
+            raise DomainRuleError("GENERATION_VARIANT_NOT_FOUND", "GenerationVariant 不存在")
+        if str(owner["owner_type"]) != "SHOT" or str(owner["owner_id"]) != shot_id:
+            raise DomainRuleError(
+                "SHOT_VARIANT_SCOPE_MISMATCH",
+                "父候选不属于当前镜头",
+                {"shot_id": shot_id, "parent_variant_id": parent_variant_id},
+            )
+        if stage_code not in {"SHOT_IMAGE", "VIDEO"}:
+            raise DomainRuleError("SHOT_GENERATION_STAGE_INVALID", "Shot 生成阶段必须是 SHOT_IMAGE 或 VIDEO")
+        return self.reroll_variant(
+            parent_variant_id,
+            reason_code=reason_code,
+            reason_note=reason_note,
+            explicit_seed=explicit_seed,
+            profile_version_id=profile_version_id,
+            bindings=None,
+            idempotency_key=idempotency_key,
+            job_scope={
+                "subject_kind": "GENERATION_VARIANT",
+                "scope_project_id": str(owner["project_id"]),
+                "scope_episode_id": str(owner["episode_id"]),
+                "scope_shot_id": shot_id,
+                "stage_code": stage_code,
+            },
+        )
+
     def create_confirmed_variant(self, intent_id: str, plan: VariantPlan, plan_hash: str) -> dict[str, Any]:
         preflight = self.preflight_variant(intent_id, plan)
         if preflight["status"] != "READY":
             raise DomainRuleError(
-                "GENERATION_DISK_PREFLIGHT_BLOCKED", "生成输出所需项目磁盘空间不足",
+                "GENERATION_DISK_PREFLIGHT_BLOCKED",
+                "生成输出所需项目磁盘空间不足",
                 {"intent_id": intent_id, "disk_gate": preflight["disk_gate"]},
             )
         if not hmac.compare_digest(str(preflight["plan_hash"]), plan_hash):
-            raise DomainRuleError(
-                "VARIANT_PLAN_STALE", "Variant 计划已变化，请重新执行 preflight", {"current_plan_hash": preflight["plan_hash"]}
-            )
+            raise DomainRuleError("VARIANT_PLAN_STALE", "Variant 计划已变化，请重新执行 preflight", {"current_plan_hash": preflight["plan_hash"]})
         return self.create_variant(intent_id, plan)
 
     def submit_confirmed_variant(
-        self, intent_id: str, plan: VariantPlan, plan_hash: str, idempotency_key: str
+        self,
+        intent_id: str,
+        plan: VariantPlan,
+        plan_hash: str,
+        idempotency_key: str,
+        *,
+        job_scope: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         preflight = self.preflight_variant(intent_id, plan)
         if preflight["status"] != "READY":
             raise DomainRuleError(
-                "GENERATION_DISK_PREFLIGHT_BLOCKED", "生成输出所需项目磁盘空间不足",
+                "GENERATION_DISK_PREFLIGHT_BLOCKED",
+                "生成输出所需项目磁盘空间不足",
                 {"intent_id": intent_id, "disk_gate": preflight["disk_gate"]},
             )
         if not hmac.compare_digest(str(preflight["plan_hash"]), plan_hash):
@@ -1672,13 +1928,9 @@ class GenerationService:
         recipe = self._execution_recipe(plan)
         workflow_version_id = str(dependencies["workflow_version_id"])
         semantic_inputs = dict(plan.parameter_set)
-        approval_by_slot = {
-            (str(item["role"]), int(item["ordinal"])): str(item["source_approval_id"])
-            for item in dependencies.get("approvals", [])
-        }
+        approval_by_slot = {(str(item["role"]), int(item["ordinal"])): str(item["source_approval_id"]) for item in dependencies.get("approvals", [])}
         media_bindings_snapshot = [
-            {**self._binding_dict(binding), "source_approval_id": approval_by_slot.get((binding.role, binding.ordinal))}
-            for binding in plan.bindings
+            {**self._binding_dict(binding), "source_approval_id": approval_by_slot.get((binding.role, binding.ordinal))} for binding in plan.bindings
         ]
         with self.database.transaction() as connection:
             intent = connection.execute("SELECT * FROM generation_intents WHERE id=?", (intent_id,)).fetchone()
@@ -1711,16 +1963,8 @@ class GenerationService:
                 connection,
                 intent,
             )
-            expected_identity_hash = (
-                identity_pack_snapshot.get("snapshot_hash")
-                if isinstance(identity_pack_snapshot, dict)
-                else None
-            )
-            current_identity_hash = (
-                current_identity_pack_snapshot.get("snapshot_hash")
-                if isinstance(current_identity_pack_snapshot, dict)
-                else None
-            )
+            expected_identity_hash = identity_pack_snapshot.get("snapshot_hash") if isinstance(identity_pack_snapshot, dict) else None
+            current_identity_hash = current_identity_pack_snapshot.get("snapshot_hash") if isinstance(current_identity_pack_snapshot, dict) else None
             if expected_identity_hash != current_identity_hash:
                 raise DomainRuleError(
                     "VARIANT_PLAN_STALE",
@@ -1732,9 +1976,7 @@ class GenerationService:
                     input_evidence = {"media_bindings": media_bindings_snapshot}
                 input_evidence["identity_pack_snapshot_hash"] = identity_pack_snapshot["snapshot_hash"]
             next_no = int(
-                connection.execute(
-                    "SELECT COALESCE(MAX(variant_no),0)+1 AS n FROM generation_variants WHERE intent_id=?", (intent_id,)
-                ).fetchone()["n"]
+                connection.execute("SELECT COALESCE(MAX(variant_no),0)+1 AS n FROM generation_variants WHERE intent_id=?", (intent_id,)).fetchone()["n"]
             )
             connection.execute(
                 """INSERT INTO generation_variants
@@ -1744,11 +1986,25 @@ class GenerationService:
                 identity_pack_snapshot_json,status, created_at, updated_at, created_by)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED', ?, ?, 'local-user')""",
                 (
-                    variant_id, intent_id, next_no, plan.variant_type, plan.parent_variant_id, plan.branch_reason,
-                    plan.prompt_revision_id, plan.profile_version_id, _canonical(plan.parameter_set), plan.seed_policy,
-                    plan.explicit_seed, plan.provider_random_nonce, _digest(input_evidence),
-                    recipe_hash, dependencies["director_recipe_version_id"], dependencies["director_recipe_hash"],
-                    _canonical(identity_pack_snapshot or {}), now, now,
+                    variant_id,
+                    intent_id,
+                    next_no,
+                    plan.variant_type,
+                    plan.parent_variant_id,
+                    plan.branch_reason,
+                    plan.prompt_revision_id,
+                    plan.profile_version_id,
+                    _canonical(plan.parameter_set),
+                    plan.seed_policy,
+                    plan.explicit_seed,
+                    plan.provider_random_nonce,
+                    _digest(input_evidence),
+                    recipe_hash,
+                    dependencies["director_recipe_version_id"],
+                    dependencies["director_recipe_hash"],
+                    _canonical(identity_pack_snapshot or {}),
+                    now,
+                    now,
                 ),
             )
             for binding in plan.bindings:
@@ -1757,8 +2013,13 @@ class GenerationService:
                     (id, variant_id, role, media_version_id, ordinal, weight, source_approval_id)
                     VALUES (?, ?, ?, ?, ?, ?, ?)""",
                     (
-                        str(uuid.uuid4()), variant_id, binding.role, binding.media_version_id, binding.ordinal,
-                        binding.weight, approval_by_slot.get((binding.role, binding.ordinal)),
+                        str(uuid.uuid4()),
+                        variant_id,
+                        binding.role,
+                        binding.media_version_id,
+                        binding.ordinal,
+                        binding.weight,
+                        approval_by_slot.get((binding.role, binding.ordinal)),
                     ),
                 )
             # G11 P0-1: inject the shot's bound CHARACTER appearance anchors into
@@ -1777,11 +2038,7 @@ class GenerationService:
                 if isinstance(prompt_context, str) and prompt_context and isinstance(semantic_inputs.get("PROMPT"), str):
                     semantic_inputs["PROMPT"] = semantic_inputs["PROMPT"].rstrip() + "\n\n" + prompt_context
                 negative_context = style_context.get("negative_prompt_context")
-                if (
-                    isinstance(negative_context, str)
-                    and negative_context
-                    and isinstance(semantic_inputs.get("NEGATIVE_PROMPT"), str)
-                ):
+                if isinstance(negative_context, str) and negative_context and isinstance(semantic_inputs.get("NEGATIVE_PROMPT"), str):
                     semantic_inputs["NEGATIVE_PROMPT"] = semantic_inputs["NEGATIVE_PROMPT"].rstrip() + "\n\n" + negative_context
             anchor_lines = _character_anchor_lines(connection, intent)
             story_assets_snapshot: dict[str, str] | None = None
@@ -1833,6 +2090,7 @@ class GenerationService:
                 idempotency_key,
                 execution_profile_version_id=plan.profile_version_id,
                 max_attempts=1,
+                **(job_scope or {}),
             )
             connection.execute(
                 """INSERT INTO audit_events
@@ -1873,9 +2131,7 @@ class GenerationService:
                             {
                                 "job_id": job["id"],
                                 "snapshot_hash": identity_pack_snapshot["snapshot_hash"],
-                                "pack_version_ids": [
-                                    item["pack_version_id"] for item in identity_pack_snapshot["packs"]
-                                ],
+                                "pack_version_ids": [item["pack_version_id"] for item in identity_pack_snapshot["packs"]],
                             }
                         ),
                     ),
@@ -1905,15 +2161,11 @@ class GenerationService:
         variant_id = str(uuid.uuid4())
         ancestors, allowed_roles, dependencies = self._plan_context(intent_id, plan)
         plan.validate(variant_id=variant_id, ancestors=ancestors, allowed_roles=allowed_roles)
-        approval_by_slot = {
-            (str(item["role"]), int(item["ordinal"])): str(item["source_approval_id"])
-            for item in dependencies.get("approvals", [])
-        }
+        approval_by_slot = {(str(item["role"]), int(item["ordinal"])): str(item["source_approval_id"]) for item in dependencies.get("approvals", [])}
         now = _now()
         execution_recipe = self._execution_recipe(plan)
         binding_snapshots = [
-            {**self._binding_dict(binding), "source_approval_id": approval_by_slot.get((binding.role, binding.ordinal))}
-            for binding in plan.bindings
+            {**self._binding_dict(binding), "source_approval_id": approval_by_slot.get((binding.role, binding.ordinal))} for binding in plan.bindings
         ]
         identity_pack_snapshot = dependencies.get("identity_pack_snapshot")
         fingerprint_evidence: object = binding_snapshots
@@ -1928,12 +2180,8 @@ class GenerationService:
             if intent is None:
                 raise DomainRuleError("GENERATION_INTENT_NOT_FOUND", "GenerationIntent 不存在", {"intent_id": intent_id})
             current_identity_pack_snapshot = CharacterIdentityPackService.generation_snapshot_for_intent(connection, intent)
-            if (
-                identity_pack_snapshot.get("snapshot_hash") if isinstance(identity_pack_snapshot, dict) else None
-            ) != (
-                current_identity_pack_snapshot.get("snapshot_hash")
-                if isinstance(current_identity_pack_snapshot, dict)
-                else None
+            if (identity_pack_snapshot.get("snapshot_hash") if isinstance(identity_pack_snapshot, dict) else None) != (
+                current_identity_pack_snapshot.get("snapshot_hash") if isinstance(current_identity_pack_snapshot, dict) else None
             ):
                 raise DomainRuleError("VARIANT_PLAN_STALE", "角色身份包绑定发生变化，请重新创建计划")
             profile = connection.execute("SELECT id FROM execution_profile_versions WHERE id = ?", (plan.profile_version_id,)).fetchone()

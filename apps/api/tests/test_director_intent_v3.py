@@ -10,6 +10,7 @@ from local_drama.config import Settings
 from local_drama.domain.director_intent import normalize_director_intent_v3
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.policies import REQUIRED_SHOT_FIELDS
+from local_drama.infrastructure.database.shot_studio_command_repository import shot_studio_command_service
 from local_drama.main import create_app
 from tests.test_director_fields import _published_camera_profile
 
@@ -110,12 +111,12 @@ def test_v3_typed_api_roundtrips_canonical_intent(workspace, database) -> None:
     payload = _v3_payload()
 
     with TestClient(create_app(workspace)) as client:
-        response = client.post(
-            f"/api/v1/projects/shots/{shot['id']}/revisions",
+        response = client.put(
+            f"/api/v2/shots/{shot['id']}/draft",
             json={"fields": payload, "freeze": True, "expected_revision_no": 1},
         )
 
-    assert response.status_code == 201, response.text
+    assert response.status_code == 200, response.text
     result = response.json()["shot_revision"]
     assert result["revision_no"] == 2
     assert result["is_frozen"] is True
@@ -139,7 +140,7 @@ def test_explicit_v3_api_rejects_invalid_typed_facts(workspace, database, mutati
     mutation(payload)
 
     with TestClient(create_app(workspace)) as client:
-        response = client.post(f"/api/v1/projects/shots/{shot['id']}/revisions", json={"fields": payload})
+        response = client.put(f"/api/v2/shots/{shot['id']}/draft", json={"fields": payload})
 
     assert response.status_code == 422
     with database.connect() as connection:
@@ -148,8 +149,12 @@ def test_explicit_v3_api_rejects_invalid_typed_facts(workspace, database, mutati
 
 def test_revision_audit_outbox_and_conflict_are_transactional(workspace, database) -> None:
     project, _episode, shot, service = _project_and_shot(workspace, database, "director_v3_revision_events")
-    created = service.create_shot_revision(
-        str(shot["id"]), {"subject_action": "walk"}, freeze=True, expected_revision_no=1, actor="director-test",
+    created = shot_studio_command_service(database).save_draft_revision(
+        str(shot["id"]),
+        {"subject_action": "walk"},
+        freeze=True,
+        expected_revision_no=1,
+        actor="director-test",
     )
     with database.connect() as connection:
         audit = connection.execute(
@@ -170,8 +175,8 @@ def test_revision_audit_outbox_and_conflict_are_transactional(workspace, databas
     assert json.loads(outbox["payload_json"])["schema_version"] == "director-intent.v3"
 
     with TestClient(create_app(workspace)) as client:
-        conflict = client.post(
-            f"/api/v1/projects/shots/{shot['id']}/revisions",
+        conflict = client.put(
+            f"/api/v2/shots/{shot['id']}/draft",
             json={"fields": _v3_payload(), "expected_revision_no": 1},
         )
     assert conflict.status_code == 409
@@ -186,10 +191,7 @@ def test_revision_audit_outbox_and_conflict_are_transactional(workspace, databas
 
 def test_ready_audit_outbox_and_invalid_transition_emit_nothing(workspace, database) -> None:
     project, _episode, shot, service = _project_and_shot(workspace, database, "director_v3_ready_events")
-    complete = {
-        field: "" if field in {"dialogue", "environment"} else 4_000 if field == "target_duration_ms" else field
-        for field in REQUIRED_SHOT_FIELDS
-    }
+    complete = {field: "" if field in {"dialogue", "environment"} else 4_000 if field == "target_duration_ms" else field for field in REQUIRED_SHOT_FIELDS}
     profile_id = _published_camera_profile(workspace, database, "NATIVE")
     complete["camera_plan"] = {
         "mode": "NATIVE",
@@ -201,8 +203,8 @@ def test_ready_audit_outbox_and_invalid_transition_emit_nothing(workspace, datab
         "curve": "EASE_IN_OUT",
         "profile_version_id": profile_id,
     }
-    revision = service.create_shot_revision(str(shot["id"]), complete, freeze=True, expected_revision_no=1)
-    ready = service.mark_shot_production_ready(str(shot["id"]), actor="director-ready")
+    revision = shot_studio_command_service(database).save_draft_revision(str(shot["id"]), complete, freeze=True, expected_revision_no=1)
+    ready = shot_studio_command_service(database).mark_ready_shot(str(shot["id"]), actor="director-ready")
     assert ready["status"] == "READY"
     with database.connect() as connection:
         audit = connection.execute(
@@ -223,12 +225,13 @@ def test_ready_audit_outbox_and_invalid_transition_emit_nothing(workspace, datab
         "revision_id": revision["id"],
         "shot_id": shot["id"],
         "to_status": "READY",
+        "atomic_save": False,
     }
     assert outbox["project_id"] == project["id"]
     assert json.loads(outbox["payload_json"])["to_status"] == "READY"
 
     with pytest.raises(DomainRuleError) as conflict:
-        service.mark_shot_production_ready(str(shot["id"]), actor="director-ready")
+        shot_studio_command_service(database).mark_ready_shot(str(shot["id"]), actor="director-ready")
     assert conflict.value.code == "INVALID_STATE_TRANSITION"
     with database.connect() as connection:
         assert (
@@ -239,29 +242,32 @@ def test_ready_audit_outbox_and_invalid_transition_emit_nothing(workspace, datab
 
 def test_save_and_ready_is_atomic_for_revision_status_and_events(workspace, database) -> None:
     _project, _episode, shot, service = _project_and_shot(workspace, database, "director_v3_atomic_ready")
-    complete = {
-        field: "" if field in {"dialogue", "environment"} else 4_000 if field == "target_duration_ms" else field
-        for field in REQUIRED_SHOT_FIELDS
-    }
+    complete = {field: "" if field in {"dialogue", "environment"} else 4_000 if field == "target_duration_ms" else field for field in REQUIRED_SHOT_FIELDS}
     profile_id = _published_camera_profile(workspace, database, "NATIVE")
     complete["camera_plan"] = {
-        "mode": "NATIVE", "shot_type": "CLOSEUP", "movement": "PUSH_IN", "prompt_text": "",
-        "direction": "FORWARD", "intensity": 0.5, "curve": "EASE_IN_OUT", "profile_version_id": profile_id,
+        "mode": "NATIVE",
+        "shot_type": "CLOSEUP",
+        "movement": "PUSH_IN",
+        "prompt_text": "",
+        "direction": "FORWARD",
+        "intensity": 0.5,
+        "curve": "EASE_IN_OUT",
+        "profile_version_id": profile_id,
     }
-    service.create_shot_revision(str(shot["id"]), complete, expected_revision_no=1)
+    shot_studio_command_service(database).save_draft_revision(str(shot["id"]), complete, expected_revision_no=1)
     changed = {**complete, "subject_action": "原子保存后的动作"}
     with TestClient(create_app(workspace)) as client:
         stale = client.post(
-            f"/api/v1/projects/shots/{shot['id']}:save-and-ready",
-            json={"fields": changed, "expected_revision_no": 1},
+            f"/api/v2/shots/{shot['id']}:mark-ready",
+            json={"draft": changed, "expected_revision_no": 1},
         )
         assert stale.status_code == 409
         with database.connect() as connection:
             assert connection.execute("SELECT COUNT(*) FROM shot_revisions WHERE shot_id=?", (shot["id"],)).fetchone()[0] == 2
             assert connection.execute("SELECT status FROM shots WHERE id=?", (shot["id"],)).fetchone()["status"] == "DIRECTED"
         saved = client.post(
-            f"/api/v1/projects/shots/{shot['id']}:save-and-ready",
-            json={"fields": changed, "freeze": True, "expected_revision_no": 2},
+            f"/api/v2/shots/{shot['id']}:mark-ready",
+            json={"draft": changed, "freeze": True, "expected_revision_no": 2},
         )
     assert saved.status_code == 200, saved.text
     assert saved.json()["shot_revision"]["revision_no"] == 3

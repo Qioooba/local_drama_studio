@@ -6,7 +6,6 @@ describe("queryKeys", () => {
   it("keeps list, detail and scoped prefixes structurally consistent", () => {
     expect(queryKeys.projects.list({ limit: 100 }).slice(0, 2)).toEqual(queryKeys.projects.lists());
     expect(queryKeys.assetBible.overview("p1").slice(0, 3)).toEqual(queryKeys.assetBible.project("p1"));
-    expect(queryKeys.freshness.report("EPISODE", "e1", 50).slice(0, 4)).toEqual(queryKeys.freshness.scope("EPISODE", "e1"));
     expect(queryKeys.sourcePassage.page("v1", 8_000).slice(0, 3)).toEqual(queryKeys.sourcePassage.document("v1"));
     expect(queryKeys.jobs.list(null)).toEqual(["jobs", "scope", "all", "list"]);
   });

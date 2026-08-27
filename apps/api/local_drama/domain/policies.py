@@ -130,15 +130,14 @@ def validate_delivery_source(*, render_approved: bool, target_selected: bool, in
         raise DomainRuleError("SOURCE_INTEGRITY_FAILED", "源媒体完整性失败，不能构建交付")
 
 
-def validate_local_transport(transport: str, base_url: str | None = None) -> None:
+def validate_local_transport(transport: str, base_url: str | None = None, *, allow_private_network: bool = False) -> None:
     if transport == "REMOTE_HTTP_SERVICE":
         raise DomainRuleError("REMOTE_PROVIDER_DISABLED_IN_LOCAL_RELEASE", "首版 LOCAL_ONLY 不允许 REMOTE transport")
     if transport == "LOOPBACK_HTTP" and base_url:
-        from urllib.parse import urlparse
+        from local_drama.domain.network_policy import parse_runtime_endpoint
 
-        hostname = urlparse(base_url).hostname
-        if hostname not in {"localhost", "127.0.0.1", "::1"}:
-            raise DomainRuleError("LOOPBACK_ONLY", "本地 Runtime base_url 只能指向 loopback")
+        if parse_runtime_endpoint(base_url, allow_private_network=allow_private_network) is None:
+            raise DomainRuleError("LOOPBACK_ONLY", "本地 Runtime base_url 只能指向 loopback 或受控私网地址")
 
 
 @dataclass(frozen=True)

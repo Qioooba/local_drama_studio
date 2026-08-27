@@ -25,81 +25,48 @@ from queue import Empty, Queue
 from time import monotonic
 from typing import Any, Callable
 
-from local_drama.application.media import MediaService, _hash_file
-from local_drama.application.director_desk import DirectorDeskReadModelService
+from local_drama.application.media import _hash_file
 from local_drama.application.subtitle_styles import DEFAULT_SUBTITLE_STYLE, validate_style
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
-from local_drama.infrastructure.database.sqlite import Database
+from local_drama.domain.timeline_formatting import (
+    canonical_json as _json,
+)
+from local_drama.domain.timeline_formatting import (
+    normalized_text_with_offsets as _normalized_text_with_offsets,
+)
+from local_drama.domain.timeline_formatting import (
+    snapshot_hash as _hash,
+)
+from local_drama.domain.timeline_formatting import (
+    subtitle_time,
+)
+from local_drama.application.ports.timeline import TimelineMediaPort, TimelineUnitOfWork
+from local_drama.infrastructure.filesystem.atomic import replace_path
 
-# Canonical audio track kinds (P1-11).  Legacy values from before the BGM/SFX
-# split are accepted on new submissions and normalized on storage so the
-# database only ever holds the canonical set; historical rows keep their old
-# value and the renderer treats MUSIC/ENVIRONMENT as BGM/SFX equivalents.
-_CANONICAL_TRACK_TYPES = {"DIALOGUE": "DIALOGUE", "BGM": "BGM", "SFX": "SFX"}
-_LEGACY_TRACK_TYPES = {"MUSIC": "BGM", "ENVIRONMENT": "SFX"}
 
-
-def _canonical_track_type(track_type: str) -> str | None:
-    return _CANONICAL_TRACK_TYPES.get(track_type) or _LEGACY_TRACK_TYPES.get(track_type)
+def _build_media_service(database: TimelineUnitOfWork, settings: Settings) -> TimelineMediaPort:
+    media = __import__("local_drama.application.media", fromlist=["MediaService"])
+    return media.MediaService(database, settings)
 
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
-def _hash(value: Any) -> str:
-    return hashlib.sha256(_json(value).encode("utf-8")).hexdigest()
-
-
-def _normalized_text_with_offsets(value: str) -> tuple[str, list[int]]:
-    """Collapse whitespace while retaining a map back to the authoritative text."""
-    normalized: list[str] = []
-    offsets: list[int] = []
-    in_whitespace = False
-    for offset, character in enumerate(value):
-        if character.isspace():
-            if normalized and not in_whitespace:
-                normalized.append(" ")
-                offsets.append(offset)
-            in_whitespace = True
-            continue
-        normalized.append(character)
-        offsets.append(offset)
-        in_whitespace = False
-    if normalized and normalized[-1] == " ":
-        normalized.pop()
-        offsets.pop()
-    return "".join(normalized), offsets
-
-
 def _timestamp_us(value: int) -> str:
-    if value < 0:
-        raise DomainRuleError("TIMELINE_TIME_INVALID", "时间戳不能为负数")
-    total_ms = value // 1000
-    hours, remainder = divmod(total_ms, 3_600_000)
-    minutes, milliseconds = divmod(remainder, 60_000)
-    seconds, millis = divmod(milliseconds, 1000)
-    return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
+    return subtitle_time(value)
 
 
 def _srt_time(value: int) -> str:
-    total_ms = value // 1000
-    hours, remainder = divmod(total_ms, 3_600_000)
-    minutes, remainder = divmod(remainder, 60_000)
-    seconds, millis = divmod(remainder, 1000)
-    return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
+    return subtitle_time(value)
 
 
 class TimelineService:
-    def __init__(self, database: Database, settings: Settings) -> None:
+    def __init__(self, database: TimelineUnitOfWork, settings: Settings, media: TimelineMediaPort | None = None) -> None:
         self.database = database
         self.settings = settings
-        self.media = MediaService(database, settings)
+        self.media = media or _build_media_service(database, settings)
         self.cancel_check: Callable[[], bool] | None = None
         self.progress_callback: Callable[[dict[str, Any]], None] | None = None
 
@@ -114,6 +81,66 @@ class TimelineService:
         if row is None:
             raise DomainRuleError("EPISODE_NOT_FOUND", "集不存在", {"episode_id": episode_id})
         return dict(row)
+
+    def timeline_selections(self, project_id: str, episode_id: str, limit: int = 500) -> dict[str, Any]:
+        """Return bounded timeline inputs without loading the Shot Studio aggregate."""
+        bounded_limit = max(1, min(int(limit), 500))
+        with self.database.connect() as connection:
+            context = connection.execute(
+                """SELECT 1 FROM projects p JOIN seasons se ON se.project_id=p.id
+                JOIN episodes e ON e.season_id=se.id WHERE p.id=? AND e.id=?""",
+                (project_id, episode_id),
+            ).fetchone()
+            if context is None:
+                raise DomainRuleError(
+                    "EPISODE_NOT_FOUND", "分集不存在或不属于当前项目",
+                    {"project_id": project_id, "episode_id": episode_id},
+                )
+            total = int(connection.execute(
+                "SELECT COUNT(*) FROM shots WHERE episode_id=? AND archived_at IS NULL", (episode_id,),
+            ).fetchone()[0])
+            rows = connection.execute(
+                """WITH continuity AS (
+                  SELECT shot_id,
+                  CASE WHEN MAX(is_stale)=1 THEN 'STALE'
+                       WHEN MAX(is_conflict)=1 THEN 'CONFLICT'
+                       WHEN MAX(is_attention)=1 THEN 'ATTENTION' ELSE 'OK' END continuity_status
+                  FROM (
+                    SELECT to_shot_id shot_id,is_stale,
+                    CASE WHEN compatibility_status IN ('BLOCKED','CONFLICT','INCOMPATIBLE') THEN 1 ELSE 0 END is_conflict,
+                    CASE WHEN compatibility_status IN ('WARNING','ATTENTION') THEN 1 ELSE 0 END is_attention
+                    FROM shot_transition_constraints
+                    UNION ALL
+                    SELECT from_shot_id,is_stale,
+                    CASE WHEN compatibility_status IN ('BLOCKED','CONFLICT','INCOMPATIBLE') THEN 1 ELSE 0 END,
+                    CASE WHEN compatibility_status IN ('WARNING','ATTENTION') THEN 1 ELSE 0 END
+                    FROM shot_transition_constraints
+                  ) GROUP BY shot_id
+                )
+                SELECT s.id,s.code,s.order_key,s.status,s.target_duration_ms,
+                (SELECT se.media_version_id
+                 FROM selections se
+                 JOIN media_versions mv ON mv.id=se.media_version_id
+                 JOIN media_assets ma ON ma.id=mv.media_asset_id
+                 LEFT JOIN generation_variants gv ON ma.owner_type='GENERATION_VARIANT' AND ma.owner_id=gv.id
+                 LEFT JOIN generation_intents gi ON gi.id=gv.intent_id
+                 WHERE ma.media_kind='VIDEO' AND mv.mime_type LIKE 'video/%'
+                   AND se.selection_type IN ('FORMAL_SELECTION','PROXY_WINNER')
+                   AND ((ma.owner_type='SHOT' AND ma.owner_id=s.id)
+                     OR (gi.owner_type='SHOT' AND gi.owner_id=s.id))
+                 ORDER BY CASE se.selection_type WHEN 'FORMAL_SELECTION' THEN 2 ELSE 1 END DESC,
+                          se.created_at DESC,se.id DESC LIMIT 1) current_video_media_version_id,
+                COALESCE(c.continuity_status,'MISSING') continuity_status
+                FROM shots s LEFT JOIN continuity c ON c.shot_id=s.id
+                WHERE s.episode_id=? AND s.archived_at IS NULL
+                ORDER BY CAST(s.order_key AS REAL),s.code,s.id LIMIT ?""",
+                (episode_id, bounded_limit),
+            ).fetchall()
+        return {
+            "items": [dict(row) for row in rows], "total": total,
+            "has_more": total > len(rows), "limit": bounded_limit,
+            "read_only": True, "request_shape": "bounded_timeline_selection_read_model",
+        }
 
     def _project_root(self, episode_id: str) -> Path:
         episode = self._episode(episode_id)
@@ -426,7 +453,7 @@ class TimelineService:
                 "SELECT id,revision_no,content_hash,status FROM subtitle_revisions WHERE episode_id=? ORDER BY revision_no DESC LIMIT 1",
                 (episode_id,),
             ).fetchone()
-        selections = DirectorDeskReadModelService(self.database).timeline_selections(
+        selections = self.timeline_selections(
             str(episode["project_id"]), episode_id, limit=500,
         )
         blockers: list[dict[str, Any]] = []
@@ -443,7 +470,7 @@ class TimelineService:
         video_items: list[dict[str, Any]] = []
         cursor_us = 0
         selected_videos: list[dict[str, Any]] = []
-        for index, item in enumerate(selections["items"]):
+        for _index, item in enumerate(selections["items"]):
             media_version_id = str(item.get("current_video_media_version_id") or "")
             shot_id = str(item["id"])
             if not media_version_id:
@@ -657,6 +684,12 @@ class TimelineService:
                 "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'producer', 'SUBTITLE_REVISION_CREATED', 'subtitle_revision', ?, ?, ?)",
                 (actor, revision_id, "创建字幕 revision", _json({"episode_id": episode_id, "format": normalized_format})),
             )
+            connection.execute(
+                """UPDATE timeline_revisions SET status='STALE',updated_at=?
+                WHERE id=(SELECT id FROM timeline_revisions WHERE episode_id=? ORDER BY revision_no DESC,id DESC LIMIT 1)
+                  AND status!='STALE'""",
+                (now, episode_id),
+            )
         return self.get_subtitles(revision_id)
 
     def _subtitle_authority(self, episode: dict[str, Any], authority: dict[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -761,7 +794,16 @@ class TimelineService:
                     minutes, rest = divmod(rest, 6000)
                     seconds, cs = divmod(rest, 100)
                     return f"{hours}:{minutes:02d}:{seconds:02d}.{cs:02d}"
-                lines.append(f"Dialogue: 0,{ass_time(cue['start_us'])},{ass_time(cue['end_us'])},{cue['text'].replace(chr(10), r'\\N')}")
+                dialogue_text = str(cue.get("text") or "")
+                dialogue_text = dialogue_text.replace(chr(10), "\\N")
+                lines.append(
+                    "Dialogue: 0,"
+                    + ass_time(cue["start_us"])
+                    + ","
+                    + ass_time(cue["end_us"])
+                    + ","
+                    + dialogue_text
+                )
             return "\n".join(lines) + "\n"
         lines = []
         for cue in cues:
@@ -783,132 +825,9 @@ class TimelineService:
         result["cues"] = [{**dict(cue), "style": json.loads(cue["style_json"])} for cue in cues]
         return result
 
-    def bind_audio(
-        self,
-        episode_id: str,
-        media_version_id: str,
-        track_type: str,
-        start_us: int,
-        end_us: int,
-        *,
-        gain_db: float = 0.0,
-        source_license_status: str = "VERIFIED_LOCAL",
-        license_evidence_path_rel: str,
-        loop_enabled: bool = False,
-        fade_in_us: int = 0,
-        fade_out_us: int = 0,
-        actor: str = "local-user",
-    ) -> dict[str, Any]:
-        media = self.media.verify_content_integrity(media_version_id)
-        episode = self._episode(episode_id)
-        if media["project_id"] != episode["project_id"] or media["media_kind"] != "AUDIO":
-            raise DomainRuleError("AUDIO_BINDING_MEDIA_INVALID", "音频绑定必须引用同项目已验证 AUDIO MediaVersion")
-        # P1-11: canonical track kinds are DIALOGUE/BGM/SFX.  Legacy MUSIC and
-        # ENVIRONMENT values stay accepted (kept as aliases so existing
-        # producers/tests keep working) and are normalized on storage; anything
-        # else is rejected for NEW submissions only.
-        canonical_track_type = _canonical_track_type(track_type)
-        if canonical_track_type is None:
-            raise DomainRuleError(
-                "AUDIO_TRACK_TYPE_UNSUPPORTED",
-                "音频轨道必须是 DIALOGUE、BGM 或 SFX（兼容旧值 MUSIC/ENVIRONMENT）",
-                {"supported": sorted(_CANONICAL_TRACK_TYPES), "legacy_aliases": sorted(_LEGACY_TRACK_TYPES)},
-            )
-        track_type = canonical_track_type
-        if end_us <= start_us or start_us < 0:
-            raise DomainRuleError("AUDIO_BINDING_RANGE_INVALID", "音频绑定时间范围无效")
-        if source_license_status not in {"VERIFIED_LOCAL", "PUBLIC_DOMAIN", "USER_OWNED"}:
-            raise DomainRuleError("AUDIO_LICENSE_REQUIRED", "音频必须具有可证明的本地授权状态")
-        duration_us = int(media.get("duration_ms") or 0) * 1000
-        if not loop_enabled and duration_us > 0 and end_us - start_us > duration_us:
-            raise DomainRuleError("AUDIO_BINDING_EXCEEDS_SOURCE", "未启用 loop 时绑定时长不能超过源音频")
-        if fade_in_us + fade_out_us > end_us - start_us:
-            raise DomainRuleError("AUDIO_FADE_RANGE_INVALID", "淡入与淡出总时长不能超过绑定范围")
-        root = (self.settings.projects_root / str(episode["root_rel"])).resolve()
-        evidence_candidate = root / license_evidence_path_rel
-        evidence_path = evidence_candidate.resolve()
-        if evidence_candidate.is_symlink() or not evidence_path.is_relative_to(root) or not evidence_path.is_file():
-            raise DomainRuleError("AUDIO_LICENSE_EVIDENCE_INVALID", "音频授权证据必须是项目内普通文件")
-        evidence_sha256, evidence_size = _hash_file(evidence_path)
-        license_evidence = {
-            "schema_version": "localdrama.audio-license-evidence.v1",
-            "path_rel": evidence_path.relative_to(root).as_posix(),
-            "sha256": evidence_sha256,
-            "byte_size": evidence_size,
-        }
-        binding_id = str(uuid.uuid4())
-        now = _now()
-        with self.database.transaction() as connection:
-            connection.execute(
-                """INSERT INTO audio_bindings
-                (id, episode_id, media_version_id, track_type, start_us, end_us, gain_db, source_license_status,
-                 status, snapshot_json, loop_enabled, fade_in_us, fade_out_us, license_evidence_json,
-                 created_at, updated_at, created_by, revision, schema_version)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?, ?, ?, ?, 1, 'v2')""",
-                (
-                    binding_id, episode_id, media_version_id, track_type, start_us, end_us, gain_db, source_license_status,
-                    _json({"schema_version": "localdrama.audio-binding.v1", "media_version_id": media_version_id, "media_sha256": media["sha256"], "gain_db": gain_db, "loop_enabled": loop_enabled, "fade_in_us": fade_in_us, "fade_out_us": fade_out_us}),
-                    int(loop_enabled), fade_in_us, fade_out_us, _json(license_evidence), now, now, actor,
-                ),
-            )
-            connection.execute(
-                "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'producer', 'AUDIO_BINDING_CREATED', 'audio_binding', ?, ?, ?)",
-                (actor, binding_id, "绑定本地音频轨道", _json({"episode_id": episode_id, "track_type": track_type})),
-            )
-        return self.get_audio_binding(binding_id)
-
-    def get_audio_binding(self, binding_id: str) -> dict[str, Any]:
-        with self.database.connect() as connection:
-            row = connection.execute("SELECT * FROM audio_bindings WHERE id=?", (binding_id,)).fetchone()
-        if row is None:
-            raise DomainRuleError("AUDIO_BINDING_NOT_FOUND", "音频绑定不存在")
-        result = dict(row)
-        result["snapshot"] = json.loads(result.pop("snapshot_json"))
-        evidence = json.loads(result.pop("license_evidence_json"))
-        result["license_evidence"] = evidence
-        result["authorization_status"] = "VERIFIED_EVIDENCE" if evidence.get("schema_version") == "localdrama.audio-license-evidence.v1" else "LEGACY_INCOMPLETE"
-        result["loop_enabled"] = bool(result["loop_enabled"])
-        return result
-
-    def unbind_audio(self, binding_id: str, actor: str = "local-user") -> dict[str, Any]:
-        """Remove only the episode-to-media relationship, preserving media and audit history."""
-        binding = self.get_audio_binding(binding_id)
-        with self.database.transaction() as connection:
-            connection.execute("DELETE FROM audio_bindings WHERE id=?", (binding_id,))
-            connection.execute(
-                "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'producer', 'AUDIO_BINDING_REMOVED', 'audio_binding', ?, ?, ?)",
-                (
-                    actor,
-                    binding_id,
-                    "移除本地音频轨道绑定",
-                    _json({"episode_id": binding["episode_id"], "media_version_id": binding["media_version_id"], "track_type": binding["track_type"]}),
-                ),
-            )
-        return {"id": binding_id, "status": "UNBOUND", "media_version_id": binding["media_version_id"]}
-
-    def list_audio_bindings(self, episode_id: str) -> list[dict[str, Any]]:
-        self._episode(episode_id)
-        with self.database.connect() as connection:
-            rows = connection.execute(
-                """SELECT ab.*,mv.duration_ms,mv.source_name,ma.purpose,
-                EXISTS(SELECT 1 FROM media_cache_entries mce WHERE mce.media_version_id=ab.media_version_id
-                  AND mce.cache_kind='WAVEFORM' AND mce.status='READY') AS waveform_ready
-                FROM audio_bindings ab JOIN media_versions mv ON mv.id=ab.media_version_id
-                JOIN media_assets ma ON ma.id=mv.media_asset_id
-                WHERE ab.episode_id=? ORDER BY ab.start_us,ab.id""",
-                (episode_id,),
-            ).fetchall()
-        items = []
-        for row in rows:
-            item = dict(row)
-            item["snapshot"] = json.loads(item.pop("snapshot_json"))
-            evidence = json.loads(item.pop("license_evidence_json"))
-            item["license_evidence"] = evidence
-            item["authorization_status"] = "VERIFIED_EVIDENCE" if evidence.get("schema_version") == "localdrama.audio-license-evidence.v1" else "LEGACY_INCOMPLETE"
-            item["loop_enabled"] = bool(item["loop_enabled"])
-            item["waveform_ready"] = bool(item["waveform_ready"])
-            items.append(item)
-        return items
+    # Legacy audio binding create/get/update/remove operations are implemented in
+    # audio_v2. This service now reads bindings only from timeline/audio facts
+    # to avoid duplicate mutable write paths.
 
     def create_frame_anchor(
         self,
@@ -1197,12 +1116,19 @@ class TimelineService:
             if executor_ref != expected_executor:
                 raise DomainRuleError("POST_PROCESS_EXECUTOR_REQUIRED", "每个增强步骤必须显式绑定受支持的本地 executor", {"ordinal": ordinal, "expected": expected_executor})
             if step["kind"] == "SCALE":
+                step["mode"] = str(step.get("mode", "EXPLICIT"))
+                if step["mode"] == "KEEP_SOURCE":
+                    step["fit"] = "CONTAIN"
+                    normalized.append(step)
+                    continue
+                if step["mode"] != "EXPLICIT":
+                    raise DomainRuleError("POST_PROCESS_SCALE_INVALID", "SCALE mode 仅支持 EXPLICIT/KEEP_SOURCE")
                 width, height = step.get("width"), step.get("height")
                 if not isinstance(width, int) or not isinstance(height, int) or not 64 <= width <= 8192 or not 64 <= height <= 8192 or width % 2 or height % 2:
                     raise DomainRuleError("POST_PROCESS_SCALE_INVALID", "SCALE 必须显式给出 64—8192 的偶数 width/height")
                 step["fit"] = str(step.get("fit", "CONTAIN"))
-                if step["fit"] not in {"CONTAIN", "STRETCH"}:
-                    raise DomainRuleError("POST_PROCESS_SCALE_INVALID", "SCALE fit 仅支持 CONTAIN/STRETCH")
+                if step["fit"] not in {"CONTAIN", "COVER", "STRETCH"}:
+                    raise DomainRuleError("POST_PROCESS_SCALE_INVALID", "SCALE fit 仅支持 CONTAIN/COVER/STRETCH")
             elif step["kind"] == "ENCODE":
                 step["codec"] = str(step.get("codec", "H264"))
                 step["preset"] = str(step.get("preset", "veryfast"))
@@ -1364,13 +1290,21 @@ class TimelineService:
         steps = recipe["steps"]
         scale = next(step for step in steps if step["kind"] == "SCALE")
         encode = next(step for step in steps if step["kind"] == "ENCODE")
-        width, height = int(scale["width"]), int(scale["height"])
+        keep_source = str(scale.get("mode", "EXPLICIT")) == "KEEP_SOURCE"
+        width, height = (0, 0) if keep_source else (int(scale["width"]), int(scale["height"]))
         processing_steps = [step for step in steps if step["kind"] not in {"TECHNICAL_QC", "ENCODE"}]
         filter_specs: list[tuple[dict[str, Any], str]] = []
         for step in processing_steps:
             kind = str(step["kind"])
             if kind == "SCALE":
-                filter_spec = f"scale={width}:{height}" if scale["fit"] == "STRETCH" else f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"
+                if keep_source:
+                    continue
+                if scale["fit"] == "STRETCH":
+                    filter_spec = f"scale={width}:{height}"
+                elif scale["fit"] == "COVER":
+                    filter_spec = f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}"
+                else:
+                    filter_spec = f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"
             elif kind == "FRAME_INTERPOLATION":
                 filter_spec = f"fps={int(step['target_fps'])}" if step["mode"] == "DUPLICATE" else f"minterpolate=fps={int(step['target_fps'])}:mi_mode=mci"
             elif kind == "DENOISE":
@@ -1525,7 +1459,7 @@ class TimelineService:
                 raise DomainRuleError("TIMELINE_MEDIA_KIND_INVALID", "VIDEO track 只能绑定视频媒体")
             paths.append(path)
             input_snapshot_items.append({"media_version_id": str(media["id"]), "sha256": str(media["sha256"]), "byte_size": int(media["byte_size"]), "start_us": int(item["start_us"]), "end_us": int(item["end_us"]), "track_type": str(item["track_type"]), "parameters": item["parameters"]})
-        bindings = self._audio_bindings_for_render(str(episode["id"]))
+        bindings = self._audio_bindings_for_timeline(timeline, str(episode["id"]))
         input_snapshot = {
             "schema_version": "localdrama.episode-render-input.v1",
             "renderer_contract": "TIMELINE_DURATION_AND_SUBTITLE_V2",
@@ -1585,7 +1519,7 @@ class TimelineService:
             items.append({"media_version_id": str(media["id"]), "sha256": str(media["sha256"]), "byte_size": int(media["byte_size"]), "start_us": int(item["start_us"]), "end_us": int(item["end_us"]), "track_type": str(item["track_type"]), "parameters": item["parameters"]})
         if not items:
             raise DomainRuleError("TIMELINE_VIDEO_REQUIRED", "整集渲染至少需要一个 VIDEO item")
-        bindings = self._audio_bindings_for_render(str(episode["id"]))
+        bindings = self._audio_bindings_for_timeline(timeline, str(episode["id"]))
         for binding in bindings:
             _, audio_path = self.media.content_path(str(binding["media_version_id"]))
             actual_sha, actual_size = _hash_file(audio_path)
@@ -1643,7 +1577,7 @@ class TimelineService:
                 "frames": segment.get("frames"),
                 "continuation": segment.get("continuation"),
             })
-        bindings = self._audio_bindings_for_render(str(episode["id"]))
+        bindings = self._audio_bindings_for_timeline(timeline, str(episode["id"]))
         input_snapshot = {
             "schema_version": "localdrama.episode-render-input.v1",
             "render_mode": "SEGMENTED_CONCAT",
@@ -1711,7 +1645,7 @@ class TimelineService:
                     "continuation": segment.get("continuation"),
                 }
             )
-        bindings = self._audio_bindings_for_render(str(episode["id"]))
+        bindings = self._audio_bindings_for_timeline(timeline, str(episode["id"]))
         input_snapshot = {
             "schema_version": "localdrama.episode-render-input.v1",
             "render_mode": "SEGMENTED_CONCAT",
@@ -1795,6 +1729,46 @@ class TimelineService:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def _audio_bindings_for_timeline(self, timeline: dict[str, Any], episode_id: str) -> list[dict[str, Any]]:
+        """Resolve audio from the immutable revision for v3 timelines.
+
+        Historical revisions predate embedded dialogue/mix items, so they keep
+        the legacy lookup until migrated. A v3 frozen revision never reads the
+        mutable current mix.
+        """
+        snapshot = timeline.get("input_snapshot") or {}
+        if str(snapshot.get("schema_version") or "") != "localdrama.timeline-editor.v3":
+            return self._audio_bindings_for_render(episode_id)
+        bindings: list[dict[str, Any]] = []
+        for item in timeline.get("items") or []:
+            track_type = str(item.get("track_type") or "").upper()
+            if track_type == "VIDEO" or not item.get("media_version_id"):
+                continue
+            media = self._media_for_episode(episode_id, str(item["media_version_id"]))
+            if str(media["media_kind"]).upper() != "AUDIO":
+                raise DomainRuleError(
+                    "TIMELINE_MEDIA_KIND_INVALID",
+                    "时间线音频轨只能引用音频媒体",
+                    {"media_version_id": str(item["media_version_id"])},
+                )
+            parameters = item.get("parameters") or {}
+            bindings.append(
+                {
+                    "id": str(parameters.get("audio_binding_id") or parameters.get("dialogue_line_id") or item["id"]),
+                    "media_version_id": str(item["media_version_id"]),
+                    "track_type": track_type,
+                    "start_us": int(item["start_us"]),
+                    "end_us": int(item["end_us"]),
+                    "gain_db": float(parameters.get("gain_db") or 0.0),
+                    "loop_enabled": bool(parameters.get("loop_enabled", False)),
+                    "fade_in_us": int(parameters.get("fade_in_us") or 0),
+                    "fade_out_us": int(parameters.get("fade_out_us") or 0),
+                    "media_sha256": str(media["sha256"]),
+                    "media_byte_size": int(media["byte_size"]),
+                }
+            )
+        return bindings
+
     @staticmethod
     def _binding_snapshot(bindings: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return [
@@ -1839,6 +1813,25 @@ class TimelineService:
         finally:
             concat_list.unlink(missing_ok=True)
 
+    @staticmethod
+    def _timeline_transition_kind(item: dict[str, Any] | None) -> str:
+        return str((item or {}).get("parameters", {}).get("transition_in") or "CUT").upper()
+
+    @staticmethod
+    def _xfade_name(kind: str) -> str:
+        if kind == "DISSOLVE":
+            return "dissolve"
+        if kind == "FADE":
+            return "fade"
+        return "fade"
+
+    @classmethod
+    def _timeline_transition_seconds(cls, previous_duration_seconds: float, current_duration_seconds: float) -> float:
+        if previous_duration_seconds <= 0.01 or current_duration_seconds <= 0.01:
+            return 0.0
+        requested = 0.5
+        return round(min(requested, previous_duration_seconds / 2, current_duration_seconds / 2), 3)
+
     def _concat_timeline_videos(
         self,
         paths: list[Path],
@@ -1855,6 +1848,7 @@ class TimelineService:
         stable stream layout.
         """
         normalized: list[Path] = []
+        item_durations_seconds: list[float] = []
         steps: list[dict[str, Any]] = []
         try:
             first_probe = self._probe(paths[0])
@@ -1882,7 +1876,8 @@ class TimelineService:
                     f"tpad=stop_mode=clone:stop_duration={duration_seconds:.6f},"
                     f"trim=duration={duration_seconds:.6f},setpts=PTS-STARTPTS"
                 )
-                args = ["-i", str(path)]
+                source_start_seconds = int((item.get("parameters") or {}).get("source_start_us") or 0) / 1_000_000
+                args = (["-ss", f"{source_start_seconds:.6f}"] if source_start_seconds > 0 else []) + ["-i", str(path)]
                 if has_audio:
                     args += [
                         "-map", "0:v:0", "-map", "0:a:0", "-vf", video_filter,
@@ -1900,6 +1895,7 @@ class TimelineService:
                 ]
                 execution = self._run_ffmpeg(args, timeout=900)
                 normalized.append(clip_path)
+                item_durations_seconds.append(duration_seconds)
                 steps.append(
                     {
                         "stage": "timeline-duration",
@@ -1909,11 +1905,128 @@ class TimelineService:
                         "stderr_tail": execution["stderr_tail"],
                     }
                 )
-            concat_execution = self._concat_videos(normalized, output_path)
+
+            if len(normalized) == 1:
+                concat_execution = self._concat_videos(normalized, output_path)
+                return {
+                    **concat_execution,
+                    "steps": [
+                        *steps,
+                        {
+                            "stage": "concat",
+                            "stdout_tail": concat_execution["stdout_tail"],
+                            "stderr_tail": concat_execution["stderr_tail"],
+                        },
+                    ],
+                }
+
+            transition_present = False
+            for item in video_items[1:]:
+                if self._timeline_transition_kind(item) != "CUT":
+                    transition_present = True
+                    break
+
+            if not transition_present:
+                concat_execution = self._concat_videos(normalized, output_path)
+                return {
+                    **concat_execution,
+                    "steps": [
+                        *steps,
+                        {
+                            "stage": "concat",
+                            "stdout_tail": concat_execution["stdout_tail"],
+                            "stderr_tail": concat_execution["stderr_tail"],
+                        },
+                    ],
+                }
+
+            filter_pieces: list[str] = []
+            transition_pieces: list[dict[str, Any]] = []
+            for index in range(len(normalized)):
+                filter_pieces.append(f"[{index}:v:0]setpts=PTS-STARTPTS[v{index}]")
+                filter_pieces.append(f"[{index}:a:0]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a{index}]")
+
+            current_video_label = "v0"
+            current_audio_label = "a0"
+            current_duration = item_durations_seconds[0]
+            for index in range(1, len(normalized)):
+                item = video_items[index]
+                transition_in = self._timeline_transition_kind(item)
+                if transition_in == "CUT":
+                    next_video = f"v{index}_concat"
+                    next_audio = f"a{index}_concat"
+                    filter_pieces.append(f"[{current_video_label}][v{index}]concat=n=2:v=1:a=0[{next_video}]")
+                    filter_pieces.append(f"[{current_audio_label}][a{index}]concat=n=2:v=0:a=1[{next_audio}]")
+                    current_video_label = next_video
+                    current_audio_label = next_audio
+                else:
+                    transition_seconds = self._timeline_transition_seconds(current_duration, item_durations_seconds[index])
+                    if transition_seconds <= 0.0:
+                        next_video = f"v{index}_concat"
+                        next_audio = f"a{index}_concat"
+                        filter_pieces.append(f"[{current_video_label}][v{index}]concat=n=2:v=1:a=0[{next_video}]")
+                        filter_pieces.append(f"[{current_audio_label}][a{index}]concat=n=2:v=0:a=1[{next_audio}]")
+                        current_video_label = next_video
+                        current_audio_label = next_audio
+                    else:
+                        transition = self._xfade_name(transition_in)
+                        v_ext = f"v{index}_ext"
+                        v_out = f"v{index}_x"
+                        filter_pieces.append(f"[{current_video_label}]tpad=stop_mode=clone:stop_duration={transition_seconds:.3f}[{v_ext}]")
+                        filter_pieces.append(
+                            f"[{v_ext}][v{index}]xfade=transition={transition}:duration={transition_seconds:.3f}:offset={current_duration:.3f}[{v_out}]"
+                        )
+                        next_audio = f"a{index}_concat"
+                        filter_pieces.append(f"[{current_audio_label}][a{index}]concat=n=2:v=0:a=1[{next_audio}]")
+                        current_video_label = v_out
+                        current_audio_label = next_audio
+                        transition_pieces.append(
+                            {
+                                "stage": "timeline-transition",
+                                "from_item_index": index - 1,
+                                "to_item_index": index,
+                                "kind": transition_in,
+                                "duration_seconds": transition_seconds,
+                            }
+                        )
+
+                current_duration += item_durations_seconds[index]
+
+            args = []
+            for clip_path in normalized:
+                args += ["-i", str(clip_path)]
+
+            concat_execution = self._run_ffmpeg(
+                [
+                    *args,
+                    "-filter_complex",
+                    ";".join(filter_pieces),
+                    "-map",
+                    f"[{current_video_label}]",
+                    "-map",
+                    f"[{current_audio_label}]",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "veryfast",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "128k",
+                    "-movflags",
+                    "+faststart",
+                    "-y",
+                    str(output_path),
+                ],
+                timeout=900,
+            )
             return {
                 **concat_execution,
                 "steps": [
                     *steps,
+                    *transition_pieces,
                     {
                         "stage": "concat",
                         "stdout_tail": concat_execution["stdout_tail"],
@@ -2180,6 +2293,9 @@ class TimelineService:
         if target["transport"] != "LOCAL_FILESYSTEM":
             raise DomainRuleError("REMOTE_TRANSPORT_DISABLED", "LOCAL_ONLY 首版只允许本地文件交付")
         project_id = str(render["project_id"])
+        explicit_no_brand = brand_kit_id == "NONE"
+        explicit_no_watermark = watermark_profile_id == "NONE"
+        explicit_no_compliance = compliance_policy_id == "NONE"
         # A machine-verified render is not an episode approval.  Delivery is a
         # separate irreversible hand-off and therefore requires the latest
         # non-stale human approval before any output path is touched.
@@ -2191,14 +2307,14 @@ class TimelineService:
                 (episode_render_version_id,),
             ).fetchone()
         with self.database.connect() as connection:
-            brand = connection.execute("SELECT * FROM brand_kits WHERE id=? AND project_id=? AND status='ACTIVE'", (brand_kit_id, project_id)).fetchone() if brand_kit_id else connection.execute("SELECT * FROM brand_kits WHERE project_id=? AND status='ACTIVE' ORDER BY updated_at DESC LIMIT 1", (project_id,)).fetchone()
-            watermark = connection.execute("SELECT * FROM watermark_profiles WHERE id=? AND project_id=? AND status='ACTIVE'", (watermark_profile_id, project_id)).fetchone() if watermark_profile_id else connection.execute("SELECT * FROM watermark_profiles WHERE project_id=? AND status='ACTIVE' ORDER BY updated_at DESC LIMIT 1", (project_id,)).fetchone()
-            compliance = connection.execute("SELECT * FROM compliance_policies WHERE id=? AND project_id=? AND status='ACTIVE'", (compliance_policy_id, project_id)).fetchone() if compliance_policy_id else connection.execute("SELECT * FROM compliance_policies WHERE project_id=? AND status='ACTIVE' ORDER BY updated_at DESC LIMIT 1", (project_id,)).fetchone()
-        if brand_kit_id and brand is None:
+            brand = None if explicit_no_brand else connection.execute("SELECT * FROM brand_kits WHERE id=? AND project_id=? AND status='ACTIVE'", (brand_kit_id, project_id)).fetchone() if brand_kit_id else connection.execute("SELECT * FROM brand_kits WHERE project_id=? AND status='ACTIVE' ORDER BY updated_at DESC LIMIT 1", (project_id,)).fetchone()
+            watermark = None if explicit_no_watermark else connection.execute("SELECT * FROM watermark_profiles WHERE id=? AND project_id=? AND status='ACTIVE'", (watermark_profile_id, project_id)).fetchone() if watermark_profile_id else connection.execute("SELECT * FROM watermark_profiles WHERE project_id=? AND status='ACTIVE' ORDER BY updated_at DESC LIMIT 1", (project_id,)).fetchone()
+            compliance = None if explicit_no_compliance else connection.execute("SELECT * FROM compliance_policies WHERE id=? AND project_id=? AND status='ACTIVE'", (compliance_policy_id, project_id)).fetchone() if compliance_policy_id else connection.execute("SELECT * FROM compliance_policies WHERE project_id=? AND status='ACTIVE' ORDER BY updated_at DESC LIMIT 1", (project_id,)).fetchone()
+        if brand_kit_id and not explicit_no_brand and brand is None:
             raise DomainRuleError("BRAND_KIT_NOT_ACTIVE", "BrandKit 不存在、项目不匹配或已 RETIRED")
-        if watermark_profile_id and watermark is None:
+        if watermark_profile_id and not explicit_no_watermark and watermark is None:
             raise DomainRuleError("WATERMARK_PROFILE_NOT_ACTIVE", "水印版本不存在、项目不匹配或已 RETIRED")
-        if compliance_policy_id and compliance is None:
+        if compliance_policy_id and not explicit_no_compliance and compliance is None:
             raise DomainRuleError("COMPLIANCE_POLICY_NOT_ACTIVE", "合规策略不存在、项目不匹配或已 RETIRED")
         brand_snapshot = {"id": str(brand["id"]), "code": str(brand["code"]), "version_no": int(brand["version_no"])} if brand else None
         watermark_config = json.loads(str(watermark["config_json"])) if watermark else None
@@ -2209,7 +2325,7 @@ class TimelineService:
         duration_ms = int(render["duration_ms"] or probe.get("duration_ms") or 0)
         findings: list[dict[str, Any]] = []
         if compliance_rules:
-            if compliance_rules.get("require_watermark") and not watermark:
+            if compliance_rules.get("require_watermark") and (not watermark or not bool((watermark_config or {}).get("enabled", True))):
                 findings.append({"code": "WATERMARK_REQUIRED", "severity": "ERROR", "message": "当前合规策略要求水印，但没有 ACTIVE 水印版本"})
             max_duration_ms = compliance_rules.get("max_duration_ms")
             if max_duration_ms is not None and duration_ms > int(max_duration_ms):
@@ -2261,7 +2377,7 @@ class TimelineService:
         partial_output = partial_dir / f"{render['episode_code']}.mp4"
         watermark_text_path = partial_dir / f"{render['episode_code']}.watermark.txt"
         try:
-            if watermark_config:
+            if watermark_config and bool(watermark_config.get("enabled", True)):
                 watermark_text_path.write_text(str(watermark_config["text"]), encoding="utf-8")
                 margin = int(watermark_config["margin"])
                 position = str(watermark_config["position"])
@@ -2278,7 +2394,7 @@ class TimelineService:
                 shutil.copyfile(source, partial_output)
             # The directory itself is published atomically only after the
             # render has been copied/transcoded successfully.
-            os.replace(partial_dir, destination_dir)
+            replace_path(partial_dir, destination_dir)
         finally:
             partial_output.unlink(missing_ok=True)
             watermark_text_path.unlink(missing_ok=True)

@@ -1,14 +1,14 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DirectorTakeAdoption } from "./DirectorTakeAdoption";
-import type { DirectorDeskCandidate } from "./types";
+import type { ShotStudioCandidate } from "../../generated/api";
 
-function candidate(index: number, overrides: Partial<DirectorDeskCandidate> = {}): DirectorDeskCandidate {
+function candidate(index: number, overrides: Partial<ShotStudioCandidate> = {}): ShotStudioCandidate {
   return {
     id: `variant-${index}`, intent_id: "intent", variant_no: index, variant_type: "STANDARD", parent_variant_id: null,
     branch_reason: "", status: "SUCCEEDED", is_stale: false, stale_reason: null, media_asset_id: `asset-${index}`,
-    media_kind: "VIDEO", media_version_id: `media-${index}`, version_no: 1, take_no: index, stage: "FORMAL",
-    rel_path: null, mime_type: "video/mp4", duration_ms: 1_000, integrity_status: "VERIFIED", selected: index === 1,
+    media_kind: "VIDEO", media_version_id: `media-${index}`, version_no: 1, take_no: index, stage: "PROXY",
+    rel_path: null, mime_type: "video/mp4", duration_ms: 1_000, integrity_status: "VERIFIED", thumbnail_ready: true, selected: index === 1,
     approved: false, created_at: "2026-08-20T00:00:00Z", ...overrides,
   };
 }
@@ -26,7 +26,7 @@ describe("DirectorTakeAdoption", () => {
     expect(onAdopt).not.toHaveBeenCalled();
     expect(screen.getByRole("alertdialog")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "确认采用" }));
-    await waitFor(() => expect(onAdopt).toHaveBeenCalledWith(expect.objectContaining({ media_version_id: "media-2" }), "FORMAL_SELECTION"));
+    await waitFor(() => expect(onAdopt).toHaveBeenCalledWith(expect.objectContaining({ media_version_id: "media-2" }), "PROXY_WINNER"));
   });
 
   it("uses the same confirmation path for the keyboard-accessible button", () => {
@@ -44,7 +44,7 @@ describe("DirectorTakeAdoption", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认采用" }));
     await screen.findByRole("button", { name: "撤销本次采用" });
     fireEvent.click(screen.getByRole("button", { name: "撤销本次采用" }));
-    await waitFor(() => expect(onAdopt).toHaveBeenNthCalledWith(2, expect.objectContaining({ media_version_id: "media-1" }), "FORMAL_SELECTION"));
+    await waitFor(() => expect(onAdopt).toHaveBeenNthCalledWith(2, expect.objectContaining({ media_version_id: "media-1" }), "PROXY_WINNER"));
   });
 
   it("explains stale and unmappable candidates instead of allowing adoption", () => {
@@ -54,11 +54,11 @@ describe("DirectorTakeAdoption", () => {
     expect(screen.getAllByRole("button", { name: "采用" }).every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
   });
 
-  it("distinguishes the current preview choice from another stage's active selection", () => {
+  it("keeps formal candidates review-only while distinguishing the current working choice", () => {
     render(<DirectorTakeAdoption
       candidates={[
         candidate(1, { stage: "PROXY", selected: true }),
-        candidate(2, { stage: "FORMAL", selected: true }),
+        candidate(2, { stage: "FORMAL", selected: false }),
       ]}
       activeCandidateId="media-1"
       currentCandidateId="media-1"
@@ -66,8 +66,8 @@ describe("DirectorTakeAdoption", () => {
       onAdopt={vi.fn()}
     />);
     expect(screen.getByRole("button", { name: "查看 Take 1 · PROXY，当前采用" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "查看 Take 2 · FORMAL，正式选择" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "查看 Take 2 · FORMAL，待比较" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "当前采用" }).hasAttribute("disabled")).toBe(true);
-    expect(screen.getByRole("button", { name: "正式选择已选" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("正式版本只能前往正式审核，不能作为 Shot Studio 工作版本")).toBeTruthy();
   });
 });

@@ -1,7 +1,8 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { Dialog, TabPanel, Tabs, type TabItem } from "../components/ui";
+import { routes } from "../app/routeRegistry";
+import { ConceptGuide, Dialog } from "../components/ui";
 import { commitEpisodeTimelineRefresh, getEpisodeTimelineStatus, getG8Readiness, getProjectConfiguration, planEpisodeTimelineRefresh, reviewInbox } from "../generated/api";
 import { DeliveryWorkflowPanel } from "../features/production/DeliveryWorkflowPanel";
 import { EpisodeContactSheetAction } from "../features/production/EpisodeContactSheetAction";
@@ -12,12 +13,31 @@ import "./creative-workspaces.css";
 type DeliveryStep = "preflight" | "compose" | "review" | "package";
 
 const DELIVERY_STEPS = new Set<DeliveryStep>(["preflight", "compose", "review", "package"]);
-const DELIVERY_TABS: TabItem[] = [
-  { id: "preflight", label: "1 交付检查" },
-  { id: "compose", label: "2 合成候选" },
-  { id: "review", label: "3 审核成片" },
-  { id: "package", label: "4 打包交付" },
+const DELIVERY_STEPS_UI: Array<{ id: DeliveryStep; label: string }> = [
+  { id: "preflight", label: "交付检查" },
+  { id: "compose", label: "合成候选" },
+  { id: "review", label: "审核成片" },
+  { id: "package", label: "打包交付" },
 ];
+
+function StepCheckIcon() {
+  return <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.2 3 3 6-6.4" /></svg>;
+}
+
+function DeliveryStepper({ activeStep, onChange, complete }: { activeStep: DeliveryStep; onChange: (step: DeliveryStep) => void; complete: Partial<Record<DeliveryStep, boolean>> }) {
+  return <nav className="delivery-stepper" aria-label="交付进度">
+    <ol>{DELIVERY_STEPS_UI.map((step, index) => {
+      const active = step.id === activeStep;
+      const done = Boolean(complete[step.id]);
+      return <li key={step.id} className={active ? "is-active" : done ? "is-complete" : "is-pending"}>
+        <button type="button" aria-current={active ? "step" : undefined} onClick={() => onChange(step.id)}>
+          <span aria-hidden="true">{done ? <StepCheckIcon /> : index + 1}</span>
+          <span><strong>{step.label}</strong><small>{active ? "当前步骤" : done ? "已完成" : "待处理"}</small></span>
+        </button>
+      </li>;
+    })}</ol>
+  </nav>;
+}
 
 export function DeliveryPage() {
   const { projectId, episodeId } = useParams();
@@ -62,7 +82,16 @@ export function DeliveryPage() {
   const renderId = createdRenderId ?? (snapshot?.renders?.latest?.id ? String(snapshot.renders.latest.id) : null);
   const targetVersionId = configuration.data?.configuration?.selected_delivery_target_version_id ? String(configuration.data.configuration.selected_delivery_target_version_id) : null;
   const deliveryId = createdDeliveryId ?? (snapshot?.delivery?.latest?.id ? String(snapshot.delivery.latest.id) : null);
+  const latestDeliveryState = String(snapshot?.delivery?.latest?.status ?? "").toUpperCase();
+  const latestHumanReviewState = String(snapshot?.delivery?.latest?.human_review_status ?? "").toUpperCase();
+  const completedSteps: Partial<Record<DeliveryStep, boolean>> = {
+    preflight: Boolean(timelineRevisionId && targetVersionId),
+    compose: Boolean(renderId && deliveryId),
+    review: latestHumanReviewState === "APPROVED",
+    package: ["VERIFIED", "DELIVERED", "PUBLISHED"].includes(latestDeliveryState) && latestHumanReviewState === "APPROVED",
+  };
   const workflowProps = {
+    projectId,
     episodeId,
     timelineRevisionId,
     renderId,
@@ -73,11 +102,12 @@ export function DeliveryPage() {
     onChanged: () => void status.refetch(),
   };
   return <div className="v2-page creative-task-page delivery-workspace-v2">
-    <div className="panel-heading"><div><p className="eyebrow">合成与交付</p><h2>从冻结时间线创建可验证成片</h2></div><Link className="secondary v2-inline-link" to={`/projects/${projectId}/episodes/${episodeId}/timeline`}>返回时间线</Link></div>
+    <div className="panel-heading"><div><p className="eyebrow">合成与交付</p><h2>从冻结时间线创建可验证成片</h2></div><Link className="secondary v2-inline-link" to={routes.postEdit(projectId, episodeId)}>返回编辑</Link></div>
     <p className="muted">合成成片、核对交付文件与人工批准是分开的步骤；机器检查通过不等于人工批准。</p>
+    <ConceptGuide title="交付流程名词说明" items={[{ term: "冻结时间线", description: "已经确认内容且不会被直接改写的编排版本，是合成成片的稳定输入。" }, { term: "交付候选", description: "准备提交的平台文件及其检查记录；创建后仍需验证和人工批准。" }, { term: "文件校验", description: "核对交付清单和文件指纹，确认文件齐全且未被替换。" }]} />
     {activeError && <p className="inline-error" role="alert">当前交付步骤读取失败：{String(activeError)}</p>}
-    <Tabs items={DELIVERY_TABS} selectedId={activeStep} onChange={selectStep} ariaLabel="交付四步检查">
-      <TabPanel id="preflight" selectedId={activeStep}>
+    <DeliveryStepper activeStep={activeStep} onChange={selectStep} complete={completedSteps} />
+      {activeStep === "preflight" && <div className="delivery-step-panel" role="region" aria-label="交付检查">
         <section className="creative-task-stage" aria-labelledby="delivery-preflight-title">
           <div className="panel-heading"><div><p className="eyebrow">步骤 1 · 交付检查</p><h3 id="delivery-preflight-title">确认冻结输入、交付目标与必要证据</h3></div><span className="status-pill neutral">只读检查</span></div>
           {g8Readiness.isLoading && <p className="loading-state" role="status">正在读取正式退出证据…</p>}
@@ -95,18 +125,18 @@ export function DeliveryPage() {
             </>}
           </section>}
           {refreshFeedback && <p className={refreshFeedback.startsWith("恢复未完成") ? "inline-error" : "review-success"} role="status">{refreshFeedback}</p>}
-          {!g8Readiness.isLoading && <div className="creative-task-command"><span>{timelineIsStale ? "当前冻结时间线已过期；请先完成上方复检与重新冻结。" : !timelineRevisionId ? <>尚无可用的冻结时间线；请先<Link to={`/projects/${projectId}/episodes/${episodeId}/timeline`}>打开时间线并冻结</Link>一个版本。</> : !targetVersionId ? <>尚未选择交付目标；请先到<Link to={`/projects/${projectId}/production-settings?view=delivery`}>生产设置</Link>选择本地目标版本。</> : "预检不会创建 render 或交付包。"}</span><button className="primary-action" type="button" aria-describedby={!timelineRevisionId || !targetVersionId ? "delivery-preflight-blocker" : undefined} disabled={!timelineRevisionId || !targetVersionId} onClick={() => selectStep("compose")}>继续到合成候选</button>{(!timelineRevisionId || !targetVersionId) && <span id="delivery-preflight-blocker" className="sr-only">冻结时间线与交付目标就绪后才能继续</span>}</div>}
+          {!g8Readiness.isLoading && <div className="creative-task-command"><span>{timelineIsStale ? "当前冻结时间线已过期；请先完成上方复检与重新冻结。" : !timelineRevisionId ? <>尚无可用的冻结时间线；请先<Link to={routes.postEdit(projectId, episodeId)}>打开编辑并冻结</Link>一个版本。</> : !targetVersionId ? <>尚未选择交付目标；请先到<Link to={routes.settings(projectId, "delivery")}>项目交付设置</Link>选择本地目标版本。</> : "这一步只检查条件，不会合成视频或创建交付包。"}</span><button className="primary-action" type="button" aria-describedby={!timelineRevisionId || !targetVersionId ? "delivery-preflight-blocker" : undefined} disabled={!timelineRevisionId || !targetVersionId} onClick={() => selectStep("compose")}>继续到合成候选</button>{(!timelineRevisionId || !targetVersionId) && <span id="delivery-preflight-blocker" className="sr-only">冻结时间线与交付目标就绪后才能继续</span>}</div>}
         </section>
-      </TabPanel>
-      <TabPanel id="compose" selectedId={activeStep}>
+      </div>}
+      {activeStep === "compose" && <div className="delivery-step-panel" role="region" aria-label="合成候选">
         <DeliveryWorkflowPanel {...workflowProps} focus="COMPOSE" />
         <div className="creative-task-command"><span>{deliveryId ? "交付候选已创建，可以进入成片审核。" : "先完成整集渲染并创建交付候选；后台任务完成后本页会恢复结果。"}</span><button className="secondary" type="button" disabled={!deliveryId} onClick={() => selectStep("review")}>下一步：审核成片 →</button></div>
-      </TabPanel>
-      <TabPanel id="review" selectedId={activeStep}>
+      </div>}
+      {activeStep === "review" && <div className="delivery-step-panel" role="region" aria-label="审核成片">
         <DeliveryWorkflowPanel {...workflowProps} focus="REVIEW" />
         <div className="creative-task-command"><span>审核确认后可进入打包交付。</span><button className="secondary" type="button" onClick={() => selectStep("package")}>下一步：打包交付 →</button></div>
-      </TabPanel>
-      <TabPanel id="package" selectedId={activeStep}>
+      </div>}
+      {activeStep === "package" && <div className="delivery-step-panel" role="region" aria-label="打包交付">
         <DeliveryWorkflowPanel {...workflowProps} focus="PACKAGE" />
         <section className="panel creative-task-stage" aria-labelledby="delivery-local-tools-title">
           <div className="panel-heading"><div><p className="eyebrow">本地交付工具</p><h3 id="delivery-local-tools-title">增强与联系表</h3></div><span className="status-pill neutral">不覆盖输入</span></div>
@@ -115,8 +145,7 @@ export function DeliveryPage() {
           <EpisodeContactSheetAction episodeId={episodeId} />
         </section>
         {!reviewVideos.isLoading && <PostProcessPanel videos={(reviewVideos.data?.items ?? []).filter((item) => item.media_kind === "VIDEO")} />}
-      </TabPanel>
-    </Tabs>
+      </div>}
     <Dialog
       open={refreshConfirmOpen}
       title="确认创建新的冻结时间线"

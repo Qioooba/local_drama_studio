@@ -44,6 +44,9 @@
   border-radius: var(--radius-md, 8px);
   border: 1px solid var(--border-subtle, #232836);
   overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scroll-padding-inline: 8px;
+  scrollbar-width: thin;
 }
 
 .generation-workbench .step-btn {
@@ -61,6 +64,7 @@
   white-space: nowrap;
   transition: all 0.15s ease;
   flex: 0 0 auto;
+  scroll-snap-align: start;
 }
 
 .generation-workbench .capability-section,
@@ -208,9 +212,9 @@
 }
 
 .generation-workbench .mode-card.selected {
-  border-color: var(--selected, #2d7467);
-  background: color-mix(in srgb, var(--selected, #2d7467) 28%, #161b26);
-  box-shadow: inset 0 0 0 1px var(--selected, #2d7467);
+  border-color: var(--selected, var(--selected));
+  background: color-mix(in srgb, var(--selected, var(--selected)) 28%, #161b26);
+  box-shadow: inset 0 0 0 1px var(--selected, var(--selected));
 }
 
 .generation-workbench .stage-container .muted,
@@ -469,6 +473,8 @@
 @media (max-width: 640px) {
   .generation-page .v2-page-header { align-items: flex-start; flex-direction: column; }
   .generation-workbench .stage-container { width: 100%; padding: 20px; overflow: hidden; }
+  .generation-workbench .step-rail { scroll-snap-type: inline proximity; padding-bottom: 10px; }
+  .generation-workbench .step-btn { min-width: 142px; justify-content: flex-start; }
   .generation-workbench .stage-header { flex-wrap: wrap; gap: 8px; }
   .generation-workbench .stage-nav-bar { align-items: stretch; flex-direction: column; }
   .generation-workbench .input-slot-row { min-width: 0; }

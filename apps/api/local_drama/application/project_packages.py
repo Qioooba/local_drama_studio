@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import shutil
 import stat
 import uuid
@@ -19,6 +18,7 @@ from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.policies import validate_project_code
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.template import TEMPLATE_DIRECTORIES, TEMPLATE_VERSION
+from local_drama.infrastructure.filesystem.atomic import replace_path
 
 PACKAGE_SCHEMA = "localdrama.project-package.v2"
 STATE_SCHEMA = "localdrama.project-state.v2"
@@ -102,6 +102,28 @@ class ProjectPackageService:
                 "modified_at": datetime.fromtimestamp(stat_result.st_mtime, UTC).isoformat().replace("+00:00", "Z"),
             })
         return items
+
+    def import_browser_upload(self, source: Path, original_name: str) -> dict[str, Any]:
+        safe_name = Path(original_name).name[:180]
+        if not safe_name or Path(safe_name).suffix.lower() != ".ldspkg":
+            raise DomainRuleError("PROJECT_PACKAGE_UPLOAD_TYPE_INVALID", "项目包必须是 .ldspkg 文件")
+        self.inspect_path(source)
+        digest = _sha256(source)
+        inbox = (self.staging_root / "inbox").resolve()
+        inbox.mkdir(parents=True, exist_ok=True)
+        destination = inbox / safe_name
+        if destination.exists() and _sha256(destination) != digest:
+            destination = inbox / f"{Path(safe_name).stem}-{digest[:12]}.ldspkg"
+        if not destination.exists():
+            partial = inbox / f".partial-{uuid.uuid4().hex}.ldspkg"
+            try:
+                shutil.copyfile(source, partial)
+                replace_path(partial, destination)
+            finally:
+                partial.unlink(missing_ok=True)
+        stat_result = destination.stat()
+        return {"name": destination.name, "byte_size": stat_result.st_size, "sha256": digest,
+                "modified_at": datetime.fromtimestamp(stat_result.st_mtime, UTC).isoformat().replace("+00:00", "Z")}
 
     def _rebuild_thumbnails(self, media_version_ids: list[str]) -> dict[str, Any]:
         """Materialize small derived thumbnails for imported IMAGE/VIDEO versions."""
@@ -319,7 +341,7 @@ class ProjectPackageService:
                 partial.unlink()
                 reused = True
             else:
-                os.replace(partial, final)
+                replace_path(partial, final)
                 reused = False
         except Exception:
             partial.unlink(missing_ok=True)
@@ -403,6 +425,16 @@ class ProjectPackageService:
             raise DomainRuleError("PROJECT_PACKAGE_PATH_NOT_ALLOWED", "只能预检项目已导出的注册项目包")
         return self.inspect_path(candidate)
 
+    def export_download_path(self, project_id: str, rel_path: str) -> Path:
+        project = self._project(project_id)
+        root = self._root(project)
+        allowed = (root / "exports" / "project-packages").resolve()
+        candidate = (root / rel_path).resolve()
+        if candidate.parent != allowed or candidate.suffix.lower() != ".ldspkg" or not candidate.is_file() or _is_reparse(candidate):
+            raise DomainRuleError("PROJECT_PACKAGE_PATH_NOT_ALLOWED", "只能下载项目已导出的注册项目包")
+        self.inspect_path(candidate)
+        return candidate
+
     def stage_from_inbox(self, inbox_name: str) -> dict[str, Any]:
         if Path(inbox_name).name != inbox_name or not inbox_name.lower().endswith(".ldspkg"):
             raise DomainRuleError("PROJECT_PACKAGE_INBOX_NAME_INVALID", "inbox 只接受单个 .ldspkg 文件名")
@@ -426,7 +458,7 @@ class ProjectPackageService:
                 if _sha256(partial) != before_sha or partial.stat().st_size != before_size or _sha256(source) != before_sha:
                     raise DomainRuleError("PROJECT_PACKAGE_STAGE_COPY_MISMATCH", "staging 复制前后 hash/size 不一致")
                 self.inspect_path(partial)
-                os.replace(partial, destination)
+                replace_path(partial, destination)
                 reused = False
             dry_run = self.inspect_path(destination)
         except Exception:
@@ -760,7 +792,7 @@ class ProjectPackageService:
             (temporary_root / "project.json").write_text(json.dumps(project_json, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             if _sha256(package) != stage_token:
                 raise DomainRuleError("PROJECT_PACKAGE_STAGE_NOT_FOUND", "提交前 staged 项目包完整性失败")
-            os.replace(temporary_root, final_root)
+            replace_path(temporary_root, final_root)
             promoted = True
             season_map = {str(item["id"]): str(uuid.uuid4()) for item in state["seasons"]}
             episode_map = {str(item["id"]): str(uuid.uuid4()) for item in state["episodes"]}
@@ -1267,7 +1299,7 @@ class ProjectPackageService:
             (temporary_root / "project.json").write_text(json.dumps(project_json, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             if _sha256(package) != stage_token:
                 raise DomainRuleError("PROJECT_PACKAGE_STAGE_NOT_FOUND", "提交前 staged 项目包完整性失败")
-            os.replace(temporary_root, final_root)
+            replace_path(temporary_root, final_root)
             promoted = True
             with self.database.transaction() as connection:
                 current = connection.execute("SELECT id,code FROM projects WHERE id=?", (project_id,)).fetchone()

@@ -16,7 +16,11 @@ router = APIRouter(tags=["provider-connections"])
 
 
 def service(request: Request) -> ProviderConnectionService:
-    return ProviderConnectionService(request.app.state.database)
+    return ProviderConnectionService(
+        request.app.state.database,
+        request.app.state.settings,
+        request.app.state.platform.secret_store,
+    )
 
 
 @router.get("/provider-connections", operation_id="listProviderConnections")

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import uuid
 from collections.abc import Iterator
 from email.utils import formatdate, parsedate_to_datetime
 from pathlib import Path
@@ -12,6 +11,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from local_drama.api.schemas.g3 import KeyframeCandidateRequest, MediaImportRequest, MediaIntegrityRepairRequest
 from local_drama.api.schemas.motion_controls import MotionControlRequest
+from local_drama.api.uploading import receive_bounded_upload
 from local_drama.application.contact_sheets import ContactSheetExportService
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.media import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, MediaService
@@ -30,6 +30,15 @@ async def export_episode_contact_sheet(episode_id: str, request: Request) -> dic
     try:
         result = ContactSheetExportService(request.app.state.database, request.app.state.settings).export_episode(episode_id)
         return {"export": result}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/episodes/{episode_id}/contact-sheet:download", operation_id="downloadEpisodeContactSheet")
+async def download_episode_contact_sheet(episode_id: str, rel_path: str, request: Request) -> FileResponse:
+    try:
+        path = ContactSheetExportService(request.app.state.database, request.app.state.settings).download_archive(episode_id, rel_path)
+        return FileResponse(path, media_type="application/zip", filename=path.name)
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -82,68 +91,47 @@ async def upload_project_media(project_id: str, request: Request) -> dict[str, o
     safe_filename = Path(filename).name[:180] or "upload.bin"
     suffix = Path(safe_filename).suffix.lower()
     
+    settings = request.app.state.settings
     if suffix in IMAGE_EXTENSIONS:
         media_kind = "IMAGE"
         purpose = "ASSET_REFERENCE"
-        maximum_bytes = 25 * 1024 * 1024
+        maximum_bytes = settings.uploads.image_mb * 1024 * 1024
     elif suffix in VIDEO_EXTENSIONS:
         media_kind = "VIDEO"
         purpose = "VIDEO_REFERENCE"
-        maximum_bytes = 100 * 1024 * 1024
+        maximum_bytes = settings.uploads.video_mb * 1024 * 1024
     elif suffix in AUDIO_EXTENSIONS:
         media_kind = "AUDIO"
         purpose = "AUDIO_REFERENCE"
-        maximum_bytes = 50 * 1024 * 1024
+        maximum_bytes = settings.uploads.audio_mb * 1024 * 1024
     else:
         raise api_error_from_domain(DomainRuleError("MEDIA_UPLOAD_TYPE_INVALID", "媒体上传仅支持常见图片、视频或音频文件"))
 
-    raw_length = request.headers.get("content-length")
-    if raw_length:
-        try:
-            if int(raw_length) > maximum_bytes:
-                max_mb = maximum_bytes // (1024 * 1024)
-                raise DomainRuleError("MEDIA_UPLOAD_TOO_LARGE", f"上传文件不能超过 {max_mb} MB")
-        except ValueError as error:
-            raise api_error_from_domain(DomainRuleError("MEDIA_UPLOAD_LENGTH_INVALID", "上传文件长度无效")) from error
-
-    temporary_directory = request.app.state.settings.work_root / "picker-uploads" / uuid.uuid4().hex
-    temporary_directory.mkdir(parents=True, exist_ok=False)
-    temporary = temporary_directory / safe_filename
     try:
-        received_bytes = 0
-        with temporary.open("xb") as destination:
-            async for chunk in request.stream():
-                if not chunk:
-                    continue
-                received_bytes += len(chunk)
-                if received_bytes > maximum_bytes:
-                    max_mb = maximum_bytes // (1024 * 1024)
-                    raise DomainRuleError("MEDIA_UPLOAD_TOO_LARGE", f"上传文件不能超过 {max_mb} MB")
-                destination.write(chunk)
-        if received_bytes == 0:
-            raise DomainRuleError("MEDIA_UPLOAD_EMPTY", "请选择非空文件")
-        media_service = service(request)
-        if media_kind == "IMAGE":
-            media_service.validate_image_upload(temporary)
-        imported = media_service.import_file(
-            project_id,
-            temporary,
-            purpose=purpose,
-            owner_type="PROJECT",
-            owner_id=project_id,
-            media_kind=media_kind,
-            stage="IMPORTED",
-            schedule_derivatives=True,
-        )
-        return {"media": imported}
+        async with receive_bounded_upload(
+            request,
+            work_group="picker-uploads",
+            allowed_suffixes=frozenset(IMAGE_EXTENSIONS | VIDEO_EXTENSIONS | AUDIO_EXTENSIONS),
+            maximum_bytes=maximum_bytes,
+            default_filename="upload.bin",
+            error_prefix="MEDIA_UPLOAD",
+        ) as (temporary, _safe_filename, _received_bytes):
+            media_service = service(request)
+            if media_kind == "IMAGE":
+                media_service.validate_image_upload(temporary)
+            imported = media_service.import_file(
+                project_id,
+                temporary,
+                purpose=purpose,
+                owner_type="PROJECT",
+                owner_id=project_id,
+                media_kind=media_kind,
+                stage="IMPORTED",
+                schedule_derivatives=True,
+            )
+            return {"media": imported}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
-    finally:
-        temporary.unlink(missing_ok=True)
-        try:
-            temporary_directory.rmdir()
-        except OSError:
-            pass
 
 
 @router.get("/media-versions/{media_version_id}", operation_id="getMediaVersion")

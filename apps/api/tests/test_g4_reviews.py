@@ -12,6 +12,7 @@ from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
 from local_drama.application.reviews import ReviewService
 from local_drama.domain.errors import DomainRuleError
+from local_drama.infrastructure.database.shot_studio_command_repository import shot_studio_command_service
 from local_drama.main import create_app
 
 
@@ -113,10 +114,7 @@ def test_review_selection_machine_qc_stale_and_batch_invariants(workspace, datab
     )
     assert approved_proxy["decision"] == "APPROVED"
     assert all(item["media_version_id"] != str(proxy_version["id"]) for item in review_service.inbox(project_id))
-    assert any(
-        item["media_version_id"] == str(proxy_version["id"])
-        for item in review_service.inbox(project_id, include_resolved=True)
-    )
+    assert any(item["media_version_id"] == str(proxy_version["id"]) for item in review_service.inbox(project_id, include_resolved=True))
     assert review_service.review_context(str(proxy_version["id"]))["subject_revision"] == 3
     duplicate_approval = review_service.submit_review(
         str(proxy_version["id"]),
@@ -163,7 +161,7 @@ def test_review_selection_machine_qc_stale_and_batch_invariants(workspace, datab
     with pytest.raises(DomainRuleError, match="批量预检后对象发生变化"):
         review_service.batch_commit(str(plan["plan_token"]), "APPROVED", _checks(proxy_template))
 
-    project_service.create_shot_revision(str(shot["id"]), {"subject_action": "walk"}, freeze=True)
+    shot_studio_command_service(database).save_draft_revision(str(shot["id"]), {"subject_action": "walk"}, freeze=True)
     reviews = review_service.list_reviews("MEDIA_VERSION", str(formal_version["id"]))
     assert reviews[0]["is_stale"] == 1
     assert reviews[0]["stale_reason"] == "shot_revision_changed"
@@ -175,13 +173,11 @@ def test_review_selection_machine_qc_stale_and_batch_invariants(workspace, datab
     assert stale_formal_plan["status"] == "BLOCKED"
     assert "LATEST_HUMAN_APPROVAL_REQUIRED" in stale_formal_plan["items"][0]["blockers"]
     with database.connect() as connection:
-        selection_history = connection.execute(
-            "SELECT media_version_id, selection_type FROM selections WHERE id=?", (formal_selection["id"],)
-        ).fetchone()
+        selection_history = connection.execute("SELECT media_version_id, selection_type FROM selections WHERE id=?", (formal_selection["id"],)).fetchone()
     assert tuple(selection_history) == (str(formal_version["id"]), "FORMAL_SELECTION")
 
 
-def test_review_api_exposes_real_templates_inbox_context_and_selection(workspace, database) -> None:
+def test_review_api_exposes_real_templates_and_legacy_inbox_read(workspace, database) -> None:
     project = _project(workspace, database, "g4_api")
     project_id = str(project["id"])
     media = MediaService(database, workspace).import_file(project_id, _video(workspace, "g4-api.mp4", "green"), stage="PROXY")
@@ -189,16 +185,10 @@ def test_review_api_exposes_real_templates_inbox_context_and_selection(workspace
     with TestClient(create_app(workspace)) as client:
         templates = client.get("/api/v1/review-templates")
         assert templates.status_code == 200
-        proxy = next(item for item in templates.json()["items"] if item["code"] == "proxy_video")
+        assert any(item["code"] == "proxy_video" for item in templates.json()["items"])
         inbox = client.get(f"/api/v1/reviews/inbox?project_id={project_id}")
         assert inbox.status_code == 200
         assert any(item["media_version_id"] == version_id for item in inbox.json()["items"])
-        context = client.get(f"/api/v1/subjects/MEDIA_VERSION/{version_id}/review-context")
-        assert context.status_code == 200
-        assert context.json()["template"]["id"] == proxy["id"]
-        selected = client.post(f"/api/v1/media-versions/{version_id}:select", json={"selection_type": "PROXY_WINNER"})
-        assert selected.status_code == 200
-        assert selected.json()["selection"]["media_version_id"] == version_id
 
 
 def test_review_inbox_resolves_dialogue_text_revision_audio_to_episode_and_shot(workspace, database) -> None:
@@ -226,9 +216,7 @@ def test_review_inbox_resolves_dialogue_text_revision_audio_to_episode_and_shot(
     version_id = str(media["media_version_id"])
 
     with TestClient(create_app(workspace)) as client:
-        response = client.get(
-            f"/api/v1/reviews/inbox?project_id={project_id}&episode_id={episode['id']}&media_kind=AUDIO"
-        )
+        response = client.get(f"/api/v1/reviews/inbox?project_id={project_id}&episode_id={episode['id']}&media_kind=AUDIO")
         assert response.status_code == 200
         item = next(row for row in response.json()["items"] if row["media_version_id"] == version_id)
         assert item["episode_id"] == str(episode["id"])
@@ -362,4 +350,3 @@ def test_review_inbox_excludes_rejected_by_default_and_includes_when_requested(w
         assert any(item["media_version_id"] == version_id for item in resolved_inbox)
         rejected_item = next(item for item in resolved_inbox if item["media_version_id"] == version_id)
         assert rejected_item["decision"] == "REJECTED"
-

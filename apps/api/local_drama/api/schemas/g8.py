@@ -64,19 +64,6 @@ class RenderSegmentedEpisodeRequest(BaseModel):
     force_rerender: bool = False
 
 
-class AudioBindingRequest(BaseModel):
-    media_version_id: str = Field(min_length=1)
-    track_type: str = Field(default="AUDIO", min_length=1, max_length=32)
-    start_us: int = Field(ge=0)
-    end_us: int = Field(gt=0)
-    gain_db: float = 0.0
-    source_license_status: str = Field(default="VERIFIED_LOCAL", min_length=1, max_length=24)
-    license_evidence_path_rel: str = Field(min_length=1)
-    loop_enabled: bool = False
-    fade_in_us: int = Field(default=0, ge=0)
-    fade_out_us: int = Field(default=0, ge=0)
-
-
 class FrameAnchorRequest(BaseModel):
     source_time_us: int | None = Field(default=None, ge=0)
     source_frame_index: int | None = Field(default=None, ge=0)

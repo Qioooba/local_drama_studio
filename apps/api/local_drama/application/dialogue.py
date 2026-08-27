@@ -4,19 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import shutil
-import subprocess
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from local_drama.application.jobs import JobService
-from local_drama.application.media import MediaService
+from local_drama.application.ports.dialogue import DialogueJobPort, DialogueMediaPort, DialogueUnitOfWork
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
-from local_drama.infrastructure.database.sqlite import Database
+from local_drama.platform import create_platform_services
+from local_drama.platform.contracts import TtsRuntime, TtsRuntimeError
 
 
 def _now() -> str:
@@ -28,10 +25,200 @@ def _json(value: Any) -> str:
 
 
 class DialogueService:
-    def __init__(self, database: Database, settings: Settings) -> None:
+    def __init__(
+        self,
+        database: DialogueUnitOfWork,
+        settings: Settings,
+        tts_runtime: TtsRuntime | None = None,
+        *,
+        jobs: DialogueJobPort | None = None,
+        media: DialogueMediaPort | None = None,
+    ) -> None:
         self.database = database
         self.settings = settings
-        self.media = MediaService(database, settings)
+        self.media = media
+        self.tts_runtime = tts_runtime or create_platform_services(settings).tts_runtime
+        self.jobs = jobs
+
+    def _media(self) -> DialogueMediaPort:
+        if self.media is None:
+            raise DomainRuleError("DIALOGUE_MEDIA_PORT_REQUIRED", "对白媒体端口未配置")
+        return self.media
+
+    @staticmethod
+    def _command_replay(
+        connection: Any,
+        scope: str,
+        idempotency_key: str,
+        payload: dict[str, Any],
+        *,
+        mismatch_code: str,
+    ) -> dict[str, Any] | None:
+        key = idempotency_key.strip()
+        if not key or len(key) > 200:
+            raise DomainRuleError("DIALOGUE_IDEMPOTENCY_KEY_INVALID", "对白命令 idempotency_key 必须为 1—200 字符")
+        payload_hash = hashlib.sha256(_json(payload).encode("utf-8")).hexdigest()
+        row = connection.execute(
+            "SELECT payload_hash,response_json FROM command_idempotencies WHERE scope=? AND idempotency_key=?",
+            (scope, key),
+        ).fetchone()
+        if row is None:
+            return None
+        if str(row["payload_hash"]) != payload_hash:
+            raise DomainRuleError(mismatch_code, "相同 idempotency_key 的对白请求内容不一致")
+        result = json.loads(str(row["response_json"]))
+        result["idempotent_replay"] = True
+        return result
+
+    @staticmethod
+    def _store_command(
+        connection: Any,
+        scope: str,
+        idempotency_key: str,
+        payload: dict[str, Any],
+        response: dict[str, Any],
+    ) -> None:
+        connection.execute(
+            "INSERT INTO command_idempotencies (scope,idempotency_key,payload_hash,response_json) VALUES (?,?,?,?)",
+            (
+                scope,
+                idempotency_key.strip(),
+                hashlib.sha256(_json(payload).encode("utf-8")).hexdigest(),
+                _json(response),
+            ),
+        )
+
+    def save_shot_dialogue_draft(
+        self,
+        shot_id: str,
+        *,
+        line_id: str | None,
+        code: str,
+        speaker: str,
+        text: str,
+        pronunciation: dict[str, Any],
+        expected_shot_revision: int,
+        expected_text_revision_no: int | None,
+        idempotency_key: str,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        code, speaker, text = code.strip(), speaker.strip(), text.strip()
+        if not code or not speaker or not text:
+            raise DomainRuleError("DIALOGUE_FIELDS_REQUIRED", "对白 code、说话人和文本均为必填")
+        payload = {
+            "line_id": line_id,
+            "code": code,
+            "speaker": speaker,
+            "text": text,
+            "pronunciation": pronunciation,
+            "expected_shot_revision": expected_shot_revision,
+            "expected_text_revision_no": expected_text_revision_no,
+        }
+        scope = f"shot-dialogue-draft:{shot_id}"
+        now = _now()
+        try:
+            with self.database.transaction() as connection:
+                replay = self._command_replay(
+                    connection,
+                    scope,
+                    idempotency_key,
+                    payload,
+                    mismatch_code="DIALOGUE_IDEMPOTENCY_MISMATCH",
+                )
+                if replay is not None:
+                    return replay
+                shot = connection.execute(
+                    """SELECT s.id,s.episode_id,s.revision,se.project_id FROM shots s
+                    JOIN episodes e ON e.id=s.episode_id JOIN seasons se ON se.id=e.season_id
+                    WHERE s.id=? AND s.archived_at IS NULL""",
+                    (shot_id,),
+                ).fetchone()
+                if shot is None:
+                    raise DomainRuleError("SHOT_NOT_FOUND", "镜头不存在")
+                if int(shot["revision"]) != expected_shot_revision:
+                    raise DomainRuleError(
+                        "SHOT_REVISION_CONFLICT",
+                        "镜头已变化，请刷新后再保存对白",
+                        {"expected_revision": expected_shot_revision, "actual_revision": int(shot["revision"])},
+                    )
+                if line_id is None:
+                    next_line_id = str(uuid.uuid4())
+                    revision_id = str(uuid.uuid4())
+                    connection.execute(
+                        """INSERT INTO dialogue_lines
+                        (id,episode_id,shot_id,code,speaker,created_at,updated_at,created_by,revision,schema_version)
+                        VALUES (?,?,?,?,?,?,?,?,1,'v2')""",
+                        (next_line_id, shot["episode_id"], shot_id, code, speaker, now, now, actor),
+                    )
+                    next_revision_no = 1
+                    line_revision = 1
+                    action = "DIALOGUE_LINE_CREATED"
+                else:
+                    line = connection.execute(
+                        "SELECT * FROM dialogue_lines WHERE id=? AND shot_id=?",
+                        (line_id, shot_id),
+                    ).fetchone()
+                    latest = connection.execute(
+                        "SELECT revision_no FROM dialogue_text_revisions WHERE dialogue_line_id=? ORDER BY revision_no DESC LIMIT 1",
+                        (line_id,),
+                    ).fetchone()
+                    if line is None or latest is None:
+                        raise DomainRuleError("DIALOGUE_LINE_NOT_FOUND", "对白不存在或不属于当前镜头")
+                    if expected_text_revision_no is None or int(latest["revision_no"]) != expected_text_revision_no:
+                        raise DomainRuleError(
+                            "DIALOGUE_TEXT_REVISION_CONFLICT",
+                            "对白文本 revision 已变化，请刷新后重试",
+                            {"expected_revision": expected_text_revision_no, "actual_revision": int(latest["revision_no"])},
+                        )
+                    next_line_id = line_id
+                    revision_id = str(uuid.uuid4())
+                    next_revision_no = expected_text_revision_no + 1
+                    line_revision = int(line["revision"]) + 1
+                    connection.execute(
+                        "UPDATE dialogue_lines SET code=?,speaker=?,updated_at=?,revision=revision+1 WHERE id=?",
+                        (code, speaker, now, line_id),
+                    )
+                    action = "DIALOGUE_VERSION_CHANGED"
+                text_hash = hashlib.sha256(_json({"text": text, "pronunciation": pronunciation}).encode("utf-8")).hexdigest()
+                connection.execute(
+                    """INSERT INTO dialogue_text_revisions
+                    (id,dialogue_line_id,revision_no,text,pronunciation_json,text_hash,created_at,updated_at,created_by,revision,schema_version)
+                    VALUES (?,?,?,?,?,?,?,?,?,1,'v2')""",
+                    (revision_id, next_line_id, next_revision_no, text, _json(pronunciation), text_hash, now, now, actor),
+                )
+                result = {
+                    "shot_id": shot_id,
+                    "line_id": next_line_id,
+                    "code": code,
+                    "speaker": speaker,
+                    "line_revision": line_revision,
+                    "text_revision": {
+                        "id": revision_id,
+                        "revision_no": next_revision_no,
+                        "text": text,
+                        "pronunciation": pronunciation,
+                        "text_hash": text_hash,
+                        "created_at": now,
+                    },
+                    "idempotent_replay": False,
+                }
+                connection.execute(
+                    """INSERT INTO audit_events
+                    (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
+                    VALUES (?,'producer',?,'DIALOGUE_LINE',?,'在 Shot Studio 保存对白版本',?)""",
+                    (actor, action, next_line_id, _json({"shot_id": shot_id, "text_revision_id": revision_id, "text_hash": text_hash})),
+                )
+                connection.execute(
+                    """INSERT INTO outbox_events (type,project_id,subject_type,subject_id,payload_json)
+                    VALUES ('DialogueVersionChanged',?,'DIALOGUE_LINE',?,?)""",
+                    (shot["project_id"], next_line_id, _json({"shot_id": shot_id, "episode_id": shot["episode_id"], "text_revision_id": revision_id, "revision_no": next_revision_no})),
+                )
+                self._store_command(connection, scope, idempotency_key, payload, result)
+                return result
+        except Exception as error:
+            if "UNIQUE constraint failed: dialogue_lines.episode_id, dialogue_lines.code" in str(error):
+                raise DomainRuleError("DIALOGUE_CODE_EXISTS", "当前集对白 code 已存在") from error
+            raise
 
     def create_line(
         self,
@@ -117,6 +304,141 @@ class DialogueService:
             connection.execute("UPDATE dialogue_lines SET updated_at=?,revision=revision+1 WHERE id=?", (now, line_id))
         return self.get_line(line_id)
 
+    def submit_line_tts_generation(
+        self,
+        line_id: str,
+        *,
+        expected_text_revision_no: int,
+        voice_profile_version_id: str,
+        emotion: str,
+        speech_rate: float,
+        idempotency_key: str,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            revision = connection.execute(
+                """SELECT dtr.id,dtr.revision_no,dl.shot_id FROM dialogue_text_revisions dtr
+                JOIN dialogue_lines dl ON dl.id=dtr.dialogue_line_id
+                WHERE dl.id=? ORDER BY dtr.revision_no DESC LIMIT 1""",
+                (line_id,),
+            ).fetchone()
+        if revision is None:
+            raise DomainRuleError("DIALOGUE_LINE_NOT_FOUND", "对白不存在")
+        if revision["shot_id"] is None:
+            raise DomainRuleError("DIALOGUE_SHOT_REQUIRED", "Shot Studio TTS 只接受已绑定镜头的对白")
+        if int(revision["revision_no"]) != expected_text_revision_no:
+            raise DomainRuleError(
+                "DIALOGUE_TEXT_REVISION_CONFLICT",
+                "对白文本 revision 已变化，请刷新后重试",
+                {"expected_revision": expected_text_revision_no, "actual_revision": int(revision["revision_no"])},
+            )
+        job = self.submit_tts_job(
+            str(revision["id"]),
+            voice_profile_version_id=voice_profile_version_id,
+            emotion=emotion,
+            speech_rate=speech_rate,
+            idempotency_key=idempotency_key,
+            actor=actor,
+        )
+        return {
+            "line_id": line_id,
+            "text_revision_id": str(revision["id"]),
+            "text_revision_no": int(revision["revision_no"]),
+            "job": {
+                "id": str(job["id"]),
+                "state": str(job["state"]),
+                "subject_kind": str(job["subject_kind"]),
+                "scope_project_id": str(job["scope_project_id"]),
+                "scope_episode_id": str(job["scope_episode_id"]),
+                "scope_shot_id": str(job["scope_shot_id"]),
+                "stage_code": str(job["stage_code"]),
+                "idempotent_replay": bool(job["idempotent_replay"]),
+            },
+        }
+
+    def adopt_working_audio(
+        self,
+        media_version_id: str,
+        *,
+        expected_text_revision_no: int,
+        idempotency_key: str,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        payload = {
+            "media_version_id": media_version_id,
+            "expected_text_revision_no": expected_text_revision_no,
+        }
+        scope = f"audio-working-adoption:{media_version_id}"
+        now = _now()
+        with self.database.transaction() as connection:
+            replay = self._command_replay(
+                connection,
+                scope,
+                idempotency_key,
+                payload,
+                mismatch_code="AUDIO_ADOPTION_IDEMPOTENCY_MISMATCH",
+            )
+            if replay is not None:
+                return replay
+            candidate = connection.execute(
+                """SELECT tc.id AS tts_candidate_id,tc.dialogue_text_revision_id,tc.status,
+                dtr.dialogue_line_id,dtr.revision_no,dl.shot_id,dl.episode_id,se.project_id,
+                ma.media_kind,mv.integrity_status
+                FROM tts_candidates tc
+                JOIN dialogue_text_revisions dtr ON dtr.id=tc.dialogue_text_revision_id
+                JOIN dialogue_lines dl ON dl.id=dtr.dialogue_line_id
+                JOIN episodes e ON e.id=dl.episode_id JOIN seasons se ON se.id=e.season_id
+                JOIN media_versions mv ON mv.id=tc.media_version_id
+                JOIN media_assets ma ON ma.id=mv.media_asset_id
+                WHERE tc.media_version_id=? ORDER BY tc.created_at DESC,tc.id DESC LIMIT 1""",
+                (media_version_id,),
+            ).fetchone()
+            if candidate is None:
+                raise DomainRuleError("TTS_CANDIDATE_NOT_FOUND", "该音频版本不是已登记的 TTS 候选")
+            latest = connection.execute(
+                "SELECT id,revision_no FROM dialogue_text_revisions WHERE dialogue_line_id=? ORDER BY revision_no DESC LIMIT 1",
+                (candidate["dialogue_line_id"],),
+            ).fetchone()
+            if latest is None or int(latest["revision_no"]) != expected_text_revision_no:
+                raise DomainRuleError(
+                    "DIALOGUE_TEXT_REVISION_CONFLICT",
+                    "对白文本 revision 已变化，请刷新后再采用声音",
+                    {"expected_revision": expected_text_revision_no, "actual_revision": int(latest["revision_no"]) if latest else None},
+                )
+            if str(latest["id"]) != str(candidate["dialogue_text_revision_id"]):
+                raise DomainRuleError("TTS_CANDIDATE_TEXT_STALE", "候选绑定的对白文本已不是最新 revision")
+            if str(candidate["status"]) != "READY" or str(candidate["media_kind"]) != "AUDIO" or str(candidate["integrity_status"]) != "VERIFIED":
+                raise DomainRuleError("TTS_CANDIDATE_MEDIA_INVALID", "工作采用只接受 READY 且完整性已验证的 AUDIO TTS 候选")
+            selection_id = str(uuid.uuid4())
+            connection.execute(
+                """INSERT INTO dialogue_candidate_selections
+                (id,dialogue_line_id,tts_candidate_id,source_text_revision_id,created_at,updated_at,created_by,revision,schema_version)
+                VALUES (?,?,?,?,?,?,?,1,'v2')""",
+                (selection_id, candidate["dialogue_line_id"], candidate["tts_candidate_id"], candidate["dialogue_text_revision_id"], now, now, actor),
+            )
+            result = {
+                "id": selection_id,
+                "dialogue_line_id": str(candidate["dialogue_line_id"]),
+                "tts_candidate_id": str(candidate["tts_candidate_id"]),
+                "media_version_id": media_version_id,
+                "source_text_revision_id": str(candidate["dialogue_text_revision_id"]),
+                "status": "ADOPTED",
+                "idempotent_replay": False,
+            }
+            connection.execute(
+                """INSERT INTO audit_events
+                (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
+                VALUES (?,'producer','TTS_WORKING_AUDIO_ADOPTED','DIALOGUE_LINE',?,'在 Shot Studio 采用 TTS 工作候选',?)""",
+                (actor, candidate["dialogue_line_id"], _json({"selection_id": selection_id, "tts_candidate_id": candidate["tts_candidate_id"], "media_version_id": media_version_id})),
+            )
+            connection.execute(
+                """INSERT INTO outbox_events (type,project_id,subject_type,subject_id,payload_json)
+                VALUES ('AudioWorkingCandidateChanged',?,'DIALOGUE_LINE',?,?)""",
+                (candidate["project_id"], candidate["dialogue_line_id"], _json({"shot_id": candidate["shot_id"], "episode_id": candidate["episode_id"], "selection_id": selection_id})),
+            )
+            self._store_command(connection, scope, idempotency_key, payload, result)
+            return result
+
     def create_voice_profile(
         self,
         project_id: str,
@@ -177,56 +499,8 @@ class DialogueService:
         return self.get_voice_profile(profile_id)
 
     def discover_local_sapi_voices(self) -> dict[str, Any]:
-        """Read installed Windows SAPI voice metadata without mutating project data."""
-        powershell = shutil.which("powershell.exe") or shutil.which("powershell") or shutil.which("pwsh")
-        base = {"runtime_contacted": False, "network_contacted": False, "mutated": False}
-        if not powershell:
-            return {"status": "UNAVAILABLE", "items": [], "message": "本机未找到 PowerShell/System.Speech runtime", **base}
-        script = (
-            "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
-            "Add-Type -AssemblyName System.Speech; "
-            "$s=New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-            "try { $s.GetInstalledVoices() | ForEach-Object { $v=$_.VoiceInfo; "
-            "[pscustomobject]@{name=$v.Name; culture=$v.Culture.Name; gender=$v.Gender.ToString(); "
-            "age=$v.Age.ToString(); voice_ref=('sapi:' + $v.Name)} } | ConvertTo-Json -Compress } "
-            "finally { $s.Dispose() }"
-        )
-        try:
-            result = subprocess.run(
-                [powershell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=10,
-                check=False,
-            )
-        except (OSError, subprocess.SubprocessError) as error:
-            return {"status": "UNAVAILABLE", "items": [], "message": f"本机 SAPI 音色扫描失败：{type(error).__name__}", "runtime_contacted": True, "network_contacted": False, "mutated": False}
-        if result.returncode != 0:
-            return {"status": "UNAVAILABLE", "items": [], "message": "System.Speech 未能读取本机音色", "runtime_contacted": True, "network_contacted": False, "mutated": False}
-        try:
-            payload: Any = json.loads(result.stdout or "[]")
-        except json.JSONDecodeError:
-            payload = []
-        rows = payload if isinstance(payload, list) else [payload]
-        items = []
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            name = str(row.get("name", "")).strip()
-            if not name:
-                continue
-            items.append(
-                {
-                    "name": name,
-                    "culture": str(row.get("culture", "")).strip(),
-                    "gender": str(row.get("gender", "")).strip(),
-                    "age": str(row.get("age", "")).strip(),
-                    "voice_ref": f"sapi:{name}",
-                }
-            )
-        return {"status": "AVAILABLE" if items else "EMPTY", "items": items, "message": None, "runtime_contacted": True, "network_contacted": False, "mutated": False}
+        """Read local voice metadata through the selected platform adapter."""
+        return dict(self.tts_runtime.discover_voices())
 
     def register_candidate(
         self,
@@ -262,7 +536,7 @@ class DialogueService:
             raise DomainRuleError("TTS_FORMAL_PROFILE_REQUIRED", "正式 TTS 候选必须绑定已发布 TTS Profile")
         if not voice["provider_profile_version_id"] and model_ref.strip() != "IMPORTED_LOCAL_AUDIO":
             raise DomainRuleError("TTS_IMPORTED_MODEL_REF_REQUIRED", "未绑定 TTS Profile 的导入候选必须标记 IMPORTED_LOCAL_AUDIO")
-        media = self.media.verify_content_integrity(media_version_id)
+        media = self._media().verify_content_integrity(media_version_id)
         if media["project_id"] != text_revision["project_id"] or media["media_kind"] != "AUDIO" or media["integrity_status"] != "VERIFIED":
             raise DomainRuleError("TTS_CANDIDATE_MEDIA_INVALID", "TTS 候选必须是同项目已验证 AUDIO MediaVersion")
         duration_ms = media.get("duration_ms")
@@ -316,7 +590,7 @@ class DialogueService:
             raise DomainRuleError("TTS_JOB_PARAMETERS_INVALID", "TTS Job 必须提供情绪，语速必须在 0.5—2.0")
         with self.database.connect() as connection:
             text_revision = connection.execute(
-                """SELECT dtr.*,dl.id AS dialogue_line_id,s.project_id FROM dialogue_text_revisions dtr
+                """SELECT dtr.*,dl.id AS dialogue_line_id,dl.shot_id,dl.episode_id,s.project_id FROM dialogue_text_revisions dtr
                 JOIN dialogue_lines dl ON dl.id=dtr.dialogue_line_id JOIN episodes e ON e.id=dl.episode_id
                 JOIN seasons s ON s.id=e.season_id WHERE dtr.id=?""",
                 (text_revision_id,),
@@ -359,7 +633,9 @@ class DialogueService:
             "provider_kind": "WINDOWS_SAPI_LOCAL",
             "network_allowed": False,
         }
-        return JobService(self.database, self.settings).create_job(
+        if self.jobs is None:
+            raise DomainRuleError("DIALOGUE_JOB_PORT_REQUIRED", "对白生成任务端口未配置")
+        return self.jobs.create_job(
             str(text_revision["project_id"]),
             "TTS_GENERATION",
             "DIALOGUE_TEXT_REVISION",
@@ -370,6 +646,11 @@ class DialogueService:
             execution_profile_version_id=str(profile["id"]),
             max_attempts=1,
             actor=actor,
+            subject_kind="DIALOGUE_TEXT_REVISION",
+            scope_project_id=str(text_revision["project_id"]),
+            scope_episode_id=str(text_revision["episode_id"]),
+            scope_shot_id=str(text_revision["shot_id"]) if text_revision["shot_id"] is not None else None,
+            stage_code="AUDIO_SUBTITLE",
         )
 
     def finalize_tts_job(self, job_id: str, actor: str = "local-user") -> dict[str, Any]:
@@ -384,9 +665,9 @@ class DialogueService:
         if job is None or job["type"] != "TTS_GENERATION" or job["state"] != "SUCCEEDED" or artifact is None:
             raise DomainRuleError("TTS_JOB_NOT_FINALIZABLE", "只有成功且具有 VERIFIED TTS_AUDIO artifact 的 Job 可以结束登记")
         snapshot = json.loads(str(job["input_snapshot_json"]))
-        promoted = self.media.promote_job_artifact(str(artifact["id"]), purpose="DIALOGUE_TTS", media_kind="AUDIO", stage="FORMAL", actor=actor)
+        promoted = self._media().promote_job_artifact(str(artifact["id"]), purpose="DIALOGUE_TTS", media_kind="AUDIO", stage="FORMAL", actor=actor)
         media_version_id = str(promoted.get("media_version_id") or promoted["id"])
-        media = self.media.get_version(media_version_id)
+        media = self._media().get_version(media_version_id)
         with self.database.connect() as connection:
             existing = connection.execute(
                 "SELECT id FROM tts_candidates WHERE dialogue_text_revision_id=? AND media_version_id=? ORDER BY created_at LIMIT 1",
@@ -498,10 +779,6 @@ class DialogueService:
         voice = next((item for item in discovered.get("items", []) if item.get("voice_ref") == voice_ref), None)
         if voice is None:
             raise DomainRuleError("SAPI_VOICE_NOT_DISCOVERED", "所选 SAPI 音色不在本机实时扫描结果中")
-        powershell = shutil.which("powershell.exe") or shutil.which("powershell")
-        if not powershell:
-            raise DomainRuleError("SAPI_RUNTIME_UNAVAILABLE", "找不到 Windows PowerShell，无法执行真实 SAPI 冒烟测试")
-
         code = "local-tts-windows-sapi"
         now = _now()
         provisional_profile_id = str(uuid.uuid5(uuid.NAMESPACE_URL, "local-drama:profile:local-tts-windows-sapi"))
@@ -520,28 +797,18 @@ class DialogueService:
         probe_dir = (self.settings.work_root / "profile-probes" / version_id).resolve()
         probe_dir.mkdir(parents=True, exist_ok=True)
         wav_path = probe_dir / "sapi-smoke.wav"
-        env = os.environ.copy()
-        env.update({"LD_SAPI_VOICE": str(voice["name"]), "LD_SAPI_OUTPUT": str(wav_path), "LD_SAPI_TEXT": smoke_text})
-        script = (
-            "Add-Type -AssemblyName System.Speech; "
-            "$s=New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-            "$s.SelectVoice($env:LD_SAPI_VOICE); $s.SetOutputToWaveFile($env:LD_SAPI_OUTPUT); "
-            "$s.Speak($env:LD_SAPI_TEXT); $s.Dispose()"
-        )
         try:
-            completed = subprocess.run(
-                [powershell, "-NoProfile", "-NonInteractive", "-Command", script],
-                capture_output=True,
-                text=True,
+            self.tts_runtime.synthesize(
+                voice=str(voice["name"]),
+                text=smoke_text,
+                output=wav_path,
                 timeout=30,
-                check=False,
-                env=env,
             )
-        except (OSError, subprocess.TimeoutExpired) as error:
+        except TtsRuntimeError as error:
             raise DomainRuleError("SAPI_SMOKE_TEST_FAILED", "本机 SAPI 冒烟测试无法执行", {"reason": type(error).__name__}) from error
-        if completed.returncode != 0 or not wav_path.is_file() or wav_path.stat().st_size <= 44:
+        if not wav_path.is_file() or wav_path.stat().st_size <= 44:
             raise DomainRuleError("SAPI_SMOKE_TEST_FAILED", "本机 SAPI 未生成可读取的 WAV 冒烟证据")
-        probe = self.media._probe(wav_path, "AUDIO")
+        probe = self._media()._probe(wav_path, "AUDIO")
         audio_streams = [item for item in probe.get("streams", []) if isinstance(item, dict) and item.get("codec_type") == "audio"]
         if probe.get("probe_status") != "PASS" or not audio_streams:
             raise DomainRuleError("SAPI_SMOKE_TEST_FAILED", "本机 SAPI WAV 未通过 ffprobe 音频校验")

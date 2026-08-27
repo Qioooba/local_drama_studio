@@ -1,11 +1,13 @@
 import { chromium } from "playwright";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const PROJECT_ID = "04710fb9-3a9e-44c0-aa2f-1e8485b26f72";
 const EPISODE_ID = "1031eec1-784a-408a-969e-010536931d59";
 const BASE_URL = "http://127.0.0.1:5173";
-const EVIDENCE_DIR = "F:\\AI_Projects\\h3\\local_drama_studio\\docs\\evidence\\ui-uat-2026-08-22\\screens";
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const EVIDENCE_DIR = path.join(ROOT, "docs", "evidence", "ui-uat-2026-08-22", "screens");
 
 fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
 
@@ -150,7 +152,7 @@ async function run() {
     }
 
     const licenseRel = "00_admin/licenses/uat_local_audio_attestation.json";
-    const bgmPath = "F:\\AI_Projects\\h3\\local_drama_studio\\projects\\goal_fullchain_20260823_01\\03_audio\\uat_tracks\\uat_bgm_v2.wav";
+    const bgmPath = path.join(ROOT, "projects", "goal_fullchain_20260823_01", "03_audio", "uat_tracks", "uat_bgm_v2.wav");
 
     await page.locator('label:has-text("本地音频绝对路径") input').fill(bgmPath);
     await page.locator('label:has-text("项目内授权证据相对路径") input').fill(licenseRel);
@@ -173,7 +175,7 @@ async function run() {
 
     // Now import and bind SFX
     console.log("4. Importing and binding compliant SFX (uat_sfx_v2.wav)...");
-    const sfxPath = "F:\\AI_Projects\\h3\\local_drama_studio\\projects\\goal_fullchain_20260823_01\\03_audio\\uat_tracks\\uat_sfx_v2.wav";
+    const sfxPath = path.join(ROOT, "projects", "goal_fullchain_20260823_01", "03_audio", "uat_tracks", "uat_sfx_v2.wav");
 
     // If form is collapsed, open it
     if (await openFormBtn.count() > 0 && await page.locator('button:has-text("导入并绑定本地音频")').isVisible()) {

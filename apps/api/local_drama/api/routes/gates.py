@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import ipaddress
+from pathlib import Path
+
 from fastapi import APIRouter, Request
 
-from local_drama.api.schemas.g3 import I2VEvidenceProbeFinalizeRequest, I2VEvidenceProbeSubmitRequest
+from local_drama.api.schemas.g3 import (
+    I2VEvidenceKeyframePrepareRequest,
+    I2VEvidenceProbeFinalizeRequest,
+    I2VEvidenceProbeSubmitRequest,
+)
 from local_drama.api.schemas.g7 import (
     BrandKitRequest,
     CompliancePolicyRequest,
@@ -18,36 +25,71 @@ from local_drama.application.g7_readiness import G7ReadinessService
 from local_drama.application.g8_readiness import G8ReadinessService
 from local_drama.application.g9_readiness import G9ReadinessService
 from local_drama.application.i2v_probe import I2VProbePlanService
-from local_drama.application.local_picker import pick_local_document_file, pick_local_model_file
 from local_drama.application.model_compatibility import ModelCompatibilityService
 from local_drama.application.network_e2e import NetworkE2EService
 from local_drama.application.t2i_probe import T2IProbePlanService
 from local_drama.application.workspace_assets import WorkspaceAssetService
 from local_drama.domain.errors import DomainRuleError
+from local_drama.platform.contracts import FilePickerRequest
 
 router = APIRouter(tags=["phase-gates"])
 
 
-@router.post("/system/dialogs:model-file", operation_id="pickLocalModelFile")
-def pick_model_file() -> dict[str, object]:
+def _require_server_dialog(request: Request) -> None:
+    if not request.app.state.settings.is_lan_service:
+        return
+    host = request.client.host if request.client else ""
     try:
-        return {"selection": pick_local_model_file()}
+        allowed = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        allowed = host.casefold() in {"localhost", "testclient"}
+    if not allowed:
+        raise DomainRuleError("SERVER_DIALOG_REMOTE_CLIENT", "远程浏览器不能打开服务器桌面的文件选择器",
+                              suggested_action="请使用浏览器上传，或从管理员配置的服务端资源库选择")
+
+
+@router.post("/system/dialogs:model-file", operation_id="pickLocalModelFile")
+def pick_model_file(request: Request) -> dict[str, object]:
+    try:
+        _require_server_dialog(request)
+        selection = request.app.state.platform.file_picker.choose(
+            FilePickerRequest("MODEL", "选择电脑中的模型文件", (".safetensors", ".ckpt", ".bin", ".pt", ".pth"))
+        )
+        return {"selection": selection.public()}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
 
 @router.post("/system/dialogs:document-file", operation_id="pickLocalDocumentFile")
-def pick_document_file() -> dict[str, object]:
+def pick_document_file(request: Request) -> dict[str, object]:
     try:
-        return {"selection": pick_local_document_file()}
+        _require_server_dialog(request)
+        selection = request.app.state.platform.file_picker.choose(
+            FilePickerRequest("DOCUMENT", "选择电脑中的剧本文档", (".txt", ".md", ".markdown", ".docx"))
+        )
+        return {"selection": selection.public()}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
 
+@router.get("/model-registry/roots", operation_id="listModelLibraryRoots")
+async def list_model_library_roots(request: Request) -> dict[str, object]:
+    items = [{"id": f"root-{index + 1}", "label": root.resolve().name or f"模型库 {index + 1}", "path": str(root.resolve())}
+             for index, root in enumerate(request.app.state.settings.model_library_roots)]
+    return {"items": items, "configured": bool(items), "read_only": True}
+
+
 @router.post("/model-registry:scan", operation_id="scanLocalModelRegistry")
-async def scan_local_model_registry(payload: ModelRegistryScanRequest) -> dict[str, object]:
+async def scan_local_model_registry(payload: ModelRegistryScanRequest, request: Request) -> dict[str, object]:
     try:
-        return {"scan": ModelCompatibilityService.scan_local_directory(payload.root_path, payload.max_files)}
+        requested = Path(payload.root_path).resolve()
+        configured = tuple(root.resolve() for root in request.app.state.settings.model_library_roots)
+        if configured and requested not in configured:
+            raise DomainRuleError("MODEL_LIBRARY_ROOT_NOT_ALLOWED", "只能扫描管理员配置的服务端模型库")
+        if request.app.state.settings.is_lan_service and not configured:
+            raise DomainRuleError("MODEL_LIBRARY_ROOTS_NOT_CONFIGURED", "服务器尚未配置可供远程选择的模型库",
+                                  suggested_action="设置 LOCAL_DRAMA_MODEL_LIBRARY_ROOTS 后重启服务")
+        return {"scan": ModelCompatibilityService.scan_local_directory(requested, payload.max_files)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -73,6 +115,29 @@ async def plan_g6_i2v_probe(
                 project_id, profile_version_id, workflow_version_id
             )
         }
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post(
+    "/projects/{project_id}/gates/g6/i2v-probe-keyframe:prepare",
+    status_code=201,
+    operation_id="prepareG6I2VEvidenceKeyframe",
+)
+async def prepare_g6_i2v_evidence_keyframe(
+    project_id: str,
+    payload: I2VEvidenceKeyframePrepareRequest,
+    request: Request,
+) -> dict[str, object]:
+    try:
+        return I2VProbePlanService(
+            request.app.state.database,
+            request.app.state.settings,
+        ).prepare_keyframe(
+            project_id,
+            payload.source_media_version_id,
+            payload.confirm_review_checks,
+        )
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -317,3 +382,13 @@ async def import_model_license_evidence(project_id: str, payload: ModelLicenseEv
         return {"evidence": evidence, "report": report}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
+
+
+# Engineering phase-gate endpoints (G6/G7/G8/G9 readiness + I2V/T2I probes +
+# network-e2e) are consumed by professional/internal verification flows, not by
+# ordinary creator-facing product UI. Keep them fully functional while removing
+# them from the public OpenAPI document (design §13.2 / §11.1).
+for _route in router.routes:
+    _path = getattr(_route, "path", "")
+    if "/gates/g" in _path:
+        _route.include_in_schema = False

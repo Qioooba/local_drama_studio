@@ -1,70 +1,46 @@
+[CmdletBinding()]
 param(
-  [int]$Port = 3210
+    [int]$Port = 3210,
+    [string]$HostAddress = "127.0.0.1",
+    [ValidateSet("LOCAL_ONLY", "LAN_SERVICE")]
+    [string]$NetworkMode = "LOCAL_ONLY"
 )
 
-$ErrorActionPreference = 'Stop'
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$runtimeRoot = Join-Path $repoRoot 'runtime'
-$pidPath = Join-Path $runtimeRoot 'api.pid.json'
-$workerStopPath = Join-Path $runtimeRoot 'worker.stop'
-New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
+$ErrorActionPreference = "Stop"
+$RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$BuildRoot = Join-Path $RepositoryRoot "work\runtime-host-dev"
+$HostBinary = Join-Path $BuildRoot "local-drama-host.exe"
+New-Item -ItemType Directory -Force -Path $BuildRoot | Out-Null
 
-if (Test-Path -LiteralPath $pidPath) {
-  $old = Get-Content -LiteralPath $pidPath -Raw | ConvertFrom-Json
-  $oldPid = if ($old.listener_pid) { [int]$old.listener_pid } else { [int]$old.pid }
-  $oldProcess = Get-Process -Id $oldPid -ErrorAction SilentlyContinue
-  if ($oldProcess) {
-    throw "LocalDramaStudio API already tracked as PID $oldPid; use scripts/stop.ps1 first."
-  }
-  Remove-Item -LiteralPath $pidPath -Force
+Write-Warning "scripts/start.ps1 is a development compatibility entrypoint; packaged deployments use LocalDramaStudio Host directly."
+Push-Location (Join-Path $RepositoryRoot "cmd\runtime-host")
+try {
+    go build -trimpath -ldflags "-X main.hostVersion=development" -o $HostBinary .
+    if ($LASTEXITCODE -ne 0) { throw "Runtime Host build failed" }
+}
+finally {
+    Pop-Location
 }
 
-$python = Join-Path $repoRoot '.venv/Scripts/python.exe'
-if (-not (Test-Path -LiteralPath $python)) { $python = (Get-Command python).Source }
-$migration = Start-Process -FilePath $python -ArgumentList @('-m', 'alembic', '-c', 'alembic.ini', 'upgrade', 'head') -WorkingDirectory $repoRoot -WindowStyle Hidden -Wait -PassThru
-if ($migration.ExitCode -ne 0) { throw "Database migration failed with exit code $($migration.ExitCode)." }
-$arguments = @('-m', 'uvicorn', 'local_drama.main:app', '--app-dir', 'apps/api', '--host', '127.0.0.1', '--port', "$Port")
-$process = Start-Process -FilePath $python -ArgumentList $arguments -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru
-$listener = $null
-for ($attempt = 0; $attempt -lt 100; $attempt++) {
-  Start-Sleep -Milliseconds 100
-  $connection = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue | Where-Object LocalAddress -in @('127.0.0.1','::1') | Select-Object -First 1
-  if ($connection) {
-    $candidate = Get-CimInstance Win32_Process -Filter "ProcessId=$([int]$connection.OwningProcess)" -ErrorAction SilentlyContinue
-    if ($candidate -and [string]$candidate.CommandLine -match 'local_drama\.main:app' -and [string]$candidate.CommandLine -match 'uvicorn') {
-      $listener = $candidate
-      break
+$env:LOCAL_DRAMA_INSTALL_ROOT = $RepositoryRoot
+$env:LOCAL_DRAMA_INSTANCE_ROOT = $RepositoryRoot
+$env:LOCAL_DRAMA_PYTHON = Join-Path $RepositoryRoot ".venv\Scripts\python.exe"
+$env:LOCAL_DRAMA_HOST = $HostAddress
+$env:LOCAL_DRAMA_PORT = [string]$Port
+$env:LOCAL_DRAMA_NETWORK_MODE = $NetworkMode
+$Process = Start-Process -FilePath $HostBinary -ArgumentList @("run") -WorkingDirectory $RepositoryRoot -WindowStyle Hidden -PassThru
+$StatePath = Join-Path $RepositoryRoot "runtime\host-state.json"
+for ($Attempt = 0; $Attempt -lt 240; $Attempt++) {
+    Start-Sleep -Milliseconds 250
+    if ($Process.HasExited) { throw "Runtime Host exited during startup with code $($Process.ExitCode)" }
+    if (Test-Path -LiteralPath $StatePath) {
+        $State = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
+        if ($State.status -eq "RUNNING") {
+            Write-Output "LocalDramaStudio started via Runtime Host PID=$($Process.Id) API=$($State.api_pid) WORKER=$($State.worker_pid) http://${HostAddress}:$Port"
+            exit 0
+        }
+        if ($State.status -eq "MAINTENANCE_FAILED") { throw "Startup database maintenance failed; run Host doctor and inspect logs" }
     }
-  }
-  if ($process.HasExited) { throw "LocalDramaStudio API exited before binding port $Port." }
 }
-if (-not $listener) {
-  Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-  throw "LocalDramaStudio API did not bind 127.0.0.1:$Port within 10 seconds."
-}
-$workerArguments = @(
-  'scripts/run_worker.py',
-  '--worker-id', 'local-drama-studio-main',
-  '--channels', 'CPU,GPU_H3',
-  '--watch',
-  '--poll-seconds', '1',
-  '--stop-file', $workerStopPath
-)
-$worker = Start-Process -FilePath $python -ArgumentList $workerArguments -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru
-Start-Sleep -Milliseconds 750
-if ($worker.HasExited) {
-  Stop-Process -Id $listener.ProcessId -Force -ErrorAction SilentlyContinue
-  throw "LocalDramaStudio Worker exited during startup with exit code $($worker.ExitCode)."
-}
-$state = [ordered]@{
-  pid = [int]$listener.ProcessId
-  launcher_pid = $process.Id
-  listener_pid = [int]$listener.ProcessId
-  worker_pid = [int]$worker.Id
-  start_time_utc = (Get-Date).ToUniversalTime().ToString('o')
-  command = ($arguments -join ' ')
-  worker_command = ($workerArguments -join ' ')
-  instance = 'local-drama-studio'
-}
-$state | ConvertTo-Json | Set-Content -LiteralPath $pidPath -Encoding UTF8
-Write-Output "started LocalDramaStudio API PID=$($listener.ProcessId) WORKER=$($worker.Id) LAUNCHER=$($process.Id) http://127.0.0.1:$Port"
+& $HostBinary stop
+throw "Runtime Host did not become ready within 60 seconds"

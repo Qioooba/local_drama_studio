@@ -50,3 +50,14 @@ def test_project_local_resource_http_contract_validates_kind(workspace, database
     assert response.json()["kind"] == "LUT"
     assert invalid.status_code == 422
 
+
+def test_browser_uploads_purpose_scoped_project_resource(workspace, database) -> None:
+    project = _create_project(workspace, database)
+    with TestClient(create_app(workspace)) as client:
+        uploaded = client.post(f"/api/v1/projects/{project['id']}/local-resources:upload", params={"kind": "LICENSE_EVIDENCE"},
+                               content=b'{"license":"user-owned"}', headers={"X-File-Name": "model-license.json", "Content-Type": "application/json"})
+    assert uploaded.status_code == 201
+    resource = uploaded.json()["resource"]
+    assert resource["path_rel"] == "00_admin/licenses/model-license.json"
+    assert (workspace.projects_root / "resource_picker" / resource["path_rel"]).is_file()
+

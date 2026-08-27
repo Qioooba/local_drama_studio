@@ -182,9 +182,12 @@ def test_whole_drama_template_errors_and_list(workspace, database) -> None:
     assert error.value.code == "PROJECT_NOT_FOUND"
     first = service.create_from_template(str(project["id"]), template_code="WHOLE_DRAMA", title="首次创建")
     assert first["code"] == "WHOLE_DRAMA"
-    with pytest.raises(DomainRuleError) as error:
-        service.create_from_template(str(project["id"]), template_code="WHOLE_DRAMA", title="重复创建")
-    assert error.value.code == "AUTOMATION_WORKFLOW_CODE_EXISTS"
+    second = service.create_from_template(str(project["id"]), template_code="WHOLE_DRAMA", title="重复创建")
+    assert second["version_no"] == 2
+    assert second["id"] != first["id"]
+    unchanged = service.create_from_template(str(project["id"]), template_code="WHOLE_DRAMA", title="重复创建")
+    assert unchanged["id"] == second["id"]
+    assert unchanged["idempotent_replay"] is True
     templates = service.list_templates()
     assert [item["code"] for item in templates] == ["WHOLE_DRAMA"]
     assert templates[0]["title"] == "整剧一键编排"

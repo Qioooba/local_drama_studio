@@ -213,7 +213,7 @@ export function ModelCompatibilityPanel({
         <div className="configuration-card">
           <small>兼容性报告</small>
           <strong>{snapshot.summary.blocked_count} BLOCKED</strong>
-          <span>格式、hash、量化或能力不匹配均硬阻断</span>
+          <span>文件格式、校验指纹、模型精度或能力不匹配时都会阻止继续</span>
         </div>
       </div>
       <div
@@ -503,9 +503,9 @@ export function G9ReadinessPanel({ readiness }: { readiness: G9Readiness }) {
       )}
       <div className="canvas-status">
         <span>生产镜头：{readiness.evidence.production_total_shots}</span>
-        <span>可见节点：{readiness.evidence.production_visible_nodes}</span>
-        <span>layout：{readiness.evidence.persisted_layout_count}</span>
-        <span>preflight：{readiness.evidence.persisted_preflight_count}</span>
+        <span>可见行：{readiness.evidence.production_visible_rows}</span>
+        <span>实验节点：{readiness.evidence.visual_lab_node_count}</span>
+        <span>实验快照：{readiness.evidence.visual_lab_snapshot_count}</span>
       </div>
     </section>
   );

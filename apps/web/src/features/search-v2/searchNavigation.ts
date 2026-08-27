@@ -87,8 +87,15 @@ export function useNavigableSearch(query: string, projectId?: string | null, deb
       return;
     }
     setState({ status: "loading", items: [], error: null });
+    const controller = new AbortController();
+    let requestTimeout: number | undefined;
+    let timedOut = false;
     const timer = window.setTimeout(() => {
-      void searchAll(normalizedQuery, projectId ?? undefined)
+      requestTimeout = window.setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, 15_000);
+      void searchAll(normalizedQuery, projectId ?? undefined, 50, "", controller.signal)
         .then((response) => {
           if (sequence !== requestSequence.current) return;
           const items = (response.items as unknown[]).map(normalizeSearchResult).filter((item): item is NavigableSearchResult => item !== null);
@@ -96,10 +103,22 @@ export function useNavigableSearch(query: string, projectId?: string | null, deb
         })
         .catch((caught: unknown) => {
           if (sequence !== requestSequence.current) return;
+          if (controller.signal.aborted && !timedOut) return;
+          if (timedOut) {
+            setState({ status: "error", items: [], error: "搜索超时，请稍后重试。" });
+            return;
+          }
           setState({ status: "error", items: [], error: caught instanceof Error ? caught.message : String(caught) });
+        })
+        .finally(() => {
+          if (requestTimeout !== undefined) window.clearTimeout(requestTimeout);
         });
     }, debounceMs);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      if (requestTimeout !== undefined) window.clearTimeout(requestTimeout);
+      controller.abort();
+    };
   }, [debounceMs, projectId, query]);
 
   return state;

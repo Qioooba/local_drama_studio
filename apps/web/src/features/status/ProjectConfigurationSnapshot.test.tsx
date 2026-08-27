@@ -75,7 +75,7 @@ describe("ProjectConfigurationSnapshot creator-first delivery setup", () => {
     await screen.findByLabelText("发布平台");
     fireEvent.click(screen.getByText("高级：创建非平台自定义规格"));
     fireEvent.change(screen.getByLabelText("规格名称"), { target: { value: "导演审片" } });
-    fireEvent.change(screen.getByLabelText("画面规格"), { target: { value: "horizontal-cinematic" } });
+    fireEvent.change(screen.getByLabelText("画面规格来源"), { target: { value: "horizontal-cinematic" } });
     fireEvent.change(screen.getByLabelText("字幕输出"), { target: { value: "BOTH" } });
     fireEvent.click(screen.getByRole("button", { name: "创建并启用自定义规格" }));
     await waitFor(() => expect(api.createDeliveryTarget).toHaveBeenCalledWith("p1", expect.objectContaining({

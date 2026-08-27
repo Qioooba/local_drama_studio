@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import io
 import json
 import subprocess
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -151,7 +153,16 @@ def test_contact_sheet_http_route_returns_real_export(workspace, database) -> No
 
     with TestClient(create_app(workspace)) as client:
         response = client.post(f'/api/v1/episodes/{episode["id"]}/contact-sheet:export')
+        exported = response.json()["export"]
+        download = client.get(
+            f'/api/v1/episodes/{episode["id"]}/contact-sheet:download',
+            params={"rel_path": exported["rel_path"]},
+        )
 
     assert response.status_code == 200
     assert response.json()["export"]["item_count"] == 1
     assert response.json()["export"]["network_contacted"] is False
+    assert download.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(download.content)) as archive:
+        assert any(name.endswith("contact-sheet.html") for name in archive.namelist())
+        assert any(name.endswith("manifest.json") for name in archive.namelist())

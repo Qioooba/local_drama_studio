@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 
 class LLMProbeRequest(BaseModel):
+    provider_connection_id: str | None = Field(default=None, min_length=1, max_length=100)
     provider: str | None = Field(default=None, max_length=50)
     base_url: str | None = Field(default=None, max_length=500)
     model: str | None = Field(default=None, max_length=200)
@@ -14,6 +15,7 @@ class LLMProbeRequest(BaseModel):
 
 
 class LLMProfileSyncRequest(BaseModel):
+    provider_connection_id: str | None = Field(default=None, min_length=1, max_length=100)
     model: str | None = Field(default=None, min_length=1, max_length=200)
     provider: str | None = Field(default=None, max_length=50)
     base_url: str | None = Field(default=None, max_length=500)
@@ -36,3 +38,5 @@ class VideoPromptExpandRequest(BaseModel):
     api_key: str | None = Field(default=None, max_length=500)
     remember_api_key: bool = Field(default=False)
     allow_remote_outbound: bool = Field(default=False)
+    language: str = Field(default="zh-CN", pattern=r"^(zh-CN|en-US)$")
+    output_spec: dict[str, float | int | str] = Field(default_factory=dict)

@@ -9,16 +9,16 @@ import subprocess
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 from urllib.error import URLError
-from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 from local_drama.application.h3_workflows import H3WorkflowFactory
-from local_drama.application.local_llm import LocalLLMService
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.network_policy import endpoint_scope, parse_runtime_endpoint
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.infrastructure.local_http import open_local
 from local_drama.infrastructure.manifest import load_manifest
 
 
@@ -28,6 +28,18 @@ def _utc_now() -> str:
 
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+class _DiagnosticLocalLLMPort(Protocol):
+    def status(
+        self,
+        provider: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
+        api_key: str | None = None,
+        live_probe: bool = True,
+    ) -> dict[str, Any]:
+        ...
 
 
 def _run_version(executable: str | None) -> tuple[str, dict[str, Any]]:
@@ -41,31 +53,46 @@ def _run_version(executable: str | None) -> tuple[str, dict[str, Any]]:
     return ("PASS" if result.returncode == 0 else "FAIL"), {"executable": executable, "version": first_line[0] if first_line else ""}
 
 
-def _probe_loopback(url: str | None) -> tuple[str, dict[str, Any]]:
+def _probe_loopback(url: str | None, *, allow_private_network: bool = False) -> tuple[str, dict[str, Any]]:
+    """Probe a validated runtime endpoint without proxy or redirect hops.
+
+    The historical name is retained for callers, but LAN_SERVICE may opt into
+    literal RFC1918/ULA endpoints through the shared network policy.
+    """
     if os.environ.get("LOCAL_DRAMA_COMFY_ACCESS", "enabled").casefold() != "enabled":
         return "BLOCKED", {"reason": "access_disabled"}
     if not url:
         return "BLOCKED", {"reason": "base_url_missing"}
-    parsed = urlparse(url)
-    if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"}:
-        return "BLOCKED", {"reason": "non_loopback_url_rejected"}
+    parsed = parse_runtime_endpoint(
+        url,
+        allow_private_network=allow_private_network,
+        schemes=frozenset({"http"}),
+    )
+    if parsed is None:
+        return "BLOCKED", {"reason": "runtime_endpoint_rejected"}
+    scope = str(endpoint_scope(parsed.hostname))
     try:
         request = Request(f"{url.rstrip('/')}/system_stats", method="GET")
-        with urlopen(request, timeout=2) as response:  # noqa: S310 - host is checked as loopback above
-            return "PASS", {"status_code": response.status, "loopback": True}
+        with open_local(request, timeout=2) as response:
+            return "PASS", {"status_code": response.status, "endpoint_scope": scope}
     except (OSError, URLError, TimeoutError) as error:
-        return "BLOCKED", {"loopback": True, "reason": type(error).__name__}
+        return "BLOCKED", {"endpoint_scope": scope, "reason": type(error).__name__}
+
+
+def _build_local_llm_port(database: Database, settings: Settings) -> _DiagnosticLocalLLMPort:
+    local_llm = __import__("local_drama.application.local_llm", fromlist=["LocalLLMService"])
+    return local_llm.LocalLLMService(database, settings)
 
 
 class DiagnosticService:
-    def __init__(self, database: Database, settings: Settings) -> None:
+    def __init__(self, database: Database, settings: Settings, llm: _DiagnosticLocalLLMPort | None = None) -> None:
         self.database = database
         self.settings = settings
+        self.llm = llm or _build_local_llm_port(database, settings)
 
     def run(self, actor: str = "local-user") -> dict[str, Any]:
         manifest = load_manifest(self.settings.manifest_path)
         runtime = manifest.runtime
-        comfy_api = dict(runtime.get("comfyui_api", {}))
         manifest_ffmpeg = str(runtime.get("ffmpeg", {}).get("executable", "")).strip()
         ffmpeg_path = manifest_ffmpeg if (manifest_ffmpeg and Path(manifest_ffmpeg).exists()) else (self.settings.ffmpeg_path or shutil.which("ffmpeg"))
         checks: list[dict[str, Any]] = []
@@ -79,7 +106,15 @@ class DiagnosticService:
         add(
             "DISABLED_MODEL_GUARD", "models", "PASS", {"count": len(manifest.disabled_assets), "paths": [item.get("path") for item in manifest.disabled_assets]}
         )
-        add("COMFYUI_LOOPBACK", "runtime", *_probe_loopback(comfy_api.get("base_url")), remediation={"action": "启动本机 ComfyUI backend；禁止联网自动修复"})
+        add(
+            "COMFYUI_LOOPBACK",
+            "runtime",
+            *_probe_loopback(
+                self.settings.comfy_base_url,
+                allow_private_network=self.settings.allows_private_network,
+            ),
+            remediation={"action": "启动已配置的 ComfyUI backend；系统不会自动下载或切换公网服务"},
+        )
         h3_layout = H3WorkflowFactory(self.settings).runtime_layout()
         add(
             "H3_CANDIDATE_LAYOUT",
@@ -89,7 +124,7 @@ class DiagnosticService:
             remediation={"action": "补齐 manifest 指向的本机 H3 release sidecar；不得自动下载或改写模型目录"},
         )
         try:
-            llm = LocalLLMService(self.database, self.settings).status()
+            llm = self.llm.status()
         except DomainRuleError as error:
             llm = {"status": "BLOCKED", "error_code": error.code}
         add(
@@ -158,11 +193,18 @@ class DiagnosticService:
         add(
             "NETWORK_POLICY",
             "network",
-            "PASS" if self.settings.mode == "LOCAL_ONLY" else "FAIL",
-            {"mode": self.settings.mode, "allowed_hosts": ["127.0.0.1", "localhost", "::1"], "public_network": False},
-            {"action": "保持 LOCAL_ONLY；远程 Provider 不提供自动修复"},
+            "PASS",
+            {
+                "release_mode": self.settings.mode,
+                "network_mode": str(self.settings.network_mode),
+                "allowed_runtime_hosts": ["127.0.0.1", "localhost", "::1"]
+                if not self.settings.allows_private_network
+                else ["127.0.0.1", "localhost", "::1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"],
+                "public_network": False,
+            },
+            {"action": "运行时仅允许当前部署模式声明的 loopback/私网边界；不会自动切换公网服务"},
         )
-        add("REMOTE_PROVIDER", "network", "PASS", {"mode": "LOCAL_ONLY", "remote_provider": "disabled"})
+        add("REMOTE_PROVIDER", "network", "PASS", {"network_mode": str(self.settings.network_mode), "automatic_remote_fallback": False})
 
         overall = (
             "FAIL"

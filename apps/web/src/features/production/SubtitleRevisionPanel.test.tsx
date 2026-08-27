@@ -6,6 +6,7 @@ import { SubtitleRevisionPanel } from "./SubtitleRevisionPanel";
 vi.mock("../../generated/api", () => ({
   createSubtitleRevision: vi.fn(),
   getEpisodeTTSSubtitleDraftPlan: vi.fn(),
+  getProjectConfiguration: vi.fn(() => Promise.resolve({ configuration: { production_plan: null } })),
   getSubtitleStyleTemplate: vi.fn(),
   listScriptBreakdownDrafts: vi.fn(),
   listSubtitleStyleTemplates: vi.fn(),

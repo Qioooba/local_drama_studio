@@ -14,11 +14,15 @@ import {
   type MultiViewSettings,
 } from "./multiviewClient";
 import "./GenerateMultiViewPanel.css";
+import { getDirectorRecipeBinding } from "../recipes-v2/api";
 
 const VIEWS: Array<{ kind: MultiViewKind; label: string; angle: string }> = [
   { kind: "FRONT", label: "正面", angle: "0°" },
   { kind: "LEFT", label: "左侧", angle: "−90°" },
   { kind: "RIGHT", label: "右侧", angle: "+90°" },
+  { kind: "BACK", label: "背面", angle: "180°" },
+  { kind: "TOP", label: "顶部", angle: "俯视" },
+  { kind: "BOTTOM", label: "底部", angle: "仰视" },
 ];
 const TERMINAL_FAILURES = new Set(["FAILED", "CANCELLED", "NEEDS_ATTENTION", "ORPHANED"]);
 
@@ -65,6 +69,7 @@ export function GenerateMultiViewPanel({ projectId, assetId, assetKind, assetSta
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profilesState, setProfilesState] = useState<"loading" | "ready" | "error">("loading");
   const [batchBindReport, setBatchBindReport] = useState<{ batchId: string; succeeded: number; failed: Array<{ kind: MultiViewKind; reason: string }> } | null>(null);
+  const [policyViews, setPolicyViews] = useState<MultiViewKind[]>(["FRONT", "LEFT", "RIGHT"]);
 
   useEffect(() => { setBatches(initialBatches); }, [initialBatches]);
   useEffect(() => {
@@ -92,14 +97,24 @@ export function GenerateMultiViewPanel({ projectId, assetId, assetKind, assetSta
       });
     return () => { cancelled = true; };
   }, [projectId]);
+  useEffect(() => {
+    let cancelled = false;
+    void getDirectorRecipeBinding(projectId).then((binding) => {
+      if (cancelled || !binding) return;
+      const allowed = new Set(VIEWS.map((item) => item.kind));
+      const configured = binding.recipe.asset_policy.character_required_refs.filter((item): item is MultiViewKind => allowed.has(item as MultiViewKind));
+      if (configured.length) setPolicyViews(configured);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [projectId]);
 
   const selectedReferences = assetStateId
     ? states.find((state) => state.id === assetStateId)?.references ?? []
     : baseReferences;
   const allReferences = [...baseReferences, ...states.flatMap((state) => state.references)];
   const missingViews = useMemo(
-    () => VIEWS.map((view) => view.kind).filter((kind) => !selectedReferences.some((reference) => reference.reference_kind === kind)),
-    [selectedReferences],
+    () => policyViews.filter((kind) => !selectedReferences.some((reference) => reference.reference_kind === kind)),
+    [policyViews, selectedReferences],
   );
   const hasHero = selectedReferences.some((reference) => reference.reference_kind === "HERO")
     || (assetStateId !== "" && baseReferences.some((reference) => reference.reference_kind === "HERO"));
@@ -109,8 +124,8 @@ export function GenerateMultiViewPanel({ projectId, assetId, assetKind, assetSta
     profile_version_id: profileVersionId.trim() || null,
     consistency_strength: consistency,
     background,
-    requested_slots: missingViews.length ? missingViews : VIEWS.map((view) => view.kind),
-  }), [assetStateId, profileVersionId, consistency, background, missingViews]);
+    requested_slots: missingViews.length ? missingViews : policyViews,
+  }), [assetStateId, profileVersionId, consistency, background, missingViews, policyViews]);
 
   useEffect(() => { setPreflight(null); }, [settings]);
 
@@ -187,7 +202,7 @@ export function GenerateMultiViewPanel({ projectId, assetId, assetKind, assetSta
 
   return <section className="panel multiview-panel" aria-labelledby={`multiview-title-${assetId}`}>
     <div className="panel-heading multiview-heading">
-      <div><p className="eyebrow">角色一致性</p><h4 id={`multiview-title-${assetId}`}>生成 FRONT / LEFT / RIGHT</h4></div>
+      <div><p className="eyebrow">角色一致性</p><h4 id={`multiview-title-${assetId}`}>生成导演配方要求的角色视图</h4></div>
       <span className={`status-pill ${hasHero ? "state-ready" : "state-blocked"}`}>{hasHero ? "HERO 已就绪" : "缺少 HERO"}</span>
     </div>
     <p className="muted">默认只生成当前造型仍缺失的视图；每个槽仍是独立任务。成功后可一次回绑全部结果，失败项不会隐藏。</p>
@@ -197,6 +212,7 @@ export function GenerateMultiViewPanel({ projectId, assetId, assetKind, assetSta
       <label>一致性<select value={consistency} onChange={(event) => setConsistency(event.target.value as typeof consistency)}><option value="HIGH">高</option><option value="MEDIUM">中</option><option value="LOW">低</option></select></label>
       <label>背景<select value={background} onChange={(event) => setBackground(event.target.value as typeof background)}><option value="CLEAN">干净背景</option><option value="TRANSPARENT">透明背景</option><option value="ORIGINAL">保留原背景</option></select></label>
     </div>
+    <fieldset><legend>本批次需要的视图</legend><div className="action-row">{VIEWS.map((view) => <label key={view.kind}><input type="checkbox" checked={policyViews.includes(view.kind)} onChange={(event) => setPolicyViews((current) => event.target.checked ? [...new Set([...current, view.kind])] : current.filter((item) => item !== view.kind))} />{view.label}</label>)}</div><small className="muted">初始值来自当前项目绑定的 Director Recipe；可为本批次显式覆盖。</small></fieldset>
     <details className="multiview-advanced">
       <summary>指定生成模型（可选）</summary>
       <label htmlFor={`multiview-profile-${assetId}`}>已发布的三视图生成模型</label>

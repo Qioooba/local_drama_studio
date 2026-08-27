@@ -80,19 +80,3 @@ RerollReasonCode = Literal[
     "QC_AUTO_RETRY",
     "OTHER",
 ]
-
-
-class VariantRerollRequest(BaseModel):
-    """One-step creative reroll command.
-
-    ``bindings=None`` means byte-for-byte semantic-slot inheritance.  A supplied
-    list is a complete replacement snapshot; it is deliberately not a patch.
-    Operational retries remain on ``POST /jobs/{id}:retry``.
-    """
-
-    reason_code: RerollReasonCode
-    reason_note: str | None = Field(default=None, max_length=900)
-    explicit_seed: int | None = None
-    profile_version_id: str | None = Field(default=None, min_length=1)
-    bindings: list[VariantInputRequest] | None = Field(default=None, max_length=100)
-    idempotency_key: str = Field(min_length=1, max_length=200)

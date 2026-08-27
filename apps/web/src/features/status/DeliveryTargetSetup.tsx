@@ -8,6 +8,7 @@ import {
   type ProjectConfiguration,
 } from "../../generated/api";
 import { generateMachineCode } from "../shared/autoCode";
+import { resolutionFromPlan } from "../shared/effectiveDefaults";
 
 const CUSTOM_FORMATS = [
   { id: "vertical-standard", title: "竖屏 1080P", width: 1080, height: 1920, fps: 30, bitrateKbps: 6000 },
@@ -41,7 +42,14 @@ export function DeliveryTargetSetup({ configuration, projectId, onChanged }: {
   const [presetCode, setPresetCode] = useState("");
   const [targetVersionId, setTargetVersionId] = useState(configuration.selected_delivery_target_version_id ?? "");
   const [customTitle, setCustomTitle] = useState("自定义本地交付");
-  const [customFormatId, setCustomFormatId] = useState<(typeof CUSTOM_FORMATS)[number]["id"]>("vertical-standard");
+  const projectResolution = resolutionFromPlan(configuration.production_plan?.plan);
+  const [customFormatId, setCustomFormatId] = useState<string>("project");
+  const [customWidth, setCustomWidth] = useState(projectResolution.width);
+  const [customHeight, setCustomHeight] = useState(projectResolution.height);
+  const [customFps, setCustomFps] = useState(projectResolution.fps);
+  const [customBitrateKbps, setCustomBitrateKbps] = useState(6000);
+  const [audioCodec, setAudioCodec] = useState("AAC");
+  const [customPathOverride, setCustomPathOverride] = useState("");
   const [subtitleMode, setSubtitleMode] = useState("SIDECAR");
   const [pending, setPending] = useState<"preset" | "custom" | "select" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -63,9 +71,22 @@ export function DeliveryTargetSetup({ configuration, projectId, onChanged }: {
   const selectedPreset = presets.find((preset) => preset.code === presetCode);
   const currentTarget = configuration.delivery_targets.find((target) => target.version_id === configuration.selected_delivery_target_version_id);
   const selectedExisting = configuration.delivery_targets.find((target) => target.version_id === targetVersionId);
-  const customFormat = CUSTOM_FORMATS.find((item) => item.id === customFormatId) ?? CUSTOM_FORMATS[0];
+  const customFormat = CUSTOM_FORMATS.find((item) => item.id === customFormatId);
   const customCode = useMemo(() => generateMachineCode("DELIVERY", customTitle).toLowerCase(), [customTitle]);
   const customPath = generatedPath(customCode || "delivery_custom");
+  const effectiveCustomPath = customPathOverride.trim() || customPath;
+
+  useEffect(() => {
+    if (customFormatId === "project") {
+      const inherited = resolutionFromPlan(configuration.production_plan?.plan);
+      setCustomWidth(inherited.width); setCustomHeight(inherited.height); setCustomFps(inherited.fps);
+      return;
+    }
+    const format = CUSTOM_FORMATS.find((item) => item.id === customFormatId);
+    if (format) {
+      setCustomWidth(format.width); setCustomHeight(format.height); setCustomFps(format.fps); setCustomBitrateKbps(format.bitrateKbps);
+    }
+  }, [configuration.production_plan?.version_id, customFormatId]);
 
   const createPreset = async () => {
     if (!selectedPreset) return;
@@ -87,12 +108,12 @@ export function DeliveryTargetSetup({ configuration, projectId, onChanged }: {
         title: customTitle.trim(),
         transport: "LOCAL_FILESYSTEM",
         spec: {
-          path_rel: customPath,
-          width: customFormat.width,
-          height: customFormat.height,
-          fps: customFormat.fps,
-          bitrate_kbps: customFormat.bitrateKbps,
-          audio: "AAC",
+          path_rel: effectiveCustomPath,
+          width: customWidth,
+          height: customHeight,
+          fps: customFps,
+          bitrate_kbps: customBitrateKbps,
+          audio: audioCodec,
           subtitles: subtitleMode,
         },
       });
@@ -140,9 +161,12 @@ export function DeliveryTargetSetup({ configuration, projectId, onChanged }: {
 
     <details className="delivery-custom-details"><summary>高级：创建非平台自定义规格</summary><div className="delivery-custom-form">
       <label>规格名称<input value={customTitle} onChange={(event) => setCustomTitle(event.target.value)} /></label>
-      <label>画面规格<select value={customFormatId} onChange={(event) => setCustomFormatId(event.target.value as typeof customFormatId)}>{CUSTOM_FORMATS.map((format) => <option key={format.id} value={format.id}>{format.title} · {format.width}×{format.height} · 每秒 {format.fps} 帧</option>)}</select></label>
+      <label>画面规格来源<select value={customFormatId} onChange={(event) => setCustomFormatId(event.target.value)}><option value="project">继承当前项目方案</option><option value="custom">完全自定义</option>{CUSTOM_FORMATS.map((format) => <option key={format.id} value={format.id}>{format.title} · {format.width}×{format.height} · 每秒 {format.fps} 帧</option>)}</select></label>
+      <div className="field-grid"><label>宽度<input type="number" min={64} max={8192} step={2} value={customWidth} onChange={(event) => { setCustomFormatId("custom"); setCustomWidth(Number(event.target.value)); }} /></label><label>高度<input type="number" min={64} max={8192} step={2} value={customHeight} onChange={(event) => { setCustomFormatId("custom"); setCustomHeight(Number(event.target.value)); }} /></label><label>帧率<input type="number" min={1} max={120} value={customFps} onChange={(event) => { setCustomFormatId("custom"); setCustomFps(Number(event.target.value)); }} /></label><label>视频码率（Kbps）<input type="number" min={100} max={200000} step={100} value={customBitrateKbps} onChange={(event) => { setCustomFormatId("custom"); setCustomBitrateKbps(Number(event.target.value)); }} /></label></div>
+      <label>音频编码<select value={audioCodec} onChange={(event) => setAudioCodec(event.target.value)}><option value="AAC">AAC（兼容性优先）</option><option value="OPUS">Opus（体积优先）</option><option value="PCM_S16LE">PCM 无损</option><option value="NONE">不含音频</option></select></label>
       <label>字幕输出<select value={subtitleMode} onChange={(event) => setSubtitleMode(event.target.value)}><option value="SIDECAR">独立字幕文件</option><option value="BURN_IN">烧录到画面</option><option value="BOTH">画面 + 独立字幕</option><option value="NONE">无字幕</option></select></label>
-      <div className="delivery-derived-facts"><span>系统代码 <code>{customCode || "等待名称"}</code></span><span>保存目录 <code>{customPath}</code></span></div>
+      <label>本地保存目录<input value={customPathOverride} onChange={(event) => setCustomPathOverride(event.target.value)} placeholder={customPath} /></label>
+      <div className="delivery-derived-facts"><span>系统代码 <code>{customCode || "等待名称"}</code></span><span>保存目录 <code>{effectiveCustomPath}</code></span><span>缺省来源 <strong>{customFormatId === "project" ? "当前项目方案" : customFormat ? "所选规格模板" : "手动输入"}</strong></span></div>
       <button type="button" className="secondary" disabled={!customTitle.trim() || pending !== null} onClick={() => void createCustom()}>{pending === "custom" ? "正在创建…" : "创建并启用自定义规格"}</button>
     </div></details>
 

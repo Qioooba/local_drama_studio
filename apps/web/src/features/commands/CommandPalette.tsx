@@ -3,6 +3,7 @@ import type { CommandContext, StudioCommand } from "./commandRegistry";
 import { eventShortcut, isTextEntryTarget, normalizeShortcut, studioCommandRegistry } from "./commandRegistry";
 import { SearchResultContent } from "../search-v2/SearchResultContent";
 import { useNavigableSearch, type NavigableSearchResult } from "../search-v2/searchNavigation";
+import { StudioIcon } from "../../components/icons";
 import "./command-palette.css";
 
 const EMPTY: StudioCommand[] = [];
@@ -108,12 +109,12 @@ export function CommandPalette({ context, baseCommands = EMPTY }: { context: Com
 
   return <>
     <button type="button" className="command-trigger" aria-label="打开命令面板" aria-keyshortcuts="Control+K Meta+K" onClick={() => setOpen(true)}>
-      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m12.5 12.5 4 4"/></svg>
+      <StudioIcon name="search" />
       <span>搜索命令与实体</span><kbd>Ctrl K</kbd>
     </button>
     <dialog ref={dialogRef} className="command-dialog" aria-labelledby="command-palette-title" onCancel={(event) => { event.preventDefault(); close(); }} onClose={() => setOpen(false)} onClick={(event) => { if (event.target === dialogRef.current) close(); }}>
       <div className="command-search-row">
-        <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m12.5 12.5 4 4"/></svg>
+        <StudioIcon name="search" />
         <label htmlFor="studio-command-search" id="command-palette-title">查找页面或操作</label>
         <input
           ref={searchRef}

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import errno
 import json
-import os
-import shutil
 import subprocess
 import threading
 from collections import deque
@@ -26,24 +24,55 @@ from local_drama.application.jobs import JobService
 from local_drama.application.local_llm import LocalLLMService
 from local_drama.application.media import MediaService
 from local_drama.application.timeline import TimelineService
+from local_drama.application.worker_dispatch import WorkerExecution, WorkerJobDispatcher
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.generation import VariantPlan
 from local_drama.domain.policies import VariantInput
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.platform import create_platform_services
+from local_drama.platform.contracts import TtsRuntime, TtsRuntimeError
+from local_drama.infrastructure.filesystem.atomic import replace_path
+
+
+# Declarative registry: job type -> business handler method name on LocalMediaWorker.
+# Kept module-level so handler registration is separated from runner orchestration
+# and can be audited/tested independently (design §13.2 "giant worker handler split").
+_JOB_HANDLER_REGISTRY: dict[str, str] = {
+    "MEDIA_DERIVATIVE": "_run_media_job",
+    "MEDIA_THUMBNAIL": "_run_media_job",
+    "MEDIA_PROXY": "_run_media_job",
+    "TTS_GENERATION": "_run_tts_job",
+    "EPISODE_COMPOSE": "_run_compose_job",
+    "VIDEO_ENHANCEMENT": "_run_enhancement_job",
+    "SEGMENTED_EPISODE_COMPOSE": "_run_segmented_compose_job",
+    "DELIVERY_BUILD": "_run_delivery_build_job",
+    "EXPERIMENT_CELL": "_run_experiment_cell",
+    "LOCAL_LLM_PROBE": "_run_local_llm_probe_job",
+}
 
 
 class LocalMediaWorker:
-    def __init__(self, database: Database, settings: Settings) -> None:
+    def __init__(self, database: Database, settings: Settings, tts_runtime: TtsRuntime | None = None) -> None:
         self.database = database
         self.settings = settings
         self.jobs = JobService(database, settings)
         self.media = MediaService(database, settings, ffmpeg_runner=self._ffmpeg)
+        self.tts_runtime = tts_runtime or create_platform_services(settings).tts_runtime
         self._active_job_context: tuple[str, str, str] | None = None
         self._last_cancel_check = 0.0
         self._last_progress_heartbeat = 0.0
         self._active_progress: dict[str, Any] = {}
         self._ffmpeg_expected_duration_ms: int | None = None
+
+    @staticmethod
+    def _execution(result: tuple[str, str]) -> WorkerExecution:
+        return WorkerExecution(kind=result[0], relative_path=result[1])
+
+    def _run_cpu_test(self, job: dict[str, Any], output_root: Path, worker_id: str) -> WorkerExecution:
+        output = output_root / "result.txt"
+        self._atomic_file(output, lambda target: target.write_text(f"job={job['id']}\nworker={worker_id}\n", encoding="utf-8"))
+        return WorkerExecution("TEXT_RESULT", output.relative_to(self.settings.work_root).as_posix())
 
     def _report_progress(self, progress: dict[str, Any], *, force: bool = False) -> bool:
         """Persist truthful, monotonic progress and return the cancel fact.
@@ -273,7 +302,7 @@ class LocalMediaWorker:
         partial = path.with_name(f".partial-{path.name}")
         try:
             writer(partial)
-            os.replace(partial, path)
+            replace_path(partial, path)
         except Exception:
             if partial.exists():
                 partial.unlink()
@@ -363,7 +392,8 @@ class LocalMediaWorker:
 
     def _run_local_llm_probe_job(self, job: dict[str, Any], output_root: Path) -> tuple[str, str]:
         snapshot = job["input_snapshot"]
-        if snapshot.get("secret_persisted") is not False or snapshot.get("credential_source") != "SETTINGS_OR_ENV":
+        credential_source = snapshot.get("credential_source")
+        if snapshot.get("secret_persisted") is not False or credential_source not in {"SETTINGS_OR_ENV", "PROVIDER_CONNECTION"}:
             raise DomainRuleError("LOCAL_LLM_PROBE_SNAPSHOT_INVALID", "LLM 测试 Job 的密钥边界无效")
         if self._cancel_requested():
             raise DomainRuleError("JOB_CANCELLED", "LLM 连接测试已取消")
@@ -372,6 +402,7 @@ class LocalMediaWorker:
             model=str(snapshot.get("model") or ""),
             provider=str(snapshot.get("provider") or ""),
             base_url=str(snapshot.get("base_url") or ""),
+            provider_connection_id=str(snapshot.get("provider_connection_id") or "") or None,
         ).probe(load_test=bool(snapshot.get("load_test", True)))
         self._report_progress({"phase": "RECORDING_EVIDENCE", "percent": 85}, force=True)
         report = {
@@ -379,7 +410,8 @@ class LocalMediaWorker:
             "job_id": str(job["id"]),
             "probe": probe,
             "secret_persisted": False,
-            "credential_source": "SETTINGS_OR_ENV",
+            "credential_source": credential_source,
+            "provider_connection_id": snapshot.get("provider_connection_id"),
         }
         output = output_root / "local-llm-probe-report.json"
         self._atomic_file(output, lambda target: target.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"))
@@ -614,45 +646,21 @@ class LocalMediaWorker:
         voice_ref = str(voice["voice_ref"])
         if not voice_ref.startswith("sapi:") or not voice_ref.removeprefix("sapi:").strip():
             raise DomainRuleError("TTS_VOICE_REF_INVALID", "Windows SAPI Job 必须使用 sapi: 音色引用")
-        powershell = shutil.which("powershell.exe") or shutil.which("pwsh.exe")
-        if powershell is None:
-            raise DomainRuleError("TTS_RUNTIME_UNAVAILABLE", "本机未找到 PowerShell/System.Speech runtime")
         output = output_root / "speech.wav"
         sapi_output = output_root / "speech.sapi.wav"
         speech_rate = float(snapshot.get("speech_rate", 1.0))
         sapi_rate = max(-10, min(10, round((speech_rate - 1.0) * 10)))
-        script = (
-            "Add-Type -AssemblyName System.Speech; "
-            "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-            "try { $s.SelectVoice($env:LOCAL_DRAMA_TTS_VOICE); "
-            "$s.Rate = [int]$env:LOCAL_DRAMA_TTS_RATE; "
-            "$s.SetOutputToWaveFile($env:LOCAL_DRAMA_TTS_OUTPUT); "
-            "$s.Speak($env:LOCAL_DRAMA_TTS_TEXT) } finally { $s.Dispose() }"
-        )
-
         def synthesize(target: Path) -> None:
-            environment = os.environ.copy()
-            environment.update(
-                {
-                    "LOCAL_DRAMA_TTS_VOICE": voice_ref.removeprefix("sapi:").strip(),
-                    "LOCAL_DRAMA_TTS_RATE": str(sapi_rate),
-                    "LOCAL_DRAMA_TTS_OUTPUT": str(target),
-                    "LOCAL_DRAMA_TTS_TEXT": str(text_revision["text"]),
-                }
-            )
             try:
-                result = subprocess.run(
-                    [powershell, "-NoProfile", "-NonInteractive", "-Command", script],
-                    capture_output=True,
-                    text=True,
+                self.tts_runtime.synthesize(
+                    voice=voice_ref.removeprefix("sapi:").strip(),
+                    text=str(text_revision["text"]),
+                    output=target,
+                    rate=sapi_rate,
                     timeout=120,
-                    check=False,
-                    env=environment,
                 )
-            except (OSError, subprocess.TimeoutExpired) as error:
+            except TtsRuntimeError as error:
                 raise DomainRuleError("TTS_RUNTIME_FAILED", "本机 SAPI TTS 执行失败", {"reason": type(error).__name__}) from error
-            if result.returncode != 0:
-                raise DomainRuleError("TTS_RUNTIME_FAILED", "本机 SAPI TTS 执行失败", {"stderr_redacted": result.stderr[-500:]})
 
         self._atomic_file(sapi_output, synthesize)
         try:
@@ -943,7 +951,7 @@ class LocalMediaWorker:
         return report, 0
 
     def _automation_tts_batch(self, episode_id: str, run_id: str, task_id: str) -> tuple[dict[str, Any], int]:
-        dialogue = DialogueService(self.database, self.settings)
+        dialogue = DialogueService(self.database, self.settings, jobs=self.jobs, media=self.media)
         prefix = f"automation:{run_id}:{task_id}"
         result = dialogue.submit_episode_tts_batch(episode_id, idempotency_key_prefix=prefix, actor="local-user")
         counts = {key: int(result["counts"].get(key, 0)) for key in ("submitted", "skipped", "failed")}
@@ -1031,7 +1039,7 @@ class LocalMediaWorker:
         still guards the text, so non-verbatim derived text fails closed with
         SUBTITLE_SCRIPT_AUTHORITY_MISMATCH instead of silently writing subtitles.
         """
-        dialogue = DialogueService(self.database, self.settings)
+        dialogue = DialogueService(self.database, self.settings, jobs=self.jobs, media=self.media)
         lines = dialogue.list_lines(episode_id)
         cues: list[dict[str, Any]] = []
         cursor_us = 0
@@ -1187,6 +1195,87 @@ class LocalMediaWorker:
             return error.code
         return None
 
+    def _run_script_breakdown_with_heartbeat(
+        self,
+        job: dict[str, Any],
+        output_root: Path,
+        *,
+        attempt_id: str,
+        token: str,
+        worker_id: str,
+    ) -> WorkerExecution:
+        heartbeat_stop = threading.Event()
+        heartbeat_errors: list[BaseException] = []
+        progress_state: dict[str, Any] = {"phase": "PREPARING", "percent": 5}
+        progress_lock = threading.Lock()
+
+        def heartbeat_progress(progress: dict[str, Any]) -> None:
+            with progress_lock:
+                progress_state.clear()
+                progress_state.update(progress)
+                self._active_progress = {**self._active_progress, **progress}
+            heartbeat = self.jobs.heartbeat(
+                attempt_id, token, worker_id, progress=progress, lease_seconds=120,
+            )
+            if heartbeat.get("cancel_requested"):
+                raise DomainRuleError("JOB_CANCELLED", "AI 拆解已请求取消；不会保存模型输出")
+            if heartbeat_errors:
+                raise DomainRuleError("JOB_HEARTBEAT_FAILED", "AI 拆解 Job lease 续期失败")
+
+        def keep_lease_alive() -> None:
+            while not heartbeat_stop.wait(20.0):
+                try:
+                    with progress_lock:
+                        current_progress = dict(progress_state)
+                    self.jobs.heartbeat(
+                        attempt_id, token, worker_id, progress=current_progress, lease_seconds=120,
+                    )
+                except BaseException as error:
+                    heartbeat_errors.append(error)
+                    return
+
+        heartbeat_thread = threading.Thread(
+            target=keep_lease_alive,
+            name=f"script-breakdown-heartbeat-{str(job['id'])[:8]}",
+            daemon=True,
+        )
+        heartbeat_thread.start()
+        try:
+            result = self._execution(self._run_script_breakdown_job(job, output_root, heartbeat_progress))
+            if heartbeat_errors:
+                raise DomainRuleError("JOB_HEARTBEAT_FAILED", "AI 拆解 Job lease 续期失败")
+            return result
+        finally:
+            heartbeat_stop.set()
+            heartbeat_thread.join(timeout=2.0)
+
+    def _dispatcher(
+        self,
+        *,
+        attempt_id: str,
+        token: str,
+        worker_id: str,
+    ) -> WorkerJobDispatcher:
+        simple_handlers = {
+            job_type: getattr(self, method_name)
+            for job_type, method_name in _JOB_HANDLER_REGISTRY.items()
+        }
+        handlers = {
+            job_type: (lambda job, root, handler=handler: self._execution(handler(job, root)))
+            for job_type, handler in simple_handlers.items()
+        }
+        handlers["CPU_TEST"] = lambda job, root: self._run_cpu_test(job, root, worker_id)
+        handlers["SCRIPT_BREAKDOWN_LOCAL_LLM"] = lambda job, root: self._run_script_breakdown_with_heartbeat(
+            job, root, attempt_id=attempt_id, token=token, worker_id=worker_id,
+        )
+
+        def automation(job: dict[str, Any], root: Path) -> WorkerExecution:
+            kind, relative, report, produced_bytes = self._run_automation_task(job, root, worker_id)
+            return WorkerExecution(kind, relative, report, produced_bytes)
+
+        handlers["AUTOMATION_WORKFLOW_TASK"] = automation
+        return WorkerJobDispatcher(handlers)
+
     def run_once(
         self,
         worker_id: str,
@@ -1216,98 +1305,22 @@ class LocalMediaWorker:
                 lease_seconds=initial_lease_seconds,
             )
             output_root = self.settings.work_root / "jobs" / str(job["id"])
-            report: dict[str, Any] | None = None
-            produced_bytes = 0
             if self._report_progress({"phase": "EXECUTING", "percent": 10}, force=True):
                 raise DomainRuleError("JOB_CANCELLED", "后台任务已取消，不会开始新的处理步骤")
-            if job["type"] == "CPU_TEST":
-                output = output_root / "result.txt"
-                self._atomic_file(output, lambda target: target.write_text(f"job={job['id']}\nworker={worker_id}\n", encoding="utf-8"))
-                kind = "TEXT_RESULT"
-                relative = output.relative_to(self.settings.work_root).as_posix()
-            elif job["type"] in {"MEDIA_DERIVATIVE", "MEDIA_THUMBNAIL", "MEDIA_PROXY"}:
-                kind, relative = self._run_media_job(job, output_root)
-            elif job["type"] == "TTS_GENERATION":
-                kind, relative = self._run_tts_job(job, output_root)
-            elif job["type"] == "EPISODE_COMPOSE":
-                kind, relative = self._run_compose_job(job, output_root)
-            elif job["type"] == "VIDEO_ENHANCEMENT":
-                kind, relative = self._run_enhancement_job(job, output_root)
-            elif job["type"] == "SEGMENTED_EPISODE_COMPOSE":
-                kind, relative = self._run_segmented_compose_job(job, output_root)
-            elif job["type"] == "DELIVERY_BUILD":
-                kind, relative = self._run_delivery_build_job(job, output_root)
-            elif job["type"] == "EXPERIMENT_CELL":
-                kind, relative = self._run_experiment_cell(job, output_root)
-            elif job["type"] == "LOCAL_LLM_PROBE":
-                kind, relative = self._run_local_llm_probe_job(job, output_root)
-            elif job["type"] == "SCRIPT_BREAKDOWN_LOCAL_LLM":
-                heartbeat_stop = threading.Event()
-                heartbeat_errors: list[BaseException] = []
-                progress_state: dict[str, Any] = {"phase": "PREPARING", "percent": 5}
-                progress_lock = threading.Lock()
-
-                def heartbeat_progress(progress: dict[str, Any]) -> None:
-                    with progress_lock:
-                        progress_state.clear()
-                        progress_state.update(progress)
-                        self._active_progress = {**self._active_progress, **progress}
-                    heartbeat = self.jobs.heartbeat(
-                        attempt_id,
-                        token,
-                        worker_id,
-                        progress=progress,
-                        lease_seconds=120,
-                    )
-                    if heartbeat.get("cancel_requested"):
-                        raise DomainRuleError("JOB_CANCELLED", "AI 拆解已请求取消；不会保存模型输出")
-                    if heartbeat_errors:
-                        raise DomainRuleError("JOB_HEARTBEAT_FAILED", "AI 拆解 Job lease 续期失败")
-
-                def keep_lease_alive() -> None:
-                    while not heartbeat_stop.wait(20.0):
-                        try:
-                            with progress_lock:
-                                current_progress = dict(progress_state)
-                            self.jobs.heartbeat(
-                                attempt_id,
-                                token,
-                                worker_id,
-                                progress=current_progress,
-                                lease_seconds=120,
-                            )
-                        except BaseException as error:
-                            heartbeat_errors.append(error)
-                            return
-
-                heartbeat_thread = threading.Thread(
-                    target=keep_lease_alive,
-                    name=f"script-breakdown-heartbeat-{str(job['id'])[:8]}",
-                    daemon=True,
-                )
-                heartbeat_thread.start()
-                try:
-                    kind, relative = self._run_script_breakdown_job(job, output_root, heartbeat_progress)
-                    if heartbeat_errors:
-                        raise DomainRuleError("JOB_HEARTBEAT_FAILED", "AI 拆解 Job lease 续期失败")
-                finally:
-                    heartbeat_stop.set()
-                    heartbeat_thread.join(timeout=2.0)
-            elif job["type"] == "AUTOMATION_WORKFLOW_TASK":
-                kind, relative, report, produced_bytes = self._run_automation_task(job, output_root, worker_id)
-            else:
-                raise DomainRuleError("JOB_TYPE_UNSUPPORTED", "当前本地 worker 不支持该 Job 类型", {"type": job["type"]})
+            execution = self._dispatcher(
+                attempt_id=attempt_id, token=token, worker_id=worker_id,
+            ).execute(job, output_root)
             business_progress_complete = int(self._active_progress.get("percent") or 0) >= 100
             if not business_progress_complete:
                 if self._report_progress({"phase": "VERIFYING_OUTPUT", "percent": 92}, force=True):
                     raise DomainRuleError("JOB_CANCELLED", "后台任务已取消，本次输出不会登记")
                 if self._report_progress({"phase": "FINALIZING", "percent": 97}, force=True):
                     raise DomainRuleError("JOB_CANCELLED", "后台任务已取消，本次输出不会提交为成功")
-            artifact = self.jobs.register_artifact(attempt_id, kind, relative)
+            artifact = self.jobs.register_artifact(attempt_id, execution.kind, execution.relative_path)
             result = self.jobs.complete(attempt_id, token, worker_id, success=True)
             advance_error: str | None = None
-            if report is not None:
-                advance_error = self._advance_automation_run(job, report, produced_bytes)
+            if execution.report is not None:
+                advance_error = self._advance_automation_run(job, execution.report, execution.produced_bytes)
             payload: dict[str, Any] = {"job": job, "attempt": attempt, "artifact": artifact, "result": result}
             if advance_error is not None:
                 payload["advance_error"] = advance_error

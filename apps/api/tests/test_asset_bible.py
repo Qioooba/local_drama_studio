@@ -320,7 +320,7 @@ def test_multiview_requested_slots_are_unique_canonical_and_reject_unknown_value
             profile_version_id=None,
             consistency_strength="HIGH",
             background="CLEAN",
-            requested_slots=["BACK"],
+            requested_slots=["DIAGONAL"],
         )
     assert caught.value.code == "ASSET_GENERATION_SLOT_INVALID"
 

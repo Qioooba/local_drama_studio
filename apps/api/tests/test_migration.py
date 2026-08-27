@@ -14,6 +14,7 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         version = connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
         variant_columns = {row[1] for row in connection.execute("PRAGMA table_info(generation_variants)")}
         shot_columns = {row[1] for row in connection.execute("PRAGMA table_info(shots)")}
+        visual_lab_document_columns = {row[1] for row in connection.execute("PRAGMA table_info(visual_lab_documents)")}
         anchor_columns = {row[1] for row in connection.execute("PRAGMA table_info(frame_anchors)")}
         media_columns = {row[1] for row in connection.execute("PRAGMA table_info(media_versions)")}
         profile_columns = {row[1] for row in connection.execute("PRAGMA table_info(execution_profile_versions)")}
@@ -23,14 +24,20 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         foreign_keys = connection.execute("PRAGMA foreign_keys").fetchone()[0]
         indexes = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
-        assert version == "0057_provider_connections"
+        working_slot_columns = {row[1] for row in connection.execute("PRAGMA table_info(shot_working_media_slots)")}
+        assert version == "0063_audio_mix_drafts"
     assert {"provider_random_nonce", "director_recipe_version_id", "director_recipe_hash"} <= variant_columns
+    assert {"one_sentence_video_runs", "one_sentence_video_candidates", "one_sentence_video_run_events"} <= tables
     assert {"scene_id", "source_shot_id", "archived_at"} <= shot_columns
+    assert "viewport_json" in visual_lab_document_columns
+    assert {"shot_id", "slot_type", "media_version_id", "adopted_from_selection_id", "revision"} <= working_slot_columns
     assert {"requested_time_us", "resolved_time_us", "source_sha256", "extraction_method"} <= anchor_columns
     assert "source_artifact_id" in media_columns
     assert {"output_contract_json", "resource_policy_json"} <= profile_columns
     assert {"input_snapshot_json", "ffmpeg_command_json", "execution_log_text"} <= render_columns
     assert {"progress_json", "progress_updated_at", "started_at", "finished_at", "last_error_detail_redacted"} <= job_columns
+    assert {"subject_kind", "scope_project_id", "scope_episode_id", "scope_shot_id", "stage_code"} <= job_columns
+    assert "job_stage_definitions" in tables
     assert {"progress_json", "started_at", "finished_at"} <= attempt_columns
     with database.connect() as connection:
         project_columns = {row[1] for row in connection.execute("PRAGMA table_info(projects)")}
@@ -75,6 +82,17 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         "ix_job_attempts_worker_session",
         "ix_storage_operations_status_updated",
         "ix_provider_connections_kind_status",
+        "ix_automation_workflows_project_code_version",
+        "ix_provider_execution_events_attempt_time",
+        "ix_visual_lab_documents_project_updated",
+        "ix_visual_lab_nodes_document_z",
+        "ix_visual_lab_node_revisions_node_no",
+        "ix_visual_lab_edges_document",
+        "ix_visual_lab_snapshots_document_no",
+        "ix_runtime_environment_versions_environment_no",
+        "ix_runtime_instances_environment_created",
+        "ix_workflow_contract_versions_workflow_no",
+        "ix_shot_working_media_slots_version",
     } <= indexes
     expected = {
         "projects",
@@ -139,6 +157,19 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         "story_asset_proposals",
         "worker_sessions",
         "storage_operations",
+        "visual_lab_documents",
+        "visual_lab_nodes",
+        "visual_lab_node_revisions",
+        "visual_lab_edges",
+        "visual_lab_snapshots",
+        "visual_lab_promotions",
+        "runtime_environments",
+        "runtime_environment_versions",
+        "workflow_app_contract_versions",
+        "workflow_runtime_bindings",
+        "runtime_instances",
+        "provider_execution_events",
+        "shot_working_media_slots",
     }
     assert expected <= tables
 

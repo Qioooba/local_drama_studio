@@ -16,6 +16,7 @@ from typing import Any, cast
 
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.video_geometry import h3_frame_count, h3_resolution
 
 # Fallback loader names; manifest ``authoritative_current_state.loader_assets``
 # overrides each key when present.  ``ref2va_unet_name`` is only consumed by the
@@ -29,14 +30,6 @@ _H3_LOADER_ASSETS = {
     "video_vae_name": "minimax_h3_video_vae_fp16.safetensors",
     "audio_vae_name": "minimax_h3_audio_vae_fp32.safetensors",
     "turbo_lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
-}
-
-# Verified on this host by openclaw (docs/H3_TURBO_PIPELINE.md): width/height
-# must be divisible by 32 and the model snaps frame counts to the 17k+5 grid.
-_H3_RESOLUTIONS = {
-    "16:9": (864, 480),
-    "9:16": (480, 832),
-    "auto": (480, 832),
 }
 
 _H3_MODEL_SUBDIRS = {
@@ -54,10 +47,10 @@ _H3_MODEL_SUBDIRS = {
 # follows the openclaw take-count experience (2/4/6/8/12).  steps/cfg use the
 # H3 common values (20 / 1.0, matching the host manifest historical
 # step_count evidence); denoise is fine-tuned inside the 0.95-1.0 band per
-# tier.  NOTE: in this batch the tier only overrides width/height and the frame
-# count (length) at compile time; steps/denoise/cfg stay as declared metadata
-# for the UI summary and for later integration, sampling continues to follow
-# ``sigma_points``.
+# tier.  These values are executable compiler inputs: a selected tier changes
+# geometry, frame count, scheduler steps and denoise in the generated graph.
+# ``default_takes`` is orchestration guidance and is explicitly labelled as
+# such in the API payload; it is never presented as a Comfy node parameter.
 PRODUCTION_TIERS: dict[str, dict[str, Any]] = {
     "FAST": {
         "code": "FAST",
@@ -121,6 +114,11 @@ def production_tiers_payload() -> list[dict[str, Any]]:
             **tier,
             "resolution": {aspect: list(size) for aspect, size in tier["resolution"].items()},
             "duration_seconds": round(tier["frames"] / 24.0, 3),
+            "effects": {
+                "graph": ["width", "height", "frames", "steps", "denoise"],
+                "orchestration": ["default_takes"],
+                "informational": ["cfg"],
+            },
         }
         for tier in PRODUCTION_TIERS.values()
     ]
@@ -183,19 +181,11 @@ class H3WorkflowFactory:
 
     @staticmethod
     def _frame_count(duration_seconds: float) -> int:
-        """Snap frames@24fps up to the model's 17k+5 grid (107 = ~4.46s, 124 = ~5.17s)."""
-        target = round(duration_seconds * 24)
-        remainder = target % 17
-        if remainder != 5:
-            target += (5 - remainder) % 17
-        return target
+        return h3_frame_count(duration_seconds)
 
     @staticmethod
     def _resolution(aspect_ratio: str) -> tuple[int, int]:
-        ratio = str(aspect_ratio).strip().lower()
-        if ratio not in _H3_RESOLUTIONS:
-            raise DomainRuleError("H3_ASPECT_RATIO_UNSUPPORTED", "H3 分辨率仅支持 16:9 / 9:16 / auto", {"aspect_ratio": aspect_ratio})
-        return _H3_RESOLUTIONS[ratio]
+        return h3_resolution(aspect_ratio)
 
     @staticmethod
     def resolve_tier(tier_code: str, aspect_ratio: str = "auto") -> dict[str, Any]:
@@ -354,6 +344,11 @@ class H3WorkflowFactory:
             width, height = resolved["width"], resolved["height"]
             length = resolved["frames"]
         steps = int(sigma_points)
+        denoise = 1.0
+        if tier is not None:
+            resolved = self.resolve_tier(tier, aspect_ratio)
+            steps = int(resolved["steps"])
+            denoise = float(resolved["denoise"])
         workflow = {
             "1": {"class_type": "UNETLoader", "inputs": {"unet_name": assets["fl2va_unet_name"], "weight_dtype": "default"}},
             "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": assets["text_encoder_name"], "type": "minimax", "device": "default"}},
@@ -361,7 +356,7 @@ class H3WorkflowFactory:
             "4": {"class_type": "VAELoader", "inputs": {"vae_name": assets["audio_vae_name"]}},
             "5": {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}},
             "6": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "res_multistep"}},
-            "7": {"class_type": "BasicScheduler", "inputs": {"model": ["1", 0], "scheduler": "simple", "steps": steps, "denoise": 1.0}},
+            "7": {"class_type": "BasicScheduler", "inputs": {"model": ["1", 0], "scheduler": "simple", "steps": steps, "denoise": denoise}},
             "8": {"class_type": "MiniMaxH3ImageToVideo", "inputs": {"clip": ["2", 0], "vae": ["3", 0], "prompt": prompt, "width": width, "height": height, "length": length}},
             "9": {"class_type": "BasicGuider", "inputs": {"model": ["1", 0], "conditioning": ["8", 0]}},
             "10": {"class_type": "SamplerCustomAdvanced", "inputs": {"noise": ["5", 0], "guider": ["9", 0], "sampler": ["6", 0], "sigmas": ["7", 0], "latent_image": ["8", 1]}},
@@ -418,6 +413,11 @@ class H3WorkflowFactory:
             width, height = resolved["width"], resolved["height"]
             length = resolved["frames"]
         steps = int(sigma_points)
+        denoise = 1.0
+        if tier is not None:
+            resolved = self.resolve_tier(tier, aspect_ratio)
+            steps = int(resolved["steps"])
+            denoise = float(resolved["denoise"])
         workflow = {
             "1": {"class_type": "UNETLoader", "inputs": {"unet_name": assets["fl2va_unet_name"], "weight_dtype": "default"}},
             "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": assets["text_encoder_name"], "type": "minimax", "device": "default"}},
@@ -428,7 +428,7 @@ class H3WorkflowFactory:
             "7": {"class_type": "MiniMaxH3ImageToVideo", "inputs": {"clip": ["2", 0], "vae": ["3", 0], "prompt": prompt, "width": width, "height": height, "length": length, "first_frame": ["6", 0]}},
             "8": {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}},
             "9": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "res_multistep"}},
-            "10": {"class_type": "BasicScheduler", "inputs": {"model": ["1", 0], "scheduler": "simple", "steps": steps, "denoise": 1.0}},
+            "10": {"class_type": "BasicScheduler", "inputs": {"model": ["1", 0], "scheduler": "simple", "steps": steps, "denoise": denoise}},
             "11": {"class_type": "BasicGuider", "inputs": {"model": ["1", 0], "conditioning": ["7", 0]}},
             "12": {"class_type": "SamplerCustomAdvanced", "inputs": {"noise": ["8", 0], "guider": ["11", 0], "sampler": ["9", 0], "sigmas": ["10", 0], "latent_image": ["7", 1]}},
             "13": {"class_type": "VAEDecode", "inputs": {"samples": ["12", 0], "vae": ["3", 0]}},
@@ -524,6 +524,11 @@ class H3WorkflowFactory:
             width, height = resolved["width"], resolved["height"]
             length = resolved["frames"]
         steps = int(sigma_points)
+        denoise = 1.0
+        if tier is not None:
+            resolved = self.resolve_tier(tier, aspect_ratio)
+            steps = int(resolved["steps"])
+            denoise = float(resolved["denoise"])
         workflow = {
             "1": {"class_type": "UNETLoader", "inputs": {"unet_name": assets["ref2va_unet_name"], "weight_dtype": "default"}},
             "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": assets["text_encoder_name"], "type": "minimax", "device": "default"}},
@@ -537,7 +542,7 @@ class H3WorkflowFactory:
             },
             "8": {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}},
             "9": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "res_multistep"}},
-            "10": {"class_type": "BasicScheduler", "inputs": {"model": ["1", 0], "scheduler": "simple", "steps": steps, "denoise": 1.0}},
+            "10": {"class_type": "BasicScheduler", "inputs": {"model": ["1", 0], "scheduler": "simple", "steps": steps, "denoise": denoise}},
             "11": {"class_type": "BasicGuider", "inputs": {"model": ["1", 0], "conditioning": ["7", 0]}},
             "12": {"class_type": "SamplerCustomAdvanced", "inputs": {"noise": ["8", 0], "guider": ["11", 0], "sampler": ["9", 0], "sigmas": ["10", 0], "latent_image": ["7", 1]}},
             "13": {"class_type": "VAEDecode", "inputs": {"samples": ["12", 0], "vae": ["3", 0]}},

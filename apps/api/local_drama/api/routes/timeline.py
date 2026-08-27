@@ -10,7 +10,6 @@ from starlette.concurrency import run_in_threadpool
 
 from local_drama.api.routes.media import _range_headers
 from local_drama.api.schemas.g8 import (
-    AudioBindingRequest,
     ComposeSubmitRequest,
     DeliveryBuildRequest,
     DeliveryReviewRequest,
@@ -29,7 +28,6 @@ from local_drama.api.schemas.g8 import (
 )
 from local_drama.application.background_operations import BackgroundOperationService
 from local_drama.application.compose import ComposeService
-from local_drama.application.episode_cockpit import EpisodeCockpitService
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.subtitle_styles import SubtitleStyleTemplateService
 from local_drama.application.timeline import TimelineService
@@ -44,14 +42,6 @@ router = APIRouter(tags=["timeline", "delivery"])
 async def get_episode_timeline_status(episode_id: str, request: Request) -> dict[str, object]:
     try:
         return {"status": TimelineStatusService(request.app.state.database).inspect(episode_id)}
-    except DomainRuleError as error:
-        raise api_error_from_domain(error) from error
-
-
-@router.get("/episodes/{episode_id}/cockpit", operation_id="getEpisodeCockpit")
-async def get_episode_cockpit(episode_id: str, request: Request) -> dict[str, object]:
-    try:
-        return {"cockpit": EpisodeCockpitService(request.app.state.database).inspect(episode_id)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -177,6 +167,17 @@ async def export_timeline_revision(
         raise api_error_from_domain(error) from error
 
 
+@router.get("/timeline-revisions/{timeline_revision_id}/export:download", operation_id="downloadTimelineExport")
+async def download_timeline_export(timeline_revision_id: str, rel_path: str, request: Request) -> FileResponse:
+    try:
+        path = TimelineExportService(request.app.state.database, request.app.state.settings).download_archive(
+            timeline_revision_id, rel_path
+        )
+        return FileResponse(path, media_type="application/zip", filename=path.name)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.post("/episodes/{episode_id}/subtitle-revisions", status_code=201, operation_id="createSubtitleRevision")
 async def create_subtitle_revision(episode_id: str, payload: SubtitleRevisionRequest, request: Request) -> dict[str, object]:
     try:
@@ -214,30 +215,6 @@ async def get_episode_tts_subtitle_draft_plan(
 async def get_subtitle_revision(subtitle_revision_id: str, request: Request) -> dict[str, object]:
     try:
         return {"subtitle": service(request).get_subtitles(subtitle_revision_id)}
-    except DomainRuleError as error:
-        raise api_error_from_domain(error) from error
-
-
-@router.post("/episodes/{episode_id}/audio-bindings", status_code=201, operation_id="bindEpisodeAudio")
-async def bind_episode_audio(episode_id: str, payload: AudioBindingRequest, request: Request) -> dict[str, object]:
-    try:
-        return {"audio_binding": service(request).bind_audio(episode_id, **payload.model_dump())}
-    except DomainRuleError as error:
-        raise api_error_from_domain(error) from error
-
-
-@router.get("/episodes/{episode_id}/audio-bindings", operation_id="listEpisodeAudioBindings")
-async def list_episode_audio(episode_id: str, request: Request) -> dict[str, object]:
-    try:
-        return {"items": service(request).list_audio_bindings(episode_id)}
-    except DomainRuleError as error:
-        raise api_error_from_domain(error) from error
-
-
-@router.delete("/audio-bindings/{binding_id}", operation_id="unbindEpisodeAudio")
-async def unbind_episode_audio(binding_id: str, request: Request) -> dict[str, object]:
-    try:
-        return {"result": service(request).unbind_audio(binding_id)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

@@ -4,30 +4,37 @@ from types import SimpleNamespace
 
 import pytest
 
-from local_drama.application import local_picker
+import local_drama.platform.windows.file_picker as windows_picker
 from local_drama.domain.errors import DomainRuleError
+from local_drama.platform.contracts import FilePickerRequest
+
+
+def _request(kind: str) -> FilePickerRequest:
+    if kind == "MODEL":
+        return FilePickerRequest("MODEL", "选择模型", (".safetensors", ".ckpt", ".bin", ".pt", ".pth"))
+    return FilePickerRequest("DOCUMENT", "选择文档", (".txt", ".md", ".markdown", ".docx"))
 
 
 def test_picker_returns_existing_path_without_copy_or_upload(workspace, monkeypatch) -> None:
     model = workspace.work_root / "picked.safetensors"
     model.parent.mkdir(parents=True, exist_ok=True)
     model.write_bytes(b"local-model")
-    monkeypatch.setattr(local_picker.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=str(model)))
-    result = local_picker.pick_local_model_file()
+    monkeypatch.setattr(windows_picker.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=str(model)))
+    result = windows_picker.WindowsFilePicker().choose(_request("MODEL")).public()
     assert result == {"selected": True, "path": str(model.resolve()), "uploaded": False, "copied": False}
 
 
 def test_picker_cancel_is_non_mutating(monkeypatch) -> None:
-    monkeypatch.setattr(local_picker.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=""))
-    assert local_picker.pick_local_model_file() == {"selected": False, "path": None, "uploaded": False, "copied": False}
+    monkeypatch.setattr(windows_picker.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=""))
+    assert windows_picker.WindowsFilePicker().choose(_request("MODEL")).public() == {"selected": False, "path": None, "uploaded": False, "copied": False}
 
 
 def test_document_picker_returns_supported_local_path(workspace, monkeypatch) -> None:
     document = workspace.work_root / "script.docx"
     document.parent.mkdir(parents=True, exist_ok=True)
     document.write_bytes(b"local-document")
-    monkeypatch.setattr(local_picker.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=str(document)))
-    assert local_picker.pick_local_document_file() == {
+    monkeypatch.setattr(windows_picker.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=str(document)))
+    assert windows_picker.WindowsFilePicker().choose(_request("DOCUMENT")).public() == {
         "selected": True,
         "path": str(document.resolve()),
         "uploaded": False,
@@ -37,10 +44,9 @@ def test_document_picker_returns_supported_local_path(workspace, monkeypatch) ->
 
 def test_document_picker_timeout_is_bounded_and_actionable(monkeypatch) -> None:
     def timeout(*args, **kwargs):
-        raise local_picker.subprocess.TimeoutExpired("powershell.exe", kwargs["timeout"])
+        raise windows_picker.subprocess.TimeoutExpired("powershell.exe", kwargs["timeout"])
 
-    monkeypatch.setattr(local_picker.subprocess, "run", timeout)
+    monkeypatch.setattr(windows_picker.subprocess, "run", timeout)
     with pytest.raises(DomainRuleError) as captured:
-        local_picker.pick_local_document_file()
-    assert captured.value.code == "LOCAL_DOCUMENT_PICKER_UNAVAILABLE"
-    assert "已自动关闭" in captured.value.message
+        windows_picker.WindowsFilePicker().choose(_request("DOCUMENT"))
+    assert captured.value.code == "LOCAL_FILE_PICKER_UNAVAILABLE"

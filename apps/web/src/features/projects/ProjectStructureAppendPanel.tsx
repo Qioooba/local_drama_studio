@@ -1,19 +1,24 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { appendProjectEpisode } from "../../generated/api";
 import { queryKeys } from "../../query/queryKeys";
 
-type SeasonTarget = { id: string; code: string; title: string; episodes: unknown[] };
+type SeasonTarget = { id: string; code: string; title: string; episodes: Array<{ target_duration_ms?: number }> };
 
-export function ProjectStructureAppendPanel({ projectId, seasons }: { projectId: string; seasons: SeasonTarget[] }) {
+export function ProjectStructureAppendPanel({ projectId, seasons, projectDefaultDurationMs }: { projectId: string; seasons: SeasonTarget[]; projectDefaultDurationMs?: number }) {
   const queryClient = useQueryClient();
   const existingEpisodeCount = useMemo(() => seasons.reduce((total, season) => total + season.episodes.length, 0), [seasons]);
   const [mode, setMode] = useState<"existing" | "new-season">(seasons.length ? "existing" : "new-season");
   const [seasonId, setSeasonId] = useState(seasons[0]?.id ?? "");
   const [seasonTitle, setSeasonTitle] = useState("");
   const [episodeTitle, setEpisodeTitle] = useState(`第 ${(seasons[0]?.episodes.length ?? existingEpisodeCount) + 1} 集`);
-  const [durationSeconds, setDurationSeconds] = useState(60);
+  const inheritedDurationSeconds = useMemo(() => {
+    const previous = seasons.flatMap((season) => season.episodes).at(-1)?.target_duration_ms;
+    return Math.max(1, Math.round(Number(previous ?? projectDefaultDurationMs ?? 60_000) / 1000));
+  }, [projectDefaultDurationMs, seasons]);
+  const [durationSeconds, setDurationSeconds] = useState(inheritedDurationSeconds);
+  useEffect(() => setDurationSeconds(inheritedDurationSeconds), [inheritedDurationSeconds, projectId]);
   const append = useMutation({
     mutationFn: () => appendProjectEpisode(projectId, {
       ...(mode === "existing" ? { season_id: seasonId } : { season_title: seasonTitle.trim() || undefined }),
@@ -29,6 +34,7 @@ export function ProjectStructureAppendPanel({ projectId, seasons }: { projectId:
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.seasons.catalog(projectId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.projects.creatorSetup(projectId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.overview(projectId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.projects.lists() }),
       ]);
     },
@@ -44,7 +50,7 @@ export function ProjectStructureAppendPanel({ projectId, seasons }: { projectId:
       </select></label>
       {mode === "existing" ? <label>目标季度<select aria-label="追加分集目标季度" value={seasonId || seasons[0]?.id || ""} onChange={(event) => { setSeasonId(event.target.value); const target = seasons.find((season) => season.id === event.target.value); setEpisodeTitle(`第 ${(target?.episodes.length ?? 0) + 1} 集`); }}>{seasons.map((season) => <option key={season.id} value={season.id}>{season.code} · {season.title}</option>)}</select></label> : <label>季度标题（可选）<input value={seasonTitle} onChange={(event) => setSeasonTitle(event.target.value)} placeholder={`第 ${seasons.length + 1} 季`} /></label>}
       <label>分集标题<input value={episodeTitle} maxLength={200} onChange={(event) => setEpisodeTitle(event.target.value)} /></label>
-      <label>目标时长（秒）<input type="number" min={1} max={86400} step={1} value={durationSeconds} onChange={(event) => setDurationSeconds(Number(event.target.value))} /></label>
+      <label>目标时长（秒）<input type="number" min={1} max={86400} step={1} value={durationSeconds} onChange={(event) => setDurationSeconds(Number(event.target.value))} /><small>{seasons.flatMap((season) => season.episodes).at(-1)?.target_duration_ms ? "继承上一集目标时长" : projectDefaultDurationMs ? "继承项目目标时长" : "安全缺省值，可修改"}</small></label>
     </div>
     <p className="muted">提交会在一个事务中追加结构，不会改写已有季度、分集或镜头。</p>
     <button type="button" className="secondary" disabled={!canSubmit || append.isPending} onClick={() => append.mutate()}>{append.isPending ? "正在创建…" : mode === "new-season" ? "创建季度与首集" : "追加分集"}</button>

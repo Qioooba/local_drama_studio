@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getJob, promoteJobArtifactToMedia, type JobArtifact } from "../../generated/api";
 import { queryKeys } from "../../query/queryKeys";
 import { MEDIA_PURPOSE_LABELS, MEDIA_PURPOSE_OPTIONS } from "../shared/formOptions";
-import { MEDIA_STAGE_LABELS } from "../shared/optionLabels";
+import { ARTIFACT_KIND_LABELS, MEDIA_KIND_LABELS, MEDIA_STAGE_LABELS, statusLabel, userFacingLabel } from "../shared/optionLabels";
 
 function artifactMediaKind(artifact: JobArtifact): "IMAGE" | "VIDEO" | "AUDIO" | null {
   const suffix = artifact.sandbox_rel_path.toLowerCase().split("?")[0];
@@ -14,14 +14,15 @@ function artifactMediaKind(artifact: JobArtifact): "IMAGE" | "VIDEO" | "AUDIO" |
 }
 
 function progressText(state: string, progress: Record<string, unknown>) {
-  if (state === "SUCCEEDED") return "SUCCEEDED · 100%";
-  if (["FAILED", "CANCELLED", "NEEDS_ATTENTION", "ORPHANED"].includes(state)) return state;
+  if (state === "SUCCEEDED") return "已完成 · 100%";
+  if (["FAILED", "CANCELLED", "NEEDS_ATTENTION", "ORPHANED"].includes(state)) return statusLabel(state);
   const phase = String(progress.phase ?? state ?? "RUNNING");
   const numeric = Number(progress.percent);
   if (!Number.isFinite(numeric)) return phase;
-  const percent = Math.max(0, Math.min(100, Math.round(numeric)));
+  const percent = Math.max(0, Math.min(100, Math.round(numeric > 0 && numeric <= 1 ? numeric * 100 : numeric)));
   const stepNumeric = Number(progress.step_percent);
-  const step = Number.isFinite(stepNumeric) ? ` · 当前编码步骤 ${Math.max(0, Math.min(100, Math.round(stepNumeric)))}%` : "";
+  const normalizedStep = stepNumeric > 0 && stepNumeric <= 1 ? stepNumeric * 100 : stepNumeric;
+  const step = Number.isFinite(stepNumeric) ? ` · 当前编码步骤 ${Math.max(0, Math.min(100, Math.round(normalizedStep)))}%` : "";
   return `${phase} · 总体 ${percent}%${step}`;
 }
 
@@ -57,11 +58,11 @@ export function JobDetailsPanel({ jobId, onChanged }: { jobId: string | null; on
     <div className="panel-heading"><div><p className="eyebrow">任务产物谱系</p><h3 id="job-details-title">任务详情与产物登记</h3></div><span className="status-pill neutral">不可变媒体</span></div>
     {detail.isPending ? <p className="empty-state">正在读取任务尝试与产物…</p> : detail.error ? <p className="inline-error" role="alert">任务详情读取失败：{String(detail.error)}</p> : job && <>
       <div className="review-meta job-detail-meta">
-        <span>Job：{job.id.slice(0, 16)}…</span>
-        <span className="job-state-meta">状态 <span className={`status-pill state-${job.state.toLowerCase()}`}>{job.state}</span></span>
+        <span>任务标识：{job.id.slice(0, 16)}…</span>
+        <span className="job-state-meta">状态 <span className={`status-pill state-${job.state.toLowerCase()}`}>{statusLabel(job.state)}</span></span>
       </div>
       <details className="job-input-snapshot">
-        <summary>查看输入快照</summary>
+        <summary>高级：查看任务输入快照</summary>
         <pre><code>{JSON.stringify(job.input_snapshot ?? {}, null, 2)}</code></pre>
       </details>
       {job.progress && Object.keys(job.progress).length > 0 && <p className="muted" role="status">当前进度：{progressText(job.state, job.progress)}</p>}
@@ -75,16 +76,17 @@ export function JobDetailsPanel({ jobId, onChanged }: { jobId: string | null; on
         {job.attempts?.length ? job.attempts.map((attempt) => {
           const attemptState = String(attempt.state ?? "UNKNOWN");
           return <article className="job-attempt" key={String(attempt.id)}>
-            <div><strong>Attempt {String(attempt.attempt_no ?? "?")}</strong><span className={`status-pill state-${attemptState.toLowerCase()}`}>{attemptState}</span></div>
+            <div><strong>第 {String(attempt.attempt_no ?? "?")} 次执行</strong><span className={`status-pill state-${attemptState.toLowerCase()}`}>{statusLabel(attemptState)}</span></div>
             {attempt.progress && Object.keys(attempt.progress).length > 0 && <small className="muted">进度：{progressText(attemptState, attempt.progress)}</small>}
             {attempt.error_code && <small className="inline-error"><strong>{attempt.error_code}</strong>{attempt.error_detail_redacted ? `：${attempt.error_detail_redacted}` : ""}</small>}
             {(attempt.artifacts ?? []).length ? <div className="artifact-list">{(attempt.artifacts ?? []).map((artifact) => {
               const detectedKind = artifactMediaKind(artifact);
               const promoted = Boolean(artifact.promoted_media_version_id);
-              return <div className="artifact-row" key={artifact.id}><span>{artifact.kind} · {artifact.status} · {String(artifact.sha256 ?? "").slice(0, 12) || "—"}…{detectedKind ? ` · ${detectedKind}` : " · 非媒体产物"}</span><button className="secondary" type="button" onClick={() => void promote(artifact)} disabled={busy !== null || artifact.status !== "VERIFIED" || !detectedKind || promoted}>{busy === artifact.id ? "登记中…" : promoted && detectedKind ? `已登记为 ${detectedKind} 媒体版本` : detectedKind ? `登记为 ${detectedKind} 媒体版本` : "不可登记为媒体"}</button></div>;
-            })}</div> : <small className="muted">该尝试暂无已验证产物。</small>}
+              const mediaLabel = detectedKind ? userFacingLabel(MEDIA_KIND_LABELS, detectedKind, "媒体") : null;
+              return <div className="artifact-row" key={artifact.id}><span>{userFacingLabel(ARTIFACT_KIND_LABELS, artifact.kind, "任务产物")} · {statusLabel(artifact.status)} · 校验指纹 {String(artifact.sha256 ?? "").slice(0, 12) || "—"}…{mediaLabel ? ` · ${mediaLabel}` : " · 不能登记为媒体"}</span><button className="secondary" type="button" onClick={() => void promote(artifact)} disabled={busy !== null || artifact.status !== "VERIFIED" || !detectedKind || promoted}>{busy === artifact.id ? "登记中…" : promoted && mediaLabel ? `已登记为${mediaLabel}` : mediaLabel ? `登记为${mediaLabel}` : "不可登记"}</button></div>;
+            })}</div> : <small className="muted">本次执行暂无已验证产物。</small>}
           </article>;
-        }) : <p className="empty-state">该任务还没有 Attempt。</p>}
+        }) : <p className="empty-state">该任务还没有执行记录。</p>}
       </div>
       {message && <p className="review-success" role="status">{message}</p>}
       {error && <p className="inline-error" role="alert">产物登记失败：{error}</p>}

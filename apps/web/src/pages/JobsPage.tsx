@@ -49,7 +49,7 @@ export function JobsPage() {
         <div><p className="eyebrow">系统区</p><h2>任务与机器</h2></div>
         <span className="status-pill neutral">本机持久化队列</span>
       </div>
-      <p className="muted">查看真实 Job、Attempt、lease、进度和已验证产物。故障重试保持同一 Job；创作重抽必须回到导演台创建新的 Variant。</p>
+      <p className="muted">查看本机后台任务、每次执行记录、占用状态、进度和已验证产物。故障重试会继续原任务；如果想换一套创作结果，请回到生成工作台创建新候选。</p>
       <section className="panel" aria-label="任务范围">
         <label>项目范围
           <select
@@ -57,7 +57,7 @@ export function JobsPage() {
             value={projectId ?? ""}
             onChange={(event) => {
               if (routeProjectId) {
-                navigate(event.target.value ? routes.projectJobs(event.target.value) : routes.jobs());
+                navigate(routes.systemJobs(event.target.value || undefined));
                 return;
               }
               const next = new URLSearchParams(searchParams);

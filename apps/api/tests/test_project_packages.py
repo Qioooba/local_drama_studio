@@ -14,16 +14,25 @@ from local_drama.application.media import MediaService
 from local_drama.application.project_packages import ProjectPackageService
 from local_drama.application.projects import ProjectService
 from local_drama.domain.errors import DomainRuleError
+from local_drama.infrastructure.database.shot_studio_command_repository import shot_studio_command_service
 from local_drama.main import create_app
 
 
 def _project(workspace, database) -> dict[str, object]:
     projects = ProjectService(database, workspace.projects_root)
-    project = projects.create_project(code="package_source", title="项目包源", episode_count=2, aspect_ratio="9:16",
-        fps_num=24, fps_den=1, target_duration_ms=90_000, allow_unconfigured_capabilities=True)
+    project = projects.create_project(
+        code="package_source",
+        title="项目包源",
+        episode_count=2,
+        aspect_ratio="9:16",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=90_000,
+        allow_unconfigured_capabilities=True,
+    )
     episode = projects.list_episodes(projects.list_seasons(str(project["id"]))[0]["id"])[0]
     shot = projects.create_shot(str(episode["id"]), "SHOT_001", 4_000, "CLOSE_UP")
-    projects.create_shot_revision(str(shot["id"]), {"subject_action": "turn", "dialogue": "本地"}, freeze=True)
+    shot_studio_command_service(database).save_draft_revision(str(shot["id"]), {"subject_action": "turn", "dialogue": "本地"}, freeze=True)
     root = workspace.projects_root / "package_source"
     sample = root / "01_story" / "source_documents" / "中文 剧本.md"
     sample.write_text("# 本地项目包\n", encoding="utf-8")
@@ -145,6 +154,21 @@ def test_project_package_api_exports_and_dry_runs_only_registered_package(worksp
     assert inspected.json()["dry_run"]["status"] == "READY_REBIND_EXISTING"
 
 
+def test_project_package_browser_download_and_upload(workspace, database) -> None:
+    project = _project(workspace, database)
+    with TestClient(create_app(workspace)) as client:
+        exported = client.post(f"/api/v1/projects/{project['id']}/packages:export").json()["package"]
+        downloaded = client.get(f"/api/v1/projects/{project['id']}/packages:download", params={"rel_path": exported["rel_path"]})
+        uploaded = client.post(
+            "/api/v1/project-packages:upload",
+            content=downloaded.content,
+            headers={"X-File-Name": "browser-copy.ldspkg", "Content-Type": "application/octet-stream"},
+        )
+    assert downloaded.status_code == 200 and downloaded.content[:2] == b"PK"
+    assert uploaded.status_code == 201
+    assert (workspace.data_root / "imports" / "project-packages" / "inbox" / uploaded.json()["package"]["name"]).is_file()
+
+
 def test_external_package_staging_uses_fixed_inbox_and_content_addressed_token(workspace, database) -> None:
     project = _project(workspace, database)
     service = ProjectPackageService(database, workspace.projects_root, workspace.data_root)
@@ -216,9 +240,12 @@ def test_staged_project_package_import_as_copy_rewrites_identity_and_retains_ret
     assert project_json["project_code"] == "package_copy"
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM projects WHERE id=?", (imported["project_id"],)).fetchone()[0] == 1
-        assert connection.execute(
-            "SELECT COUNT(*) FROM episodes e JOIN seasons s ON s.id=e.season_id WHERE s.project_id=?", (imported["project_id"],)
-        ).fetchone()[0] == 2
+        assert (
+            connection.execute("SELECT COUNT(*) FROM episodes e JOIN seasons s ON s.id=e.season_id WHERE s.project_id=?", (imported["project_id"],)).fetchone()[
+                0
+            ]
+            == 2
+        )
         imported_media = connection.execute(
             """SELECT ma.owner_id,mv.id AS media_version_id,mv.rel_path,mv.sha256 FROM media_assets ma JOIN media_versions mv ON mv.media_asset_id=ma.id
             JOIN shots sh ON sh.id=ma.owner_id JOIN episodes e ON e.id=sh.episode_id JOIN seasons s ON s.id=e.season_id
@@ -226,13 +253,14 @@ def test_staged_project_package_import_as_copy_rewrites_identity_and_retains_ret
             (imported["project_id"], imported["project_id"]),
         ).fetchone()
         assert imported_media is not None
-        assert connection.execute(
-            "SELECT COUNT(*) FROM media_cache_entries mce JOIN media_versions mv ON mv.id=mce.media_version_id WHERE mv.id IN (SELECT mv2.id FROM media_versions mv2 JOIN media_assets ma ON ma.id=mv2.media_asset_id WHERE ma.project_id=?)",
-            (imported["project_id"],),
-        ).fetchone()[0] == 1
-        audit = connection.execute(
-            "SELECT action FROM audit_events WHERE subject_id=? ORDER BY rowid DESC LIMIT 1", (imported["project_id"],)
-        ).fetchone()
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM media_cache_entries mce JOIN media_versions mv ON mv.id=mce.media_version_id WHERE mv.id IN (SELECT mv2.id FROM media_versions mv2 JOIN media_assets ma ON ma.id=mv2.media_asset_id WHERE ma.project_id=?)",
+                (imported["project_id"],),
+            ).fetchone()[0]
+            == 1
+        )
+        audit = connection.execute("SELECT action FROM audit_events WHERE subject_id=? ORDER BY rowid DESC LIMIT 1", (imported["project_id"],)).fetchone()
         assert connection.execute("SELECT COUNT(*) FROM project_package_imports WHERE status='COMPLETED'").fetchone()[0] == 1
     assert audit["action"] == "PROJECT_PACKAGE_IMPORTED"
     assert hashlib.sha256((copied_root / imported_media["rel_path"]).read_bytes()).hexdigest() == imported_media["sha256"]
@@ -249,14 +277,18 @@ def test_project_package_roundtrip_preserves_asset_bible_and_preference_history(
     asset_id, state_id = str(uuid.uuid4()), str(uuid.uuid4())
     preference_set_id, preference_v1, preference_v2 = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
     with database.transaction() as connection:
-        episode_id = str(connection.execute(
-            "SELECT e.id FROM episodes e JOIN seasons s ON s.id=e.season_id WHERE s.project_id=? ORDER BY e.display_order LIMIT 1",
-            (project_id,),
-        ).fetchone()[0])
-        shot_id = str(connection.execute(
-            "SELECT sh.id FROM shots sh JOIN episodes e ON e.id=sh.episode_id JOIN seasons s ON s.id=e.season_id WHERE s.project_id=? LIMIT 1",
-            (project_id,),
-        ).fetchone()[0])
+        episode_id = str(
+            connection.execute(
+                "SELECT e.id FROM episodes e JOIN seasons s ON s.id=e.season_id WHERE s.project_id=? ORDER BY e.display_order LIMIT 1",
+                (project_id,),
+            ).fetchone()[0]
+        )
+        shot_id = str(
+            connection.execute(
+                "SELECT sh.id FROM shots sh JOIN episodes e ON e.id=sh.episode_id JOIN seasons s ON s.id=e.season_id WHERE s.project_id=? LIMIT 1",
+                (project_id,),
+            ).fetchone()[0]
+        )
         connection.execute(
             """INSERT INTO story_assets
             (id,project_id,kind,code,name,description,canonical_media_version_id,extra_json,status,created_at,updated_at,created_by,revision,schema_version)
@@ -349,14 +381,18 @@ def test_project_package_roundtrip_rewrites_groups_qc_and_director_recipe_refs(w
     recipe_id, recipe_version_id = str(uuid.uuid4()), str(uuid.uuid4())
     asset_id, proposal_id = str(uuid.uuid4()), str(uuid.uuid4())
     with database.transaction() as connection:
-        episode_id = str(connection.execute(
-            "SELECT e.id FROM episodes e JOIN seasons s ON s.id=e.season_id WHERE s.project_id=? ORDER BY e.display_order LIMIT 1",
-            (project_id,),
-        ).fetchone()[0])
-        shot_id = str(connection.execute(
-            "SELECT sh.id FROM shots sh JOIN episodes e ON e.id=sh.episode_id JOIN seasons s ON s.id=e.season_id WHERE s.project_id=? LIMIT 1",
-            (project_id,),
-        ).fetchone()[0])
+        episode_id = str(
+            connection.execute(
+                "SELECT e.id FROM episodes e JOIN seasons s ON s.id=e.season_id WHERE s.project_id=? ORDER BY e.display_order LIMIT 1",
+                (project_id,),
+            ).fetchone()[0]
+        )
+        shot_id = str(
+            connection.execute(
+                "SELECT sh.id FROM shots sh JOIN episodes e ON e.id=sh.episode_id JOIN seasons s ON s.id=e.season_id WHERE s.project_id=? LIMIT 1",
+                (project_id,),
+            ).fetchone()[0]
+        )
         connection.execute(
             "INSERT INTO scenes (id,project_id,code,title,location,time_of_day,created_at,updated_at,created_by) VALUES (?,?,?,?,?,?,?,?,?)",
             (scene_id, project_id, "SCENE_A", "Scene A", "studio", "night", now, now, "test"),
@@ -466,12 +502,14 @@ def test_project_package_roundtrip_rewrites_groups_qc_and_director_recipe_refs(w
         assert imported_recipe["recipe_version_id"] == imported_recipe["id"]
         rewritten = json.loads(imported_recipe["recipe_json"])
         assert rewritten["qc_policy_ref"]["policy_version_id"] == imported_policy["id"]
-        assert imported_recipe["recipe_hash"] == hashlib.sha256(
-            json.dumps(rewritten, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest()
+        assert (
+            imported_recipe["recipe_hash"]
+            == hashlib.sha256(json.dumps(rewritten, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        )
         assert imported_policy["id"] != policy_version_id and imported_recipe["id"] != recipe_version_id
         imported_proposal = connection.execute(
-            "SELECT * FROM story_asset_proposals WHERE project_id=?", (imported["project_id"],),
+            "SELECT * FROM story_asset_proposals WHERE project_id=?",
+            (imported["project_id"],),
         ).fetchone()
         assert imported_proposal["status"] == "ACCEPTED_MERGE"
         assert imported_proposal["resolved_asset_id"] == imported_proposal["suggested_asset_id"]
@@ -491,10 +529,21 @@ def test_project_package_import_old_v2_defaults_new_domains_to_empty(workspace, 
         contents = {name: archive.read(name) for name in archive.namelist()}
     state = json.loads(contents["project-state.json"])
     for key in (
-        "story_assets", "story_asset_proposals", "story_asset_states", "story_asset_references", "episode_asset_state_bindings",
-        "shot_asset_bindings", "generation_preference_sets", "generation_preference_versions",
-        "shot_groups", "shot_group_members", "generation_qc_policy_sets", "generation_qc_policy_versions",
-        "director_recipes", "director_recipe_versions", "project_director_recipe_binding",
+        "story_assets",
+        "story_asset_proposals",
+        "story_asset_states",
+        "story_asset_references",
+        "episode_asset_state_bindings",
+        "shot_asset_bindings",
+        "generation_preference_sets",
+        "generation_preference_versions",
+        "shot_groups",
+        "shot_group_members",
+        "generation_qc_policy_sets",
+        "generation_qc_policy_versions",
+        "director_recipes",
+        "director_recipe_versions",
+        "project_director_recipe_binding",
     ):
         state.pop(key, None)
     for shot in state["shots"]:
@@ -565,9 +614,7 @@ def test_staged_project_package_import_rolls_back_database_and_filesystem_on_fai
     assert not list(workspace.projects_root.glob(".package_rollback.import-*"))
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM projects WHERE code='package_rollback'").fetchone()[0] == 0
-        receipt = connection.execute(
-            "SELECT target_project_id,status FROM project_package_imports WHERE target_code='package_rollback'"
-        ).fetchone()
+        receipt = connection.execute("SELECT target_project_id,status FROM project_package_imports WHERE target_code='package_rollback'").fetchone()
     assert receipt["status"] == "FAILED"
     assert (workspace.data_root / "imports" / "project-packages" / "staged" / f"{token}.ldspkg").is_file()
 
@@ -642,9 +689,16 @@ def test_stale_import_journal_recovers_only_its_owned_orphan_root(workspace, dat
         )
     orphan = workspace.projects_root / code
     orphan.mkdir()
-    (orphan / "project.json").write_text(json.dumps({
-        "project_id": target_project_id, "project_code": code, "imported_from_package_sha256": token,
-    }), encoding="utf-8")
+    (orphan / "project.json").write_text(
+        json.dumps(
+            {
+                "project_id": target_project_id,
+                "project_code": code,
+                "imported_from_package_sha256": token,
+            }
+        ),
+        encoding="utf-8",
+    )
     (orphan / "orphan.tmp").write_text("partial", encoding="utf-8")
 
     recovered = service.import_as_copy(token, code=code, title="崩溃恢复")

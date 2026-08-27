@@ -21,7 +21,7 @@ def test_release_invariants_cover_0044_through_0048_and_pass_at_head(database) -
         "CHARACTER_IDENTITY_PACK_SCOPE",
     }
 
-    assert result["alembic_revision"] == "0057_provider_connections"
+    assert result["alembic_revision"] == "0063_audio_mix_drafts"
     assert expected <= checks.keys()
     assert {checks[code]["status"] for code in expected} == {"PASS"}
     assert result["mode"] == "READ_ONLY"

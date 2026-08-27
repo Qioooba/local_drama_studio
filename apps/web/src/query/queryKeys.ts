@@ -12,6 +12,7 @@ export const queryKeys = {
     list: (value: KeyFilters = {}) => ["projects", "list", filters(value)] as const,
     details: () => ["projects", "detail"] as const,
     detail: (projectId: string) => ["projects", "detail", projectId] as const,
+    overview: (projectId: string) => ["projects", "detail", projectId, "overview-v2"] as const,
     health: (projectId: string) => ["projects", "detail", projectId, "health"] as const,
     creatorSetup: (projectId: string) => ["projects", "detail", projectId, "creator-setup"] as const,
   },
@@ -68,11 +69,6 @@ export const queryKeys = {
   workflows: {
     all: ["workflows"] as const,
     versions: () => ["workflows", "versions"] as const,
-  },
-  freshness: {
-    all: ["freshness"] as const,
-    scope: (scopeType: string, scopeIdValue: string) => ["freshness", "scope", scopeType, scopeIdValue] as const,
-    report: (scopeType: string, scopeIdValue: string, limit: number) => ["freshness", "scope", scopeType, scopeIdValue, "report", { limit }] as const,
   },
   scriptBreakdown: {
     all: (projectId: string) => ["projects", projectId, "script-breakdown-drafts"] as const,

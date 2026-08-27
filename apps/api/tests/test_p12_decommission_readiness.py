@@ -22,6 +22,7 @@ def test_current_tree_remains_deferred_without_real_uat_signoff() -> None:
     assert report["entrypoint_app_imports"] == []
     assert report["v2_root_legacy_mount"]["can_mount_legacy_shell"] is False
     assert report["legacy_query_context_losses"] == []
+    assert report["legacy_query_links"] == []
     assert report["hard_blockers"] == []
     assert report["blockers"]
     assert all(item["status"] == "KEEP" for item in report["protected_backend_facts"])

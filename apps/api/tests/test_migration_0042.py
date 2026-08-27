@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from scripts.migrate import migrate
 
-HEAD = "0057_provider_connections"
+HEAD = "0063_audio_mix_drafts"
 PREVIOUS = "0041_character_voice_bindings"
 
 
@@ -154,16 +154,10 @@ def test_backfill_is_idempotent_rerun_does_not_duplicate_hero(old_db: Path) -> N
     # not create a duplicate.  We simulate the migration's repair query by
     # executing the same guarded INSERT again for the same asset.
     with _connect(old_db) as connection:
-        media_id_actual = connection.execute(
-            "SELECT media_version_id FROM story_asset_references WHERE story_asset_id='asset-idem-1'"
-        ).fetchone()[0]
-        count_before = connection.execute(
-            "SELECT COUNT(*) FROM story_asset_references WHERE story_asset_id='asset-idem-1'"
-        ).fetchone()[0]
+        media_id_actual = connection.execute("SELECT media_version_id FROM story_asset_references WHERE story_asset_id='asset-idem-1'").fetchone()[0]
+        count_before = connection.execute("SELECT COUNT(*) FROM story_asset_references WHERE story_asset_id='asset-idem-1'").fetchone()[0]
         assert count_before == 1
-        exists = connection.execute(
-            "SELECT 1 FROM story_asset_references WHERE story_asset_id='asset-idem-1' AND reference_kind='HERO'"
-        ).fetchone()
+        exists = connection.execute("SELECT 1 FROM story_asset_references WHERE story_asset_id='asset-idem-1' AND reference_kind='HERO'").fetchone()
         # The migration's NOT EXISTS guard is exactly this predicate.
         assert exists is not None
         if exists is None:
@@ -173,9 +167,7 @@ def test_backfill_is_idempotent_rerun_does_not_duplicate_hero(old_db: Path) -> N
                 "INSERT INTO story_asset_references (id, project_id, story_asset_id, asset_state_id, media_version_id, reference_kind, label, priority, is_locked, metadata_json, status, created_at, updated_at, created_by, revision, schema_version) VALUES (?,?,?,NULL,?,'HERO','',100,1,'{}','ACTIVE',?,?,'test',1,'v1')",
                 (str(uuid.uuid4()), "project", "asset-idem-1", media_id_actual, "2026-08-19T00:00:00Z", "2026-08-19T00:00:00Z"),
             )
-        count_after = connection.execute(
-            "SELECT COUNT(*) FROM story_asset_references WHERE story_asset_id='asset-idem-1'"
-        ).fetchone()[0]
+        count_after = connection.execute("SELECT COUNT(*) FROM story_asset_references WHERE story_asset_id='asset-idem-1'").fetchone()[0]
         assert count_after == 1
 
 

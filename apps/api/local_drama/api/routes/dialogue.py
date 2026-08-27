@@ -14,13 +14,21 @@ from local_drama.api.schemas.dialogue import (
 )
 from local_drama.application.dialogue import DialogueService
 from local_drama.application.errors import api_error_from_domain
+from local_drama.application.jobs import JobService
+from local_drama.application.media import MediaService
 from local_drama.domain.errors import DomainRuleError
 
 router = APIRouter(tags=["dialogue", "tts"])
 
 
 def service(request: Request) -> DialogueService:
-    return DialogueService(request.app.state.database, request.app.state.settings)
+    return DialogueService(
+        request.app.state.database,
+        request.app.state.settings,
+        request.app.state.platform.tts_runtime,
+        jobs=JobService(request.app.state.database, request.app.state.settings),
+        media=MediaService(request.app.state.database, request.app.state.settings),
+    )
 
 
 @router.post("/episodes/{episode_id}/dialogue-lines", status_code=201, operation_id="createDialogueLine")

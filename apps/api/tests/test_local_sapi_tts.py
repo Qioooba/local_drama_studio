@@ -8,15 +8,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 from local_drama.application.dialogue import DialogueService
+from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
 from local_drama.application.worker import LocalMediaWorker
 from local_drama.main import create_app
 
 
 def test_local_sapi_voice_discovery_is_read_only(workspace, database, monkeypatch) -> None:
-    monkeypatch.setattr("local_drama.application.dialogue.shutil.which", lambda _name: "powershell.exe")
+    monkeypatch.setattr("local_drama.platform.windows.tts.shutil.which", lambda _name: "powershell.exe")
     monkeypatch.setattr(
-        "local_drama.application.dialogue.subprocess.run",
+        "local_drama.platform.windows.tts.subprocess.run",
         lambda *_args, **_kwargs: SimpleNamespace(
             returncode=0,
             stdout=json.dumps(
@@ -56,18 +57,18 @@ def test_publish_local_sapi_profile_requires_real_wav_probe(workspace, database,
                 stdout=json.dumps([{"name": "Microsoft Huihui Desktop", "culture": "zh-CN", "gender": "Female", "age": "Adult"}]),
                 stderr="",
             )
-        output = Path(kwargs["env"]["LD_SAPI_OUTPUT"])
+        output = Path(kwargs["env"]["LOCAL_DRAMA_TTS_OUTPUT"])
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"RIFF" + b"\x00" * 256)
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("local_drama.application.dialogue.shutil.which", lambda _name: "powershell.exe")
-    monkeypatch.setattr("local_drama.application.dialogue.subprocess.run", fake_run)
+    monkeypatch.setattr("local_drama.platform.windows.tts.shutil.which", lambda _name: "powershell.exe")
+    monkeypatch.setattr("local_drama.platform.windows.tts.subprocess.run", fake_run)
     monkeypatch.setattr(
-        "local_drama.application.dialogue.MediaService._probe",
+        "local_drama.application.media.MediaService._probe",
         lambda *_args, **_kwargs: {"probe_status": "PASS", "streams": [{"codec_type": "audio", "codec_name": "pcm_s16le"}], "format": {"duration": "0.25"}},
     )
-    service = DialogueService(database, workspace)
+    service = DialogueService(database, workspace, media=MediaService(database, workspace))
     published = service.publish_local_sapi_profile("sapi:Microsoft Huihui Desktop", "验收短句")
     replay = service.publish_local_sapi_profile("sapi:Microsoft Huihui Desktop", "验收短句")
     assert published["status"] == "PUBLISHED"

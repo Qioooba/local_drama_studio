@@ -6,7 +6,7 @@ import path from "node:path";
  * G11 P1-10 Jianying (CapCut) draft export Windows UAT: real browser clicks
  * against the isolated simulation environment (:3225).  A new timeline
  * revision is created through the real API with a real verified VIDEO media
- * version, then the TimelineExportAction panel exports the Jianying draft and
+ * version, then the V2 TimelineExportPanel exports the Jianying draft and
  * the export package (draft_content.json + bundled media) is verified.
  */
 
@@ -37,7 +37,7 @@ test.afterAll(() => {
     steps,
     errors,
     interpretation:
-      "G11 P1-10 Jianying draft export real-click UAT: a real timeline revision referencing a verified VIDEO media version is exported through the TimelineExportAction panel; the export package contains draft_content.json with video tracks/segments and the bundled media copy.",
+      "G11 P1-10 Jianying draft export real-click UAT: a frozen timeline revision referencing a verified VIDEO media version is exported through the V2 TimelineExportPanel; the export package contains draft_content.json with video tracks/segments and the bundled media copy.",
   };
   fs.mkdirSync(path.dirname(evidencePath()), { recursive: true });
   fs.writeFileSync(evidencePath(), `${JSON.stringify(output, null, 2)}\n`, "utf8");
@@ -61,7 +61,7 @@ test("G11 Jianying export: create timeline revision, export draft through the pa
     data: {
       items: [{ track_type: "VIDEO", media_version_id: realVideoMediaId, start_us: 0, end_us: 3_000_000, parameters: {} }],
       input_snapshot: { schema_version: "g11.jianying-uat.v1", source: "playwright-spec" },
-      status: "DRAFT",
+      status: "FROZEN",
     },
   });
   expect(timelineResponse.status()).toBe(201);
@@ -70,9 +70,8 @@ test("G11 Jianying export: create timeline revision, export draft through the pa
   steps.push(`real timeline revision v${timeline.revision_no} created with verified video ${realVideoMediaId}`);
 
   // --- Export the Jianying draft through the panel ------------------------------------------
-  const params = new URLSearchParams({ view: "projects", project: projectId, episode: episodeId });
-  await page.goto(`/?${params.toString()}`, { waitUntil: "networkidle" });
-  const exportPanel = page.locator(".local-export-action");
+  await page.goto(`${base}/projects/${projectId}/episodes/${episodeId}/timeline?view=export`, { waitUntil: "networkidle" });
+  const exportPanel = page.locator(".timeline-v2-export");
   await expect(exportPanel.getByRole("button", { name: "导出剪映草稿" })).toBeVisible();
   await exportPanel.getByRole("button", { name: "导出剪映草稿" }).click();
   await expect(exportPanel.getByText(/已导出 \d+ 个文件/)).toBeVisible({ timeout: 30_000 });

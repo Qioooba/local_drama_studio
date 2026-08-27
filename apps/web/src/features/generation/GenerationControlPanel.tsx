@@ -53,6 +53,9 @@ export function GenerationControlPanel({ timedDirections, performanceBindings, m
   const tierOptions = allowedTierCodes?.length ? allTierOptions.filter((item) => allowedTierCodes.includes(item.code)) : allTierOptions;
   const selectedTier = tier ? tierOptions.find((item) => item.code === tier) ?? null : null;
   const selectedTierDetail = tier && tiers ? tiers.find((item) => item.code === tier) ?? null : null;
+  const allowedTierLabels = allowedTierCodes
+    ?.map((code) => allTierOptions.find((item) => item.code === code)?.label)
+    .filter((label): label is string => Boolean(label));
   const estimateResolution = selectedTierDetail && aspectRatio ? selectedTierDetail.resolution[aspectRatio] : undefined;
   const estimateRequest = profileVersionId && estimateResolution?.[0] && estimateResolution?.[1] ? {
     profileVersionId,
@@ -63,7 +66,7 @@ export function GenerationControlPanel({ timedDirections, performanceBindings, m
     steps: selectedTierDetail?.steps,
   } : null;
 
-  return <section className="generation-control-panel" aria-labelledby="generation-controls-title"><div className="section-title"><span id="generation-controls-title">导演控制与多模态输入</span><small>写入冻结 Variant 参数，不修改源媒体</small></div>
+  return <section className="generation-control-panel" aria-labelledby="generation-controls-title"><div className="section-title"><span id="generation-controls-title">导演控制与多种参考输入</span><small>保存到当前生成候选，不会改动原始素材</small></div>
     <div className="structured-control-grid">
       <TimedDirectionEditor value={timedDirections} onChange={onTimedDirectionsChange} projectId={projectId} />
       <PerformanceBindingEditor value={performanceBindings} onChange={onPerformanceBindingsChange} projectId={projectId} />
@@ -74,15 +77,15 @@ export function GenerationControlPanel({ timedDirections, performanceBindings, m
       <label htmlFor="production-tier">生产档位<select id="production-tier" value={tier} onChange={(event) => onTierChange?.(event.target.value)}>
         <option value="">不指定（手动参数）</option>
         {tierOptions.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
-      </select><small>{allowedTierCodes?.length ? `当前工作流固定档位：${allowedTierCodes.join("、")}；不显示不兼容档位。` : "生产档位由当前模型能力提供；选择后会采用对应的分辨率与帧数。"}</small></label>
-      {selectedTier && <div className="tier-summary" role="group" aria-label="生产档位参数摘要">{selectedTierDetail ? <dl><div><dt>帧数</dt><dd>{selectedTierDetail.frames}</dd></div><div><dt>分辨率</dt><dd>9:16 {selectedTierDetail.resolution["9:16"]?.join("×")} / 16:9 {selectedTierDetail.resolution["16:9"]?.join("×")}</dd></div><div><dt>默认 take</dt><dd>{selectedTierDetail.default_takes}</dd></div><div><dt>denoise</dt><dd>{selectedTierDetail.denoise}</dd></div><div><dt>steps</dt><dd>{selectedTierDetail.steps}</dd></div></dl> : <p className="muted">档位参数加载中…</p>}</div>}
+      </select><small>{allowedTierLabels?.length ? `当前生成流程只支持：${allowedTierLabels.join("、")}；其他不兼容档位已隐藏。` : "生产档位由当前模型能力提供；选择后会采用对应的分辨率与帧数。"}</small></label>
+      {selectedTier && <div className="tier-summary" role="group" aria-label="生产档位参数摘要">{selectedTierDetail ? <dl><div><dt>帧数</dt><dd>{selectedTierDetail.frames}</dd></div><div><dt>分辨率</dt><dd>9:16 {selectedTierDetail.resolution["9:16"]?.join("×")} / 16:9 {selectedTierDetail.resolution["16:9"]?.join("×")}</dd></div><div><dt>默认生成数量</dt><dd>{selectedTierDetail.default_takes}</dd></div><div><dt>画面重绘强度</dt><dd>{selectedTierDetail.denoise}</dd></div><div><dt>生成迭代次数</dt><dd>{selectedTierDetail.steps}</dd></div></dl> : <p className="muted">档位参数加载中…</p>}</div>}
       {tiersError && <p className="inline-error" role="alert">生产档位读取失败：{tiersError}。提交不会自动附加档位。</p>}
       <GenerationEstimateFact profileLabel={profileLabel || null} request={estimateRequest} />
     </div>
-    <div className="ref2v-capability-row" aria-label="Ref2V 参考视频能力">
-      <strong>Ref2V 参考视频能力</strong>
-      {ref2va === null ? <span className="status-pill neutral">读取中</span> : ref2va.supported ? <><span className="status-pill">H3_REF2VA_CANDIDATE</span><small>参考图 Ref2V 原生链可编译；参考视频输入位待集成评估，本期不开放提交。</small></> : <><span className="status-pill neutral">H3_REF2VA_UNAVAILABLE</span><small>置灰原因：{ref2va.reason}</small></>}
-      {ref2va?.manifest_hint?.ref2va_unet_name && <small className="muted">manifest 加载器：{ref2va.manifest_hint.ref2va_unet_name}</small>}
+    <div className="ref2v-capability-row" aria-label="参考视频生成能力">
+      <strong>参考视频生成能力</strong>
+      {ref2va === null ? <span className="status-pill neutral">读取中</span> : ref2va.supported ? <><span className="status-pill">试验性支持</span><small>本机已具备基础能力，但参考视频输入仍在评估，本期暂不开放提交。</small></> : <><span className="status-pill neutral">当前不可用</span><small>本机尚未安装所需的参考视频模型。</small></>}
+      {ref2va?.manifest_hint?.ref2va_unet_name && <details><summary>高级：查看本机模型信息</summary><small className="muted">模型加载项：{ref2va.manifest_hint.ref2va_unet_name}</small></details>}
     </div>
-    <p className="muted">当前只保存结构化控制快照；实际 inpaint/outpaint、pose、lip-sync 或 driving 执行由已发布 Profile 的 capability contract 决定。</p></section>;
+    <p className="muted">这里保存的是可复用的导演控制设置。局部重绘、扩图、姿态控制、口型同步和动作驱动能否真正执行，取决于当前已发布生成配置支持的能力。</p></section>;
 }

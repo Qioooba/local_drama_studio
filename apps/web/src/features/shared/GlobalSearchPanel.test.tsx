@@ -32,7 +32,7 @@ describe("GlobalSearchPanel", () => {
     render(<MemoryRouter><GlobalSearchPanel projectId="p1" /><LocationProbe /></MemoryRouter>);
     fireEvent.change(screen.getByLabelText(/搜索项目、分集/), { target: { value: keyword } });
     const result = await screen.findByRole("button", { name: `打开${label}` });
-    expect(searchAll).toHaveBeenCalledWith(keyword, "p1");
+    expect(searchAll).toHaveBeenCalledWith(keyword, "p1", 50, "", expect.any(AbortSignal));
     expect(screen.queryByText(`hidden-${keyword}`)).toBeNull();
     fireEvent.click(result);
     await waitFor(() => expect(screen.getByLabelText("当前路径").textContent).toBe(route));

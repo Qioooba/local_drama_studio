@@ -95,7 +95,7 @@ def test_local_clients_do_not_follow_redirects_or_use_provider_payload_details(r
     monkeypatch.setattr(client, "_request", lambda *args, **kwargs: {"error": "/secret/path", "node_errors": {"token": "secret"}})
     with pytest.raises(DomainRuleError) as reject_error:
         client.queue_prompt({"1": {"class_type": "Safe", "inputs": {}}})
-    assert reject_error.value.details == {"provider_response": "rejected"}
+    assert reject_error.value.details == {"provider_response": "rejected", "node_errors": []}
     assert "secret" not in json.dumps(reject_error.value.details)
 
 

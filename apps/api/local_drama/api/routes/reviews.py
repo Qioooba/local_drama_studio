@@ -3,15 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 from local_drama.api.schemas.reviews import (
-    BatchCommitRequest,
-    BatchPreflightRequest,
-    FormalSelectionCommitRequest,
-    FormalSelectionPreflightRequest,
     MachineCheckRequest,
-    ReviewRequest,
     ReviewTemplateVersionRequest,
-    SelectionRequest,
-    VideoAnnotationRequest,
 )
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.reviews import ReviewService
@@ -76,53 +69,6 @@ async def review_inbox(
         raise api_error_from_domain(error) from error
 
 
-@router.get("/reviews/formal-selection-candidates", operation_id="listFormalSelectionCandidates")
-async def formal_selection_candidates(request: Request, project_id: str) -> dict[str, object]:
-    return {"items": service(request).formal_selection_candidates(project_id)}
-
-
-@router.get("/subjects/{subject_type}/{subject_id}/review-context", operation_id="getReviewContext")
-async def review_context(subject_type: str, subject_id: str, request: Request) -> dict[str, object]:
-    try:
-        if subject_type != "MEDIA_VERSION":
-            raise DomainRuleError("UNSUPPORTED_REVIEW_SUBJECT", "G4 当前审核 subject_type 只支持 MEDIA_VERSION")
-        return service(request).review_context(subject_id)
-    except DomainRuleError as error:
-        raise api_error_from_domain(error) from error
-
-
-@router.post("/subjects/{subject_type}/{subject_id}/reviews", status_code=201, operation_id="submitReview")
-async def submit_review(subject_type: str, subject_id: str, payload: ReviewRequest, request: Request) -> dict[str, object]:
-    try:
-        checks = [item.model_dump() for item in payload.checks]
-        if subject_type == "EPISODE_RENDER_VERSION":
-            return {
-                "review": service(request).submit_episode_render_review(
-                    subject_id,
-                    payload.template_version_id,
-                    payload.decision,
-                    payload.expected_subject_revision,
-                    checks,
-                    payload.comment,
-                )
-            }
-        if subject_type != "MEDIA_VERSION":
-            raise DomainRuleError("UNSUPPORTED_REVIEW_SUBJECT", "审核 subject_type 只支持 MEDIA_VERSION 或 EPISODE_RENDER_VERSION")
-        return {
-            "review": service(request).submit_review(
-                subject_id,
-                payload.template_version_id,
-                payload.decision,
-                payload.expected_subject_revision,
-                checks,
-                payload.comment,
-                continuity_plan_hash=payload.continuity_plan_hash,
-            )
-        }
-    except DomainRuleError as error:
-        raise api_error_from_domain(error) from error
-
-
 @router.get("/media-versions/{media_version_id}/approval-impact", operation_id="previewMediaApprovalImpact")
 async def preview_media_approval_impact(media_version_id: str, request: Request) -> dict[str, object]:
     try:
@@ -136,14 +82,6 @@ async def list_reviews(subject_type: str, subject_id: str, request: Request) -> 
     return {"items": service(request).list_reviews(subject_type, subject_id)}
 
 
-@router.post("/reviews/{review_id}:void", operation_id="voidReview")
-async def void_review(review_id: str, request: Request) -> dict[str, object]:
-    try:
-        return {"review": service(request).void_review(review_id)}
-    except DomainRuleError as error:
-        raise api_error_from_domain(error) from error
-
-
 @router.post("/subjects/{subject_type}/{subject_id}/machine-checks", status_code=201, operation_id="runMachineCheck")
 async def machine_check(subject_type: str, subject_id: str, payload: MachineCheckRequest, request: Request) -> dict[str, object]:
     try:
@@ -153,67 +91,3 @@ async def machine_check(subject_type: str, subject_id: str, payload: MachineChec
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
-
-@router.post("/reviews/batch:preflight", operation_id="preflightReviewBatch")
-async def batch_preflight(payload: BatchPreflightRequest, request: Request) -> dict[str, object]:
-    try:
-        return {"plan": service(request).batch_preflight(payload.project_id, [item.model_dump() for item in payload.items])}
-    except DomainRuleError as error:
-        raise api_error_from_domain(error) from error
-
-
-@router.post("/reviews/batch:commit", operation_id="commitReviewBatch")
-async def batch_commit(payload: BatchCommitRequest, request: Request) -> dict[str, object]:
-    try:
-        return {"result": service(request).batch_commit(payload.plan_token, payload.decision, [item.model_dump() for item in payload.checks], payload.comment)}
-    except DomainRuleError as error:
-        raise api_error_from_domain(error) from error
-
-
-@router.post("/reviews/formal-selection:preflight", operation_id="preflightFormalSelection")
-async def formal_selection_preflight(payload: FormalSelectionPreflightRequest, request: Request) -> dict[str, object]:
-    try:
-        return {"plan": service(request).formal_selection_preflight(payload.project_id, payload.media_version_ids)}
-    except DomainRuleError as error:
-        raise api_error_from_domain(error) from error
-
-
-@router.post("/reviews/formal-selection:commit", operation_id="commitFormalSelection")
-async def formal_selection_commit(payload: FormalSelectionCommitRequest, request: Request) -> dict[str, object]:
-    try:
-        return {"result": service(request).commit_formal_selection(payload.project_id, payload.media_version_ids, payload.plan_hash)}
-    except DomainRuleError as error:
-        raise api_error_from_domain(error) from error
-
-
-@router.post("/media-versions/{media_version_id}:select", operation_id="selectMediaVersion")
-async def select_media_version(media_version_id: str, payload: SelectionRequest, request: Request) -> dict[str, object]:
-    try:
-        return {"selection": service(request).select_version(media_version_id, payload.selection_type)}
-    except DomainRuleError as error:
-        raise api_error_from_domain(error) from error
-
-
-@router.get("/media-versions/{media_version_id}/annotations", operation_id="listVideoAnnotations")
-async def list_video_annotations(media_version_id: str, request: Request) -> dict[str, object]:
-    try:
-        return {"items": service(request).list_video_annotations(media_version_id)}
-    except DomainRuleError as error:
-        raise api_error_from_domain(error) from error
-
-
-@router.post("/media-versions/{media_version_id}/annotations", status_code=201, operation_id="createVideoAnnotation")
-async def create_video_annotation(media_version_id: str, payload: VideoAnnotationRequest, request: Request) -> dict[str, object]:
-    try:
-        return {
-            "annotation": service(request).create_video_annotation(
-                media_version_id,
-                payload.timecode_ms,
-                payload.category,
-                payload.comment,
-                snapshot_media_version_id=payload.snapshot_media_version_id,
-                rework_job_id=payload.rework_job_id,
-            )
-        }
-    except DomainRuleError as error:
-        raise api_error_from_domain(error) from error

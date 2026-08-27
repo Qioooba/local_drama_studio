@@ -1,274 +1,196 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
-import { Drawer, TabPanel, Tabs, type TabItem } from "../../components/ui";
+import { routes } from "../../app/routeRegistry";
 import {
-  getEpisodeTimelineStatus,
-  getGenerationIntent,
-  getGenerationVariant,
-  getReviewContext,
-  listFormalSelectionCandidates,
-  listReviewTemplates,
-  reviewInbox,
-  runMachineCheck,
-  selectMediaVersion,
-  submitReview,
-  type FormalSelectionCandidate,
+  createReviewDecisionV2,
+  getEpisodePostOverviewV2,
+  listEpisodeReviewTargetsV2,
+  revokeReviewDecisionV2,
+  type EpisodeReviewTarget,
+  type ReviewTargetKind,
 } from "../../generated/api";
-import { getShotGroupWorkspace } from "../episode-plan-v2/shotGroupsApi";
-import { EpisodeReviewPanel } from "../production/EpisodeReviewPanel";
-import { FormalSelectionPanel } from "../reviews/FormalSelectionPanel";
-import { ReviewInboxPanel } from "../reviews/ReviewInboxPanel";
+import { VideoAnnotations } from "../reviews/VideoAnnotations";
 
-type IssueFilter = "ALL" | "BLOCKED" | "MACHINE" | "STALE";
-type ReviewTask = "shot" | "render" | "delivery";
+const KIND_LABELS: Record<ReviewTargetKind, string> = {
+  MEDIA_VERSION: "镜头与音频",
+  EPISODE_RENDER_VERSION: "整集成片",
+};
+const DECISION_LABELS = { APPROVED: "批准", NEEDS_CHANGES: "需修改", REJECTED: "拒绝" } as const;
+type Decision = keyof typeof DECISION_LABELS;
 
-const REVIEW_TASK_IDS = new Set<ReviewTask>(["shot", "render", "delivery"]);
-const SELECTION_LABELS: Record<string, string> = { KEYFRAME: "当前关键帧", PROXY_WINNER: "首选预览", FORMAL_SELECTION: "正式采用版本" };
-const selectionLabel = (value: string) => SELECTION_LABELS[value] ?? value;
-
-async function listEpisodeFormalCandidates(projectId: string, episodeId: string) {
-  const [candidatesResult, workspace] = await Promise.all([
-    listFormalSelectionCandidates(projectId),
-    getShotGroupWorkspace(episodeId),
-  ]);
-  const shotIds = new Set(workspace.shots.map((item) => item.id));
-  const matches: FormalSelectionCandidate[] = [];
-  const candidates = candidatesResult.items;
-
-  // The formal-selection read model is project-scoped. Resolve its immutable
-  // media contexts in small batches so this page never leaks another episode's
-  // candidates into the current episode workflow.
-  for (let offset = 0; offset < candidates.length; offset += 8) {
-    const batch = candidates.slice(offset, offset + 8);
-    const contexts = await Promise.all(batch.map(async (candidate) => {
-      try {
-        return await getReviewContext(candidate.media_version_id);
-      } catch {
-        return null;
-      }
-    }));
-    batch.forEach((candidate, index) => {
-      const media = contexts[index]?.media_version;
-      const ownerType = String(media?.owner_type ?? "");
-      const ownerId = String(media?.owner_id ?? "");
-      if ((ownerType === "EPISODE" && ownerId === episodeId) || (ownerType === "SHOT" && shotIds.has(ownerId))) {
-        matches.push(candidate);
-      }
-    });
-    const generationCandidates = batch.filter((_, index) =>
-      String(contexts[index]?.media_version?.owner_type ?? "") === "GENERATION_VARIANT",
-    );
-    const generationOwners = await Promise.all(generationCandidates.map(async (candidate) => {
-      try {
-        const variant = await getGenerationVariant(
-          String(contexts[batch.indexOf(candidate)]?.media_version?.owner_id ?? ""),
-        );
-        const intent = await getGenerationIntent(variant.variant.intent_id);
-        return { candidate, ownerType: intent.intent.owner_type, ownerId: intent.intent.owner_id };
-      } catch {
-        return null;
-      }
-    }));
-    generationOwners.forEach((resolved) => {
-      if (!resolved) return;
-      if ((resolved.ownerType === "EPISODE" && resolved.ownerId === episodeId)
-        || (resolved.ownerType === "SHOT" && shotIds.has(resolved.ownerId))) {
-        matches.push(resolved.candidate);
-      }
-    });
-  }
-  return matches;
+function newCommandKey(prefix: string) {
+  return `${prefix}:${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`}`;
 }
 
-function SummaryCard({ label, value, detail, tone }: { label: string; value: number | string; detail: string; tone?: string }) {
-  return <article className={`episode-review-summary-card${tone ? ` tone-${tone}` : ""}`}><span>{label}</span><strong>{value}</strong><small>{detail}</small></article>;
+function Summary({ label, value, detail, tone = "neutral" }: { label: string; value: string | number; detail: string; tone?: string }) {
+  return <article className={`post-review-summary tone-${tone}`}><span>{label}</span><strong>{value}</strong><small>{detail}</small></article>;
+}
+
+function TargetRow({ item, selected, onSelect }: { item: EpisodeReviewTarget; selected: boolean; onSelect: () => void }) {
+  const needsAttention = item.blocker_codes.length > 0 || item.latest_decision_stale;
+  return <button className={`post-review-target${selected ? " is-selected" : ""}`} type="button" onClick={onSelect} aria-pressed={selected}>
+    <span className="post-review-target__title"><strong>{item.label}</strong><span className={`status-pill ${needsAttention ? "warning" : "neutral"}`}>{needsAttention ? "需处理" : "待决定"}</span></span>
+    <span>{item.media_kind ? `${item.media_kind} · ${item.stage}` : "整集成片"}</span>
+    <small>{item.machine_status ? `机器证据：${item.machine_status}` : `完整性：${item.integrity_status}`}</small>
+  </button>;
 }
 
 export function EpisodeReviewWorkspace({ projectId, episodeId }: { projectId: string; episodeId: string }) {
   const queryClient = useQueryClient();
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
-  const requestedMediaVersionId = searchParams.get("media");
-  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(requestedMediaVersionId);
-  const [issueFilter, setIssueFilter] = useState<IssueFilter>("ALL");
-  const [shotSearch, setShotSearch] = useState("");
-  const [selectionDrawerOpen, setSelectionDrawerOpen] = useState(false);
-  const [selectionMessage, setSelectionMessage] = useState<string | null>(null);
-  const requestedTask = searchParams.get("view") as ReviewTask | null;
-  const activeTask: ReviewTask = requestedTask && REVIEW_TASK_IDS.has(requestedTask) ? requestedTask : "shot";
-  const selectTask = (task: string) => {
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current);
-      if (task === "shot") next.delete("view");
-      else next.set("view", task);
-      return next;
-    }, { replace: true });
-  };
+  const requestedKind = searchParams.get("targetKind") as ReviewTargetKind | null;
+  const legacyMedia = searchParams.get("media");
+  const requestedId = searchParams.get("targetId") ?? legacyMedia;
+  const initialKind: ReviewTargetKind = requestedKind === "EPISODE_RENDER_VERSION" ? requestedKind : "MEDIA_VERSION";
+  const [kind, setKind] = useState<ReviewTargetKind>(initialKind);
+  const [includeResolved, setIncludeResolved] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(requestedId);
+  const [decision, setDecision] = useState<Decision>("APPROVED");
+  const [comment, setComment] = useState("");
+  const [checks, setChecks] = useState<Record<string, boolean>>({});
 
-  const inbox = useQuery({
-    queryKey: ["reviews", "inbox", projectId, episodeId],
-    queryFn: () => reviewInbox(projectId, "", { episode_id: episodeId, include_resolved: true }),
+  const overview = useQuery({ queryKey: ["post-v2", episodeId, "overview"], queryFn: () => getEpisodePostOverviewV2(episodeId) });
+  const targets = useQuery({
+    queryKey: ["post-v2", episodeId, "review-targets", kind, includeResolved],
+    queryFn: () => listEpisodeReviewTargetsV2(episodeId, { targetKinds: [kind], includeResolved, limit: 100 }),
   });
-  const templates = useQuery({ queryKey: ["reviews", "templates"], queryFn: () => listReviewTemplates() });
-  const timelineStatus = useQuery({
-    queryKey: ["episode", episodeId, "timeline-status"],
-    queryFn: () => getEpisodeTimelineStatus(episodeId),
-  });
-  const formalCandidates = useQuery({
-    queryKey: ["reviews", "formal-selection", projectId, episodeId],
-    queryFn: () => listEpisodeFormalCandidates(projectId, episodeId),
-    enabled: activeTask === "shot" && selectionDrawerOpen,
-  });
-
-  const allItems = inbox.data?.items ?? [];
-  const unresolvedItems = useMemo(
-    () => allItems.filter((item) => item.decision !== "APPROVED" || Boolean(item.is_stale)),
-    [allItems],
-  );
-  const visibleItems = useMemo(() => {
-    const needle = shotSearch.trim().toLocaleLowerCase();
-    return allItems.filter((item) => {
-      const issueMatches = issueFilter === "ALL"
-        || (issueFilter === "BLOCKED" && Number(item.is_blocked ?? 0) === 1)
-        || (issueFilter === "MACHINE" && String(item.machine_status ?? "NOT_RUN") !== "PASS")
-        || (issueFilter === "STALE" && Boolean(item.is_stale));
-      const searchMatches = !needle || [item.shot_code, item.media_version_id, item.stage, item.media_kind]
-        .some((value) => String(value ?? "").toLocaleLowerCase().includes(needle));
-      return issueMatches && searchMatches;
-    });
-  }, [allItems, issueFilter, shotSearch]);
-  const resolvingRequestedMedia = Boolean(
-    requestedMediaVersionId
-      && inbox.isFetching
-      && !visibleItems.some((item) => item.media_version_id === requestedMediaVersionId),
-  );
+  const items = targets.data?.items ?? [];
+  const selected = items.find((item) => item.target_id === selectedId) ?? null;
+  const resolvingDeepLink = Boolean(requestedId && targets.isFetching && !selected);
 
   useEffect(() => {
-    if (requestedMediaVersionId && visibleItems.some((item) => item.media_version_id === requestedMediaVersionId)) {
-      setSelectedVersionId(requestedMediaVersionId);
+    if (requestedId && items.some((item) => item.target_id === requestedId)) {
+      setSelectedId(requestedId);
       return;
     }
-    if (resolvingRequestedMedia) return;
-    if (visibleItems.some((item) => item.media_version_id === selectedVersionId)) return;
-    setSelectedVersionId(visibleItems[0]?.media_version_id ?? null);
-  }, [requestedMediaVersionId, resolvingRequestedMedia, selectedVersionId, visibleItems]);
+    if (resolvingDeepLink || items.some((item) => item.target_id === selectedId)) return;
+    setSelectedId(items[0]?.target_id ?? null);
+  }, [items, requestedId, resolvingDeepLink, selectedId]);
 
-  const selectedContext = useQuery({
-    queryKey: ["reviews", "context", selectedVersionId],
-    queryFn: () => getReviewContext(selectedVersionId as string),
-    enabled: activeTask === "shot" && Boolean(selectedVersionId),
-  });
+  useEffect(() => {
+    if (!selected) return;
+    setChecks(Object.fromEntries(selected.template_items.map((item) => [item.id, false])));
+    setDecision("APPROVED");
+    setComment("");
+  }, [selected?.target_id]);
 
-  const refreshReviewData = () => {
-    void queryClient.invalidateQueries({ queryKey: ["reviews", "inbox", projectId, episodeId] });
-    void queryClient.invalidateQueries({ queryKey: ["reviews", "context"] });
-    void queryClient.invalidateQueries({ queryKey: ["reviews", "formal-selection", projectId, episodeId] });
+  const refresh = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["post-v2", episodeId, "overview"] }),
+      queryClient.invalidateQueries({ queryKey: ["post-v2", episodeId, "review-targets"] }),
+    ]);
   };
-  const selectMutation = useMutation({
-    mutationFn: ({ mediaVersionId, selectionType }: { mediaVersionId: string; selectionType: string }) => selectMediaVersion(mediaVersionId, selectionType),
-    onMutate: () => setSelectionMessage(null),
-    onSuccess: (_result, variables) => {
-      setSelectionMessage(`已保存${selectionLabel(variables.selectionType)}；当前候选保持可追溯。`);
-      refreshReviewData();
+  const createDecision = useMutation({
+    mutationFn: async () => {
+      if (!selected) throw new Error("请先选择审核目标");
+      return createReviewDecisionV2({
+        target_kind: selected.target_kind,
+        target_id: selected.target_id,
+        template_version_id: selected.template_version_id,
+        expected_revision: selected.subject_revision,
+        decision,
+        checks: selected.template_items.map((item) => ({ item_id: item.id, result: checks[item.id] ? "PASS" : "FAIL" })),
+        comment: comment.trim() || null,
+        idempotency_key: newCommandKey("review"),
+      });
     },
-    onError: () => setSelectionMessage(null),
+    onSuccess: refresh,
   });
-  const reviewMutation = useMutation({
-    mutationFn: ({ mediaVersionId, payload }: { mediaVersionId: string; payload: Parameters<typeof submitReview>[1] }) => submitReview(mediaVersionId, payload),
-    onSuccess: refreshReviewData,
+  const revokeDecision = useMutation({
+    mutationFn: async () => {
+      if (!selected?.latest_decision_id || !selected.latest_decision_revision) throw new Error("没有可撤回的审核决定");
+      return revokeReviewDecisionV2(selected.latest_decision_id, {
+        expected_revision: selected.latest_decision_revision,
+        reason: comment.trim() || "审核人撤回决定",
+        idempotency_key: newCommandKey("review-revoke"),
+      });
+    },
+    onSuccess: refresh,
   });
-  const machineCheckMutation = useMutation({
-    mutationFn: (mediaVersionId: string) => runMachineCheck(mediaVersionId),
-    onSuccess: refreshReviewData,
-  });
-  const selectVisibleMediaVersion = (id: string) => {
-    selectMutation.reset();
-    reviewMutation.reset();
-    machineCheckMutation.reset();
-    setSelectionMessage(null);
-    setSelectedVersionId(id);
+
+  const requiredComplete = useMemo(
+    () => selected?.template_items.filter((item) => item.required).every((item) => checks[item.id]) ?? false,
+    [checks, selected],
+  );
+  const submitDisabled = !selected || createDecision.isPending || (decision === "APPROVED" && (!requiredComplete || selected.blocker_codes.length > 0));
+  const summary = overview.data?.overview;
+
+  const selectKind = (nextKind: ReviewTargetKind) => {
+    setKind(nextKind);
+    setSelectedId(null);
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
-      next.set("media", id);
+      next.set("targetKind", nextKind);
+      next.delete("targetId");
+      next.delete("media");
+      return next;
+    }, { replace: true });
+  };
+  const selectTarget = (item: EpisodeReviewTarget) => {
+    setSelectedId(item.target_id);
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("targetKind", item.target_kind);
+      next.set("targetId", item.target_id);
+      next.delete("media");
       return next;
     }, { replace: true });
   };
 
-  const blockedCount = unresolvedItems.filter((item) => Number(item.is_blocked ?? 0) === 1).length;
-  const staleCount = unresolvedItems.filter((item) => Boolean(item.is_stale)).length;
-  const machineIssueCount = unresolvedItems.filter((item) => String(item.machine_status ?? "NOT_RUN") !== "PASS").length;
-  const latestRender = timelineStatus.data?.status.renders.latest ?? null;
-  const loading = inbox.isPending || templates.isPending || timelineStatus.isPending;
-  const failures = [inbox.error, templates.error, timelineStatus.error].filter(Boolean);
-  const taskItems: TabItem[] = [
-    { id: "shot", label: "镜头候选", badge: unresolvedItems.length },
-    { id: "render", label: "整集成片", badge: latestRender ? "可审核" : "未生成" },
-    { id: "delivery", label: "交付交接", badge: staleCount ? `${staleCount} 失效` : "待确认" },
-  ];
-
-  return <div className="episode-review-workspace">
-    <section className="episode-review-summary" aria-label="本集审核摘要">
-      <SummaryCard label="未解决候选" value={unresolvedItems.length} detail="仅当前分集" />
-      <SummaryCard label="阻塞问题" value={blockedCount} detail="完整性、机器检查或失效" tone={blockedCount ? "danger" : "ok"} />
-      <SummaryCard label="机器证据待补" value={machineIssueCount} detail="未运行或未通过" tone={machineIssueCount ? "warning" : "ok"} />
-      <SummaryCard label="失效审核" value={staleCount} detail="上游变更后需重审" tone={staleCount ? "warning" : "ok"} />
+  return <div className="episode-review-workspace post-review-v2">
+    <section className="post-review-summary-grid" aria-label="本集审核摘要">
+      <Summary label="待审核" value={summary?.review.pending_count ?? "—"} detail="当前分集全部目标" tone={summary?.review.pending_count ? "warning" : "ok"} />
+      <Summary label="阻塞" value={summary?.review.blocked_count ?? "—"} detail="需先补齐机器或文件证据" tone={summary?.review.blocked_count ? "danger" : "ok"} />
+      <Summary label="已失效" value={summary?.review.stale_count ?? "—"} detail="上游变化后重新决定" tone={summary?.review.stale_count ? "warning" : "ok"} />
+      <Summary label="整集批准" value={summary?.review.approved_render_id ? "已完成" : "未完成"} detail="交付只消费有效批准" tone={summary?.review.approved_render_id ? "ok" : "neutral"} />
     </section>
 
-    {loading && <p className="empty-state" aria-live="polite">正在读取本集候选、机器证据与整集版本…</p>}
-    {failures.length > 0 && <div className="inline-error" role="alert"><strong>审核工作台有 {failures.length} 项读取失败。</strong><button className="secondary" type="button" onClick={() => { void inbox.refetch(); void templates.refetch(); void timelineStatus.refetch(); }}>重试</button></div>}
-
-    <Tabs items={taskItems} selectedId={activeTask} onChange={selectTask} ariaLabel="本集审核任务">
-      <TabPanel id="shot" selectedId={activeTask}>
-        <section id="candidate-review" className="episode-review-stage" aria-labelledby="candidate-review-title">
-          <div className="panel-heading"><div><p className="eyebrow">镜头候选</p><h3 id="candidate-review-title">比较候选并记录审核结论</h3></div><button className="secondary" type="button" onClick={() => setSelectionDrawerOpen(true)}>采用已批准成片</button></div>
-          <p className="muted">批量审核使用同一表单，系统先检查并锁定本批次，再一次性提交；机器检查只记录技术证据，不能代替人工决定。</p>
-          <div className="episode-review-filters" role="group" aria-label="本集审核过滤器">
-            <label>问题范围<select value={issueFilter} onChange={(event) => setIssueFilter(event.target.value as IssueFilter)}><option value="ALL">全部未解决</option><option value="BLOCKED">仅阻塞</option><option value="MACHINE">机器证据待补</option><option value="STALE">失效待重审</option></select></label>
-            <label>搜索镜头<input value={shotSearch} onChange={(event) => setShotSearch(event.target.value)} placeholder="输入镜头编号" /></label>
-            <span className="status-pill">显示 {visibleItems.length} / {allItems.length}</span>
-          </div>
-          {selectionMessage && <p className="inline-success" role="status">{selectionMessage}</p>}
-          {selectMutation.error && <p className="inline-error" role="alert">选择记录保存失败：{String(selectMutation.error)}</p>}
-          {resolvingRequestedMedia ? <p className="empty-state" role="status">正在定位指定审核候选…</p> : !inbox.isPending && allItems.length === 0 ? <p className="empty-state">本集没有未解决的候选审核项。</p> : <ReviewInboxPanel
-            items={visibleItems}
-            templates={templates.data?.items ?? []}
-            selectedVersionId={selectedVersionId}
-            context={selectedContext.data}
-            onSelect={selectVisibleMediaVersion}
-            onPromote={(mediaVersionId, selectionType) => selectMutation.mutate({ mediaVersionId, selectionType })}
-            selecting={selectMutation.isPending}
-            onMachineCheck={(mediaVersionId) => machineCheckMutation.mutate(mediaVersionId)}
-            machineChecking={machineCheckMutation.isPending}
-            machineCheckError={machineCheckMutation.error ? String(machineCheckMutation.error) : null}
-            onSubmit={(mediaVersionId, payload) => reviewMutation.mutate({ mediaVersionId, payload })}
-            submitting={reviewMutation.isPending}
-            submitError={reviewMutation.error ? String(reviewMutation.error) : null}
-            submitSucceeded={reviewMutation.isSuccess}
-            onBatchChanged={refreshReviewData}
-          />}
-        </section>
-      </TabPanel>
-
-      <TabPanel id="render" selectedId={activeTask}>
-        <section id="episode-render-review" className="episode-review-stage" aria-labelledby="episode-render-stage-title">
-          <div className="panel-heading"><div><p className="eyebrow">整集成片</p><h3 id="episode-render-stage-title">审核冻结时间线生成的整集成片</h3></div><span className="status-pill neutral">必须人工确认</span></div>
-          <EpisodeReviewPanel render={latestRender} templates={templates.data?.items ?? []} onChanged={() => void timelineStatus.refetch()} />
-        </section>
-      </TabPanel>
-
-      <TabPanel id="delivery" selectedId={activeTask}>
-        <section className="episode-review-stage creative-task-gateway" aria-labelledby="review-delivery-title">
-          <div><p className="eyebrow">交付交接</p><h3 id="review-delivery-title">审核完成后，再进入交付</h3><p className="muted">先在时间线确认冻结输入，再到交付工作区合成成片、校验文件清单并完成平台检查。当前页不会重复提供交付操作。</p></div>
-          <div className="creative-task-gateway__actions"><Link className="secondary" to={`/projects/${projectId}/episodes/${episodeId}/timeline`}>检查冻结时间线</Link><Link className="primary-action" to={`/projects/${projectId}/episodes/${episodeId}/delivery`}>进入交付工作区</Link></div>
-        </section>
-      </TabPanel>
-    </Tabs>
-
-    <Drawer open={selectionDrawerOpen} onClose={() => setSelectionDrawerOpen(false)} title="采用已批准成片" width={560}>
-      <div className="creative-task-drawer-content">
-        <p className="muted">这里只列出已经人工批准且文件校验完整的正式视频；采用操作不会替你创建审核结论。</p>
-        {formalCandidates.isPending ? <p className="empty-state" aria-live="polite">正在限定本集正式候选…</p> : formalCandidates.isError ? <p className="inline-error" role="alert">读取本集正式候选失败：{String(formalCandidates.error)}</p> : <FormalSelectionPanel projectId={projectId} candidates={formalCandidates.data ?? []} onChanged={refreshReviewData} />}
+    <section className="post-review-toolbar" aria-label="审核目标筛选">
+      <div className="segmented-control" role="group" aria-label="审核目标类型">
+        {(Object.keys(KIND_LABELS) as ReviewTargetKind[]).map((value) => <button key={value} type="button" className={kind === value ? "is-active" : ""} onClick={() => selectKind(value)}>{KIND_LABELS[value]}</button>)}
       </div>
-    </Drawer>
+      <label className="post-review-resolved"><input type="checkbox" checked={includeResolved} onChange={(event) => setIncludeResolved(event.target.checked)} />显示已解决</label>
+    </section>
+
+    {overview.isError || targets.isError ? <div className="inline-error" role="alert">审核工作台读取失败。<button className="secondary" type="button" onClick={() => { void overview.refetch(); void targets.refetch(); }}>重试</button></div> : null}
+    {targets.isPending || resolvingDeepLink ? <p className="empty-state" role="status">正在读取审核目标…</p> : null}
+
+    <div className="post-review-layout">
+      <section className="post-review-list" aria-label="审核目标列表">
+        <header><div><p className="eyebrow">审核队列</p><h3>{KIND_LABELS[kind]}</h3></div><span>{targets.data?.total ?? 0} 项</span></header>
+        {!targets.isPending && items.length === 0 ? <p className="empty-state">当前筛选下没有待处理目标。</p> : items.map((item) => <TargetRow key={item.target_id} item={item} selected={item.target_id === selectedId} onSelect={() => selectTarget(item)} />)}
+      </section>
+
+      <section className="post-review-inspector" aria-label="审核决定">
+        {!selected ? <p className="empty-state">从左侧选择一个目标，查看证据并记录人工决定。</p> : <>
+          <header><div><p className="eyebrow">人工决定</p><h3>{selected.label}</h3></div><span className="status-pill neutral">revision {selected.subject_revision}</span></header>
+          <div className="post-review-preview">
+            {selected.target_kind === "EPISODE_RENDER_VERSION"
+              ? <video key={selected.target_id} ref={videoRef} controls preload="none" poster={`/api/v1/episode-renders/${encodeURIComponent(selected.target_id)}/thumbnail?size=medium&frame=poster`} src={`/api/v1/episode-renders/${encodeURIComponent(selected.target_id)}/content`} />
+              : selected.media_kind === "VIDEO"
+              ? <video key={selected.target_id} ref={videoRef} controls preload="none" poster={`/api/v1/media-versions/${encodeURIComponent(selected.target_id)}/thumbnail?size=medium&frame=poster`} src={`/api/v1/media-versions/${encodeURIComponent(selected.target_id)}/proxy`} />
+              : selected.media_kind === "AUDIO"
+              ? <audio key={selected.target_id} controls preload="metadata" src={`/api/v1/media-versions/${encodeURIComponent(selected.target_id)}/content`} />
+              : <img src={`/api/v1/media-versions/${encodeURIComponent(selected.target_id)}/thumbnail?size=medium&frame=poster`} alt={`${selected.label} 审核预览`} />}
+          </div>
+          <dl className="post-review-facts"><div><dt>完整性</dt><dd>{selected.integrity_status}</dd></div><div><dt>机器证据</dt><dd>{selected.machine_status ?? "不适用"}</dd></div><div><dt>最近决定</dt><dd>{selected.latest_decision ?? "尚无"}{selected.latest_decision_stale ? " · 已失效" : ""}</dd></div></dl>
+          {selected.allowed_actions.includes("CREATE_FRAME_ANNOTATION") && selected.duration_ms ? <VideoAnnotations mediaVersionId={selected.target_id} expectedRevision={selected.subject_revision} durationMs={selected.duration_ms} getCurrentTimeMs={() => (videoRef.current?.currentTime ?? 0) * 1000} onSeek={(timecodeMs) => { if (videoRef.current) videoRef.current.currentTime = timecodeMs / 1000; }} /> : null}
+          {selected.blocker_codes.length > 0 && <div className="post-review-blockers" role="note"><strong>批准前需处理</strong><ul>{selected.blocker_codes.map((code) => <li key={code}>{code}</li>)}</ul></div>}
+          <fieldset className="post-review-checks"><legend>{selected.template_code} 检查表</legend>{selected.template_items.map((item) => <label key={item.id}><input type="checkbox" checked={Boolean(checks[item.id])} onChange={(event) => setChecks((current) => ({ ...current, [item.id]: event.target.checked }))} /><span>{item.label}{item.required ? " *" : ""}</span></label>)}</fieldset>
+          <label className="post-review-field">审核结论<select value={decision} onChange={(event) => setDecision(event.target.value as Decision)}>{(Object.keys(DECISION_LABELS) as Decision[]).map((value) => <option key={value} value={value}>{DECISION_LABELS[value]}</option>)}</select></label>
+          <label className="post-review-field">备注<textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder={decision === "REJECTED" ? "拒绝时必须填写具体原因" : "记录修改建议或批准说明"} rows={3} /></label>
+          {createDecision.error && <p className="inline-error" role="alert">提交失败：{String(createDecision.error)}</p>}
+          {createDecision.isSuccess && <p className="inline-success" role="status">审核决定已保存并写入审计记录。</p>}
+          {revokeDecision.error && <p className="inline-error" role="alert">撤回失败：{String(revokeDecision.error)}</p>}
+          <div className="post-review-actions">
+            {selected.latest_decision_id && selected.latest_decision !== "VOIDED" && <button className="secondary" type="button" disabled={revokeDecision.isPending} onClick={() => revokeDecision.mutate()}>撤回最近决定</button>}
+            <button className="primary-action" type="button" disabled={submitDisabled} onClick={() => createDecision.mutate()}>{createDecision.isPending ? "正在保存…" : `保存${DECISION_LABELS[decision]}`}</button>
+          </div>
+        </>}
+      </section>
+    </div>
+    <footer className="creative-task-gateway post-review-handoff"><div><strong>审核完成后</strong><p>冻结剪辑负责生成 Review Proxy；交付只消费有效的整集人工批准。</p></div><div className="creative-task-gateway__actions"><Link className="secondary" to={routes.postEdit(projectId, episodeId)}>检查剪辑</Link><Link className="secondary" to={routes.delivery(projectId, episodeId)}>查看交付</Link></div></footer>
   </div>;
 }

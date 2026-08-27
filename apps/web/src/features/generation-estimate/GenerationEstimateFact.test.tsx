@@ -23,9 +23,9 @@ describe("GenerationEstimateFact", () => {
     render(<GenerationEstimateFact profileLabel="H3 正式视频" request={request} />);
     expect(await screen.findByText("预计 20秒–40秒")).toBeTruthy();
     expect(screen.getByText("基于本机最近 4 次同维度成功运行")).toBeTruthy();
-    expect(screen.getByText("864×480 · 7.292秒 · 175帧 · 20 steps")).toBeTruthy();
+    expect(screen.getByText("864×480 · 7.292秒 · 175帧 · 20 次生成迭代")).toBeTruthy();
     expect(getLocalGenerationEstimate).toHaveBeenCalledWith(request);
-    expect(screen.getByText(/Profile resource_policy 是声明值，不属于此历史实测/)).toBeTruthy();
+    expect(screen.getByText(/生成配置中的资源预估只是理论值，不计入历史实测/)).toBeTruthy();
   });
 
   it("never guesses when fewer than three samples exist", async () => {

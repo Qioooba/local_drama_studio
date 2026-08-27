@@ -4,7 +4,7 @@ import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const sourceRoot = join(process.cwd(), "src");
-const excluded = ["features/episode-run-v2/", "ProjectPackage"];
+const excluded = ["ProjectPackage"];
 const files = (directory) => readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
   const path = join(directory, entry.name);
   if (entry.isDirectory()) return files(path);

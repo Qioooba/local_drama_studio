@@ -43,11 +43,11 @@ describe("JobDetailsPanel", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><JobDetailsPanel jobId="job-1" /></QueryClientProvider>);
 
-    expect(await screen.findByText("当前进度：SUCCEEDED · 100%")).toBeTruthy();
-    expect(screen.getByText("进度：SUCCEEDED · 100%")).toBeTruthy();
+    expect(await screen.findByText("当前进度：已完成 · 100%")).toBeTruthy();
+    expect(screen.getByText("进度：已完成 · 100%")).toBeTruthy();
     expect(document.querySelectorAll(".status-pill.state-succeeded")).toHaveLength(2);
-    expect(screen.getByText("查看输入快照")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "已登记为 VIDEO 媒体版本" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("高级：查看任务输入快照")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "已登记为视频" }).hasAttribute("disabled")).toBe(true);
   });
 
   it("shows a failed error once at its attempt", async () => {
@@ -72,5 +72,20 @@ describe("JobDetailsPanel", () => {
 
     expect(await screen.findByText("PROVIDER_FAILED")).toBeTruthy();
     expect(screen.getAllByText(/worker stopped/)).toHaveLength(1);
+  });
+
+  it("normalizes provider fractional progress for the job and current step", async () => {
+    const running = {
+      ...job,
+      state: "RUNNING",
+      progress: { phase: "SAMPLING", percent: 0.38, step_percent: 0.625 },
+      attempts: [{ ...job.attempts[0], state: "RUNNING", progress: { phase: "SAMPLING", percent: 0.38, step_percent: 0.625 }, artifacts: [] }],
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ job: running }), { status: 200 }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><JobDetailsPanel jobId="job-1" /></QueryClientProvider>);
+
+    expect(await screen.findByText("当前进度：SAMPLING · 总体 38% · 当前编码步骤 63%")).toBeTruthy();
+    expect(screen.getByText("进度：SAMPLING · 总体 38% · 当前编码步骤 63%")).toBeTruthy();
   });
 });

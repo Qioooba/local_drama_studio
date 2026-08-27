@@ -7,14 +7,15 @@ second bridge state table.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from local_drama.application.ports.frame_bridges import FrameBridgeUnitOfWork
 from local_drama.domain.errors import DomainRuleError
-from local_drama.infrastructure.database.sqlite import Database
 
 
 def _now() -> str:
@@ -28,7 +29,7 @@ def _json(value: object) -> str:
 class FrameBridgeCommandService:
     """Fine-grained writes for the Director Desk continuity projection."""
 
-    def __init__(self, database: Database) -> None:
+    def __init__(self, database: FrameBridgeUnitOfWork) -> None:
         self.database = database
 
     def inherit(
@@ -38,6 +39,7 @@ class FrameBridgeCommandService:
         expected_boundary_revision: int,
         source_anchor_id: str | None = None,
         lock: bool | None = None,
+        idempotency_key: str,
         actor: str = "local-user",
     ) -> dict[str, Any]:
         """Copy the previous end frame into a new current-start anchor.
@@ -46,7 +48,15 @@ class FrameBridgeCommandService:
         while the stale predecessor and every old inherited anchor stay
         queryable as production history.
         """
+        command_payload = {
+            "expected_boundary_revision": expected_boundary_revision,
+            "source_anchor_id": source_anchor_id,
+            "lock": lock,
+        }
         with self.database.transaction() as connection:
+            replay = self._idempotent_replay(connection, transition_id, "INHERIT", idempotency_key, command_payload)
+            if replay is not None:
+                return replay
             transition = self._transition(connection, transition_id)
             self._expect_revision(transition, expected_boundary_revision)
             selected_source_id = source_anchor_id or transition["from_anchor_id"]
@@ -118,7 +128,14 @@ class FrameBridgeCommandService:
                     "after_boundary_revision": expected_boundary_revision + 1,
                 },
             )
-            return self._result(connection, transition_id, inherited_from_anchor_id=str(source["id"]))
+            return self._finish_command(
+                connection,
+                transition_id,
+                "INHERIT",
+                idempotency_key,
+                command_payload,
+                inherited_from_anchor_id=str(source["id"]),
+            )
 
     def set_current_frame(
         self,
@@ -127,6 +144,7 @@ class FrameBridgeCommandService:
         expected_boundary_revision: int,
         media_version_id: str | None = None,
         frame_anchor_id: str | None = None,
+        idempotency_key: str,
         actor: str = "local-user",
     ) -> dict[str, Any]:
         if (media_version_id is None) == (frame_anchor_id is None):
@@ -134,7 +152,15 @@ class FrameBridgeCommandService:
                 "FRAME_BRIDGE_CANDIDATE_REQUIRED",
                 "必须且只能提供 media_version_id 或 frame_anchor_id",
             )
+        command_payload = {
+            "expected_boundary_revision": expected_boundary_revision,
+            "media_version_id": media_version_id,
+            "frame_anchor_id": frame_anchor_id,
+        }
         with self.database.transaction() as connection:
+            replay = self._idempotent_replay(connection, transition_id, "SET_CURRENT_FRAME", idempotency_key, command_payload)
+            if replay is not None:
+                return replay
             transition = self._transition(connection, transition_id)
             self._expect_revision(transition, expected_boundary_revision)
             if frame_anchor_id:
@@ -193,7 +219,9 @@ class FrameBridgeCommandService:
                     "before_boundary_revision": expected_boundary_revision,
                 },
             )
-            return self._result(connection, transition_id)
+            return self._finish_command(
+                connection, transition_id, "SET_CURRENT_FRAME", idempotency_key, command_payload
+            )
 
     def set_source_frame(
         self,
@@ -201,10 +229,18 @@ class FrameBridgeCommandService:
         *,
         expected_boundary_revision: int,
         frame_anchor_id: str,
+        idempotency_key: str,
         actor: str = "local-user",
     ) -> dict[str, Any]:
         """Bind an extracted tail frame to the outgoing side of a boundary."""
+        command_payload = {
+            "expected_boundary_revision": expected_boundary_revision,
+            "frame_anchor_id": frame_anchor_id,
+        }
         with self.database.transaction() as connection:
+            replay = self._idempotent_replay(connection, transition_id, "SET_SOURCE_FRAME", idempotency_key, command_payload)
+            if replay is not None:
+                return replay
             transition = self._transition(connection, transition_id)
             self._expect_revision(transition, expected_boundary_revision)
             anchor = self._anchor(connection, frame_anchor_id)
@@ -239,7 +275,9 @@ class FrameBridgeCommandService:
                     "after_boundary_revision": expected_boundary_revision + 1,
                 },
             )
-            return self._result(connection, transition_id)
+            return self._finish_command(
+                connection, transition_id, "SET_SOURCE_FRAME", idempotency_key, command_payload
+            )
 
     def set_locked(
         self,
@@ -247,9 +285,15 @@ class FrameBridgeCommandService:
         *,
         expected_boundary_revision: int,
         locked: bool,
+        idempotency_key: str,
         actor: str = "local-user",
     ) -> dict[str, Any]:
+        command_payload = {"expected_boundary_revision": expected_boundary_revision, "locked": locked}
+        command = "LOCK" if locked else "UNLOCK"
         with self.database.transaction() as connection:
+            replay = self._idempotent_replay(connection, transition_id, command, idempotency_key, command_payload)
+            if replay is not None:
+                return replay
             transition = self._transition(connection, transition_id)
             self._expect_revision(transition, expected_boundary_revision)
             if locked and int(transition["is_stale"]):
@@ -270,7 +314,99 @@ class FrameBridgeCommandService:
                 "锁定 Frame Bridge" if locked else "解锁 Frame Bridge",
                 {"before_boundary_revision": expected_boundary_revision, "enforcement": enforcement},
             )
-            return self._result(connection, transition_id)
+            return self._finish_command(connection, transition_id, command, idempotency_key, command_payload)
+
+    @staticmethod
+    def _idempotency_scope(transition_id: str, command: str) -> str:
+        return f"frame-bridge:{transition_id}:{command}"
+
+    @classmethod
+    def _idempotent_replay(
+        cls,
+        connection: sqlite3.Connection,
+        transition_id: str,
+        command: str,
+        idempotency_key: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        key = idempotency_key.strip()
+        if not key or len(key) > 200:
+            raise DomainRuleError(
+                "FRAME_BRIDGE_IDEMPOTENCY_KEY_INVALID",
+                "Frame Bridge idempotency_key 必须为 1—200 字符",
+            )
+        payload_hash = hashlib.sha256(_json(payload).encode("utf-8")).hexdigest()
+        row = connection.execute(
+            "SELECT payload_hash,response_json FROM command_idempotencies WHERE scope=? AND idempotency_key=?",
+            (cls._idempotency_scope(transition_id, command), key),
+        ).fetchone()
+        if row is None:
+            return None
+        if str(row["payload_hash"]) != payload_hash:
+            raise DomainRuleError(
+                "FRAME_BRIDGE_IDEMPOTENCY_MISMATCH",
+                "相同 Frame Bridge idempotency_key 的请求内容不一致",
+                {"transition_id": transition_id, "command": command},
+            )
+        result = json.loads(str(row["response_json"]))
+        result["idempotent_replay"] = True
+        return result
+
+    @classmethod
+    def _finish_command(
+        cls,
+        connection: sqlite3.Connection,
+        transition_id: str,
+        command: str,
+        idempotency_key: str,
+        payload: dict[str, Any],
+        *,
+        inherited_from_anchor_id: str | None = None,
+    ) -> dict[str, Any]:
+        result = cls._result(
+            connection,
+            transition_id,
+            inherited_from_anchor_id=inherited_from_anchor_id,
+        )
+        result["idempotent_replay"] = False
+        payload_hash = hashlib.sha256(_json(payload).encode("utf-8")).hexdigest()
+        connection.execute(
+            "INSERT INTO command_idempotencies (scope,idempotency_key,payload_hash,response_json) VALUES (?,?,?,?)",
+            (
+                cls._idempotency_scope(transition_id, command),
+                idempotency_key.strip(),
+                payload_hash,
+                _json(result),
+            ),
+        )
+        scope = connection.execute(
+            """SELECT se.project_id,s.episode_id,t.from_shot_id,t.to_shot_id
+            FROM shot_transition_constraints t
+            JOIN shots s ON s.id=t.to_shot_id
+            JOIN episodes e ON e.id=s.episode_id
+            JOIN seasons se ON se.id=e.season_id
+            WHERE t.id=?""",
+            (transition_id,),
+        ).fetchone()
+        assert scope is not None
+        connection.execute(
+            """INSERT INTO outbox_events (type,project_id,subject_type,subject_id,payload_json)
+            VALUES ('FrameBridgeChanged',?,'SHOT_TRANSITION_CONSTRAINT',?,?)""",
+            (
+                scope["project_id"],
+                transition_id,
+                _json(
+                    {
+                        "command": command,
+                        "episode_id": scope["episode_id"],
+                        "from_shot_id": scope["from_shot_id"],
+                        "to_shot_id": scope["to_shot_id"],
+                        "boundary_revision": result["boundary_revision"],
+                    }
+                ),
+            ),
+        )
+        return result
 
     @staticmethod
     def _transition(connection: sqlite3.Connection, transition_id: str) -> sqlite3.Row:

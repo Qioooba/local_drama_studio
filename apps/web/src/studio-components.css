@@ -1,0 +1,462 @@
+/*
+ * LocalDrama Studio — component design system
+ * Typography, iconography, buttons and form controls shared by every workspace.
+ */
+
+:root {
+  --font-ui: Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+  --font-display: Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
+  --type-display: clamp(30px, 3vw, 44px);
+  --type-h1: clamp(25px, 2.2vw, 34px);
+  --type-h2: clamp(20px, 1.6vw, 26px);
+  --type-h3: 16px;
+  --type-body: 14px;
+  --type-label: 12px;
+  --type-caption: 11px;
+  --control-height: 44px;
+  --control-height-compact: 36px;
+  --control-radius: 9px;
+  --control-bg: #0f141e;
+  --control-bg-hover: #131925;
+  --control-bg-focus: #111724;
+  --control-border: rgba(160, 172, 196, .2);
+  --control-border-hover: rgba(178, 188, 210, .38);
+  --control-ring: rgba(142, 118, 255, .2);
+  --button-ease: 180ms cubic-bezier(.2, .8, .2, 1);
+}
+
+body,
+button,
+input,
+select,
+textarea {
+  font-family: var(--font-ui);
+  font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+  text-rendering: optimizeLegibility;
+}
+
+body { font-size: var(--type-body); line-height: 1.55; }
+
+h1, h2, h3, h4, h5, h6 {
+  margin-block-start: 0;
+  font-family: var(--font-display);
+  text-wrap: balance;
+}
+
+h1 { font-size: var(--type-h1); font-weight: 700; line-height: 1.16; letter-spacing: -.032em; }
+h2 { font-size: var(--type-h2); font-weight: 680; line-height: 1.22; letter-spacing: -.024em; }
+h3 { font-size: var(--type-h3); font-weight: 650; line-height: 1.35; letter-spacing: -.012em; }
+h4, h5, h6 { font-weight: 640; line-height: 1.4; }
+p, li, dd { line-height: 1.6; }
+small, .muted, .helper-text { font-size: var(--type-caption); line-height: 1.5; }
+strong { font-weight: 650; }
+
+.eyebrow,
+.nav-title,
+.command-group-label,
+.project-card__frame,
+.project-card__format {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+code, pre, kbd, samp, output, time, .tabular-nums,
+.project-code, .job-id, .shot-code, .timecode {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+  letter-spacing: 0;
+}
+
+/* One optical language for every product SVG icon. */
+.shell svg:not(.react-flow__node svg) {
+  shape-rendering: geometricPrecision;
+}
+
+.nav-item__icon,
+.mobile-nav-toggle svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+}
+
+#root .shell .nav-item { gap: 10px; }
+#root .shell .nav-item::before { display: none; }
+#root .shell .nav-item__icon { color: #737e92; transition: color var(--button-ease), transform var(--button-ease); }
+#root .shell .nav-item__label { display: flex; min-width: 0; flex: 1; align-items: center; justify-content: space-between; gap: 8px; }
+#root .shell .nav-item:hover .nav-item__icon { color: #b6a8ff; }
+#root .shell .nav-item.active .nav-item__icon { color: #c5baff; transform: scale(1.04); }
+
+#root .shell .mobile-nav-toggle {
+  display: none;
+  border: 1px solid var(--control-border);
+  color: #cdd3de;
+  background: #111620;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .04);
+}
+#root .shell .mobile-nav-toggle:hover,
+#root .shell .mobile-nav-toggle[aria-expanded="true"] {
+  border-color: rgba(142, 118, 255, .55);
+  color: #fff;
+  background: rgba(124, 92, 255, .14);
+}
+
+/* Buttons: restrained geometry, explicit hierarchy, complete interaction states. */
+#root .shell button,
+#root .shell .primary-action,
+#root .shell .secondary,
+#root .shell a.secondary,
+#root .shell .episode-primary-action,
+#root .shell .episode-danger-action {
+  box-sizing: border-box;
+  border-radius: var(--control-radius);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: .005em;
+  text-decoration: none;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    color var(--button-ease),
+    border-color var(--button-ease),
+    background-color var(--button-ease),
+    box-shadow var(--button-ease),
+    opacity var(--button-ease),
+    transform var(--button-ease);
+}
+
+#root .shell :is(
+  .primary-action,
+  .episode-primary-action,
+  .secondary,
+  a.secondary,
+  .episode-danger-action,
+  .ui-state__action,
+  button[type="submit"]
+) { min-height: var(--control-height); }
+
+#root .shell :is(
+  .primary-action,
+  .episode-primary-action,
+  .secondary,
+  a.secondary,
+  .danger,
+  .danger-action,
+  .episode-danger-action,
+  .ui-state__action,
+  button[type="submit"],
+  button:not([class]):not([role="menuitem"]):not([role="option"]):not([role="tab"])
+) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+#root .shell button > svg,
+#root .shell .primary-action > svg,
+#root .shell .secondary > svg,
+#root .shell a.secondary > svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  stroke-width: 1.75;
+}
+
+#root .shell :is(.primary-action, .episode-primary-action, button[type="submit"]):not(:disabled) {
+  border: 1px solid rgba(178, 162, 255, .48);
+  color: #fff;
+  background: linear-gradient(180deg, #886eff 0%, #6f54ed 100%);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .18), 0 6px 18px rgba(91, 64, 211, .22);
+}
+
+#root .shell :is(.primary-action, .episode-primary-action, button[type="submit"]):hover:not(:disabled) {
+  border-color: rgba(206, 197, 255, .7);
+  background: linear-gradient(180deg, #927aff 0%, #7659f2 100%);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .22), 0 8px 24px rgba(91, 64, 211, .3);
+}
+
+#root .shell :is(
+  .secondary,
+  a.secondary,
+  .ui-state__action,
+  button:not([class]):not([role="menuitem"]):not([role="option"]):not([role="tab"])
+) {
+  border: 1px solid var(--control-border);
+  color: #d7dce6;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .035), transparent), var(--control-bg);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .035);
+}
+
+#root .shell :is(
+  .secondary,
+  a.secondary,
+  .ui-state__action,
+  button:not([class]):not([role="menuitem"]):not([role="option"]):not([role="tab"])
+):hover:not(:disabled) {
+  border-color: var(--control-border-hover);
+  color: #fff;
+  background-color: var(--control-bg-hover);
+}
+
+#root .shell :is(.danger, .danger-action, .episode-danger-action, .ui-btn-reject) {
+  border-color: rgba(255, 107, 122, .34);
+  color: #ff9aa6;
+  background: rgba(255, 107, 122, .08);
+}
+
+#root .shell :is(.danger, .danger-action, .episode-danger-action, .ui-btn-reject):hover:not(:disabled) {
+  border-color: rgba(255, 127, 141, .55);
+  color: #ffc0c7;
+  background: rgba(255, 107, 122, .13);
+}
+
+#root .shell button:active:not(:disabled),
+#root .shell a.secondary:active,
+#root .shell .primary-action:active:not(:disabled) { transform: scale(.985); }
+
+#root .shell button:disabled,
+#root .shell .primary-action[aria-disabled="true"],
+#root .shell .secondary[aria-disabled="true"] {
+  color: #929caf !important;
+  border-color: rgba(139, 151, 174, .12) !important;
+  background: #0d1119 !important;
+  box-shadow: none !important;
+  cursor: not-allowed;
+  opacity: .82;
+  transform: none;
+}
+
+#root .shell button[aria-busy="true"] { position: relative; padding-right: 38px; pointer-events: none; }
+#root .shell button[aria-busy="true"]::after {
+  position: absolute;
+  right: 14px;
+  width: 13px;
+  height: 13px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  content: "";
+  animation: studio-spin .7s linear infinite;
+}
+@keyframes studio-spin { to { transform: rotate(1turn); } }
+
+#root .shell :is(.ui-icon-button, .episode-icon-button) {
+  display: inline-grid;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: #8f99ab;
+  background: transparent;
+  box-shadow: none;
+}
+#root .shell :is(.ui-icon-button, .episode-icon-button):hover:not(:disabled) {
+  border-color: var(--control-border);
+  color: #e8ebf2;
+  background: rgba(255, 255, 255, .05);
+}
+/* Keep navigation hit areas usable without making the visual chrome bulky. */
+#root .shell a.brand-lockup,
+#root .shell .skip-link,
+#root .shell .workspace-breadcrumbs a,
+#root .shell .nav-item {
+  min-height: 44px;
+}
+
+#root .shell .workspace-breadcrumbs a {
+  display: inline-flex;
+  align-items: center;
+  margin-block: -10px;
+  padding-block: 10px;
+}
+
+/* Legacy bare-button skin must never override semantic tab styling. */
+#root .shell .director-inspector-tabs button[role="tab"] {
+  min-height: 44px;
+  padding: 7px 5px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: #aab3c2;
+  background: transparent;
+  box-shadow: none;
+}
+
+#root .shell .director-inspector-tabs button[role="tab"]:hover {
+  color: #eef1f7;
+  background: rgba(255, 255, 255, .035);
+}
+
+#root .shell .director-inspector-tabs button[role="tab"][aria-selected="true"] {
+  border-bottom-color: #8e76ff;
+  color: #d9d0ff;
+  background: rgba(124, 92, 255, .1);
+}
+
+/* Forms: a single control shell with deliberate hover/focus/error/read-only states. */
+#root .shell input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+#root .shell select,
+#root .shell textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--control-height);
+  padding: 10px 12px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--control-radius);
+  color: #e7eaf0;
+  background-color: var(--control-bg);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .025), 0 1px rgba(0, 0, 0, .2);
+  font-size: 13px;
+  line-height: 1.45;
+  caret-color: #a995ff;
+  transition: border-color var(--button-ease), background-color var(--button-ease), box-shadow var(--button-ease);
+}
+
+#root .shell select:not([multiple]) {
+  appearance: none;
+  padding-right: 36px;
+  background-image:
+    linear-gradient(45deg, transparent 48%, #8c96a9 48% 58%, transparent 58%),
+    linear-gradient(135deg, #8c96a9 42% 52%, transparent 52%);
+  background-repeat: no-repeat;
+  background-position: right 14px center, right 9px center;
+  background-size: 7px 7px, 7px 7px;
+}
+
+#root .shell textarea { min-height: 104px; padding-block: 11px; line-height: 1.58; }
+#root .shell input::placeholder,
+#root .shell textarea::placeholder { color: #667186; opacity: 1; }
+
+#root .shell input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):hover:not(:disabled):not([readonly]),
+#root .shell select:hover:not(:disabled),
+#root .shell textarea:hover:not(:disabled):not([readonly]) {
+  border-color: var(--control-border-hover);
+  background-color: var(--control-bg-hover);
+}
+
+#root .shell input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus-visible,
+#root .shell select:focus-visible,
+#root .shell textarea:focus-visible {
+  border-color: #8e76ff;
+  outline: none;
+  background-color: var(--control-bg-focus);
+  box-shadow: 0 0 0 3px var(--control-ring), inset 0 1px rgba(255, 255, 255, .035);
+}
+
+#root .shell :is(input, select, textarea)[aria-invalid="true"],
+#root .shell .ui-field.has-error :is(input, select, textarea) {
+  border-color: rgba(255, 107, 122, .72);
+  box-shadow: 0 0 0 3px rgba(255, 107, 122, .11);
+}
+
+#root .shell :is(input, select, textarea):disabled {
+  color: #929caf;
+  border-color: rgba(139, 151, 174, .1);
+  background-color: #0b0f16;
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: .82;
+}
+
+#root .shell :is(input, textarea)[readonly] {
+  color: #aab2c1;
+  border-style: dashed;
+  background-color: rgba(15, 20, 30, .65);
+}
+
+#root .shell label,
+#root .shell legend,
+#root .shell .ui-field__label {
+  color: #aab3c2;
+  font-size: var(--type-label);
+  font-weight: 620;
+  line-height: 1.4;
+}
+
+#root .shell .ui-field { gap: 7px; margin-bottom: 16px; }
+#root .shell .ui-field__hint { color: #727d90; }
+#root .shell .ui-field__error { color: #ff9aa6; font-weight: 560; }
+
+#root .shell fieldset {
+  min-width: 0;
+  border-color: var(--border);
+  border-radius: 11px;
+}
+#root .shell legend { padding-inline: 6px; }
+
+#root .shell input[type="checkbox"],
+#root .shell input[type="radio"] {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  min-height: 18px;
+  margin: 0;
+  border: 1px solid rgba(156, 168, 191, .42);
+  background: #0d121b;
+  cursor: pointer;
+  transition: border-color var(--button-ease), background-color var(--button-ease), box-shadow var(--button-ease);
+}
+#root .shell input[type="checkbox"] { border-radius: 5px; }
+#root .shell input[type="radio"] { border-radius: 50%; }
+#root .shell input[type="checkbox"]:checked {
+  border-color: #8e76ff;
+  background:
+    linear-gradient(45deg, transparent 42%, white 42% 58%, transparent 58%) 3px 8px / 7px 6px no-repeat,
+    linear-gradient(-45deg, transparent 42%, white 42% 58%, transparent 58%) 7px 5px / 8px 10px no-repeat,
+    #7c5cff;
+}
+#root .shell input[type="radio"]:checked {
+  border-color: #9a84ff;
+  background: radial-gradient(circle, #b4a6ff 0 3.5px, #6f54ed 4px 100%);
+}
+#root .shell input[type="checkbox"]:focus-visible,
+#root .shell input[type="radio"]:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--control-ring); }
+#root .shell input[type="checkbox"]:disabled,
+#root .shell input[type="radio"]:disabled { cursor: not-allowed; opacity: .45; }
+
+#root .shell input[type="range"] {
+  height: 20px;
+  accent-color: #8e76ff;
+  cursor: pointer;
+}
+
+#root .shell .checkbox-chip-options label {
+  min-height: 40px;
+  padding: 5px 11px;
+  border-color: var(--control-border);
+  background: var(--control-bg);
+}
+#root .shell .checkbox-chip-options label.selected {
+  border-color: rgba(142, 118, 255, .6);
+  color: #ddd7ff;
+  background: rgba(124, 92, 255, .12);
+}
+
+@media (max-width: 1100px) {
+  #root .shell .mobile-nav-toggle { display: inline-flex; align-items: center; justify-content: center; }
+}
+
+@media (max-width: 760px) {
+  :root { --type-body: 14px; }
+  #root .shell input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  #root .shell select,
+  #root .shell textarea { font-size: 16px; }
+  #root .shell .mobile-nav-toggle span { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #root .shell button,
+  #root .shell .nav-item__icon,
+  #root .shell :is(input, select, textarea) { transition: none; }
+  #root .shell button[aria-busy="true"]::after { animation-duration: 1.4s; }
+}

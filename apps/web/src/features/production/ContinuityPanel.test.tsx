@@ -26,11 +26,17 @@ const context: ContinuityContext = {
   episode_id: "episode",
   selected_shot_id: "current-id",
   shots: { previous: shot("previous", "S001"), current: shot("current", "S002"), next: shot("next", "S003") },
-  transitions: [{ id: "transition" }],
+  transitions: [{
+    id: "transition", from_shot_id: "previous-id", to_shot_id: "current-id",
+    constraint_type: "FRAME_BRIDGE", enforcement: "ADVISORY",
+    compatibility_status: "COMPATIBLE", is_stale: false, stale_reason: null,
+    from_anchor_id: null, to_anchor_id: null, boundary_revision: 1,
+  }],
   read_only: true,
   runtime_contacted: false,
   network_contacted: false,
   mutated: false,
+  request_shape: "shot_continuity_context_v2",
 };
 
 function renderPanel(value: ContinuityContext | undefined) {

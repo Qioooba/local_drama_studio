@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useReducer, useRef, type ReactNode } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   createProject,
+  listDeliveryPresets,
   planProjectCreation,
   type Profile,
   type Project,
@@ -11,6 +12,7 @@ import {
 import { LANGUAGE_OPTIONS } from "../shared/formOptions";
 import { canonicalCapabilityLabel } from "../preferences-v2/canonicalCapabilities";
 import { ProfileExecutionDetailButton } from "../model-config/ProfileExecutionDetailButton";
+import { StudioIcon } from "../../components/icons";
 
 type Step = 1 | 2 | 3;
 type SetupMode = "CREATE_FIRST" | "PRODUCTION_READY";
@@ -47,12 +49,7 @@ type FormatPreset = {
   fps: number;
 };
 
-const FORMAT_PRESETS: FormatPreset[] = [
-  { id: "vertical_1080p", title: "竖屏短剧", description: "9:16 · 1080P · 24 fps", ratio: "9:16", width: 1080, height: 1920, fps: 24 },
-  { id: "vertical_4k", title: "竖屏超清", description: "9:16 · 4K · 30 fps", ratio: "9:16", width: 2160, height: 3840, fps: 30 },
-  { id: "horizontal_1080p", title: "横屏微短剧", description: "16:9 · 1080P · 24 fps", ratio: "16:9", width: 1920, height: 1080, fps: 24 },
-  { id: "horizontal_4k", title: "横屏 4K", description: "16:9 · 4K · 25 fps", ratio: "16:9", width: 3840, height: 2160, fps: 25 },
-];
+const SAFE_FORMAT_FALLBACK: FormatPreset = { id: "safe_vertical_1080p", title: "竖屏 1080P", description: "9:16 · 1080P · 24 fps", ratio: "9:16", width: 1080, height: 1920, fps: 24 };
 
 const DEFAULT_STATE: CreationState = {
   step: 1,
@@ -61,7 +58,7 @@ const DEFAULT_STATE: CreationState = {
   seasons: 1,
   episodes: 10,
   durationSeconds: 90,
-  presetId: "vertical_1080p",
+  presetId: "",
   language: "zh-CN",
   subtitleMode: "BOTH",
   setupMode: "CREATE_FIRST",
@@ -163,6 +160,11 @@ export function ProjectCreateWizard({ onCreated, profiles = [], profilesPending 
   const dialogRef = useRef<HTMLElement>(null);
   const firstFieldRef = useRef<HTMLInputElement>(null);
   const wasOpen = useRef(false);
+  const deliveryPresets = useQuery({ queryKey: ["delivery-presets", "project-create"], queryFn: () => listDeliveryPresets(), enabled: open });
+  const formatPresets = useMemo<FormatPreset[]>(() => {
+    const mapped = (deliveryPresets.data?.items ?? []).map((item) => ({ id: item.code, title: item.title, description: `${item.spec.cover_aspect} · ${item.spec.width}×${item.spec.height} · ${item.spec.fps} fps`, ratio: item.spec.cover_aspect, width: item.spec.width, height: item.spec.height, fps: item.spec.fps }));
+    return mapped.length ? mapped : [SAFE_FORMAT_FALLBACK];
+  }, [deliveryPresets.data?.items]);
 
   const publishedByCapability = useMemo(() => Object.entries(
     profiles
@@ -175,7 +177,7 @@ export function ProjectCreateWizard({ onCreated, profiles = [], profilesPending 
   const recommendedBindings = useMemo(() => Object.fromEntries(
     publishedByCapability.map(([capability, items]) => [capability, items[0]?.version_id ?? ""]),
   ), [publishedByCapability]);
-  const preset = FORMAT_PRESETS.find((item) => item.id === state.presetId) ?? FORMAT_PRESETS[0];
+  const preset = formatPresets.find((item) => item.id === state.presetId) ?? formatPresets[0];
   const selectedBindings = useMemo(() => Object.entries(state.profileBindings).filter(([, versionId]) => Boolean(versionId)), [state.profileBindings]);
   const productionReady = state.setupMode === "PRODUCTION_READY";
   const payload = useMemo<ProjectCreatePayload>(() => ({
@@ -233,6 +235,12 @@ export function ProjectCreateWizard({ onCreated, profiles = [], profilesPending 
   };
 
   useEffect(() => {
+    if (formatPresets[0] && (!state.presetId || !formatPresets.some((item) => item.id === state.presetId))) {
+      dispatch({ type: "preset", value: formatPresets[0].id });
+    }
+  }, [formatPresets, state.presetId]);
+
+  useEffect(() => {
     if (!open) {
       if (wasOpen.current) triggerRef.current?.focus();
       wasOpen.current = false;
@@ -265,7 +273,7 @@ export function ProjectCreateWizard({ onCreated, profiles = [], profilesPending 
     };
   }, [open]);
 
-  if (!open) return <button ref={triggerRef} type="button" className="secondary" aria-haspopup="dialog" onClick={() => setOpen(true)}>新建项目</button>;
+  if (!open) return <button ref={triggerRef} type="button" className="primary-action" aria-haspopup="dialog" onClick={() => setOpen(true)}><StudioIcon name="sparkles" />新建项目</button>;
 
   const plan: ProjectCreationPlan | undefined = preflight.data?.plan;
   const basicsValid = Boolean(state.title.trim() && state.code.trim() && state.seasons >= 1 && state.episodes >= 1 && state.durationSeconds >= 15);
@@ -286,7 +294,7 @@ export function ProjectCreateWizard({ onCreated, profiles = [], profilesPending 
         <div className="creator-structure-grid">
           <label>季度数<input type="number" inputMode="numeric" min={1} max={20} value={state.seasons} onChange={(event) => dispatch({ type: "field", field: "seasons", value: Math.max(1, Number(event.target.value)) })} /><small>创建后仍可继续追加季度</small></label>
           <label>每季计划集数<input type="number" inputMode="numeric" min={1} max={200} value={state.episodes} onChange={(event) => dispatch({ type: "field", field: "episodes", value: Math.max(1, Number(event.target.value)) })} /><small>只是初始结构，不限制后续追加</small></label>
-          <label>单集目标时长<select value={state.durationSeconds} onChange={(event) => dispatch({ type: "field", field: "durationSeconds", value: Number(event.target.value) })}><option value={60}>约 1 分钟</option><option value={90}>约 1 分 30 秒</option><option value={120}>约 2 分钟</option><option value={180}>约 3 分钟</option><option value={300}>约 5 分钟</option></select><small>后续可按集和镜头微调</small></label>
+          <label>单集目标时长（秒）<input type="number" min={15} max={86400} step={1} value={state.durationSeconds} onChange={(event) => dispatch({ type: "field", field: "durationSeconds", value: Number(event.target.value) })} /><small>输入业务需要的精确时长；后续仍可按集和镜头微调</small></label>
         </div>
         <div className="field-fact"><span>项目技术标识</span><strong>{state.code || "填写标题后自动生成"}</strong><small>由作品标题稳定生成；创建前会自动检查冲突。</small></div>
         <div className="creator-wizard-actions"><button type="button" disabled={!basicsValid} onClick={() => dispatch({ type: "step", value: 2 })}>继续选择创作方式</button></div>
@@ -294,7 +302,7 @@ export function ProjectCreateWizard({ onCreated, profiles = [], profilesPending 
 
       {state.step === 2 && <div className="creator-wizard-stage">
         <div className="creator-wizard-lead"><span>02</span><div><h4>作品要怎样发布？</h4><p>选择一个场景预设即可；分辨率、帧率和字幕参数会一起联动。</p></div></div>
-        <fieldset className="creator-format-fieldset"><legend>发布画幅</legend><div className="creator-format-grid">{FORMAT_PRESETS.map((item) => <ChoiceCard key={item.id} name="format" value={item.id} checked={state.presetId === item.id} onChange={() => dispatch({ type: "preset", value: item.id })} title={item.title} description={item.description} badge={item.id === "vertical_1080p" ? "推荐" : undefined} />)}</div></fieldset>
+        <fieldset className="creator-format-fieldset"><legend>发布画幅</legend>{deliveryPresets.isPending && <p className="muted">正在读取服务端发布规格…</p>}<div className="creator-format-grid">{formatPresets.map((item, index) => <ChoiceCard key={item.id} name="format" value={item.id} checked={preset.id === item.id} onChange={() => dispatch({ type: "preset", value: item.id })} title={item.title} description={item.description} badge={index === 0 ? "服务端默认" : undefined} />)}</div><small className="muted">规格来自后端发布预设；读取失败时仅显示一项可继续创建的安全缺省值。</small></fieldset>
         <div className="creator-language-grid">
           <label>作品语言<select value={state.language} onChange={(event) => dispatch({ type: "field", field: "language", value: event.target.value })}>{LANGUAGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
           <label>字幕输出<select value={state.subtitleMode} onChange={(event) => dispatch({ type: "field", field: "subtitleMode", value: event.target.value })}><option value="BOTH">画面字幕 + 独立字幕文件</option><option value="BURN_IN">仅画面字幕</option><option value="SIDECAR">仅独立字幕文件</option><option value="NONE">暂不需要字幕</option></select></label>

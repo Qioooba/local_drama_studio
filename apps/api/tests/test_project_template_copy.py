@@ -8,18 +8,25 @@ from fastapi.testclient import TestClient
 from local_drama.application.configuration import ConfigurationService
 from local_drama.application.profiles import ProfileService
 from local_drama.application.projects import ProjectService
+from local_drama.infrastructure.database.shot_studio_command_repository import shot_studio_command_service
 from local_drama.main import create_app
 
 
 def _source(workspace, database) -> tuple[ProjectService, dict[str, object]]:
     projects = ProjectService(database, workspace.projects_root)
     project = projects.create_project(
-        code="template_source", title="Template source", episode_count=2, aspect_ratio="9:16",
-        fps_num=24, fps_den=1, target_duration_ms=90_000, allow_unconfigured_capabilities=True,
+        code="template_source",
+        title="Template source",
+        episode_count=2,
+        aspect_ratio="9:16",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=90_000,
+        allow_unconfigured_capabilities=True,
     )
     episode = projects.list_episodes(projects.list_seasons(str(project["id"]))[0]["id"])[0]
     shot = projects.create_shot(str(episode["id"]), "SHOT_001", 4_000, "MEDIUM")
-    projects.create_shot_revision(str(shot["id"]), {"subject_action": "walk", "prompt": "reusable structure"}, freeze=True)
+    shot_studio_command_service(database).save_draft_revision(str(shot["id"]), {"subject_action": "walk", "prompt": "reusable structure"}, freeze=True)
     return projects, project
 
 

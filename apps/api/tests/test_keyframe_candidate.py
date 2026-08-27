@@ -60,13 +60,9 @@ def test_video_cannot_be_selected_as_keyframe(workspace, database) -> None:
     source = workspace.work_root / "not-a-keyframe.mp4"
     source.write_bytes(b"video")
     imported = MediaService(database, workspace).import_file(str(project["id"]), source, media_kind="VIDEO", stage="PROXY")
-    with TestClient(create_app(workspace)) as client:
-        response = client.post(
-            f"/api/v1/media-versions/{imported['media_version_id']}:select",
-            json={"selection_type": "KEYFRAME"},
-        )
-    assert response.status_code == 422, response.text
-    assert response.json()["error"]["code"] == "INVALID_KEYFRAME_SELECTION"
+    with pytest.raises(DomainRuleError) as error:
+        ReviewService(database, workspace).select_version(str(imported["media_version_id"]), "KEYFRAME")
+    assert error.value.code == "INVALID_KEYFRAME_SELECTION"
 
 
 def test_image_review_requires_structured_checks_and_rejection_reason(workspace, database) -> None:

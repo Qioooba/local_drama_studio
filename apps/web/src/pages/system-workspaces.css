@@ -1,2 +1,4 @@
-.system-workspace-tabs { margin: 16px 0 4px; }
+.system-workspace-tabs { min-width: 0; margin: 16px 0 4px; }
+.system-workspace-tabs .ui-tabs__list { flex-wrap: nowrap; }
+.system-workspace-tabs .ui-tab { flex: 0 0 auto; white-space: nowrap; }
 .system-workspace-stack { display: grid; gap: 16px; min-width: 0; }

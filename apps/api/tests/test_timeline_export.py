@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import subprocess
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -153,7 +155,16 @@ def test_timeline_export_http_route(workspace, database) -> None:
 
     with TestClient(create_app(workspace)) as client:
         response = client.post(f'/api/v1/timeline-revisions/{timeline["id"]}:export')
+        exported = response.json()["export"]
+        download = client.get(
+            f'/api/v1/timeline-revisions/{timeline["id"]}/export:download',
+            params={"rel_path": exported["rel_path"]},
+        )
 
     assert response.status_code == 200
     assert response.json()["export"]["status"] == "EXPORTED"
     assert len(response.json()["export"]["files"]) == 2
+    assert download.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(download.content)) as archive:
+        assert any(name.endswith(".otio") for name in archive.namelist())
+        assert any(name.endswith(".edl") for name in archive.namelist())

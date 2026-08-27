@@ -24,6 +24,7 @@ from typing import Any
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.infrastructure.filesystem.atomic import replace_path
 
 CHUNK_SIZE = 1024 * 1024
 RECOVERABLE_STATES = ("STAGING", "STAGED", "FINALIZING", "FILE_COMMITTED", "NEEDS_ATTENTION")
@@ -350,7 +351,7 @@ class StorageOperationService:
         partial = destination.with_name(f".partial-{destination.name}")
         try:
             actual_sha256, actual_size = _stream_copy(source, partial)
-            os.replace(partial, destination)
+            replace_path(partial, destination)
             operation = self.get_operation(operation_id)
             self._checkpoint("after_staging_copy", operation)
             if expected_sha256 is not None and actual_sha256 != expected_sha256:
@@ -524,7 +525,7 @@ class StorageOperationService:
                     self._quarantine(operation_id, partial, "STORAGE_FINALIZE_HASH_MISMATCH")
                     raise DomainRuleError("STORAGE_FINALIZE_HASH_MISMATCH", "finalize copy hash/大小不一致")
                 self._checkpoint("after_copy_before_replace", operation)
-                os.replace(partial, destination)
+                replace_path(partial, destination)
                 self._checkpoint("after_destination_replace", operation)
             if actual_hash != expected_hash or actual_size != expected_size:
                 self._quarantine(operation_id, destination, "STORAGE_DESTINATION_HASH_MISMATCH")
@@ -744,7 +745,7 @@ class StorageOperationService:
                         self._quarantine(operation_id, partial, "STORAGE_RESTORE_HASH_MISMATCH")
                         quarantined.append(operation_id)
                         continue
-                    os.replace(partial, destination)
+                    replace_path(partial, destination)
                     recovered.append(operation_id)
                 actual_hash, actual_size = _stream_hash(destination)
                 if actual_hash != operation["actual_sha256"] or actual_size != int(operation["actual_byte_size"]):

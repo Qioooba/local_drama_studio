@@ -5,6 +5,7 @@ import subprocess
 from fastapi.testclient import TestClient
 
 from local_drama.application.dialogue import DialogueService
+from local_drama.application.media import MediaService
 from local_drama.application.documents import DocumentImportService
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
@@ -42,7 +43,7 @@ def test_selected_tts_builds_read_only_script_authorized_subtitle_draft(workspac
         capture_output=True,
     )
     media = MediaService(database, workspace).import_file(project_id, audio_path, purpose="DIALOGUE_TTS", media_kind="AUDIO")
-    dialogue = DialogueService(database, workspace)
+    dialogue = DialogueService(database, workspace, media=MediaService(database, workspace))
     line = dialogue.create_line(episode_id, code="DLG-001", speaker="甲", text="你好，世界。", pronunciation={}, shot_id=str(shot["id"]))
     voice = dialogue.create_voice_profile(
         project_id,

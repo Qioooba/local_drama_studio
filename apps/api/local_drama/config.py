@@ -5,19 +5,54 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from local_drama.bootstrap.build_identity import load_build_identity
+from local_drama.bootstrap.config_loader import load_machine_config, settings_values
+from local_drama.bootstrap.resource_locator import ResourceLocator
+from local_drama.domain.network_policy import NetworkMode, normalize_network_mode, validate_bind_host
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-_LOCAL_BIND_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+class StorageSettings(BaseModel):
+    data_root: Path
+    projects_root: Path
+    work_root: Path
+    cache_root: Path
+    logs_root: Path
+    backups_root: Path
+    comfy_input_root: Path
+    comfy_output_root: Path
+
+
+class UploadLimits(BaseModel):
+    image_mb: int = Field(gt=0)
+    video_mb: int = Field(gt=0)
+    audio_mb: int = Field(gt=0)
+    document_mb: int = Field(gt=0)
+    project_resource_mb: int = Field(gt=0)
+    project_package_mb: int = Field(gt=0)
+
+
+class RuntimeSettings(BaseModel):
+    comfy_base_url: str
+    llm_provider: str
+    llm_base_url: str
+    llm_model: str | None
+    allow_private_network: bool
 
 
 class Settings(BaseModel):
     app_name: str = "LocalDramaStudio"
-    app_version: str = "0.1.0-g1"
+    app_version: str = Field(default_factory=lambda: load_build_identity().version)
     environment: str = "development"
+    instance_id: str = "default"
+    install_profile: str = Field(default="DESKTOP", pattern="^(DESKTOP|SERVER)$")
     host: str = "127.0.0.1"
-    port: int = 3210
+    port: int = Field(default=3210, ge=1, le=65535)
     mode: str = Field(default="LOCAL_ONLY", pattern="^LOCAL_ONLY$")
+    network_mode: NetworkMode = NetworkMode.LOCAL_ONLY
     data_root: Path = REPO_ROOT / "data"
     projects_root: Path = REPO_ROOT / "projects"
     work_root: Path = REPO_ROOT / "work"
@@ -25,8 +60,8 @@ class Settings(BaseModel):
     logs_root: Path = REPO_ROOT / "logs"
     backups_root: Path = REPO_ROOT / "backups"
     comfy_base_url: str = "http://127.0.0.1:8188"
-    comfy_output_root: Path | None = REPO_ROOT / "work" / "comfy-production" / "output"
-    comfy_input_root: Path | None = REPO_ROOT / "work" / "comfy-production" / "input"
+    comfy_output_root: Path | None = None
+    comfy_input_root: Path | None = None
     llm_provider: str = "OLLAMA_LOOPBACK"
     llm_base_url: str = "http://127.0.0.1:11434"
     llm_model: str | None = None
@@ -37,49 +72,113 @@ class Settings(BaseModel):
         "http://127.0.0.1:5173",
         "http://localhost:5173",
     )
+    tool_fallback_dirs: tuple[str, ...] = ()
+    ffmpeg_override: Path | None = Field(default=None, exclude=True)
+    ffprobe_override: Path | None = Field(default=None, exclude=True)
+    upload_max_image_mb: int = Field(default=25, gt=0)
+    upload_max_video_mb: int = Field(default=100, gt=0)
+    upload_max_audio_mb: int = Field(default=50, gt=0)
+    upload_max_document_mb: int = Field(default=25, gt=0)
+    upload_max_project_resource_mb: int = Field(default=50, gt=0)
+    upload_max_project_package_mb: int = Field(default=2048, gt=0)
+    model_library_roots: tuple[Path, ...] = ()
+    worker_channels: tuple[str, ...] = ("CPU", "GPU_H3")
+    frontend_dist_root: Path | None = None
+    model_manifest_override: Path | None = None
+    trusted_lan_unauthenticated: bool = False
+    release_root: Path = Field(default=REPO_ROOT, exclude=True)
+    instance_root: Path = Field(default=REPO_ROOT, exclude=True)
+    config_path: Path | None = Field(default=None, exclude=True)
 
-    @field_validator("host")
+    @field_validator("network_mode", mode="before")
     @classmethod
-    def validate_local_bind_host(cls, value: str) -> str:
-        """Fail closed instead of allowing a LOCAL_ONLY API on a LAN/public bind."""
+    def validate_network_mode(cls, value: str | NetworkMode) -> NetworkMode:
+        return normalize_network_mode(value)
 
-        normalized = value.strip().casefold()
-        if normalized not in _LOCAL_BIND_HOSTS:
-            raise ValueError("LOCAL_ONLY API host must be a literal loopback address")
-        return normalized
+    @model_validator(mode="after")
+    def resolve_dependent_settings(self) -> "Settings":
+        self.host = validate_bind_host(self.host, self.network_mode)
+        if self.comfy_input_root is None:
+            self.comfy_input_root = self.work_root / "comfy-production" / "input"
+        if self.comfy_output_root is None:
+            self.comfy_output_root = self.work_root / "comfy-production" / "output"
+        return self
+
+    @property
+    def is_lan_service(self) -> bool:
+        return self.network_mode is NetworkMode.LAN_SERVICE
+
+    @property
+    def allows_private_network(self) -> bool:
+        return self.is_lan_service
+
+    @property
+    def storage(self) -> StorageSettings:
+        assert self.comfy_input_root is not None and self.comfy_output_root is not None
+        return StorageSettings(
+            data_root=self.data_root,
+            projects_root=self.projects_root,
+            work_root=self.work_root,
+            cache_root=self.cache_root,
+            logs_root=self.logs_root,
+            backups_root=self.backups_root,
+            comfy_input_root=self.comfy_input_root,
+            comfy_output_root=self.comfy_output_root,
+        )
+
+    @property
+    def uploads(self) -> UploadLimits:
+        return UploadLimits(
+            image_mb=self.upload_max_image_mb,
+            video_mb=self.upload_max_video_mb,
+            audio_mb=self.upload_max_audio_mb,
+            document_mb=self.upload_max_document_mb,
+            project_resource_mb=self.upload_max_project_resource_mb,
+            project_package_mb=self.upload_max_project_package_mb,
+        )
+
+    @property
+    def runtime(self) -> RuntimeSettings:
+        return RuntimeSettings(
+            comfy_base_url=self.comfy_base_url,
+            llm_provider=self.llm_provider,
+            llm_base_url=self.llm_base_url,
+            llm_model=self.llm_model,
+            allow_private_network=self.allows_private_network,
+        )
 
     @property
     def workspace_root(self) -> Path:
-        return REPO_ROOT
+        return self.release_root
 
     @property
     def manifest_path(self) -> Path:
+        if self.model_manifest_override is not None:
+            return self.model_manifest_override
         local_in_repo = self.workspace_root / "model_manifest.json"
         if local_in_repo.exists():
             return local_in_repo
         return self.workspace_root.parent / "model_manifest.json"
 
-    @property
-    def ffmpeg_path(self) -> str | None:
-        configured = os.environ.get("LOCAL_DRAMA_FFMPEG")
-        if configured and Path(configured).exists():
-            return configured
-        which_path = shutil.which("ffmpeg")
+    def _resolve_tool(self, executable: str, configured: Path | None) -> str | None:
+        if configured is not None and configured.is_file():
+            return str(configured)
+        which_path = shutil.which(executable)
         if which_path:
             return which_path
-        candidate = Path(r"E:\Tools\ffmpeg\bin\ffmpeg.exe")
-        return str(candidate) if candidate.exists() else None
+        for directory in self.tool_fallback_dirs:
+            candidate = Path(directory) / f"{executable}.exe"
+            if candidate.is_file():
+                return str(candidate)
+        return None
+
+    @property
+    def ffmpeg_path(self) -> str | None:
+        return self._resolve_tool("ffmpeg", self.ffmpeg_override)
 
     @property
     def ffprobe_path(self) -> str | None:
-        configured = os.environ.get("LOCAL_DRAMA_FFPROBE")
-        if configured and Path(configured).exists():
-            return configured
-        which_path = shutil.which("ffprobe")
-        if which_path:
-            return which_path
-        candidate = Path(r"E:\Tools\ffmpeg\bin\ffprobe.exe")
-        return str(candidate) if candidate.exists() else None
+        return self._resolve_tool("ffprobe", self.ffprobe_override)
 
     @property
     def database_path(self) -> Path:
@@ -89,10 +188,42 @@ class Settings(BaseModel):
     def workflow_packages_root(self) -> Path:
         return self.work_root / "workflow_packages"
 
+    @property
+    def resolved_frontend_dist_root(self) -> Path | None:
+        configured = self.frontend_dist_root
+        if configured is not None:
+            if not configured.is_dir() or not (configured / "index.html").is_file():
+                raise ValueError("LOCAL_DRAMA_FRONTEND_DIST must contain an index.html build artifact")
+            return configured
+        candidates = (
+            self.release_root / "web",
+            self.release_root / "apps" / "web" / "dist",
+        )
+        return next((path for path in candidates if (path / "index.html").is_file()), None)
+
     @classmethod
     def from_env(cls) -> "Settings":
-        values: dict[str, Any] = {}
-        for field_name in ("host", "environment", "mode", "comfy_base_url", "llm_provider", "llm_base_url", "llm_model", "llm_api_key"):
+        locator = ResourceLocator.discover()
+        machine_config = load_machine_config(
+            locator.config_path,
+            release_root=locator.release_root,
+            instance_root=locator.instance_root,
+        )
+        values: dict[str, Any] = settings_values(machine_config) if machine_config is not None else {}
+        values.update(
+            {
+                "release_root": locator.release_root,
+                "instance_root": locator.instance_root,
+                "config_path": locator.config_path,
+            }
+        )
+        if machine_config is None and locator.packaged:
+            # The locator owns the field-name → directory-name mapping
+            # (data_root → <instance>/data, never <instance>/data_root).
+            values.update(locator.storage_roots())
+            values["frontend_dist_root"] = locator.frontend_dist
+            values["model_manifest_override"] = locator.default_manifest_path
+        for field_name in ("host", "environment", "mode", "network_mode", "comfy_base_url", "llm_provider", "llm_base_url", "llm_model", "llm_api_key"):
             env_name = f"LOCAL_DRAMA_{field_name.upper()}"
             if env_name in os.environ:
                 values[field_name] = os.environ[env_name]
@@ -124,14 +255,39 @@ class Settings(BaseModel):
             if extra:
                 defaults = cls.model_fields["allowed_origins"].default
                 values["allowed_origins"] = tuple(defaults) + extra
-        if "LOCAL_DRAMA_COMFY_OUTPUT_ROOT" in os.environ:
-            values["comfy_output_root"] = Path(os.environ["LOCAL_DRAMA_COMFY_OUTPUT_ROOT"])
-        else:
-            values["comfy_output_root"] = REPO_ROOT / "work" / "comfy-production" / "output"
-        if "LOCAL_DRAMA_COMFY_INPUT_ROOT" in os.environ:
-            values["comfy_input_root"] = Path(os.environ["LOCAL_DRAMA_COMFY_INPUT_ROOT"])
-        else:
-            values["comfy_input_root"] = REPO_ROOT / "work" / "comfy-production" / "input"
+        for field_name in ("data_root", "projects_root", "work_root", "cache_root", "logs_root", "backups_root"):
+            env_name = f"LOCAL_DRAMA_{field_name.upper()}"
+            if env_name in os.environ:
+                values[field_name] = Path(os.environ[env_name])
+        for field_name in ("comfy_output_root", "comfy_input_root"):
+            env_name = f"LOCAL_DRAMA_{field_name.upper()}"
+            if env_name in os.environ:
+                values[field_name] = Path(os.environ[env_name])
+        if "LOCAL_DRAMA_TOOL_FALLBACK_DIRS" in os.environ:
+            values["tool_fallback_dirs"] = tuple(
+                part.strip() for part in os.environ["LOCAL_DRAMA_TOOL_FALLBACK_DIRS"].split(";") if part.strip()
+            )
+        if "LOCAL_DRAMA_FFMPEG" in os.environ:
+            values["ffmpeg_override"] = Path(os.environ["LOCAL_DRAMA_FFMPEG"])
+        if "LOCAL_DRAMA_FFPROBE" in os.environ:
+            values["ffprobe_override"] = Path(os.environ["LOCAL_DRAMA_FFPROBE"])
+        for field_name in (
+            "upload_max_image_mb",
+            "upload_max_video_mb",
+            "upload_max_audio_mb",
+            "upload_max_document_mb",
+            "upload_max_project_resource_mb",
+            "upload_max_project_package_mb",
+        ):
+            env_name = f"LOCAL_DRAMA_{field_name.upper()}"
+            if env_name in os.environ:
+                values[field_name] = int(os.environ[env_name])
+        if "LOCAL_DRAMA_MODEL_LIBRARY_ROOTS" in os.environ:
+            values["model_library_roots"] = tuple(
+                Path(part.strip()) for part in os.environ["LOCAL_DRAMA_MODEL_LIBRARY_ROOTS"].split(";") if part.strip()
+            )
+        if "LOCAL_DRAMA_FRONTEND_DIST" in os.environ:
+            values["frontend_dist_root"] = Path(os.environ["LOCAL_DRAMA_FRONTEND_DIST"])
         return cls(**values)
 
     def ensure_roots(self) -> None:

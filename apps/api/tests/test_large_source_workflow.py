@@ -7,7 +7,8 @@ from fastapi.testclient import TestClient
 
 from local_drama.application.documents import DocumentImportService
 from local_drama.application.projects import ProjectService
-from local_drama.application.read_models import SearchService
+from local_drama.application.search import SearchService
+from local_drama.infrastructure.database.search_repository import SqliteSearchRepository
 from local_drama.main import create_app
 
 
@@ -91,7 +92,7 @@ def test_200k_chinese_source_is_preserved_and_all_read_responses_are_bounded(wor
         assert too_large.status_code == 422
         assert too_large.json()["error"]["code"] == "SOURCE_PASSAGE_TOO_LARGE"
 
-    results = SearchService(database).search(marker, project_id=project_id, limit=5)
+    results = SearchService(SqliteSearchRepository(database)).search(marker, project_id=project_id, limit=5)
     assert len(results) == 1
     assert results[0]["subject_type"] == "SOURCE_DOCUMENT"
     assert marker not in results[0]["snippet"]  # no source passage leaks into navigation results
@@ -130,7 +131,9 @@ def test_search_index_failure_is_explicit_and_reimport_retries_without_losing_so
     retried = service.import_document(project_id, source)
     assert retried["reused"] is True
     assert retried["index_status"] == "READY"
-    assert SearchService(database).search("可恢复搜索索引", project_id=project_id, limit=5)[0]["subject_type"] == "SOURCE_DOCUMENT"
+    assert SearchService(SqliteSearchRepository(database)).search(
+        "可恢复搜索索引", project_id=project_id, limit=5
+    )[0]["subject_type"] == "SOURCE_DOCUMENT"
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM source_document_versions").fetchone()[0] == 1
         assert connection.execute("SELECT COUNT(*) FROM import_sessions").fetchone()[0] == 1

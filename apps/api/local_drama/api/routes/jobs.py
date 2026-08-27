@@ -180,3 +180,13 @@ async def deliver_events(payload: OutboxDeliveryRequest, request: Request) -> di
         return {"delivery": OutboxDeliveryService(request.app.state.database).deliver(**payload.model_dump())}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
+
+
+# Worker lease control (claim/heartbeat/complete) is an internal runtime API
+# consumed by the local worker, not a creator-facing product interface. Keep it
+# fully functional while removing it from the public OpenAPI document
+# (design §13.2 "public worker lease control interface").
+for _route in router.routes:
+    _path = getattr(_route, "path", "")
+    if str(_path).endswith(":claim") or str(_path).endswith(":heartbeat") or str(_path).endswith(":complete"):
+        _route.include_in_schema = False

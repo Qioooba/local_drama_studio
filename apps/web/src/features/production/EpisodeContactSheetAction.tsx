@@ -14,7 +14,7 @@ export function EpisodeContactSheetAction({ episodeId }: { episodeId: string | n
         {mutation.isPending ? "校验并导出中…" : "导出联系表"}
       </button>
       {mutation.isError && <p className="inline-error" role="alert">{mutation.error instanceof Error ? mutation.error.message : String(mutation.error)}</p>}
-      {exported && <p className="export-result" role="status">{exported.reused ? "已复验并复用" : "已导出"} {exported.item_count} 项：<code>{exported.contact_sheet_rel_path}</code></p>}
+      {exported && <p className="export-result" role="status">{exported.reused ? "已复验并复用" : "已导出"} {exported.item_count} 项：<code>{exported.contact_sheet_rel_path}</code> <a className="secondary" href={`/api/v1/episodes/${encodeURIComponent(episodeId ?? "")}/contact-sheet:download?rel_path=${encodeURIComponent(exported.rel_path)}`} download>下载 ZIP</a></p>}
     </div>
   );
 }

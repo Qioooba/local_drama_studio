@@ -227,10 +227,22 @@
 }
 
 .workflow-configuration-panel .workflow-create-form input,
-.workflow-configuration-panel .workflow-create-form select {
+.workflow-configuration-panel .workflow-create-form select,
+.workflow-configuration-panel .workflow-create-form textarea {
   box-sizing: border-box;
   min-width: 0;
   min-height: 44px;
+}
+
+.workflow-configuration-panel .workflow-create-form textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+}
+
+.workflow-configuration-panel .workflow-create-form input[type="checkbox"] {
+  width: 22px;
+  min-height: 22px;
 }
 
 .workflow-configuration-panel .workflow-create-form__wide {
@@ -309,6 +321,22 @@
   min-width: 0;
 }
 
+.workflow-configuration-panel .workflow-effect-report ul {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workflow-configuration-panel .workflow-effect-report li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 .workflow-configuration-panel .revoke-reason-field {
   flex: 1 1 190px;
   min-width: 0;
@@ -338,6 +366,76 @@
 .profile-evidence-probe p {
   margin: 0;
   color: var(--text-muted);
+}
+
+.profile-evidence-keyframe {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.profile-evidence-keyframe legend {
+  padding: 0 6px;
+  color: var(--text);
+  font-weight: 800;
+}
+
+.profile-evidence-keyframe > label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.profile-evidence-keyframe select {
+  min-height: 44px;
+}
+
+.profile-evidence-keyframe__preview {
+  display: grid;
+  grid-template-columns: minmax(160px, 240px) minmax(0, 1fr);
+  align-items: end;
+  gap: 12px;
+  margin: 0;
+}
+
+.profile-evidence-keyframe__preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.profile-evidence-keyframe__preview figcaption {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.profile-evidence-keyframe .profile-evidence-keyframe__confirmation {
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: start;
+  color: var(--text);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.profile-evidence-keyframe__confirmation input {
+  width: 20px;
+  min-height: 20px;
+  margin: 2px 0 0;
+}
+
+.profile-evidence-keyframe > button {
+  min-height: 44px;
+  justify-self: start;
 }
 
 .profile-evidence-probe dl {
@@ -412,6 +510,14 @@
   }
 
   .profile-evidence-probe dl { grid-template-columns: minmax(0, 1fr); }
+
+  .profile-evidence-keyframe__preview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .profile-evidence-keyframe > button {
+    width: 100%;
+  }
 }
 
 @media (max-width: 480px) {

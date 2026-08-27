@@ -6,7 +6,7 @@
 .story-flow-toggle { display: none; }
 .story-current-stage { display: none; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-muted); }
 .story-current-stage > span,
-.story-stage-heading > span { display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 auto; border-radius: 50%; background: var(--accent); color: var(--button-foreground, #fff); font-weight: 800; }
+.story-stage-heading > span { display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 auto; border-radius: 50%; background: var(--accent); color: #071612; font-weight: 800; }
 .story-current-stage div { display: grid; gap: 2px; }
 .story-current-stage small,
 .story-current-stage p { color: var(--muted); }

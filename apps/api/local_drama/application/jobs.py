@@ -83,6 +83,11 @@ class JobService:
             "project_id": row["project_id"],
             "subject_type": row["subject_type"],
             "subject_id": row["subject_id"],
+            "subject_kind": row["subject_kind"] if "subject_kind" in row.keys() else row["subject_type"],
+            "scope_project_id": row["scope_project_id"] if "scope_project_id" in row.keys() else row["project_id"],
+            "scope_episode_id": row["scope_episode_id"] if "scope_episode_id" in row.keys() else None,
+            "scope_shot_id": row["scope_shot_id"] if "scope_shot_id" in row.keys() else None,
+            "stage_code": row["stage_code"] if "stage_code" in row.keys() else "LEGACY_UNCLASSIFIED",
             "state": row["state"],
             "channel": row["channel"],
             "idempotency_key": row["idempotency_key"],
@@ -117,6 +122,11 @@ class JobService:
         max_attempts: int = 3,
         depends_on_job_ids: list[str] | None = None,
         actor: str = "local-user",
+        subject_kind: str | None = None,
+        scope_project_id: str | None = None,
+        scope_episode_id: str | None = None,
+        scope_shot_id: str | None = None,
+        stage_code: str | None = None,
     ) -> dict[str, Any]:
         with self.database.transaction() as connection:
             return self.create_job_in_transaction(
@@ -133,6 +143,11 @@ class JobService:
                 max_attempts=max_attempts,
                 depends_on_job_ids=depends_on_job_ids,
                 actor=actor,
+                subject_kind=subject_kind,
+                scope_project_id=scope_project_id,
+                scope_episode_id=scope_episode_id,
+                scope_shot_id=scope_shot_id,
+                stage_code=stage_code,
             )
 
     def create_job_in_transaction(
@@ -151,12 +166,24 @@ class JobService:
         max_attempts: int = 3,
         depends_on_job_ids: list[str] | None = None,
         actor: str = "local-user",
+        subject_kind: str | None = None,
+        scope_project_id: str | None = None,
+        scope_episode_id: str | None = None,
+        scope_shot_id: str | None = None,
+        stage_code: str | None = None,
     ) -> dict[str, Any]:
         if not idempotency_key or len(idempotency_key) > 200:
             raise DomainRuleError("IDEMPOTENCY_KEY_REQUIRED", "Job command 必须提供 1—200 字符 Idempotency-Key")
         if max_attempts < 1 or max_attempts > 20:
             raise DomainRuleError("INVALID_MAX_ATTEMPTS", "max_attempts 必须在 1—20 之间")
         dependencies = depends_on_job_ids or []
+        canonical_subject_kind = (subject_kind or subject_type).strip()
+        canonical_scope_project_id = scope_project_id or project_id
+        canonical_stage_code = stage_code or "LEGACY_UNCLASSIFIED"
+        if not canonical_subject_kind:
+            raise DomainRuleError("JOB_SUBJECT_KIND_REQUIRED", "Job 必须声明 canonical subject_kind")
+        if canonical_scope_project_id != project_id:
+            raise DomainRuleError("JOB_SCOPE_PROJECT_MISMATCH", "Job canonical project scope 与项目不一致")
         request_payload = {
             "project_id": project_id,
             "type": job_type,
@@ -168,6 +195,11 @@ class JobService:
             "priority": priority,
             "max_attempts": max_attempts,
             "depends_on_job_ids": dependencies,
+            "subject_kind": canonical_subject_kind,
+            "scope_project_id": canonical_scope_project_id,
+            "scope_episode_id": scope_episode_id,
+            "scope_shot_id": scope_shot_id,
+            "stage_code": canonical_stage_code,
         }
         payload_hash = _payload_hash(request_payload)
         scope = f"job:create:{project_id}"
@@ -186,6 +218,32 @@ class JobService:
         project = connection.execute("SELECT id FROM projects WHERE id=?", (project_id,)).fetchone()
         if project is None:
             raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
+        stage = connection.execute(
+            "SELECT code FROM job_stage_definitions WHERE code=? AND active=1",
+            (canonical_stage_code,),
+        ).fetchone()
+        if stage is None:
+            raise DomainRuleError(
+                "JOB_STAGE_INVALID",
+                "Job stage_code 不存在或已停用",
+                {"stage_code": canonical_stage_code},
+            )
+        if scope_episode_id is not None:
+            episode = connection.execute(
+                """SELECT e.id FROM episodes e JOIN seasons s ON s.id=e.season_id
+                WHERE e.id=? AND s.project_id=?""",
+                (scope_episode_id, project_id),
+            ).fetchone()
+            if episode is None:
+                raise DomainRuleError("JOB_SCOPE_EPISODE_MISMATCH", "Job episode scope 不属于当前项目")
+        if scope_shot_id is not None:
+            shot = connection.execute(
+                """SELECT sh.id,sh.episode_id FROM shots sh JOIN episodes e ON e.id=sh.episode_id
+                JOIN seasons s ON s.id=e.season_id WHERE sh.id=? AND s.project_id=?""",
+                (scope_shot_id, project_id),
+            ).fetchone()
+            if shot is None or (scope_episode_id is not None and str(shot["episode_id"]) != scope_episode_id):
+                raise DomainRuleError("JOB_SCOPE_SHOT_MISMATCH", "Job shot scope 不属于声明的项目/分集")
         if len(set(dependencies)) != len(dependencies) or job_id in dependencies:
             raise DomainRuleError("INVALID_JOB_DEPENDENCY", "Job dependency 不能重复或自引用")
         if dependencies:
@@ -195,15 +253,21 @@ class JobService:
                 raise DomainRuleError("JOB_DEPENDENCY_NOT_FOUND", "Job dependency 必须存在于同一项目")
         connection.execute(
             """INSERT INTO jobs
-                (id, type, project_id, subject_type, subject_id, state, channel, idempotency_key, input_snapshot_json,
+                (id, type, project_id, subject_type, subject_id, subject_kind,scope_project_id,scope_episode_id,scope_shot_id,stage_code,
+                 state, channel, idempotency_key, input_snapshot_json,
                  execution_profile_version_id, priority, max_attempts, next_run_at, created_at, updated_at, created_by, revision, schema_version)
-                VALUES (?, ?, ?, ?, ?, 'QUEUED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'v2')""",
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'v2')""",
             (
                 job_id,
                 job_type,
                 project_id,
                 subject_type,
                 subject_id,
+                canonical_subject_kind,
+                canonical_scope_project_id,
+                scope_episode_id,
+                scope_shot_id,
+                canonical_stage_code,
                 channel,
                 idempotency_key,
                 _json(input_snapshot),
@@ -296,7 +360,12 @@ class JobService:
             rows = connection.execute(f"SELECT * FROM jobs {clause} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?", params).fetchall()
         has_more = len(rows) > normalized_limit
         items = [self._job_response(row) for row in rows[:normalized_limit]]
-        return {"items": items, "next_cursor": normalized_cursor + normalized_limit if has_more else None, "cursor": normalized_cursor, "limit": normalized_limit}
+        return {
+            "items": items,
+            "next_cursor": normalized_cursor + normalized_limit if has_more else None,
+            "cursor": normalized_cursor,
+            "limit": normalized_limit,
+        }
 
     def list_attempts(self, job_id: str) -> list[dict[str, Any]]:
         with self.database.connect() as connection:
@@ -606,7 +675,17 @@ class JobService:
             )
             connection.execute(
                 "UPDATE jobs SET state=?, next_run_at=?, progress_json=?, progress_updated_at=?, last_error_code=?, last_error_detail_redacted=?, finished_at=?, updated_at=?, revision=revision+1 WHERE id=?",
-                (job_state, next_run_at, _json(terminal_progress), now, error_code, error_detail_redacted, now if job_state in {SUCCEEDED, FAILED, CANCELLED} else None, now, row["job_id"]),
+                (
+                    job_state,
+                    next_run_at,
+                    _json(terminal_progress),
+                    now,
+                    error_code,
+                    error_detail_redacted,
+                    now if job_state in {SUCCEEDED, FAILED, CANCELLED} else None,
+                    now,
+                    row["job_id"],
+                ),
             )
             self._sync_experiment_cell_status(connection, str(row["job_id"]), job_state, now)
             connection.execute("UPDATE job_resource_leases SET released_at=? WHERE attempt_id=? AND released_at IS NULL", (now, attempt_id))
@@ -642,7 +721,8 @@ class JobService:
                 (now, now, attempt_id),
             )
             connection.execute(
-                "UPDATE jobs SET state='SUCCEEDED', next_run_at=NULL, last_error_code=NULL, last_error_detail_redacted=NULL, finished_at=?, updated_at=?, revision=revision+1 WHERE id=?", (now, now, row["job_id"])
+                "UPDATE jobs SET state='SUCCEEDED', next_run_at=NULL, last_error_code=NULL, last_error_detail_redacted=NULL, finished_at=?, updated_at=?, revision=revision+1 WHERE id=?",
+                (now, now, row["job_id"]),
             )
             self._sync_experiment_cell_status(connection, str(row["job_id"]), SUCCEEDED, now)
             connection.execute("UPDATE job_resource_leases SET released_at=? WHERE attempt_id=? AND released_at IS NULL", (now, attempt_id))
@@ -675,7 +755,8 @@ class JobService:
             if row["state"] not in {FAILED, NEEDS_ATTENTION, ORPHANED}:
                 raise DomainRuleError("JOB_NOT_RETRYABLE", "只有失败、孤儿或需人工关注的 Job 可以 retry")
             connection.execute(
-                "UPDATE jobs SET state='QUEUED', next_run_at=?, cancel_requested_at=NULL, progress_json='{}', progress_updated_at=NULL, last_error_code=NULL, last_error_detail_redacted=NULL, finished_at=NULL, updated_at=?, revision=revision+1 WHERE id=?", (now, now, job_id)
+                "UPDATE jobs SET state='QUEUED', next_run_at=?, cancel_requested_at=NULL, progress_json='{}', progress_updated_at=NULL, last_error_code=NULL, last_error_detail_redacted=NULL, finished_at=NULL, updated_at=?, revision=revision+1 WHERE id=?",
+                (now, now, job_id),
             )
             self._sync_experiment_cell_status(connection, job_id, QUEUED, now)
             self._emit(connection, "JOB_REQUEUED", row["project_id"], "JOB", job_id, {"reason": "explicit_retry"})
@@ -760,12 +841,14 @@ class JobService:
                     job_id,
                     {"job_id": job_id, "dependency_job_id": dependency_id, "dependency_state": dependency_state, "job_state": NEEDS_ATTENTION},
                 )
-                recovered.append({
-                    "job_id": job_id,
-                    "job_state": NEEDS_ATTENTION,
-                    "dependency_job_id": dependency_id,
-                    "dependency_state": dependency_state,
-                })
+                recovered.append(
+                    {
+                        "job_id": job_id,
+                        "job_state": NEEDS_ATTENTION,
+                        "dependency_job_id": dependency_id,
+                        "dependency_state": dependency_state,
+                    }
+                )
         return {"reconciled": len(recovered), "items": recovered, "at": current_iso}
 
     def events(self, *, after_event_id: int = 0, project_id: str | None = None, limit: int = 100) -> list[dict[str, Any]]:

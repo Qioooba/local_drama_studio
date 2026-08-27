@@ -12,11 +12,14 @@ from local_drama.api.routes.media import _stream
 from local_drama.application.configuration import ConfigurationService
 from local_drama.application.documents import DocumentImportService
 from local_drama.application.media import MediaService
+from local_drama.application.episode_production import EpisodeProductionQueryService
 from local_drama.application.profiles import ProfileService
 from local_drama.application.projects import ProjectService
-from local_drama.application.read_models import ProductionReadModelService, SearchService
+from local_drama.application.search import SearchService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.main import create_app
+from local_drama.infrastructure.database.episode_production_repository import SqliteEpisodeProductionReadRepository
+from local_drama.infrastructure.database.search_repository import SqliteSearchRepository
 
 
 def _project(workspace, database, code: str = "g3-project") -> dict[str, object]:
@@ -112,7 +115,7 @@ def test_explicit_plan_delivery_and_profile_binding_blocker(workspace, database)
     assert configuration.blockers(project_id) == []
 
 
-def test_real_media_probe_range_thumbnail_and_production_read_model(workspace, database) -> None:
+def test_real_media_probe_range_thumbnail_and_episode_production_projection(workspace, database) -> None:
     project = _project(workspace, database, "g3_media")
     project_id = str(project["id"])
     source = _real_video(Path("g3.mp4"), workspace)
@@ -125,23 +128,24 @@ def test_real_media_probe_range_thumbnail_and_production_read_model(workspace, d
     archived_shot = project_service.create_shot(str(episode["id"]), "S_ARCHIVED", 1000)
     with database.transaction() as connection:
         connection.execute("UPDATE shots SET archived_at='2026-08-22T00:00:00Z' WHERE id=?", (str(archived_shot["id"]),))
-    production = ProductionReadModelService(database).episode(str(episode["id"]))
-    assert [item["id"] for item in production["items"]] == [str(shot["id"])]
+    production_service = EpisodeProductionQueryService(SqliteEpisodeProductionReadRepository(database))
+    production = production_service.shots(str(episode["id"]), cursor=0, limit=50, states=set())
+    assert [item["shot_id"] for item in production["items"]] == [str(shot["id"])]
     assert production["items"][0]["blockers"]
-    assert production["request_shape"] == "bounded_cursor_read_model"
-    assert production["page"]["cursor"] == 0
-    page = ProductionReadModelService(database).episode(str(episode["id"]), limit=1, cursor=1)
-    assert page["page"]["cursor"] == 1
+    assert production["request_shape"] == "bounded_episode_production_shots_v2"
+    assert production["cursor"] == 0
+    page = production_service.shots(str(episode["id"]), cursor=1, limit=1, states=set())
+    assert page["cursor"] == 1
     # GET is now read-only; materialization belongs to the durable derivative
     # worker (covered in test_media_derivative_jobs).  This test prewarms the
     # cache so it can continue exercising Range and presentation reads.
     MediaService(database, workspace).thumbnail(str(media["media_version_id"]), "small", "first")
     MediaService(database, workspace).filmstrip(str(media["media_version_id"]))
     with TestClient(create_app(workspace)) as client:
-        paged_production = client.get(f"/api/v1/episodes/{episode['id']}/production", params={"cursor": 0, "limit": 1})
+        paged_production = client.get(f"/api/v2/episodes/{episode['id']}/production/shots", params={"cursor": 0, "limit": 1})
         assert paged_production.status_code == 200
-        assert paged_production.json()["page"]["cursor"] == 0
-        assert paged_production.json()["page"]["limit"] == 1
+        assert paged_production.json()["cursor"] == 0
+        assert paged_production.json()["limit"] == 1
         version_id = str(media["media_version_id"])
         ranged = client.get(f"/api/v1/media-versions/{version_id}/content", headers={"Range": "bytes=0-15"})
         assert ranged.status_code == 206
@@ -348,7 +352,7 @@ def test_script_import_preview_search_and_no_fake_llm_result(workspace, database
     imported = DocumentImportService(database, workspace).import_document(str(project["id"]), source)
     assert imported["status"] == "PREVIEW_READY"
     assert imported["preview"]["paragraph_count"] == 3
-    assert SearchService(database).search("人物")
+    assert SearchService(SqliteSearchRepository(database)).search("人物")
     with TestClient(create_app(workspace)) as client:
         response = client.post(
             f"/api/v1/import-sessions/{imported['import_session_id']}:request-breakdown",

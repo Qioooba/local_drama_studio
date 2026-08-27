@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://localdramastudio.local/schemas/runtime-host.v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "host_version", "release_version", "role", "instance_id", "config_path", "release_root", "data_root", "control_endpoint"],
+  "properties": {
+    "protocol_version": {"const": 1},
+    "host_version": {"type": "string"},
+    "release_version": {"type": "string"},
+    "role": {"enum": ["api", "worker", "maintenance"]},
+    "instance_id": {"type": "string"},
+    "config_path": {"type": "string"},
+    "release_root": {"type": "string"},
+    "data_root": {"type": "string"},
+    "control_endpoint": {"type": "string"}
+  }
+}

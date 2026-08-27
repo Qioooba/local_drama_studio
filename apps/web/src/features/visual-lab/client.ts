@@ -1,0 +1,34 @@
+import { requestJson } from "../../generated/api";
+
+export type VisualLabNodeKind = "TEXT_REF" | "STORY_ASSET_REF" | "MEDIA_REF" | "SHOT_REF" | "GENERATION_INTENT" | "TRANSFORM_INTENT" | "COMPARE_SET" | "SEQUENCE_PREVIEW" | "OUTPUT_DRAFT" | "NOTE" | "FRAME";
+export type VisualLabPortMap = { inputs?: Record<string, string>; outputs?: Record<string, string> };
+export type VisualLabNode = { id: string; document_id: string; node_kind: VisualLabNodeKind; position_x: number; position_y: number; width: number; height: number; z_index: number; collapsed: number; revision: number; content_revision_no: number; content_hash: string; content: { title?: string; body?: string; reference_id?: string; intent_id?: string; variant_plan?: Record<string, unknown>; ports?: VisualLabPortMap; [key: string]: unknown } };
+export type VisualLabEdge = { id: string; source_node_id: string; source_port: string; target_node_id: string; target_port: string; edge_kind: "REFERENCES" | "GUIDES" | "DERIVES" | "COMPARES" | "SEQUENCES"; metadata: Record<string, unknown> };
+export type VisualLabViewport = { x: number; y: number; zoom: number };
+export type VisualLabDocument = { id: string; project_id: string; episode_id: string | null; code: string; title: string; topology_revision: number; revision: number; updated_at: string; viewport: VisualLabViewport; node_count?: number; edge_count?: number };
+export type VisualLabGraph = { document: VisualLabDocument; nodes: VisualLabNode[]; edges: VisualLabEdge[] };
+export type VisualLabSnapshot = { id: string; document_id: string; snapshot_no: number; content_hash: string; created_at: string; created_by: string };
+
+const json = (value: unknown) => ({ headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) });
+export const listVisualLabs = (projectId: string) => requestJson<{ items: VisualLabDocument[] }>(`/api/v1/projects/${encodeURIComponent(projectId)}/visual-labs`);
+export const getVisualLab = (labId: string) => requestJson<VisualLabGraph>(`/api/v1/visual-labs/${encodeURIComponent(labId)}`);
+export const createVisualLab = (projectId: string, payload: { code: string; title: string; episode_id?: string | null }) => requestJson<{ document: VisualLabDocument }>(`/api/v1/projects/${encodeURIComponent(projectId)}/visual-labs`, { method: "POST", ...json(payload) });
+export const createVisualLabNode = (labId: string, payload: Record<string, unknown>) => requestJson<{ node: VisualLabNode }>(`/api/v1/visual-labs/${encodeURIComponent(labId)}/nodes`, { method: "POST", ...json(payload) });
+export const reviseVisualLabNode = (nodeId: string, payload: Record<string, unknown>) => requestJson<{ node: VisualLabNode }>(`/api/v1/visual-lab-nodes/${encodeURIComponent(nodeId)}/revisions`, { method: "POST", ...json(payload) });
+export const moveVisualLabNodes = (labId: string, nodes: Array<Record<string, unknown>>) => requestJson<{ nodes: VisualLabNode[] }>(`/api/v1/visual-labs/${encodeURIComponent(labId)}/nodes:batch-move`, { method: "POST", ...json({ nodes }) });
+export const saveVisualLabViewport = (labId: string, viewport: VisualLabViewport) => requestJson<{ viewport: VisualLabViewport }>(`/api/v1/visual-labs/${encodeURIComponent(labId)}/viewport`, { method: "PUT", ...json(viewport) });
+export const duplicateVisualLabNodes = (labId: string, nodeIds: string[], topologyRevision: number, offset = 48) => requestJson<{ nodes: VisualLabNode[]; id_mapping: Record<string, string>; topology_revision: number }>(`/api/v1/visual-labs/${encodeURIComponent(labId)}/nodes:duplicate`, { method: "POST", ...json({ node_ids: nodeIds, offset_x: offset, offset_y: offset, expected_topology_revision: topologyRevision }) });
+export const deleteVisualLabNodes = (labId: string, nodeIds: string[], topologyRevision: number) => requestJson<{ result: { node_ids: string[]; deleted: true; topology_revision: number } }>(`/api/v1/visual-labs/${encodeURIComponent(labId)}/nodes:batch-delete`, { method: "POST", ...json({ node_ids: nodeIds, expected_topology_revision: topologyRevision }) });
+export const deleteVisualLabNode = (nodeId: string, expectedTopologyRevision: number) => requestJson<{ result: { node_id: string; deleted: boolean } }>(`/api/v1/visual-lab-nodes/${encodeURIComponent(nodeId)}:delete`, { method: "POST", ...json({ expected_topology_revision: expectedTopologyRevision }) });
+export const createVisualLabEdge = (labId: string, payload: Record<string, unknown>) => requestJson<{ edge: VisualLabEdge }>(`/api/v1/visual-labs/${encodeURIComponent(labId)}/edges`, { method: "POST", ...json(payload) });
+export const snapshotVisualLab = (labId: string) => requestJson<{ snapshot: VisualLabSnapshot }>(`/api/v1/visual-labs/${encodeURIComponent(labId)}/snapshots`, { method: "POST" });
+export const listVisualLabSnapshots = (labId: string) => requestJson<{ items: VisualLabSnapshot[] }>(`/api/v1/visual-labs/${encodeURIComponent(labId)}/snapshots`);
+export const restoreVisualLabSnapshot = async (snapshotId: string) => {
+  const { plan } = await requestJson<{ plan: { status: string; plan_hash: string; blockers: Array<{ code: string; message: string }> } }>(`/api/v1/visual-lab-snapshots/${encodeURIComponent(snapshotId)}:restore-preflight`, { method: "POST" });
+  if (plan.status !== "READY") throw new Error(plan.blockers.map((item) => item.message).join("；"));
+  return requestJson<{ restored: true; snapshot_id: string; graph: VisualLabGraph }>(`/api/v1/visual-lab-snapshots/${encodeURIComponent(snapshotId)}:restore`, { method: "POST", ...json({ plan_hash: plan.plan_hash }) });
+};
+export const preflightVisualLabRun = (nodeId: string) => requestJson<{ plan: { status: string; plan_hash: string; blockers: Array<{ code: string; message: string }> } }>(`/api/v1/visual-lab-nodes/${encodeURIComponent(nodeId)}/runs:preflight`, { method: "POST" });
+export const runVisualLabNode = (nodeId: string, planHash: string) => requestJson<Record<string, unknown>>(`/api/v1/visual-lab-nodes/${encodeURIComponent(nodeId)}/runs`, { method: "POST", ...json({ plan_hash: planHash, idempotency_key: crypto.randomUUID() }) });
+export const preflightVisualLabPromotion = (nodeId: string, sourceMediaVersionId: string, targetId: string) => requestJson<{ plan: { status: string; plan_hash: string; blockers: Array<{ code: string; message: string }> } }>(`/api/v1/visual-lab-nodes/${encodeURIComponent(nodeId)}/promotions:preflight`, { method: "POST", ...json({ source_media_version_id: sourceMediaVersionId, target_type: "SHOT_CANDIDATE", target_id: targetId }) });
+export const promoteVisualLabCandidate = (nodeId: string, sourceMediaVersionId: string, targetId: string, planHash: string) => requestJson<{ promotion: { id: string; target_shot_id: string; approved: false } }>(`/api/v1/visual-lab-nodes/${encodeURIComponent(nodeId)}/promotions`, { method: "POST", ...json({ source_media_version_id: sourceMediaVersionId, target_type: "SHOT_CANDIDATE", target_id: targetId, plan_hash: planHash }) });

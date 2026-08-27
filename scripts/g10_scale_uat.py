@@ -146,7 +146,7 @@ def run_uat(root: Path) -> dict[str, Any]:
     with TestClient(app) as client:
         for episode_id in episode_ids:
             started = time.perf_counter()
-            production = client.get(f"/api/v1/episodes/{episode_id}/production")
+            production = client.get(f"/api/v2/episodes/{episode_id}/production/shots?cursor=0&limit=100")
             production_ms.append((time.perf_counter() - started) * 1000)
             started = time.perf_counter()
             timeline = client.get(f"/api/v1/episodes/{episode_id}/timeline-status")

@@ -16,17 +16,17 @@ Write-Host ("[Runtime] pnpm: " + $pnpmVer)
 # 2. 媒体处理引擎 (FFmpeg / FFprobe)
 $ffmpegCmd = (Get-Command ffmpeg -ErrorAction SilentlyContinue).Source
 $ffprobeCmd = (Get-Command ffprobe -ErrorAction SilentlyContinue).Source
-$ffmpegCandidate = if ($ffmpegCmd) { $ffmpegCmd } elseif (Test-Path "E:\Tools\ffmpeg\bin\ffmpeg.exe") { "E:\Tools\ffmpeg\bin\ffmpeg.exe" } else { $null }
-$ffprobeCandidate = if ($ffprobeCmd) { $ffprobeCmd } elseif (Test-Path "E:\Tools\ffmpeg\bin\ffprobe.exe") { "E:\Tools\ffmpeg\bin\ffprobe.exe" } else { $null }
+$ffmpegCandidate = if ($env:LOCAL_DRAMA_FFMPEG) { $env:LOCAL_DRAMA_FFMPEG } else { $ffmpegCmd }
+$ffprobeCandidate = if ($env:LOCAL_DRAMA_FFPROBE) { $env:LOCAL_DRAMA_FFPROBE } else { $ffprobeCmd }
 if ($ffmpegCandidate) {
   Write-Host ("[Media] FFmpeg: PASS (" + $ffmpegCandidate + ")") -ForegroundColor Green
 } else {
-  Write-Host "[Media] FFmpeg: WARN (未在 PATH 或 E:\Tools 找到 ffmpeg.exe；视频抽帧与联系表可能受限)" -ForegroundColor Yellow
+  Write-Host "[Media] FFmpeg: WARN (未通过 LOCAL_DRAMA_FFMPEG 或 PATH 找到 ffmpeg；视频抽帧与联系表可能受限)" -ForegroundColor Yellow
 }
 if ($ffprobeCandidate) {
   Write-Host ("[Media] FFprobe: PASS (" + $ffprobeCandidate + ")") -ForegroundColor Green
 } else {
-  Write-Host "[Media] FFprobe: WARN (未在 PATH 或 E:\Tools 找到 ffprobe.exe；媒体探测可能受限)" -ForegroundColor Yellow
+  Write-Host "[Media] FFprobe: WARN (未通过 LOCAL_DRAMA_FFPROBE 或 PATH 找到 ffprobe；媒体探测可能受限)" -ForegroundColor Yellow
 }
 
 # 3. 数据库与迁移状态

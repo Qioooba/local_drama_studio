@@ -1,27 +1,22 @@
-import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { getEpisodeProduction, listProfiles } from "../generated/api";
 import { StoryboardBatchWorkbench } from "../features/projects/StoryboardBatchWorkbench";
 import { ShotGroupPlanner } from "../features/episode-plan-v2/ShotGroupPlanner";
 import { SelectedBeatReplanPanel } from "../features/episode-plan-v2/SelectedBeatReplanPanel";
 import { EpisodeSourcePassage } from "../features/source-passage/EpisodeSourcePassage";
 import { EpisodeSceneRanges } from "../features/projects/EpisodeSceneRanges";
-import { PromptTemplatePanel } from "../features/production/PromptTemplatePanel";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { Drawer, TabPanel, Tabs } from "../components/ui";
 import { routes } from "../app/routeRegistry";
-import { STATUS_LABELS, optionLabel } from "../features/shared/optionLabels";
 import "./episode-plan.css";
 
-type PlanTask = "storyboard" | "scenes" | "source" | "prompts";
+type PlanTask = "storyboard" | "scenes" | "source";
 
-const PLAN_TASKS = new Set<PlanTask>(["storyboard", "scenes", "source", "prompts"]);
+const PLAN_TASKS = new Set<PlanTask>(["storyboard", "scenes", "source"]);
 const PLAN_TABS = [
   { id: "storyboard", label: "镜头分镜板" },
   { id: "scenes", label: "场景与分组" },
   { id: "source", label: "原文证据" },
-  { id: "prompts", label: "提示词快照" },
 ];
 
 /** Episode plan: source evidence → reviewed AI draft → versioned shot plan. */
@@ -31,6 +26,7 @@ export function EpisodePlanPage() {
   const requestedTask = searchParams.get("view") as PlanTask | null;
   const activeTab: PlanTask = requestedTask && PLAN_TASKS.has(requestedTask) ? requestedTask : "storyboard";
   const [replanDrawerOpen, setReplanDrawerOpen] = useState(false);
+  const [sourceDrawerOpen, setSourceDrawerOpen] = useState(false);
 
   const selectTab = (task: string) => {
     setSearchParams((current) => {
@@ -41,31 +37,7 @@ export function EpisodePlanPage() {
     }, { replace: true });
   };
 
-  const production = useQuery({
-    queryKey: ["episode", episodeId, "production", "prompt-tools"],
-    queryFn: () => getEpisodeProduction(episodeId),
-    enabled: Boolean(episodeId),
-  });
-  const profiles = useQuery({
-    queryKey: ["profiles"],
-    queryFn: () => listProfiles(),
-    enabled: Boolean(projectId),
-  });
-
-  const shots = useMemo(() => production.data?.items ?? [], [production.data?.items]);
-  const [selectedShotId, setSelectedShotId] = useState("");
-
-  useEffect(() => {
-    if (!shots.some((shot) => String(shot.id) === selectedShotId)) {
-      setSelectedShotId(shots[0] ? String(shots[0].id) : "");
-    }
-  }, [selectedShotId, shots]);
-
   if (!projectId || !episodeId) return <p className="inline-error" role="alert">缺少项目或分集上下文。</p>;
-  const selectedShot = shots.find((shot) => String(shot.id) === selectedShotId);
-  const publishedProfiles = (profiles.data?.items ?? []).filter(
-    (profile) => profile.status === "PUBLISHED"
-  );
 
   return (
     <ErrorBoundary projectId={projectId} fallbackTitle="分集策划工作区异常">
@@ -76,6 +48,13 @@ export function EpisodePlanPage() {
             <h2>从原文证据到可生产镜头</h2>
           </div>
           <div className="episode-plan-actions">
+            <button
+              type="button"
+              className="secondary btn-sm"
+              onClick={() => setSourceDrawerOpen(true)}
+            >
+              对照原文
+            </button>
             <button
               type="button"
               className="secondary btn-sm"
@@ -92,9 +71,9 @@ export function EpisodePlanPage() {
             </Link>
             <Link
               className="primary-action v2-inline-link"
-              to={routes.directorDesk(projectId, episodeId)}
+              to={routes.shotStudio(projectId, episodeId)}
             >
-              进入导演台
+              进入镜头工作台
             </Link>
           </div>
         </div>
@@ -153,59 +132,20 @@ export function EpisodePlanPage() {
 
         </TabPanel>
 
-        {/* Tab 4: Prompts Snapshot */}
-        <TabPanel id="prompts" selectedId={activeTab}>
-          <div className="episode-plan-stack">
-          <section className="panel" aria-labelledby="episode-prompt-tools-title">
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">生成准备</p>
-                <h3 id="episode-prompt-tools-title">镜头提示词快照</h3>
-              </div>
-            </div>
-            <p className="muted">
-              按镜头编号选择，不需要粘贴技术 ID；冻结结果保留镜头字段和已发布 Profile 版本来源。
-            </p>
-            {production.isLoading || profiles.isLoading ? (
-              <p className="loading-state" role="status">
-                正在读取镜头与已发布 Profile…
-              </p>
-            ) : null}
-            {(production.isError || profiles.isError) && (
-              <p className="inline-error" role="alert">
-                生成准备读取失败：{String(production.error ?? profiles.error)}
-              </p>
-            )}
-            {!production.isLoading && shots.length === 0 ? (
-              <p className="empty-state">当前集还没有镜头，请先完成镜头编排。</p>
-            ) : (
-              <label htmlFor="episode-prompt-shot">
-                目标镜头
-                <select
-                  id="episode-prompt-shot"
-                  value={selectedShotId}
-                  onChange={(event) => setSelectedShotId(event.target.value)}
-                >
-                  <option value="">请选择镜头</option>
-                  {shots.map((shot, index) => (
-                    <option key={String(shot.id)} value={String(shot.id)}>
-                      {String(shot.code ?? `镜头 ${index + 1}`)} · {optionLabel(STATUS_LABELS, typeof shot.status === "string" ? shot.status : undefined, "未导演")}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {shots.length > 0 && publishedProfiles.length === 0 && !profiles.isLoading ? (
-              <p className="inline-warning" role="status">
-                暂无已发布 Profile；可先查看镜头，但冻结提示词前需在模型页发布可用版本。
-              </p>
-            ) : null}
-          </section>
-          <PromptTemplatePanel projectId={projectId} shot={selectedShot} profiles={publishedProfiles} />
-          </div>
-        </TabPanel>
-
         {/* Replan Drawer */}
+        <Drawer
+          open={sourceDrawerOpen}
+          onClose={() => setSourceDrawerOpen(false)}
+          title="原文证据对照"
+          width={640}
+        >
+          <div className="episode-plan-source-drawer">
+            <p className="muted">在不离开镜头分镜板的情况下核对本集来源段落；修改原稿或重新拆解仍由故事工作区负责。</p>
+            <EpisodeSourcePassage projectId={projectId} episodeId={episodeId} />
+            <Link className="secondary v2-inline-link" to={`${routes.storyWorkspace(projectId)}#story-review`}>前往故事工作区审核或重新拆解</Link>
+          </div>
+        </Drawer>
+
         <Drawer
           open={replanDrawerOpen}
           onClose={() => setReplanDrawerOpen(false)}

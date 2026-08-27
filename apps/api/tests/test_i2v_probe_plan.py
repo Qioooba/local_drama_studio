@@ -12,6 +12,62 @@ from local_drama.application.reviews import ReviewService
 PNG = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415408d763f8cfc0f01f00050001ff89993d1d0000000049454e44ae426082")
 
 
+def test_prepare_i2v_probe_keyframe_copies_reviews_selects_and_reuses(workspace, database) -> None:
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="i2v_probe_bootstrap",
+        title="I2V probe bootstrap",
+        episode_count=1,
+        aspect_ratio="9:16",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=60_000,
+        allow_unconfigured_capabilities=True,
+    )
+    source_path = workspace.work_root / "profile-evidence.png"
+    source_path.write_bytes(PNG)
+    source = MediaService(database, workspace).import_file(
+        str(project["id"]),
+        source_path,
+        purpose="PROFILE_EVIDENCE",
+        owner_type="EXECUTION_PROFILE_VERSION",
+        owner_id=str(uuid.uuid4()),
+        media_kind="IMAGE",
+        stage="KEYFRAME",
+    )
+
+    service = I2VProbePlanService(database, workspace)
+    prepared = service.prepare_keyframe(
+        str(project["id"]),
+        str(source["media_version_id"]),
+        True,
+    )["approved_keyframe"]
+    assert prepared["reused"] is False
+    assert prepared["source_media_version_id"] == source["media_version_id"]
+    assert prepared["media_version_id"] != source["media_version_id"]
+
+    keyframe = MediaService(database, workspace).get_version(str(prepared["media_version_id"]))
+    assert keyframe["owner_type"] == "SHOT"
+    assert keyframe["owner_id"] == prepared["shot_id"]
+    assert keyframe["purpose"] == "KEYFRAME"
+    assert keyframe["stage"] == "KEYFRAME"
+    assert keyframe["approved_version_id"] == prepared["media_version_id"]
+    assert keyframe["selected_version_id"] == prepared["media_version_id"]
+    assert keyframe["sha256"] == MediaService(database, workspace).get_version(
+        str(source["media_version_id"])
+    )["sha256"]
+
+    reused = service.prepare_keyframe(
+        str(project["id"]),
+        str(source["media_version_id"]),
+        True,
+    )["approved_keyframe"]
+    assert reused["reused"] is True
+    assert reused["media_version_id"] == prepared["media_version_id"]
+    plan = service.plan(str(project["id"]))
+    assert "APPROVED_KEYFRAME_REQUIRED" not in plan["blockers"]
+    assert plan["snapshot"]["approved_keyframe"]["media_version_id"] == prepared["media_version_id"]
+
+
 def test_i2v_probe_plan_is_read_only_and_freezes_approved_evidence(workspace, database) -> None:
     project = ProjectService(database, workspace.projects_root).create_project(
         code="i2v_probe_plan", title="I2V probe plan", episode_count=1, aspect_ratio="9:16",

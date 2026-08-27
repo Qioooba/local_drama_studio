@@ -1,10 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createProject, planProjectCreation } from "../../generated/api";
+import { createProject, listDeliveryPresets, planProjectCreation } from "../../generated/api";
 import { ProjectCreateWizard } from "./ProjectCreateWizard";
 
-vi.mock("../../generated/api", () => ({ planProjectCreation: vi.fn(), createProject: vi.fn() }));
+vi.mock("../../generated/api", () => ({ planProjectCreation: vi.fn(), createProject: vi.fn(), listDeliveryPresets: vi.fn() }));
+
+const deliveryPresets = [
+  { code: "vertical_short", title: "竖屏短剧", description: "", spec: { path_rel: "06_delivery/master", width: 1080, height: 1920, fps: 24, bitrate_kbps: 12000, max_duration_seconds: 180, cover_aspect: "9:16", audio: "aac", subtitles: "both" } },
+  { code: "landscape_4k", title: "横屏 4K", description: "", spec: { path_rel: "06_delivery/master", width: 3840, height: 2160, fps: 25, bitrate_kbps: 45000, max_duration_seconds: 180, cover_aspect: "16:9", audio: "aac", subtitles: "both" } },
+];
 
 const draftPlan = {
   status: "READY_WITH_CONFIGURATION_BLOCKERS" as const,
@@ -37,6 +42,7 @@ function openAndName(title = "新剧") {
 }
 
 beforeEach(() => {
+  vi.mocked(listDeliveryPresets).mockReset().mockResolvedValue({ items: deliveryPresets });
   vi.mocked(planProjectCreation).mockReset().mockResolvedValue({ plan: draftPlan });
   vi.mocked(createProject).mockReset().mockResolvedValue({ project: { id: "new", code: "new_drama", title: "新剧", status: "DRAFT", revision: 1 }, blockers: draftPlan.configuration_blockers });
 });
@@ -63,7 +69,7 @@ describe("ProjectCreateWizard", () => {
     expect(screen.getByRole("spinbutton", { name: /每季计划集数/ })).toHaveProperty("value", "10");
     expect(screen.getByText("项目技术标识")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "继续选择创作方式" }));
-    expect(screen.getByLabelText(/竖屏短剧/)).toHaveProperty("checked", true);
+    expect(await screen.findByLabelText(/竖屏短剧/)).toHaveProperty("checked", true);
     expect(screen.getByLabelText(/先开始创作/)).toHaveProperty("checked", true);
     fireEvent.click(screen.getByRole("button", { name: "继续并自动检查" }));
     await screen.findByText("创作就绪");
@@ -132,7 +138,7 @@ describe("ProjectCreateWizard", () => {
     renderWizard();
     openAndName();
     fireEvent.click(screen.getByRole("button", { name: "继续选择创作方式" }));
-    fireEvent.click(screen.getByLabelText(/横屏 4K/));
+    fireEvent.click(await screen.findByLabelText(/横屏 4K/));
     fireEvent.click(screen.getByRole("button", { name: "继续并自动检查" }));
     await waitFor(() => expect(planProjectCreation).toHaveBeenCalledWith(expect.objectContaining({
       aspect_ratio: "16:9",

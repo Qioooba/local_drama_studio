@@ -26,22 +26,22 @@ function jobs(revision = 1): Job[] {
 describe("JobsPanel", () => {
   it("keeps the expanded row count across live fact refreshes and resets only when scope changes", () => {
     const view = render(<MemoryRouter><JobsPanel jobs={jobs()} loading={false} scopeKey="project-1" /></MemoryRouter>);
-    expect(screen.getAllByRole("button", { name: "详情 · 产物" })).toHaveLength(12);
+    expect(screen.getAllByRole("button", { name: "查看详情和产物" })).toHaveLength(12);
     fireEvent.click(screen.getByRole("button", { name: "继续显示任务（12/14）" }));
-    expect(screen.getAllByRole("button", { name: "详情 · 产物" })).toHaveLength(14);
+    expect(screen.getAllByRole("button", { name: "查看详情和产物" })).toHaveLength(14);
 
     view.rerender(<MemoryRouter><JobsPanel jobs={jobs(2)} loading={false} scopeKey="project-1" /></MemoryRouter>);
-    expect(screen.getAllByRole("button", { name: "详情 · 产物" })).toHaveLength(14);
+    expect(screen.getAllByRole("button", { name: "查看详情和产物" })).toHaveLength(14);
 
     view.rerender(<MemoryRouter><JobsPanel jobs={jobs(2)} loading={false} scopeKey="project-2" /></MemoryRouter>);
-    expect(screen.getAllByRole("button", { name: "详情 · 产物" })).toHaveLength(12);
+    expect(screen.getAllByRole("button", { name: "查看详情和产物" })).toHaveLength(12);
   });
 
   it("reports a completed lease scan even when nothing needed recovery", async () => {
     vi.mocked(reconcileJobs).mockResolvedValue({ result: { reconciled: 0, items: [] } });
     render(<MemoryRouter><JobsPanel jobs={[]} loading={false} scopeKey="project-1" /></MemoryRouter>);
-    fireEvent.click(screen.getByRole("button", { name: "扫描过期租约" }));
-    expect((await screen.findByRole("status")).textContent).toContain("没有需要接管的 Attempt");
+    fireEvent.click(screen.getByRole("button", { name: "扫描失联任务" }));
+    expect((await screen.findByRole("status")).textContent).toContain("没有需要接管的执行");
   });
 
   it("shows an executable recovery command only when queued work has no worker", () => {
@@ -49,7 +49,7 @@ describe("JobsPanel", () => {
     render(<MemoryRouter><JobsPanel jobs={jobs()} loading={false} scopeKey="project-1" capacity={capacity} /></MemoryRouter>);
     expect(screen.getByRole("status").textContent).toContain("3 个任务排队");
     expect(screen.getByText(".\\scripts\\start-worker.ps1")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "复制 Worker 启动命令" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "复制后台服务启动命令" })).toBeTruthy();
   });
 
   it("shows persisted phase and numeric progress inline without inventing a percentage", () => {
@@ -58,8 +58,8 @@ describe("JobsPanel", () => {
     active[1] = { ...active[1], state: "RUNNING", progress: { phase: "VERIFYING_SOURCE" } };
     render(<MemoryRouter><JobsPanel jobs={active} loading={false} scopeKey="project-1" /></MemoryRouter>);
 
-    expect(screen.getByRole("progressbar", { name: "TTS_GENERATION进度 58%" })).toBeTruthy();
-    expect(screen.getByText(/ENCODING · 58%/)).toBeTruthy();
-    expect(screen.getByText(/VERIFYING_SOURCE · 优先级/)).toBeTruthy();
+    expect(screen.getByRole("progressbar", { name: "生成对白配音进度 58%" })).toBeTruthy();
+    expect(screen.getByText(/正在编码媒体 · 58%/)).toBeTruthy();
+    expect(screen.getByText(/正在校验输入文件 · 优先级/)).toBeTruthy();
   });
 });

@@ -12,7 +12,8 @@ import { EpisodeReviewPage } from "../pages/EpisodeReviewPage";
 import { AudioPage } from "../pages/AudioPage";
 import { TimelinePage } from "../pages/TimelinePage";
 import { ProductionSettingsPage } from "../pages/ProductionSettingsPage";
-import { MediaLabPage } from "../pages/MediaLabPage";
+import { SystemWorkflowsPage } from "../pages/SystemWorkflowsPage";
+import { PostShell, ProjectSettingsShell, SystemShell } from "../pages/WorkspaceShells";
 
 vi.mock("../generated/api", () => ({
   listProjects: () => ({ items: [] }),
@@ -23,75 +24,25 @@ vi.mock("../generated/api", () => ({
   getProjectEpisodeCatalog: () => ({ catalog: { project_id: "proj-1", seasons: [], read_only: true, runtime_contacted: false, network_contacted: false, mutated: false } }),
   getStoryboardWorkspace: () => ({ storyboard: { episode: { id: "ep-9", title: "第九集" }, items: [], views: ["TABLE"], identity_invariant: "stable", total_duration_ms: 0 } }),
   listDialogueLines: () => ({ items: [] }),
-  listEpisodeAudioBindings: () => ({ items: [] }),
-  getEpisodeProduction: () => ({
-    items: [{ id: "shot-42", code: "S042", status: "DRAFT" }],
+  listEpisodeProductionShotsV2: () => ({
+    items: [{ shot_id: "shot-42", shot_code: "S042", overall_state: "EMPTY" }],
   }),
-  listProfiles: () => ({ items: [] }),
-  listVoiceProfileVersions: () => ({ items: [] }),
-  reviewInbox: () => ({ items: [] }),
-  getEpisodeTimelineStatus: () => ({ status: undefined }),
-}));
-
-vi.mock("../features/episode-cockpit/api", () => ({ getEpisodeCockpit: () => Promise.resolve({
-  episode: { id: "ep-9", code: "EP09", title: "第九集", project_id: "proj-1" },
-  shots: { total: 2, directed: 1, with_candidates: 1, remaining_generation: 0, selected: 1, approved: 0, failed: 0, stale: 0 },
-  jobs: { failed: 0 }, bridges: { total: 1, ready: 1, stale: 0 }, audio: { bindings: 0, verified: 0 },
-  qc: { candidate_versions: 1, checked: 0, passed: 0, failed: 0 }, blockers: [{ code: "UNDIRECTED_SHOTS", count: 1, label: "仍有镜头未完成导演意图" }],
-  observed_at: "2026-08-24T00:00:00Z", read_only: true, mutated: false,
-}) }));
-
-vi.mock("../features/episode-run-v2/EpisodeRunPanel", () => ({
-  EpisodeRunPanel: ({ projectId, episodeId }: { projectId: string; episodeId: string }) => <section aria-label="整集生产工作台">{projectId}/{episodeId}</section>,
-}));
-
-vi.mock("../features/freshness/FreshnessPanel", () => ({
-  FreshnessPanel: ({ scopeType, scopeId }: { scopeType: string; scopeId: string }) => <section aria-label={`Freshness ${scopeType}`}>{scopeId}</section>,
-}));
-
-vi.mock("../features/episode-review-v2/EpisodeReviewWorkspace", () => ({
-  EpisodeReviewWorkspace: ({ projectId, episodeId }: { projectId: string; episodeId: string }) => <section aria-label="整集审核工作台">{projectId}/{episodeId}</section>,
-}));
-
-vi.mock("../features/audio-v2/AudioEpisodeOverview", () => ({ AudioEpisodeOverview: () => <section aria-label="声音概况" /> }));
-vi.mock("../features/status/AudioTrackPanel", () => ({ AudioTrackPanel: () => <section aria-label="音轨编排" /> }));
-vi.mock("../features/status/DialogueTTSPanel", () => ({ DialogueTTSPanel: () => <section aria-label="台词与语音" /> }));
-vi.mock("../features/timeline-v2/TimelineComposer", () => ({ TimelineComposer: () => <section aria-label="时间线编排器" /> }));
-vi.mock("../features/timeline-v2/TimelineExportPanel", () => ({ TimelineExportPanel: () => <section aria-label="时间线导出" /> }));
-vi.mock("../features/production/SubtitleRevisionPanel", () => ({ SubtitleRevisionPanel: () => <section aria-label="字幕修订" /> }));
-vi.mock("../features/status/ReadinessPanels", () => ({ TimelineStatusPanel: () => <section aria-label="时间线事实" /> }));
-vi.mock("../features/shared/ComfyLabPanel", () => ({ ComfyLabPanel: () => <section aria-label="本地素材实验沙盒" /> }));
-
-vi.mock("../features/director-v2/DirectorDeskClient", () => ({
-  loadDirectorDesk: (_projectId: string, _episodeId: string, shotId?: string) => {
-    const selectedId = shotId ?? "shot-1";
+  getShotStudioV2: (_episodeId: string, shotId: string) => {
     const shot = {
-      id: selectedId,
-      code: selectedId === "shot-1" ? "S001" : selectedId,
-      order_key: "0001",
-      scene_id: null,
-      group_id: null,
-      thumbnail_media_version_id: null,
-      current_video_media_version_id: null,
-      status: "DRAFT",
-      continuity_status: "PENDING",
-      job_status: null,
-      target_duration_ms: 3000,
-      shot_type: "中景",
-      revision: 1,
+      id: shotId, code: shotId === "shot-1" ? "S001" : shotId, order_key: "0001",
+      scene_id: null, scene_code: null, scene_title: null, group_id: null, group_code: null, group_title: null,
+      thumbnail_media_version_id: null, current_video_media_version_id: null, status: "DRAFT",
+      continuity_status: "PENDING", job_status: null, target_duration_ms: 3000, shot_type: "中景", revision: 1,
     };
     return Promise.resolve({
       project: { id: "proj-1", code: "P1", name: "测试项目", aspect_ratio: "9:16" },
       episode: { id: "ep-9", code: "EP09", title: "第九集", status: "DRAFT", shot_count: 1, approved_count: 0, blocked_count: 0 },
       shot_nav: { items: [shot], total: 1, selected_index: 0, window_start: 0, window_end: 1, has_previous: false, has_next: false },
       current_shot: {
-        shot,
-        current_revision: { id: "rev-1", revision_no: 1, is_frozen: false, fields: {} },
-        source_context: {},
-        assets: [],
-        asset_states: [],
-        selected_variant: null,
-        current_media: null,
+        shot, current_revision: { id: "rev-1", revision_no: 1, is_frozen: false, fields: {} },
+        source_context: { scene_id: null, source_range: null, source_text: null },
+        intent_suggestions: { environment: null, continuity: null, script: null }, assets: [], asset_states: [],
+        selected_variant: null, current_media: null,
         candidates: [1, 2].map((take) => ({
           id: `variant-${take}`, intent_id: "intent-1", variant_no: take, variant_type: "KEYFRAME", parent_variant_id: null,
           branch_reason: take === 1 ? "ORIGINAL" : "USER_REROLL", status: "SUCCEEDED", is_stale: false, stale_reason: null,
@@ -100,21 +51,41 @@ vi.mock("../features/director-v2/DirectorDeskClient", () => ({
           integrity_status: "VERIFIED", selected: take === 1, approved: false, created_at: "2026-08-20T00:00:00Z",
         })),
         frame_bridge: { previous: null, current_start: null, current_end: null, next: null, compatibility: "UNKNOWN", stale: false },
-        qc_summary: {},
-        review_summary: {},
-        generation_preferences: {},
-        active_jobs: [],
-        blockers: [],
+        qc_summary: { subject_id: null, latest_run: null, results: [] }, review_summary: { subject_id: null, count: 0, latest: null },
+        generation_preferences: { resolutions: [], available: false }, capability_options: [], active_jobs: [], blockers: [],
       },
-      permissions: { can_edit: true, can_generate: true, can_approve: false },
-      read_only: false,
-      request_shape: "bounded_director_desk_read_model",
+      allowed_actions: { edit_draft: true, mark_ready: true, generate: true, adopt_working_version: true, write_review_decision: false },
+      review_handoff: { subject_type: null, subject_id: null, route_kind: "REVIEW", write_owner: "REVIEW_WORKSPACE" },
+      read_only: true, runtime_contacted: false, network_contacted: false, mutated: false, request_shape: "bounded_shot_studio_v2",
     });
   },
-  approveFormalCandidate: vi.fn(),
-  rerollDirectorCandidate: vi.fn(),
-  selectDirectorCandidate: vi.fn(),
+  listProfiles: () => ({ items: [] }),
+  listVoiceProfileVersions: () => ({ items: [] }),
+  reviewInbox: () => ({ items: [] }),
+  getEpisodeTimelineStatus: () => ({ status: undefined }),
+  listWorkflowVersions: () => ({ items: [] }),
 }));
+
+vi.mock("../features/episode-production-v2/EpisodeProductionWorkspace", () => ({
+  EpisodeProductionWorkspace: ({ projectId, episodeId }: { projectId: string; episodeId: string }) => <section aria-label="整集生产工作台">{projectId}/{episodeId}</section>,
+}));
+
+vi.mock("../features/episode-review-v2/EpisodeReviewWorkspace", () => ({
+  EpisodeReviewWorkspace: ({ projectId, episodeId }: { projectId: string; episodeId: string }) => <section aria-label="整集审核工作台">{projectId}/{episodeId}</section>,
+}));
+
+vi.mock("../features/edit-v2/EpisodeEditWorkspace", () => ({
+  EpisodeEditWorkspace: ({ projectId, episodeId }: { projectId: string; episodeId: string }) => <section aria-label="时间线编排器">{projectId}/{episodeId}</section>,
+}));
+
+vi.mock("../features/audio-v2/EpisodeAudioWorkspace", () => ({
+  EpisodeAudioWorkspace: ({ projectId, episodeId }: { projectId: string; episodeId: string }) => <section aria-label="整集声音工作台">{projectId}/{episodeId}</section>,
+}));
+
+vi.mock("../features/timeline-v2/TimelineExportPanel", () => ({ TimelineExportPanel: () => <section aria-label="时间线导出" /> }));
+vi.mock("../features/production/SubtitleRevisionPanel", () => ({ SubtitleRevisionPanel: () => <section aria-label="字幕修订" /> }));
+vi.mock("../features/status/ReadinessPanels", () => ({ TimelineStatusPanel: () => <section aria-label="时间线事实" /> }));
+vi.mock("../features/shared/ComfyLabPanel", () => ({ ComfyLabPanel: () => <section aria-label="本地素材实验沙盒" /> }));
 
 vi.mock("../features/director-v2/DirectorIntentEditor", () => ({
   DirectorIntentEditor: () => <div>镜头意图编辑器</div>,
@@ -134,16 +105,21 @@ function renderAt(path: string) {
         children: [
           { index: true, element: <ProjectHomePage /> },
           { path: "assets", element: <AssetBiblePage /> },
-          { path: "production-settings", element: <ProductionSettingsPage /> },
+          { path: "settings", element: <ProjectSettingsShell />, children: [
+            { path: "production", element: <ProductionSettingsPage /> },
+            { path: "data", element: <ProductionSettingsPage /> },
+          ] },
           { path: "episodes/:episodeId/plan", element: <EpisodePlanPage /> },
-          { path: "episodes/:episodeId/direct/:shotId?", element: <DirectorDeskPage /> },
-          { path: "episodes/:episodeId/run", element: <EpisodeRunPage /> },
-          { path: "episodes/:episodeId/review", element: <EpisodeReviewPage /> },
-          { path: "episodes/:episodeId/audio", element: <AudioPage /> },
-          { path: "episodes/:episodeId/timeline", element: <TimelinePage /> },
+          { path: "episodes/:episodeId/studio/:shotId?", element: <DirectorDeskPage /> },
+          { path: "episodes/:episodeId/production", element: <EpisodeRunPage /> },
+          { path: "episodes/:episodeId/post", element: <PostShell />, children: [
+            { path: "review", element: <EpisodeReviewPage /> },
+            { path: "audio", element: <AudioPage /> },
+            { path: "edit", element: <TimelinePage /> },
+          ] },
         ],
       },
-      { path: "/lab", element: <AppShell />, children: [{ index: true, element: <MediaLabPage /> }] },
+      { path: "/system", element: <AppShell />, children: [{ element: <SystemShell />, children: [{ path: "workflows", element: <SystemWorkflowsPage /> }] }] },
     ],
     { initialEntries: [path] },
   );
@@ -157,34 +133,33 @@ describe("V2 router foundation", () => {
 
   it("deep-links into a project home page", async () => {
     renderAt("/projects/proj-1");
-    expect((await screen.findAllByText("项目总览")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("项目首页")).length).toBeGreaterThan(0);
     expect((await screen.findAllByText("分集")).length).toBeGreaterThan(0);
-    expect(screen.getByRole("heading", { name: "选择一集进入生产流程" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "制作进度" })).toBeTruthy();
   });
 
   it("deep-links into the asset bible page", async () => {
     renderAt("/projects/proj-1/assets");
-    expect((await screen.findAllByText("资产圣经")).length).toBeGreaterThan(0);
-    expect(screen.getByRole("heading", { name: "角色 / 场景 / 道具 / 服装" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "角色、场景、道具与服装" })).toBeTruthy();
   });
 
   it("deep-links into episode plan and director desk with optional shot id", async () => {
     renderAt("/projects/proj-1/episodes/ep-9/plan");
     expect(await screen.findByRole("tablist", { name: "分集策划任务" })).toBeTruthy();
     cleanup();
-    renderAt("/projects/proj-1/episodes/ep-9/direct");
-    expect(await screen.findByRole("heading", { name: "先选择要精修的镜头" })).toBeTruthy();
+    renderAt("/projects/proj-1/episodes/ep-9/studio");
+    expect(await screen.findByRole("heading", { name: "先选择要处理的镜头" })).toBeTruthy();
     expect(screen.getByRole("link", { name: /S042/ }).getAttribute("href")).toBe(
-      "/projects/proj-1/episodes/ep-9/direct/shot-42",
+      "/projects/proj-1/episodes/ep-9/studio/shot-42",
     );
     expect(screen.queryByRole("button", { name: /生成|重抽|批准/ })).toBeNull();
     cleanup();
-    renderAt("/projects/proj-1/episodes/ep-9/direct/shot-42");
+    renderAt("/projects/proj-1/episodes/ep-9/studio/shot-42");
     expect(await screen.findByRole("heading", { name: /shot-42/ })).toBeTruthy();
   });
 
   it("uses the documented Director shortcuts without triggering approval", async () => {
-    renderAt("/projects/proj-1/episodes/ep-9/direct/shot-1");
+    renderAt("/projects/proj-1/episodes/ep-9/studio/shot-1");
     const first = await screen.findByRole("button", { name: /查看 Take 1/ });
     const second = screen.getByRole("button", { name: /查看 Take 2/ });
     expect(first.getAttribute("aria-pressed")).toBe("true");
@@ -204,26 +179,23 @@ describe("V2 router foundation", () => {
     expect(await screen.findByText("v2-root-boundary")).toBeTruthy();
   });
 
-  it("keeps scoped freshness reachable through the project owner and the episode run task URL", async () => {
-    renderAt("/projects/proj-1/production-settings?view=freshness");
-    expect((await screen.findByRole("region", { name: "Freshness PROJECT" })).textContent).toContain("proj-1");
-    cleanup();
-    renderAt("/projects/proj-1/episodes/ep-9/run?view=freshness");
-    expect((await screen.findByRole("region", { name: "Freshness EPISODE" })).textContent).toContain("ep-9");
+  it("keeps project import, export, and maintenance in the data owner", async () => {
+    renderAt("/projects/proj-1/settings/data");
+    expect(await screen.findByRole("heading", { name: "数据与维护" })).toBeTruthy();
   });
 
   it("deep-links into the expert material lab without mixing it into formal production", async () => {
-    renderAt("/lab?project=proj-1");
-    expect(await screen.findByRole("heading", { name: "素材实验室" })).toBeTruthy();
+    renderAt("/system/workflows?project=proj-1");
+    expect(await screen.findByRole("heading", { name: "工作流与运行环境" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "本地素材实验沙盒" })).toBeTruthy();
-    expect(screen.getByText(/不会自动进入正式资产/)).toBeTruthy();
+    expect(screen.getByText(/项目只能消费已发布且兼容的版本/)).toBeTruthy();
   });
 
   it.each([
-    ["run", "整集生产工作台"],
-    ["review", "整集审核工作台"],
-    ["audio", "台词与语音"],
-    ["timeline?view=export", "时间线导出"],
+    ["production", "整集生产工作台"],
+    ["post/review", "整集审核工作台"],
+    ["post/audio", "整集声音工作台"],
+    ["post/edit?view=export", "时间线编排器"],
   ])("deep-links into the episode %s workspace", async (route, regionName) => {
     renderAt(`/projects/proj-1/episodes/ep-9/${route}`);
     expect(await screen.findByRole("region", { name: regionName })).toBeTruthy();

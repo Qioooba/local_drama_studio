@@ -142,7 +142,10 @@ def test_verified_deepseek_probe_can_store_key_in_os_credential_manager(workspac
             "load_test": load_test,
         },
     )
-    monkeypatch.setattr("local_drama.infrastructure.windows_credentials.write_deepseek_api_key", remembered.append)
+    monkeypatch.setattr(
+        "local_drama.platform.windows.credentials.WindowsCredentialStore.put",
+        lambda _store, _ref, value: remembered.append(value),
+    )
 
     with TestClient(create_app(workspace)) as client:
         response = client.post(
@@ -302,6 +305,7 @@ def test_deepseek_expands_one_sentence_video_prompt_without_persisting_key(works
         lambda self, system, user, **kwargs: {
             "title": "雾桥纸伞",
             "video_prompt": "晨雾中的江南石桥，女子撑纸伞缓步前行，柔和逆光，镜头稳定向前推进。",
+            "keyframe_prompt": "晨雾中的江南石桥，女子撑纸伞准备迈步，柔和逆光，中景构图。",
             "subject_action": "女子撑纸伞缓步过桥",
             "environment": "晨雾中的江南石桥，柔和逆光",
             "shot_type": "中景",
@@ -349,12 +353,16 @@ def test_deepseek_one_sentence_can_remember_key_in_os_credential_store(workspace
     profile_id = str(candidate["profile_version_id"])
     service.publish(profile_id, api_key="sk-remember-without-database", allow_remote_outbound=True)
     remembered: list[str] = []
-    monkeypatch.setattr("local_drama.infrastructure.windows_credentials.write_deepseek_api_key", remembered.append)
+    monkeypatch.setattr(
+        "local_drama.platform.windows.credentials.WindowsCredentialStore.put",
+        lambda _store, _ref, value: remembered.append(value),
+    )
     monkeypatch.setattr(
         "local_drama.infrastructure.local_llm.LocalLLMClient.chat_json",
         lambda self, system, user, **kwargs: {
             "title": "记住密钥测试",
             "video_prompt": "一只白鸟掠过湖面，晨光，稳定跟拍。",
+            "keyframe_prompt": "晨光湖面上方，一只白鸟准备贴近水面飞行，中景构图。",
             "subject_action": "白鸟掠过湖面",
             "environment": "晨光湖面",
             "shot_type": "中景",

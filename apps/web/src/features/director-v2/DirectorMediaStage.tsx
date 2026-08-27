@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fallbackToOriginalVideo, mediaContentUrl, mediaProxyUrl } from "../shared/mediaPlaybackPolicy";
+import { MediaThumbnail } from "../shared/MediaThumbnail";
 import "./director-media-stage.css";
 
 export type DirectorStageMedia = {
@@ -7,6 +8,7 @@ export type DirectorStageMedia = {
   mediaKind: string | null;
   mimeType?: string | null;
   durationMs?: number | null;
+  thumbnailReady?: boolean;
 };
 
 export type DirectorMediaStageProps = {
@@ -96,7 +98,9 @@ export function DirectorMediaStage({ media, comparisonMedia = null, label, badge
         {loading && <div className="director-media-stage__loading" role="status"><span aria-hidden="true" />正在读取视频 Range…</div>}
         {error && <div className="director-media-stage__error" role="alert"><strong>无法播放当前视频</strong><span>{error}</span><button type="button" onClick={() => { setError(null); videoRef.current?.load(); }}>重新加载</button></div>}
         <div className="director-media-stage__controls" aria-label="视频播放控制"><button type="button" aria-label={playing ? "暂停（Space）" : "播放（Space）"} onClick={() => void togglePlayback()} disabled={Boolean(error)}><StageIcon name={playing ? "pause" : "play"} /></button><button type="button" aria-label="从头播放" onClick={() => void restart()} disabled={Boolean(error)}><StageIcon name="restart" /></button><span aria-label={`播放时间 ${formatTime(currentTime)}，总时长 ${formatTime(duration)}`}>{formatTime(currentTime)} / {formatTime(duration)}</span><input aria-label="视频进度" type="range" min="0" max={Math.max(duration, .01)} step="0.05" value={Math.min(currentTime, duration || 0)} disabled={!duration || Boolean(error)} onChange={(event) => { const next = Number(event.target.value); if (videoRef.current) videoRef.current.currentTime = next; setCurrentTime(next); }} /><button type="button" aria-label={muted ? "取消静音" : "静音"} aria-pressed={muted} onClick={() => setMuted((value) => !value)}><StageIcon name={muted ? "muted" : "volume"} /></button></div>
-      </> : <img src={directorThumbnailUrl(showComparison && comparisonMedia ? comparisonMedia.mediaVersionId : media.mediaVersionId)} alt={`${label}${showComparison ? " 对照" : ""}图片缩略图`} loading="eager" decoding="async" />}
+      </> : media.thumbnailReady === false
+        ? <span className="media-thumbnail-fallback" role="img" aria-label={`${label}缩略图待生成`}><span aria-hidden="true">◫</span><small>缩略图待生成</small></span>
+        : <MediaThumbnail src={directorThumbnailUrl(showComparison && comparisonMedia ? comparisonMedia.mediaVersionId : media.mediaVersionId)} alt={`${label}${showComparison ? " 对照" : ""}图片缩略图`} fallbackLabel={`${label}缩略图待生成`} loading="eager" decoding="async" />}
     {media && <div className="director-media-stage__view-tools" aria-label="画面检查工具">
       <button type="button" aria-pressed={viewMode === "fit"} onClick={() => { setViewMode("fit"); setDetailZoom(false); }}>适合</button>
       <button type="button" aria-pressed={viewMode === "actual"} onClick={() => { setViewMode("actual"); setDetailZoom(false); }}>100%</button>

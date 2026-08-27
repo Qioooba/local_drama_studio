@@ -1,11 +1,13 @@
 import { chromium } from "playwright";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const BASE_URL = process.env.BASE_URL || "http://127.0.0.1:5173";
-const EDGE_PATH = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
+const EDGE_PATH = process.env.EDGE_PATH;
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-const OUTPUT_DIR = path.resolve("docs/visual_audit/flash_check/controls_detailed");
+const OUTPUT_DIR = path.join(ROOT, "docs", "visual_audit", "flash_check", "controls_detailed");
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
 const projectId = "e5eaa01d-d39a-4a63-acbf-026da30b46e7";

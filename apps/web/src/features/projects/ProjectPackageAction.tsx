@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useId, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   commitStagedProjectPackage,
@@ -7,12 +7,14 @@ import {
   rebuildProjectThumbnails,
   requestJson,
   stageProjectPackage,
+  uploadProjectPackage,
 } from "../../generated/api";
 
 type IdentityMode = "REBIND_EXISTING" | "IMPORT_AS_COPY_REWRITE_IDENTITY";
 type InboxPackage = { name: string; byte_size: number; modified_at: string };
 
 export function ProjectPackageAction({ projectId, onImported }: { projectId: string; onImported?: (projectId: string) => void }) {
+  const packageInputId = useId();
   const [inboxName, setInboxName] = useState("");
   const [identityMode, setIdentityMode] = useState<IdentityMode>("IMPORT_AS_COPY_REWRITE_IDENTITY");
   const [code, setCode] = useState("");
@@ -25,6 +27,7 @@ export function ProjectPackageAction({ projectId, onImported }: { projectId: str
   }, [inbox.data?.items, inboxName]);
   const inspect = useMutation({ mutationFn: (relPath: string) => dryRunProjectPackage(projectId, relPath) });
   const exportPackage = useMutation({ mutationFn: () => exportProjectPackage(projectId), onSuccess: ({ package: item }) => inspect.mutate(item.rel_path) });
+  const upload = useMutation({ mutationFn: (file: File) => uploadProjectPackage(file), onSuccess: async ({ package: item }) => { setInboxName(item.name); await inbox.refetch(); } });
   const stage = useMutation({ mutationFn: () => stageProjectPackage(inboxName.trim()), onSuccess: ({ staging }) => { setCode(`${staging.dry_run.project_code}_copy_${Date.now().toString(36)}`); setTitle(`${staging.dry_run.project_code} 导入副本`); } });
   const commit = useMutation({
     mutationFn: () => {
@@ -38,15 +41,16 @@ export function ProjectPackageAction({ projectId, onImported }: { projectId: str
   });
   const rebuild = useMutation({ mutationFn: () => rebuildProjectThumbnails(projectId) });
   const submitStage = (event: FormEvent) => { event.preventDefault(); if (inboxName.trim()) stage.mutate(); };
-  const busy = exportPackage.isPending || inspect.isPending || stage.isPending || commit.isPending || rebuild.isPending;
-  const error = exportPackage.error || inspect.error || stage.error || commit.error || rebuild.error;
+  const busy = exportPackage.isPending || inspect.isPending || upload.isPending || stage.isPending || commit.isPending || rebuild.isPending;
+  const error = exportPackage.error || inspect.error || upload.error || stage.error || commit.error || rebuild.error;
   return <section className="project-package-action" aria-labelledby="project-package-title">
     <div><strong id="project-package-title">v2 标准项目包</strong><p className="muted">导出逐项记录 SHA-256。导入只读取固定本地 inbox，先暂存预检，再明确决定重写身份或仅恢复缺失目录；不会覆盖现有项目目录。</p></div>
     <div className="action-row"><button type="button" className="secondary" onClick={() => exportPackage.mutate()} disabled={busy}>{exportPackage.isPending ? "导出校验中…" : "导出并 dry-run"}</button><button type="button" className="secondary" onClick={() => rebuild.mutate()} disabled={busy}>{rebuild.isPending ? "重建缩略图中…" : "重建项目缩略图"}</button></div>
-    {exportPackage.data && <p>包：{exportPackage.data.package.rel_path} · {exportPackage.data.package.entry_count} entries · SHA {String(exportPackage.data.package.sha256 ?? "").slice(0, 12) || "—"}…</p>}
+    {exportPackage.data && <p>包：{exportPackage.data.package.rel_path} · {exportPackage.data.package.entry_count} entries · SHA {String(exportPackage.data.package.sha256 ?? "").slice(0, 12) || "—"}… <a className="secondary" href={`/api/v1/projects/${encodeURIComponent(projectId)}/packages:download?rel_path=${encodeURIComponent(exportPackage.data.package.rel_path)}`} download>下载到当前电脑</a></p>}
     {inspect.data && <p><strong>{inspect.data.dry_run.status}</strong> · 展开 {inspect.data.dry_run.expanded_bytes} bytes · {inspect.data.dry_run.blockers.join("、") || "哈希 / 结构 / 磁盘 PASS"}</p>}
     <form className="package-import-form" onSubmit={submitStage}>
-      <p className="muted">把 .ldspkg 放入本机 <code>data/imports/project-packages/inbox</code>，系统会自动列出可导入的包。</p>
+      <p className="muted">从当前电脑选择 .ldspkg，浏览器先上传到服务端受控 inbox，再执行结构、哈希、展开体积与身份预检。</p>
+      <div className="action-row"><label className={`secondary${upload.isPending ? " disabled" : ""}`} htmlFor={packageInputId}>{upload.isPending ? "正在上传项目包…" : "选择并上传项目包"}</label><input id={packageInputId} className="project-resource-file" type="file" accept=".ldspkg" disabled={busy} onChange={(event) => { const file = event.target.files?.[0]; if (file) upload.mutate(file); }} /></div>
       <label>待导入项目包<select value={inboxName} onChange={(event) => setInboxName(event.target.value)} disabled={inbox.isPending || inbox.isError || !inbox.data?.items.length} required><option value="">{inbox.isPending ? "正在读取 inbox…" : inbox.isError ? "读取失败，请刷新" : inbox.data?.items.length ? "请选择项目包" : "inbox 中没有 .ldspkg 文件"}</option>{inbox.data?.items.map((item) => <option value={item.name} key={item.name}>{item.name} · {Math.max(1, Math.round(item.byte_size / 1024))} KB</option>)}</select><small>不接受手写路径，避免输错文件名或越过固定目录。</small></label>
       <button className="secondary" type="button" onClick={() => void inbox.refetch()} disabled={inbox.isFetching}>刷新文件列表</button>
       <button className="secondary" type="submit" disabled={busy || !inboxName.trim()}>{stage.isPending ? "暂存校验中…" : "暂存并预检"}</button>

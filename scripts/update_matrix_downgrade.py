@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-matrix_path = Path(r"F:\AI_Projects\h3\local_drama_studio\docs\evidence\ui-uat-2026-08-22\CONTROL_STATE_MATRIX.md")
+matrix_path = Path(__file__).resolve().parents[1] / "docs" / "evidence" / "ui-uat-2026-08-22" / "CONTROL_STATE_MATRIX.md"
 content = matrix_path.read_text(encoding="utf-8", errors="replace")
 
 # Replace PASS in rows 091-098 with INVALID_AS_UI_EVIDENCE

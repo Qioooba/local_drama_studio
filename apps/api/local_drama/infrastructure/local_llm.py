@@ -15,9 +15,8 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.network_policy import parse_runtime_endpoint
 from local_drama.infrastructure.local_http import open_local
-
-LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 class LocalLLMClient:
@@ -28,6 +27,7 @@ class LocalLLMClient:
         timeout_seconds: float = 30.0,
         provider: str = "OLLAMA_LOOPBACK",
         api_key: str | None = None,
+        allow_private_network: bool = False,
     ) -> None:
         normalized_provider = (provider or "OLLAMA_LOOPBACK").strip().upper()
         if normalized_provider not in {"OLLAMA_LOOPBACK", "OPENAI_COMPAT"}:
@@ -35,10 +35,14 @@ class LocalLLMClient:
 
         parsed = urlparse(base_url)
         if normalized_provider == "OLLAMA_LOOPBACK":
-            if parsed.scheme != "http" or (parsed.hostname or "").casefold() not in LOOPBACK_HOSTS:
-                raise DomainRuleError("LOCAL_ONLY_ENDPOINT_REQUIRED", "本地 LLM 只允许 http loopback endpoint")
             if parsed.username or parsed.password or parsed.query or parsed.fragment:
-                raise DomainRuleError("LOCAL_ONLY_ENDPOINT_AMBIGUOUS", "本地 LLM endpoint 不得携带凭据、query 或 fragment")
+                raise DomainRuleError("LOCAL_ONLY_ENDPOINT_AMBIGUOUS", "LLM endpoint 不得在 URL 中携带凭据、query 或 fragment")
+            if parse_runtime_endpoint(
+                base_url,
+                allow_private_network=allow_private_network,
+                schemes=frozenset({"http"}),
+            ) is None:
+                raise DomainRuleError("LOCAL_ONLY_ENDPOINT_REQUIRED", "本地 LLM 只允许 http loopback 或受控私网 endpoint")
         else:
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:
                 raise DomainRuleError("LLM_ENDPOINT_INVALID", "OpenAI 兼容 LLM 只允许 http 或 https endpoint")

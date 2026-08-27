@@ -160,7 +160,7 @@
 | 2.1(ShotGroupPlanner).2 | 分镜参数用统一枚举 | ✅ 已实现 | Scene/Group/Beat 均走下拉选择器，`shot_type` 在分镜板用共享枚举。 |
 | 2.1(CharacterIdentityPack).1 | 身份包代码 BASE 可默认生成 | ✅ 已实现 | `setNewPackCode("BASE")` 预填（`CharacterIdentityPackPanel.tsx`）。 |
 | 2.1(CharacterIdentityPack).2 | 审核状态用统一枚举 | ✅ 已实现 | `STATUS_LABELS` + `StatusBadge`。 |
-| 2.1(StoryAssetLibrary).1 | 资产 code 自动生成并绑定类别 | ✅ 已实现 | `generateAssetCode(kind,name)`（`StoryAssetLibraryPanel.tsx`）。 |
+| 2.1(AssetBible).1 | 资产 code 自动生成并绑定类别 | ✅ 已实现 | `generateAssetCode(kind,name)`（`AssetBiblePage.tsx`）。 |
 | 2.2.1(DialogueTTS/Governance) | `emotion/model_ref/ttsJobId` 不应自由输入 | 🔨 已实现 | emotion 使用 `TTS_EMOTION_OPTIONS` 下拉；`model_ref` 在卡片只读展示；`ttsJobId` 不再是用户输入项，选择真实候选即写入。 |
 | 2.2.2(MotionControl) | `subject_role/mask` 应下拉 + 预览 | ✅ 已实现 | `SUBJECT_ROLE_OPTIONS` 下拉；mask/keyframe 用 `ProjectMediaVersionSelect`。 |
 | 2.2.3(PostProcess) | LUT 路径应项目内资源 picker | 🔨 已实现 | `ProjectLocalResourceSelect` 从当前项目只读扫描 `.cube`，以名称/大小/相对路径选择；绝对路径不出 API。 |

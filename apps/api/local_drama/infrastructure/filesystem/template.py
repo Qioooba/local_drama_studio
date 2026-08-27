@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+
+from local_drama.infrastructure.filesystem.atomic import replace_path
 
 TEMPLATE_VERSION = "project-template.v2.0"
 TEMPLATE_DIRECTORIES = (
@@ -96,7 +97,7 @@ def build_project_tree(projects_root: Path, project_id: str, code: str, title: s
             "legacy_refs": [],
         }
         (temporary_root / "project.json").write_text(json.dumps(project_json, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        os.replace(temporary_root, final_root)
+        replace_path(temporary_root, final_root)
         return final_root, final_root / "project.json"
     except Exception:
         if temporary_root.exists():

@@ -1,147 +1,44 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildBreadcrumbs,
-  parseRouteContext,
-  routes,
-  validateRouteOwnership,
-} from "./routeRegistry";
+import { buildBreadcrumbs, parseRouteContext, routes, validateRouteOwnership } from "./routeRegistry";
 
-describe("routeRegistry", () => {
-  it("builds correct typed route URLs", () => {
+describe("canonical route registry", () => {
+  it("builds the reduced product routes", () => {
     expect(routes.projects()).toBe("/projects");
-    expect(routes.models()).toBe("/models");
-    expect(routes.models("p-123")).toBe("/models?project=p-123");
-    expect(routes.jobs()).toBe("/jobs");
-    expect(routes.jobs("p-123")).toBe("/jobs?project=p-123");
-    expect(routes.diagnostics()).toBe("/diagnostics");
-    expect(routes.diagnostics("p-123")).toBe("/diagnostics?project=p-123");
-    expect(routes.mediaLab()).toBe("/lab");
-    expect(routes.mediaLab("p-123")).toBe("/lab?project=p-123");
-
-    expect(routes.projectHome("proj-001")).toBe("/projects/proj-001");
-    expect(routes.story("proj-001")).toBe("/projects/proj-001/story");
-    expect(routes.assets("proj-001")).toBe("/projects/proj-001/assets");
-    expect(routes.qcPolicies("proj-001")).toBe("/projects/proj-001/qc-policies");
-    expect(routes.directorRecipes("proj-001")).toBe("/projects/proj-001/director-recipes");
-    expect(routes.productionSettings("proj-001")).toBe("/projects/proj-001/production-settings");
-    expect(routes.projectModels("proj-001")).toBe("/models?project=proj-001");
-    expect(routes.projectJobs("proj-001")).toBe("/jobs?project=proj-001");
-    expect(routes.projectDiagnostics("proj-001")).toBe("/diagnostics?project=proj-001");
-    expect(routes.canvas("proj-001")).toBe("/projects/proj-001/canvas");
-    expect(routes.canvas("proj-001", "ep-1")).toBe("/projects/proj-001/canvas?episode=ep-1");
-    expect(routes.operations("proj-001")).toBe("/projects/proj-001/operations");
-
-    expect(routes.episodePlan("proj-001", "ep-01")).toBe("/projects/proj-001/episodes/ep-01/plan");
-    expect(routes.directorDesk("proj-001", "ep-01")).toBe("/projects/proj-001/episodes/ep-01/direct");
-    expect(routes.directorDesk("proj-001", "ep-01", "shot-02")).toBe(
-      "/projects/proj-001/episodes/ep-01/direct/shot-02"
-    );
-    expect(routes.generation("proj-001", "ep-01")).toBe("/projects/proj-001/episodes/ep-01/generation");
-    expect(routes.generation("proj-001", "ep-01", "shot-02")).toBe(
-      "/projects/proj-001/episodes/ep-01/generation/shot-02"
-    );
-    expect(routes.episodeReview("proj-001", "ep-01")).toBe("/projects/proj-001/episodes/ep-01/review");
-    expect(routes.audio("proj-001", "ep-01")).toBe("/projects/proj-001/episodes/ep-01/audio");
-    expect(routes.timeline("proj-001", "ep-01")).toBe("/projects/proj-001/episodes/ep-01/timeline");
-    expect(routes.delivery("proj-001", "ep-01")).toBe("/projects/proj-001/episodes/ep-01/delivery");
-    expect(routes.episodeRun("proj-001", "ep-01")).toBe("/projects/proj-001/episodes/ep-01/run");
+    expect(routes.settings("p 1", "quality")).toBe("/projects/p%201/settings/quality");
+    expect(routes.shotStudio("p1", "e1", "s1")).toBe("/projects/p1/episodes/e1/studio/s1");
+    expect(routes.episodeProduction("p1", "e1")).toBe("/projects/p1/episodes/e1/production");
+    expect(routes.postReview("p1", "e1")).toBe("/projects/p1/episodes/e1/post/review");
+    expect(routes.postAudio("p1", "e1")).toBe("/projects/p1/episodes/e1/post/audio");
+    expect(routes.postEdit("p1", "e1")).toBe("/projects/p1/episodes/e1/post/edit");
+    expect(routes.systemJobs("p1")).toBe("/system/jobs?project=p1");
   });
 
-  it("parses route context accurately across global, project, and episode scopes", () => {
-    expect(parseRouteContext("/projects")).toEqual({
-      routeId: "projects",
-      scope: "GLOBAL",
-      projectId: null,
-      episodeId: null,
-      shotId: null,
-    });
-
-    expect(parseRouteContext("/projects/proj-999")).toEqual({
-      routeId: "projectHome",
-      scope: "PROJECT",
-      projectId: "proj-999",
-      episodeId: null,
-      shotId: null,
-    });
-
-    expect(parseRouteContext("/projects/proj-999/story")).toEqual({
-      routeId: "story",
-      scope: "PROJECT",
-      projectId: "proj-999",
-      episodeId: null,
-      shotId: null,
-    });
-
-    expect(parseRouteContext("/projects/proj-999/models").routeId).toBe("projectModels");
-    expect(parseRouteContext("/projects/proj-999/jobs").routeId).toBe("projectJobs");
-    expect(parseRouteContext("/projects/proj-999/diagnostics").routeId).toBe("projectDiagnostics");
-    expect(parseRouteContext("/projects/proj-999/settings").routeId).toBe("productionSettings");
-    expect(parseRouteContext("/lab")).toEqual({
-      routeId: "mediaLab",
-      scope: "GLOBAL",
-      projectId: null,
-      episodeId: null,
-      shotId: null,
-    });
-
-    expect(parseRouteContext("/projects/proj-999/episodes/ep-03/direct/shot-77")).toEqual({
-      routeId: "directorDeskShot",
-      scope: "EPISODE",
-      projectId: "proj-999",
-      episodeId: "ep-03",
-      shotId: "shot-77",
-    });
-
-    expect(parseRouteContext("/projects/proj-999/episodes/ep-03/direct")).toEqual({
-      routeId: "directorDesk",
-      scope: "EPISODE",
-      projectId: "proj-999",
-      episodeId: "ep-03",
-      shotId: null,
-    });
-
-    expect(parseRouteContext("/projects/proj-999/episodes/ep-03/generation/shot-88")).toEqual({
-      routeId: "generationShot",
-      scope: "EPISODE",
-      projectId: "proj-999",
-      episodeId: "ep-03",
-      shotId: "shot-88",
-    });
+  it("parses canonical contexts", () => {
+    expect(parseRouteContext("/projects/p1/settings/quality").routeId).toBe("settings");
+    expect(parseRouteContext("/system/capabilities").routeId).toBe("systemCapabilities");
+    expect(parseRouteContext("/projects/p1/episodes/e1/studio/s1")).toEqual({ routeId: "shotStudioShot", scope: "EPISODE", projectId: "p1", episodeId: "e1", shotId: "s1" });
+    expect(parseRouteContext("/projects/p1/episodes/e1/production").routeId).toBe("episodeProduction");
+    expect(parseRouteContext("/projects/p1/episodes/e1/post/audio").routeId).toBe("postAudio");
   });
 
-  it("fails closed for malformed percent-encoded route segments", () => {
-    expect(() => parseRouteContext("/projects/%E0%A4%A/story")).not.toThrow();
-    expect(parseRouteContext("/projects/%E0%A4%A/story")).toEqual({
-      routeId: null,
-      scope: null,
-      projectId: null,
-      episodeId: null,
-      shotId: null,
-    });
-    expect(parseRouteContext("/projects/p1/episodes/e1/direct/%E0%A4%A").routeId).toBeNull();
+  it("fails closed for malformed identifiers", () => {
+    expect(parseRouteContext("/projects/%E0%A4%A/story").routeId).toBeNull();
+    expect(parseRouteContext("/projects/p1/episodes/e1/studio/%E0%A4%A").routeId).toBeNull();
   });
 
-  it("validates route ownership preventing cross-project context leaks", () => {
-    const ctx = parseRouteContext("/projects/proj-100/episodes/ep-01/plan");
-    expect(validateRouteOwnership(ctx, "proj-100", "ep-01")).toEqual({ valid: true });
-    expect(validateRouteOwnership(ctx, "proj-200", "ep-01").valid).toBe(false);
-    expect(validateRouteOwnership(ctx, "proj-100", "ep-99").valid).toBe(false);
+  it("validates entity ownership", () => {
+    const context = parseRouteContext("/projects/p1/episodes/e1/plan");
+    expect(validateRouteOwnership(context, "p1", "e1")).toEqual({ valid: true });
+    expect(validateRouteOwnership(context, "p2", "e1").valid).toBe(false);
   });
 
-  it("builds correct breadcrumbs hierarchy", () => {
-    const crumbs = buildBreadcrumbs({
-      pathname: "/projects/proj-100/episodes/ep-01/direct/shot-12",
-      projectTitle: "大唐双龙传",
-      seasonTitle: "S01 · 第一季",
-      episodeTitle: "第1集 启程",
-      shotCode: "S12-全景打斗",
-    });
-
-    expect(crumbs).toHaveLength(5);
-    expect(crumbs[0]).toEqual({ label: "项目列表", to: "/projects" });
-    expect(crumbs[1]).toEqual({ label: "大唐双龙传", to: "/projects/proj-100" });
-    expect(crumbs[2]).toEqual({ label: "S01 · 第一季 / 第1集 启程", to: "/projects/proj-100/episodes/ep-01/plan" });
-    expect(crumbs[3]).toEqual({ label: "导演工作台", to: "/projects/proj-100/episodes/ep-01/direct" });
-    expect(crumbs[4]).toEqual({ label: "S12-全景打斗", isCurrent: true });
+  it("builds precise shot breadcrumbs", () => {
+    expect(buildBreadcrumbs({ pathname: "/projects/p1/episodes/e1/studio/s1", projectTitle: "项目", seasonTitle: "S1", episodeTitle: "E1", shotCode: "S001" })).toEqual([
+      { label: "项目", to: "/projects" },
+      { label: "项目", to: "/projects/p1" },
+      { label: "S1 / E1", to: "/projects/p1/episodes/e1/plan" },
+      { label: "镜头", to: "/projects/p1/episodes/e1/studio" },
+      { label: "S001", isCurrent: true },
+    ]);
   });
 });

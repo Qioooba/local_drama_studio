@@ -845,6 +845,23 @@ class ProfileService:
             inputs_ok = isinstance(required_inputs, list) and all(str(slot) in slots for slot in required_inputs)
             fallback_ok = support != "PROMPT_FALLBACK" or (isinstance(item, dict) and item.get("prompt_fallback") is True)
             checks.append({"code": f"CAPABILITY_{name.upper()}", "passed": bool(matrix_ok and valid_support and inputs_ok and fallback_ok)})
+        if str(row["capability"]).startswith("VIDEO_"):
+            camera = matrix.get("camera") if isinstance(matrix, dict) else None
+            camera_support = camera.get("support") if isinstance(camera, dict) else None
+            camera_inputs = camera.get("required_inputs", []) if isinstance(camera, dict) else []
+            camera_inputs_ok = isinstance(camera_inputs, list) and all(str(slot) in slots for slot in camera_inputs)
+            camera_fallback_ok = camera_support != "PROMPT_FALLBACK" or (
+                isinstance(camera, dict) and camera.get("prompt_fallback") is True
+            )
+            checks.append({
+                "code": "CAPABILITY_CAMERA",
+                "passed": bool(
+                    matrix_ok
+                    and camera_support in {"NATIVE", "PROMPT_FALLBACK", "UNSUPPORTED"}
+                    and camera_inputs_ok
+                    and camera_fallback_ok
+                ),
+            })
         return checks
 
     def validate_compatibility(self, profile_version_id: str, actor: str = "local-user") -> dict[str, Any]:

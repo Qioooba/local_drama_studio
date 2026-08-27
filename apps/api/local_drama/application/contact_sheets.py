@@ -3,16 +3,17 @@ from __future__ import annotations
 import hashlib
 import html
 import json
-import os
 import shutil
 import subprocess
 import uuid
 from pathlib import Path
 from typing import Any
 
+from local_drama.application.export_archives import materialize_verified_export_archive
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.infrastructure.filesystem.atomic import replace_path
 
 
 def _sha256(path: Path) -> str:
@@ -166,11 +167,25 @@ class ContactSheetExportService:
             (partial / "manifest.json").write_bytes(_canonical(manifest) + b"\n")
             document = f'<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>{html.escape(str(episode["title"]))} 联系表</title><style>body{{font:14px system-ui;margin:24px;background:#f4f1eb;color:#20242b}}main{{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}}article{{display:grid;gap:8px;padding:12px;background:#fffdf8;border:1px solid #d8d2c7;border-radius:10px}}img{{width:100%;height:auto;max-width:320px;aspect-ratio:16/9;object-fit:contain;background:#111715}}span,code{{font-size:12px;color:#666b66}}</style><h1>{html.escape(str(episode["title"]))} · 已选媒体联系表</h1><p>本地只读导出 · {len(items)} 项 · manifest {export_hash[:16]}…</p><main>{"".join(cards)}</main></html>'
             (partial / "contact-sheet.html").write_text(document, encoding="utf-8")
-            os.replace(partial, final)
+            replace_path(partial, final)
         except Exception:
             shutil.rmtree(partial, ignore_errors=True)
             raise
         return self._result(project_root, final, export_hash, len(items), reused=False)
+
+    def download_archive(self, episode_id: str, rel_path: str) -> Path:
+        episode, _items = self._selected_items(episode_id)
+        project_root = (self.settings.projects_root / str(episode["root_rel"])).resolve()
+        allowed = (project_root / "01_story" / "episodes" / str(episode["code"]) / "exports").resolve()
+        candidate = (project_root / rel_path).resolve()
+        if candidate.parent != allowed or not candidate.name.startswith("contact-sheet-"):
+            raise DomainRuleError("CONTACT_SHEET_DOWNLOAD_NOT_ALLOWED", "只能下载本集已注册的联系表导出")
+        try:
+            export_hash = str(json.loads((candidate / "manifest.json").read_text(encoding="utf-8"))["export_hash"])
+        except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+            raise DomainRuleError("CONTACT_SHEET_EXPORT_TAMPERED", "联系表导出 manifest 无效") from error
+        self._verify_existing(candidate, export_hash)
+        return materialize_verified_export_archive(candidate)
 
     @staticmethod
     def _result(project_root: Path, final: Path, export_hash: str, item_count: int, *, reused: bool) -> dict[str, Any]:

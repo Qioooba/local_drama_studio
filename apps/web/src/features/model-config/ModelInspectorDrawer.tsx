@@ -80,7 +80,7 @@ function SummaryRows({ execution }: { execution: ProfileExecutionDetail }) {
       <div><dt>运行状态</dt><dd>{String(runtime?.status ?? "未知")}</dd></div>
       <div><dt>工作流</dt><dd>{String(workflow?.title ?? workflow?.code ?? "未绑定")}</dd></div>
       <div><dt>工作流版本</dt><dd>{workflow?.version_no ? `v${String(workflow.version_no)}` : "—"}</dd></div>
-      {provider ? <div><dt>Provider Connection</dt><dd>{provider.title} · {provider.protocol}</dd></div> : null}
+      {provider ? <div><dt>生成服务连接</dt><dd>{provider.title} · {provider.protocol}</dd></div> : null}
       {provider ? <div><dt>服务地址</dt><dd><code>{provider.base_url}</code></dd></div> : null}
       {provider || execution.provider ? <div><dt>远端模型</dt><dd>{provider?.model ?? execution.model ?? "—"}</dd></div> : null}
       <div><dt>可配置字段</dt><dd>{Object.keys((execution.override_schema.fields as Record<string, unknown> | undefined) ?? {}).length} 个</dd></div>
@@ -101,15 +101,15 @@ export function ModelInspectorDrawer({
   const execution = profile?.execution ?? null;
   return (
     <Drawer open={open} title={profile ? `${profile.title} · v${profile.version_no} 执行详情` : "模型执行详情"} width="min(620px, 92vw)" onClose={onClose}>
-      {!profile ? <p className="empty-state">尚未选择 Profile 版本。</p> : !execution ? (
-        <div className="inline-error" role="alert">当前 API 没有返回执行详情；请刷新 Profile 版本后重试。</div>
+      {!profile ? <p className="empty-state">尚未选择生成配置版本。</p> : !execution ? (
+        <div className="inline-error" role="alert">服务器没有返回执行详情；请刷新生成配置版本后重试。</div>
       ) : (
         <div className="model-inspector-drawer">
           <div className="model-inspector-intro">
             <div>
               <p className="eyebrow">真实执行内容</p>
               <h3>{profile.capability}</h3>
-              <p className="muted">以下内容来自 Profile Version、模型清单和工作流版本，不是前端静态说明。</p>
+              <p className="muted">以下内容来自已发布生成配置、模型清单和本机工作流版本，不是页面写死的说明。</p>
             </div>
             <StatusBadge tone={profile.status === "PUBLISHED" ? "success" : "attention"}>{profile.status}</StatusBadge>
           </div>
@@ -120,7 +120,7 @@ export function ModelInspectorDrawer({
 
           <InspectorSection title="模型组件" summary={`${execution.components.length} 个组件`}>
             <div className="model-inspector-components">
-              {execution.components.length ? execution.components.map((component, index) => <ComponentRow key={`${component.artifact_id ?? component.role}-${index}`} component={component} />) : <p className="muted">该 Profile 尚未声明模型组件。</p>}
+              {execution.components.length ? execution.components.map((component, index) => <ComponentRow key={`${component.artifact_id ?? component.role}-${index}`} component={component} />) : <p className="muted">该生成配置尚未声明模型组件。</p>}
             </div>
           </InspectorSection>
 
@@ -134,11 +134,11 @@ export function ModelInspectorDrawer({
           <InspectorSection title="证据（专家）" summary="本机路径、哈希与原始快照" defaultOpen={false}>
             <dl className="model-inspector-evidence">
               <div><dt>Model Bundle</dt><dd><code>{shortHash(execution.fingerprints.model_bundle)}</code></dd></div>
-              <div><dt>Workflow</dt><dd><code>{shortHash(execution.fingerprints.workflow)}</code></dd></div>
+              <div><dt>本机工作流指纹</dt><dd><code>{shortHash(execution.fingerprints.workflow)}</code></dd></div>
               <div><dt>Manifest</dt><dd><code>{shortHash(execution.fingerprints.manifest)}</code></dd></div>
             </dl>
             <details className="model-inspector-path">
-              <summary>查看原始 Model Bundle JSON</summary>
+              <summary>高级：查看原始模型包数据</summary>
               <pre>{JSON.stringify(execution.model_bundle, null, 2)}</pre>
             </details>
           </InspectorSection>

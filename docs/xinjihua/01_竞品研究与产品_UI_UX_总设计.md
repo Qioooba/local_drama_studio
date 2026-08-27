@@ -400,7 +400,7 @@ LocalDramaStudio 应把目前分散的：
 
 ### 8.3 本项目对应方案
 
-- 现有 `@xyflow/react` Canvas 保留，改名为“高级画布 / Lab”，不要作为日常逐镜编辑主入口。
+- **已被 `04_画布与_ComfyUI_整体重构设计开发方案.md` 取代：** 不保留现有生产 DAG 作为 Lab 基础；退役旧 `ProductionCanvasPanel`，新建结构化 Production Cockpit 与独立 Visual Lab。
 - 在 Director Desk 中增加“镜头构图”轻量视觉控件。
 - 本地模式成本中心改成：GPU 时间、预计耗时、VRAM、磁盘、失败率、平均重抽次数；未来若接云端再加入金额/credits。
 
@@ -481,7 +481,7 @@ LocalDramaStudio 首页也不应让用户选择技术模块，而应选择：
 这对 LocalDramaStudio 的意义非常直接：
 
 - 现有 `automation_workflows` 对应 Agent 编排基础；
-- 现有 `ProductionCanvasPanel` 对应画布基础；
+- 现有 `ProductionCanvasPanel` 只提供了早期技术验证证据，不再作为画布基础；新 Visual Lab 使用独立文档、typed nodes/edges 与语义生成契约，详见 `04_画布与_ComfyUI_整体重构设计开发方案.md`；
 - 现有 Profile / Workflow / Prompt Template 可演化为“能力 + Recipe/Skill”；
 - 缺的是产品层统一，而不是从零搭底层。
 

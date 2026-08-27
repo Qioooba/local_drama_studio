@@ -259,6 +259,6 @@ export function AIDraftReviewPanel({ projectId }: { projectId: string }) {
         {apply.error && apply.variables?.draftId === item.id && <p className="inline-error" role="alert">{String(apply.error)}</p>}
       </article>;
     })}</div>
-    {drafts.data?.items.length === 0 && <p className="empty-state">当前没有真实本地 LLM 拆解草稿；不会显示模拟建议。</p>}
+    {drafts.data?.items.length === 0 && <p className="empty-state">当前没有本地大语言模型生成的拆解草稿；页面不会用模拟建议填充。</p>}
   </section>;
 }

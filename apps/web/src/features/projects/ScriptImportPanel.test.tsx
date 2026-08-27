@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { cancelJob, commitImportSession, getProjectConfiguration, importScriptDocument, listEpisodes, listJobs, listSeasons, pickLocalDocumentFile, retryJob } from "../../generated/api";
+import { cancelJob, commitImportSession, getClientCapabilities, getProjectConfiguration, importScriptDocument, listEpisodes, listJobs, listSeasons, pickLocalDocumentFile, retryJob, uploadScriptDocument } from "../../generated/api";
 import { requestScriptBreakdown } from "../story-workspace-v2/breakdownClient";
 import { ScriptImportPanel } from "./ScriptImportPanel";
 import { queryKeys } from "../../query/queryKeys";
@@ -12,12 +12,14 @@ vi.mock("../../generated/api", () => ({
   commitImportSession: vi.fn(),
   importScriptDocument: vi.fn(),
   getProjectConfiguration: vi.fn(),
+  getClientCapabilities: vi.fn(),
   listEpisodes: vi.fn(),
   listJobs: vi.fn(),
   listSeasons: vi.fn(),
   pickLocalDocumentFile: vi.fn(),
   cancelJob: vi.fn(),
   retryJob: vi.fn(),
+  uploadScriptDocument: vi.fn(),
 }));
 
 vi.mock("../story-workspace-v2/breakdownClient", () => ({
@@ -50,12 +52,20 @@ function renderWithClient(ui: React.ReactElement) {
   return { ...render(<MemoryRouter><QueryClientProvider client={client}>{ui}</QueryClientProvider></MemoryRouter>), client };
 }
 
+async function uploadDocument(name = "episode.md") {
+  const input = screen.getByLabelText("选择本地文档") as HTMLInputElement;
+  fireEvent.change(input, { target: { files: [new File(["第一场\n\n人物进入"], name, { type: "text/markdown" })] } });
+  await screen.findByText(/预览已准备好/);
+}
+
 describe("ScriptImportPanel", () => {
   beforeEach(() => {
+    vi.mocked(getClientCapabilities).mockResolvedValue({ capabilities: { network_mode: "LOCAL_ONLY", client_location: "SERVER_LOOPBACK", server_file_dialogs: true, browser_uploads: true, browser_downloads: true, model_library_roots: [], upload_limits_mb: {} } });
     vi.mocked(pickLocalDocumentFile).mockReset().mockResolvedValue({
       selection: { selected: true, path: "D:\\Scripts\\episode.md", uploaded: false, copied: false },
     });
     vi.mocked(importScriptDocument).mockReset().mockResolvedValue({ import: imported });
+    vi.mocked(uploadScriptDocument).mockReset().mockResolvedValue({ import: imported });
     vi.mocked(commitImportSession).mockReset().mockResolvedValue({
       commit: {
         ...imported,
@@ -92,16 +102,12 @@ describe("ScriptImportPanel", () => {
     });
   });
 
-  it("uses the native picker, previews, then commits with the frozen preview hash", async () => {
+  it("uploads a browser-selected document, previews, then commits with the frozen preview hash", async () => {
     renderWithClient(<ScriptImportPanel projectId="project-1" />);
     const commit = screen.getByRole("button", { name: "确认导入所选原稿" }) as HTMLButtonElement;
     expect(commit.disabled).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "浏览…" }));
-    await waitFor(() =>
-      expect(screen.getByLabelText("已选择文档路径")).toHaveTextContent("D:\\Scripts\\episode.md")
-    );
-    fireEvent.click(screen.getByRole("button", { name: "读取文档并预览" }));
-    expect(await screen.findByText(/预览已准备好/)).toBeTruthy();
+    await uploadDocument();
+    expect(uploadScriptDocument).toHaveBeenCalledWith("project-1", expect.objectContaining({ name: "episode.md" }));
     expect(commit.disabled).toBe(false);
     fireEvent.click(commit);
     await waitFor(() => expect(commitImportSession).toHaveBeenCalledWith("session-1", "a".repeat(64)));
@@ -109,7 +115,7 @@ describe("ScriptImportPanel", () => {
   });
 
   it("selects visible paragraph ranges with Shift and complete chapters with one action", async () => {
-    vi.mocked(importScriptDocument).mockResolvedValueOnce({
+    vi.mocked(uploadScriptDocument).mockResolvedValueOnce({
       import: {
         ...imported,
         preview: {
@@ -124,11 +130,7 @@ describe("ScriptImportPanel", () => {
       },
     });
     renderWithClient(<ScriptImportPanel projectId="project-1" />);
-    vi.mocked(pickLocalDocumentFile).mockResolvedValueOnce({ selection: { selected: true, path: "D:\\Scripts\\chaptered.txt", uploaded: false, copied: false } });
-    fireEvent.click(screen.getByRole("button", { name: "浏览…" }));
-    await waitFor(() => expect(screen.getByLabelText("已选择文档路径")).toHaveTextContent("chaptered.txt"));
-    fireEvent.click(screen.getByRole("button", { name: "读取文档并预览" }));
-    await screen.findByText(/预览已准备好/);
+    await uploadDocument("chaptered.txt");
 
     fireEvent.click(screen.getByRole("button", { name: /第 2 段.*雨夜来信/ }));
     fireEvent.click(screen.getByRole("button", { name: /第 1 段.*第一章/ }), { shiftKey: true });
@@ -140,22 +142,17 @@ describe("ScriptImportPanel", () => {
     expect(screen.getByRole("button", { name: /第 4 段.*清晨重逢/ })).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("recovers the browse button when the native picker is cancelled", async () => {
-    vi.mocked(pickLocalDocumentFile).mockResolvedValueOnce({
-      selection: { selected: false, path: null, uploaded: false, copied: false },
-    });
+  it("keeps the browser upload available while hiding server dialogs from a remote client", async () => {
+    vi.mocked(getClientCapabilities).mockResolvedValueOnce({ capabilities: { network_mode: "LAN_SERVICE", client_location: "REMOTE_BROWSER", server_file_dialogs: false, browser_uploads: true, browser_downloads: true, model_library_roots: [], upload_limits_mb: {} } });
     renderWithClient(<ScriptImportPanel projectId="project-1" />);
-    fireEvent.click(screen.getByRole("button", { name: "浏览…" }));
-    expect(await screen.findByRole("button", { name: "浏览…" })).toBeEnabled();
-    expect(screen.getByLabelText("已选择文档路径")).toHaveTextContent("尚未选择文档");
+    expect(screen.getByText("选择本地文档")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("button", { name: "浏览…" })).not.toBeInTheDocument());
+    expect(uploadScriptDocument).not.toHaveBeenCalled();
   });
 
   it("triggers AI script breakdown after commit and surfaces draft readiness", async () => {
     renderWithClient(<ScriptImportPanel projectId="project-1" />);
-    fireEvent.click(screen.getByRole("button", { name: "浏览…" }));
-    await waitFor(() => expect(screen.getByLabelText("已选择文档路径")).toHaveTextContent("episode.md"));
-    fireEvent.click(screen.getByRole("button", { name: "读取文档并预览" }));
-    await screen.findByText(/预览已准备好/);
+    await uploadDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "确认导入所选原稿" }));
     await screen.findByText(/原稿已安全导入/);
@@ -176,10 +173,7 @@ describe("ScriptImportPanel", () => {
 
   it("blocks an invalid episode source range before creating a Job", async () => {
     renderWithClient(<ScriptImportPanel projectId="project-1" />);
-    fireEvent.click(screen.getByRole("button", { name: "浏览…" }));
-    await waitFor(() => expect(screen.getByLabelText("已选择文档路径")).toHaveTextContent("episode.md"));
-    fireEvent.click(screen.getByRole("button", { name: "读取文档并预览" }));
-    await screen.findByText(/预览已准备好/);
+    await uploadDocument();
     fireEvent.click(screen.getByRole("button", { name: "确认导入所选原稿" }));
     await screen.findByText(/原稿已安全导入/);
     fireEvent.change(screen.getByLabelText("本集原文起始段"), { target: { value: "2" } });
@@ -191,14 +185,11 @@ describe("ScriptImportPanel", () => {
   it("requires an explicitly published project binding and never invents or synchronizes a fallback Profile", async () => {
     vi.mocked(getProjectConfiguration).mockResolvedValue({ configuration: { profile_bindings: [] } } as never);
     renderWithClient(<ScriptImportPanel projectId="project-1" />);
-    fireEvent.click(screen.getByRole("button", { name: "浏览…" }));
-    await waitFor(() => expect(screen.getByLabelText("已选择文档路径")).toHaveTextContent("episode.md"));
-    fireEvent.click(screen.getByRole("button", { name: "读取文档并预览" }));
-    await screen.findByText(/预览已准备好/);
+    await uploadDocument();
     fireEvent.click(screen.getByRole("button", { name: "确认导入所选原稿" }));
     await screen.findByText(/原稿已安全导入/);
     expect(screen.getByRole("button", { name: "开始 AI 拆解" })).toBeDisabled();
-    expect(screen.getByRole("link", { name: /前往模型与能力/ }).getAttribute("href")).toBe("/models?project=project-1");
+    expect(screen.getByRole("link", { name: /前往项目能力/ }).getAttribute("href")).toBe("/projects/project-1/settings/capabilities");
     expect(requestScriptBreakdown).not.toHaveBeenCalled();
   });
 
@@ -268,16 +259,14 @@ describe("ScriptImportPanel", () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.scriptBreakdown.all("project-1") });
   });
 
-  it("invalidates a prepared preview when the path changes", async () => {
+  it("invalidates a prepared preview when another browser file is selected", async () => {
     renderWithClient(<ScriptImportPanel projectId="project-1" />);
-    fireEvent.click(screen.getByRole("button", { name: "浏览…" }));
-    await waitFor(() => expect(screen.getByLabelText("已选择文档路径")).toHaveTextContent("episode.md"));
-    fireEvent.click(screen.getByRole("button", { name: "读取文档并预览" }));
-    await screen.findByText(/预览已准备好/);
-    vi.mocked(pickLocalDocumentFile).mockResolvedValueOnce({ selection: { selected: true, path: "D:\\Scripts\\second.txt", uploaded: false, copied: false } });
-    fireEvent.click(screen.getByRole("button", { name: "浏览…" }));
-    await waitFor(() => expect(screen.getByLabelText("已选择文档路径")).toHaveTextContent("second.txt"));
-    expect(screen.queryByText(/预览已准备好/)).toBeNull();
+    await uploadDocument();
+    vi.mocked(uploadScriptDocument).mockReturnValueOnce(new Promise(() => undefined));
+    const input = screen.getByLabelText("选择本地文档") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["第二稿"], "second.txt", { type: "text/plain" })] } });
+    await waitFor(() => expect(screen.getByText("已选择：second.txt")).toBeInTheDocument());
+    expect(screen.queryByText(/预览已准备好/)).not.toBeInTheDocument();
     expect(
       (screen.getByRole("button", { name: "确认导入所选原稿" }) as HTMLButtonElement).disabled
     ).toBe(true);

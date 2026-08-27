@@ -62,17 +62,24 @@ class G8ReadinessService:
             )
             subtitle_count = int(connection.execute("SELECT COUNT(*) FROM subtitle_revisions WHERE episode_id=?", (eid,)).fetchone()[0])
             audio_rows = connection.execute(
-                """SELECT ti.track_type,ab.source_license_status,ab.license_evidence_json
+                """SELECT ti.track_type,ab.id AS audio_binding_id,ab.source_license_status,ab.license_evidence_json,
+                   tc.id AS tts_candidate_id
                    FROM timeline_items ti
-                   JOIN audio_bindings ab ON ab.id=json_extract(ti.parameters_json,'$.audio_binding_id')
+                   LEFT JOIN audio_bindings ab ON ab.id=json_extract(ti.parameters_json,'$.audio_binding_id')
+                   LEFT JOIN tts_candidates tc ON tc.id=json_extract(ti.parameters_json,'$.tts_candidate_id')
+                     AND tc.media_version_id=ti.media_version_id
                   WHERE ti.timeline_revision_id=? AND ti.track_type IN ('DIALOGUE','BGM','SFX')""",
                 (timeline_id,),
             ).fetchall() if timeline_id else []
-            audio_tracks = {str(row["track_type"]).upper() for row in audio_rows}
+            audio_tracks = {
+                str(row["track_type"]).upper() for row in audio_rows
+                if row["audio_binding_id"] is not None or (str(row["track_type"]).upper() == "DIALOGUE" and row["tts_candidate_id"] is not None)
+            }
             declared_audio = sum(
                 1
                 for row in audio_rows
-                if str(row["source_license_status"]).upper() in {"VERIFIED_LOCAL", "USER_OWNED", "PUBLIC_DOMAIN"}
+                if row["audio_binding_id"] is not None
+                and str(row["source_license_status"]).upper() in {"VERIFIED_LOCAL", "USER_OWNED", "PUBLIC_DOMAIN"}
                 and json.loads(str(row["license_evidence_json"])).get("schema_version") == "localdrama.audio-license-evidence.v1"
             )
             render = connection.execute(

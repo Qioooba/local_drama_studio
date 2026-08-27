@@ -24,9 +24,9 @@ describe("PromptTemplatePanel", () => {
     fireEvent.change(screen.getByLabelText("语言"), { target: { value: "en" } });
     fireEvent.change(screen.getByLabelText("模型配置"), { target: { value: "profile-v1" } });
     fireEvent.change(screen.getByLabelText("模板"), { target: { value: "{subject_action}, cinematic" } });
-    fireEvent.change(screen.getByLabelText("展开结果"), { target: { value: "turn, cinematic" } });
+    fireEvent.change(screen.getByLabelText("最终提示词"), { target: { value: "turn, cinematic" } });
     fireEvent.change(screen.getByLabelText("负向词"), { target: { value: "flicker" } });
-    fireEvent.click(screen.getByRole("button", { name: "冻结展开结果" }));
+    fireEvent.click(screen.getByRole("button", { name: "冻结最终提示词" }));
     await waitFor(() => expect(createPrompt).toHaveBeenCalled());
     const payload = vi.mocked(createPrompt).mock.calls[0][0];
     expect(payload.content_text).toBe("turn, cinematic");
@@ -35,14 +35,14 @@ describe("PromptTemplatePanel", () => {
 
   it("keeps freeze disabled until every explicit field is selected", () => {
     renderPanel();
-    expect((screen.getByRole("button", { name: "冻结展开结果" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "冻结最终提示词" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("renders explicit fallbacks for legacy prompts without language or profile identity", async () => {
     vi.mocked(listPrompts).mockResolvedValue({ items: [{ id: "legacy", title: "旧提示词", revision_no: 1, content_text: "legacy", content_hash: "b".repeat(64), structured: {}, status: "FROZEN" }] });
     renderPanel();
-    expect(await screen.findByText("语言未记录 · 历史 Profile 版本")).toBeTruthy();
-    fireEvent.click(screen.getByText("高级：历史 Profile 技术标识"));
+    expect(await screen.findByText("语言未记录 · 历史生成配置")).toBeTruthy();
+    fireEvent.click(screen.getByText("高级：查看校验信息"));
     expect(screen.getByText("未记录")).toBeTruthy();
     expect(document.body.textContent).not.toContain("undefined");
   });
@@ -54,9 +54,9 @@ describe("PromptTemplatePanel", () => {
       structured: { template_text: "{character}, close-up", expanded_text: "mother close-up, warm light", negative_text: "flicker", language: "en", model_profile_version_id: "profile-v1" },
     }] });
     renderPanel();
-    expect((screen.getByLabelText("展开结果") as HTMLTextAreaElement).value).toBe("");
+    expect((screen.getByLabelText("最终提示词") as HTMLTextAreaElement).value).toBe("");
     fireEvent.click(await screen.findByRole("button", { name: "采用为当前草稿" }));
-    expect((screen.getByLabelText("展开结果") as HTMLTextAreaElement).value).toBe("mother close-up, warm light");
+    expect((screen.getByLabelText("最终提示词") as HTMLTextAreaElement).value).toBe("mother close-up, warm light");
     expect((screen.getByLabelText("负向词") as HTMLTextAreaElement).value).toBe("flicker");
     expect((screen.getByLabelText("语言") as HTMLSelectElement).value).toBe("en");
     expect(createPrompt).not.toHaveBeenCalled();

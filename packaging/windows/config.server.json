@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "instance_id": "default",
+  "install_profile": "SERVER",
+  "network": {
+    "mode": "LAN_SERVICE",
+    "host": "0.0.0.0",
+    "port": 3210,
+    "trusted_lan_unauthenticated": false
+  },
+  "storage": {
+    "data_root": "${INSTANCE_ROOT}/data",
+    "projects_root": "${INSTANCE_ROOT}/projects",
+    "work_root": "${INSTANCE_ROOT}/work",
+    "cache_root": "${INSTANCE_ROOT}/cache",
+    "backups_root": "${INSTANCE_ROOT}/backups",
+    "logs_root": "${INSTANCE_ROOT}/logs"
+  },
+  "runtime": {
+    "worker_channels": ["CPU", "GPU_H3"]
+  },
+  "tools": {
+    "ffmpeg": "${RELEASE_ROOT}/tools/ffmpeg/ffmpeg.exe",
+    "ffprobe": "${RELEASE_ROOT}/tools/ffmpeg/ffprobe.exe"
+  },
+  "frontend_dist": "${RELEASE_ROOT}/web"
+}

@@ -23,6 +23,7 @@ from typing import Any
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.comfy import ComfyClient
+from local_drama.infrastructure.filesystem.atomic import replace_path
 
 
 def _now() -> str:
@@ -165,7 +166,7 @@ class ComfyLabService:
         self.sandbox_root.mkdir(parents=True, exist_ok=True)
         partial = self.configuration_path.with_name(f".partial-{uuid.uuid4().hex}.json")
         partial.write_text(_json(payload) + "\n", encoding="utf-8")
-        os.replace(partial, self.configuration_path)
+        replace_path(partial, self.configuration_path)
         return {**self._configuration(), "persisted": True, "runtime_contacted": False, "network_contacted": False}
 
     def _read_state(self) -> dict[str, Any] | None:
@@ -228,13 +229,17 @@ class ComfyLabService:
         config = self._configuration()
         if not config["configured"] or not config["endpoint"]:
             raise DomainRuleError("COMFY_LAB_LAUNCH_NOT_CONFIGURED", "ComfyUI Designer 未配置本机 endpoint")
-        return ComfyClient(str(config["endpoint"]), self.sandbox_root / "output")
+        return ComfyClient(
+            str(config["endpoint"]),
+            self.sandbox_root / "output",
+            allow_private_network=self.settings.allows_private_network,
+        )
 
     def _write_state(self, state: dict[str, Any]) -> None:
         self.sandbox_root.mkdir(parents=True, exist_ok=True)
         partial = self.state_path.with_name(f".partial-{uuid.uuid4().hex}.json")
         partial.write_text(_json(state) + "\n", encoding="utf-8")
-        os.replace(partial, self.state_path)
+        replace_path(partial, self.state_path)
 
     def start(self) -> dict[str, Any]:
         current = self._status()
@@ -327,7 +332,67 @@ class ComfyLabService:
         target.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
         return {"status": "CAPTURED", "capture_id": capture_id, "content_hash": content_hash, "sandbox_rel_path": target.relative_to(self.settings.work_root.resolve()).as_posix(), "formal_project_write": False, "runtime_contacted": False, "network_contacted": False}
 
-    def test_run(self, workflow: dict[str, Any], *, execute: bool, client: ComfyClient | None = None) -> dict[str, Any]:
+    def _capture_path(self, capture_id: str) -> Path:
+        try:
+            uuid.UUID(str(capture_id))
+        except ValueError as error:
+            raise DomainRuleError("COMFY_LAB_CAPTURE_ID_INVALID", "Designer capture id 无效") from error
+        target = (self.captures_root / f"{capture_id}.json").resolve()
+        if not target.is_relative_to(self.captures_root.resolve()):
+            raise DomainRuleError("COMFY_LAB_CAPTURE_PATH_INVALID", "Designer capture 路径越界")
+        return target
+
+    def get_capture(self, capture_id: str) -> dict[str, Any]:
+        target = self._capture_path(capture_id)
+        if not target.is_file() or target.is_symlink():
+            raise DomainRuleError("COMFY_LAB_CAPTURE_NOT_FOUND", "Designer capture 不存在", {"capture_id": capture_id})
+        try:
+            payload = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise DomainRuleError("COMFY_LAB_CAPTURE_INVALID", "Designer capture 文件无效", {"capture_id": capture_id}) from error
+        workflow = payload.get("workflow") if isinstance(payload, dict) else None
+        declared_hash = payload.get("content_hash") if isinstance(payload, dict) else None
+        actual_hash = _hash(workflow) if isinstance(workflow, dict) and workflow else None
+        if actual_hash is None or declared_hash != actual_hash:
+            raise DomainRuleError(
+                "COMFY_LAB_CAPTURE_HASH_MISMATCH",
+                "Designer capture 内容与冻结哈希不一致，必须重新捕获并实测",
+                {"capture_id": capture_id},
+            )
+        test_path = target.with_suffix(".test.json")
+        test_evidence = None
+        if test_path.is_file() and not test_path.is_symlink():
+            try:
+                test_evidence = json.loads(test_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                test_evidence = None
+        return {**payload, "test_evidence": test_evidence, "sandbox_rel_path": target.relative_to(self.settings.work_root.resolve()).as_posix()}
+
+    def list_captures(self) -> list[dict[str, Any]]:
+        if not self.captures_root.is_dir():
+            return []
+        items: list[dict[str, Any]] = []
+        for path in sorted(self.captures_root.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+            if path.name.endswith(".test.json") or path.is_symlink():
+                continue
+            try:
+                capture = self.get_capture(path.stem)
+            except DomainRuleError:
+                continue
+            items.append({key: capture.get(key) for key in ("capture_id", "title", "content_hash", "sandbox_rel_path", "test_evidence")})
+        return items
+
+    def promotable_capture(self, capture_id: str) -> dict[str, Any]:
+        capture = self.get_capture(capture_id)
+        evidence = capture.get("test_evidence")
+        if not isinstance(evidence, dict) or evidence.get("status") != "PASS" or evidence.get("content_hash") != capture.get("content_hash"):
+            raise DomainRuleError("COMFY_LAB_EXECUTION_TEST_REQUIRED", "提升为正式候选前必须对同一 capture 完成 PASS 执行测试", {"capture_id": capture_id})
+        return capture
+
+    def test_run(self, workflow: dict[str, Any] | None, *, capture_id: str | None = None, execute: bool, client: ComfyClient | None = None) -> dict[str, Any]:
+        capture = self.get_capture(capture_id) if capture_id else None
+        if capture is not None:
+            workflow = capture.get("workflow")
         if not workflow:
             raise DomainRuleError("COMFY_LAB_WORKFLOW_REQUIRED", "Designer test workflow 不能为空")
         self._reject_absolute_paths(workflow)
@@ -337,5 +402,25 @@ class ComfyLabService:
             return {"status": "READY" if status["status"] == "RUNNING" else "BLOCKED", "blockers": [] if status["status"] == "RUNNING" else ["COMFY_LAB_NOT_RUNNING"], "plan": plan, "would_contact_comfyui": False, "network_contacted": False}
         if status["status"] != "RUNNING":
             raise DomainRuleError("COMFY_LAB_NOT_RUNNING", "Designer 未运行，不能执行 test run", {"would_contact_comfyui": False})
-        result = (client or self._client()).queue_prompt(workflow, client_id=f"local-drama-designer-{uuid.uuid4().hex}")
-        return {"status": "QUEUED", "prompt_id": str(result["prompt_id"]), "plan": plan, "would_contact_comfyui": True, "network_contacted": False}
+        runtime = client or self._client()
+        result = runtime.queue_prompt(workflow, client_id=f"local-drama-designer-{uuid.uuid4().hex}")
+        prompt_id = str(result["prompt_id"])
+        history = runtime.wait_history(prompt_id, timeout_seconds=30.0)
+        passed = history.get("status") == "success"
+        evidence = {
+            "status": "PASS" if passed else "BLOCKED",
+            "capture_id": capture_id,
+            "content_hash": _hash(workflow),
+            "prompt_id": prompt_id,
+            "runtime_status": history.get("status"),
+            "tested_at": _now(),
+            "designer_endpoint": status["endpoint"],
+            "formal_project_write": False,
+            "network_contacted": False,
+        }
+        if capture_id:
+            test_path = self._capture_path(capture_id).with_suffix(".test.json")
+            partial = test_path.with_name(f".partial-{uuid.uuid4().hex}.test.json")
+            partial.write_text(json.dumps(evidence, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+            replace_path(partial, test_path)
+        return {**evidence, "plan": plan, "would_contact_comfyui": True}

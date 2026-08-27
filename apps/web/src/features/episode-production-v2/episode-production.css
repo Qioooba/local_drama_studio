@@ -1,0 +1,54 @@
+.episode-production-workspace { display: grid; gap: 18px; min-width: 0; }
+.episode-production-hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.episode-production-hero h2 { margin: 3px 0 6px; }
+.episode-production-hero p:last-child { margin: 0; color: var(--muted); }
+.episode-production-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.episode-production-summary article { display: grid; gap: 5px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.episode-production-summary article.attention { border-color: #d6a052; background: #fff8ec; }
+.episode-production-summary span { color: var(--muted); font-size: 12px; }
+.episode-production-summary strong { overflow: hidden; font-size: 20px; text-overflow: ellipsis; }
+.episode-production-run { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--surface) 95%, var(--accent)); }
+.episode-production-run > div { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.episode-production-run small { color: var(--muted); }
+.episode-production-run__actions, .episode-production-run__options { justify-content: flex-end; }
+.episode-production-run__options label { display: flex; align-items: center; gap: 7px; }
+.episode-production-run__options select { min-height: 38px; }
+.episode-production-feedback { margin: -8px 0 0; color: #226a43; }
+.episode-production-list { display: grid; gap: 12px; }
+.episode-production-list__heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; }
+.episode-production-list__heading h3, .episode-production-list__heading p { margin: 0; }
+.episode-production-list__heading p { margin-top: 4px; color: var(--muted); font-size: 13px; }
+.episode-production-list__heading > span { color: var(--muted); white-space: nowrap; }
+.production-shot-list { display: grid; gap: 10px; }
+.production-shot { display: grid; gap: 12px; padding: 15px; border: 1px solid var(--line); border-left-width: 4px; border-radius: 13px; background: var(--surface); }
+.production-shot.state-blocked, .production-shot.state-failed { border-left-color: #c8584d; }
+.production-shot.state-needs_review, .production-shot.state-stale { border-left-color: #d59b43; }
+.production-shot.state-running { border-left-color: #4f78c6; }
+.production-shot.state-ready { border-left-color: #4c9669; }
+.production-shot header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.production-shot header > div { display: flex; min-width: 0; align-items: center; gap: 9px; }
+.production-shot h3 { min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: 17px; }
+.production-stage-rail { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; margin: 0; padding: 0; list-style: none; }
+.production-stage { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 7px; min-width: 0; padding: 9px; border-radius: 9px; background: var(--surface-subtle, #f6f5f2); }
+.production-stage > div { display: grid; gap: 3px; min-width: 0; }
+.production-stage strong { font-size: 12px; }
+.production-stage small { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.production-stage > span:last-child { grid-column: 2; color: var(--muted); font-size: 11px; }
+.production-stage__dot { width: 8px; height: 8px; margin-top: 3px; border-radius: 50%; background: #9c9993; }
+.production-stage.state-ready .production-stage__dot { background: #469164; }
+.production-stage.state-running .production-stage__dot { background: #4f78c6; box-shadow: 0 0 0 3px #dce7fb; }
+.production-stage.state-blocked .production-stage__dot, .production-stage.state-failed .production-stage__dot { background: #c8584d; }
+.production-stage.state-needs_review .production-stage__dot, .production-stage.state-stale .production-stage__dot { background: #d59b43; }
+.production-shot__facts { display: flex; flex-wrap: wrap; gap: 8px; }
+.production-shot__facts span { padding: 5px 8px; border-radius: 7px; background: var(--surface-subtle, #f6f5f2); color: var(--muted); font-size: 12px; }
+.production-shot__blockers { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.production-shot__blockers li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; border-radius: 9px; background: #fff5ec; }
+.production-shot__blockers li > div { display: grid; gap: 2px; }
+.production-shot__blockers strong { color: #8a4f20; font-size: 11px; }
+.production-shot__blockers span { color: var(--muted); font-size: 12px; }
+.episode-production-empty { display: grid; place-items: center; gap: 5px; min-height: 180px; padding: 24px; border: 1px dashed var(--line); border-radius: 12px; text-align: center; }
+.episode-production-empty span { color: var(--muted); }
+.episode-production-pagination { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.episode-production-loading, .episode-production-error { display: grid; gap: 8px; min-height: 180px; place-content: center; text-align: center; }
+@media (max-width: 900px) { .episode-production-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }.production-stage-rail { grid-template-columns: 1fr; }.production-stage small { white-space: normal; }.episode-production-run { align-items: flex-start; flex-direction: column; }.episode-production-run__actions, .episode-production-run__options { justify-content: flex-start; } }
+@media (max-width: 560px) { .episode-production-hero { align-items: stretch; flex-direction: column; }.episode-production-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }.episode-production-summary article:last-child { grid-column: 1 / -1; }.production-shot header { align-items: flex-start; }.production-shot__blockers li { align-items: flex-start; flex-direction: column; }.episode-production-run__options { display: grid !important; width: 100%; }.episode-production-run__options label, .episode-production-run__options select, .episode-production-run__options button { width: 100%; }.episode-production-run__options select { flex: 1; }.episode-production-pagination { justify-content: space-between; } }

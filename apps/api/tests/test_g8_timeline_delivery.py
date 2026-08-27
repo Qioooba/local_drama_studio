@@ -29,6 +29,30 @@ def _project(workspace, database) -> dict[str, object]:
     )
 
 
+def _approve_render_v2(client: TestClient, render: dict[str, object], *, comment: str) -> dict[str, object]:
+    targets = client.get(
+        f"/api/v2/episodes/{render['episode_id']}/review-targets",
+        params={"target_kind": "EPISODE_RENDER_VERSION", "include_resolved": True},
+    )
+    assert targets.status_code == 200, targets.text
+    target = next(item for item in targets.json()["items"] if item["target_id"] == render["id"])
+    response = client.post(
+        "/api/v2/review-decisions",
+        json={
+            "target_kind": "EPISODE_RENDER_VERSION",
+            "target_id": render["id"],
+            "template_version_id": target["template_version_id"],
+            "expected_revision": target["subject_revision"],
+            "decision": "APPROVED",
+            "checks": [{"item_id": item["id"], "result": "PASS"} for item in target["template_items"]],
+            "comment": comment,
+            "idempotency_key": f"approve-render:{render['id']}",
+        },
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["decision"]
+
+
 def _video(workspace) -> Path:
     output = workspace.work_root / "g8-source.mp4"
     subprocess.run(
@@ -175,11 +199,11 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
         assert cps.json()["error"]["code"] == "SUBTITLE_CPS_EXCEEDED"
 
         audio_response = client.post(
-            f"/api/v1/episodes/{episode['id']}/audio-bindings",
-            json={"media_version_id": audio["media_version_id"], "track_type": "MUSIC", "start_us": 0, "end_us": 1_000_000, "source_license_status": "VERIFIED_LOCAL", "license_evidence_path_rel": "00_admin/audio-license.json", "loop_enabled": True, "fade_in_us": 50_000, "fade_out_us": 50_000},
+            f"/api/v2/episodes/{episode['id']}/post/audio/tracks",
+            json={"media_version_id": audio["media_version_id"], "track_kind": "BGM", "start_us": 0, "end_us": 1_000_000, "gain_db": 0, "license_status": "VERIFIED_LOCAL", "license_evidence_path_rel": "00_admin/audio-license.json", "loop_enabled": True, "fade_in_us": 50_000, "fade_out_us": 50_000, "expected_mix_revision": 0, "idempotency_key": "g8-audio-track"},
         )
         assert audio_response.status_code == 201, audio_response.text
-        audio_items = client.get(f"/api/v1/episodes/{episode['id']}/audio-bindings").json()["items"]
+        audio_items = client.get(f"/api/v2/episodes/{episode['id']}/post/audio").json()["workspace"]["tracks"]
         assert len(audio_items) == 1
         assert audio_items[0]["authorization_status"] == "VERIFIED_EVIDENCE"
         assert audio_items[0]["loop_enabled"] is True
@@ -282,6 +306,21 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
         assert derived.json()["recipe"]["parent_recipe_id"] == recipe.json()["recipe"]["id"]
         assert derived.json()["recipe"]["status"] == "DRAFT"
 
+        # Subtitle/audio changes correctly invalidate the earlier timeline.
+        # This legacy fixture has no formal per-shot selection, so create its
+        # refreshed immutable revision explicitly before exercising render.
+        stale_render = client.post(f"/api/v1/timeline-revisions/{timeline['id']}:render")
+        assert stale_render.status_code == 422
+        assert stale_render.json()["error"]["code"] == "TIMELINE_STALE"
+        refreshed_timeline_response = client.post(
+            f"/api/v1/episodes/{episode['id']}/timeline-revisions",
+            json={
+                "items": [{"track_type": "VIDEO", "media_version_id": video_id, "start_us": 0, "end_us": 1_000_000, "parameters": {"fit": "contain"}}],
+                "input_snapshot": {"source": "g8-test-refreshed", "subtitle_revision_id": ass.json()["subtitle"]["id"]},
+            },
+        )
+        assert refreshed_timeline_response.status_code == 201, refreshed_timeline_response.text
+        timeline = refreshed_timeline_response.json()["timeline"]
         render_response = client.post(f"/api/v1/timeline-revisions/{timeline['id']}:render")
         assert render_response.status_code == 201, render_response.text
         render = render_response.json()["render"]
@@ -295,20 +334,8 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
         assert render["ffmpeg_command"]["executor"] == "builtin:ffmpeg"
         assert render["ffmpeg_command"]["returncode"] == 0
         assert '"stderr_tail"' in render["execution_log"]
-        templates = client.get("/api/v1/review-templates").json()["items"]
-        render_template = next(item for item in templates if item["code"] == "episode_render")
-        render_review = client.post(
-            f"/api/v1/subjects/EPISODE_RENDER_VERSION/{render['id']}/reviews",
-            json={
-                "template_version_id": render_template["id"],
-                "decision": "APPROVED",
-                "expected_subject_revision": 1,
-                "checks": [{"item_id": item["id"], "result": "PASS"} for item in render_template["items"]],
-                "comment": "本地整集渲染机器完整性与画面/音频/字幕证据已复核",
-            },
-        )
-        assert render_review.status_code == 201, render_review.text
-        assert render_review.json()["review"]["subject_type"] == "EPISODE_RENDER_VERSION"
+        render_review = _approve_render_v2(client, render, comment="本地整集渲染机器完整性与画面/音频/字幕证据已复核")
+        assert render_review["target_kind"] == "EPISODE_RENDER_VERSION"
         target = ConfigurationService(database).create_delivery_target(project_id, "g8-local", "G8 local", "LOCAL_FILESYSTEM", {"path_rel": "06_delivery/g8"})
         delivery_submission = client.post("/api/v1/delivery-packages:submit", json={"episode_render_version_id": render["id"], "target_version_id": target["version_id"]})
         assert delivery_submission.status_code == 202, delivery_submission.text
@@ -328,7 +355,7 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
         observed = client.get(f"/api/v1/episodes/{episode['id']}/timeline-status")
         assert observed.status_code == 200, observed.text
         status = observed.json()["status"]
-        assert status["timeline"]["revision_count"] == 1
+        assert status["timeline"]["revision_count"] == 2
         assert status["subtitles"]["revision_count"] == 3
         assert status["audio"] == {"binding_count": 1, "verified_local_count": 1}
         assert status["renders"]["count"] == 1
@@ -490,18 +517,7 @@ def test_brand_watermark_and_compliance_versions_bind_delivery_without_auto_revi
         assert render.status_code == 201, render.text
         # FR-DEL-001 requires an explicit, latest human approval for the
         # immutable episode render before a delivery candidate may be built.
-        render_template = next(item for item in client.get("/api/v1/review-templates").json()["items"] if item["code"] == "episode_render")
-        render_review = client.post(
-            f"/api/v1/subjects/EPISODE_RENDER_VERSION/{render.json()['render']['id']}/reviews",
-            json={
-                "template_version_id": render_template["id"],
-                "decision": "APPROVED",
-                "expected_subject_revision": 1,
-                "checks": [{"item_id": item["id"], "result": "PASS"} for item in render_template["items"]],
-                "comment": "整集渲染版本已完成正式审核",
-            },
-        )
-        assert render_review.status_code == 201, render_review.text
+        _approve_render_v2(client, render.json()["render"], comment="整集渲染版本已完成正式审核")
         target = ConfigurationService(database).create_delivery_target(project_id, "brand-local", "Brand local", "LOCAL_FILESYSTEM", {"path_rel": "06_delivery/品牌 本地 UAT"})
         brand = client.post(f"/api/v1/projects/{project_id}/brand-kits", json={"code": "series", "title": "Series v1", "tokens": {"colors": {"primary": "#223344"}}})
         assert brand.status_code == 201, brand.text
@@ -555,9 +571,7 @@ def _delivery_render_fixture(workspace, database, client, *, approve: bool) -> t
     timeline = client.post(f"/api/v1/episodes/{episode['id']}/timeline-revisions", json={"items": [{"track_type": "VIDEO", "media_version_id": source["media_version_id"], "start_us": 0, "end_us": 1_000_000, "parameters": {}}], "input_snapshot": {"source": "delivery-requirements"}}).json()["timeline"]
     render = client.post(f"/api/v1/timeline-revisions/{timeline['id']}:render").json()["render"]
     if approve:
-        template = next(item for item in client.get("/api/v1/review-templates").json()["items"] if item["code"] == "episode_render")
-        response = client.post(f"/api/v1/subjects/EPISODE_RENDER_VERSION/{render['id']}/reviews", json={"template_version_id": template["id"], "decision": "APPROVED", "expected_subject_revision": 1, "checks": [{"item_id": item["id"], "result": "PASS"} for item in template["items"]], "comment": "交付需求测试批准"})
-        assert response.status_code == 201, response.text
+        _approve_render_v2(client, render, comment="交付需求测试批准")
     target = ConfigurationService(database).create_delivery_target(project_id, "delivery-requirements", "Delivery requirements", "LOCAL_FILESYSTEM", {"path_rel": "06_delivery/delivery-requirements", "width": 320, "height": 180, "fps": 24, "bitrate": "1M", "audio_codec": "AAC", "subtitles": "SIDECAR"})
     return project, render, target
 

@@ -6,6 +6,7 @@ import { listProfiles, listProjects } from "../generated/api";
 import { ProjectsPage } from "./ProjectsPage";
 
 vi.mock("../features/projects/ProjectCreateWizard", () => ({ ProjectCreateWizard: () => null }));
+vi.mock("../features/projects/OneSentenceVideoWizard", () => ({ OneSentenceVideoWizard: () => null }));
 vi.mock("../generated/api", () => ({ listProfiles: vi.fn(), listProjects: vi.fn() }));
 
 function renderPage() {

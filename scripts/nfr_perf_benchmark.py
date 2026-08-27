@@ -75,10 +75,10 @@ def run(root: Path) -> dict[str, Any]:
         # the 800-shot fixture without asking any endpoint for an unbounded list.
         production_pages = []
         for episode_id in episode_ids:
-            page = _timed_get(client, f"/api/v1/episodes/{episode_id}/production?cursor=0&limit=10", repeats=1)
+            page = _timed_get(client, f"/api/v2/episodes/{episode_id}/production/shots?cursor=0&limit=10", repeats=1)
             payload = page["last"]
             production_pages.append({"episode_id": episode_id, "returned": int(payload.get("item_count") or 0), "page": payload.get("page")})
-        pages.append({"kind": "production_read_model", "episode_count": len(production_pages), "bounded_pages": all(item["returned"] <= 10 for item in production_pages), "sample": production_pages[:3]})
+        pages.append({"kind": "episode_production_v2", "episode_count": len(production_pages), "bounded_pages": all(item["returned"] <= 10 for item in production_pages), "sample": production_pages[:3]})
 
         projects = _timed_get(client, "/api/v1/projects?cursor=0&limit=50")
         projects["kind"] = "project_list"

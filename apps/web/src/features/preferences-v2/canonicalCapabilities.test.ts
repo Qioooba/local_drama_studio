@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   CANONICAL_CAPABILITIES,
-  CAPABILITY_ALIASES,
   CAPABILITY_LABELS,
   isCanonicalCapability,
   normalizeCapability,

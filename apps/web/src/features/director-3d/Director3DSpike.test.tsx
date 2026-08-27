@@ -23,7 +23,7 @@ describe("Director3DSpike character authority", () => {
     ]} onChange={onChange} />);
     fireEvent.click(screen.getByRole("button", { name: "角色 A" }));
     expect(screen.queryByLabelText("角色名")).toBeNull();
-    fireEvent.change(screen.getByLabelText("3D 角色 A 资产"), { target: { value: "character-ning" } });
+    fireEvent.change(screen.getByLabelText("三维预演角色 A"), { target: { value: "character-ning" } });
     const next = onChange.mock.calls.at(-1)?.[0] as Director3DValue;
     expect(next.participants[0]).toMatchObject({ asset_id: "character-ning", label: "阿宁 · CHARACTER_ANING" });
   });

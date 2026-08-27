@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
+from starlette.types import ASGIApp
 
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -51,7 +52,26 @@ def _is_loopback_client(request: Request) -> bool:
         return False
 
 
-def _is_allowed_write_origin(origin: str, allowed_origins: set[str]) -> bool:
+def _origin_matches_request_host(origin: str, request: Request) -> bool:
+    parsed_origin = urlsplit(origin)
+    host_header = request.headers.get("host", "").strip()
+    if not host_header or not parsed_origin.hostname:
+        return False
+    if parsed_origin.scheme not in {"http", "https"} or parsed_origin.username or parsed_origin.password:
+        return False
+    if parsed_origin.path not in {"", "/"} or parsed_origin.query or parsed_origin.fragment:
+        return False
+    try:
+        origin_port = parsed_origin.port or (443 if parsed_origin.scheme == "https" else 80)
+        request_authority = urlsplit(f"//{host_header}")
+        request_host = (request_authority.hostname or "").casefold()
+        request_port = request_authority.port or origin_port
+    except ValueError:
+        return False
+    return parsed_origin.hostname.casefold() == request_host and origin_port == request_port
+
+
+def _is_allowed_write_origin(origin: str, allowed_origins: set[str], *, request: Request | None = None) -> bool:
     """Accept configured origins and HTTP origins served on literal loopback.
 
     The Vite development server may choose another free port when its preferred
@@ -62,6 +82,8 @@ def _is_allowed_write_origin(origin: str, allowed_origins: set[str]) -> bool:
     """
 
     if origin in allowed_origins:
+        return True
+    if request is not None and _origin_matches_request_host(origin, request):
         return True
     try:
         parsed = urlsplit(origin)
@@ -177,9 +199,16 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
 
 
 class LocalOriginMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, allowed_origins: tuple[str, ...]) -> None:  # type: ignore[no-untyped-def]
+    def __init__(
+        self,
+        app: ASGIApp,
+        allowed_origins: tuple[str, ...],
+        *,
+        allow_same_origin_writes: bool = False,
+    ) -> None:
         super().__init__(app)
         self.allowed_origins = set(allowed_origins)
+        self.allow_same_origin_writes = allow_same_origin_writes
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         origin = request.headers.get("Origin")
@@ -201,7 +230,11 @@ class LocalOriginMiddleware(BaseHTTPMiddleware):
                 },
                 headers={"X-Request-Id": request_id, **SECURITY_REJECTION_HEADERS},
             )
-        if state_changing and origin and not _is_allowed_write_origin(origin, self.allowed_origins):
+        if state_changing and origin and not _is_allowed_write_origin(
+            origin,
+            self.allowed_origins,
+            request=request if self.allow_same_origin_writes else None,
+        ):
             request_id, _trace_id = _ensure_request_context(request)
             _log_request("request.rejected", request, status_code=403, error="ORIGIN_NOT_ALLOWED")
             return JSONResponse(

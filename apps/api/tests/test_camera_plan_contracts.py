@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from local_drama.application.profiles import ProfileService
 from local_drama.application.projects import ProjectService
 from local_drama.domain.errors import DomainRuleError
+from local_drama.infrastructure.database.shot_studio_command_repository import shot_studio_command_service
 from local_drama.main import create_app
 
 
@@ -102,18 +103,30 @@ def test_shot_revision_rejects_forged_executable_camera_mode(workspace, database
     profile_id = _profile_with_camera(workspace, database, {"support": "UNSUPPORTED"})
     projects = ProjectService(database, workspace.projects_root)
     project = projects.create_project(
-        code="camera_gate", title="camera gate", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1,
-        target_duration_ms=60_000, allow_unconfigured_capabilities=True,
+        code="camera_gate",
+        title="camera gate",
+        episode_count=1,
+        aspect_ratio="16:9",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=60_000,
+        allow_unconfigured_capabilities=True,
     )
     season = projects.list_seasons(str(project["id"]))[0]
     episode = projects.list_episodes(str(season["id"]))[0]
     shot = projects.create_shot(str(episode["id"]), "S001", 4_000)
     forged = {
-        "mode": "NATIVE", "shot_type": "CLOSEUP", "movement": "ORBIT", "prompt_text": "",
-        "direction": "CLOCKWISE", "intensity": 0.5, "curve": "LINEAR", "profile_version_id": profile_id,
+        "mode": "NATIVE",
+        "shot_type": "CLOSEUP",
+        "movement": "ORBIT",
+        "prompt_text": "",
+        "direction": "CLOCKWISE",
+        "intensity": 0.5,
+        "curve": "LINEAR",
+        "profile_version_id": profile_id,
     }
     with pytest.raises(DomainRuleError) as error:
-        projects.create_shot_revision(str(shot["id"]), {"camera_plan": forged}, freeze=True)
+        shot_studio_command_service(database).save_draft_revision(str(shot["id"]), {"camera_plan": forged}, freeze=True)
     assert error.value.code == "CAMERA_PLAN_UNSUPPORTED"
 
 
@@ -121,26 +134,44 @@ def test_ready_rechecks_profile_when_contract_changes_after_revision_save(worksp
     profile_id = _profile_with_camera(workspace, database, {"support": "NATIVE"})
     projects = ProjectService(database, workspace.projects_root)
     project = projects.create_project(
-        code="camera_stale", title="camera stale", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1,
-        target_duration_ms=60_000, allow_unconfigured_capabilities=True,
+        code="camera_stale",
+        title="camera stale",
+        episode_count=1,
+        aspect_ratio="16:9",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=60_000,
+        allow_unconfigured_capabilities=True,
     )
     season = projects.list_seasons(str(project["id"]))[0]
     episode = projects.list_episodes(str(season["id"]))[0]
     shot = projects.create_shot(str(episode["id"]), "S001", 4_000)
     fields = {
-        "shot_type": "CLOSEUP", "composition": "center", "subject_action": "turn",
+        "shot_type": "CLOSEUP",
+        "composition": "center",
+        "subject_action": "turn",
         "camera_plan": {
-            "mode": "NATIVE", "shot_type": "CLOSEUP", "movement": "PUSH_IN", "prompt_text": "",
-            "direction": "FORWARD", "intensity": 0.5, "curve": "LINEAR", "profile_version_id": profile_id,
+            "mode": "NATIVE",
+            "shot_type": "CLOSEUP",
+            "movement": "PUSH_IN",
+            "prompt_text": "",
+            "direction": "FORWARD",
+            "intensity": 0.5,
+            "curve": "LINEAR",
+            "profile_version_id": profile_id,
         },
-        "target_duration_ms": 4_000, "dialogue": "", "environment": "", "continuity": "same", "creative_intent": "focus",
+        "target_duration_ms": 4_000,
+        "dialogue": "",
+        "environment": "",
+        "continuity": "same",
+        "creative_intent": "focus",
     }
-    projects.create_shot_revision(str(shot["id"]), fields, freeze=True)
+    shot_studio_command_service(database).save_draft_revision(str(shot["id"]), fields, freeze=True)
     with database.transaction() as connection:
         connection.execute(
             "UPDATE execution_profile_versions SET parameter_schema_json=? WHERE id=?",
             (json.dumps({"capabilities": {"camera": {"support": "UNSUPPORTED"}}}), profile_id),
         )
     with pytest.raises(DomainRuleError) as error:
-        projects.mark_shot_production_ready(str(shot["id"]))
+        shot_studio_command_service(database).mark_ready_shot(str(shot["id"]))
     assert error.value.code == "CAMERA_PLAN_UNSUPPORTED"

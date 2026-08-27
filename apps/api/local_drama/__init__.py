@@ -1,3 +1,5 @@
 """LocalDramaStudio API package."""
 
-__version__ = "0.1.0-g1"
+from .bootstrap.build_identity import load_build_identity
+
+__version__ = load_build_identity().version

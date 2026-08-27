@@ -1,0 +1,13 @@
+from __future__ import annotations
+
+from typing import Any, Protocol
+
+
+class AudioWorkspacePort(Protocol):
+    def workspace(self, episode_id: str) -> dict[str, Any]: ...
+
+    def create_track(self, episode_id: str, command: dict[str, Any], *, actor: str) -> dict[str, Any]: ...
+
+    def update_track(self, binding_id: str, command: dict[str, Any], *, actor: str) -> dict[str, Any]: ...
+
+    def remove_track(self, binding_id: str, command: dict[str, Any], *, actor: str) -> dict[str, Any]: ...

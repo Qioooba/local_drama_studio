@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { routes } from "../../app/routeRegistry";
 import {
   deriveProfileContractVersion,
   getProfileVersion,
   publishProfileContractVersion,
   publishWorkflowVersion,
-  registerH3I2VCandidateWorkflow,
-  registerWorkflowPackage,
   revokeWorkflowVersion,
   rollbackWorkflowVersion,
+  submitMediaDerivative,
   syncProfiles,
   validateProfileContractVersion,
   validateWorkflowLocal,
@@ -26,6 +26,7 @@ import {
   finalizeT2IEvidenceProbe,
   planI2VEvidenceProbe,
   planT2IEvidenceProbe,
+  prepareI2VEvidenceKeyframe,
   submitI2VEvidenceProbe,
   submitT2IEvidenceProbe,
   validateProfileEvidenceCompatibility,
@@ -33,9 +34,11 @@ import {
   type T2IEvidenceProbePlan,
 } from "./profileEvidenceClient";
 import "./profile-configuration.css";
+import { WorkflowDefinitionForm } from "./WorkflowDefinitionForm";
 import { ProfileContractEditors } from "./ProfileContractEditors";
 import { ModelInspectorDrawer } from "../model-config/ModelInspectorDrawer";
 import { PRODUCTION_TIER_LABELS, STATUS_LABELS, optionLabel } from "../shared/optionLabels";
+import { ProjectMediaVersionSelect } from "../media-picker/ProjectMediaVersionSelect";
 
 type ProfileConfigurationPanelProps =
   | {
@@ -67,6 +70,24 @@ function parseObject(value: string, label: string): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
+function jsonDiffers(value: string, persisted: Record<string, unknown>): boolean {
+  try {
+    return JSON.stringify(JSON.parse(value)) !== JSON.stringify(persisted);
+  } catch {
+    return true;
+  }
+}
+
+function parameterEffectLabel(effect: unknown): string {
+  const code = String(effect ?? "");
+  if (code === "GRAPH") return "写入候选图";
+  if (code === "SEMANTIC_DEFAULT") return "运行时语义槽可覆盖";
+  if (code === "INACTIVE_TIER_CONTROLS_FRAMES") return "当前未生效：生产档位控制帧数";
+  if (code === "INACTIVE_TIER_CONTROLS_STEPS") return "当前未生效：生产档位控制采样步数";
+  if (code === "INACTIVE_FREEFORM_MODE") return "当前未生效：已使用自由参数模式";
+  return code;
+}
+
 export function ProfileConfigurationPanel(props: ProfileConfigurationPanelProps) {
   if (props.mode === "profile-contracts") {
     return <ProfileContractsTask profiles={props.profiles} workflows={props.workflows} projectId={props.projectId} onChanged={props.onChanged} />;
@@ -93,6 +114,9 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged }: { p
   const [probePlan, setProbePlan] = useState<I2VEvidenceProbePlan | T2IEvidenceProbePlan | null>(null);
   const [probeJobId, setProbeJobId] = useState<string | null>(null);
   const [probeConfirmOpen, setProbeConfirmOpen] = useState(false);
+  const [keyframeSourceId, setKeyframeSourceId] = useState("");
+  const [keyframeConfirmed, setKeyframeConfirmed] = useState(false);
+  const [keyframePreviewJobId, setKeyframePreviewJobId] = useState<string | null>(null);
   const publishedI2VWorkflows = workflows.filter(
     (item) => item.status === "PUBLISHED" && item.contract.capability === "H3_FL2VA_I2V_CANDIDATE",
   );
@@ -136,6 +160,9 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged }: { p
     setProbePlan(null);
     setProbeJobId(null);
     setProbeConfirmOpen(false);
+    setKeyframeSourceId("");
+    setKeyframeConfirmed(false);
+    setKeyframePreviewJobId(null);
   }, [current?.id]);
 
   useEffect(() => {
@@ -247,6 +274,49 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged }: { p
     onError: (error) => setFeedback({ kind: "error", message: String(error) }),
   });
 
+  const prepareKeyframe = useMutation({
+    mutationFn: () => {
+      if (!projectId || !keyframeSourceId || !keyframeConfirmed) {
+        throw new Error("请选择真实图片并完成画面检查确认。");
+      }
+      return prepareI2VEvidenceKeyframe(projectId, keyframeSourceId);
+    },
+    onSuccess: ({ approved_keyframe: keyframe }) => {
+      setProbePlan(null);
+      setFeedback({
+        kind: "success",
+        message: keyframe.reused
+          ? `已复用相同内容的专用验证首帧 ${keyframe.media_version_id.slice(0, 12)}…。`
+          : `已创建并批准专用验证首帧 ${keyframe.media_version_id.slice(0, 12)}…；来源图片保持不变。`,
+      });
+    },
+    onError: (error) => setFeedback({ kind: "error", message: String(error) }),
+  });
+
+  const prepareKeyframePreview = useMutation({
+    mutationFn: (mediaVersionId: string) => submitMediaDerivative(
+      mediaVersionId,
+      "THUMBNAIL",
+      { size: "medium", frame: "poster" },
+    ),
+    onSuccess: ({ job }) => setKeyframePreviewJobId(job.id),
+    onError: (error) => setFeedback({
+      kind: "error",
+      message: `验证首帧预览准备失败：${String(error)}`,
+    }),
+  });
+
+  const keyframePreviewJob = useQuery({
+    queryKey: ["profile-evidence-keyframe-preview", keyframePreviewJobId],
+    queryFn: () => getJob(keyframePreviewJobId!),
+    enabled: Boolean(keyframePreviewJobId),
+    refetchInterval: (query) => {
+      const state = query.state.data?.job.state;
+      return state && ["SUCCEEDED", "FAILED", "CANCELLED"].includes(state) ? false : 1_000;
+    },
+  });
+  const keyframePreviewReady = keyframePreviewJob.data?.job.state === "SUCCEEDED";
+
   const evidenceSubmit = useMutation({
     mutationFn: () => {
       if (!projectId || !current || !probePlan || probePlan.status !== "READY") {
@@ -299,6 +369,12 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged }: { p
   });
 
   const isDraft = current?.status === "DRAFT";
+  const hasContractChanges = Boolean(current) && (
+    jsonDiffers(inputJson, current!.input_contract)
+    || jsonDiffers(parameterJson, current!.parameter_schema)
+    || jsonDiffers(outputJson, current!.output_contract)
+    || jsonDiffers(resourceJson, current!.resource_policy)
+  );
 
   const [syncing, setSyncing] = useState(false);
   const runManifestSync = async () => {
@@ -411,6 +487,64 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged }: { p
                     </small>
                   </div>
                   {!projectId ? <p className="inline-error">请从具体项目的 Models 页面进入，证据不能跨项目猜测。</p> : null}
+                  {!isImageEvidence ? (
+                    <fieldset className="profile-evidence-keyframe">
+                      <legend>首次启用：准备验证首帧</legend>
+                      <p>从当前项目选择一张真实图片，检查后登记为独立的镜头关键帧。系统会制作不可变副本，来源图片的归属与用途不会改变。</p>
+                      <ProjectMediaVersionSelect
+                        projectId={projectId}
+                        value={keyframeSourceId}
+                        onChange={(value) => {
+                          setKeyframeSourceId(value);
+                          setKeyframeConfirmed(false);
+                          setKeyframePreviewJobId(null);
+                          setProbePlan(null);
+                          if (value) prepareKeyframePreview.mutate(value);
+                        }}
+                        label="真实图片来源"
+                        mediaKinds={["IMAGE"]}
+                        disabled={prepareKeyframe.isPending}
+                        required
+                      />
+                      {projectId && keyframeSourceId && keyframePreviewReady ? (
+                        <figure className="profile-evidence-keyframe__preview">
+                          <img
+                            src={`/api/v1/media-versions/${encodeURIComponent(keyframeSourceId)}/thumbnail?size=medium&frame=poster`}
+                            alt="待登记的 I2V 验证首帧预览"
+                            width="320"
+                            height="568"
+                          />
+                          <figcaption>请按实际画面检查，而不是仅凭文件名确认。</figcaption>
+                        </figure>
+                      ) : null}
+                      {projectId && keyframeSourceId && !keyframePreviewReady ? (
+                        <p role="status">
+                          {prepareKeyframePreview.isPending || keyframePreviewJob.isPending
+                            ? "正在准备安全预览…"
+                            : keyframePreviewJob.data?.job.state === "FAILED"
+                              ? "预览生成失败，请重新选择图片或查看任务详情。"
+                              : "安全预览正在后台生成…"}
+                        </p>
+                      ) : null}
+                      <label className="profile-evidence-keyframe__confirmation">
+                        <input
+                          type="checkbox"
+                          checked={keyframeConfirmed}
+                          onChange={(event) => setKeyframeConfirmed(event.target.checked)}
+                          disabled={!keyframeSourceId || !keyframePreviewReady || prepareKeyframe.isPending}
+                        />
+                        <span>我已检查人物身份、服装、人体/手部、场景道具、构图、光线、连续性和可视频化，确认全部通过。</span>
+                      </label>
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={!projectId || !keyframeSourceId || !keyframeConfirmed || prepareKeyframe.isPending}
+                        onClick={() => prepareKeyframe.mutate()}
+                      >
+                        {prepareKeyframe.isPending ? "登记中…" : "登记为专用验证首帧"}
+                      </button>
+                    </fieldset>
+                  ) : null}
                   <label>
                     验证工作流版本
                     <select
@@ -469,7 +603,7 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged }: { p
                       {evidenceFinalize.isPending ? "登记发布中…" : "登记证据并发布"}
                     </button>
                   </div>
-                  {projectId && probeJobId ? <a href={`/projects/${projectId}/jobs?job=${encodeURIComponent(probeJobId)}`}>打开 Job 详情</a> : null}
+                  {projectId && probeJobId ? <a href={`${routes.systemJobs(projectId)}&job=${encodeURIComponent(probeJobId)}`}>打开 Job 详情</a> : null}
                   <Dialog
                     open={probeConfirmOpen}
                     title="确认创建真实媒体证据 Job"
@@ -496,21 +630,26 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged }: { p
                   </button>
                 ) : (
                   <>
-                    <button type="button" className="secondary" onClick={() => validate.mutate()} disabled={validate.isPending || publish.isPending}>
+                    <button type="button" className="primary-action" onClick={() => derive.mutate()} disabled={!hasContractChanges || derive.isPending || validate.isPending || publish.isPending}>
+                      {derive.isPending ? "创建中…" : "保存修改为新 DRAFT"}
+                    </button>
+                    <button type="button" className="secondary" onClick={() => validate.mutate()} disabled={hasContractChanges || derive.isPending || validate.isPending || publish.isPending}>
                       {validate.isPending ? "验证中…" : "运行本地契约验证"}
                     </button>
                     <button
                       type="button"
                       className="primary-action"
                       onClick={() => publish.mutate()}
-                      disabled={publish.isPending || validate.isPending || current.validation?.status !== "PASS"}
+                      disabled={hasContractChanges || derive.isPending || publish.isPending || validate.isPending || current.validation?.status !== "PASS"}
                     >
                       {publish.isPending ? "发布中…" : "发布已验证版本"}
                     </button>
                   </>
                 )}
               </div>
-              {isDraft && current.validation?.status !== "PASS" ? (
+              {isDraft && hasContractChanges ? (
+                <small className="action-help">当前表单有未保存修改。先派生新的不可变 DRAFT，再验证并发布，避免误发布旧契约。</small>
+              ) : isDraft && current.validation?.status !== "PASS" ? (
                 <small className="action-help">发布保持禁用，直到当前 contract hash 获得 PASS 验证证明。</small>
               ) : null}
             </>
@@ -535,104 +674,6 @@ function WorkflowVersionsTask({
   const [validations, setValidations] = useState<Record<string, WorkflowValidation>>({});
   const [revokeReasons, setRevokeReasons] = useState<Record<string, string>>({});
   const [busyAction, setBusyAction] = useState<string | null>(null);
-  const [showH3Create, setShowH3Create] = useState(false);
-  const h3Code = "h3_fl2va_i2v_fast";
-  const [h3Title, setH3Title] = useState("H3 FL2VA I2V · FAST");
-  const h3Prompt = "由生成任务在运行时注入提示词";
-  const h3Seed = "107";
-  const [h3Tier, setH3Tier] = useState("FAST");
-  const [showT2ICreate, setShowT2ICreate] = useState(false);
-  const t2iCode = "sdxl-turbo-t2i-keyframe";
-  const [t2iTitle, setT2ITitle] = useState("SDXL Turbo T2I · KEYFRAME");
-  const t2iPrompt = "由生成任务在运行时注入提示词";
-  const t2iSeed = "260826";
-
-  const createSdxlT2IWorkflow = async () => {
-    const code = t2iCode.trim();
-    const title = t2iTitle.trim();
-    const prompt = t2iPrompt.trim();
-    const seed = Number(t2iSeed);
-    if (!code || !title || !prompt || !Number.isSafeInteger(seed) || seed < 0) {
-      setFeedback({ kind: "error", message: "创建 SDXL T2I 工作流需要 code、标题、占位提示词和非负整数 seed。" });
-      return;
-    }
-    setBusyAction("create:sdxl-t2i");
-    setFeedback(null);
-    try {
-      const workflow: Record<string, unknown> = {
-        "1": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "sdxl_turbo_fp16.safetensors" } },
-        "2": { class_type: "CLIPTextEncode", inputs: { text: prompt, clip: ["1", 1] } },
-        "3": { class_type: "EmptyLatentImage", inputs: { width: 480, height: 852, batch_size: 1 } },
-        "4": {
-          class_type: "KSampler",
-          inputs: { seed, steps: 4, cfg: 1.0, sampler_name: "euler", scheduler: "simple", denoise: 1.0, model: ["1", 0], positive: ["2", 0], negative: ["2", 0], latent_image: ["3", 0] },
-        },
-        "5": { class_type: "VAEDecode", inputs: { samples: ["4", 0], vae: ["1", 2] } },
-        "6": { class_type: "SaveImage", inputs: { filename_prefix: "local_drama/t2i_keyframe", images: ["5", 0] } },
-      };
-      const contract = {
-        capability: "SDXL_T2I_CANDIDATE",
-        input_slots: {},
-        local_only: true,
-        production_tier: "KEYFRAME",
-        requires_explicit_validation: true,
-      };
-      const node_bindings = {
-        PROMPT: { node_id: "2", input: "text" },
-        SEED: { node_id: "4", input: "seed" },
-        OUTPUT_PREFIX: { node_id: "6", input: "filename_prefix" },
-      };
-      const runtime_contract = { transport: "LOOPBACK_HTTP", worker_policy: "ONE_H3_WORKER_ONE_GPU_TASK" };
-      const result = await registerWorkflowPackage({ code, title, workflow, contract, node_bindings, runtime_contract });
-      setFeedback({
-        kind: "success",
-        message: `${result.workflow_version.code} v${result.workflow_version.version_no} 已创建为候选；PROMPT、SEED 与 OUTPUT_PREFIX 为运行时语义绑定。`,
-      });
-      setShowT2ICreate(false);
-      onChanged();
-    } catch (error) {
-      setFeedback({ kind: "error", message: `SDXL T2I 工作流创建失败：${String(error)}` });
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
-  const createH3I2VWorkflow = async () => {
-    const code = h3Code.trim();
-    const title = h3Title.trim();
-    const prompt = h3Prompt.trim();
-    const seed = Number(h3Seed);
-    if (!code || !title || !prompt || !Number.isSafeInteger(seed) || seed < 0) {
-      setFeedback({ kind: "error", message: "创建 H3 I2V 工作流需要 code、标题、占位提示词和非负整数 seed。" });
-      return;
-    }
-    setBusyAction("create:h3-i2v");
-    setFeedback(null);
-    try {
-      const result = await registerH3I2VCandidateWorkflow({
-        code,
-        title,
-        prompt,
-        seed,
-        first_frame: "runtime/first-frame.png",
-        aspect_ratio: "9:16",
-        filename_prefix: "local_drama/h3_i2v",
-        sigma_points: 20,
-        acceleration: "off",
-        tier: h3Tier,
-      });
-      setFeedback({
-        kind: "success",
-        message: `${result.workflow_version.code} v${result.workflow_version.version_no} 已创建为候选；PROMPT、SEED、FRAME_COUNT、OUTPUT_PREFIX 与 FIRST_FRAME 均为运行时语义绑定。`,
-      });
-      setShowH3Create(false);
-      onChanged();
-    } catch (error) {
-      setFeedback({ kind: "error", message: `H3 I2V 工作流创建失败：${String(error)}` });
-    } finally {
-      setBusyAction(null);
-    }
-  };
 
   const validateWorkflow = async (workflow: WorkflowVersionSummary) => {
     setBusyAction(`validate:${workflow.id}`);
@@ -722,55 +763,10 @@ function WorkflowVersionsTask({
         <span className="status-pill neutral">本地验证 · 显式变更</span>
       </div>
       <p className="muted">
-        这里操作同一套权威 Workflow Version API。本地验证不会连接 ComfyUI；发布、撤销和回滚都必须由用户显式触发，并保留对应验证或原因。
+        这里操作同一套权威 Workflow Version API。兼容性验证会连接配置的本机 ComfyUI，检查节点与输入 schema；发布、撤销和回滚都必须由用户显式触发并保留证据。
       </p>
 
-      <div className="workflow-create-toolbar">
-        <button type="button" className="primary-action" onClick={() => setShowH3Create((current) => !current)} disabled={busyAction !== null}>
-          {showH3Create ? "收起创建表单" : "创建 H3 首帧工作流"}
-        </button>
-        <button type="button" className="secondary" onClick={() => setShowT2ICreate((current) => !current)} disabled={busyAction !== null}>
-          {showT2ICreate ? "收起 T2I 表单" : "创建 SDXL T2I 工作流"}
-        </button>
-        <small>创建后仍需本地验证和显式发布；不会在此步骤运行 ComfyUI。</small>
-      </div>
-
-      {showH3Create ? (
-        <form
-          className="workflow-create-form"
-          aria-label="创建 H3 首帧工作流"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void createH3I2VWorkflow();
-          }}
-        >
-          <label>显示标题<input value={h3Title} onChange={(event) => setH3Title(event.target.value)} /></label>
-          <label>生产档位<select value={h3Tier} onChange={(event) => setH3Tier(event.target.value)}><option value="FAST">极速粗筛（速度优先）</option><option value="DRAFT">日常生成（主力候选）</option><option value="SCREEN">候选精筛（质量优先）</option><option value="PRODUCTION">正式成片</option><option value="MASTER">关键镜头精制</option></select></label>
-          <div className="workflow-create-form__wide workflow-auto-facts"><strong>系统自动配置验证参数</strong><span>技术标识：{h3Code}</span><span>验证 Seed：{h3Seed}</span><small>占位提示词、帧数、输出前缀和首帧语义槽由系统模板注入，真实生成时会被镜头内容替换。</small></div>
-          <div className="workflow-create-form__wide profile-editor-actions">
-            <button type="submit" className="primary-action" disabled={busyAction !== null}>{busyAction === "create:h3-i2v" ? "创建中…" : "创建候选版本"}</button>
-            <button type="button" className="secondary" onClick={() => setShowH3Create(false)} disabled={busyAction !== null}>取消</button>
-          </div>
-        </form>
-      ) : null}
-
-      {showT2ICreate ? (
-        <form
-          className="workflow-create-form"
-          aria-label="创建 SDXL T2I 工作流"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void createSdxlT2IWorkflow();
-          }}
-        >
-          <label>显示标题<input value={t2iTitle} onChange={(event) => setT2ITitle(event.target.value)} /></label>
-          <div className="workflow-create-form__wide workflow-auto-facts"><strong>系统自动配置验证参数</strong><span>技术标识：{t2iCode}</span><span>验证 Seed：{t2iSeed}</span><small>系统按 SDXL Turbo 模板注入提示词、输出前缀、竖屏尺寸与采样步数；真实生成时会替换占位内容。</small></div>
-          <div className="workflow-create-form__wide profile-editor-actions">
-            <button type="submit" className="primary-action" disabled={busyAction !== null}>{busyAction === "create:sdxl-t2i" ? "创建中…" : "创建候选版本"}</button>
-            <button type="button" className="secondary" onClick={() => setShowT2ICreate(false)} disabled={busyAction !== null}>取消</button>
-          </div>
-        </form>
-      ) : null}
+      <WorkflowDefinitionForm disabled={busyAction !== null} onCreated={onChanged} />
 
       {feedback ? (
         <p className={feedback.kind === "error" ? "inline-error" : "review-success"} role={feedback.kind === "error" ? "alert" : "status"}>
@@ -808,6 +804,16 @@ function WorkflowVersionsTask({
                     <dd>{workflow.published_at ? new Date(workflow.published_at).toLocaleString() : "尚未发布"}</dd>
                   </div>
                 </dl>
+                {workflow.contract.parameter_effects && typeof workflow.contract.parameter_effects === "object" ? (
+                  <details className="workflow-effect-report">
+                    <summary>参数生效范围</summary>
+                    <ul>
+                      {Object.entries(workflow.contract.parameter_effects as Record<string, unknown>).map(([name, effect]) => (
+                        <li key={name}><code>{name}</code><span>{parameterEffectLabel(effect)}</span></li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
 
                 <div className="workflow-actions">
                   <button

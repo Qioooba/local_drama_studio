@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   getLocalLLMStatus,
@@ -10,6 +10,8 @@ import {
   type LocalLLMProbeLevel,
   type LocalLLMStatus,
 } from "../story-workspace-v2/breakdownClient";
+import { listProviderConnections } from "../../generated/api";
+import { routes } from "../../app/routeRegistry";
 import "./profile-configuration.css";
 import "./local-llm-configuration.css";
 
@@ -20,40 +22,17 @@ interface PresetOption {
   baseUrl: string;
   model: string;
   description: string;
+  connectionId?: string;
 }
 
-const PRESETS: PresetOption[] = [
+const BASE_PRESETS: PresetOption[] = [
   {
     id: "ollama-local",
-    name: "Ollama 当前本机模型 (本地离线)",
+    name: "Ollama 当前服务端模型（离线）",
     provider: "OLLAMA_LOOPBACK",
     baseUrl: "http://127.0.0.1:11434",
     model: "",
-    description: "优先读取当前本机环境登记的 Ollama 模型；不会连接公网。",
-  },
-  {
-    id: "deepseek-vision",
-    name: "DeepSeek V4 Flash Vision (远程/推荐剧本拆解与质检)",
-    provider: "OPENAI_COMPAT",
-    baseUrl: "https://api.deepseek.com",
-    model: "deepseek-v4-flash-vision-exp",
-    description: "兼容 OpenAI SDK，支持剧本长文拆解与图像/视频视觉质检评审。",
-  },
-  {
-    id: "deepseek-chat",
-    name: "DeepSeek Chat (远程通用文本)",
-    provider: "OPENAI_COMPAT",
-    baseUrl: "https://api.deepseek.com",
-    model: "deepseek-chat",
-    description: "兼容 OpenAI SDK，用于小说剧本拆解与通用 Prompt 优化。",
-  },
-  {
-    id: "ollama-qwen",
-    name: "Ollama Qwen 2.5 7B (本地离线)",
-    provider: "OLLAMA_LOOPBACK",
-    baseUrl: "http://127.0.0.1:11434",
-    model: "qwen2.5:7b",
-    description: "纯本地回环运行，零云端出境，完全私有。",
+    description: "优先读取 Windows 服务端登记的 Ollama 模型；不会连接公网。",
   },
   {
     id: "custom",
@@ -98,13 +77,25 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
   const [probeResult, setProbeResult] = useState<LocalLLMStatus | null>(null);
   const [probeJobId, setProbeJobId] = useState<string | null>(null);
   const [lastSyncedProfileId, setLastSyncedProfileId] = useState<string | null>(null);
-  const [lastSyncedProfileCode, setLastSyncedProfileCode] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ kind: "success" | "error"; message: string } | null>(null);
 
   const statusQuery = useQuery({
     queryKey: ["local-llm-runtime-status"],
     queryFn: () => getLocalLLMStatus({ live_probe: false }),
   });
+  const providerConnections = useQuery({ queryKey: ["provider-connections", "local-llm"], queryFn: () => listProviderConnections() });
+  const presets = useMemo<PresetOption[]>(() => {
+    const connections = (providerConnections.data?.items ?? []).map((connection) => ({
+      id: `connection:${connection.id}`,
+      name: `${connection.title}${connection.status === "ACTIVE" ? "（已启用）" : ""}`,
+      provider: (connection.protocol.toUpperCase().includes("OLLAMA") ? "OLLAMA_LOOPBACK" : "OPENAI_COMPAT") as PresetOption["provider"],
+      baseUrl: connection.base_url,
+      model: connection.model ?? "",
+      description: `来自 Provider 连接中心 · ${connection.provider_kind} · revision ${connection.revision}`,
+      connectionId: connection.id,
+    }));
+    return [BASE_PRESETS[0], ...connections, BASE_PRESETS.at(-1)!];
+  }, [providerConnections.data?.items]);
   const initializedFromRuntime = useRef(false);
 
   useEffect(() => {
@@ -112,29 +103,29 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
     if (initializedFromRuntime.current || !runtime?.provider || !runtime.base_url) return;
     const runtimeProvider = runtime.provider === "OLLAMA_LOOPBACK" ? "OLLAMA_LOOPBACK" : "OPENAI_COMPAT";
     const runtimeModel = runtime.model ?? "";
-    const exactPreset = PRESETS.find((preset) => preset.id !== "ollama-local" && preset.id !== "custom"
+    const exactPreset = presets.find((preset) => preset.id !== "ollama-local" && preset.id !== "custom"
       && preset.provider === runtimeProvider && preset.baseUrl === runtime.base_url && preset.model === runtimeModel);
     setProvider(runtimeProvider);
     setBaseUrl(runtime.base_url);
     setModel(runtimeModel);
     setSelectedPreset(exactPreset?.id ?? (runtimeProvider === "OLLAMA_LOOPBACK" ? "ollama-local" : "custom"));
     initializedFromRuntime.current = true;
-  }, [statusQuery.data]);
+  }, [presets, statusQuery.data]);
 
   const isRemote = isRemoteEndpoint(baseUrl);
+  const providerConnectionId = presets.find((preset) => preset.id === selectedPreset)?.connectionId;
 
   const invalidateVerification = () => {
     setProbeResult(null);
     setProbeJobId(null);
     setLastSyncedProfileId(null);
-    setLastSyncedProfileCode(null);
     setFeedback(null);
   };
 
   const applyPreset = (presetId: string) => {
     invalidateVerification();
     setSelectedPreset(presetId);
-    const preset = PRESETS.find((p) => p.id === presetId);
+    const preset = presets.find((p) => p.id === presetId);
     if (preset?.id === "ollama-local") {
       const runtime = statusQuery.data?.status;
       setProvider("OLLAMA_LOOPBACK");
@@ -171,6 +162,7 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
           model: model.trim(),
           load_test: true,
           allow_remote_outbound: allowRemoteOutbound,
+          provider_connection_id: providerConnectionId,
         });
         setProbeJobId(submission.job.id);
         setFeedback({ kind: "success", message: "4 级连接测试已提交到作业中心；离开本页也不会丢失结果。" });
@@ -184,6 +176,7 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
         remember_api_key: Boolean(apiKey.trim() && rememberApiKey),
         load_test: true,
         allow_remote_outbound: allowRemoteOutbound,
+        provider_connection_id: providerConnectionId,
       });
       setProbeResult(resp.probe);
       if (resp.probe.status === "PASS" && resp.probe.probe_level_passed === 4) {
@@ -250,9 +243,9 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
         capability,
         allow_remote_outbound: allowRemoteOutbound,
         probe_job_id: probeJobId ?? undefined,
+        provider_connection_id: providerConnectionId,
       });
       setLastSyncedProfileId(resp.profile.profile_version_id);
-      setLastSyncedProfileCode(resp.profile.profile_code);
       setFeedback({
         kind: "success",
         message: `候选 Profile 已生成（ID: ${resp.profile.profile_version_id.slice(0, 12)}…）。请点击“发布正式 Profile”激活使用。`,
@@ -297,7 +290,7 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
     }
   };
 
-  const renderLevelBadge = (level?: LocalLLMProbeLevel, label?: string) => {
+  const renderLevelBadge = (level?: LocalLLMProbeLevel) => {
     if (!level) {
       return <span className="probe-badge pending">待测试</span>;
     }
@@ -320,8 +313,8 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
   return (
     <section className="local-llm-configuration-panel" aria-labelledby="llm-config-title">
       <div className="section-title">
-        <span id="llm-config-title">LLM 模型与远程 Provider 管理</span>
-        <small>OpenAI 兼容 · DeepSeek · 本地 Ollama · 4 级连通性探测</small>
+        <span id="llm-config-title">大语言模型（LLM）与服务连接管理</span>
+        <small>OpenAI 兼容 · DeepSeek · Windows 服务端 Ollama · 4 级连通性探测</small>
       </div>
 
       <div className="llm-config-layout">
@@ -336,22 +329,22 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
               value={selectedPreset}
               onChange={(e) => applyPreset(e.target.value)}
             >
-              {PRESETS.map((preset) => (
+              {presets.map((preset) => (
                 <option key={preset.id} value={preset.id}>
                   {preset.name}
                 </option>
               ))}
             </select>
             <small className="muted">
-              {PRESETS.find((p) => p.id === selectedPreset)?.description}
+              {presets.find((p) => p.id === selectedPreset)?.description}
             </small>
           </div>
 
-          {selectedPreset !== "custom" && <div className="llm-preset-facts"><span>连接方式</span><strong>{provider === "OLLAMA_LOOPBACK" ? "本机 Ollama" : "OpenAI 兼容远端服务"}</strong><small>{baseUrl} · {model || "由服务自动选择模型"}</small></div>}
+          {selectedPreset !== "custom" && <div className="llm-preset-facts"><span>连接方式</span><strong>{provider === "OLLAMA_LOOPBACK" ? "Windows 服务端 Ollama" : "OpenAI 兼容远端服务"}</strong><small>{baseUrl} · {model || "由服务自动选择模型"}</small></div>}
 
           {selectedPreset === "custom" && <div className="form-group">
             <label htmlFor="llm-provider-select">
-              <strong>Provider 协议</strong>
+              <strong>服务连接协议</strong>
             </label>
             <select
               id="llm-provider-select"
@@ -359,7 +352,7 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
               onChange={(e) => { invalidateVerification(); setSelectedPreset("custom"); setProvider(e.target.value as "OPENAI_COMPAT" | "OLLAMA_LOOPBACK"); }}
             >
               <option value="OPENAI_COMPAT">OpenAI 兼容接口（含 DeepSeek 等远程服务）</option>
-              <option value="OLLAMA_LOOPBACK">本机 Ollama（仅本地访问）</option>
+              <option value="OLLAMA_LOOPBACK">Windows 服务端 Ollama（回环访问）</option>
             </select>
           </div>}
 
@@ -403,7 +396,10 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
               value={model}
               onChange={(e) => { invalidateVerification(); setSelectedPreset("custom"); setModel(e.target.value); }}
               placeholder="deepseek-v4-flash-vision-exp"
+              list="local-llm-discovered-models"
             />
+            <datalist id="local-llm-discovered-models">{statusQuery.data?.status.models?.map((item) => <option value={item} key={item} />)}</datalist>
+            <small className="muted">优先从当前运行服务发现的模型中选择；也可填写服务实际支持的模型标识。</small>
           </div>}
 
           {isRemote && <div className="form-group">
@@ -499,7 +495,7 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
           )}
           {probeJobId && projectId && (
             <p className="muted" role="status">
-              后台 Job {probeJobId.slice(0, 12)}… · {durableProbeState ?? "读取中"} · <a href={`/projects/${projectId}/jobs?job=${encodeURIComponent(probeJobId)}`}>打开作业详情</a>
+              后台 Job {probeJobId.slice(0, 12)}… · {durableProbeState ?? "读取中"} · <a href={`${routes.systemJobs(projectId)}&job=${encodeURIComponent(probeJobId)}`}>打开作业详情</a>
             </p>
           )}
         </div>
@@ -540,7 +536,7 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
               <div className="probe-level-item">
                 <div className="probe-level-title">
                   <strong>第 4 级：最小样例真实推理</strong>
-                  <small>发送微型 Payload 测试真实 JSON 输出能力</small>
+                  <small>发送一小段测试数据，检查模型能否返回结构化结果</small>
                 </div>
                 <div>{renderLevelBadge(probeResult?.probe_levels?.level_4_inference)}</div>
               </div>
@@ -558,7 +554,7 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
             <h4>系统运行环境状态 (Runtime Environment)</h4>
             <dl className="runtime-facts">
               <div>
-                <dt>当前默认 Provider</dt>
+                <dt>当前默认模型服务</dt>
                 <dd><code>{statusQuery.data?.status.provider || "OLLAMA_LOOPBACK"}</code></dd>
               </div>
               <div>

@@ -6,8 +6,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
-const FFPROBE = process.env.FFPROBE_PATH || "E:\\Tools\\ffmpeg\\bin\\ffprobe.exe";
-const FFMPEG  = process.env.FFMPEG_PATH  || "E:\\Tools\\ffmpeg\\bin\\ffmpeg.exe";
+const FFPROBE = process.env.FFPROBE_PATH || "ffprobe";
+const FFMPEG  = process.env.FFMPEG_PATH  || "ffmpeg";
 
 export class E2EHarness {
   constructor({ label = "run", evidenceRoot = "docs/evidence", apiPort = 3210 } = {}) {

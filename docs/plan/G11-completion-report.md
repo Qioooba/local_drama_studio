@@ -11,7 +11,7 @@
 ### P0 短剧完整闭环（提交 `82e23e5`）
 | 编号 | 功能 | 关键实现 |
 |---|---|---|
-| P0-1/2 | 故事资产库 | `story_assets`/`shot_asset_bindings`（迁移 0040）；四类资产卡 CRUD+乐观锁+归档+canonical 参考图+镜头绑定；StoryAssetLibraryPanel / DirectorShotEditor 绑定区 / ContinuityPanel 绑定资产区 |
+| P0-1/2 | 故事资产库 | `story_assets`/`shot_asset_bindings`（迁移 0040）；四类资产卡 CRUD+乐观锁+归档+canonical 参考图+镜头绑定；当前由 V2 Asset Bible / Director 绑定区 / Continuity 接管 |
 | P0-1 | 角色锚点提示词注入 | `prompt_anchors.py`；submit 时追加进执行 PROMPT、job 快照冻结 anchor+sha256、独立审计；预览端点与执行锚点逐字节一致；EXACT_REPLAY/plan_hash 语义保持 |
 | P0-3 | 拆解草稿落地应用 | `breakdown_apply.py` 单事务落地（场/镜头/对白）；幂等状态翻转；AIDraftReviewPanel 应用到成片 |
 | P0-5 | 多角色 TTS 编排 | `character_voice_bindings`（迁移 0041）；`submit_episode_tts_batch` 批量（镜头绑定优先、speaker 兜底、逐行隔离）；DialogueTTSPanel 编排区 |
@@ -23,7 +23,7 @@
 | P1-6 | 交付规格预设库 | 7 个不可变平台预设；from-preset 创建复用既有校验/审计；ReadinessPanels 预设区 |
 | P1-7 | 生产档位 | 5 档（FAST..MASTER，17k+5 帧数网格 107/107/124/175/209）；build_t2va/fl2va tier 覆盖；档位下拉+参数摘要；tier 冻结元数据 |
 | P1-8 | Ref2V 能力位 | 原生 `MiniMaxH3ReferenceToVideo` 链（真实 0.31 节点核实）；能力门禁+端点+UI 置灰；TRUSTED_COMFY_BUILTINS 扩展 |
-| P1-9 | 长镜头分段 | `plan_segments` 纯函数规划 + `render_segmented_episode` 真实 ffmpeg 拼接登记 |
+| P1-9 | 分段合成 | `render_segmented_episode` 对显式 segments 做真实 ffmpeg 拼接登记；未接入的自动规划器已在后续清理中退役 |
 | P1-10 | 剪映草稿导出 | `draft_content.json` best-effort 包 + 媒体随包复制；format 参数向后兼容；面板按钮 |
 | P1-11 | 音效/BGM 轨 | track_type 约束+旧值兼容；三步 ffmpeg 混音（无绑定零改动）；AudioTrackPanel BGM |
 | P1-12 | 字幕样式模板 | creative_entries 承载项目模板（不建表）；ASS [V4+ Styles] 块；cue.style_json 持久化；面板样式编辑器 |

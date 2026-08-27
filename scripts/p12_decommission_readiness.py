@@ -16,7 +16,9 @@ ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "docs" / "release" / "p12-decommission-gates.json"
 STATIC_IMPORT_RE = re.compile(r"\bimport(?!\s*\()\s+(?P<clause>[^;]+?)\s+from\s+[\"'](?P<specifier>[^\"']+)[\"']", re.MULTILINE)
 DYNAMIC_IMPORT_RE = re.compile(r"\bimport\s*\(\s*[\"'](?P<specifier>[^\"']+)[\"']\s*\)")
-QUERY_RE = re.compile(r"(?:\?view=|searchParams\.set\([\"']view[\"']|view=canvas)")
+# Only root-query URLs belong to the retired ``/?view=...`` contract. V2 pages
+# legitimately use ``?view=`` for tabs such as timeline/export and settings.
+QUERY_RE = re.compile(r"[\"'`]/\?[^\"'`\n]*\bview=")
 CONTEXT_KEYS = ("project", "episode", "shot")
 
 

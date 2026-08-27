@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { DirectorDeskCandidate } from "./types";
+import type { ShotStudioCandidate } from "../../generated/api";
+import { MediaThumbnail } from "../shared/MediaThumbnail";
 import { FRAME_CANDIDATE_MIME, frameCandidateIssue } from "./frameCandidateDrag";
 
-export type DirectorSelectionType = "KEYFRAME" | "PROXY_WINNER" | "FORMAL_SELECTION";
+export type DirectorSelectionType = "KEYFRAME" | "PROXY_WINNER";
 
-export function selectionTypeForCandidate(candidate: DirectorDeskCandidate): DirectorSelectionType | null {
-  if (candidate.stage === "FORMAL") return "FORMAL_SELECTION";
+export function selectionTypeForCandidate(candidate: ShotStudioCandidate): DirectorSelectionType | null {
   if (candidate.stage === "PROXY") return "PROXY_WINNER";
   if (candidate.stage === "KEYFRAME" && candidate.media_kind === "IMAGE") return "KEYFRAME";
   return null;
 }
 
-function disabledReason(candidate: DirectorDeskCandidate, currentCandidateId: string | null, pending: boolean) {
+function disabledReason(candidate: ShotStudioCandidate, currentCandidateId: string | null, pending: boolean) {
   if (candidate.is_stale) return `候选已失效${candidate.stale_reason ? `：${candidate.stale_reason}` : ""}，不能采用`;
+  if (candidate.stage === "FORMAL") return "正式版本只能前往正式审核，不能作为 Shot Studio 工作版本";
   if (!selectionTypeForCandidate(candidate)) return "缺少可用的 selection_type，无法建立可审计的采用记录";
   if (candidate.media_version_id === currentCandidateId) return "这个候选是当前预览采用项";
   if (candidate.selected) return "这个候选已是所属阶段的有效选择";
@@ -20,7 +21,7 @@ function disabledReason(candidate: DirectorDeskCandidate, currentCandidateId: st
   return null;
 }
 
-function candidateDecisionLabel(candidate: DirectorDeskCandidate, currentCandidateId: string | null) {
+function candidateDecisionLabel(candidate: ShotStudioCandidate, currentCandidateId: string | null) {
   if (candidate.approved) return "已批准";
   if (candidate.media_version_id === currentCandidateId) return "当前采用";
   if (candidate.selected && candidate.stage === "FORMAL") return "正式选择";
@@ -31,21 +32,21 @@ function candidateDecisionLabel(candidate: DirectorDeskCandidate, currentCandida
 }
 
 type Props = {
-  candidates: DirectorDeskCandidate[];
+  candidates: ShotStudioCandidate[];
   activeCandidateId: string | null;
   currentCandidateId: string | null;
   pending?: boolean;
   onActivate: (candidateId: string) => void;
-  onAdopt: (candidate: DirectorDeskCandidate, selectionType: DirectorSelectionType) => Promise<void>;
+  onAdopt: (candidate: ShotStudioCandidate, selectionType: DirectorSelectionType) => Promise<void>;
   onFeedback?: (message: string) => void;
   onDialogOpenChange?: (open: boolean) => void;
-  renderSecondaryAction?: (candidate: DirectorDeskCandidate) => ReactNode;
+  renderSecondaryAction?: (candidate: ShotStudioCandidate) => ReactNode;
   thumbnailUrl?: (mediaVersionId: string) => string;
   undoWindowMs?: number;
 };
 
 type UndoState = {
-  previous: DirectorDeskCandidate;
+  previous: ShotStudioCandidate;
   selectionType: DirectorSelectionType;
 };
 
@@ -62,7 +63,7 @@ export function DirectorTakeAdoption({
   thumbnailUrl = (id) => `/api/v1/media-versions/${encodeURIComponent(id)}/thumbnail?size=medium&frame=poster`,
   undoWindowMs = 8_000,
 }: Props) {
-  const [pendingCandidate, setPendingCandidate] = useState<DirectorDeskCandidate | null>(null);
+  const [pendingCandidate, setPendingCandidate] = useState<ShotStudioCandidate | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropActive, setDropActive] = useState(false);
   const [undo, setUndo] = useState<UndoState | null>(null);
@@ -96,7 +97,7 @@ export function DirectorTakeAdoption({
     return () => window.removeEventListener("keydown", handleEscape);
   });
 
-  const requestAdoption = (candidate: DirectorDeskCandidate) => {
+  const requestAdoption = (candidate: ShotStudioCandidate) => {
     const reason = disabledReason(candidate, currentCandidateId, busy);
     if (reason) {
       onFeedback?.(reason);
@@ -185,7 +186,7 @@ export function DirectorTakeAdoption({
         onDragEnd={() => { setDraggedId(null); setDropActive(false); }}
       >
         <button type="button" className="director-take-select" aria-pressed={activeCandidateId === candidate.media_version_id} aria-label={`查看 Take ${candidate.take_no ?? index + 1} · ${candidate.stage ?? "未分阶段"}，${decisionLabel}`} onClick={() => onActivate(candidate.media_version_id)}>
-          <img src={thumbnailUrl(candidate.media_version_id)} alt="" loading="lazy" decoding="async" />
+          <MediaThumbnail src={thumbnailUrl(candidate.media_version_id)} alt="" fallbackLabel="候选缩略图待生成" loading="lazy" decoding="async" />
           <span className="director-take-caption"><span>Take {candidate.take_no ?? index + 1}<small>{candidate.stage ?? "未分阶段"}</small></span><strong>{decisionLabel}</strong></span>
         </button>
         <div className="director-take-actions">
@@ -197,7 +198,7 @@ export function DirectorTakeAdoption({
     })}
     {pendingCandidate && <div className="director-dialog-scrim" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && closeConfirmation()}>
       <section className="director-dialog" role="alertdialog" aria-modal="true" aria-labelledby="adoption-title" aria-describedby="adoption-description">
-        <div><span className="director-kicker">显式采用</span><h2 id="adoption-title">确认采用 Take {pendingCandidate.take_no ?? pendingCandidate.variant_no}？</h2><p id="adoption-description">确认后会新增 {selectionTypeForCandidate(pendingCandidate)} 选择记录。采用不等于批准，也不会删除此前选择历史。</p></div>
+        <div><span className="director-kicker">显式采用</span><h2 id="adoption-title">确认采用 Take {pendingCandidate.take_no ?? pendingCandidate.variant_no}？</h2><p id="adoption-description">确认后会更新镜头 {selectionTypeForCandidate(pendingCandidate)} 工作槽。采用不等于批准，也不会删除此前修订历史。</p></div>
         <div className="director-dialog-actions"><button ref={cancelRef} type="button" className="director-button ghost" onClick={closeConfirmation}>取消</button><button type="button" className="director-button primary" disabled={busy} onClick={() => void confirm()}>{busy ? "正在采用…" : "确认采用"}</button></div>
       </section>
     </div>}

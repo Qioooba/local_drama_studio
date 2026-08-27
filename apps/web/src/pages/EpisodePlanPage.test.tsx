@@ -2,11 +2,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getEpisodeProduction, listProfiles } from "../generated/api";
+import { listProfiles } from "../generated/api";
 import { EpisodePlanPage } from "./EpisodePlanPage";
 
 vi.mock("../generated/api", () => ({
-  getEpisodeProduction: vi.fn(),
   listProfiles: vi.fn(),
 }));
 
@@ -38,7 +37,6 @@ vi.mock("../features/production/PromptTemplatePanel", () => ({
 describe("EpisodePlanPage (009B)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(getEpisodeProduction).mockResolvedValue({ items: [] } as never);
     vi.mocked(listProfiles).mockResolvedValue({ items: [] } as never);
   });
 

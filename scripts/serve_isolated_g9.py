@@ -41,8 +41,10 @@ def build_settings(root: Path) -> Settings:
 def ensure_fixture(settings: Settings) -> tuple[str, str]:
     settings.ensure_roots()
     database_path = settings.database_path
-    if not database_path.exists():
-        migrate(database_path)
+    # The reusable browser fixture can outlive newly added schema revisions.
+    # Always advance it to the current head before serving it; Alembic upgrades
+    # are idempotent when the fixture is already current.
+    migrate(database_path)
     database = Database(database_path)
     service = ProjectService(database, settings.projects_root)
     projects = service.list_projects(limit=10)

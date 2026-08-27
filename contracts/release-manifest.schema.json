@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://localdramastudio.local/schemas/release-manifest.v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product", "version", "build_id", "channel", "platform", "host", "python", "database", "config_schema", "files"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "product": {"const": "LocalDramaStudio"},
+    "version": {"type": "string"},
+    "build_id": {"type": "string"},
+    "channel": {"type": "string"},
+    "platform": {
+      "type": "object",
+      "required": ["os", "arch"],
+      "properties": {"os": {"enum": ["windows", "linux"]}, "arch": {"type": "string"}}
+    },
+    "host": {
+      "type": "object",
+      "required": ["protocol", "minimum_version"],
+      "properties": {"protocol": {"type": "integer"}, "minimum_version": {"type": "string"}}
+    },
+    "python": {
+      "type": "object",
+      "required": ["version", "abi"],
+      "properties": {"version": {"type": "string"}, "abi": {"type": "string"}}
+    },
+    "database": {
+      "type": "object",
+      "required": ["accepted_heads", "target_heads", "requires_backup"],
+      "properties": {
+        "accepted_heads": {"type": "array", "items": {"type": "string"}},
+        "target_heads": {"type": "array", "items": {"type": "string"}},
+        "requires_backup": {"type": "boolean"}
+      }
+    },
+    "config_schema": {
+      "type": "object",
+      "required": ["minimum", "target"],
+      "properties": {"minimum": {"type": "integer"}, "target": {"type": "integer"}}
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "size", "sha256"],
+        "properties": {
+          "path": {"type": "string"},
+          "size": {"type": "integer", "minimum": 0},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    },
+    "sbom": {"type": ["string", "null"]},
+    "signature": {"type": ["object", "null"]}
+  }
+}

@@ -28,6 +28,9 @@ VIEW_SPECS = (
     ("FRONT", 0.0, "front view, facing camera"),
     ("LEFT", -90.0, "left profile view"),
     ("RIGHT", 90.0, "right profile view"),
+    ("BACK", 180.0, "back view, preserve hairstyle and outfit construction"),
+    ("TOP", 0.0, "top view, preserve silhouette and proportions"),
+    ("BOTTOM", 0.0, "low underside view, preserve silhouette and proportions"),
 )
 _REFERENCE_ROLE_PREFERENCE = (
     "CHARACTER_REFERENCE",

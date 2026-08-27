@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-import uuid
-from pathlib import Path
-from urllib.parse import unquote
-
 from fastapi import APIRouter, Header, Query, Request
 
 from local_drama.api.schemas.g3 import (
@@ -14,6 +10,7 @@ from local_drama.api.schemas.g3 import (
     DocumentImportRequest,
     SourcePassageResponse,
 )
+from local_drama.api.uploading import receive_bounded_upload
 from local_drama.application.breakdown_apply import BreakdownApplyService
 from local_drama.application.breakdown_revisions import BreakdownRevisionService
 from local_drama.application.documents import DocumentImportService
@@ -39,44 +36,23 @@ async def import_script(project_id: str, payload: DocumentImportRequest, request
 @router.post("/projects/{project_id}/imports:upload", status_code=201, operation_id="uploadScriptDocument")
 async def upload_script(project_id: str, request: Request) -> dict[str, object]:
     """Register one bounded browser upload for script documents (.txt, .md, .docx)."""
-    maximum_bytes = 25 * 1024 * 1024
-    raw_length = request.headers.get("content-length")
-    if raw_length:
-        try:
-            if int(raw_length) > maximum_bytes:
-                raise DomainRuleError("DOCUMENT_UPLOAD_TOO_LARGE", "剧本文档不能超过 25 MB")
-        except ValueError as error:
-            raise api_error_from_domain(DomainRuleError("DOCUMENT_UPLOAD_LENGTH_INVALID", "上传文档长度无效")) from error
-    filename = unquote(request.headers.get("x-file-name", "script.txt"))
-    safe_filename = Path(filename).name[:180] or "script.txt"
-    if Path(safe_filename).suffix.lower() not in DOCUMENT_EXTENSIONS:
-        raise api_error_from_domain(DomainRuleError("UNSUPPORTED_DOCUMENT_TYPE", "剧本文档仅支持 TXT、Markdown、DOCX"))
-    temporary_directory = request.app.state.settings.work_root / "document-uploads" / uuid.uuid4().hex
-    temporary_directory.mkdir(parents=True, exist_ok=False)
-    temporary = temporary_directory / safe_filename
     try:
-        received_bytes = 0
-        with temporary.open("xb") as destination:
-            async for chunk in request.stream():
-                if not chunk:
-                    continue
-                received_bytes += len(chunk)
-                if received_bytes > maximum_bytes:
-                    raise DomainRuleError("DOCUMENT_UPLOAD_TOO_LARGE", "剧本文档不能超过 25 MB")
-                destination.write(chunk)
-        if received_bytes == 0:
-            raise DomainRuleError("DOCUMENT_UPLOAD_EMPTY", "请选择非空剧本文档")
-        doc_service = service(request)
-        imported = doc_service.import_document(project_id, temporary)
-        return {"import": imported}
+        maximum_mb = request.app.state.settings.uploads.document_mb
+        async with receive_bounded_upload(
+            request,
+            work_group="document-uploads",
+            allowed_suffixes=frozenset(DOCUMENT_EXTENSIONS),
+            maximum_bytes=maximum_mb * 1024 * 1024,
+            default_filename="script.txt",
+            error_prefix="DOCUMENT_UPLOAD",
+            type_error_code="UNSUPPORTED_DOCUMENT_TYPE",
+            type_error_message="剧本文档仅支持 TXT、Markdown、DOCX",
+            too_large_message=f"剧本文档不能超过 {maximum_mb} MB",
+            empty_message="请选择非空剧本文档",
+        ) as (temporary, _safe_filename, _received_bytes):
+            return {"import": service(request).import_document(project_id, temporary)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
-    finally:
-        temporary.unlink(missing_ok=True)
-        try:
-            temporary_directory.rmdir()
-        except OSError:
-            pass
 
 
 @router.get("/import-sessions/{session_id}", operation_id="getImportSession")

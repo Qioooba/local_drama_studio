@@ -69,15 +69,20 @@ def test_video_annotation_validates_time_snapshot_and_rework_project(workspace, 
 def test_video_annotation_api_is_audited_and_lists_in_time_order(workspace, database) -> None:
     _, media = _project_video(workspace, database, "video_annotation_api")
     media_version_id = str(media["media_version_id"])
+    with database.connect() as connection:
+        revision = int(connection.execute(
+            """SELECT ma.revision FROM media_assets ma JOIN media_versions mv
+            ON mv.media_asset_id=ma.id WHERE mv.id=?""", (media_version_id,)
+        ).fetchone()[0])
     with TestClient(create_app(workspace)) as client:
         for timecode_ms in (700, 100):
             response = client.post(
-                f"/api/v1/media-versions/{media_version_id}/annotations",
-                json={"timecode_ms": timecode_ms, "category": "ARTIFACT", "comment": f"artifact at {timecode_ms}"},
+                f"/api/v2/review-targets/MEDIA_VERSION/{media_version_id}/annotations",
+                json={"expected_revision": revision, "timecode_ms": timecode_ms, "category": "ARTIFACT", "comment": f"artifact at {timecode_ms}", "idempotency_key": f"annotation-{timecode_ms}"},
             )
             assert response.status_code == 201
-        listed = client.get(f"/api/v1/media-versions/{media_version_id}/annotations")
+        listed = client.get(f"/api/v2/review-targets/MEDIA_VERSION/{media_version_id}/annotations")
         assert listed.status_code == 200
         assert [item["timecode_ms"] for item in listed.json()["items"]] == [100, 700]
     with database.connect() as connection:
-        assert connection.execute("SELECT COUNT(*) FROM audit_events WHERE action='VIDEO_ANNOTATION_CREATED'").fetchone()[0] == 2
+        assert connection.execute("SELECT COUNT(*) FROM audit_events WHERE action='REVIEW_ANNOTATION_CREATED'").fetchone()[0] == 2

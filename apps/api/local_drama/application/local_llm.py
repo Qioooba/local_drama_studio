@@ -18,8 +18,11 @@ from local_drama.application.source_text import looks_like_source_heading, sourc
 from local_drama.config import Settings
 from local_drama.domain.capabilities import normalize_capability
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.network_policy import endpoint_is_remote
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.local_llm import LocalLLMClient
+from local_drama.platform import create_platform_services
+from local_drama.platform.contracts import SecretRef, SecretStore
 
 
 def _now() -> str:
@@ -839,9 +842,10 @@ def _mask_key(key: str | None) -> str | None:
 
 
 class LocalLLMService:
-    def __init__(self, database: Database, settings: Settings) -> None:
+    def __init__(self, database: Database, settings: Settings, secret_store: SecretStore | None = None) -> None:
         self.database = database
         self.settings = settings
+        self.secret_store = secret_store or create_platform_services(settings).secret_store
 
     def _resolve_api_key(
         self,
@@ -864,9 +868,7 @@ class LocalLLMService:
             if val and val.strip():
                 return val.strip()
         try:
-            from local_drama.infrastructure.windows_credentials import read_deepseek_api_key
-
-            return read_deepseek_api_key()
+            return self.secret_store.get(SecretRef("DeepSeekAPI", "default"))
         except OSError:
             # Credential-store availability must not break local Ollama or
             # obscure the stable LLM_API_KEY_REQUIRED remediation path.
@@ -880,16 +882,27 @@ class LocalLLMService:
         provider: str | None = None,
         base_url: str | None = None,
         api_key: str | None = None,
+        provider_connection_id: str | None = None,
     ) -> LocalLLMClient:
-        resolved_provider = provider or self.settings.llm_provider or "OLLAMA_LOOPBACK"
-        resolved_base_url = base_url or self.settings.llm_base_url
-        resolved_model = model or self.settings.llm_model
-        resolved_key = self._resolve_api_key(explicit_key=api_key, provider=resolved_provider)
+        if provider_connection_id:
+            from local_drama.application.provider_connections import ProviderConnectionService
+
+            connection = ProviderConnectionService(self.database, self.settings).resolve_for_execution(provider_connection_id)
+            resolved_provider = "OLLAMA_LOOPBACK" if str(connection["protocol"]).upper() == "OLLAMA" else "OPENAI_COMPAT"
+            resolved_base_url = str(connection["base_url"])
+            resolved_model = model or connection.get("model") or self.settings.llm_model
+            resolved_key = connection.get("secret")
+        else:
+            resolved_provider = provider or self.settings.llm_provider or "OLLAMA_LOOPBACK"
+            resolved_base_url = base_url or self.settings.llm_base_url
+            resolved_model = model or self.settings.llm_model
+            resolved_key = self._resolve_api_key(explicit_key=api_key, provider=resolved_provider)
         return LocalLLMClient(
             resolved_base_url,
             resolved_model,
             provider=resolved_provider,
             api_key=resolved_key,
+            allow_private_network=self.settings.allows_private_network,
         )
 
     def submit_probe(
@@ -902,24 +915,30 @@ class LocalLLMService:
         api_key: str | None = None,
         load_test: bool = True,
         allow_remote_outbound: bool = False,
+        provider_connection_id: str | None = None,
     ) -> dict[str, Any]:
         """Queue a durable four-level probe without persisting credentials."""
-        from urllib.parse import urlparse
-
         if api_key and api_key.strip():
             raise DomainRuleError(
                 "LOCAL_LLM_ASYNC_KEY_ENV_REQUIRED",
                 "后台连接测试不会把 API Key 写入 Job；请通过受控环境变量提供密钥",
                 suggested_action="设置 LOCAL_DRAMA_LLM_API_KEY 后重新提交，或仅在兼容同步测试中临时使用密钥",
             )
-        resolved_provider = (provider or self.settings.llm_provider or "OLLAMA_LOOPBACK").strip().upper()
-        resolved_base_url = (base_url or self.settings.llm_base_url).strip()
-        resolved_model = (model or self.settings.llm_model or "").strip()
+        if provider_connection_id:
+            from local_drama.application.provider_connections import ProviderConnectionService
+
+            selected_connection = ProviderConnectionService(self.database, self.settings).resolve_for_execution(provider_connection_id)
+            resolved_provider = "OLLAMA_LOOPBACK" if str(selected_connection["protocol"]).upper() == "OLLAMA" else "OPENAI_COMPAT"
+            resolved_base_url = str(selected_connection["base_url"]).strip()
+            resolved_model = str(model or selected_connection.get("model") or "").strip()
+        else:
+            resolved_provider = (provider or self.settings.llm_provider or "OLLAMA_LOOPBACK").strip().upper()
+            resolved_base_url = (base_url or self.settings.llm_base_url).strip()
+            resolved_model = (model or self.settings.llm_model or "").strip()
         # Constructing the client performs provider/URL/model validation before
         # a durable command is accepted, without contacting the runtime.
-        self.client(model=resolved_model, provider=resolved_provider, base_url=resolved_base_url)
-        parsed = urlparse(resolved_base_url)
-        is_remote = (parsed.hostname or "").casefold() not in {"127.0.0.1", "localhost", "::1"}
+        self.client(model=resolved_model, provider=resolved_provider, base_url=resolved_base_url, provider_connection_id=provider_connection_id)
+        is_remote = endpoint_is_remote(resolved_base_url)
         if resolved_provider == "OPENAI_COMPAT" and is_remote and not allow_remote_outbound:
             raise DomainRuleError("OUTBOUND_CONFIRMATION_REQUIRED", "数据将离开本机：后台测试远程 LLM 需要显式确认出境安全许可")
         snapshot = {
@@ -929,7 +948,8 @@ class LocalLLMService:
             "model": resolved_model,
             "load_test": bool(load_test),
             "allow_remote_outbound": bool(allow_remote_outbound),
-            "credential_source": "SETTINGS_OR_ENV",
+            "credential_source": "PROVIDER_CONNECTION" if provider_connection_id else "SETTINGS_OR_ENV",
+            "provider_connection_id": provider_connection_id,
             "secret_persisted": False,
         }
         fingerprint = hashlib.sha256(_json(snapshot).encode()).hexdigest()
@@ -1065,7 +1085,13 @@ class LocalLLMService:
                 "has_api_key": bool(resolved_key),
                 "masked_api_key": _mask_key(resolved_key),
             }
-        client = LocalLLMClient(resolved_base_url, resolved_model, provider=resolved_provider, api_key=resolved_key)
+        client = LocalLLMClient(
+            resolved_base_url,
+            resolved_model,
+            provider=resolved_provider,
+            api_key=resolved_key,
+            allow_private_network=self.settings.allows_private_network,
+        )
         probe_res = client.probe(load_test=True)
         probe_res["has_api_key"] = bool(resolved_key)
         probe_res["masked_api_key"] = _mask_key(resolved_key)
@@ -1081,27 +1107,44 @@ class LocalLLMService:
         allow_remote_outbound: bool = False,
         actor: str = "local-user",
         probe_job_id: str | None = None,
+        provider_connection_id: str | None = None,
     ) -> dict[str, Any]:
         try:
             normalized_capability = normalize_capability(capability)
         except ValueError as error:
             raise DomainRuleError("PROFILE_CAPABILITY_INVALID", f"能力名称无效: {capability}") from error
 
-        resolved_provider = (provider or self.settings.llm_provider or "OLLAMA_LOOPBACK").strip().upper()
-        resolved_base_url = (base_url or self.settings.llm_base_url).strip()
-        selected_model = (model or self.settings.llm_model or "").strip()
-        resolved_key = self._resolve_api_key(explicit_key=api_key, provider=resolved_provider)
+        if provider_connection_id:
+            from local_drama.application.provider_connections import ProviderConnectionService
+
+            selected_connection = ProviderConnectionService(self.database, self.settings).resolve_for_execution(provider_connection_id)
+            resolved_provider = "OLLAMA_LOOPBACK" if str(selected_connection["protocol"]).upper() == "OLLAMA" else "OPENAI_COMPAT"
+            resolved_base_url = str(selected_connection["base_url"]).strip()
+            selected_model = str(model or selected_connection.get("model") or "").strip()
+            resolved_key = selected_connection.get("secret")
+        else:
+            resolved_provider = (provider or self.settings.llm_provider or "OLLAMA_LOOPBACK").strip().upper()
+            resolved_base_url = (base_url or self.settings.llm_base_url).strip()
+            selected_model = (model or self.settings.llm_model or "").strip()
+            resolved_key = self._resolve_api_key(explicit_key=api_key, provider=resolved_provider)
 
         if not selected_model:
             return self.status(provider=resolved_provider, base_url=resolved_base_url, model=None, api_key=resolved_key)
 
         from urllib.parse import urlparse
+
         parsed = urlparse(resolved_base_url)
-        is_remote = (parsed.hostname or "").casefold() not in {"127.0.0.1", "localhost", "::1"}
+        is_remote = endpoint_is_remote(resolved_base_url)
         if resolved_provider == "OPENAI_COMPAT" and is_remote and not allow_remote_outbound:
             raise DomainRuleError("OUTBOUND_CONFIRMATION_REQUIRED", "数据将离开本机：使用远程 LLM Provider 需要显式确认出境安全许可")
 
-        client = LocalLLMClient(resolved_base_url, selected_model, provider=resolved_provider, api_key=resolved_key)
+        client = LocalLLMClient(
+            resolved_base_url,
+            selected_model,
+            provider=resolved_provider,
+            api_key=resolved_key,
+            allow_private_network=self.settings.allows_private_network,
+        )
         probe = (
             self.verified_probe_evidence(
                 probe_job_id,
@@ -1140,6 +1183,7 @@ class LocalLLMService:
             "has_api_key": bool(resolved_key),
             "masked_api_key": _mask_key(resolved_key),
             "allow_remote_outbound": allow_remote_outbound if is_remote else True,
+            "provider_connection_id": provider_connection_id,
         }
         with self.database.transaction() as connection:
             connection.execute(
@@ -1223,7 +1267,7 @@ class LocalLLMService:
                     version_id,
                     profile_id,
                     normalized_capability,
-                    _json({"runtime_id": runtime_id, "model": selected_model, "provider": resolved_provider}),
+                    _json({"runtime_id": runtime_id, "model": selected_model, "provider": resolved_provider, "provider_connection_id": provider_connection_id}),
                     _json({"source": "TXT|MD|DOCX|IMAGE|VIDEO", "output": "SCRIPT_BREAKDOWN_DRAFT|QC_REPORT", "transport": transport}),
                     _json({"temperature": {"value": 0, "locked": True}}),
                     profile_status,
@@ -1248,7 +1292,7 @@ class LocalLLMService:
         probe_job_id: str | None = None,
     ) -> dict[str, Any]:
         with self.database.transaction() as connection:
-            row = connection.execute("SELECT id, capability, capability_json FROM execution_profile_versions WHERE id=?", (profile_version_id,)).fetchone()
+            row = connection.execute("SELECT id, capability, capability_json, model_bundle_json FROM execution_profile_versions WHERE id=?", (profile_version_id,)).fetchone()
             if row is None:
                 raise DomainRuleError("PROFILE_NOT_FOUND", "Profile 版本不存在")
             try:
@@ -1262,18 +1306,33 @@ class LocalLLMService:
             if profile_capability not in {"LLM_STORY_PARSE", "QC_VISUAL", "QC_FACE", "QC_IDENTITY"}:
                 raise DomainRuleError("PROFILE_CAPABILITY_MISMATCH", "Profile 不是本地 LLM 能力")
             capability = json.loads(row["capability_json"] or "{}")
-            provider = str(capability.get("provider") or "OLLAMA_LOOPBACK")
-            base_url = str(capability.get("base_url") or self.settings.llm_base_url)
-            model = str(capability.get("model") or "")
-            resolved_key = self._resolve_api_key(capability, explicit_key=api_key)
+            bundle = json.loads(row["model_bundle_json"] or "{}")
+            provider_connection_id = str(bundle.get("provider_connection_id") or capability.get("provider_connection_id") or "").strip() or None
+            if provider_connection_id:
+                from local_drama.application.provider_connections import ProviderConnectionService
 
-            from urllib.parse import urlparse
-            parsed = urlparse(base_url)
-            is_remote = (parsed.hostname or "").casefold() not in {"127.0.0.1", "localhost", "::1"}
+                selected_connection = ProviderConnectionService(self.database, self.settings).resolve_for_execution(provider_connection_id)
+                provider = "OLLAMA_LOOPBACK" if str(selected_connection["protocol"]).upper() == "OLLAMA" else "OPENAI_COMPAT"
+                base_url = str(selected_connection["base_url"])
+                model = str(bundle.get("model") or selected_connection.get("model") or "")
+                resolved_key = selected_connection.get("secret")
+            else:
+                provider = str(capability.get("provider") or "OLLAMA_LOOPBACK")
+                base_url = str(capability.get("base_url") or self.settings.llm_base_url)
+                model = str(capability.get("model") or "")
+                resolved_key = self._resolve_api_key(capability, explicit_key=api_key)
+
+            is_remote = endpoint_is_remote(base_url)
             if provider == "OPENAI_COMPAT" and is_remote and not (allow_remote_outbound or capability.get("allow_remote_outbound")):
                 raise DomainRuleError("OUTBOUND_CONFIRMATION_REQUIRED", "数据将离开本机：发布远程 LLM Profile 需要显式确认出境安全许可")
 
-            client = LocalLLMClient(base_url, model, provider=provider, api_key=resolved_key)
+            client = LocalLLMClient(
+                base_url,
+                model,
+                provider=provider,
+                api_key=resolved_key,
+                allow_private_network=self.settings.allows_private_network,
+            )
             probe = (
                 self.verified_probe_evidence(
                     probe_job_id,
@@ -1310,6 +1369,8 @@ class LocalLLMService:
         api_key: str | None = None,
         remember_api_key: bool = False,
         allow_remote_outbound: bool = False,
+        language: str = "zh-CN",
+        output_spec: dict[str, float | int | str] | None = None,
     ) -> dict[str, Any]:
         """Expand one creator sentence into a bounded, production-ready T2V shot.
 
@@ -1322,79 +1383,163 @@ class LocalLLMService:
             raise DomainRuleError("VIDEO_STORY_REQUIRED", "请输入一句完整的视频描述")
         with self.database.connect() as connection:
             row = connection.execute(
-                "SELECT status,capability,capability_json FROM execution_profile_versions WHERE id=?",
+                "SELECT status,capability,capability_json,model_bundle_json FROM execution_profile_versions WHERE id=?",
                 (profile_version_id,),
             ).fetchone()
         if row is None or str(row["status"]) != "PUBLISHED" or str(row["capability"]) != "LLM_STORY_PARSE":
             raise DomainRuleError("LOCAL_LLM_PROFILE_UNAVAILABLE", "请选择已发布的剧本规划 LLM Profile")
         capability = json.loads(str(row["capability_json"] or "{}"))
-        provider = str(capability.get("provider") or "OLLAMA_LOOPBACK").strip().upper()
-        base_url = str(capability.get("base_url") or self.settings.llm_base_url).strip()
-        model = str(capability.get("model") or "").strip()
+        bundle = json.loads(str(row["model_bundle_json"] or "{}"))
+        provider_connection_id = str(bundle.get("provider_connection_id") or "").strip() or None
+        connection_secret: str | None = None
+        if provider_connection_id:
+            from local_drama.application.provider_connections import ProviderConnectionService
+
+            selected_connection = ProviderConnectionService(self.database, self.settings).resolve_for_execution(provider_connection_id)
+            provider = "OLLAMA_LOOPBACK" if selected_connection["protocol"].upper() == "OLLAMA" else "OPENAI_COMPAT"
+            base_url = str(selected_connection["base_url"]).strip()
+            model = str(bundle.get("model") or selected_connection.get("model") or "").strip()
+            connection_secret = selected_connection.get("secret")
+        else:
+            # Legacy published Profiles remain executable, but newly bound
+            # Profiles take all endpoint and credential authority from their
+            # Provider Connection above.
+            provider = str(bundle.get("provider") or capability.get("provider") or "OLLAMA_LOOPBACK").strip().upper()
+            base_url = str(capability.get("base_url") or self.settings.llm_base_url).strip()
+            model = str(bundle.get("model") or capability.get("model") or "").strip()
         if not model:
             raise DomainRuleError("LOCAL_LLM_PROFILE_CONFIG_MISMATCH", "已发布 Profile 未记录显式模型")
 
-        from urllib.parse import urlparse
-
-        is_remote = (urlparse(base_url).hostname or "").casefold() not in {"127.0.0.1", "localhost", "::1"}
+        is_remote = endpoint_is_remote(base_url)
         if provider == "OPENAI_COMPAT" and is_remote and not allow_remote_outbound:
             raise DomainRuleError(
                 "OUTBOUND_CONFIRMATION_REQUIRED",
-                "这句话将发送到远程 DeepSeek；请先确认允许本次出境处理",
+                "这句话将发送到所选远程 Provider；请先确认允许本次出境处理",
             )
-        resolved_key = self._resolve_api_key(capability, explicit_key=api_key)
+        resolved_key = connection_secret or self._resolve_api_key(capability, explicit_key=api_key, provider=provider)
         if provider == "OPENAI_COMPAT" and not resolved_key:
             raise DomainRuleError(
                 "LLM_API_KEY_REQUIRED",
-                "DeepSeek API Key 尚未载入；请输入密钥或为 API 进程配置 LOCAL_DRAMA_LLM_API_KEY",
+                "所选 Provider Connection 没有可用密钥；请先在模型设置中完成连接配置",
             )
-        output = LocalLLMClient(base_url, model, provider=provider, api_key=resolved_key).chat_json(
-            "你是短视频导演。把用户的一句话改写为单镜头文生视频提示词。只输出 JSON 对象，"
-            "必须包含 title、video_prompt、subject_action、environment、shot_type、camera_movement。"
-            "video_prompt 使用中文，必须忠于原句，不新增人物身份、品牌、对白或剧情转折；"
-            "同时写清主体、动作、环境、光线、构图、镜头运动和稳定性要求，适合 4 秒连续镜头。",
-            normalized_story,
+        spec = dict(output_spec or {})
+        duration_seconds = float(spec.get("duration_seconds") or 4.0)
+        if not math.isfinite(duration_seconds) or not 0.5 <= duration_seconds <= 120:
+            raise DomainRuleError("VIDEO_OUTPUT_SPEC_INVALID", "成片时长规格无效")
+        aspect_ratio = str(spec.get("aspect_ratio") or "未声明")[:32]
+        width = int(spec["width"]) if "width" in spec else None
+        height = int(spec["height"]) if "height" in spec else None
+        fps = float(spec["fps"]) if "fps" in spec else None
+        if language not in {"zh-CN", "en-US"}:
+            raise DomainRuleError("VIDEO_PROMPT_LANGUAGE_INVALID", "提示词语言只支持 zh-CN 或 en-US")
+        prompt_language = "简体中文" if language == "zh-CN" else "English"
+        client = LocalLLMClient(
+            base_url,
+            model,
+            provider=provider,
+            api_key=resolved_key,
+            allow_private_network=self.settings.allows_private_network,
         )
+        system_prompt = (
+            "你是短视频导演。把用户的一句话改写为单镜头文生视频提示词。只输出 JSON 对象，"
+            "且只能包含 title、video_prompt、keyframe_prompt、subject_action、environment、shot_type、camera_movement 七个字符串字段。"
+            "shot_type 必须是 CLOSE_UP、MEDIUM_CLOSE_UP、MEDIUM、FULL、WIDE、EXTREME_WIDE 之一；"
+            "camera_movement 必须是 STATIC、DOLLY_IN、DOLLY_OUT、PAN_LEFT、PAN_RIGHT、TILT_UP、TILT_DOWN、"
+            "TRACK_LEFT、TRACK_RIGHT、CRANE_UP、CRANE_DOWN、ORBIT 之一。"
+            f"video_prompt 使用{prompt_language}，目标为 {duration_seconds:.3f} 秒、{aspect_ratio} 画幅"
+            f"{f'、{width}×{height}' if width and height else ''}{f'、{fps:g} fps' if fps else ''} 的连续单镜头。"
+            "必须忠于原句，不新增人物身份、品牌、对白或剧情转折；只安排一个清晰主体动作和一种镜头运动，"
+            "并写清环境、光线、构图与稳定性要求。keyframe_prompt 使用相同语言，描述动作开始前最适合做 I2V 首帧的"
+            "单张静态画面，保留主体、环境、光线、景别和构图，但不得包含运镜、时间变化或多个连续动作。"
+        )
+        output = client.chat_json(system_prompt, normalized_story)
+        required_keys = {"title", "video_prompt", "keyframe_prompt", "subject_action", "environment", "shot_type", "camera_movement"}
+        allowed_shot_values = {"CLOSE_UP", "MEDIUM_CLOSE_UP", "MEDIUM", "FULL", "WIDE", "EXTREME_WIDE", "特写", "近景", "中近景", "中景", "全景", "远景"}
+        allowed_movement_values = {"STATIC", "DOLLY_IN", "DOLLY_OUT", "PAN_LEFT", "PAN_RIGHT", "TILT_UP", "TILT_DOWN", "TRACK_LEFT", "TRACK_RIGHT", "CRANE_UP", "CRANE_DOWN", "ORBIT", "固定", "静止", "缓慢推镜", "推镜", "拉镜", "跟拍", "左摇", "右摇"}
+        structurally_valid = (
+            isinstance(output, dict)
+            and set(output) == required_keys
+            and all(isinstance(output.get(key), str) and str(output[key]).strip() for key in required_keys)
+            and str(output.get("shot_type") or "").strip() in allowed_shot_values
+            and str(output.get("camera_movement") or "").strip() in allowed_movement_values
+        )
+        if not structurally_valid:
+            # One bounded repair attempt keeps the public contract strict while
+            # tolerating a model's first malformed JSON/schema response.
+            output = client.chat_json(
+                system_prompt + " 上一次输出未通过结构校验；这是唯一一次修复机会，必须逐字遵守字段集合与枚举。",
+                normalized_story,
+            )
         if remember_api_key and api_key and api_key.strip():
             try:
-                from local_drama.infrastructure.windows_credentials import write_deepseek_api_key
-
-                write_deepseek_api_key(api_key)
+                self.secret_store.put(SecretRef("DeepSeekAPI", "default"), api_key)
             except (OSError, ValueError) as error:
                 raise DomainRuleError(
                     "LLM_CREDENTIAL_STORE_FAILED",
-                    "DeepSeek 请求成功，但无法安全保存到 Windows 凭据管理器；请取消记住密钥后重试",
+                    "DeepSeek 请求成功，但无法保存到操作系统安全凭据库；请取消记住密钥后重试",
                 ) from error
-        required = ("title", "video_prompt", "subject_action", "environment", "shot_type", "camera_movement")
+        required = ("title", "video_prompt", "keyframe_prompt", "subject_action", "environment", "shot_type", "camera_movement")
         missing = [key for key in required if not isinstance(output.get(key), str) or not str(output[key]).strip()]
-        if missing:
+        unexpected = sorted(set(output) - set(required))
+        valid_shot_types = {"CLOSE_UP", "MEDIUM_CLOSE_UP", "MEDIUM", "FULL", "WIDE", "EXTREME_WIDE"}
+        valid_movements = {"STATIC", "DOLLY_IN", "DOLLY_OUT", "PAN_LEFT", "PAN_RIGHT", "TILT_UP", "TILT_DOWN", "TRACK_LEFT", "TRACK_RIGHT", "CRANE_UP", "CRANE_DOWN", "ORBIT"}
+        shot_aliases = {"特写": "CLOSE_UP", "近景": "MEDIUM_CLOSE_UP", "中近景": "MEDIUM_CLOSE_UP", "中景": "MEDIUM", "全景": "WIDE", "远景": "EXTREME_WIDE"}
+        movement_aliases = {"固定": "STATIC", "静止": "STATIC", "缓慢推镜": "DOLLY_IN", "推镜": "DOLLY_IN", "拉镜": "DOLLY_OUT", "跟拍": "TRACK_RIGHT", "左摇": "PAN_LEFT", "右摇": "PAN_RIGHT"}
+        raw_shot_type = str(output.get("shot_type") or "").strip()
+        raw_camera_movement = str(output.get("camera_movement") or "").strip()
+        shot_type = shot_aliases.get(raw_shot_type, raw_shot_type.upper())
+        camera_movement = movement_aliases.get(raw_camera_movement, raw_camera_movement.upper())
+        if missing or unexpected or shot_type not in valid_shot_types or camera_movement not in valid_movements:
             raise DomainRuleError(
                 "LOCAL_LLM_OUTPUT_INVALID",
-                "DeepSeek 返回的视频规划缺少必填字段",
-                {"missing_fields": missing},
+                "LLM 返回的视频规划不符合严格结构契约",
+                {"missing_fields": missing, "unexpected_fields": unexpected, "shot_type": shot_type, "camera_movement": camera_movement},
             )
+        if is_remote:
+            with self.database.transaction() as connection:
+                connection.execute(
+                    """INSERT INTO audit_events
+                    (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json)
+                    VALUES ('local-user','producer','ONE_SENTENCE_REMOTE_LLM_CALLED','execution_profile_version',?,?,?)""",
+                    (
+                        profile_version_id,
+                        "经用户本次确认向远端 Provider 发送一句话规划请求",
+                        _json({
+                            "provider_connection_id": provider_connection_id,
+                            "provider": provider,
+                            "model": model,
+                            "story_sha256": hashlib.sha256(normalized_story.encode("utf-8")).hexdigest(),
+                            "story_characters": len(normalized_story),
+                            "content_recorded": False,
+                        }),
+                    ),
+                )
         title = str(output["title"]).strip()[:200]
         prompt = str(output["video_prompt"]).strip()[:4000]
         return {
             "schema_version": "localdrama.one-sentence-video-plan.v1",
             "title": title,
             "video_prompt": prompt,
+            "keyframe_prompt": str(output["keyframe_prompt"]).strip()[:4000],
             "director_intent": {
                 "schema_version": "director-intent.v3",
-                "shot_type": str(output["shot_type"]).strip()[:120],
+                "shot_type": shot_type,
                 "composition": {"preset": "AUTO", "framing": "由 DeepSeek 提示词裁决"},
                 "subject_action": str(output["subject_action"]).strip()[:1000],
                 "performance": {"emotion": None, "intensity": 0.5, "body_action": str(output["subject_action"]).strip()[:1000]},
                 "camera_plan": None,
-                "target_duration_ms": 4000,
+                "target_duration_ms": round(duration_seconds * 1000),
                 "dialogue": "",
                 "environment": str(output["environment"]).strip()[:1000],
                 "continuity": "单镜头连续动作，无跳切",
                 "creative_intent": normalized_story,
             },
-            "camera_movement": str(output["camera_movement"]).strip()[:500],
+            "camera_movement": camera_movement,
+            "language": language,
+            "output_spec": spec,
             "provider": provider,
             "model": model,
+            "provider_connection_id": provider_connection_id,
             "remote": is_remote,
             "network_contacted": is_remote,
             "secret_persisted": bool(remember_api_key and api_key and api_key.strip()),
@@ -1638,7 +1783,13 @@ class LocalLLMService:
             f" 必须覆盖的 P 编号全集是 {sorted(paragraph_offsets)}；"
             "返回前自检所有 scene.source_paragraph_nos 的并集必须与这个全集完全相同，不得缺号或越界。"
         )
-        output = LocalLLMClient(base_url, model, provider=provider, api_key=api_key).chat_json(
+        output = LocalLLMClient(
+            base_url,
+            model,
+            provider=provider,
+            api_key=api_key,
+            allow_private_network=self.settings.allows_private_network,
+        ).chat_json(
             "你是本地剧本拆解器。最终答案只输出 JSON 对象，顶层必须包含 scenes、confidence、questions。输入已排除章节标题，每个 P 段都是本集必须覆盖的叙事正文；必须按原文顺序拆场，并让全部 P 段至少被一个 scene 引用。每个 scene 必须包含 scene_no、title、summary、characters、source_paragraph_nos、shots；source_paragraph_nos 必须至少列出一个实际描述该场内容的原文 P 编号，只能填写输入中真实存在的编号，不得把 P 编号当作场次序号盲填，不要返回顶层 source_passages，不要返回 quote。每个 shot 必须包含 shot_no、visual、action、dialogue、duration_seconds。confidence 必须是 {overall:0到1,notes:字符串数组}；questions 是待人工确认的字符串数组。P 编号只用于引用，不得写进场景正文、镜头或对白。每条非空 dialogue 只能逐字摘录自该 scene 的 source_paragraph_nos 所指原文；可以添加说话人前缀，但不得转述、改写或补写。原文没有明确对白时必须返回空字符串。不得臆造原文不存在的关键事实。" + required_paragraph_instruction + duration_contract,
             numbered_source_text,
             json_schema=response_schema,

@@ -5,7 +5,6 @@ import {
   cancelAutomationWorkflowRun,
   createAutomationWorkflow,
   createAutomationWorkflowFromTemplate,
-  getAutomationWorkflowRun,
   listAutomationWorkflowRuns,
   listAutomationWorkflowTemplates,
   listAutomationWorkflows,

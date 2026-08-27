@@ -8,7 +8,7 @@ import { ProjectStructureAppendPanel } from "./ProjectStructureAppendPanel";
 
 vi.mock("../../generated/api", () => ({ appendProjectEpisode: vi.fn() }));
 
-function mount(seasons: Array<{ id: string; code: string; title: string; episodes: unknown[] }>) {
+function mount(seasons: Array<{ id: string; code: string; title: string; episodes: Array<{ target_duration_ms?: number }> }>) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<MemoryRouter><QueryClientProvider client={client}><ProjectStructureAppendPanel projectId="project-1" seasons={seasons} /></QueryClientProvider></MemoryRouter>);
 }

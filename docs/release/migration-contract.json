@@ -1,7 +1,7 @@
 {
   "schema_version": "localdrama.release-migration-contract.v1",
   "expected_heads": [
-    "0057_provider_connections"
+    "0063_audio_mix_drafts"
   ],
   "upgrade_command": ".venv\\\\Scripts\\\\python.exe -m alembic upgrade heads",
   "rollback_policy": "restore_verified_pre_migration_backup_with_matching_code",
@@ -133,6 +133,60 @@
         "provider_connections",
         "credential_manager_only_secret_storage",
         "provider_connection_probe_audit"
+      ]
+    },
+    {
+      "revision": "0058_one_sentence_video_runs",
+      "facts": [
+        "one_sentence_video_runs",
+        "one_sentence_video_candidates",
+        "one_sentence_video_run_events",
+        "durable_direct_t2v_and_keyframe_i2v_execution_state"
+      ]
+    },
+    {
+      "revision": "0059_automation_workflow_versions",
+      "facts": [
+        "automation_workflows.version_no",
+        "automation_workflows.template_code",
+        "immutable_project_scoped_automation_workflow_versions"
+      ]
+    },
+    {
+      "revision": "0060_visual_lab_runtime_foundation",
+      "facts": [
+        "visual_lab_documents_nodes_edges_and_snapshots",
+        "visual_lab_promotions",
+        "versioned_runtime_environments",
+        "workflow_app_contract_versions_and_runtime_bindings",
+        "runtime_instances",
+        "provider_execution_events"
+      ]
+    },
+    {
+      "revision": "0061_shot_working_media_slots",
+      "facts": [
+        "shot_working_media_slots",
+        "one_current_media_version_per_shot_slot",
+        "legacy_per_asset_selection_backfill",
+        "shot_studio_adoption_single_write_authority"
+      ]
+    },
+    {
+      "revision": "0062_canonical_job_scope_stage",
+      "facts": [
+        "job_stage_definitions",
+        "jobs.subject_kind",
+        "jobs.scope_project_id_episode_id_shot_id",
+        "jobs.stage_code",
+        "shot_studio_jobs_never_infer_stage_from_type_or_purpose"
+      ]
+    },
+    {
+      "revision": "0063_audio_mix_drafts",
+      "facts": [
+        "audio_mix_drafts",
+        "audio_bindings_backfilled_draft_projection"
       ]
     }
   ]

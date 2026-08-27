@@ -338,7 +338,7 @@ export function GenerationPreferencePanel({ initialProjectId }: { initialProject
               <textarea value={auditNote} onChange={(event) => setAuditNote(event.target.value)} maxLength={1000} placeholder="只在需要说明特殊背景时补充" />
               <small>{auditNote.length}/1000 · 保存范围、能力和选择方式会由系统自动记录</small>
             </label>
-            {mode === "AUTO" ? <p className="muted">AUTO 模式只保存能力选择，不保存 Profile 专属运行参数；固定版本后可展开对应参数。</p> : <ProfileOverrideFields schema={resolvedSchema} value={settings} scope={ownerType} onChange={setSettings} disabled={save.isPending} />}
+            {mode === "AUTO" ? <p className="muted">自动选择模式只保存所需能力，不固定某个生成配置的专属参数；改为固定版本后才能调整对应参数。</p> : <ProfileOverrideFields schema={resolvedSchema} value={settings} scope={ownerType} onChange={setSettings} disabled={save.isPending} />}
             {mode === "EXPLICIT" && selectedProfile ? <small className="field-help">当前参数来自 {creatorProfileTitle(selectedProfile.title)} v{selectedProfile.version_no ?? "?"} 的声明契约；未知字段不会被静默保存。</small> : null}
           </details>
 
@@ -356,7 +356,7 @@ export function GenerationPreferencePanel({ initialProjectId }: { initialProject
 
           {conflict && (
             <div className="revision-conflict" role="alert">
-              <strong>检测到 revision 冲突，未覆盖他人的更改</strong>
+              <strong>检测到版本冲突，未覆盖他人的更改</strong>
               <p>你的基线：{String(expectedRevision ?? "不存在")} · 服务端当前：{String(conflict.details.actual_revision ?? "不存在")}</p>
               <p>{conflict.message}{conflict.requestId ? ` · request ${conflict.requestId}` : ""}</p>
               <button type="button" className="secondary" onClick={() => void reloadConflict()}>读取最新版本后重新编辑</button>

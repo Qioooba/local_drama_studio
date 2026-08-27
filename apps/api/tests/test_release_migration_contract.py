@@ -41,6 +41,12 @@ def test_release_migration_contract_matches_graph_and_package_authority() -> Non
         "0055_breakdown_scene_applications",
         "0056_breakdown_draft_revisions",
         "0057_provider_connections",
+        "0058_one_sentence_video_runs",
+        "0059_automation_workflow_versions",
+        "0060_visual_lab_runtime_foundation",
+        "0061_shot_working_media_slots",
+        "0062_canonical_job_scope_stage",
+        "0063_audio_mix_drafts",
     ]
     graph = {revision.revision for revision in scripts.walk_revisions()}
     assert set(revisions).issubset(graph)
@@ -55,5 +61,5 @@ def test_release_runbooks_use_contract_instead_of_stale_current_head() -> None:
     assert "0048_asset_proposals" in go_no_go
     assert "schema_validation_status: REHEARSAL_REQUIRED" in go_no_go
     assert "历史冻结决策（2026-08-17）" in go_no_go
-    assert "default=ROOT / \"docs\" / \"evidence\" / \"g10\" / \"upgrade-rollback-rehearsal-0039" not in rehearsal
+    assert 'default=ROOT / "docs" / "evidence" / "g10" / "upgrade-rollback-rehearsal-0039' not in rehearsal
     assert 'f"upgrade-rollback-rehearsal-{head_label}-{date_label}.json"' in rehearsal

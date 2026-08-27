@@ -271,7 +271,7 @@ describe("Episode Plan Data Contract & Shared QueryClient Integration", () => {
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByText("当前没有真实本地 LLM 拆解草稿；不会显示模拟建议。")).toBeTruthy();
+    expect(await screen.findByText("当前没有本地大语言模型生成的拆解草稿；页面不会用模拟建议填充。")).toBeTruthy();
     expect(screen.getByText("0 份")).toBeTruthy();
   });
 

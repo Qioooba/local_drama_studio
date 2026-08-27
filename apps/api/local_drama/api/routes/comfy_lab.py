@@ -2,9 +2,16 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from local_drama.api.schemas.comfy_lab import ComfyLabCaptureRequest, ComfyLabConfigureRequest, ComfyLabDiscoverRequest, ComfyLabTestRunRequest
+from local_drama.api.schemas.comfy_lab import (
+    ComfyLabCaptureRequest,
+    ComfyLabConfigureRequest,
+    ComfyLabDiscoverRequest,
+    ComfyLabPromoteRequest,
+    ComfyLabTestRunRequest,
+)
 from local_drama.application.comfy_lab import ComfyLabService
 from local_drama.application.errors import api_error_from_domain
+from local_drama.application.workflows import WorkflowService
 from local_drama.domain.errors import DomainRuleError
 
 router = APIRouter(tags=["comfy-lab"])
@@ -72,9 +79,35 @@ async def capture(payload: ComfyLabCaptureRequest, request: Request) -> dict[str
         raise api_error_from_domain(error) from error
 
 
+@router.get("/comfy-lab/captures", operation_id="listComfyLabCaptures")
+async def list_captures(request: Request) -> dict[str, object]:
+    return {"items": service(request).list_captures(), "runtime_contacted": False}
+
+
+@router.get("/comfy-lab/captures/{capture_id}", operation_id="getComfyLabCapture")
+async def get_capture(capture_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"capture": service(request).get_capture(capture_id), "runtime_contacted": False}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/comfy-lab/captures/{capture_id}:promote", status_code=201, operation_id="promoteComfyLabCapture")
+async def promote_capture(capture_id: str, payload: ComfyLabPromoteRequest, request: Request) -> dict[str, object]:
+    try:
+        capture = service(request).promotable_capture(capture_id)
+        contract = {**payload.contract, "source": {"kind": "COMFY_LAB_CAPTURE", "capture_id": capture_id, "content_hash": capture["content_hash"]}, "requires_explicit_validation": True, "local_only": True}
+        version = WorkflowService(request.app.state.database, request.app.state.settings).register_package(
+            payload.code, payload.title, capture["workflow"], contract, payload.node_bindings, payload.runtime_contract
+        )
+        return {"workflow_version": version, "source_capture_id": capture_id}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.post("/comfy-lab/test-runs", operation_id="createComfyLabTestRun")
 async def test_run(payload: ComfyLabTestRunRequest, request: Request) -> dict[str, object]:
     try:
-        return {"test_run": service(request).test_run(payload.workflow, execute=payload.execute)}
+        return {"test_run": service(request).test_run(payload.workflow, capture_id=payload.capture_id, execute=payload.execute)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error

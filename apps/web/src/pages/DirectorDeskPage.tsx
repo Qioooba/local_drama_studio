@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { routes } from "../app/routeRegistry";
-import { approveFormalCandidate, loadDirectorDesk, rerollDirectorCandidate, selectDirectorCandidate } from "../features/director-v2/DirectorDeskClient";
 import { DirectorIntentEditor } from "../features/director-v2/DirectorIntentEditor";
 import { FrameBridgeControls } from "../features/director-v2/FrameBridgeControls";
 import { CandidateCompareDialog } from "../features/director-v2/CandidateCompareDialog";
@@ -10,27 +9,33 @@ import { DirectorTakeAdoption, type DirectorSelectionType } from "../features/di
 import { DirectorMediaStage } from "../features/director-v2/DirectorMediaStage";
 import { DirectorSoundInspector } from "../features/director-v2/DirectorSoundInspector";
 import { ShotNavigator } from "../features/director-v2/ShotNavigator";
+import { ShotGenerationInspector } from "../features/director-v2/ShotGenerationInspector";
 import { readDirectorBatch, removeDirectorBatch, updateDirectorBatchDone } from "../features/director-v2/directorBatchState";
-import type { DirectorDeskCandidate, RerollReasonCode } from "../features/director-v2/types";
+import type { RerollReasonCode } from "../features/director-v2/types";
 import { useStudioCommand } from "../features/commands/useStudioCommand";
 import { useProjectEventInvalidation } from "../features/events/useProjectEventInvalidation";
 import { ShotAssetSection } from "../features/production/DirectorShotEditor";
 import { ContinuityPanel } from "../features/production/ContinuityPanel";
-import { createKeyframeCandidate, getEpisodeProduction, getShotContinuityContext, listProfiles } from "../generated/api";
+import { adoptShotWorkingVersionV2, createKeyframeCandidate, getShotContinuityContextV2, getShotStudioV2, listEpisodeProductionShotsV2, submitShotGenerationV2, type ShotStudioCandidate } from "../generated/api";
 import { DirectorSourcePassage } from "../features/source-passage/DirectorSourcePassage";
 import { MediaPicker } from "../features/media-picker/MediaPicker";
 import { Dialog } from "../components/ui";
 import "../features/director-v2/director-desk.css";
 
-type InspectorTab = "picture" | "assets" | "generate" | "continuity" | "sound" | "advanced";
+type InspectorContext = "design" | "generate" | "takes";
+type DesignSection = "picture" | "assets" | "continuity" | "sound";
 
-const INSPECTOR_TABS: Array<{ id: InspectorTab; label: string }> = [
+const INSPECTOR_CONTEXTS: Array<{ id: InspectorContext; label: string }> = [
+  { id: "design", label: "设计" },
+  { id: "generate", label: "生成" },
+  { id: "takes", label: "候选与证据" },
+];
+
+const DESIGN_SECTIONS: Array<{ id: DesignSection; label: string }> = [
   { id: "picture", label: "画面" },
   { id: "assets", label: "角色场景" },
-  { id: "generate", label: "生成" },
   { id: "continuity", label: "连贯性" },
   { id: "sound", label: "声音" },
-  { id: "advanced", label: "高级" },
 ];
 
 const STATUS_LABELS: Record<string, string> = {
@@ -89,19 +94,43 @@ function DeskIcon({ name }: { name: "source" | "previous" | "next" | "collapse" 
 export function DirectorDeskPage() {
   const { projectId = "", episodeId = "", shotId } = useParams();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("picture");
+  const requestedContext = searchParams.get("focus") as InspectorContext | null;
+  const legacySection = searchParams.get("inspector") as DesignSection | null;
+  const [inspectorContext, setInspectorContextState] = useState<InspectorContext>(INSPECTOR_CONTEXTS.some((item) => item.id === requestedContext) ? requestedContext! : "design");
+  const [designSection, setDesignSection] = useState<DesignSection>(DESIGN_SECTIONS.some((item) => item.id === legacySection) ? legacySection! : "picture");
+  const setInspectorContext = useCallback((context: InspectorContext) => {
+    setInspectorContextState(context);
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("focus", context);
+      next.delete("inspector");
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+  const openDesignSection = useCallback((section: DesignSection) => {
+    setDesignSection(section);
+    setInspectorContext("design");
+  }, [setInspectorContext]);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(true);
   const [resampleOpen, setResampleOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
-  const [approvalOpen, setApprovalOpen] = useState(false);
   const [adoptionOpen, setAdoptionOpen] = useState(false);
   const [keyframePickerOpen, setKeyframePickerOpen] = useState(false);
   const [keyframeSourceId, setKeyframeSourceId] = useState("");
   const [navDrawerOpen, setNavDrawerOpen] = useState(false);
-  const [inspectorDrawerOpen, setInspectorDrawerOpen] = useState(false);
+  const [inspectorDrawerOpen, setInspectorDrawerOpen] = useState(Boolean(requestedContext || legacySection));
+  useEffect(() => {
+    const hasRequestedContext = INSPECTOR_CONTEXTS.some((item) => item.id === requestedContext);
+    setInspectorContextState(hasRequestedContext ? requestedContext! : "design");
+    if (DESIGN_SECTIONS.some((item) => item.id === legacySection)) setDesignSection(legacySection!);
+    if (hasRequestedContext || legacySection) {
+      setNavDrawerOpen(false);
+      setInspectorDrawerOpen(true);
+    }
+  }, [legacySection, requestedContext]);
   const toggleNavDrawer = () => {
     const next = !navDrawerOpen;
     setNavDrawerOpen(next);
@@ -128,27 +157,22 @@ export function DirectorDeskPage() {
   const [rerollBranch, setRerollBranch] = useState<"SEED" | "PROFILE">("SEED");
   const [activeCandidateId, setActiveCandidateId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
-  const modalOpen = sourceOpen || resampleOpen || compareOpen || approvalOpen || adoptionOpen || keyframePickerOpen;
+  const modalOpen = sourceOpen || resampleOpen || compareOpen || adoptionOpen || keyframePickerOpen;
 
   const desk = useQuery({
-    queryKey: ["director-desk-v2", projectId, episodeId, shotId],
-    queryFn: () => loadDirectorDesk(projectId, episodeId, shotId),
+    queryKey: ["shot-studio-v2", projectId, episodeId, shotId],
+    queryFn: () => getShotStudioV2(episodeId, shotId!, { navRadius: 25 }),
     enabled: Boolean(projectId && episodeId && shotId),
   });
   const shotChooser = useQuery({
     queryKey: ["episode", episodeId, "director-shot-choice"],
-    queryFn: () => getEpisodeProduction(episodeId),
+    queryFn: () => listEpisodeProductionShotsV2(episodeId, { limit: 100 }),
     enabled: Boolean(projectId && episodeId && !shotId),
-  });
-  const profiles = useQuery({
-    queryKey: ["profiles", "director-camera"],
-    queryFn: () => listProfiles(),
-    enabled: Boolean(projectId && episodeId && shotId),
   });
   useProjectEventInvalidation(
     projectId,
     ["JOB_QUEUED", "JOB_CLAIMED", "JOB_FINISHED", "JOB_REQUEUED", "JOB_RECONCILED", "ARTIFACT_REGISTERED", "SHOT_REVISION_CREATED", "SHOT_PRODUCTION_READY", "FRAME_BRIDGE_INHERITED", "FRAME_BRIDGE_CURRENT_FRAME_SET", "FRAME_BRIDGE_LOCKED", "FRAME_BRIDGE_UNLOCKED"],
-    [["director-desk-v2", projectId, episodeId]],
+    [["shot-studio-v2", projectId, episodeId]],
   );
   const shots = desk.data?.shot_nav.items ?? [];
   const selected = desk.data?.current_shot.shot;
@@ -164,7 +188,7 @@ export function DirectorDeskPage() {
     if (!targetId) return;
     const nextParams = new URLSearchParams(params);
     nextParams.set("batchIndex", String(index));
-    navigate(`/projects/${projectId}/episodes/${episodeId}/direct/${targetId}?${nextParams.toString()}`);
+    navigate(`${routes.shotStudio(projectId, episodeId, targetId)}?${nextParams.toString()}`);
   };
   const toggleBatchDone = () => {
     if (!selected || !batchActive) return;
@@ -175,7 +199,7 @@ export function DirectorDeskPage() {
     if (updateDirectorBatchDone(batchParam, episodeId ?? "", nextDone)) nextParams.delete("batchDone");
     else if (nextDone.length) nextParams.set("batchDone", nextDone.join(","));
     else nextParams.delete("batchDone");
-    navigate(`/projects/${projectId}/episodes/${episodeId}/direct/${selected.id}?${nextParams.toString()}`, { replace: true });
+    navigate(`${routes.shotStudio(projectId, episodeId, selected.id)}?${nextParams.toString()}`, { replace: true });
   };
   const exitBatch = () => {
     if (!selected) return;
@@ -185,18 +209,19 @@ export function DirectorDeskPage() {
     nextParams.delete("batchIndex");
     nextParams.delete("batchDone");
     const suffix = nextParams.toString();
-    navigate(`/projects/${projectId}/episodes/${episodeId}/direct/${selected.id}${suffix ? `?${suffix}` : ""}`, { replace: true });
+    navigate(`${routes.shotStudio(projectId, episodeId, selected.id)}${suffix ? `?${suffix}` : ""}`, { replace: true });
   };
   const continuity = useQuery({
     queryKey: ["shot-continuity-context", selected?.id],
-    queryFn: () => getShotContinuityContext(selected!.id),
-    enabled: Boolean(selected?.id && inspectorTab === "continuity"),
+    queryFn: () => getShotContinuityContextV2(selected!.id),
+    enabled: Boolean(selected?.id && inspectorContext === "design" && designSection === "continuity"),
   });
 
   const candidates = desk.data?.current_shot.candidates ?? [];
+  const currentWorkingMediaId = desk.data?.current_shot.current_media?.media_version_id ?? null;
   const activeCandidate = candidates.find((item) => item.media_version_id === activeCandidateId)
-    ?? candidates.find((item) => item.selected || item.approved)
-    ?? candidates[0];
+    ?? candidates.find((item) => item.selected)
+    ?? (currentWorkingMediaId ? undefined : candidates[0]);
   const activeCandidateIndex = Math.max(0, candidates.findIndex((item) => item.media_version_id === activeCandidate?.media_version_id));
   const comparisonCandidate = candidates.find((item) => item.media_kind === "IMAGE" && item.media_version_id !== activeCandidate?.media_version_id);
   const parentVariantId = activeCandidate?.id ?? desk.data?.current_shot.selected_variant?.id;
@@ -208,24 +233,21 @@ export function DirectorDeskPage() {
   const parentProfileId = activeCandidate?.capability_profile_version_id ?? null;
   const canCreateProfileBranch = Boolean(effectiveVideoProfileId && effectiveVideoProfileId !== parentProfileId);
   const usesProfileBranch = rerollBranch === "PROFILE" && canCreateProfileBranch;
-  const refreshDesk = () => queryClient.invalidateQueries({ queryKey: ["director-desk-v2", projectId, episodeId] });
+  const refreshDesk = () => queryClient.invalidateQueries({ queryKey: ["shot-studio-v2", projectId, episodeId] });
   const selectMutation = useMutation({
-    mutationFn: ({ candidate, selectionType }: { candidate: DirectorDeskCandidate; selectionType: DirectorSelectionType }) => selectDirectorCandidate(candidate.media_version_id, selectionType),
+    mutationFn: ({ candidate }: { candidate: ShotStudioCandidate; selectionType: DirectorSelectionType }) => adoptShotWorkingVersionV2(candidate.media_version_id),
     onSuccess: refreshDesk,
   });
-  const approveMutation = useMutation({
-    mutationFn: (candidate: DirectorDeskCandidate) => approveFormalCandidate(projectId, candidate.media_version_id),
-    onSuccess: async () => { setFeedback("正式候选已通过预检并用于交付。"); setApprovalOpen(false); await refreshDesk(); },
-    onError: (error) => setFeedback(`批准未提交：${error instanceof Error ? error.message : String(error)}`),
-  });
   const rerollMutation = useMutation({
-    mutationFn: () => rerollDirectorCandidate(
-      parentVariantId!,
-      rerollReason,
-      undefined,
-      !usesProfileBranch && explicitSeedRequired ? Number(rerollSeed) : undefined,
-      usesProfileBranch ? effectiveVideoProfileId! : undefined,
-    ),
+    mutationFn: () => submitShotGenerationV2(selected!.id, {
+      operation: "REROLL",
+      stage_code: activeCandidate?.media_kind === "IMAGE" ? "SHOT_IMAGE" : "VIDEO",
+      parent_variant_id: parentVariantId!,
+      reason_code: rerollReason,
+      explicit_seed: !usesProfileBranch && explicitSeedRequired ? Number(rerollSeed) : undefined,
+      profile_version_id: usesProfileBranch ? effectiveVideoProfileId! : undefined,
+      idempotency_key: globalThis.crypto?.randomUUID?.() ?? `shot-reroll-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    }),
     onSuccess: async (result) => { setFeedback(`新候选已排队（任务 ${result.job.id}）。`); setResampleOpen(false); await refreshDesk(); },
     onError: (error) => setFeedback(`重抽提交失败：${error instanceof Error ? error.message : String(error)}`),
   });
@@ -277,15 +299,19 @@ export function DirectorDeskPage() {
   const frameBridge = desk.data?.current_shot.frame_bridge;
   const stageMediaId = activeCandidate?.media_version_id
     ?? desk.data?.current_shot.current_media?.media_version_id
-    ?? (typeof fields.media_version_id === "string" ? fields.media_version_id : null);
+    ?? null;
   const stageMediaKind = activeCandidate?.media_kind
     ?? desk.data?.current_shot.current_media?.media_kind
-    ?? (typeof fields.media_kind === "string" ? fields.media_kind : null);
+    ?? null;
   const stageMimeType = activeCandidate?.mime_type ?? desk.data?.current_shot.current_media?.mime_type ?? null;
   const stageDurationMs = activeCandidate?.duration_ms ?? desk.data?.current_shot.current_media?.duration_ms ?? null;
   const sourceExcerpt = desk.data?.current_shot.source_context.source_text
     ?? firstText(fields, ["source_excerpt", "source_text", "excerpt", "dialogue"], "当前镜头尚未关联原文段落。请在分集规划中补充来源范围。");
-  const generationHref = selected?.id ? routes.generation(projectId, episodeId, selected.id) : (shotId ? routes.generation(projectId, episodeId, shotId) : routes.generation(projectId, episodeId));
+  const generationHref = `${routes.shotStudio(projectId, episodeId, selected?.id ?? shotId)}?focus=generate`;
+  const openGenerationInspector = () => {
+    setInspectorContext("generate");
+    openInspectorDrawer();
+  };
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -300,7 +326,6 @@ export function DirectorDeskPage() {
           setSourceOpen(false);
           setResampleOpen(false);
           setCompareOpen(false);
-          setApprovalOpen(false);
           setAdoptionOpen(false);
           setKeyframePickerOpen(false);
           return;
@@ -337,37 +362,37 @@ export function DirectorDeskPage() {
       }
       if (event.key.toLowerCase() === "g") {
         event.preventDefault();
-        setInspectorTab("generate");
+        setInspectorContext("generate");
         openInspectorDrawer();
       }
       if (event.key.toLowerCase() === "f") {
         event.preventDefault();
-        setInspectorTab("continuity");
+        openDesignSection("continuity");
         openInspectorDrawer();
       }
       if (event.key.toLowerCase() === "a") {
         event.preventDefault();
-        setInspectorTab("assets");
+        openDesignSection("assets");
         openInspectorDrawer();
       }
       if (event.key === "Enter") {
         event.preventDefault();
-        setInspectorTab("picture");
+        openDesignSection("picture");
         openInspectorDrawer();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeCandidateIndex, candidates, inspectorDrawerOpen, modalOpen, navDrawerOpen]);
+  }, [activeCandidateIndex, candidates, inspectorDrawerOpen, modalOpen, navDrawerOpen, openDesignSection, setInspectorContext]);
 
-  useStudioCommand(useMemo(() => ({ id: "shot.previous", label: "上一镜", description: "保持当前项目与分集上下文", group: "当前页面" as const, shortcut: "J", enabled: () => Boolean(previous && !modalOpen), run: () => { if (previous) navigate(`/projects/${projectId}/episodes/${episodeId}/direct/${previous.id}`); } }), [episodeId, modalOpen, navigate, previous, projectId]));
-  useStudioCommand(useMemo(() => ({ id: "shot.next", label: "下一镜", description: "保持当前项目与分集上下文", group: "当前页面" as const, shortcut: "K", enabled: () => Boolean(next && !modalOpen), run: () => { if (next) navigate(`/projects/${projectId}/episodes/${episodeId}/direct/${next.id}`); } }), [episodeId, modalOpen, navigate, next, projectId]));
-  useStudioCommand(useMemo(() => ({ id: "shot.generate", label: "打开当前镜头生成设置", description: "先检查模型、资产与资源预检", group: "当前页面" as const, shortcut: "G", enabled: () => Boolean(!modalOpen && selected && desk.data?.permissions.can_generate), run: () => { setInspectorTab("generate"); setNavDrawerOpen(false); setInspectorDrawerOpen(true); } }), [desk.data?.permissions.can_generate, modalOpen, selected]));
-  useStudioCommand(useMemo(() => ({ id: "shot.reroll", label: "重抽当前镜头", description: "保留当前候选并创建新的创作分支", group: "当前页面" as const, shortcut: "R", enabled: () => Boolean(!modalOpen && parentVariantId && desk.data?.permissions.can_generate), run: () => setResampleOpen(true) }), [desk.data?.permissions.can_generate, modalOpen, parentVariantId]));
-  useStudioCommand(useMemo(() => ({ id: "shot.assets", label: "打开当前镜头资产选择", description: "进入本镜资产绑定，不写入选择前的任何事实", group: "当前页面" as const, shortcut: "A", enabled: () => !modalOpen, run: () => { setInspectorTab("assets"); setNavDrawerOpen(false); setInspectorDrawerOpen(true); } }), [modalOpen]));
-  useStudioCommand(useMemo(() => ({ id: "shot.frame-bridge", label: "打开镜头桥", description: "管理首尾帧来源、锁定与 stale", group: "当前页面" as const, shortcut: "F", enabled: () => Boolean(!modalOpen && frameBridge), run: () => { setInspectorTab("continuity"); setNavDrawerOpen(false); setInspectorDrawerOpen(true); } }), [frameBridge, modalOpen]));
+  useStudioCommand(useMemo(() => ({ id: "shot.previous", label: "上一镜", description: "保持当前项目与分集上下文", group: "当前页面" as const, shortcut: "J", enabled: () => Boolean(previous && !modalOpen), run: () => { if (previous) navigate(routes.shotStudio(projectId, episodeId, previous.id)); } }), [episodeId, modalOpen, navigate, previous, projectId]));
+  useStudioCommand(useMemo(() => ({ id: "shot.next", label: "下一镜", description: "保持当前项目与分集上下文", group: "当前页面" as const, shortcut: "K", enabled: () => Boolean(next && !modalOpen), run: () => { if (next) navigate(routes.shotStudio(projectId, episodeId, next.id)); } }), [episodeId, modalOpen, navigate, next, projectId]));
+  useStudioCommand(useMemo(() => ({ id: "shot.generate", label: "打开当前镜头生成设置", description: "先检查模型、资产与资源预检", group: "当前页面" as const, shortcut: "G", enabled: () => Boolean(!modalOpen && selected && desk.data?.allowed_actions.generate), run: () => { setInspectorContext("generate"); setNavDrawerOpen(false); setInspectorDrawerOpen(true); } }), [desk.data?.allowed_actions.generate, modalOpen, selected, setInspectorContext]));
+  useStudioCommand(useMemo(() => ({ id: "shot.reroll", label: "重抽当前镜头", description: "保留当前候选并创建新的创作分支", group: "当前页面" as const, shortcut: "R", enabled: () => Boolean(!modalOpen && parentVariantId && desk.data?.allowed_actions.generate), run: () => setResampleOpen(true) }), [desk.data?.allowed_actions.generate, modalOpen, parentVariantId]));
+  useStudioCommand(useMemo(() => ({ id: "shot.assets", label: "打开当前镜头资产选择", description: "进入本镜资产绑定，不写入选择前的任何事实", group: "当前页面" as const, shortcut: "A", enabled: () => !modalOpen, run: () => { openDesignSection("assets"); setNavDrawerOpen(false); setInspectorDrawerOpen(true); } }), [modalOpen, openDesignSection]));
+  useStudioCommand(useMemo(() => ({ id: "shot.frame-bridge", label: "打开镜头桥", description: "管理首尾帧来源、锁定与 stale", group: "当前页面" as const, shortcut: "F", enabled: () => Boolean(!modalOpen && frameBridge), run: () => { openDesignSection("continuity"); setNavDrawerOpen(false); setInspectorDrawerOpen(true); } }), [frameBridge, modalOpen, openDesignSection]));
   useStudioCommand(useMemo(() => ({ id: "shot.compare", label: "并排比较候选", description: "支持 2-up / 4-up 与统一视频播放", group: "当前页面" as const, shortcut: "C", enabled: () => candidates.length > 1 && !modalOpen, run: () => setCompareOpen(true) }), [candidates.length, modalOpen]));
-  useStudioCommand(useMemo(() => ({ id: "shot.details", label: "打开当前镜头详情", description: "聚焦画面与镜头 Inspector", group: "当前页面" as const, shortcut: "Enter", enabled: () => !modalOpen, run: () => { setInspectorTab("picture"); setNavDrawerOpen(false); setInspectorDrawerOpen(true); } }), [modalOpen]));
+  useStudioCommand(useMemo(() => ({ id: "shot.details", label: "打开当前镜头详情", description: "聚焦画面与镜头 Inspector", group: "当前页面" as const, shortcut: "Enter", enabled: () => !modalOpen, run: () => { openDesignSection("picture"); setNavDrawerOpen(false); setInspectorDrawerOpen(true); } }), [modalOpen, openDesignSection]));
   useStudioCommand(useMemo(() => ({ id: "shot.candidate.1", label: "聚焦候选 1", group: "当前页面" as const, shortcut: "1", enabled: () => Boolean(!modalOpen && candidates[0]), run: () => { if (candidates[0]) setActiveCandidateId(candidates[0].media_version_id); } }), [candidates, modalOpen]));
   useStudioCommand(useMemo(() => ({ id: "shot.candidate.2", label: "聚焦候选 2", group: "当前页面" as const, shortcut: "2", enabled: () => Boolean(!modalOpen && candidates[1]), run: () => { if (candidates[1]) setActiveCandidateId(candidates[1].media_version_id); } }), [candidates, modalOpen]));
   useStudioCommand(useMemo(() => ({ id: "shot.toggle-nav", label: "切换镜头导航抽屉", description: "在紧凑视口下展开或收起镜头导航", group: "当前页面" as const, shortcut: "N", enabled: () => !modalOpen, run: () => { setInspectorDrawerOpen(false); setNavDrawerOpen((value) => !value); } }), [modalOpen]));
@@ -378,7 +403,7 @@ export function DirectorDeskPage() {
     if (shotChooser.isLoading) return <div className="director-loading" role="status">正在读取本集镜头…</div>;
     if (shotChooser.error) return <div className="director-error" role="alert"><strong>无法读取镜头列表</strong><span>{shotChooser.error instanceof Error ? shotChooser.error.message : String(shotChooser.error)}</span><button type="button" className="secondary" onClick={() => void shotChooser.refetch()}>重试</button></div>;
     const chooserItems = shotChooser.data?.items ?? [];
-    return <section className="director-shot-choice" aria-labelledby="director-shot-choice-title"><div><p className="eyebrow">导演台入口</p><h2 id="director-shot-choice-title">先选择要精修的镜头</h2><p>未指定镜头时不会静默打开第一镜，也不会启用生成、重抽或批准操作。</p></div>{chooserItems.length ? <nav aria-label="选择导演镜头">{chooserItems.map((shot, index) => <Link key={String(shot.id)} to={routes.directorDesk(projectId, episodeId, String(shot.id))}><span>{String(shot.code ?? `镜头 ${index + 1}`)}</span><small>{String(shot.status ?? "未开始")}</small></Link>)}</nav> : <p className="empty-state">本集还没有镜头，请先在分集规划中创建镜头。</p>}<Link className="secondary v2-inline-link" to={routes.episodePlan(projectId, episodeId)}>返回分集规划</Link></section>;
+    return <section className="director-shot-choice" aria-labelledby="director-shot-choice-title"><div><p className="eyebrow">镜头工作台</p><h2 id="director-shot-choice-title">先选择要处理的镜头</h2><p>未指定镜头时不会静默打开第一镜，也不会启用生成、重抽或工作采用。</p></div>{chooserItems.length ? <nav aria-label="选择镜头">{chooserItems.map((shot, index) => <Link key={shot.shot_id} to={routes.shotStudio(projectId, episodeId, shot.shot_id)}><span>{shot.shot_code || `镜头 ${index + 1}`}</span><small>{STATUS_LABELS[shot.overall_state] ?? shot.overall_state}</small></Link>)}</nav> : <p className="empty-state">本集还没有镜头，请先在分集策划中创建镜头。</p>}<Link className="secondary v2-inline-link" to={routes.episodePlan(projectId, episodeId)}>返回分集策划</Link></section>;
   }
   if (desk.isLoading) return <div className="director-loading" role="status">正在打开导演台…</div>;
   if (desk.error) return <div className="director-error" role="alert"><strong>导演台暂时无法打开</strong><span>{desk.error instanceof Error ? desk.error.message : String(desk.error)}</span><Link to={`/projects/${projectId}/episodes/${episodeId}/plan`}>返回分集规划</Link></div>;
@@ -393,8 +418,8 @@ export function DirectorDeskPage() {
           <button type="button" className="director-button ghost desk-inspector-toggle" aria-keyshortcuts="I" aria-expanded={inspectorDrawerOpen} aria-label="切换检查器 (I)" onClick={toggleInspectorDrawer}><DeskIcon name="frame" /><span>检查器 <kbd>I</kbd></span></button>
           <button type="button" className="director-button ghost" aria-keyshortcuts="O" onClick={() => setSourceOpen(true)}><DeskIcon name="source" />查看原文 <kbd>O</kbd></button>
           <button type="button" className="director-button ghost" aria-keyshortcuts="C" disabled={candidates.length < 2} title={candidates.length < 2 ? "至少需要两个候选才能并排比较" : undefined} onClick={() => setCompareOpen(true)}><DeskIcon name="compare" />并排比较</button>
-          <Link className="director-button ghost" to={`/projects/${projectId}/episodes/${episodeId}/review`}><DeskIcon name="compare" />集审核</Link>
-          <button type="button" className="director-button primary" disabled={!parentVariantId || !desk.data?.permissions.can_generate} title={!desk.data?.permissions.can_generate ? "当前权限不允许生成候选" : !parentVariantId ? "当前没有可作为父节点的候选" : undefined} onClick={() => setResampleOpen(true)}>重抽当前镜头</button>
+          <Link className="director-button ghost" to={routes.postReview(projectId, episodeId)}><DeskIcon name="compare" />正式审核</Link>
+          <button type="button" className="director-button primary" disabled={!parentVariantId || !desk.data?.allowed_actions.generate} title={!desk.data?.allowed_actions.generate ? "当前镜头尚未满足生成条件" : !parentVariantId ? "当前没有可作为父节点的候选" : undefined} onClick={() => setResampleOpen(true)}>重抽当前镜头</button>
         </div>
       </header>
 
@@ -424,7 +449,7 @@ export function DirectorDeskPage() {
           totalShots={desk.data?.shot_nav.total}
           windowStart={desk.data?.shot_nav.window_start}
           windowEnd={desk.data?.shot_nav.window_end}
-          canEdit={Boolean(desk.data?.permissions.can_edit)}
+          canEdit={Boolean(desk.data?.allowed_actions.adopt_working_version)}
           onChanged={refreshDesk}
         />
           </div>
@@ -434,15 +459,15 @@ export function DirectorDeskPage() {
           <div className="director-stage-toolbar">
             <div><span className="director-kicker">当前镜头</span><h2>{selected.code} · {firstText(fields, ["title", "summary"], selected.shot_type || "未命名镜头")}</h2></div>
             <div className="director-stepper">
-              {previous ? <Link aria-label="上一镜，快捷键 J" aria-keyshortcuts="J" to={`/projects/${projectId}/episodes/${episodeId}/direct/${previous.id}`}><DeskIcon name="previous" /></Link> : <button type="button" disabled aria-label="已经是第一镜"><DeskIcon name="previous" /></button>}
+              {previous ? <Link aria-label="上一镜，快捷键 J" aria-keyshortcuts="J" to={routes.shotStudio(projectId, episodeId, previous.id)}><DeskIcon name="previous" /></Link> : <button type="button" disabled aria-label="已经是第一镜"><DeskIcon name="previous" /></button>}
               <span>{currentIndex + 1} / {desk.data?.shot_nav.total ?? shots.length}</span>
-              {next ? <Link aria-label="下一镜，快捷键 K" aria-keyshortcuts="K" to={`/projects/${projectId}/episodes/${episodeId}/direct/${next.id}`}><DeskIcon name="next" /></Link> : <button type="button" disabled aria-label="已经是最后一镜"><DeskIcon name="next" /></button>}
+              {next ? <Link aria-label="下一镜，快捷键 K" aria-keyshortcuts="K" to={routes.shotStudio(projectId, episodeId, next.id)}><DeskIcon name="next" /></Link> : <button type="button" disabled aria-label="已经是最后一镜"><DeskIcon name="next" /></button>}
             </div>
           </div>
-          <DirectorMediaStage label={`${selected.code} 当前选中媒体`} media={stageMediaId ? { mediaVersionId: stageMediaId, mediaKind: stageMediaKind, mimeType: stageMimeType, durationMs: stageDurationMs } : null} comparisonMedia={comparisonCandidate ? { mediaVersionId: comparisonCandidate.media_version_id, mediaKind: comparisonCandidate.media_kind, mimeType: comparisonCandidate.mime_type } : null} badges={[selected.shot_type || "镜头类型未设", `${Math.round(selected.target_duration_ms / 100) / 10}s`, revision?.is_frozen ? "修订已锁定" : "可编辑"]} onEmptyAction={() => navigate(generationHref)} keyboardShortcutsEnabled={!modalOpen} />
+          <DirectorMediaStage label={`${selected.code} 当前选中媒体`} media={stageMediaId ? { mediaVersionId: stageMediaId, mediaKind: stageMediaKind, mimeType: stageMimeType, durationMs: stageDurationMs, thumbnailReady: activeCandidate?.thumbnail_ready ?? desk.data?.current_shot.current_media?.thumbnail_ready } : null} comparisonMedia={comparisonCandidate ? { mediaVersionId: comparisonCandidate.media_version_id, mediaKind: comparisonCandidate.media_kind, mimeType: comparisonCandidate.mime_type, thumbnailReady: comparisonCandidate.thumbnail_ready } : null} badges={[selected.shot_type || "镜头类型未设", `${Math.round(selected.target_duration_ms / 100) / 10}s`, revision?.is_frozen ? "修订已锁定" : "可编辑"]} onEmptyAction={openGenerationInspector} keyboardShortcutsEnabled={!modalOpen} />
           <div className="director-frame-bridge" aria-label="前后镜头画面衔接">
             <div><span className="frame-node"><DeskIcon name="frame" /><small>上一镜尾帧</small><strong>{frameBridge?.previous?.from_shot_code ?? previous?.code ?? "无"}</strong></span><span className="frame-line" aria-hidden="true" /><span className="frame-node active"><DeskIcon name="frame" /><small>本镜首帧</small><strong>{frameBridge?.current_start ? frameBridge.current_start.status : "待选择"}</strong></span><span className="frame-line" aria-hidden="true" /><span className="frame-node"><DeskIcon name="frame" /><small>本镜尾帧</small><strong>{frameBridge?.current_end ? frameBridge.current_end.status : next ? "连接下一镜" : "片尾"}</strong></span></div>
-            <button type="button" className="director-text-button" onClick={() => { setInspectorTab("continuity"); openInspectorDrawer(); }}>管理来源与锁定</button>
+            <button type="button" className="director-text-button" onClick={() => { openDesignSection("continuity"); openInspectorDrawer(); }}>管理来源与锁定</button>
           </div>
         </section>
 
@@ -450,21 +475,52 @@ export function DirectorDeskPage() {
           {inspectorDrawerOpen && <div className="director-drawer-backdrop" role="presentation" onClick={() => setInspectorDrawerOpen(false)} />}
           <aside className="director-inspector" aria-label="镜头检查器">
           <div className="director-zone-title"><div><span>镜头设置</span><strong>{STATUS_LABELS[selected.status] ?? selected.status}</strong></div><button type="button" className="director-inspector-close" aria-label="收起检查器" onClick={() => setInspectorDrawerOpen(false)}>×</button></div>
-          <div className="director-inspector-tabs" role="tablist" aria-label="检查器分类">
-            {INSPECTOR_TABS.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={inspectorTab === tab.id} aria-keyshortcuts={tab.id === "generate" ? "G" : tab.id === "continuity" ? "F" : tab.id === "assets" ? "A" : tab.id === "picture" ? "Enter" : undefined} onClick={() => { setInspectorTab(tab.id); openInspectorDrawer(); }}>{tab.label}</button>)}
+          <div className="director-inspector-tabs" role="tablist" aria-label="镜头工作上下文">
+            {INSPECTOR_CONTEXTS.map((context) => <button key={context.id} type="button" role="tab" aria-selected={inspectorContext === context.id} aria-keyshortcuts={context.id === "generate" ? "G" : undefined} onClick={() => { setInspectorContext(context.id); openInspectorDrawer(); }}>{context.label}</button>)}
           </div>
           <div className="director-inspector-body">
-            {inspectorTab === "picture" && <DirectorIntentEditor shotId={selected.id} shotCode={selected.code} currentRevision={revision ?? null} targetDurationMs={selected.target_duration_ms} shotType={selected.shot_type} shotStatus={selected.status} cameraProfiles={(profiles.data?.items ?? []).filter((profile) => profile.status === "PUBLISHED" && profile.capability.startsWith("VIDEO_"))} stagingParticipants={stagingParticipants} intentSuggestions={desk.data?.current_shot.intent_suggestions} blockers={desk.data?.current_shot.blockers ?? []} canEdit={desk.data?.permissions.can_edit ?? false} keyboardShortcutsEnabled={!modalOpen} onSaved={async () => { await refreshDesk(); }} onReloadRequested={() => { void refreshDesk(); }} />}
-            {inspectorTab === "assets" && <><div className="director-section-head"><strong>本镜资产与角色</strong><Link to={`/projects/${projectId}/assets`}>打开资产圣经</Link></div><p className="director-help">绑定与解绑会保存为正式镜头事实；角色造型与参考状态继续在资产圣经或分集策划中管理。</p><ShotAssetSection projectId={projectId} shotId={selected.id} canEdit={Boolean(desk.data?.permissions.can_edit)} /></>}
-            {inspectorTab === "generate" && <><div className="director-section-head"><strong>本镜生效生成能力</strong><Link to={`/projects/${projectId}/production-settings`}>管理生产设置</Link></div><div className="director-placeholder-list">{resolvedGeneration.map((resolution) => <span key={resolution.capability ?? "unknown"}><strong>{resolution.profile?.title ?? resolution.profile?.code ?? "自动匹配能力"}</strong>{resolution.blocked_reason ? ` · 阻塞：${resolution.blocked_reason}` : " · 可用"}<small>系统按镜头、分集、项目的优先级自动解析</small></span>)}{resolvedGeneration.length === 0 && <span>尚无可用生成能力；提交时不会擅自改用其他模型。</span>}</div>{parentVariantId ? <button type="button" className="director-button primary wide" onClick={() => setResampleOpen(true)}>创建新候选</button> : <Link className="director-button primary wide" to={generationHref}>检查并生成首个候选</Link>}<button type="button" className="director-button ghost wide" disabled={!desk.data?.permissions.can_edit} onClick={() => { setKeyframeSourceId(""); keyframeMutation.reset(); setKeyframePickerOpen(true); }}>从项目图片创建关键帧候选</button><p className="director-help">候选数量和质量策略来自整集生产模式或生成工作台。项目图片只会派生新的关键帧候选，不会自动采用或批准。</p></>}
-            {inspectorTab === "continuity" && <>
-              {frameBridge && <FrameBridgeControls frameBridge={frameBridge} currentCandidate={activeCandidate ?? null} currentShotId={selected.id} previousShotId={previous?.id} nextShotId={next?.id} canEdit={desk.data?.permissions.can_edit ?? false} onChanged={async () => { await refreshDesk(); void continuity.refetch(); }} />}
-              {continuity.isLoading && <p className="loading-state" role="status">正在读取前后镜头连续性…</p>}
-              {continuity.isError && <p className="inline-error" role="alert">连续性对照读取失败：{continuity.error instanceof Error ? continuity.error.message : String(continuity.error)}</p>}
-              {!continuity.isLoading && !continuity.isError && <ContinuityPanel context={continuity.data?.continuity} />}
+            {inspectorContext === "design" && <>
+              <div className="director-design-sections" role="tablist" aria-label="设计任务">
+                {DESIGN_SECTIONS.map((section) => <button key={section.id} type="button" role="tab" aria-selected={designSection === section.id} aria-keyshortcuts={section.id === "continuity" ? "F" : section.id === "assets" ? "A" : section.id === "picture" ? "Enter" : undefined} onClick={() => setDesignSection(section.id)}>{section.label}</button>)}
+              </div>
+              {designSection === "picture" && <DirectorIntentEditor shotId={selected.id} shotCode={selected.code} currentRevision={revision ?? null} targetDurationMs={selected.target_duration_ms} shotType={selected.shot_type} shotStatus={selected.status} cameraProfiles={desk.data?.current_shot.capability_options.filter((profile) => profile.status === "PUBLISHED" && profile.capability.startsWith("VIDEO_")) ?? []} stagingParticipants={stagingParticipants} intentSuggestions={desk.data?.current_shot.intent_suggestions} blockers={desk.data?.current_shot.blockers ?? []} canEdit={desk.data?.allowed_actions.edit_draft ?? false} keyboardShortcutsEnabled={!modalOpen} onSaved={async () => { await refreshDesk(); }} onReloadRequested={() => { void refreshDesk(); }} />}
+              {designSection === "assets" && <><div className="director-section-head"><strong>本镜资产与角色</strong><Link to={`/projects/${projectId}/assets`}>打开资产圣经</Link></div><p className="director-help">绑定与解绑会保存为正式镜头事实；角色造型与参考状态继续在资产圣经或分集策划中管理。</p><ShotAssetSection projectId={projectId} shotId={selected.id} canEdit={Boolean(desk.data?.allowed_actions.edit_draft)} /></>}
+              {designSection === "continuity" && <>
+                {frameBridge && <FrameBridgeControls frameBridge={frameBridge} currentCandidate={activeCandidate ?? null} currentShotId={selected.id} previousShotId={previous?.id} nextShotId={next?.id} canEdit={desk.data?.allowed_actions.edit_draft ?? false} onChanged={async () => { await refreshDesk(); void continuity.refetch(); }} />}
+                {continuity.isLoading && <p className="loading-state" role="status">正在读取前后镜头连续性…</p>}
+                {continuity.isError && <p className="inline-error" role="alert">连续性对照读取失败：{continuity.error instanceof Error ? continuity.error.message : String(continuity.error)}</p>}
+                {!continuity.isLoading && !continuity.isError && <ContinuityPanel context={continuity.data?.continuity} />}
+              </>}
+              {designSection === "sound" && <DirectorSoundInspector
+                projectId={projectId}
+                shotId={selected.id}
+                shotCode={selected.code}
+                shotRevision={selected.revision}
+                dialogue={desk.data?.current_shot.dialogue ?? { lines: [], total: 0 }}
+                canEdit={desk.data?.allowed_actions.edit_draft ?? false}
+                reviewHref={routes.postReview(projectId, episodeId)}
+                onChanged={refreshDesk}
+              />}
             </>}
-            {inspectorTab === "sound" && <DirectorSoundInspector projectId={projectId} episodeId={episodeId} shotCode={selected.code} dialogue={firstText(fields, ["dialogue", "narration", "source_excerpt"], "本镜无台词")} assets={desk.data?.current_shot.assets ?? []} />}
-            {inspectorTab === "advanced" && <><div className="director-continuity-list"><div><span>修订号</span><strong>v{revision?.revision_no ?? selected.revision ?? 0}</strong></div><div><span>镜头 ID</span><code>{selected.id}</code></div><div><span>冻结</span><strong>{revision?.is_frozen ? "是" : "否"}</strong></div><div><span>活动任务</span><strong>{desk.data?.current_shot.active_jobs.length ?? 0}</strong></div></div><p className="director-help">高级字段只展示真实生产标识，不影响常规导演操作。</p></>}
+            {inspectorContext === "generate" && (parentVariantId
+              ? <><div className="director-section-head"><strong>继续探索候选</strong><Link to={routes.settings(projectId, "capabilities")}>管理项目能力</Link></div><div className="director-placeholder-list">{resolvedGeneration.map((resolution) => <span key={resolution.capability ?? "unknown"}><strong>{resolution.profile?.title ?? resolution.profile?.code ?? "自动匹配能力"}</strong>{resolution.blocked_reason ? ` · 阻塞：${resolution.blocked_reason}` : " · 可用"}<small>系统按镜头、分集、项目的优先级自动解析</small></span>)}</div><button type="button" className="director-button primary wide" disabled={!desk.data?.allowed_actions.generate} onClick={() => setResampleOpen(true)}>从当前候选创建分支</button><p className="director-help">创意重抽创建新 Variant；任务执行失败应在任务详情重试。</p></>
+              : <ShotGenerationInspector
+                shotId={selected.id}
+                shotCode={selected.code}
+                shotRevision={selected.revision}
+                fields={fields}
+                currentShot={desk.data!.current_shot}
+                canGenerate={desk.data?.allowed_actions.generate ?? false}
+                reviewHref={routes.postReview(projectId, episodeId)}
+                onOpenKeyframePicker={() => { setKeyframeSourceId(""); keyframeMutation.reset(); setKeyframePickerOpen(true); }}
+                onSubmitted={async (message) => { setFeedback(message); await refreshDesk(); }}
+              />)}
+            {inspectorContext === "takes" && <>
+              <div className="director-section-head"><strong>候选、质检与审核证据</strong><Link to={routes.postReview(projectId, episodeId)}>打开审核工作区</Link></div>
+              <div className="director-continuity-list"><div><span>候选</span><strong>{candidates.length}</strong></div><div><span>当前工作媒体</span><strong>{desk.data?.current_shot.current_media ? "已采用" : "未采用"}</strong></div><div><span>机器质检结果</span><strong>{desk.data?.current_shot.qc_summary.results.length ?? 0}</strong></div><div><span>审核记录</span><strong>{desk.data?.current_shot.review_summary.count ?? 0}</strong></div><div><span>活动任务</span><strong>{desk.data?.current_shot.active_jobs.length ?? 0}</strong></div><div><span>镜头修订</span><strong>v{revision?.revision_no ?? selected.revision ?? 0}</strong></div></div>
+              <p className="director-help">这里解释候选来源、工作采用和证据状态；正式批准与退回只在审核工作区写入。</p>
+              {candidates.length > 1 && <button type="button" className="director-button secondary wide" onClick={() => setCompareOpen(true)}>并排比较候选</button>}
+            </>}
           </div>
         </aside>
         </div>
@@ -482,10 +538,10 @@ export function DirectorDeskPage() {
             onAdopt={(candidate, selectionType) => selectMutation.mutateAsync({ candidate, selectionType }).then(() => undefined)}
             onFeedback={setFeedback}
             onDialogOpenChange={setAdoptionOpen}
-            renderSecondaryAction={(candidate) => candidate.stage === "FORMAL" && candidate.media_kind === "VIDEO" ? <button type="button" disabled={!desk.data?.permissions.can_approve || approveMutation.isPending} title={!desk.data?.permissions.can_approve ? "当前权限不允许批准交付" : approveMutation.isPending ? "正在提交批准" : "打开批准确认"} onClick={() => { setActiveCandidateId(candidate.media_version_id); setApprovalOpen(true); }}>用于交付</button> : candidate.stage === "PROXY" && candidate.selected ? <button type="button" title="前往生成工作台生成正式版本" onClick={() => navigate(generationHref)}>生成正式版</button> : null}
+            renderSecondaryAction={(candidate) => candidate.stage === "FORMAL" && candidate.media_kind === "VIDEO" ? <button type="button" onClick={() => navigate(routes.postReview(projectId, episodeId))}>前往审核</button> : candidate.stage === "PROXY" && candidate.selected ? <button type="button" title="在当前镜头生成正式版本" onClick={openGenerationInspector}>生成正式版</button> : null}
           />}
           {candidates.length === 0 && <div className="director-take-empty"><strong>还没有候选</strong><span>生成后可在这里同屏比较；选择与批准始终是两个动作。</span></div>}
-          {parentVariantId ? <button type="button" className="director-new-take" onClick={() => setResampleOpen(true)}>+ 重抽候选</button> : <Link className="director-new-take" to={generationHref}>+ 生成首个候选</Link>}
+          {parentVariantId ? <button type="button" className="director-new-take" onClick={() => setResampleOpen(true)}>+ 重抽候选</button> : candidates.length ? <button type="button" className="director-new-take" disabled>+ 先选择候选</button> : <Link className="director-new-take" to={generationHref} onClick={openGenerationInspector}>+ 生成首个候选</Link>}
         </div>}
       </section>
 
@@ -507,7 +563,6 @@ export function DirectorDeskPage() {
           {!parentVariantId && <p className="director-help">当前还没有基础候选；请先通过生成工作台创建首个候选。</p>}<p className="director-help">如果只是执行失败，请到任务详情重试；重试不会创建新的创作候选。</p>
         </section>
       </div>}
-      {approvalOpen && activeCandidate && <div className="director-dialog-scrim" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setApprovalOpen(false)}><section className="director-dialog" role="alertdialog" aria-modal="true" aria-labelledby="approval-title" aria-describedby="approval-description"><div><span className="director-kicker">人工交付确认</span><h2 id="approval-title">确认将候选 {activeCandidate.take_no ?? activeCandidate.variant_no} 用于交付？</h2><p id="approval-description">这会记录正式人工批准，并把当前正式视频作为交付版本。机器检查通过不能替代你的决定；点击“用于交付”本身不会直接写入。</p></div><div className="director-dialog-actions"><button type="button" className="director-button ghost" autoFocus onClick={() => setApprovalOpen(false)}>取消</button><button type="button" className="director-button primary" disabled={approveMutation.isPending} title={approveMutation.isPending ? "正在提交人工批准" : undefined} onClick={() => approveMutation.mutate(activeCandidate)}>{approveMutation.isPending ? "正在批准…" : "确认批准用于交付"}</button></div></section></div>}
       {compareOpen && <CandidateCompareDialog candidates={candidates} initialCandidateId={activeCandidate?.media_version_id} onClose={() => setCompareOpen(false)} />}
       <Dialog open={keyframePickerOpen} onClose={() => { if (!keyframeMutation.isPending) setKeyframePickerOpen(false); }} title={selected ? `为 ${selected.code} 创建关键帧候选` : "创建关键帧候选"} dirtyGuard={Boolean(keyframeSourceId) && !keyframeMutation.isPending}>
         <p className="director-help">选择或导入项目内图片，再为本镜创建关键帧候选。此操作不会改写源图片，也不会自动采用、审核或锁定前后镜头衔接。</p>

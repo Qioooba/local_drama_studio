@@ -186,16 +186,16 @@ def run(*, root: Path, port: int | None = None, keep_root: bool = True) -> dict[
 
         native_plan = _mapping(_mapping(_mapping(native_resolution.get("payload")).get("resolution")).get("camera_plan"))
         fallback_plan = _mapping(_mapping(_mapping(fallback_resolution.get("payload")).get("resolution")).get("camera_plan"))
-        native_revision = _http(base_url, f"/api/v1/projects/shots/{native_shot['id']}/revisions", method="POST", body={"fields": _ready_fields(native_plan), "freeze": True}, headers=write_headers)
-        native_ready = _http(base_url, f"/api/v1/projects/shots/{native_shot['id']}:mark-production-ready", method="POST", headers=write_headers)
-        fallback_revision = _http(base_url, f"/api/v1/projects/shots/{fallback_shot['id']}/revisions", method="POST", body={"fields": _ready_fields(fallback_plan), "freeze": True}, headers=write_headers)
-        fallback_ready = _http(base_url, f"/api/v1/projects/shots/{fallback_shot['id']}:mark-production-ready", method="POST", headers=write_headers)
-        forged_revision = _http(base_url, f"/api/v1/projects/shots/{unsupported_shot['id']}/revisions", method="POST", body={"fields": _ready_fields(_plan(unsupported_profile, "NATIVE")), "freeze": True}, headers=write_headers)
+        native_revision = _http(base_url, f"/api/v2/shots/{native_shot['id']}/draft", method="PUT", body={"fields": _ready_fields(native_plan), "freeze": True}, headers=write_headers)
+        native_ready = _http(base_url, f"/api/v2/shots/{native_shot['id']}:mark-ready", method="POST", body={}, headers=write_headers)
+        fallback_revision = _http(base_url, f"/api/v2/shots/{fallback_shot['id']}/draft", method="PUT", body={"fields": _ready_fields(fallback_plan), "freeze": True}, headers=write_headers)
+        fallback_ready = _http(base_url, f"/api/v2/shots/{fallback_shot['id']}:mark-ready", method="POST", body={}, headers=write_headers)
+        forged_revision = _http(base_url, f"/api/v2/shots/{unsupported_shot['id']}/draft", method="PUT", body={"fields": _ready_fields(_plan(unsupported_profile, "NATIVE")), "freeze": True}, headers=write_headers)
 
-        stale_revision = _http(base_url, f"/api/v1/projects/shots/{stale_shot['id']}/revisions", method="POST", body={"fields": _ready_fields(_plan(native_profile, "NATIVE")), "freeze": True}, headers=write_headers)
+        stale_revision = _http(base_url, f"/api/v2/shots/{stale_shot['id']}/draft", method="PUT", body={"fields": _ready_fields(_plan(native_profile, "NATIVE")), "freeze": True}, headers=write_headers)
         with database.transaction() as connection:
             connection.execute("UPDATE execution_profile_versions SET parameter_schema_json=? WHERE id=?", (json.dumps({"seed": {"determinism": "EXPLICIT"}, "capabilities": {"camera": {"support": "UNSUPPORTED"}}}), native_profile))
-        stale_ready = _http(base_url, f"/api/v1/projects/shots/{stale_shot['id']}:mark-production-ready", method="POST", headers=write_headers)
+        stale_ready = _http(base_url, f"/api/v2/shots/{stale_shot['id']}:mark-ready", method="POST", body={}, headers=write_headers)
     finally:
         process.terminate()
         try:

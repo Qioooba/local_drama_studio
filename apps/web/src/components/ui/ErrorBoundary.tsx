@@ -128,7 +128,7 @@ export function RouteErrorBoundary({ defaultProjectId, error: explicitError }: {
             <p className="eyebrow">工作区路由异常</p>
             <h2>工作区载入受阻</h2>
           </div>
-          <span className="status-pill status-pill--error">ROUTER_ERROR</span>
+          <span className="status-pill status-pill--error">页面加载错误</span>
         </div>
         <p className="muted">
           当前工作区在渲染时发生未捕获异常。生产状态和不可变版本不受影响，您可以重试当前页面或返回项目。

@@ -98,6 +98,11 @@ class I2VEvidenceProbeSubmitRequest(BaseModel):
     idempotency_key: str = Field(min_length=1, max_length=200)
 
 
+class I2VEvidenceKeyframePrepareRequest(BaseModel):
+    source_media_version_id: str = Field(min_length=1)
+    confirm_review_checks: Literal[True]
+
+
 class I2VEvidenceProbeFinalizeRequest(BaseModel):
     job_id: str = Field(min_length=1)
 

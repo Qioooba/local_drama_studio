@@ -31,7 +31,7 @@ describe("GenerationControlPanel multimodal contracts", () => {
   it("exposes immutable driving/reference bindings with semantic role and weight", async () => {
     const onReferenceBindingsChange = vi.fn();
     const { rerender } = render(<GenerationControlPanel projectId="project-1" timedDirections="[]" performanceBindings="[]" referenceBindings="[]" motionMasks="[]" onTimedDirectionsChange={vi.fn()} onPerformanceBindingsChange={vi.fn()} onReferenceBindingsChange={onReferenceBindingsChange} onMotionMasksChange={vi.fn()} />);
-    await screen.findByText(/H3_REF2VA_CANDIDATE/);
+    await screen.findByText("试验性支持");
     fireEvent.click(screen.getByRole("button", { name: "添加媒体绑定" }));
     const added = onReferenceBindingsChange.mock.calls.at(-1)?.[0] as string;
     rerender(<GenerationControlPanel projectId="project-1" timedDirections="[]" performanceBindings="[]" referenceBindings={added} motionMasks="[]" onTimedDirectionsChange={vi.fn()} onPerformanceBindingsChange={vi.fn()} onReferenceBindingsChange={onReferenceBindingsChange} onMotionMasksChange={vi.fn()} />);
@@ -90,7 +90,7 @@ describe("GenerationControlPanel multimodal contracts", () => {
     );
     const select = (await screen.findByLabelText(/生产档位/)) as HTMLSelectElement;
     expect([...select.options].map((option) => option.value)).toEqual(["", "FAST"]);
-    expect(screen.getByText(/当前工作流固定档位：FAST/)).toBeTruthy();
+    expect(screen.getByText(/当前生成流程只支持：极速粗筛/)).toBeTruthy();
   });
 
   it("reports the selected tier through onTierChange", async () => {
@@ -104,20 +104,20 @@ describe("GenerationControlPanel multimodal contracts", () => {
   it("shows the Ref2V capability bit from GET /capabilities/ref2va", async () => {
     renderPanel();
     await waitFor(() => expect(getRef2VaCapability).toHaveBeenCalled());
-    expect(await screen.findByText(/H3_REF2VA_CANDIDATE/)).toBeTruthy();
+    expect(await screen.findByText("试验性支持")).toBeTruthy();
     expect(screen.getByText(/minimax_h3_ref2va_int8_convrot.safetensors/)).toBeTruthy();
   });
 
   it("greys the Ref2V slot with the reason when unsupported", async () => {
     vi.mocked(getRef2VaCapability).mockResolvedValue({ capability: { capability: "H3_REF2VA_UNAVAILABLE", supported: false, reason: "manifest 缺少 ref2va 模型", manifest_hint: { ref2va_unet_name: null } } });
     renderPanel();
-    expect(await screen.findByText(/H3_REF2VA_UNAVAILABLE/)).toBeTruthy();
-    expect(screen.getByText(/manifest 缺少 ref2va 模型/)).toBeTruthy();
+    expect(await screen.findByText("当前不可用")).toBeTruthy();
+    expect(screen.getByText(/尚未安装所需的参考视频模型/)).toBeTruthy();
   });
 
   it("queries history with the resolved profile and exact selected tier dimensions", async () => {
     render(<GenerationControlPanel timedDirections="[]" performanceBindings="[]" referenceBindings="[]" motionMasks="[]" onTimedDirectionsChange={vi.fn()} onPerformanceBindingsChange={vi.fn()} onReferenceBindingsChange={vi.fn()} onMotionMasksChange={vi.fn()} tier="PRODUCTION" profileVersionId="profile-v1" profileLabel="正式视频" aspectRatio="16:9" />);
     await waitFor(() => expect(getGenerationEstimate).toHaveBeenCalledWith({ profile_version_id: "profile-v1", width: 864, height: 480, duration_seconds: 7.292, frame_count: 175, steps: 20, gpu_class: undefined }));
-    expect(await screen.findByText("864×480 · 7.292秒 · 175帧 · 20 steps")).toBeTruthy();
+    expect(await screen.findByText("864×480 · 7.292秒 · 175帧 · 20 次生成迭代")).toBeTruthy();
   });
 });

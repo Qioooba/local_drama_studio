@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os
+import ipaddress
 import shutil
 import sqlite3
 from pathlib import Path
@@ -10,7 +10,6 @@ from pydantic import BaseModel
 
 from local_drama.application.diagnostics import _probe_loopback
 from local_drama.application.worker_sessions import ACTIVE_SESSION_STATES, WorkerSessionService
-from local_drama.infrastructure.manifest import load_manifest
 
 router = APIRouter(tags=["health"])
 
@@ -31,19 +30,50 @@ def _writable(path: Path) -> str:
         return "not_writable"
 
 
+def _client_is_loopback(request: Request) -> bool:
+    host = request.client.host if request.client else ""
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return host.casefold() in {"localhost", "testclient"}
+
+
+def _client_capabilities(request: Request) -> dict[str, object]:
+    settings = request.app.state.settings
+    return {
+        "network_mode": str(settings.network_mode),
+        "client_location": "SERVER_LOOPBACK" if _client_is_loopback(request) else "REMOTE_BROWSER",
+        "server_file_dialogs": bool(request.app.state.platform.file_picker.available and _client_is_loopback(request)),
+        "browser_uploads": True,
+        "browser_downloads": True,
+        "model_library_roots": [str(path) for path in settings.model_library_roots],
+        "upload_limits_mb": settings.uploads.model_dump(),
+    }
+
+
 @router.get("/health/live", response_model=HealthCheck, operation_id="healthLive")
-async def live() -> HealthCheck:
-    return HealthCheck(status="HEALTHY", checks={"process": "ok", "mode": "LOCAL_ONLY"})
+async def live(request: Request) -> HealthCheck:
+    network_mode = str(request.app.state.settings.network_mode)
+    return HealthCheck(status="HEALTHY", checks={"process": "ok", "mode": network_mode, "network_mode": network_mode})
 
 
 @router.get("/session/bootstrap", operation_id="bootstrapLocalSession")
-async def bootstrap_local_session(request: Request) -> dict[str, str]:
+async def bootstrap_local_session(request: Request) -> dict[str, object]:
     """Return the per-process token to a same-origin local client.
 
     No CORS allow header is emitted, so an unrelated webpage cannot read this
     response even though it may attempt a simple cross-origin GET.
     """
-    return {"token": str(request.app.state.instance_session_token), "mode": "LOCAL_ONLY"}
+    return {
+        "token": str(request.app.state.instance_session_token),
+        "mode": str(request.app.state.settings.network_mode),
+        "capabilities": _client_capabilities(request),
+    }
+
+
+@router.get("/system/client-capabilities", operation_id="getClientCapabilities")
+async def client_capabilities(request: Request) -> dict[str, object]:
+    return {"capabilities": _client_capabilities(request)}
 
 
 @router.get("/health/ready", response_model=HealthCheck, operation_id="healthReady")
@@ -73,10 +103,16 @@ async def ready(request: Request) -> HealthCheck:
 @router.get("/health/dependencies", response_model=HealthCheck, operation_id="healthDependencies")
 async def dependencies(request: Request) -> HealthCheck:
     settings = request.app.state.settings
-    ffmpeg = os.environ.get("LOCAL_DRAMA_FFMPEG") or shutil.which("ffmpeg")
-    manifest = load_manifest(settings.manifest_path)
-    comfy_api = dict(manifest.runtime.get("comfyui_api", {}))
-    comfy_probe, comfy_observed = _probe_loopback(comfy_api.get("base_url"))
+    ffmpeg = settings.ffmpeg_path or shutil.which("ffmpeg")
+    if settings.allows_private_network:
+        comfy_probe, comfy_observed = _probe_loopback(
+            settings.comfy_base_url,
+            allow_private_network=True,
+        )
+    else:
+        # Keep the local-only probe seam intentionally simple: tests and
+        # embedded hosts have historically replaced this one-argument call.
+        comfy_probe, comfy_observed = _probe_loopback(settings.comfy_base_url)
     comfy_status = "ready" if comfy_probe == "PASS" else f"blocked:{comfy_observed.get('reason', 'unavailable')}"
     database = request.app.state.database
     database_status = "not_configured" if not database.exists else "unreadable"
@@ -116,7 +152,7 @@ async def dependencies(request: Request) -> HealthCheck:
             "comfy_designer": comfy_status,
             "production_profiles": profile_status,
             "worker_supervisor": worker_status,
-            "network_scope": settings.mode,
+            "network_scope": str(settings.network_mode),
         },
     )
 
@@ -128,6 +164,7 @@ async def contract(request: Request) -> dict[str, str]:
         "app": settings.app_name,
         "version": settings.app_version,
         "mode": settings.mode,
+        "network_mode": str(settings.network_mode),
         "database_authority": "sqlite_wal_after_g2",
         "media_authority": "project_filesystem",
         "profile_registry": "manifest_backed_candidates_after_g3",

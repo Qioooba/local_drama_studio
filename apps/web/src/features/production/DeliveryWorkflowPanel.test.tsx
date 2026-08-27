@@ -37,9 +37,9 @@ describe("DeliveryWorkflowPanel", () => {
     });
 
     render(<DeliveryWorkflowPanel episodeId="episode-1" timelineRevisionId={null} renderId={null} targetVersionId={null} deliveryId={null} />);
-    await screen.findByRole("link", { name: "下载 MP4 · 已审计 2 次" });
-    expect(screen.getByText("下载与审计")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "下载 MP4 · 已审计 2 次" }).getAttribute("href")).toBe("/api/v1/delivery-packages/package-1/download");
+    await screen.findByRole("link", { name: "下载 MP4 · 已记录 2 次" });
+    expect(screen.getByText("下载与操作记录")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "下载 MP4 · 已记录 2 次" }).getAttribute("href")).toBe("/api/v1/delivery-packages/package-1/download");
   });
 
   it("exposes only the actions owned by the selected delivery step", async () => {
@@ -52,12 +52,12 @@ describe("DeliveryWorkflowPanel", () => {
     expect(screen.queryByRole("button", { name: "记录人工批准" })).toBeNull();
 
     rerender(<DeliveryWorkflowPanel {...props} focus="REVIEW" />);
-    expect(screen.getByRole("button", { name: "验证 manifest / SHA" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "验证交付文件" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "记录人工批准" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "提交整集渲染任务" })).toBeNull();
 
     rerender(<DeliveryWorkflowPanel {...props} focus="PACKAGE" />);
-    expect(screen.getByRole("button", { name: "复验 manifest / SHA" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "重新验证交付文件" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "记录人工批准" })).toBeNull();
     await waitFor(() => expect(listEpisodeDeliveryPackages).toHaveBeenCalledWith("episode-1"));
   });
@@ -103,7 +103,7 @@ describe("DeliveryWorkflowPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "提交整集渲染任务" }));
     await screen.findByText(/已进入后台队列/);
     expect(onRenderCreated).not.toHaveBeenCalled();
-    expect(screen.getByRole("link", { name: "任务中心" }).getAttribute("href")).toBe("/jobs");
+    expect(screen.getByRole("link", { name: "任务中心" }).getAttribute("href")).toBe("/system/jobs");
     expect((screen.getByRole("button", { name: "整集渲染已排队" }) as HTMLButtonElement).disabled).toBe(true);
     rerender(<DeliveryWorkflowPanel episodeId="episode-1" timelineRevisionId="timeline-1" renderId="render-new" targetVersionId="target-1" deliveryId="delivery-old" focus="COMPOSE" onRenderCreated={onRenderCreated} onDeliveryCreated={onDeliveryCreated} />);
     fireEvent.click(screen.getByRole("button", { name: "提交交付候选任务" }));
@@ -117,7 +117,7 @@ describe("DeliveryWorkflowPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "一键验证并批准" }));
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("manifest 已完成验证（VERIFIED）");
+    expect(alert.textContent).toContain("交付文件已完成验证（已验证）");
     expect(alert.textContent).toContain("记录人工批准");
     expect(screen.getByRole("button", { name: "记录人工批准" })).toBeTruthy();
   });

@@ -9,6 +9,8 @@ from typing import Any
 from local_drama.application.jobs import JobService
 from local_drama.application.media import MediaService
 from local_drama.application.profiles import ProfileService
+from local_drama.application.projects import ProjectService
+from local_drama.application.reviews import ReviewService
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
@@ -22,6 +24,110 @@ class I2VProbePlanService:
     def __init__(self, database: Database, settings: Settings | None = None) -> None:
         self.database = database
         self.settings = settings
+
+    def prepare_keyframe(
+        self,
+        project_id: str,
+        source_media_version_id: str,
+        confirm_review_checks: bool,
+    ) -> dict[str, Any]:
+        """Create a dedicated, reviewed shot keyframe for the first I2V evidence run.
+
+        The source remains immutable and keeps its original ownership.  A byte-for-byte
+        project-local copy receives explicit SHOT/KEYFRAME ownership so Profile evidence
+        publication never mutates or reinterprets an unrelated media asset.
+        """
+        if self.settings is None:
+            raise DomainRuleError("I2V_PROBE_SETTINGS_REQUIRED", "I2V 验证首帧准备缺少本机运行设置")
+        if not confirm_review_checks:
+            raise DomainRuleError(
+                "I2V_KEYFRAME_REVIEW_CONFIRMATION_REQUIRED",
+                "请先确认人物、服装、人体/手部、场景、构图、光线、连续性和可视频化检查",
+            )
+
+        media_service = MediaService(self.database, self.settings)
+        source, _ = media_service.content_path(source_media_version_id)
+        if str(source["project_id"]) != project_id:
+            raise DomainRuleError("I2V_KEYFRAME_PROJECT_MISMATCH", "验证首帧来源必须属于当前项目")
+        if str(source["media_kind"]) != "IMAGE" or not str(source["mime_type"]).startswith("image/"):
+            raise DomainRuleError("I2V_KEYFRAME_IMAGE_REQUIRED", "验证首帧来源必须是真实图片媒体")
+        if str(source["integrity_status"]) != "VERIFIED":
+            raise DomainRuleError("I2V_KEYFRAME_INTEGRITY_REQUIRED", "验证首帧来源必须通过完整性校验")
+
+        shot_code = "PROFILE_I2V_EVIDENCE_001"
+        with self.database.connect() as connection:
+            existing = connection.execute(
+                """SELECT mv.id AS media_version_id, ma.owner_id AS shot_id, rd.id AS approval_id
+                FROM media_assets ma
+                JOIN media_versions mv ON mv.id=ma.approved_version_id
+                JOIN shots s ON s.id=ma.owner_id
+                JOIN episodes e ON e.id=s.episode_id
+                JOIN seasons se ON se.id=e.season_id
+                JOIN review_decisions rd ON rd.subject_type='MEDIA_VERSION' AND rd.subject_id=mv.id
+                WHERE se.project_id=? AND s.code=? AND ma.owner_type='SHOT' AND ma.purpose='KEYFRAME'
+                AND ma.media_kind='IMAGE' AND mv.stage='KEYFRAME' AND mv.integrity_status='VERIFIED'
+                AND mv.sha256=? AND rd.decision='APPROVED' AND rd.is_stale=0
+                ORDER BY rd.created_at DESC LIMIT 1""",
+                (project_id, shot_code, str(source["sha256"])),
+            ).fetchone()
+        if existing is not None:
+            return {
+                "approved_keyframe": {
+                    **dict(existing),
+                    "source_media_version_id": source_media_version_id,
+                    "reused": True,
+                }
+            }
+
+        projects = ProjectService(self.database, self.settings.projects_root)
+        seasons = projects.list_seasons(project_id)
+        episodes = projects.list_episodes(str(seasons[0]["id"])) if seasons else []
+        if not episodes:
+            raise DomainRuleError("I2V_KEYFRAME_EPISODE_REQUIRED", "项目至少需要一集才能登记验证首帧")
+        episode_id = str(episodes[0]["id"])
+        with self.database.connect() as connection:
+            shot = connection.execute(
+                "SELECT * FROM shots WHERE episode_id=? AND code=? AND archived_at IS NULL",
+                (episode_id, shot_code),
+            ).fetchone()
+        if shot is None:
+            shot = projects.create_shot(episode_id, shot_code, 4_458, "MEDIUM")
+
+        keyframe = media_service.create_keyframe_candidate(
+            source_media_version_id,
+            str(shot["id"]),
+            actor="local-user",
+        )
+        keyframe_id = str(keyframe["media_version_id"])
+        reviews = ReviewService(self.database, self.settings)
+        reviews.ensure_templates(actor="system")
+        context = reviews.review_context(keyframe_id)
+        approval = reviews.submit_review(
+            keyframe_id,
+            str(context["template"]["id"]),
+            "APPROVED",
+            int(context["subject_revision"]),
+            [
+                {
+                    "item_id": str(item["id"]),
+                    "result": "PASS",
+                    "comment": "用户在 I2V 验证首帧准备流程中查看真实预览并明确确认",
+                }
+                for item in context["template"]["items"]
+            ],
+            comment="用户确认此不可变副本可作为 I2V Profile 的专用验证首帧",
+            actor="local-user",
+        )
+        reviews.select_version(keyframe_id, "KEYFRAME", actor="local-user")
+        return {
+            "approved_keyframe": {
+                "media_version_id": keyframe_id,
+                "shot_id": str(shot["id"]),
+                "approval_id": str(approval["id"]),
+                "source_media_version_id": source_media_version_id,
+                "reused": False,
+            }
+        }
 
     def plan(
         self,

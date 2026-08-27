@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ErrorState, Skeleton, TabPanel, Tabs } from "../components/ui";
-import { GenerationPreferencePanel } from "../features/preferences-v2/GenerationPreferencePanel";
+import { ConceptGuide, ErrorState, Skeleton, TabPanel, Tabs } from "../components/ui";
 import { ProviderConnectionsPanel } from "../features/model-config/ProviderConnectionsPanel";
 import { LocalLLMConfigurationPanel } from "../features/profiles/LocalLLMConfigurationPanel";
 import { ProfileConfigurationPanel } from "../features/profiles/ProfileConfigurationPanel";
@@ -12,17 +11,15 @@ import { queryKeys } from "../query/queryKeys";
 import "./system-workspaces.css";
 import "./models-workspace.css";
 
-type ModelView = "profile-contracts" | "workflows" | "preferences" | "compatibility" | "local-llm" | "connections";
+type ModelView = "profile-contracts" | "compatibility" | "local-llm" | "connections";
 
 const CREATOR_VIEWS: Array<{ id: ModelView; label: string }> = [
-  { id: "preferences", label: "项目生成能力" },
-  { id: "compatibility", label: "添加与检查模型" },
+  { id: "compatibility", label: "能力目录与模型" },
   { id: "local-llm", label: "故事拆解模型" },
   { id: "connections", label: "远端服务与密钥" },
 ];
 const EXPERT_VIEWS: Array<{ id: ModelView; label: string; description: string }> = [
-  { id: "profile-contracts", label: "Profile 契约", description: "编辑不可变输入、参数、输出与资源合同" },
-  { id: "workflows", label: "Workflow 版本", description: "注册、验证、发布或撤销本机执行图" },
+  { id: "profile-contracts", label: "执行配置契约", description: "编辑不可变输入、参数、输出与资源约束" },
 ];
 const MODEL_VIEWS = [...CREATOR_VIEWS, ...EXPERT_VIEWS];
 
@@ -36,7 +33,7 @@ export function ModelsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const projectId = routeProjectId || searchParams.get("project") || undefined;
   const requestedView = searchParams.get("view");
-  const activeView: ModelView = isModelView(requestedView) ? requestedView : "preferences";
+  const activeView: ModelView = isModelView(requestedView) ? requestedView : "compatibility";
   const expertActive = EXPERT_VIEWS.some((item) => item.id === activeView);
   const [expertOpen, setExpertOpen] = useState(expertActive);
 
@@ -67,7 +64,7 @@ export function ModelsPage() {
   const workflows = useQuery({
     queryKey: queryKeys.workflows.versions(),
     queryFn: () => listWorkflowVersions(),
-    enabled: activeView === "profile-contracts" || activeView === "workflows",
+    enabled: activeView === "profile-contracts",
   });
   const adapterContracts = useQuery({
     queryKey: ["operations", "adapter-contracts"],
@@ -84,14 +81,15 @@ export function ModelsPage() {
     <div className="v2-page models-page">
       <div className="panel-heading models-page-heading">
         <div>
-          <p className="eyebrow">创作配置</p>
-          <h2>模型与创作能力</h2>
+          <p className="eyebrow">系统能力目录</p>
+          <h3>模型、连接与运行契约</h3>
         </div>
         <span className="status-pill neutral">按用途选择 · 系统固定版本</span>
       </div>
       <p className="muted models-page-summary">
-        先告诉系统项目需要图像、视频、声音或故事拆解能力。系统会保存确切的已发布版本，工程契约只在专家工具中维护。
+        在本机统一添加、验证并发布创作能力。项目只绑定这里已经发布的版本，不直接维护 provider 或运行契约。
       </p>
+      <ConceptGuide title="模型与能力名词说明" items={[{ term: "创作能力", description: "按用途描述模型能做什么，例如文字生成视频、参考图生成视频或语音合成。" }, { term: "已发布版本", description: "已经过本机验证、可以用于正式任务的固定版本。草稿不会进入正式生成。" }, { term: "执行配置", description: "模型、工作流、默认参数和资源要求的组合。普通创作只需按用途选择。" }]} />
 
       <section className="models-quickstart" aria-labelledby="models-quickstart-title">
         <div className="models-quickstart-heading">
@@ -109,7 +107,7 @@ export function ModelsPage() {
 
       {!expertActive ? <div className="system-workspace-tabs models-task-tabs">
         <Tabs items={CREATOR_VIEWS} selectedId={activeView} onChange={setActiveView} ariaLabel="创作能力配置" />
-      </div> : <div className="models-back-to-creator"><button type="button" className="secondary" onClick={() => setActiveView(projectId ? "preferences" : "compatibility")}>返回创作能力配置</button></div>}
+      </div> : <div className="models-back-to-creator"><button type="button" className="secondary" onClick={() => setActiveView("compatibility")}>返回能力目录</button></div>}
 
       <details className="models-expert-tools" open={expertOpen} onToggle={(event) => setExpertOpen(event.currentTarget.open)}>
         <summary><span>专家工具：执行契约与工作流版本</span><small>仅供需要接入新运行时、维护合同或发布工作流的技术人员</small></summary>
@@ -120,9 +118,9 @@ export function ModelsPage() {
 
       <TabPanel id="profile-contracts" selectedId={activeView}>
         {profiles.isPending ? (
-          <Skeleton label="正在读取 Profile 契约" lines={5} />
+          <Skeleton label="正在读取执行配置契约" lines={5} />
         ) : profiles.error ? (
-          <ErrorState description={`Profile 契约读取失败：${String(profiles.error)}`} onRetry={() => void profiles.refetch()} />
+          <ErrorState description={`执行配置契约读取失败：${String(profiles.error)}`} onRetry={() => void profiles.refetch()} />
         ) : (
           <ProfileConfigurationPanel
             mode="profile-contracts"
@@ -134,31 +132,12 @@ export function ModelsPage() {
         )}
       </TabPanel>
 
-      <TabPanel id="workflows" selectedId={activeView}>
-        {workflows.isPending ? (
-          <Skeleton label="正在读取 Workflow 版本" lines={5} />
-        ) : workflows.error ? (
-          <ErrorState description={`Workflow 版本读取失败：${String(workflows.error)}`} onRetry={() => void workflows.refetch()} />
-        ) : (
-          <ProfileConfigurationPanel
-            mode="workflows"
-            workflows={workflows.data?.items ?? []}
-            workflowsLoading={workflows.isFetching}
-            onChanged={() => void workflows.refetch()}
-          />
-        )}
-      </TabPanel>
-
       <TabPanel id="local-llm" selectedId={activeView}>
         <LocalLLMConfigurationPanel projectId={projectId} onChanged={() => void profiles.refetch()} />
       </TabPanel>
 
       <TabPanel id="connections" selectedId={activeView}>
         <ProviderConnectionsPanel />
-      </TabPanel>
-
-      <TabPanel id="preferences" selectedId={activeView}>
-        <GenerationPreferencePanel initialProjectId={projectId} />
       </TabPanel>
 
       <TabPanel id="compatibility" selectedId={activeView}>

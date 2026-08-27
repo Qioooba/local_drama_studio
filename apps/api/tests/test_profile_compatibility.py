@@ -22,6 +22,7 @@ def _complete(service: ProfileService, workspace, database) -> dict[str, object]
             "V2V": {"support": "UNSUPPORTED", "required_inputs": []},
             "reference": {"support": "PROMPT_FALLBACK", "required_inputs": ["MOTION_REFERENCE"], "prompt_fallback": True},
             "motion": {"support": "NATIVE", "required_inputs": []},
+            "camera": {"support": "PROMPT_FALLBACK", "required_inputs": [], "prompt_fallback": True},
         }},
         {"media_kind": "VIDEO", "container": "mp4"},
         {"gpu_heavy_concurrency": 1, "worker_policy": "ONE_H3_WORKER_ONE_GPU_TASK"},
@@ -36,7 +37,7 @@ def test_capability_compatibility_matrix_passes_without_runtime(workspace, datab
     assert result["status"] == "PASS"
     assert result["runtime_contacted"] is False
     assert result["network_contacted"] is False
-    assert len(result["checks"]) == 9
+    assert len(result["checks"]) == 10
 
 
 def test_capability_compatibility_rejects_missing_reference_input_and_bad_fallback(workspace, database) -> None:

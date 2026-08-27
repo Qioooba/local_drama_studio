@@ -7,7 +7,6 @@ import {
   createKeyframeCandidate,
   createPrompt,
   planGenerationVariant,
-  resolveEffectiveConfiguration,
   submitGenerationVariant,
 } from "../../generated/api";
 import {
@@ -224,7 +223,7 @@ describe("GenerationWorkbench step workflow", () => {
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByText(/已带入导演台 Frame Bridge 的锁定首帧/)).toBeTruthy();
+    expect(await screen.findByText(/已带入导演台锁定的首帧/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "创建关键帧候选并进入人工审核" }));
     await waitFor(() => expect(createKeyframeCandidate).toHaveBeenCalledWith("frame-bridge-image", "shot-1"));
     expect(openReviews).toHaveBeenCalledWith("keyframe-1");

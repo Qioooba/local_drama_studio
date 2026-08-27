@@ -16,7 +16,7 @@ describe("AssetUsagePanel", () => {
     render(<MemoryRouter><AssetUsagePanel item={base} projectId="project-1" /></MemoryRouter>);
     expect(screen.getByText("EP03 · S012")).toBeTruthy();
     expect(screen.getByText("SC04 · 屋顶 · main")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "打开 EP03 · S012 导演台" }).getAttribute("href")).toBe("/projects/project-1/episodes/episode-3/direct/shot-12");
+    expect(screen.getByRole("link", { name: "打开 EP03 · S012 镜头工作台" }).getAttribute("href")).toBe("/projects/project-1/episodes/episode-3/studio/shot-12");
     expect(screen.queryByText("episode-3")).toBeNull();
     expect(screen.queryByText("shot-12")).toBeNull();
   });

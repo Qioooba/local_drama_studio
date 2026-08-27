@@ -1,16 +1,16 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CandidateCompareDialog } from "./CandidateCompareDialog";
-import type { DirectorDeskCandidate } from "./types";
+import type { ShotStudioCandidate } from "../../generated/api";
 
-function candidate(index: number, kind = "VIDEO"): DirectorDeskCandidate {
+function candidate(index: number, kind = "VIDEO"): ShotStudioCandidate {
   return {
     id: `variant-${index}`, intent_id: "intent", variant_no: index, variant_type: "STANDARD",
     parent_variant_id: null, branch_reason: index === 1 ? "" : "USER_REROLL", status: "SUCCEEDED",
     is_stale: false, stale_reason: null, media_asset_id: `asset-${index}`, media_kind: kind,
     media_version_id: `media-${index}`, version_no: 1, take_no: index, stage: "FORMAL",
     rel_path: `take-${index}.mp4`, mime_type: kind === "VIDEO" ? "video/mp4" : "image/png",
-    duration_ms: kind === "VIDEO" ? index * 1_000 : null, integrity_status: "VERIFIED",
+    duration_ms: kind === "VIDEO" ? index * 1_000 : null, integrity_status: "VERIFIED", thumbnail_ready: true,
     selected: index === 1, approved: false, created_at: "2026-08-20T00:00:00Z",
   };
 }

@@ -1,7 +1,8 @@
 import sys
 from pathlib import Path
 
-matrix_path = Path(r"F:\AI_Projects\h3\local_drama_studio\docs\evidence\ui-uat-2026-08-22\CONTROL_STATE_MATRIX.md")
+evidence_root = Path(__file__).resolve().parents[1] / "docs" / "evidence" / "ui-uat-2026-08-22"
+matrix_path = evidence_root / "CONTROL_STATE_MATRIX.md"
 content = matrix_path.read_text(encoding="utf-8", errors="replace")
 
 new_rows = """| **099** | `/projects/97c309b0-bf45-4dca-bd0c-006b76080be8/story#story-import` | `button:has-text('建立源版本并解析预览'), button:has-text('确认 commit（不覆盖母本）'), button:has-text('提交 AI 拆解任务')` | 新建纯可见项目 97c309b0 (9:16/1080x1920/25fps/60s)，本地 Ollama deepseek-r1:14b 就绪 | 通过真实 DOM 填充路径、解析预览并提交 AI 拆解任务 | 写入 import_sessions, source_documents, source_document_versions, jobs | Job 9390bb24 真实由本地 worker 执行至 SUCCEEDED (100%)，生成不可变草稿 73f33fdc | `screens/gate1_clean_01_draft_ready.jpg` | — | `PASS` |
@@ -16,7 +17,7 @@ else:
 matrix_path.write_text(content, encoding="utf-8")
 print("CONTROL_STATE_MATRIX.md updated with Gate 1 clean rows (099, 100)!")
 
-progress_path = Path(r"F:\AI_Projects\h3\local_drama_studio\docs\evidence\ui-uat-2026-08-22\PROGRESS.md")
+progress_path = evidence_root / "PROGRESS.md"
 progress_content = progress_path.read_text(encoding="utf-8", errors="replace")
 
 gate1_entry = """

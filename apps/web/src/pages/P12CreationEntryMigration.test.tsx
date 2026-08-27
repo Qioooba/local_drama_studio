@@ -3,11 +3,11 @@ import type { ReactNode } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getEpisodeProduction, getEpisodeTimelineStatus, getG8Readiness, getProjectConfiguration, listProfiles, reviewInbox } from "../generated/api";
+import { getEpisodeTimelineStatus, getG8Readiness, getProjectConfiguration, reviewInbox } from "../generated/api";
 import { DeliveryPage } from "./DeliveryPage";
 import { EpisodePlanPage } from "./EpisodePlanPage";
 
-vi.mock("../generated/api", () => ({ getEpisodeProduction: vi.fn(), getEpisodeTimelineStatus: vi.fn(), getG8Readiness: vi.fn(), getProjectConfiguration: vi.fn(), listProfiles: vi.fn(), reviewInbox: vi.fn() }));
+vi.mock("../generated/api", () => ({ getEpisodeTimelineStatus: vi.fn(), getG8Readiness: vi.fn(), getProjectConfiguration: vi.fn(), reviewInbox: vi.fn() }));
 vi.mock("../features/projects/ScriptImportPanel", () => ({ ScriptImportPanel: () => null }));
 vi.mock("../features/projects/AIDraftReviewPanel", () => ({ AIDraftReviewPanel: () => null }));
 vi.mock("../features/projects/StoryboardBatchWorkbench", () => ({ StoryboardBatchWorkbench: () => null }));
@@ -29,23 +29,17 @@ function renderRoute(path: string, element: ReactNode) {
 describe("P12 creation entry migration", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(getEpisodeProduction).mockResolvedValue({ episode: {}, items: [{ id: "opaque-shot-id", code: "S012", status: "DIRECTED", current_revision: {} }] });
-    vi.mocked(listProfiles).mockResolvedValue({ items: [{ id: "profile", version_id: "opaque-version", code: "image-main", title: "主图模型", version_no: 3, capability: "TEXT_TO_IMAGE", status: "PUBLISHED" }] });
     vi.mocked(getEpisodeTimelineStatus).mockResolvedValue({ status: { timeline: { latest: null }, renders: { latest: null }, delivery: { latest: null } } } as never);
     vi.mocked(getProjectConfiguration).mockResolvedValue({ configuration: {} } as never);
     vi.mocked(getG8Readiness).mockResolvedValue({ readiness: {} } as never);
     vi.mocked(reviewInbox).mockResolvedValue({ items: [{ media_version_id: "opaque-media", media_asset_id: "asset", project_id: "project-1", episode_id: "episode-1", episode_code: "EP01", shot_code: "S012", media_kind: "VIDEO", stage: "PROXY", decision: null, is_stale: 0 }] });
   });
 
-  it("mounts scene ranges and semantic shot/profile prompt tools in Episode Plan", async () => {
+  it("keeps scene ranges in Episode Plan and retires the duplicate prompt owner", async () => {
     renderRoute("/projects/project-1/episodes/episode-1/plan", <EpisodePlanPage />);
     fireEvent.click(screen.getByRole("tab", { name: "场景与分组" }));
     expect(await screen.findByText("场次范围 episode-1")).toBeTruthy();
-    fireEvent.click(screen.getByRole("tab", { name: "提示词快照" }));
-    expect(await screen.findByText("提示词 S012 · 主图模型")).toBeTruthy();
-    expect(screen.getByRole("option", { name: "S012 · 已完成导演设计" })).toBeTruthy();
-    expect(screen.queryByText("opaque-shot-id")).toBeNull();
-    expect(screen.queryByText("opaque-version")).toBeNull();
+    expect(screen.queryByRole("tab", { name: "提示词快照" })).toBeNull();
   });
 
   it("mounts contact-sheet and current-episode post-process tools in Delivery", async () => {

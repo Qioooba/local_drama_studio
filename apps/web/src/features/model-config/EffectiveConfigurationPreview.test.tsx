@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveEffectiveConfiguration } from "../../generated/api";
@@ -35,8 +35,9 @@ describe("EffectiveConfigurationPreview", () => {
         <EffectiveConfigurationPreview projectId="project-1" capability="VIDEO_T2V" profileVersionId="profile-1" settings={{ sigma_points: 31 }} />
       </QueryClientProvider>,
     );
-    expect(await screen.findByText("最终参数")).toBeTruthy();
-    expect(screen.getByText(/sigma_points/)).toBeTruthy();
-    expect(screen.getByText("RUN_OVERRIDE")).toBeTruthy();
+    expect(await screen.findByText("最终生效配置")).toBeTruthy();
+    fireEvent.click(await screen.findByText("高级：查看最终运行参数"));
+    expect(screen.getByText("采样点数")).toBeTruthy();
+    expect(screen.getByText(/本次运行设置/)).toBeTruthy();
   });
 });

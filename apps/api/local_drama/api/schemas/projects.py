@@ -167,14 +167,6 @@ class DirectorIntentV3(BaseModel):
         return normalize_director_intent_v3(value) if isinstance(value, dict) else value
 
 
-class ShotRevisionRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    fields: DirectorIntentV3
-    freeze: bool = False
-    expected_revision_no: int | None = Field(default=None, ge=1)
-
-
 class StoryboardBatchEdit(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

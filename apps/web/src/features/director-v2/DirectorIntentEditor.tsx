@@ -1,12 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { DirectorIntentApiError, saveDirectorIntentAndReady, saveDirectorIntentRevision, type ShotRevisionWrite } from "./directorIntentClient";
 import { StagingBoard, suggestEyeLineFromStaging, type StagingBoardValue } from "./StagingBoard";
 import { LazyDirector3DSpike } from "../director-3d/LazyDirector3DSpike";
 import type { Director3DValue } from "../director-3d/types";
-import { markShotProductionReady, resolveProfileCameraPlan, type Profile } from "../../generated/api";
+import {
+  ApiRequestError,
+  markShotReadyV2,
+  putShotDraftV2,
+  resolveProfileCameraPlan,
+  type ShotDraftWrite,
+  type ShotStudioCapabilityOption,
+} from "../../generated/api";
 import { ProfileExecutionDetailButton } from "../model-config/ProfileExecutionDetailButton";
 import { CAMERA_CURVES, CAMERA_DIRECTION_LABELS, CAMERA_DIRECTIONS, CAMERA_MOVEMENTS, COMPOSITIONS, SHOT_TYPES } from "../shared/directorOptions";
 import { EmotionPicker, EyeLineControl, MicroExpressionSelect } from "./DirectorPerformanceControls";
+import { notifyDraftDirty } from "../drafts/draftGuard";
+import { asRecord, findConfigValue } from "../shared/effectiveDefaults";
 import "./director-intent-editor.css";
 
 export type DirectorIntentV3 = {
@@ -60,7 +68,7 @@ export type DirectorIntentEditorProps = {
   targetDurationMs?: number;
   shotType?: string | null;
   shotStatus?: string | null;
-  cameraProfiles?: Profile[];
+  cameraProfiles?: ShotStudioCapabilityOption[];
   stagingParticipants?: Array<{ id: string; label: string }>;
   intentSuggestions?: {
     environment: { value: string; source_label: string; source_revision?: string; stale?: boolean; stale_reason?: string | null } | null;
@@ -69,7 +77,7 @@ export type DirectorIntentEditorProps = {
   };
   blockers?: Array<string | { code?: string; message: string; blocking?: boolean }>;
   canEdit?: boolean;
-  onSaved?: (revision: ShotRevisionWrite) => void | Promise<void>;
+  onSaved?: (revision: ShotDraftWrite) => void | Promise<void>;
   onReloadRequested?: () => void;
   keyboardShortcutsEnabled?: boolean;
 };
@@ -174,7 +182,7 @@ export function normalizeDirectorIntent(fields: Record<string, unknown>, fallbac
 }
 
 function ChoiceGrid({ label, value, options, onChange }: { label: string; value: string | null; options: ReadonlyArray<readonly [string, string]>; onChange: (value: string) => void }) {
-  return <fieldset className="intent-choice-field"><legend>{label}</legend><div className="intent-choice-grid">{options.map(([code, title]) => <button key={code} type="button" title={`${title} · ${code}`} className={value === code ? "selected" : ""} aria-pressed={value === code} onClick={() => onChange(code)}><strong>{title}</strong><small>{code}</small></button>)}</div></fieldset>;
+  return <fieldset className="intent-choice-field"><legend>{label}</legend><div className="intent-choice-grid">{options.map(([code, title]) => <button key={code} type="button" title={title} className={value === code ? "selected" : ""} aria-pressed={value === code} onClick={() => onChange(code)}><strong>{title}</strong></button>)}</div></fieldset>;
 }
 
 export function DirectorIntentEditor({ shotId, shotCode, currentRevision, targetDurationMs, shotType, shotStatus, cameraProfiles = [], stagingParticipants = [], intentSuggestions, blockers = [], canEdit = true, onSaved, onReloadRequested, keyboardShortcutsEnabled = true }: DirectorIntentEditorProps) {
@@ -204,6 +212,16 @@ export function DirectorIntentEditor({ shotId, shotCode, currentRevision, target
   const changeComposition = (value: Partial<DirectorIntentV3["composition"]>) => change("composition", { ...draft.composition, ...value });
   const changePerformance = (value: Partial<DirectorIntentV3["performance"]>) => change("performance", { ...draft.performance, ...value });
   const changeCamera = (value: Partial<DirectorIntentV3["camera_plan"]>) => change("camera_plan", { ...draft.camera_plan, ...value });
+  const selectedCameraProfile = cameraProfiles.find((profile) => profile.version_id === draft.camera_plan.profile_version_id);
+  const cameraContract = asRecord(asRecord(selectedCameraProfile?.capability_contract).camera);
+  const supportedValues = (keys: string[], fallback: string[]) => {
+    const value = findConfigValue(cameraContract, keys);
+    return Array.isArray(value) && value.length ? value.map(String) : fallback;
+  };
+  const supportedMovements = supportedValues(["movements", "supported_movements"], CAMERA_MOVEMENTS.map(([value]) => value));
+  const supportedDirections = supportedValues(["directions", "supported_directions"], [...CAMERA_DIRECTIONS]);
+  const supportedCurves = supportedValues(["curves", "supported_curves"], CAMERA_CURVES.map(([value]) => value));
+  const movementOptions = CAMERA_MOVEMENTS.filter(([value]) => supportedMovements.includes(value));
   const stagingEyeLine = useMemo(() => draft.staging ? suggestEyeLineFromStaging(draft.staging) : null, [draft.staging]);
   const stagingEyeLineSource = draft.suggestion_sources.staging_eye_line;
   const stagingEyeLineStale = Boolean(stagingEyeLine && stagingEyeLineSource && stagingEyeLineSource.source_fingerprint !== stagingEyeLine.source_fingerprint);
@@ -227,8 +245,8 @@ export function DirectorIntentEditor({ shotId, shotCode, currentRevision, target
     if (!draft.subject_action.trim()) items.push("补充画面或主体动作");
     if (!draft.performance.emotion) items.push("补充表演情绪");
     if (!draft.camera_plan.movement) items.push("请选择运镜");
-    if (!draft.camera_plan.profile_version_id) items.push("选择已发布的运镜 Profile");
-    else if (!new Set(["NATIVE", "PROMPT_FALLBACK"]).has(draft.camera_plan.mode)) items.push("当前 Profile 不支持所选运镜，请调整运镜或更换 Profile");
+    if (!draft.camera_plan.profile_version_id) items.push("选择已发布的运镜配置");
+    else if (!new Set(["NATIVE", "PROMPT_FALLBACK"]).has(draft.camera_plan.mode)) items.push("当前配置不支持所选运镜，请调整运镜或更换配置");
     if (!Number.isFinite(draft.target_duration_ms) || draft.target_duration_ms <= 0) items.push("时长必须大于 0 秒");
     if (!draft.creative_intent.trim()) items.push("补充创作意图");
     return items;
@@ -275,28 +293,49 @@ export function DirectorIntentEditor({ shotId, shotCode, currentRevision, target
       try { window.localStorage.removeItem(draftCandidate.key); }
       catch { setStorageError("旧草稿已迁移到当前表单，但无法清理旧缓冲记录。"); }
       setDraftCandidate(null);
-      setMessage(`已显式迁移 revision ${draftCandidate.stored.base_revision_no} 的本地草稿；保存前请复核差异。`);
+      setMessage(`已迁移基于第 ${draftCandidate.stored.base_revision_no} 版的本地草稿；保存前请复核差异。`);
     }
   };
 
+  const discardCurrentDraft = useCallback(() => {
+    setDraft(JSON.parse(baseline) as DirectorIntentV3);
+    setMessage(null);
+    setConflict(null);
+    try {
+      if (storageKey) window.localStorage.removeItem(storageKey);
+      setStorageError(null);
+      return true;
+    } catch {
+      setStorageError("修改已在表单中放弃，但浏览器未能清理本地草稿。");
+      return false;
+    }
+  }, [baseline, storageKey]);
+
   const save = useCallback(async () => {
-    if (!canEdit || !dirty || saving || !currentRevision?.revision_no) return;
+    if (!canEdit || !dirty || saving || !currentRevision?.revision_no) return false;
     setSaving(true); setMessage(null); setConflict(null);
     try {
-      const revision = await saveDirectorIntentRevision({ shotId, fields: draft as unknown as Record<string, unknown>, expectedRevisionNo: currentRevision.revision_no, freeze });
+      const { shot_revision: revision } = await putShotDraftV2(shotId, { fields: draft as unknown as Record<string, unknown>, expected_revision_no: currentRevision.revision_no, freeze });
       try { clearShotDrafts(shotId); setStorageError(null); }
       catch { setStorageError("服务端保存成功，但浏览器未能清理本地草稿记录，可在下次提示时丢弃。"); }
       setDraftCandidate(null);
       setBaseline(JSON.stringify(draft));
-      setMessage(`已保存 revision ${revision.revision_no}${revision.is_frozen ? "（已冻结）" : ""}`);
+      setMessage(`已保存为第 ${revision.revision_no} 版${revision.is_frozen ? "（已冻结）" : ""}`);
       await onSaved?.(revision);
+      return true;
     } catch (error) {
-      if (error instanceof DirectorIntentApiError && error.status === 409) {
+      if (error instanceof ApiRequestError && error.status === 409) {
         const current = error.details?.current_revision_no;
         setConflict({ message: error.message, currentRevisionNo: typeof current === "number" ? current : undefined });
       } else setMessage(`保存失败：${error instanceof Error ? error.message : String(error)}`);
+      return false;
     } finally { setSaving(false); }
   }, [canEdit, currentRevision?.revision_no, dirty, draft, freeze, onSaved, saving, shotId]);
+
+  useEffect(() => {
+    notifyDraftDirty(dirty, { save, discard: discardCurrentDraft });
+    return () => notifyDraftDirty(false);
+  }, [dirty, discardCurrentDraft, save, shotId]);
 
   const resolveCamera = useCallback(async () => {
     if (!draft.camera_plan.profile_version_id || !draft.shot_type || !draft.camera_plan.movement || resolvingCamera) return;
@@ -334,24 +373,24 @@ export function DirectorIntentEditor({ shotId, shotCode, currentRevision, target
     try {
       if (dirty) {
         setSaving(true); setMarkingReady(true);
-        const revision = await saveDirectorIntentAndReady({ shotId, fields: draft as unknown as Record<string, unknown>, expectedRevisionNo: currentRevision.revision_no, freeze });
+        const { shot_revision: revision } = await markShotReadyV2(shotId, { draft: draft as unknown as Record<string, unknown>, expected_revision_no: currentRevision.revision_no, freeze });
         try { clearShotDrafts(shotId); setStorageError(null); }
         catch { setStorageError("服务端保存成功，但浏览器未能清理本地草稿记录，可在下次提示时丢弃。"); }
         setDraftCandidate(null);
         setBaseline(JSON.stringify(draft));
-        setMessage(`已原子保存 revision ${revision.revision_no}${revision.is_frozen ? "（已冻结）" : ""}，镜头已标记 Production Ready`);
+        setMessage(`已保存为第 ${revision.revision_no} 版${revision.is_frozen ? "（已冻结）" : ""}，镜头已标记为可进入生产`);
         await onSaved?.(revision);
       } else if (shotStatus === "DIRECTED" && semanticMissing.length === 0) {
         setMarkingReady(true);
-        await markShotProductionReady(shotId);
-        setMessage("镜头已标记 Production Ready");
+        await markShotReadyV2(shotId, { expected_revision_no: currentRevision.revision_no });
+        setMessage("镜头已标记为可进入生产");
         await onSaved?.({ id: currentRevision.id, shot_id: shotId, revision_no: currentRevision.revision_no, is_frozen: currentRevision.is_frozen, fields: currentRevision.fields });
       }
     } catch (error) {
-      if (error instanceof DirectorIntentApiError && error.status === 409) {
+      if (error instanceof ApiRequestError && error.status === 409) {
         const current = error.details?.current_revision_no;
         setConflict({ message: error.message, currentRevisionNo: typeof current === "number" ? current : undefined });
-      } else setMessage(`保存并就绪失败，未写入新 revision：${error instanceof Error ? error.message : String(error)}`);
+      } else setMessage(`保存并就绪失败，未写入新版本：${error instanceof Error ? error.message : String(error)}`);
     } finally { setSaving(false); setMarkingReady(false); }
   }, [canEdit, currentRevision, dirty, draft, freeze, markingReady, onSaved, saving, semanticMissing.length, shotId, shotStatus]);
 
@@ -373,13 +412,13 @@ export function DirectorIntentEditor({ shotId, shotCode, currentRevision, target
     return () => window.removeEventListener("keydown", keyboardSave);
   }, [keyboardShortcutsEnabled, save]);
 
-  if (!currentRevision) return <section className="intent-editor intent-empty"><strong>{shotCode} 尚无可编辑 revision</strong><span>先创建镜头初始修订，再编辑导演意图。</span></section>;
+  if (!currentRevision) return <section className="intent-editor intent-empty"><strong>{shotCode} 尚无可编辑版本</strong><span>先创建镜头初始版本，再编辑导演意图。</span></section>;
   return <section className="intent-editor" aria-labelledby="director-intent-title">
-    <header className="intent-editor-head"><div><span>DIRECTOR INTENT V3</span><h3 id="director-intent-title">{shotCode} · 单镜编辑</h3></div><div className="intent-revision"><span>revision {currentRevision.revision_no}</span>{currentRevision.is_frozen && <span>当前版本已冻结</span>}<strong className={dirty ? "dirty" : "saved"}>{dirty ? "未保存" : "已保存"}</strong></div></header>
+    <header className="intent-editor-head"><div><span>单镜导演设计</span><h3 id="director-intent-title">{shotCode} · 单镜编辑</h3></div><div className="intent-revision"><span>第 {currentRevision.revision_no} 版</span>{currentRevision.is_frozen && <span>当前版本已冻结</span>}<strong className={dirty ? "dirty" : "saved"}>{dirty ? "未保存" : "已保存"}</strong></div></header>
     <div className="intent-editor-scroll">
       {draftCandidate && <aside className={`intent-draft-recovery ${draftCandidate.stale ? "stale" : ""}`} role="status">
         <div><strong>{draftCandidate.stale ? "发现过期的本地草稿" : "发现可恢复的本地草稿"}</strong><span>{draftCandidate.stale
-          ? `草稿基于 revision ${draftCandidate.stored.base_revision_no}，当前为 revision ${currentRevision.revision_no}；不会自动套用。`
+          ? `草稿基于第 ${draftCandidate.stored.base_revision_no} 版，当前为第 ${currentRevision.revision_no} 版；不会自动套用。`
           : `保存于 ${new Date(draftCandidate.stored.saved_at).toLocaleString()}，尚未写入服务端。`}</span></div>
         <div><button type="button" onClick={applyStoredDraft}>{draftCandidate.stale ? "显式迁移并复核" : "恢复草稿"}</button><button type="button" className="intent-discard" onClick={discardStoredDraft}>丢弃本地草稿</button></div>
       </aside>}
@@ -394,24 +433,24 @@ export function DirectorIntentEditor({ shotId, shotCode, currentRevision, target
         <label>身体动作<textarea value={draft.performance.body_action ?? ""} disabled={!canEdit || currentRevision.is_frozen} onChange={(event) => changePerformance({ body_action: event.target.value || null })} placeholder="保留创作自由：描述姿态、动作节奏与停顿" /></label>
         <MicroExpressionSelect value={draft.performance.facial_action} disabled={!canEdit || currentRevision.is_frozen} onChange={(facial_action) => changePerformance({ facial_action })} />
         <EyeLineControl value={draft.performance.eye_line} disabled={!canEdit || currentRevision.is_frozen} onChange={(eye_line) => changePerformance({ eye_line })} />
-        {stagingEyeLine && <aside className={`intent-inheritance-suggestion ${stagingEyeLineStale ? "is-stale" : ""}`} role={stagingEyeLineStale ? "alert" : undefined}><div><strong>{stagingEyeLineStale ? "站位已变化，视线建议需复核" : "根据 2D 站位建议视线"}</strong><span>{stagingEyeLine.reason}</span></div><button type="button" disabled={!canEdit || currentRevision.is_frozen || (!stagingEyeLineStale && draft.performance.eye_line === stagingEyeLine.value && stagingEyeLineSource?.source_fingerprint === stagingEyeLine.source_fingerprint)} onClick={() => setDraft((old) => ({ ...old, performance: { ...old.performance, eye_line: stagingEyeLine.value }, suggestion_sources: { ...old.suggestion_sources, staging_eye_line: { source_fingerprint: stagingEyeLine.source_fingerprint, source_label: `${stagingEyeLine.subject_label}→${stagingEyeLine.target_label}` } } }))}>{stagingEyeLineStale ? "按新站位更新" : "采用视线建议"}</button></aside>}
+        {stagingEyeLine && <aside className={`intent-inheritance-suggestion ${stagingEyeLineStale ? "is-stale" : ""}`} role={stagingEyeLineStale ? "alert" : undefined}><div><strong>{stagingEyeLineStale ? "站位已变化，视线建议需复核" : "根据二维站位建议视线"}</strong><span>{stagingEyeLine.reason}</span></div><button type="button" disabled={!canEdit || currentRevision.is_frozen || (!stagingEyeLineStale && draft.performance.eye_line === stagingEyeLine.value && stagingEyeLineSource?.source_fingerprint === stagingEyeLine.source_fingerprint)} onClick={() => setDraft((old) => ({ ...old, performance: { ...old.performance, eye_line: stagingEyeLine.value }, suggestion_sources: { ...old.suggestion_sources, staging_eye_line: { source_fingerprint: stagingEyeLine.source_fingerprint, source_label: `${stagingEyeLine.subject_label}→${stagingEyeLine.target_label}` } } }))}>{stagingEyeLineStale ? "按新站位更新" : "采用视线建议"}</button></aside>}
       </div>
-      <details className="intent-section"><summary>2D 站位预演</summary><StagingBoard value={draft.staging ?? undefined} participantOptions={stagingParticipants} disabled={!canEdit || currentRevision.is_frozen} onChange={(staging, output) => setDraft((old) => ({ ...old, staging, performance: { ...old.performance, blocking_summary: output.blocking_summary }, camera_plan: { ...old.camera_plan, ...output.camera_plan, mode: "PROMPT_FALLBACK" } }))} /></details>
-      <details className="intent-section"><summary>可选 3D 导演预演</summary><LazyDirector3DSpike value={draft.staging_3d ?? undefined} participantOptions={stagingParticipants} disabled={!canEdit || currentRevision.is_frozen} onChange={(staging_3d, output) => setDraft((old) => ({ ...old, staging_3d, composition: { ...old.composition, ...output.director_intent_patch.composition }, performance: { ...old.performance, ...output.director_intent_patch.performance }, camera_plan: { ...old.camera_plan, ...output.camera_plan, mode: "PROMPT_FALLBACK" } }))} /></details>
+      <details className="intent-section"><summary>二维站位预演</summary><StagingBoard value={draft.staging ?? undefined} participantOptions={stagingParticipants} disabled={!canEdit || currentRevision.is_frozen} onChange={(staging, output) => setDraft((old) => ({ ...old, staging, performance: { ...old.performance, blocking_summary: output.blocking_summary }, camera_plan: { ...old.camera_plan, ...output.camera_plan, mode: "PROMPT_FALLBACK" } }))} /></details>
+      <details className="intent-section"><summary>可选的三维导演预演</summary><LazyDirector3DSpike value={draft.staging_3d ?? undefined} participantOptions={stagingParticipants} disabled={!canEdit || currentRevision.is_frozen} onChange={(staging_3d, output) => setDraft((old) => ({ ...old, staging_3d, composition: { ...old.composition, ...output.director_intent_patch.composition }, performance: { ...old.performance, ...output.director_intent_patch.performance }, camera_plan: { ...old.camera_plan, ...output.camera_plan, mode: "PROMPT_FALLBACK" } }))} /></details>
       <div className="intent-section">
         <h4>运镜</h4>
-        <ChoiceGrid label="运动方式" value={draft.camera_plan.movement} options={CAMERA_MOVEMENTS} onChange={(movement) => changeCamera({ movement, mode: "UNSUPPORTED" })} />
+        <ChoiceGrid label="运动方式" value={draft.camera_plan.movement} options={movementOptions.length ? movementOptions : CAMERA_MOVEMENTS} onChange={(movement) => changeCamera({ movement, mode: "UNSUPPORTED" })} />
         <div className="intent-fields-2">
-          <label>方向<select value={draft.camera_plan.direction} onChange={(event) => changeCamera({ direction: event.target.value, mode: "UNSUPPORTED" })}>{CAMERA_DIRECTIONS.map((value) => <option key={value} value={value}>{CAMERA_DIRECTION_LABELS[value]}</option>)}</select></label>
+          <label>方向<select value={draft.camera_plan.direction} onChange={(event) => changeCamera({ direction: event.target.value, mode: "UNSUPPORTED" })}>{supportedDirections.map((value) => <option key={value} value={value}>{CAMERA_DIRECTION_LABELS[value as keyof typeof CAMERA_DIRECTION_LABELS] ?? value}</option>)}</select></label>
           <label>强度 <output>{Math.round(draft.camera_plan.intensity * 100)}%</output><input aria-label="运镜强度" type="range" min="0" max="1" step="0.05" value={draft.camera_plan.intensity} onChange={(event) => changeCamera({ intensity: Number(event.target.value), mode: "UNSUPPORTED" })} /></label>
         </div>
         <label>已发布运镜配置<select aria-label="已发布运镜配置" value={draft.camera_plan.profile_version_id ?? ""} onChange={(event) => changeCamera({ profile_version_id: event.target.value || null, mode: "UNSUPPORTED" })}><option value="">请选择</option>{cameraProfiles.map((profile) => <option key={profile.version_id} value={profile.version_id}>{profile.title} · 第 {profile.version_no ?? "?"} 版</option>)}</select></label><ProfileExecutionDetailButton profileVersionId={draft.camera_plan.profile_version_id} />
         <button type="button" className="intent-resolve-camera" disabled={resolvingCamera || !draft.camera_plan.profile_version_id || !draft.shot_type || !draft.camera_plan.movement} onClick={() => void resolveCamera()}>{resolvingCamera ? "裁决中…" : "立即重新裁决运镜"}</button>
-        <small className="intent-resolve-hint">运镜字段变更后自动按已发布配置裁决；仅在需要强制刷新时点击。</small>
+        <small className="intent-resolve-hint">运镜字段变更后，系统会按已发布配置自动判断能否执行；页面只展示当前配置支持的运动方式、方向和节奏。</small>
         <details>
           <summary>高级：缓动与兼容方式</summary>
           <div className="intent-fields-2">
-            <label>运动节奏<select value={draft.camera_plan.curve} onChange={(event) => changeCamera({ curve: event.target.value, mode: "UNSUPPORTED" })}>{CAMERA_CURVES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <label>运动节奏<select value={draft.camera_plan.curve} onChange={(event) => changeCamera({ curve: event.target.value, mode: "UNSUPPORTED" })}>{CAMERA_CURVES.filter(([value]) => supportedCurves.includes(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
             <div className="intent-camera-resolution"><span>系统采用方式</span><strong>{draft.camera_plan.mode === "NATIVE" ? "模型原生运镜" : draft.camera_plan.mode === "PROMPT_FALLBACK" ? "提示词兼容运镜" : "等待系统裁决"}</strong></div>
           </div>
           {draft.camera_plan.mode === "PROMPT_FALLBACK" && <label>兼容运镜补充描述<textarea value={draft.camera_plan.prompt_text} onChange={(event) => changeCamera({ prompt_text: event.target.value, mode: "UNSUPPORTED" })} placeholder="只补充预设无法表达的镜头运动；通常无需填写" /><small>系统会先按所选运镜生成描述，仅在确有特殊路径时补充。</small></label>}
@@ -423,10 +462,10 @@ export function DirectorIntentEditor({ shotId, shotCode, currentRevision, target
         {intentSuggestions?.continuity && <aside className={`intent-inheritance-suggestion ${intentSuggestions.continuity.eligible ? "" : "unavailable"} ${intentSuggestions.continuity.stale ? "is-stale" : ""}`} role={intentSuggestions.continuity.stale ? "alert" : undefined}><div><strong>{intentSuggestions.continuity.stale ? "上一镜已更新" : "前后镜连续性建议"}</strong><span>{intentSuggestions.continuity.source_label ? `来源：${intentSuggestions.continuity.source_label}` : "基于镜头顺序检查"}</span>{intentSuggestions.continuity.value ? <p>{intentSuggestions.continuity.value}</p> : <p>{intentSuggestions.continuity.reason}</p>}{intentSuggestions.continuity.stale_reason && <p>{intentSuggestions.continuity.stale_reason}</p>}</div>{intentSuggestions.continuity.value && <button type="button" disabled={!canEdit || currentRevision.is_frozen || (!intentSuggestions.continuity.stale && draft.continuity === intentSuggestions.continuity.value)} onClick={() => setDraft((old) => ({ ...old, continuity: intentSuggestions.continuity!.value, suggestion_sources: { ...old.suggestion_sources, continuity: { source_revision: intentSuggestions.continuity!.source_revision, source_label: intentSuggestions.continuity!.source_label } } }))}>{intentSuggestions.continuity.stale ? "重新继承并复核" : draft.continuity === intentSuggestions.continuity.value ? "已采用" : "继承并复核"}</button>}</aside>}
         <label>连续性变化<textarea value={draft.continuity ?? ""} onChange={(event) => change("continuity", event.target.value || null)} placeholder="记录服装、伤势、持物、位置或动作承接的变化" /></label>
       </div>
-      <aside className={`intent-ready ${missing.length ? "blocked" : "ready"}`}><div><strong>Production Ready</strong><span>{missing.length ? `还有 ${missing.length} 项需要处理` : "导演意图已满足当前生产门槛"}</span></div>{missing.length > 0 && <ul>{missing.map((item) => <li key={item}>{item}</li>)}</ul>}</aside>
-      {conflict && <div className="intent-conflict" role="alert"><strong>保存冲突</strong><span>{conflict.message}{conflict.currentRevisionNo ? `（服务端已到 revision ${conflict.currentRevisionNo}）` : ""}</span><button type="button" onClick={onReloadRequested}>刷新最新版本</button></div>}
+      <aside className={`intent-ready ${missing.length ? "blocked" : "ready"}`}><div><strong>进入生产前检查</strong><span>{missing.length ? `还有 ${missing.length} 项需要处理` : "导演设计已满足当前生产条件"}</span></div>{missing.length > 0 && <ul>{missing.map((item) => <li key={item}>{item}</li>)}</ul>}</aside>
+      {conflict && <div className="intent-conflict" role="alert"><strong>保存冲突</strong><span>{conflict.message}{conflict.currentRevisionNo ? `（服务器已更新到第 ${conflict.currentRevisionNo} 版）` : ""}</span><button type="button" onClick={onReloadRequested}>刷新最新版本</button></div>}
       {message && <p className={message.includes("失败") ? "intent-message error" : "intent-message"} role={message.includes("失败") ? "alert" : "status"}>{message}</p>}
     </div>
-    <footer className="intent-editor-actions"><label><input type="checkbox" checked={freeze} disabled={!canEdit} onChange={(event) => setFreeze(event.target.checked)} />保存后冻结</label><button type="button" className="intent-discard" disabled={!dirty || saving} onClick={() => { setDraft(JSON.parse(baseline) as DirectorIntentV3); setMessage(null); try { if (storageKey) window.localStorage.removeItem(storageKey); } catch { setStorageError("修改已在表单中放弃，但浏览器未能清理本地草稿。"); } }}>放弃修改</button><button type="button" className="intent-save" disabled={!canEdit || !dirty || saving} onClick={() => void save()}>{saving ? "保存中…" : `仅保存 revision ${currentRevision.revision_no + 1}`}<kbd>Ctrl S</kbd></button><button type="button" className="intent-save-and-ready" title={semanticMissing.length ? semanticMissing.join("；") : undefined} disabled={!canEdit || saving || markingReady || shotStatus !== "DIRECTED" || semanticMissing.length > 0} onClick={() => void saveAndReady()}>{markingReady ? "处理中…" : shotStatus === "READY" ? "已 Production Ready" : "保存并就绪"}</button></footer>
+    <footer className="intent-editor-actions"><label><input type="checkbox" checked={freeze} disabled={!canEdit} onChange={(event) => setFreeze(event.target.checked)} />保存后冻结</label><button type="button" className="intent-discard" disabled={!dirty || saving} onClick={() => void discardCurrentDraft()}>放弃修改</button><button type="button" className="intent-save" disabled={!canEdit || !dirty || saving} onClick={() => void save()}>{saving ? "保存中…" : `仅保存为第 ${currentRevision.revision_no + 1} 版`}<kbd>Ctrl S</kbd></button><button type="button" className="intent-save-and-ready" title={semanticMissing.length ? semanticMissing.join("；") : undefined} disabled={!canEdit || saving || markingReady || shotStatus !== "DIRECTED" || semanticMissing.length > 0} onClick={() => void saveAndReady()}>{markingReady ? "处理中…" : shotStatus === "READY" ? "已可进入生产" : "保存并就绪"}</button></footer>
   </section>;
 }

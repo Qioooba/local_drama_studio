@@ -10,23 +10,23 @@ describe("legacy query route V2 decommission compatibility", () => {
     ["?view=overview", "/projects"],
     ["?view=overview&project=project-1", "/projects/project-1"],
     ["?view=projects", "/projects"],
-    ["?view=projects&project=project-1", "/projects/project-1/operations"],
+    ["?view=projects&project=project-1", "/projects/project-1"],
     ["?view=projects&project=project-1&episode=episode-2", "/projects/project-1/episodes/episode-2/plan"],
-    ["?view=generation&project=project-1&episode=episode-2", "/projects/project-1/episodes/episode-2/generation"],
-    ["?view=generation&project=project-1&episode=episode-2&shot=shot-3", "/projects/project-1/episodes/episode-2/generation/shot-3"],
-    ["?view=reviews&project=project-1&episode=episode-2", "/projects/project-1/episodes/episode-2/review"],
-    ["?view=canvas&project=project-1&episode=episode-2", "/projects/project-1/canvas?episode=episode-2"],
-    ["?view=profiles", "/models"],
-    ["?view=profiles&project=project-1", "/projects/project-1/production-settings"],
-    ["?view=jobs&project=project-1", "/jobs?project=project-1"],
-    ["?view=diagnostics&project=project-1", "/diagnostics?project=project-1"],
+    ["?view=generation&project=project-1&episode=episode-2", "/projects/project-1/episodes/episode-2/studio?focus=generate"],
+    ["?view=generation&project=project-1&episode=episode-2&shot=shot-3", "/projects/project-1/episodes/episode-2/studio/shot-3?focus=generate"],
+    ["?view=reviews&project=project-1&episode=episode-2", "/projects/project-1/episodes/episode-2/post/review"],
+    ["?view=canvas&project=project-1&episode=episode-2", "/projects/project-1/episodes/episode-2/production"],
+    ["?view=profiles", "/system/capabilities"],
+    ["?view=profiles&project=project-1", "/projects/project-1/settings/capabilities"],
+    ["?view=jobs&project=project-1", "/system/jobs?project=project-1"],
+    ["?view=diagnostics&project=project-1", "/system/diagnostics?project=project-1"],
   ])("maps %s to a lossless V2 route", (search, expected) => {
     expect(resolveLegacyRoute(search)).toBe(expected);
   });
 
   it("encodes legacy entity ids in both path and query destinations", () => {
-    expect(resolveLegacyRoute("?view=projects&project=project%2Funsafe")).toBe("/projects/project%2Funsafe/operations");
-    expect(resolveLegacyRoute("?view=canvas&project=p%2F1&episode=e%2F2")).toBe("/projects/p%2F1/canvas?episode=e%2F2");
+    expect(resolveLegacyRoute("?view=projects&project=project%2Funsafe")).toBe("/projects/project%2Funsafe");
+    expect(resolveLegacyRoute("?view=canvas&project=p%2F1&episode=e%2F2")).toBe("/projects/p%2F1/episodes/e%2F2/production");
   });
 
   it.each([
@@ -47,7 +47,7 @@ describe("legacy query route V2 decommission compatibility", () => {
       <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route path="/" element={<LegacyRouteBoundary />} />
-          <Route path="/jobs" element={<div>jobs-v2</div>} />
+          <Route path="/system/jobs" element={<div>jobs-v2</div>} />
         </Routes>
       </MemoryRouter>,
     );
@@ -57,7 +57,7 @@ describe("legacy query route V2 decommission compatibility", () => {
     routeTree("/?view=reviews&project=project-1&episode=episode-2&review=version-9");
     expect(await screen.findByRole("heading", { name: "旧链接需要选择新的工作区" })).toBeTruthy();
     expect(screen.getByText("version-9")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "打开本集审核" }).getAttribute("href")).toBe("/projects/project-1/episodes/episode-2/review");
+    expect(screen.getByRole("link", { name: "打开本集审核" }).getAttribute("href")).toBe("/projects/project-1/episodes/episode-2/post/review");
     expect(screen.queryByText("legacy-shell")).toBeNull();
   });
 });

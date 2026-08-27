@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACCELERATION_LABELS, MEDIA_KIND_LABELS, MEDIA_STAGE_LABELS, PRODUCTION_TIER_LABELS, STATUS_LABELS, optionLabel } from "./optionLabels";
+import { ACCELERATION_LABELS, JOB_TYPE_LABELS, MEDIA_KIND_LABELS, MEDIA_STAGE_LABELS, PRODUCTION_TIER_LABELS, STATUS_LABELS, optionLabel, statusLabel, userFacingLabel } from "./optionLabels";
 
 describe("下拉框中文标签", () => {
   it("将后台媒体码值转换为中文显示文本", () => {
@@ -15,5 +15,11 @@ describe("下拉框中文标签", () => {
   it("运行参数显示中文但仍使用后台枚举码", () => {
     expect(optionLabel(PRODUCTION_TIER_LABELS, "BALANCED")).toBe("质量与速度平衡");
     expect(optionLabel(ACCELERATION_LABELS, "TURBO_LORA")).toBe("启用 Turbo LoRA 加速");
+  });
+
+  it("普通界面不泄露未知后台枚举", () => {
+    expect(statusLabel("FUTURE_STATUS")).toBe("状态未知");
+    expect(userFacingLabel(JOB_TYPE_LABELS, "GENERATION_VARIANT")).toBe("生成镜头候选");
+    expect(userFacingLabel(JOB_TYPE_LABELS, "FUTURE_JOB")).toBe("未识别类型");
   });
 });

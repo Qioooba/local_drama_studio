@@ -8,7 +8,6 @@ for their own real execution and evidence.
 
 from __future__ import annotations
 
-import ipaddress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -16,24 +15,19 @@ from urllib.parse import urlsplit
 
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.network_policy import parse_runtime_endpoint
 
-LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 HTTP_TRANSPORTS = {"LOOPBACK_HTTP", "LOCAL_LLM_LOOPBACK"}
 LOCAL_EXECUTABLE_TRANSPORTS = {"LOCAL_CLI", "LOCAL_PROCESS", "FFMPEG_LOCAL"}
 
 
-def _is_loopback_host(host: str | None) -> bool:
-    if not host:
-        return False
-    if host.casefold() in LOOPBACK_HOSTS:
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
-
-
-def validate_adapter_target(transport: str, *, base_url: str | None = None, executable_ref: str | None = None) -> None:
+def validate_adapter_target(
+    transport: str,
+    *,
+    base_url: str | None = None,
+    executable_ref: str | None = None,
+    allow_private_network: bool = False,
+) -> None:
     """Reject remote or ambiguous adapter targets before any runtime call."""
 
     if transport == "REMOTE_HTTP_SERVICE" or transport.startswith("REMOTE_"):
@@ -42,12 +36,12 @@ def validate_adapter_target(transport: str, *, base_url: str | None = None, exec
         if not base_url:
             raise DomainRuleError("LOOPBACK_ENDPOINT_REQUIRED", "loopback adapter 必须声明 base_url")
         parsed = urlsplit(base_url)
-        if parsed.scheme not in {"http", "https"} or not _is_loopback_host(parsed.hostname):
-            raise DomainRuleError("LOOPBACK_ONLY", "本地 adapter base_url 只能指向 loopback")
         if parsed.username or parsed.password:
             raise DomainRuleError("LOOPBACK_CREDENTIALS_FORBIDDEN", "loopback adapter URL 不得携带凭据")
         if parsed.query or parsed.fragment:
             raise DomainRuleError("LOOPBACK_ENDPOINT_AMBIGUOUS", "loopback adapter URL 不得携带 query 或 fragment")
+        if parse_runtime_endpoint(base_url, allow_private_network=allow_private_network) is None:
+            raise DomainRuleError("LOOPBACK_ONLY", "本地 adapter base_url 只能指向 loopback 或受控私网地址")
         return
     if transport in LOCAL_EXECUTABLE_TRANSPORTS:
         if not executable_ref or not executable_ref.strip():
@@ -99,9 +93,15 @@ def _contract(
     capabilities: tuple[str, ...],
     base_url: str | None = None,
     executable_ref: str | None = None,
+    allow_private_network: bool = False,
 ) -> AdapterContract:
     try:
-        validate_adapter_target(transport, base_url=base_url, executable_ref=executable_ref)
+        validate_adapter_target(
+            transport,
+            base_url=base_url,
+            executable_ref=executable_ref,
+            allow_private_network=allow_private_network,
+        )
     except DomainRuleError as error:
         return AdapterContract(code, title, kind, transport, base_url, executable_ref, capabilities, "BLOCKED", (error.code,))
     if executable_ref and Path(executable_ref).is_absolute() and not Path(executable_ref).is_file():
@@ -118,22 +118,25 @@ class AdapterContractRegistry:
     def inspect(self) -> dict[str, Any]:
         ffmpeg = self.settings.ffmpeg_path
         ffprobe = self.settings.ffprobe_path
+        allow_private = self.settings.allows_private_network
         contracts = (
             _contract(
                 code="comfyui-loopback",
-                title="ComfyUI H3 loopback adapter",
+                title="ComfyUI H3 loopback adapter" if not allow_private else "ComfyUI H3 LAN adapter",
                 kind="COMFY",
                 transport="LOOPBACK_HTTP",
                 base_url=self.settings.comfy_base_url,
                 capabilities=("system_stats", "object_info", "queue", "prompt", "history", "interrupt", "collect"),
+                allow_private_network=allow_private,
             ),
             _contract(
                 code="local-llm-loopback",
-                title="Local LLM loopback adapter",
+                title="Local LLM loopback adapter" if not allow_private else "Local LLM LAN adapter",
                 kind="LOCAL_LLM_LOOPBACK",
                 transport="LOCAL_LLM_LOOPBACK",
                 base_url=self.settings.llm_base_url,
                 capabilities=("model_list", "chat_json", "deterministic_temperature_zero"),
+                allow_private_network=allow_private,
             ),
             _contract(
                 code="local-cli",
@@ -153,7 +156,7 @@ class AdapterContractRegistry:
             ),
         )
         return {
-            "mode": "LOCAL_ONLY",
+            "mode": str(self.settings.network_mode),
             "contracts": [item.as_dict() for item in contracts],
             "remote_transport_allowed": False,
             "runtime_contacted": False,

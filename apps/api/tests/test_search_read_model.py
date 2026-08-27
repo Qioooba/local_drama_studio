@@ -9,7 +9,8 @@ from local_drama.application.generation import GenerationService
 from local_drama.application.jobs import JobService
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
-from local_drama.application.read_models import SearchService
+from local_drama.application.search import SearchService
+from local_drama.infrastructure.database.search_repository import SqliteSearchRepository
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.main import create_app
 
@@ -112,7 +113,9 @@ def test_search_tolerates_pre_extension_schema_without_rebuilding_index(tmp_path
         connection.execute("CREATE TABLE projects (id TEXT PRIMARY KEY,code TEXT NOT NULL,title TEXT NOT NULL)")
         connection.execute("CREATE VIRTUAL TABLE fts_search USING fts5(project_id,subject_type,subject_id,content)")
         connection.execute("INSERT INTO projects VALUES ('p-old','OLD_NEEDLE','Old Needle Project')")
-    results = SearchService(database).search("needle", project_id="p-old", limit=999)
+    results = SearchService(SqliteSearchRepository(database)).search(
+        "needle", project_id="p-old", limit=999
+    )
     assert results == [{
         "project_id": "p-old", "subject_type": "PROJECT", "subject_id": "p-old",
         "label": "OLD_NEEDLE · Old Needle Project", "context": "项目",

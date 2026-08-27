@@ -2,21 +2,19 @@ import sys
 from pathlib import Path
 
 # Add project root to sys.path
-root = Path(r"F:\AI_Projects\h3\local_drama_studio")
+root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / "apps" / "api"))
 
 from local_drama.config import Settings
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.application.media import MediaService
 from local_drama.application.reviews import ReviewService
-from local_drama.application.director_desk import DirectorDeskReadModelService
 
 settings = Settings()
 settings.ensure_roots()
 db = Database(settings.database_path)
 media_service = MediaService(db, settings)
 review_service = ReviewService(db, settings)
-director_service = DirectorDeskReadModelService(db)
 
 PROJECT_ID = "9893a9bc-e58b-45a2-9143-c1bd7b886db9"
 EPISODE_ID = "b989644a-666e-448c-968b-6b865dbebca7"

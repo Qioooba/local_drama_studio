@@ -177,26 +177,27 @@ def test_recovery_treats_legacy_workflow_without_checkpoint_snapshot_as_on_excep
     assert recovered["recovery"]["refreshed_task_ids"] == []
 
 
-def test_checkpoint_policy_api_defaults_and_rejects_unknown_values(workspace, database) -> None:
+def test_checkpoint_policy_core_defaults_and_v2_rejects_unknown_values(workspace, database) -> None:
     _project, episode = _episode(workspace, database, "checkpoint_api")
+    defaulted = EpisodeProductionRunService(database, workspace).preflight(
+        str(episode["id"]), min_free_disk_bytes=1
+    )
+    assert defaulted["checkpoint_policy"] == "ON_EXCEPTION"
+    assert "ASSET_REFERENCE_REQUIREMENTS_MISSING" in {
+        item["code"] for item in defaulted["checks"]
+    }
     with TestClient(create_app(workspace)) as client:
-        defaulted = client.get(
-            f"/api/v1/episodes/{episode['id']}/production-runs/preflight",
-            params={"min_free_disk_bytes": 1},
-        )
-        assert defaulted.status_code == 200
-        assert defaulted.json()["preflight"]["checkpoint_policy"] == "ON_EXCEPTION"
-        assert "ASSET_COMPLETION_REQUIRED" in {
-            item["code"] for item in defaulted.json()["preflight"]["checks"]
-        }
-        invalid_query = client.get(
-            f"/api/v1/episodes/{episode['id']}/production-runs/preflight",
-            params={"checkpoint_policy": "EVERYTHING"},
-        )
         invalid_body = client.post(
-            f"/api/v1/episodes/{episode['id']}/production-runs",
-            headers={"Idempotency-Key": "invalid-checkpoint"},
-            json={"checkpoint_policy": "EVERYTHING"},
+            f"/api/v2/episodes/{episode['id']}/production-runs",
+            json={"checkpoint_policy": "EVERYTHING", "idempotency_key": "invalid-checkpoint"},
         )
-    assert invalid_query.status_code == 422
+        retired_preflight = client.get(f"/api/v1/episodes/{episode['id']}/production-runs/preflight")
+        retired_start = client.post(
+            f"/api/v1/episodes/{episode['id']}/production-runs",
+            headers={"Idempotency-Key": "retired"},
+            json={},
+        )
     assert invalid_body.status_code == 422
+    assert retired_preflight.status_code == 404
+    assert retired_start.status_code in {404, 405}
+    assert "/api/v1/episodes/{episode_id}/production-runs" not in create_app(workspace).openapi()["paths"]

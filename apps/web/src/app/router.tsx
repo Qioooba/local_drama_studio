@@ -4,6 +4,8 @@ import { LegacyRouteBoundary } from "./legacyRoute";
 import { AppShell } from "../layouts/AppShell";
 import { FeatureFlagRoute } from "./featureFlags";
 import { RouteErrorBoundary } from "../components/ui/ErrorBoundary";
+import { routes } from "./routeRegistry";
+import { PostShell, ProjectSettingsShell, SystemShell } from "../pages/WorkspaceShells";
 
 const ProjectHomePage = lazy(() => import("../pages/ProjectHomePage").then((module) => ({ default: module.ProjectHomePage })));
 const AssetBiblePage = lazy(() => import("../pages/AssetBiblePage").then((module) => ({ default: module.AssetBiblePage })));
@@ -21,79 +23,114 @@ const ProjectsPage = lazy(() => import("../pages/ProjectsPage").then((module) =>
 const QcPoliciesPage = lazy(() => import("../pages/QcPoliciesPage").then((module) => ({ default: module.QcPoliciesPage })));
 const DirectorRecipesPage = lazy(() => import("../pages/DirectorRecipesPage").then((module) => ({ default: module.DirectorRecipesPage })));
 const ProductionSettingsPage = lazy(() => import("../pages/ProductionSettingsPage").then((module) => ({ default: module.ProductionSettingsPage })));
+const ProjectCapabilitiesPage = lazy(() => import("../pages/ProjectCapabilitiesPage").then((module) => ({ default: module.ProjectCapabilitiesPage })));
 const StoryWorkspacePage = lazy(() => import("../pages/StoryWorkspacePage").then((module) => ({ default: module.StoryWorkspacePage })));
-const MediaLabPage = lazy(() => import("../pages/MediaLabPage").then((module) => ({ default: module.MediaLabPage })));
-const CanvasPage = lazy(() => import("../pages/CanvasPage").then((module) => ({ default: module.CanvasPage })));
-const ProjectOperationsPage = lazy(() => import("../pages/ProjectOperationsPage").then((module) => ({ default: module.ProjectOperationsPage })));
-const GenerationPage = lazy(() => import("../pages/GenerationPage").then((module) => ({ default: module.GenerationPage })));
+const SystemWorkflowsPage = lazy(() => import("../pages/SystemWorkflowsPage").then((module) => ({ default: module.SystemWorkflowsPage })));
+const VisualLabListPage = lazy(() => import("../features/visual-lab/VisualLabListPage").then((module) => ({ default: module.VisualLabListPage })));
+const VisualLabWorkspacePage = lazy(() => import("../features/visual-lab/VisualLabWorkspacePage").then((module) => ({ default: module.VisualLabWorkspacePage })));
 
 const page = (content: ReactNode) => <Suspense fallback={<main className="route-loading" role="status">正在载入工作区…</main>}>{content}</Suspense>;
 
-export function ProjectSystemRouteRedirect({ workspace }: { workspace: "models" | "jobs" | "diagnostics" | "lab" }) {
-  const { projectId } = useParams();
+function LegacyProjectRedirect({ target }: { target: "settings" | "capabilities" | "quality" | "directing" | "labs" | "jobs" | "diagnostics" | "workflows" }) {
+  const { projectId = "" } = useParams();
   const location = useLocation();
-  const search = new URLSearchParams(location.search);
-  if (projectId) search.set("project", projectId);
-  return <Navigate to={{ pathname: `/${workspace}`, search: search.toString() ? `?${search.toString()}` : "", hash: location.hash }} replace />;
+  if (target === "settings") {
+    const legacyView = new URLSearchParams(location.search).get("view");
+    const section = legacyView === "delivery" ? "delivery" : legacyView === "automation" ? "automation" : legacyView === "assets" ? "rights" : legacyView === "freshness" ? "data" : "production";
+    return <Navigate to={routes.settings(projectId, section)} replace />;
+  }
+  if (target === "capabilities") return <Navigate to={routes.settings(projectId, "capabilities")} replace />;
+  if (target === "quality") return <Navigate to={routes.settings(projectId, "quality")} replace />;
+  if (target === "directing") return <Navigate to={routes.settings(projectId, "directing")} replace />;
+  if (target === "labs") return <Navigate to={routes.visualLabs(projectId)} replace />;
+  if (target === "jobs") return <Navigate to={routes.systemJobs(projectId)} replace />;
+  if (target === "diagnostics") return <Navigate to={routes.systemDiagnostics(projectId)} replace />;
+  return <Navigate to={routes.systemWorkflows(projectId)} replace />;
 }
 
-/**
- * V2 route contract (see docs/xinjihua/02_架构与前后端重构规格.md §5).
- *
- * Root and legacy query bookmarks resolve into V2 routes or an explicit V2
- * compatibility chooser. The legacy App bundle is never imported here.
- */
+function LegacyEpisodeRedirect({ target }: { target: "studio" | "generate" | "production" | "review" | "audio" | "edit" }) {
+  const { projectId = "", episodeId = "", shotId } = useParams();
+  const location = useLocation();
+  if (target === "studio" || target === "generate") {
+    const search = new URLSearchParams(location.search);
+    if (target === "generate") search.set("focus", "generate");
+    return <Navigate to={{ pathname: routes.shotStudio(projectId, episodeId, shotId), search: search.toString() ? `?${search}` : "", hash: location.hash }} replace />;
+  }
+  const to = target === "production" ? routes.episodeProduction(projectId, episodeId) : target === "review" ? routes.postReview(projectId, episodeId) : target === "audio" ? routes.postAudio(projectId, episodeId) : routes.postEdit(projectId, episodeId);
+  return <Navigate to={{ pathname: to, search: location.search, hash: location.hash }} replace />;
+}
+
+function LegacyGlobalRedirect({ target }: { target: "capabilities" | "jobs" | "diagnostics" | "workflows" }) {
+  const location = useLocation();
+  return <Navigate to={{ pathname: `/system/${target}`, search: location.search, hash: location.hash }} replace />;
+}
+
 export const router = createBrowserRouter([
+  { path: "/", element: <LegacyRouteBoundary />, errorElement: <RouteErrorBoundary /> },
+  { path: "/projects", element: <AppShell />, errorElement: <RouteErrorBoundary />, children: [{ index: true, element: page(<ProjectsPage />) }] },
   {
-    path: "/",
-    element: <LegacyRouteBoundary />,
-    errorElement: <RouteErrorBoundary />,
-  },
-  {
-    path: "/projects",
-    element: <AppShell />,
-    errorElement: <RouteErrorBoundary />,
-    children: [{ index: true, element: page(<ProjectsPage />) }],
-  },
-  {
-    path: "/projects/:projectId",
-    element: <AppShell />,
-    errorElement: <RouteErrorBoundary />,
-    children: [
+    path: "/projects/:projectId", element: <AppShell />, errorElement: <RouteErrorBoundary />, children: [
       { index: true, element: page(<ProjectHomePage />) },
       { path: "story", element: page(<StoryWorkspacePage />) },
       { path: "assets", element: page(<FeatureFlagRoute flag="ASSET_BIBLE_V2" fallbackView="projects"><AssetBiblePage /></FeatureFlagRoute>) },
-      { path: "qc-policies", element: page(<QcPoliciesPage />) },
-      { path: "director-recipes", element: page(<DirectorRecipesPage />) },
-      { path: "production-settings", element: page(<ProductionSettingsPage />) },
-      { path: "settings", element: <Navigate to="production-settings" replace /> },
-      { path: "models", element: <ProjectSystemRouteRedirect workspace="models" /> },
-      { path: "jobs", element: <ProjectSystemRouteRedirect workspace="jobs" /> },
-      { path: "diagnostics", element: <ProjectSystemRouteRedirect workspace="diagnostics" /> },
-      { path: "lab", element: <ProjectSystemRouteRedirect workspace="lab" /> },
-      { path: "canvas", element: page(<CanvasPage />) },
-      { path: "operations", element: page(<ProjectOperationsPage />) },
+      { path: "settings", element: <ProjectSettingsShell />, children: [
+        { index: true, element: <Navigate to="production" replace /> },
+        { path: "production", element: page(<ProductionSettingsPage />) },
+        { path: "capabilities", element: page(<ProjectCapabilitiesPage />) },
+        { path: "directing", element: page(<DirectorRecipesPage />) },
+        { path: "quality", element: page(<QcPoliciesPage />) },
+        { path: "delivery", element: page(<ProductionSettingsPage />) },
+        { path: "automation", element: page(<ProductionSettingsPage />) },
+        { path: "rights", element: page(<ProductionSettingsPage />) },
+        { path: "data", element: page(<ProductionSettingsPage />) },
+      ] },
+      { path: "labs", element: page(<VisualLabListPage />) },
+      { path: "labs/:labId", element: page(<VisualLabWorkspacePage />) },
       { path: "episodes/:episodeId/plan", element: page(<EpisodePlanPage />) },
-      { path: "episodes/:episodeId/direct", element: page(<FeatureFlagRoute flag="DIRECTOR_DESK_V2" fallbackView="generation"><DirectorDeskPage /></FeatureFlagRoute>) },
-      { path: "episodes/:episodeId/direct/:shotId", element: page(<FeatureFlagRoute flag="DIRECTOR_DESK_V2" fallbackView="generation"><DirectorDeskPage /></FeatureFlagRoute>) },
-      { path: "episodes/:episodeId/generation", element: page(<GenerationPage />) },
-      { path: "episodes/:episodeId/generation/:shotId", element: page(<GenerationPage />) },
-      { path: "episodes/:episodeId/review", element: page(<EpisodeReviewPage />) },
-      { path: "episodes/:episodeId/audio", element: page(<AudioPage />) },
-      { path: "episodes/:episodeId/timeline", element: page(<TimelinePage />) },
+      { path: "episodes/:episodeId/studio", element: page(<FeatureFlagRoute flag="DIRECTOR_DESK_V2" fallbackView="projects"><DirectorDeskPage /></FeatureFlagRoute>) },
+      { path: "episodes/:episodeId/studio/:shotId", element: page(<FeatureFlagRoute flag="DIRECTOR_DESK_V2" fallbackView="projects"><DirectorDeskPage /></FeatureFlagRoute>) },
+      { path: "episodes/:episodeId/production", element: page(<FeatureFlagRoute flag="EPISODE_AGENT_RUN_V2" fallbackView="projects"><EpisodeRunPage /></FeatureFlagRoute>) },
+      { path: "episodes/:episodeId/post", element: <PostShell />, children: [
+        { index: true, element: <Navigate to="review" replace /> },
+        { path: "review", element: page(<EpisodeReviewPage />) },
+        { path: "audio", element: page(<AudioPage />) },
+        { path: "edit", element: page(<TimelinePage />) },
+      ] },
       { path: "episodes/:episodeId/delivery", element: page(<DeliveryPage />) },
-      { path: "episodes/:episodeId/run", element: page(<FeatureFlagRoute flag="EPISODE_AGENT_RUN_V2" fallbackView="projects"><EpisodeRunPage /></FeatureFlagRoute>) },
+
+      { path: "qc-policies", element: <LegacyProjectRedirect target="quality" /> },
+      { path: "director-recipes", element: <LegacyProjectRedirect target="directing" /> },
+      { path: "production-settings", element: <LegacyProjectRedirect target="settings" /> },
+      { path: "operations", element: <LegacyProjectRedirect target="settings" /> },
+      { path: "models", element: <LegacyProjectRedirect target="capabilities" /> },
+      { path: "jobs", element: <LegacyProjectRedirect target="jobs" /> },
+      { path: "diagnostics", element: <LegacyProjectRedirect target="diagnostics" /> },
+      { path: "lab", element: <LegacyProjectRedirect target="workflows" /> },
+      { path: "canvas", element: <LegacyProjectRedirect target="labs" /> },
+      { path: "episodes/:episodeId/direct", element: <LegacyEpisodeRedirect target="studio" /> },
+      { path: "episodes/:episodeId/direct/:shotId", element: <LegacyEpisodeRedirect target="studio" /> },
+      { path: "episodes/:episodeId/generation", element: <LegacyEpisodeRedirect target="generate" /> },
+      { path: "episodes/:episodeId/generation/:shotId", element: <LegacyEpisodeRedirect target="generate" /> },
+      { path: "episodes/:episodeId/run", element: <LegacyEpisodeRedirect target="production" /> },
+      { path: "episodes/:episodeId/review", element: <LegacyEpisodeRedirect target="review" /> },
+      { path: "episodes/:episodeId/audio", element: <LegacyEpisodeRedirect target="audio" /> },
+      { path: "episodes/:episodeId/timeline", element: <LegacyEpisodeRedirect target="edit" /> },
     ],
   },
   {
-    element: <AppShell />,
-    errorElement: <RouteErrorBoundary />,
-    children: [
-      { path: "/models", element: page(<ModelsPage />) },
-      { path: "/jobs", element: page(<JobsPage />) },
-      { path: "/diagnostics", element: page(<DiagnosticsPage />) },
-      { path: "/lab", element: page(<MediaLabPage />) },
+    path: "/system", element: <AppShell />, errorElement: <RouteErrorBoundary />, children: [
+      { element: <SystemShell />, children: [
+        { index: true, element: <Navigate to="capabilities" replace /> },
+        { path: "capabilities", element: page(<ModelsPage />) },
+        { path: "jobs", element: page(<JobsPage />) },
+        { path: "diagnostics", element: page(<DiagnosticsPage />) },
+        { path: "workflows", element: page(<SystemWorkflowsPage />) },
+      ] },
     ],
   },
+  { path: "/models", element: <LegacyGlobalRedirect target="capabilities" /> },
+  { path: "/jobs", element: <LegacyGlobalRedirect target="jobs" /> },
+  { path: "/diagnostics", element: <LegacyGlobalRedirect target="diagnostics" /> },
+  { path: "/lab", element: <LegacyGlobalRedirect target="workflows" /> },
   { path: "*", element: <Navigate to="/" replace /> },
 ]);

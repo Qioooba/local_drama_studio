@@ -3,9 +3,12 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ModelsPage } from "../pages/ModelsPage";
+import { SystemWorkflowsPage } from "../pages/SystemWorkflowsPage";
 import type { Profile, ProfileVersionDetail, WorkflowVersionSummary } from "../generated/api";
 
 vi.mock("../features/preferences-v2/GenerationPreferencePanel", () => ({ GenerationPreferencePanel: () => null }));
+vi.mock("../features/model-config/RuntimeEnvironmentsPanel", () => ({ RuntimeEnvironmentsPanel: () => null }));
+vi.mock("../features/shared/ComfyLabPanel", () => ({ ComfyLabPanel: () => null }));
 vi.mock("../features/profiles/profileEvidenceClient", () => ({
   planI2VEvidenceProbe: vi.fn(),
   validateProfileEvidenceCompatibility: vi.fn(),
@@ -91,6 +94,8 @@ vi.mock("../generated/api", () => ({
   listProjects: vi.fn().mockResolvedValue({ items: [] }),
   listProfiles: vi.fn(),
   listWorkflowVersions: vi.fn(),
+  listWorkflowDefinitions: vi.fn().mockResolvedValue({ items: [] }),
+  instantiateWorkflowDefinition: vi.fn(),
   getProfileVersion: vi.fn(),
   deriveProfileContractVersion: vi.fn(),
   validateProfileContractVersion: vi.fn(),
@@ -103,19 +108,12 @@ vi.mock("../generated/api", () => ({
   runDiagnostics: vi.fn().mockResolvedValue({ run: { status: "HEALTHY", checks: [] } }),
   listSeasons: vi.fn().mockResolvedValue({ items: [] }),
   listEpisodes: vi.fn().mockResolvedValue({ items: [] }),
-  getEpisodeProduction: vi.fn().mockResolvedValue({ episode: {}, items: [] }),
   h3CandidateRuntime: vi.fn().mockResolvedValue({ runtime: { status: "BLOCKED" } }),
   reviewInbox: vi.fn().mockResolvedValue({ items: [] }),
   listReviewTemplates: vi.fn().mockResolvedValue({ items: [] }),
-  getReviewContext: vi.fn(),
-  submitReview: vi.fn(),
-  selectMediaVersion: vi.fn(),
   listJobs: vi.fn().mockResolvedValue({ items: [] }),
   getG6Readiness: vi.fn(),
   planG6I2VProbe: vi.fn(),
-  getProductionCanvas: vi.fn(),
-  preflightProductionCanvasRun: vi.fn(),
-  saveProductionCanvasLayout: vi.fn(),
   getJob: vi.fn(),
 }));
 
@@ -144,6 +142,11 @@ function renderProjectProfilesView() {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+}
+
+function renderWorkflowsView() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><MemoryRouter><SystemWorkflowsPage /></MemoryRouter></QueryClientProvider>);
 }
 
 describe("Profile contract editor interactions", () => {
@@ -218,6 +221,23 @@ describe("Profile contract editor interactions", () => {
     await waitFor(() => expect(api.getProfileVersion).toHaveBeenCalledWith("v-draft"));
     expect(vi.mocked(api.getProfileVersion).mock.calls.some(([id]) => !id)).toBe(false);
     expect(screen.queryByText(/Profile 契约读取失败/)).toBeNull();
+  });
+
+  it("does not validate or publish stale DRAFT data after the form changes", async () => {
+    vi.mocked(api.getProfileVersion).mockImplementation((id) => Promise.resolve({
+      profile_version: id === "v-draft"
+        ? { ...draftDetail, validation: { id: "att-existing", status: "PASS", contract_hash: draftDetail.contract_hash, checks: [] } }
+        : publishedDetail,
+    }));
+    renderProfilesView();
+    fireEvent.click(await screen.findByRole("button", { name: /h3-native-i2v I2V · v5 DRAFT/ }));
+    await screen.findByRole("button", { name: "保存修改为新 DRAFT" });
+    fireEvent.change(screen.getByRole("combobox", { name: /^输出媒体类型/ }), { target: { value: "IMAGE" } });
+
+    expect((screen.getByRole("button", { name: "保存修改为新 DRAFT" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "运行本地契约验证" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "发布已验证版本" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/当前表单有未保存修改/)).toBeTruthy();
   });
 
   it("explains the real-evidence requirement when a contract publish is refused", async () => {
@@ -299,7 +319,7 @@ describe("Profile contract editor interactions", () => {
     vi.mocked(api.listWorkflowVersions).mockResolvedValue({ items: [draftWorkflow], runtime_contacted: false });
     vi.mocked(api.publishWorkflowVersion).mockResolvedValue({ workflow_version: { ...draftWorkflow, status: "PUBLISHED" } });
 
-    renderProfilesView("/?view=workflows");
+    renderWorkflowsView();
     expect(await screen.findByRole("heading", { name: "工作流版本、验证与发布证据" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "发布" })).toBeNull();
 
@@ -319,7 +339,7 @@ describe("Profile contract editor interactions", () => {
       validation: { id: "wf-validation-fail", workflow_version_id: "wf-1", status: "FAIL", checks: [] },
     });
 
-    renderProfilesView("/?view=workflows");
+    renderWorkflowsView();
     fireEvent.click(await screen.findByRole("button", { name: "本地验证" }));
     expect(await screen.findByText(/本地工作流验证：FAIL/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "发布" })).toBeNull();
@@ -327,7 +347,7 @@ describe("Profile contract editor interactions", () => {
   });
 
   it("requires a written reason before revoking a published workflow", async () => {
-    renderProfilesView("/?view=workflows");
+    renderWorkflowsView();
     const revokeButton = await screen.findByRole("button", { name: "撤销" });
     expect((revokeButton as HTMLButtonElement).disabled).toBe(true);
 

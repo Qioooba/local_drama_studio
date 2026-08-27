@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createVideoAnnotation, listVideoAnnotations } from "../../generated/api";
+import { createReviewAnnotationV2, listReviewAnnotationsV2, type ReviewAnnotationCategory } from "../../generated/api";
 
 const CATEGORIES = [
   ["IDENTITY", "人物身份或造型"],
@@ -25,13 +25,14 @@ function formatTimecode(value: number) {
 
 export function VideoAnnotations({
   mediaVersionId,
+  expectedRevision,
   durationMs,
   currentTimeMs,
   getCurrentTimeMs,
   onSeek,
 }: {
-  projectId?: string;
   mediaVersionId: string;
+  expectedRevision: number;
   durationMs: number;
   currentTimeMs?: number;
   getCurrentTimeMs?: () => number;
@@ -41,19 +42,21 @@ export function VideoAnnotations({
   const [category, setCategory] = useState("ARTIFACT");
   const [comment, setComment] = useState("");
   const annotations = useQuery({
-    queryKey: ["video-annotations", mediaVersionId],
-    queryFn: () => listVideoAnnotations(mediaVersionId),
+    queryKey: ["review-v2", "annotations", mediaVersionId],
+    queryFn: () => listReviewAnnotationsV2("MEDIA_VERSION", mediaVersionId, { limit: 100 }),
   });
   const currentTimecode = () => clampTimecode(getCurrentTimeMs?.() ?? currentTimeMs ?? 0, durationMs);
   const create = useMutation({
-    mutationFn: () => createVideoAnnotation(mediaVersionId, {
+    mutationFn: (commandKey: string) => createReviewAnnotationV2("MEDIA_VERSION", mediaVersionId, {
+      expected_revision: expectedRevision,
       timecode_ms: currentTimecode(),
-      category,
+      category: category as ReviewAnnotationCategory,
       comment: comment.trim(),
+      idempotency_key: commandKey,
     }),
     onSuccess: () => {
       setComment("");
-      void queryClient.invalidateQueries({ queryKey: ["video-annotations", mediaVersionId] });
+      void queryClient.invalidateQueries({ queryKey: ["review-v2", "annotations", mediaVersionId] });
     },
   });
 
@@ -73,7 +76,7 @@ export function VideoAnnotations({
         <label className="annotation-comment">问题描述
           <textarea aria-label="问题描述" value={comment} maxLength={4000} onChange={(event) => setComment(event.target.value)} placeholder="描述画面中需要修改的地方" />
         </label>
-        <button type="button" className="secondary" disabled={!comment.trim() || durationMs <= 0 || create.isPending} onClick={() => create.mutate()}>
+        <button type="button" className="secondary" disabled={!comment.trim() || durationMs <= 0 || create.isPending} onClick={() => create.mutate(`review-annotation:${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`}`)}>
           {create.isPending ? "保存中…" : "标记播放器当前画面"}
         </button>
       </div>

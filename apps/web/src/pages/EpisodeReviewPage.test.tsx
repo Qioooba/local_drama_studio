@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { EpisodeReviewPage } from "./EpisodeReviewPage";
 
 vi.mock("../features/episode-review-v2/EpisodeReviewWorkspace", () => ({
@@ -14,9 +14,9 @@ describe("EpisodeReviewPage (009C)", () => {
   it("renders review workspace with episode context and navigation links", () => {
     render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <MemoryRouter initialEntries={["/projects/project-1/episodes/ep-1/review"]}>
+        <MemoryRouter initialEntries={["/projects/project-1/episodes/ep-1/post/review"]}>
           <Routes>
-            <Route path="/projects/:projectId/episodes/:episodeId/review" element={<EpisodeReviewPage />} />
+            <Route path="/projects/:projectId/episodes/:episodeId/post/review" element={<EpisodeReviewPage />} />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>
@@ -24,7 +24,7 @@ describe("EpisodeReviewPage (009C)", () => {
 
     expect(screen.getByRole("heading", { name: "从候选问题到整集批准" })).toBeTruthy();
     expect(screen.getByText("EpisodeReviewWorkspace project-1 ep-1")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "返回导演台" }).getAttribute("href")).toBe("/projects/project-1/episodes/ep-1/direct");
-    expect(screen.getByRole("link", { name: "查看时间线" }).getAttribute("href")).toBe("/projects/project-1/episodes/ep-1/timeline");
+    expect(screen.getByRole("link", { name: "返回镜头" }).getAttribute("href")).toBe("/projects/project-1/episodes/ep-1/studio");
+    expect(screen.getByRole("link", { name: "查看编辑" }).getAttribute("href")).toBe("/projects/project-1/episodes/ep-1/post/edit");
   });
 });

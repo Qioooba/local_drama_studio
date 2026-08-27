@@ -128,6 +128,8 @@ def test_h3_candidate_registration_accepts_tier(workspace, database) -> None:
         assert version["workflow"]["8"]["inputs"]["length"] == 209
         assert version["workflow"]["8"]["inputs"]["width"] == 864
         assert version["workflow"]["8"]["inputs"]["height"] == 480
+        assert version["workflow"]["7"]["inputs"]["steps"] == 20
+        assert version["workflow"]["7"]["inputs"]["denoise"] == 1.0
         # node ids are unchanged, so the semantic bindings stay valid
         assert version["node_bindings"]["FRAME_COUNT"] == {"node_id": "8", "input": "length"}
         assert version["node_bindings"]["PROMPT"] == {"node_id": "8", "input": "prompt"}
@@ -138,6 +140,7 @@ def test_h3_candidate_registration_accepts_tier(workspace, database) -> None:
         )
         assert i2v.status_code == 201
         assert i2v.json()["workflow_version"]["workflow"]["7"]["inputs"]["length"] == 124
+        assert i2v.json()["workflow_version"]["workflow"]["10"]["inputs"]["denoise"] == 0.98
 
         # invalid tier fails closed with H3_TIER_UNSUPPORTED and no package row
         bad = client.post(

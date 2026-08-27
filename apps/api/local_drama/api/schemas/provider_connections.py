@@ -11,7 +11,7 @@ class ProviderConnectionCreateRequest(BaseModel):
     provider_kind: str = Field(min_length=1, max_length=48)
     base_url: str = Field(min_length=1, max_length=500)
     model: str | None = Field(default=None, max_length=240)
-    credential_source: Literal["NONE", "WINDOWS_CREDENTIAL_MANAGER", "ENVIRONMENT"] = "NONE"
+    credential_source: Literal["NONE", "OS_SECRET_STORE", "WINDOWS_CREDENTIAL_MANAGER", "ENVIRONMENT"] = "NONE"
     environment_variable_name: str | None = Field(default=None, max_length=160)
 
 

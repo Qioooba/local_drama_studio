@@ -12,9 +12,9 @@ const RUN_START_TIME_MS = RUN_START_DATE.getTime();
 const BASE_URL = process.env.BASE_URL || "http://127.0.0.1:5173";
 const API_URL = process.env.API_URL || "http://127.0.0.1:3210";
 const COMFY_URL = process.env.COMFY_URL || "http://127.0.0.1:8188";
-const FFPROBE_PATH = "E:\\Tools\\ffmpeg\\bin\\ffprobe.exe";
-const FFMPEG_PATH = "E:\\Tools\\ffmpeg\\bin\\ffmpeg.exe";
-const EDGE_PATH = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
+const FFPROBE_PATH = process.env.FFPROBE_PATH || "ffprobe";
+const FFMPEG_PATH = process.env.FFMPEG_PATH || "ffmpeg";
+const EDGE_PATH = process.env.EDGE_PATH;
 
 const DEEPSEEK_KEY = process.env.LOCAL_DRAMA_LLM_API_KEY || "sk-6f59214c02694a8cbe4808c111554ba1";
 
@@ -281,7 +281,7 @@ async function runTest() {
     await importRailBtn.click();
     await page.waitForTimeout(1000);
 
-    const storyFilePath = "F:\\AI_Projects\\h3\\local_drama_studio\\work\\real_e2e_story.txt";
+    const storyFilePath = path.resolve("work", "real_e2e_story.txt");
     const pathInput = page.locator("input[placeholder*='episode-01']");
     await pathInput.waitFor({ state: "visible", timeout: 10000 });
     await pathInput.fill(storyFilePath);

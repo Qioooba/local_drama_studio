@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
-import type { DirectorDeskShotNavItem } from "./types";
+import type { ShotStudioShotNavItem } from "../../generated/api";
 import { ShotNavigator } from "./ShotNavigator";
 
 const shotEdit = vi.hoisted(() => ({
@@ -17,7 +17,7 @@ vi.mock("../episode-plan-v2/shotEditingApi", () => ({
   commitShotEdit: shotEdit.commit,
 }));
 
-function shot(id: string, code: string, thumbnail: string | null = null): DirectorDeskShotNavItem {
+function shot(id: string, code: string, thumbnail: string | null = null): ShotStudioShotNavItem {
   return {
     id, code, order_key: code, scene_id: "scene-1", scene_code: "SC01", scene_title: "屋内",
     group_id: null, group_code: null, group_title: null, thumbnail_media_version_id: thumbnail, current_video_media_version_id: null,
@@ -82,8 +82,8 @@ describe("ShotNavigator", () => {
 
     fireEvent.click(screen.getByLabelText("选择镜头 S01"));
     fireEvent.click(screen.getByLabelText("选择镜头 S02"));
-    expect(screen.getByRole("link", { name: "审核入口" }).getAttribute("href")).toBe("/projects/p1/episodes/e1/review");
-    expect(screen.getByRole("link", { name: "生产入口" }).getAttribute("href")).toBe("/projects/p1/episodes/e1/run");
+    expect(screen.getByRole("link", { name: "审核入口" }).getAttribute("href")).toBe("/projects/p1/episodes/e1/post/review");
+    expect(screen.getByRole("link", { name: "生产入口" }).getAttribute("href")).toBe("/projects/p1/episodes/e1/production");
     expect(screen.getByText("2 已选")).toBeTruthy();
   });
 
@@ -106,13 +106,13 @@ describe("ShotNavigator", () => {
     fireEvent.click(screen.getByLabelText("选择镜头 S03"));
     fireEvent.click(screen.getByRole("button", { name: "逐镜处理" }));
     await waitFor(() => expect(screen.getByTestId("location-probe").textContent).toMatch(
-      /^\/projects\/p1\/episodes\/e1\/direct\/s2\?batch=ref%3A[^&]+&batchIndex=0$/,
+      /^\/projects\/p1\/episodes\/e1\/studio\/s2\?batch=ref%3A[^&]+&batchIndex=0$/,
     ));
     expect(screen.getByTestId("location-probe").textContent).not.toContain("s2%2Cs3");
   });
 
   it("restores the selected checkboxes from an existing batch URL", async () => {
-    renderNavigator("/projects/p1/episodes/e1/direct/s2?batch=s1%2Cs2&batchIndex=1");
+    renderNavigator("/projects/p1/episodes/e1/studio/s2?batch=s1%2Cs2&batchIndex=1");
     await waitFor(() => expect(screen.getByText("2 已选")).toBeTruthy());
     expect((screen.getByLabelText("选择镜头 S01") as HTMLInputElement).checked).toBe(true);
     expect((screen.getByLabelText("选择镜头 S02") as HTMLInputElement).checked).toBe(true);

@@ -5,13 +5,15 @@ import subprocess
 
 from fastapi.testclient import TestClient
 
-from local_drama.application.canvas import ProductionCanvasService
 from local_drama.application.g8_readiness import G8ReadinessService
 from local_drama.application.g9_readiness import G9ReadinessService
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
 from local_drama.application.timeline import TimelineService
+from local_drama.application.dialogue import DialogueService
+from local_drama.infrastructure.database.audio_repository import SqliteAudioWorkspaceRepository
 from local_drama.application.timeline_status import TimelineStatusService
+from local_drama.application.visual_labs import VisualLabService
 from local_drama.main import create_app
 
 
@@ -102,7 +104,7 @@ def test_g8_counts_timeline_shots_for_generation_variant_owned_videos(workspace,
 
     audio_source = workspace.work_root / "g8-timeline-audio.wav"
     subprocess.run(
-        [workspace.ffmpeg_path, "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-y", str(audio_source)],
+        [workspace.ffmpeg_path, "-f", "lavfi", "-i", "sine=frequency=440:duration=3", "-y", str(audio_source)],
         check=True, capture_output=True,
     )
     audio = MediaService(database, workspace).import_file(
@@ -112,13 +114,21 @@ def test_g8_counts_timeline_shots_for_generation_variant_owned_videos(workspace,
     license_path = project_root / "00_admin" / "licenses" / "g8-audio.json"
     license_path.parent.mkdir(parents=True, exist_ok=True)
     license_path.write_text('{"owner":"test"}', encoding="utf-8")
-    bindings = [
-        timeline_service.bind_audio(
-            str(episode["id"]), str(audio["media_version_id"]), track_type, 0, 1_000_000,
-            license_evidence_path_rel="00_admin/licenses/g8-audio.json",
+    audio_repository = SqliteAudioWorkspaceRepository(database, workspace)
+    bindings = []
+    for mix_revision, track_type in enumerate(("BGM", "SFX")):
+        result = audio_repository.create_track(
+            str(episode["id"]),
+            {"media_version_id": str(audio["media_version_id"]), "track_kind": track_type, "start_us": 0, "end_us": 1_000_000, "gain_db": 0, "license_status": "VERIFIED_LOCAL", "license_evidence_path_rel": "00_admin/licenses/g8-audio.json", "loop_enabled": False, "fade_in_us": 0, "fade_out_us": 0, "expected_mix_revision": mix_revision, "idempotency_key": f"g8-status:{track_type}"},
+            actor="test",
         )
-        for track_type in ("DIALOGUE", "BGM", "SFX")
-    ]
+        bindings.append({**result, "track_type": result["track_kind"]})
+    dialogue = DialogueService(database, workspace, media=MediaService(database, workspace))
+    line = dialogue.create_line(str(episode["id"]), code="DLG-001", speaker="甲", text="测试对白", pronunciation={}, shot_id=str(shots[0]["id"]))
+    voice = dialogue.create_voice_profile(str(project["id"]), code="G8_VOICE", title="G8 voice", voice_ref="local:g8", license_status="USER_OWNED", license_evidence_path_rel="00_admin/licenses/g8-audio.json")
+    candidate = dialogue.register_candidate(str(line["text_revisions"][-1]["id"]), voice_profile_version_id=str(voice["id"]), media_version_id=str(audio["media_version_id"]), emotion="NEUTRAL", speech_rate=1.0, seed=7, model_ref="IMPORTED_LOCAL_AUDIO", candidate_kind="PREVIEW")
+    dialogue.select_candidate(str(candidate["id"]))
+    dialogue_item = {"id": str(line["id"]), "candidate_id": str(candidate["id"]), "track_type": "DIALOGUE", "media_version_id": str(audio["media_version_id"])}
     # Merely creating episode bindings must not claim that the already-frozen
     # revision rendered them.
     bindings_only = G8ReadinessService(database).inspect(str(project["id"]), str(episode["id"]))
@@ -126,7 +136,7 @@ def test_g8_counts_timeline_shots_for_generation_variant_owned_videos(workspace,
 
     timeline_service.create_timeline_revision(
         str(episode["id"]),
-        [*video_items, *[
+        [*video_items, {"track_type": "DIALOGUE", "media_version_id": dialogue_item["media_version_id"], "start_us": 0, "end_us": 1_000_000, "parameters": {"dialogue_line_id": dialogue_item["id"], "tts_candidate_id": dialogue_item["candidate_id"]}}, *[
             {"track_type": binding["track_type"], "media_version_id": binding["media_version_id"], "start_us": 0, "end_us": 1_000_000, "parameters": {"audio_binding_id": binding["id"]}}
             for binding in bindings
         ]],
@@ -145,7 +155,7 @@ def test_g9_readiness_separates_production_facts_from_scale_fixture(workspace, d
     result = G9ReadinessService(database).inspect(str(project["id"]), str(episode["id"]))
 
     assert result["status"] == "IN_PROGRESS"
-    assert result["next_required_action"] == "PREFLIGHT_PERSISTENCE"
+    assert result["next_required_action"] == "PRODUCTION_GRID_HAS_SHOTS"
     assert result["evidence"]["production_total_shots"] == 0
     assert "fixture" in result["evidence"]["automated_fixture"]
     assert result["runtime_contacted"] is False
@@ -160,8 +170,10 @@ def test_g9_readiness_requires_matching_three_viewport_browser_evidence(workspac
     episode = service.list_episodes(str(season["id"]))[0]
     for number in range(1, 21):
         service.create_shot(str(episode["id"]), f"S{number:03d}", 1000, "SCALE_UAT")
-    graph = ProductionCanvasService(database).graph("EPISODE", str(episode["id"]), cursor=0, limit=300)
-    ProductionCanvasService(database).preflight("EPISODE", str(episode["id"]), "NODE", graph["nodes"][0]["id"], None, 1)
+    lab_service = VisualLabService(database, workspace)
+    document = lab_service.create(str(project["id"]), "g9-evidence", "G9 Evidence", str(episode["id"]))
+    lab_service.add_node(str(document["id"]), {"node_kind": "NOTE", "position_x": 0, "position_y": 0, "width": 260, "height": 180, "content": {"title": "UAT"}, "expected_topology_revision": 1})
+    lab_service.snapshot(str(document["id"]))
     evidence_root = tmp_path / "g9"
     evidence_root.mkdir()
     base = {
@@ -174,35 +186,23 @@ def test_g9_readiness_requires_matching_three_viewport_browser_evidence(workspac
         "network_contacted": False,
     }
     performance_viewports = [
-        {"viewport": viewport, "status": "PASS", "node_count": 100, "horizontal_overflow_px": 0, "console_errors": [], "page_errors": [], "failed_responses": []}
+        {"viewport": viewport, "status": "PASS", "surface": "PRODUCTION_COCKPIT", "keyboard_accessible": True, "horizontal_page_overflow_px": 0, "console_errors": [], "page_errors": [], "failed_responses": []}
         for viewport in ("1440x900", "1280x800", "1024x768")
     ]
-    accessibility_viewports = [
-        {
-            "viewport": viewport,
-            "status": "PASS",
-            "semantic_canvas": True,
-            "keyboard_node_list": True,
-            "search_filter": True,
-            "route_synchronized_selection": True,
-            "selected_state": True,
-            "horizontal_overflow_px": 0,
-            "console_errors": [],
-            "page_errors": [],
-            "failed_responses": [],
-        }
+    lab_viewports = [
+        {"viewport": viewport, "status": "PASS", "surface": "VISUAL_LAB", "keyboard_accessible": True, "horizontal_page_overflow_px": 0, "console_errors": [], "page_errors": [], "failed_responses": []}
         for viewport in ("1440x900", "1280x800", "1024x768")
     ]
-    (evidence_root / "g9-production-canvas-uat-2026-08-15.json").write_text(
+    (evidence_root / "g9-production-cockpit-uat.json").write_text(
         json.dumps({**base, "viewports": performance_viewports}), encoding="utf-8"
     )
-    (evidence_root / "g9-production-accessibility-uat-2026-08-15.json").write_text(
-        json.dumps({**base, "viewports": accessibility_viewports}), encoding="utf-8"
+    (evidence_root / "g9-visual-lab-uat.json").write_text(
+        json.dumps({**base, "viewports": lab_viewports}), encoding="utf-8"
     )
 
     result = G9ReadinessService(database, evidence_root=evidence_root).inspect(str(project["id"]), str(episode["id"]))
 
     assert result["status"] == "PASS"
     assert result["next_required_action"] is None
-    assert result["evidence"]["performance_uat"] is not None
-    assert result["evidence"]["accessibility_route_uat"] is not None
+    assert result["evidence"]["production_cockpit_uat"] is not None
+    assert result["evidence"]["visual_lab_uat"] is not None

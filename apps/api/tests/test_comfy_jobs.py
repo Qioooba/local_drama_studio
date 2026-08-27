@@ -58,6 +58,12 @@ def test_poll_maps_live_comfy_queue_state_before_history_exists(workspace, datab
     assert service.poll_attempt(attempt_id, "worker-1")["status"] == "PROVIDER_UNCONFIRMED"
 
 
+def _iso_utc_minutes_ago(minutes: int) -> str:
+    from datetime import UTC, datetime, timedelta
+
+    return (datetime.now(UTC) - timedelta(minutes=minutes)).isoformat()
+
+
 def test_poll_closes_attempt_when_comfy_runtime_dies(workspace, database, monkeypatch) -> None:
     service, attempt_id = _active_attempt(workspace, database)
 
@@ -77,6 +83,79 @@ def test_poll_closes_attempt_when_comfy_runtime_dies(workspace, database, monkey
     assert row["error_code"] == "COMFY_RUNTIME_UNAVAILABLE"
     assert row["job_state"] == "QUEUED"
     assert row["last_error_code"] == "COMFY_RUNTIME_UNAVAILABLE"
+
+
+def test_poll_survives_busy_comfy_runtime_within_grace(workspace, database, monkeypatch) -> None:
+    service, attempt_id = _active_attempt(workspace, database)
+
+    def busy(_prompt_id: str) -> dict[str, object]:
+        raise DomainRuleError("COMFY_LOOPBACK_UNAVAILABLE", "busy", {"reason": "URLError", "cause": "TimeoutError"})
+
+    monkeypatch.setattr(service.comfy, "history", busy)
+    first = service.poll_attempt(attempt_id, "worker-1")
+    assert first["status"] == "RUNNING"
+    assert first["runtime_busy"] is True
+    second = service.poll_attempt(attempt_id, "worker-1")
+    assert second["status"] == "RUNNING"
+    with database.connect() as connection:
+        events = connection.execute(
+            "SELECT COUNT(*) FROM provider_execution_events WHERE job_attempt_id=? AND event_type='PROVIDER_BUSY'",
+            (attempt_id,),
+        ).fetchone()[0]
+        state = connection.execute("SELECT state FROM job_attempts WHERE id=?", (attempt_id,)).fetchone()[0]
+    assert events == 1
+    assert state == "RUNNING"
+    with database.transaction() as connection:
+        connection.execute(
+            "UPDATE provider_execution_events SET occurred_at=? "
+            "WHERE job_attempt_id=? AND event_type='PROVIDER_BUSY'",
+            (_iso_utc_minutes_ago(31), attempt_id),
+        )
+    expired = service.poll_attempt(attempt_id, "worker-1")
+    assert expired["status"] == "FAILED"
+    with database.connect() as connection:
+        row = connection.execute("SELECT error_code FROM job_attempts WHERE id=?", (attempt_id,)).fetchone()
+    assert row["error_code"] == "COMFY_RUNTIME_UNAVAILABLE"
+
+
+def test_busy_grace_clock_resets_after_runtime_responds(workspace, database, monkeypatch) -> None:
+    service, attempt_id = _active_attempt(workspace, database)
+
+    def busy(_prompt_id: str) -> dict[str, object]:
+        raise DomainRuleError("COMFY_LOOPBACK_UNAVAILABLE", "busy", {"reason": "URLError", "cause": "TimeoutError"})
+
+    monkeypatch.setattr(service.comfy, "history", busy)
+    assert service.poll_attempt(attempt_id, "worker-1")["status"] == "RUNNING"
+    # The runtime answers again between busy stretches: a normal RUNNING poll
+    # must restart the continuous-busy window instead of letting the first
+    # busy timestamp eventually fail the attempt.
+    monkeypatch.setattr(service.comfy, "history", lambda prompt_id: {prompt_id: {"status": {"status_str": "running"}}})
+    answered = service.poll_attempt(attempt_id, "worker-1")
+    assert answered["status"] == "running"
+    monkeypatch.setattr(service.comfy, "history", busy)
+    recovered = service.poll_attempt(attempt_id, "worker-1")
+    assert recovered["status"] == "RUNNING"
+    with database.connect() as connection:
+        stamps = connection.execute(
+            "SELECT occurred_at FROM provider_execution_events WHERE job_attempt_id=? AND event_type='PROVIDER_BUSY' ORDER BY sequence_no",
+            (attempt_id,),
+        ).fetchall()
+    assert len(stamps) == 2
+    assert stamps[1]["occurred_at"] > stamps[0]["occurred_at"]
+
+
+def test_poll_closes_attempt_immediately_on_connection_refused(workspace, database, monkeypatch) -> None:
+    service, attempt_id = _active_attempt(workspace, database)
+
+    def refused(_prompt_id: str) -> dict[str, object]:
+        raise DomainRuleError("COMFY_LOOPBACK_UNAVAILABLE", "refused", {"reason": "URLError", "cause": "ConnectionRefusedError"})
+
+    monkeypatch.setattr(service.comfy, "history", refused)
+    result = service.poll_attempt(attempt_id, "worker-1")
+    assert result["status"] == "FAILED"
+    with database.connect() as connection:
+        row = connection.execute("SELECT state FROM job_attempts WHERE id=?", (attempt_id,)).fetchone()
+    assert row["state"] == "FAILED"
 
 
 def test_background_recovery_finds_provider_success_without_manual_attempt_id(workspace, database, monkeypatch) -> None:

@@ -8,10 +8,13 @@ import uuid
 from fastapi.testclient import TestClient
 
 from local_drama.application.breakdown_apply import BreakdownApplyService
-from local_drama.application.director_desk import DirectorDeskReadModelService
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
 from local_drama.application.shot_groups import ShotGroupService
+from local_drama.application.shot_studio import ShotStudioQueryService
+from local_drama.application.timeline import TimelineService
+from local_drama.infrastructure.database.shot_studio_command_repository import shot_studio_command_service
+from local_drama.infrastructure.database.shot_studio_repository import SqliteShotStudioReadRepository
 from local_drama.main import create_app
 from tests.test_breakdown_apply import _persisted_draft
 from tests.test_generation_variants import _project
@@ -19,6 +22,10 @@ from tests.test_qc_auto_reroll_policy import _child
 from tests.test_qc_auto_reroll_policy import _context as _generation_context
 
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+
+
+def _studio(database) -> ShotStudioQueryService:
+    return ShotStudioQueryService(SqliteShotStudioReadRepository(database))
 
 
 def _project_episode(workspace, database, code: str):
@@ -36,17 +43,29 @@ def test_director_desk_uses_authoritative_scene_group_and_excludes_archived(work
     projects.bind_episode_scene_range(episode_id, str(real_scene["id"]), 1, 10, 40, "第一场")
     active = projects.create_shot(episode_id, "SHOT_001", 2400, "MEDIUM")
     archived = projects.create_shot(episode_id, "SHOT_SPLIT_PARENT", 3000, "WIDE")
-    projects.create_shot_revision(str(active["id"]), {
-        "scene_id": "legacy-scene-must-not-win", "group_id": "legacy-group-must-not-win", "source_text": "原文证据",
-    })
+    shot_studio_command_service(database).save_draft_revision(
+        str(active["id"]),
+        {
+            "scene_id": "legacy-scene-must-not-win",
+            "group_id": "legacy-group-must-not-win",
+            "source_text": "原文证据",
+        },
+    )
     active = projects.get_shot(str(active["id"]))
     groups = ShotGroupService(database)
     groups.assign_scene(
-        shot_id=str(active["id"]), scene_id=str(real_scene["id"]), expected_revision=int(active["revision"]),
+        shot_id=str(active["id"]),
+        scene_id=str(real_scene["id"]),
+        expected_revision=int(active["revision"]),
     )
     group = groups.create_group(
-        episode_id=episode_id, kind="BEAT", code="BEAT_001", title="真实节拍", scene_id=str(real_scene["id"]),
-        metadata={}, order_key=None,
+        episode_id=episode_id,
+        kind="BEAT",
+        code="BEAT_001",
+        title="真实节拍",
+        scene_id=str(real_scene["id"]),
+        metadata={},
+        order_key=None,
     )
     groups.replace_members(group_id=str(group["id"]), shot_ids=[str(active["id"])], expected_revision=int(group["revision"]))
     with database.transaction() as connection:
@@ -57,59 +76,84 @@ def test_director_desk_uses_authoritative_scene_group_and_excludes_archived(work
 
     with TestClient(create_app(workspace)) as client:
         response = client.get(
-            f"/api/v1/projects/{project_id}/episodes/{episode_id}/director-desk",
-            params={"shot_id": str(active["id"])},
+            f"/api/v2/episodes/{episode_id}/shots/{active['id']}/studio",
         )
     assert response.status_code == 200
     body = response.json()
+    assert body["request_shape"] == "bounded_shot_studio_v2"
+    assert body["allowed_actions"]["write_review_decision"] is False
+    assert body["review_handoff"]["write_owner"] == "REVIEW_WORKSPACE"
+    assert "permissions" not in body
     assert body["episode"]["shot_count"] == 1
     assert body["shot_nav"]["total"] == 1
     assert [item["id"] for item in body["shot_nav"]["items"]] == [active["id"]]
     nav = body["shot_nav"]["items"][0]
     assert (nav["scene_id"], nav["scene_code"], nav["scene_title"]) == (
-        real_scene["id"], "SCENE_REAL", "真实场景",
+        real_scene["id"],
+        "SCENE_REAL",
+        "真实场景",
     )
     assert (nav["group_id"], nav["group_code"], nav["group_title"]) == (
-        group["id"], "BEAT_001", "真实节拍",
+        group["id"],
+        "BEAT_001",
+        "真实节拍",
     )
     assert body["current_shot"]["shot"]["scene_id"] == real_scene["id"]
     assert body["current_shot"]["source_context"]["scene_id"] == real_scene["id"]
     assert body["current_shot"]["source_context"]["source_range"]["source_start"] == 10
 
 
-def test_director_desk_requires_explicit_shot_selection(workspace, database) -> None:
+def test_legacy_director_desk_read_route_is_retired(workspace, database) -> None:
     project, episode, projects = _project_episode(workspace, database, "director_explicit_shot")
     projects.create_shot(str(episode["id"]), "SHOT_001", 2400, "MEDIUM")
 
     with TestClient(create_app(workspace)) as client:
-        response = client.get(
-            f"/api/v1/projects/{project['id']}/episodes/{episode['id']}/director-desk"
-        )
+        response = client.get(f"/api/v1/projects/{project['id']}/episodes/{episode['id']}/director-desk")
 
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "DIRECTOR_SHOT_REQUIRED"
+    assert response.status_code == 404
+
+
+def test_openapi_exposes_only_the_typed_shot_studio_read_contract(workspace) -> None:
+    schema = create_app(workspace).openapi()
+    assert "/api/v2/episodes/{episode_id}/shots/{shot_id}/studio" in schema["paths"]
+    assert "/api/v1/projects/{project_id}/episodes/{episode_id}/director-desk" not in schema["paths"]
+    operation = schema["paths"]["/api/v2/episodes/{episode_id}/shots/{shot_id}/studio"]["get"]
+    assert operation["operationId"] == "getShotStudioV2"
+    assert operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/ShotStudioResponse")
 
 
 def test_director_desk_suggests_grounded_scene_and_previous_shot_context(workspace, database) -> None:
     project, episode, projects = _project_episode(workspace, database, "director_intent_suggestions")
     scene = projects.create_scene(
-        str(project["id"]), "LIGHTHOUSE_NIGHT", "海边旧灯塔", location="灯塔内", time_of_day="夜景",
+        str(project["id"]),
+        "LIGHTHOUSE_NIGHT",
+        "海边旧灯塔",
+        location="灯塔内",
+        time_of_day="夜景",
     )
     previous = projects.create_shot(str(episode["id"]), "SHOT_001", 2400, "MEDIUM")
     current = projects.create_shot(str(episode["id"]), "SHOT_002", 2400, "CLOSEUP")
-    previous_revision = projects.create_shot_revision(str(previous["id"]), {
-        "environment": "冷色调，雾气弥漫",
-        "continuity": "男主身着风衣，左肩受伤",
-        "performance": {"blocking_summary": "男主站在窗边"},
-    })
+    previous_revision = shot_studio_command_service(database).save_draft_revision(
+        str(previous["id"]),
+        {
+            "environment": "冷色调，雾气弥漫",
+            "continuity": "男主身着风衣，左肩受伤",
+            "performance": {"blocking_summary": "男主站在窗边"},
+        },
+    )
     with database.transaction() as connection:
         connection.execute("UPDATE shots SET scene_id=? WHERE id IN (?,?)", (scene["id"], previous["id"], current["id"]))
-    projects.create_shot_revision(str(current["id"]), {
-        "suggestion_sources": {"continuity": {"source_revision": previous_revision["id"]}},
-    })
+    shot_studio_command_service(database).save_draft_revision(
+        str(current["id"]),
+        {
+            "suggestion_sources": {"continuity": {"source_revision": previous_revision["id"]}},
+        },
+    )
 
-    result = DirectorDeskReadModelService(database).get(
-        str(project["id"]), str(episode["id"]), str(current["id"]), nav_radius=2,
+    result = _studio(database).studio(
+        str(episode["id"]),
+        str(current["id"]),
+        nav_radius=2,
     )
     suggestions = result["current_shot"]["intent_suggestions"]
     assert suggestions["environment"]["value"] == "灯塔内；夜景"
@@ -122,9 +166,11 @@ def test_director_desk_suggests_grounded_scene_and_previous_shot_context(workspa
     assert suggestions["continuity"]["value"] == "男主身着风衣，左肩受伤；环境：冷色调，雾气弥漫；站位：男主站在窗边"
     assert suggestions["continuity"]["stale"] is False
 
-    projects.create_shot_revision(str(previous["id"]), {"continuity": "男主已放下风衣"})
-    refreshed = DirectorDeskReadModelService(database).get(
-        str(project["id"]), str(episode["id"]), str(current["id"]), nav_radius=2,
+    shot_studio_command_service(database).save_draft_revision(str(previous["id"]), {"continuity": "男主已放下风衣"})
+    refreshed = _studio(database).studio(
+        str(episode["id"]),
+        str(current["id"]),
+        nav_radius=2,
     )
     assert refreshed["current_shot"]["intent_suggestions"]["continuity"]["stale"] is True
     assert "上一镜版本已更新" in refreshed["current_shot"]["intent_suggestions"]["continuity"]["stale_reason"]
@@ -138,8 +184,10 @@ def test_director_desk_maps_applied_breakdown_shot_to_grounded_script_suggestion
             "SELECT id FROM shots WHERE episode_id=? AND code='EPISODE_001-01-01'",
             (episode["id"],),
         ).fetchone()
-    result = DirectorDeskReadModelService(database).get(
-        str(project["id"]), str(episode["id"]), str(shot["id"]), nav_radius=2,
+    result = _studio(database).studio(
+        str(episode["id"]),
+        str(shot["id"]),
+        nav_radius=2,
     )
     suggestion = result["current_shot"]["intent_suggestions"]["script"]
     assert suggestion["subject_action"] == "开门"
@@ -155,8 +203,13 @@ def test_director_desk_contract_handles_empty_revision_and_stale_candidate(works
     source = workspace.work_root / "director-candidate.png"
     source.write_bytes(PNG)
     imported = MediaService(database, workspace).import_file(
-        context["project_id"], source, purpose="CANDIDATE", owner_type="GENERATION_VARIANT",
-        owner_id=context["variant_id"], media_kind="IMAGE", stage="KEYFRAME",
+        context["project_id"],
+        source,
+        purpose="CANDIDATE",
+        owner_type="GENERATION_VARIANT",
+        owner_id=context["variant_id"],
+        media_kind="IMAGE",
+        stage="KEYFRAME",
     )
     with database.transaction() as connection:
         connection.execute(
@@ -165,8 +218,7 @@ def test_director_desk_contract_handles_empty_revision_and_stale_candidate(works
         )
     with TestClient(create_app(workspace)) as client:
         response = client.get(
-            f"/api/v1/projects/{context['project_id']}/episodes/{context['episode_id']}/director-desk",
-            params={"shot_id": context["shot_id"]},
+            f"/api/v2/episodes/{context['episode_id']}/shots/{context['shot_id']}/studio",
         )
     assert response.status_code == 200
     body = response.json()
@@ -185,45 +237,57 @@ def test_director_desk_latest_selection_supersedes_history_and_undo_reloads(work
     older_source.write_bytes(PNG + b"older")
     newer_source.write_bytes(PNG + b"newer")
     older = MediaService(database, workspace).import_file(
-        context["project_id"], older_source, purpose="CANDIDATE", owner_type="GENERATION_VARIANT",
-        owner_id=context["variant_id"], media_kind="IMAGE", stage="KEYFRAME",
+        context["project_id"],
+        older_source,
+        purpose="CANDIDATE",
+        owner_type="GENERATION_VARIANT",
+        owner_id=context["variant_id"],
+        media_kind="IMAGE",
+        stage="KEYFRAME",
     )
     newer_variant_id = _child(database, context, context["variant_id"], 2)
     newer = MediaService(database, workspace).import_file(
-        context["project_id"], newer_source, purpose="CANDIDATE", owner_type="GENERATION_VARIANT",
-        owner_id=newer_variant_id, media_kind="IMAGE", stage="KEYFRAME",
+        context["project_id"],
+        newer_source,
+        purpose="CANDIDATE",
+        owner_type="GENERATION_VARIANT",
+        owner_id=newer_variant_id,
+        media_kind="IMAGE",
+        stage="KEYFRAME",
     )
 
-    desk_url = f"/api/v1/projects/{context['project_id']}/episodes/{context['episode_id']}/director-desk"
+    desk_url = f"/api/v2/episodes/{context['episode_id']}/shots/{context['shot_id']}/studio"
     with TestClient(create_app(workspace)) as client:
         for media_version_id in (newer["media_version_id"], older["media_version_id"]):
-            selected = client.post(
-                f"/api/v1/media-versions/{media_version_id}:select", json={"selection_type": "KEYFRAME"},
-            )
+            selected = client.post(f"/api/v2/media-versions/{media_version_id}:adopt")
             assert selected.status_code == 200, selected.text
-        restored_old = client.get(desk_url, params={"shot_id": context["shot_id"]}).json()["current_shot"]
+        restored_old = client.get(desk_url).json()["current_shot"]
         assert restored_old["current_media"]["media_version_id"] == older["media_version_id"]
         assert restored_old["selected_variant"]["id"] == context["variant_id"]
         assert [item["media_version_id"] for item in restored_old["candidates"] if item["selected"]] == [older["media_version_id"]]
 
-        undo = client.post(
-            f"/api/v1/media-versions/{newer['media_version_id']}:select", json={"selection_type": "KEYFRAME"},
-        )
+        undo = client.post(f"/api/v2/media-versions/{newer['media_version_id']}:adopt")
         assert undo.status_code == 200, undo.text
-        restored_new = client.get(desk_url, params={"shot_id": context["shot_id"]}).json()["current_shot"]
+        restored_new = client.get(desk_url).json()["current_shot"]
         assert restored_new["current_media"]["media_version_id"] == newer["media_version_id"]
         assert restored_new["selected_variant"]["id"] == newer_variant_id
         assert [item["media_version_id"] for item in restored_new["candidates"] if item["selected"]] == [newer["media_version_id"]]
 
     with database.connect() as connection:
-        history_count = connection.execute(
-            """SELECT COUNT(*) FROM selections se JOIN media_versions mv ON mv.id=se.media_version_id
-            JOIN media_assets ma ON ma.id=mv.media_asset_id
-            JOIN generation_variants gv ON gv.id=ma.owner_id JOIN generation_intents gi ON gi.id=gv.intent_id
-            WHERE gi.owner_type='SHOT' AND gi.owner_id=? AND se.selection_type='KEYFRAME'""",
+        slot = connection.execute(
+            """SELECT id,slot_type,media_version_id,revision FROM shot_working_media_slots
+            WHERE shot_id=? AND slot_type='KEYFRAME'""",
             (context["shot_id"],),
+        ).fetchone()
+        audit_count = connection.execute(
+            """SELECT COUNT(*) FROM audit_events
+            WHERE action='SHOT_WORKING_VERSION_ADOPTED' AND subject_id=?""",
+            (slot["id"],),
         ).fetchone()[0]
-    assert history_count == 3
+    assert slot["slot_type"] == "KEYFRAME"
+    assert slot["media_version_id"] == newer["media_version_id"]
+    assert slot["revision"] == 3
+    assert audit_count == 3
 
 
 def test_director_desk_navigator_exposes_only_selected_video_for_timeline(workspace, database) -> None:
@@ -231,31 +295,38 @@ def test_director_desk_navigator_exposes_only_selected_video_for_timeline(worksp
     image_source = workspace.work_root / "director-nav-image.png"
     image_source.write_bytes(PNG)
     image = MediaService(database, workspace).import_file(
-        context["project_id"], image_source, purpose="KEYFRAME", owner_type="GENERATION_VARIANT",
-        owner_id=context["variant_id"], media_kind="IMAGE", stage="KEYFRAME",
+        context["project_id"],
+        image_source,
+        purpose="KEYFRAME",
+        owner_type="GENERATION_VARIANT",
+        owner_id=context["variant_id"],
+        media_kind="IMAGE",
+        stage="KEYFRAME",
     )
     video_source = workspace.work_root / "director-nav-video.mp4"
     subprocess.run(
         [workspace.ffmpeg_path, "-f", "lavfi", "-i", "color=c=navy:s=160x90:d=1", "-pix_fmt", "yuv420p", "-an", "-y", str(video_source)],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
     video = MediaService(database, workspace).import_file(
-        context["project_id"], video_source, purpose="CANDIDATE", owner_type="GENERATION_VARIANT",
-        owner_id=context["variant_id"], media_kind="VIDEO", stage="PROXY",
+        context["project_id"],
+        video_source,
+        purpose="CANDIDATE",
+        owner_type="GENERATION_VARIANT",
+        owner_id=context["variant_id"],
+        media_kind="VIDEO",
+        stage="PROXY",
     )
 
-    desk_url = f"/api/v1/projects/{context['project_id']}/episodes/{context['episode_id']}/director-desk"
+    desk_url = f"/api/v2/episodes/{context['episode_id']}/shots/{context['shot_id']}/studio"
     with TestClient(create_app(workspace)) as client:
-        assert client.post(
-            f"/api/v1/media-versions/{image['media_version_id']}:select", json={"selection_type": "KEYFRAME"},
-        ).status_code == 200
-        image_only_nav = client.get(desk_url, params={"shot_id": context["shot_id"]}).json()["shot_nav"]["items"][0]
+        assert client.post(f"/api/v2/media-versions/{image['media_version_id']}:adopt").status_code == 200
+        image_only_nav = client.get(desk_url).json()["shot_nav"]["items"][0]
         assert image_only_nav["current_video_media_version_id"] is None
 
-        assert client.post(
-            f"/api/v1/media-versions/{video['media_version_id']}:select", json={"selection_type": "PROXY_WINNER"},
-        ).status_code == 200
-        video_nav = client.get(desk_url, params={"shot_id": context["shot_id"]}).json()["shot_nav"]["items"][0]
+        assert client.post(f"/api/v2/media-versions/{video['media_version_id']}:adopt").status_code == 200
+        video_nav = client.get(desk_url).json()["shot_nav"]["items"][0]
         assert video_nav["current_video_media_version_id"] == video["media_version_id"]
 
 
@@ -292,8 +363,10 @@ def test_director_desk_100_shots_has_bounded_queries_and_latency(workspace, data
 
     monkeypatch.setattr(database, "connect", traced_connect)
     started = time.perf_counter()
-    result = DirectorDeskReadModelService(database).get(
-        str(project["id"]), episode_id, shot_ids[50], nav_radius=12,
+    result = _studio(database).studio(
+        episode_id,
+        shot_ids[50],
+        nav_radius=12,
     )
     elapsed_ms = (time.perf_counter() - started) * 1000
     assert result["shot_nav"]["total"] == 100
@@ -303,8 +376,10 @@ def test_director_desk_100_shots_has_bounded_queries_and_latency(workspace, data
     assert elapsed_ms < 700, f"Director aggregate took {elapsed_ms:.1f}ms"
 
     statements.clear()
-    timeline = DirectorDeskReadModelService(database).timeline_selections(
-        str(project["id"]), episode_id, limit=500,
+    timeline = TimelineService(database, workspace).timeline_selections(
+        str(project["id"]),
+        episode_id,
+        limit=500,
     )
     assert timeline["total"] == 100
     assert len(timeline["items"]) == 100

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { notifyDraftDirty } from "../drafts/draftGuard";
 import {
   createFrameAnchor,
   createGenerationIntent,
@@ -32,7 +33,8 @@ import { MotionControlPanel } from "./MotionControlPanel";
 import { MediaPicker } from "../media-picker/MediaPicker";
 import { creatorProfileTitle } from "../preferences-v2/canonicalCapabilities";
 import { ProfileExecutionDetailButton } from "../model-config/ProfileExecutionDetailButton";
-import { MEDIA_STAGE_LABELS, optionLabel } from "../shared/optionLabels";
+import { MEDIA_STAGE_LABELS, optionLabel, statusLabel } from "../shared/optionLabels";
+import { composePromptFromIntent, deriveShotSeed } from "./generationDefaults";
 import "./generation-workbench.css";
 
 type Shot = Record<string, unknown>;
@@ -164,6 +166,15 @@ function formatEstimate(value: number | null, count: number, unit = ""): string 
   return `${total}${unit}`;
 }
 
+function formatStorageEstimate(value: number | null, count: number): string {
+  if (value === null) return "未声明";
+  const bytes = value * count;
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  if (bytes >= 1024 ** 2) return `${Math.round(bytes / 1024 ** 2)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${Math.round(bytes)} 字节`;
+}
+
 const frameActionLabels: Record<FrameAction, string> = {
   FIRST_FRAME: "首帧",
   CURRENT_FRAME: "当前帧",
@@ -174,43 +185,6 @@ const WORKBENCH_DRAFT_PREFIX = "local-drama:generation-workbench-draft:v1";
 
 export function generationWorkbenchDraftKey(projectId: string | null, shotId: string | null): string {
   return `${WORKBENCH_DRAFT_PREFIX}:${projectId ?? "no-project"}:${shotId ?? "no-shot"}`;
-}
-
-/** Stable per-shot seed derivation so consecutive shots never collide by
- *  default (Z-04). Deterministic to keep reproducibility when revisiting a shot. */
-export function deriveShotSeed(shotId: string | null, fallback = 42): number {
-  if (!shotId) return fallback;
-  let hash = 2166136261;
-  for (let index = 0; index < shotId.length; index += 1) {
-    hash ^= shotId.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  const seed = (hash >>> 0) % 900_000 + 100_000;
-  return Number.isFinite(seed) ? seed : fallback;
-}
-
-/** Compose a starting prompt from the structured shot intent so directors do
- *  not have to re-paste every take (Z-05). */
-export function composePromptFromIntent(fields: Record<string, unknown>, shotCode?: string | null): string {
-  const camera = fields.camera_plan && typeof fields.camera_plan === "object" ? fields.camera_plan as Record<string, unknown> : {};
-  const performance = fields.performance && typeof fields.performance === "object" ? fields.performance as Record<string, unknown> : {};
-  const parts: string[] = [];
-  if (shotCode) parts.push(`镜头 ${shotCode}`);
-  const action = typeof fields.subject_action === "string" ? fields.subject_action : "";
-  if (action) parts.push(action);
-  const intent = typeof fields.creative_intent === "string" ? fields.creative_intent : "";
-  if (intent) parts.push(`情绪基调：${intent}`);
-  const shotType = typeof camera.shot_type === "string" && camera.shot_type ? camera.shot_type : typeof fields.shot_type === "string" && fields.shot_type ? fields.shot_type : "";
-  if (shotType) parts.push(`景别 ${shotType}`);
-  const movement = typeof camera.movement === "string" && camera.movement && camera.movement !== "STATIC" ? camera.movement : "";
-  if (movement) parts.push(`运镜 ${movement}`);
-  const emotion = typeof performance.emotion === "string" && performance.emotion ? performance.emotion : "";
-  if (emotion) parts.push(`情绪 ${emotion}`);
-  const dialogue = Array.isArray(fields.dialogue)
-    ? fields.dialogue.map((line) => typeof line === "string" ? line : typeof line === "object" && line ? String((line as Record<string, unknown>).text ?? (line as Record<string, unknown>).speaker ?? "") : "").filter(Boolean).join("；")
-    : typeof fields.dialogue === "string" ? fields.dialogue : "";
-  if (dialogue) parts.push(`对白：${dialogue}`);
-  return parts.filter(Boolean).join("，");
 }
 
 function readWorkbenchDraft(projectId: string | null, shotId: string | null): Record<string, unknown> | null {
@@ -235,11 +209,11 @@ function readWorkbenchDraft(projectId: string | null, shotId: string | null): Re
 
 const readinessLabels: Record<string, string> = {
   APPROVED_KEYFRAME: "批准一张真实关键帧",
-  PUBLISHED_I2V_PROFILE: "用真实 I2V 成功证据发布能力",
-  FOUR_REAL_PROXY_TAKES: "从同一批准关键帧生成 4 个真实代理",
-  HUMAN_PROXY_WINNER: "由人工选择代理 winner",
-  FORMAL_VIDEO: "从 winner 生成正式视频",
-  FORMAL_MACHINE_QC: "正式视频通过机器 QC",
+  PUBLISHED_I2V_PROFILE: "用真实生成证据发布图片生成视频能力",
+  FOUR_REAL_PROXY_TAKES: "从同一批准关键帧生成 4 个真实预览候选",
+  HUMAN_PROXY_WINNER: "由人工选择最佳预览候选",
+  FORMAL_VIDEO: "从最佳候选生成正式视频",
+  FORMAL_MACHINE_QC: "正式视频通过机器检查",
   FORMAL_HUMAN_APPROVAL: "由人工完成正式审核批准",
 };
 
@@ -285,7 +259,6 @@ export function GenerationWorkbench({
   const [sourceImageId, setSourceImageId] = useState("");
   const [currentTimeSeconds, setCurrentTimeSeconds] = useState("0");
   const [draftAnchor, setDraftAnchor] = useState<FrameAnchor | null>(null);
-  const [frameAction, setFrameAction] = useState<FrameAction | null>(null);
   const [promptText, setPromptText] = useState("");
   const [timedDirectionsText, setTimedDirectionsText] = useState("[]");
   const [performanceBindingsText, setPerformanceBindingsText] = useState("[]");
@@ -399,8 +372,25 @@ export function GenerationWorkbench({
   };
 
   // Debounced best-effort draft persistence + dirty guard on leave.
+  const hasMeaningfulDraft = Boolean(promptText) || seedTouched || takeCountText !== "1" || mode !== "I2V";
   useEffect(() => {
-    const hasMeaningfulDraft = Boolean(promptText) || seedTouched || takeCountText !== "1" || mode !== "I2V";
+    const dirty = hasMeaningfulDraft && !submitted;
+    notifyDraftDirty(dirty, {
+      save: () => { persistWorkbenchDraft({}); return true; },
+      discard: () => {
+        try { window.localStorage.removeItem(generationWorkbenchDraftKey(projectId, selectedShotId)); }
+        catch { return false; }
+        setPromptText("");
+        setSeedText(String(deriveShotSeed(selectedShotId)));
+        setSeedTouched(false);
+        setTakeCountText("1");
+        setMode("I2V");
+        return true;
+      },
+    });
+    return () => notifyDraftDirty(false);
+  }, [hasMeaningfulDraft, mode, projectId, promptText, seedText, seedTouched, selectedShotId, submitted, takeCountText]);
+  useEffect(() => {
     if (!hasMeaningfulDraft) return;
     const timer = window.setTimeout(() => persistWorkbenchDraft({}), 400);
     return () => {
@@ -410,7 +400,6 @@ export function GenerationWorkbench({
   }, [mode, projectId, promptText, seedText, seedTouched, selectedShotId, takeCountText]);
 
   useEffect(() => {
-    const hasMeaningfulDraft = Boolean(promptText) || seedTouched || takeCountText !== "1" || mode !== "I2V";
     if (!hasMeaningfulDraft) return;
     const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
     window.addEventListener("beforeunload", beforeUnload);
@@ -496,7 +485,6 @@ export function GenerationWorkbench({
       if (action === "CURRENT_FRAME" && (!Number.isFinite(seconds) || seconds < 0)) {
         throw new Error("当前时间必须是大于或等于 0 的秒数");
       }
-      setFrameAction(action);
       return createFrameAnchor(
         sourceVideoId,
         action === "FIRST_FRAME"
@@ -522,7 +510,7 @@ export function GenerationWorkbench({
     mutationFn: async () => {
       if (!projectId || !selectedShotId || !selected) throw new Error("请先选择项目、镜头和可用生成能力");
       if (!promptText.trim()) throw new Error("镜头描述不能为空");
-      if (!Number.isInteger(seed)) throw new Error("Seed 必须是整数");
+      if (!Number.isInteger(seed)) throw new Error("随机种子必须是整数");
       if (!Number.isInteger(takeCount) || takeCount < 1 || takeCount > 8) throw new Error("候选数量必须是 1—8");
       if (requiresCamera && !cameraReady) throw new Error("当前生成能力不支持这个运镜设置");
       if (mode === "I2V" && !approvedKeyframeId) throw new Error("图片生成视频前需要选择本镜已批准关键帧");
@@ -693,7 +681,7 @@ export function GenerationWorkbench({
         .map((value) => Number(value.trim()))
         .filter((value) => Number.isInteger(value));
       if (seeds.length === 0 || seeds.length > 24 || new Set(seeds).size !== seeds.length) {
-        throw new Error("批量 seed 必须是 1—24 个不重复整数");
+        throw new Error("批量随机种子必须是 1—24 个不重复整数");
       }
       return deriveGenerationVariantSeedBatch(effectiveVariantId, { seeds, branch_reason: "UI_SEED_BATCH_EXPERIMENT" });
     },
@@ -981,8 +969,8 @@ export function GenerationWorkbench({
               {mode === "I2V" && initialSourceImageId && sourceImageId === initialSourceImageId && !approvedKeyframeIds.includes(initialSourceImageId) && (
                 <p className="review-guidance" role="status">
                   {approvedKeyframeId
-                    ? `已带入导演台 Frame Bridge 的锁定首帧，并匹配本镜头已批准 KEYFRAME ${approvedKeyframeId.slice(0, 12)}；I2V 将使用已批准版本。`
-                    : "已带入导演台 Frame Bridge 的锁定首帧；请先创建关键帧候选并完成人工批准，批准前不会提交 I2V。"}
+                    ? `已带入导演台锁定的首帧，并匹配本镜头已批准的关键帧 ${approvedKeyframeId.slice(0, 12)}；生成时将使用这个批准版本。`
+                    : "已带入导演台锁定的首帧；请先创建关键帧候选并完成人工批准，批准前不会提交视频生成。"}
                 </p>
               )}
               {sourceImageId && (
@@ -1093,8 +1081,8 @@ export function GenerationWorkbench({
               <span>本机运行环境：{h3?.status === "READY" ? "可用" : h3?.status ?? "未检查"}</span>
               <span>资源信息：{resourceStatus === "DECLARED" ? "完整" : resourceStatus === "PARTIAL" ? "部分可估算" : "由运行时检查"}</span>
               <span>预计时长：{formatEstimate(visiblePerTake.duration_seconds, takeCount, " 秒")}</span>
-              <span>预计显存：{formatEstimate(visiblePerTake.vram_bytes, takeCount, " bytes")}</span>
-              <span>预计磁盘：{formatEstimate(visiblePerTake.disk_bytes, takeCount, " bytes")}</span>
+              <span>预计显存：{formatStorageEstimate(visiblePerTake.vram_bytes, takeCount)}</span>
+              <span>预计磁盘：{formatStorageEstimate(visiblePerTake.disk_bytes, takeCount)}</span>
             </div>
 
             <div className="generation-submit-actions">
@@ -1234,7 +1222,7 @@ export function GenerationWorkbench({
                 <span>自定义可复现随机种子</span>
               </div>
               <label>候选数量<select value={seedBatchCount} onChange={(event) => { const count = Number(event.target.value); setSeedBatchCount(count); setSeedBatchText(Array.from({ length: count }, () => Math.floor(Math.random() * 900_000) + 100_000).join(",")); }}>{[2, 4, 6, 8].map((count) => <option key={count} value={count}>{count} 个可复现候选</option>)}</select></label>
-              <button type="button" className="secondary" onClick={() => setSeedBatchText(Array.from({ length: seedBatchCount }, () => Math.floor(Math.random() * 900_000) + 100_000).join(","))}>换一组随机 Seed</button>
+              <button type="button" className="secondary" onClick={() => setSeedBatchText(Array.from({ length: seedBatchCount }, () => Math.floor(Math.random() * 900_000) + 100_000).join(","))}>换一组随机种子</button>
               <details><summary>查看本组复现参数</summary><code>{seedBatchText.split(",").join(" · ")}</code></details>
               <button type="button" className="secondary" onClick={() => seedBatchMutation.mutate()} disabled={seedBatchMutation.isPending} style={{ marginLeft: 8 }}>
                 生成批量实验矩阵
@@ -1265,7 +1253,7 @@ export function GenerationWorkbench({
           <div className="stage-header">
             <div>
               <h3 id="stage-review-title">5. 候选对比与人工审核</h3>
-              <p>查看真实代理视频候选，选择 winner 与人工批准严格分离</p>
+              <p>查看真实预览视频候选；选出最佳候选和正式人工批准是两个独立步骤</p>
             </div>
             <span className="status-pill neutral">步骤 5 / 5</span>
           </div>
@@ -1274,10 +1262,10 @@ export function GenerationWorkbench({
             <div className="panel gate-readiness">
               <div className="panel-heading">
                 <div>
-                  <p className="eyebrow">退出就绪门禁</p>
-                  <h4>真实生成闭环门禁</h4>
+                  <p className="eyebrow">完成条件</p>
+                  <h4>正式生成流程检查</h4>
                 </div>
-                <span className={`status-pill${g6Readiness.status === "PASS" ? "" : " neutral"}`}>{g6Readiness.status}</span>
+                <span className={`status-pill${g6Readiness.status === "PASS" ? "" : " neutral"}`}>{statusLabel(g6Readiness.status, "待检查")}</span>
               </div>
               <ol className="gate-checks">
                 {g6Readiness.checks.map((check) => (
@@ -1346,9 +1334,9 @@ export function GenerationWorkbench({
             即将为镜头 <strong>{String(selectedShot?.code ?? selectedShotId)}</strong> 生成 <strong>{takeCount}</strong> 个候选。
           </p>
           <div style={{ background: "var(--surface-subtle, #14171f)", padding: 12, borderRadius: 6, fontSize: 13 }}>
-            <div><strong>生成方式：</strong>{mode}</div>
+            <div><strong>生成方式：</strong>{modes.find((item) => item.id === mode)?.title ?? "自定义生成"}</div>
             <div><strong>生成能力：</strong>{selected ? creatorProfileTitle(selected.title) : "—"}</div>
-            <div><strong>预计磁盘：</strong>{formatEstimate(visiblePerTake.disk_bytes, takeCount, " bytes")}</div>
+            <div><strong>预计磁盘：</strong>{formatStorageEstimate(visiblePerTake.disk_bytes, takeCount)}</div>
           </div>
           <p className="muted" style={{ fontSize: 12 }}>
             确认后任务会在本机后台执行；关闭页面不会中断，已有候选和历史记录不会被覆盖。

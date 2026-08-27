@@ -321,9 +321,10 @@ class WorkspaceAssetService:
 
     @staticmethod
     def _validate_watermark_config(config: dict[str, Any]) -> dict[str, Any]:
-        allowed = {"text", "position", "opacity", "font_size", "margin", "color"}
-        if not set(config).issubset(allowed) or not str(config.get("text", "")).strip():
-            raise DomainRuleError("INVALID_WATERMARK_PROFILE", "水印配置必须包含 text，且只能使用受支持字段")
+        allowed = {"enabled", "text", "position", "opacity", "font_size", "margin", "color"}
+        enabled = bool(config.get("enabled", True))
+        if not set(config).issubset(allowed) or (enabled and not str(config.get("text", "")).strip()):
+            raise DomainRuleError("INVALID_WATERMARK_PROFILE", "启用水印时必须包含 text，且只能使用受支持字段")
         position = str(config.get("position", "BOTTOM_RIGHT"))
         if position not in {"TOP_LEFT", "TOP_RIGHT", "BOTTOM_LEFT", "BOTTOM_RIGHT", "CENTER"}:
             raise DomainRuleError("WATERMARK_POSITION_INVALID", "水印位置不受支持")
@@ -338,7 +339,7 @@ class WorkspaceAssetService:
         color = str(config.get("color", "white"))
         if not color.strip():
             raise DomainRuleError("WATERMARK_CONFIG_INVALID", "水印颜色不能为空")
-        return {"text": str(config["text"]).strip(), "position": position, "opacity": opacity, "font_size": font_size, "margin": margin, "color": color}
+        return {"enabled": enabled, "text": str(config.get("text", "")).strip(), "position": position, "opacity": opacity, "font_size": font_size, "margin": margin, "color": color}
 
     @staticmethod
     def _validate_compliance_rules(rules: dict[str, Any]) -> dict[str, Any]:

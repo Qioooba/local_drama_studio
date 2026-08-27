@@ -56,7 +56,7 @@
 | `production/DirectorShotEditor.tsx` | 资产名称；主体动作；兼容运镜补充描述；对白；环境；连续性；创作意图 | 保留：镜头创作；资产编号和运镜模式已自动化 |
 | `production/EpisodeReviewPanel.tsx` | 备注/拒绝原因 | 保留：审核结论 |
 | `production/PromptTemplatePanel.tsx` | 标题；模板；展开结果；负向词 | 保留：明确的高级 Prompt 创作工作台 |
-| `production/StoryAssetLibraryPanel.tsx` | 名称；补充描述 | 保留：资产内容；描述已改为多行输入 |
+| `pages/AssetBiblePage.tsx` | 名称；补充描述 | 保留：资产内容；描述使用多行输入 |
 | `production/SubtitleRevisionPanel.tsx` | 字幕文本；模板名称 | 保留：字幕创作与模板命名；字体已改下拉 |
 | `profiles/LocalLLMConfigurationPanel.tsx` | 自定义 Base URL；自定义模型名；远端 API Key | 高级保留：只有选择“自定义”或远端服务时显示，预设用户只看事实 |
 | `profiles/ProfileConfigurationPanel.tsx` | 两处显示标题；撤销原因 | 保留：用户可读名称与审计原因；code/seed/prompt 已后台生成 |

@@ -1,13 +1,13 @@
 import { createStoryAssetReference, type AssetBibleItem, type StoryAssetReference } from "./api";
 import { requestJson as generatedRequestJson } from "../../generated/api";
 
-export type MultiViewKind = "FRONT" | "LEFT" | "RIGHT";
+export type MultiViewKind = "FRONT" | "LEFT" | "RIGHT" | "BACK" | "TOP" | "BOTTOM";
 export type MultiViewSettings = {
   asset_state_id: string | null;
   profile_version_id: string | null;
   consistency_strength: "LOW" | "MEDIUM" | "HIGH";
   background: "CLEAN" | "TRANSPARENT" | "ORIGINAL";
-  requested_slots?: MultiViewKind[];
+  requested_slots?: string[];
 };
 
 export type MultiViewBlocker = {

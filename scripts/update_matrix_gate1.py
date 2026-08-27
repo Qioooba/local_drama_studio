@@ -1,6 +1,7 @@
 import os
+from pathlib import Path
 
-MATRIX_PATH = r"F:\AI_Projects\h3\local_drama_studio\docs\evidence\ui-uat-2026-08-22\CONTROL_STATE_MATRIX.md"
+MATRIX_PATH = Path(__file__).resolve().parents[1] / "docs" / "evidence" / "ui-uat-2026-08-22" / "CONTROL_STATE_MATRIX.md"
 
 with open(MATRIX_PATH, "r", encoding="utf-8", errors="replace") as f:
     text = f.read()

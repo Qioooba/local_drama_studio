@@ -7,6 +7,7 @@ from local_drama.api.schemas.workflows import (
     H3CandidateWorkflowRequest,
     H3I2VCandidateWorkflowRequest,
     WorkflowCompileRequest,
+    WorkflowDefinitionInstantiateRequest,
     WorkflowPackageRequest,
     WorkflowPublishRequest,
     WorkflowRevokeRequest,
@@ -14,6 +15,7 @@ from local_drama.api.schemas.workflows import (
 from local_drama.application.comfy_jobs import ComfyGenerationService
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.h3_workflows import H3WorkflowFactory, production_tiers_payload
+from local_drama.application.workflow_definitions import WorkflowDefinitionService
 from local_drama.application.workflows import WorkflowService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.comfy import ComfyClient
@@ -27,11 +29,48 @@ def workflow_service(request: Request) -> WorkflowService:
 
 def comfy_client(request: Request) -> ComfyClient:
     settings = request.app.state.settings
-    return ComfyClient(settings.comfy_base_url, settings.comfy_output_root)
+    return ComfyClient(
+        settings.comfy_base_url,
+        settings.comfy_output_root,
+        allow_private_network=settings.allows_private_network,
+    )
 
 
 def comfy_service(request: Request) -> ComfyGenerationService:
     return ComfyGenerationService(request.app.state.database, request.app.state.settings)
+
+
+def definition_service(request: Request) -> WorkflowDefinitionService:
+    return WorkflowDefinitionService(request.app.state.settings)
+
+
+@router.get("/workflow-definitions", operation_id="listWorkflowDefinitions")
+async def list_definitions(request: Request) -> dict[str, object]:
+    try:
+        return {"items": definition_service(request).list_definitions(), "runtime_contacted": False}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/workflow-definitions/{definition_code}:instantiate", status_code=201, operation_id="instantiateWorkflowDefinition")
+async def instantiate_definition(
+    definition_code: str,
+    payload: WorkflowDefinitionInstantiateRequest,
+    request: Request,
+) -> dict[str, object]:
+    try:
+        compiled = definition_service(request).instantiate(definition_code, payload.parameters)
+        version = workflow_service(request).register_package(
+            payload.code,
+            payload.title,
+            compiled["workflow"],
+            compiled["contract"],
+            compiled["node_bindings"],
+            compiled["runtime_contract"],
+        )
+        return {"workflow_version": version, "definition_code": definition_code.upper(), "parameters": compiled["parameters"]}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
 
 
 @router.post("/workflow-packages", status_code=201, operation_id="registerWorkflowPackage")
@@ -45,39 +84,14 @@ async def register_package(payload: WorkflowPackageRequest, request: Request) ->
 @router.post("/workflow-packages:h3-candidate", status_code=201, operation_id="registerH3CandidateWorkflow")
 async def register_h3_candidate(payload: H3CandidateWorkflowRequest, request: Request) -> dict[str, object]:
     try:
-        workflow = H3WorkflowFactory(request.app.state.settings).build_t2va(
-            payload.prompt,
-            seed=payload.seed,
-            duration_seconds=payload.duration_seconds,
-            aspect_ratio=payload.aspect_ratio,
-            filename_prefix=payload.filename_prefix,
-            sigma_points=payload.sigma_points,
-            acceleration=payload.acceleration,
-            lora_strength=payload.lora_strength,
-            native_audio=payload.native_audio,
-            tier=payload.tier,
-        )
-        bindings = {
-            "PROMPT": {"node_id": "8", "input": "prompt"},
-            "SEED": {"node_id": "5", "input": "noise_seed"},
-            "FRAME_COUNT": {"node_id": "8", "input": "length"},
-            "SIGMA_POINTS": {"node_id": "7", "input": "steps"},
-            "OUTPUT_PREFIX": {"node_id": "14", "input": "filename_prefix"},
-        }
-        contract = {
-            "capability": "H3_T2VA_CANDIDATE",
-            "requires_explicit_validation": True,
-            "local_only": True,
-            "production_tier": payload.tier.upper() if payload.tier else None,
-            "runtime_overrides": {
-                "sigma_points": payload.sigma_points,
-                "acceleration": payload.acceleration,
-                "lora_strength": payload.lora_strength if payload.acceleration == "TURBO_LORA" else None,
-                "native_audio": payload.native_audio,
-            },
-        }
-        runtime_contract = {"transport": "LOOPBACK_HTTP", "worker_policy": "ONE_H3_WORKER_ONE_GPU_TASK", "candidate": True}
-        version = workflow_service(request).register_package(payload.code, payload.title, workflow, contract, bindings, runtime_contract)
+        compiled = definition_service(request).instantiate("H3_T2V", {
+            "prompt": payload.prompt, "seed": payload.seed, "aspect_ratio": payload.aspect_ratio,
+            "filename_prefix": payload.filename_prefix, "acceleration": payload.acceleration,
+            "lora_strength": payload.lora_strength, "native_audio": payload.native_audio,
+            "tier": payload.tier or "DRAFT", "use_production_tier": payload.tier is not None,
+            "duration_seconds": payload.duration_seconds, "sigma_points": payload.sigma_points,
+        })
+        version = workflow_service(request).register_package(payload.code, payload.title, compiled["workflow"], compiled["contract"], compiled["node_bindings"], compiled["runtime_contract"])
         return {"workflow_version": version, "candidate_assets": H3WorkflowFactory(request.app.state.settings).candidate_assets()}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
@@ -87,42 +101,15 @@ async def register_h3_candidate(payload: H3CandidateWorkflowRequest, request: Re
 async def register_h3_i2v_candidate(payload: H3I2VCandidateWorkflowRequest, request: Request) -> dict[str, object]:
     try:
         factory = H3WorkflowFactory(request.app.state.settings)
-        workflow = factory.build_fl2va(
-            payload.prompt,
-            first_frame=payload.first_frame,
-            seed=payload.seed,
-            duration_seconds=payload.duration_seconds,
-            aspect_ratio=payload.aspect_ratio,
-            filename_prefix=payload.filename_prefix,
-            sigma_points=payload.sigma_points,
-            acceleration=payload.acceleration,
-            lora_strength=payload.lora_strength,
-            native_audio=payload.native_audio,
-            tier=payload.tier,
-        )
-        bindings = {
-            "FIRST_FRAME": {"node_id": "5", "input": "image"},
-            "PROMPT": {"node_id": "7", "input": "prompt"},
-            "SEED": {"node_id": "8", "input": "noise_seed"},
-            "FRAME_COUNT": {"node_id": "7", "input": "length"},
-            "SIGMA_POINTS": {"node_id": "10", "input": "steps"},
-            "OUTPUT_PREFIX": {"node_id": "16", "input": "filename_prefix"},
-        }
-        contract = {
-            "capability": "H3_FL2VA_I2V_CANDIDATE",
-            "input_slots": {"FIRST_FRAME": {"min": 1, "max": 1}},
-            "requires_explicit_validation": True,
-            "local_only": True,
-            "production_tier": payload.tier.upper() if payload.tier else None,
-            "runtime_overrides": {
-                "sigma_points": payload.sigma_points,
-                "acceleration": payload.acceleration,
-                "lora_strength": payload.lora_strength if payload.acceleration == "TURBO_LORA" else None,
-                "native_audio": payload.native_audio,
-            },
-        }
-        runtime_contract = {"transport": "LOOPBACK_HTTP", "worker_policy": "ONE_H3_WORKER_ONE_GPU_TASK", "candidate": True}
-        version = workflow_service(request).register_package(payload.code, payload.title, workflow, contract, bindings, runtime_contract)
+        compiled = definition_service(request).instantiate("H3_I2V", {
+            "prompt": payload.prompt, "seed": payload.seed, "first_frame": payload.first_frame,
+            "aspect_ratio": payload.aspect_ratio, "filename_prefix": payload.filename_prefix,
+            "acceleration": payload.acceleration, "lora_strength": payload.lora_strength,
+            "native_audio": payload.native_audio, "tier": payload.tier or "DRAFT",
+            "use_production_tier": payload.tier is not None,
+            "duration_seconds": payload.duration_seconds, "sigma_points": payload.sigma_points,
+        })
+        version = workflow_service(request).register_package(payload.code, payload.title, compiled["workflow"], compiled["contract"], compiled["node_bindings"], compiled["runtime_contract"])
         return {"workflow_version": version, "candidate_assets": factory.candidate_assets()}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error

@@ -17,7 +17,7 @@ const MATRIX: Record<string, AuditItem> = {
   "../features/reviews/ImageCandidateGrid#ImageCandidateGrid": { status: "EQUIVALENT_V2", target: "EpisodeReviewWorkspace candidate list/compare", safeToRemoveFromLegacyApp: true },
   "../features/reviews/FormalSelectionPanel#FormalSelectionPanel": { status: "EQUIVALENT_V2", target: "episodes/:episodeId/review", safeToRemoveFromLegacyApp: true, authority: "formal delivery selection" },
   "../features/profiles/ProfileConfigurationPanel#ProfileConfigurationPanel": { status: "SYSTEM_OR_TOOL", target: "/models", safeToRemoveFromLegacyApp: true, authority: "Profile/Workflow publish" },
-  "../features/canvas/ProductionCanvasPanel#ProductionCanvasPanel": { status: "SYSTEM_OR_TOOL", target: "/projects/:projectId/canvas", safeToRemoveFromLegacyApp: true },
+  "../features/canvas/ProductionCanvasPanel#ProductionCanvasPanel": { status: "EQUIVALENT_V2", target: "/projects/:projectId/labs", safeToRemoveFromLegacyApp: true, authority: "Visual Lab documents and immutable node revisions" },
   "../features/production/EpisodeContactSheetAction#EpisodeContactSheetAction": { status: "EQUIVALENT_V2", target: "episodes/:episodeId/delivery", safeToRemoveFromLegacyApp: true },
   "../features/production/EpisodeReviewPanel#EpisodeReviewPanel": { status: "EQUIVALENT_V2", target: "episodes/:episodeId/review", safeToRemoveFromLegacyApp: true, authority: "episode render review" },
   "../features/production/TimelineExportAction#TimelineExportAction": { status: "EQUIVALENT_V2", target: "TimelineExportPanel on episodes/:episodeId/timeline", safeToRemoveFromLegacyApp: true },

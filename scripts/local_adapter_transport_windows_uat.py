@@ -228,7 +228,7 @@ def run_uat(sandbox_root: Path) -> dict[str, Any]:
                 ),
                 _check(
                     "PROVIDER_CREDENTIALS_AND_PATH_REDACTED",
-                    provider_details == {"provider_response": "rejected"}
+                    provider_details == {"provider_response": "rejected", "node_errors": []}
                     and "secret" not in details_serialized.casefold()
                     and "disclose" not in details_serialized.casefold(),
                     error_code="COMFY_PROMPT_REJECTED",

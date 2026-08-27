@@ -1,11 +1,13 @@
 import { chromium } from "playwright";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const PROJECT_ID = "04710fb9-3a9e-44c0-aa2f-1e8485b26f72";
 const EPISODE_ID = "1031eec1-784a-408a-969e-010536931d59";
 const BASE_URL = "http://127.0.0.1:5173";
-const EVIDENCE_DIR = "F:\\AI_Projects\\h3\\local_drama_studio\\docs\\evidence\\ui-uat-2026-08-22\\screens";
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const EVIDENCE_DIR = path.join(ROOT, "docs", "evidence", "ui-uat-2026-08-22", "screens");
 
 fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
 

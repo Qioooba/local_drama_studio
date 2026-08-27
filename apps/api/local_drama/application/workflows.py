@@ -5,7 +5,6 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-import os
 import re
 import uuid
 from datetime import UTC, datetime
@@ -17,6 +16,7 @@ from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.comfy import ComfyClient
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.manifest import load_manifest
+from local_drama.infrastructure.filesystem.atomic import replace_path
 
 # ComfyUI core builtins (nodes.py) and core comfy_extras used by the native
 # MiniMax H3 chain verified on this host (openclaw docs/H3_TURBO_PIPELINE.md).
@@ -78,7 +78,7 @@ class WorkflowService:
         partial = target.with_name(f".partial-{uuid.uuid4().hex}.json")
         try:
             partial.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
-            os.replace(partial, target)
+            replace_path(partial, target)
         except Exception:
             if partial.exists():
                 partial.unlink()
@@ -112,6 +112,27 @@ class WorkflowService:
             "node_mapping_sha256": mapping_sha.lower(),
             "manifest_sha256": manifest.sha256,
         }
+
+    @staticmethod
+    def _validate_graph_structure(workflow: dict[str, Any]) -> dict[str, Any]:
+        node_ids = {str(node_id) for node_id in workflow}
+        references: list[dict[str, str]] = []
+        for raw_node_id, node in workflow.items():
+            node_id = str(raw_node_id)
+            if not isinstance(node, dict) or not isinstance(node.get("class_type"), str) or not str(node.get("class_type")).strip():
+                raise DomainRuleError("WORKFLOW_NODE_INVALID", "workflow 节点必须声明 class_type", {"node_id": node_id})
+            inputs = node.get("inputs")
+            if not isinstance(inputs, dict):
+                raise DomainRuleError("WORKFLOW_NODE_INPUTS_INVALID", "workflow 节点 inputs 必须是对象", {"node_id": node_id})
+            for input_name, value in inputs.items():
+                if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str) and isinstance(value[1], int):
+                    source = value[0]
+                    if source not in node_ids:
+                        raise DomainRuleError("WORKFLOW_LINK_SOURCE_MISSING", "workflow 连线引用了不存在的源节点", {"node_id": node_id, "input": input_name, "source_node_id": source})
+                    if source == node_id:
+                        raise DomainRuleError("WORKFLOW_SELF_LINK_INVALID", "workflow 节点不能连接到自身", {"node_id": node_id, "input": input_name})
+                    references.append({"source_node_id": source, "target_node_id": node_id, "input": str(input_name)})
+        return {"node_count": len(node_ids), "link_count": len(references), "links": references}
 
     @staticmethod
     def _validate_bindings(workflow: dict[str, Any], contract: dict[str, Any], node_bindings: dict[str, Any]) -> None:
@@ -154,6 +175,7 @@ class WorkflowService:
         self._validate_code(code)
         if not workflow or not isinstance(workflow, dict):
             raise DomainRuleError("WORKFLOW_REQUIRED", "workflow package content 不能为空")
+        graph_structure = self._validate_graph_structure(workflow)
         supply_chain = self._validate_node_supply_chain(workflow)
         self._validate_bindings(workflow, contract, node_bindings)
         if any(
@@ -196,6 +218,7 @@ class WorkflowService:
                     "node_bindings": node_bindings,
                     "runtime_contract": runtime_contract or {},
                     "node_supply_chain": supply_chain,
+                    "graph_structure": graph_structure,
                 },
             )
             connection.execute(
@@ -269,27 +292,55 @@ class WorkflowService:
             "semantic_inputs": semantic_inputs,
             "compiled_hash": compiled_hash,
             "content_hash": version["content_hash"],
+            "effect_report": {
+                "applied_semantic_roles": sorted(str(role) for role in semantic_inputs),
+                "declared_semantic_roles": sorted(str(role) for role in bindings),
+                "unchanged_declared_roles": sorted(str(role) for role in set(bindings) - set(semantic_inputs)),
+                "parameter_effects": version["contract"].get("parameter_effects", {}),
+            },
         }
 
     def validate_against_comfy(self, version_id: str, client: ComfyClient) -> dict[str, Any]:
         version = self.get_version(version_id)
+        graph_structure = self._validate_graph_structure(version["workflow"])
         supply_chain = self._validate_node_supply_chain(version["workflow"])
         object_info = client.object_info()
         available = set(object_info)
         required = {str(node.get("class_type")) for node in version["workflow"].values() if isinstance(node, dict) and node.get("class_type")}
         missing = sorted(required - available)
+        schema_errors: list[dict[str, Any]] = []
+        for node_id, node in version["workflow"].items():
+            if not isinstance(node, dict):
+                continue
+            node_schema = object_info.get(str(node.get("class_type")))
+            schema_inputs = node_schema.get("input") if isinstance(node_schema, dict) else None
+            if not isinstance(schema_inputs, dict):
+                continue
+            allowed_inputs: set[str] = set()
+            for group in ("required", "optional", "hidden"):
+                values = schema_inputs.get(group)
+                if isinstance(values, dict):
+                    allowed_inputs.update(str(name) for name in values)
+            if allowed_inputs:
+                for input_name in node.get("inputs", {}):
+                    if str(input_name) not in allowed_inputs:
+                        schema_errors.append({"node_id": str(node_id), "class_type": str(node.get("class_type")), "input": str(input_name), "error": "INPUT_NOT_DECLARED"})
         runtime_layout: dict[str, Any] | None = None
         if "H3" in str(version["contract"].get("capability", "")).upper():
             from local_drama.application.h3_workflows import H3WorkflowFactory
 
             runtime_layout = H3WorkflowFactory(self.settings).runtime_layout()
-        node_status = "PASS" if not missing else "BLOCKED"
+        node_status = "PASS" if not missing and not schema_errors else "BLOCKED"
         status = node_status if runtime_layout is None else "PASS" if node_status == "PASS" and runtime_layout.get("status") == "PASS" else "BLOCKED"
         evidence = {
             "workflow_version_id": version_id,
             "status": status,
             "required_nodes": sorted(required),
             "missing_nodes": missing,
+            "schema_errors": schema_errors,
+            "graph_structure": graph_structure,
+            "validation_scope": "STRUCTURE_NODE_SCHEMA_AND_RUNTIME_LAYOUT",
+            "execution_verified": False,
             "comfy_url": client.base_url,
             "runtime_layout": runtime_layout,
             "node_supply_chain": supply_chain,
