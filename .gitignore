@@ -57,7 +57,14 @@ apps/api/local_drama.db
 gui-test-screenshots/
 
 # locked/unreadable legacy session temp dirs
-.p*/
+.p2/
+.pDirector2/
+.pDirSeed/
+.pSapiPub/
+.pSapiReal2/
+.pSapiReal3/
+.pSapiReal4/
+.pSapiReal5/
 .pytest-tmp-*/
 .tb/
 .ts/

@@ -59,22 +59,11 @@ def main() -> int:
 
     orphans = sorted(all_files[path] for path in all_files.keys() - seen
                      if ".test." not in all_files[path])
-    tests_only = sorted(
-        all_files[path]
-        for path in all_files.keys() - seen
-        if ".test." in all_files[path] and any(
-            orphan.startswith(all_files[path].rsplit(".test.", 1)[0]) is False and False
-            for orphan in ()
-        )
-    )
     print(f"reachable: {len(seen)} / {len(all_files)} files")
     if orphans:
         print("ORPHANS (non-test, never imported from entries):")
         for orphan in orphans:
             print(f"  {orphan}")
-    test_orphans = [t for t in tests_only if t]
-    if test_orphans:
-        pass
     return 0
 
 
