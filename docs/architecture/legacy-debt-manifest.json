@@ -81,9 +81,9 @@
         "remove_by_slice": 8
       },
       {
-        "id": "apps/api/local_drama/application/comfy_jobs.py:24",
+        "id": "apps/api/local_drama/application/comfy_jobs.py:23",
         "file": "apps/api/local_drama/application/comfy_jobs.py",
-        "line": 24,
+        "line": 23,
         "owner": "legacy-application",
         "remove_by_slice": 8
       },
@@ -102,9 +102,9 @@
         "remove_by_slice": 8
       },
       {
-        "id": "apps/api/local_drama/application/contact_sheets.py:16",
+        "id": "apps/api/local_drama/application/contact_sheets.py:15",
         "file": "apps/api/local_drama/application/contact_sheets.py",
-        "line": 16,
+        "line": 15,
         "owner": "legacy-application",
         "remove_by_slice": 8
       },
@@ -221,9 +221,9 @@
         "remove_by_slice": 8
       },
       {
-        "id": "apps/api/local_drama/application/media.py:21",
+        "id": "apps/api/local_drama/application/media.py:20",
         "file": "apps/api/local_drama/application/media.py",
-        "line": 21,
+        "line": 20,
         "owner": "legacy-application",
         "remove_by_slice": 8
       },
@@ -270,9 +270,9 @@
         "remove_by_slice": 8
       },
       {
-        "id": "apps/api/local_drama/application/project_packages.py:20",
+        "id": "apps/api/local_drama/application/project_packages.py:19",
         "file": "apps/api/local_drama/application/project_packages.py",
-        "line": 20,
+        "line": 19,
         "owner": "legacy-application",
         "remove_by_slice": 8
       },
@@ -375,9 +375,9 @@
         "remove_by_slice": 8
       },
       {
-        "id": "apps/api/local_drama/application/worker.py:33",
+        "id": "apps/api/local_drama/application/worker.py:38",
         "file": "apps/api/local_drama/application/worker.py",
-        "line": 33,
+        "line": 38,
         "owner": "legacy-application",
         "remove_by_slice": 8
       },
@@ -396,9 +396,9 @@
         "remove_by_slice": 8
       },
       {
-        "id": "apps/api/local_drama/application/workflows.py:18",
+        "id": "apps/api/local_drama/application/workflows.py:17",
         "file": "apps/api/local_drama/application/workflows.py",
-        "line": 18,
+        "line": 17,
         "owner": "legacy-application",
         "remove_by_slice": 8
       },
@@ -916,9 +916,9 @@
         "remove_by_slice": 8
       },
       {
-        "id": "apps/api/local_drama/application/projects.py:1368:ReviewService",
+        "id": "apps/api/local_drama/application/projects.py:1369:ReviewService",
         "file": "apps/api/local_drama/application/projects.py",
-        "line": 1368,
+        "line": 1369,
         "service": "ReviewService",
         "owner": "legacy-application",
         "remove_by_slice": 8
@@ -972,9 +972,9 @@
         "remove_by_slice": 8
       },
       {
-        "id": "apps/api/local_drama/application/timeline_exports.py:85:MediaService",
+        "id": "apps/api/local_drama/application/timeline_exports.py:86:MediaService",
         "file": "apps/api/local_drama/application/timeline_exports.py",
-        "line": 85,
+        "line": 86,
         "service": "MediaService",
         "owner": "legacy-application",
         "remove_by_slice": 8
@@ -996,113 +996,113 @@
         "remove_by_slice": 8
       },
       {
-        "id": "apps/api/local_drama/application/worker.py:59:JobService",
+        "id": "apps/api/local_drama/application/worker.py:50:BackgroundOperationService",
         "file": "apps/api/local_drama/application/worker.py",
-        "line": 59,
-        "service": "JobService",
-        "owner": "legacy-application",
-        "remove_by_slice": 8
-      },
-      {
-        "id": "apps/api/local_drama/application/worker.py:60:MediaService",
-        "file": "apps/api/local_drama/application/worker.py",
-        "line": 60,
-        "service": "MediaService",
-        "owner": "legacy-application",
-        "remove_by_slice": 8
-      },
-      {
-        "id": "apps/api/local_drama/application/worker.py:135:TimelineService",
-        "file": "apps/api/local_drama/application/worker.py",
-        "line": 135,
-        "service": "TimelineService",
-        "owner": "legacy-application",
-        "remove_by_slice": 8
-      },
-      {
-        "id": "apps/api/local_drama/application/worker.py:810:BackgroundOperationService",
-        "file": "apps/api/local_drama/application/worker.py",
-        "line": 810,
+        "line": 50,
         "service": "BackgroundOperationService",
         "owner": "legacy-application",
         "remove_by_slice": 8
       },
       {
-        "id": "apps/api/local_drama/application/worker.py:954:DialogueService",
+        "id": "apps/api/local_drama/application/worker.py:126:JobService",
         "file": "apps/api/local_drama/application/worker.py",
-        "line": 954,
+        "line": 126,
+        "service": "JobService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker.py:127:MediaService",
+        "file": "apps/api/local_drama/application/worker.py",
+        "line": 127,
+        "service": "MediaService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker.py:202:TimelineService",
+        "file": "apps/api/local_drama/application/worker.py",
+        "line": 202,
+        "service": "TimelineService",
+        "owner": "legacy-application",
+        "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/worker.py:797:DialogueService",
+        "file": "apps/api/local_drama/application/worker.py",
+        "line": 797,
         "service": "DialogueService",
         "owner": "legacy-application",
         "remove_by_slice": 8
       },
       {
-        "id": "apps/api/local_drama/application/worker.py:1042:DialogueService",
+        "id": "apps/api/local_drama/application/worker.py:885:DialogueService",
         "file": "apps/api/local_drama/application/worker.py",
-        "line": 1042,
+        "line": 885,
         "service": "DialogueService",
         "owner": "legacy-application",
         "remove_by_slice": 8
       },
       {
-        "id": "apps/api/local_drama/application/worker.py:1182:AutomationWorkflowService",
+        "id": "apps/api/local_drama/application/worker.py:1025:AutomationWorkflowService",
         "file": "apps/api/local_drama/application/worker.py",
-        "line": 1182,
+        "line": 1025,
         "service": "AutomationWorkflowService",
         "owner": "legacy-application",
         "remove_by_slice": 8
       },
       {
-        "id": "apps/api/local_drama/application/worker.py:493:GenerationService",
+        "id": "apps/api/local_drama/application/worker.py:533:GenerationService",
         "file": "apps/api/local_drama/application/worker.py",
-        "line": 493,
+        "line": 533,
         "service": "GenerationService",
         "owner": "legacy-application",
         "remove_by_slice": 8
       },
       {
-        "id": "apps/api/local_drama/application/worker.py:858:LocalLLMService",
+        "id": "apps/api/local_drama/application/worker.py:73:LocalLLMService",
         "file": "apps/api/local_drama/application/worker.py",
-        "line": 858,
+        "line": 73,
         "service": "LocalLLMService",
         "owner": "legacy-application",
         "remove_by_slice": 8
       },
       {
-        "id": "apps/api/local_drama/application/worker.py:1004:ConfigurationService",
+        "id": "apps/api/local_drama/application/worker.py:847:ConfigurationService",
         "file": "apps/api/local_drama/application/worker.py",
-        "line": 1004,
+        "line": 847,
         "service": "ConfigurationService",
         "owner": "legacy-application",
         "remove_by_slice": 8
       },
       {
-        "id": "apps/api/local_drama/application/worker.py:1107:EpisodeFrontHalfActionService",
+        "id": "apps/api/local_drama/application/worker.py:950:EpisodeFrontHalfActionService",
         "file": "apps/api/local_drama/application/worker.py",
-        "line": 1107,
+        "line": 950,
         "service": "EpisodeFrontHalfActionService",
         "owner": "legacy-application",
         "remove_by_slice": 8
       },
       {
-        "id": "apps/api/local_drama/application/worker.py:401:LocalLLMService",
+        "id": "apps/api/local_drama/application/worker.py:1092:LocalLLMService",
         "file": "apps/api/local_drama/application/worker.py",
-        "line": 401,
+        "line": 1092,
         "service": "LocalLLMService",
         "owner": "legacy-application",
         "remove_by_slice": 8
       },
       {
-        "id": "apps/api/local_drama/application/worker.py:1118:EpisodeWorkerActionService",
+        "id": "apps/api/local_drama/application/worker.py:961:EpisodeWorkerActionService",
         "file": "apps/api/local_drama/application/worker.py",
-        "line": 1118,
+        "line": 961,
         "service": "EpisodeWorkerActionService",
         "owner": "legacy-application",
         "remove_by_slice": 8
       },
       {
-        "id": "apps/api/local_drama/application/worker.py:1122:EpisodeWorkerActionService",
+        "id": "apps/api/local_drama/application/worker.py:965:EpisodeWorkerActionService",
         "file": "apps/api/local_drama/application/worker.py",
-        "line": 1122,
+        "line": 965,
         "service": "EpisodeWorkerActionService",
         "owner": "legacy-application",
         "remove_by_slice": 8

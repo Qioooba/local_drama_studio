@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from queue import Empty, Queue
 from time import monotonic
-from typing import Any
+from typing import Any, Callable
 
 from local_drama.application.automation_workflows import AutomationWorkflowService
 from local_drama.application.background_operations import BackgroundOperationService
@@ -25,30 +25,97 @@ from local_drama.application.local_llm import LocalLLMService
 from local_drama.application.media import MediaService
 from local_drama.application.timeline import TimelineService
 from local_drama.application.worker_dispatch import WorkerExecution, WorkerJobDispatcher
+from local_drama.application.worker_handlers.delivery_build import run_delivery_build_job
+from local_drama.application.worker_handlers.episode_compose import run_episode_compose_job
+from local_drama.application.worker_handlers.local_llm_probe import run_local_llm_probe_job
+from local_drama.application.worker_handlers.script_breakdown import run_script_breakdown_job
+from local_drama.application.worker_handlers.segmented_compose import run_segmented_compose_job
+from local_drama.application.worker_handlers.video_enhancement import run_video_enhancement_job
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.generation import VariantPlan
 from local_drama.domain.policies import VariantInput
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.infrastructure.filesystem.atomic import replace_path
 from local_drama.platform import create_platform_services
 from local_drama.platform.contracts import TtsRuntime, TtsRuntimeError
-from local_drama.infrastructure.filesystem.atomic import replace_path
+
+
+def _make_delivery_build_handler(
+    worker: LocalMediaWorker,
+) -> Callable[[dict[str, Any], Path], tuple[str, str]]:
+    """Bind the extracted DELIVERY_BUILD business flow to runner-owned ports."""
+
+    def handler(job: dict[str, Any], output_root: Path) -> tuple[str, str]:
+        operations = BackgroundOperationService(worker.database, worker.settings)
+        return run_delivery_build_job(
+            job,
+            output_root,
+            work_root=worker.settings.work_root,
+            delivery_planner=operations,
+            delivery_builder=worker._timeline_service(),
+            atomic_writer=worker._atomic_file,
+        )
+
+    return handler
+
+
+def _make_local_llm_probe_handler(
+    worker: LocalMediaWorker,
+) -> Callable[[dict[str, Any], Path], tuple[str, str]]:
+    """Bind the extracted LOCAL_LLM_PROBE flow to runner-owned ports."""
+
+    def handler(job: dict[str, Any], output_root: Path) -> tuple[str, str]:
+        return run_local_llm_probe_job(
+            job,
+            output_root,
+            work_root=worker.settings.work_root,
+            local_llm=LocalLLMService(worker.database, worker.settings),
+            atomic_writer=worker._atomic_file,
+            cancel_check=worker._cancel_requested,
+            report_progress=worker._report_progress,
+        )
+
+    return handler
+
+
+def _make_timeline_job_handler(
+    worker: LocalMediaWorker,
+    run_job: Callable[..., tuple[str, str]],
+) -> Callable[[dict[str, Any], Path], tuple[str, str]]:
+    """Bind an extracted timeline-family handler to runner-owned ports."""
+
+    def handler(job: dict[str, Any], output_root: Path) -> tuple[str, str]:
+        return run_job(
+            job,
+            output_root,
+            work_root=worker.settings.work_root,
+            timeline_factory=worker._timeline_service,
+            atomic_writer=worker._atomic_file,
+        )
+
+    return handler
 
 
 # Declarative registry: job type -> business handler method name on LocalMediaWorker.
 # Kept module-level so handler registration is separated from runner orchestration
 # and can be audited/tested independently (design §13.2 "giant worker handler split").
+# Job types whose handlers already moved to application/worker_handlers are
+# resolved through _EXTRACTED_HANDLER_PROVIDERS instead of getattr binding.
 _JOB_HANDLER_REGISTRY: dict[str, str] = {
     "MEDIA_DERIVATIVE": "_run_media_job",
     "MEDIA_THUMBNAIL": "_run_media_job",
     "MEDIA_PROXY": "_run_media_job",
     "TTS_GENERATION": "_run_tts_job",
-    "EPISODE_COMPOSE": "_run_compose_job",
-    "VIDEO_ENHANCEMENT": "_run_enhancement_job",
-    "SEGMENTED_EPISODE_COMPOSE": "_run_segmented_compose_job",
-    "DELIVERY_BUILD": "_run_delivery_build_job",
     "EXPERIMENT_CELL": "_run_experiment_cell",
-    "LOCAL_LLM_PROBE": "_run_local_llm_probe_job",
+}
+
+_EXTRACTED_HANDLER_PROVIDERS: dict[str, Callable[[LocalMediaWorker], Callable[[dict[str, Any], Path], tuple[str, str]]]] = {
+    "DELIVERY_BUILD": _make_delivery_build_handler,
+    "EPISODE_COMPOSE": lambda worker: _make_timeline_job_handler(worker, run_episode_compose_job),
+    "SEGMENTED_EPISODE_COMPOSE": lambda worker: _make_timeline_job_handler(worker, run_segmented_compose_job),
+    "VIDEO_ENHANCEMENT": lambda worker: _make_timeline_job_handler(worker, run_video_enhancement_job),
+    "LOCAL_LLM_PROBE": _make_local_llm_probe_handler,
 }
 
 
@@ -390,33 +457,6 @@ class LocalMediaWorker:
             return "PROXY_VIDEO", output.relative_to(self.settings.work_root).as_posix()
         raise DomainRuleError("JOB_TYPE_UNSUPPORTED", "当前 worker 不支持该媒体 Job 类型", {"type": job["type"]})
 
-    def _run_local_llm_probe_job(self, job: dict[str, Any], output_root: Path) -> tuple[str, str]:
-        snapshot = job["input_snapshot"]
-        credential_source = snapshot.get("credential_source")
-        if snapshot.get("secret_persisted") is not False or credential_source not in {"SETTINGS_OR_ENV", "PROVIDER_CONNECTION"}:
-            raise DomainRuleError("LOCAL_LLM_PROBE_SNAPSHOT_INVALID", "LLM 测试 Job 的密钥边界无效")
-        if self._cancel_requested():
-            raise DomainRuleError("JOB_CANCELLED", "LLM 连接测试已取消")
-        self._report_progress({"phase": "PROBING_RUNTIME", "percent": 25}, force=True)
-        probe = LocalLLMService(self.database, self.settings).client(
-            model=str(snapshot.get("model") or ""),
-            provider=str(snapshot.get("provider") or ""),
-            base_url=str(snapshot.get("base_url") or ""),
-            provider_connection_id=str(snapshot.get("provider_connection_id") or "") or None,
-        ).probe(load_test=bool(snapshot.get("load_test", True)))
-        self._report_progress({"phase": "RECORDING_EVIDENCE", "percent": 85}, force=True)
-        report = {
-            "schema_version": "localdrama.local-llm-probe-report.v1",
-            "job_id": str(job["id"]),
-            "probe": probe,
-            "secret_persisted": False,
-            "credential_source": credential_source,
-            "provider_connection_id": snapshot.get("provider_connection_id"),
-        }
-        output = output_root / "local-llm-probe-report.json"
-        self._atomic_file(output, lambda target: target.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"))
-        return "LOCAL_LLM_PROBE_REPORT", output.relative_to(self.settings.work_root).as_posix()
-
     def _run_experiment_cell(self, job: dict[str, Any], output_root: Path) -> tuple[str, str]:
         """Turn one immutable matrix cell into a real child Variant + GPU Job.
 
@@ -692,203 +732,6 @@ class LocalMediaWorker:
         if probe.get("probe_status") != "PASS" or duration_ms is None or duration_ms <= 0:
             raise DomainRuleError("TTS_OUTPUT_INVALID", "SAPI 输出未通过本机 FFprobe")
         return "TTS_AUDIO", output.relative_to(self.settings.work_root).as_posix()
-
-    def _run_compose_job(self, job: dict[str, Any], output_root: Path) -> tuple[str, str]:
-        snapshot = job["input_snapshot"]
-        timeline_revision_id = str(snapshot.get("timeline_revision_id") or "")
-        expected = str(snapshot.get("compose_fingerprint") or "")
-        if job["subject_type"] != "TIMELINE_REVISION" or str(job["subject_id"]) != timeline_revision_id or not expected:
-            raise DomainRuleError("COMPOSE_JOB_SNAPSHOT_INVALID", "Compose Job 缺少不可变 timeline/fingerprint 输入")
-        timeline = self._timeline_service()
-        current = timeline.preflight_episode_render(timeline_revision_id)
-        if str(current["compose_fingerprint"]) != expected:
-            raise DomainRuleError(
-                "COMPOSE_INPUT_STALE", "Compose 入队后输入已变化；请重新预检并提交",
-                {"expected_fingerprint": expected, "current_fingerprint": current["compose_fingerprint"]},
-            )
-        render = timeline.render_episode(
-            timeline_revision_id, force_rerender=bool(snapshot.get("force_rerender")), actor="compose-worker",
-        )
-        report = {
-            "schema_version": "localdrama.episode-compose-report.v1", "job_id": str(job["id"]),
-            "timeline_revision_id": timeline_revision_id, "compose_fingerprint": expected,
-            "render_version_id": str(render["id"]), "render_sha256": str(render["sha256"]),
-            "idempotent_render_replay": bool(render.get("idempotent_replay")),
-            "local_only": True, "network_contacted": False,
-        }
-        output = output_root / "compose-report.json"
-        self._atomic_file(output, lambda target: target.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"))
-        return "EPISODE_COMPOSE_REPORT", output.relative_to(self.settings.work_root).as_posix()
-
-    def _run_enhancement_job(self, job: dict[str, Any], output_root: Path) -> tuple[str, str]:
-        snapshot = job["input_snapshot"]
-        media_version_id = str(snapshot.get("input_media_version_id") or "")
-        recipe_id = str(snapshot.get("recipe_id") or "")
-        plan_hash = str(snapshot.get("plan_hash") or "")
-        parameters = snapshot.get("parameters")
-        if (
-            job["subject_type"] != "MEDIA_VERSION"
-            or str(job["subject_id"]) != media_version_id
-            or not recipe_id
-            or not plan_hash
-            or not isinstance(parameters, dict)
-        ):
-            raise DomainRuleError("ENHANCEMENT_JOB_SNAPSHOT_INVALID", "增强 Job 缺少不可变媒体、配方或计划输入")
-        timeline = self._timeline_service()
-        current = timeline.plan_enhancement(media_version_id, recipe_id, parameters)
-        if str(current["plan_hash"]) != plan_hash:
-            raise DomainRuleError("ENHANCEMENT_PLAN_STALE", "增强入队后输入或配方已变化，请重新预检并提交")
-        enhancement = timeline.run_enhancement(
-            media_version_id,
-            recipe_id,
-            plan_hash,
-            parameters,
-            actor="enhancement-worker",
-        )
-        report = {
-            "schema_version": "localdrama.enhancement-job-report.v1",
-            "job_id": str(job["id"]),
-            "enhancement_run_id": str(enhancement["id"]),
-            "output_media_version_id": str(enhancement["output_media_version_id"]),
-            "output_sha256": str(enhancement["output_sha256"]),
-            "qc_passed": bool(enhancement.get("qc", {}).get("passed")),
-            "local_only": True,
-            "network_contacted": False,
-        }
-        output = output_root / "enhancement-report.json"
-        self._atomic_file(output, lambda target: target.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"))
-        return "VIDEO_ENHANCEMENT_REPORT", output.relative_to(self.settings.work_root).as_posix()
-
-    def _run_segmented_compose_job(self, job: dict[str, Any], output_root: Path) -> tuple[str, str]:
-        snapshot = job["input_snapshot"]
-        timeline_revision_id = str(snapshot.get("timeline_revision_id") or "")
-        segments = snapshot.get("segments")
-        expected = str(snapshot.get("compose_fingerprint") or "")
-        if (
-            job["subject_type"] != "TIMELINE_REVISION"
-            or str(job["subject_id"]) != timeline_revision_id
-            or not isinstance(segments, list)
-            or not expected
-        ):
-            raise DomainRuleError("SEGMENTED_COMPOSE_JOB_SNAPSHOT_INVALID", "分段合成 Job 缺少不可变时间线或分段输入")
-        timeline = self._timeline_service()
-        current = timeline.preflight_segmented_episode_render(timeline_revision_id, segments)
-        if str(current["compose_fingerprint"]) != expected:
-            raise DomainRuleError("COMPOSE_INPUT_STALE", "分段合成入队后输入已变化，请重新预检并提交")
-        render = timeline.render_segmented_episode(
-            timeline_revision_id,
-            segments,
-            force_rerender=bool(snapshot.get("force_rerender")),
-            actor="segmented-compose-worker",
-        )
-        report = {
-            "schema_version": "localdrama.segmented-compose-report.v1",
-            "job_id": str(job["id"]),
-            "timeline_revision_id": timeline_revision_id,
-            "compose_fingerprint": expected,
-            "render_version_id": str(render["id"]),
-            "render_sha256": str(render["sha256"]),
-            "local_only": True,
-            "network_contacted": False,
-        }
-        output = output_root / "segmented-compose-report.json"
-        self._atomic_file(output, lambda target: target.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"))
-        return "SEGMENTED_EPISODE_COMPOSE_REPORT", output.relative_to(self.settings.work_root).as_posix()
-
-    def _run_delivery_build_job(self, job: dict[str, Any], output_root: Path) -> tuple[str, str]:
-        snapshot = job["input_snapshot"]
-        render_id = str(snapshot.get("episode_render_version_id") or "")
-        target_version_id = str(snapshot.get("target_version_id") or "")
-        expected = str(snapshot.get("delivery_fingerprint") or "")
-        if (
-            job["subject_type"] != "EPISODE_RENDER_VERSION"
-            or str(job["subject_id"]) != render_id
-            or not target_version_id
-            or not expected
-        ):
-            raise DomainRuleError("DELIVERY_JOB_SNAPSHOT_INVALID", "交付 Job 缺少不可变渲染或目标版本输入")
-        operations = BackgroundOperationService(self.database, self.settings)
-        current = operations.delivery_plan(
-            render_id,
-            target_version_id,
-            snapshot.get("brand_kit_id"),
-            snapshot.get("watermark_profile_id"),
-            snapshot.get("compliance_policy_id"),
-        )
-        if str(current["fingerprint"]) != expected:
-            raise DomainRuleError("DELIVERY_INPUT_STALE", "交付入队后渲染、目标或批准状态已变化，请重新提交")
-        delivery = self._timeline_service().build_delivery(
-            render_id,
-            target_version_id,
-            snapshot.get("brand_kit_id"),
-            snapshot.get("watermark_profile_id"),
-            snapshot.get("compliance_policy_id"),
-            actor="delivery-worker",
-        )
-        report = {
-            "schema_version": "localdrama.delivery-build-job-report.v1",
-            "job_id": str(job["id"]),
-            "delivery_package_id": str(delivery["id"]),
-            "manifest_sha256": str(delivery.get("manifest_sha256") or ""),
-            "status": str(delivery["status"]),
-            "local_only": True,
-            "network_contacted": False,
-        }
-        output = output_root / "delivery-build-report.json"
-        self._atomic_file(output, lambda target: target.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"))
-        return "DELIVERY_BUILD_REPORT", output.relative_to(self.settings.work_root).as_posix()
-
-    def _run_script_breakdown_job(
-        self,
-        job: dict[str, Any],
-        output_root: Path,
-        on_progress: Any,
-    ) -> tuple[str, str]:
-        snapshot = job["input_snapshot"]
-        session_id = str(snapshot.get("import_session_id") or "")
-        profile_version_id = str(snapshot.get("profile_version_id") or "")
-        if (
-            job["subject_type"] != "IMPORT_SESSION"
-            or str(job["subject_id"]) != session_id
-            or str(job.get("execution_profile_version_id") or "") != profile_version_id
-            or snapshot.get("automatic_apply") is not False
-            or snapshot.get("requires_human_action") is not True
-        ):
-            raise DomainRuleError("LOCAL_LLM_JOB_SNAPSHOT_INVALID", "AI 拆解 Job 缺少不可变源/Profile/人工审核安全快照")
-        result = LocalLLMService(self.database, self.settings).breakdown(
-            session_id,
-            profile_version_id,
-            job_id=str(job["id"]),
-            input_snapshot=snapshot,
-            on_progress=on_progress,
-        )
-        scenes = result.get("draft", {}).get("scenes", [])
-        scene_count = len(scenes) if isinstance(scenes, list) else 0
-        shot_count = sum(
-            len(scene.get("shots", []))
-            for scene in scenes
-            if isinstance(scene, dict) and isinstance(scene.get("shots", []), list)
-        )
-        report = {
-            "schema_version": "localdrama.script-breakdown-job-report.v1",
-            "job_id": str(job["id"]),
-            "draft_id": str(result["id"]),
-            "draft_status": str(result["status"]),
-            "scene_count": scene_count,
-            "shot_count": shot_count,
-            "idempotent_replay": bool(result.get("idempotent_replay")),
-            "automatic_apply": False,
-            "requires_human_action": True,
-            "local_only": True,
-            "remote_provider_contacted": False,
-        }
-        output = output_root / "script-breakdown-report.json"
-        self._atomic_file(
-            output,
-            lambda target: target.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"),
-        )
-        on_progress({"phase": "DRAFT_READY", "percent": 100, "draft_id": str(result["id"])})
-        return "SCRIPT_BREAKDOWN_REPORT", output.relative_to(self.settings.work_root).as_posix()
 
     # ------------------------------------------------------------------
     # Declarative automation task executor (AUTOMATION_WORKFLOW_TASK).
@@ -1241,7 +1084,16 @@ class LocalMediaWorker:
         )
         heartbeat_thread.start()
         try:
-            result = self._execution(self._run_script_breakdown_job(job, output_root, heartbeat_progress))
+            result = self._execution(
+                run_script_breakdown_job(
+                    job,
+                    output_root,
+                    work_root=self.settings.work_root,
+                    local_llm=LocalLLMService(self.database, self.settings),
+                    atomic_writer=self._atomic_file,
+                    on_progress=heartbeat_progress,
+                )
+            )
             if heartbeat_errors:
                 raise DomainRuleError("JOB_HEARTBEAT_FAILED", "AI 拆解 Job lease 续期失败")
             return result
@@ -1260,6 +1112,8 @@ class LocalMediaWorker:
             job_type: getattr(self, method_name)
             for job_type, method_name in _JOB_HANDLER_REGISTRY.items()
         }
+        for job_type, provider in _EXTRACTED_HANDLER_PROVIDERS.items():
+            simple_handlers[job_type] = provider(self)
         handlers = {
             job_type: (lambda job, root, handler=handler: self._execution(handler(job, root)))
             for job_type, handler in simple_handlers.items()
