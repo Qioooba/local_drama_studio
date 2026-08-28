@@ -434,4 +434,21 @@ describe("ErrorBoundary and RouteErrorBoundary Contract", () => {
     expect((screen.getByRole("link", { name: "返回项目" }) as HTMLAnchorElement).getAttribute("href")).toBe("/projects/p1");
     expect(screen.getByRole("button", { name: "刷新重试" })).toBeTruthy();
   });
+
+  it("identifies a stale dynamic chunk and offers to load the latest version", () => {
+    render(
+      <MemoryRouter initialEntries={["/projects/p1/story"]}>
+        <Routes>
+          <Route
+            path="/projects/:projectId/story"
+            element={<RouteErrorBoundary error={new TypeError("Failed to fetch dynamically imported module: http://127.0.0.1:3210/assets/StoryWorkspacePage-old.js")} />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("heading", { level: 2, name: "界面版本载入受阻" })).toBeTruthy();
+    expect(screen.getByText(/当前页面仍引用上一版界面资源/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "载入最新版本" })).toBeTruthy();
+  });
 });

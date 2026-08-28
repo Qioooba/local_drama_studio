@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -23,9 +22,10 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from queue import Empty, Queue
 from time import monotonic
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from local_drama.application.media import _hash_file
+from local_drama.application.ports.timeline import TimelineMediaPort, TimelineUnitOfWork
 from local_drama.application.subtitle_styles import DEFAULT_SUBTITLE_STYLE, validate_style
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
@@ -41,13 +41,12 @@ from local_drama.domain.timeline_formatting import (
 from local_drama.domain.timeline_formatting import (
     subtitle_time,
 )
-from local_drama.application.ports.timeline import TimelineMediaPort, TimelineUnitOfWork
 from local_drama.infrastructure.filesystem.atomic import replace_path
 
 
 def _build_media_service(database: TimelineUnitOfWork, settings: Settings) -> TimelineMediaPort:
     media = __import__("local_drama.application.media", fromlist=["MediaService"])
-    return media.MediaService(database, settings)
+    return cast(TimelineMediaPort, media.MediaService(database, settings))
 
 
 def _now() -> str:
@@ -886,7 +885,7 @@ class TimelineService:
             self._run_ffmpeg(args, timeout=120)
             if not frame_path.is_file() or frame_path.stat().st_size == 0:
                 raise DomainRuleError("FRAME_ANCHOR_EXTRACTION_EMPTY", "FFmpeg 未生成可注册的真实视频帧")
-            imported = self.media.import_file(source["project_id"], frame_path, purpose="FRAME_ANCHOR", owner_type="MEDIA_VERSION", owner_id=source_media_version_id, media_kind="IMAGE", stage="FRAME_ANCHOR", actor=actor)
+            imported = self.media.import_file(source["project_id"], str(frame_path), purpose="FRAME_ANCHOR", owner_type="MEDIA_VERSION", owner_id=source_media_version_id, media_kind="IMAGE", stage="FRAME_ANCHOR", actor=actor)
         finally:
             frame_path.unlink(missing_ok=True)
         anchor_id = str(uuid.uuid4())
@@ -1376,7 +1375,7 @@ class TimelineService:
                 raise DomainRuleError("ENHANCEMENT_QC_FAILED", "增强输出尺寸或目标帧率未通过技术 QC")
             step_trace.append({"ordinal": len(step_trace), "kind": "ENCODE", "executor_ref": "builtin:ffmpeg", "profile": encode, "input_sha256": current_hash, "output_sha256": output_hash, "status": "SUCCEEDED"})
             execution_snapshot["step_trace"] = step_trace
-            imported = self.media.import_file(source_item["project_id"], output, purpose="ENHANCEMENT", owner_type="MEDIA_VERSION", owner_id=input_media_version_id, media_kind=source_item["media_kind"], stage="ENHANCED", actor=actor)
+            imported = self.media.import_file(source_item["project_id"], str(output), purpose="ENHANCEMENT", owner_type="MEDIA_VERSION", owner_id=input_media_version_id, media_kind=source_item["media_kind"], stage="ENHANCED", actor=actor)
             if imported.get("duplicate"):
                 raise DomainRuleError("ENHANCEMENT_OUTPUT_DUPLICATE", "增强输出与现有媒体 hash 相同，未注册伪新版本")
             with self.database.transaction() as connection:

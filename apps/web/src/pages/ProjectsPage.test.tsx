@@ -2,12 +2,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { listProfiles, listProjects } from "../generated/api";
+import { listProjects } from "../generated/api";
 import { ProjectsPage } from "./ProjectsPage";
 
 vi.mock("../features/projects/ProjectCreateWizard", () => ({ ProjectCreateWizard: () => null }));
-vi.mock("../features/projects/OneSentenceVideoWizard", () => ({ OneSentenceVideoWizard: () => null }));
-vi.mock("../generated/api", () => ({ listProfiles: vi.fn(), listProjects: vi.fn() }));
+vi.mock("../generated/api", () => ({ listProjects: vi.fn() }));
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -16,7 +15,6 @@ function renderPage() {
 
 describe("ProjectsPage recent projects", () => {
   beforeEach(() => {
-    vi.mocked(listProfiles).mockResolvedValue({ items: [] } as never);
     vi.mocked(listProjects).mockResolvedValue({ items: [
       { id: "p2", code: "P2", title: "Second", status: "ACTIVE", revision: 2, updated_at: "2026-08-19T00:00:00Z" },
       { id: "p5", code: "P5", title: "Oldest", status: "ARCHIVED", revision: 1, updated_at: "2026-08-01T00:00:00Z" },

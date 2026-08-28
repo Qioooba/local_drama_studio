@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { createModelCompatibilityReport, getClientCapabilities, listModelLibraryRoots, pickLocalModelFile, registerLocalModelReference, scanLocalModelRegistry, type ModelRegistryScanItem } from "../../generated/api";
+import { createGlobalModelCompatibilityReport, createModelCompatibilityReport, getClientCapabilities, listModelLibraryRoots, pickLocalModelFile, registerGlobalModelReference, registerLocalModelReference, scanLocalModelRegistry, type ModelRegistryScanItem } from "../../generated/api";
 import { generateMachineCode } from "../shared/autoCode";
 
 const MODEL_USES = [
@@ -18,7 +18,7 @@ function modelStem(path: string): string {
   return path.replace(/\\/g, "/").split("/").pop()?.replace(/\.[^.]+$/, "") ?? "";
 }
 
-export function LocalModelReferenceForm({ projectId, onRegistered }: { projectId: string; onRegistered: () => void }) {
+export function LocalModelReferenceForm({ projectId, onRegistered }: { projectId?: string; onRegistered: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [kind, setKind] = useState("");
   const [path, setPath] = useState("");
@@ -42,10 +42,13 @@ export function LocalModelReferenceForm({ projectId, onRegistered }: { projectId
     setPending(true);
     setMessage(null);
     try {
-      const registered = await registerLocalModelReference(projectId, {
-        code, kind, machine_path_ref: path.trim(), license_note: "USER_SUPPLIED_LOCAL_MODEL",
-      });
-      const result = await createModelCompatibilityReport(projectId, registered.artifact.id, selectedUse.capability);
+      const payload = { code, kind, machine_path_ref: path.trim(), license_note: "USER_SUPPLIED_LOCAL_MODEL" };
+      const registered = projectId
+        ? await registerLocalModelReference(projectId, payload)
+        : await registerGlobalModelReference(payload);
+      const result = projectId
+        ? await createModelCompatibilityReport(projectId, registered.artifact.id, selectedUse.capability)
+        : await createGlobalModelCompatibilityReport(registered.artifact.id, selectedUse.capability);
       const capabilityStatus = result.report.capability?.status ?? "NOT_REQUESTED";
       setMessage(`已引用服务端模型，未复制或上传权重；用途检查：${capabilityStatus}；兼容性：${result.report.report_status}`);
       onRegistered();
@@ -102,7 +105,7 @@ export function LocalModelReferenceForm({ projectId, onRegistered }: { projectId
 
   const serverDialogs = capabilities.data?.capabilities.server_file_dialogs ?? false;
   return <div className="model-license-import local-model-reference-form">
-    <button className="primary-action" type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>{expanded ? "收起模型添加" : "添加服务端模型"}</button>
+    <button className="primary-action" type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>{expanded ? "收起模型添加" : projectId ? "添加服务端模型" : "添加全局模型"}</button>
     {expanded && <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
       <div className="local-model-primary-fields">
         <label>这个模型用来做什么？<select value={kind} onChange={(event) => setKind(event.target.value)} required><option value="">请选择用途</option>{MODEL_USES.map((item) => <option key={item.kind} value={item.kind}>{item.label}</option>)}</select></label>
@@ -147,7 +150,7 @@ export function LocalModelReferenceForm({ projectId, onRegistered }: { projectId
       </details>
 
       {path && <details className="local-model-technical-details"><summary>技术信息</summary><p>系统标识 <code>{code}</code></p><p>将自动检查：{selectedUse?.label ?? "选择用途后显示"}</p></details>}
-      <p className="muted">系统只在 Windows 服务端读取模型文件信息和兼容性，不把权重发送到浏览器。</p>
+      <p className="muted">系统只在 Windows 服务端读取模型文件信息和兼容性，不把权重发送到浏览器；添加后可供所有项目选择。</p>
       <button className="primary-action" type="submit" disabled={pending || !path || !kind}>{pending ? "正在检查模型…" : "添加并检查模型"}</button>
       {message && <p className={message.startsWith("登记失败") ? "inline-error" : "review-success"} role="status">{message}</p>}
     </form>}

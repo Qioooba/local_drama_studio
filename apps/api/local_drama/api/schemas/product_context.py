@@ -55,6 +55,8 @@ class EpisodeSummary(StrictModel):
     display_order: int | None = None
     production_status: str
     target_duration_ms: int | None = None
+    preview_render_id: str | None = None
+    preview_media_version_id: str | None = None
 
 
 class SeasonSummary(StrictModel):

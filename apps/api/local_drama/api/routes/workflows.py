@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
+from fastapi.routing import APIRoute
 
 from local_drama.api.schemas.workflows import (
     ComfyWorkerRequest,
@@ -259,5 +260,5 @@ async def recover_attempt(attempt_id: str, payload: ComfyWorkerRequest, request:
 # (design §13.2 / §11.1: no provider internals in the normal product surface).
 for _route in router.routes:
     _path = getattr(_route, "path", "")
-    if _path.startswith("/comfy"):
+    if isinstance(_route, APIRoute) and _path.startswith("/comfy"):
         _route.include_in_schema = False

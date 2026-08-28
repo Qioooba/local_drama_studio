@@ -4,6 +4,7 @@ import ipaddress
 from pathlib import Path
 
 from fastapi import APIRouter, Request
+from fastapi.routing import APIRoute
 
 from local_drama.api.schemas.g3 import (
     I2VEvidenceKeyframePrepareRequest,
@@ -18,7 +19,15 @@ from local_drama.api.schemas.g7 import (
     WatermarkProfileRequest,
     WorkspaceAssetAuthorizationRequest,
 )
-from local_drama.api.schemas.g7_model import LocalModelReferenceRequest, ModelCompatibilityRequest, ModelLicenseEvidenceRequest, ModelRegistryScanRequest
+from local_drama.api.schemas.g7_model import (
+    GlobalModelArtifactResponse,
+    GlobalModelCompatibilityReportResponse,
+    GlobalModelRegistryResponse,
+    LocalModelReferenceRequest,
+    ModelCompatibilityRequest,
+    ModelLicenseEvidenceRequest,
+    ModelRegistryScanRequest,
+)
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.g6_readiness import G6ReadinessService
 from local_drama.application.g7_readiness import G7ReadinessService
@@ -89,7 +98,7 @@ async def scan_local_model_registry(payload: ModelRegistryScanRequest, request: 
         if request.app.state.settings.is_lan_service and not configured:
             raise DomainRuleError("MODEL_LIBRARY_ROOTS_NOT_CONFIGURED", "服务器尚未配置可供远程选择的模型库",
                                   suggested_action="设置 LOCAL_DRAMA_MODEL_LIBRARY_ROOTS 后重启服务")
-        return {"scan": ModelCompatibilityService.scan_local_directory(requested, payload.max_files)}
+        return {"scan": ModelCompatibilityService.scan_local_directory(str(requested), payload.max_files)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -243,6 +252,47 @@ async def get_model_compatibility(project_id: str, request: Request) -> dict[str
         raise api_error_from_domain(error) from error
 
 
+@router.get("/model-registry", operation_id="getGlobalModelRegistry", response_model=GlobalModelRegistryResponse)
+async def get_global_model_registry(request: Request) -> dict[str, object]:
+    return {"compatibility": ModelCompatibilityService(request.app.state.database).system_snapshot()}
+
+
+@router.post(
+    "/model-registry/artifacts",
+    status_code=201,
+    operation_id="registerGlobalModelReference",
+    response_model=GlobalModelArtifactResponse,
+)
+async def register_global_model_reference(payload: LocalModelReferenceRequest, request: Request) -> dict[str, object]:
+    try:
+        artifact = ModelCompatibilityService(request.app.state.database).register_local_reference(
+            None,
+            payload.code,
+            payload.kind,
+            payload.machine_path_ref,
+            payload.license_note,
+        )
+        return {"artifact": artifact}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post(
+    "/model-registry/compatibility-report",
+    status_code=201,
+    operation_id="createGlobalModelCompatibilityReport",
+    response_model=GlobalModelCompatibilityReportResponse,
+)
+async def create_global_model_compatibility_report(payload: ModelCompatibilityRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"report": ModelCompatibilityService(request.app.state.database).report(
+            payload.model_artifact_id,
+            required_capability=payload.required_capability,
+        )}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.post("/projects/{project_id}/model-artifacts", status_code=201, operation_id="registerLocalModelReference")
 async def register_local_model_reference(project_id: str, payload: LocalModelReferenceRequest, request: Request) -> dict[str, object]:
     try:
@@ -390,5 +440,5 @@ async def import_model_license_evidence(project_id: str, payload: ModelLicenseEv
 # them from the public OpenAPI document (design §13.2 / §11.1).
 for _route in router.routes:
     _path = getattr(_route, "path", "")
-    if "/gates/g" in _path:
+    if isinstance(_route, APIRoute) and "/gates/g" in _path:
         _route.include_in_schema = False

@@ -872,6 +872,63 @@ class MediaService:
             replace_path(partial, destination)
         return destination, "image/webp", relative.as_posix(), preset_hash
 
+    def cached_visual_thumbnail(
+        self,
+        source: Path,
+        *,
+        cache_namespace: str,
+        source_sha256: str,
+        media_kind: str,
+        mime_type: str,
+        duration_ms: int | None = None,
+        size: str = "small",
+        frame: str = "poster",
+    ) -> tuple[Path, str, str, str]:
+        """Derive a bounded WebP preview for an authorized image or video."""
+        kind = media_kind.strip().upper()
+        mime = mime_type.strip().lower()
+        is_image = kind == "IMAGE" and mime.startswith("image/")
+        is_video = kind == "VIDEO" and mime.startswith("video/")
+        if not (is_image or is_video):
+            raise DomainRuleError(
+                "MEDIA_KIND_MIME_MISMATCH",
+                "媒体类型与 MIME 不一致，不能生成缩略图",
+                {"media_kind": kind, "mime_type": mime},
+            )
+        if is_video:
+            return self.cached_video_thumbnail(
+                source,
+                cache_namespace=cache_namespace,
+                source_sha256=source_sha256,
+                duration_ms=duration_ms,
+                size=size,
+                frame=frame,
+            )
+        if size not in {"small", "medium"}:
+            raise DomainRuleError("THUMBNAIL_SIZE_UNSUPPORTED", "缩略图 size 仅支持 small 或 medium", {"size": size})
+        normalized_frame = {"poster": "first", "start": "first", "first_frame": "first"}.get(
+            str(frame or "poster").strip().lower(), str(frame or "poster").strip().lower()
+        )
+        if normalized_frame != "first":
+            raise DomainRuleError("THUMBNAIL_FRAME_UNSUPPORTED", "图片只有 first/poster 缩略图")
+        safe_namespace = re.sub(r"[^A-Za-z0-9._-]+", "_", cache_namespace).strip("._")
+        if not safe_namespace:
+            raise DomainRuleError("THUMBNAIL_CACHE_KEY_INVALID", "缩略图缓存键无效")
+        preset = f"thumbnail-v2:{size}:{normalized_frame}"
+        preset_hash = hashlib.sha256(preset.encode()).hexdigest()
+        relative = Path("thumbnails") / safe_namespace / size / f"{source_sha256}_{preset_hash[:16]}.webp"
+        destination = (self.settings.cache_root / relative).resolve()
+        cache_root = self.settings.cache_root.resolve()
+        if not destination.is_relative_to(cache_root):
+            raise DomainRuleError("THUMBNAIL_CACHE_PATH_INVALID", "缩略图缓存路径越界")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if not destination.exists():
+            partial = destination.with_suffix(".partial.webp")
+            scale = "320:-1" if size == "small" else "960:-1"
+            self._run_ffmpeg(["-i", str(source), "-frames:v", "1", "-vf", f"scale={scale}", "-c:v", "libwebp", "-y", str(partial)])
+            replace_path(partial, destination)
+        return destination, "image/webp", relative.as_posix(), preset_hash
+
     def thumbnail(self, media_version_id: str, size: str = "small", frame: str = "poster", *, materialize: bool = True) -> tuple[Path, str]:
         item, source = self.content_path(media_version_id)
         self._verify_content_size(item, source)
@@ -918,30 +975,18 @@ class MediaService:
                 )
             return destination, "image/webp"
         self.verify_content_integrity(media_version_id)
-        if is_video and not is_image:
-            destination, mime, cached_relative, preset_hash = self.cached_video_thumbnail(
-                source,
-                cache_namespace=media_version_id,
-                source_sha256=str(item["sha256"]),
-                duration_ms=int(item.get("duration_ms") or 0),
-                size=size,
-                frame=normalized_frame,
-            )
-            self._cache_entry(media_version_id, "THUMBNAIL", cached_relative, item["sha256"], preset_hash)
-            return destination, mime
-        preset = f"thumbnail-v2:{size}:{normalized_frame}"
-        preset_hash = hashlib.sha256(preset.encode()).hexdigest()
-        extension = ".webp"
-        relative = Path("thumbnails") / media_version_id / size / f"{item['sha256']}_{preset_hash[:16]}{extension}"
-        destination = self.settings.cache_root / relative
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        if not destination.exists():
-            partial = destination.with_suffix(".partial.webp")
-            scale = "320:-1" if size == "small" else "960:-1"
-            self._run_ffmpeg(["-i", str(source), "-frames:v", "1", "-vf", f"scale={scale}", "-c:v", "libwebp", "-y", str(partial)])
-            replace_path(partial, destination)
-            self._cache_entry(media_version_id, "THUMBNAIL", relative.as_posix(), item["sha256"], preset_hash)
-        return destination, "image/webp"
+        destination, mime, cached_relative, preset_hash = self.cached_visual_thumbnail(
+            source,
+            cache_namespace=media_version_id,
+            source_sha256=str(item["sha256"]),
+            media_kind=media_kind,
+            mime_type=mime_type,
+            duration_ms=int(item.get("duration_ms") or 0),
+            size=size,
+            frame=normalized_frame,
+        )
+        self._cache_entry(media_version_id, "THUMBNAIL", cached_relative, item["sha256"], preset_hash)
+        return destination, mime
 
     def filmstrip(self, media_version_id: str, *, materialize: bool = True) -> tuple[Path, str]:
         item, source = self.content_path(media_version_id)

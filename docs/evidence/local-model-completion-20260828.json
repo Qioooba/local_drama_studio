@@ -1,0 +1,71 @@
+{
+  "schema_version": "localdrama.local-model-completion.v1",
+  "completed_at": "2026-08-28T21:45:00+08:00",
+  "network_policy": {
+    "external_network_used_after_user_stop": false,
+    "download_processes": 0,
+    "ollama_probe": "LOOPBACK_ONLY"
+  },
+  "canonical_root": "F:/AI_Models/LocalDramaStudio",
+  "manifest_sha256": "1a21510344befb76bbf73aecf2c30ac52f222daa1980da2d23ac605803f7aac8",
+  "verified": {
+    "model_groups": 6,
+    "unique_component_files": 15,
+    "unique_bytes": 124064903107,
+    "published_workflows": 6,
+    "runtime_verified_candidate_profiles": 8,
+    "models": [
+      "Qwen-Image-2512 Q5_K_M",
+      "Qwen-Image-Edit-2511 Q5_K_M",
+      "Qwen-Image-Edit-2511 Multiple-Angles LoRA",
+      "MiniMax H3 FL2VA",
+      "MiniMax H3 Ref2VA",
+      "ACE-Step 1.5 XL-SFT"
+    ]
+  },
+  "blocked_incomplete": [
+    {"model":"qwen3.8:27b","reason":"OLLAMA_MODEL_NOT_PRESENT"},
+    {"model":"Qwen3-Embedding-8B","reason":"SHARDS_1_TO_3_HAVE_ARIA2_INCOMPLETE_MARKERS"},
+    {"model":"VoxCPM2","reason":"MAIN_WEIGHT_INCOMPLETE_AND_AUDIOVAE_MISSING"},
+    {"model":"LatentSync-1.6","reason":"PRIMARY_WEIGHTS_MISSING"},
+    {"model":"Qwen3-ASR-1.7B-hf","reason":"PRIMARY_WEIGHT_MISSING"},
+    {"model":"Qwen3-ForcedAligner-0.6B-hf","reason":"PRIMARY_WEIGHT_MISSING"}
+  ],
+  "database": {
+    "migration_head": "0068_local_ai_model_runtime",
+    "integrity_check": "ok",
+    "foreign_key_violations": 0,
+    "verified_artifacts": 15,
+    "stale_candidate_profile_versions_deleted": 16,
+    "stale_candidate_artifacts_deleted": 30,
+    "model_files_deleted": 0,
+    "pre_prune_backup": "F:/AI_Models/LocalDramaStudio/Backups/local_drama-pre-stale-candidate-prune-20260828-213542.sqlite3"
+  },
+  "retained_legacy_assets": [
+    {
+      "path": "E:/AI/ComfyUI-Models/checkpoints/sdxl_turbo_fp16.safetensors",
+      "reason": "Published legacy workflow still has 5 project bindings and 15 job references."
+    },
+    {
+      "path": "E:/AI/ComfyUI-Models/_disabled-artifacts-20260809/MiniMax-H3-FL2VA-int8_convrot.full-int8-33gb.safetensors",
+      "reason": "It is a hard link to legacy H3 paths; removing one name would not reclaim the allocation and could break reproducibility."
+    }
+  ],
+  "tests": {
+    "api_suite": "PASS_WITH_ONE_CONDITIONAL_SKIP",
+    "ruff": "PASS",
+    "image_decode": "PASS_3_OF_3",
+    "audio_probe": "PASS_FLAC_48KHZ_STEREO",
+    "video_probe": "PASS_2_OF_2_H264_AAC",
+    "profile_compatibility": "PASS_8_OF_8"
+  },
+  "runtime": {
+    "host": "RUNNING",
+    "live": "HEALTHY",
+    "ready": "HEALTHY",
+    "dependencies": "HEALTHY",
+    "worker_channels": ["CPU", "GPU_H3", "GPU_LOCAL_AI"],
+    "listen_scope": "127.0.0.1"
+  },
+  "publication_gate": "Profiles remain candidates until project media quality and license evidence are supplied; runtime verification is complete."
+}

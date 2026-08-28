@@ -4752,6 +4752,28 @@
         }
       }
     },
+    "/api/v1/diagnostics/gpu-runtime": {
+      "get": {
+        "tags": [
+          "diagnostics"
+        ],
+        "summary": "Gpu Runtime Status",
+        "description": "Return durable single-card ownership without contacting model runtimes.",
+        "operationId": "getGpuRuntimeStatus",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuRuntimeStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/diagnostics/{check_id}:dry-run-fix": {
       "post": {
         "tags": [
@@ -6559,6 +6581,109 @@
         }
       }
     },
+    "/api/v1/model-registry": {
+      "get": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "Get Global Model Registry",
+        "operationId": "getGlobalModelRegistry",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GlobalModelRegistryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/model-registry/artifacts": {
+      "post": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "Register Global Model Reference",
+        "operationId": "registerGlobalModelReference",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocalModelReferenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GlobalModelArtifactResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/model-registry/compatibility-report": {
+      "post": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "Create Global Model Compatibility Report",
+        "operationId": "createGlobalModelCompatibilityReport",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelCompatibilityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GlobalModelCompatibilityReportResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/model-artifacts": {
       "post": {
         "tags": [
@@ -7774,6 +7899,71 @@
         }
       }
     },
+    "/api/v1/import-sessions/{session_id}/paragraphs": {
+      "get": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Get Import Session Paragraphs",
+        "operationId": "getImportSessionParagraphs",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Start"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 40,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceParagraphPageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/source-document-versions/{source_document_version_id}/passage": {
       "get": {
         "tags": [
@@ -8584,6 +8774,46 @@
                   "additionalProperties": true,
                   "title": "Response Registerjobartifact"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/artifacts/{artifact_id}/download": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Download Artifact",
+        "operationId": "downloadJobArtifact",
+        "parameters": [
+          {
+            "name": "artifact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Artifact Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -10338,6 +10568,7 @@
         ],
         "summary": "Plan",
         "operationId": "planOneSentenceVideoRun",
+        "deprecated": true,
         "parameters": [
           {
             "name": "Idempotency-Key",
@@ -10354,7 +10585,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/OneSentenceVideoPlanRequest"
+                "$ref": "#/components/schemas/QuickGenerationPlanRequest"
               }
             }
           }
@@ -10392,6 +10623,7 @@
         ],
         "summary": "List Runs",
         "operationId": "listOneSentenceVideoRuns",
+        "deprecated": true,
         "parameters": [
           {
             "name": "limit",
@@ -10437,6 +10669,7 @@
         ],
         "summary": "Get Run",
         "operationId": "getOneSentenceVideoRun",
+        "deprecated": true,
         "parameters": [
           {
             "name": "run_id",
@@ -10481,6 +10714,7 @@
         ],
         "summary": "Commit",
         "operationId": "commitOneSentenceVideoRun",
+        "deprecated": true,
         "parameters": [
           {
             "name": "run_id",
@@ -10525,6 +10759,7 @@
         ],
         "summary": "Resume",
         "operationId": "resumeOneSentenceVideoRun",
+        "deprecated": true,
         "parameters": [
           {
             "name": "run_id",
@@ -10569,6 +10804,7 @@
         ],
         "summary": "Cancel",
         "operationId": "cancelOneSentenceVideoRun",
+        "deprecated": true,
         "parameters": [
           {
             "name": "run_id",
@@ -10613,6 +10849,7 @@
         ],
         "summary": "Retry",
         "operationId": "retryOneSentenceVideoRun",
+        "deprecated": true,
         "parameters": [
           {
             "name": "run_id",
@@ -10629,7 +10866,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/OneSentenceVideoRetryRequest"
+                "$ref": "#/components/schemas/QuickGenerationRetryRequest"
               }
             }
           }
@@ -10660,6 +10897,68 @@
         }
       }
     },
+    "/api/v1/one-sentence-video-runs/{run_id}:regenerate-prompt": {
+      "post": {
+        "tags": [
+          "one-sentence-video-runs"
+        ],
+        "summary": "Regenerate Prompt",
+        "operationId": "regenerateOneSentenceVideoPrompt",
+        "deprecated": true,
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuickGenerationPromptRegenerateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickGenerationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/one-sentence-video-runs/{run_id}:reroll-images": {
       "post": {
         "tags": [
@@ -10667,6 +10966,7 @@
         ],
         "summary": "Reroll Images",
         "operationId": "rerollOneSentenceVideoImages",
+        "deprecated": true,
         "parameters": [
           {
             "name": "run_id",
@@ -10683,7 +10983,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/OneSentenceImageRerollRequest"
+                "$ref": "#/components/schemas/QuickGenerationImageRerollRequest"
               }
             }
           }
@@ -10721,6 +11021,7 @@
         ],
         "summary": "Select Candidate",
         "operationId": "selectOneSentenceVideoImageCandidate",
+        "deprecated": true,
         "parameters": [
           {
             "name": "run_id",
@@ -10746,7 +11047,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/OneSentenceImageSelectRequest"
+                "$ref": "#/components/schemas/QuickGenerationImageSelectRequest"
               }
             }
           }
@@ -10760,6 +11061,775 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Selectonesentencevideoimagecandidate"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/quick-generations:plan": {
+      "post": {
+        "tags": [
+          "quick-generations"
+        ],
+        "summary": "Plan",
+        "operationId": "planQuickGeneration",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuickGenerationPlanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickGenerationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/quick-generations": {
+      "get": {
+        "tags": [
+          "quick-generations"
+        ],
+        "summary": "List Runs",
+        "operationId": "listQuickGenerations",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 12,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickGenerationListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/quick-generations/{run_id}": {
+      "get": {
+        "tags": [
+          "quick-generations"
+        ],
+        "summary": "Get Run",
+        "operationId": "getQuickGeneration",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickGenerationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/quick-generations/{run_id}:commit": {
+      "post": {
+        "tags": [
+          "quick-generations"
+        ],
+        "summary": "Commit",
+        "operationId": "commitQuickGeneration",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickGenerationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/quick-generations/{run_id}:resume": {
+      "post": {
+        "tags": [
+          "quick-generations"
+        ],
+        "summary": "Resume",
+        "operationId": "resumeQuickGeneration",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickGenerationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/quick-generations/{run_id}:cancel": {
+      "post": {
+        "tags": [
+          "quick-generations"
+        ],
+        "summary": "Cancel",
+        "operationId": "cancelQuickGeneration",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickGenerationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/quick-generations/{run_id}:retry": {
+      "post": {
+        "tags": [
+          "quick-generations"
+        ],
+        "summary": "Retry",
+        "operationId": "retryQuickGeneration",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuickGenerationRetryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickGenerationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/quick-generations/{run_id}:regenerate-prompt": {
+      "post": {
+        "tags": [
+          "quick-generations"
+        ],
+        "summary": "Regenerate Prompt",
+        "operationId": "regenerateQuickGenerationPrompt",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuickGenerationPromptRegenerateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickGenerationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/quick-generations/{run_id}:reroll-images": {
+      "post": {
+        "tags": [
+          "quick-generations"
+        ],
+        "summary": "Reroll Images",
+        "operationId": "rerollQuickGenerationImages",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuickGenerationImageRerollRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickGenerationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/quick-generations/{run_id}/candidates/{candidate_id}:select": {
+      "post": {
+        "tags": [
+          "quick-generations"
+        ],
+        "summary": "Select Candidate",
+        "operationId": "selectQuickGenerationCandidate",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Candidate Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuickGenerationImageSelectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickGenerationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/quick-generation-outputs/{output_id}/content": {
+      "get": {
+        "tags": [
+          "quick-generations"
+        ],
+        "summary": "Output Content",
+        "operationId": "getQuickGenerationOutputContent",
+        "parameters": [
+          {
+            "name": "output_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Output Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/quick-generation-outputs/{output_id}/thumbnail": {
+      "get": {
+        "tags": [
+          "quick-generations"
+        ],
+        "summary": "Output Thumbnail",
+        "operationId": "getQuickGenerationOutputThumbnail",
+        "parameters": [
+          {
+            "name": "output_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Output Id"
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "small",
+              "title": "Size"
+            }
+          },
+          {
+            "name": "frame",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "poster",
+              "title": "Frame"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/quick-generation-presets": {
+      "get": {
+        "tags": [
+          "quick-generations"
+        ],
+        "summary": "List Presets",
+        "operationId": "listQuickGenerationPresets",
+        "parameters": [
+          {
+            "name": "capability",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Capability"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickGenerationPresetListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "quick-generations"
+        ],
+        "summary": "Create Preset",
+        "operationId": "createQuickGenerationPreset",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuickGenerationPresetCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickGenerationPresetResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/quick-generation-presets/{preset_id}": {
+      "put": {
+        "tags": [
+          "quick-generations"
+        ],
+        "summary": "Update Preset",
+        "operationId": "updateQuickGenerationPreset",
+        "parameters": [
+          {
+            "name": "preset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Preset Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuickGenerationPresetUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickGenerationPresetResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "quick-generations"
+        ],
+        "summary": "Delete Preset",
+        "operationId": "deleteQuickGenerationPreset",
+        "parameters": [
+          {
+            "name": "preset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Preset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickGenerationPresetDeleteResponse"
                 }
               }
             }
@@ -28394,6 +29464,30 @@
             "minLength": 64,
             "pattern": "^[0-9a-f]{64}$",
             "title": "Expected Preview Hash"
+          },
+          "source_paragraph_start": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Paragraph Start"
+          },
+          "source_paragraph_end": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Paragraph End"
           }
         },
         "type": "object",
@@ -30419,6 +31513,28 @@
               }
             ],
             "title": "Target Duration Ms"
+          },
+          "preview_render_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Render Id"
+          },
+          "preview_media_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Media Version Id"
           }
         },
         "additionalProperties": false,
@@ -31944,6 +33060,66 @@
         ],
         "title": "GenerationResolutionFact"
       },
+      "GlobalModelArtifactResponse": {
+        "properties": {
+          "artifact": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Artifact"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "artifact"
+        ],
+        "title": "GlobalModelArtifactResponse"
+      },
+      "GlobalModelCompatibilityReportResponse": {
+        "properties": {
+          "report": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Report"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "report"
+        ],
+        "title": "GlobalModelCompatibilityReportResponse"
+      },
+      "GlobalModelRegistryResponse": {
+        "properties": {
+          "compatibility": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Compatibility"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "compatibility"
+        ],
+        "title": "GlobalModelRegistryResponse"
+      },
+      "GpuRuntimeStatusResponse": {
+        "properties": {
+          "gpu_runtime": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Gpu Runtime"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "gpu_runtime"
+        ],
+        "title": "GpuRuntimeStatusResponse"
+      },
       "H3CandidateWorkflowRequest": {
         "properties": {
           "code": {
@@ -33320,139 +34496,6 @@
           "target"
         ],
         "title": "NextAction"
-      },
-      "OneSentenceImageRerollRequest": {
-        "properties": {
-          "count": {
-            "type": "integer",
-            "maximum": 8.0,
-            "minimum": 1.0,
-            "title": "Count",
-            "default": 4
-          },
-          "parent_candidate_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parent Candidate Id"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "title": "OneSentenceImageRerollRequest"
-      },
-      "OneSentenceImageSelectRequest": {
-        "properties": {
-          "confirm_review_checks": {
-            "type": "boolean",
-            "const": true,
-            "title": "Confirm Review Checks"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "confirm_review_checks"
-        ],
-        "title": "OneSentenceImageSelectRequest"
-      },
-      "OneSentenceVideoPlanRequest": {
-        "properties": {
-          "story": {
-            "type": "string",
-            "maxLength": 2000,
-            "minLength": 2,
-            "title": "Story"
-          },
-          "mode": {
-            "type": "string",
-            "enum": [
-              "DIRECT_T2V",
-              "KEYFRAME_I2V"
-            ],
-            "title": "Mode",
-            "default": "DIRECT_T2V"
-          },
-          "language": {
-            "type": "string",
-            "enum": [
-              "zh-CN",
-              "en-US"
-            ],
-            "title": "Language",
-            "default": "zh-CN"
-          },
-          "llm_profile_version_id": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Llm Profile Version Id"
-          },
-          "image_profile_version_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Image Profile Version Id"
-          },
-          "video_profile_version_id": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Video Profile Version Id"
-          },
-          "image_candidate_count": {
-            "type": "integer",
-            "maximum": 8.0,
-            "minimum": 1.0,
-            "title": "Image Candidate Count",
-            "default": 4
-          },
-          "allow_remote_outbound": {
-            "type": "boolean",
-            "title": "Allow Remote Outbound",
-            "default": false
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "story",
-          "llm_profile_version_id",
-          "video_profile_version_id"
-        ],
-        "title": "OneSentenceVideoPlanRequest"
-      },
-      "OneSentenceVideoRetryRequest": {
-        "properties": {
-          "mode": {
-            "type": "string",
-            "enum": [
-              "SAME_INPUT",
-              "NEW_SEED"
-            ],
-            "title": "Mode"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "mode"
-        ],
-        "title": "OneSentenceVideoRetryRequest"
       },
       "OutboxDeliveryRequest": {
         "properties": {
@@ -35137,6 +36180,343 @@
           "results"
         ],
         "title": "QcSummary"
+      },
+      "QuickGenerationImageRerollRequest": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Count",
+            "default": 4
+          },
+          "parent_candidate_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Candidate Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "QuickGenerationImageRerollRequest"
+      },
+      "QuickGenerationImageSelectRequest": {
+        "properties": {
+          "confirm_review_checks": {
+            "type": "boolean",
+            "const": true,
+            "title": "Confirm Review Checks"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "confirm_review_checks"
+        ],
+        "title": "QuickGenerationImageSelectRequest"
+      },
+      "QuickGenerationListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "QuickGenerationListResponse"
+      },
+      "QuickGenerationPlanRequest": {
+        "properties": {
+          "story": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 2,
+            "title": "Story"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "TEXT_TO_IMAGE",
+              "TEXT_TO_VIDEO",
+              "TEXT_TO_IMAGE_TO_VIDEO"
+            ],
+            "title": "Mode",
+            "default": "TEXT_TO_VIDEO"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "zh-CN",
+              "en-US"
+            ],
+            "title": "Language",
+            "default": "zh-CN"
+          },
+          "llm_profile_version_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Llm Profile Version Id"
+          },
+          "image_profile_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Profile Version Id"
+          },
+          "video_profile_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Profile Version Id"
+          },
+          "image_candidate_count": {
+            "type": "integer",
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Image Candidate Count",
+            "default": 4
+          },
+          "allow_remote_outbound": {
+            "type": "boolean",
+            "title": "Allow Remote Outbound",
+            "default": false
+          },
+          "llm_parameters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Llm Parameters"
+          },
+          "image_parameters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Image Parameters"
+          },
+          "video_parameters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Video Parameters"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "story",
+          "llm_profile_version_id"
+        ],
+        "title": "QuickGenerationPlanRequest"
+      },
+      "QuickGenerationPresetCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "capability": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Capability"
+          },
+          "execution_profile_version_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Execution Profile Version Id"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Parameters"
+          },
+          "favorite": {
+            "type": "boolean",
+            "title": "Favorite",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "capability",
+          "execution_profile_version_id"
+        ],
+        "title": "QuickGenerationPresetCreateRequest"
+      },
+      "QuickGenerationPresetDeleteResponse": {
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          },
+          "preset_id": {
+            "type": "string",
+            "title": "Preset Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "deleted",
+          "preset_id"
+        ],
+        "title": "QuickGenerationPresetDeleteResponse"
+      },
+      "QuickGenerationPresetListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "QuickGenerationPresetListResponse"
+      },
+      "QuickGenerationPresetResponse": {
+        "properties": {
+          "preset": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Preset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "preset"
+        ],
+        "title": "QuickGenerationPresetResponse"
+      },
+      "QuickGenerationPresetUpdateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "execution_profile_version_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Execution Profile Version Id"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Parameters"
+          },
+          "favorite": {
+            "type": "boolean",
+            "title": "Favorite"
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "execution_profile_version_id",
+          "favorite",
+          "expected_revision"
+        ],
+        "title": "QuickGenerationPresetUpdateRequest"
+      },
+      "QuickGenerationPromptRegenerateRequest": {
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "KEYFRAME",
+              "VIDEO"
+            ],
+            "title": "Target"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target"
+        ],
+        "title": "QuickGenerationPromptRegenerateRequest"
+      },
+      "QuickGenerationRetryRequest": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "SAME_INPUT",
+              "NEW_SEED"
+            ],
+            "title": "Mode"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "title": "QuickGenerationRetryRequest"
+      },
+      "QuickGenerationRunResponse": {
+        "properties": {
+          "run": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Run"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run"
+        ],
+        "title": "QuickGenerationRunResponse"
       },
       "Rational": {
         "properties": {
@@ -38989,6 +40369,120 @@
         "additionalProperties": false,
         "type": "object",
         "title": "SourceContextFact"
+      },
+      "SourceParagraphItem": {
+        "properties": {
+          "number": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Number"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "source_start": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Source Start"
+          },
+          "source_end": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Source End"
+          },
+          "is_heading": {
+            "type": "boolean",
+            "title": "Is Heading"
+          }
+        },
+        "type": "object",
+        "required": [
+          "number",
+          "text",
+          "source_start",
+          "source_end",
+          "is_heading"
+        ],
+        "title": "SourceParagraphItem"
+      },
+      "SourceParagraphPageResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "source_document_version_id": {
+            "type": "string",
+            "title": "Source Document Version Id"
+          },
+          "start_paragraph": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Start Paragraph"
+          },
+          "end_paragraph": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "End Paragraph"
+          },
+          "total_paragraph_count": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Total Paragraph Count"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SourceParagraphItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "chapters": {
+            "items": {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Chapters"
+          },
+          "has_previous": {
+            "type": "boolean",
+            "title": "Has Previous"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More"
+          },
+          "read_only": {
+            "type": "boolean",
+            "const": true,
+            "title": "Read Only"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "source_document_version_id",
+          "start_paragraph",
+          "end_paragraph",
+          "total_paragraph_count",
+          "items",
+          "chapters",
+          "has_previous",
+          "has_more",
+          "read_only"
+        ],
+        "title": "SourceParagraphPageResponse"
       },
       "SourcePassageResponse": {
         "properties": {

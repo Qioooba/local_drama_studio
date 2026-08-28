@@ -18,7 +18,16 @@ $stdoutPath = Join-Path $logsRoot 'comfy-production.stdout.log'
 $stderrPath = Join-Path $logsRoot 'comfy-production.stderr.log'
 $managerConfigDir = Join-Path $userRoot '__manager'
 $managerConfigPath = Join-Path $managerConfigDir 'config.ini'
-$extraModelRoot = $env:LOCAL_DRAMA_COMFY_EXTRA_MODEL_ROOT
+$extraModelRootsRaw = if ($env:LOCAL_DRAMA_COMFY_EXTRA_MODEL_ROOTS) {
+  $env:LOCAL_DRAMA_COMFY_EXTRA_MODEL_ROOTS
+} else {
+  $env:LOCAL_DRAMA_COMFY_EXTRA_MODEL_ROOT
+}
+$extraModelRoots = @(
+  $extraModelRootsRaw -split ';' |
+    ForEach-Object { $_.Trim() } |
+    Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+)
 $extraModelConfigPath = Join-Path $sandboxRoot 'extra_model_paths.yaml'
 $port = if ($env:LOCAL_DRAMA_COMFY_PORT) { [int]$env:LOCAL_DRAMA_COMFY_PORT } else { 8188 }
 
@@ -73,8 +82,10 @@ if ([string]::IsNullOrWhiteSpace($python) -or [string]::IsNullOrWhiteSpace($comf
   throw 'start requires LOCAL_DRAMA_COMFY_PYTHON and LOCAL_DRAMA_COMFY_ROOT; no hidden ComfyUI path is assumed'
 }
 if (-not (Test-Path -LiteralPath $python) -or -not (Test-Path -LiteralPath (Join-Path $comfyRoot 'main.py'))) { throw 'configured ComfyUI python/root does not exist' }
-if (-not [string]::IsNullOrWhiteSpace($extraModelRoot) -and -not (Test-Path -LiteralPath $extraModelRoot -PathType Container)) {
-  throw 'LOCAL_DRAMA_COMFY_EXTRA_MODEL_ROOT must reference an existing directory'
+foreach ($extraModelRoot in $extraModelRoots) {
+  if (-not (Test-Path -LiteralPath $extraModelRoot -PathType Container)) {
+    throw "ComfyUI extra model root does not exist: $extraModelRoot"
+  }
 }
 $existing = Get-ListenerProcess
 if ($null -ne $existing) { Write-Output "COMFY_ALREADY_RUNNING PID=$($existing.ProcessId) PORT=$port"; exit 0 }
@@ -98,24 +109,28 @@ $arguments = @(
   # The supported H3 chain uses ComfyUI core + comfy_extras nodes. The RH
   # plugin family is deliberately excluded because its Windows INT8 unload
   # path is a proven c10.dll access-violation source on this host.
-  '--disable-all-custom-nodes','--disable-api-nodes'
+  '--disable-all-custom-nodes','--whitelist-custom-nodes','ComfyUI-GGUF','--disable-api-nodes'
 )
-if (-not [string]::IsNullOrWhiteSpace($extraModelRoot)) {
-  $normalizedExtraModelRoot = $extraModelRoot.Replace('\\', '/')
-  @(
-    'local_drama_external_models:',
-    "  base_path: $normalizedExtraModelRoot",
-    '  checkpoints: checkpoints',
-    '  configs: configs',
-    '  vae: vae',
-    '  clip: clip',
-    '  clip_vision: clip_vision',
-    '  text_encoders: text_encoders',
-    '  diffusion_models: diffusion_models',
-    '  loras: loras',
-    '  audio_encoders: audio_encoders',
-    '  audio_models: audio_models'
-  ) | Set-Content -LiteralPath $extraModelConfigPath -Encoding UTF8
+if ($extraModelRoots.Count -gt 0) {
+  $extraModelConfig = @()
+  for ($index = 0; $index -lt $extraModelRoots.Count; $index++) {
+    $normalizedExtraModelRoot = $extraModelRoots[$index].Replace('\\', '/')
+    $extraModelConfig += @(
+      "local_drama_external_models_$($index + 1):",
+      "  base_path: $normalizedExtraModelRoot",
+      '  checkpoints: checkpoints',
+      '  configs: configs',
+      '  vae: vae',
+      '  clip: clip',
+      '  clip_vision: clip_vision',
+      '  text_encoders: text_encoders',
+      '  diffusion_models: diffusion_models',
+      '  loras: loras',
+      '  audio_encoders: audio_encoders',
+      '  audio_models: audio_models'
+    )
+  }
+  $extraModelConfig | Set-Content -LiteralPath $extraModelConfigPath -Encoding UTF8
   $arguments += @('--extra-model-paths-config', $extraModelConfigPath)
 }
 if ($env:LOCAL_DRAMA_COMFY_DIAGNOSTIC_FLAGS) {

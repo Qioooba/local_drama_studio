@@ -25,6 +25,9 @@ runtime/*.json
 runtime/*.log
 runtime/*.pid
 runtime/*.sqlite3
+runtime/*.lock
+runtime/*.stop
+config/config.json
 apps/web/*.log
 *.egg-info/
 # isolated UAT work roots (never commit)

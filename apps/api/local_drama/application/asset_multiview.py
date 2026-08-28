@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from typing import Any
+from typing import Any, ClassVar
 
 from local_drama.application.generation import GenerationService
 from local_drama.application.queries.generation_preferences import GenerationPreferenceQueryService
@@ -52,7 +52,7 @@ def _digest(value: object) -> str:
 class AssetMultiViewService:
     CAPABILITY_BLOCKER_CODE = "ASSET_MULTI_VIEW_CAPABILITY_UNAVAILABLE"
     CAPABILITY = CAPABILITY
-    SPECS = VIEW_SPECS
+    SPECS: ClassVar[tuple[tuple[str, float, str], ...]] = VIEW_SPECS
     PURPOSE = "ASSET_MULTI_VIEW"
     OUTPUT_REFERENCE_KIND: str | None = None
     PROMPT_PREFIX = "character turnaround, preserve identity and outfit"

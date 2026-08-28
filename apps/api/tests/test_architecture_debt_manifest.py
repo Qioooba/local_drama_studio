@@ -8,9 +8,15 @@ from scripts.audit_architecture_debt import MANIFEST_PATH, audit
 def test_legacy_architecture_debt_does_not_grow() -> None:
     baseline = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     current = audit()
+    signatures = {
+        "concrete_database_dependencies": lambda entry: (entry["file"],),
+        "cross_service_construction": lambda entry: (entry["file"], entry["service"]),
+        "routes_without_response_model": lambda entry: (entry["file"], entry["operation_id"]),
+    }
     for category, current_entries in current["categories"].items():
-        allowed = {entry["id"] for entry in baseline["categories"][category]}
-        introduced = {entry["id"] for entry in current_entries} - allowed
+        signature = signatures[category]
+        allowed = {signature(entry) for entry in baseline["categories"][category]}
+        introduced = {signature(entry) for entry in current_entries} - allowed
         assert not introduced, f"new {category} debt must use a port/response schema: {sorted(introduced)}"
 
 

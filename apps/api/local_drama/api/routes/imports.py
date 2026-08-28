@@ -8,6 +8,7 @@ from local_drama.api.schemas.g3 import (
     BreakdownRequest,
     DocumentImportCommitRequest,
     DocumentImportRequest,
+    SourceParagraphPageResponse,
     SourcePassageResponse,
 )
 from local_drama.api.uploading import receive_bounded_upload
@@ -72,6 +73,23 @@ async def get_import_session_issues(session_id: str, request: Request) -> dict[s
 
 
 @router.get(
+    "/import-sessions/{session_id}/paragraphs",
+    response_model=SourceParagraphPageResponse,
+    operation_id="getImportSessionParagraphs",
+)
+async def get_import_session_paragraphs(
+    session_id: str,
+    request: Request,
+    start: int = Query(default=1, ge=1),
+    limit: int = Query(default=40, ge=1, le=100),
+) -> dict[str, object]:
+    try:
+        return service(request).get_paragraphs(session_id, start=start, limit=limit)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get(
     "/source-document-versions/{source_document_version_id}/passage",
     response_model=SourcePassageResponse,
     operation_id="getSourceDocumentPassage",
@@ -91,7 +109,14 @@ async def get_source_document_passage(
 @router.post("/import-sessions/{session_id}:commit", operation_id="commitImportSession")
 async def commit_import_session(session_id: str, payload: DocumentImportCommitRequest, request: Request) -> dict[str, object]:
     try:
-        return {"commit": service(request).commit(session_id, payload.expected_preview_hash)}
+        return {
+            "commit": service(request).commit(
+                session_id,
+                payload.expected_preview_hash,
+                source_paragraph_start=payload.source_paragraph_start,
+                source_paragraph_end=payload.source_paragraph_end,
+            )
+        }
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

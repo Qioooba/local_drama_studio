@@ -12,7 +12,7 @@ import json
 import shutil
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from local_drama.domain.capabilities import (
     VIDEO_GENERATION_CAPABILITIES,
@@ -480,7 +480,7 @@ class EpisodeProductionRunService:
         workflows = self.automation.list_workflows(str(episode["project_id"]), include_archived=True)["items"]
         prior = next((item for item in workflows if item["code"] == code), None)
         if prior:
-            return prior
+            return cast(dict[str, Any], prior)
         include_front_half = bool(preflight.get("include_front_half"))
         front_half_only = bool(preflight.get("front_half_only"))
         actions: list[str] = []
@@ -814,7 +814,7 @@ class EpisodeProductionRunService:
     def resume(self, run_id: str, *, note: str, actor: str = "local-user") -> dict[str, Any]:
         self._episode_id_for_run(self.automation.get_run(run_id))
         self.automation.resume_run(run_id, decision="HUMAN_APPROVED", note=note, actor=actor)
-        return self.recover(run_id, actor=actor)["run"]
+        return cast(dict[str, Any], self.recover(run_id, actor=actor)["run"])
 
     def cancel(self, run_id: str, *, actor: str = "local-user") -> dict[str, Any]:
         self._episode_id_for_run(self.automation.get_run(run_id))

@@ -450,7 +450,7 @@ class SqliteEpisodeProductionReadRepository:
             blockers.append(self._blocker("SHOT_INTENT_INCOMPLETE", "镜头意图尚未达到可生产状态。", "SHOT_STUDIO", "OPEN_DESIGN"))
 
         material_slots: list[dict[str, Any]] = []
-        freshness: list[dict[str, str]] = []
+        freshness: list[dict[str, Any]] = []
         for kind, stage_code in (("KEYFRAME", "SHOT_IMAGE"), ("VIDEO", "VIDEO")):
             slot = slots[shot_id].get(kind)
             selected_id = str(slot["media_version_id"]) if slot else None
@@ -517,6 +517,7 @@ class SqliteEpisodeProductionReadRepository:
             compose = self._stage("COMPOSE_QC", "EMPTY", "WORKING_VIDEO_REQUIRED", None, ["OPEN_SHOT_STUDIO"])
         stages.append(compose)
         if video_id:
+            assert video is not None
             included = timeline is not None and video_id in timeline_media
             freshness.append({
                 "source_revision": f"media:{video_id}:r{video['media_revision']}",

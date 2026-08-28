@@ -5,7 +5,6 @@ Benchmark & Fault Injection Suite for LocalDramaStudio Scale & Resilience:
 """
 from __future__ import annotations
 
-import os
 import sys
 import time
 import uuid
@@ -19,10 +18,10 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(API_ROOT))
 
 
+from local_drama.application.jobs import JobService
+from local_drama.application.projects import ProjectService
 from local_drama.config import Settings
 from local_drama.infrastructure.database.sqlite import Database
-from local_drama.application.projects import ProjectService
-from local_drama.application.jobs import JobService
 
 
 def run_benchmark():
@@ -133,7 +132,7 @@ def run_benchmark():
         if claim:
             claims.append(claim)
     assert len(claims) == 50, f"Expected 50 claims, got {len(claims)}"
-    print(f"  [OK] Successfully claimed 50 jobs concurrently")
+    print("  [OK] Successfully claimed 50 jobs concurrently")
 
 
     # Reconcile expired leases (simulating 15 seconds clock advance)
@@ -183,12 +182,8 @@ def run_benchmark():
 
     # Cleanup temporary test database
     import shutil
-    try:
-        shutil.rmtree(workspace.data_root, ignore_errors=True)
-    except Exception:
-        pass
+    shutil.rmtree(workspace.data_root, ignore_errors=True)
 
 
 if __name__ == "__main__":
     run_benchmark()
-

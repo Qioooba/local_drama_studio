@@ -266,7 +266,7 @@ select option { color: var(--text); background: #11151e; }
   content: "";
   pointer-events: none;
 }
-.projects-hero > * { position: relative; z-index: 1; }
+.projects-hero > :not(.project-create-wizard-overlay) { position: relative; z-index: 1; }
 .projects-hero h2 { max-width: 780px; font-size: clamp(30px, 3vw, 46px); }
 .projects-hero > .primary-action { width: auto; min-width: 150px; flex: 0 0 auto; align-self: center; }
 .projects-page-filters { display: grid; grid-template-columns: minmax(240px, 1fr) 180px; max-width: 680px; padding: 12px; }

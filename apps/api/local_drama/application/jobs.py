@@ -11,6 +11,7 @@ from pathlib import Path
 from time import monotonic
 from typing import Any
 
+from local_drama.application.job_resources import scheduler_resource_key
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
@@ -46,29 +47,13 @@ def _parse_json(value: str) -> Any:
     return json.loads(value) if value else {}
 
 
-def _resource_key(channel: str, worker_id: str | None = None) -> str:
-    """Return the scheduler resource gate for a channel.
-
-    GPU_H3 is deliberately a single heavy resource. Other channels have
-    independent gates so CPU/text/audio work does not block a GPU slot (or
-    each other). The key is persisted with every attempt for audit/recovery.
-    """
-    normalized = channel.strip().upper()
-    if normalized in {"GPU_H3", "GPU", "VIDEO_GPU"}:
-        return "GPU_H3_HEAVY"
-    # Non-GPU channels are independent. A worker is still prevented from
-    # claiming two jobs on the same channel, while separate workers may run
-    # CPU/text/audio work concurrently.
-    return f"CHANNEL:{normalized}:{worker_id or 'scheduler'}"
-
-
 class JobService:
     def __init__(self, database: Database, settings: Settings | None = None) -> None:
         self.database = database
         self.settings = settings
         self._last_automatic_reconcile_at: float | None = None
 
-    def _emit(self, connection: Any, event_type: str, project_id: str, subject_type: str, subject_id: str, payload: dict[str, Any]) -> int:
+    def _emit(self, connection: Any, event_type: str, project_id: str | None, subject_type: str, subject_id: str, payload: dict[str, Any]) -> int:
         cursor = connection.execute(
             "INSERT INTO outbox_events (type, project_id, subject_type, subject_id, payload_json) VALUES (?, ?, ?, ?, ?)",
             (event_type, project_id, subject_type, subject_id, _json(payload)),
@@ -84,6 +69,7 @@ class JobService:
             "subject_type": row["subject_type"],
             "subject_id": row["subject_id"],
             "subject_kind": row["subject_kind"] if "subject_kind" in row.keys() else row["subject_type"],
+            "scope_kind": row["scope_kind"] if "scope_kind" in row.keys() else "PROJECT",
             "scope_project_id": row["scope_project_id"] if "scope_project_id" in row.keys() else row["project_id"],
             "scope_episode_id": row["scope_episode_id"] if "scope_episode_id" in row.keys() else None,
             "scope_shot_id": row["scope_shot_id"] if "scope_shot_id" in row.keys() else None,
@@ -109,7 +95,7 @@ class JobService:
 
     def create_job(
         self,
-        project_id: str,
+        project_id: str | None,
         job_type: str,
         subject_type: str,
         subject_id: str,
@@ -123,6 +109,7 @@ class JobService:
         depends_on_job_ids: list[str] | None = None,
         actor: str = "local-user",
         subject_kind: str | None = None,
+        scope_kind: str | None = None,
         scope_project_id: str | None = None,
         scope_episode_id: str | None = None,
         scope_shot_id: str | None = None,
@@ -144,6 +131,7 @@ class JobService:
                 depends_on_job_ids=depends_on_job_ids,
                 actor=actor,
                 subject_kind=subject_kind,
+                scope_kind=scope_kind,
                 scope_project_id=scope_project_id,
                 scope_episode_id=scope_episode_id,
                 scope_shot_id=scope_shot_id,
@@ -153,7 +141,7 @@ class JobService:
     def create_job_in_transaction(
         self,
         connection: Any,
-        project_id: str,
+        project_id: str | None,
         job_type: str,
         subject_type: str,
         subject_id: str,
@@ -167,6 +155,7 @@ class JobService:
         depends_on_job_ids: list[str] | None = None,
         actor: str = "local-user",
         subject_kind: str | None = None,
+        scope_kind: str | None = None,
         scope_project_id: str | None = None,
         scope_episode_id: str | None = None,
         scope_shot_id: str | None = None,
@@ -178,12 +167,19 @@ class JobService:
             raise DomainRuleError("INVALID_MAX_ATTEMPTS", "max_attempts 必须在 1—20 之间")
         dependencies = depends_on_job_ids or []
         canonical_subject_kind = (subject_kind or subject_type).strip()
+        canonical_scope_kind = (scope_kind or ("PROJECT" if project_id else "SYSTEM")).strip().upper()
         canonical_scope_project_id = scope_project_id or project_id
         canonical_stage_code = stage_code or "LEGACY_UNCLASSIFIED"
         if not canonical_subject_kind:
             raise DomainRuleError("JOB_SUBJECT_KIND_REQUIRED", "Job 必须声明 canonical subject_kind")
-        if canonical_scope_project_id != project_id:
-            raise DomainRuleError("JOB_SCOPE_PROJECT_MISMATCH", "Job canonical project scope 与项目不一致")
+        if canonical_scope_kind not in {"PROJECT", "QUICK_GENERATION", "SYSTEM"}:
+            raise DomainRuleError("JOB_SCOPE_KIND_INVALID", "Job scope_kind 无效")
+        if canonical_scope_kind == "PROJECT" and (not project_id or canonical_scope_project_id != project_id):
+            raise DomainRuleError("JOB_SCOPE_PROJECT_MISMATCH", "项目 Job 必须声明一致的 canonical project scope")
+        if canonical_scope_kind != "PROJECT" and (project_id is not None or canonical_scope_project_id is not None):
+            raise DomainRuleError("JOB_SCOPE_PROJECT_FORBIDDEN", "非项目 Job 不能携带项目、分集或镜头作用域")
+        if canonical_scope_kind != "PROJECT" and (scope_episode_id is not None or scope_shot_id is not None):
+            raise DomainRuleError("JOB_SCOPE_PRODUCTION_FORBIDDEN", "非项目 Job 不能携带分集或镜头作用域")
         request_payload = {
             "project_id": project_id,
             "type": job_type,
@@ -196,13 +192,14 @@ class JobService:
             "max_attempts": max_attempts,
             "depends_on_job_ids": dependencies,
             "subject_kind": canonical_subject_kind,
+            "scope_kind": canonical_scope_kind,
             "scope_project_id": canonical_scope_project_id,
             "scope_episode_id": scope_episode_id,
             "scope_shot_id": scope_shot_id,
             "stage_code": canonical_stage_code,
         }
         payload_hash = _payload_hash(request_payload)
-        scope = f"job:create:{project_id}"
+        scope = f"job:create:{project_id or canonical_scope_kind.lower()}"
         job_id = str(uuid.uuid4())
         now = _iso(_utc_now())
         existing = connection.execute(
@@ -215,9 +212,10 @@ class JobService:
             result = dict(_parse_json(existing["response_json"]))
             result["idempotent_replay"] = True
             return result
-        project = connection.execute("SELECT id FROM projects WHERE id=?", (project_id,)).fetchone()
-        if project is None:
-            raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
+        if project_id is not None:
+            project = connection.execute("SELECT id FROM projects WHERE id=?", (project_id,)).fetchone()
+            if project is None:
+                raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
         stage = connection.execute(
             "SELECT code FROM job_stage_definitions WHERE code=? AND active=1",
             (canonical_stage_code,),
@@ -228,7 +226,7 @@ class JobService:
                 "Job stage_code 不存在或已停用",
                 {"stage_code": canonical_stage_code},
             )
-        if scope_episode_id is not None:
+        if project_id is not None and scope_episode_id is not None:
             episode = connection.execute(
                 """SELECT e.id FROM episodes e JOIN seasons s ON s.id=e.season_id
                 WHERE e.id=? AND s.project_id=?""",
@@ -236,7 +234,7 @@ class JobService:
             ).fetchone()
             if episode is None:
                 raise DomainRuleError("JOB_SCOPE_EPISODE_MISMATCH", "Job episode scope 不属于当前项目")
-        if scope_shot_id is not None:
+        if project_id is not None and scope_shot_id is not None:
             shot = connection.execute(
                 """SELECT sh.id,sh.episode_id FROM shots sh JOIN episodes e ON e.id=sh.episode_id
                 JOIN seasons s ON s.id=e.season_id WHERE sh.id=? AND s.project_id=?""",
@@ -248,15 +246,21 @@ class JobService:
             raise DomainRuleError("INVALID_JOB_DEPENDENCY", "Job dependency 不能重复或自引用")
         if dependencies:
             placeholders = ",".join("?" for _ in dependencies)
-            rows = connection.execute(f"SELECT id, project_id FROM jobs WHERE id IN ({placeholders})", dependencies).fetchall()
-            if len(rows) != len(dependencies) or any(row["project_id"] != project_id for row in rows):
-                raise DomainRuleError("JOB_DEPENDENCY_NOT_FOUND", "Job dependency 必须存在于同一项目")
+            rows = connection.execute(
+                f"SELECT id, project_id, scope_kind FROM jobs WHERE id IN ({placeholders})",
+                dependencies,
+            ).fetchall()
+            if len(rows) != len(dependencies) or any(
+                row["project_id"] != project_id or row["scope_kind"] != canonical_scope_kind
+                for row in rows
+            ):
+                raise DomainRuleError("JOB_DEPENDENCY_NOT_FOUND", "Job dependency 必须存在于同一作用域")
         connection.execute(
             """INSERT INTO jobs
-                (id, type, project_id, subject_type, subject_id, subject_kind,scope_project_id,scope_episode_id,scope_shot_id,stage_code,
+                (id, type, project_id, subject_type, subject_id, subject_kind,scope_kind,scope_project_id,scope_episode_id,scope_shot_id,stage_code,
                  state, channel, idempotency_key, input_snapshot_json,
                  execution_profile_version_id, priority, max_attempts, next_run_at, created_at, updated_at, created_by, revision, schema_version)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'v2')""",
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'v2')""",
             (
                 job_id,
                 job_type,
@@ -264,6 +268,7 @@ class JobService:
                 subject_type,
                 subject_id,
                 canonical_subject_kind,
+                canonical_scope_kind,
                 canonical_scope_project_id,
                 scope_episode_id,
                 scope_shot_id,
@@ -439,22 +444,29 @@ class JobService:
                 channel_clause = f"AND j.channel IN ({','.join('?' for _ in channels)})"
                 params.extend(channels)
             params.append(worker_id)
-            row = connection.execute(
+            candidates = connection.execute(
                 f"""SELECT j.* FROM jobs j
                 WHERE j.state='QUEUED' AND (j.next_run_at IS NULL OR j.next_run_at<=?) {channel_clause}
                 AND NOT EXISTS (SELECT 1 FROM job_attempts active JOIN jobs aj ON aj.id=active.job_id
                                 WHERE active.worker_id=? AND active.state IN ('CLAIMED','RUNNING') AND aj.channel=j.channel)
-                AND NOT (j.channel IN ('GPU_H3','GPU','VIDEO_GPU') AND EXISTS (
-                    SELECT 1 FROM jobs gpu_active
-                    WHERE gpu_active.channel IN ('GPU_H3','GPU','VIDEO_GPU') AND gpu_active.state IN ('CLAIMED','RUNNING')
-                ))
-                AND NOT (j.channel IN ('GPU_H3','GPU','VIDEO_GPU') AND EXISTS (
-                    SELECT 1 FROM job_resource_leases rl WHERE rl.resource_key='GPU_H3_HEAVY' AND rl.released_at IS NULL
-                ))
                 AND NOT EXISTS (SELECT 1 FROM job_dependencies d JOIN jobs dependency ON dependency.id=d.depends_on_job_id WHERE d.job_id=j.id AND dependency.state!='SUCCEEDED')
-                ORDER BY j.priority ASC, j.created_at ASC LIMIT 1""",
+                ORDER BY j.priority ASC, j.created_at ASC LIMIT 128""",
                 params,
-            ).fetchone()
+            ).fetchall()
+            active_resource_keys = {
+                str(item["resource_key"])
+                for item in connection.execute(
+                    "SELECT resource_key FROM job_resource_leases WHERE released_at IS NULL"
+                ).fetchall()
+            }
+            row = next(
+                (
+                    candidate
+                    for candidate in candidates
+                    if scheduler_resource_key(dict(candidate), worker_id) not in active_resource_keys
+                ),
+                None,
+            )
             if row is None:
                 return None
             attempt_row = connection.execute("SELECT COALESCE(MAX(attempt_no), 0) + 1 AS attempt_no FROM job_attempts WHERE job_id=?", (row["id"],)).fetchone()
@@ -474,7 +486,7 @@ class JobService:
             )
             connection.execute(
                 "INSERT INTO job_resource_leases (id, job_id, attempt_id, channel, resource_key, acquired_at, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (str(uuid.uuid4()), row["id"], attempt_id, row["channel"], _resource_key(str(row["channel"]), worker_id), now_iso, now_iso, actor),
+                (str(uuid.uuid4()), row["id"], attempt_id, row["channel"], scheduler_resource_key(dict(row), worker_id), now_iso, now_iso, actor),
             )
             self._emit(
                 connection,
@@ -767,7 +779,7 @@ class JobService:
         source = self.get_job(job_id)
         input_snapshot = {**source["input_snapshot"], **(input_overrides or {}), "clone_of_job_id": job_id}
         return self.create_job(
-            str(source["project_id"]),
+            str(source["project_id"]) if source["project_id"] is not None else None,
             str(source["type"]),
             str(source["subject_type"]),
             str(source["subject_id"]),
@@ -778,6 +790,12 @@ class JobService:
             priority=int(source["priority"]),
             max_attempts=int(source["max_attempts"]),
             actor=actor,
+            subject_kind=str(source["subject_kind"]),
+            scope_kind=str(source["scope_kind"]),
+            scope_project_id=source["scope_project_id"],
+            scope_episode_id=source["scope_episode_id"],
+            scope_shot_id=source["scope_shot_id"],
+            stage_code=str(source["stage_code"]),
         )
 
     def reconcile(self, *, now: datetime | None = None, actor: str = "reconciler") -> dict[str, Any]:
@@ -836,7 +854,7 @@ class JobService:
                 self._emit(
                     connection,
                     "JOB_DEPENDENCY_BLOCKED",
-                    str(row["project_id"]),
+                    row["project_id"],
                     "JOB",
                     job_id,
                     {"job_id": job_id, "dependency_job_id": dependency_id, "dependency_state": dependency_state, "job_state": NEEDS_ATTENTION},
@@ -909,6 +927,26 @@ class JobService:
                 "status": "VERIFIED",
                 "idempotent_replay": False,
             }
+
+    def artifact_download(self, artifact_id: str) -> tuple[dict[str, Any], Path]:
+        """Resolve a verified artifact to a safe, server-local file for download."""
+        if self.settings is None:
+            raise DomainRuleError("WORKSPACE_REQUIRED", "artifact 下载需要本地 workspace")
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT * FROM artifacts WHERE id=?", (artifact_id,)).fetchone()
+        if row is None:
+            raise DomainRuleError("ARTIFACT_NOT_FOUND", "任务产物不存在")
+        artifact = dict(row)
+        if artifact.get("status") != "VERIFIED":
+            raise DomainRuleError("ARTIFACT_NOT_VERIFIED", "任务产物尚未通过校验，不能下载")
+        relative = Path(str(artifact.get("sandbox_rel_path") or ""))
+        if relative.is_absolute() or ".." in relative.parts or not relative.name:
+            raise DomainRuleError("INVALID_ARTIFACT_PATH", "任务产物路径无效")
+        root = self.settings.work_root.resolve()
+        path = (root / relative).resolve()
+        if not path.is_relative_to(root) or not path.is_file() or path.is_symlink():
+            raise DomainRuleError("ARTIFACT_NOT_FOUND", "任务产物文件不存在、越界或为 symlink")
+        return artifact, path
 
 
 def secrets_token() -> str:

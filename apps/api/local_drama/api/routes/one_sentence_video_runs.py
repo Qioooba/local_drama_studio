@@ -6,14 +6,20 @@ from starlette.concurrency import run_in_threadpool
 from local_drama.api.schemas.one_sentence_video_runs import (
     OneSentenceImageRerollRequest,
     OneSentenceImageSelectRequest,
+    OneSentencePromptRegenerateRequest,
     OneSentenceVideoPlanRequest,
     OneSentenceVideoRetryRequest,
 )
+from local_drama.api.schemas.quick_generations import QuickGenerationRunResponse
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.one_sentence_video_runs import OneSentenceVideoRunService
 from local_drama.domain.errors import DomainRuleError
 
-router = APIRouter(prefix="/one-sentence-video-runs", tags=["one-sentence-video-runs"])
+router = APIRouter(
+    prefix="/one-sentence-video-runs",
+    tags=["one-sentence-video-runs"],
+    deprecated=True,
+)
 
 
 def service(request: Request) -> OneSentenceVideoRunService:
@@ -76,6 +82,29 @@ async def cancel(run_id: str, request: Request) -> dict[str, object]:
 async def retry(run_id: str, payload: OneSentenceVideoRetryRequest, request: Request) -> dict[str, object]:
     try:
         return await run_in_threadpool(service(request).retry, run_id, payload.mode)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post(
+    "/{run_id}:regenerate-prompt",
+    status_code=201,
+    operation_id="regenerateOneSentenceVideoPrompt",
+    response_model=QuickGenerationRunResponse,
+)
+async def regenerate_prompt(
+    run_id: str,
+    payload: OneSentencePromptRegenerateRequest,
+    request: Request,
+    idempotency_key: str = Header(..., alias="Idempotency-Key"),
+) -> dict[str, object]:
+    try:
+        return await run_in_threadpool(
+            service(request).regenerate_prompt,
+            run_id,
+            payload.target,
+            idempotency_key=idempotency_key,
+        )
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

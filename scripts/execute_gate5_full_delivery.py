@@ -1,20 +1,21 @@
-import sys
-import subprocess
-import uuid
 import json
+import subprocess
+import sys
+import uuid
 from pathlib import Path
 
 # Add project root to sys.path
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / "apps" / "api"))
 
-from local_drama.config import Settings
-from local_drama.infrastructure.database.sqlite import Database
-from local_drama.application.media import MediaService
-from local_drama.application.dialogue import DialogueService
-from local_drama.application.timeline import TimelineService
-from local_drama.application.reviews import ReviewService
 from local_drama.application.configuration import ConfigurationService
+from local_drama.application.dialogue import DialogueService
+from local_drama.application.media import MediaService
+from local_drama.application.reviews import ReviewService
+from local_drama.application.timeline import TimelineService
+from local_drama.config import Settings
+from local_drama.domain.errors import DomainRuleError
+from local_drama.infrastructure.database.sqlite import Database
 
 settings = Settings()
 settings.ensure_roots()
@@ -70,13 +71,13 @@ else:
 try:
     binding_su = dialogue_service.bind_character_voice(PROJECT_ID, SUWAN_ID, voice_profile_id)
     print(f"3a. Bound Voice for 苏晚: {binding_su['id']}")
-except Exception as e:
+except DomainRuleError as e:
     print("3a. Voice binding for 苏晚:", e)
 
 try:
     binding_lin = dialogue_service.bind_character_voice(PROJECT_ID, LINMO_ID, voice_profile_id)
     print(f"3b. Bound Voice for 林默: {binding_lin['id']}")
-except Exception as e:
+except DomainRuleError as e:
     print("3b. Voice binding for 林默:", e)
 
 # 4. 生成并导入 60s BGM 音频并绑定到时间线
@@ -166,7 +167,7 @@ for idx, s in enumerate(shots[2:], start=3):
     v_path = tmp_dir / f"shot_0{idx}_proxy.mp4"
     subprocess.run([
         "ffmpeg", "-y",
-        "-f", "lavfi", "-i", f"color=c=navy:s=320x180:d=8.2",
+        "-f", "lavfi", "-i", "color=c=navy:s=320x180:d=8.2",
         "-c:v", "libx264", "-pix_fmt", "yuv420p",
         str(v_path)
     ], check=True)
@@ -182,8 +183,8 @@ for idx, s in enumerate(shots[2:], start=3):
     v_id = m["media_version_id"]
     try:
         review_service.select_version(v_id, "PROXY_WINNER")
-    except Exception:
-        pass
+    except DomainRuleError as error:
+        print(f"7. Existing review selection kept for {v_id}: {error.code}")
     video_versions.append(v_id)
 
 print(f"7. All {len(shots)} shots have adopted PROXY_WINNER videos")

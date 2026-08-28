@@ -34,6 +34,29 @@ class DocumentImportRequest(BaseModel):
 
 class DocumentImportCommitRequest(BaseModel):
     expected_preview_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    source_paragraph_start: int | None = Field(default=None, ge=1)
+    source_paragraph_end: int | None = Field(default=None, ge=1)
+
+
+class SourceParagraphItem(BaseModel):
+    number: int = Field(ge=1)
+    text: str
+    source_start: int = Field(ge=0)
+    source_end: int = Field(gt=0)
+    is_heading: bool
+
+
+class SourceParagraphPageResponse(BaseModel):
+    session_id: str
+    source_document_version_id: str
+    start_paragraph: int = Field(ge=1)
+    end_paragraph: int = Field(ge=1)
+    total_paragraph_count: int = Field(ge=1)
+    items: list[SourceParagraphItem]
+    chapters: list[dict[str, int | str]]
+    has_previous: bool
+    has_more: bool
+    read_only: Literal[True]
 
 
 class SourcePassageResponse(BaseModel):

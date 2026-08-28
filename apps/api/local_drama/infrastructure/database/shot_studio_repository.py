@@ -27,6 +27,10 @@ def _json(value: object, default: object) -> Any:
         return default
 
 
+def _object_dict(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def _table_exists(connection: sqlite3.Connection, name: str) -> bool:
     return connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
 
@@ -650,14 +654,14 @@ class SqliteShotStudioReadRepository:
         fields: dict[str, Any],
     ) -> dict[str, Any]:
         """Return grounded, opt-in Director suggestions without mutating authority."""
-        scene = source_context.get("source_range") if isinstance(source_context.get("source_range"), dict) else {}
-        suggestion_sources = fields.get("suggestion_sources") if isinstance(fields.get("suggestion_sources"), dict) else {}
+        scene = _object_dict(source_context.get("source_range"))
+        suggestion_sources = _object_dict(fields.get("suggestion_sources"))
         scene_parts = [str(value).strip() for value in (scene.get("location"), scene.get("time_of_day")) if value]
         environment = None
         if scene_parts:
             scene_label = " · ".join(str(value).strip() for value in (scene.get("scene_code"), scene.get("scene_title")) if value) or "当前场景"
             source_revision = str(scene.get("scene_revision") or "")
-            adopted = suggestion_sources.get("environment") if isinstance(suggestion_sources.get("environment"), dict) else {}
+            adopted = _object_dict(suggestion_sources.get("environment"))
             stale = bool(adopted and str(adopted.get("source_revision") or "") != source_revision)
             environment = {
                 "value": "；".join(scene_parts),
@@ -682,7 +686,7 @@ class SqliteShotStudioReadRepository:
         continuity: dict[str, Any] | None = None
         if previous is not None:
             source_revision = str(previous["revision_id"] or "")
-            adopted = suggestion_sources.get("continuity") if isinstance(suggestion_sources.get("continuity"), dict) else {}
+            adopted = _object_dict(suggestion_sources.get("continuity"))
             stale = bool(adopted and str(adopted.get("source_revision") or "") != source_revision)
             same_scene = bool(scene_id and previous["scene_id"] == scene_id)
             if not same_scene:
@@ -698,7 +702,7 @@ class SqliteShotStudioReadRepository:
                 }
             else:
                 previous_fields = _json(previous["fields_json"], {})
-                performance = previous_fields.get("performance") if isinstance(previous_fields.get("performance"), dict) else {}
+                performance = _object_dict(previous_fields.get("performance"))
                 inherited_parts = []
                 if previous_fields.get("continuity"):
                     inherited_parts.append(str(previous_fields["continuity"]).strip())

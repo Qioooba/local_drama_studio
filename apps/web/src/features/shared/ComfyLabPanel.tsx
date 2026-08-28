@@ -128,7 +128,7 @@ export function ComfyLabPanel() {
       <button className="secondary" type="button" onClick={() => run(async (signal) => { const result = await restartComfyLab("", signal); setStatus(result.status); })} disabled={busy || !canLaunch || status?.status !== "RUNNING"}>重启</button>
     </div>
 
-    <div className="workflow-create-form">
+    <div className="workflow-create-form workflow-capture-form">
       <label>捕获标题<input value={captureTitle} onChange={(event) => setCaptureTitle(event.target.value)} /></label>
       <label>已有捕获<select value={selected?.capture_id ?? ""} onChange={(event) => void selectCapture(event.target.value)}><option value="">新建捕获</option>{captures.map((item) => <option key={item.capture_id} value={item.capture_id}>{item.title ?? item.capture_id.slice(0, 8)} · {item.test_evidence?.status ?? "未执行"}</option>)}</select></label>
       <label className="workflow-create-form__wide">ComfyUI API Format JSON<textarea rows={14} value={workflowJson} onChange={(event) => setWorkflowJson(event.target.value)} spellCheck={false} /></label>

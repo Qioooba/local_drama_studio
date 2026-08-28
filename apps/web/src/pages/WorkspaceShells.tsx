@@ -21,7 +21,7 @@ export function PostShell() {
 export function ProjectSettingsShell() {
   const { projectId = "" } = useParams();
   const items = [
-    ["production", "生产"], ["capabilities", "能力"], ["directing", "导演"], ["quality", "质量"],
+    ["production", "生产"], ["capabilities", "生成偏好"], ["directing", "导演"], ["quality", "质量"],
     ["delivery", "交付"], ["automation", "自动化"], ["rights", "权利"], ["data", "数据"],
   ] as const;
   return <section className="workspace-section-shell">
@@ -37,7 +37,7 @@ export function SystemShell() {
   return <section className="workspace-section-shell system-center-shell">
     <header className="workspace-section-head"><div><p className="eyebrow">高级与运维</p><h2>系统中心</h2></div><p>创作流程只消费能力与状态；连接、任务细节、诊断和工作流在这里管理。</p></header>
     <SectionNav items={[
-      { to: routes.systemCapabilities(projectId), label: "能力" },
+      { to: routes.systemCapabilities(), label: "能力" },
       { to: routes.systemJobs(projectId), label: "任务" },
       { to: routes.systemDiagnostics(projectId), label: "诊断" },
       { to: routes.systemWorkflows(projectId), label: "工作流" },

@@ -92,12 +92,13 @@ describe("shared UI primitives", () => {
     rerender(
       <>
         <button>触发器</button>
-        <Dialog open title="确认" onClose={close} footer={<button>提交</button>}>
+        <Dialog open title="确认" size="fullscreen" onClose={close} footer={<button>提交</button>}>
           正文
         </Dialog>
       </>
     );
     expect(screen.getByRole("dialog")).toHaveAccessibleName("确认");
+    expect(screen.getByRole("dialog")).toHaveClass("ui-dialog--fullscreen");
     expect(screen.getByRole("dialog").closest(".ui-dialog-backdrop")?.parentElement).toBe(document.body);
     expect(document.documentElement.style.overflow).toBe("hidden");
     expect(document.body.style.overflow).toBe("hidden");

@@ -4,7 +4,18 @@ from typing import Any, Protocol
 
 
 class EpisodeProductionStarterPort(Protocol):
-    def start(self, episode_id: str, *, idempotency_key: str, **options: Any) -> dict[str, Any]: ...
+    def start(
+        self,
+        episode_id: str,
+        *,
+        idempotency_key: str,
+        tts_enabled: bool = True,
+        production_mode: str = "BALANCED",
+        checkpoint_policy: str = "ON_EXCEPTION",
+        min_free_disk_bytes: int = 5 * 1024 * 1024 * 1024,
+        front_half_only: bool = False,
+        actor: str = "local-user",
+    ) -> dict[str, Any]: ...
 
 
 class EpisodeProductionTransitionPort(Protocol):

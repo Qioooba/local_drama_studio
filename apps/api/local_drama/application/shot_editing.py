@@ -5,7 +5,7 @@ import json
 import sqlite3
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
@@ -218,7 +218,7 @@ class ShotEditingService:
         row = connection.execute("SELECT id,revision FROM episodes WHERE id=?", (episode_id,)).fetchone()
         if not row:
             raise DomainRuleError("EPISODE_NOT_FOUND", "分集不存在", {"episode_id": episode_id})
-        return row
+        return cast(sqlite3.Row, row)
 
     @staticmethod
     def _active_shots(connection: sqlite3.Connection, episode_id: str) -> list[sqlite3.Row]:

@@ -9,7 +9,7 @@ from typing import Any, Callable
 from local_drama.application.worker_handlers._timeline_ports import EpisodeTimelineJobPort
 from local_drama.domain.errors import DomainRuleError
 
-AtomicWriter = Callable[[Path, Callable[[Path], None]], None]
+AtomicWriter = Callable[[Path, Callable[[Path], object]], None]
 
 
 def run_episode_compose_job(

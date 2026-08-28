@@ -2,3 +2,24 @@
 .system-workspace-tabs .ui-tabs__list { flex-wrap: nowrap; }
 .system-workspace-tabs .ui-tab { flex: 0 0 auto; white-space: nowrap; }
 .system-workspace-stack { display: grid; gap: 16px; min-width: 0; }
+.diagnostic-run-progress { margin: 8px 0 12px; color: var(--text-muted); font-size: 13px; }
+.diagnostic-run-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.diagnostic-run-error > span { min-width: 0; overflow-wrap: anywhere; }
+.diagnostic-run-error > button { flex: 0 0 auto; }
+.comfy-lab-panel .workflow-create-form.workflow-capture-form { align-items: start; }
+.comfy-lab-panel .workflow-create-form.workflow-capture-form > label:not(.workflow-create-form__wide) {
+  grid-template-rows: minmax(18px, auto) 44px;
+  align-content: start;
+  min-width: 0;
+}
+.comfy-lab-panel .workflow-create-form.workflow-capture-form > label > input,
+.comfy-lab-panel .workflow-create-form.workflow-capture-form > label > select { align-self: end; width: 100%; min-width: 0; }
+
+@media (max-width: 720px) {
+  .diagnostic-run-error { align-items: stretch; flex-direction: column; }
+}
+
+@media (max-width: 760px) {
+  .comfy-lab-panel .workflow-create-form.workflow-capture-form { grid-template-columns: minmax(0, 1fr); }
+  .comfy-lab-panel .workflow-create-form.workflow-capture-form > .workflow-create-form__wide { grid-column: 1; }
+}

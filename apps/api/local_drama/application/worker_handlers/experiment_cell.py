@@ -15,7 +15,7 @@ from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.generation import VariantPlan
 from local_drama.domain.policies import VariantInput
 
-AtomicWriter = Callable[[Path, Callable[[Path], None]], None]
+AtomicWriter = Callable[[Path, Callable[[Path], object]], None]
 
 
 class WorkerPersistencePort(Protocol):

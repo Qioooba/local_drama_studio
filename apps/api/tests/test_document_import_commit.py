@@ -124,7 +124,12 @@ def test_browser_document_upload_streams_into_the_same_preview_contract(workspac
             headers={"Content-Type": "text/plain", "X-File-Name": "empty.txt"},
         )
     assert uploaded.status_code == 201, uploaded.text
-    assert uploaded.json()["import"]["status"] == "PREVIEW_READY"
+    imported = uploaded.json()["import"]
+    assert imported["status"] == "PREVIEW_READY"
+    stored_source_path = Path(imported["stored_source_path"])
+    assert stored_source_path.is_absolute()
+    assert stored_source_path.is_file()
+    assert stored_source_path.is_relative_to(workspace.projects_root.resolve())
     assert empty.status_code == 422
     assert empty.json()["error"]["code"] == "DOCUMENT_UPLOAD_EMPTY"
 
@@ -145,3 +150,67 @@ def test_import_preview_exposes_deterministic_chapter_shortcuts(workspace, datab
         {"title": "第一章 雨夜", "start_paragraph": 1, "end_paragraph": 3},
         {"title": "第二章 清晨", "start_paragraph": 4, "end_paragraph": 5},
     ]
+
+
+def test_paragraph_api_pages_full_source_and_commit_freezes_selected_body_range(workspace, database) -> None:
+    project = _project(workspace, database)
+    source = workspace.work_root / "long-novel.md"
+    source.write_text(
+        "# 第一章 雨夜\n\n第一段。\n\n第二段。\n\n# 第二章 清晨\n\n第三段。\n\n第四段。",
+        encoding="utf-8",
+    )
+
+    with TestClient(create_app(workspace)) as client:
+        imported_response = client.post(
+            f"/api/v1/projects/{project['id']}/imports",
+            json={"source_path": str(source)},
+        )
+        assert imported_response.status_code == 201, imported_response.text
+        imported = imported_response.json()["import"]
+        session_id = imported["import_session_id"]
+
+        first_page_response = client.get(f"/api/v1/import-sessions/{session_id}/paragraphs?start=1&limit=3")
+        assert first_page_response.status_code == 200, first_page_response.text
+        first_page = first_page_response.json()
+        assert first_page["start_paragraph"] == 1
+        assert first_page["end_paragraph"] == 3
+        assert first_page["total_paragraph_count"] == 6
+        assert first_page["has_previous"] is False
+        assert first_page["has_more"] is True
+        assert first_page["items"][0]["is_heading"] is True
+        assert first_page["items"][1]["text"] == "第一段。"
+
+        second_page = client.get(f"/api/v1/import-sessions/{session_id}/paragraphs?start=4&limit=3").json()
+        assert second_page["has_previous"] is True
+        assert second_page["has_more"] is False
+        assert second_page["items"][0]["number"] == 4
+
+        committed_response = client.post(
+            f"/api/v1/import-sessions/{session_id}:commit",
+            json={
+                "expected_preview_hash": imported["preview_hash"],
+                "source_paragraph_start": 2,
+                "source_paragraph_end": 5,
+            },
+        )
+        assert committed_response.status_code == 200, committed_response.text
+        committed = committed_response.json()["commit"]
+        assert committed["commit_snapshot"]["body_range"] == {
+            "source_paragraph_start": 2,
+            "source_paragraph_end": 5,
+            "source_paragraph_count": 4,
+            "selection_mode": "EXPLICIT",
+        }
+        selected = next(item for item in committed["items"] if item["item_type"] == "SOURCE_BODY_RANGE")
+        assert selected["payload"] == committed["commit_snapshot"]["body_range"]
+
+        repeated = client.post(
+            f"/api/v1/import-sessions/{session_id}:commit",
+            json={
+                "expected_preview_hash": imported["preview_hash"],
+                "source_paragraph_start": 2,
+                "source_paragraph_end": 5,
+            },
+        )
+        assert repeated.status_code == 200, repeated.text
+        assert repeated.json()["commit"]["idempotent"] is True

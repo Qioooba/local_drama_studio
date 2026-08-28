@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from local_drama.application.ports.shot_studio_commands import ShotStudioCommandPort
 from local_drama.domain.director_intent import (
@@ -79,16 +79,18 @@ class ShotStudioCommandService:
         expected_revision_no: int | None = None,
         actor: str = "local-user",
     ) -> dict[str, Any]:
-        return self.save_draft(
+        result = self.save_draft(
             shot_id,
             fields,
             freeze=freeze,
             expected_revision_no=expected_revision_no,
             actor=actor,
-        )["shot_revision"]
+        )
+        return cast(dict[str, Any], result["shot_revision"])
 
     def mark_ready_shot(self, shot_id: str, *, actor: str = "local-user") -> dict[str, Any]:
-        return self.mark_ready(shot_id, actor=actor)["shot"]
+        result = self.mark_ready(shot_id, actor=actor)
+        return cast(dict[str, Any], result["shot"])
 
     def _validate_camera_plan(self, fields: dict[str, Any], *, require_executable: bool) -> None:
         camera_payload = fields.get("camera_plan")

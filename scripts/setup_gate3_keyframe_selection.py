@@ -5,10 +5,10 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / "apps" / "api"))
 
-from local_drama.config import Settings
-from local_drama.infrastructure.database.sqlite import Database
 from local_drama.application.media import MediaService
 from local_drama.application.reviews import ReviewService
+from local_drama.config import Settings
+from local_drama.infrastructure.database.sqlite import Database
 
 settings = Settings()
 settings.ensure_roots()

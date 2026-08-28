@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import re
 import subprocess
 from collections.abc import Iterable
 from datetime import UTC, datetime
@@ -105,6 +106,29 @@ def _scan_dependencies() -> dict[str, Any]:
     }
 
 
+_COMPONENT_DECLARATION = re.compile(
+    r"^(?:export\s+)?(?:default\s+)?function\s+([A-Z][A-Za-z0-9_]*)\b"
+)
+
+
+def _component_spans(path: Path) -> list[tuple[str, int]]:
+    """Measure top-level React functions instead of treating a primitives barrel as one component."""
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    declarations = [
+        (index, match.group(1))
+        for index, line in enumerate(lines)
+        if (match := _COMPONENT_DECLARATION.match(line))
+    ]
+    if not declarations:
+        return [(path.stem, len(lines))]
+    spans: list[tuple[str, int]] = []
+    for position, (start, name) in enumerate(declarations):
+        end = declarations[position + 1][0] if position + 1 < len(declarations) else len(lines)
+        spans.append((name, end - start))
+    return spans
+
+
 def _scan_components() -> dict[str, Any]:
     components: list[dict[str, Any]] = []
     for path in sorted(WEB_SRC.rglob("*.tsx")):
@@ -112,15 +136,16 @@ def _scan_components() -> dict[str, Any]:
         # is intentionally large and is checked by client generation instead.
         if "generated" in path.parts or path.name.endswith(".test.tsx"):
             continue
-        line_count = len(path.read_text(encoding="utf-8").splitlines())
-        components.append(
-            {
-                "path": _relative(path),
-                "lines": line_count,
-                "recommended_limit_exceeded": line_count > UI_RECOMMENDED_LINES,
-                "warning_limit_exceeded": line_count > UI_WARNING_LINES,
-            }
-        )
+        for component_name, line_count in _component_spans(path):
+            components.append(
+                {
+                    "path": _relative(path),
+                    "component": component_name,
+                    "lines": line_count,
+                    "recommended_limit_exceeded": line_count > UI_RECOMMENDED_LINES,
+                    "warning_limit_exceeded": line_count > UI_WARNING_LINES,
+                }
+            )
     recommended = [item for item in components if item["recommended_limit_exceeded"]]
     warnings = [item for item in components if item["warning_limit_exceeded"]]
     return {

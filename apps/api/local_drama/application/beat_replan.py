@@ -5,7 +5,7 @@ import json
 import sqlite3
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
@@ -53,7 +53,7 @@ class BeatReplanService:
             if previous:
                 if previous["payload_hash"] != payload_hash:
                     raise DomainRuleError("IDEMPOTENCY_PAYLOAD_MISMATCH", "幂等键已用于不同的 Beat Replan 请求")
-                return json.loads(str(previous["response_json"]))
+                return cast(dict[str, Any], json.loads(str(previous["response_json"])))
 
             plan = self._build_plan(
                 connection, episode_id=episode_id, group_id=group_id, draft_id=draft_id,

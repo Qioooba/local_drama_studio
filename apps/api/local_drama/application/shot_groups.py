@@ -4,7 +4,7 @@ import json
 import sqlite3
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
@@ -235,14 +235,14 @@ class ShotGroupService:
         ).fetchone()
         if not row:
             raise DomainRuleError("EPISODE_NOT_FOUND", "分集不存在", {"episode_id": episode_id})
-        return row
+        return cast(sqlite3.Row, row)
 
     @staticmethod
     def _group(connection: sqlite3.Connection, group_id: str) -> sqlite3.Row:
         row = connection.execute("SELECT * FROM shot_groups WHERE id=?", (group_id,)).fetchone()
         if not row:
             raise DomainRuleError("SHOT_GROUP_NOT_FOUND", "镜头分组不存在", {"group_id": group_id})
-        return row
+        return cast(sqlite3.Row, row)
 
     @staticmethod
     def _scene_in_project(connection: sqlite3.Connection, scene_id: str, project_id: str) -> None:

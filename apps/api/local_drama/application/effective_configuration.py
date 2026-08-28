@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from local_drama.application.override_schema import effective_schema, validate_overrides
@@ -35,7 +36,7 @@ def _defaults(profile: dict[str, Any]) -> dict[str, Any]:
 
 
 class EffectiveConfigurationService:
-    def __init__(self, database: Database, manifest_path) -> None:
+    def __init__(self, database: Database, manifest_path: Path) -> None:
         self.database = database
         self.manifest_path = manifest_path
 

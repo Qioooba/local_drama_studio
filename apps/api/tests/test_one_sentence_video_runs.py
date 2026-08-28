@@ -4,11 +4,12 @@ import json
 
 import pytest
 
+from local_drama.application.generation_model_catalog import build_generation_model_catalog
 from local_drama.application.jobs import JobService
 from local_drama.application.local_llm import LocalLLMService
 from local_drama.application.one_sentence_video_runs import OneSentenceVideoRunService
 from local_drama.application.profiles import ProfileService
-from local_drama.application.worker import LocalMediaWorker
+from local_drama.application.quick_generation_presets import QuickGenerationPresetService
 from local_drama.application.workflows import WorkflowService
 from local_drama.domain.errors import DomainRuleError
 
@@ -17,37 +18,49 @@ def _profiles(workspace, database, monkeypatch):
     monkeypatch.setattr(
         "local_drama.infrastructure.local_llm.LocalLLMClient.probe",
         lambda self, load_test=False: {
-            "status": "PASS", "provider": self.provider, "base_url": self.base_url, "model": self.model,
-            "probe_level_passed": 4, "probe_levels": {}, "model_present": True, "load_test": load_test,
+            "status": "PASS",
+            "provider": self.provider,
+            "base_url": self.base_url,
+            "model": self.model,
+            "probe_level_passed": 4,
+            "probe_levels": {},
+            "model_present": True,
+            "load_test": load_test,
         },
     )
     monkeypatch.setattr(
         "local_drama.infrastructure.local_llm.LocalLLMClient.chat_json",
         lambda self, system, user, **kwargs: {
-            "title": "雨夜橘猫", "video_prompt": "雨夜霓虹街道，橘猫撑伞前行，稳定向前推进",
-            "keyframe_prompt": "雨夜霓虹街道中，橘猫撑着透明雨伞准备前行，中景电影构图",
-            "subject_action": "橘猫撑伞前行", "environment": "雨夜霓虹街道",
-            "shot_type": "MEDIUM", "camera_movement": "DOLLY_IN",
+            "title": "雨夜橘猫",
+            "video_prompt": "雨夜霓虹街道，橘猫撑伞前行，稳定向前推进",
+            "keyframe_prompt": "An orange cat holds a transparent umbrella on a neon-lit rainy street, medium cinematic composition",
+            "subject_action": "橘猫撑伞前行",
+            "environment": "雨夜霓虹街道",
+            "shot_type": "MEDIUM",
+            "camera_movement": "DOLLY_IN",
         },
     )
     llm_service = LocalLLMService(database, workspace)
     llm = llm_service.sync_candidate(
-        model="qwen-test", capability="LLM_STORY_PARSE", provider="OLLAMA_LOOPBACK",
-        base_url="http://127.0.0.1:11434", allow_remote_outbound=False,
+        model="qwen-test",
+        capability="LLM_STORY_PARSE",
+        provider="OLLAMA_LOOPBACK",
+        base_url="http://127.0.0.1:11434",
+        allow_remote_outbound=False,
     )
     llm_service.publish(str(llm["profile_version_id"]), allow_remote_outbound=False)
 
-    t2v = next(
-        item for item in ProfileService(database, workspace.manifest_path).sync_manifest()["profiles"]
-        if item["capability"] == "VIDEO_T2V"
-    )
+    t2v = next(item for item in ProfileService(database, workspace.manifest_path).sync_manifest()["profiles"] if item["capability"] == "VIDEO_T2V")
     graph = {
         "1": {"class_type": "MiniMaxH3ImageToVideo", "inputs": {"prompt": "", "width": 480, "height": 832, "length": 107}},
         "2": {"class_type": "RandomNoise", "inputs": {"noise_seed": 1}},
         "3": {"class_type": "CreateVideo", "inputs": {"images": ["1", 0], "fps": 24.0}},
     }
     workflow = WorkflowService(database, workspace).register_package(
-        "one_sentence_test", "One sentence test", graph, {"local_only": True},
+        "one_sentence_test",
+        "One sentence test",
+        graph,
+        {"local_only": True},
         {"PROMPT": {"node_id": "1", "input": "prompt"}, "SEED": {"node_id": "2", "input": "noise_seed"}},
     )
     with database.transaction() as connection:
@@ -125,19 +138,19 @@ def _image_first_profiles(workspace, database) -> tuple[str, str]:
     return str(image["version_id"]), str(i2v["version_id"])
 
 
-def test_plan_is_idempotent_and_does_not_create_project_until_commit(workspace, database, monkeypatch) -> None:
+def test_plan_and_commit_never_create_project_production_entities(workspace, database, monkeypatch) -> None:
     llm_id, t2v_id = _profiles(workspace, database, monkeypatch)
-    service = OneSentenceVideoRunService(
-        database, workspace, runtime_probe=lambda: {"status": "READY", "endpoint": "http://127.0.0.1:8188"}
-    )
+    service = OneSentenceVideoRunService(database, workspace, runtime_probe=lambda: {"status": "READY", "endpoint": "http://127.0.0.1:8188"})
     payload = {
-        "story": "雨夜霓虹灯下，一只橘猫撑伞穿过街道。", "language": "zh-CN",
-        "mode": "DIRECT_T2V",
+        "story": "雨夜霓虹灯下，一只橘猫撑伞穿过街道。",
+        "language": "zh-CN",
+        "mode": "TEXT_TO_VIDEO",
         "llm_profile_version_id": llm_id,
         "image_profile_version_id": None,
         "video_profile_version_id": t2v_id,
         "image_candidate_count": 4,
-        "allow_remote_outbound": False, "idempotency_key": "one-sentence-plan-1",
+        "allow_remote_outbound": False,
+        "idempotency_key": "one-sentence-plan-1",
     }
     first = service.plan(**payload)["run"]
     replay = service.plan(**payload)["run"]
@@ -145,9 +158,15 @@ def test_plan_is_idempotent_and_does_not_create_project_until_commit(workspace, 
     assert replay["id"] == first["id"]
     assert first["state"] == "PLANNED"
     assert first["plan"]["output_spec"] == {
-        "width": 480, "height": 832, "frame_count": 107, "fps": 24,
-        "duration_seconds": 4.458, "target_duration_ms": 4458,
-        "aspect_ratio": "15:26", "source": "PUBLISHED_WORKFLOW", "editable": False,
+        "width": 480,
+        "height": 832,
+        "frame_count": 107,
+        "fps": 24,
+        "duration_seconds": 4.458,
+        "target_duration_ms": 4458,
+        "aspect_ratio": "15:26",
+        "source": "PUBLISHED_WORKFLOW",
+        "editable": True,
     }
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM projects").fetchone()[0] == 0
@@ -158,27 +177,138 @@ def test_plan_is_idempotent_and_does_not_create_project_until_commit(workspace, 
 
     committed = service.commit(first["id"])["run"]
     assert committed["state"] == "GENERATING"
-    assert committed["project_id"] and committed["episode_id"] and committed["shot_id"]
-    assert committed["variant_id"] and committed["job_id"]
-    assert committed["links"]["generation"].endswith(f"/generation/{committed['shot_id']}")
+    assert committed["job_id"]
+    assert committed["links"] == {"workspace": f"/quick-create?run={committed['id']}"}
     with database.connect() as connection:
-        assert connection.execute("SELECT COUNT(*) FROM projects").fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM projects").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM seasons").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM episodes").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM shots").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM generation_intents").fetchone()[0] == 0
         assert connection.execute("SELECT COUNT(*) FROM jobs WHERE id=?", (committed["job_id"],)).fetchone()[0] == 1
+        job_scope = connection.execute("SELECT project_id,scope_kind FROM jobs WHERE id=?", (committed["job_id"],)).fetchone()
+    assert dict(job_scope) == {"project_id": None, "scope_kind": "QUICK_GENERATION"}
 
 
-def test_cancel_reaches_backend_job_and_new_seed_creates_a_branch(workspace, database, monkeypatch) -> None:
+def test_run_parameters_are_validated_frozen_and_applied_to_output_spec(workspace, database, monkeypatch) -> None:
     llm_id, t2v_id = _profiles(workspace, database, monkeypatch)
-    service = OneSentenceVideoRunService(
-        database, workspace, runtime_probe=lambda: {"status": "READY", "endpoint": "http://127.0.0.1:8188"}
-    )
+    service = OneSentenceVideoRunService(database, workspace, runtime_probe=lambda: {"status": "READY", "endpoint": "http://127.0.0.1:8188"})
+    parameters = {
+        "width": 832,
+        "height": 480,
+        "frame_count": 121,
+        "fps": 30,
+        "steps": 32,
+        "cfg": 5.5,
+        "sampler_name": "res_multistep",
+        "scheduler": "simple",
+        "denoise": 0.85,
+    }
     planned = service.plan(
-        story="海边清晨，一只白鸟贴着水面飞行。", language="zh-CN",
-        mode="DIRECT_T2V",
+        story="一列火车穿过清晨的山谷。",
+        language="zh-CN",
+        mode="TEXT_TO_VIDEO",
         llm_profile_version_id=llm_id,
         image_profile_version_id=None,
         video_profile_version_id=t2v_id,
         image_candidate_count=4,
-        allow_remote_outbound=False, idempotency_key="one-sentence-plan-2",
+        allow_remote_outbound=False,
+        llm_parameters={"temperature": 0.2, "top_p": 0.9, "max_tokens": 1024},
+        image_parameters={},
+        video_parameters=parameters,
+        idempotency_key="quick-parameters-1",
+    )["run"]
+    assert planned["plan"]["output_spec"]["width"] == 832
+    assert planned["plan"]["output_spec"]["height"] == 480
+    assert planned["plan"]["output_spec"]["frame_count"] == 121
+    assert planned["plan"]["output_spec"]["fps"] == 30
+    assert planned["plan"]["output_spec"]["source"] == "RUN_PARAMETERS"
+    committed = service.commit(planned["id"])["run"]
+    with database.connect() as connection:
+        snapshot = json.loads(connection.execute("SELECT input_snapshot_json FROM jobs WHERE id=?", (committed["job_id"],)).fetchone()[0])
+    assert snapshot["execution_snapshot"]["effective_configuration"]["effective_settings"] == parameters
+
+
+def test_quick_generation_presets_are_model_scoped_and_mutable(workspace, database, monkeypatch) -> None:
+    _llm_id, t2v_id = _profiles(workspace, database, monkeypatch)
+    service = QuickGenerationPresetService(database, ProfileService(database, workspace.manifest_path))
+    created = service.create(
+        name="竖屏快速预览",
+        capability="VIDEO_T2V",
+        execution_profile_version_id=t2v_id,
+        parameters={"width": 480, "height": 832, "steps": 24, "scheduler": "simple"},
+    )["preset"]
+    assert created["favorite"] is True
+    assert service.list("VIDEO_T2V")["items"][0]["parameters"]["steps"] == 24
+    updated = service.update(
+        created["id"],
+        name="竖屏精细预览",
+        execution_profile_version_id=t2v_id,
+        parameters={"width": 480, "height": 832, "steps": 36, "scheduler": "simple"},
+        favorite=False,
+        expected_revision=created["revision"],
+    )["preset"]
+    assert updated["name"] == "竖屏精细预览"
+    assert updated["parameters"]["steps"] == 36
+    assert updated["favorite"] is False
+    assert service.delete(created["id"])["deleted"] is True
+
+
+def test_prompt_regeneration_branches_without_rewriting_completed_evidence(workspace, database, monkeypatch) -> None:
+    llm_id, _ = _profiles(workspace, database, monkeypatch)
+    image_id, i2v_id = _image_first_profiles(workspace, database)
+    service = OneSentenceVideoRunService(database, workspace, runtime_probe=lambda: {"status": "READY", "endpoint": "http://127.0.0.1:8188"})
+    source = service.plan(
+        story="丝袜美女骑摩托车",
+        language="zh-CN",
+        mode="TEXT_TO_IMAGE_TO_VIDEO",
+        llm_profile_version_id=llm_id,
+        image_profile_version_id=image_id,
+        video_profile_version_id=i2v_id,
+        image_candidate_count=4,
+        allow_remote_outbound=False,
+        idempotency_key="prompt-source-1",
+    )["run"]
+    source_keyframe = source["plan"]["video_plan"]["keyframe_prompt"]
+    source_video = source["plan"]["video_plan"]["video_prompt"]
+    fresh = {
+        **source["plan"]["video_plan"],
+        "keyframe_prompt": "A fashionable woman in stockings sits on a motorcycle, cinematic city street",
+        "video_prompt": "全新的骑行视频提示词",
+    }
+    monkeypatch.setattr(service.llm, "expand_video_prompt", lambda *args, **kwargs: fresh)
+
+    keyframe_branch = service.regenerate_prompt(source["id"], "KEYFRAME", idempotency_key="prompt-keyframe-branch-1")["run"]
+    replay = service.regenerate_prompt(source["id"], "KEYFRAME", idempotency_key="prompt-keyframe-branch-1")["run"]
+    assert replay["id"] == keyframe_branch["id"]
+    assert keyframe_branch["id"] != source["id"]
+    assert keyframe_branch["state"] == "PLANNED"
+    assert "project_id" not in keyframe_branch
+    assert keyframe_branch["plan"]["video_plan"]["keyframe_prompt"] == fresh["keyframe_prompt"]
+    assert keyframe_branch["plan"]["video_plan"]["video_prompt"] == source_video
+    assert keyframe_branch["plan"]["regenerated_from"] == {"run_id": source["id"], "target": "KEYFRAME"}
+
+    video_branch = service.regenerate_prompt(source["id"], "VIDEO", idempotency_key="prompt-video-branch-1")["run"]
+    assert video_branch["plan"]["video_plan"]["video_prompt"] == fresh["video_prompt"]
+    assert video_branch["plan"]["video_plan"]["keyframe_prompt"] == source_keyframe
+    unchanged = service.get(source["id"], reconcile=False)["run"]
+    assert unchanged["plan"]["video_plan"]["keyframe_prompt"] == source_keyframe
+    assert unchanged["plan"]["video_plan"]["video_prompt"] == source_video
+
+
+def test_cancel_reaches_backend_job_and_new_seed_creates_a_branch(workspace, database, monkeypatch) -> None:
+    llm_id, t2v_id = _profiles(workspace, database, monkeypatch)
+    service = OneSentenceVideoRunService(database, workspace, runtime_probe=lambda: {"status": "READY", "endpoint": "http://127.0.0.1:8188"})
+    planned = service.plan(
+        story="海边清晨，一只白鸟贴着水面飞行。",
+        language="zh-CN",
+        mode="TEXT_TO_VIDEO",
+        llm_profile_version_id=llm_id,
+        image_profile_version_id=None,
+        video_profile_version_id=t2v_id,
+        image_candidate_count=4,
+        allow_remote_outbound=False,
+        idempotency_key="one-sentence-plan-2",
     )["run"]
     committed = service.commit(planned["id"])["run"]
     cancelled = service.cancel(planned["id"])["run"]
@@ -188,23 +318,22 @@ def test_cancel_reaches_backend_job_and_new_seed_creates_a_branch(workspace, dat
     branched = service.retry(planned["id"], "NEW_SEED")["run"]
     assert branched["state"] == "GENERATING"
     assert branched["job_id"] != committed["job_id"]
-    assert branched["variant_id"] != committed["variant_id"]
     assert branched["seed"] != committed["seed"]
 
 
 def test_resume_requeues_locally_failed_video_job(workspace, database, monkeypatch) -> None:
     llm_id, t2v_id = _profiles(workspace, database, monkeypatch)
-    service = OneSentenceVideoRunService(
-        database, workspace, runtime_probe=lambda: {"status": "READY", "endpoint": "http://127.0.0.1:8188"}
-    )
+    service = OneSentenceVideoRunService(database, workspace, runtime_probe=lambda: {"status": "READY", "endpoint": "http://127.0.0.1:8188"})
     planned = service.plan(
-        story="海边清晨，一只白鸟贴着水面飞行。", language="zh-CN",
-        mode="DIRECT_T2V",
+        story="海边清晨，一只白鸟贴着水面飞行。",
+        language="zh-CN",
+        mode="TEXT_TO_VIDEO",
         llm_profile_version_id=llm_id,
         image_profile_version_id=None,
         video_profile_version_id=t2v_id,
         image_candidate_count=4,
-        allow_remote_outbound=False, idempotency_key="one-sentence-resume-1",
+        allow_remote_outbound=False,
+        idempotency_key="one-sentence-resume-1",
     )["run"]
     committed = service.commit(planned["id"])["run"]
     jobs = JobService(database, workspace)
@@ -233,12 +362,11 @@ def test_resume_requeues_locally_failed_video_job(workspace, database, monkeypat
 def test_cancelling_keyframe_batch_syncs_candidate_rows(workspace, database, monkeypatch) -> None:
     llm_id, _ = _profiles(workspace, database, monkeypatch)
     image_id, i2v_id = _image_first_profiles(workspace, database)
-    service = OneSentenceVideoRunService(
-        database, workspace, runtime_probe=lambda: {"status": "READY", "endpoint": "http://127.0.0.1:8188"}
-    )
+    service = OneSentenceVideoRunService(database, workspace, runtime_probe=lambda: {"status": "READY", "endpoint": "http://127.0.0.1:8188"})
     planned = service.plan(
-        story="黄昏的沙漠公路，一辆复古跑车疾驰而去。", language="zh-CN",
-        mode="KEYFRAME_I2V",
+        story="黄昏的沙漠公路，一辆复古跑车疾驰而去。",
+        language="zh-CN",
+        mode="TEXT_TO_IMAGE_TO_VIDEO",
         llm_profile_version_id=llm_id,
         image_profile_version_id=image_id,
         video_profile_version_id=i2v_id,
@@ -258,11 +386,11 @@ def test_cancelling_keyframe_batch_syncs_candidate_rows(workspace, database, mon
     assert all(item["state"] == "CANCELLED" for item in cancelled["candidates"])
     with database.connect() as connection:
         stale = connection.execute(
-            "SELECT COUNT(*) FROM one_sentence_video_candidates WHERE run_id=? AND state NOT IN ('CANCELLED','FAILED')",
+            "SELECT COUNT(*) FROM quick_generation_candidates WHERE run_id=? AND state NOT IN ('CANCELLED','FAILED')",
             (planned["id"],),
         ).fetchone()[0]
         job_states = connection.execute(
-            "SELECT DISTINCT j.state FROM jobs j JOIN one_sentence_video_candidates c ON c.job_id=j.id WHERE c.run_id=?",
+            "SELECT DISTINCT j.state FROM jobs j JOIN quick_generation_candidates c ON c.job_id=j.id WHERE c.run_id=?",
             (planned["id"],),
         ).fetchall()
     assert stale == 0
@@ -272,13 +400,11 @@ def test_cancelling_keyframe_batch_syncs_candidate_rows(workspace, database, mon
 def test_image_first_candidates_become_approved_keyframe_and_real_i2v_binding(workspace, database, monkeypatch) -> None:
     llm_id, _ = _profiles(workspace, database, monkeypatch)
     image_id, i2v_id = _image_first_profiles(workspace, database)
-    service = OneSentenceVideoRunService(
-        database, workspace, runtime_probe=lambda: {"status": "READY", "endpoint": "http://127.0.0.1:8188"}
-    )
+    service = OneSentenceVideoRunService(database, workspace, runtime_probe=lambda: {"status": "READY", "endpoint": "http://127.0.0.1:8188"})
     planned = service.plan(
         story="雨夜霓虹灯下，一只橘猫撑伞穿过街道。",
         language="zh-CN",
-        mode="KEYFRAME_I2V",
+        mode="TEXT_TO_IMAGE_TO_VIDEO",
         llm_profile_version_id=llm_id,
         image_profile_version_id=image_id,
         video_profile_version_id=i2v_id,
@@ -287,8 +413,11 @@ def test_image_first_candidates_become_approved_keyframe_and_real_i2v_binding(wo
         idempotency_key="one-sentence-image-first-1",
     )["run"]
     assert planned["plan"]["image_spec"] == {
-        "width": 768, "height": 1344, "aspect_ratio": "4:7",
-        "source": "PUBLISHED_WORKFLOW", "editable": False,
+        "width": 768,
+        "height": 1344,
+        "aspect_ratio": "4:7",
+        "source": "PUBLISHED_WORKFLOW",
+        "editable": True,
     }
     committed = service.commit(planned["id"])["run"]
     assert committed["state"] == "GENERATING"
@@ -298,8 +427,7 @@ def test_image_first_candidates_become_approved_keyframe_and_real_i2v_binding(wo
 
     jobs = JobService(database, workspace)
     png = bytes.fromhex(
-        "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
-        "0000000d4944415408d763f8cfc0f01f00050001ff89993d1d0000000049454e44ae426082"
+        "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415408d763f8cfc0f01f00050001ff89993d1d0000000049454e44ae426082"
     )
     candidate_job_ids = {str(item["job_id"]) for item in committed["candidates"]}
     for ordinal in range(1, 4):
@@ -319,49 +447,101 @@ def test_image_first_candidates_become_approved_keyframe_and_real_i2v_binding(wo
             success=True,
         )
 
-    processing = service.get(planned["id"])["run"]
-    assert processing["state"] == "GENERATING"
-    assert all(item["state"] == "PROCESSING" and item["media_version_id"] for item in processing["candidates"])
-    LocalMediaWorker(database, workspace).run_until_idle("one-sentence-thumbnail-worker")
     awaiting = service.get(planned["id"])["run"]
     assert awaiting["state"] == "AWAITING_SELECTION"
     assert awaiting["stage"] == "IMAGE_SELECTION"
-    assert all(item["state"] == "READY" and item["media_version_id"] for item in awaiting["candidates"])
+    assert all(item["state"] == "READY" and item["output"]["media_kind"] == "IMAGE" for item in awaiting["candidates"])
     chosen = awaiting["candidates"][1]
     with pytest.raises(DomainRuleError) as missing_review:
         service.select_image_candidate(planned["id"], chosen["id"], confirm_review_checks=False)
-    assert missing_review.value.code == "ONE_SENTENCE_KEYFRAME_REVIEW_REQUIRED"
+    assert missing_review.value.code == "QUICK_GENERATION_IMAGE_CONFIRMATION_REQUIRED"
 
-    generating = service.select_image_candidate(
-        planned["id"], chosen["id"], confirm_review_checks=True
-    )["run"]
+    generating = service.select_image_candidate(planned["id"], chosen["id"], confirm_review_checks=True)["run"]
     assert generating["state"] == "GENERATING"
     assert generating["stage"] == "VIDEO_GENERATING"
     assert generating["selected_candidate_id"] == chosen["id"]
-    assert generating["selected_image_media_version_id"] == chosen["media_version_id"]
-    assert generating["job_id"] and generating["variant_id"]
+    assert generating["selected_image_output_id"] == chosen["output_id"]
+    assert generating["job_id"]
     with database.connect() as connection:
-        evidence = connection.execute(
-            """SELECT vib.role,vib.media_version_id,vib.source_approval_id,
-            ma.owner_type,ma.owner_id,ma.purpose,ma.approved_version_id,mv.stage
-            FROM variant_input_bindings vib
-            JOIN media_versions mv ON mv.id=vib.media_version_id
-            JOIN media_assets ma ON ma.id=mv.media_asset_id
-            WHERE vib.variant_id=?""",
-            (generating["variant_id"],),
-        ).fetchone()
-        review = connection.execute(
-            "SELECT decision,is_stale FROM review_decisions WHERE id=?",
-            (generating["keyframe_review_id"],),
-        ).fetchone()
-    assert dict(evidence) == {
-        "role": "FIRST_FRAME",
-        "media_version_id": chosen["media_version_id"],
-        "source_approval_id": generating["keyframe_review_id"],
-        "owner_type": "SHOT",
-        "owner_id": generating["shot_id"],
-        "purpose": "KEYFRAME",
-        "approved_version_id": chosen["media_version_id"],
-        "stage": "KEYFRAME",
-    }
-    assert dict(review) == {"decision": "APPROVED", "is_stale": 0}
+        snapshot = json.loads(connection.execute("SELECT input_snapshot_json FROM jobs WHERE id=?", (generating["job_id"],)).fetchone()[0])
+        project_count = connection.execute("SELECT COUNT(*) FROM projects").fetchone()[0]
+        media_count = connection.execute("SELECT COUNT(*) FROM media_versions").fetchone()[0]
+    assert snapshot["artifact_bindings"] == [{"role": "FIRST_FRAME", "artifact_id": chosen["output"]["source_artifact_id"]}]
+    assert project_count == 0
+    assert media_count == 0
+
+
+def test_text_to_image_finishes_with_selected_standalone_image(workspace, database, monkeypatch) -> None:
+    llm_id, _ = _profiles(workspace, database, monkeypatch)
+    image_id, _ = _image_first_profiles(workspace, database)
+    service = OneSentenceVideoRunService(database, workspace, runtime_probe=lambda: {"status": "READY", "endpoint": "http://127.0.0.1:8188"})
+    planned = service.plan(
+        story="薄雾森林中的白鹿，柔和晨光。",
+        language="zh-CN",
+        mode="TEXT_TO_IMAGE",
+        llm_profile_version_id=llm_id,
+        image_profile_version_id=image_id,
+        video_profile_version_id=None,
+        image_candidate_count=1,
+        allow_remote_outbound=False,
+        idempotency_key="quick-text-to-image-1",
+    )["run"]
+    assert planned["plan"]["result_kind"] == "IMAGE"
+    assert planned["plan"]["video"] is None
+    assert planned["plan"]["camera_resolution"] is None
+    committed = service.commit(planned["id"])["run"]
+    assert committed["job_id"] is None
+    assert len(committed["candidates"]) == 1
+
+    jobs = JobService(database, workspace)
+    claim = jobs.claim("quick-image-worker", ["GPU_H3"])
+    assert claim is not None
+    output = workspace.work_root / "quick-image-only.png"
+    output.write_bytes(
+        bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415408d763f8cfc0f01f00050001ff89993d1d0000000049454e44ae426082"
+        )
+    )
+    jobs.register_artifact(str(claim["attempt"]["id"]), "COMFY_OUTPUT", output.relative_to(workspace.work_root).as_posix())
+    jobs.complete(str(claim["attempt"]["id"]), str(claim["attempt"]["lease_token"]), "quick-image-worker", success=True)
+    awaiting = service.get(planned["id"])["run"]
+    selected = service.select_image_candidate(
+        planned["id"], awaiting["candidates"][0]["id"], confirm_review_checks=True
+    )["run"]
+    assert selected["state"] == "SUCCEEDED"
+    assert selected["output"]["media_kind"] == "IMAGE"
+    assert selected["output"]["thumbnail_url"].endswith("/thumbnail?size=small&frame=poster")
+    thumbnail, thumbnail_mime = service.thumbnail_path(str(selected["output"]["id"]))
+    assert thumbnail.is_file()
+    assert thumbnail_mime == "image/webp"
+    assert selected["video_profile_version_id"] is None
+
+
+def test_model_catalog_groups_one_video_model_under_both_actions() -> None:
+    profiles = [
+        {
+            "id": "t2v-profile",
+            "version_id": "t2v-v1",
+            "version_no": 1,
+            "title": "Wan VIDEO_T2V Profile",
+            "capability": "VIDEO_T2V",
+            "status": "PUBLISHED",
+            "workflow_version_id": "workflow-t2v",
+            "model_bundle": {"model_family": "Wan 2.2"},
+        },
+        {
+            "id": "i2v-profile",
+            "version_id": "i2v-v1",
+            "version_no": 1,
+            "title": "Wan VIDEO_I2V Profile",
+            "capability": "VIDEO_I2V",
+            "status": "PUBLISHED",
+            "workflow_version_id": "workflow-i2v",
+            "model_bundle": {"model_family": "Wan 2.2"},
+        },
+    ]
+    catalog = build_generation_model_catalog(profiles)
+    assert len(catalog) == 1
+    assert catalog[0]["name"] == "Wan 2.2"
+    assert catalog[0]["actions"] == ["IMAGE_TO_VIDEO", "TEXT_TO_VIDEO"]
+    assert {route["profile_version_id"] for route in catalog[0]["routes"]} == {"t2v-v1", "i2v-v1"}

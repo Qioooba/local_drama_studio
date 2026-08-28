@@ -17,8 +17,8 @@ from local_drama.domain.capabilities import normalize_capability
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.policies import validate_project_code
 from local_drama.infrastructure.database.sqlite import Database
-from local_drama.infrastructure.filesystem.template import TEMPLATE_DIRECTORIES, TEMPLATE_VERSION
 from local_drama.infrastructure.filesystem.atomic import replace_path
+from local_drama.infrastructure.filesystem.template import TEMPLATE_DIRECTORIES, TEMPLATE_VERSION
 
 PACKAGE_SCHEMA = "localdrama.project-package.v2"
 STATE_SCHEMA = "localdrama.project-state.v2"

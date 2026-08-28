@@ -30,7 +30,7 @@ class LocalLLMProbePort(Protocol):
         ...
 
 
-AtomicWriter = Callable[[Path, Callable[[Path], None]], None]
+AtomicWriter = Callable[[Path, Callable[[Path], object]], None]
 CancelCheck = Callable[[], bool]
 ProgressReporter = Callable[..., bool]
 

@@ -8,16 +8,22 @@ import { getDiagnostics, listProjects, runDiagnostics } from "../generated/api";
 import { queryKeys } from "../query/queryKeys";
 import "./system-workspaces.css";
 
-const DIAGNOSTIC_RUN_TIMEOUT_MS = 10_000;
+export const DIAGNOSTIC_READ_TIMEOUT_MS = 15_000;
+export const DIAGNOSTIC_RUN_TIMEOUT_MS = 90_000;
 
-function diagnosticRequestWithTimeout<T>(request: Promise<T>, timeoutMessage: string): Promise<T> {
+export function diagnosticRequestWithTimeout<T>(request: Promise<T>, timeoutMessage: string, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error(timeoutMessage)), DIAGNOSTIC_RUN_TIMEOUT_MS);
+    const timer = window.setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
     request.then(
       (value) => { window.clearTimeout(timer); resolve(value); },
       (error) => { window.clearTimeout(timer); reject(error); },
     );
   });
+}
+
+export function diagnosticErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/(?:\s|&#x20;|&#32;|&nbsp;)+$/giu, "");
 }
 
 const DIAGNOSTIC_TABS = [
@@ -49,8 +55,19 @@ export function DiagnosticsPage() {
   };
 
   const projects = useQuery({ queryKey: queryKeys.projects.list({ limit: 100 }), queryFn: () => listProjects({ limit: 100 }) });
-  const diagnostics = useQuery({ queryKey: queryKeys.diagnostics.current(), queryFn: () => diagnosticRequestWithTimeout(getDiagnostics(), "诊断记录读取超时，请重试"), retry: false });
-  const run = useMutation({ mutationFn: () => diagnosticRequestWithTimeout(runDiagnostics(), "诊断超时，请重试"), onSuccess: () => void diagnostics.refetch() });
+  const diagnostics = useQuery({
+    queryKey: queryKeys.diagnostics.current(),
+    queryFn: () => diagnosticRequestWithTimeout(getDiagnostics(), "诊断记录读取超时，请重试", DIAGNOSTIC_READ_TIMEOUT_MS),
+    retry: false,
+  });
+  const run = useMutation({
+    mutationFn: () => diagnosticRequestWithTimeout(
+      runDiagnostics(),
+      "诊断检查超过 90 秒，服务端可能仍在完成。请稍后重新读取诊断记录。",
+      DIAGNOSTIC_RUN_TIMEOUT_MS,
+    ),
+    onSuccess: () => void diagnostics.refetch(),
+  });
 
   return (
     <div className="v2-page diagnostics-page">
@@ -80,14 +97,31 @@ export function DiagnosticsPage() {
               {run.isPending ? "检查中…" : "运行诊断"}
             </button>
           </div>
+          {run.isPending ? (
+            <p className="diagnostic-run-progress" role="status">
+              正在逐项检查 Comfy、LLM、FFmpeg 与本机清单，通常需要 10–60 秒，请勿重复点击。
+            </p>
+          ) : null}
           {diagnostics.isPending ? (
             <Skeleton label="正在读取诊断记录" lines={4} />
           ) : diagnostics.error ? (
-            <ErrorState description={`诊断读取失败：${String(diagnostics.error)}`} onRetry={() => void diagnostics.refetch()} />
+            <ErrorState description={`诊断读取失败：${diagnosticErrorMessage(diagnostics.error)}`} onRetry={() => void diagnostics.refetch()} />
           ) : (
             <DiagnosticPanel run={run.data?.run ?? diagnostics.data?.run ?? null} />
           )}
-          {run.error ? <p className="inline-error" role="alert">诊断运行失败：{String(run.error)}</p> : null}
+          {run.error ? (
+            <div className="inline-error diagnostic-run-error" role="alert">
+              <span>诊断运行失败：{diagnosticErrorMessage(run.error)}</span>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => { run.reset(); void diagnostics.refetch(); }}
+                disabled={diagnostics.isFetching}
+              >
+                {diagnostics.isFetching ? "正在重新读取…" : "重新读取诊断记录"}
+              </button>
+            </div>
+          ) : null}
         </section>
       </TabPanel>
 

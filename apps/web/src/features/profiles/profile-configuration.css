@@ -6,14 +6,163 @@
 }
 
 .profile-configuration-panel .profile-editor-layout {
-  grid-template-columns: minmax(248px, 0.78fr) minmax(0, 1.7fr);
+  grid-template-columns: minmax(286px, 0.78fr) minmax(0, 1.7fr);
+  align-items: start;
 }
 
-.profile-configuration-panel .profile-version-choice {
+.profile-capability-import {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.profile-capability-import > summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  cursor: pointer;
+}
+
+.profile-capability-import > summary span { color: var(--text); font-weight: 750; }
+.profile-capability-import > summary small { color: var(--text-muted); text-align: right; }
+.profile-capability-import > div { display: flex; align-items: end; justify-content: space-between; gap: 16px; padding: 0 12px 12px; }
+.profile-capability-import p { max-width: 78ch; margin: 0; color: var(--text-muted); line-height: 1.55; }
+.profile-capability-import button { min-height: 44px; flex: none; }
+
+.profile-capability-browser {
+  display: grid;
+  gap: 16px;
   min-width: 0;
-  min-height: 68px;
+  align-content: start;
 }
 
+@media (min-width: 1101px) {
+  .profile-capability-browser {
+    position: sticky;
+    z-index: 1;
+    top: 0;
+    max-height: calc(100dvh - 132px);
+    overflow: auto;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    scrollbar-width: thin;
+  }
+}
+
+.profile-capability-browser__heading,
+.profile-capability-family__heading,
+.profile-version-switcher__heading,
+.profile-contract-section__heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.profile-capability-browser__heading { min-height: 34px; align-items: center; border-bottom: 1px solid var(--border); }
+.profile-capability-browser__heading small { color: var(--text-muted); }
+.profile-capability-family { display: grid; gap: 8px; min-width: 0; }
+.profile-capability-family__heading > div { display: grid; gap: 2px; min-width: 0; }
+.profile-capability-family__heading h4 { margin: 0; font-size: 13px; }
+.profile-capability-family__heading small { color: var(--text-muted); font-size: 11px; line-height: 1.4; }
+.profile-capability-family__heading > span { display: grid; min-width: 24px; height: 24px; place-items: center; border-radius: 999px; background: var(--surface-muted); color: var(--text-muted); font-size: 11px; }
+.profile-capability-family__items { display: grid; gap: 6px; }
+
+.profile-capability-choice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 72px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.profile-capability-choice:hover { border-color: var(--info); }
+.profile-capability-choice.selected { border-color: var(--info); background: color-mix(in srgb, var(--info) 12%, var(--surface)); box-shadow: inset 3px 0 var(--info); }
+.profile-capability-choice > span { display: grid; gap: 3px; min-width: 0; }
+.profile-capability-choice > span:last-child { justify-items: end; }
+.profile-capability-choice small { color: var(--text-muted); font-size: 11px; overflow-wrap: anywhere; }
+.profile-capability-choice .status-pill { white-space: nowrap; }
+
+.profile-contract-context { margin-bottom: 14px; }
+.profile-contract-context h4 { margin: 3px 0; font-size: 20px; }
+.profile-contract-context p { margin: 0; color: var(--text-muted); }
+.profile-contract-context code { color: var(--text); }
+
+.profile-version-switcher {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.profile-version-switcher__heading > div { display: grid; gap: 2px; }
+.profile-version-switcher__heading small { color: var(--text-muted); }
+.profile-version-switcher__items { display: flex; flex-wrap: wrap; gap: 8px; }
+.profile-version-chip { display: inline-flex; min-height: 44px; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); cursor: pointer; }
+.profile-version-chip.selected { border-color: var(--info); box-shadow: inset 0 -2px var(--info); }
+.profile-version-state-help { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.profile-version-state-help strong { color: var(--text); }
+
+.profile-configuration-panel .profile-contract-meta { grid-template-columns: repeat(3, minmax(0, 1fr)) auto; }
+.profile-contract-structured { display: grid; margin-top: 18px; border-top: 1px solid var(--border); }
+.profile-contract-section { display: grid; gap: 12px; padding: 20px 0; border-bottom: 1px solid var(--border); scroll-margin-top: 16px; }
+.profile-contract-section__heading h4 { margin: 3px 0 0; font-size: 16px; }
+.profile-contract-section > p { max-width: 82ch; margin: 0; color: var(--text-muted); line-height: 1.55; }
+.profile-contract-section .profile-contract-fields { margin-top: 0; }
+.profile-contract-section .profile-contract-fields label,
+.profile-contract-section .field-fact { padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-muted); color: var(--text); font-size: 12px; }
+.profile-contract-section .profile-contract-fields label > small,
+.profile-contract-section .field-fact small { color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+.profile-contract-section select { min-width: 0; min-height: 44px; width: 100%; }
+.profile-contract-section .field-fact { display: grid; align-content: start; gap: 6px; }
+.profile-contract-section .field-fact span { font-weight: 750; }
+.profile-contract-section .checkbox-label { font-weight: 600; }
+
+.profile-contract-section .profile-override-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.profile-contract-section .profile-override-field { display: grid; min-width: 0; align-content: start; gap: 7px; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-muted); }
+.profile-contract-section .profile-override-field > span { display: grid; gap: 3px; }
+.profile-contract-section .profile-override-field > span small,
+.profile-contract-section .profile-override-field > small { color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+.profile-contract-section .profile-override-field input:not([type="checkbox"]),
+.profile-contract-section .profile-override-field select { box-sizing: border-box; min-width: 0; min-height: 44px; width: 100%; }
+.profile-contract-section .profile-override-field input[type="checkbox"] { width: 22px; min-height: 22px; }
+.profile-contract-section .profile-override-clear { justify-self: start; min-height: 36px; }
+
+.profile-contract-advanced { margin-top: 18px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-muted); }
+.profile-contract-advanced > summary { display: flex; min-height: 48px; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; cursor: pointer; }
+.profile-contract-advanced > summary span { font-weight: 750; }
+.profile-contract-advanced > summary small { color: var(--text-muted); }
+.profile-contract-advanced__body { padding: 0 12px 12px; }
+.profile-contract-template-action { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
+.profile-contract-template-action > div { display: grid; gap: 4px; }
+.profile-contract-template-action small { color: var(--text-muted); }
+.profile-contract-json { margin-top: 12px; }
+.profile-contract-json > summary { min-height: 44px; cursor: pointer; font-weight: 700; }
+
+.profile-capability-choice:focus-visible,
+.profile-version-chip:focus-visible,
+.profile-capability-import button:focus-visible,
+.profile-contract-section input:focus-visible,
+.profile-contract-section select:focus-visible,
+.profile-contract-advanced button:focus-visible,
+.profile-contract-advanced summary:focus-visible,
+.profile-capability-import summary:focus-visible,
 .profile-configuration-panel .profile-version-choice:focus-visible,
 .workflow-configuration-panel button:focus-visible,
 .workflow-configuration-panel input:focus-visible,
@@ -41,6 +190,17 @@
   display: grid;
   gap: 14px;
 }
+
+.model-inspector-edit-defaults { min-height: 44px; margin-bottom: 12px; }
+.model-inspector-parameters { display: grid; gap: 10px; }
+.model-inspector-parameters article { display: grid; gap: 9px; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-muted); }
+.model-inspector-parameters article > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.model-inspector-parameters article code { color: var(--text-muted); font-size: 11px; overflow-wrap: anywhere; }
+.model-inspector-parameters dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 0; }
+.model-inspector-parameters dl > div { min-width: 0; padding: 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); }
+.model-inspector-parameters dt { color: var(--text-muted); font-size: 11px; }
+.model-inspector-parameters dd { margin: 3px 0 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 700; }
+.model-inspector-parameters article > p { margin: 0; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
 
 .model-inspector-intro,
 .model-inspector-component__heading {
@@ -467,9 +627,11 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .profile-configuration-panel .profile-version-list {
+  .profile-capability-browser {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .profile-capability-browser__heading { grid-column: 1 / -1; }
 
   .profile-configuration-panel .profile-contract-editor {
     padding-top: 18px;
@@ -480,10 +642,24 @@
 }
 
 @media (max-width: 760px) {
-  .profile-configuration-panel .profile-version-list,
+  .profile-capability-browser,
+  .profile-contract-section .profile-override-fields,
   .profile-configuration-panel .profile-contract-fields {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .profile-capability-import > summary,
+  .profile-capability-import > div,
+  .profile-contract-section__heading,
+  .profile-contract-advanced > summary,
+  .profile-contract-template-action { align-items: flex-start; flex-direction: column; }
+
+  .profile-capability-import > summary small { text-align: left; }
+  .profile-capability-import button,
+  .profile-contract-template-action button { width: 100%; }
+
+  .profile-configuration-panel .profile-contract-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .profile-execution-details-button { grid-column: 1 / -1; width: 100%; }
 
   .profile-configuration-panel .profile-contract-meta,
   .workflow-configuration-panel .workflow-version-facts {
@@ -518,6 +694,8 @@
   .profile-evidence-keyframe > button {
     width: 100%;
   }
+
+  .model-inspector-parameters dl { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 480px) {
@@ -525,4 +703,6 @@
   .workflow-configuration-panel .workflow-version-facts {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .profile-version-switcher__heading { align-items: flex-start; flex-direction: column; }
 }

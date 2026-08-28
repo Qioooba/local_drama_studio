@@ -7,7 +7,7 @@ import math
 import shutil
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
@@ -431,7 +431,7 @@ class GenerationService:
                         "IDEMPOTENCY_PAYLOAD_MISMATCH",
                         "相同 Idempotency-Key 已用于不同 Shot 生成目标",
                     )
-                replay = json.loads(str(existing["response_json"]))
+                replay = cast(dict[str, Any], json.loads(str(existing["response_json"])))
                 replay["idempotent_replay"] = True
                 return replay
             intent_id = str(uuid.uuid4())
@@ -1144,7 +1144,10 @@ class GenerationService:
             free_bytes = None
         estimate_known = isinstance(required, (int, float)) and not isinstance(required, bool)
         required_bytes = int(required) if estimate_known else None
-        blocking = bool(estimate_known and (free_bytes is None or free_bytes < required_bytes))
+        blocking = bool(
+            estimate_known
+            and (free_bytes is None or (required_bytes is not None and free_bytes < required_bytes))
+        )
         return {
             "status": "BLOCKED" if blocking else "PASS" if estimate_known else "ESTIMATE_UNAVAILABLE",
             "blocking": blocking,
@@ -2035,11 +2038,13 @@ class GenerationService:
             # the pre-injection behaviour (no story_assets key).
             if style_context is not None:
                 prompt_context = style_context.get("prompt_context")
-                if isinstance(prompt_context, str) and prompt_context and isinstance(semantic_inputs.get("PROMPT"), str):
-                    semantic_inputs["PROMPT"] = semantic_inputs["PROMPT"].rstrip() + "\n\n" + prompt_context
+                prompt_value = semantic_inputs.get("PROMPT")
+                if isinstance(prompt_context, str) and prompt_context and isinstance(prompt_value, str):
+                    semantic_inputs["PROMPT"] = prompt_value.rstrip() + "\n\n" + prompt_context
                 negative_context = style_context.get("negative_prompt_context")
-                if isinstance(negative_context, str) and negative_context and isinstance(semantic_inputs.get("NEGATIVE_PROMPT"), str):
-                    semantic_inputs["NEGATIVE_PROMPT"] = semantic_inputs["NEGATIVE_PROMPT"].rstrip() + "\n\n" + negative_context
+                negative_value = semantic_inputs.get("NEGATIVE_PROMPT")
+                if isinstance(negative_context, str) and negative_context and isinstance(negative_value, str):
+                    semantic_inputs["NEGATIVE_PROMPT"] = negative_value.rstrip() + "\n\n" + negative_context
             anchor_lines = _character_anchor_lines(connection, intent)
             story_assets_snapshot: dict[str, str] | None = None
             if anchor_lines and "PROMPT" in semantic_inputs and isinstance(semantic_inputs["PROMPT"], str) and semantic_inputs["PROMPT"].strip():
@@ -2079,6 +2084,7 @@ class GenerationService:
                 job_input_snapshot["identity_packs"] = identity_pack_snapshot
             if style_context is not None:
                 job_input_snapshot["style_context"] = style_context
+            scope = job_scope or {}
             job = JobService(self.database).create_job_in_transaction(
                 connection,
                 str(intent["project_id"]),
@@ -2090,7 +2096,12 @@ class GenerationService:
                 idempotency_key,
                 execution_profile_version_id=plan.profile_version_id,
                 max_attempts=1,
-                **(job_scope or {}),
+                subject_kind=scope.get("subject_kind"),
+                scope_kind=scope.get("scope_kind"),
+                scope_project_id=scope.get("scope_project_id"),
+                scope_episode_id=scope.get("scope_episode_id"),
+                scope_shot_id=scope.get("scope_shot_id"),
+                stage_code=scope.get("stage_code"),
             )
             connection.execute(
                 """INSERT INTO audit_events

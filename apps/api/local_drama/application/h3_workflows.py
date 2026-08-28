@@ -165,15 +165,32 @@ class H3WorkflowFactory:
         manifest = self._manifest()
         comfy_root = Path(str(manifest.get("runtime", {}).get("comfyui_root", "")))
         assets = self.loader_assets()
+        canonical = manifest.get("canonical_model_root", {})
+        canonical_root = Path(str(canonical.get("path", ""))) if isinstance(canonical, dict) else Path()
+        search_roots = [comfy_root / "models"]
+        if str(canonical_root):
+            search_roots.append(canonical_root)
+        search_roots.extend(Path(root) for root in self.settings.model_library_roots)
+        unique_roots: list[Path] = []
+        for root in search_roots:
+            resolved = root.resolve()
+            if resolved not in unique_roots:
+                unique_roots.append(resolved)
         missing: list[str] = []
+        resolved_components: dict[str, str] = {}
         for key, subdir in _H3_MODEL_SUBDIRS.items():
-            candidate = comfy_root / "models" / subdir / assets[key]
-            if not candidate.is_file():
-                missing.append(str(candidate))
+            candidates = [root / subdir / assets[key] for root in unique_roots]
+            selected = next((candidate for candidate in candidates if candidate.is_file()), None)
+            if selected is None:
+                missing.append(str(candidates[0]))
+            else:
+                resolved_components[key] = str(selected)
         return {
             "status": "PASS" if not missing else "BLOCKED",
-            "release_root": str(comfy_root / "models") if comfy_root else "",
+            "release_root": str(canonical_root if str(canonical_root) else comfy_root / "models"),
+            "search_roots": [str(root) for root in unique_roots],
             "selected_components": self.candidate_assets(),
+            "resolved_components": resolved_components,
             "missing_model_files": missing,
             "node_family": "comfy_extras.MiniMaxH3ImageToVideo",
             "manifest_sha256": manifest.get("manifest_sha256"),

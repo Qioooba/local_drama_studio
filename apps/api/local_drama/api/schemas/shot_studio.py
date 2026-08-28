@@ -123,7 +123,7 @@ class ShotBaseGenerationPreflightRequest(StrictModel):
             branch_reason=self.branch_reason,
             prompt_revision_id=self.prompt_revision_id,
             profile_version_id=self.profile_version_id,
-            parameter_set=self.parameter_set,
+            parameter_set={key: value for key, value in self.parameter_set.items()},
             seed_policy=self.seed_policy,
             explicit_seed=self.explicit_seed,
             bindings=tuple(VariantInput(item.role, item.media_version_id, item.ordinal, item.weight) for item in self.bindings),

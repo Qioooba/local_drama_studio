@@ -18,11 +18,12 @@ from local_drama.application.dialogue import DialogueService
 from local_drama.application.episode_front_half_actions import EpisodeFrontHalfActionService
 from local_drama.application.episode_worker_actions import EpisodeWorkerActionService
 from local_drama.application.generation import GenerationService
+from local_drama.application.job_resources import gpu_runtime_for_job
 from local_drama.application.jobs import JobService
 from local_drama.application.local_llm import LocalLLMService
 from local_drama.application.media import MediaService
 from local_drama.application.timeline import TimelineService
-from local_drama.application.worker_dispatch import WorkerExecution, WorkerJobDispatcher
+from local_drama.application.worker_dispatch import WorkerExecution, WorkerHandler, WorkerJobDispatcher
 from local_drama.application.worker_handlers.automation_task import advance_automation_run, run_automation_task
 from local_drama.application.worker_handlers.delivery_build import run_delivery_build_job
 from local_drama.application.worker_handlers.episode_compose import run_episode_compose_job
@@ -174,12 +175,20 @@ _EXTRACTED_HANDLER_PROVIDERS: dict[str, Callable[[LocalMediaWorker], Callable[[d
 
 
 class LocalMediaWorker:
-    def __init__(self, database: Database, settings: Settings, tts_runtime: TtsRuntime | None = None) -> None:
+    def __init__(
+        self,
+        database: Database,
+        settings: Settings,
+        tts_runtime: TtsRuntime | None = None,
+        *,
+        gpu_coordinator: Any | None = None,
+    ) -> None:
         self.database = database
         self.settings = settings
         self.jobs = JobService(database, settings)
         self.media = MediaService(database, settings, ffmpeg_runner=self._ffmpeg)
         self.tts_runtime = tts_runtime or create_platform_services(settings).tts_runtime
+        self.gpu_coordinator = gpu_coordinator
         self._active_job_context: tuple[str, str, str] | None = None
         self._last_cancel_check = 0.0
         self._last_progress_heartbeat = 0.0
@@ -499,9 +508,14 @@ class LocalMediaWorker:
             job_type: provider(self)
             for job_type, provider in _EXTRACTED_HANDLER_PROVIDERS.items()
         }
-        handlers = {
-            job_type: (lambda job, root, handler=handler: self._execution(handler(job, root)))
-            for job_type, handler in simple_handlers.items()
+        def adapt(handler: Callable[[dict[str, Any], Path], tuple[str, str]]) -> WorkerHandler:
+            def execute(job: dict[str, Any], root: Path) -> WorkerExecution:
+                return self._execution(handler(job, root))
+
+            return execute
+
+        handlers: dict[str, WorkerHandler] = {
+            job_type: adapt(handler) for job_type, handler in simple_handlers.items()
         }
         handlers["CPU_TEST"] = lambda job, root: self._run_cpu_test(job, root, worker_id)
         handlers["SCRIPT_BREAKDOWN_LOCAL_LLM"] = lambda job, root: self._run_script_breakdown_with_heartbeat(
@@ -558,9 +572,18 @@ class LocalMediaWorker:
             output_root = self.settings.work_root / "jobs" / str(job["id"])
             if self._report_progress({"phase": "EXECUTING", "percent": 10}, force=True):
                 raise DomainRuleError("JOB_CANCELLED", "后台任务已取消，不会开始新的处理步骤")
-            execution = self._dispatcher(
-                attempt_id=attempt_id, token=token, worker_id=worker_id,
-            ).execute(job, output_root)
+            dispatcher = self._dispatcher(attempt_id=attempt_id, token=token, worker_id=worker_id)
+            runtime = gpu_runtime_for_job(job)
+            if runtime is not None and self.gpu_coordinator is not None:
+                with self.gpu_coordinator.session(
+                    runtime,
+                    owner_kind="JOB_ATTEMPT",
+                    owner_ref=attempt_id,
+                    retain_if_same_runtime_waiting=True,
+                ):
+                    execution = dispatcher.execute(job, output_root)
+            else:
+                execution = dispatcher.execute(job, output_root)
             business_progress_complete = int(self._active_progress.get("percent") or 0) >= 100
             if not business_progress_complete:
                 if self._report_progress({"phase": "VERIFYING_OUTPUT", "percent": 92}, force=True):

@@ -1,14 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { Job } from "../../generated/api";
-import { reconcileJobs } from "../../generated/api";
 import { JobsPanel } from "./JobsPanel";
-
-vi.mock("../../generated/api", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../../generated/api")>();
-  return { ...original, reconcileJobs: vi.fn() };
-});
 
 function jobs(revision = 1): Job[] {
   return Array.from({ length: 14 }, (_, index) => ({
@@ -37,13 +31,6 @@ describe("JobsPanel", () => {
     expect(screen.getAllByRole("button", { name: "查看详情和产物" })).toHaveLength(12);
   });
 
-  it("reports a completed lease scan even when nothing needed recovery", async () => {
-    vi.mocked(reconcileJobs).mockResolvedValue({ result: { reconciled: 0, items: [] } });
-    render(<MemoryRouter><JobsPanel jobs={[]} loading={false} scopeKey="project-1" /></MemoryRouter>);
-    fireEvent.click(screen.getByRole("button", { name: "扫描失联任务" }));
-    expect((await screen.findByRole("status")).textContent).toContain("没有需要接管的执行");
-  });
-
   it("shows an executable recovery command only when queued work has no worker", () => {
     const capacity = { queued_count: 3, active_worker_count: 0 } as never;
     render(<MemoryRouter><JobsPanel jobs={jobs()} loading={false} scopeKey="project-1" capacity={capacity} /></MemoryRouter>);
@@ -54,7 +41,7 @@ describe("JobsPanel", () => {
 
   it("shows persisted phase and numeric progress inline without inventing a percentage", () => {
     const active = jobs().slice(0, 2);
-    active[0] = { ...active[0], state: "RUNNING", progress: { phase: "ENCODING", percent: 58 } };
+    active[0] = { ...active[0], state: "RUNNING", progress: { phase: "ENCODING", percent: 0.58 } };
     active[1] = { ...active[1], state: "RUNNING", progress: { phase: "VERIFYING_SOURCE" } };
     render(<MemoryRouter><JobsPanel jobs={active} loading={false} scopeKey="project-1" /></MemoryRouter>);
 

@@ -1,4 +1,3 @@
-import sys
 from pathlib import Path
 
 matrix_path = Path(__file__).resolve().parents[1] / "docs" / "evidence" / "ui-uat-2026-08-22" / "CONTROL_STATE_MATRIX.md"
@@ -10,10 +9,9 @@ for row_num in range(91, 99):
     if marker in content:
         lines = content.splitlines()
         for i, line in enumerate(lines):
-            if line.startswith(marker):
+            if line.startswith(marker) and "`PASS`" in line:
                 # replace `PASS` at the end
-                if "`PASS`" in line:
-                    lines[i] = line.replace("`PASS`", "`INVALID_AS_UI_EVIDENCE`")
+                lines[i] = line.replace("`PASS`", "`INVALID_AS_UI_EVIDENCE`")
         content = "\n".join(lines)
 
 matrix_path.write_text(content, encoding="utf-8")

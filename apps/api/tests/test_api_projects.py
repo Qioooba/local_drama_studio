@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from local_drama.main import create_app
@@ -28,7 +30,11 @@ def test_project_api_uses_real_migration_and_returns_conflict(workspace, databas
         assert response.status_code == 201
         project = response.json()["project"]
         assert response.json()["blockers"] == ["PROFILE_NOT_BOUND", "PRODUCTION_PLAN_NOT_BOUND", "DELIVERY_TARGET_NOT_BOUND"]
-        assert client.get(f"/api/v1/projects/{project['id']}").status_code == 200
+        detail_response = client.get(f"/api/v1/projects/{project['id']}")
+        assert detail_response.status_code == 200
+        absolute_root_path = Path(detail_response.json()["project"]["absolute_root_path"])
+        assert absolute_root_path.is_absolute()
+        assert absolute_root_path == (workspace.projects_root / project["root_rel"]).resolve()
         catalog_response = client.get(f"/api/v1/projects/{project['id']}/episode-catalog")
         assert catalog_response.status_code == 200
         catalog = catalog_response.json()["catalog"]

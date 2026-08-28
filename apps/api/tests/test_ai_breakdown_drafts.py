@@ -642,7 +642,7 @@ def test_request_script_breakdown_flow(workspace, database, monkeypatch) -> None
         assert items[0]["requires_human_action"] is True
 
 
-def _durable_breakdown_setup(workspace, database, monkeypatch, code: str):
+def _durable_breakdown_setup(workspace, database, monkeypatch, code: str, source_text: str | None = None):
     project = ProjectService(database, workspace.projects_root).create_project(
         code=code,
         title=code,
@@ -654,7 +654,7 @@ def _durable_breakdown_setup(workspace, database, monkeypatch, code: str):
         allow_unconfigured_capabilities=True,
     )
     source = workspace.work_root / f"{code}.md"
-    source.write_text("# 第一场\n\n侦探走进书房。拿起桌上的钥匙。", encoding="utf-8")
+    source.write_text(source_text or "# 第一场\n\n侦探走进书房。拿起桌上的钥匙。", encoding="utf-8")
     documents = DocumentImportService(database, workspace)
     imported = documents.import_document(str(project["id"]), source)
     documents.commit(str(imported["import_session_id"]), str(imported["preview_hash"]))
@@ -761,6 +761,27 @@ def test_durable_breakdown_freezes_and_enforces_episode_duration_contract(worksp
     assert draft["confidence"]["target_duration_seconds"] == 60
     assert draft["confidence"]["total_duration_seconds"] == 60
     assert draft["confidence"]["duration_contract_status"] == "PASS"
+
+
+def test_durable_breakdown_rejects_an_oversized_single_model_request(workspace, database, monkeypatch) -> None:
+    long_source = "# 长篇原文\n\n" + "\n\n".join(f"第 {index} 段：" + "山河故人" * 25 for index in range(1, 61))
+    _, imported, profile_version_id = _durable_breakdown_setup(
+        workspace,
+        database,
+        monkeypatch,
+        "durable_breakdown_source_limit",
+        long_source,
+    )
+
+    with TestClient(create_app(workspace)) as client:
+        response = client.post(
+            f"/api/v1/import-sessions/{imported['import_session_id']}:request-breakdown",
+            headers={"Idempotency-Key": "oversized-breakdown-source"},
+            json={"profile_version_id": profile_version_id},
+        )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "BREAKDOWN_SOURCE_RANGE_TOO_LARGE"
 
 
 def test_scene_local_source_ids_produce_complete_exact_passage_coverage() -> None:

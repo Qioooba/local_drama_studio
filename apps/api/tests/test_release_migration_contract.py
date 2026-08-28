@@ -47,6 +47,11 @@ def test_release_migration_contract_matches_graph_and_package_authority() -> Non
         "0061_shot_working_media_slots",
         "0062_canonical_job_scope_stage",
         "0063_audio_mix_drafts",
+        "0064_quick_generation_domain",
+        "0065_quick_generation_parameters",
+        "0066_action_driven_quick_generation",
+        "0067_single_gpu_runtime_orchestration",
+        "0068_local_ai_model_runtime",
     ]
     graph = {revision.revision for revision in scripts.walk_revisions()}
     assert set(revisions).issubset(graph)

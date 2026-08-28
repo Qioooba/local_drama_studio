@@ -50,6 +50,22 @@ const publishedDetail: ProfileVersionDetail = {
   resource_policy: {},
   contract_hash: "53cf79d5816712a7dc06945326f778dbf75564b26a62ed0ce686ee16609fd2b1",
   validation: null,
+  execution: {
+    schema_version: "localdrama.profile-execution-detail.v1",
+    runtime: null,
+    workflow: null,
+    components: [],
+    defaults: {},
+    override_schema: { fields: {
+      production_tier: { type: "enum", label: "生产档位", default: "DRAFT", options: ["DRAFT", "PRODUCTION"], scopes: ["PROJECT", "SHOT", "RUN"] },
+      frame_count: { type: "integer", label: "帧数", minimum: 9, maximum: 1001, step: 1, scopes: ["RUN"] },
+    } },
+    worker_policy: "ONE_H3_WORKER_ONE_GPU_TASK",
+    model_bundle: {},
+    fingerprints: { execution: "sha256:" + "a".repeat(64), model_bundle: "sha256:" + "b".repeat(64), workflow: null, manifest: null },
+    read_only: true,
+    local_only: true,
+  },
 };
 
 const draftDetail: ProfileVersionDetail = {
@@ -67,6 +83,7 @@ const draftDetail: ProfileVersionDetail = {
   resource_policy: { gpu_heavy_concurrency: 1, worker_policy: "ONE_H3_WORKER_ONE_GPU_TASK" },
   contract_hash: "53cf79d5816712a7dc06945326f778dbf75564b26a62ed0ce686ee16609fd2b1",
   validation: null,
+  execution: publishedDetail.execution,
 };
 
 let draftValidation: ProfileVersionDetail["validation"] = null;
@@ -187,6 +204,16 @@ describe("Profile contract editor interactions", () => {
     expect(derivedId).toBe("v-published");
     expect(await screen.findByText(/已创建不可变 DRAFT v5/)).toBeTruthy();
     expect(await screen.findByText("运行本地契约验证")).toBeTruthy();
+  });
+
+  it("stores human-readable generation defaults in the derived profile contract", async () => {
+    renderProfilesView();
+    const tier = await screen.findByRole("combobox", { name: /生产档位/ });
+    fireEvent.change(tier, { target: { value: "PRODUCTION" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存为新 DRAFT" }));
+    await waitFor(() => expect(api.deriveProfileContractVersion).toHaveBeenCalled());
+    const [, payload] = vi.mocked(api.deriveProfileContractVersion).mock.calls[0];
+    expect(payload.parameter_schema).toMatchObject({ defaults: { production_tier: "PRODUCTION" } });
   });
 
   it("keeps publish disabled until a PASS validation exists", async () => {

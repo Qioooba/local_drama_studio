@@ -25,9 +25,15 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         foreign_keys = connection.execute("PRAGMA foreign_keys").fetchone()[0]
         indexes = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
         working_slot_columns = {row[1] for row in connection.execute("PRAGMA table_info(shot_working_media_slots)")}
-        assert version == "0063_audio_mix_drafts"
+        quick_run_columns = {row[1] for row in connection.execute("PRAGMA table_info(quick_generation_runs)")}
+        assert version == "0068_local_ai_model_runtime"
     assert {"provider_random_nonce", "director_recipe_version_id", "director_recipe_hash"} <= variant_columns
-    assert {"one_sentence_video_runs", "one_sentence_video_candidates", "one_sentence_video_run_events"} <= tables
+    assert {"quick_generation_runs", "quick_generation_candidates", "quick_generation_outputs", "quick_generation_events", "quick_generation_presets"} <= tables
+    assert "model_parameters_json" in quick_run_columns
+    with database.connect() as connection:
+        video_profile_column = next(row for row in connection.execute("PRAGMA table_info(quick_generation_runs)") if row[1] == "video_profile_version_id")
+    assert video_profile_column[3] == 0
+    assert not {"one_sentence_video_runs", "one_sentence_video_candidates", "one_sentence_video_run_events"} & tables
     assert {"scene_id", "source_shot_id", "archived_at"} <= shot_columns
     assert "viewport_json" in visual_lab_document_columns
     assert {"shot_id", "slot_type", "media_version_id", "adopted_from_selection_id", "revision"} <= working_slot_columns
@@ -36,7 +42,7 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
     assert {"output_contract_json", "resource_policy_json"} <= profile_columns
     assert {"input_snapshot_json", "ffmpeg_command_json", "execution_log_text"} <= render_columns
     assert {"progress_json", "progress_updated_at", "started_at", "finished_at", "last_error_detail_redacted"} <= job_columns
-    assert {"subject_kind", "scope_project_id", "scope_episode_id", "scope_shot_id", "stage_code"} <= job_columns
+    assert {"subject_kind", "scope_kind", "scope_project_id", "scope_episode_id", "scope_shot_id", "stage_code"} <= job_columns
     assert "job_stage_definitions" in tables
     assert {"progress_json", "started_at", "finished_at"} <= attempt_columns
     with database.connect() as connection:
@@ -93,6 +99,8 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         "ix_runtime_instances_environment_created",
         "ix_workflow_contract_versions_workflow_no",
         "ix_shot_working_media_slots_version",
+        "uq_gpu_runtime_leases_active_resource",
+        "ix_gpu_runtime_leases_owner_ref",
     } <= indexes
     expected = {
         "projects",
@@ -170,6 +178,11 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         "runtime_instances",
         "provider_execution_events",
         "shot_working_media_slots",
+        "gpu_runtime_leases",
+        "gpu_runtime_state",
+        "embedding_indexes",
+        "embedding_chunks",
+        "speech_alignment_runs",
     }
     assert expected <= tables
 

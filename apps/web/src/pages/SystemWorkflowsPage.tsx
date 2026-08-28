@@ -5,6 +5,7 @@ import { ProfileConfigurationPanel } from "../features/profiles/ProfileConfigura
 import { ComfyLabPanel } from "../features/shared/ComfyLabPanel";
 import { listWorkflowVersions } from "../generated/api";
 import { queryKeys } from "../query/queryKeys";
+import "./system-workspaces.css";
 
 export function SystemWorkflowsPage() {
   const workflows = useQuery({ queryKey: queryKeys.workflows.versions(), queryFn: () => listWorkflowVersions() });

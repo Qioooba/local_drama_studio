@@ -1,0 +1,79 @@
+{
+  "schema_version": "localdrama.local-model-suite-evidence.v1",
+  "created_at": "2026-08-28T21:10:00+08:00",
+  "network_used_for_verification": false,
+  "gpu": "NVIDIA GeForce RTX 3090 Ti 24GB",
+  "comfyui": "0.33.1",
+  "canonical_model_root": "F:/AI_Models/LocalDramaStudio/ComfyUI",
+  "file_verification_report": "F:/AI_Models/LocalDramaStudio/Logs/model-verification-current.json",
+  "successful_runs": [
+    {
+      "code": "qwen-image-2512-q5-k-m",
+      "workflow_code": "qwen-image-2512-q5-smoke",
+      "capability": "IMAGE_CONCEPT",
+      "prompt_id": "6d596bdf-9a33-45e4-9e12-706e1e6ee57b",
+      "output": "F:/AI_Projects/h3/local_drama_studio/work/comfy-production/output/verification/qwen-image-2512-q5_00001_.png",
+      "output_kind": "IMAGE"
+    },
+    {
+      "code": "qwen-image-edit-2511-q5-k-m",
+      "workflow_code": "qwen-image-edit-2511-q5-smoke",
+      "capability": "IMAGE_EDIT",
+      "prompt_id": "3c10a3f5-2584-456e-bcf7-fef74d58444e",
+      "output": "F:/AI_Projects/h3/local_drama_studio/work/comfy-production/output/verification/qwen-image-edit-2511-q5_00001_.png",
+      "output_kind": "IMAGE"
+    },
+    {
+      "code": "qwen-image-edit-2511-multiple-angles-lora",
+      "workflow_code": "qwen-image-edit-2511-multiple-angles-smoke",
+      "capability": "IMAGE_MULTI_VIEW",
+      "prompt_id": "2aac26a2-4420-494e-859e-7a4279b64fc3",
+      "output": "F:/AI_Projects/h3/local_drama_studio/work/comfy-production/output/verification/qwen-image-edit-2511-multiple-angles_00001_.png",
+      "output_kind": "IMAGE"
+    },
+    {
+      "code": "ace-step-1.5-xl-sft",
+      "workflow_code": "ace-step-15-xl-sft-smoke",
+      "capability": "AUDIO_MUSIC",
+      "prompt_id": "62d92d33-a047-4914-9988-6d9136613c7a",
+      "output": "F:/AI_Projects/h3/local_drama_studio/work/comfy-production/output/verification/ace-step-15-xl-sft_00001.flac",
+      "output_kind": "AUDIO",
+      "probe": {"codec":"flac","sample_rate":48000,"channels":2,"duration_seconds":1.0}
+    },
+    {
+      "code": "minimax-h3-fl2va",
+      "workflow_code": "minimax-h3-fl2va-smoke",
+      "capability": "VIDEO_I2V",
+      "prompt_id": "5a0e4adb-441b-49e7-b94e-2fbd16352301",
+      "output": "F:/AI_Projects/h3/local_drama_studio/work/comfy-production/output/verification/minimax-h3-fl2va_00001_.mp4",
+      "output_kind": "VIDEO",
+      "probe": {"video_codec":"h264","width":64,"height":64,"audio_codec":"aac","sample_rate":32000,"channels":2,"duration_seconds":0.208333}
+    },
+    {
+      "code": "minimax-h3-ref2va",
+      "workflow_code": "minimax-h3-ref2va-smoke",
+      "capability": "VIDEO_REFERENCE",
+      "prompt_id": "f7f1eea7-52ee-49e7-a127-ef24395a8a19",
+      "output": "F:/AI_Projects/h3/local_drama_studio/work/comfy-production/output/verification/minimax-h3-ref2va_00001_.mp4",
+      "output_kind": "VIDEO",
+      "probe": {"video_codec":"h264","width":64,"height":64,"audio_codec":"aac","sample_rate":32000,"channels":2,"duration_seconds":0.208333}
+    }
+  ],
+  "corrected_runtime_contracts": [
+    {
+      "node": "MiniMaxH3ReferenceToVideo",
+      "rejected_input": "ref_image_1",
+      "accepted_input": "ref_images.ref_image_0",
+      "failed_prompt_id": "a00585f8-c62f-4c0d-b1a7-f0cae953b851",
+      "verified_prompt_id": "f7f1eea7-52ee-49e7-a127-ef24395a8a19"
+    }
+  ],
+  "blocked_incomplete_models": [
+    "qwen3.8:27b",
+    "Qwen3-Embedding-8B",
+    "VoxCPM2",
+    "LatentSync-1.6",
+    "Qwen3-ASR-1.7B-hf",
+    "Qwen3-ForcedAligner-0.6B-hf"
+  ]
+}

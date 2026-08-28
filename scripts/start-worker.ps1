@@ -1,6 +1,6 @@
 param(
   [string]$WorkerId = 'local-drama-studio-manual',
-  [string]$Channels = 'CPU,GPU_H3'
+  [string]$Channels = 'CPU,GPU_H3,GPU_LOCAL_AI'
 )
 
 $ErrorActionPreference = 'Stop'

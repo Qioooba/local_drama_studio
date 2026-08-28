@@ -20,6 +20,7 @@ const JobsPage = lazy(() => import("../pages/JobsPage").then((module) => ({ defa
 const DiagnosticsPage = lazy(() => import("../pages/DiagnosticsPage").then((module) => ({ default: module.DiagnosticsPage })));
 const EpisodeRunPage = lazy(() => import("../pages/EpisodeRunPage").then((module) => ({ default: module.EpisodeRunPage })));
 const ProjectsPage = lazy(() => import("../pages/ProjectsPage").then((module) => ({ default: module.ProjectsPage })));
+const QuickCreatePage = lazy(() => import("../pages/QuickCreatePage").then((module) => ({ default: module.QuickCreatePage })));
 const QcPoliciesPage = lazy(() => import("../pages/QcPoliciesPage").then((module) => ({ default: module.QcPoliciesPage })));
 const DirectorRecipesPage = lazy(() => import("../pages/DirectorRecipesPage").then((module) => ({ default: module.DirectorRecipesPage })));
 const ProductionSettingsPage = lazy(() => import("../pages/ProductionSettingsPage").then((module) => ({ default: module.ProductionSettingsPage })));
@@ -28,6 +29,7 @@ const StoryWorkspacePage = lazy(() => import("../pages/StoryWorkspacePage").then
 const SystemWorkflowsPage = lazy(() => import("../pages/SystemWorkflowsPage").then((module) => ({ default: module.SystemWorkflowsPage })));
 const VisualLabListPage = lazy(() => import("../features/visual-lab/VisualLabListPage").then((module) => ({ default: module.VisualLabListPage })));
 const VisualLabWorkspacePage = lazy(() => import("../features/visual-lab/VisualLabWorkspacePage").then((module) => ({ default: module.VisualLabWorkspacePage })));
+const HomePage = lazy(() => import("../pages/HomePage").then((module) => ({ default: module.HomePage })));
 
 const page = (content: ReactNode) => <Suspense fallback={<main className="route-loading" role="status">正在载入工作区…</main>}>{content}</Suspense>;
 
@@ -65,9 +67,17 @@ function LegacyGlobalRedirect({ target }: { target: "capabilities" | "jobs" | "d
   return <Navigate to={{ pathname: `/system/${target}`, search: location.search, hash: location.hash }} replace />;
 }
 
+function RootRouteBoundary() {
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  const hasLegacyContext = ["view", "project", "episode", "shot", "review", "legacy"].some((key) => params.has(key));
+  return hasLegacyContext ? <LegacyRouteBoundary /> : <AppShell />;
+}
+
 export const router = createBrowserRouter([
-  { path: "/", element: <LegacyRouteBoundary />, errorElement: <RouteErrorBoundary /> },
+  { path: "/", element: <RootRouteBoundary />, errorElement: <RouteErrorBoundary />, children: [{ index: true, element: page(<HomePage />) }] },
   { path: "/projects", element: <AppShell />, errorElement: <RouteErrorBoundary />, children: [{ index: true, element: page(<ProjectsPage />) }] },
+  { path: "/quick-create", element: <AppShell />, errorElement: <RouteErrorBoundary />, children: [{ index: true, element: page(<QuickCreatePage />) }] },
   {
     path: "/projects/:projectId", element: <AppShell />, errorElement: <RouteErrorBoundary />, children: [
       { index: true, element: page(<ProjectHomePage />) },

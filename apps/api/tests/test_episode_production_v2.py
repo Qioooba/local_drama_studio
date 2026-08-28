@@ -4,9 +4,9 @@ import uuid
 
 from fastapi.testclient import TestClient
 
+from local_drama.application.automation_workflows import AutomationWorkflowService
 from local_drama.application.generation import GenerationService
 from local_drama.application.jobs import JobService
-from local_drama.application.automation_workflows import AutomationWorkflowService
 from local_drama.application.projects import ProjectService
 from local_drama.infrastructure.database.episode_production_repository import SqliteEpisodeProductionReadRepository
 from local_drama.main import create_app

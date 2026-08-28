@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import builtins
 import hashlib
 import json
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from local_drama.api.schemas.variants import VariantPlanRequest
 from local_drama.application.generation import GenerationService
@@ -22,6 +23,10 @@ def _canonical(value: Any) -> str:
 
 def _hash(value: Any) -> str:
     return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
+
+
+def _object_dict(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 DEFAULT_PORTS: dict[str, dict[str, dict[str, str]]] = {
@@ -75,7 +80,7 @@ class VisualLabService:
                 if "UNIQUE" in str(error).upper():
                     raise DomainRuleError("VISUAL_LAB_CODE_CONFLICT", "项目内画布代码已存在") from error
                 raise
-        return self.get(document_id)["document"]
+        return cast(dict[str, Any], self.get(document_id)["document"])
 
     def get(self, document_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
@@ -160,7 +165,7 @@ class VisualLabService:
             connection.execute("UPDATE visual_lab_nodes SET current_content_revision_id=?,updated_at=?,revision=revision+1 WHERE id=?", (revision_id, now, node_id))
         return next(item for item in self.get(str(node["document_id"]))["nodes"] if item["id"] == node_id)
 
-    def move_nodes(self, document_id: str, nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def move_nodes(self, document_id: str, nodes: builtins.list[dict[str, Any]]) -> builtins.list[dict[str, Any]]:
         now = _now()
         with self.database.transaction() as connection:
             for item in nodes:
@@ -173,7 +178,7 @@ class VisualLabService:
                 if result.rowcount != 1:
                     raise DomainRuleError("REVISION_CONFLICT", "节点位置已被修改", {"node_id": item["id"]})
             connection.execute("UPDATE visual_lab_documents SET updated_at=?,revision=revision+1 WHERE id=?", (now, document_id))
-        return self.get(document_id)["nodes"]
+        return cast(builtins.list[dict[str, Any]], self.get(document_id)["nodes"])
 
     def save_viewport(self, document_id: str, viewport: dict[str, float]) -> dict[str, float]:
         now = _now()
@@ -187,7 +192,7 @@ class VisualLabService:
                 raise DomainRuleError("VISUAL_LAB_NOT_FOUND", "Visual Lab 不存在")
         return normalized
 
-    def duplicate_nodes(self, document_id: str, node_ids: list[str], offset_x: float, offset_y: float, expected_topology_revision: int, actor: str = "local-user") -> dict[str, Any]:
+    def duplicate_nodes(self, document_id: str, node_ids: builtins.list[str], offset_x: float, offset_y: float, expected_topology_revision: int, actor: str = "local-user") -> dict[str, Any]:
         unique_ids = list(dict.fromkeys(node_ids))
         now = _now()
         mapping: dict[str, str] = {}
@@ -241,7 +246,7 @@ class VisualLabService:
         graph = self.get(document_id)
         return {"nodes": [node for node in graph["nodes"] if node["id"] in mapping.values()], "id_mapping": mapping, "topology_revision": expected_topology_revision + 1}
 
-    def delete_nodes(self, document_id: str, node_ids: list[str], expected_topology_revision: int) -> dict[str, Any]:
+    def delete_nodes(self, document_id: str, node_ids: builtins.list[str], expected_topology_revision: int) -> dict[str, Any]:
         unique_ids = list(dict.fromkeys(node_ids))
         now = _now()
         with self.database.transaction() as connection:
@@ -286,8 +291,8 @@ class VisualLabService:
 
     @staticmethod
     def _port_type(content: dict[str, Any], side: str, name: str) -> str | None:
-        ports = content.get("ports") if isinstance(content.get("ports"), dict) else {}
-        mapping = ports.get(side) if isinstance(ports.get(side), dict) else {}
+        ports = _object_dict(content.get("ports"))
+        mapping = _object_dict(ports.get(side))
         return str(mapping[name]) if name in mapping else None
 
     def connect(self, document_id: str, payload: dict[str, Any], actor: str = "local-user") -> dict[str, Any]:
@@ -363,7 +368,7 @@ class VisualLabService:
             )
         return {"id": snapshot_id, "document_id": document_id, "snapshot_no": next_no, "content_hash": _hash(content), "created_at": now}
 
-    def list_snapshots(self, document_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    def list_snapshots(self, document_id: str, limit: int = 50) -> builtins.list[dict[str, Any]]:
         with self.database.connect() as connection:
             document = connection.execute("SELECT id FROM visual_lab_documents WHERE id=?", (document_id,)).fetchone()
             if document is None:

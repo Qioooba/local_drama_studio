@@ -18,8 +18,8 @@ from local_drama.domain.policies import (
     validate_project_spec,
 )
 from local_drama.infrastructure.database.sqlite import Database
-from local_drama.infrastructure.filesystem.template import TEMPLATE_VERSION, build_project_tree
 from local_drama.infrastructure.filesystem.atomic import replace_path
+from local_drama.infrastructure.filesystem.template import TEMPLATE_VERSION, build_project_tree
 
 from .reviews import ReviewService
 
@@ -352,6 +352,16 @@ class ProjectService:
         if row is None:
             raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
         return dict(row)
+
+    def get_project_detail(self, project_id: str) -> dict[str, Any]:
+        """Return project facts together with its server-resolved filesystem location."""
+        project = self.get_project(project_id)
+        projects_root = self.projects_root.resolve()
+        project_root = (projects_root / str(project["root_rel"])).resolve()
+        if not project_root.is_relative_to(projects_root):
+            raise DomainRuleError("PROJECT_ROOT_INVALID", "项目目录越界", {"project_id": project_id})
+        project["absolute_root_path"] = str(project_root)
+        return project
 
     def list_local_resources(self, project_id: str, kind: str, *, limit: int = 200) -> dict[str, Any]:
         """List safe project-relative resources for user-facing pickers.
@@ -725,18 +735,51 @@ class ProjectService:
         normalized_search = search.strip() if search else ""
         if normalized_search:
             escaped = normalized_search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            filters.append("(title LIKE ? ESCAPE '\\' OR code LIKE ? ESCAPE '\\')")
+            filters.append("(p.title LIKE ? ESCAPE '\\' OR p.code LIKE ? ESCAPE '\\')")
             parameters.extend([f"%{escaped}%", f"%{escaped}%"])
         if status:
-            filters.append("status=?")
+            filters.append("p.status=?")
             parameters.append(status)
         where = f" WHERE {' AND '.join(filters)}" if filters else ""
-        parameters.extend([limit + 1, cursor])
+        small_poster_hash = hashlib.sha256(b"thumbnail-v2:small:first").hexdigest()
+        query_parameters: list[object] = [small_poster_hash, *parameters, limit + 1, cursor]
         with self.database.connect() as connection:
-            rows = connection.execute(f"SELECT * FROM projects{where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?", parameters).fetchall()
+            rows = connection.execute(
+                f"""WITH preview_candidates AS (
+                    SELECT ma.project_id, mv.id AS preview_media_version_id, ma.media_kind AS preview_media_kind,
+                    CASE WHEN EXISTS (
+                        SELECT 1 FROM media_cache_entries mce
+                        WHERE mce.media_version_id=mv.id AND mce.cache_kind='THUMBNAIL'
+                        AND mce.preset_hash=? AND mce.source_sha256=mv.sha256 AND mce.status='READY'
+                    ) THEN 1 ELSE 0 END AS preview_has_thumbnail,
+                    mv.updated_at AS preview_updated_at
+                    FROM media_versions mv
+                    JOIN media_assets ma ON ma.id=mv.media_asset_id
+                    WHERE mv.integrity_status='VERIFIED'
+                    AND ((ma.media_kind='IMAGE' AND LOWER(mv.mime_type) LIKE 'image/%')
+                      OR (ma.media_kind='VIDEO' AND LOWER(mv.mime_type) LIKE 'video/%'))
+                ), ranked_previews AS (
+                    SELECT *, ROW_NUMBER() OVER (
+                        PARTITION BY project_id
+                        ORDER BY preview_has_thumbnail DESC,
+                        CASE WHEN preview_has_thumbnail=0 AND preview_media_kind='IMAGE' THEN 0 ELSE 1 END,
+                        preview_updated_at DESC, preview_media_version_id DESC
+                    ) AS preview_rank
+                    FROM preview_candidates
+                )
+                SELECT p.*, rp.preview_media_version_id, rp.preview_media_kind, rp.preview_has_thumbnail
+                FROM projects p
+                LEFT JOIN ranked_previews rp ON rp.project_id=p.id AND rp.preview_rank=1
+                {where}
+                ORDER BY p.created_at DESC, p.id DESC LIMIT ? OFFSET ?""",
+                query_parameters,
+            ).fetchall()
         has_more = len(rows) > limit
+        items = [dict(row) for row in rows[:limit]]
+        for item in items:
+            item["preview_has_thumbnail"] = bool(item.get("preview_has_thumbnail"))
         return {
-            "items": [dict(row) for row in rows[:limit]],
+            "items": items,
             "page": {"cursor": cursor, "limit": limit, "next_cursor": cursor + limit if has_more else None, "has_more": has_more},
         }
 

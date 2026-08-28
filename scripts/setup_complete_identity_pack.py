@@ -1,5 +1,5 @@
-import sys
 import struct
+import sys
 import zlib
 from pathlib import Path
 
@@ -7,11 +7,14 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / "apps" / "api"))
 
-from local_drama.config import Settings
-from local_drama.infrastructure.database.sqlite import Database
+from local_drama.application.character_identity_packs import (
+    CharacterIdentityPackService,
+)
 from local_drama.application.media import MediaService
 from local_drama.application.workspace_assets import WorkspaceAssetService
-from local_drama.application.character_identity_packs import CharacterIdentityPackService
+from local_drama.config import Settings
+from local_drama.infrastructure.database.sqlite import Database
+
 
 def make_solid_png(width, height, r, g, b):
     def chunk(tag, data):

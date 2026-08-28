@@ -1,7 +1,7 @@
 {
   "schema_version": "localdrama.release-migration-contract.v1",
   "expected_heads": [
-    "0063_audio_mix_drafts"
+    "0068_local_ai_model_runtime"
   ],
   "upgrade_command": ".venv\\\\Scripts\\\\python.exe -m alembic upgrade heads",
   "rollback_policy": "restore_verified_pre_migration_backup_with_matching_code",
@@ -187,6 +187,46 @@
       "facts": [
         "audio_mix_drafts",
         "audio_bindings_backfilled_draft_projection"
+      ]
+    },
+    {
+      "revision": "0064_quick_generation_domain",
+      "facts": [
+        "standalone_quick_generation_runs_candidates_outputs_events",
+        "jobs.scope_kind_quick_generation",
+        "projectless_quick_generation_jobs"
+      ]
+    },
+    {
+      "revision": "0065_quick_generation_parameters",
+      "facts": [
+        "quick_generation_runs.model_parameters_json",
+        "quick_generation_presets",
+        "model_scoped_run_parameter_snapshots"
+      ]
+    },
+    {
+      "revision": "0066_action_driven_quick_generation",
+      "facts": [
+        "action_driven_text_to_image_text_to_video_and_image_to_video_routes",
+        "nullable_video_route_for_image_only_results",
+        "legacy_quick_generation_mode_normalization"
+      ]
+    },
+    {
+      "revision": "0067_single_gpu_runtime_orchestration",
+      "facts": [
+        "cross_process_gpu_runtime_leases",
+        "single_gpu_resident_runtime_state",
+        "strict_comfy_ollama_runtime_switching"
+      ]
+    },
+    {
+      "revision": "0068_local_ai_model_runtime",
+      "facts": [
+        "pytorch_single_gpu_runtime",
+        "embedding_indexes_and_chunks",
+        "speech_alignment_runs"
       ]
     }
   ]

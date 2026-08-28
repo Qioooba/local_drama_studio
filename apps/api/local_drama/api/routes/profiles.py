@@ -5,6 +5,7 @@ from fastapi import APIRouter, Request
 from local_drama.api.schemas.g3 import CameraPlanResolveRequest, ProfileBindingRequest, ProfileContractDraftRequest, ProfileEvidencePublishRequest
 from local_drama.application.configuration import ConfigurationService
 from local_drama.application.errors import api_error_from_domain
+from local_drama.application.generation_model_catalog import build_generation_model_catalog
 from local_drama.application.profiles import ProfileService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.errors import ApiError
@@ -28,7 +29,13 @@ async def manifest(request: Request) -> dict[str, object]:
 @router.get("/profiles", operation_id="listProfiles")
 async def list_profiles(request: Request) -> dict[str, object]:
     try:
-        return {"items": service(request).list_profiles(), "manifest": service(request).get_manifest()}
+        profile_service = service(request)
+        items = profile_service.list_profiles()
+        return {
+            "items": items,
+            "models": build_generation_model_catalog(items),
+            "manifest": profile_service.get_manifest(),
+        }
     except ManifestValidationError as error:
         raise ApiError("MANIFEST_INVALID", str(error), status_code=503) from error
 

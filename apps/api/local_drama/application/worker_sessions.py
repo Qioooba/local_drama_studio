@@ -374,6 +374,7 @@ class WorkerSupervisor:
     ) -> dict[str, Any]:
         from local_drama.application.comfy_jobs import ComfyGenerationService
         from local_drama.application.episode_production_runs import EpisodeProductionRunService
+        from local_drama.application.gpu_runtime import GpuRuntimeCoordinator
         from local_drama.application.storage_operations import StorageOperationService
         from local_drama.application.worker import LocalMediaWorker
 
@@ -405,8 +406,9 @@ class WorkerSupervisor:
         processed = 0
         restarts = 0
         needs_success_reset = False
-        worker = LocalMediaWorker(self.database, self.settings)
-        comfy_worker = ComfyGenerationService(self.database, self.settings)
+        gpu_coordinator = GpuRuntimeCoordinator(self.database, self.settings)
+        worker = LocalMediaWorker(self.database, self.settings, gpu_coordinator=gpu_coordinator)
+        comfy_worker = ComfyGenerationService(self.database, self.settings, gpu_coordinator=gpu_coordinator)
         last_episode_watchdog_at = time.monotonic()
         last_episode_watchdog = startup_reconcile["episode_runs"]
         last_provider_reconcile = provider_reconcile
@@ -457,8 +459,9 @@ class WorkerSupervisor:
                     next_restart = datetime.fromisoformat(str(failed["next_restart_at"]))
                     self._sleep(max(0.0, (next_restart - _now()).total_seconds()))
                     self.sessions.mark_running(session_id)
-                    worker = LocalMediaWorker(self.database, self.settings)
-                    comfy_worker = ComfyGenerationService(self.database, self.settings)
+                    gpu_coordinator = GpuRuntimeCoordinator(self.database, self.settings)
+                    worker = LocalMediaWorker(self.database, self.settings, gpu_coordinator=gpu_coordinator)
+                    comfy_worker = ComfyGenerationService(self.database, self.settings, gpu_coordinator=gpu_coordinator)
                     continue
                 if result is not None or needs_success_reset:
                     self.sessions.record_success(session_id)

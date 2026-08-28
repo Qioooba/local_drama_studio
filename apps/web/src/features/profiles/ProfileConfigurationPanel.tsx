@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { routes } from "../../app/routeRegistry";
 import {
@@ -39,6 +39,14 @@ import { ProfileContractEditors } from "./ProfileContractEditors";
 import { ModelInspectorDrawer } from "../model-config/ModelInspectorDrawer";
 import { PRODUCTION_TIER_LABELS, STATUS_LABELS, optionLabel } from "../shared/optionLabels";
 import { ProjectMediaVersionSelect } from "../media-picker/ProjectMediaVersionSelect";
+import { canonicalCapabilityLabel, creatorProfileTitle } from "../preferences-v2/canonicalCapabilities";
+import {
+  PROFILE_FAMILIES,
+  profileFamilyId,
+  profileStageDescription,
+  profileStatusDescription,
+  profileStatusLabel,
+} from "./profilePresentation";
 
 type ProfileConfigurationPanelProps =
   | {
@@ -47,6 +55,7 @@ type ProfileConfigurationPanelProps =
       workflows: WorkflowVersionSummary[];
       projectId?: string;
       onChanged: () => void;
+      onDirtyChange?: (dirty: boolean) => void;
     }
   | {
       mode: "workflows";
@@ -56,6 +65,7 @@ type ProfileConfigurationPanelProps =
     };
 
 type Feedback = { kind: "success" | "error"; message: string } | null;
+type ProfileCollection = { id: string; code: string; title: string; capability: string; versions: Profile[] };
 
 function parseObject(value: string, label: string): Record<string, unknown> {
   let parsed: unknown;
@@ -90,7 +100,7 @@ function parameterEffectLabel(effect: unknown): string {
 
 export function ProfileConfigurationPanel(props: ProfileConfigurationPanelProps) {
   if (props.mode === "profile-contracts") {
-    return <ProfileContractsTask profiles={props.profiles} workflows={props.workflows} projectId={props.projectId} onChanged={props.onChanged} />;
+    return <ProfileContractsTask profiles={props.profiles} workflows={props.workflows} projectId={props.projectId} onChanged={props.onChanged} onDirtyChange={props.onDirtyChange} />;
   }
   return (
     <WorkflowVersionsTask
@@ -101,7 +111,7 @@ export function ProfileConfigurationPanel(props: ProfileConfigurationPanelProps)
   );
 }
 
-function ProfileContractsTask({ profiles, workflows, projectId, onChanged }: { profiles: Profile[]; workflows: WorkflowVersionSummary[]; projectId?: string; onChanged: () => void }) {
+function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDirtyChange }: { profiles: Profile[]; workflows: WorkflowVersionSummary[]; projectId?: string; onChanged: () => void; onDirtyChange?: (dirty: boolean) => void }) {
   const preferredId = profiles.find((item) => item.status === "PUBLISHED")?.version_id ?? profiles[0]?.version_id ?? null;
   const [selectedId, setSelectedId] = useState<string | null>(preferredId);
   const [draftId, setDraftId] = useState<string | null>(null);
@@ -126,7 +136,34 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged }: { p
   const preferredEvidenceWorkflowId = publishedI2VWorkflows[0]?.id ?? "";
   const [evidenceWorkflowId, setEvidenceWorkflowId] = useState(preferredEvidenceWorkflowId);
 
+  const profileCollections = useMemo(() => {
+    const collections = new Map<string, ProfileCollection>();
+    for (const profile of profiles) {
+      const key = profile.id || `${profile.code}:${profile.capability}`;
+      const currentCollection = collections.get(key);
+      if (currentCollection) currentCollection.versions.push(profile);
+      else collections.set(key, {
+        id: key,
+        code: profile.code,
+        title: profile.title,
+        capability: profile.capability,
+        versions: [profile],
+      });
+    }
+    for (const collection of collections.values()) {
+      collection.versions.sort((left, right) => Number(right.version_no ?? 0) - Number(left.version_no ?? 0));
+    }
+    return [...collections.values()];
+  }, [profiles]);
+
+  const groupedCollections = useMemo(() => PROFILE_FAMILIES.map((family) => ({
+    ...family,
+    items: profileCollections.filter((item) => profileFamilyId(item.capability) === family.id),
+  })).filter((family) => family.items.length), [profileCollections]);
+
   const selected = profiles.find((item) => item.version_id === selectedId) ?? profiles[0] ?? null;
+  const selectedCollection = profileCollections.find((item) => item.id === selected?.id) ?? null;
+  const selectedVersions = selectedCollection?.versions ?? [];
   const detail = useQuery({
     queryKey: queryKeys.profiles.version(selected?.version_id),
     queryFn: () => getProfileVersion(selected!.version_id),
@@ -376,13 +413,18 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged }: { p
     || jsonDiffers(resourceJson, current!.resource_policy)
   );
 
+  useEffect(() => {
+    onDirtyChange?.(hasContractChanges);
+    return () => onDirtyChange?.(false);
+  }, [hasContractChanges, onDirtyChange]);
+
   const [syncing, setSyncing] = useState(false);
   const runManifestSync = async () => {
     setSyncing(true);
     setFeedback(null);
     try {
       await syncProfiles();
-      setFeedback({ kind: "success", message: "模型清单候选已同步；新能力以 CANDIDATE 版本进入列表。" });
+      setFeedback({ kind: "success", message: "模型清单已重新扫描；新增能力会以“待验证候选”进入对应分类，现有版本未修改。" });
       onChanged();
     } catch (error) {
       setFeedback({ kind: "error", message: `同步模型清单失败：${String(error)}` });
@@ -396,43 +438,45 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged }: { p
       <div className="panel-heading">
         <div>
           <p className="eyebrow">能力配置</p>
-          <h3 id="profile-contracts-title">本地能力契约与不可变版本</h3>
+          <h3 id="profile-contracts-title">按创作阶段管理能力与版本</h3>
         </div>
         <span className="status-pill">仅本地</span>
       </div>
       <p className="muted">
-        编辑只会派生新 DRAFT；本地验证不会连接 ComfyUI。执行指纹有变化时，发布必须提供真实成功媒体证据。
+        先按故事、图像、视频或声音选择能力，再管理该能力的版本和默认参数。编辑只会派生新草稿，不会覆盖已发布版本。
       </p>
 
-      <div className="profile-editor-actions">
-        <button type="button" className="secondary" onClick={() => void runManifestSync()} disabled={syncing}>
-          {syncing ? "同步中…" : "同步模型清单候选"}
-        </button>
-        <small>读取本机 model_manifest.json，把新能力登记为 CANDIDATE 版本；不会自动发布。</small>
-      </div>
+      <details className="profile-capability-import">
+        <summary><span>发现本机新增能力</span><small>仅在修改模型清单或接入新运行时后使用</small></summary>
+        <div>
+          <p>Studio 启动时会自动读取本机模型清单。只有在运行中手动更新了 <code>model_manifest.json</code>，才需要重新扫描；扫描只登记“待验证候选”，不会修改现有版本或自动发布。</p>
+          <button type="button" className="secondary" onClick={() => void runManifestSync()} disabled={syncing}>
+            {syncing ? "正在重新扫描…" : "重新扫描模型清单"}
+          </button>
+        </div>
+      </details>
 
       <div className="profile-editor-layout">
-        <aside className="profile-version-list" aria-label="Profile 版本">
-          {profiles.map((profile) => (
-            <button
-              key={profile.version_id}
-              type="button"
-              className={`profile-version-choice${selected?.version_id === profile.version_id ? " selected" : ""}`}
-              aria-pressed={selected?.version_id === profile.version_id}
-              onClick={() => {
-                setSelectedId(profile.version_id);
-                setDraftId(null);
-                setFeedback(null);
-              }}
-            >
-              <span>
-                <strong>{profile.code}</strong>
-                <small>{profile.capability} · v{String(profile.version_no ?? "—")}</small>
-              </span>
-              <span className={`status-pill state-${String(profile.status).toLowerCase()}`}>{profile.status}</span>
-            </button>
-          ))}
-          {profiles.length === 0 ? <p className="empty-state">尚无 Profile 版本；系统不会创建隐式默认项。</p> : null}
+        <aside className="profile-capability-browser" aria-label="按创作阶段选择能力">
+          <div className="profile-capability-browser__heading"><strong>选择能力</strong><small>{profileCollections.length} 项能力</small></div>
+          {groupedCollections.map((family) => <section key={family.id} className="profile-capability-family" aria-labelledby={`profile-family-${family.id}`}>
+            <div className="profile-capability-family__heading"><div><h4 id={`profile-family-${family.id}`}>{family.label}</h4><small>{family.description}</small></div><span>{family.items.length}</span></div>
+            <div className="profile-capability-family__items">
+              {family.items.map((item) => {
+                const representative = item.versions.find((version) => version.status === "PUBLISHED") ?? item.versions[0];
+                const isSelected = selectedCollection?.id === item.id;
+                return <button key={item.id} type="button" className={`profile-capability-choice${isSelected ? " selected" : ""}`} aria-pressed={isSelected} onClick={() => {
+                  setSelectedId(representative.version_id);
+                  setDraftId(null);
+                  setFeedback(null);
+                }}>
+                  <span><strong>{canonicalCapabilityLabel(item.capability)}</strong><small>{creatorProfileTitle(item.title)}</small></span>
+                  <span><small>{item.versions.length} 个版本</small><span className={`status-pill state-${String(representative.status).toLowerCase()}`}>{profileStatusLabel(representative.status)}</span></span>
+                </button>;
+              })}
+            </div>
+          </section>)}
+          {profiles.length === 0 ? <p className="empty-state">尚未发现可管理的能力。接入模型或服务后再重新扫描模型清单。</p> : null}
         </aside>
 
         <div className="profile-contract-editor">
@@ -448,15 +492,33 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged }: { p
             <p className="empty-state">当前版本没有可编辑的契约事实。</p>
           ) : (
             <>
+              <header className="profile-contract-context">
+                <div><p className="eyebrow">{profileStageDescription(current.capability)}</p><h4>{canonicalCapabilityLabel(current.capability)}</h4><p>{creatorProfileTitle(current.title)} · <code>{current.code}</code></p></div>
+              </header>
+
+              <section className="profile-version-switcher" aria-labelledby="profile-version-switcher-title">
+                <div className="profile-version-switcher__heading"><div><strong id="profile-version-switcher-title">版本历史</strong><small>选择要查看或派生的不可变版本</small></div><small>{selectedVersions.length} 个版本</small></div>
+                <div className="profile-version-switcher__items" role="group" aria-label="能力版本历史">
+                  {selectedVersions.map((profile) => {
+                    const isSelected = (draftId ?? selected?.version_id) === profile.version_id;
+                    return <button key={profile.version_id} type="button" className={`profile-version-chip${isSelected ? " selected" : ""}`} aria-pressed={isSelected} aria-label={`${profile.code} ${profile.capability} · v${String(profile.version_no ?? "—")} ${profile.status}`} onClick={() => {
+                      setSelectedId(profile.version_id);
+                      setDraftId(null);
+                      setFeedback(null);
+                    }}><strong>v{String(profile.version_no ?? "—")}</strong><span className={`status-pill state-${String(profile.status).toLowerCase()}`}>{profileStatusLabel(profile.status)}</span></button>;
+                  })}
+                </div>
+                <p className="profile-version-state-help"><strong>{profileStatusLabel(current.status)}：</strong>{profileStatusDescription(current.status)}</p>
+              </section>
+
               <div className="profile-contract-meta">
-                <span><small>版本</small><strong>v{current.version_no}</strong></span>
-                <span><small>能力</small><strong>{current.capability}</strong></span>
-                <span><small>状态</small><strong>{current.status}</strong></span>
-                <span><small>契约 hash</small><code title={String(current.contract_hash ?? "")}>{String(current.contract_hash ?? "").slice(0, 12) || "—"}</code></span>
-                <button type="button" className="secondary profile-execution-details-button" onClick={() => setInspectorOpen(true)}>查看执行详情</button>
+                <span><small>当前版本</small><strong>第 {current.version_no} 版</strong></span>
+                <span><small>版本阶段</small><strong>{profileStatusLabel(current.status)}</strong></span>
+                <span><small>本地验证</small><strong>{current.validation ? profileStatusLabel(current.validation.status) : "尚未验证"}</strong></span>
+                <button type="button" className="secondary profile-execution-details-button" onClick={() => setInspectorOpen(true)}>查看模型、工作流与运行时</button>
               </div>
 
-              <ProfileContractEditors capability={current.capability} inputJson={inputJson} parameterJson={parameterJson} outputJson={outputJson} resourceJson={resourceJson} onInputChange={setInputJson} onParameterChange={setParameterJson} onOutputChange={setOutputJson} onResourceChange={setResourceJson} />
+              <ProfileContractEditors capability={current.capability} overrideSchema={current.execution?.override_schema} inputJson={inputJson} parameterJson={parameterJson} outputJson={outputJson} resourceJson={resourceJson} onInputChange={setInputJson} onParameterChange={setParameterJson} onOutputChange={setOutputJson} onResourceChange={setResourceJson} />
 
               {current.validation ? (
                 <div className={`profile-validation ${current.validation.status === "PASS" ? "passed" : "failed"}`}>
@@ -656,7 +718,15 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged }: { p
           )}
         </div>
       </div>
-      <ModelInspectorDrawer open={inspectorOpen} profile={current ?? null} onClose={() => setInspectorOpen(false)} />
+      <ModelInspectorDrawer
+        open={inspectorOpen}
+        profile={current ?? null}
+        onClose={() => setInspectorOpen(false)}
+        onEditDefaults={() => {
+          setInspectorOpen(false);
+          window.requestAnimationFrame(() => document.getElementById("profile-generation-defaults")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+        }}
+      />
     </section>
   );
 }

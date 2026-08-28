@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from typing import Any
+from typing import Any, cast
 
 from local_drama.application.ports.director_recipes import DirectorRecipeRepository
 from local_drama.domain.errors import DomainRuleError
@@ -74,7 +74,7 @@ def validate_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
     qc = _object(recipe["qc_policy_ref"], "qc_policy_ref", {"policy_version_id"})
     if not isinstance(qc.get("policy_version_id"), str) or not qc["policy_version_id"].strip():
         raise DomainRuleError("DIRECTOR_RECIPE_QC_POLICY_REF_INVALID", "qc_policy_ref.policy_version_id 必须声明")
-    return json.loads(canonical_recipe(recipe))
+    return cast(dict[str, Any], json.loads(canonical_recipe(recipe)))
 
 
 class DirectorRecipeCommandService:

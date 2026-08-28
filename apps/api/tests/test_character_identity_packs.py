@@ -12,8 +12,27 @@ from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
 from local_drama.application.story_assets import StoryAssetService
 from local_drama.application.workspace_assets import WorkspaceAssetService
+from local_drama.domain.character_identity_packs import (
+    IMMUTABLE_PACK_VERSION_STATUSES,
+    REQUIRED_THREE_VIEW_SLOTS,
+    PackVersionStatus,
+    SlotKind,
+)
 from local_drama.domain.errors import DomainRuleError
 from local_drama.main import create_app
+
+
+def test_character_identity_pack_domain_constants_remain_canonical() -> None:
+    assert REQUIRED_THREE_VIEW_SLOTS == (
+        SlotKind.FRONT.value,
+        SlotKind.LEFT.value,
+        SlotKind.RIGHT.value,
+    )
+    assert IMMUTABLE_PACK_VERSION_STATUSES == {
+        PackVersionStatus.APPROVED.value,
+        PackVersionStatus.SUPERSEDED.value,
+        PackVersionStatus.RETIRED.value,
+    }
 
 
 def _setup_character_and_media(workspace, database):

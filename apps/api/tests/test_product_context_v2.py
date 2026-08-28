@@ -33,6 +33,8 @@ def test_v2_context_and_overview_are_typed_bounded_projections(workspace, databa
         assert overview["next_action"]["reason_code"] == "reviewable_story_draft_count"
         assert overview["next_action"]["target"]["kind"] == "STORY"
         assert len(overview["seasons"]) == 1 and len(overview["seasons"][0]["episodes"]) == 1
+        assert overview["seasons"][0]["episodes"][0]["preview_render_id"] is None
+        assert overview["seasons"][0]["episodes"][0]["preview_media_version_id"] is None
         assert overview["network_contacted"] is False and overview["mutated"] is False
 
 

@@ -1,51 +1,64 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { routes } from "../../app/routeRegistry";
 import {
   cancelJob,
   commitImportSession,
-  getProjectConfiguration,
-  getClientCapabilities,
-  importScriptDocument,
+  getImportSessionParagraphs,
   uploadScriptDocument,
   listEpisodes,
   listJobs,
+  listProfiles,
   listSeasons,
-  pickLocalDocumentFile,
   retryJob,
   type DocumentImport,
   type Job,
 } from "../../generated/api";
 import { requestScriptBreakdown } from "../story-workspace-v2/breakdownClient";
 import { queryKeys } from "../../query/queryKeys";
+import { BreakdownJobMonitor } from "./BreakdownJobMonitor";
+
+function preferredInitialSourceRange(preview: DocumentImport["preview"]) {
+  const paragraphCount = Math.max(1, Number(preview.paragraph_count ?? 1));
+  const firstChapter = preview.chapters?.[0];
+  if (firstChapter && firstChapter.start_paragraph >= 1 && firstChapter.end_paragraph >= firstChapter.start_paragraph) {
+    return { start: firstChapter.start_paragraph, end: Math.min(paragraphCount, firstChapter.end_paragraph) };
+  }
+  return { start: 1, end: paragraphCount };
+}
+
+const PARAGRAPH_PAGE_SIZE = 40;
 
 export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: string; onDraftReady?: (job: Job) => void }) {
   const queryClient = useQueryClient();
   const fileInputId = useId();
-  const [path, setPath] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
+  const [storedPathCopyState, setStoredPathCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [dragOver, setDragOver] = useState(false);
   const [prepared, setPrepared] = useState<DocumentImport | null>(null);
   const [committed, setCommitted] = useState(false);
-  const [pending, setPending] = useState<"browse" | "preview" | "commit" | "breakdown" | "upload" | null>(null);
+  const [pending, setPending] = useState<"commit" | "breakdown" | "upload" | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [breakdownSuccess, setBreakdownSuccess] = useState<string | null>(null);
   const [jobAction, setJobAction] = useState<string | null>(null);
   const [targetSeasonId, setTargetSeasonId] = useState("");
   const [targetEpisodeId, setTargetEpisodeId] = useState("");
+  const [selectedBreakdownProfileId, setSelectedBreakdownProfileId] = useState("");
   const [sourceParagraphStart, setSourceParagraphStart] = useState(1);
   const [sourceParagraphEnd, setSourceParagraphEnd] = useState(1);
   const [paragraphSelectionAnchor, setParagraphSelectionAnchor] = useState<number | null>(null);
+  const [paragraphPageStart, setParagraphPageStart] = useState(1);
   const observedJobStates = useRef<Map<string, string> | null>(null);
   const submittedJobIds = useRef(new Set<string>());
   const announcedReadyJobIds = useRef(new Set<string>());
 
-  const projectConfiguration = useQuery({
-    queryKey: queryKeys.productionSettings.section(projectId, "configuration"),
-    queryFn: () => getProjectConfiguration(projectId),
+  const profiles = useQuery({
+    queryKey: queryKeys.profiles.list(),
+    queryFn: () => listProfiles(),
   });
-  const clientCapabilities = useQuery({ queryKey: ["client-capabilities"], queryFn: () => getClientCapabilities(), staleTime: Infinity });
   const seasons = useQuery({
     queryKey: queryKeys.seasons.list(projectId),
     queryFn: () => listSeasons(projectId),
@@ -58,18 +71,64 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
   });
   const effectiveEpisodeId = targetEpisodeId || episodes.data?.items?.[0]?.id || "";
   const targetEpisode = episodes.data?.items?.find((episode) => episode.id === effectiveEpisodeId);
-  const projectLLMBinding = projectConfiguration.data?.configuration.profile_bindings.find(
-    (binding) => binding.capability === "LLM_STORY_PARSE" && binding.binding_status === "ACTIVE" && binding.profile_status === "PUBLISHED",
-  );
+  const breakdownModels = useMemo(() => {
+    const modelOptions = (profiles.data?.models ?? []).flatMap((model) => {
+      const route = model.routes.find(
+        (candidate) => candidate.capability === "LLM_STORY_PARSE" && candidate.status === "PUBLISHED",
+      );
+      return route ? [{
+        id: model.id,
+        name: model.name,
+        profileVersionId: route.profile_version_id,
+        profileTitle: route.profile_title,
+        versionNo: route.version_no,
+      }] : [];
+    });
+    if (modelOptions.length) return modelOptions;
+    return (profiles.data?.items ?? [])
+      .filter((profile) => profile.capability === "LLM_STORY_PARSE" && profile.status === "PUBLISHED")
+      .sort((left, right) => (right.version_no ?? 0) - (left.version_no ?? 0))
+      .map((profile) => ({
+        id: profile.id,
+        name: String(profile.model_bundle && typeof profile.model_bundle === "object" && "model" in profile.model_bundle
+          ? profile.model_bundle.model
+          : profile.title),
+        profileVersionId: profile.version_id,
+        profileTitle: profile.title,
+        versionNo: profile.version_no ?? 1,
+      }));
+  }, [profiles.data]);
+  const selectedBreakdownModel = breakdownModels.find((model) => model.profileVersionId === selectedBreakdownProfileId) ?? null;
   const breakdownJobQuery = useQuery({
     queryKey: queryKeys.scriptBreakdown.jobs(projectId),
     queryFn: () => listJobs(projectId),
     refetchInterval: 3_000,
   });
+  const paragraphPage = useQuery({
+    queryKey: ["import-session-paragraphs", prepared?.import_session_id ?? "", paragraphPageStart, PARAGRAPH_PAGE_SIZE],
+    queryFn: () => getImportSessionParagraphs(prepared!.import_session_id, paragraphPageStart, PARAGRAPH_PAGE_SIZE),
+    enabled: Boolean(prepared?.import_session_id),
+    placeholderData: (previous) => previous,
+  });
   const breakdownJobs = (breakdownJobQuery.data?.items ?? [])
     .filter((job) => job.type === "SCRIPT_BREAKDOWN_LOCAL_LLM")
     .slice(0, 5);
   const breakdownJobStateSignature = breakdownJobs.map((job) => `${job.id}:${job.state}`).join("|");
+  const storedSourcePath = prepared?.stored_source_path ?? "";
+
+  useEffect(() => setStoredPathCopyState("idle"), [storedSourcePath]);
+
+  useEffect(() => {
+    if (!breakdownModels.length) {
+      setSelectedBreakdownProfileId("");
+      return;
+    }
+    setSelectedBreakdownProfileId((current) => (
+      breakdownModels.some((model) => model.profileVersionId === current)
+        ? current
+        : breakdownModels[0].profileVersionId
+    ));
+  }, [breakdownModels]);
 
   useEffect(() => {
     const currentStates = new Map(breakdownJobs.map((job) => [job.id, String(job.state ?? "UNKNOWN")]));
@@ -91,23 +150,25 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
     observedJobStates.current = currentStates;
   }, [breakdownJobStateSignature, onDraftReady, projectId, queryClient]);
 
-  const changePath = (value: string) => {
-    setPath(value);
-    setSelectedFileName(null);
-    setPrepared(null);
-    setCommitted(false);
-    setError(null);
-    setBreakdownSuccess(null);
+  const copyStoredSourcePath = async () => {
+    if (!storedSourcePath) return;
+    try {
+      await navigator.clipboard.writeText(storedSourcePath);
+      setStoredPathCopyState("copied");
+    } catch {
+      setStoredPathCopyState("failed");
+    }
   };
 
   const handleFileUpload = async (file: File | undefined) => {
     if (!file) return;
     const name = file.name.toLowerCase();
     if (!name.endsWith(".txt") && !name.endsWith(".md") && !name.endsWith(".markdown") && !name.endsWith(".docx")) {
-      setError("剧本文档仅支持 TXT、Markdown、DOCX 格式。");
+      setUploadError("该文件无法上传。请选择 TXT、Markdown 或 DOCX 文档。");
       return;
     }
     setPending("upload");
+    setUploadError(null);
     setError(null);
     setSelectedFileName(file.name);
     setPrepared(null);
@@ -117,46 +178,13 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
       const result = await uploadScriptDocument(projectId, file);
       setPrepared(result.import);
       setCommitted(result.import.status === "COMMITTED");
-      setSourceParagraphStart(1);
-      setSourceParagraphEnd(Math.max(1, Number(result.import.preview.paragraph_count ?? 1)));
+      const initialRange = preferredInitialSourceRange(result.import.preview);
+      setSourceParagraphStart(initialRange.start);
+      setSourceParagraphEnd(initialRange.end);
+      setParagraphPageStart(initialRange.start);
       setParagraphSelectionAnchor(null);
     } catch (reason) {
-      setError(`文档上传与解析失败：${String(reason)}`);
-    } finally {
-      setPending(null);
-    }
-  };
-
-  const browse = async () => {
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 65_000);
-    setPending("browse");
-    setError(null);
-    try {
-      const result = await pickLocalDocumentFile("", controller.signal);
-      if (result.selection.selected && result.selection.path) changePath(result.selection.path);
-    } catch (reason) {
-      setError(controller.signal.aborted
-        ? "Windows 服务端文件选择器长时间没有返回，页面已恢复可操作；请重试，或直接点击上方“选择本地文档”上传。"
-        : `Windows 服务端文件选择器失败：${String(reason)}。建议直接点击上方“选择本地文档”上传。`);
-    } finally {
-      window.clearTimeout(timeout);
-      setPending(null);
-    }
-  };
-
-  const preview = async () => {
-    setPending("preview");
-    setError(null);
-    try {
-      const result = await importScriptDocument(projectId, path.trim());
-      setPrepared(result.import);
-      setCommitted(result.import.status === "COMMITTED");
-      setSourceParagraphStart(1);
-      setSourceParagraphEnd(Math.max(1, Number(result.import.preview.paragraph_count ?? 1)));
-      setParagraphSelectionAnchor(null);
-    } catch (reason) {
-      setError(`解析失败：${String(reason)}`);
+      setUploadError(`上传或解析失败：${String(reason)}。请检查文件后重新选择上传。`);
     } finally {
       setPending(null);
     }
@@ -167,7 +195,11 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
     setPending("commit");
     setError(null);
     try {
-      const result = await commitImportSession(prepared.import_session_id, prepared.preview_hash);
+      const result = await commitImportSession(prepared.import_session_id, {
+        expected_preview_hash: prepared.preview_hash,
+        source_paragraph_start: sourceParagraphStart,
+        source_paragraph_end: sourceParagraphEnd,
+      });
       setCommitted(result.commit.status === "COMMITTED");
     } catch (reason) {
       setError(`提交失败：${String(reason)}`);
@@ -179,7 +211,7 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
   const triggerBreakdown = async () => {
     if (!prepared || !committed) return;
     if (!effectiveEpisodeId) {
-      setError("请选择 AI 拆解目标集；目标时长会冻结进 Job 快照并在服务端强制校验。");
+      setError("请选择这份拆解草稿对应的分集。系统会读取该集目标时长，用于控制镜头数量和总时长。");
       return;
     }
     const paragraphCount = Number(prepared.preview.paragraph_count ?? 0);
@@ -187,8 +219,8 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
       setError(`请选择有效的本集原文范围：1–${paragraphCount} 段。`);
       return;
     }
-    if (!projectLLMBinding) {
-      setError("本项目尚未绑定已发布的 LLM_STORY_PARSE Profile；请先在模型与能力中完成测试、发布与项目绑定。");
+    if (!selectedBreakdownModel) {
+      setError("请选择一个已发布的故事拆解模型。");
       return;
     }
     setPending("breakdown");
@@ -198,7 +230,7 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
       // Persist a durable Job. Worker calls the model independently.
       const submission = await requestScriptBreakdown(
         prepared.import_session_id,
-        projectLLMBinding.profile_version_id,
+        selectedBreakdownModel.profileVersionId,
         effectiveEpisodeId,
         crypto.randomUUID(),
         { sourceParagraphStart, sourceParagraphEnd },
@@ -215,8 +247,26 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
     }
   };
 
-  const isLLMPass = Boolean(projectLLMBinding);
+  const isLLMPass = Boolean(selectedBreakdownModel);
   const sourceRangeValid = Boolean(prepared) && sourceParagraphStart >= 1 && sourceParagraphEnd >= sourceParagraphStart && sourceParagraphEnd <= Number(prepared?.preview.paragraph_count ?? 0);
+  const selectedParagraphCount = sourceRangeValid ? sourceParagraphEnd - sourceParagraphStart + 1 : 0;
+  const importWorkflowStep = committed ? 4 : prepared ? 2 : 1;
+  const targetEpisodeLabel = targetEpisode?.title || targetEpisode?.code || "所选分集";
+  const targetDurationSeconds = targetEpisode ? Math.round(Number(targetEpisode.target_duration_ms ?? 0) / 1000) : 0;
+  const targetDurationMinimum = Math.round(targetDurationSeconds * 0.8);
+  const targetDurationMaximum = Math.round(targetDurationSeconds * 1.2);
+  const visibleParagraphs = paragraphPage.data?.items ?? (paragraphPageStart === 1
+    ? (prepared?.preview.paragraphs ?? []).map((text, index) => ({
+        number: index + 1,
+        text,
+        source_start: 0,
+        source_end: 0,
+        is_heading: false,
+      }))
+    : []);
+  const visibleParagraphEnd = paragraphPage.data?.end_paragraph
+    ?? visibleParagraphs.at(-1)?.number
+    ?? paragraphPageStart;
 
   const selectParagraph = (paragraphNumber: number, extend: boolean) => {
     if (extend && paragraphSelectionAnchor !== null) {
@@ -233,6 +283,7 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
     setParagraphSelectionAnchor(start);
     setSourceParagraphStart(start);
     setSourceParagraphEnd(end);
+    setParagraphPageStart(start);
   };
 
   const mutateJob = async (job: Job, action: "cancel" | "retry") => {
@@ -253,11 +304,41 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
   return (
     <section className="subpanel script-import-panel" aria-labelledby="script-import-title">
       <div className="section-title">
-        <span id="script-import-title">剧本文档导入</span>
+        <span id="script-import-title">小说与剧本文档导入</span>
         <small>支持 TXT、Markdown、DOCX</small>
       </div>
 
-      {/* File Upload Zone for LAN / Browser native picker (e.g. Mac/Windows client) */}
+      <ol className="import-workflow-steps" aria-label="剧本文档导入进度">
+        {[
+          ["上传与解析", "服务端读取并识别结构"],
+          ["核对正文", "浏览章节并选择连续范围"],
+          ["确认入库", "冻结范围、来源和版本记录"],
+        ].map(([title, description], index) => {
+          const step = index + 1;
+          const state = step < importWorkflowStep ? "done" : step === importWorkflowStep ? "current" : "upcoming";
+          return (
+            <li key={title} className={state} aria-current={state === "current" ? "step" : undefined}>
+              <span className="import-workflow-step-marker" aria-hidden="true">{state === "done" ? "✓" : step}</span>
+              <span>
+                <strong>{title}</strong>
+                <small>{description}</small>
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+
+      <aside className="import-safety-note" aria-label="原文保护说明">
+        <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path d="M12 3 5.5 5.5v5.8c0 4.1 2.6 7.8 6.5 9.7 3.9-1.9 6.5-5.6 6.5-9.7V5.5L12 3Z" />
+          <path d="m9.3 12 1.8 1.8 3.8-4" />
+        </svg>
+        <div>
+          <strong>原文受保护</strong>
+          <p>系统不会修改原文档。请先预览并选择正文范围，确认后再建立可追溯的项目副本。</p>
+        </div>
+      </aside>
+
       <div
         className={`script-upload-dropzone${dragOver ? " drag-over" : ""}`}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -267,138 +348,211 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
           setDragOver(false);
           void handleFileUpload(e.dataTransfer.files?.[0]);
         }}
-        style={{
-          border: dragOver ? "2px dashed #3b82f6" : "2px dashed #4b5563",
-          borderRadius: "8px",
-          padding: "16px",
-          textAlign: "center",
-          marginBottom: "12px",
-          backgroundColor: dragOver ? "rgba(59, 130, 246, 0.08)" : "rgba(255, 255, 255, 0.02)",
-        }}
       >
         <input
           id={fileInputId}
+          ref={fileInputRef}
           type="file"
           accept=".txt,.md,.markdown,.docx"
-          style={{ display: "none" }}
+          aria-label="选择本地文档"
+          className="script-upload-input"
           disabled={pending !== null}
-          onChange={(event) => void handleFileUpload(event.target.files?.[0])}
-        />
-        <p style={{ margin: "0 0 8px 0", fontSize: "14px", fontWeight: 500 }}>
-          {selectedFileName ? `已选择：${selectedFileName}` : "从本地电脑选择文档（TXT / Markdown / DOCX）"}
-        </p>
-        <div style={{ display: "flex", gap: "10px", justifyContent: "center", alignItems: "center", flexWrap: "wrap" }}>
-          <label
-            htmlFor={fileInputId}
-            className="primary-action"
-            style={{ display: "inline-block", cursor: pending !== null ? "not-allowed" : "pointer", margin: 0 }}
-          >
-            {pending === "upload" ? "正在上传解析…" : "选择本地文档"}
-          </label>
-          <small className="muted" style={{ margin: 0 }}>支持直接拖拽文件到此处</small>
-        </div>
-      </div>
-
-      {clientCapabilities.data?.capabilities.server_file_dialogs && <details className="script-server-path-details" style={{ marginBottom: "12px" }}>
-        <summary style={{ cursor: "pointer", color: "#9ca3af", fontSize: "13px" }}>
-          高级：从 Windows 服务端目录导入
-        </summary>
-        <div style={{ marginTop: "8px" }}>
-          <label>
-            Windows 服务端中的文档绝对路径
-            <span className="inline-control">
-              <strong className="selected-path" aria-label="已选择文档路径" title={path}>{path || "尚未选择文档"}</strong>
-              <button
-                type="button"
-                className="secondary"
-                aria-label="浏览…"
-                onClick={() => {
-                  void browse();
-                }}
-                disabled={pending !== null}
-              >
-                {pending === "browse" ? "选择中…" : "浏览…"}
-              </button>
-            </span>
-            <small>通过系统文件选择器取得路径，不需要手动输入。</small>
-          </label>
-          <div className="post-process-actions" style={{ marginTop: "8px" }}>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => {
-                void preview();
-              }}
-              disabled={!path.trim() || pending !== null}
-            >
-              {pending === "preview" ? "解析中…" : "读取文档并预览"}
-            </button>
-          </div>
-        </div>
-      </details>}
-
-      <p className="muted">
-        系统不会修改原文档。请先预览并选择正文范围，确认后再建立可追溯的项目副本。
-      </p>
-      <div className="post-process-actions">
-        <button
-          type="button"
-          className="primary-action"
-          onClick={() => {
-            void commit();
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            void handleFileUpload(file);
           }}
-          disabled={!prepared || committed || pending !== null}
-        >
-          {pending === "commit" ? "正在导入…" : committed ? "已导入项目" : "确认导入所选原稿"}
-        </button>
+        />
+        <p className="script-upload-file-name">
+          {selectedFileName
+            ? pending === "upload" ? `正在上传：${selectedFileName}` : `已上传：${selectedFileName}`
+            : "从本地电脑上传原稿"}
+        </p>
+        <p className="script-upload-guidance">选择或拖入 TXT、Markdown、DOCX 文件，上传完成后自动解析预览。</p>
+        <div className="script-upload-actions">
+          <button
+            type="button"
+            className="primary-action"
+            aria-controls={fileInputId}
+            disabled={pending !== null}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {pending === "upload" ? "正在上传并解析…" : "选择并上传文档"}
+          </button>
+          <small className="muted">仅接受实际文件，不接受路径文字</small>
+        </div>
       </div>
+      {uploadError && <p className="inline-error script-upload-error" role="alert">{uploadError}</p>}
 
       {prepared && (
         <div className="import-preview" aria-label="剧本文档解析预览">
-          <p>
-            <strong>
-              {prepared.preview.paragraph_count} 段 · {prepared.preview.character_count} 字符
-            </strong>{" "}
-            · preview <code>{String(prepared.preview_hash ?? "").slice(0, 16) || "—"}</code>
-          </p>
-          <div className="import-selection-toolbar" aria-label="章节与原文范围快捷选择">
+          <header className="import-preview-header">
             <div>
-              <strong>选择本集原文</strong>
-              <small>单击选择一段；按住 Shift 再点另一段可连续选择。</small>
+              <small>步骤 2 · 核对正文</small>
+              <h3>正文预览与范围</h3>
+              <p>{prepared.preview.paragraph_count} 段 · {prepared.preview.character_count} 字符</p>
             </div>
-            <button type="button" className="secondary" onClick={() => selectParagraphRange(1, prepared.preview.paragraph_count)}>选择全文</button>
-            {(prepared.preview.chapters ?? []).map((chapter) => (
-              <button
-                type="button"
-                className="secondary"
-                key={`${chapter.start_paragraph}-${chapter.title}`}
-                onClick={() => selectParagraphRange(chapter.start_paragraph, chapter.end_paragraph)}
-              >
-                {chapter.title} · {chapter.start_paragraph}–{chapter.end_paragraph} 段
-              </button>
-            ))}
-          </div>
-          <ol className="import-paragraph-picker" aria-label="可选择的原文段落">
-            {prepared.preview.paragraphs.map((paragraph, index) => (
-              <li key={`${index}-${paragraph.slice(0, 16)}`}>
+            <span className="status-pill state-ready">
+              {committed ? "项目副本已建立" : "预览已就绪"}
+            </span>
+          </header>
+
+          {storedSourcePath && <section className="script-upload-location" aria-labelledby="script-upload-location-label">
+            <div className="script-upload-location__value">
+              <span id="script-upload-location-label">上传后服务器保存位置</span>
+              <code aria-label="上传文档服务器绝对路径" title={storedSourcePath}>{storedSourcePath}</code>
+              <small>{committed ? "已纳入项目版本记录，可通过来源信息追溯。" : "文件已复制到项目受控目录；确认前不会生成生产内容。"}</small>
+            </div>
+            <button type="button" className="secondary" onClick={() => void copyStoredSourcePath()}>
+              {storedPathCopyState === "copied" ? "已复制" : storedPathCopyState === "failed" ? "复制失败，请手动选择" : "复制路径"}
+            </button>
+          </section>}
+
+          <section className="manuscript-range-workspace" aria-labelledby="manuscript-range-title">
+            <header className="manuscript-range-header">
+              <div>
+                <small>服务端解析结果</small>
+                <h4 id="manuscript-range-title">确定要纳入项目的正文范围</h4>
+                <p>章节、段号和字符偏移均来自不可变解析副本。先核对结构，再选择连续正文范围。</p>
+              </div>
+              <div className="manuscript-range-status" aria-live="polite">
+                <span>{prepared.preview.paragraph_count} 段正文</span>
+                <strong>{sourceRangeValid ? `已选 ${selectedParagraphCount} 段` : "范围待修正"}</strong>
+              </div>
+            </header>
+
+            <div className="manuscript-browser">
+              <nav className="manuscript-chapter-nav" aria-label="识别到的章节">
+                <div className="manuscript-pane-heading">
+                  <strong>章节导航</strong>
+                  <small>规则识别，可人工改选</small>
+                </div>
                 <button
                   type="button"
-                  className={index + 1 >= sourceParagraphStart && index + 1 <= sourceParagraphEnd ? "selected" : ""}
-                  aria-pressed={index + 1 >= sourceParagraphStart && index + 1 <= sourceParagraphEnd}
-                  onClick={(event) => selectParagraph(index + 1, event.shiftKey)}
+                  className={sourceParagraphStart === 1 && sourceParagraphEnd === prepared.preview.paragraph_count ? "selected" : ""}
+                  onClick={() => selectParagraphRange(1, prepared.preview.paragraph_count)}
                 >
-                  <span>第 {index + 1} 段</span>
-                  <span>{paragraph}</span>
+                  <span>全文</span>
+                  <small>第 1–{prepared.preview.paragraph_count} 段</small>
                 </button>
-              </li>
-            ))}
-          </ol>
-          {prepared.preview.preview_truncated && <p className="muted">预览仅展示前 {prepared.preview.paragraphs.length} 段；可用章节按钮选择完整章节，或在下方“精确段号”中输入未展示范围。</p>}
-          <p className={committed ? "frame-feedback success" : "frame-feedback"}>
-            {committed
-              ? "原稿已安全导入，项目副本可随时追溯。"
-              : "预览已准备好。确认前不会写入项目，也不会创建镜头。"}
-          </p>
+                {(prepared.preview.chapters ?? []).length ? (prepared.preview.chapters ?? []).map((chapter) => (
+                  <button
+                    type="button"
+                    className={sourceParagraphStart === chapter.start_paragraph && sourceParagraphEnd === chapter.end_paragraph ? "selected" : ""}
+                    key={`${chapter.start_paragraph}-${chapter.title}`}
+                    onClick={() => selectParagraphRange(chapter.start_paragraph, chapter.end_paragraph)}
+                  >
+                    <span>{chapter.title}</span>
+                    <small>第 {chapter.start_paragraph}–{chapter.end_paragraph} 段</small>
+                  </button>
+                )) : <p className="empty-state">未识别到章节标题。仍可在正文中连续选择，或输入精确段号。</p>}
+              </nav>
+
+              <div className="manuscript-paragraph-pane">
+                <div className="manuscript-paragraph-toolbar">
+                  <div className="manuscript-pane-heading">
+                    <strong>正文段落</strong>
+                    <small>当前显示第 {paragraphPageStart}–{visibleParagraphEnd} 段 · 单击起点，Shift + 单击终点</small>
+                  </div>
+                  <div className="manuscript-page-actions" aria-label="正文分页">
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={paragraphPageStart <= 1 || paragraphPage.isFetching}
+                      onClick={() => setParagraphPageStart(Math.max(1, paragraphPageStart - PARAGRAPH_PAGE_SIZE))}
+                    >
+                      上一页
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={!paragraphPage.data?.has_more || paragraphPage.isFetching}
+                      onClick={() => setParagraphPageStart(visibleParagraphEnd + 1)}
+                    >
+                      下一页
+                    </button>
+                  </div>
+                </div>
+
+                {paragraphPage.isPending && !visibleParagraphs.length ? <p className="empty-state" role="status">正在从服务端读取正文段落…</p> : null}
+                {paragraphPage.error ? (
+                  <div className="query-error-actions">
+                    <p className="inline-error" role="alert">正文读取失败：{String(paragraphPage.error)}</p>
+                    <button type="button" className="secondary" onClick={() => void paragraphPage.refetch()}>重新读取本页</button>
+                  </div>
+                ) : null}
+                <ol className="import-paragraph-picker" aria-label="可选择的原文段落" start={paragraphPageStart}>
+                  {visibleParagraphs.map((paragraph) => (
+                    <li key={`${paragraph.number}-${paragraph.source_start}`}>
+                      <button
+                        type="button"
+                        className={`${paragraph.number >= sourceParagraphStart && paragraph.number <= sourceParagraphEnd ? "selected" : ""}${paragraph.is_heading ? " is-heading" : ""}`}
+                        aria-pressed={paragraph.number >= sourceParagraphStart && paragraph.number <= sourceParagraphEnd}
+                        onClick={(event) => selectParagraph(paragraph.number, event.shiftKey)}
+                      >
+                        <span>{paragraph.is_heading ? `章节 · 第 ${paragraph.number} 段` : `第 ${paragraph.number} 段`}</span>
+                        <span>{paragraph.text}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </div>
+
+            <div className="manuscript-selection-inspector">
+              <div className="import-selection-summary" aria-live="polite">
+                <span>当前正文范围</span>
+                <strong>{sourceRangeValid ? `第 ${sourceParagraphStart}–${sourceParagraphEnd} 段，共 ${selectedParagraphCount} 段` : "段落范围无效，请重新选择"}</strong>
+                <small>确认后，范围和段落偏移会与导入会话一起保存，可用于后续分集拆解和来源追溯。</small>
+              </div>
+              <details className="breakdown-paragraph-range-details import-exact-range">
+                <summary>精确输入段号</summary>
+                <div className="breakdown-paragraph-range-inputs">
+                  <label>
+                    正文起始段
+                    <input aria-label="本集原文起始段" type="number" min={1} max={prepared.preview.paragraph_count} value={sourceParagraphStart} onChange={(event) => { const value = Number(event.target.value); setParagraphSelectionAnchor(null); setSourceParagraphStart(value); if (value >= 1 && value <= prepared.preview.paragraph_count) setParagraphPageStart(value); }} />
+                  </label>
+                  <label>
+                    正文结束段
+                    <input aria-label="本集原文结束段" type="number" min={1} max={prepared.preview.paragraph_count} value={sourceParagraphEnd} onChange={(event) => { setParagraphSelectionAnchor(null); setSourceParagraphEnd(Number(event.target.value)); }} />
+                  </label>
+                </div>
+              </details>
+            </div>
+          </section>
+
+          <div className={`import-confirmation-area${committed ? " is-complete" : ""}`}>
+            {committed ? (
+              <div className="import-commit-success" role="status">
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M20 11.1V12a8 8 0 1 1-4.7-7.3" />
+                  <path d="m9 11 2 2 9-9" />
+                </svg>
+                <div>
+                  <strong>已建立可追溯的项目副本</strong>
+                  <small>原文未被修改；当前选择为第 {sourceParagraphStart}–{sourceParagraphEnd} 段，共 {selectedParagraphCount} 段。</small>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="import-selection-summary" aria-live="polite">
+                  <span>准备建立项目副本</span>
+                  <strong>{sourceRangeValid ? `已选择第 ${sourceParagraphStart}–${sourceParagraphEnd} 段，共 ${selectedParagraphCount} 段` : "段落范围无效，请重新选择"}</strong>
+                  <small>确认后将冻结当前预览版本和正文范围；不会创建镜头，也不会启动 AI。</small>
+                </div>
+                <button
+                  type="button"
+                  className="primary-action"
+                  onClick={() => {
+                    void commit();
+                  }}
+                  disabled={!sourceRangeValid || pending !== null}
+                >
+                  {pending === "commit" ? "正在建立副本…" : "确认并建立项目副本"}
+                </button>
+              </>
+            )}
+          </div>
 
           {committed && (
             <div className="breakdown-trigger-area">
@@ -409,60 +563,88 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
               <p className="muted breakdown-trigger-guidance">
                 系统会在后台生成可编辑草稿并保留原文引用，<strong>不会自动批准、应用或覆盖你的生产内容</strong>。
               </p>
-              {projectLLMBinding ? (
-                <p className="frame-feedback success" role="status">
-                  已准备：{projectLLMBinding.profile_title || "本地故事拆解模型"}
-                </p>
-              ) : null}
+              <div className="breakdown-target-fields" aria-label="拆解模型与草稿对应分集">
+                <label className="breakdown-model-field">
+                  拆解模型
+                  <select
+                    aria-label="AI 拆解模型"
+                    value={selectedBreakdownProfileId}
+                    onChange={(event) => setSelectedBreakdownProfileId(event.target.value)}
+                    disabled={profiles.isPending || breakdownModels.length === 0 || pending !== null}
+                  >
+                    {profiles.isPending ? <option value="">正在读取全局模型清单…</option> : null}
+                    {!profiles.isPending && breakdownModels.length === 0 ? <option value="">没有可用模型</option> : null}
+                    {breakdownModels.map((model) => (
+                      <option key={model.profileVersionId} value={model.profileVersionId}>
+                        {model.name}
+                      </option>
+                    ))}
+                  </select>
+                  <small>
+                    {selectedBreakdownModel
+                      ? `本次使用“${selectedBreakdownModel.name}”；对应已发布执行配置 ${selectedBreakdownModel.profileTitle} v${selectedBreakdownModel.versionNo}。提交后会冻结到任务中。`
+                      : "这里只列出全局能力清单中已发布的故事拆解模型。"}
+                  </small>
+                </label>
+                <section className="breakdown-destination" aria-labelledby="breakdown-destination-title">
+                  <header className="breakdown-destination__header">
+                    <small>本次草稿去向</small>
+                    <h4 id="breakdown-destination-title">这段正文准备做成哪一集？</h4>
+                    <p>选择分集后，系统会读取它的目标成片时长，帮助 AI 控制镜头数量和总时长。这里只生成待审核草稿，不会覆盖该集现有内容。</p>
+                  </header>
 
-              <div className="breakdown-target-fields" aria-label="AI 拆解目标集与时长">
-                <label>
-                  目标季度
-                  <select
-                    aria-label="AI 拆解目标季度"
-                    value={effectiveSeasonId}
-                    onChange={(event) => {
-                      setTargetSeasonId(event.target.value);
-                      setTargetEpisodeId("");
-                    }}
-                  >
-                    {(seasons.data?.items ?? []).map((season) => (
-                      <option key={season.id} value={season.id}>{season.title || season.code}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  AI 拆解目标集
-                  <select
-                    aria-label="AI 拆解目标集"
-                    value={effectiveEpisodeId}
-                    onChange={(event) => setTargetEpisodeId(event.target.value)}
-                    disabled={!effectiveSeasonId || episodes.isPending}
-                  >
-                    {(episodes.data?.items ?? []).map((episode) => (
-                      <option key={episode.id} value={episode.id}>{episode.title || episode.code}</option>
-                    ))}
-                  </select>
-                </label>
-                <p className="muted" role="status">
-                  {targetEpisode
-                    ? `目标成片时长 ${Math.round(Number(targetEpisode.target_duration_ms ?? 0) / 1000)} 秒；草稿镜头合计必须落在目标 ±20% 内。`
-                    : "项目暂无可用分集；请先创建季度与分集。"}
-                </p>
-                <p className="frame-feedback" role="status">已选择第 {sourceParagraphStart}–{sourceParagraphEnd} 段，共 {sourceRangeValid ? sourceParagraphEnd - sourceParagraphStart + 1 : 0} 段。章节标题会从模型输入中排除，源文件与偏移保持不变。</p>
-                <details className="breakdown-paragraph-range-details">
-                  <summary>高级：精确段号</summary>
-                  <div className="breakdown-paragraph-range-inputs">
+                  <div className="breakdown-destination__fields">
                     <label>
-                      本集原文起始段
-                      <input aria-label="本集原文起始段" type="number" min={1} max={prepared.preview.paragraph_count} value={sourceParagraphStart} onChange={(event) => { setParagraphSelectionAnchor(null); setSourceParagraphStart(Number(event.target.value)); }} />
+                      所属季度
+                      <select
+                        aria-label="草稿所属季度"
+                        value={effectiveSeasonId}
+                        onChange={(event) => {
+                          setTargetSeasonId(event.target.value);
+                          setTargetEpisodeId("");
+                        }}
+                      >
+                        {(seasons.data?.items ?? []).map((season) => (
+                          <option key={season.id} value={season.id}>{season.title || season.code}</option>
+                        ))}
+                      </select>
                     </label>
                     <label>
-                      本集原文结束段
-                      <input aria-label="本集原文结束段" type="number" min={1} max={prepared.preview.paragraph_count} value={sourceParagraphEnd} onChange={(event) => { setParagraphSelectionAnchor(null); setSourceParagraphEnd(Number(event.target.value)); }} />
+                      草稿对应分集
+                      <select
+                        aria-label="草稿对应分集"
+                        value={effectiveEpisodeId}
+                        onChange={(event) => setTargetEpisodeId(event.target.value)}
+                        disabled={!effectiveSeasonId || episodes.isPending}
+                      >
+                        {(episodes.data?.items ?? []).map((episode) => (
+                          <option key={episode.id} value={episode.id}>{episode.title || episode.code}</option>
+                        ))}
+                      </select>
                     </label>
                   </div>
-                </details>
+
+                  {targetEpisode ? (
+                    <div className="breakdown-destination__summary" role="status">
+                      <div className="breakdown-destination__result">
+                        <span>本次将生成</span>
+                        <strong>{targetEpisodeLabel}的待审核拆解草稿</strong>
+                      </div>
+                      <dl>
+                        <div><dt>目标成片</dt><dd>{targetDurationSeconds} 秒</dd></div>
+                        <div><dt>草稿时长范围</dt><dd>{targetDurationMinimum}–{targetDurationMaximum} 秒</dd></div>
+                        <div><dt>使用正文</dt><dd>第 {sourceParagraphStart}–{sourceParagraphEnd} 段</dd></div>
+                      </dl>
+                      <small>章节标题会从模型输入中排除；原文件、段落偏移和版本记录保持不变。</small>
+                    </div>
+                  ) : (
+                    <div className="breakdown-destination__empty" role="status">
+                      <strong>项目暂无可用分集</strong>
+                      <span>请先在项目首页创建季度与分集，再回来生成拆解草稿。</span>
+                      <Link to={routes.projectHome(projectId)}>前往项目首页</Link>
+                    </div>
+                  )}
+                </section>
               </div>
 
               <div className="breakdown-trigger-actions">
@@ -474,13 +656,18 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
                   }}
                   disabled={pending !== null || !isLLMPass || !effectiveEpisodeId || !sourceRangeValid}
                 >
-                  {pending === "breakdown" ? "正在准备后台拆解…" : "开始 AI 拆解"}
+                  {pending === "breakdown" ? `正在为${targetEpisodeLabel}准备草稿…` : targetEpisode ? `为${targetEpisodeLabel}生成拆解草稿` : "生成拆解草稿"}
                 </button>
-                {!isLLMPass && !projectConfiguration.isPending && (
+                {!isLLMPass && !profiles.isPending && (
                   <span className="breakdown-runtime-warning" role="status">
-                    尚未准备故事拆解模型。<Link to={routes.settings(projectId, "capabilities")}>前往项目能力完成绑定</Link>。
+                    尚无已发布的故事拆解模型。<Link to={routes.systemCapabilities()}>前往能力与模型完成接入和发布</Link>。
                   </span>
                 )}
+                {profiles.error ? (
+                  <span className="breakdown-runtime-warning" role="alert">
+                    模型清单读取失败。<button type="button" className="text-action" onClick={() => void profiles.refetch()}>重新读取</button>
+                  </span>
+                ) : null}
               </div>
               {breakdownSuccess && (
                 <div className="frame-feedback success breakdown-submit-success" role="status">
@@ -492,74 +679,22 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
           )}
         </div>
       )}
-      <section className="breakdown-job-monitor" aria-labelledby="breakdown-job-monitor-title">
-        <div className="section-title">
-          <span id="breakdown-job-monitor-title">AI 拆解任务进度</span>
-          <small>刷新恢复 · 取消 · 失败后显式重试</small>
-        </div>
-        <p className="muted">
-          拆解会在 Windows 服务端后台持续运行，关闭客户端页面也不会丢失。若长时间没有进展，请到“任务与机器”查看并恢复运行环境。
-        </p>
-        {breakdownJobQuery.isPending ? <p className="empty-state">正在读取已持久化任务…</p> : null}
-        {breakdownJobQuery.error ? (
-          <div className="query-error-actions">
-            <p className="inline-error" role="alert">任务读取失败：{String(breakdownJobQuery.error)}</p>
-            <button type="button" className="secondary" onClick={() => void breakdownJobQuery.refetch()}>重新读取任务</button>
-          </div>
-        ) : null}
-        {breakdownJobs.length ? (
-          <div className="breakdown-job-list">
-            {breakdownJobs.map((job) => {
-              const state = String(job.state ?? "UNKNOWN");
-              const progress = Number(job.progress?.percent ?? (state === "SUCCEEDED" ? 100 : 0));
-              const boundedProgress = Number.isFinite(progress) ? Math.max(0, Math.min(100, progress)) : 0;
-              const canCancel = ["QUEUED", "CLAIMED", "RUNNING"].includes(state);
-              const canRetry = ["FAILED", "NEEDS_ATTENTION", "ORPHANED"].includes(state);
-              const subjectSession = String(job.subject_id ?? "");
-              return (
-                <article className="breakdown-job-card" key={job.id} aria-label={`AI 拆解任务 ${job.id}`}>
-                  <div className="breakdown-job-heading">
-                    <div>
-                      <strong>{subjectSession ? `导入会话 ${subjectSession.slice(0, 12)}…` : "剧本拆解"}</strong>
-                      <small>Job {job.id.slice(0, 12)}… · Attempt 失败重试保持同一 Job</small>
-                    </div>
-                    <span className={`status-pill state-${state.toLowerCase()}`}>{state}</span>
-                  </div>
-                  <label className="breakdown-progress-label">
-                    <span>{String(job.progress?.phase ?? (state === "QUEUED" ? "WAITING_FOR_WORKER" : state))}</span>
-                    <span>{Math.round(boundedProgress)}%</span>
-                    <progress value={boundedProgress} max={100} aria-label={`AI 拆解进度 ${Math.round(boundedProgress)}%`} />
-                  </label>
-                  {job.last_error_code ? (
-                    <p className="inline-error" role="alert">
-                      {job.last_error_code}：{String(job.last_error_detail_redacted ?? "请检查本地模型与 worker 后重试。")}
-                    </p>
-                  ) : null}
-                  {state === "SUCCEEDED" ? (
-                    <div className="frame-feedback success"><p>草稿已生成，但尚未应用。请进入审核阶段选择目标分集并人工确认。</p>{onDraftReady ? <button type="button" className="secondary" onClick={() => { void queryClient.invalidateQueries({ queryKey: queryKeys.scriptBreakdown.all(projectId) }); onDraftReady(job); }}>打开审核阶段</button> : <a href="#story-review">打开审核阶段</a>}</div>
-                  ) : null}
-                  {state === "CANCEL_REQUESTED" ? <p className="muted">正在等待本地 Ollama 调用返回；取消会在草稿持久化前再次检查。</p> : null}
-                  <div className="breakdown-job-actions">
-                    <Link className="secondary v2-inline-link" to={`${routes.systemJobs(projectId)}&job=${encodeURIComponent(job.id)}`}>查看任务详情</Link>
-                    {canCancel ? (
-                      <button type="button" className="secondary" disabled={jobAction !== null} onClick={() => void mutateJob(job, "cancel")}>
-                        {jobAction === `cancel:${job.id}` ? "取消中…" : "取消任务"}
-                      </button>
-                    ) : null}
-                    {canRetry ? (
-                      <button type="button" className="secondary" disabled={jobAction !== null} onClick={() => void mutateJob(job, "retry")}>
-                        {jobAction === `retry:${job.id}` ? "重新排队中…" : "失败重试"}
-                      </button>
-                    ) : null}
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        ) : !breakdownJobQuery.isPending && !breakdownJobQuery.error ? (
-          <p className="empty-state">当前项目还没有 AI 拆解任务。</p>
-        ) : null}
-      </section>
+      <BreakdownJobMonitor
+        projectId={projectId}
+        jobs={breakdownJobs}
+        models={breakdownModels}
+        isPending={breakdownJobQuery.isPending}
+        error={breakdownJobQuery.error}
+        jobAction={jobAction}
+        onRefetch={() => {
+          void breakdownJobQuery.refetch();
+        }}
+        onMutate={mutateJob}
+        onDraftReady={onDraftReady ? (job) => {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.scriptBreakdown.all(projectId) });
+          onDraftReady(job);
+        } : undefined}
+      />
       {error && (
         <p className="inline-error" role="alert">
           {error}

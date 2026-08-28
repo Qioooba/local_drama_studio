@@ -41,11 +41,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps({"sessions": sessions.list_sessions(), "mutated": False}, ensure_ascii=False, default=str))
         return 0
     if args.reconcile and not args.worker_id:
-        result = {
+        reconcile_result = {
             "worker_sessions": sessions.reconcile(),
             "storage_operations": StorageOperationService(database, settings).reconcile(),
         }
-        print(json.dumps({"reconcile": result}, ensure_ascii=False, default=str))
+        print(json.dumps({"reconcile": reconcile_result}, ensure_ascii=False, default=str))
         return 0
     if not args.worker_id:
         parser.error("--worker-id is required unless --status or --reconcile is used")

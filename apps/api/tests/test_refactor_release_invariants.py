@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 
 from scripts.refactor_invariants import audit
+from scripts.verify_release import _expected_migration_heads
 
 
 def test_release_invariants_cover_0044_through_0048_and_pass_at_head(database) -> None:
@@ -21,7 +22,9 @@ def test_release_invariants_cover_0044_through_0048_and_pass_at_head(database) -
         "CHARACTER_IDENTITY_PACK_SCOPE",
     }
 
-    assert result["alembic_revision"] == "0063_audio_mix_drafts"
+    expected_heads = _expected_migration_heads()
+    assert len(expected_heads) == 1
+    assert result["alembic_revision"] == expected_heads[0]
     assert expected <= checks.keys()
     assert {checks[code]["status"] for code in expected} == {"PASS"}
     assert result["mode"] == "READ_ONLY"

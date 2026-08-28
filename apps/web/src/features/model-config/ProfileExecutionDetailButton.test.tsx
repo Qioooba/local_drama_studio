@@ -31,7 +31,7 @@ describe("ProfileExecutionDetailButton", () => {
     expect(getProfileVersion).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "查看执行详情" }));
     await waitFor(() => expect(getProfileVersion).toHaveBeenCalledWith("profile-v4"));
-    expect(await screen.findByText("H3 T2V · v4 执行详情")).toBeTruthy();
+    expect(await screen.findByText("H3 T2V · 第 4 版执行详情")).toBeTruthy();
     expect(screen.getByText("Local ComfyUI")).toBeTruthy();
   });
 });

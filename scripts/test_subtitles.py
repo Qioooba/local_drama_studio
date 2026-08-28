@@ -5,9 +5,9 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / "apps" / "api"))
 
+from local_drama.application.timeline import TimelineService
 from local_drama.config import Settings
 from local_drama.infrastructure.database.sqlite import Database
-from local_drama.application.timeline import TimelineService
 
 settings = Settings()
 db = Database(settings.database_path)

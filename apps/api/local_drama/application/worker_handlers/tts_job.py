@@ -9,7 +9,7 @@ from local_drama.domain.errors import DomainRuleError
 from local_drama.platform.contracts import TtsRuntimeError
 
 FfmpegRunner = Callable[[list[str]], None]
-AtomicWriter = Callable[[Path, Callable[[Path], None]], None]
+AtomicWriter = Callable[[Path, Callable[[Path], object]], None]
 
 
 class WorkerPersistencePort(Protocol):

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import TypeVar
+
 from fastapi import APIRouter, Request
 
 from local_drama.api.schemas.visual_labs import (
@@ -22,13 +25,14 @@ from local_drama.application.visual_labs import VisualLabService
 from local_drama.domain.errors import DomainRuleError
 
 router = APIRouter(tags=["visual-labs"])
+T = TypeVar("T")
 
 
 def service(request: Request) -> VisualLabService:
     return VisualLabService(request.app.state.database, request.app.state.settings)
 
 
-def guarded(call):
+def guarded(call: Callable[[], T]) -> T:
     try:
         return call()
     except DomainRuleError as error:

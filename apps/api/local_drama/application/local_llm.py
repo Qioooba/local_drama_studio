@@ -24,6 +24,9 @@ from local_drama.infrastructure.local_llm import LocalLLMClient
 from local_drama.platform import create_platform_services
 from local_drama.platform.contracts import SecretRef, SecretStore
 
+_BREAKDOWN_MAX_SOURCE_CHARACTERS = 4_000
+_BREAKDOWN_CONTEXT_TOKENS = 8_192
+
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
@@ -411,7 +414,8 @@ def validate_scene_distinctness(scenes: Any) -> None:
     for scene_index, scene in enumerate(scenes, start=1):
         if not isinstance(scene, dict):
             continue
-        scene_no = scene.get("scene_no") if isinstance(scene.get("scene_no"), int) else scene_index
+        raw_scene_no = scene.get("scene_no")
+        scene_no = raw_scene_no if isinstance(raw_scene_no, int) and not isinstance(raw_scene_no, bool) else scene_index
         summary = re.sub(r"\s+", "", str(scene.get("summary") or ""))
         if len(summary) < 16:
             continue
@@ -462,7 +466,12 @@ def _validate_breakdown_output(
     scene_numbers: set[int] = set()
     total_duration_seconds = 0.0
     for scene_index, scene in enumerate(scenes, start=1):
-        if not isinstance(scene, dict) or not scene_fields.issubset(scene) or not isinstance(scene.get("characters"), list) or not isinstance(scene.get("shots"), list):
+        if (
+            not isinstance(scene, dict)
+            or not scene_fields.issubset(scene)
+            or not isinstance(scene.get("characters"), list)
+            or not isinstance(scene.get("shots"), list)
+        ):
             raise DomainRuleError("LOCAL_LLM_OUTPUT_INVALID", "本地 LLM scene 不符合拆镜 schema", {"scene_index": scene_index})
         if not isinstance(scene["scene_no"], int) or scene["scene_no"] in scene_numbers:
             raise DomainRuleError("LOCAL_LLM_OUTPUT_INVALID", "scene_no 必须是唯一整数", {"scene_index": scene_index})
@@ -510,6 +519,7 @@ def _validate_breakdown_output(
         paragraph_no = passage.get("paragraph_no")
         quote = passage.get("quote")
         resolved_paragraph_nos: set[int] = set()
+        alignment: dict[str, Any] | None
         if isinstance(paragraph_no, int) and paragraph_no in paragraph_offsets:
             source_start, source_end = paragraph_offsets[paragraph_no]
             exact_quote = source_text[source_start:source_end]
@@ -531,11 +541,7 @@ def _validate_breakdown_output(
             if alignment is not None:
                 aligned_start = int(alignment["source_start"])
                 aligned_end = int(alignment["source_end"])
-                resolved_paragraph_nos.update(
-                    number
-                    for number, (start, end) in paragraph_offsets.items()
-                    if start < aligned_end and end > aligned_start
-                )
+                resolved_paragraph_nos.update(number for number, (start, end) in paragraph_offsets.items() if start < aligned_end and end > aligned_start)
                 if len(resolved_paragraph_nos) == 1:
                     alignment["paragraph_no"] = next(iter(resolved_paragraph_nos))
         else:
@@ -586,11 +592,7 @@ def _validate_breakdown_output(
                 original_scene = json.loads(_json(scene))
                 fallback_groups.setdefault(source, []).append((scene, score, original_scene))
             for source, fallback_scenes in fallback_groups.items():
-                source_units = [
-                    part.strip()
-                    for part in re.split(r"(?<=[。！？!?；;，,：:])", source)
-                    if part.strip()
-                ] or [source.strip()]
+                source_units = [part.strip() for part in re.split(r"(?<=[。！？!?；;，,：:])", source) if part.strip()] or [source.strip()]
                 total_shots = sum(len(scene.get("shots") or []) for scene, _, _ in fallback_scenes)
                 unit_cursor = 0
                 remaining_shots = total_shots
@@ -614,11 +616,7 @@ def _validate_breakdown_output(
                     assigned_source = "".join(assigned_units)
                     scene["title"] = assigned_units[0][:48]
                     scene["summary"] = assigned_source
-                    scene["characters"] = [
-                        name
-                        for name in scene.get("characters", [])
-                        if isinstance(name, str) and name.strip() and name in assigned_source
-                    ]
+                    scene["characters"] = [name for name in scene.get("characters", []) if isinstance(name, str) and name.strip() and name in assigned_source]
                     for shot_index, shot in enumerate(shots):
                         if not isinstance(shot, dict):
                             continue
@@ -748,7 +746,6 @@ def _normalize_scene_source_passages(value: dict[str, Any], required_paragraphs:
     return value
 
 
-
 def _normalize_breakdown_durations(
     value: dict[str, Any],
     target_duration_seconds: float,
@@ -758,13 +755,7 @@ def _normalize_breakdown_durations(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Fit model-proposed shot timings to the episode budget without changing content."""
     normalized = json.loads(_json(value))
-    shots = [
-        shot
-        for scene in normalized.get("scenes", [])
-        if isinstance(scene, dict)
-        for shot in scene.get("shots", [])
-        if isinstance(shot, dict)
-    ]
+    shots = [shot for scene in normalized.get("scenes", []) if isinstance(scene, dict) for shot in scene.get("shots", []) if isinstance(shot, dict)]
     durations: list[float] = []
     for index, shot in enumerate(shots, start=1):
         duration = shot.get("duration_seconds")
@@ -863,6 +854,7 @@ class LocalLLMService:
         if self.settings.llm_api_key and self.settings.llm_api_key.strip():
             return self.settings.llm_api_key.strip()
         import os
+
         for env_var in ("LOCAL_DRAMA_LLM_API_KEY", "LOCAL_DRAMA_OPENAI_COMPAT_API_KEY", "DEEPSEEK_API_KEY", "OPENAI_API_KEY"):
             val = os.environ.get(env_var)
             if val and val.strip():
@@ -1240,11 +1232,7 @@ class LocalLLMService:
             ).fetchone()
             if current is not None:
                 version_id = str(current["id"])
-            readiness = (
-                probe
-                if probe_job_id or not (current and current["status"] == "PUBLISHED")
-                else client.probe(load_test=True)
-            )
+            readiness = probe if probe_job_id or not (current and current["status"] == "PUBLISHED") else client.probe(load_test=True)
             profile_status = (
                 "PUBLISHED"
                 if current and current["status"] == "PUBLISHED" and readiness["status"] == "PASS"
@@ -1279,7 +1267,12 @@ class LocalLLMService:
             )
             connection.execute(
                 "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'operator', 'LOCAL_LLM_CANDIDATE_SYNCED', 'execution_profile_version', ?, ?, ?)",
-                (actor, version_id, f"同步 {resolved_provider} LLM 候选 Profile", _json({"probe": probe, "model": selected_model, "capability": normalized_capability, "provider": resolved_provider})),
+                (
+                    actor,
+                    version_id,
+                    f"同步 {resolved_provider} LLM 候选 Profile",
+                    _json({"probe": probe, "model": selected_model, "capability": normalized_capability, "provider": resolved_provider}),
+                ),
             )
         return {"profile_version_id": version_id, "profile_code": code, "status": profile_status, "probe": probe}
 
@@ -1292,7 +1285,9 @@ class LocalLLMService:
         probe_job_id: str | None = None,
     ) -> dict[str, Any]:
         with self.database.transaction() as connection:
-            row = connection.execute("SELECT id, capability, capability_json, model_bundle_json FROM execution_profile_versions WHERE id=?", (profile_version_id,)).fetchone()
+            row = connection.execute(
+                "SELECT id, capability, capability_json, model_bundle_json FROM execution_profile_versions WHERE id=?", (profile_version_id,)
+            ).fetchone()
             if row is None:
                 raise DomainRuleError("PROFILE_NOT_FOUND", "Profile 版本不存在")
             try:
@@ -1357,7 +1352,12 @@ class LocalLLMService:
             )
             connection.execute(
                 "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'operator', 'LOCAL_LLM_PROFILE_PUBLISHED', 'execution_profile_version', ?, ?, ?)",
-                (actor, profile_version_id, f"发布 {provider} LLM Profile", _json({"model": model, "provider": provider, "status": "PUBLISHED", "probe_level_passed": 4})),
+                (
+                    actor,
+                    profile_version_id,
+                    f"发布 {provider} LLM Profile",
+                    _json({"model": model, "provider": provider, "status": "PUBLISHED", "probe_level_passed": 4}),
+                ),
             )
         return {"profile_version_id": profile_version_id, "status": "PUBLISHED", "probe": probe}
 
@@ -1371,6 +1371,8 @@ class LocalLLMService:
         allow_remote_outbound: bool = False,
         language: str = "zh-CN",
         output_spec: dict[str, float | int | str] | None = None,
+        inference_options: dict[str, Any] | None = None,
+        target_kind: str = "VIDEO",
     ) -> dict[str, Any]:
         """Expand one creator sentence into a bounded, production-ready T2V shot.
 
@@ -1440,26 +1442,65 @@ class LocalLLMService:
             api_key=resolved_key,
             allow_private_network=self.settings.allows_private_network,
         )
-        system_prompt = (
-            "你是短视频导演。把用户的一句话改写为单镜头文生视频提示词。只输出 JSON 对象，"
-            "且只能包含 title、video_prompt、keyframe_prompt、subject_action、environment、shot_type、camera_movement 七个字符串字段。"
-            "shot_type 必须是 CLOSE_UP、MEDIUM_CLOSE_UP、MEDIUM、FULL、WIDE、EXTREME_WIDE 之一；"
-            "camera_movement 必须是 STATIC、DOLLY_IN、DOLLY_OUT、PAN_LEFT、PAN_RIGHT、TILT_UP、TILT_DOWN、"
-            "TRACK_LEFT、TRACK_RIGHT、CRANE_UP、CRANE_DOWN、ORBIT 之一。"
-            f"video_prompt 使用{prompt_language}，目标为 {duration_seconds:.3f} 秒、{aspect_ratio} 画幅"
+        image_only = target_kind.strip().upper() == "IMAGE"
+        target_instruction = (
+            f"keyframe_prompt 是最终执行提示词，目标为 {aspect_ratio} 画幅"
+            f"{f'、{width}×{height}' if width and height else ''} 的单张静态作品。"
+            if image_only
+            else f"video_prompt 使用{prompt_language}，目标为 {duration_seconds:.3f} 秒、{aspect_ratio} 画幅"
             f"{f'、{width}×{height}' if width and height else ''}{f'、{fps:g} fps' if fps else ''} 的连续单镜头。"
-            "必须忠于原句，不新增人物身份、品牌、对白或剧情转折；只安排一个清晰主体动作和一种镜头运动，"
-            "并写清环境、光线、构图与稳定性要求。keyframe_prompt 使用相同语言，描述动作开始前最适合做 I2V 首帧的"
-            "单张静态画面，保留主体、环境、光线、景别和构图，但不得包含运镜、时间变化或多个连续动作。"
         )
-        output = client.chat_json(system_prompt, normalized_story)
+        system_prompt = "".join(
+            [
+                "你是视觉概念设计师。把用户的一句话改写为单张文生图提示词。"
+                if image_only
+                else "你是短视频导演。把用户的一句话改写为单镜头文生视频提示词。",
+                "只输出 JSON 对象，且只能包含 title、video_prompt、keyframe_prompt、subject_action、environment、shot_type、camera_movement 七个字符串字段。",
+                "shot_type 必须是 CLOSE_UP、MEDIUM_CLOSE_UP、MEDIUM、FULL、WIDE、EXTREME_WIDE 之一；",
+                "camera_movement 必须是 STATIC、DOLLY_IN、DOLLY_OUT、PAN_LEFT、PAN_RIGHT、TILT_UP、TILT_DOWN、",
+                "TRACK_LEFT、TRACK_RIGHT、CRANE_UP、CRANE_DOWN、ORBIT 之一。",
+                target_instruction,
+                "必须忠于原句，不新增人物身份、品牌、对白或剧情转折；只安排一个清晰主体动作和一种镜头运动，",
+                "并写清环境、光线、构图与稳定性要求。keyframe_prompt 必须使用 English（供 SDXL/CLIP 文生图模型执行），",
+                "描述最终要生成的单张静态作品，" if image_only else "描述动作开始前最适合做 I2V 首帧的单张静态画面，",
+                "保留原句中的主体、服装、道具、环境、光线、景别和构图，",
+                "但不得包含运镜、时间变化或多个连续动作。即使 video_prompt 使用简体中文，keyframe_prompt 也必须是 English。",
+            ]
+        )
+        output = client.chat_json(system_prompt, normalized_story, inference_options=inference_options)
         required_keys = {"title", "video_prompt", "keyframe_prompt", "subject_action", "environment", "shot_type", "camera_movement"}
+
+        def has_cjk(value: object) -> bool:
+            return any("\u4e00" <= character <= "\u9fff" for character in str(value))
+
         allowed_shot_values = {"CLOSE_UP", "MEDIUM_CLOSE_UP", "MEDIUM", "FULL", "WIDE", "EXTREME_WIDE", "特写", "近景", "中近景", "中景", "全景", "远景"}
-        allowed_movement_values = {"STATIC", "DOLLY_IN", "DOLLY_OUT", "PAN_LEFT", "PAN_RIGHT", "TILT_UP", "TILT_DOWN", "TRACK_LEFT", "TRACK_RIGHT", "CRANE_UP", "CRANE_DOWN", "ORBIT", "固定", "静止", "缓慢推镜", "推镜", "拉镜", "跟拍", "左摇", "右摇"}
+        allowed_movement_values = {
+            "STATIC",
+            "DOLLY_IN",
+            "DOLLY_OUT",
+            "PAN_LEFT",
+            "PAN_RIGHT",
+            "TILT_UP",
+            "TILT_DOWN",
+            "TRACK_LEFT",
+            "TRACK_RIGHT",
+            "CRANE_UP",
+            "CRANE_DOWN",
+            "ORBIT",
+            "固定",
+            "静止",
+            "缓慢推镜",
+            "推镜",
+            "拉镜",
+            "跟拍",
+            "左摇",
+            "右摇",
+        }
         structurally_valid = (
             isinstance(output, dict)
             and set(output) == required_keys
             and all(isinstance(output.get(key), str) and str(output[key]).strip() for key in required_keys)
+            and not has_cjk(output.get("keyframe_prompt"))
             and str(output.get("shot_type") or "").strip() in allowed_shot_values
             and str(output.get("camera_movement") or "").strip() in allowed_movement_values
         )
@@ -1467,8 +1508,9 @@ class LocalLLMService:
             # One bounded repair attempt keeps the public contract strict while
             # tolerating a model's first malformed JSON/schema response.
             output = client.chat_json(
-                system_prompt + " 上一次输出未通过结构校验；这是唯一一次修复机会，必须逐字遵守字段集合与枚举。",
+                system_prompt + " 上一次输出未通过结构或语言校验；这是唯一一次修复机会，必须逐字遵守字段集合、枚举，并确保 keyframe_prompt 只含 English。",
                 normalized_story,
+                inference_options=inference_options,
             )
         if remember_api_key and api_key and api_key.strip():
             try:
@@ -1482,18 +1524,46 @@ class LocalLLMService:
         missing = [key for key in required if not isinstance(output.get(key), str) or not str(output[key]).strip()]
         unexpected = sorted(set(output) - set(required))
         valid_shot_types = {"CLOSE_UP", "MEDIUM_CLOSE_UP", "MEDIUM", "FULL", "WIDE", "EXTREME_WIDE"}
-        valid_movements = {"STATIC", "DOLLY_IN", "DOLLY_OUT", "PAN_LEFT", "PAN_RIGHT", "TILT_UP", "TILT_DOWN", "TRACK_LEFT", "TRACK_RIGHT", "CRANE_UP", "CRANE_DOWN", "ORBIT"}
+        valid_movements = {
+            "STATIC",
+            "DOLLY_IN",
+            "DOLLY_OUT",
+            "PAN_LEFT",
+            "PAN_RIGHT",
+            "TILT_UP",
+            "TILT_DOWN",
+            "TRACK_LEFT",
+            "TRACK_RIGHT",
+            "CRANE_UP",
+            "CRANE_DOWN",
+            "ORBIT",
+        }
         shot_aliases = {"特写": "CLOSE_UP", "近景": "MEDIUM_CLOSE_UP", "中近景": "MEDIUM_CLOSE_UP", "中景": "MEDIUM", "全景": "WIDE", "远景": "EXTREME_WIDE"}
-        movement_aliases = {"固定": "STATIC", "静止": "STATIC", "缓慢推镜": "DOLLY_IN", "推镜": "DOLLY_IN", "拉镜": "DOLLY_OUT", "跟拍": "TRACK_RIGHT", "左摇": "PAN_LEFT", "右摇": "PAN_RIGHT"}
+        movement_aliases = {
+            "固定": "STATIC",
+            "静止": "STATIC",
+            "缓慢推镜": "DOLLY_IN",
+            "推镜": "DOLLY_IN",
+            "拉镜": "DOLLY_OUT",
+            "跟拍": "TRACK_RIGHT",
+            "左摇": "PAN_LEFT",
+            "右摇": "PAN_RIGHT",
+        }
         raw_shot_type = str(output.get("shot_type") or "").strip()
         raw_camera_movement = str(output.get("camera_movement") or "").strip()
         shot_type = shot_aliases.get(raw_shot_type, raw_shot_type.upper())
         camera_movement = movement_aliases.get(raw_camera_movement, raw_camera_movement.upper())
-        if missing or unexpected or shot_type not in valid_shot_types or camera_movement not in valid_movements:
+        if missing or unexpected or has_cjk(output.get("keyframe_prompt")) or shot_type not in valid_shot_types or camera_movement not in valid_movements:
             raise DomainRuleError(
                 "LOCAL_LLM_OUTPUT_INVALID",
                 "LLM 返回的视频规划不符合严格结构契约",
-                {"missing_fields": missing, "unexpected_fields": unexpected, "shot_type": shot_type, "camera_movement": camera_movement},
+                {
+                    "missing_fields": missing,
+                    "unexpected_fields": unexpected,
+                    "keyframe_prompt_must_be_english": True,
+                    "shot_type": shot_type,
+                    "camera_movement": camera_movement,
+                },
             )
         if is_remote:
             with self.database.transaction() as connection:
@@ -1504,14 +1574,16 @@ class LocalLLMService:
                     (
                         profile_version_id,
                         "经用户本次确认向远端 Provider 发送一句话规划请求",
-                        _json({
-                            "provider_connection_id": provider_connection_id,
-                            "provider": provider,
-                            "model": model,
-                            "story_sha256": hashlib.sha256(normalized_story.encode("utf-8")).hexdigest(),
-                            "story_characters": len(normalized_story),
-                            "content_recorded": False,
-                        }),
+                        _json(
+                            {
+                                "provider_connection_id": provider_connection_id,
+                                "provider": provider,
+                                "model": model,
+                                "story_sha256": hashlib.sha256(normalized_story.encode("utf-8")).hexdigest(),
+                                "story_characters": len(normalized_story),
+                                "content_recorded": False,
+                            }
+                        ),
                     ),
                 )
         title = str(output["title"]).strip()[:200]
@@ -1633,6 +1705,29 @@ class LocalLLMService:
                     "paragraph_count": paragraph_count,
                 },
             )
+        extracted = Path(str(row["extracted_text_rel"]))
+        project_root = (self.settings.projects_root / self._project_code(str(row["project_id"]))).resolve()
+        text_path = (project_root / extracted).resolve()
+        if not text_path.is_relative_to(project_root) or not text_path.is_file():
+            raise DomainRuleError("SOURCE_TEXT_NOT_FOUND", "剧本提取文本不在项目目录或不存在")
+        selected_source, selected_offsets = _numbered_source_paragraphs(
+            text_path.read_text(encoding="utf-8"),
+            skip_headings=True,
+            paragraph_start=selected_start,
+            paragraph_end=selected_end,
+        )
+        if not selected_offsets:
+            raise DomainRuleError("BREAKDOWN_SOURCE_RANGE_EMPTY", "所选原文范围只有空行或章节标题，无法生成本集草稿")
+        if len(selected_source) > _BREAKDOWN_MAX_SOURCE_CHARACTERS:
+            raise DomainRuleError(
+                "BREAKDOWN_SOURCE_RANGE_TOO_LARGE",
+                f"本次选择约 {len(selected_source)} 字，超过单次 AI 拆解上限 {_BREAKDOWN_MAX_SOURCE_CHARACTERS} 字；请按一个章节或更小段落范围提交",
+                {
+                    "selected_character_count": len(selected_source),
+                    "selected_paragraph_count": len(selected_offsets),
+                    "maximum_character_count": _BREAKDOWN_MAX_SOURCE_CHARACTERS,
+                },
+            )
         snapshot = {
             "schema_version": "localdrama.script-breakdown-job.v3",
             "import_session_id": session_id,
@@ -1643,11 +1738,14 @@ class LocalLLMService:
             "profile_capability_sha256": _sha256_json(runtime_contract),
             "model": model,
             "base_url": base_url,
+            "provider": str(runtime_contract.get("provider") or "OLLAMA_LOOPBACK").strip().upper(),
             "automatic_apply": False,
             "requires_human_action": True,
             "source_paragraph_start": selected_start,
             "source_paragraph_end": selected_end,
             "source_paragraph_count": paragraph_count,
+            "selected_source_character_count": len(selected_source),
+            "selected_source_paragraph_count": len(selected_offsets),
             **(target or {}),
         }
         return JobService(self.database, self.settings).create_job(
@@ -1674,11 +1772,7 @@ class LocalLLMService:
             ).fetchone()
         if row is None:
             raise DomainRuleError("JOB_NOT_FOUND", "AI 拆解 Job 不存在", {"job_id": job_id})
-        if (
-            str(row["type"]) != "SCRIPT_BREAKDOWN_LOCAL_LLM"
-            or str(row["subject_type"]) != "IMPORT_SESSION"
-            or str(row["subject_id"]) != session_id
-        ):
+        if str(row["type"]) != "SCRIPT_BREAKDOWN_LOCAL_LLM" or str(row["subject_type"]) != "IMPORT_SESSION" or str(row["subject_id"]) != session_id:
             raise DomainRuleError("LOCAL_LLM_JOB_SNAPSHOT_INVALID", "AI 拆解 Job 与导入会话不匹配")
         if str(row["state"]) == "CANCEL_REQUESTED":
             raise DomainRuleError("JOB_CANCELLED", "AI 拆解已请求取消；不会保存模型输出")
@@ -1706,9 +1800,7 @@ class LocalLLMService:
         runtime_contract = _profile_runtime_contract(capability, self.settings.llm_base_url)
         target = self._breakdown_target(
             str(row["project_id"]),
-            str(input_snapshot.get("target_episode_id"))
-            if input_snapshot and input_snapshot.get("target_episode_id")
-            else None,
+            str(input_snapshot.get("target_episode_id")) if input_snapshot and input_snapshot.get("target_episode_id") else None,
         )
         if input_snapshot is not None:
             expected = {
@@ -1730,9 +1822,7 @@ class LocalLLMService:
         if job_id:
             self._assert_job_can_persist(job_id, session_id)
             with self.database.connect() as connection:
-                existing = connection.execute(
-                    "SELECT draft_json,status FROM script_breakdown_drafts WHERE id=?", (draft_id,)
-                ).fetchone()
+                existing = connection.execute("SELECT draft_json,status FROM script_breakdown_drafts WHERE id=?", (draft_id,)).fetchone()
             if existing is not None:
                 return {
                     "id": draft_id,
@@ -1780,8 +1870,7 @@ class LocalLLMService:
         response_schema["properties"]["source_passages"]["items"]["properties"]["paragraph_no"]["maximum"] = len(paragraph_offsets)
         response_schema["properties"]["scenes"]["items"]["properties"]["source_paragraph_nos"]["items"]["maximum"] = len(paragraph_offsets)
         required_paragraph_instruction = (
-            f" 必须覆盖的 P 编号全集是 {sorted(paragraph_offsets)}；"
-            "返回前自检所有 scene.source_paragraph_nos 的并集必须与这个全集完全相同，不得缺号或越界。"
+            f" 必须覆盖的 P 编号全集是 {sorted(paragraph_offsets)}；返回前自检所有 scene.source_paragraph_nos 的并集必须与这个全集完全相同，不得缺号或越界。"
         )
         output = LocalLLMClient(
             base_url,
@@ -1790,9 +1879,12 @@ class LocalLLMService:
             api_key=api_key,
             allow_private_network=self.settings.allows_private_network,
         ).chat_json(
-            "你是本地剧本拆解器。最终答案只输出 JSON 对象，顶层必须包含 scenes、confidence、questions。输入已排除章节标题，每个 P 段都是本集必须覆盖的叙事正文；必须按原文顺序拆场，并让全部 P 段至少被一个 scene 引用。每个 scene 必须包含 scene_no、title、summary、characters、source_paragraph_nos、shots；source_paragraph_nos 必须至少列出一个实际描述该场内容的原文 P 编号，只能填写输入中真实存在的编号，不得把 P 编号当作场次序号盲填，不要返回顶层 source_passages，不要返回 quote。每个 shot 必须包含 shot_no、visual、action、dialogue、duration_seconds。confidence 必须是 {overall:0到1,notes:字符串数组}；questions 是待人工确认的字符串数组。P 编号只用于引用，不得写进场景正文、镜头或对白。每条非空 dialogue 只能逐字摘录自该 scene 的 source_paragraph_nos 所指原文；可以添加说话人前缀，但不得转述、改写或补写。原文没有明确对白时必须返回空字符串。不得臆造原文不存在的关键事实。" + required_paragraph_instruction + duration_contract,
+            "你是本地剧本拆解器。最终答案只输出 JSON 对象，顶层必须包含 scenes、confidence、questions。输入已排除章节标题，每个 P 段都是本集必须覆盖的叙事正文；必须按原文顺序拆场，并让全部 P 段至少被一个 scene 引用。每个 scene 必须包含 scene_no、title、summary、characters、source_paragraph_nos、shots；source_paragraph_nos 必须至少列出一个实际描述该场内容的原文 P 编号，只能填写输入中真实存在的编号，不得把 P 编号当作场次序号盲填，不要返回顶层 source_passages，不要返回 quote。每个 shot 必须包含 shot_no、visual、action、dialogue、duration_seconds。confidence 必须是 {overall:0到1,notes:字符串数组}；questions 是待人工确认的字符串数组。P 编号只用于引用，不得写进场景正文、镜头或对白。每条非空 dialogue 只能逐字摘录自该 scene 的 source_paragraph_nos 所指原文；可以添加说话人前缀，但不得转述、改写或补写。原文没有明确对白时必须返回空字符串。不得臆造原文不存在的关键事实。"
+            + required_paragraph_instruction
+            + duration_contract,
             numbered_source_text,
             json_schema=response_schema,
+            inference_options={"num_ctx": _BREAKDOWN_CONTEXT_TOKENS},
         )
         if job_id:
             self._assert_job_can_persist(job_id, session_id)
@@ -1807,7 +1899,6 @@ class LocalLLMService:
         draft, evidence = _validate_breakdown_output(
             _normalize_scene_source_passages(output, required_paragraphs=set(paragraph_offsets)),
             source_text,
-
             target_episode_id=str(target["target_episode_id"]) if target else None,
             target_duration_seconds=float(target["target_duration_seconds"]) if target else None,
             sanitize_ungrounded_dialogue=True,
@@ -1824,7 +1915,15 @@ class LocalLLMService:
                 "source_paragraph_count": execution_snapshot.get("source_paragraph_count"),
             }
         )
-        evidence.update({"schema_version": "localdrama.script-breakdown-evidence.v1", "source": "model_output", "model": model, "profile_version_id": profile_version_id, "job_id": job_id})
+        evidence.update(
+            {
+                "schema_version": "localdrama.script-breakdown-evidence.v1",
+                "source": "model_output",
+                "model": model,
+                "profile_version_id": profile_version_id,
+                "job_id": job_id,
+            }
+        )
         now = _now()
         with self.database.transaction() as connection:
             if job_id:
@@ -1849,11 +1948,24 @@ class LocalLLMService:
             connection.execute("UPDATE import_sessions SET status='BREAKDOWN_READY', updated_at=?, revision=revision+1 WHERE id=?", (now, session_id))
             connection.execute(
                 "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, job_id, summary, metadata_redacted_json) VALUES ('local-llm', 'producer', 'SCRIPT_BREAKDOWN_COMPLETED', 'script_breakdown_draft', ?, ?, ?, ?)",
-                (draft_id, job_id, "本地 LLM 完成剧本拆解草稿（等待人工应用）", _json({"session_id": session_id, "profile_version_id": profile_version_id, "model": model, "job_id": job_id, "automatic_apply": False})),
+                (
+                    draft_id,
+                    job_id,
+                    "本地 LLM 完成剧本拆解草稿（等待人工应用）",
+                    _json({"session_id": session_id, "profile_version_id": profile_version_id, "model": model, "job_id": job_id, "automatic_apply": False}),
+                ),
             )
         if on_progress:
             on_progress({"phase": "DRAFT_READY", "percent": 95, "draft_id": draft_id})
-        return {"id": draft_id, "status": "DRAFT_READY", "profile_version_id": profile_version_id, "draft": draft, "idempotent_replay": False, "automatic_apply": False, "requires_human_action": True}
+        return {
+            "id": draft_id,
+            "status": "DRAFT_READY",
+            "profile_version_id": profile_version_id,
+            "draft": draft,
+            "idempotent_replay": False,
+            "automatic_apply": False,
+            "requires_human_action": True,
+        }
 
     def list_breakdown_drafts(self, project_id: str) -> list[dict[str, Any]]:
         from local_drama.application.breakdown_revisions import load_effective_breakdown_draft
@@ -1895,9 +2007,7 @@ class LocalLLMService:
             complete = all(key in item["confidence"] for key in ("profile_version_id", "confidence", "questions", "source_passages"))
             applied = item["status"] == "APPLIED"
             scene_nos = sorted(
-                int(scene.get("scene_no", 0))
-                for scene in (item["draft"].get("scenes") or [])
-                if isinstance(scene, dict) and int(scene.get("scene_no", 0)) > 0
+                int(scene.get("scene_no", 0)) for scene in (item["draft"].get("scenes") or []) if isinstance(scene, dict) and int(scene.get("scene_no", 0)) > 0
             )
             applied_scene_nos = applied_by_draft.get(str(item["id"]), scene_nos if applied else [])
             remaining_scene_nos = sorted(set(scene_nos) - set(applied_scene_nos))
@@ -1917,7 +2027,18 @@ class LocalLLMService:
                     validate_scene_distinctness(item["draft"].get("scenes"))
                 except DomainRuleError as error:
                     blockers.append({"code": error.code, "message": error.message})
-            item.update({"profile_version_id": item["confidence"].get("profile_version_id"), "evidence_status": "COMPLETE" if complete else "LEGACY_INCOMPLETE", "application_status": application_status, "applied_scene_nos": applied_scene_nos, "remaining_scene_nos": remaining_scene_nos, "application_blockers": blockers, "automatic_apply": False, "requires_human_action": not applied})
+            item.update(
+                {
+                    "profile_version_id": item["confidence"].get("profile_version_id"),
+                    "evidence_status": "COMPLETE" if complete else "LEGACY_INCOMPLETE",
+                    "application_status": application_status,
+                    "applied_scene_nos": applied_scene_nos,
+                    "remaining_scene_nos": remaining_scene_nos,
+                    "application_blockers": blockers,
+                    "automatic_apply": False,
+                    "requires_human_action": not applied,
+                }
+            )
             items.append(item)
         return items
 

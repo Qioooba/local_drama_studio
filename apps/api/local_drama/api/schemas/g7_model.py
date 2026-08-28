@@ -1,8 +1,26 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class GlobalModelRegistryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    compatibility: dict[str, Any]
+
+
+class GlobalModelArtifactResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    artifact: dict[str, Any]
+
+
+class GlobalModelCompatibilityReportResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    report: dict[str, Any]
 
 
 class ModelCompatibilityRequest(BaseModel):

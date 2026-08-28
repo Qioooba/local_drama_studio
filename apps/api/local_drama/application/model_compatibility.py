@@ -180,7 +180,7 @@ class ModelCompatibilityService:
 
     def register_local_reference(
         self,
-        project_id: str,
+        project_id: str | None,
         code: str,
         kind: str,
         machine_path_ref: str,
@@ -203,7 +203,7 @@ class ModelCompatibilityService:
         now = _utc_now()
         artifact_id = str(uuid.uuid4())
         with self.database.transaction() as connection:
-            if connection.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone() is None:
+            if project_id and connection.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone() is None:
                 raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
             existing = connection.execute("SELECT * FROM model_artifacts WHERE code=?", (code.strip(),)).fetchone()
             if existing is not None:
@@ -217,13 +217,13 @@ class ModelCompatibilityService:
                 (id,runtime_id,code,kind,machine_path_ref,license_note,compatibility_json,status,
                  created_at,updated_at,created_by,revision,schema_version)
                 VALUES (?,NULL,?,?,?,?,?,'CANDIDATE',?,?,?,1,'v2')""",
-                (artifact_id, code.strip(), kind.strip(), str(resolved), (license_note or "USER_SUPPLIED_LOCAL_MODEL").strip(), _json({"distribution_scope": "REFERENCE_ONLY_NOT_BUNDLED", "project_context_id": project_id}), now, now, actor),
+                (artifact_id, code.strip(), kind.strip(), str(resolved), (license_note or "USER_SUPPLIED_LOCAL_MODEL").strip(), _json({"distribution_scope": "REFERENCE_ONLY_NOT_BUNDLED", "scope": "GLOBAL", "legacy_project_context_id": project_id}), now, now, actor),
             )
             connection.execute(
                 """INSERT INTO audit_events
                 (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
                 VALUES (?,'operator','LOCAL_MODEL_REFERENCE_REGISTERED','model_artifact',?,?,?)""",
-                (actor, artifact_id, "登记用户自带本机模型路径（未复制权重）", _json({"project_id": project_id, "code": code.strip(), "kind": kind.strip()})),
+                (actor, artifact_id, "登记全局用户自带本机模型路径（未复制权重）", _json({"project_id": project_id, "scope": "GLOBAL", "code": code.strip(), "kind": kind.strip()})),
             )
         return {
             "id": artifact_id,
@@ -455,6 +455,55 @@ class ModelCompatibilityService:
                 "blocked_count": blocked,
                 "missing_license_evidence_count": missing_license,
             },
+            "runtime_contacted": False,
+            "network_contacted": False,
+            "mutated": False,
+        }
+
+    def system_snapshot(self) -> dict[str, Any]:
+        """Return the global model registry shared by every project.
+
+        Model artifacts and compatibility reports are machine-level resources.
+        Project-specific license evidence remains visible through the legacy
+        project projection because it is stored inside a project's evidence
+        directory and must not be silently promoted to a system-wide claim.
+        """
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """SELECT ma.id AS artifact_id, ma.code, ma.kind, ma.machine_path_ref,
+                    ma.status AS artifact_status, ma.sha256 AS artifact_sha256,
+                    mcr.id AS report_id, mcr.sha256 AS report_sha256, mcr.byte_size,
+                    mcr.quantization_json, mcr.license_status, mcr.report_status,
+                    mcr.blockers_json, mcr.created_at AS report_created_at
+                FROM model_artifacts ma
+                LEFT JOIN model_compatibility_reports mcr ON mcr.id=(
+                    SELECT latest.id FROM model_compatibility_reports latest
+                    WHERE latest.model_artifact_id=ma.id
+                    ORDER BY latest.created_at DESC LIMIT 1
+                )
+                ORDER BY ma.kind, ma.code"""
+            ).fetchall()
+        reports: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["quantization"] = json.loads(str(item.pop("quantization_json") or "{}"))
+            item["blockers"] = json.loads(str(item.pop("blockers_json") or "[]"))
+            item["has_report"] = item["report_id"] is not None
+            item["license_evidence_id"] = None
+            item["license_path_rel"] = None
+            item["has_license_evidence"] = item["license_status"] in {"LOCAL_LICENSE_VERIFIED", "USER_OWNED"}
+            reports.append(item)
+        return {
+            "reports": reports,
+            "summary": {
+                "artifact_count": len(reports),
+                "reported_count": sum(1 for item in reports if item["has_report"]),
+                "pass_count": sum(1 for item in reports if item["report_status"] == "PASS"),
+                "blocked_count": sum(1 for item in reports if item["report_status"] == "BLOCKED"),
+                "missing_license_evidence_count": sum(1 for item in reports if not item["has_license_evidence"]),
+            },
+            "scope": "GLOBAL",
+            "available_to_all_projects": True,
             "runtime_contacted": False,
             "network_contacted": False,
             "mutated": False,

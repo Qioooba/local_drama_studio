@@ -28,7 +28,7 @@ class LocalLLMBreakdownPort(Protocol):
         ...
 
 
-AtomicWriter = Callable[[Path, Callable[[Path], None]], None]
+AtomicWriter = Callable[[Path, Callable[[Path], object]], None]
 ProgressCallback = Callable[[dict[str, Any]], None]
 
 

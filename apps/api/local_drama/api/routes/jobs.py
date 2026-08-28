@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import mimetypes
 from collections.abc import AsyncIterator
 from time import monotonic
 
 from fastapi import APIRouter, Header, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.routing import APIRoute
 
 from local_drama.api.schemas.jobs import (
     ArtifactPromoteRequest,
@@ -139,6 +141,16 @@ async def register_artifact(attempt_id: str, payload: ArtifactRegisterRequest, r
         raise api_error_from_domain(error) from error
 
 
+@router.get("/artifacts/{artifact_id}/download", operation_id="downloadJobArtifact")
+async def download_artifact(artifact_id: str, request: Request) -> FileResponse:
+    try:
+        _, path = service(request).artifact_download(artifact_id)
+        media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        return FileResponse(path=path, media_type=media_type, filename=path.name)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.post("/artifacts/{artifact_id}:promote-media", status_code=201, operation_id="promoteJobArtifactToMedia")
 async def promote_artifact(artifact_id: str, payload: ArtifactPromoteRequest, request: Request) -> dict[str, object]:
     try:
@@ -188,5 +200,5 @@ async def deliver_events(payload: OutboxDeliveryRequest, request: Request) -> di
 # (design §13.2 "public worker lease control interface").
 for _route in router.routes:
     _path = getattr(_route, "path", "")
-    if str(_path).endswith(":claim") or str(_path).endswith(":heartbeat") or str(_path).endswith(":complete"):
+    if isinstance(_route, APIRoute) and (str(_path).endswith(":claim") or str(_path).endswith(":heartbeat") or str(_path).endswith(":complete")):
         _route.include_in_schema = False

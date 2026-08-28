@@ -9,7 +9,7 @@ import subprocess
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from urllib.error import URLError
 from urllib.request import Request
 
@@ -81,7 +81,7 @@ def _probe_loopback(url: str | None, *, allow_private_network: bool = False) -> 
 
 def _build_local_llm_port(database: Database, settings: Settings) -> _DiagnosticLocalLLMPort:
     local_llm = __import__("local_drama.application.local_llm", fromlist=["LocalLLMService"])
-    return local_llm.LocalLLMService(database, settings)
+    return cast(_DiagnosticLocalLLMPort, local_llm.LocalLLMService(database, settings))
 
 
 class DiagnosticService:

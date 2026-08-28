@@ -15,19 +15,26 @@ from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.comfy import ComfyClient
 from local_drama.infrastructure.database.sqlite import Database
-from local_drama.infrastructure.manifest import load_manifest
 from local_drama.infrastructure.filesystem.atomic import replace_path
+from local_drama.infrastructure.manifest import load_manifest
 
 # ComfyUI core builtins (nodes.py) and core comfy_extras used by the native
 # MiniMax H3 chain verified on this host (openclaw docs/H3_TURBO_PIPELINE.md).
 TRUSTED_COMFY_BUILTINS = {
     "BasicGuider",
     "BasicScheduler",
+    "CFGNorm",
     "CheckpointLoaderSimple",
     "CLIPLoader",
     "CLIPTextEncode",
+    "ConditioningZeroOut",
     "CreateVideo",
+    "DualCLIPLoader",
+    "EmptyAceStep1.5LatentAudio",
     "EmptyLatentImage",
+    "EmptySD3LatentImage",
+    "FluxKontextImageScale",
+    "FluxKontextMultiReferenceLatentMethod",
     "ImageScale",
     "KSampler",
     "KSamplerSelect",
@@ -35,14 +42,19 @@ TRUSTED_COMFY_BUILTINS = {
     "LoraLoaderModelOnly",
     "MiniMaxH3ImageToVideo",
     "MiniMaxH3ReferenceToVideo",
+    "ModelSamplingAuraFlow",
     "RandomNoise",
     "SamplerCustomAdvanced",
     "SaveImage",
+    "SaveAudio",
     "SaveVideo",
     "UNETLoader",
     "VAEDecode",
     "VAEDecodeAudio",
+    "VAEEncode",
     "VAELoader",
+    "TextEncodeAceStepAudio1.5",
+    "TextEncodeQwenImageEditPlus",
 }
 
 
@@ -89,15 +101,31 @@ class WorkflowService:
         manifest = load_manifest(self.settings.manifest_path)
         nodes = manifest.data.get("nodes", {})
         trusted_custom = {str(item) for item in nodes.get("class_mappings", [])}
-        plugin_init_sha = str(nodes.get("plugin_init_sha256", ""))
-        mapping_sha = str(nodes.get("node_mapping_sha256", ""))
+        plugins = list(nodes.get("plugins") or [])
+        if not plugins:
+            plugins = [
+                {
+                    "name": "legacy",
+                    "plugin_init_sha256": nodes.get("plugin_init_sha256", ""),
+                    "node_mapping_sha256": nodes.get("node_mapping_sha256", ""),
+                }
+            ]
         required = {
             str(node.get("class_type"))
             for node in workflow.values()
             if isinstance(node, dict) and node.get("class_type")
         }
         untrusted = sorted(required - TRUSTED_COMFY_BUILTINS - trusted_custom)
-        hashes_valid = all(len(value) == 64 and all(char in "0123456789abcdefABCDEF" for char in value) for value in (plugin_init_sha, mapping_sha))
+        plugin_hashes = [
+            str(plugin.get(key, ""))
+            for plugin in plugins
+            if isinstance(plugin, dict)
+            for key in ("plugin_init_sha256", "node_mapping_sha256")
+        ]
+        hashes_valid = bool(plugin_hashes) and all(
+            len(value) == 64 and all(char in "0123456789abcdefABCDEF" for char in value)
+            for value in plugin_hashes
+        )
         if untrusted or not hashes_valid:
             raise DomainRuleError(
                 "WORKFLOW_NODE_SUPPLY_CHAIN_UNTRUSTED",
@@ -108,8 +136,8 @@ class WorkflowService:
             "required_nodes": sorted(required),
             "trusted_custom_nodes": sorted(required & trusted_custom),
             "trusted_builtin_nodes": sorted(required & TRUSTED_COMFY_BUILTINS),
-            "plugin_init_sha256": plugin_init_sha.lower(),
-            "node_mapping_sha256": mapping_sha.lower(),
+            "trusted_plugins": [str(plugin.get("name") or "unnamed") for plugin in plugins if isinstance(plugin, dict)],
+            "plugin_hashes": [value.lower() for value in plugin_hashes],
             "manifest_sha256": manifest.sha256,
         }
 
@@ -317,13 +345,28 @@ class WorkflowService:
             if not isinstance(schema_inputs, dict):
                 continue
             allowed_inputs: set[str] = set()
+            dynamic_input_prefixes: list[str] = []
             for group in ("required", "optional", "hidden"):
                 values = schema_inputs.get(group)
                 if isinstance(values, dict):
                     allowed_inputs.update(str(name) for name in values)
+                    for dynamic_name, definition in values.items():
+                        if not (
+                            isinstance(definition, list)
+                            and definition
+                            and definition[0] == "COMFY_AUTOGROW_V3"
+                            and len(definition) > 1
+                            and isinstance(definition[1], dict)
+                        ):
+                            continue
+                        template = definition[1].get("template", {})
+                        prefix = template.get("prefix") if isinstance(template, dict) else None
+                        if isinstance(prefix, str) and prefix:
+                            dynamic_input_prefixes.append(f"{dynamic_name}.{prefix}")
             if allowed_inputs:
                 for input_name in node.get("inputs", {}):
-                    if str(input_name) not in allowed_inputs:
+                    name = str(input_name)
+                    if name not in allowed_inputs and not any(name.startswith(prefix) for prefix in dynamic_input_prefixes):
                         schema_errors.append({"node_id": str(node_id), "class_type": str(node.get("class_type")), "input": str(input_name), "error": "INPUT_NOT_DECLARED"})
         runtime_layout: dict[str, Any] | None = None
         if "H3" in str(version["contract"].get("capability", "")).upper():

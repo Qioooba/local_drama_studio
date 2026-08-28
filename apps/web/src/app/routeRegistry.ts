@@ -21,7 +21,9 @@ const encode = (value: string) => encodeURIComponent(value.trim());
 const projectQuery = (projectId?: string | null) => projectId ? `?project=${encode(projectId)}` : "";
 
 export const routes = {
+  home: () => "/",
   projects: () => "/projects",
+  quickCreate: () => "/quick-create",
   projectHome: (projectId: string) => `/projects/${encode(projectId)}`,
   story: (projectId: string) => `/projects/${encode(projectId)}/story`,
   storyWorkspace: (projectId: string) => `/projects/${encode(projectId)}/story`,
@@ -36,14 +38,16 @@ export const routes = {
   postAudio: (projectId: string, episodeId: string) => `/projects/${encode(projectId)}/episodes/${encode(episodeId)}/post/audio`,
   postEdit: (projectId: string, episodeId: string) => `/projects/${encode(projectId)}/episodes/${encode(episodeId)}/post/edit`,
   delivery: (projectId: string, episodeId: string) => `/projects/${encode(projectId)}/episodes/${encode(episodeId)}/delivery`,
-  systemCapabilities: (projectId?: string | null) => `/system/capabilities${projectQuery(projectId)}`,
+  systemCapabilities: (_projectId?: string | null) => "/system/capabilities",
   systemJobs: (projectId?: string | null) => `/system/jobs${projectQuery(projectId)}`,
   systemDiagnostics: (projectId?: string | null) => `/system/diagnostics${projectQuery(projectId)}`,
   systemWorkflows: (projectId?: string | null) => `/system/workflows${projectQuery(projectId)}`,
 } as const;
 
 export const ROUTE_REGISTRY: Record<string, RouteMetadata> = {
+  home: { id: "home", scope: "GLOBAL", title: "工作台", pathPattern: "/" },
   projects: { id: "projects", scope: "GLOBAL", title: "项目", pathPattern: "/projects" },
+  quickCreate: { id: "quickCreate", scope: "GLOBAL", title: "快速生成", pathPattern: "/quick-create" },
   projectHome: { id: "projectHome", scope: "PROJECT", title: "首页", pathPattern: "/projects/:projectId", parentRouteId: "projects" },
   story: { id: "story", scope: "PROJECT", title: "故事", pathPattern: "/projects/:projectId/story", parentRouteId: "projectHome" },
   assets: { id: "assets", scope: "PROJECT", title: "资产", pathPattern: "/projects/:projectId/assets", parentRouteId: "projectHome" },
@@ -69,7 +73,9 @@ function decode(value?: string): string | null { try { return value ? decodeURIC
 
 export function parseRouteContext(pathname: string): RouteContext {
   const clean = pathname.split("?")[0].replace(/\/+$/, "") || "/";
+  if (clean === "/") return { routeId: "home", scope: "GLOBAL", projectId: null, episodeId: null, shotId: null };
   if (clean === "/projects") return { routeId: "projects", scope: "GLOBAL", projectId: null, episodeId: null, shotId: null };
+  if (clean === "/quick-create") return { routeId: "quickCreate", scope: "GLOBAL", projectId: null, episodeId: null, shotId: null };
   const system = clean.match(/^\/system\/(capabilities|jobs|diagnostics|workflows)$/);
   if (system) return { routeId: `system${system[1][0].toUpperCase()}${system[1].slice(1)}`, scope: "GLOBAL", projectId: null, episodeId: null, shotId: null };
   const episode = clean.match(/^\/projects\/([^/]+)\/episodes\/([^/]+)\/(plan|studio|production|delivery|post\/(review|audio|edit))(?:\/([^/]+))?$/);
@@ -94,8 +100,12 @@ export function validateRouteOwnership(context: RouteContext, expectedProjectId:
 
 export function buildBreadcrumbs({ pathname, projectTitle, seasonTitle, episodeTitle, shotCode }: { pathname: string; projectTitle?: string | null; seasonTitle?: string | null; episodeTitle?: string | null; shotCode?: string | null }): BreadcrumbItem[] {
   const context = parseRouteContext(pathname);
-  const items: BreadcrumbItem[] = [{ label: "项目", to: routes.projects() }];
+  if (context.routeId === "quickCreate") return [{ label: "快速生成", isCurrent: true }];
+  if (context.routeId === "home") return [{ label: "工作台", isCurrent: true }];
+  const items: BreadcrumbItem[] = [{ label: "工作台", to: routes.home() }];
+  if (context.routeId === "projects") return [...items, { label: "项目", isCurrent: true }];
   if (context.projectId) {
+    items.push({ label: "项目", to: routes.projects() });
     if (context.routeId === "projectHome") return [...items, { label: projectTitle || "首页", isCurrent: true }];
     items.push({ label: projectTitle || "首页", to: routes.projectHome(context.projectId) });
   }
@@ -104,7 +114,7 @@ export function buildBreadcrumbs({ pathname, projectTitle, seasonTitle, episodeT
     if (context.routeId === "episodePlan") return [...items, { label, isCurrent: true }];
     items.push({ label, to: routes.episodePlan(context.projectId, context.episodeId) });
   }
-  if (context.routeId && context.routeId !== "projects") {
+  if (context.routeId) {
     const meta = ROUTE_REGISTRY[context.routeId];
     if (context.shotId && context.projectId && context.episodeId) {
       items.push({ label: meta.title, to: routes.shotStudio(context.projectId, context.episodeId) }, { label: shotCode || context.shotId, isCurrent: true });

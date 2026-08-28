@@ -10,6 +10,7 @@ import ctypes
 import os
 import re
 from ctypes import wintypes
+from typing import Any
 
 DEEPSEEK_CREDENTIAL_TARGET = "LocalDramaStudio/DeepSeekAPI"
 
@@ -45,7 +46,7 @@ def provider_credential_target(connection_id: str) -> str:
     return f"LocalDramaStudio/ProviderConnection/{normalized}"
 
 
-def _advapi32():
+def _advapi32() -> Any | None:
     if os.name != "nt":
         return None
     library = ctypes.WinDLL("Advapi32.dll", use_last_error=True)

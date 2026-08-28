@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from typing import Any
 
 from .errors import DomainRuleError
 from .policies import VariantInput, validate_binding_roles, validate_variant_lineage
@@ -32,7 +33,7 @@ class VariantPlan:
     branch_reason: str
     prompt_revision_id: str | None
     profile_version_id: str
-    parameter_set: dict[str, object]
+    parameter_set: dict[str, Any]
     seed_policy: str
     explicit_seed: int | None
     bindings: tuple[VariantInput, ...]

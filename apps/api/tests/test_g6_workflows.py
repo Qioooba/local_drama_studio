@@ -31,6 +31,35 @@ class _OfflineComfyContract:
         return {"LoadImage": {}, "SaveImage": {}}
 
 
+class _OfflineAutogrowContract:
+    base_url = "http://127.0.0.1:8188"
+
+    def object_info(self) -> dict[str, object]:
+        return {
+            "LoadImage": {"input": {"required": {"image": [["fixture.png"]]}}},
+            "MiniMaxH3ReferenceToVideo": {
+                "input": {
+                    "required": {
+                        "clip": ["CLIP"],
+                        "vae": ["VAE"],
+                        "audio_vae": ["VAE"],
+                        "prompt": ["STRING"],
+                        "width": ["INT"],
+                        "height": ["INT"],
+                        "length": ["INT"],
+                        "ref_image_size": ["COMBO"],
+                    },
+                    "optional": {
+                        "ref_images": [
+                            "COMFY_AUTOGROW_V3",
+                            {"template": {"prefix": "ref_image_", "min": 0, "max": 9}},
+                        ]
+                    },
+                }
+            },
+        }
+
+
 @pytest.mark.comfyui
 def test_real_loopback_comfy_workflow_capture_compile_and_publish(workspace, database) -> None:
     workflow, bindings = _workflow()
@@ -66,6 +95,36 @@ def test_workflow_registration_rejects_untrusted_custom_node(workspace, database
     assert raised.value.code == "WORKFLOW_NODE_SUPPLY_CHAIN_UNTRUSTED"
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM workflows WHERE code='untrusted_custom_node'").fetchone()[0] == 0
+
+
+def test_workflow_validation_accepts_v3_autogrow_dotted_input(workspace, database) -> None:
+    service = WorkflowService(database, workspace)
+    version = service.register_package(
+        "autogrow_reference_fixture",
+        "Autogrow reference fixture",
+        {
+            "1": {"class_type": "LoadImage", "inputs": {"image": "fixture.png"}},
+            "2": {
+                "class_type": "MiniMaxH3ReferenceToVideo",
+                "inputs": {
+                    "clip": ["1", 0],
+                    "vae": ["1", 0],
+                    "audio_vae": ["1", 0],
+                    "prompt": "<Picture 1>",
+                    "width": 64,
+                    "height": 64,
+                    "length": 5,
+                    "ref_image_size": "match",
+                    "ref_images.ref_image_0": ["1", 0],
+                },
+            },
+        },
+        {"capability": "REFERENCE_DYNAMIC_INPUT_TEST"},
+        {},
+    )
+    validation = service.validate_against_comfy(str(version["id"]), _OfflineAutogrowContract())  # type: ignore[arg-type]
+    assert validation["status"] == "PASS"
+    assert validation["schema_errors"] == []
 
 
 @pytest.mark.comfyui

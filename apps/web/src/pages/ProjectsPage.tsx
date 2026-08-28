@@ -2,8 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import { ProjectCreateWizard } from "../features/projects/ProjectCreateWizard";
-import { OneSentenceVideoWizard } from "../features/projects/OneSentenceVideoWizard";
-import { listProfiles, listProjects } from "../generated/api";
+import { listProjects } from "../generated/api";
 import { queryKeys } from "../query/queryKeys";
 import { partitionRecentProjects, type ProjectWithUpdatedAt } from "./projectRecency";
 
@@ -24,7 +23,6 @@ export function ProjectsPage() {
     queryKey: queryKeys.projects.list({ limit: 100 }),
     queryFn: () => listProjects({ limit: 100 }),
   });
-  const profiles = useQuery({ queryKey: queryKeys.profiles.list(), queryFn: () => listProfiles() });
   const visibleProjects = useMemo<ProjectWithUpdatedAt[]>(() => {
     const term = search.trim().toLocaleLowerCase();
     return ((projects.data?.items ?? []) as ProjectWithUpdatedAt[]).filter((project) => {
@@ -58,8 +56,6 @@ export function ProjectsPage() {
       <div className="projects-hero">
         <div><p className="eyebrow">创作项目</p><h2>让每个故事都有自己的片场</h2><p className="muted">从最近项目继续导演，或开启一条从故事、分镜到成片的全新制作线。</p></div>
         <ProjectCreateWizard
-          profiles={profiles.data?.items ?? []}
-          profilesPending={profiles.isPending}
           onCreated={(created) => {
             void queryClient.invalidateQueries({ queryKey: queryKeys.projects.lists() });
             navigate(`/projects/${created.id}/story#story-import`);
@@ -90,14 +86,6 @@ export function ProjectsPage() {
         <div className="panel-heading"><h3 id="other-projects-title">其他项目</h3></div>
         <div className="projects-grid">{projectCards(otherProjects)}</div>
       </section>}
-
-      <section className="projects-quick-create" aria-labelledby="quick-create-title">
-        <div className="panel-heading"><div><p className="eyebrow">快速创建</p><h3 id="quick-create-title">从一句话快速开机</h3></div><span className="muted">适合先试做一个镜头</span></div>
-        <OneSentenceVideoWizard
-          profiles={profiles.data?.items ?? []}
-          onProjectCreated={() => void queryClient.invalidateQueries({ queryKey: queryKeys.projects.lists() })}
-        />
-      </section>
     </div>
   );
 }

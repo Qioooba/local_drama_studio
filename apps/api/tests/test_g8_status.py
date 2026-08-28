@@ -5,15 +5,15 @@ import subprocess
 
 from fastapi.testclient import TestClient
 
+from local_drama.application.dialogue import DialogueService
 from local_drama.application.g8_readiness import G8ReadinessService
 from local_drama.application.g9_readiness import G9ReadinessService
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
 from local_drama.application.timeline import TimelineService
-from local_drama.application.dialogue import DialogueService
-from local_drama.infrastructure.database.audio_repository import SqliteAudioWorkspaceRepository
 from local_drama.application.timeline_status import TimelineStatusService
 from local_drama.application.visual_labs import VisualLabService
+from local_drama.infrastructure.database.audio_repository import SqliteAudioWorkspaceRepository
 from local_drama.main import create_app
 
 

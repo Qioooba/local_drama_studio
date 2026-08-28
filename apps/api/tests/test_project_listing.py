@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import subprocess
+
 from fastapi.testclient import TestClient
 
+from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
 from local_drama.main import create_app
 
@@ -53,3 +56,22 @@ def test_project_list_cursor_is_bounded_and_stable(workspace, database) -> None:
     assert len(first["items"]) == 2
     assert first["page"] == {"cursor": 0, "limit": 2, "next_cursor": 2, "has_more": True}
     assert set(item["id"] for item in first["items"]).isdisjoint(item["id"] for item in second["items"])
+
+
+def test_project_list_exposes_real_cached_media_preview(workspace, database) -> None:
+    project = _project(workspace, database, "preview_project", "真实缩略图项目")
+    source = workspace.work_root / "project-preview.png"
+    subprocess.run(
+        [workspace.ffmpeg_path, "-f", "lavfi", "-i", "color=c=purple:s=160x90:d=1", "-frames:v", "1", "-y", str(source)],
+        check=True,
+        capture_output=True,
+    )
+    media = MediaService(database, workspace).import_file(str(project["id"]), source, media_kind="IMAGE", purpose="PROJECT_PREVIEW")
+    media_version_id = str(media["media_version_id"])
+    MediaService(database, workspace).thumbnail(media_version_id, "small", "poster")
+
+    listed = ProjectService(database, workspace.projects_root).list_projects(search="真实缩略图项目")
+
+    assert listed[0]["preview_media_version_id"] == media_version_id
+    assert listed[0]["preview_media_kind"] == "IMAGE"
+    assert listed[0]["preview_has_thumbnail"] is True

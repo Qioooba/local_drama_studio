@@ -313,8 +313,8 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
   return (
     <section className="local-llm-configuration-panel" aria-labelledby="llm-config-title">
       <div className="section-title">
-        <span id="llm-config-title">大语言模型（LLM）与服务连接管理</span>
-        <small>OpenAI 兼容 · DeepSeek · Windows 服务端 Ollama · 4 级连通性探测</small>
+        <span id="llm-config-title">智能理解模型配置</span>
+        <small>故事与策划 · 提示词 · 视觉质检 · OpenAI 兼容 · Ollama</small>
       </div>
 
       <div className="llm-config-layout">
@@ -358,7 +358,7 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
 
           <div className="form-group">
             <label htmlFor="llm-capability-select">
-              <strong>目标能力绑定 (Capability)</strong>
+              <strong>发布为哪种能力</strong>
             </label>
             <select
               id="llm-capability-select"

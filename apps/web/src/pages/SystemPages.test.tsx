@@ -64,11 +64,28 @@ describe("V2 system workspaces", () => {
   });
 
   it("renders real jobs and capacity and preserves project scope in the URL", async () => {
+    api.listProjects.mockResolvedValue({ items: [
+      { id: "project-1", title: "北方小院" },
+      { id: "project-2", title: "南城夜景" },
+    ] });
+    api.listJobsPage.mockImplementation((projectId?: string) => Promise.resolve({
+      items: projectId === "project-1"
+        ? [{ id: "job-1", type: "GENERATION_VARIANT", project_id: "project-1", state: "FAILED", channel: "GPU_H3", priority: 50, max_attempts: 3, revision: 2 }]
+        : [
+          { id: "job-1", type: "GENERATION_VARIANT", project_id: "project-1", state: "FAILED", channel: "GPU_H3", priority: 50, max_attempts: 3, revision: 2 },
+          { id: "job-2", type: "TTS_GENERATION", project_id: "project-2", state: "SUCCEEDED", channel: "CPU", priority: 80, max_attempts: 2, revision: 1 },
+        ],
+      next_cursor: null, cursor: 0, limit: 100,
+    }));
     mount(<JobsPage />);
     expect(await screen.findByText("生成镜头候选")).toBeInTheDocument();
     expect(screen.getByText("本机队列产能快照")).toBeInTheDocument();
-    fireEvent.change(screen.getByRole("combobox", { name: "任务项目范围" }), { target: { value: "project-1" } });
+    expect(screen.getByText("当前范围：全部任务（含独立生成） · 已读取 2 个任务")).toBeInTheDocument();
+    expect(screen.getByText(/南城夜景 ·/)).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("combobox", { name: "后台任务范围" }), { target: { value: "project-1" } });
     await waitFor(() => expect(api.listJobsPage).toHaveBeenLastCalledWith("project-1", 0, 100));
+    expect(await screen.findByText("当前范围：北方小院 · 已读取 1 个任务")).toBeInTheDocument();
+    expect(screen.queryByText("生成对白配音")).not.toBeInTheDocument();
   });
 
   it("uses the project route parameter as the jobs owner scope", async () => {
@@ -81,7 +98,7 @@ describe("V2 system workspaces", () => {
 
     expect(await screen.findByText("生成镜头候选")).toBeInTheDocument();
     await waitFor(() => expect(api.listJobsPage).toHaveBeenLastCalledWith("project-1", 0, 100));
-    expect(screen.getByRole("combobox", { name: "任务项目范围" })).toHaveValue("project-1");
+    expect(screen.getByRole("combobox", { name: "后台任务范围" })).toHaveValue("project-1");
     fireEvent.click(screen.getByRole("button", { name: "查看详情和产物" }));
     expect(await screen.findByRole("dialog", { name: "任务详情与产物" })).toBeInTheDocument();
     await waitFor(() => expect(router.state.location.search).toBe("?job=job-1"));
@@ -100,13 +117,22 @@ describe("V2 system workspaces", () => {
 
   it("keeps system capability publishing separate from project capability binding", async () => {
     mount(<ModelsPage />);
-    expect(await screen.findByRole("heading", { name: "模型、连接与运行契约" })).toBeInTheDocument();
-    expect(screen.getByText(/项目只绑定这里已经发布的版本/)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "从项目要完成的创作任务开始" })).toBeInTheDocument();
-    expect(screen.getByText("专家工具：执行契约与工作流版本")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "能力与模型中心" })).toBeInTheDocument();
+    expect(screen.getByText(/资源登记一次即可供所有项目使用/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "一次接入，所有项目复用" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开专家配置" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "执行配置契约" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "模型与服务" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "故事拆解模型" })).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "生成偏好任务" })).not.toBeInTheDocument();
-    expect(api.listProfiles).not.toHaveBeenCalled();
+    expect(api.listProfiles).toHaveBeenCalledOnce();
     expect(api.listWorkflowVersions).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "打开专家配置" }));
+    expect(await screen.findByRole("dialog", { name: "执行配置契约" })).toBeInTheDocument();
+    await waitFor(() => expect(api.listWorkflowVersions).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "执行配置契约" })).not.toBeInTheDocument());
   });
 
   it("gives workflow publishing its own system owner instead of nesting it in Models", async () => {
@@ -129,11 +155,11 @@ describe("V2 system workspaces", () => {
     const router = createMemoryRouter([{ element: <AppShell />, children: [{ path: "/jobs", element: <JobsPage /> }] }], { initialEntries: ["/jobs?project=project-1"] });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
-    expect(await screen.findByRole("link", { name: "返回项目列表" })).toBeInTheDocument();
-    const projectNavigation = screen.getByRole("navigation", { name: "项目导航" });
+    expect(await screen.findByRole("link", { name: "返回全局工作台" })).toBeInTheDocument();
+    const projectNavigation = screen.getByRole("navigation", { name: "主导航" });
     expect(projectNavigation).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "任务与机器", level: 2 })).toBeInTheDocument();
-    expect(within(projectNavigation).getByRole("link", { name: "首页" })).toBeVisible();
+    expect(within(projectNavigation).getByRole("link", { name: "项目首页" })).toBeVisible();
     expect(within(projectNavigation).getByRole("link", { name: "故事" })).toBeVisible();
     expect(within(projectNavigation).getByRole("link", { name: "资产" })).toBeVisible();
     expect(screen.getByRole("link", { name: "打开任务中心" })).toBeVisible();
@@ -176,7 +202,7 @@ describe("V2 system workspaces", () => {
     await waitFor(() => expect(screen.getByRole("combobox", { name: "当前分集" })).toHaveValue("episode-1"));
     expect(screen.queryByRole("combobox", { name: "当前季度" })).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "当前镜头" })).not.toBeInTheDocument();
-    const projectNav = screen.getByRole("navigation", { name: "项目导航" });
+    const projectNav = screen.getByRole("navigation", { name: "主导航" });
     expect(within(projectNav).getByRole("link", { name: "策划" })).toBeInTheDocument();
     expect(within(projectNav).getByRole("link", { name: "镜头" })).toBeInTheDocument();
     expect(within(projectNav).getByRole("link", { name: "生产" })).toBeInTheDocument();
@@ -208,8 +234,8 @@ describe("V2 system workspaces", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
     await screen.findByRole("heading", { name: "任务与机器", level: 2 });
-    const trigger = screen.getByRole("button", { name: "打开项目导航" });
-    const navigation = screen.getByRole("navigation", { name: "项目导航" });
+    const trigger = screen.getByRole("button", { name: "打开主导航" });
+    const navigation = screen.getByRole("navigation", { name: "主导航" });
     fireEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
     expect(navigation).toHaveClass("mobile-open");
@@ -229,8 +255,8 @@ describe("V2 system workspaces", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
     expect(await screen.findByText("项目内容")).toBeInTheDocument();
-    const navigation = screen.getByRole("navigation", { name: "项目导航" });
-    expect(within(navigation).getByText("项目")).toBeInTheDocument();
+    const navigation = screen.getByRole("navigation", { name: "主导航" });
+    expect(within(navigation).getByText("当前项目")).toBeInTheDocument();
     expect(within(navigation).getByText("项目工具")).toBeInTheDocument();
     expect(within(navigation).getByRole("link", { name: "设置" })).toBeVisible();
     expect(within(navigation).getByRole("link", { name: "Visual Lab" })).toBeVisible();

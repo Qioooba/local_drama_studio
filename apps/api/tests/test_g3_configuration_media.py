@@ -11,15 +11,15 @@ from fastapi.testclient import TestClient
 from local_drama.api.routes.media import _stream
 from local_drama.application.configuration import ConfigurationService
 from local_drama.application.documents import DocumentImportService
-from local_drama.application.media import MediaService
 from local_drama.application.episode_production import EpisodeProductionQueryService
+from local_drama.application.media import MediaService
 from local_drama.application.profiles import ProfileService
 from local_drama.application.projects import ProjectService
 from local_drama.application.search import SearchService
 from local_drama.domain.errors import DomainRuleError
-from local_drama.main import create_app
 from local_drama.infrastructure.database.episode_production_repository import SqliteEpisodeProductionReadRepository
 from local_drama.infrastructure.database.search_repository import SqliteSearchRepository
+from local_drama.main import create_app
 
 
 def _project(workspace, database, code: str = "g3-project") -> dict[str, object]:

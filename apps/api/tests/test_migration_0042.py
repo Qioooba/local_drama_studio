@@ -12,9 +12,22 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from scripts.migrate import migrate
 
-HEAD = "0063_audio_mix_drafts"
+ROOT = Path(__file__).resolve().parents[3]
+
+
+def _current_head() -> str:
+    config = Config(str(ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(ROOT / "apps" / "api" / "alembic"))
+    heads = ScriptDirectory.from_config(config).get_heads()
+    assert len(heads) == 1
+    return str(heads[0])
+
+
+HEAD = _current_head()
 PREVIOUS = "0041_character_voice_bindings"
 
 
@@ -26,7 +39,6 @@ def _upgrade_to(target: str, database_path: Path) -> None:
 
     from alembic import command
 
-    ROOT = Path(__file__).resolve().parents[3]
     config = Config(str(ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(ROOT / "apps" / "api" / "alembic"))
     config.set_main_option("prepend_sys_path", str(ROOT / "apps" / "api"))

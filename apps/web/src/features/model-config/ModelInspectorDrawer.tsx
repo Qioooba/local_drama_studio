@@ -1,5 +1,8 @@
 import { Drawer, InspectorSection, StatusBadge } from "../../components/ui/primitives";
 import type { ProfileExecutionComponent, ProfileExecutionDetail, ProfileVersionDetail } from "../../generated/api";
+import { canonicalCapabilityLabel, creatorProfileTitle } from "../preferences-v2/canonicalCapabilities";
+import { ACCELERATION_LABELS, PRODUCTION_TIER_LABELS, STATUS_LABELS, optionLabel } from "../shared/optionLabels";
+import { profileStageDescription, profileStatusLabel } from "../profiles/profilePresentation";
 
 const ROLE_LABELS: Record<string, string> = {
   PRIMARY_MODEL: "主模型",
@@ -77,41 +80,87 @@ function SummaryRows({ execution }: { execution: ProfileExecutionDetail }) {
   return (
     <dl className="model-inspector-summary">
       <div><dt>运行时</dt><dd>{String(runtime?.title ?? runtime?.code ?? "未绑定")}</dd></div>
-      <div><dt>运行状态</dt><dd>{String(runtime?.status ?? "未知")}</dd></div>
+      <div><dt>运行状态</dt><dd>{optionLabel(STATUS_LABELS, String(runtime?.status ?? "UNKNOWN"))}</dd></div>
       <div><dt>工作流</dt><dd>{String(workflow?.title ?? workflow?.code ?? "未绑定")}</dd></div>
       <div><dt>工作流版本</dt><dd>{workflow?.version_no ? `v${String(workflow.version_no)}` : "—"}</dd></div>
       {provider ? <div><dt>生成服务连接</dt><dd>{provider.title} · {provider.protocol}</dd></div> : null}
       {provider ? <div><dt>服务地址</dt><dd><code>{provider.base_url}</code></dd></div> : null}
       {provider || execution.provider ? <div><dt>远端模型</dt><dd>{provider?.model ?? execution.model ?? "—"}</dd></div> : null}
-      <div><dt>可配置字段</dt><dd>{Object.keys((execution.override_schema.fields as Record<string, unknown> | undefined) ?? {}).length} 个</dd></div>
+      <div><dt>生成时可调整参数</dt><dd>{Object.keys((execution.override_schema.fields as Record<string, unknown> | undefined) ?? {}).length} 个</dd></div>
       <div><dt>执行指纹</dt><dd><code title={execution.fingerprints.execution}>{shortHash(execution.fingerprints.execution)}</code></dd></div>
     </dl>
   );
+}
+
+type InspectorParameterField = {
+  label?: string;
+  default?: unknown;
+  minimum?: number;
+  maximum?: number;
+  options?: unknown[];
+  scopes?: string[];
+  editable?: boolean;
+  description?: string;
+};
+
+const PARAMETER_OPTION_LABELS = { ...PRODUCTION_TIER_LABELS, ...ACCELERATION_LABELS };
+const PARAMETER_SCOPE_LABELS: Record<string, string> = { PROJECT: "项目默认", SHOT: "镜头设置", RUN: "本次生成" };
+
+function parameterValueLabel(value: unknown) {
+  if (typeof value === "boolean") return value ? "开启" : "关闭";
+  if (value === undefined || value === null || value === "") return "由模型决定";
+  return optionLabel(PARAMETER_OPTION_LABELS, String(value), String(value));
+}
+
+function ParameterSummary({ execution }: { execution: ProfileExecutionDetail }) {
+  const rawFields = execution.override_schema.fields;
+  const fields = rawFields && typeof rawFields === "object" && !Array.isArray(rawFields)
+    ? Object.entries(rawFields as Record<string, unknown>).filter(([, value]) => value && typeof value === "object" && !Array.isArray(value)) as Array<[string, InspectorParameterField]>
+    : [];
+  if (!fields.length) return <p className="muted">该能力没有声明可调整的生成参数。</p>;
+  return <div className="model-inspector-parameters">
+    {fields.map(([key, field]) => {
+      const effectiveDefault = execution.defaults[key] ?? field.default;
+      const limits = field.options?.length
+        ? `${field.options.length} 个允许值`
+        : field.minimum !== undefined || field.maximum !== undefined
+          ? `允许范围 ${field.minimum ?? "—"}–${field.maximum ?? "—"}`
+          : "由能力契约校验";
+      const scopes = (field.scopes ?? []).map((scope) => PARAMETER_SCOPE_LABELS[scope] ?? scope).join("、") || "仅版本默认";
+      return <article key={key}>
+        <div><strong>{field.label ?? key}</strong><code>{key}</code></div>
+        <dl><div><dt>当前默认</dt><dd>{parameterValueLabel(effectiveDefault)}</dd></div><div><dt>可调整阶段</dt><dd>{scopes}</dd></div><div><dt>约束</dt><dd>{field.editable === false ? "已锁定" : limits}</dd></div></dl>
+        {field.description ? <p>{field.description}</p> : null}
+      </article>;
+    })}
+  </div>;
 }
 
 export function ModelInspectorDrawer({
   open,
   profile,
   onClose,
+  onEditDefaults,
 }: {
   open: boolean;
   profile: ProfileVersionDetail | null;
   onClose: () => void;
+  onEditDefaults?: () => void;
 }) {
   const execution = profile?.execution ?? null;
   return (
-    <Drawer open={open} title={profile ? `${profile.title} · v${profile.version_no} 执行详情` : "模型执行详情"} width="min(620px, 92vw)" onClose={onClose}>
+    <Drawer open={open} title={profile ? `${creatorProfileTitle(profile.title)} · 第 ${profile.version_no} 版执行详情` : "模型执行详情"} width="min(680px, 94vw)" onClose={onClose}>
       {!profile ? <p className="empty-state">尚未选择生成配置版本。</p> : !execution ? (
         <div className="inline-error" role="alert">服务器没有返回执行详情；请刷新生成配置版本后重试。</div>
       ) : (
         <div className="model-inspector-drawer">
           <div className="model-inspector-intro">
             <div>
-              <p className="eyebrow">真实执行内容</p>
-              <h3>{profile.capability}</h3>
-              <p className="muted">以下内容来自已发布生成配置、模型清单和本机工作流版本，不是页面写死的说明。</p>
+              <p className="eyebrow">真实执行绑定 · 只读证据</p>
+              <h3>{canonicalCapabilityLabel(profile.capability)}</h3>
+              <p className="muted">{profileStageDescription(profile.capability)}。运行时、工作流和模型组件来自模型清单及发布记录，不能在详情抽屉里临时改写。</p>
             </div>
-            <StatusBadge tone={profile.status === "PUBLISHED" ? "success" : "attention"}>{profile.status}</StatusBadge>
+            <StatusBadge tone={profile.status === "PUBLISHED" ? "success" : "attention"}>{profileStatusLabel(profile.status)}</StatusBadge>
           </div>
 
           <InspectorSection title="概览" summary="运行时、工作流与指纹">
@@ -124,11 +173,11 @@ export function ModelInspectorDrawer({
             </div>
           </InspectorSection>
 
-          <InspectorSection title="默认参数与可覆盖字段" summary="只读契约">
-            <div className="model-inspector-json-grid">
-              <div><span>默认参数</span><pre>{JSON.stringify(execution.defaults, null, 2)}</pre></div>
-              <div><span>可覆盖 Schema</span><pre>{JSON.stringify(execution.override_schema, null, 2)}</pre></div>
-            </div>
+          <InspectorSection title="生成参数边界" summary={`${Object.keys((execution.override_schema.fields as Record<string, unknown> | undefined) ?? {}).length} 个字段`}>
+            <p className="muted">默认值属于能力版本，可以在主配置区修改并派生新草稿；允许范围和运行时绑定属于模型契约，只在这里核对。</p>
+            {onEditDefaults ? <button type="button" className="secondary model-inspector-edit-defaults" onClick={onEditDefaults}>返回配置生成默认参数</button> : null}
+            <ParameterSummary execution={execution} />
+            <details className="model-inspector-path"><summary>高级：查看参数 Schema</summary><pre>{JSON.stringify(execution.override_schema, null, 2)}</pre></details>
           </InspectorSection>
 
           <InspectorSection title="证据（专家）" summary="本机路径、哈希与原始快照" defaultOpen={false}>

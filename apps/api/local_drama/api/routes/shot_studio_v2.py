@@ -44,7 +44,7 @@ from local_drama.infrastructure.database.shot_studio_command_repository import (
 from local_drama.infrastructure.database.shot_studio_repository import SqliteShotStudioReadRepository
 
 router = APIRouter(tags=["shot-studio-v2"])
-shot_generation_response_adapter = TypeAdapter(ShotGenerationResponse)
+shot_generation_response_adapter: TypeAdapter[ShotGenerationResponse] = TypeAdapter(ShotGenerationResponse)
 
 
 def service(request: Request) -> ShotStudioQueryService:

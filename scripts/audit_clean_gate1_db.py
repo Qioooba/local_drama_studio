@@ -1,4 +1,5 @@
 import json
+
 from local_drama.config import Settings
 from local_drama.infrastructure.database.sqlite import Database
 

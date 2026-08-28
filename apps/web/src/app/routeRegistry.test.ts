@@ -3,6 +3,8 @@ import { buildBreadcrumbs, parseRouteContext, routes, validateRouteOwnership } f
 
 describe("canonical route registry", () => {
   it("builds the reduced product routes", () => {
+    expect(routes.home()).toBe("/");
+    expect(routes.quickCreate()).toBe("/quick-create");
     expect(routes.projects()).toBe("/projects");
     expect(routes.settings("p 1", "quality")).toBe("/projects/p%201/settings/quality");
     expect(routes.shotStudio("p1", "e1", "s1")).toBe("/projects/p1/episodes/e1/studio/s1");
@@ -10,10 +12,13 @@ describe("canonical route registry", () => {
     expect(routes.postReview("p1", "e1")).toBe("/projects/p1/episodes/e1/post/review");
     expect(routes.postAudio("p1", "e1")).toBe("/projects/p1/episodes/e1/post/audio");
     expect(routes.postEdit("p1", "e1")).toBe("/projects/p1/episodes/e1/post/edit");
+    expect(routes.systemCapabilities("p1")).toBe("/system/capabilities");
     expect(routes.systemJobs("p1")).toBe("/system/jobs?project=p1");
   });
 
   it("parses canonical contexts", () => {
+    expect(parseRouteContext("/").routeId).toBe("home");
+    expect(parseRouteContext("/quick-create").routeId).toBe("quickCreate");
     expect(parseRouteContext("/projects/p1/settings/quality").routeId).toBe("settings");
     expect(parseRouteContext("/system/capabilities").routeId).toBe("systemCapabilities");
     expect(parseRouteContext("/projects/p1/episodes/e1/studio/s1")).toEqual({ routeId: "shotStudioShot", scope: "EPISODE", projectId: "p1", episodeId: "e1", shotId: "s1" });
@@ -34,6 +39,7 @@ describe("canonical route registry", () => {
 
   it("builds precise shot breadcrumbs", () => {
     expect(buildBreadcrumbs({ pathname: "/projects/p1/episodes/e1/studio/s1", projectTitle: "项目", seasonTitle: "S1", episodeTitle: "E1", shotCode: "S001" })).toEqual([
+      { label: "工作台", to: "/" },
       { label: "项目", to: "/projects" },
       { label: "项目", to: "/projects/p1" },
       { label: "S1 / E1", to: "/projects/p1/episodes/e1/plan" },

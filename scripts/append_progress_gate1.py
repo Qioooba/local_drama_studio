@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 PROGRESS_PATH = Path(__file__).resolve().parents[1] / "docs" / "evidence" / "ui-uat-2026-08-22" / "PROGRESS.md"

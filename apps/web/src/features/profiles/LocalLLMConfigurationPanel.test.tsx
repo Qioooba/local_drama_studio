@@ -79,7 +79,7 @@ describe("LocalLLMConfigurationPanel", () => {
 
   it("uses an unregistered remote runtime as editable custom configuration", async () => {
     renderWithClient(<LocalLLMConfigurationPanel />);
-    expect(screen.getByText("大语言模型（LLM）与服务连接管理")).toBeInTheDocument();
+    expect(screen.getByText("智能理解模型配置")).toBeInTheDocument();
     expect(screen.getByLabelText("预设模板 (Preset)")).toBeInTheDocument();
     await waitFor(() => expect((screen.getByLabelText("预设模板 (Preset)") as HTMLSelectElement).value).toBe("custom"));
     expect(screen.getByLabelText("Base URL")).toHaveValue("https://api.deepseek.com");

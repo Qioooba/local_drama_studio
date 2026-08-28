@@ -16,6 +16,44 @@ class _OfflineWorkflowNodes:
         return {"LoadImage": {}, "SaveImage": {}}
 
 
+def test_quick_generation_parameters_rewrite_only_the_per_job_graph(workspace, database) -> None:
+    service = ComfyGenerationService(database, workspace)
+    workflow = {
+        "1": {"class_type": "EmptyLatentImage", "inputs": {"width": 768, "height": 1344}},
+        "2": {"class_type": "KSampler", "inputs": {"steps": 20, "cfg": 7.0, "sampler_name": "euler", "scheduler": "normal", "denoise": 1.0}},
+        "3": {"class_type": "MiniMaxH3ImageToVideo", "inputs": {"width": 480, "height": 832, "length": 107}},
+        "4": {"class_type": "CreateVideo", "inputs": {"fps": 24.0}},
+    }
+    evidence = service._apply_effective_configuration(
+        workflow,
+        {
+            "effective_settings": {
+                "width": 832,
+                "height": 480,
+                "frame_count": 121,
+                "fps": 30,
+                "steps": 32,
+                "cfg": 5.5,
+                "sampler_name": "dpmpp_2m",
+                "scheduler": "karras",
+                "denoise": 0.8,
+            },
+            "fingerprint": "sha256:test",
+        },
+    )
+    assert evidence["changed"] is True
+    assert workflow["1"]["inputs"] == {"width": 832, "height": 480}
+    assert workflow["2"]["inputs"] == {
+        "steps": 32,
+        "cfg": 5.5,
+        "sampler_name": "dpmpp_2m",
+        "scheduler": "karras",
+        "denoise": 0.8,
+    }
+    assert workflow["3"]["inputs"] == {"width": 832, "height": 480, "length": 121}
+    assert workflow["4"]["inputs"]["fps"] == 30.0
+
+
 def _publish_offline(service: WorkflowService, version_id: str) -> None:
     validation = service.validate_against_comfy(version_id, _OfflineWorkflowNodes())  # type: ignore[arg-type]
     service.publish(version_id, str(validation["validation_id"]))
@@ -32,14 +70,24 @@ def _active_attempt(workspace, database) -> tuple[ComfyGenerationService, str]:
     )
     _publish_offline(workflows, str(version["id"]))
     project = ProjectService(database, workspace.projects_root).create_project(
-        code="comfy_poll_project", title="Comfy poll project", episode_count=1,
-        aspect_ratio="16:9", fps_num=24, fps_den=1, target_duration_ms=60_000,
+        code="comfy_poll_project",
+        title="Comfy poll project",
+        episode_count=1,
+        aspect_ratio="16:9",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=60_000,
         allow_unconfigured_capabilities=True,
     )
     jobs = JobService(database, workspace)
     jobs.create_job(
-        str(project["id"]), "COMFY_STATE_TEST", "WORKFLOW_VERSION", str(version["id"]), "GPU_H3",
-        {"workflow_version_id": str(version["id"]), "semantic_inputs": {}}, "comfy-state-test",
+        str(project["id"]),
+        "COMFY_STATE_TEST",
+        "WORKFLOW_VERSION",
+        str(version["id"]),
+        "GPU_H3",
+        {"workflow_version_id": str(version["id"]), "semantic_inputs": {}},
+        "comfy-state-test",
     )
     claim = jobs.claim("worker-1", ["GPU_H3"], 60)
     assert claim is not None
@@ -107,8 +155,7 @@ def test_poll_survives_busy_comfy_runtime_within_grace(workspace, database, monk
     assert state == "RUNNING"
     with database.transaction() as connection:
         connection.execute(
-            "UPDATE provider_execution_events SET occurred_at=? "
-            "WHERE job_attempt_id=? AND event_type='PROVIDER_BUSY'",
+            "UPDATE provider_execution_events SET occurred_at=? WHERE job_attempt_id=? AND event_type='PROVIDER_BUSY'",
             (_iso_utc_minutes_ago(31), attempt_id),
         )
     expired = service.poll_attempt(attempt_id, "worker-1")
@@ -174,7 +221,9 @@ def test_background_recovery_finds_provider_success_without_manual_attempt_id(wo
     assert result["recovered"] == 1
     assert result["items"][0]["status"] == "RECOVERED"
     with database.connect() as connection:
-        row = connection.execute("SELECT a.state AS attempt_state,j.state AS job_state FROM job_attempts a JOIN jobs j ON j.id=a.job_id WHERE a.id=?", (attempt_id,)).fetchone()
+        row = connection.execute(
+            "SELECT a.state AS attempt_state,j.state AS job_state FROM job_attempts a JOIN jobs j ON j.id=a.job_id WHERE a.id=?", (attempt_id,)
+        ).fetchone()
         artifacts = connection.execute("SELECT COUNT(*) FROM artifacts WHERE job_attempt_id=?", (attempt_id,)).fetchone()[0]
     assert row["attempt_state"] == "SUCCEEDED"
     assert row["job_state"] == "SUCCEEDED"
@@ -193,18 +242,29 @@ def test_submit_materializes_verified_media_binding_inside_isolated_input_root(w
     )
     _publish_offline(workflow_service, str(version["id"]))
     project = ProjectService(database, workspace.projects_root).create_project(
-        code="comfy_media_input", title="Comfy media input", episode_count=1,
-        aspect_ratio="16:9", fps_num=24, fps_den=1, target_duration_ms=60_000,
+        code="comfy_media_input",
+        title="Comfy media input",
+        episode_count=1,
+        aspect_ratio="16:9",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=60_000,
         allow_unconfigured_capabilities=True,
     )
     source = workspace.work_root / "source.png"
     source.write_bytes(
-        bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415408d763f8cfc0f01f00050001ff89993d1d0000000049454e44ae426082")
+        bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415408d763f8cfc0f01f00050001ff89993d1d0000000049454e44ae426082"
+        )
     )
     media = MediaService(database, workspace).import_file(str(project["id"]), source, media_kind="IMAGE")
     jobs = JobService(database, workspace)
     jobs.create_job(
-        str(project["id"]), "I2V", "WORKFLOW_VERSION", str(version["id"]), "GPU_H3",
+        str(project["id"]),
+        "I2V",
+        "WORKFLOW_VERSION",
+        str(version["id"]),
+        "GPU_H3",
         {
             "workflow_version_id": str(version["id"]),
             "semantic_inputs": {},
@@ -242,18 +302,29 @@ def test_submit_drops_undeclared_metadata_roles_but_compiles_declared_ones(works
     )
     _publish_offline(workflow_service, str(version["id"]))
     project = ProjectService(database, workspace.projects_root).create_project(
-        code="comfy_metadata_project", title="Comfy metadata project", episode_count=1,
-        aspect_ratio="16:9", fps_num=24, fps_den=1, target_duration_ms=60_000,
+        code="comfy_metadata_project",
+        title="Comfy metadata project",
+        episode_count=1,
+        aspect_ratio="16:9",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=60_000,
         allow_unconfigured_capabilities=True,
     )
     source = workspace.work_root / "meta-source.png"
     source.write_bytes(
-        bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415408d763f8cfc0f01f00050001ff89993d1d0000000049454e44ae426082")
+        bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415408d763f8cfc0f01f00050001ff89993d1d0000000049454e44ae426082"
+        )
     )
     media = MediaService(database, workspace).import_file(str(project["id"]), source, media_kind="IMAGE")
     jobs = JobService(database, workspace)
     jobs.create_job(
-        str(project["id"]), "GENERATION_VARIANT", "WORKFLOW_VERSION", str(version["id"]), "GPU_H3",
+        str(project["id"]),
+        "GENERATION_VARIANT",
+        "WORKFLOW_VERSION",
+        str(version["id"]),
+        "GPU_H3",
         {
             "workflow_version_id": str(version["id"]),
             "semantic_inputs": {

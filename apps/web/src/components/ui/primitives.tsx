@@ -242,6 +242,7 @@ export function Dialog({
   onClose,
   footer,
   dirtyGuard = false,
+  size = "default",
 }: {
   open: boolean;
   title: string;
@@ -249,6 +250,7 @@ export function Dialog({
   onClose: () => void;
   footer?: ReactNode;
   dirtyGuard?: boolean;
+  size?: "default" | "wide" | "fullscreen";
 }) {
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -296,13 +298,13 @@ export function Dialog({
   if (!open) return null;
   return createPortal(
     <div
-      className="ui-dialog-backdrop"
+      className={`ui-dialog-backdrop ui-dialog-backdrop--${size}`}
       role="presentation"
       onMouseDown={(event) => event.target === event.currentTarget && safeClose()}
     >
       <section
         ref={dialogRef}
-        className="ui-dialog"
+        className={`ui-dialog ui-dialog--${size}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

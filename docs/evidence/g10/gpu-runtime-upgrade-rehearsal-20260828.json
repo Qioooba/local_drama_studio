@@ -1,0 +1,51 @@
+{
+  "schema_version": "g10.upgrade_rollback_rehearsal.v3",
+  "observed_at": "2026-08-27T19:12:46.406608+00:00",
+  "status": "PASS",
+  "scope": "isolated copy of a production pre-migration backup",
+  "source_backup": {
+    "path": "data/local_drama.sqlite3",
+    "migration": "0063_audio_mix_drafts",
+    "migration_heads": [
+      "0063_audio_mix_drafts"
+    ],
+    "integrity": "ok",
+    "bytes": 4476928,
+    "sha256": "3c03a96c8abee7c4cf776aeb652cf0d047b53b369efc1010281cbf7e9d7226eb"
+  },
+  "upgrade_copy": {
+    "operation": "alembic upgrade heads on isolated copy",
+    "from_migration": "0063_audio_mix_drafts",
+    "to_migration": "0067_single_gpu_runtime_orchestration",
+    "expected_heads": [
+      "0067_single_gpu_runtime_orchestration"
+    ],
+    "migration": "0067_single_gpu_runtime_orchestration",
+    "migration_heads": [
+      "0067_single_gpu_runtime_orchestration"
+    ],
+    "integrity": "ok",
+    "bytes": 4476928,
+    "sha256": "85d802d7679c8b6c659120e1cefe8d5d330950a521a4789c9575322ac1550f3c"
+  },
+  "restore_copy": {
+    "operation": "restore source backup to a separate copy",
+    "migration": "0063_audio_mix_drafts",
+    "migration_heads": [
+      "0063_audio_mix_drafts"
+    ],
+    "integrity": "ok",
+    "bytes": 4476928,
+    "sha256": "3c03a96c8abee7c4cf776aeb652cf0d047b53b369efc1010281cbf7e9d7226eb",
+    "matches_source_sha256": true
+  },
+  "safety": {
+    "production_database_mutated": false,
+    "api_contacted": false,
+    "comfyui_contacted": false,
+    "network_contacted": false,
+    "jobs_created": false,
+    "temporary_directory_retained": "output/gpu-runtime-upgrade-rehearsal-20260828"
+  },
+  "interpretation": "Current migration upgrade and exact backup restore are verified on isolated copies; this does not authorize final release."
+}

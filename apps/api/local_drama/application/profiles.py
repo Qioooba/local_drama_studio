@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from local_drama.application.override_schema import default_override_schema
+from local_drama.application.override_schema import default_override_schema, effective_schema
 from local_drama.domain.capabilities import normalize_capability
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.generation_contracts import resolve_camera_plan
@@ -217,6 +217,8 @@ class ProfileService:
 
             profiles: list[dict[str, Any]] = []
             capabilities = manifest.capabilities
+            profile_code_prefix = _code(str(current_state.get("profile_code_prefix") or "h3-native"))
+            profile_title_prefix = str(current_state.get("profile_title_prefix") or "H3").strip()
             for capability, capability_data in capabilities.items():
                 if not isinstance(capability_data, dict):
                     continue
@@ -229,7 +231,7 @@ class ProfileService:
                         {"manifest_capability": str(capability)},
                     ) from error
                 route_status = manifest.route_status.get(f"native_{str(capability).lower()}", capability_data.get("status", "UNKNOWN"))
-                profile_code = _code(f"h3-native-{capability}")
+                profile_code = _code(f"{profile_code_prefix}-{capability}")
                 profile_id = _stable_id(f"profile:{profile_code}")
                 profile_status = "CANDIDATE_BLOCKED" if runtime_status != "AVAILABLE" else "CANDIDATE_UNVERIFIED"
                 capability_contract = {
@@ -245,7 +247,7 @@ class ProfileService:
                     VALUES (?, ?, ?, ?, ?, ?, 1, 'v2')
                     ON CONFLICT(code) DO UPDATE SET title=excluded.title, updated_at=excluded.updated_at,
                     revision=execution_profiles.revision+1""",
-                    (profile_id, profile_code, f"H3 {capability} 本机候选 Profile", now, now, actor),
+                    (profile_id, profile_code, f"{profile_title_prefix} {capability} 本机候选 Profile", now, now, actor),
                 )
                 existing_version = connection.execute(
                     """SELECT * FROM execution_profile_versions
@@ -271,14 +273,16 @@ class ProfileService:
                             profile_id,
                             version_no,
                             canonical_capability,
-                            _json({
-                                "schema_version": "localdrama.execution-profile-bundle.v1",
-                                "manifest_sha256": manifest.sha256,
-                                "runtime_id": runtime_id,
-                                "artifact_ids": artifact_ids,
-                                "route_status": route_status,
-                                "override_schema": default_override_schema(canonical_capability),
-                            }),
+                            _json(
+                                {
+                                    "schema_version": "localdrama.execution-profile-bundle.v1",
+                                    "manifest_sha256": manifest.sha256,
+                                    "runtime_id": runtime_id,
+                                    "artifact_ids": artifact_ids,
+                                    "route_status": route_status,
+                                    "override_schema": default_override_schema(canonical_capability),
+                                }
+                            ),
                             _json({"required_inputs": capability_data.get("required_nodes", []), "transport": "LOOPBACK_HTTP"}),
                             _json({"seed": {"required": True, "determinism": "profile_declared"}}),
                             profile_status,
@@ -324,7 +328,7 @@ class ProfileService:
                 """SELECT p.id, p.code, p.title, v.id AS version_id, v.version_no, v.capability,
                 v.status, v.manifest_sha256, v.capability_json, v.worker_policy,
                 v.output_contract_json, v.resource_policy_json, v.revision,
-                v.model_bundle_json, v.parameter_schema_json,
+                v.model_bundle_json, v.parameter_schema_json, v.workflow_version_id,
                 w.contract_json AS workflow_contract_json
                 FROM execution_profiles p JOIN execution_profile_versions v
                 ON v.execution_profile_id = p.id
@@ -342,6 +346,7 @@ class ProfileService:
                 item["override_schema"] = parameter_schema.get("override_schema") if isinstance(parameter_schema, dict) else None
             if not isinstance(item["override_schema"], dict):
                 item["override_schema"] = default_override_schema(str(item["capability"]))
+            item["override_schema"] = effective_schema({"capability": item["capability"], "override_schema": item["override_schema"]})
             workflow_contract = json.loads(str(item.pop("workflow_contract_json") or "{}"))
             item["workflow_tier"] = str(workflow_contract.get("production_tier") or "").strip().upper() or None
             item["dynamic_production_tiers"] = workflow_contract.get("dynamic_production_tiers") is True
@@ -542,6 +547,7 @@ class ProfileService:
             override_schema = parameter_schema.get("override_schema")
         if not isinstance(override_schema, dict):
             override_schema = default_override_schema(str(row["capability"] or ""))
+        override_schema = effective_schema({"capability": str(row["capability"] or ""), "override_schema": override_schema})
 
         worker_policy = _parse_json(row["worker_policy"], None)
         if worker_policy is None:
@@ -826,13 +832,17 @@ class ProfileService:
         checks.append({"code": "LOCAL_TRANSPORT", "passed": transport in {"LOOPBACK_HTTP", "LOCAL_PROCESS", "LOCAL_CLI"}})
         slots = input_contract.get("input_slots", {})
         slots_ok = isinstance(slots, dict) and all(
-            isinstance(spec, dict) and isinstance(spec.get("min", 0), int) and isinstance(spec.get("max", 0), int)
-            and 0 <= int(spec["min"]) <= int(spec["max"])
+            isinstance(spec, dict) and isinstance(spec.get("min", 0), int) and isinstance(spec.get("max", 0), int) and 0 <= int(spec["min"]) <= int(spec["max"])
             for spec in slots.values()
         )
         checks.append({"code": "INPUT_SLOT_BOUNDS", "passed": slots_ok})
         seed = parameter_schema.get("seed")
-        checks.append({"code": "SEED_DETERMINISM", "passed": isinstance(seed, dict) and str(seed.get("determinism", "")) in {"EXPLICIT", "BEST_EFFORT", "NONDETERMINISTIC", "profile_declared"}})
+        checks.append(
+            {
+                "code": "SEED_DETERMINISM",
+                "passed": isinstance(seed, dict) and str(seed.get("determinism", "")) in {"EXPLICIT", "BEST_EFFORT", "NONDETERMINISTIC", "profile_declared"},
+            }
+        )
         checks.append({"code": "OUTPUT_MEDIA_KIND", "passed": str(output_contract.get("media_kind", "")) in {"IMAGE", "VIDEO", "AUDIO", "DOCUMENT"}})
         checks.append({"code": "GPU_CONCURRENCY", "passed": resource_policy.get("gpu_heavy_concurrency") == 1})
         matrix = parameter_schema.get("capabilities")
@@ -850,18 +860,13 @@ class ProfileService:
             camera_support = camera.get("support") if isinstance(camera, dict) else None
             camera_inputs = camera.get("required_inputs", []) if isinstance(camera, dict) else []
             camera_inputs_ok = isinstance(camera_inputs, list) and all(str(slot) in slots for slot in camera_inputs)
-            camera_fallback_ok = camera_support != "PROMPT_FALLBACK" or (
-                isinstance(camera, dict) and camera.get("prompt_fallback") is True
+            camera_fallback_ok = camera_support != "PROMPT_FALLBACK" or (isinstance(camera, dict) and camera.get("prompt_fallback") is True)
+            checks.append(
+                {
+                    "code": "CAPABILITY_CAMERA",
+                    "passed": bool(matrix_ok and camera_support in {"NATIVE", "PROMPT_FALLBACK", "UNSUPPORTED"} and camera_inputs_ok and camera_fallback_ok),
+                }
             )
-            checks.append({
-                "code": "CAPABILITY_CAMERA",
-                "passed": bool(
-                    matrix_ok
-                    and camera_support in {"NATIVE", "PROMPT_FALLBACK", "UNSUPPORTED"}
-                    and camera_inputs_ok
-                    and camera_fallback_ok
-                ),
-            })
         return checks
 
     def validate_compatibility(self, profile_version_id: str, actor: str = "local-user") -> dict[str, Any]:
@@ -888,7 +893,15 @@ class ProfileService:
                 VALUES (?, 'operator', 'PROFILE_COMPATIBILITY_VALIDATED', 'execution_profile_version', ?, ?, ?)""",
                 (actor, profile_version_id, f"Profile capability compatibility {status}", _json({"attestation_id": attestation_id})),
             )
-        return {"id": attestation_id, "profile_version_id": profile_version_id, "contract_hash": contract_hash, "status": status, "checks": checks, "runtime_contacted": False, "network_contacted": False}
+        return {
+            "id": attestation_id,
+            "profile_version_id": profile_version_id,
+            "contract_hash": contract_hash,
+            "status": status,
+            "checks": checks,
+            "runtime_contacted": False,
+            "network_contacted": False,
+        }
 
     def retire_version(self, profile_version_id: str, actor: str = "local-user") -> dict[str, Any]:
         now = _utc_now()
@@ -898,11 +911,15 @@ class ProfileService:
                 raise DomainRuleError("PROFILE_VERSION_NOT_FOUND", "ExecutionProfileVersion 不存在")
             if row["status"] != "PUBLISHED":
                 raise DomainRuleError("PROFILE_RETIRE_REQUIRES_PUBLISHED", "只有 PUBLISHED ProfileVersion 可退休")
-            if connection.execute("SELECT 1 FROM project_profile_bindings WHERE execution_profile_version_id=? AND status='ACTIVE'", (profile_version_id,)).fetchone():
+            if connection.execute(
+                "SELECT 1 FROM project_profile_bindings WHERE execution_profile_version_id=? AND status='ACTIVE'", (profile_version_id,)
+            ).fetchone():
                 raise DomainRuleError("PROFILE_VERSION_IN_USE", "项目仍绑定该 ProfileVersion，不能退休")
             if connection.execute("SELECT 1 FROM jobs WHERE execution_profile_version_id=?", (profile_version_id,)).fetchone():
                 raise DomainRuleError("PROFILE_VERSION_HAS_JOBS", "已有 Job 快照引用该 ProfileVersion，不能退休")
-            connection.execute("UPDATE execution_profile_versions SET status='RETIRED', updated_at=?, revision=revision+1 WHERE id=?", (now, profile_version_id))
+            connection.execute(
+                "UPDATE execution_profile_versions SET status='RETIRED', updated_at=?, revision=revision+1 WHERE id=?", (now, profile_version_id)
+            )
             connection.execute(
                 """INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json)
                 VALUES (?, 'operator', 'PROFILE_VERSION_RETIRED', 'execution_profile_version', ?, '退休未绑定的重复 ProfileVersion', ?)""",
@@ -922,9 +939,7 @@ class ProfileService:
     ) -> dict[str, Any]:
         now = _utc_now()
         with self.database.transaction() as connection:
-            candidate = connection.execute(
-                "SELECT * FROM execution_profile_versions WHERE id=?", (candidate_version_id,)
-            ).fetchone()
+            candidate = connection.execute("SELECT * FROM execution_profile_versions WHERE id=?", (candidate_version_id,)).fetchone()
             if candidate is None:
                 raise DomainRuleError("PROFILE_VERSION_NOT_FOUND", "ExecutionProfileVersion 不存在")
             try:
@@ -974,9 +989,7 @@ class ProfileService:
                     )
             else:
                 contract_compatibility = None
-            workflow = connection.execute(
-                "SELECT * FROM workflow_versions WHERE id=?", (workflow_version_id,)
-            ).fetchone()
+            workflow = connection.execute("SELECT * FROM workflow_versions WHERE id=?", (workflow_version_id,)).fetchone()
             if workflow is None or workflow["status"] != "PUBLISHED":
                 raise DomainRuleError("WORKFLOW_NOT_PUBLISHED", "Profile 发布证据必须引用 PUBLISHED workflow")
             workflow_contract = json.loads(str(workflow["contract_json"]))
@@ -1079,11 +1092,11 @@ class ProfileService:
             contract = json.loads(str(candidate["capability_json"]))
             manifest_capability = dict(contract.get("manifest_capability", {}))
             workflow_content = json.loads(str(workflow["content_json"] or "{}"))
-            required_workflow_nodes = sorted({
-                str(node.get("class_type"))
-                for node in workflow_content.values()
-                if isinstance(node, dict) and node.get("class_type")
-            }) if isinstance(workflow_content, dict) else []
+            required_workflow_nodes = (
+                sorted({str(node.get("class_type")) for node in workflow_content.values() if isinstance(node, dict) and node.get("class_type")})
+                if isinstance(workflow_content, dict)
+                else []
+            )
             uses_core_h3 = "MiniMaxH3ImageToVideo" in required_workflow_nodes
             manifest_capability.update(
                 {

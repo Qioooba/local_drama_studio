@@ -1,19 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
-import { getProjectOverviewV2, type ProductRouteTarget, type ProjectOverviewV2 } from "../generated/api";
+import { getProjectOverviewV2, type ProductRouteTarget } from "../generated/api";
 import { queryKeys } from "../query/queryKeys";
+import { EpisodeProgressLibrary, type EpisodeProgressGroup } from "../features/projects/EpisodeProgressLibrary";
 import { ProjectStructureAppendPanel } from "../features/projects/ProjectStructureAppendPanel";
 import { routes } from "../app/routeRegistry";
+import "../features/projects/episode-progress-library.css";
 
-type EpisodeCatalog = Pick<ProjectOverviewV2, "seasons">;
-type SeasonItem = EpisodeCatalog["seasons"][number];
-type EpisodeItem = SeasonItem["episodes"][number];
-type EpisodeGroup = { season: Omit<SeasonItem, "episodes">; episodes: EpisodeItem[] };
+type EpisodeGroup = EpisodeProgressGroup;
 
 const orderValue = (item: { number?: number; display_order?: number }) => item.number ?? item.display_order ?? Number.MAX_SAFE_INTEGER;
-const isComplete = (episode: EpisodeItem) => /DELIVERED|APPROVED/.test(episode.production_status.toUpperCase());
-const statusLabel: Record<string, string> = { NOT_STARTED: "未开始", DRAFT: "草稿", DELIVERED: "已交付", APPROVED: "已批准", IN_PROGRESS: "制作中" };
-const statusClass: Record<string, string> = { NOT_STARTED: "state-not_started", DRAFT: "state-draft", DELIVERED: "state-delivered", APPROVED: "state-approved", IN_PROGRESS: "state-running" };
 
 export function ProjectHomePage() {
   const { projectId = "" } = useParams();
@@ -47,14 +43,7 @@ export function ProjectHomePage() {
       <details><summary>查看阻塞原因</summary><ul>{overview.data?.blockers.map((blocker) => <li key={blocker.code}><Link to={targetTo(blocker.owner)}>{blocker.label}</Link></li>)}</ul></details>
     </section>}
 
-    <section className="panel" aria-labelledby="episode-list-title">
-      <div className="panel-heading"><div><p className="eyebrow">分集</p><h3 id="episode-list-title">制作进度</h3></div><span className="status-pill neutral">{episodes.length} 集</span></div>
-      {overview.isPending && <p className="empty-state" role="status">正在读取分集目录…</p>}
-      {!overview.isPending && groups.map((group) => <section className="v2-season-group" key={group.season.id} aria-labelledby={`season-${group.season.id}`}>
-        <div className="panel-heading"><h4 id={`season-${group.season.id}`}>{group.season.code} · {group.season.title}</h4><span className="status-pill neutral">{group.episodes.length} 集</span></div>
-        <div className="v2-episode-list">{group.episodes.map((episode) => { const state = episode.production_status.toUpperCase(); return <div className="v2-episode-row" key={episode.id}><strong>{episode.code} · {episode.title}</strong><span className={`status-pill ${statusClass[state] ?? "neutral"}`}>{statusLabel[state] ?? episode.production_status}</span><Link className="secondary v2-inline-link" to={isComplete(episode) ? routes.delivery(projectId, episode.id) : state === "NOT_STARTED" || state === "DRAFT" ? routes.episodePlan(projectId, episode.id) : routes.episodeProduction(projectId, episode.id)}>{isComplete(episode) ? "查看交付" : "继续制作"}</Link></div>; })}{group.episodes.length === 0 && <p className="empty-state">本季度还没有分集。</p>}</div>
-      </section>)}
-    </section>
+    <EpisodeProgressLibrary projectId={projectId} groups={groups} loading={overview.isPending} />
 
     {Boolean(overview.data?.recent_activity.length) && <section className="panel" aria-labelledby="recent-activity-title"><div className="panel-heading"><div><p className="eyebrow">最近活动</p><h3 id="recent-activity-title">项目变化</h3></div></div><ul>{overview.data?.recent_activity.map((item) => <li key={item.event_id}><strong>{item.type}</strong><span className="muted"> · {item.occurred_at}</span></li>)}</ul></section>}
 

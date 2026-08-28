@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.policies import VALID_SHOT_TRANSITIONS, require_transition
 from local_drama.infrastructure.database.sqlite import Database
+
+if TYPE_CHECKING:
+    from local_drama.application.shot_studio_commands import ShotStudioCommandService
 
 
 def _utc_now() -> str:
@@ -387,7 +390,7 @@ class SqliteShotStudioCommandRepository:
         return dict(row)
 
 
-def shot_studio_command_service(database: Database):
+def shot_studio_command_service(database: Database) -> ShotStudioCommandService:
     """Compose the application command owner at an infrastructure boundary."""
     from local_drama.application.shot_studio_commands import ShotStudioCommandService
 

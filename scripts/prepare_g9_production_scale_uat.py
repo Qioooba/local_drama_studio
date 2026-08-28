@@ -19,8 +19,10 @@ sys.path.insert(0, str(ROOT / "apps" / "api"))
 from local_drama.application.projects import ProjectService
 from local_drama.config import Settings
 from local_drama.infrastructure.database.backup import online_backup
+from local_drama.infrastructure.database.episode_production_repository import (
+    SqliteEpisodeProductionReadRepository,
+)
 from local_drama.infrastructure.database.sqlite import Database
-from local_drama.infrastructure.database.episode_production_repository import SqliteEpisodeProductionReadRepository
 
 PROJECT_ID = "e5eaa01d-d39a-4a63-acbf-026da30b46e7"
 EPISODE_ID = "d4db1033-9517-4bd0-958d-4228e0abead1"

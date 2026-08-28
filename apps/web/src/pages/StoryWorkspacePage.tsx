@@ -1,10 +1,13 @@
-import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { EntityRail, ThreePaneLayout, type EntityRailItem } from "../components/ui";
 import { AssetProposalReviewPanel } from "../features/episode-plan-v2/AssetProposalReviewPanel";
 import { AIDraftReviewPanel } from "../features/projects/AIDraftReviewPanel";
 import { CreativeLibrary } from "../features/projects/CreativeLibrary";
+import { getProject } from "../features/projects/projectClient";
 import { ScriptImportPanel } from "../features/projects/ScriptImportPanel";
+import { queryKeys } from "../query/queryKeys";
 import "./story-workspace.css";
 
 export type StoryStage = "import" | "review" | "assets" | "bible";
@@ -27,8 +30,27 @@ export function StoryWorkspacePage() {
   const navigate = useNavigate();
   const activeStage = stageFromHash(location.hash);
   const [navOpen, setNavOpen] = useState(() => typeof window === "undefined" || window.innerWidth > 960);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const project = useQuery({
+    queryKey: queryKeys.projects.detail(projectId ?? ""),
+    queryFn: () => getProject(projectId!),
+    enabled: Boolean(projectId),
+  });
+
+  const absoluteRootPath = project.data?.project.absolute_root_path;
+  useEffect(() => setCopyState("idle"), [absoluteRootPath]);
 
   if (!projectId) return <p className="inline-error" role="alert">缺少项目上下文。</p>;
+
+  const copyProjectPath = async () => {
+    if (!absoluteRootPath) return;
+    try {
+      await navigator.clipboard.writeText(absoluteRootPath);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+  };
 
   const selectStage = (stage: StoryStage) => {
     const target = STAGES.find((item) => item.id === stage) ?? STAGES[0];
@@ -50,13 +72,29 @@ export function StoryWorkspacePage() {
       <div className="story-header-actions"><button type="button" className="secondary story-flow-toggle" onClick={() => setNavOpen((value) => !value)} aria-expanded={navOpen}>选择阶段</button><Link className="secondary v2-inline-link" to={`/projects/${projectId}`}>返回项目总览</Link></div>
     </header>
 
+    <section className="story-project-location" aria-labelledby="story-project-location-label">
+      <div className="story-project-location__value">
+        <span id="story-project-location-label">服务器项目目录</span>
+        {absoluteRootPath
+          ? <code title={absoluteRootPath}>{absoluteRootPath}</code>
+          : project.isError
+            ? <span className="inline-error" role="alert">项目目录读取失败。</span>
+            : <span className="muted" role="status">正在读取绝对路径…</span>}
+      </div>
+      {project.isError
+        ? <button type="button" className="secondary" onClick={() => void project.refetch()}>重新读取</button>
+        : <button type="button" className="secondary" disabled={!absoluteRootPath} onClick={() => void copyProjectPath()}>
+            {copyState === "copied" ? "已复制" : copyState === "failed" ? "复制失败，请手动选择" : "复制路径"}
+          </button>}
+    </section>
+
     <div className="story-current-stage" role="status"><span>{activeDefinition.marker}</span><div><small>当前工作</small><strong>{activeDefinition.title}</strong><p>{activeDefinition.desc}</p></div></div>
 
     <ThreePaneLayout
       navRail={<EntityRail title="故事工作流" items={railItems} selectedId={activeStage} onSelect={(id) => selectStage(id as StoryStage)} />}
       mainStage={<div className="story-main-stage">
         {activeStage === "import" && <section id="story-import" className="story-stage-section" aria-labelledby="story-import-heading">
-          <div className="story-stage-heading"><span>1</span><div><h3 id="story-import-heading">导入小说、剧本或长文</h3><p>直接选择正文范围并提交拆解；项目标识、段落编号和模型能力由系统查询。</p></div></div>
+          <div className="story-stage-heading"><span>1</span><div><h3 id="story-import-heading">导入小说、剧本或长文</h3><p>先由服务端解析章节和段落，确认正文范围入库后，再选择分集生成待审核草稿。</p></div></div>
           <ScriptImportPanel projectId={projectId} onDraftReady={() => selectStage("review")} />
           <footer className="story-stage-next"><span>已有可审阅草稿？</span><button type="button" className="secondary" onClick={() => selectStage("review")}>查看拆解草稿</button></footer>
         </section>}

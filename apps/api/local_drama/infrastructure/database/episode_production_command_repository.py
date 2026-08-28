@@ -7,7 +7,7 @@ import hmac
 import json
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
@@ -67,7 +67,7 @@ class SqliteEpisodeProductionTransitionRepository:
                         "EPISODE_PRODUCTION_IDEMPOTENCY_MISMATCH",
                         "相同 Idempotency-Key 不能复用不同命令内容",
                     )
-                replay = json.loads(str(prior["response_json"]))
+                replay = cast(dict[str, Any], json.loads(str(prior["response_json"])))
                 replay["idempotent_replay"] = True
                 return replay
 

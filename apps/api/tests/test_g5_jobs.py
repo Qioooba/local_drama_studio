@@ -47,6 +47,51 @@ def _create(service: JobService, project_id: str, key: str, **extra: object) -> 
     )
 
 
+def test_global_job_scope_is_preserved_by_clone_and_isolates_dependencies(workspace, database) -> None:
+    service = JobService(database, workspace)
+    quick_job = service.create_job(
+        None,
+        "QUICK_GENERATION",
+        "QUICK_GENERATION_RUN",
+        "quick-run-1",
+        "GPU_H3",
+        {"prompt": "rainy street"},
+        "quick-job-1",
+        scope_kind="QUICK_GENERATION",
+        stage_code="QUICK_GENERATION",
+    )
+
+    cloned = service.clone(str(quick_job["id"]), "quick-job-clone-1")
+    assert cloned["project_id"] is None
+    assert cloned["scope_project_id"] is None
+    assert cloned["scope_kind"] == "QUICK_GENERATION"
+    assert cloned["stage_code"] == "QUICK_GENERATION"
+
+    system_job = service.create_job(
+        None,
+        "CPU_TEST",
+        "SYSTEM_PROBE",
+        "probe-1",
+        "CPU",
+        {"probe": True},
+        "system-job-1",
+        scope_kind="SYSTEM",
+    )
+    with pytest.raises(DomainRuleError, match="同一作用域"):
+        service.create_job(
+            None,
+            "QUICK_GENERATION",
+            "QUICK_GENERATION_RUN",
+            "quick-run-2",
+            "GPU_H3",
+            {"prompt": "night train"},
+            "quick-job-2",
+            scope_kind="QUICK_GENERATION",
+            stage_code="QUICK_GENERATION",
+            depends_on_job_ids=[str(system_job["id"])],
+        )
+
+
 def test_persistent_queue_idempotency_dependencies_lease_and_recovery(workspace, database) -> None:
     project = _project(workspace, database)
     project_id = str(project["id"])

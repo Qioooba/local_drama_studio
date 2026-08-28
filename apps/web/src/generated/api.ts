@@ -19,7 +19,8 @@ export type CreativeEntryRevision = { id: string; entry_id: string; revision_no:
 export type BreakdownDraftShotRevision = { shot_no: number; visual: string; action: string; dialogue: unknown; duration_seconds: number };
 export type BreakdownDraftSceneRevisionPayload = { expected_revision: number; change_note: string; title: string; summary: string; characters: string[]; shots: BreakdownDraftShotRevision[] };
 export type ScriptBreakdownDraft = { id: string; project_id: string; source_document_version_id: string; import_session_id: string; status: string; revision: number; source_document_code: string; source_document_title: string; draft: { scenes?: Array<Record<string, unknown>> }; confidence: { profile_version_id?: string; model?: string; confidence?: { overall?: number; notes?: string[] }; questions?: string[]; source_passages?: Array<{ scene_no: number; quote: string; source_start: number; source_end: number; paragraph_no?: number }>; target_episode_id?: string; target_duration_seconds?: number; total_duration_seconds?: number; model_total_duration_seconds?: number; normalized_total_duration_seconds?: number; duration_adjustment_ratio?: number; duration_adjustment_status?: 'NOT_REQUIRED' | 'NORMALIZED_TO_TARGET'; duration_tolerance_ratio?: number; duration_contract_status?: 'PASS' | 'NOT_REQUESTED'; dialogue_grounding_status?: 'PASS'; dialogue_adjustment_status?: 'NOT_REQUIRED' | 'STRIPPED_UNGROUNDED'; stripped_ungrounded_dialogue_count?: number; dialogue_adjustments?: Array<{ scene_no?: number; shot_no?: number; model_dialogue_sha256: string }>; source_coverage_status?: 'PASS' | 'NOT_REQUESTED'; covered_source_paragraph_count?: number; required_source_paragraph_count?: number; source_paragraph_start?: number; source_paragraph_end?: number; source_paragraph_count?: number; scene_grounding_status?: 'PASS'; scene_adjustment_status?: 'NOT_REQUIRED' | 'EXTRACTIVE_FALLBACK'; extractive_fallback_scene_count?: number; scene_adjustments?: Array<{ scene_no: number; model_scene_sha256: string; model_source_similarity: number }> }; profile_version_id: string | null; evidence_status: 'COMPLETE' | 'LEGACY_INCOMPLETE'; application_status: 'NOT_APPLIED' | 'PARTIALLY_APPLIED' | 'APPLIED'; applied_scene_nos?: number[]; remaining_scene_nos?: number[]; application_blockers?: Array<{ code: string; message: string }>; model_draft_sha256: string; effective_draft_revision_id: string | null; effective_draft_revision_no: number; human_edited: boolean; automatic_apply: false; requires_human_action: boolean; created_at: string };
-export type DocumentImport = { source_document_id: string; source_document_version_id: string; import_session_id: string; media_version_id: string; status: 'PREVIEW_READY' | 'COMMITTED'; preview_hash: string; reused?: boolean; index_status: 'READY' | 'FAILED_RETRYABLE'; preview: { character_count: number; paragraph_count: number; paragraphs: string[]; chapters?: Array<{ title: string; start_paragraph: number; end_paragraph: number }>; preview_character_limit: number; preview_truncated: boolean; offset_unit: 'UNICODE_CODEPOINT'; requires_llm_confirmation: true } };
+export type DocumentImport = { source_document_id: string; source_document_version_id: string; import_session_id: string; media_version_id: string; stored_source_path: string; status: 'PREVIEW_READY' | 'COMMITTED'; preview_hash: string; reused?: boolean; index_status: 'READY' | 'FAILED_RETRYABLE'; preview: { character_count: number; paragraph_count: number; paragraphs: string[]; chapters?: Array<{ title: string; start_paragraph: number; end_paragraph: number }>; preview_character_limit: number; preview_truncated: boolean; offset_unit: 'UNICODE_CODEPOINT'; requires_llm_confirmation: true } };
+export type SourceParagraphPage = { session_id: string; source_document_version_id: string; start_paragraph: number; end_paragraph: number; total_paragraph_count: number; items: Array<{ number: number; text: string; source_start: number; source_end: number; is_heading: boolean }>; chapters: Array<{ title: string; start_paragraph: number; end_paragraph: number }>; has_previous: boolean; has_more: boolean; read_only: true };
 export type SourceDocumentPassage = { source_document_version_id: string; source_start: number; source_end: number; requested_end: number; offset_unit: 'UNICODE_CODEPOINT'; text: string; text_sha256: string; source_text_sha256: string; total_character_count: number | null; has_more: boolean; maximum_character_count: number; read_only: true };
 export type ImportSession = { id: string; project_id: string; source_document_version_id: string; status: 'PREVIEW_READY' | 'COMMITTED'; revision: number; preview_hash: string; preview: { character_count: number; paragraph_count: number; paragraphs: string[]; requires_llm_confirmation: true }; validation: { valid: boolean; issue_count: number }; items: Array<Record<string, unknown>>; source_document_version: Record<string, unknown> };
 export type StoryboardShot = { id: string; code: string; order_key: string; target_duration_ms: number; shot_type: string; status: string; revision: number; current_revision_id: string; current_revision_no: number; is_frozen: number; fields: Record<string, unknown>; display_ordinal: number; timeline_start_ms: number; timeline_end_ms: number };
@@ -33,6 +34,9 @@ export type ProjectPackageDryRun = { status: 'READY_REBIND_EXISTING' | 'IDENTITY
 export type ProjectPackageStaging = { status: 'STAGED'; stage_token: string; source_name: string; byte_size: number; sha256: string; reused: boolean; source_retained: true; dry_run: ProjectPackageDryRun; database_mutated: false; runtime_contacted: false; network_contacted: false };
 export type ProjectPackageCommit = { status: 'IMPORTED' | 'REBOUND'; identity_mode: 'REBIND_EXISTING' | 'IMPORT_AS_COPY_REWRITE_IDENTITY'; project_id: string; project_code: string; stage_token: string; staged_package_retained: true; runtime_contacted: false; network_contacted: false; counts?: Record<string, number>; database_structure_changed?: false };
 export type Profile = { id: string; code: string; title: string; version_id: string; version_no?: number; capability: string; status: string; workflow_tier?: string | null; dynamic_production_tiers?: boolean; [key: string]: unknown };
+export type GenerationModelAction = 'TEXT_PLANNING' | 'TEXT_TO_IMAGE' | 'TEXT_TO_VIDEO' | 'IMAGE_TO_VIDEO';
+export type GenerationModelRoute = { action: GenerationModelAction; capability: string; profile_version_id: string; profile_title: string; version_no: number; status: string; workflow_version_id: string | null; executable: boolean };
+export type GenerationModel = { id: string; name: string; category: 'TEXT' | 'IMAGE' | 'VIDEO'; capabilities: string[]; actions: GenerationModelAction[]; routes: GenerationModelRoute[]; executable: boolean };
 export type ProfileContract = { input_contract: Record<string, unknown>; parameter_schema: Record<string, unknown>; output_contract: Record<string, unknown>; resource_policy: Record<string, unknown> };
 export type ProfileValidation = { id: string; profile_version_id?: string; contract_hash: string; status: 'PASS' | 'FAIL'; checks: Array<{ code: string; passed: boolean; label?: string }>; runtime_contacted?: false; network_contacted?: false };
 export type ProfileExecutionComponent = { artifact_id: string | null; role: string; purpose?: string | null; title: string; code?: string; kind?: string; status: string; available?: boolean; required?: boolean; model?: string; machine_path?: string; sha256?: string | null; size_bytes?: number | null; manifest_sha256?: string | null; compatibility?: Record<string, unknown>; revision?: number };
@@ -69,6 +73,7 @@ export type GenerationVariantDraft = { intent_id: string; variant_type: string; 
 export type GenerationVariant = { id: string; intent_id: string; variant_no: number; variant_type: string; parent_variant_id: string | null; recipe_hash: string; status: string; bindings: Array<Record<string, unknown>>; [key: string]: unknown };
 export type GenerationResourceEstimate = { status: 'DECLARED' | 'PARTIAL' | 'UNKNOWN'; source: 'PROFILE_RESOURCE_POLICY'; per_take: { duration_seconds: number | null; vram_bytes: number | null; disk_bytes: number | null }; policy_keys: { duration_seconds: string | null; vram_bytes: string | null; disk_bytes: string | null }; unknown: string[]; take_count: 1; bounded: true };
 export type GenerationEstimate = { status: 'AVAILABLE' | 'NO_LOCAL_ESTIMATE'; reason: 'SCHEMA_UNAVAILABLE' | 'NO_MATCHING_HISTORY' | 'INSUFFICIENT_SAMPLES' | null; dimensions: { profile_version_id: string; width: number | null; height: number | null; duration_seconds: number | null; frame_count: number | null; steps: number | null; gpu_class: string | null; gpu_hardware_model: null; gpu_hardware_model_known: false }; sample_count: number; minimum_sample_count: number; p50_seconds: number | null; p90_seconds: number | null; evidence: { source: 'LOCAL_SUCCEEDED_JOB_ATTEMPTS'; most_recent_first: true; candidate_limit: number; candidate_count: number; gpu_dimension_source: 'JOB_RESOURCE_LEASE_CLASS_OR_CHANNEL'; gpu_hardware_model_recorded: false }; audit: { read_only: true; writes_performed: 0; query_count: number; query_limit: number }; local_only: true; network_contacted: false };
+export type GpuRuntimeStatus = { state: { resource_key: string; resident_runtime: 'COMFY' | 'OLLAMA' | null; status: 'IDLE' | 'TRANSITIONING' | 'READY' | 'RESIDENT' | 'DEGRADED'; active_owner_ref: string | null; last_transition_at: string | null; last_release_at: string | null; last_error_code: string | null; last_error_detail_redacted: string | null; updated_at: string } | null; active_lease: { owner_kind: string; owner_ref: string; runtime_kind: 'COMFY' | 'OLLAMA'; acquired_at: string; heartbeat_at: string; lease_expires_at: string } | null };
 export type GenerationVariantPlan = { intent_id: string; status: 'READY' | 'BLOCKED'; plan_hash: string; recipe_hash: string; dependencies: Record<string, unknown>; effective_configuration?: Record<string, unknown>; blockers?: Array<Record<string, unknown>>; resource_estimate?: GenerationResourceEstimate; would_persist_variant: false; would_create_job: false };
 export type PromptRevision = { id: string; prompt_id: string; revision_no: number; parent_revision_id: string | null; content_text: string; structured: Record<string, unknown>; content_hash: string; status: 'FROZEN'; [key: string]: unknown };
 export type GenerationExperiment = { id: string; intent_id: string; title: string; status: 'DRAFT' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED'; plan_hash: string; cell_count: number; expanded_count: number; remaining_count: number; [key: string]: unknown };
@@ -479,8 +484,8 @@ export async function commitStagedProjectPackage(stageToken: string, payload: { 
   return requestJson(`/api/v1/project-packages/${encodeURIComponent(stageToken)}:commit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
-export async function listProfiles(baseUrl = ''): Promise<{ items: Profile[] }> {
-  return requestJson<{ items: Profile[] }>('/api/v1/profiles', undefined, baseUrl);
+export async function listProfiles(baseUrl = ''): Promise<{ items: Profile[]; models?: GenerationModel[]; manifest?: Record<string, unknown> }> {
+  return requestJson<{ items: Profile[]; models?: GenerationModel[]; manifest?: Record<string, unknown> }>('/api/v1/profiles', undefined, baseUrl);
 }
 
 export async function getProfileVersion(profileVersionId: string, baseUrl = ''): Promise<{ profile_version: ProfileVersionDetail }> {
@@ -549,6 +554,10 @@ export async function getDiagnostics(baseUrl = ''): Promise<{ run: DiagnosticRun
 
 export async function runDiagnostics(baseUrl = ''): Promise<{ run: DiagnosticRun }> {
   return requestJson<{ run: DiagnosticRun }>('/api/v1/diagnostics/runs', { method: 'POST' }, baseUrl);
+}
+
+export async function getGpuRuntimeStatus(baseUrl = ''): Promise<{ gpu_runtime: GpuRuntimeStatus }> {
+  return requestJson<{ gpu_runtime: GpuRuntimeStatus }>('/api/v1/diagnostics/gpu-runtime', undefined, baseUrl);
 }
 
 export async function dryRunDiagnosticFix(checkId: string, baseUrl = ''): Promise<{ preview: Record<string, unknown> }> {
@@ -805,13 +814,18 @@ export async function getImportSession(sessionId: string, baseUrl = ''): Promise
   return requestJson(`/api/v1/import-sessions/${encodeURIComponent(sessionId)}`, undefined, baseUrl);
 }
 
+export async function getImportSessionParagraphs(sessionId: string, start = 1, limit = 40, baseUrl = ''): Promise<SourceParagraphPage> {
+  const query = new URLSearchParams({ start: String(start), limit: String(limit) });
+  return requestJson(`/api/v1/import-sessions/${encodeURIComponent(sessionId)}/paragraphs?${query.toString()}`, undefined, baseUrl);
+}
+
 export async function getSourceDocumentPassage(sourceDocumentVersionId: string, start: number, end: number, baseUrl = ''): Promise<SourceDocumentPassage> {
   const query = new URLSearchParams({ start: String(start), end: String(end) });
   return requestJson(`/api/v1/source-document-versions/${encodeURIComponent(sourceDocumentVersionId)}/passage?${query.toString()}`, undefined, baseUrl);
 }
 
-export async function commitImportSession(sessionId: string, expectedPreviewHash: string, baseUrl = ''): Promise<{ commit: ImportSession & { idempotent: boolean; source_preserved: true } }> {
-  return requestJson(`/api/v1/import-sessions/${encodeURIComponent(sessionId)}:commit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expected_preview_hash: expectedPreviewHash }) }, baseUrl);
+export async function commitImportSession(sessionId: string, payload: { expected_preview_hash: string; source_paragraph_start: number; source_paragraph_end: number }, baseUrl = ''): Promise<{ commit: ImportSession & { idempotent: boolean; source_preserved: true } }> {
+  return requestJson(`/api/v1/import-sessions/${encodeURIComponent(sessionId)}:commit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
 export async function branchPromptRevision(revisionId: string, payload: { content_text: string; structured?: Record<string, unknown> }, baseUrl = ''): Promise<{ revision: PromptRevision }> {
@@ -854,7 +868,7 @@ export async function listSeasons(projectId: string, baseUrl = ''): Promise<{ it
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/seasons`, undefined, baseUrl);
 }
 
-export type ProjectEpisodeCatalog = { project_id: string; seasons: Array<{ id: string; code: string; title: string; number?: number; display_order?: number; episodes: Array<{ id: string; code: string; title: string; number?: number; display_order?: number; production_status: string; target_duration_ms?: number }> }>; read_only: true; runtime_contacted: false; network_contacted: false; mutated: false };
+export type ProjectEpisodeCatalog = { project_id: string; seasons: Array<{ id: string; code: string; title: string; number?: number; display_order?: number; episodes: Array<{ id: string; code: string; title: string; number?: number; display_order?: number; production_status: string; target_duration_ms?: number; preview_render_id?: string | null; preview_media_version_id?: string | null }> }>; read_only: true; runtime_contacted: false; network_contacted: false; mutated: false };
 
 export type ProjectCreatorSetup = { project_id: string; milestones: Record<'episode_count' | 'production_plan_count' | 'published_profile_binding_count' | 'reviewable_story_draft_count' | 'active_story_asset_count' | 'shot_intent_count' | 'shot_generation_job_count', { ready: boolean; count: number }>; operations: { worker_ready: boolean; active_worker_count: number }; completed_count: number; total_count: 7; observed_at: string; read_only: true; runtime_contacted: false; network_contacted: false; mutated: false };
 
@@ -1253,6 +1267,18 @@ export async function selectDeliveryTargetVersion(projectId: string, versionId: 
 
 export async function getModelCompatibility(projectId: string, baseUrl = ''): Promise<{ compatibility: ModelCompatibilitySnapshot }> {
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/model-compatibility`, undefined, baseUrl);
+}
+
+export async function getGlobalModelRegistry(baseUrl = ''): Promise<{ compatibility: ModelCompatibilitySnapshot }> {
+  return requestJson('/api/v1/model-registry', undefined, baseUrl);
+}
+
+export async function registerGlobalModelReference(payload: { code: string; kind: string; machine_path_ref: string; license_note?: string }, baseUrl = ''): Promise<{ artifact: LocalModelReference }> {
+  return requestJson('/api/v1/model-registry/artifacts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function createGlobalModelCompatibilityReport(modelArtifactId: string, requiredCapability?: 'T2V' | 'I2V' | 'VIDEO' | 'IMAGE' | 'AUDIO' | 'TTS' | 'TEXT', baseUrl = ''): Promise<{ report: ModelCompatibilityReport }> {
+  return requestJson('/api/v1/model-registry/compatibility-report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_artifact_id: modelArtifactId, ...(requiredCapability ? { required_capability: requiredCapability } : {}) }) }, baseUrl);
 }
 
 export async function registerLocalModelReference(projectId: string, payload: { code: string; kind: string; machine_path_ref: string; license_note?: string }, baseUrl = ''): Promise<{ artifact: LocalModelReference }> {

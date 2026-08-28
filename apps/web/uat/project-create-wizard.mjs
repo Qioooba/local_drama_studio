@@ -16,19 +16,21 @@ try {
     await page.goto(`${baseUrl}/projects`, { waitUntil: "networkidle" });
     await page.getByRole("button", { name: "新建项目" }).click();
     await page.getByLabel(/作品标题/).fill(`创作者入口验收 ${viewport.width}`);
-    const technicalIdCollapsed = !await page.getByText("高级：项目技术标识").locator("..").evaluate((node) => node.hasAttribute("open"));
-    await page.getByRole("button", { name: "继续选择创作方式" }).click();
-    const recommendedFormatSelected = await page.getByLabel(/竖屏短剧/).isChecked();
-    const writingFirstSelected = await page.getByLabel(/先开始创作/).isChecked();
+    const technicalIdAutomatic = await page.getByText("项目技术标识", { exact: true }).isVisible() && await page.getByLabel("项目技术标识").count() === 0;
+    await page.getByRole("button", { name: "继续设置制作规格" }).click();
+    const recommendedFormatSelected = await page.getByRole("radio", { name: /竖屏 9:16/ }).isChecked() && await page.getByLabel("常用分辨率").nth(1).inputValue() === "1080x1920";
+    const customFormatAvailable = await page.getByRole("radio", { name: /自定义尺寸/ }).isVisible();
+    const modelConfigurationAbsent = await page.getByText("同时配置现有模型", { exact: true }).count() === 0 && await page.getByText("开始方式", { exact: true }).count() === 0;
     await page.getByRole("button", { name: "继续并自动检查" }).click();
     await page.getByText("创作就绪", { exact: true }).waitFor();
     const geometry = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth, horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth }));
-    const minControlHeight = await page.locator(".project-create-wizard input:visible, .project-create-wizard select:visible, .project-create-wizard button:visible").evaluateAll((items) => Math.min(...items.map((item) => item.getBoundingClientRect().height)));
-    results.push({ viewport, technicalIdCollapsed, recommendedFormatSelected, writingFirstSelected, automaticPreflight: true, finalCreateClicked: false, geometry, minControlHeight, consoleProblems, pageErrors, failedResponses, publicRequests });
+    const minControlHeight = await page.locator(".project-create-wizard input:not([type='radio']):visible, .project-create-wizard select:visible, .project-create-wizard button:visible").evaluateAll((items) => Math.min(...items.map((item) => item.getBoundingClientRect().height)));
+    const minRadioHitHeight = await page.locator(".creator-format-orientation:visible, .creator-custom-format-toggle:visible").evaluateAll((items) => Math.min(...items.map((item) => item.getBoundingClientRect().height)));
+    results.push({ viewport, technicalIdAutomatic, recommendedFormatSelected, customFormatAvailable, modelConfigurationAbsent, automaticPreflight: true, finalCreateClicked: false, geometry, minControlHeight, minRadioHitHeight, consoleProblems, pageErrors, failedResponses, publicRequests });
     await page.close();
   }
 } finally { await browser.close(); }
-const passed = results.every((item) => item.technicalIdCollapsed && item.recommendedFormatSelected && item.writingFirstSelected && !item.finalCreateClicked && !item.geometry.horizontalOverflow && item.minControlHeight >= 40 && [item.consoleProblems, item.pageErrors, item.failedResponses, item.publicRequests].every((values) => values.length === 0));
+const passed = results.every((item) => item.technicalIdAutomatic && item.recommendedFormatSelected && item.customFormatAvailable && item.modelConfigurationAbsent && !item.finalCreateClicked && !item.geometry.horizontalOverflow && item.minControlHeight >= 40 && item.minRadioHitHeight >= 40 && [item.consoleProblems, item.pageErrors, item.failedResponses, item.publicRequests].every((values) => values.length === 0));
 const evidence = {
   schema_version: "localdrama.project-create-wizard-uat.v2",
   observed_at: new Date().toISOString(),
@@ -36,8 +38,8 @@ const evidence = {
   mode: "AUTOMATIC_PREFLIGHT_NO_CREATE",
   database_mutated: false,
   screenshots_captured: false,
-  expected_flow: ["作品信息", "创作方式", "确认创建"],
-  automatic_fields: ["project_code", "resolution", "fps", "subtitle_language", "production_plan_code", "delivery_target_code", "delivery_path"],
+  expected_flow: ["作品信息", "制作规格", "确认创建"],
+  automatic_fields: ["project_code", "resolution", "fps", "subtitle_language"],
   results,
 };
 await writeFile(new URL("../../../docs/evidence/g10/project-create-wizard-uat-2026-08-24.json", import.meta.url), `${JSON.stringify(evidence, null, 2)}\n`, "utf8");

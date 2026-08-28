@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { appendProjectEpisode, getProjectOverviewV2, type ProductRouteTarget } from "../generated/api";
@@ -8,10 +8,10 @@ import { ProjectHomePage } from "./ProjectHomePage";
 vi.mock("../generated/api", () => ({ appendProjectEpisode: vi.fn(), getProjectOverviewV2: vi.fn() }));
 
 const seasons = [
-  { id: "season-2", code: "S02", title: "第二季", number: 2, episodes: [{ id: "episode-3", code: "EP03", title: "第二季首集", number: 1, production_status: "PLANNED" }] },
+  { id: "season-2", code: "S02", title: "第二季", number: 2, episodes: [{ id: "episode-3", code: "EP03", title: "第二季首集", number: 1, production_status: "PLANNED", preview_render_id: null, preview_media_version_id: null }] },
   { id: "season-1", code: "S01", title: "第一季", number: 1, episodes: [
-    { id: "episode-2", code: "EP02", title: "未完成", number: 2, production_status: "PLANNED" },
-    { id: "episode-1", code: "EP01", title: "已交付", number: 1, production_status: "DELIVERED" },
+    { id: "episode-2", code: "EP02", title: "未完成", number: 2, production_status: "PLANNED", preview_render_id: null, preview_media_version_id: "media-2" },
+    { id: "episode-1", code: "EP01", title: "已交付", number: 1, production_status: "DELIVERED", preview_render_id: "render-1", preview_media_version_id: "media-1" },
   ] },
 ];
 
@@ -45,9 +45,20 @@ describe("ProjectHomePage v2 overview", () => {
     expect(screen.getByRole("heading", { name: "S02 · 第二季" })).toBeTruthy();
     await waitFor(() => expect(getProjectOverviewV2).toHaveBeenCalledTimes(1));
     expect(screen.getAllByRole("heading", { level: 4 }).map((node) => node.textContent)).toEqual(["S01 · 第一季", "S02 · 第二季"]);
+    expect(screen.getByText("全项目 3 集")).toBeTruthy();
+    expect(screen.getAllByText("本季 2 集")).toHaveLength(1);
+    expect(screen.getAllByText("本季 1 集")).toHaveLength(1);
+    expect((await screen.findByAltText("第 1 集 已交付 缩略图")).getAttribute("src")).toContain("/episode-renders/render-1/thumbnail");
+    expect(screen.getByAltText("第 2 集 未完成 缩略图").getAttribute("src")).toContain("/media-versions/media-2/thumbnail");
+    expect(screen.queryByText("第二季首集")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /S02 · 第二季/ }));
+    expect(screen.getByText("第二季首集")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "大图" }));
+    expect(screen.getByRole("button", { name: "大图" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("heading", { name: "导入并拆解故事" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "进入故事" }).getAttribute("href")).toBe("/projects/project-1/story#story-import");
-    expect(screen.getAllByRole("link", { name: "继续制作" })).toHaveLength(2);
+    expect(screen.getByRole("link", { name: /第 1 集 已交付，查看交付/ }).getAttribute("href")).toContain("/delivery");
+    expect(screen.getAllByText("继续制作")).toHaveLength(2);
   });
 
   it("shows one recoverable overview error without presenting partial projections", async () => {

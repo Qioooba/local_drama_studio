@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TypeVar
+from typing import TypeVar, cast
 
 from fastapi import APIRouter, Query, Request
 
@@ -18,7 +18,7 @@ T = TypeVar("T")
 
 
 def _database(request: Request) -> Database:
-    return request.app.state.database
+    return cast(Database, request.app.state.database)
 
 
 def _query(request: Request, fn: Callable[[QcPolicyQueryService], T]) -> T:

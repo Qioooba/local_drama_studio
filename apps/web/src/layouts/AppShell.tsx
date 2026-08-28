@@ -12,6 +12,7 @@ import { Dialog } from "../components/ui";
 import { DRAFT_STATE_EVENT, retireWorkspaceTabPersistence, type DraftStateChange } from "../features/drafts/draftGuard";
 
 const shellActions: StudioCommand[] = [
+  { id: "action.quick-create", label: "快速生成", description: "生成独立画面或视频，不创建项目", group: "当前页面", keywords: ["一句话", "视频", "画面"], run: ({ navigate }) => navigate(routes.quickCreate()) },
   { id: "action.new-project", label: "新建项目", group: "当前页面", keywords: ["创建", "快速成片", "专业制片"], run: ({ navigate }) => navigate("/projects?create=1") },
   { id: "action.project-settings", label: "项目设置", group: "当前页面", enabled: ({ projectId }) => Boolean(projectId), run: ({ navigate, projectId }) => navigate(routes.settings(projectId!)) },
   { id: "action.system-jobs", label: "查看后台任务", group: "系统", run: ({ navigate, projectId }) => navigate(routes.systemJobs(projectId)) },
@@ -147,12 +148,12 @@ export function AppShell() {
   return <main className="shell">
     <a className="skip-link" href="#v2-workspace-content">跳到工作区内容</a>
     <header className="topbar">
-      <Link className="brand-lockup brand-link" to={routes.projects()} aria-label="返回项目列表">
+      <Link className="brand-lockup brand-link" to={routes.home()} aria-label="返回全局工作台">
         <span className="brand-mark" aria-hidden="true"><StudioMarkIcon /></span>
         <div><p className="eyebrow">本地短剧制作</p><h1>AI 导演工作室</h1></div>
       </Link>
       <div className="topbar-context">
-        <button ref={mobileNavTriggerRef} type="button" className="mobile-nav-toggle" aria-label="打开项目导航" aria-expanded={mobileNavOpen} onClick={() => setMobileNavOpen((open) => !open)}><StudioIcon name="menu" /><span>菜单</span></button>
+        <button ref={mobileNavTriggerRef} type="button" className="mobile-nav-toggle" aria-label="打开主导航" aria-expanded={mobileNavOpen} onClick={() => setMobileNavOpen((open) => !open)}><StudioIcon name="menu" /><span>菜单</span></button>
         <CommandPalette context={commandContext} baseCommands={shellActions} />
         <div className="context-selectors">
           <label>项目<select aria-label="当前项目" value={projectId ?? ""} onChange={(event) => navigate(event.target.value ? routes.projectHome(event.target.value) : routes.projects())}>
@@ -174,15 +175,18 @@ export function AppShell() {
     </header>
     <div className="layout">
       {mobileNavOpen && <div className="mobile-nav-backdrop" role="presentation" onMouseDown={() => { setMobileNavOpen(false); mobileNavTriggerRef.current?.focus(); }} />}
-      <nav ref={mobileNavRef} className={`sidebar${mobileNavOpen ? " mobile-open" : ""}`} aria-label="项目导航" onClick={(event) => { if ((event.target as Element).closest("a")) setMobileNavOpen(false); }}>
+      <nav ref={mobileNavRef} className={`sidebar${mobileNavOpen ? " mobile-open" : ""}`} aria-label="主导航" onClick={(event) => { if ((event.target as Element).closest("a")) setMobileNavOpen(false); }}>
         <div className="sidebar-scroll">
-          <span className="nav-title">项目</span>
+          <span className="nav-title">工作区</span>
+          <StudioNavLink icon="home" to={routes.home()} end>全局工作台</StudioNavLink>
+          <StudioNavLink icon="sparkles" to={routes.quickCreate()} end>快速生成</StudioNavLink>
           <StudioNavLink icon="grid" to={routes.projects()} end>全部项目</StudioNavLink>
           {projectId ? <>
-            <StudioNavLink icon="home" to={routes.projectHome(projectId)} end>首页</StudioNavLink>
+            <span className="nav-title nav-section">当前项目</span>
+            <StudioNavLink icon="clapperboard" to={routes.projectHome(projectId)} end>项目首页</StudioNavLink>
             <StudioNavLink icon="book" to={routes.story(projectId)}>故事</StudioNavLink>
             <StudioNavLink icon="assets" to={routes.assets(projectId)}>资产</StudioNavLink>
-          </> : <p className="sidebar-context-hint">选择项目后进入故事与资产工作区。</p>}
+          </> : <p className="sidebar-context-hint">选择项目后显示故事、资产与本集制作流程。</p>}
           {episodePrefix ? <>
             <span className="nav-title nav-section">本集</span>
             <StudioNavLink icon="book" to={routes.episodePlan(projectId!, episodeId!)}>策划</StudioNavLink>
@@ -196,6 +200,11 @@ export function AppShell() {
             <StudioNavLink icon="sliders" to={routes.settings(projectId)}>设置</StudioNavLink>
             <StudioNavLink icon="workflow" to={routes.visualLabs(projectId)}>Visual Lab</StudioNavLink>
           </>}
+          <span className="nav-title nav-section">系统中心</span>
+          <StudioNavLink icon="cpu" to={routes.systemCapabilities()}>能力与模型</StudioNavLink>
+          <StudioNavLink icon="activity" to={routes.systemJobs(projectId)}>任务与机器</StudioNavLink>
+          <StudioNavLink icon="shield" to={routes.systemDiagnostics(projectId)}>诊断与审计</StudioNavLink>
+          <StudioNavLink icon="workflow" to={routes.systemWorkflows(projectId)}>工作流与环境</StudioNavLink>
         </div>
       </nav>
       <section ref={workspaceRef} className="content v2-content" id="v2-workspace-content" tabIndex={-1}>

@@ -51,6 +51,9 @@ from .api.routes.prompts import router as prompts_router
 from .api.routes.provider_connections import router as provider_connections_router
 from .api.routes.provider_events import router as provider_events_router
 from .api.routes.qc_policies import router as qc_policies_router
+from .api.routes.quick_generation_presets import router as quick_generation_presets_router
+from .api.routes.quick_generations import output_router as quick_generation_outputs_router
+from .api.routes.quick_generations import router as quick_generations_router
 from .api.routes.reviews import router as reviews_router
 from .api.routes.search import router as search_router
 from .api.routes.shot_editing import router as shot_editing_router
@@ -166,6 +169,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(llm_router, prefix="/api/v1")
     app.include_router(media_router, prefix="/api/v1")
     app.include_router(one_sentence_video_runs_router, prefix="/api/v1")
+    app.include_router(quick_generations_router, prefix="/api/v1")
+    app.include_router(quick_generation_outputs_router, prefix="/api/v1")
+    app.include_router(quick_generation_presets_router, prefix="/api/v1")
     app.include_router(provider_events_router, prefix="/api/v1")
     app.include_router(post_v2_router, prefix="/api/v2")
     app.include_router(audio_v2_router, prefix="/api/v2")

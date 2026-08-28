@@ -318,7 +318,7 @@ class WorkflowRuntimeService:
             pid = process.pid
         elif kind != "EXTERNAL":
             raise DomainRuleError("RUNTIME_INSTANCE_KIND_INVALID", "运行实例类型无效")
-        port = urlparse(str(manifest["endpoint"])).port
+        port = urlparse(str(manifest["endpoint"])).port or 0
         with self.database.transaction() as connection:
             connection.execute(
                 """INSERT INTO runtime_instances
@@ -346,4 +346,3 @@ class WorkflowRuntimeService:
         with self.database.transaction() as connection:
             connection.execute("UPDATE runtime_instances SET state='STOPPED',updated_at=?,last_heartbeat_at=?,revision=revision+1 WHERE id=?", (now, now, expected_instance_id))
         return {"instance_id": expected_instance_id, "observed_state": "STOPPED", "stopped": True}
-

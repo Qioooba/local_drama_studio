@@ -143,6 +143,20 @@ class ComfyClient:
         result = self._request("POST", "/interrupt", {})
         return dict(result)
 
+    def free_memory(self, *, unload_models: bool = True, free_memory: bool = True) -> dict[str, Any]:
+        """Ask the owning ComfyUI process to evict models and CUDA caches.
+
+        The endpoint is asynchronous: callers that require a hard transition
+        must poll ``system_stats`` after this command.
+        """
+
+        result = self._request(
+            "POST",
+            "/free",
+            {"unload_models": bool(unload_models), "free_memory": bool(free_memory)},
+        )
+        return dict(result)
+
     def collect_outputs(self, history_item: dict[str, Any]) -> list[Path]:
         if self.output_root is None:
             raise DomainRuleError("COMFY_OUTPUT_ROOT_REQUIRED", "收集 Comfy 输出需要显式配置本地 output_root")

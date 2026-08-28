@@ -4,6 +4,7 @@ import ctypes
 import os
 import re
 from ctypes import wintypes
+from typing import Any
 
 from local_drama.platform.contracts import SecretRef
 
@@ -51,7 +52,7 @@ class WindowsCredentialStore:
         return f"LocalDramaStudio/{_safe(ref.namespace)}/{_safe(ref.key)}"
 
     @staticmethod
-    def _library():
+    def _library() -> Any | None:
         if os.name != "nt":
             return None
         library = ctypes.WinDLL("Advapi32.dll", use_last_error=True)

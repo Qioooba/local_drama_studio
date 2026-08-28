@@ -9,11 +9,13 @@ import socket
 import time
 import uuid
 from collections.abc import Callable
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from local_drama.application.job_resources import GpuRuntime
 from local_drama.application.jobs import JobService
 from local_drama.application.media import MediaService
 from local_drama.application.workflows import WorkflowService
@@ -22,6 +24,10 @@ from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.comfy import ComfyClient
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.atomic import replace_path
+
+
+def _object_dict(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 class ComfyGenerationService:
@@ -33,7 +39,7 @@ class ComfyGenerationService:
     # decode, may fail the attempt.
     BUSY_UNAVAILABLE_GRACE_SECONDS = 1800
 
-    def __init__(self, database: Database, settings: Settings) -> None:
+    def __init__(self, database: Database, settings: Settings, *, gpu_coordinator: Any | None = None) -> None:
         self.database = database
         self.settings = settings
         self.jobs = JobService(database, settings)
@@ -44,12 +50,14 @@ class ComfyGenerationService:
             settings.comfy_output_root,
             allow_private_network=settings.allows_private_network,
         )
+        self.gpu_coordinator = gpu_coordinator
 
     def submit_next(
         self,
         worker_id: str,
         *,
         worker_session_id: str | None = None,
+        before_queue_prompt: Callable[[dict[str, Any], dict[str, Any]], None] | None = None,
     ) -> dict[str, Any] | None:
         claim = self.jobs.claim(
             worker_id,
@@ -123,6 +131,47 @@ class ComfyGenerationService:
                     {"media_version_id": media_version_id},
                 )
             semantic_inputs[role] = target_name
+        # Quick Create is intentionally outside the project/media-version
+        # domain. Its selected keyframe is still a verified immutable job
+        # artifact, so materialize that artifact directly instead of creating
+        # a fake project asset merely to satisfy an I2V input slot.
+        for binding in snapshot.get("artifact_bindings", []):
+            if not isinstance(binding, dict) or not binding.get("role") or not binding.get("artifact_id"):
+                raise DomainRuleError("COMFY_ARTIFACT_BINDING_INVALID", "Comfy Job 的快捷作品输入快照无效")
+            role = str(binding["role"])
+            artifact_id = str(binding["artifact_id"])
+            if role not in {"FIRST_FRAME", "END_FRAME", "MIDDLE_KEYFRAME", "REFERENCE_IMAGE"}:
+                raise DomainRuleError("COMFY_MEDIA_ROLE_UNSUPPORTED", "Comfy 输入物化不支持该媒体角色", {"role": role})
+            if self.settings.comfy_input_root is None:
+                raise DomainRuleError("COMFY_INPUT_ROOT_REQUIRED", "媒体输入需要显式隔离的 Comfy input root")
+            with self.database.connect() as connection:
+                artifact = connection.execute(
+                    """SELECT a.id,a.sandbox_rel_path,a.sha256,a.status,j.scope_kind
+                    FROM artifacts a JOIN job_attempts ja ON ja.id=a.job_attempt_id
+                    JOIN jobs j ON j.id=ja.job_id WHERE a.id=?""",
+                    (artifact_id,),
+                ).fetchone()
+            if artifact is None or str(artifact["status"]) != "VERIFIED" or str(artifact["scope_kind"]) != "QUICK_GENERATION":
+                raise DomainRuleError("COMFY_ARTIFACT_BINDING_INVALID", "快捷作品输入必须来自已验证的快速生成产物")
+            work_root = self.settings.work_root.resolve()
+            source = (work_root / str(artifact["sandbox_rel_path"])).resolve()
+            if not source.is_relative_to(work_root) or not source.is_file() or source.is_symlink():
+                raise DomainRuleError("COMFY_ARTIFACT_FILE_MISSING", "快捷作品输入文件不存在或已越过工作区")
+            input_root = self.settings.comfy_input_root.resolve()
+            input_root.mkdir(parents=True, exist_ok=True)
+            target_name = f"quick-{artifact_id}-{str(artifact['sha256'])[:12]}{source.suffix.lower()}"
+            target = (input_root / target_name).resolve()
+            if not target.is_relative_to(input_root):
+                raise DomainRuleError("COMFY_INPUT_PATH_INVALID", "Comfy 输入物化路径越界")
+            if not target.exists():
+                partial = target.with_name(f".partial-{target.name}")
+                shutil.copyfile(source, partial)
+                replace_path(partial, target)
+            digest_hex = hashlib.sha256(target.read_bytes()).hexdigest()
+            if digest_hex != str(artifact["sha256"]):
+                target.unlink(missing_ok=True)
+                raise DomainRuleError("COMFY_INPUT_INTEGRITY_MISMATCH", "快捷作品输入物化后的 SHA-256 不一致")
+            semantic_inputs[role] = target_name
         compiled = self.workflows.compile_semantic_inputs(workflow_version_id, semantic_inputs)
         compiled["effect_report"]["snapshot_only_roles"] = snapshot_only_roles
         effective_snapshot = snapshot.get("execution_snapshot", {}).get("effective_configuration")
@@ -144,6 +193,8 @@ class ComfyGenerationService:
                 ).hexdigest()
             compiled["runtime_overrides"] = runtime_evidence
         client_id = f"local-drama-{worker_id}"
+        if before_queue_prompt is not None:
+            before_queue_prompt(job, attempt)
         try:
             response = self.comfy.queue_prompt(
                 compiled["workflow"],
@@ -215,14 +266,29 @@ class ComfyGenerationService:
                 "SELECT sequence_no,event_type,semantic_phase FROM provider_execution_events WHERE job_attempt_id=? ORDER BY sequence_no DESC LIMIT 1",
                 (attempt_id,),
             ).fetchone()
-            if event_type != "PROGRESS" and last is not None and str(last["event_type"]) == event_type and str(last["semantic_phase"] or "") == str(semantic_phase or ""):
+            if (
+                event_type != "PROGRESS"
+                and last is not None
+                and str(last["event_type"]) == event_type
+                and str(last["semantic_phase"] or "") == str(semantic_phase or "")
+            ):
                 return
             sequence_no = int(last["sequence_no"]) + 1 if last else 1
             connection.execute(
                 """INSERT INTO provider_execution_events
                 (id,job_attempt_id,provider_prompt_id,sequence_no,event_type,semantic_phase,progress,payload_redacted_json,occurred_at)
                 VALUES (?,?,?,?,?,?,?,?,?)""",
-                (str(uuid.uuid4()), attempt_id, prompt_id, sequence_no, event_type, semantic_phase, progress, json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")), now),
+                (
+                    str(uuid.uuid4()),
+                    attempt_id,
+                    prompt_id,
+                    sequence_no,
+                    event_type,
+                    semantic_phase,
+                    progress,
+                    json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                    now,
+                ),
             )
 
     def _persist_job_execution_evidence(self, job_id: str, compiled: dict[str, Any], prompt_id: str) -> None:
@@ -249,13 +315,13 @@ class ComfyGenerationService:
         graph returned by ``compile_semantic_inputs`` and returns evidence that
         is sent with the Comfy prompt.
         """
-        settings = snapshot.get("effective_settings") if isinstance(snapshot.get("effective_settings"), dict) else {}
-        sigma_points = settings.get("sigma_points")
+        settings = _object_dict(snapshot.get("effective_settings"))
+        sigma_points = settings.get("steps", settings.get("sigma_points"))
         changed = False
         sigma_nodes: list[str] = []
         if isinstance(sigma_points, int) and not isinstance(sigma_points, bool):
             for node_id, node in workflow.items():
-                if not isinstance(node, dict) or node.get("class_type") != "BasicScheduler":
+                if not isinstance(node, dict) or node.get("class_type") not in {"BasicScheduler", "KSampler", "KSamplerAdvanced"}:
                     continue
                 inputs = node.get("inputs")
                 if isinstance(inputs, dict) and "steps" in inputs:
@@ -263,11 +329,43 @@ class ComfyGenerationService:
                     sigma_nodes.append(str(node_id))
                     changed = True
 
+        parameter_nodes: dict[str, list[str]] = {
+            "cfg": [],
+            "sampler_name": [],
+            "scheduler": [],
+            "denoise": [],
+            "width": [],
+            "height": [],
+            "frame_count": [],
+            "fps": [],
+        }
+        for node_id, node in workflow.items():
+            if not isinstance(node, dict):
+                continue
+            raw_inputs = node.get("inputs")
+            if not isinstance(raw_inputs, dict):
+                continue
+            inputs = raw_inputs
+            class_type = str(node.get("class_type") or "")
+            for key in ("cfg", "sampler_name", "scheduler", "denoise", "width", "height"):
+                value = settings.get(key)
+                if value is not None and key in inputs:
+                    inputs[key] = value
+                    parameter_nodes[key].append(str(node_id))
+                    changed = True
+            frame_count = settings.get("frame_count")
+            if isinstance(frame_count, int) and "Video" in class_type and "length" in inputs:
+                inputs["length"] = frame_count
+                parameter_nodes["frame_count"].append(str(node_id))
+                changed = True
+            fps = settings.get("fps")
+            if isinstance(fps, (int, float)) and not isinstance(fps, bool) and class_type == "CreateVideo" and "fps" in inputs:
+                inputs["fps"] = float(fps)
+                parameter_nodes["fps"].append(str(node_id))
+                changed = True
+
         acceleration = str(settings.get("acceleration") or "OFF").upper()
-        lora_nodes = [
-            str(node_id) for node_id, node in workflow.items()
-            if isinstance(node, dict) and node.get("class_type") == "LoraLoaderModelOnly"
-        ]
+        lora_nodes = [str(node_id) for node_id, node in workflow.items() if isinstance(node, dict) and node.get("class_type") == "LoraLoaderModelOnly"]
         lora_strength = settings.get("lora_strength", 1.0)
         lora_asset = None
         if acceleration == "TURBO_LORA":
@@ -284,25 +382,33 @@ class ComfyGenerationService:
                 lora_nodes.append(lora_id)
                 changed = True
             else:
-                lora_asset = str(workflow[lora_nodes[0]].get("inputs", {}).get("lora_name") or "") or None
+                lora_asset = str(_object_dict(workflow[lora_nodes[0]].get("inputs")).get("lora_name") or "") or None
             model_ref = [lora_nodes[0], 0]
             for node in workflow.values():
-                if not isinstance(node, dict) or not isinstance(node.get("inputs"), dict):
+                if not isinstance(node, dict):
                     continue
+                raw_inputs = node.get("inputs")
+                if not isinstance(raw_inputs, dict):
+                    continue
+                inputs = raw_inputs
                 if node.get("class_type") == "LoraLoaderModelOnly":
-                    node["inputs"]["strength_model"] = float(lora_strength)
-                elif node.get("class_type") in {"BasicScheduler", "BasicGuider"} and node["inputs"].get("model") == ["1", 0]:
-                    node["inputs"]["model"] = model_ref
+                    inputs["strength_model"] = float(lora_strength)
+                elif node.get("class_type") in {"BasicScheduler", "BasicGuider"} and inputs.get("model") == ["1", 0]:
+                    inputs["model"] = model_ref
                     changed = True
         elif acceleration == "OFF" and lora_nodes:
             for lora_id in lora_nodes:
                 lora_node = workflow.get(lora_id)
-                base_ref = lora_node.get("inputs", {}).get("model", ["1", 0]) if isinstance(lora_node, dict) else ["1", 0]
+                base_ref = _object_dict(lora_node.get("inputs")).get("model", ["1", 0]) if isinstance(lora_node, dict) else ["1", 0]
                 for node in workflow.values():
-                    if not isinstance(node, dict) or not isinstance(node.get("inputs"), dict):
+                    if not isinstance(node, dict):
                         continue
-                    if node.get("class_type") in {"BasicScheduler", "BasicGuider"} and node["inputs"].get("model") == [lora_id, 0]:
-                        node["inputs"]["model"] = base_ref
+                    raw_inputs = node.get("inputs")
+                    if not isinstance(raw_inputs, dict):
+                        continue
+                    inputs = raw_inputs
+                    if node.get("class_type") in {"BasicScheduler", "BasicGuider"} and inputs.get("model") == [lora_id, 0]:
+                        inputs["model"] = base_ref
                         changed = True
                 workflow.pop(lora_id, None)
                 changed = True
@@ -315,7 +421,7 @@ class ComfyGenerationService:
                 if not isinstance(node, dict):
                     continue
                 class_type = str(node.get("class_type") or "")
-                inputs = node.get("inputs") if isinstance(node.get("inputs"), dict) else {}
+                inputs = _object_dict(node.get("inputs"))
                 if class_type == "VAELoader" and "audio" in str(inputs.get("vae_name") or "").lower():
                     audio_vae_nodes.append(str(node_id))
                 if class_type == "VAEDecodeAudio":
@@ -336,6 +442,7 @@ class ComfyGenerationService:
             "changed": changed,
             "sigma_points": sigma_points,
             "sigma_nodes": sigma_nodes,
+            "parameter_nodes": parameter_nodes,
             "acceleration": acceleration,
             "lora_nodes": [str(node_id) for node_id in lora_nodes if str(node_id) in workflow],
             "lora_asset": lora_asset,
@@ -363,60 +470,74 @@ class ComfyGenerationService:
         dedicated Comfy worker instead of being claimed by LocalMediaWorker and
         rejected as an unsupported job type.
         """
-        submission = self.submit_next(worker_id, worker_session_id=worker_session_id)
-        if submission is None:
-            return None
-        attempt = submission["attempt"]
-        attempt_id = str(attempt["id"])
-        timeout = float(timeout_seconds if timeout_seconds is not None else self.GPU_LEASE_SECONDS)
-        deadline = time.monotonic() + max(1.0, timeout)
-        websocket = getattr(self.comfy, "websocket_events", None)
-        runtime_reachable = False
-        try:
-            endpoint = urlparse(self.comfy.base_url)
-            with socket.create_connection((str(endpoint.hostname), int(endpoint.port or 8188)), timeout=0.25):
-                runtime_reachable = True
-        except OSError:
+        with ExitStack() as runtime_stack:
+            def prepare_runtime(job: dict[str, Any], attempt: dict[str, Any]) -> None:
+                if self.gpu_coordinator is not None:
+                    runtime_stack.enter_context(
+                        self.gpu_coordinator.session(
+                            GpuRuntime.COMFY,
+                            owner_kind="JOB_ATTEMPT",
+                            owner_ref=str(attempt["id"]),
+                            retain_if_same_runtime_waiting=True,
+                        )
+                    )
+
+            submission = self.submit_next(
+                worker_id,
+                worker_session_id=worker_session_id,
+                before_queue_prompt=prepare_runtime,
+            )
+            if submission is None:
+                return None
+            attempt = submission["attempt"]
+            attempt_id = str(attempt["id"])
+            timeout = float(timeout_seconds if timeout_seconds is not None else self.GPU_LEASE_SECONDS)
+            deadline = time.monotonic() + max(1.0, timeout)
+            websocket = getattr(self.comfy, "websocket_events", None)
             runtime_reachable = False
-        if callable(websocket) and runtime_reachable and submission.get("websocket_capable") is True:
             try:
-                websocket(
-                    str(submission["prompt_id"]),
-                    str(submission["client_id"]),
-                    timeout_seconds=max(1.0, deadline - time.monotonic()),
-                    on_event=lambda item: self._consume_provider_event(attempt_id, worker_id, item),
-                )
-            except DomainRuleError as error:
-                # WebSocket is the preferred progress channel. History/queue
-                # remains the recovery authority when the socket disconnects.
-                self._record_provider_event(attempt_id, str(submission["prompt_id"]), "WEBSOCKET_DISCONNECTED", {"error_code": error.code})
-        while True:
-            polled = self.poll_attempt(attempt_id, worker_id)
-            status = str(polled.get("status", ""))
-            if status in {"SUCCEEDED", "FAILED"}:
-                return {**submission, "poll": polled, "result": polled.get("result")}
-            if time.monotonic() >= deadline:
-                active = self._active_attempt(attempt_id)
-                result = self.jobs.complete(
-                    attempt_id,
-                    str(active["lease_token"]),
-                    worker_id,
-                    success=False,
-                    error_code="COMFY_EXECUTION_TIMEOUT",
-                    error_detail_redacted="Comfy execution exceeded the bounded GPU worker timeout",
-                    provider_job_id=str(active.get("comfy_prompt_id") or active.get("provider_job_id") or "") or None,
-                )
-                return {
-                    **submission,
-                    "poll": {"status": "FAILED", "result": result},
-                    "result": result,
-                    "error": "COMFY_EXECUTION_TIMEOUT",
-                }
-            sleep(max(0.1, poll_interval_seconds))
+                endpoint = urlparse(self.comfy.base_url)
+                with socket.create_connection((str(endpoint.hostname), int(endpoint.port or 8188)), timeout=0.25):
+                    runtime_reachable = True
+            except OSError:
+                runtime_reachable = False
+            if callable(websocket) and runtime_reachable and submission.get("websocket_capable") is True:
+                try:
+                    websocket(
+                        str(submission["prompt_id"]),
+                        str(submission["client_id"]),
+                        timeout_seconds=max(1.0, deadline - time.monotonic()),
+                        on_event=lambda item: self._consume_provider_event(attempt_id, worker_id, item),
+                    )
+                except DomainRuleError as error:
+                    self._record_provider_event(attempt_id, str(submission["prompt_id"]), "WEBSOCKET_DISCONNECTED", {"error_code": error.code})
+            while True:
+                polled = self.poll_attempt(attempt_id, worker_id)
+                status = str(polled.get("status", ""))
+                if status in {"SUCCEEDED", "FAILED"}:
+                    return {**submission, "poll": polled, "result": polled.get("result")}
+                if time.monotonic() >= deadline:
+                    active = self._active_attempt(attempt_id)
+                    result = self.jobs.complete(
+                        attempt_id,
+                        str(active["lease_token"]),
+                        worker_id,
+                        success=False,
+                        error_code="COMFY_EXECUTION_TIMEOUT",
+                        error_detail_redacted="Comfy execution exceeded the bounded GPU worker timeout",
+                        provider_job_id=str(active.get("comfy_prompt_id") or active.get("provider_job_id") or "") or None,
+                    )
+                    return {
+                        **submission,
+                        "poll": {"status": "FAILED", "result": result},
+                        "result": result,
+                        "error": "COMFY_EXECUTION_TIMEOUT",
+                    }
+                sleep(max(0.1, poll_interval_seconds))
 
     def _consume_provider_event(self, attempt_id: str, worker_id: str, item: dict[str, Any]) -> None:
         event_type = str(item.get("type") or "UNKNOWN").upper()
-        data = item.get("data") if isinstance(item.get("data"), dict) else {}
+        data = _object_dict(item.get("data"))
         attempt = self._active_attempt(attempt_id)
         expected_prompt_id = str(attempt.get("comfy_prompt_id") or attempt.get("provider_job_id") or "")
         if data.get("prompt_id") and str(data.get("prompt_id")) != expected_prompt_id:
@@ -428,7 +549,11 @@ class ComfyGenerationService:
         value, maximum = data.get("value"), data.get("max")
         if isinstance(value, (int, float)) and isinstance(maximum, (int, float)) and maximum > 0:
             progress = max(0.0, min(1.0, float(value) / float(maximum)))
-        redacted = {"node_id": node_id, "value": value if isinstance(value, (int, float)) else None, "max": maximum if isinstance(maximum, (int, float)) else None}
+        redacted = {
+            "node_id": node_id,
+            "value": value if isinstance(value, (int, float)) else None,
+            "max": maximum if isinstance(maximum, (int, float)) else None,
+        }
         self._record_provider_event(attempt_id, prompt_id, event_type, redacted, progress=progress, semantic_phase=semantic_phase)
         if event_type in {"EXECUTING", "PROGRESS", "EXECUTION_START", "EXECUTED"}:
             self.jobs.heartbeat(
@@ -468,9 +593,7 @@ class ComfyGenerationService:
             raise DomainRuleError("ATTEMPT_NOT_ACTIVE", "Comfy Attempt 不再运行")
         return dict(row)
 
-    def _fail_runtime_unavailable(
-        self, attempt: dict[str, Any], worker_id: str, prompt_id: str
-    ) -> dict[str, Any]:
+    def _fail_runtime_unavailable(self, attempt: dict[str, Any], worker_id: str, prompt_id: str) -> dict[str, Any]:
         result = self.jobs.complete(
             str(attempt["id"]),
             str(attempt["lease_token"]),
@@ -614,11 +737,7 @@ class ComfyGenerationService:
     def _queue_prompt_ids(entries: Any) -> set[str]:
         if not isinstance(entries, list):
             return set()
-        return {
-            str(entry[1])
-            for entry in entries
-            if isinstance(entry, (list, tuple)) and len(entry) > 1 and entry[1]
-        }
+        return {str(entry[1]) for entry in entries if isinstance(entry, (list, tuple)) and len(entry) > 1 and entry[1]}
 
     def interrupt_attempt(self, attempt_id: str, worker_id: str) -> dict[str, Any]:
         attempt = self._active_attempt(attempt_id)
@@ -697,9 +816,19 @@ class ComfyGenerationService:
                     items.append({"attempt_id": attempt_id, "job_id": str(row["job_id"]), "provider_job_id": provider_job_id, "status": provider_status})
                     continue
                 recovered = self.recover_attempt(attempt_id, provider_job_id)
-                items.append({"attempt_id": attempt_id, "job_id": str(row["job_id"]), "provider_job_id": provider_job_id, "status": "RECOVERED", "artifact_count": len(recovered["artifacts"])})
+                items.append(
+                    {
+                        "attempt_id": attempt_id,
+                        "job_id": str(row["job_id"]),
+                        "provider_job_id": provider_job_id,
+                        "status": "RECOVERED",
+                        "artifact_count": len(recovered["artifacts"]),
+                    }
+                )
             except DomainRuleError as error:
-                items.append({"attempt_id": attempt_id, "job_id": str(row["job_id"]), "provider_job_id": provider_job_id, "status": "DEFERRED", "error_code": error.code})
+                items.append(
+                    {"attempt_id": attempt_id, "job_id": str(row["job_id"]), "provider_job_id": provider_job_id, "status": "DEFERRED", "error_code": error.code}
+                )
                 if error.code == "COMFY_LOOPBACK_UNAVAILABLE":
                     break
         return {"inspected": len(rows), "recovered": sum(1 for item in items if item["status"] == "RECOVERED"), "items": items}

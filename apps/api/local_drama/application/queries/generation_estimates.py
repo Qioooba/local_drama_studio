@@ -15,7 +15,7 @@ def _number(mapping: dict[str, Any], *keys: str) -> float | None:
     indexed = {str(key).lower(): value for key, value in mapping.items()}
     for key in keys:
         value = indexed.get(key.lower())
-        if isinstance(value, bool):
+        if value is None or isinstance(value, bool):
             continue
         try:
             parsed = float(value)

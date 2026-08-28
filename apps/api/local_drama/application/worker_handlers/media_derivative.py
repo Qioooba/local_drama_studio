@@ -13,7 +13,7 @@ from typing import Any, Callable, Protocol
 from local_drama.domain.errors import DomainRuleError
 
 FfmpegRunner = Callable[[list[str]], None]
-AtomicWriter = Callable[[Path, Callable[[Path], None]], None]
+AtomicWriter = Callable[[Path, Callable[[Path], object]], None]
 DurationSetter = Callable[[int | None], None]
 
 

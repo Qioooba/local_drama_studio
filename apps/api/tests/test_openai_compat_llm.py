@@ -87,11 +87,7 @@ def test_local_llm_client_openai_compat_probe_four_levels(monkeypatch) -> None:
         if path == "/v1/models":
             return {"data": [{"id": "deepseek-v4-flash-vision-exp"}, {"id": "deepseek-chat"}]}
         if path == "/v1/chat/completions":
-            return {
-                "choices": [
-                    {"message": {"role": "assistant", "content": '{"ready":true}'}}
-                ]
-            }
+            return {"choices": [{"message": {"role": "assistant", "content": '{"ready":true}'}}]}
         return {}
 
     monkeypatch.setattr(client, "_request", mock_request)
@@ -195,10 +191,14 @@ def test_local_llm_client_chat_json_multimodal_formatting(monkeypatch) -> None:
         "You are a QC inspector.",
         "Inspect image frame.",
         images=["https://example.com/frame1.jpg", "base64encodedrawbytes=="],
+        inference_options={"temperature": 0.35, "top_p": 0.8, "max_tokens": 1536},
     )
 
     assert result == {"visual_qc": "PASS", "score": 0.95}
     assert len(captured_payloads) == 1
+    assert captured_payloads[0]["temperature"] == 0.35
+    assert captured_payloads[0]["top_p"] == 0.8
+    assert captured_payloads[0]["max_tokens"] == 1536
     user_content = captured_payloads[0]["messages"][1]["content"]
     assert isinstance(user_content, list)
     assert user_content[0] == {"type": "text", "text": "Inspect image frame."}
@@ -300,18 +300,21 @@ def test_deepseek_expands_one_sentence_video_prompt_without_persisting_key(works
         api_key="sk-one-sentence-secret",
         allow_remote_outbound=True,
     )
-    monkeypatch.setattr(
-        "local_drama.infrastructure.local_llm.LocalLLMClient.chat_json",
-        lambda self, system, user, **kwargs: {
+    system_prompts: list[str] = []
+
+    def expand_response(self, system, user, **kwargs):
+        system_prompts.append(system)
+        return {
             "title": "雾桥纸伞",
             "video_prompt": "晨雾中的江南石桥，女子撑纸伞缓步前行，柔和逆光，镜头稳定向前推进。",
-            "keyframe_prompt": "晨雾中的江南石桥，女子撑纸伞准备迈步，柔和逆光，中景构图。",
+            "keyframe_prompt": "A woman with a paper umbrella prepares to walk across a misty Jiangnan stone bridge, soft backlight, medium composition.",
             "subject_action": "女子撑纸伞缓步过桥",
             "environment": "晨雾中的江南石桥，柔和逆光",
             "shot_type": "中景",
             "camera_movement": "缓慢推镜",
-        },
-    )
+        }
+
+    monkeypatch.setattr("local_drama.infrastructure.local_llm.LocalLLMClient.chat_json", expand_response)
 
     with pytest.raises(DomainRuleError) as outbound:
         service.expand_video_prompt(
@@ -332,6 +335,7 @@ def test_deepseek_expands_one_sentence_video_prompt_without_persisting_key(works
     assert plan["network_contacted"] is True
     assert plan["secret_persisted"] is False
     assert plan["director_intent"]["target_duration_ms"] == 4000
+    assert "keyframe_prompt 必须使用 English" in system_prompts[-1]
     serialized = json.dumps(plan, ensure_ascii=False)
     assert "sk-one-sentence-secret" not in serialized
 
@@ -340,7 +344,16 @@ def test_deepseek_one_sentence_can_remember_key_in_os_credential_store(workspace
     service = LocalLLMService(database, workspace)
     monkeypatch.setattr(
         "local_drama.infrastructure.local_llm.LocalLLMClient.probe",
-        lambda self, load_test=False: {"status": "PASS", "provider": self.provider, "base_url": self.base_url, "model": self.model, "probe_level_passed": 4, "probe_levels": {}, "model_present": True, "load_test": load_test},
+        lambda self, load_test=False: {
+            "status": "PASS",
+            "provider": self.provider,
+            "base_url": self.base_url,
+            "model": self.model,
+            "probe_level_passed": 4,
+            "probe_levels": {},
+            "model_present": True,
+            "load_test": load_test,
+        },
     )
     candidate = service.sync_candidate(
         model="deepseek-chat",
@@ -362,7 +375,7 @@ def test_deepseek_one_sentence_can_remember_key_in_os_credential_store(workspace
         lambda self, system, user, **kwargs: {
             "title": "记住密钥测试",
             "video_prompt": "一只白鸟掠过湖面，晨光，稳定跟拍。",
-            "keyframe_prompt": "晨光湖面上方，一只白鸟准备贴近水面飞行，中景构图。",
+            "keyframe_prompt": "A white bird prepares to skim across a dawn-lit lake, medium composition.",
             "subject_action": "白鸟掠过湖面",
             "environment": "晨光湖面",
             "shot_type": "中景",
@@ -382,7 +395,9 @@ def test_deepseek_one_sentence_can_remember_key_in_os_credential_store(workspace
     assert plan["secret_persisted"] is True
     assert plan["credential_store"] == "WINDOWS_CREDENTIAL_MANAGER"
     with database.connect() as connection:
-        serialized_rows = "\n".join(str(value) for row in connection.execute("SELECT capability_json FROM execution_profile_versions").fetchall() for value in row)
+        serialized_rows = "\n".join(
+            str(value) for row in connection.execute("SELECT capability_json FROM execution_profile_versions").fetchall() for value in row
+        )
     assert "sk-remember-without-database" not in serialized_rows
 
 

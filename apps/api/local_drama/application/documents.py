@@ -19,7 +19,7 @@ from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
 
 from .media import DOCUMENT_EXTENSIONS, MediaService
-from .source_text import source_chapters, source_paragraphs
+from .source_text import looks_like_source_heading, source_chapters, source_paragraphs
 
 PREVIEW_PARAGRAPH_LIMIT = 20
 PREVIEW_PARAGRAPH_CHARACTER_LIMIT = 1_000
@@ -93,6 +93,7 @@ class DocumentImportService:
         media = self.media.import_file(project_id, source, purpose="SCRIPT_SOURCE", owner_type="PROJECT", actor=actor)
         if media.get("duplicate"):
             media = {**self.media.get_version(str(media["media_version_id"])), **media}
+        stored_source_path = self._stored_source_path(project_id, media)
         digest = media["sha256"]
         with self.database.connect() as connection:
             existing_version = connection.execute(
@@ -114,6 +115,7 @@ class DocumentImportService:
                 "source_document_version_id": str(existing_version["id"]),
                 "import_session_id": str(reusable_session["id"]),
                 "media_version_id": str(media["media_version_id"]),
+                "stored_source_path": stored_source_path,
                 "status": session["status"],
                 "preview": session["preview"],
                 "preview_hash": session["preview_hash"],
@@ -202,12 +204,27 @@ class DocumentImportService:
             "source_document_version_id": source_version_id,
             "import_session_id": session_id,
             "media_version_id": media["media_version_id"],
+            "stored_source_path": stored_source_path,
             "status": "PREVIEW_READY",
             "preview": preview,
             "index_status": index_status,
         }
         result["preview_hash"] = self.get_session(session_id)["preview_hash"]
         return result
+
+    def _stored_source_path(self, project_id: str, media: dict[str, Any]) -> str:
+        """Return the absolute path of the immutable project copy, never the browser's client path."""
+        project_root = self.media._project_root(project_id)
+        rel_path = Path(str(media.get("rel_path") or ""))
+        if rel_path.is_absolute() or ".." in rel_path.parts:
+            raise DomainRuleError("IMPORT_SOURCE_PATH_INVALID", "导入后的剧本文档路径无效")
+        try:
+            stored_path = (project_root / rel_path).resolve(strict=True)
+        except OSError as error:
+            raise DomainRuleError("IMPORT_SOURCE_PATH_MISSING", "导入后的剧本文档副本不存在") from error
+        if not stored_path.is_relative_to(project_root):
+            raise DomainRuleError("IMPORT_SOURCE_PATH_INVALID", "导入后的剧本文档路径超出项目目录")
+        return str(stored_path)
 
     def _replace_search_index(self, project_id: str, source_document_id: str, title: str, text: str, actor: str) -> str:
         try:
@@ -327,6 +344,7 @@ class DocumentImportService:
                             "validation_status": item["validation_status"],
                         }
                         for item in result["items"]
+                        if item["item_type"] == "DOCUMENT_PREVIEW"
                     ],
                 }
             ).encode("utf-8")
@@ -337,11 +355,64 @@ class DocumentImportService:
         }
         return result
 
+    def get_paragraphs(self, session_id: str, *, start: int = 1, limit: int = 40) -> dict[str, Any]:
+        """Page through the immutable server-parsed paragraph authority."""
+        session = self.get_session(session_id)
+        version = session.get("source_document_version")
+        if not version or version.get("parse_status") != "PARSED":
+            raise DomainRuleError("IMPORT_SOURCE_NOT_PARSED", "源文档版本尚未完成解析")
+        project_root = self.media._project_root(str(session["project_id"]))
+        extracted_text = (project_root / str(version["extracted_text_rel"])).resolve()
+        if not extracted_text.is_relative_to(project_root) or not extracted_text.is_file():
+            raise DomainRuleError("IMPORT_EXTRACTED_TEXT_MISSING", "解析后的不可变文本缺失")
+        text = extracted_text.read_text(encoding="utf-8")
+        if hashlib.sha256(text.encode("utf-8")).hexdigest() != str(version["text_sha256"]):
+            raise DomainRuleError("IMPORT_EXTRACTED_TEXT_CHANGED", "解析后的不可变文本 hash 已变化")
+        paragraphs = source_paragraphs(text)
+        if not paragraphs:
+            raise DomainRuleError("IMPORT_SOURCE_EMPTY", "解析后的正文没有可用段落")
+        if start > len(paragraphs):
+            raise DomainRuleError(
+                "IMPORT_PARAGRAPH_PAGE_OUT_OF_RANGE",
+                f"正文页起始段不能超过 {len(paragraphs)}",
+                {"total_paragraph_count": len(paragraphs)},
+            )
+        page = paragraphs[start - 1 : start - 1 + limit]
+        return {
+            "session_id": session_id,
+            "source_document_version_id": str(session["source_document_version_id"]),
+            "start_paragraph": page[0].number,
+            "end_paragraph": page[-1].number,
+            "total_paragraph_count": len(paragraphs),
+            "items": [
+                {
+                    "number": paragraph.number,
+                    "text": paragraph.text,
+                    "source_start": paragraph.start,
+                    "source_end": paragraph.end,
+                    "is_heading": looks_like_source_heading(paragraph.text),
+                }
+                for paragraph in page
+            ],
+            "chapters": session["preview"].get("chapters", []),
+            "has_previous": page[0].number > 1,
+            "has_more": page[-1].number < len(paragraphs),
+            "read_only": True,
+        }
+
     def get_issues(self, session_id: str) -> list[dict[str, Any]]:
         session = self.get_session(session_id)
         return [item for item in session["items"] if item["validation_status"] != "VALID"]
 
-    def commit(self, session_id: str, expected_preview_hash: str, actor: str = "local-user") -> dict[str, Any]:
+    def commit(
+        self,
+        session_id: str,
+        expected_preview_hash: str,
+        actor: str = "local-user",
+        *,
+        source_paragraph_start: int | None = None,
+        source_paragraph_end: int | None = None,
+    ) -> dict[str, Any]:
         session = self.get_session(session_id)
         if not hmac.compare_digest(str(session["preview_hash"]), expected_preview_hash):
             raise DomainRuleError("IMPORT_PREVIEW_STALE", "导入预览已变化，请重新检查后提交")
@@ -362,6 +433,26 @@ class DocumentImportService:
             raise DomainRuleError("IMPORT_EXTRACTED_TEXT_MISSING", "解析后的不可变文本缺失")
         if hashlib.sha256(extracted_text.read_bytes()).hexdigest() != version["text_sha256"]:
             raise DomainRuleError("IMPORT_EXTRACTED_TEXT_CHANGED", "解析后的不可变文本 hash 已变化")
+        paragraphs = source_paragraphs(extracted_text.read_text(encoding="utf-8"))
+        if not paragraphs:
+            raise DomainRuleError("IMPORT_SOURCE_EMPTY", "解析后的正文没有可用段落")
+        if (source_paragraph_start is None) != (source_paragraph_end is None):
+            raise DomainRuleError("IMPORT_BODY_RANGE_INCOMPLETE", "正文范围必须同时提供起始段和结束段")
+        selection_mode = "EXPLICIT" if source_paragraph_start is not None else "FULL_DOCUMENT_DEFAULT"
+        range_start = source_paragraph_start if source_paragraph_start is not None else 1
+        range_end = source_paragraph_end if source_paragraph_end is not None else len(paragraphs)
+        if range_start < 1 or range_end < range_start or range_end > len(paragraphs):
+            raise DomainRuleError(
+                "IMPORT_BODY_RANGE_INVALID",
+                f"正文范围必须位于 1–{len(paragraphs)} 段内，且结束段不得早于起始段",
+                {"total_paragraph_count": len(paragraphs)},
+            )
+        body_range = {
+            "source_paragraph_start": range_start,
+            "source_paragraph_end": range_end,
+            "source_paragraph_count": range_end - range_start + 1,
+            "selection_mode": selection_mode,
+        }
         now = _utc_now()
         snapshot = {
             "source_document_version_id": session["source_document_version_id"],
@@ -369,6 +460,7 @@ class DocumentImportService:
             "text_sha256": version["text_sha256"],
             "preview_hash": session["preview_hash"],
             "validated_item_ids": [item["id"] for item in session["items"]],
+            "body_range": body_range,
         }
         idempotent_race = False
         with self.database.transaction() as connection:
@@ -382,6 +474,21 @@ class DocumentImportService:
                     raise DomainRuleError("IMPORT_COMMIT_CONFLICT", "导入会话提交冲突，请重新读取")
                 idempotent_race = True
             if not idempotent_race:
+                connection.execute(
+                    """INSERT INTO import_session_items
+                    (id, session_id, item_type, source_start, source_end, payload_json, validation_status, created_at, updated_at, created_by, revision, schema_version)
+                    VALUES (?, ?, 'SOURCE_BODY_RANGE', ?, ?, ?, 'VALID', ?, ?, ?, 1, 'v2')""",
+                    (
+                        str(uuid.uuid4()),
+                        session_id,
+                        paragraphs[range_start - 1].start,
+                        paragraphs[range_end - 1].end,
+                        _json(body_range),
+                        now,
+                        now,
+                        actor,
+                    ),
+                )
                 connection.execute(
                     "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'producer', 'IMPORT_SESSION_COMMITTED', 'import_session', ?, ?, ?)",
                     (actor, session_id, "确认剧本文档解析预览", _json(snapshot)),

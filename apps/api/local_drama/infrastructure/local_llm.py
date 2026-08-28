@@ -37,11 +37,14 @@ class LocalLLMClient:
         if normalized_provider == "OLLAMA_LOOPBACK":
             if parsed.username or parsed.password or parsed.query or parsed.fragment:
                 raise DomainRuleError("LOCAL_ONLY_ENDPOINT_AMBIGUOUS", "LLM endpoint 不得在 URL 中携带凭据、query 或 fragment")
-            if parse_runtime_endpoint(
-                base_url,
-                allow_private_network=allow_private_network,
-                schemes=frozenset({"http"}),
-            ) is None:
+            if (
+                parse_runtime_endpoint(
+                    base_url,
+                    allow_private_network=allow_private_network,
+                    schemes=frozenset({"http"}),
+                )
+                is None
+            ):
                 raise DomainRuleError("LOCAL_ONLY_ENDPOINT_REQUIRED", "本地 LLM 只允许 http loopback 或受控私网 endpoint")
         else:
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:
@@ -163,6 +166,7 @@ class LocalLLMClient:
                             "prompt": 'Return exactly JSON: {"ready":true}',
                             "format": "json",
                             "stream": False,
+                            "keep_alive": 0,
                             "options": {"temperature": 0, "num_predict": 8},
                         },
                     )
@@ -261,8 +265,21 @@ class LocalLLMClient:
         images: list[str] | None = None,
         *,
         json_schema: dict[str, Any] | None = None,
+        inference_options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        options = dict(inference_options or {})
+        temperature = float(options.get("temperature", 0))
+        top_p = float(options.get("top_p", 0.9))
+        max_tokens = int(options.get("max_tokens", 2048))
+        num_ctx = int(options.get("num_ctx", 0))
         if self.provider == "OLLAMA_LOOPBACK":
+            ollama_options: dict[str, Any] = {
+                "temperature": temperature,
+                "top_p": top_p,
+                "num_predict": max_tokens,
+            }
+            if num_ctx > 0:
+                ollama_options["num_ctx"] = num_ctx
             msg_payload: dict[str, Any] = {
                 "model": self.model,
                 "stream": False,
@@ -272,7 +289,7 @@ class LocalLLMClient:
                 # the application service; this only makes transport output
                 # reliably parseable.
                 "format": json_schema or "json",
-                "options": {"temperature": 0},
+                "options": ollama_options,
                 "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
             }
             if images:
@@ -297,7 +314,9 @@ class LocalLLMClient:
                 {
                     "model": self.model,
                     "stream": False,
-                    "temperature": 0,
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    "max_tokens": max_tokens,
                     "messages": [
                         {"role": "system", "content": system},
                         {"role": "user", "content": user_content},
@@ -360,6 +379,7 @@ class LocalLLMClient:
 
         normalized = [unwrap(value) for value in values]
         if normalized:
+
             def score(value: Any) -> int:
                 if isinstance(value, dict):
                     return 100 * len(required.intersection(value)) + len(value)

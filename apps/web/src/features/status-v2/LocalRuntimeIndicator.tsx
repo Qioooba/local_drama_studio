@@ -5,12 +5,7 @@ import { routes } from "../../app/routeRegistry";
 import { StatusDotIcon } from "../../components/icons";
 import type { HealthCheck } from "../../generated/api";
 import "./local-runtime-indicator.css";
-
-export async function loadHealth(path: "ready" | "dependencies"): Promise<HealthCheck> {
-  const response = await fetch(`/api/v1/health/${path}`);
-  if (!response.ok) throw new Error(`健康检查失败（HTTP ${response.status}）`);
-  return response.json() as Promise<HealthCheck>;
-}
+import { isProductionRuntimeHealthy, loadRuntimeHealth, runtimeHealthQueryKeys } from "./runtimeHealth";
 
 const CHECK_LABELS: Record<string, string> = {
   mode: "运行模式",
@@ -28,14 +23,7 @@ const CHECK_LABELS: Record<string, string> = {
 
 function pollIsHealthy(ready: UseQueryResult<HealthCheck, Error>, dependencies: UseQueryResult<HealthCheck, Error>): boolean {
   if (ready.isError || dependencies.isError) return false;
-  const dependencyChecks = dependencies.data?.checks ?? {};
-  return ready.data?.status === "HEALTHY"
-    && dependencies.data?.status === "HEALTHY"
-    && dependencyChecks.ffmpeg === "discovered"
-    && dependencyChecks.database === "ok"
-    && dependencyChecks.comfy_designer === "ready"
-    && (dependencyChecks.worker_supervisor ?? "").startsWith("ready:")
-    && dependencyChecks.production_profiles !== "not_synced";
+  return isProductionRuntimeHealthy(ready.data, dependencies.data);
 }
 
 const DEGRADE_AFTER_CONSECUTIVE_FAILURES = 2;
@@ -43,8 +31,8 @@ const DEGRADE_AFTER_CONSECUTIVE_FAILURES = 2;
 export function LocalRuntimeIndicator() {
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const summaryRef = useRef<HTMLElement>(null);
-  const ready = useQuery({ queryKey: ["system-health", "ready"], queryFn: () => loadHealth("ready"), refetchInterval: 30_000 });
-  const dependencies = useQuery({ queryKey: ["system-health", "dependencies"], queryFn: () => loadHealth("dependencies"), refetchInterval: 30_000 });
+  const ready = useQuery({ queryKey: runtimeHealthQueryKeys.ready, queryFn: () => loadRuntimeHealth("ready"), refetchInterval: 30_000 });
+  const dependencies = useQuery({ queryKey: runtimeHealthQueryKeys.dependencies, queryFn: () => loadRuntimeHealth("dependencies"), refetchInterval: 30_000 });
   const [failureStreak, setFailureStreak] = useState(0);
   const [hasEverBeenHealthy, setHasEverBeenHealthy] = useState(false);
   const loading = ready.isPending || dependencies.isPending;

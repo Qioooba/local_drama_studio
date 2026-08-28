@@ -39,7 +39,7 @@ class DeliveryBuildPort(Protocol):
         ...
 
 
-AtomicWriter = Callable[[Path, Callable[[Path], None]], None]
+AtomicWriter = Callable[[Path, Callable[[Path], object]], None]
 
 
 def run_delivery_build_job(

@@ -48,6 +48,9 @@ describe("JobDetailsPanel", () => {
     expect(document.querySelectorAll(".status-pill.state-succeeded")).toHaveLength(2);
     expect(screen.getByText("高级：查看任务输入快照")).toBeTruthy();
     expect(screen.getByRole("button", { name: "已登记为视频" }).hasAttribute("disabled")).toBe(true);
+    const download = screen.getByRole("link", { name: "下载视频到当前电脑" });
+    expect(download.getAttribute("href")).toBe("/api/v1/artifacts/artifact-1/download");
+    expect(download.hasAttribute("download")).toBe(true);
   });
 
   it("shows a failed error once at its attempt", async () => {

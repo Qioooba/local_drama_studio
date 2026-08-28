@@ -12,7 +12,7 @@ import json
 import sqlite3
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from local_drama.application.ports.frame_bridges import FrameBridgeUnitOfWork
 from local_drama.domain.errors import DomainRuleError
@@ -348,7 +348,7 @@ class FrameBridgeCommandService:
                 "相同 Frame Bridge idempotency_key 的请求内容不一致",
                 {"transition_id": transition_id, "command": command},
             )
-        result = json.loads(str(row["response_json"]))
+        result = cast(dict[str, Any], json.loads(str(row["response_json"])))
         result["idempotent_replay"] = True
         return result
 
@@ -413,7 +413,7 @@ class FrameBridgeCommandService:
         row = connection.execute("SELECT * FROM shot_transition_constraints WHERE id=?", (transition_id,)).fetchone()
         if row is None:
             raise DomainRuleError("FRAME_BRIDGE_NOT_FOUND", "Frame Bridge 不存在", {"transition_id": transition_id})
-        return row
+        return cast(sqlite3.Row, row)
 
     @staticmethod
     def _expect_revision(transition: sqlite3.Row, expected: int) -> None:
@@ -441,7 +441,7 @@ class FrameBridgeCommandService:
         row = connection.execute("SELECT * FROM frame_anchors WHERE id=?", (anchor_id,)).fetchone()
         if row is None:
             raise DomainRuleError("FRAME_ANCHOR_NOT_FOUND", "FrameAnchor 不存在", {"anchor_id": anchor_id})
-        return row
+        return cast(sqlite3.Row, row)
 
     @staticmethod
     def _require_fresh_anchor(anchor: sqlite3.Row, *, side: str) -> None:
@@ -473,7 +473,7 @@ class FrameBridgeCommandService:
         ).fetchone()
         if row is None:
             raise DomainRuleError("MEDIA_VERSION_NOT_FOUND", "MediaVersion 不存在")
-        return row
+        return cast(sqlite3.Row, row)
 
     @classmethod
     def _media_shot_id(cls, connection: sqlite3.Connection, media_version_id: str) -> str | None:

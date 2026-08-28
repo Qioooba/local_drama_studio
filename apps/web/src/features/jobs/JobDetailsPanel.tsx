@@ -26,13 +26,15 @@ function progressText(state: string, progress: Record<string, unknown>) {
   return `${phase} · 总体 ${percent}%${step}`;
 }
 
+const TERMINAL_JOB_STATES = new Set(["SUCCEEDED", "FAILED", "CANCELLED", "NEEDS_ATTENTION", "ORPHANED"]);
+
 export function JobDetailsPanel({ jobId, onChanged }: { jobId: string | null; onChanged?: () => void }) {
   const detail = useQuery({
     queryKey: queryKeys.jobs.detail(jobId ?? "missing"),
     queryFn: () => getJob(jobId as string),
     enabled: Boolean(jobId),
     refetchOnMount: "always",
-    refetchInterval: 3000,
+    refetchInterval: (query) => TERMINAL_JOB_STATES.has(String(query.state.data?.job.state ?? "")) ? false : 1500,
   });
   const [busy, setBusy] = useState<string | null>(null);
   const [stage, setStage] = useState<"KEYFRAME" | "PROXY" | "FORMAL" | "TIMELINE">("PROXY");
@@ -83,7 +85,8 @@ export function JobDetailsPanel({ jobId, onChanged }: { jobId: string | null; on
               const detectedKind = artifactMediaKind(artifact);
               const promoted = Boolean(artifact.promoted_media_version_id);
               const mediaLabel = detectedKind ? userFacingLabel(MEDIA_KIND_LABELS, detectedKind, "媒体") : null;
-              return <div className="artifact-row" key={artifact.id}><span>{userFacingLabel(ARTIFACT_KIND_LABELS, artifact.kind, "任务产物")} · {statusLabel(artifact.status)} · 校验指纹 {String(artifact.sha256 ?? "").slice(0, 12) || "—"}…{mediaLabel ? ` · ${mediaLabel}` : " · 不能登记为媒体"}</span><button className="secondary" type="button" onClick={() => void promote(artifact)} disabled={busy !== null || artifact.status !== "VERIFIED" || !detectedKind || promoted}>{busy === artifact.id ? "登记中…" : promoted && mediaLabel ? `已登记为${mediaLabel}` : mediaLabel ? `登记为${mediaLabel}` : "不可登记"}</button></div>;
+              const downloadable = artifact.status === "VERIFIED" && Boolean(detectedKind);
+              return <div className="artifact-row" key={artifact.id}><span>{userFacingLabel(ARTIFACT_KIND_LABELS, artifact.kind, "任务产物")} · {statusLabel(artifact.status)} · 校验指纹 {String(artifact.sha256 ?? "").slice(0, 12) || "—"}…{mediaLabel ? ` · ${mediaLabel}` : " · 不能登记为媒体"}</span><div className="artifact-actions">{downloadable && <a className="secondary" href={`/api/v1/artifacts/${encodeURIComponent(artifact.id)}/download`} download>{`下载${mediaLabel ?? "媒体"}到当前电脑`}</a>}<button className="secondary" type="button" onClick={() => void promote(artifact)} disabled={busy !== null || artifact.status !== "VERIFIED" || !detectedKind || promoted}>{busy === artifact.id ? "登记中…" : promoted && mediaLabel ? `已登记为${mediaLabel}` : mediaLabel ? `登记为${mediaLabel}` : "不可登记"}</button></div></div>;
             })}</div> : <small className="muted">本次执行暂无已验证产物。</small>}
           </article>;
         }) : <p className="empty-state">该任务还没有执行记录。</p>}

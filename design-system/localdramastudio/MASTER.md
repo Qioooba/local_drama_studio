@@ -68,9 +68,24 @@ Media viewers, multi-video comparison and timeline use `#111715` surfaces with `
 - The same episode keeps `view`, `shot`, filters, selection and scroll in URL/session state.
 - Operational pages (profiles, jobs, diagnostics) remain separate from creative production pages.
 
-## 5. Generation workflow
+## 5. Generation workflows
 
-One ordered path:
+The product has two intentionally separate paths:
+
+### Quick generation
+
+1. Start from the global Quick Create entry, without choosing or creating a project.
+2. Describe one visual result, then choose one action recipe: text-to-image, text-to-image-to-video, or text-to-video. Recipes remain selectable even when a required executable route is not ready; readiness is explained inside the selected recipe.
+3. Choose a model for each active stage: text planning, text-to-image, text-to-video, or image-to-video. The selector contains models supporting that stage's action, not a frozen preset or an unrelated capability Profile.
+4. Treat a model as a reusable identity with a set of supported actions. One video model may expose both text-to-video and image-to-video execution routes and must appear in both relevant stage selectors without being duplicated as two user-facing models.
+5. Edit this run's model-declared parameters inline. Parameters are validated by the selected model schema and frozen into the job execution snapshot.
+6. Optionally apply, save, update, favorite, or delete a reusable preset. A preset is only a named model-and-parameter starting point; applying it never locks the fields.
+7. Review remote-outbound consent when applicable and inspect the exact effective parameters in the execution plan.
+8. Submit global `QUICK_GENERATION` jobs for the active stages.
+9. For image-producing recipes, compare independent output artifacts and select the final image or the image-to-video input.
+10. Preview or download the resulting standalone image or video. It does not appear in project production records.
+
+### Project production
 
 1. Select project/episode/shot and GenerationIntent.
 2. Choose mode: text-to-image, image-to-video, text-to-video, reference-to-video, or capability-driven advanced mode.
@@ -80,6 +95,8 @@ One ordered path:
 6. Run preflight showing jobs, runtime, GPU exclusivity, time/disk estimate and blockers.
 7. Confirm exact action in a semantic dialog.
 8. Compare candidates, review, select winner, then separately approve/promote.
+
+Quick generation must never synthesize placeholder projects, episodes, shots, GenerationIntents, MediaVersions, or review records. Converting a standalone artifact into project material, if added later, must be an explicit user action with its own provenance event.
 
 Retry is operational and stays in Job details. Resample/replay/prompt/source/first-last are creative variants and must never be merged into retry.
 
@@ -109,4 +126,3 @@ Retry is operational and stays in Job details. Resample/replay/prompt/source/fir
 - Do not use color alone. All icon buttons have accessible names.
 - Validate normal/loading/empty/error/blocked/running/success at 1440×900, 1280×800 and 1024×768.
 - Every browser QA capture delivered to the user is a <=720px, quality 50–60 thumbnail; original evidence remains local.
-

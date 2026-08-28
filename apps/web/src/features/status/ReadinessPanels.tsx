@@ -1,5 +1,4 @@
 import {
-  type AdapterRegistry,
   type G8Readiness,
   type G9Readiness,
   type ModelCompatibilitySnapshot,
@@ -119,59 +118,6 @@ export function ProjectConfigurationSnapshot({
   );
 }
 
-export function AdapterContractsPanel({
-  registry,
-}: {
-  registry?: AdapterRegistry;
-}) {
-  return (
-    <section
-      className="panel adapter-contracts"
-      aria-labelledby="adapter-contracts-title"
-    >
-      <div className="panel-heading">
-        <div>
-          <p className="eyebrow">适配器契约</p>
-          <h3 id="adapter-contracts-title">本地适配器契约</h3>
-        </div>
-        <span className="status-pill">静态检查 · 无运行时接触</span>
-      </div>
-      <p className="muted">
-        这里仅展示 transport 边界与能力声明；不会启动 ComfyUI、Ollama、CLI 或
-        FFmpeg，也不会打开网络连接。
-      </p>
-      <div
-        className="configuration-table"
-        role="table"
-        aria-label="本地适配器契约"
-      >
-        <div className="configuration-row configuration-header" role="row">
-          <strong>适配器</strong>
-          <strong>Transport</strong>
-          <strong>状态</strong>
-          <strong>能力</strong>
-        </div>
-        {(registry?.contracts ?? []).map((item) => (
-          <div className="configuration-row" role="row" key={item.code}>
-            <span title={item.title}>{item.title}</span>
-            <span title={item.transport}>{item.transport}</span>
-            <span className="status-pill" title={item.status}>
-              {item.status}
-            </span>
-            <span title={(item.capabilities ?? []).join(" · ")}>
-              {(item.capabilities ?? []).slice(0, 3).join(" · ")}
-              {(item.capabilities ?? []).length > 3
-                ? ` · +${(item.capabilities ?? []).length - 3}`
-                : ""}
-            </span>
-          </div>
-        ))}
-        {!registry && <p className="empty-state">正在读取本地契约…</p>}
-      </div>
-    </section>
-  );
-}
-
 export function ModelCompatibilityPanel({
   snapshot,
   projectId,
@@ -188,14 +134,10 @@ export function ModelCompatibilityPanel({
     >
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">本机模型引用</p>
-          <h3 id="model-compatibility-title">用户自带模型路径与兼容性</h3>
+          <p className="eyebrow">{projectId ? "项目存证视图" : "全局模型库"}</p>
+          <h3 id="model-compatibility-title">本机模型与兼容性</h3>
         </div>
-        <span
-          className={`status-pill${snapshot.summary.pass_count === snapshot.summary.reported_count ? "" : " neutral"}`}
-        >
-          {snapshot.summary.pass_count}/{snapshot.summary.reported_count} 兼容
-        </span>
+        <span className={`status-pill${snapshot.summary.pass_count === snapshot.summary.reported_count ? "" : " neutral"}`}>{projectId ? `${snapshot.summary.pass_count}/${snapshot.summary.reported_count} 兼容` : "所有项目可用"}</span>
       </div>
       <div className="configuration-grid">
         <div className="configuration-card">
@@ -204,7 +146,7 @@ export function ModelCompatibilityPanel({
           <span>仅引用电脑里的路径，不复制权重</span>
         </div>
         <div className="configuration-card">
-          <small>用户授权记录</small>
+          <small>{projectId ? "项目授权记录" : "已记录授权状态"}</small>
           <strong>
             {snapshot.summary.missing_license_evidence_count} 未填写
           </strong>
@@ -276,16 +218,10 @@ export function ModelCompatibilityPanel({
           </div>
         ))}
       </div>
-      <p className="muted">
-        平台只保存本机绝对路径、hash
-        和兼容性，不捆绑、上传或重新分发模型。授权信息由用户按实际情况自愿记录；未填写时明确提示风险，但不阻塞平台功能验证。
-      </p>
+      <p className="muted">平台只保存本机绝对路径、hash 和兼容性，不捆绑、上传或重新分发模型。{projectId ? "项目许可证存证只证明当前项目的使用依据。" : "这里登记的是系统资源，登记一次即可供所有项目选择；具体项目仍可保留自己的许可证存证。"}</p>
+      {onEvidenceImported && <LocalModelReferenceForm projectId={projectId} onRegistered={onEvidenceImported} />}
       {projectId && onEvidenceImported && (
         <>
-          <LocalModelReferenceForm
-            projectId={projectId}
-            onRegistered={onEvidenceImported}
-          />
           <ModelLicenseEvidenceForm
             projectId={projectId}
             reports={snapshot.reports}

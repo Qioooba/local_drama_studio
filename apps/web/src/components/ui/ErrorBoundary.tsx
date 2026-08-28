@@ -31,6 +31,11 @@ export function extractRequestId(error: unknown): string | null {
   return null;
 }
 
+export function isDynamicImportError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /failed to fetch dynamically imported module|error loading dynamically imported module|importing a module script failed|loading chunk [^ ]+ failed|chunkloaderror/i.test(message);
+}
+
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
@@ -119,6 +124,7 @@ export function RouteErrorBoundary({ defaultProjectId, error: explicitError }: {
   const projectId = params.projectId ?? defaultProjectId;
   const message = routeError instanceof Error ? routeError.message : String(routeError ?? "未知路由异常");
   const requestId = extractRequestId(routeError);
+  const isStaleChunk = isDynamicImportError(routeError);
 
   return (
     <div className="product-error-boundary route-error-boundary" role="alert" aria-live="assertive">
@@ -126,12 +132,14 @@ export function RouteErrorBoundary({ defaultProjectId, error: explicitError }: {
         <div className="panel-heading">
           <div>
             <p className="eyebrow">工作区路由异常</p>
-            <h2>工作区载入受阻</h2>
+            <h2>{isStaleChunk ? "界面版本载入受阻" : "工作区载入受阻"}</h2>
           </div>
           <span className="status-pill status-pill--error">页面加载错误</span>
         </div>
         <p className="muted">
-          当前工作区在渲染时发生未捕获异常。生产状态和不可变版本不受影响，您可以重试当前页面或返回项目。
+          {isStaleChunk
+            ? "应用已更新，但当前页面仍引用上一版界面资源。请载入最新版本；生产状态和不可变版本不受影响。"
+            : "当前工作区在渲染时发生未捕获异常。生产状态和不可变版本不受影响，您可以重试当前页面或返回项目。"}
         </p>
         <p className="error-boundary-message">{message}</p>
         {requestId && (
@@ -141,7 +149,7 @@ export function RouteErrorBoundary({ defaultProjectId, error: explicitError }: {
         )}
         <div className="error-boundary-actions">
           <button type="button" className="secondary" onClick={() => window.location.reload()}>
-            刷新重试
+            {isStaleChunk ? "载入最新版本" : "刷新重试"}
           </button>
           {projectId ? (
             <Link className="primary-action v2-inline-link" to={`/projects/${projectId}`}>

@@ -35,6 +35,8 @@ class GenerationCapability(str, Enum):
     LIPSYNC = "LIPSYNC"
     AUDIO_SFX = "AUDIO_SFX"
     AUDIO_MUSIC = "AUDIO_MUSIC"
+    ASR = "ASR"
+    AUDIO_ALIGNMENT = "AUDIO_ALIGNMENT"
 
     # Frame & Post Process
     FRAME_EXTRACT = "FRAME_EXTRACT"
@@ -99,6 +101,11 @@ CAPABILITY_ALIASES: Final[dict[str, str]] = {
     "BGM": "AUDIO_MUSIC",
     "BGM_GEN": "AUDIO_MUSIC",
     "AUDIO_BGM": "AUDIO_MUSIC",
+    "SPEECH_TO_TEXT": "ASR",
+    "STT": "ASR",
+    "AUDIO_ASR": "ASR",
+    "FORCED_ALIGNMENT": "AUDIO_ALIGNMENT",
+    "AUDIO_FORCED_ALIGNMENT": "AUDIO_ALIGNMENT",
 
     # Image
     "CHARACTER": "IMAGE_CHARACTER",

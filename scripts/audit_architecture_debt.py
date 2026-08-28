@@ -20,6 +20,15 @@ def _relative(path: Path) -> str:
     return path.relative_to(ROOT).as_posix()
 
 
+def _returns_raw_response(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    annotation = node.returns
+    if isinstance(annotation, ast.Name):
+        return annotation.id in {"FileResponse", "StreamingResponse", "Response"}
+    if isinstance(annotation, ast.Subscript) and isinstance(annotation.value, ast.Name):
+        return annotation.value.id in {"FileResponse", "StreamingResponse", "Response"}
+    return False
+
+
 def audit() -> dict[str, Any]:
     concrete_database: list[dict[str, Any]] = []
     service_construction: list[dict[str, Any]] = []
@@ -37,6 +46,8 @@ def audit() -> dict[str, Any]:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in tree.body:
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if _returns_raw_response(node):
                 continue
             for decorator in node.decorator_list:
                 if not isinstance(decorator, ast.Call) or not isinstance(decorator.func, ast.Attribute):

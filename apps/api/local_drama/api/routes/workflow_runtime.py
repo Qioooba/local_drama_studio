@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import TypeVar
+
 from fastapi import APIRouter, Request
 
 from local_drama.api.schemas.workflow_runtime import (
@@ -15,13 +18,14 @@ from local_drama.application.workflow_runtime import WorkflowRuntimeService
 from local_drama.domain.errors import DomainRuleError
 
 router = APIRouter(tags=["workflow-runtime"])
+T = TypeVar("T")
 
 
 def _service(request: Request) -> WorkflowRuntimeService:
     return WorkflowRuntimeService(request.app.state.database, request.app.state.settings)
 
 
-def _guard(call):
+def _guard(call: Callable[[], T]) -> T:
     try:
         return call()
     except DomainRuleError as error:
@@ -91,4 +95,3 @@ async def publish_contract(contract_id: str, request: Request) -> dict[str, obje
 @router.put("/workflow-versions/{workflow_version_id}/runtime-binding", operation_id="bindWorkflowRuntime")
 async def bind_runtime(workflow_version_id: str, payload: WorkflowRuntimeBindRequest, request: Request) -> dict[str, object]:
     return {"binding": _guard(lambda: _service(request).bind(workflow_version_id, payload.contract_version_id, payload.runtime_environment_version_id))}
-

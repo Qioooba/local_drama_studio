@@ -1,5 +1,4 @@
 import json
-import os
 
 with open('flash_ui_audit/master_audit_results.json', 'r', encoding='utf-8') as f:
     data = json.load(f)

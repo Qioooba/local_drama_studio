@@ -134,6 +134,9 @@ describe("V2 router foundation", () => {
   it("deep-links into a project home page", async () => {
     renderAt("/projects/proj-1");
     expect((await screen.findAllByText("项目首页")).length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "全局工作台" }).getAttribute("href")).toBe("/");
+    expect(screen.getByRole("link", { name: "能力与模型" }).getAttribute("href")).toBe("/system/capabilities");
+    expect(screen.getByRole("link", { name: "诊断与审计" }).getAttribute("href")).toBe("/system/diagnostics?project=proj-1");
     expect((await screen.findAllByText("分集")).length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { name: "制作进度" })).toBeTruthy();
   });

@@ -121,7 +121,7 @@ def build_generation_style_context(connection: sqlite3.Connection, project_id: s
         tokens = _declarative(selected)
         if not isinstance(tokens, dict) or not tokens:
             continue
-        item = {
+        item: dict[str, Any] = {
             "id": str(row["id"]),
             "code": str(row["code"]),
             "title": str(row["title"]),

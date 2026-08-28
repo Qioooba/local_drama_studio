@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
 from local_drama.application.shot_studio import ShotStudioQueryService
-from local_drama.infrastructure.database.shot_studio_repository import SqliteShotStudioReadRepository
 from local_drama.infrastructure.database.shot_studio_command_repository import shot_studio_command_service
+from local_drama.infrastructure.database.shot_studio_repository import SqliteShotStudioReadRepository
 from local_drama.main import create_app
 
 

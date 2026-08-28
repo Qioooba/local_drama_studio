@@ -253,6 +253,8 @@ class WorkflowDefinitionService:
     @staticmethod
     def _normalize_value(name: str, spec: dict[str, Any], raw: Any) -> Any:
         value = spec.get("default") if raw is None else raw
+        if value is None:
+            raise DomainRuleError("WORKFLOW_DEFINITION_VALUE_REQUIRED", "工作流参数不能为空", {"field": name})
         kind = str(spec.get("type"))
         if kind == "integer":
             if isinstance(value, bool):

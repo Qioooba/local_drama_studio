@@ -57,7 +57,15 @@ class SqliteProductContextReadRepository:
             catalog_rows = connection.execute(
                 """SELECT s.id AS season_id,s.code AS season_code,s.title AS season_title,s.number AS season_number,
                 s.display_order AS season_display_order,e.id AS episode_id,e.code AS episode_code,e.title AS episode_title,
-                e.number AS episode_number,e.display_order AS episode_display_order,e.production_status,e.target_duration_ms
+                e.number AS episode_number,e.display_order AS episode_display_order,e.production_status,e.target_duration_ms,
+                (SELECT erv.id FROM episode_render_versions erv
+                 WHERE erv.episode_id=e.id AND erv.integrity_status='VERIFIED'
+                 ORDER BY erv.created_at DESC,erv.id DESC LIMIT 1) AS preview_render_id,
+                (SELECT ws.media_version_id FROM shot_working_media_slots ws
+                 JOIN shots preview_shot ON preview_shot.id=ws.shot_id
+                 WHERE preview_shot.episode_id=e.id
+                 ORDER BY preview_shot.order_key,CASE ws.slot_type WHEN 'VIDEO' THEN 0 ELSE 1 END,ws.updated_at DESC
+                 LIMIT 1) AS preview_media_version_id
                 FROM seasons s LEFT JOIN episodes e ON e.season_id=s.id WHERE s.project_id=?
                 ORDER BY s.display_order,s.number,s.id,e.display_order,e.number,e.id""",
                 (project_id,),
@@ -88,7 +96,17 @@ class SqliteProductContextReadRepository:
                 seasons.append(season)
                 by_id[season_id] = season
             if row["episode_id"] is not None:
-                season["episodes"].append({"id": row["episode_id"], "code": row["episode_code"], "title": row["episode_title"], "number": row["episode_number"], "display_order": row["episode_display_order"], "production_status": row["production_status"], "target_duration_ms": row["target_duration_ms"]})
+                season["episodes"].append({
+                    "id": row["episode_id"],
+                    "code": row["episode_code"],
+                    "title": row["episode_title"],
+                    "number": row["episode_number"],
+                    "display_order": row["episode_display_order"],
+                    "production_status": row["production_status"],
+                    "target_duration_ms": row["target_duration_ms"],
+                    "preview_render_id": row["preview_render_id"],
+                    "preview_media_version_id": row["preview_media_version_id"],
+                })
         milestone_keys = (
             "episode_count", "production_plan_count", "published_profile_binding_count", "reviewable_story_draft_count",
             "active_story_asset_count", "shot_intent_count", "shot_generation_job_count",

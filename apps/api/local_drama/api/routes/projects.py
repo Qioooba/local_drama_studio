@@ -120,7 +120,7 @@ async def plan_project_creation(payload: ProjectCreateRequest, request: Request)
 @router.get("/{project_id}", operation_id="getProject")
 async def get_project(project_id: str, request: Request) -> dict[str, object]:
     try:
-        return {"project": service(request).get_project(project_id)}
+        return {"project": service(request).get_project_detail(project_id)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

@@ -7,7 +7,7 @@ import json
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from local_drama.application.ports.dialogue import DialogueJobPort, DialogueMediaPort, DialogueUnitOfWork
 from local_drama.config import Settings
@@ -66,7 +66,7 @@ class DialogueService:
             return None
         if str(row["payload_hash"]) != payload_hash:
             raise DomainRuleError(mismatch_code, "相同 idempotency_key 的对白请求内容不一致")
-        result = json.loads(str(row["response_json"]))
+        result = cast(dict[str, Any], json.loads(str(row["response_json"])))
         result["idempotent_replay"] = True
         return result
 
