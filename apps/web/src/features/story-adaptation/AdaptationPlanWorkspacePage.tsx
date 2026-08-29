@@ -24,6 +24,7 @@ export function AdaptationPlanWorkspacePage() {
   const [profileVersionId, setProfileVersionId] = useState("");
   const [allowRemoteOutbound, setAllowRemoteOutbound] = useState(false);
   const [confirmAppend, setConfirmAppend] = useState(false);
+  const [publishAfterApprove, setPublishAfterApprove] = useState(false);
   const profileOptions = useCapabilityOptions("LLM_STORY_PARSE", { projectId });
   const workspace = useQuery({
     queryKey: queryKeys.adaptationPlanning.workspace(planId ?? ""),
@@ -72,6 +73,12 @@ export function AdaptationPlanWorkspacePage() {
         queryClient.invalidateQueries({ queryKey: ["adaptation-materialization-preflight", planId] }),
         queryClient.invalidateQueries({ queryKey: queryKeys.seasons.list(projectId ?? "") }),
       ]);
+    },
+  });
+  const approveAndPublish = useMutation({
+    mutationFn: async () => {
+      await approve.mutateAsync();
+      await publish.mutateAsync();
     },
   });
 
@@ -193,9 +200,13 @@ export function AdaptationPlanWorkspacePage() {
         </li>)}
       </ol>
       {data.plan.artifact_status === "IN_REVIEW" ? <div className="adaptation-review-action">
-        <div><strong>批准当前规划修订</strong><p>批准只确认这份待审核规划；不会立即写入真实季度、分集、场次或镜头。</p></div>
-        <button type="button" className="primary" disabled={approve.isPending} onClick={() => approve.mutate()}>{approve.isPending ? "正在批准…" : "批准规划草稿"}</button>
+        <div><strong>批准当前规划修订</strong><p>批准只确认这份待审核规划；勾选发布后才会写入真实季度与分集（仅追加，不覆盖）。</p></div>
+        <label><input type="checkbox" checked={publishAfterApprove} onChange={(event) => setPublishAfterApprove(event.target.checked)} />批准后立即追加发布为真实季集</label>
+        {publishAfterApprove
+          ? <button type="button" className="primary" disabled={approveAndPublish.isPending} onClick={() => approveAndPublish.mutate()}>{approveAndPublish.isPending ? "正在批准并发布…" : "批准并追加发布"}</button>
+          : <button type="button" className="primary" disabled={approve.isPending} onClick={() => approve.mutate()}>{approve.isPending ? "正在批准…" : "批准规划草稿"}</button>}
         {approve.isError ? <p className="inline-error" role="alert">批准失败：{String(approve.error)}</p> : null}
+        {approveAndPublish.isError && !approve.isError ? <p className="inline-error" role="alert">规划已批准，但发布失败：{String(approveAndPublish.error)}。可在下方发布区重试。</p> : null}
       </div> : null}
     </section> : null}
 
