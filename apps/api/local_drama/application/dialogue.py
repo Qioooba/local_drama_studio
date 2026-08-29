@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 from local_drama.application.ports.dialogue import DialogueJobPort, DialogueMediaPort, DialogueUnitOfWork
+from local_drama.application.reviews import ReviewService
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.filesystem.path_policy import controlled_path
@@ -689,7 +690,9 @@ class DialogueService:
         )
         return {"job_id": job_id, "artifact_id": str(artifact["id"]), "media": media, "candidate": candidate, "idempotent_replay": existing is not None}
 
-    def select_candidate(self, candidate_id: str, actor: str = "local-user") -> dict[str, Any]:
+    def select_candidate(self, candidate_id: str, actor: str = "local-user", *, authority: str = "HUMAN") -> dict[str, Any]:
+        if authority not in {"HUMAN", "AUTOMATION_RUN"}:
+            raise DomainRuleError("TTS_SELECTION_AUTHORITY_INVALID", "选择权威必须是 HUMAN 或 AUTOMATION_RUN")
         candidate = self.get_candidate(candidate_id)
         with self.database.connect() as connection:
             latest = connection.execute(
@@ -708,10 +711,17 @@ class DialogueService:
             ).fetchone()
         if latest is None or latest["id"] != candidate["dialogue_text_revision_id"]:
             raise DomainRuleError("TTS_CANDIDATE_TEXT_STALE", "候选绑定的对白文本已不是最新 revision")
-        if candidate["candidate_kind"] == "FORMAL" and (
-            machine is None or machine["status"] != "PASS" or review is None or review["decision"] != "APPROVED"
-        ):
-            raise DomainRuleError("TTS_FORMAL_APPROVAL_REQUIRED", "正式对白候选必须同时通过最新音频机器 QC 和人工审核")
+        machine_passed = machine is not None and machine["status"] == "PASS"
+        human_approved = review is not None and review["decision"] == "APPROVED"
+        if candidate["candidate_kind"] == "FORMAL":
+            if authority == "AUTOMATION_RUN":
+                # Automation may adopt a formal candidate on machine QC alone,
+                # but the machine gate itself is never skipped; every auto
+                # selection is audit-tagged for later human re-review.
+                if not machine_passed:
+                    raise DomainRuleError("TTS_FORMAL_APPROVAL_REQUIRED", "自动采用仍要求最新音频机器 QC 通过")
+            elif not machine_passed or not human_approved:
+                raise DomainRuleError("TTS_FORMAL_APPROVAL_REQUIRED", "正式对白候选必须同时通过最新音频机器 QC 和人工审核")
         selection_id, now = str(uuid.uuid4()), _now()
         with self.database.transaction() as connection:
             connection.execute(
@@ -720,7 +730,81 @@ class DialogueService:
                 VALUES (?,?,?,?,?,?,?,1,'v2')""",
                 (selection_id, candidate["dialogue_line_id"], candidate_id, candidate["dialogue_text_revision_id"], now, now, actor),
             )
-        return {"id": selection_id, "tts_candidate_id": candidate_id, "status": "SELECTED", "source_text_revision_id": candidate["dialogue_text_revision_id"]}
+            if authority == "AUTOMATION_RUN":
+                connection.execute(
+                    "INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json) VALUES (?,'producer','TTS_CANDIDATE_AUTO_SELECTED','tts_candidate',?,'自动化运行按机器 QC 结果采用对白候选',?)",
+                    (actor, candidate_id, json.dumps({"selection_id": selection_id, "dialogue_line_id": str(candidate["dialogue_line_id"]), "media_version_id": str(candidate["media_version_id"])}, ensure_ascii=False)),
+                )
+        return {"id": selection_id, "tts_candidate_id": candidate_id, "status": "SELECTED", "source_text_revision_id": candidate["dialogue_text_revision_id"], "authority": authority}
+
+    def finalize_episode_tts_jobs(self, episode_id: str, *, auto_select: bool, actor: str = "episode-run-auto") -> dict[str, Any]:
+        """Register every succeeded TTS Job of an episode, then fill empty selections.
+
+        finalize_tts_job is idempotent (artifact reuse + candidate dedup), so
+        replaying this over the same job set is a no-op.  Auto-selection only
+        fills lines that have no selection at all and requires machine QC PASS
+        (authority AUTOMATION_RUN); human selections are never overridden.
+        """
+        with self.database.connect() as connection:
+            jobs = connection.execute(
+                "SELECT id FROM jobs WHERE type='TTS_GENERATION' AND scope_episode_id=? AND state='SUCCEEDED' ORDER BY created_at,id",
+                (episode_id,),
+            ).fetchall()
+        finalized: list[dict[str, Any]] = []
+        failures: list[dict[str, Any]] = []
+        for row in jobs:
+            job_id = str(row["id"])
+            try:
+                result = self.finalize_tts_job(job_id, actor=actor)
+            except DomainRuleError as error:
+                failures.append({"job_id": job_id, "code": error.code, "message": error.message})
+                continue
+            finalized.append(
+                {
+                    "job_id": job_id,
+                    "candidate_id": str(result["candidate"]["id"]),
+                    "dialogue_line_id": str(result["candidate"]["dialogue_line_id"]),
+                    "media_version_id": str(result["media"]["id"] if "id" in result["media"] else result["media"].get("media_version_id", "")),
+                    "idempotent_replay": bool(result["idempotent_replay"]),
+                }
+            )
+        selected: list[dict[str, Any]] = []
+        if auto_select:
+            reviews = ReviewService(self.database, self.settings)
+            for item in finalized:
+                line_id = item["dialogue_line_id"]
+                with self.database.connect() as connection:
+                    existing = connection.execute(
+                        "SELECT id FROM dialogue_candidate_selections WHERE dialogue_line_id=? ORDER BY created_at DESC LIMIT 1",
+                        (line_id,),
+                    ).fetchone()
+                    unverified = connection.execute(
+                        "SELECT integrity_status FROM media_versions WHERE id=?",
+                        (item["media_version_id"],),
+                    ).fetchone()
+                if existing is not None:
+                    continue
+                if unverified is None or str(unverified["integrity_status"]) != "VERIFIED":
+                    failures.append({"job_id": item["job_id"], "code": "TTS_MEDIA_UNVERIFIED", "message": "收尾后的音频媒体未通过完整性校验"})
+                    continue
+                try:
+                    reviews.machine_check(item["media_version_id"], actor=actor)
+                except DomainRuleError as error:
+                    failures.append({"job_id": item["job_id"], "code": error.code, "message": error.message})
+                    continue
+                try:
+                    selection = self.select_candidate(item["candidate_id"], actor=actor, authority="AUTOMATION_RUN")
+                except DomainRuleError as error:
+                    failures.append({"job_id": item["job_id"], "code": error.code, "message": error.message})
+                    continue
+                selected.append({"dialogue_line_id": line_id, "selection_id": str(selection["id"]), "candidate_id": item["candidate_id"]})
+        return {
+            "episode_id": episode_id,
+            "succeeded_jobs": len(jobs),
+            "finalized": finalized,
+            "auto_selected": selected,
+            "failures": failures,
+        }
 
     def get_voice_profile(self, profile_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:

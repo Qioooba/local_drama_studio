@@ -50,6 +50,7 @@ ACTION_STAGE = {
     "VIDEO_GENERATION": "VIDEO",
     "QC": "COMPOSE_QC",
     "TTS_BATCH": "AUDIO_SUBTITLE",
+    "TTS_FINALIZE": "AUDIO_SUBTITLE",
     "TIMELINE_ASSEMBLY": "COMPOSE_QC",
     "RENDER": "COMPOSE_QC",
     "DELIVERY": "COMPOSE_QC",
@@ -498,7 +499,7 @@ class EpisodeProductionRunService:
         if not front_half_only:
             actions.extend(BACK_HALF_ACTIONS)
             if preflight.get("tts_enabled", True):
-                actions.append("TTS_BATCH")
+                actions.extend(["TTS_BATCH", "TTS_FINALIZE"])
             actions.extend(["TIMELINE_ASSEMBLY", "RENDER", "DELIVERY"])
         production_mode = str(preflight.get("production_mode") or "BALANCED")
         mode_policy = dict(preflight.get("mode_policy") or PRODUCTION_MODE_POLICIES[production_mode])

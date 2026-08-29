@@ -53,6 +53,7 @@ def test_stage_definitions_and_front_half_action_mapping() -> None:
     assert ACTION_STAGE["VIDEO_GENERATION"] == "VIDEO"
     assert ACTION_STAGE["QC"] == "COMPOSE_QC"
     assert ACTION_STAGE["TTS_BATCH"] == "AUDIO_SUBTITLE"
+    assert ACTION_STAGE["TTS_FINALIZE"] == "AUDIO_SUBTITLE"
     assert ACTION_STAGE["TIMELINE_ASSEMBLY"] == "COMPOSE_QC"
     assert ACTION_STAGE["RENDER"] == "COMPOSE_QC"
     assert ACTION_STAGE["DELIVERY"] == "COMPOSE_QC"
@@ -92,9 +93,10 @@ def test_front_half_dag_workflow_generation(workspace, database) -> None:
     assert actions[6] == "VIDEO_GENERATION"
     assert actions[7] == "QC"
     assert actions[8] == "TTS_BATCH"
-    assert actions[9] == "TIMELINE_ASSEMBLY"
-    assert actions[10] == "RENDER"
-    assert actions[11] == "DELIVERY"
+    assert actions[9] == "TTS_FINALIZE"
+    assert actions[10] == "TIMELINE_ASSEMBLY"
+    assert actions[11] == "RENDER"
+    assert actions[12] == "DELIVERY"
 
 
 def _episode(workspace, database, code: str) -> tuple[dict, dict]:
@@ -757,3 +759,86 @@ def test_last_frame_anchor_reuses_fresh_anchor_before_extracting(workspace, data
     fresh = service._last_frame_anchor(video_version)
     assert fresh["id"] == "anchor-new" and fresh["reused"] is False
     assert extracted == [video_version]
+
+
+class _FakeFinalizeDialogue:
+    def __init__(self, result: dict) -> None:
+        self.result = result
+        self.calls: list[dict] = []
+
+    def submit_episode_tts_batch(self, episode_id: str, *, idempotency_key_prefix: str, actor: str = "local-user") -> dict:
+        raise AssertionError("not used by TTS_FINALIZE")
+
+    def finalize_episode_tts_jobs(self, episode_id: str, *, auto_select: bool, actor: str = "episode-run-auto") -> dict:
+        self.calls.append({"episode_id": episode_id, "auto_select": auto_select})
+        return self.result
+
+    def list_lines(self, episode_id: str) -> list[dict]:
+        return []
+
+
+def _run_tts_finalize_action(database, workspace, project_id: str, episode_id: str, dialogue_port, mode_policy: dict) -> tuple[str, str, dict, int]:
+    automation = AutomationWorkflowService(database)
+    workflow = automation.create_workflow(
+        project_id,
+        code="handler-tts-finalize",
+        title="TTS_FINALIZE handler",
+        mode="BATCH_AUTOMATED",
+        nodes=[{"id": "episode", "type": "EPISODE_PRODUCTION_TASK"}],
+        batch_items=[
+            {"key": "TTS_FINALIZE", "payload": {"action": "TTS_FINALIZE", "episode_id": episode_id, "mode_policy": mode_policy}},
+        ],
+        conditions=[
+            {"field": "machine_check.status", "operator": "EQ", "value": "NEEDS_HITL", "action": "PAUSE_HITL"},
+        ],
+        max_iterations=2,
+        max_tasks=2,
+        max_disk_bytes=1_000_000,
+        human_gate="ON_CONDITION",
+    )
+    run = automation.start_run(str(workflow["id"]), plan_hash=str(workflow["plan_hash"]), idempotency_key="handler-run-tts-finalize")
+    job = JobService(database, workspace).get_job(str(run["tasks"][0]["job_id"]))
+    return run_automation_task(
+        job,
+        workspace.work_root / "tts-finalize-handler-tests",
+        worker_id="handler-test",
+        work_root=workspace.work_root,
+        database=database,
+        front_half_actions_factory=lambda: EpisodeFrontHalfActionService(database, workspace),
+        episode_worker_actions_factory=lambda: EpisodeWorkerActionService(database, workspace),
+        dialogue_factory=lambda: dialogue_port,
+        configuration_factory=lambda: ConfigurationService(database),
+        timeline_factory=lambda: TimelineService(database, workspace),
+        atomic_writer=write_atomic,
+    )
+
+
+def test_tts_finalize_handler_reports_pass_and_fail(workspace, database) -> None:
+    project, episode_row = _episode(workspace, database, "tts_finalize_handler")
+    project_id, episode_id = str(project["id"]), str(episode_row["id"])
+    good = _FakeFinalizeDialogue(
+        {
+            "episode_id": "ep-1",
+            "succeeded_jobs": 2,
+            "finalized": [{"job_id": "j1", "candidate_id": "c1", "dialogue_line_id": "l1", "media_version_id": "m1", "idempotent_replay": False}],
+            "auto_selected": [{"dialogue_line_id": "l1", "selection_id": "s1", "candidate_id": "c1"}],
+            "failures": [],
+        }
+    )
+    report = _run_tts_finalize_action(database, workspace, project_id, episode_id, good, {"auto_select_videos": True})[2]
+    assert report["machine_check"]["status"] == "PASS"
+    assert report["machine_check"]["auto_selected_count"] == 1
+    assert good.calls == [{"episode_id": episode_id, "auto_select": True}]
+
+    bad = _FakeFinalizeDialogue(
+        {
+            "episode_id": "ep-1",
+            "succeeded_jobs": 1,
+            "finalized": [],
+            "auto_selected": [],
+            "failures": [{"job_id": "j9", "code": "TTS_MEDIA_UNVERIFIED", "message": "音频未验证"}],
+        }
+    )
+    report = _run_tts_finalize_action(database, workspace, project_id, episode_id, bad, {"auto_select_videos": True})[2]
+    assert report["status"] == "FAIL"
+    assert report["machine_check"]["code"] == "TTS_FINALIZE_FAILED"

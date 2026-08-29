@@ -64,6 +64,11 @@ class AutomationDialoguePort(Protocol):
     ) -> dict[str, Any]:  # pragma: no cover - protocol boundary
         ...
 
+    def finalize_episode_tts_jobs(
+        self, episode_id: str, *, auto_select: bool, actor: str = "episode-run-auto"
+    ) -> dict[str, Any]:  # pragma: no cover - protocol boundary
+        ...
+
     def list_lines(self, episode_id: str) -> list[dict[str, Any]]:  # pragma: no cover - protocol boundary
         ...
 
@@ -222,6 +227,41 @@ def _automation_timeline_assembly(
         "revision_no": revision.get("revision_no"),
     }
     return _automation_report("PASS", machine_check, {"timeline_revision_id": str(revision.get("id", ""))}, "时间线已按当前采用事实自动组装并冻结"), 0
+
+
+def _automation_tts_finalize(
+    dialogue: AutomationDialoguePort,
+    episode_id: str,
+    payload: dict[str, Any],
+) -> tuple[dict[str, Any], int]:
+    """Register succeeded TTS Jobs and fill empty voice selections.
+
+    TTS_BATCH only submits Jobs; without this finalize step the synthesized
+    audio never becomes a registered candidate and the episode would render
+    without dialogue.  Failures stay per-job: a single bad line parks the run
+    via the report instead of losing the whole batch.
+    """
+    mode_policy = payload.get("mode_policy", {})
+    auto_select = bool(mode_policy.get("auto_select_videos", False)) if isinstance(mode_policy, dict) else False
+    result = dialogue.finalize_episode_tts_jobs(episode_id, auto_select=auto_select, actor="local-user")
+    finalized = result.get("finalized", [])
+    failures = result.get("failures", [])
+    selected = result.get("auto_selected", [])
+    produced = {"finalized": finalized, "auto_selected": selected, "failures": failures}
+    if failures:
+        machine_check = {"status": "FAIL", "ok": False, "code": "TTS_FINALIZE_FAILED", "failures": failures, "finalized_count": len(finalized)}
+        return _automation_report("FAIL", machine_check, produced, f"TTS 收尾存在 {len(failures)} 个失败任务"), 0
+    machine_check = {
+        "status": "PASS",
+        "ok": True,
+        "succeeded_jobs": int(result.get("succeeded_jobs", 0)),
+        "finalized_count": len(finalized),
+        "auto_selected_count": len(selected),
+    }
+    summary = f"TTS 收尾完成：登记 {len(finalized)} 条候选"
+    if auto_select and selected:
+        summary += f"，自动采用 {len(selected)} 条"
+    return _automation_report("PASS", machine_check, produced, summary), 0
 
 
 def _automation_render(
@@ -408,6 +448,8 @@ def run_automation_task(
         report, produced_extra = episode_worker_actions_factory().qc(episode_id, run_id, task_id, auto_select=auto_select)
     elif action == "TTS_BATCH":
         report, produced_extra = _automation_tts_batch(dialogue_factory(), episode_id, run_id, task_id)
+    elif action == "TTS_FINALIZE":
+        report, produced_extra = _automation_tts_finalize(dialogue_factory(), episode_id, payload)
     elif action == "TIMELINE_ASSEMBLY":
         report, produced_extra = _automation_timeline_assembly(timeline_factory, episode_id)
     elif action == "RENDER":
