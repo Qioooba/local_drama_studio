@@ -156,6 +156,8 @@
 
 ```powershell
 # 一次性
+# 持久部署优先修改 config/config.json（SERVER + LAN_SERVICE）；
+# 下列环境变量仅用于当前进程的临时覆盖。
 $env:LOCAL_DRAMA_NETWORK_MODE = "LAN_SERVICE"
 $env:LOCAL_DRAMA_HOST         = "0.0.0.0"
 $env:LOCAL_DRAMA_PORT         = "3210"
@@ -176,7 +178,7 @@ $env:LOCAL_DRAMA_UPLOAD_MAX_PROJECT_PACKAGE_MB  = "2048"
 
 cd F:\AI_Projects\h3\local_drama_studio
 pnpm --filter local-drama-studio-web build   # 产出 apps/web/dist
-.\scripts\start.ps1                          # 单端口 http://<server-ip>:3210
+.\scripts\start.ps1                          # 默认读取 config/config.json
 ```
 
 客户端浏览器访问 `http://<server-ip>:3210` 即可完成页面、上传、实时预览全流程。

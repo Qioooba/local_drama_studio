@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import os
 import shutil
@@ -51,6 +52,74 @@ def _run_version(executable: str | None) -> tuple[str, dict[str, Any]]:
         return "FAIL", {"executable": executable, "reason": type(error).__name__}
     first_line = (result.stdout or result.stderr).splitlines()[:1]
     return ("PASS" if result.returncode == 0 else "FAIL"), {"executable": executable, "version": first_line[0] if first_line else ""}
+
+
+def _positive_number(value: object) -> float | None:
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _probe_gpu_runtime(runtime: dict[str, Any]) -> dict[str, Any]:
+    """Return one normalized GPU fact, preferring the live local driver.
+
+    The canonical model inventory is deliberately read-only and may be older
+    than the installed driver. Diagnostics therefore treat it as a bounded
+    fallback rather than declaring the machine unavailable when an optional
+    inventory field is absent.
+    """
+
+    manifest_gpu = dict(runtime.get("gpu", {}))
+    manifest_total_bytes = _positive_number(manifest_gpu.get("total_bytes"))
+    if manifest_total_bytes is None:
+        total_gib = _positive_number(manifest_gpu.get("total_gib"))
+        manifest_total_bytes = total_gib * 1024**3 if total_gib is not None else None
+    observed: dict[str, Any] = {
+        "index": manifest_gpu.get("index"),
+        "name": manifest_gpu.get("name"),
+        "total_bytes": int(manifest_total_bytes) if manifest_total_bytes is not None else None,
+        "driver": manifest_gpu.get("driver"),
+        "cuda": runtime.get("cuda"),
+        "cuda_available": runtime.get("cuda_available") is True,
+        "source": "MODEL_INVENTORY",
+    }
+
+    executable = shutil.which("nvidia-smi")
+    if executable:
+        try:
+            result = subprocess.run(
+                [
+                    executable,
+                    "--query-gpu=index,name,driver_version,memory.total",
+                    "--format=csv,noheader,nounits",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            rows = list(csv.reader((result.stdout or "").splitlines(), skipinitialspace=True))
+            if result.returncode == 0 and rows and len(rows[0]) >= 4:
+                index, name, driver, memory_mib = (item.strip() for item in rows[0][:4])
+                live_total_mib = _positive_number(memory_mib)
+                observed.update(
+                    {
+                        "index": int(index) if index.isdigit() else index,
+                        "name": name or observed["name"],
+                        "driver": driver or observed["driver"],
+                        "total_bytes": int(live_total_mib * 1024**2) if live_total_mib is not None else observed["total_bytes"],
+                        "source": "NVIDIA_SMI",
+                    }
+                )
+            else:
+                observed["live_probe_error"] = f"exit_{result.returncode}"
+        except (OSError, subprocess.TimeoutExpired) as error:
+            observed["live_probe_error"] = type(error).__name__
+    else:
+        observed["live_probe_error"] = "nvidia_smi_not_found"
+    return observed
 
 
 def _probe_loopback(url: str | None, *, allow_private_network: bool = False) -> tuple[str, dict[str, Any]]:
@@ -143,20 +212,26 @@ class DiagnosticService:
         disk = shutil.disk_usage(self.settings.data_root)
         disk_status = "PASS" if disk.free > 10 * 1024 * 1024 * 1024 else "WARN"
         add("DISK_SPACE", "storage", disk_status, {"free_bytes": disk.free, "total_bytes": disk.total, "used_bytes": disk.used})
-        gpu = dict(runtime.get("gpu", {}))
+        gpu = _probe_gpu_runtime(runtime)
         add(
             "GPU_MANIFEST",
             "gpu",
-            "PASS" if gpu.get("name") and int(gpu.get("total_bytes", 0)) > 0 else "BLOCKED",
-            {"name": gpu.get("name"), "total_bytes": gpu.get("total_bytes"), "cuda": runtime.get("cuda")},
+            "PASS" if gpu.get("name") and _positive_number(gpu.get("total_bytes")) is not None else "BLOCKED",
+            gpu,
+            {"action": "确认 NVIDIA 显卡可被系统识别，并重新运行本机检查。"},
         )
-        cuda_available = runtime.get("cuda_available") is True
+        cuda_available = gpu.get("cuda_available") is True
+        driver_status = "PASS" if gpu.get("driver") and gpu.get("cuda") and cuda_available else ("WARN" if cuda_available else "BLOCKED")
         add(
             "GPU_DRIVER_CUDA",
             "gpu",
-            "PASS" if gpu.get("driver") and runtime.get("cuda") and cuda_available else "BLOCKED",
-            {"driver": gpu.get("driver"), "cuda": runtime.get("cuda"), "cuda_available": cuda_available},
-            {"action": "安装/配置本机 GPU 驱动与 CUDA；不会自动改驱动或联网下载"},
+            driver_status,
+            gpu,
+            {
+                "action": "显卡计算可用，但清单证据不完整；请重新运行本机检查。"
+                if cuda_available
+                else "检查本机 GPU 驱动与 CUDA；系统不会自动修改驱动或联网下载。"
+            },
         )
         capabilities = manifest.capabilities
         missing_nodes = [
@@ -240,7 +315,14 @@ class DiagnosticService:
                 "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'operator', 'DIAGNOSTIC_RUN', 'diagnostic_run', ?, ?, ?)",
                 (actor, run_id, "执行本机诊断", _json({"status": overall, "check_count": len(checks)})),
             )
-        return {"id": run_id, "status": overall, "manifest_sha256": manifest.sha256, "checks": checks}
+        return {
+            "id": run_id,
+            "status": overall,
+            "manifest_sha256": manifest.sha256,
+            "created_at": now,
+            "updated_at": now,
+            "checks": checks,
+        }
 
     def latest(self) -> dict[str, Any] | None:
         with self.database.connect() as connection:

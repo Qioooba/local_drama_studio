@@ -2,9 +2,48 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from local_drama.application.diagnostics import _probe_gpu_runtime
 from local_drama.application.model_compatibility import ModelCompatibilityService
 from local_drama.application.projects import ProjectService
 from local_drama.main import create_app
+
+
+def test_gpu_diagnostics_prefers_live_driver_facts(monkeypatch) -> None:
+    monkeypatch.setattr("local_drama.application.diagnostics.shutil.which", lambda executable: "nvidia-smi" if executable == "nvidia-smi" else None)
+    monkeypatch.setattr(
+        "local_drama.application.diagnostics.subprocess.run",
+        lambda *args, **kwargs: type("Result", (), {"returncode": 0, "stdout": "0, NVIDIA GeForce RTX 3090 Ti, 610.62, 24564\n", "stderr": ""})(),
+    )
+
+    observed = _probe_gpu_runtime(
+        {
+            "cuda": "13.0",
+            "cuda_available": True,
+            "gpu": {"index": 0, "name": "stale inventory name", "total_gib": 23.99},
+        }
+    )
+
+    assert observed["source"] == "NVIDIA_SMI"
+    assert observed["name"] == "NVIDIA GeForce RTX 3090 Ti"
+    assert observed["driver"] == "610.62"
+    assert observed["total_bytes"] == 24564 * 1024**2
+
+
+def test_gpu_diagnostics_normalizes_inventory_gib_without_faking_zero(monkeypatch) -> None:
+    monkeypatch.setattr("local_drama.application.diagnostics.shutil.which", lambda executable: None)
+
+    observed = _probe_gpu_runtime(
+        {
+            "cuda": "13.0",
+            "cuda_available": True,
+            "gpu": {"index": 0, "name": "NVIDIA GeForce RTX 3090 Ti", "total_gib": 23.99},
+        }
+    )
+
+    assert observed["source"] == "MODEL_INVENTORY"
+    assert observed["total_bytes"] == int(23.99 * 1024**3)
+    assert observed["driver"] is None
+    assert observed["live_probe_error"] == "nvidia_smi_not_found"
 
 
 def test_diagnostics_exposes_blueprint_checks_and_dry_run_fix(workspace, database) -> None:

@@ -9,8 +9,10 @@ import zipfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
+from urllib.parse import quote
 
 from local_drama.application.commands.director_recipes import canonical_recipe, recipe_hash, validate_recipe
+from local_drama.application.local_artifacts import local_artifact_reference
 from local_drama.application.media import MediaService
 from local_drama.config import Settings
 from local_drama.domain.capabilities import normalize_capability
@@ -18,6 +20,7 @@ from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.policies import validate_project_code
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.atomic import replace_path
+from local_drama.infrastructure.filesystem.path_policy import canonical_relative_path, controlled_path, safe_filename
 from local_drama.infrastructure.filesystem.template import TEMPLATE_DIRECTORIES, TEMPLATE_VERSION
 
 PACKAGE_SCHEMA = "localdrama.project-package.v2"
@@ -40,10 +43,10 @@ def _sha256(path: Path) -> str:
 
 
 def _safe_member(name: str) -> PurePosixPath:
-    path = PurePosixPath(name)
-    if not name or "\\" in name or path.is_absolute() or ".." in path.parts or any(not part for part in path.parts):
-        raise DomainRuleError("PROJECT_PACKAGE_PATH_INVALID", "项目包包含不安全路径", {"path": name})
-    return path
+    try:
+        return PurePosixPath(canonical_relative_path(name, code="PROJECT_PACKAGE_PATH_INVALID"))
+    except DomainRuleError as error:
+        raise DomainRuleError("PROJECT_PACKAGE_PATH_INVALID", "项目包包含不安全路径", {"path": name}) from error
 
 
 def _writestr(archive: zipfile.ZipFile, name: str, content: bytes) -> None:
@@ -104,14 +107,14 @@ class ProjectPackageService:
         return items
 
     def import_browser_upload(self, source: Path, original_name: str) -> dict[str, Any]:
-        safe_name = Path(original_name).name[:180]
+        safe_name = safe_filename(original_name, default="project.ldspkg")
         if not safe_name or Path(safe_name).suffix.lower() != ".ldspkg":
             raise DomainRuleError("PROJECT_PACKAGE_UPLOAD_TYPE_INVALID", "项目包必须是 .ldspkg 文件")
         self.inspect_path(source)
         digest = _sha256(source)
         inbox = (self.staging_root / "inbox").resolve()
         inbox.mkdir(parents=True, exist_ok=True)
-        destination = inbox / safe_name
+        destination = controlled_path(inbox, safe_name)
         if destination.exists() and _sha256(destination) != digest:
             destination = inbox / f"{Path(safe_name).stem}-{digest[:12]}.ldspkg"
         if not destination.exists():
@@ -178,7 +181,12 @@ class ProjectPackageService:
         return dict(row)
 
     def _root(self, project: dict[str, Any]) -> Path:
-        root = (self.projects_root / str(project["root_rel"])).resolve()
+        root = controlled_path(
+            self.projects_root,
+            str(project["root_rel"]),
+            must_exist=True,
+            code="PROJECT_ROOT_INVALID",
+        )
         if root.parent != self.projects_root or not root.is_dir() or _is_reparse(root):
             raise DomainRuleError("PROJECT_ROOT_INVALID", "项目根目录缺失或越界")
         return root
@@ -346,7 +354,18 @@ class ProjectPackageService:
         except Exception:
             partial.unlink(missing_ok=True)
             raise
-        return {"status": "EXPORTED", "project_id": project_id, "rel_path": final.relative_to(root).as_posix(), "byte_size": final.stat().st_size,
+        rel_path = final.relative_to(root).as_posix()
+        artifact = local_artifact_reference(
+            root=root,
+            path=final,
+            scope="PROJECT",
+            kind="FILE",
+            display_name=final.name,
+            download_url=f"/api/v1/projects/{quote(project_id, safe='')}/packages:download?rel_path={quote(rel_path, safe='')}",
+            download_filename=final.name,
+            error_code="PROJECT_PACKAGE_OUTPUT_INVALID",
+        )
+        return {"status": "EXPORTED", "project_id": project_id, "artifact": artifact, "rel_path": rel_path, "byte_size": final.stat().st_size,
                 "sha256": _sha256(final), "entry_count": len(entries), "expanded_bytes": sum(int(item["byte_size"]) for item in entries), "reused": reused,
                 "database_mutated": False, "runtime_contacted": False, "network_contacted": False}
 
@@ -420,7 +439,13 @@ class ProjectPackageService:
         project = self._project(project_id)
         root = self._root(project)
         allowed = (root / "exports" / "project-packages").resolve()
-        candidate = (root / rel_path).resolve()
+        candidate = controlled_path(
+            root,
+            rel_path,
+            must_exist=True,
+            require_file=True,
+            code="PROJECT_PACKAGE_PATH_NOT_ALLOWED",
+        )
         if allowed not in candidate.parents or not candidate.is_file() or _is_reparse(candidate):
             raise DomainRuleError("PROJECT_PACKAGE_PATH_NOT_ALLOWED", "只能预检项目已导出的注册项目包")
         return self.inspect_path(candidate)
@@ -429,14 +454,20 @@ class ProjectPackageService:
         project = self._project(project_id)
         root = self._root(project)
         allowed = (root / "exports" / "project-packages").resolve()
-        candidate = (root / rel_path).resolve()
+        candidate = controlled_path(
+            root,
+            rel_path,
+            must_exist=True,
+            require_file=True,
+            code="PROJECT_PACKAGE_PATH_NOT_ALLOWED",
+        )
         if candidate.parent != allowed or candidate.suffix.lower() != ".ldspkg" or not candidate.is_file() or _is_reparse(candidate):
             raise DomainRuleError("PROJECT_PACKAGE_PATH_NOT_ALLOWED", "只能下载项目已导出的注册项目包")
         self.inspect_path(candidate)
         return candidate
 
     def stage_from_inbox(self, inbox_name: str) -> dict[str, Any]:
-        if Path(inbox_name).name != inbox_name or not inbox_name.lower().endswith(".ldspkg"):
+        if safe_filename(inbox_name, default="") != inbox_name or not inbox_name.lower().endswith(".ldspkg"):
             raise DomainRuleError("PROJECT_PACKAGE_INBOX_NAME_INVALID", "inbox 只接受单个 .ldspkg 文件名")
         inbox = (self.staging_root / "inbox").resolve()
         staged = (self.staging_root / "staged").resolve()
@@ -1277,7 +1308,11 @@ class ProjectPackageService:
             code_row = connection.execute("SELECT id FROM projects WHERE code=?", (project_code,)).fetchone()
         if row is None or str(row["code"]) != project_code or code_row is None or str(code_row["id"]) != project_id:
             raise DomainRuleError("PROJECT_PACKAGE_REBIND_IDENTITY_MISMATCH", "rebind 要求本地项目 ID 与 code 同时匹配")
-        final_root = (self.projects_root / str(row["root_rel"])).resolve()
+        final_root = controlled_path(
+            self.projects_root,
+            str(row["root_rel"]),
+            code="PROJECT_ROOT_INVALID",
+        )
         if final_root.parent != self.projects_root:
             raise DomainRuleError("PROJECT_ROOT_INVALID", "项目根目录配置越界")
         if final_root.exists():

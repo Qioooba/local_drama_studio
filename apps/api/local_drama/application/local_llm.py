@@ -20,6 +20,7 @@ from local_drama.domain.capabilities import normalize_capability
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.network_policy import endpoint_is_remote
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.infrastructure.filesystem.path_policy import controlled_path
 from local_drama.infrastructure.local_llm import LocalLLMClient
 from local_drama.platform import create_platform_services
 from local_drama.platform.contracts import SecretRef, SecretStore
@@ -897,6 +898,56 @@ class LocalLLMService:
             allow_private_network=self.settings.allows_private_network,
         )
 
+    def discover_ollama_models(self, base_url: str | None = None) -> dict[str, Any]:
+        """Read the model catalog exposed by one allowed Ollama endpoint.
+
+        Discovery only calls Ollama's read-only ``/api/tags`` endpoint. It does
+        not load a model into memory, run inference, copy weights, or mutate the
+        runtime. The normal local/private-network endpoint policy still applies.
+        """
+        # The catalog is specifically the local Ollama inventory. A remote
+        # OpenAI-compatible default must not replace or suppress this scan.
+        resolved_base_url = (base_url or "http://127.0.0.1:11434").strip()
+        client = LocalLLMClient(
+            resolved_base_url,
+            "__catalog_discovery__",
+            provider="OLLAMA_LOOPBACK",
+            allow_private_network=self.settings.allows_private_network,
+        )
+        raw_models = client.tags()
+        items: list[dict[str, Any]] = []
+        for raw in raw_models:
+            name = str(raw.get("name") or raw.get("model") or "").strip()
+            if not name:
+                continue
+            details = raw.get("details") if isinstance(raw.get("details"), dict) else {}
+            families = details.get("families") if isinstance(details.get("families"), list) else []
+            items.append(
+                {
+                    "name": name,
+                    "model": str(raw.get("model") or name),
+                    "modified_at": raw.get("modified_at"),
+                    "size_bytes": int(raw.get("size") or 0),
+                    "digest": str(raw.get("digest") or ""),
+                    "format": str(details.get("format") or ""),
+                    "family": str(details.get("family") or ""),
+                    "families": [str(value) for value in families if value],
+                    "parameter_size": str(details.get("parameter_size") or ""),
+                    "quantization_level": str(details.get("quantization_level") or ""),
+                }
+            )
+        items.sort(key=lambda item: str(item["name"]).casefold())
+        return {
+            "provider": "OLLAMA_LOOPBACK",
+            "base_url": resolved_base_url.rstrip("/"),
+            "items": items,
+            "count": len(items),
+            "scanned_at": _now(),
+            "read_only": True,
+            "runtime_contacted": True,
+            "mutated": False,
+        }
+
     def submit_probe(
         self,
         project_id: str,
@@ -974,8 +1025,14 @@ class LocalLLMService:
             raise DomainRuleError("LOCAL_LLM_PROBE_REPORT_MISSING", "LLM 测试已完成但结果报告缺失")
         artifact = artifacts[-1]
         work_root = self.settings.work_root.resolve()
-        path = (work_root / str(artifact["sandbox_rel_path"])).resolve()
-        if not path.is_relative_to(work_root) or not path.is_file() or path.is_symlink() or path.stat().st_size > 1024 * 1024:
+        path = controlled_path(
+            work_root,
+            str(artifact["sandbox_rel_path"]),
+            must_exist=True,
+            require_file=True,
+            code="LOCAL_LLM_PROBE_REPORT_INVALID",
+        )
+        if path.stat().st_size > 1024 * 1024:
             raise DomainRuleError("LOCAL_LLM_PROBE_REPORT_INVALID", "LLM 测试结果报告无效")
         raw = path.read_bytes()
         if hashlib.sha256(raw).hexdigest() != str(artifact["sha256"]):
@@ -1286,7 +1343,12 @@ class LocalLLMService:
     ) -> dict[str, Any]:
         with self.database.transaction() as connection:
             row = connection.execute(
-                "SELECT id, capability, capability_json, model_bundle_json FROM execution_profile_versions WHERE id=?", (profile_version_id,)
+                """SELECT version.id, version.capability, version.capability_json, version.model_bundle_json,
+                          version.version_no, profile.code AS profile_code
+                   FROM execution_profile_versions AS version
+                   JOIN execution_profiles AS profile ON profile.id=version.execution_profile_id
+                   WHERE version.id=?""",
+                (profile_version_id,),
             ).fetchone()
             if row is None:
                 raise DomainRuleError("PROFILE_NOT_FOUND", "Profile 版本不存在")
@@ -1359,7 +1421,22 @@ class LocalLLMService:
                     _json({"model": model, "provider": provider, "status": "PUBLISHED", "probe_level_passed": 4}),
                 ),
             )
-        return {"profile_version_id": profile_version_id, "status": "PUBLISHED", "probe": probe}
+        return {
+            "profile_version_id": profile_version_id,
+            "profile_code": str(row["profile_code"]),
+            "version_no": int(row["version_no"]),
+            "status": "PUBLISHED",
+            "probe": probe,
+            "publication": {
+                "destination": "GLOBAL_CAPABILITY_CATALOG",
+                "scope": "LOCAL_STUDIO",
+                "consumer_scope": "ALL_PROJECTS",
+                "capability": profile_capability,
+                "model": model,
+                "provider": provider,
+                "published_at": now,
+            },
+        }
 
     def expand_video_prompt(
         self,
@@ -1705,11 +1782,14 @@ class LocalLLMService:
                     "paragraph_count": paragraph_count,
                 },
             )
-        extracted = Path(str(row["extracted_text_rel"]))
-        project_root = (self.settings.projects_root / self._project_code(str(row["project_id"]))).resolve()
-        text_path = (project_root / extracted).resolve()
-        if not text_path.is_relative_to(project_root) or not text_path.is_file():
-            raise DomainRuleError("SOURCE_TEXT_NOT_FOUND", "剧本提取文本不在项目目录或不存在")
+        project_root = self._project_root(str(row["project_id"]))
+        text_path = controlled_path(
+            project_root,
+            str(row["extracted_text_rel"]),
+            must_exist=True,
+            require_file=True,
+            code="SOURCE_TEXT_NOT_FOUND",
+        )
         selected_source, selected_offsets = _numbered_source_paragraphs(
             text_path.read_text(encoding="utf-8"),
             skip_headings=True,
@@ -1835,11 +1915,14 @@ class LocalLLMService:
                 }
         if on_progress:
             on_progress({"phase": "CALLING_LOCAL_LLM", "percent": 20})
-        extracted = Path(str(row["extracted_text_rel"]))
-        project_root = (self.settings.projects_root / self._project_code(str(row["project_id"]))).resolve()
-        text_path = (project_root / extracted).resolve()
-        if not text_path.is_relative_to(project_root) or not text_path.is_file():
-            raise DomainRuleError("SOURCE_TEXT_NOT_FOUND", "剧本提取文本不在项目目录或不存在")
+        project_root = self._project_root(str(row["project_id"]))
+        text_path = controlled_path(
+            project_root,
+            str(row["extracted_text_rel"]),
+            must_exist=True,
+            require_file=True,
+            code="SOURCE_TEXT_NOT_FOUND",
+        )
         source_bytes = text_path.read_bytes()
         if hashlib.sha256(source_bytes).hexdigest() != str(row["text_sha256"]):
             raise DomainRuleError("SOURCE_TEXT_CHANGED", "剧本提取文本 hash 已变化，拒绝执行旧 Job 快照")
@@ -2042,9 +2125,9 @@ class LocalLLMService:
             items.append(item)
         return items
 
-    def _project_code(self, project_id: str) -> str:
+    def _project_root(self, project_id: str) -> Path:
         with self.database.connect() as connection:
-            row = connection.execute("SELECT code FROM projects WHERE id=?", (project_id,)).fetchone()
+            row = connection.execute("SELECT root_rel FROM projects WHERE id=?", (project_id,)).fetchone()
         if row is None:
             raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
-        return str(row["code"])
+        return self.settings.resolve_project_root(str(row["root_rel"]))

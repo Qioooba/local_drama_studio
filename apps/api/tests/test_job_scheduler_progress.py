@@ -89,6 +89,38 @@ def test_gpu_heavy_resource_is_exclusive_but_cpu_is_independent(workspace, datab
     assert second is not None and second["job"]["id"] == gpu_two["id"]
 
 
+def test_claim_type_filters_keep_v2_execution_out_of_legacy_consumer(workspace, database) -> None:
+    project = _project(workspace, database, "scheduler_type_filters")
+    jobs = JobService(database, workspace)
+    legacy = jobs.create_job(
+        str(project["id"]),
+        "LEGACY_COMFY_TEST",
+        "PROJECT",
+        str(project["id"]),
+        "GPU_H3",
+        {"workflow_version_id": "legacy-workflow"},
+        "legacy-comfy-filter",
+    )
+    v2 = jobs.create_job(
+        None,
+        "MODEL_PLATFORM_EXECUTION",
+        "MODEL_PLATFORM_EXECUTION",
+        "execution-snapshot-1",
+        "GPU_H3",
+        {"execution_snapshot_id": "execution-snapshot-1", "scheduler_runtime": "COMFY"},
+        "v2-comfy-filter",
+        subject_kind="MODEL_PLATFORM_EXECUTION",
+        scope_kind="SYSTEM",
+        stage_code="MODEL_PLATFORM_EXECUTION",
+    )
+
+    v2_claim = jobs.claim("v2-worker", ["GPU_H3"], exclude_job_types=["MODEL_PLATFORM_EXECUTION"])
+    assert v2_claim is not None and v2_claim["job"]["id"] == legacy["id"]
+    jobs.complete(str(v2_claim["attempt"]["id"]), str(v2_claim["attempt"]["lease_token"]), "v2-worker", success=True)
+    local_claim = jobs.claim("local-v2-worker", ["GPU_H3"], job_types=["MODEL_PLATFORM_EXECUTION"])
+    assert local_claim is not None and local_claim["job"]["id"] == v2["id"]
+
+
 def test_restart_claim_reconciles_expired_lease_and_retry_clone_keep_history(workspace, database) -> None:
     project = _project(workspace, database, "scheduler_recovery")
     jobs = JobService(database, workspace)

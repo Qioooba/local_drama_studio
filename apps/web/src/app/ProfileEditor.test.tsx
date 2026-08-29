@@ -221,7 +221,7 @@ describe("Profile contract editor interactions", () => {
     await screen.findByRole("button", { name: "保存为新 DRAFT" });
     fireEvent.click(screen.getByRole("button", { name: "保存为新 DRAFT" }));
     await screen.findByText("运行本地契约验证");
-    const publishButton = screen.getByRole("button", { name: "发布已验证版本" }) as HTMLButtonElement;
+    const publishButton = screen.getByRole("button", { name: "发布到全局能力目录" }) as HTMLButtonElement;
     expect(publishButton.disabled).toBe(true);
     expect(await screen.findByText(/发布保持禁用/)).toBeTruthy();
   });
@@ -234,7 +234,7 @@ describe("Profile contract editor interactions", () => {
     fireEvent.click(screen.getByRole("button", { name: "运行本地契约验证" }));
     await waitFor(() => expect(api.validateProfileContractVersion).toHaveBeenCalled());
     expect(await screen.findByText(/本地契约验证 PASS/)).toBeTruthy();
-    const publishButton = (await screen.findByRole("button", { name: "发布已验证版本" })) as HTMLButtonElement;
+    const publishButton = (await screen.findByRole("button", { name: "发布到全局能力目录" })) as HTMLButtonElement;
     await waitFor(() => expect(publishButton.disabled).toBe(false));
   });
 
@@ -263,7 +263,7 @@ describe("Profile contract editor interactions", () => {
 
     expect((screen.getByRole("button", { name: "保存修改为新 DRAFT" }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole("button", { name: "运行本地契约验证" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "发布已验证版本" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "发布到全局能力目录" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/当前表单有未保存修改/)).toBeTruthy();
   });
 
@@ -274,12 +274,31 @@ describe("Profile contract editor interactions", () => {
     await screen.findByText("运行本地契约验证");
     fireEvent.click(screen.getByRole("button", { name: "运行本地契约验证" }));
     await screen.findByText(/本地契约验证 PASS/);
-    const publishButton = await screen.findByRole("button", { name: "发布已验证版本" });
+    const publishButton = await screen.findByRole("button", { name: "发布到全局能力目录" });
     await waitFor(() => expect((publishButton as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(publishButton);
     await waitFor(() => expect(api.publishProfileContractVersion).toHaveBeenCalled());
     expect(await screen.findByText(/PROFILE_REAL_EVIDENCE_REQUIRED/)).toBeTruthy();
     expect(await screen.findByText(/必须转入真实媒体证据发布/)).toBeTruthy();
+  });
+
+  it("shows the global catalog destination after a contract version is published", async () => {
+    const validatedDraft = {
+      ...draftDetail,
+      validation: { id: "att-publish", status: "PASS" as const, contract_hash: draftDetail.contract_hash, checks: [{ code: "CONTRACT", passed: true }] },
+    };
+    vi.mocked(api.listProfiles).mockResolvedValue({ items: [draft] });
+    vi.mocked(api.getProfileVersion).mockResolvedValue({ profile_version: validatedDraft });
+    vi.mocked(api.publishProfileContractVersion).mockResolvedValue({ profile_version: { ...validatedDraft, status: "PUBLISHED" } });
+
+    renderProfilesView();
+    const publishButton = await screen.findByRole("button", { name: "发布到全局能力目录" });
+    expect((publishButton as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(publishButton);
+
+    expect(await screen.findByRole("heading", { name: "发布完成" })).toBeTruthy();
+    expect(screen.getByText("系统 / 能力与模型 / 能力目录")).toBeTruthy();
+    expect(screen.getByText("本机全局 · 所有项目可选")).toBeTruthy();
   });
 
   it("uses an accessible confirmation dialog before queuing one real I2V evidence job", async () => {
@@ -337,7 +356,7 @@ describe("Profile contract editor interactions", () => {
     await screen.findByText("运行本地契约验证");
     fireEvent.click(screen.getByRole("button", { name: "运行本地契约验证" }));
     expect(await screen.findByText(/契约验证未通过/)).toBeTruthy();
-    const publishButton = screen.getByRole("button", { name: "发布已验证版本" }) as HTMLButtonElement;
+    const publishButton = screen.getByRole("button", { name: "发布到全局能力目录" }) as HTMLButtonElement;
     expect(publishButton.disabled).toBe(true);
   });
 

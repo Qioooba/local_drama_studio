@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Callable, TypedDict
 from urllib.parse import urlparse
 
+from local_drama.application.local_artifacts import local_artifact_reference
 from local_drama.application.media import infer_media_kind
 from local_drama.application.override_schema import effective_schema, validate_overrides
 from local_drama.application.ports.database import DatabaseUnitOfWork
@@ -31,6 +32,7 @@ from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.network_policy import endpoint_is_remote
 from local_drama.infrastructure.comfy import ComfyClient
 from local_drama.infrastructure.filesystem.atomic import replace_path
+from local_drama.infrastructure.filesystem.path_policy import controlled_path, safe_filename
 
 TERMINAL_STATES = {"SUCCEEDED", "FAILED", "CANCELLED"}
 ACTIVE_JOB_STATES = {"QUEUED", "CLAIMED", "RUNNING", "CANCEL_REQUESTED"}
@@ -491,13 +493,50 @@ class QuickGenerationService:
     def _output(self, output_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
             row = connection.execute("SELECT * FROM quick_generation_outputs WHERE id=?", (output_id,)).fetchone()
+            run_row = connection.execute(
+                "SELECT story_json FROM quick_generation_runs WHERE id=(SELECT run_id FROM quick_generation_outputs WHERE id=?)",
+                (output_id,),
+            ).fetchone()
         if row is None:
             raise DomainRuleError("QUICK_GENERATION_OUTPUT_NOT_FOUND", "快速生成作品不存在")
-        return {
+        item = {
             **dict(row),
             "content_url": f"/api/v1/quick-generation-outputs/{output_id}/content",
             "thumbnail_url": f"/api/v1/quick-generation-outputs/{output_id}/thumbnail?size=small&frame=poster",
         }
+        if item.get("legacy_media_version_id"):
+            media, path = self.media.content_path(str(item["legacy_media_version_id"]))
+            relative = Path(*str(media.get("rel_path") or path.name).replace("\\", "/").split("/"))
+            reference_root = path.parents[max(0, len(relative.parts) - 1)]
+            scope = "PROJECT"
+        else:
+            reference_root = self.settings.data_root.resolve()
+            path = controlled_path(
+                reference_root,
+                str(item.get("rel_path") or ""),
+                must_exist=True,
+                require_file=True,
+                code="QUICK_GENERATION_OUTPUT_FILE_MISSING",
+            )
+            scope = "DATA"
+        story = json.loads(str(run_row["story_json"] or "{}")) if run_row is not None else {}
+        story_text = str(story.get("text") or "作品").strip()
+        suffix = path.suffix.lower() or (".png" if item["media_kind"] == "IMAGE" else ".mp4")
+        download_filename = safe_filename(
+            f"快速生成-{story_text[:48]}-{output_id[:8]}{suffix}",
+            default=f"quick-generation-{output_id[:8]}{suffix}",
+        )
+        item["artifact"] = local_artifact_reference(
+            root=reference_root,
+            path=path,
+            scope=scope,
+            kind="FILE",
+            display_name=download_filename,
+            download_url=f"/api/v1/quick-generation-outputs/{output_id}/download",
+            download_filename=download_filename,
+            error_code="QUICK_GENERATION_OUTPUT_FILE_MISSING",
+        )
+        return item
 
     def _candidates(self, run_id: str) -> list[dict[str, Any]]:
         selected_id = str(self._row(run_id).get("selected_candidate_id") or "")
@@ -707,9 +746,13 @@ class QuickGenerationService:
         if existing is not None:
             return dict(existing)
         work_root = self.settings.work_root.resolve()
-        source = (work_root / str(artifact["sandbox_rel_path"])).resolve()
-        if not source.is_relative_to(work_root) or not source.is_file() or source.is_symlink():
-            raise DomainRuleError("QUICK_GENERATION_ARTIFACT_MISSING", "快速生成产物文件不存在或越过工作区")
+        source = controlled_path(
+            work_root,
+            str(artifact["sandbox_rel_path"]),
+            must_exist=True,
+            require_file=True,
+            code="QUICK_GENERATION_ARTIFACT_MISSING",
+        )
         digest = hashlib.sha256(source.read_bytes()).hexdigest()
         if digest != str(artifact["sha256"]):
             raise DomainRuleError("QUICK_GENERATION_ARTIFACT_INTEGRITY_FAILED", "快速生成产物校验失败")
@@ -956,9 +999,13 @@ class QuickGenerationService:
             _media, path = self.media.content_path(str(output["legacy_media_version_id"]))
             return output, path
         data_root = self.settings.data_root.resolve()
-        path = (data_root / str(output.get("rel_path") or "")).resolve()
-        if not path.is_relative_to(data_root) or not path.is_file() or path.is_symlink():
-            raise DomainRuleError("QUICK_GENERATION_OUTPUT_FILE_MISSING", "快速生成作品文件不存在或越过数据目录")
+        path = controlled_path(
+            data_root,
+            str(output.get("rel_path") or ""),
+            must_exist=True,
+            require_file=True,
+            code="QUICK_GENERATION_OUTPUT_FILE_MISSING",
+        )
         if hashlib.sha256(path.read_bytes()).hexdigest() != str(output["sha256"]):
             raise DomainRuleError("QUICK_GENERATION_OUTPUT_INTEGRITY_FAILED", "快速生成作品完整性校验失败")
         return output, path

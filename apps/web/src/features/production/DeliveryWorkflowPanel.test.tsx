@@ -24,6 +24,7 @@ describe("DeliveryWorkflowPanel", () => {
         episode_render_version_id: "render-1",
         target_version_id: "target-1",
         status: "VERIFIED",
+        artifact: { scope: "PROJECT", kind: "FILE", display_name: "EP001 · 抖音竖屏 · EP001-package.mp4", server_absolute_path: "F:\\DramaProjects\\p\\06_delivery\\EP001.mp4", rel_path: "06_delivery/EP001.mp4", download_url: "/api/v1/delivery-packages/package-1/download", download_filename: "EP001-package.mp4" },
         manifest_sha256: "a".repeat(64),
         rel_path: "06_delivery/Episode-1/delivery-package-1",
         events: [

@@ -19,6 +19,7 @@ from local_drama.api.schemas.comfy_lab import (
     ComfyLabTestRunEnvelope,
     ComfyLabTestRunRequest,
 )
+from local_drama.api.server_paths import require_server_loopback
 from local_drama.application.comfy_lab import ComfyLabService
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.workflows import WorkflowService
@@ -44,6 +45,8 @@ async def session(request: Request) -> dict[str, object]:
 @router.post("/comfy-lab:discover", operation_id="discoverComfyLab", response_model=ComfyLabDiscoveryEnvelope)
 async def discover(payload: ComfyLabDiscoverRequest, request: Request) -> dict[str, object]:
     try:
+        if payload.apply:
+            require_server_loopback(request, action="自动写入运行时路径到")
         return {"discovery": service(request).discover(apply=payload.apply)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
@@ -52,6 +55,7 @@ async def discover(payload: ComfyLabDiscoverRequest, request: Request) -> dict[s
 @router.put("/comfy-lab/configuration", operation_id="configureComfyLab", response_model=ComfyLabConfigureEnvelope)
 async def configure(payload: ComfyLabConfigureRequest, request: Request) -> dict[str, object]:
     try:
+        require_server_loopback(request, action="配置运行时绝对路径到")
         return {"configuration": service(request).configure(payload.python_path, payload.root_path, payload.port)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error

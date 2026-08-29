@@ -1,0 +1,23 @@
+{
+  "task": "latentsync",
+  "status": "PASS",
+  "model": "F:\\AI_Models\\LocalDramaStudio\\Services\\LatentSync-1.6",
+  "runtime": "F:\\AI_Models\\LocalDramaStudio\\Runtimes\\LatentSync",
+  "video_input": "F:\\AI_Projects\\h3\\local_drama_studio\\work\\local-model-tests\\latentsync-input.mp4",
+  "audio_input": "F:\\AI_Projects\\h3\\local_drama_studio\\work\\local-model-tests\\voxcpm2-test.wav",
+  "output": "F:\\AI_Projects\\h3\\local_drama_studio\\work\\local-model-tests\\latentsync-output.mp4",
+  "output_bytes": 950551,
+  "output_sha256": "2814F704E81D67D60875BA246DE3FBB838FFE13684643B94A3F66C20F1B19F52",
+  "duration_seconds": 2.48,
+  "video_codec": "h264",
+  "audio_codec": "aac",
+  "resolution": "1080x1920",
+  "fps": 25,
+  "inference_steps": 2,
+  "detected_faces": 60,
+  "restored_faces": 62,
+  "onnx_providers": ["CUDAExecutionProvider", "CPUExecutionProvider"],
+  "gpu": "NVIDIA GeForce RTX 3090 Ti",
+  "network_used": false,
+  "verified_at": "2026-08-29T00:55:44+08:00"
+}

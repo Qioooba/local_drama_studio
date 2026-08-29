@@ -21,6 +21,14 @@ func uninstallService() error {
 	return fmt.Errorf("uninstall-service is Windows-only; remove the systemd unit on Linux")
 }
 
+func installFirewallRule(_ int, _ string) error {
+	return fmt.Errorf("configure-firewall is Windows-only; configure the host firewall for the systemd service")
+}
+
+func removeFirewallRule() error {
+	return fmt.Errorf("remove-firewall is Windows-only; configure the host firewall for the systemd service")
+}
+
 func atomicReplace(source string, target string) error {
 	return os.Rename(source, target)
 }

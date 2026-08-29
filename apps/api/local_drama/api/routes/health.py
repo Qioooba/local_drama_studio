@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ipaddress
 import shutil
 import sqlite3
 from pathlib import Path
@@ -8,8 +7,10 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
+from local_drama.api.contract_version import API_CONTRACT_VERSION
 from local_drama.application.diagnostics import _probe_loopback
 from local_drama.application.worker_sessions import ACTIVE_SESSION_STATES, WorkerSessionService
+from local_drama.infrastructure.filesystem.path_policy import client_is_server_loopback
 
 router = APIRouter(tags=["health"])
 
@@ -30,20 +31,15 @@ def _writable(path: Path) -> str:
         return "not_writable"
 
 
-def _client_is_loopback(request: Request) -> bool:
-    host = request.client.host if request.client else ""
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return host.casefold() in {"localhost", "testclient"}
-
-
 def _client_capabilities(request: Request) -> dict[str, object]:
     settings = request.app.state.settings
+    loopback = client_is_server_loopback(request.client.host if request.client else None)
     return {
         "network_mode": str(settings.network_mode),
-        "client_location": "SERVER_LOOPBACK" if _client_is_loopback(request) else "REMOTE_BROWSER",
-        "server_file_dialogs": bool(request.app.state.platform.file_picker.available and _client_is_loopback(request)),
+        "trusted_lan_unauthenticated": bool(settings.trusted_lan_unauthenticated),
+        "security_warning": "TRUSTED_LAN_NO_LOGIN" if settings.is_lan_service else None,
+        "client_location": "SERVER_LOOPBACK" if loopback else "REMOTE_BROWSER",
+        "server_file_dialogs": bool(request.app.state.platform.file_picker.available and loopback),
         "browser_uploads": True,
         "browser_downloads": True,
         "model_library_roots": [str(path) for path in settings.model_library_roots],
@@ -163,6 +159,7 @@ async def contract(request: Request) -> dict[str, str]:
     return {
         "app": settings.app_name,
         "version": settings.app_version,
+        "api_contract_version": API_CONTRACT_VERSION,
         "mode": settings.mode,
         "network_mode": str(settings.network_mode),
         "database_authority": "sqlite_wal_after_g2",

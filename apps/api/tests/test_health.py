@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from local_drama.api.contract_version import API_CONTRACT_HEADER, API_CONTRACT_VERSION
 from local_drama.application.worker_sessions import WorkerSessionService
 from local_drama.config import Settings
 from local_drama.main import create_app
@@ -36,6 +37,39 @@ def test_live_is_local_only(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.json()["checks"]["mode"] == "LOCAL_ONLY"
     assert response.headers["X-Request-Id"]
+    assert response.headers[API_CONTRACT_HEADER] == API_CONTRACT_VERSION
+
+
+def test_api_contract_discovery_and_business_request_version_are_consistent(tmp_path: Path) -> None:
+    settings = Settings(
+        data_root=tmp_path / "data",
+        projects_root=tmp_path / "projects",
+        work_root=tmp_path / "work",
+        cache_root=tmp_path / "cache",
+        logs_root=tmp_path / "logs",
+        backups_root=tmp_path / "backups",
+    )
+    with TestClient(create_app(settings)) as client:
+        contract = client.get("/api/v1/system/contract")
+        mismatch = client.get(
+            "/api/v1/session/bootstrap",
+            headers={API_CONTRACT_HEADER: "localdrama.api.stale"},
+        )
+        matched = client.get(
+            "/api/v1/session/bootstrap",
+            headers={API_CONTRACT_HEADER: API_CONTRACT_VERSION},
+        )
+    assert contract.status_code == 200
+    assert contract.json()["api_contract_version"] == API_CONTRACT_VERSION
+    assert contract.headers[API_CONTRACT_HEADER] == API_CONTRACT_VERSION
+    assert mismatch.status_code == 409
+    assert mismatch.json()["error"]["code"] == "API_CONTRACT_MISMATCH"
+    assert mismatch.json()["error"]["details"] == {
+        "expected": API_CONTRACT_VERSION,
+        "observed": "localdrama.api.stale",
+    }
+    assert mismatch.headers[API_CONTRACT_HEADER] == API_CONTRACT_VERSION
+    assert matched.status_code == 200
 
 
 def test_ready_reports_g2_database_boundary(tmp_path: Path) -> None:

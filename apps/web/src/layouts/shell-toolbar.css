@@ -1,0 +1,127 @@
+.shell-toolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.shell-toolbar__search { flex: 0 1 auto; min-width: 0; }
+
+.shell-toolbar .command-trigger {
+  width: clamp(190px, 18vw, 240px);
+  min-height: 44px;
+  justify-content: flex-start;
+  border-color: rgba(148, 158, 180, .24);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .035);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .025);
+}
+
+.shell-toolbar .command-trigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-toolbar .command-trigger kbd { margin-left: auto; }
+
+.shell-context-switcher,
+.shell-system-tools {
+  display: flex;
+  min-width: 0;
+  height: 44px;
+  align-items: stretch;
+  overflow: visible;
+  border: 1px solid rgba(148, 158, 180, .24);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .035);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .025);
+}
+
+.shell-context-field {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  padding-left: 10px;
+}
+
+.shell-context-field + .shell-context-field,
+.shell-system-tools > * + * { border-left: 1px solid rgba(148, 158, 180, .18); }
+
+.shell-context-field > span {
+  flex: 0 0 auto;
+  color: #7f899c;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.shell-context-field select {
+  width: clamp(118px, 12vw, 176px);
+  min-height: 42px;
+  padding: 0 26px 0 0;
+  border: 0;
+  border-radius: 0;
+  color: #edf0f6;
+  background-color: transparent;
+  font-size: 12px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+}
+
+.shell-context-field--episode select { width: clamp(100px, 9vw, 136px); }
+
+.shell-context-field:focus-within {
+  z-index: 1;
+  border-radius: 9px;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.shell-system-action {
+  display: inline-flex;
+  min-width: 96px;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  color: #cbd1dc;
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 180ms ease, background-color 180ms ease;
+}
+
+.shell-system-action svg { width: 17px; height: 17px; flex: 0 0 17px; }
+.shell-system-action:hover { color: #fff; background: rgba(124, 92, 255, .1); }
+.shell-system-action:focus-visible { position: relative; z-index: 2; border-radius: 9px; outline: 3px solid var(--focus-ring); outline-offset: -3px; }
+
+@media (max-width: 1180px) {
+  .shell-toolbar .command-trigger { width: 44px; padding-inline: 0; justify-content: center; }
+  .shell-toolbar .command-trigger span,
+  .shell-toolbar .command-trigger kbd { display: none; }
+}
+
+@media (max-width: 900px) {
+  .shell-system-action { min-width: 44px; width: 44px; padding: 0; }
+  .shell-system-action span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+}
+
+@media (max-width: 760px) {
+  .shell-toolbar { flex: 0 0 auto; gap: 6px; }
+  .shell-context-switcher { display: none; }
+  .shell-system-tools { height: 44px; }
+}
+
+@media (max-width: 520px) {
+  .shell-toolbar__search { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-system-action { transition: none; }
+}

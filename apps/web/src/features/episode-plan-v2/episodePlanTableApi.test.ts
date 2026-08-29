@@ -2,12 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   markEpisodePlanShotReady, runPerShot, setEpisodePlanShotAssetState,
 } from "./episodePlanTableApi";
+import { apiJsonResponse } from "../../test/apiResponse";
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Episode Plan shot command routes", () => {
   it("uses the existing 0042 state command and real Production Ready route", async () => {
-    const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    const fetch = vi.fn().mockImplementation(async () => apiJsonResponse({}));
     vi.stubGlobal("fetch", fetch);
     await setEpisodePlanShotAssetState("shot-1", "asset-1", "state-1");
     await markEpisodePlanShotReady("shot-1");

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "react-router-dom";
 import { router } from "./app/router";
 import { installChunkLoadRecovery } from "./app/chunkLoadRecovery";
+import { ApiCompatibilityGate } from "./app/ApiCompatibilityGate";
 import "./styles.css";
 import "./v2-pages.css";
 import "./studio-theme.css";
@@ -17,8 +18,10 @@ installChunkLoadRecovery();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
+    <ApiCompatibilityGate>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </ApiCompatibilityGate>
   </StrictMode>,
 );

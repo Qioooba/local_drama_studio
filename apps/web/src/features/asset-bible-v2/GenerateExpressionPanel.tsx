@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { listProfiles, type Profile } from "../../generated/api";
 import type { StoryAssetReference, StoryAssetState } from "./api";
-import { ProfileExecutionDetailButton } from "../model-config/ProfileExecutionDetailButton";
+import { CapabilityPicker, useCapabilityOptions } from "../model-config/CapabilityPicker";
 import type { MultiViewSettings } from "./multiviewClient";
 import { bindExpressionReference, getAssetExpressionHistory, isExpressionBatchActive, preflightAssetExpression, submitAssetExpression, type ExpressionBatch, type ExpressionKind, type ExpressionPreflight } from "./expressionClient";
 import "./GenerateMultiViewPanel.css";
@@ -22,7 +21,7 @@ type Props = {
 export function GenerateExpressionPanel({ projectId, assetId, assetStatus, states, baseReferences, initialBatches, onReferencesChanged }: Props) {
   const [assetStateId, setAssetStateId] = useState("");
   const [profileVersionId, setProfileVersionId] = useState("");
-  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const profileOptions = useCapabilityOptions("IMAGE_EXPRESSION", { projectId });
   const [preflight, setPreflight] = useState<ExpressionPreflight | null>(null);
   const [batches, setBatches] = useState(initialBatches);
   const [busy, setBusy] = useState<"preflight" | "submit" | string | null>(null);
@@ -32,13 +31,6 @@ export function GenerateExpressionPanel({ projectId, assetId, assetStatus, state
   const [background, setBackground] = useState<MultiViewSettings["background"]>("CLEAN");
   useEffect(() => { setBatches(initialBatches); }, [initialBatches]);
   useEffect(() => { setAssetStateId(""); setProfileVersionId(""); setPreflight(null); setError(null); }, [assetId]);
-  useEffect(() => {
-    let cancelled = false;
-    void listProfiles().then(({ items }) => {
-      if (!cancelled) setProfiles(items.filter((item) => item.capability === "IMAGE_EXPRESSION" && item.status === "PUBLISHED"));
-    }).catch(() => { if (!cancelled) setProfiles([]); });
-    return () => { cancelled = true; };
-  }, [projectId]);
   const settings = useMemo<MultiViewSettings>(() => ({ asset_state_id: assetStateId || null, profile_version_id: profileVersionId || null, consistency_strength: consistency, background, requested_slots: selectedSlots }), [assetStateId, background, consistency, profileVersionId, selectedSlots]);
   useEffect(() => { setPreflight(null); }, [settings]);
   const active = batches.some(isExpressionBatchActive);
@@ -70,7 +62,7 @@ export function GenerateExpressionPanel({ projectId, assetId, assetStatus, state
     <p className="muted">九个表情会分别生成并保留各自历史，单项失败不会丢失其他成功结果。提交时会固定当前主参考、剧情状态和生成配置版本。</p>
     <div className="multiview-controls">
       <label>造型状态<select value={assetStateId} onChange={(event) => setAssetStateId(event.target.value)}><option value="">基础角色</option>{states.map((state) => <option value={state.id} key={state.id}>{state.label}</option>)}</select></label>
-      <label>生成模型配置<select aria-label="表情生成模型配置" value={profileVersionId} onChange={(event) => setProfileVersionId(event.target.value)}><option value="">自动使用项目偏好</option>{profiles.map((profile) => <option value={profile.version_id} key={profile.version_id}>{profile.title} · 第 {profile.version_no ?? "?"} 版</option>)}</select></label><ProfileExecutionDetailButton profileVersionId={profileVersionId} />
+      <CapabilityPicker capability="IMAGE_EXPRESSION" label="表情生成方式" value={profileVersionId} onChange={setProfileVersionId} query={profileOptions} disabled={busy !== null} migrationBusinessSurface="assets" />
       <label>一致性<select value={consistency} onChange={(event) => setConsistency(event.target.value as typeof consistency)}><option value="HIGH">高</option><option value="MEDIUM">中</option><option value="LOW">低</option></select></label><label>背景<select value={background} onChange={(event) => setBackground(event.target.value as typeof background)}><option value="CLEAN">干净背景</option><option value="TRANSPARENT">透明背景</option><option value="ORIGINAL">保留原背景</option></select></label>
     </div>
     <fieldset><legend>本批次表情槽</legend><div className="action-row">{SLOTS.map((slot) => <label key={slot.kind}><input type="checkbox" checked={selectedSlots.includes(slot.kind)} onChange={(event) => setSelectedSlots((current) => event.target.checked ? [...current, slot.kind] : current.filter((item) => item !== slot.kind))} />{slot.label}</label>)}</div></fieldset>

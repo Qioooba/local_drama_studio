@@ -1,10 +1,13 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { listProfiles } from "../../generated/api";
+import { listCapabilityOptions } from "../../generated/api";
+import { capabilityOptionFixture, capabilityOptionsFixture } from "../model-config/capabilityOptionsTestFixtures";
 import { GenerateMultiViewPanel } from "./GenerateMultiViewPanel";
 import { bindMultiViewReference, preflightAssetMultiView } from "./multiviewClient";
 
-vi.mock("../../generated/api", () => ({ listProfiles: vi.fn() }));
+vi.mock("../../generated/api", () => ({ listCapabilityOptions: vi.fn(), getProfileVersion: vi.fn() }));
 vi.mock("./multiviewClient", () => ({
   bindMultiViewReference: vi.fn(),
   getAssetMultiViewHistory: vi.fn().mockResolvedValue([]),
@@ -20,7 +23,8 @@ const hero = {
 };
 
 function renderPanel() {
-  return render(<GenerateMultiViewPanel projectId="project-1" assetId="asset-1" assetKind="CHARACTER" assetStatus="ACTIVE" states={[]} baseReferences={[hero]} initialBatches={[]} onReferencesChanged={vi.fn().mockResolvedValue(undefined)} />);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<MemoryRouter><QueryClientProvider client={client}><GenerateMultiViewPanel projectId="project-1" assetId="asset-1" assetKind="CHARACTER" assetStatus="ACTIVE" states={[]} baseReferences={[hero]} initialBatches={[]} onReferencesChanged={vi.fn().mockResolvedValue(undefined)} /></QueryClientProvider></MemoryRouter>);
 }
 
 describe("GenerateMultiViewPanel profile selection", () => {
@@ -34,17 +38,15 @@ describe("GenerateMultiViewPanel profile selection", () => {
   });
 
   it("lists only published IMAGE_MULTI_VIEW versions with semantic labels and keeps AUTO default", async () => {
-    vi.mocked(listProfiles).mockResolvedValue({ items: [
-      { id: "profile-1", version_id: "version-secret-1", code: "CHARACTER_3VIEW", title: "角色三视图", version_no: 4, capability: "IMAGE_MULTI_VIEW", status: "PUBLISHED" },
-      { id: "profile-2", version_id: "version-secret-2", code: "DRAFT_3VIEW", title: "草稿", version_no: 2, capability: "IMAGE_MULTI_VIEW", status: "DRAFT" },
-      { id: "profile-3", version_id: "version-secret-3", code: "VIDEO", title: "视频", version_no: 8, capability: "VIDEO_GENERATION", status: "PUBLISHED" },
-    ] });
+    vi.mocked(listCapabilityOptions).mockResolvedValue(capabilityOptionsFixture("IMAGE_MULTI_VIEW", [
+      capabilityOptionFixture("IMAGE_MULTI_VIEW", "version-secret-1", "角色三视图", "角色三视图配置", 4),
+    ]));
     renderPanel();
 
-    const select = await screen.findByLabelText("已发布的三视图生成模型");
+    const select = await screen.findByLabelText("三视图生成方式");
     await waitFor(() => expect((select as HTMLSelectElement).disabled).toBe(false));
-    expect(screen.getByRole("option", { name: "自动使用项目偏好" })).toBeTruthy();
-    expect(screen.getByRole("option", { name: "角色三视图 · 第 4 版" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: /自动：角色三视图/ })).toBeTruthy();
+    expect(screen.getByRole("option", { name: /角色三视图.*角色三视图配置 v4/ })).toBeTruthy();
     expect(screen.queryByRole("option", { name: /草稿|视频/ })).toBeNull();
     expect(document.body.textContent).not.toContain("version-secret");
 
@@ -54,19 +56,20 @@ describe("GenerateMultiViewPanel profile selection", () => {
   });
 
   it("explains catalogue failure without blocking AUTO preflight", async () => {
-    vi.mocked(listProfiles).mockRejectedValue(new Error("offline"));
+    vi.mocked(listCapabilityOptions).mockRejectedValue(new Error("offline"));
     renderPanel();
-    expect((await screen.findByRole("alert")).textContent).toContain("AUTO 仍可运行只读预检");
+    expect((await screen.findByRole("alert")).textContent).toContain("能力选项读取失败");
     expect((screen.getByRole("button", { name: "预检 3 个缺失视图" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("bulk-binds every successful unbound output and reports partial failures", async () => {
-    vi.mocked(listProfiles).mockResolvedValue({ items: [] });
+    vi.mocked(listCapabilityOptions).mockResolvedValue(capabilityOptionsFixture("IMAGE_MULTI_VIEW", []));
     const onChanged = vi.fn().mockResolvedValue(undefined);
     vi.mocked(bindMultiViewReference)
       .mockResolvedValueOnce({ reference: {} as never })
       .mockRejectedValueOnce(new Error("RIGHT 绑定冲突"));
-    render(<GenerateMultiViewPanel
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<MemoryRouter><QueryClientProvider client={client}><GenerateMultiViewPanel
       projectId="project-1"
       assetId="asset-1"
       assetKind="CHARACTER"
@@ -82,7 +85,7 @@ describe("GenerateMultiViewPanel profile selection", () => {
         })),
       }] as never}
       onReferencesChanged={onChanged}
-    />);
+    /></QueryClientProvider></MemoryRouter>);
 
     fireEvent.click(await screen.findByRole("button", { name: "一键回绑 2 个成功视图" }));
     await waitFor(() => expect(bindMultiViewReference).toHaveBeenCalledTimes(2));

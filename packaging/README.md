@@ -36,6 +36,8 @@ packaging/windows/build.ps1 `
 
 The default build is offline after the wheelhouse is prepared. It produces a portable ZIP, `.ldsupdate`, release directory, and—when Inno Setup is installed—an installer. Use `-SkipInstaller` for portable-only builds.
 
+The Windows installer owns the complete runtime-profile lifecycle. Desktop mode uses loopback and removes any Host-owned LAN firewall/service state. Trusted LAN server mode atomically applies the Server template, preserves user-owned machine settings across upgrades, creates a firewall rule for the effective configured port and persisted trusted-network scope, and installs the delayed-auto-start service. Existing installs are migrated by the candidate release before profile fields are merged; first installs bootstrap the selected profile. The native Host commands are idempotent so repair installs do not duplicate rules or discard configuration.
+
 For a non-development channel, provide an Ed25519 private/public key pair. Create a pair from `cmd/release-sign` and keep the private key outside the repository:
 
 ```powershell

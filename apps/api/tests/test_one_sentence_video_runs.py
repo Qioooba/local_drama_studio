@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -511,6 +512,13 @@ def test_text_to_image_finishes_with_selected_standalone_image(workspace, databa
     assert selected["state"] == "SUCCEEDED"
     assert selected["output"]["media_kind"] == "IMAGE"
     assert selected["output"]["thumbnail_url"].endswith("/thumbnail?size=small&frame=poster")
+    artifact = selected["output"]["artifact"]
+    assert artifact["scope"] == "DATA"
+    assert artifact["kind"] == "FILE"
+    assert artifact["download_url"].endswith(f"/{selected['output']['id']}/download")
+    assert artifact["download_filename"].startswith("快速生成-")
+    assert artifact["download_filename"].endswith(".png")
+    assert Path(artifact["server_absolute_path"]).is_file()
     thumbnail, thumbnail_mime = service.thumbnail_path(str(selected["output"]["id"]))
     assert thumbnail.is_file()
     assert thumbnail_mime == "image/webp"

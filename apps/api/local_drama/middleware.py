@@ -16,6 +16,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
+from local_drama.api.contract_version import API_CONTRACT_HEADER, API_CONTRACT_VERSION
+
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
@@ -195,6 +197,60 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             status_code=response.status_code,
             duration_ms=(time.perf_counter() - started) * 1000,
         )
+        return response
+
+
+class ApiContractMiddleware(BaseHTTPMiddleware):
+    """Make mixed API/UI releases fail before a route payload is consumed.
+
+    The version is advertised on every response. Network clients must send the
+    same version for business endpoints; health and contract discovery remain
+    readable so an incompatible UI can explain the required recovery action.
+    """
+
+    _DISCOVERY_PATHS = frozenset(
+        {
+            "/api/v1/system/contract",
+            "/api/v1/health/live",
+            "/api/v1/health/ready",
+            "/api/v1/health/dependencies",
+        }
+    )
+
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        is_api_request = request.url.path.startswith("/api/")
+        in_process_test = request.client is not None and request.client.host == "testclient"
+        observed = request.headers.get(API_CONTRACT_HEADER) or request.query_params.get("api_contract_version")
+        enforce_request_version = not in_process_test or observed is not None
+        if (
+            is_api_request
+            and request.method != "OPTIONS"
+            and request.url.path not in self._DISCOVERY_PATHS
+            and enforce_request_version
+        ):
+            if observed != API_CONTRACT_VERSION:
+                request_id, _trace_id = _ensure_request_context(request)
+                response = JSONResponse(
+                    status_code=409,
+                    content={
+                        "error": {
+                            "code": "API_CONTRACT_MISMATCH",
+                            "message": "界面与本地服务版本不一致，请刷新页面；若仍出现此提示，请重启本地服务",
+                            "request_id": request_id,
+                            "details": {
+                                "expected": API_CONTRACT_VERSION,
+                                "observed": observed,
+                            },
+                            "retryable": False,
+                            "suggested_action": "刷新页面或重启 LocalDramaStudio 服务",
+                        }
+                    },
+                )
+                response.headers[API_CONTRACT_HEADER] = API_CONTRACT_VERSION
+                return response
+        response = await call_next(request)
+        if is_api_request:
+            response.headers[API_CONTRACT_HEADER] = API_CONTRACT_VERSION
         return response
 
 

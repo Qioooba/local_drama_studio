@@ -12,6 +12,12 @@ import {
 } from "../story-workspace-v2/breakdownClient";
 import { listProviderConnections } from "../../generated/api";
 import { routes } from "../../app/routeRegistry";
+import { OllamaModelCatalog } from "./OllamaModelCatalog";
+import {
+  ProfilePublicationReceipt,
+  ProfilePublicationTarget,
+  type ProfilePublicationReceiptData,
+} from "./ProfilePublicationReceipt";
 import "./profile-configuration.css";
 import "./local-llm-configuration.css";
 
@@ -60,7 +66,15 @@ function isRemoteEndpoint(url: string): boolean {
   }
 }
 
-export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged?: () => void; projectId?: string }) {
+export function LocalLLMConfigurationPanel({
+  onChanged,
+  onPublished,
+  projectId,
+}: {
+  onChanged?: () => void;
+  onPublished?: (receipt: ProfilePublicationReceiptData) => void;
+  projectId?: string;
+}) {
   const [selectedPreset, setSelectedPreset] = useState<string>("ollama-local");
   const [provider, setProvider] = useState<"OPENAI_COMPAT" | "OLLAMA_LOOPBACK">("OLLAMA_LOOPBACK");
   const [baseUrl, setBaseUrl] = useState("http://127.0.0.1:11434");
@@ -78,6 +92,7 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
   const [probeJobId, setProbeJobId] = useState<string | null>(null);
   const [lastSyncedProfileId, setLastSyncedProfileId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+  const [publicationReceipt, setPublicationReceipt] = useState<ProfilePublicationReceiptData | null>(null);
 
   const statusQuery = useQuery({
     queryKey: ["local-llm-runtime-status"],
@@ -120,6 +135,7 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
     setProbeJobId(null);
     setLastSyncedProfileId(null);
     setFeedback(null);
+    setPublicationReceipt(null);
   };
 
   const applyPreset = (presetId: string) => {
@@ -140,6 +156,14 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
     }
   };
 
+  const selectDiscoveredModel = (modelName: string, catalogBaseUrl: string) => {
+    invalidateVerification();
+    setSelectedPreset("ollama-local");
+    setProvider("OLLAMA_LOOPBACK");
+    setBaseUrl(catalogBaseUrl);
+    setModel(modelName);
+  };
+
   const handleTestConnection = async () => {
     if (isRemote && !allowRemoteOutbound) {
       setFeedback({ kind: "error", message: "数据将离开本机：测试远程 LLM 连接必须勾选确认出境安全许可。" });
@@ -154,6 +178,7 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
     }
     setProbing(true);
     setFeedback(null);
+    setPublicationReceipt(null);
     try {
       if (projectId && !apiKey.trim()) {
         const submission = await submitLocalLLMProbe(projectId, {
@@ -234,6 +259,7 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
     }
     setSyncing(true);
     setFeedback(null);
+    setPublicationReceipt(null);
     try {
       const resp = await syncLocalLLMProfile({
         provider,
@@ -276,9 +302,15 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
         allowRemoteOutbound,
         probeJobId: probeJobId ?? undefined,
       });
-      setFeedback({
-        kind: "success",
-        message: `Profile ${resp.profile.profile_version_id.slice(0, 12)}… 已正式发布（PUBLISHED），已在剧本拆解与质检中可用！`,
+      setFeedback(null);
+      setPublicationReceipt({
+        profileVersionId: resp.profile.profile_version_id,
+        profileCode: resp.profile.profile_code,
+        versionNo: resp.profile.version_no,
+        capability: resp.profile.publication.capability,
+        model: resp.profile.publication.model,
+        provider: resp.profile.publication.provider,
+        publishedAt: resp.profile.publication.published_at,
       });
       setLastSyncedProfileId(null);
       await statusQuery.refetch();
@@ -312,10 +344,19 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
 
   return (
     <section className="local-llm-configuration-panel" aria-labelledby="llm-config-title">
-      <div className="section-title">
-        <span id="llm-config-title">智能理解模型配置</span>
-        <small>故事与策划 · 提示词 · 视觉质检 · OpenAI 兼容 · Ollama</small>
+      <div className="llm-panel-heading">
+        <div className="section-title">
+          <span id="llm-config-title">智能理解模型配置</span>
+          <small>先从本机目录选模型，再验证并发布为创作能力</small>
+        </div>
+        <div className="llm-safety-note"><span aria-hidden="true" />只读扫描，不加载模型、不复制权重、不连接公网</div>
       </div>
+
+      <OllamaModelCatalog
+        selectedModel={model}
+        selectedProvider={provider}
+        onSelect={(item, catalogBaseUrl) => selectDiscoveredModel(item.name, catalogBaseUrl)}
+      />
 
       <div className="llm-config-layout">
         {/* Left column: Form controls */}
@@ -340,7 +381,7 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
             </small>
           </div>
 
-          {selectedPreset !== "custom" && <div className="llm-preset-facts"><span>连接方式</span><strong>{provider === "OLLAMA_LOOPBACK" ? "Windows 服务端 Ollama" : "OpenAI 兼容远端服务"}</strong><small>{baseUrl} · {model || "由服务自动选择模型"}</small></div>}
+          {selectedPreset !== "custom" && <div className="llm-preset-facts"><span>当前配置</span><strong>{model || (provider === "OLLAMA_LOOPBACK" ? "请从上方选择模型" : "由服务自动选择模型")}</strong><small>{provider === "OLLAMA_LOOPBACK" ? "本机 Ollama" : "OpenAI 兼容远端服务"} · {baseUrl}</small></div>}
 
           {selectedPreset === "custom" && <div className="form-group">
             <label htmlFor="llm-provider-select">
@@ -453,6 +494,8 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
             </div>
           )}
 
+          <ProfilePublicationTarget capability={capability} model={model.trim() || undefined} />
+
           <div className="llm-action-buttons">
             <button
               type="button"
@@ -484,15 +527,18 @@ export function LocalLLMConfigurationPanel({ onChanged, projectId }: { onChanged
                 !probePassed
               }
             >
-              {publishing ? "正在发布…" : "3. 发布正式 Profile (Publish)"}
+              {publishing ? "正在发布到全局目录…" : "3. 发布到全局能力目录"}
             </button>
           </div>
 
           {feedback && (
-            <div className={`frame-feedback ${feedback.kind}`} role="status">
+            <div className={`frame-feedback ${feedback.kind}`} role={feedback.kind === "error" ? "alert" : "status"}>
               <p>{feedback.message}</p>
             </div>
           )}
+          {publicationReceipt ? (
+            <ProfilePublicationReceipt receipt={publicationReceipt} onLocate={onPublished} />
+          ) : null}
           {probeJobId && projectId && (
             <p className="muted" role="status">
               后台 Job {probeJobId.slice(0, 12)}… · {durableProbeState ?? "读取中"} · <a href={`${routes.systemJobs(projectId)}&job=${encodeURIComponent(probeJobId)}`}>打开作业详情</a>

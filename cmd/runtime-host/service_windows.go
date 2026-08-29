@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -77,16 +78,33 @@ func installService() error {
 		return err
 	}
 	defer manager.Disconnect()
-	if existing, openErr := manager.OpenService(serviceName); openErr == nil {
-		existing.Close()
-		return nil
-	}
-	service, err := manager.CreateService(serviceName, executable, mgr.Config{
+	configuration := mgr.Config{
 		StartType:        mgr.StartAutomatic,
 		DisplayName:      "Local Drama Studio",
 		Description:      "Local Drama Studio runtime supervisor, API and background worker",
 		DelayedAutoStart: true,
-	}, "service")
+	}
+	if existing, openErr := manager.OpenService(serviceName); openErr == nil {
+		defer existing.Close()
+		existingConfiguration, err := existing.Config()
+		if err != nil {
+			return err
+		}
+		existingConfiguration.StartType = configuration.StartType
+		existingConfiguration.BinaryPathName = fmt.Sprintf("\"%s\" service", executable)
+		existingConfiguration.DisplayName = configuration.DisplayName
+		existingConfiguration.Description = configuration.Description
+		existingConfiguration.DelayedAutoStart = configuration.DelayedAutoStart
+		if err := existing.UpdateConfig(existingConfiguration); err != nil {
+			return err
+		}
+		return existing.SetRecoveryActions([]mgr.RecoveryAction{
+			{Type: mgr.ServiceRestart, Delay: 5 * time.Second},
+			{Type: mgr.ServiceRestart, Delay: 15 * time.Second},
+			{Type: mgr.ServiceRestart, Delay: 30 * time.Second},
+		}, 24*60*60)
+	}
+	service, err := manager.CreateService(serviceName, executable, configuration, "service")
 	if err != nil {
 		return err
 	}
@@ -111,6 +129,45 @@ func uninstallService() error {
 	defer service.Close()
 	_, _ = service.Control(svc.Stop)
 	return service.Delete()
+}
+
+func netshPath() string {
+	if systemRoot := os.Getenv("SystemRoot"); systemRoot != "" {
+		candidate := filepath.Join(systemRoot, "System32", "netsh.exe")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return "netsh.exe"
+}
+
+func installFirewallRule(port int, remoteAddress string) error {
+	arguments, err := firewallAddArguments(port, remoteAddress)
+	if err != nil {
+		return err
+	}
+	_ = removeFirewallRule()
+	command := exec.Command(netshPath(), arguments...)
+	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("configure Windows Firewall: %w (%s)", err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func removeFirewallRule() error {
+	command := exec.Command(netshPath(), "advfirewall", "firewall", "delete", "rule", "name="+firewallRuleName)
+	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	output, err := command.CombinedOutput()
+	if err != nil {
+		text := strings.ToLower(string(output))
+		if strings.Contains(text, "no rules match") || strings.Contains(text, "找不到") {
+			return nil
+		}
+		return fmt.Errorf("remove Windows Firewall rule: %w (%s)", err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 func atomicReplace(source string, target string) error {

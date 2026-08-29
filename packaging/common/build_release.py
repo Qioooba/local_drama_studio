@@ -7,10 +7,11 @@ import os
 import shutil
 import subprocess
 import sys
-import tomllib
 from collections.abc import Callable
 from email.parser import Parser
 from pathlib import Path
+
+import tomllib
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
@@ -256,6 +257,7 @@ def build(args: argparse.Namespace) -> Path:
     _copytree(REPOSITORY_ROOT / "apps" / "web" / "dist", payload / "web")
     _copytree(REPOSITORY_ROOT / "apps" / "api" / "alembic", payload / "migrations")
     _copytree(REPOSITORY_ROOT / "contracts", payload / "contracts")
+    shutil.copy2(REPOSITORY_ROOT / "scripts" / "model_platform_release_gate.py", payload / "app" / "model_platform_release_gate.py")
     shutil.copy2(REPOSITORY_ROOT / "release" / "version.json", payload / "version.json")
     if args.ffmpeg_runtime:
         ffmpeg_runtime = Path(args.ffmpeg_runtime).resolve()

@@ -26,6 +26,7 @@ type releaseIdentity struct {
 const (
 	hostProtocolSupported   = 1
 	workerProtocolSupported = 1
+	configSchemaSupported   = 2
 )
 
 // loadReleaseIdentity resolves release/version.json exactly like the Python

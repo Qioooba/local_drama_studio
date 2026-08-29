@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import json
 import zipfile
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi.testclient import TestClient
 
 from local_drama.application.documents import DocumentImportService
 from local_drama.application.projects import ProjectService
+from local_drama.application.source_text import source_paragraphs
 from local_drama.main import create_app
 
 
@@ -112,11 +115,12 @@ def test_unsupported_document_does_not_create_source_or_session(workspace, datab
 
 def test_browser_document_upload_streams_into_the_same_preview_contract(workspace, database) -> None:
     project = _project(workspace, database)
+    original_filename = "照骨灯_凡人修仙原创长篇_约200分钟.txt"
     with TestClient(create_app(workspace)) as client:
         uploaded = client.post(
             f"/api/v1/projects/{project['id']}/imports:upload",
             content="第一场\n人物进入房间".encode(),
-            headers={"Content-Type": "text/plain", "X-File-Name": "browser-script.txt"},
+            headers={"Content-Type": "text/plain", "X-File-Name": quote(original_filename)},
         )
         empty = client.post(
             f"/api/v1/projects/{project['id']}/imports:upload",
@@ -126,12 +130,31 @@ def test_browser_document_upload_streams_into_the_same_preview_contract(workspac
     assert uploaded.status_code == 201, uploaded.text
     imported = uploaded.json()["import"]
     assert imported["status"] == "PREVIEW_READY"
-    stored_source_path = Path(imported["stored_source_path"])
-    assert stored_source_path.is_absolute()
-    assert stored_source_path.is_file()
-    assert stored_source_path.is_relative_to(workspace.projects_root.resolve())
+    stored_source = imported["stored_source"]
+    assert stored_source["scope"] == "PROJECT"
+    assert stored_source["kind"] == "FILE"
+    assert stored_source["display_name"] == original_filename
+    assert stored_source["download_filename"] == original_filename
+    assert original_filename in stored_source["rel_path"]
+    assert not Path(stored_source["rel_path"]).is_absolute()
+    expected_stored_path = workspace.projects_root / project["root_rel"] / stored_source["rel_path"]
+    assert expected_stored_path.is_file()
+    assert Path(stored_source["server_absolute_path"]) == expected_stored_path.resolve()
+    assert stored_source["download_url"] == f"/api/v1/media-versions/{imported['media_version_id']}/content"
     assert empty.status_code == 422
     assert empty.json()["error"]["code"] == "DOCUMENT_UPLOAD_EMPTY"
+
+
+def test_document_import_routes_publish_one_typed_response_contract(workspace) -> None:
+    spec = create_app(workspace).openapi()
+    direct = spec["paths"]["/api/v1/projects/{project_id}/imports"]["post"]["responses"]["201"]
+    upload = spec["paths"]["/api/v1/projects/{project_id}/imports:upload"]["post"]["responses"]["201"]
+    expected = {"$ref": "#/components/schemas/DocumentImportResponse"}
+    assert direct["content"]["application/json"]["schema"] == expected
+    assert upload["content"]["application/json"]["schema"] == expected
+    properties = spec["components"]["schemas"]["DocumentImportResult"]["properties"]
+    assert "stored_source" in properties
+    assert "stored_source_path" not in properties
 
 
 def test_import_preview_exposes_deterministic_chapter_shortcuts(workspace, database) -> None:
@@ -150,6 +173,58 @@ def test_import_preview_exposes_deterministic_chapter_shortcuts(workspace, datab
         {"title": "第一章 雨夜", "start_paragraph": 1, "end_paragraph": 3},
         {"title": "第二章 清晨", "start_paragraph": 4, "end_paragraph": 5},
     ]
+
+
+def test_import_preview_indexes_chapter_headings_missing_a_leading_blank_line(workspace, database) -> None:
+    project = _project(workspace, database)
+    source = workspace.work_root / "chapter-heading-without-blank-line.txt"
+    text = "第一章 雨夜\n\n第一段。\n第二章 清晨\n\n第二段。\n\n第三章 归途\n第三段。"
+    source.write_text(text, encoding="utf-8")
+
+    imported = DocumentImportService(database, workspace).import_document(str(project["id"]), source)
+
+    assert imported["preview"]["paragraphs"] == [
+        "第一章 雨夜",
+        "第一段。\n第二章 清晨",
+        "第二段。",
+        "第三章 归途\n第三段。",
+    ]
+    assert imported["preview"]["chapters"] == [
+        {"title": "第一章 雨夜", "start_paragraph": 1, "end_paragraph": 2},
+        {"title": "第二章 清晨", "start_paragraph": 3, "end_paragraph": 3},
+        {"title": "第三章 归途", "start_paragraph": 4, "end_paragraph": 4},
+    ]
+    extracted = source.read_text(encoding="utf-8")
+    for paragraph in source_paragraphs(extracted):
+        assert extracted[paragraph.start:paragraph.end] == paragraph.text
+
+
+def test_reimport_refreshes_a_preview_from_an_older_structure_index(workspace, database) -> None:
+    project = _project(workspace, database)
+    source = workspace.work_root / "stale-structure-preview.txt"
+    source.write_text("第一章 雨夜\n\n第一段。\n第二章 清晨\n\n第二段。", encoding="utf-8")
+    service = DocumentImportService(database, workspace)
+
+    first = service.import_document(str(project["id"]), source)
+    with database.transaction() as connection:
+        preview = json.loads(
+            connection.execute(
+                "SELECT preview_json FROM import_sessions WHERE id=?",
+                (first["import_session_id"],),
+            ).fetchone()["preview_json"]
+        )
+        preview.pop("source_structure_version")
+        connection.execute(
+            "UPDATE import_sessions SET preview_json=? WHERE id=?",
+            (json.dumps(preview, ensure_ascii=False), first["import_session_id"]),
+        )
+
+    refreshed = service.import_document(str(project["id"]), source)
+
+    assert refreshed["source_document_version_id"] == first["source_document_version_id"]
+    assert refreshed["import_session_id"] != first["import_session_id"]
+    assert refreshed["preview"]["source_structure_version"] == 2
+    assert [chapter["title"] for chapter in refreshed["preview"]["chapters"]] == ["第一章 雨夜", "第二章 清晨"]
 
 
 def test_paragraph_api_pages_full_source_and_commit_freezes_selected_body_range(workspace, database) -> None:

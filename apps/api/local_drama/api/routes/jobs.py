@@ -55,6 +55,14 @@ async def get_job(job_id: str, request: Request) -> dict[str, object]:
         raise api_error_from_domain(error) from error
 
 
+@router.delete("/jobs/{job_id}", operation_id="deleteJob", response_model=dict[str, object])
+async def delete_job(job_id: str, request: Request) -> dict[str, object]:
+    try:
+        return service(request).delete(job_id)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.get("/jobs/{job_id}/attempts", operation_id="listJobAttempts")
 async def list_attempts(job_id: str, request: Request) -> dict[str, object]:
     try:

@@ -18,6 +18,7 @@ from local_drama.domain.character_identity_packs import REQUIRED_THREE_VIEW_SLOT
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.policies import missing_shot_fields
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.infrastructure.filesystem.path_policy import controlled_path
 
 
 def _decode(value: object, fallback: Any) -> Any:
@@ -111,9 +112,16 @@ class EpisodeFrontHalfActionService:
     def _validate_source_file(self, episode: dict[str, Any], source: dict[str, Any]) -> tuple[bool, str]:
         if str(source.get("parse_status")) != "PARSED":
             return False, "提交的剧本源版本尚未完成可靠解析"
-        project_root = (self.settings.projects_root / str(episode["root_rel"])).resolve()
-        path = (project_root / str(source.get("extracted_text_rel") or "")).resolve()
-        if not path.is_relative_to(project_root) or not path.is_file() or path.is_symlink():
+        project_root = self.settings.resolve_project_root(str(episode["root_rel"]))
+        try:
+            path = controlled_path(
+                project_root,
+                str(source.get("extracted_text_rel") or ""),
+                must_exist=True,
+                require_file=True,
+                code="SOURCE_TEXT_INVALID",
+            )
+        except DomainRuleError:
             return False, "提交的不可变剧本文本缺失或路径无效"
         try:
             digest = hashlib.sha256(path.read_bytes()).hexdigest()

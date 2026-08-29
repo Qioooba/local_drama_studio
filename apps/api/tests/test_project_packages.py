@@ -6,6 +6,7 @@ import json
 import shutil
 import uuid
 import zipfile
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -149,6 +150,11 @@ def test_project_package_api_exports_and_dry_runs_only_registered_package(worksp
         exported = client.post(f"/api/v1/projects/{project['id']}/packages:export")
         assert exported.status_code == 200
         package = exported.json()["package"]
+        artifact = package["artifact"]
+        assert artifact["kind"] == "FILE"
+        assert Path(artifact["server_absolute_path"]).is_file()
+        assert artifact["download_filename"] == Path(package["rel_path"]).name
+        assert artifact["download_url"].startswith(f"/api/v1/projects/{project['id']}/packages:download")
         inspected = client.post(f"/api/v1/projects/{project['id']}/packages:dry-run", json={"rel_path": package["rel_path"]})
     assert inspected.status_code == 200
     assert inspected.json()["dry_run"]["status"] == "READY_REBIND_EXISTING"

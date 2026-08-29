@@ -3,13 +3,12 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useBlocker, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { BreadcrumbSeparatorIcon, StudioIcon, StudioMarkIcon, type StudioIconName } from "../components/icons";
 import { buildBreadcrumbs, parseRouteContext, routes } from "../app/routeRegistry";
-import { CommandPalette } from "../features/commands/CommandPalette";
 import type { StudioCommand } from "../features/commands/commandRegistry";
-import { LocalRuntimeIndicator } from "../features/status-v2/LocalRuntimeIndicator";
 import { getProjectEpisodeCatalog, listProjects } from "../generated/api";
 import { queryKeys } from "../query/queryKeys";
 import { Dialog } from "../components/ui";
 import { DRAFT_STATE_EVENT, retireWorkspaceTabPersistence, type DraftStateChange } from "../features/drafts/draftGuard";
+import { ShellToolbar } from "./ShellToolbar";
 
 const shellActions: StudioCommand[] = [
   { id: "action.quick-create", label: "快速生成", description: "生成独立画面或视频，不创建项目", group: "当前页面", keywords: ["一句话", "视频", "画面"], run: ({ navigate }) => navigate(routes.quickCreate()) },
@@ -152,26 +151,24 @@ export function AppShell() {
         <span className="brand-mark" aria-hidden="true"><StudioMarkIcon /></span>
         <div><p className="eyebrow">本地短剧制作</p><h1>AI 导演工作室</h1></div>
       </Link>
-      <div className="topbar-context">
-        <button ref={mobileNavTriggerRef} type="button" className="mobile-nav-toggle" aria-label="打开主导航" aria-expanded={mobileNavOpen} onClick={() => setMobileNavOpen((open) => !open)}><StudioIcon name="menu" /><span>菜单</span></button>
-        <CommandPalette context={commandContext} baseCommands={shellActions} />
-        <div className="context-selectors">
-          <label>项目<select aria-label="当前项目" value={projectId ?? ""} onChange={(event) => navigate(event.target.value ? routes.projectHome(event.target.value) : routes.projects())}>
-            <option value="">全部项目</option>
-            {projects.data?.items.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}
-          </select></label>
-          {projectId && <label>分集<select aria-label="当前分集" value={episodeId ?? ""} disabled={episodeCatalog.isPending || seasons.length === 0} onChange={(event) => {
-            if (!event.target.value) return;
-            rememberEpisode(projectId, event.target.value);
-            navigate(episodeStagePath(projectId, event.target.value, location.pathname));
-          }}>
-            {!episodeId && <option value="">选择分集</option>}
-            {seasons.map((season) => <optgroup key={season.id} label={season.title}>{season.episodes.map((episode) => <option key={episode.id} value={episode.id}>{episode.title}</option>)}</optgroup>)}
-          </select></label>}
-        </div>
-        <Link className="topbar-system-link" to={routes.systemJobs(projectId)} aria-label="打开任务中心"><StudioIcon name="activity" /><span>任务</span></Link>
-        <LocalRuntimeIndicator />
-      </div>
+      <ShellToolbar
+        baseCommands={shellActions}
+        commandContext={commandContext}
+        episodeCatalogPending={episodeCatalog.isPending}
+        episodeId={episodeId}
+        mobileNavOpen={mobileNavOpen}
+        mobileNavTriggerRef={mobileNavTriggerRef}
+        onEpisodeChange={(nextEpisodeId) => {
+          if (!projectId || !nextEpisodeId) return;
+          rememberEpisode(projectId, nextEpisodeId);
+          navigate(episodeStagePath(projectId, nextEpisodeId, location.pathname));
+        }}
+        onProjectChange={(nextProjectId) => navigate(nextProjectId ? routes.projectHome(nextProjectId) : routes.projects())}
+        onToggleMobileNav={() => setMobileNavOpen((open) => !open)}
+        projectId={projectId}
+        projects={projects.data?.items ?? []}
+        seasons={seasons}
+      />
     </header>
     <div className="layout">
       {mobileNavOpen && <div className="mobile-nav-backdrop" role="presentation" onMouseDown={() => { setMobileNavOpen(false); mobileNavTriggerRef.current?.focus(); }} />}

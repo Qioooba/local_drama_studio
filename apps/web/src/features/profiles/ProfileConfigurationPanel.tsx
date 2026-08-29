@@ -47,6 +47,11 @@ import {
   profileStatusDescription,
   profileStatusLabel,
 } from "./profilePresentation";
+import {
+  ProfilePublicationReceipt,
+  ProfilePublicationTarget,
+  type ProfilePublicationReceiptData,
+} from "./ProfilePublicationReceipt";
 
 type ProfileConfigurationPanelProps =
   | {
@@ -56,6 +61,7 @@ type ProfileConfigurationPanelProps =
       projectId?: string;
       onChanged: () => void;
       onDirtyChange?: (dirty: boolean) => void;
+      onPublished?: (receipt: ProfilePublicationReceiptData) => void;
     }
   | {
       mode: "workflows";
@@ -98,9 +104,19 @@ function parameterEffectLabel(effect: unknown): string {
   return code;
 }
 
+function profileExecutionModel(profile: ProfileVersionDetail): string | undefined {
+  const value = profile.execution?.model ?? profile.execution?.model_bundle?.model;
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function profileExecutionProvider(profile: ProfileVersionDetail): string | undefined {
+  const value = profile.execution?.provider ?? profile.execution?.model_bundle?.provider;
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
 export function ProfileConfigurationPanel(props: ProfileConfigurationPanelProps) {
   if (props.mode === "profile-contracts") {
-    return <ProfileContractsTask profiles={props.profiles} workflows={props.workflows} projectId={props.projectId} onChanged={props.onChanged} onDirtyChange={props.onDirtyChange} />;
+    return <ProfileContractsTask profiles={props.profiles} workflows={props.workflows} projectId={props.projectId} onChanged={props.onChanged} onDirtyChange={props.onDirtyChange} onPublished={props.onPublished} />;
   }
   return (
     <WorkflowVersionsTask
@@ -111,7 +127,7 @@ export function ProfileConfigurationPanel(props: ProfileConfigurationPanelProps)
   );
 }
 
-function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDirtyChange }: { profiles: Profile[]; workflows: WorkflowVersionSummary[]; projectId?: string; onChanged: () => void; onDirtyChange?: (dirty: boolean) => void }) {
+function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDirtyChange, onPublished }: { profiles: Profile[]; workflows: WorkflowVersionSummary[]; projectId?: string; onChanged: () => void; onDirtyChange?: (dirty: boolean) => void; onPublished?: (receipt: ProfilePublicationReceiptData) => void }) {
   const preferredId = profiles.find((item) => item.status === "PUBLISHED")?.version_id ?? profiles[0]?.version_id ?? null;
   const [selectedId, setSelectedId] = useState<string | null>(preferredId);
   const [draftId, setDraftId] = useState<string | null>(null);
@@ -120,6 +136,7 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
   const [outputJson, setOutputJson] = useState("{}");
   const [resourceJson, setResourceJson] = useState("{}");
   const [feedback, setFeedback] = useState<Feedback>(null);
+  const [publicationReceipt, setPublicationReceipt] = useState<ProfilePublicationReceiptData | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [probePlan, setProbePlan] = useState<I2VEvidenceProbePlan | T2IEvidenceProbePlan | null>(null);
   const [probeJobId, setProbeJobId] = useState<string | null>(null);
@@ -183,6 +200,7 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
     setSelectedId(preferredId);
     setDraftId(null);
     setFeedback(null);
+    setPublicationReceipt(null);
   }, [preferredId, profiles, selectedId]);
 
   useEffect(() => {
@@ -228,6 +246,7 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
     },
     onSuccess: (data) => {
       setDraftId(data.profile_version.id);
+      setPublicationReceipt(null);
       setFeedback({
         kind: "success",
         message: `已创建不可变 DRAFT v${data.profile_version.version_no}；原版本未覆盖。`,
@@ -263,7 +282,17 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
       return publishProfileContractVersion(current.id);
     },
     onSuccess: (data) => {
-      setFeedback({ kind: "success", message: `Profile v${data.profile_version.version_no} 已发布。` });
+      const receipt: ProfilePublicationReceiptData = {
+        profileVersionId: data.profile_version.id,
+        profileCode: current?.code,
+        versionNo: data.profile_version.version_no,
+        capability: current?.capability ?? selected?.capability ?? "UNKNOWN",
+        model: current ? profileExecutionModel(current) : undefined,
+        provider: current ? profileExecutionProvider(current) : undefined,
+      };
+      setFeedback(null);
+      setPublicationReceipt(receipt);
+      setSelectedId(data.profile_version.id);
       setDraftId(null);
       onChanged();
     },
@@ -394,10 +423,16 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
         : finalizeI2VEvidenceProbe(projectId, probeJobId);
     },
     onSuccess: (data) => {
-      setFeedback({
-        kind: "success",
-        message: `真实媒体证据已登记；Profile v${data.profile_version.version_no} ${data.profile_version.status}。`,
-      });
+      const receipt: ProfilePublicationReceiptData = {
+        profileVersionId: data.profile_version.id,
+        profileCode: data.profile_version.code,
+        versionNo: data.profile_version.version_no,
+        capability: data.profile_version.capability,
+        model: profileExecutionModel(data.profile_version),
+        provider: profileExecutionProvider(data.profile_version),
+      };
+      setFeedback(null);
+      setPublicationReceipt(receipt);
       setSelectedId(data.profile_version.id);
       setDraftId(null);
       onChanged();
@@ -469,6 +504,7 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
                   setSelectedId(representative.version_id);
                   setDraftId(null);
                   setFeedback(null);
+                  setPublicationReceipt(null);
                 }}>
                   <span><strong>{canonicalCapabilityLabel(item.capability)}</strong><small>{creatorProfileTitle(item.title)}</small></span>
                   <span><small>{item.versions.length} 个版本</small><span className={`status-pill state-${String(representative.status).toLowerCase()}`}>{profileStatusLabel(representative.status)}</span></span>
@@ -505,6 +541,7 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
                       setSelectedId(profile.version_id);
                       setDraftId(null);
                       setFeedback(null);
+                      setPublicationReceipt(null);
                     }}><strong>v{String(profile.version_no ?? "—")}</strong><span className={`status-pill state-${String(profile.status).toLowerCase()}`}>{profileStatusLabel(profile.status)}</span></button>;
                   })}
                 </div>
@@ -537,6 +574,7 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
                   {feedback.message}
                 </p>
               ) : null}
+              {publicationReceipt ? <ProfilePublicationReceipt receipt={publicationReceipt} onLocate={onPublished} /> : null}
 
               {isDraft && (current.capability === "VIDEO_I2V" || String(current.capability).startsWith("IMAGE_")) ? (
                 <section className="profile-evidence-probe" aria-label={isImageEvidence ? "T2I 真实媒体证据发布" : "I2V 真实媒体证据发布"}>
@@ -685,6 +723,8 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
                 </section>
               ) : null}
 
+              {isDraft ? <ProfilePublicationTarget capability={current.capability} model={profileExecutionModel(current)} /> : null}
+
               <div className="profile-editor-actions">
                 {!isDraft ? (
                   <button type="button" className="primary-action" onClick={() => derive.mutate()} disabled={derive.isPending}>
@@ -704,7 +744,7 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
                       onClick={() => publish.mutate()}
                       disabled={hasContractChanges || derive.isPending || publish.isPending || validate.isPending || current.validation?.status !== "PASS"}
                     >
-                      {publish.isPending ? "发布中…" : "发布已验证版本"}
+                      {publish.isPending ? "正在发布到全局目录…" : "发布到全局能力目录"}
                     </button>
                   </>
                 )}

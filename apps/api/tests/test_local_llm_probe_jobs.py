@@ -87,6 +87,9 @@ def test_local_llm_probe_runs_as_durable_job_without_persisting_secret(workspace
     )
     published = llm.publish(str(candidate["profile_version_id"]), probe_job_id=str(job["id"]))
     assert published["status"] == "PUBLISHED"
+    assert published["publication"]["destination"] == "GLOBAL_CAPABILITY_CATALOG"
+    assert published["publication"]["consumer_scope"] == "ALL_PROJECTS"
+    assert published["publication"]["model"] == "qwen3:8b"
     with pytest.raises(DomainRuleError) as mismatch:
         llm.verified_probe_evidence(
             str(job["id"]),

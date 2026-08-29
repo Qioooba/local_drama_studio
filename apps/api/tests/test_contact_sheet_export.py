@@ -105,6 +105,10 @@ def test_contact_sheet_exports_verified_original_and_small_thumbnail_without_dat
     assert exported["network_contacted"] is False
     assert exported["reused"] is False
     project_root = workspace.projects_root / str(project["root_rel"])
+    assert exported["artifact"]["kind"] == "DIRECTORY"
+    assert Path(exported["artifact"]["server_absolute_path"]) == (project_root / str(exported["rel_path"])).resolve()
+    assert exported["artifact"]["download_filename"].endswith(".zip")
+    assert exported["artifact"]["download_url"].startswith(f"/api/v1/episodes/{episode['id']}/contact-sheet:download")
     manifest = json.loads((project_root / str(exported["manifest_rel_path"])).read_text(encoding="utf-8"))
     assert manifest["export_hash"] == exported["export_hash"]
     assert manifest["items"][0]["sha256"] == selected["sha256"]

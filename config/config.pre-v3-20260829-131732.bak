@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "instance_id": "default",
+  "environment": "production",
+  "install_profile": "SERVER",
+  "network": {
+    "mode": "LAN_SERVICE",
+    "host": "0.0.0.0",
+    "port": 3210,
+    "allowed_origins": [],
+    "firewall_remote_address": "LocalSubnet",
+    "trusted_lan_unauthenticated": true
+  },
+  "runtime": {
+    "comfy_base_url": "http://127.0.0.1:8188",
+    "llm_provider": "OLLAMA_LOOPBACK",
+    "llm_base_url": "http://127.0.0.1:11434",
+    "llm_model": "qwen3.8:27b",
+    "model_library_roots": [
+      "F:/AI_Models/LocalDramaStudio/ComfyUI",
+      "F:/AI_Models/LocalDramaStudio/Services"
+    ],
+    "worker_channels": ["CPU", "GPU_H3", "GPU_LOCAL_AI"],
+    "local_ai_python": "E:/AI/ComfyDesktop/ComfyUI/ComfyUI/.venv/Scripts/python.exe",
+    "local_ai_adapter": "${RELEASE_ROOT}/scripts/local_ai_runtime.py",
+    "local_ai_model_root": "F:/AI_Models/LocalDramaStudio",
+    "latentsync_python": "F:/AI_Models/LocalDramaStudio/Runtimes/LatentSync/.venv/Scripts/python.exe",
+    "latentsync_root": "F:/AI_Models/LocalDramaStudio/Runtimes/LatentSync"
+  },
+  "model_manifest": "F:/AI_Models/LocalDramaStudio/model_manifest.json"
+}

@@ -123,6 +123,16 @@ class LocalLLMClient:
                     raise
                 return []
 
+    def show(self, model: str) -> dict[str, Any]:
+        """Read native metadata for one Ollama tag without loading it for inference."""
+
+        if self.provider != "OLLAMA_LOOPBACK":
+            raise DomainRuleError("OLLAMA_SHOW_UNSUPPORTED", "只有 Ollama Runtime 支持读取 native model metadata")
+        name = (model or "").strip()
+        if not name:
+            raise DomainRuleError("OLLAMA_MODEL_REQUIRED", "读取模型详情需要明确的 Ollama tag")
+        return self._request("/api/show", {"model": name})
+
     def probe(self, *, load_test: bool = False) -> dict[str, Any]:
         """Test connection in 4 distinct levels:
 
@@ -166,8 +176,13 @@ class LocalLLMClient:
                             "prompt": 'Return exactly JSON: {"ready":true}',
                             "format": "json",
                             "stream": False,
+                            # Hybrid-reasoning models can spend the entire
+                            # tiny probe budget on hidden thinking tokens and
+                            # return an empty response.  This probe validates
+                            # inference availability, not reasoning quality.
+                            "think": False,
                             "keep_alive": 0,
-                            "options": {"temperature": 0, "num_predict": 8},
+                            "options": {"temperature": 0, "num_predict": 32},
                         },
                     )
                     load_test_passed = bool(response.get("response"))
@@ -283,6 +298,11 @@ class LocalLLMClient:
             msg_payload: dict[str, Any] = {
                 "model": self.model,
                 "stream": False,
+                # Structured application calls require JSON in message
+                # content.  Keep reasoning disabled so hybrid Ollama models
+                # do not place the useful payload in a separate thinking
+                # field or exhaust the requested output budget before it.
+                "think": False,
                 # Ollama's JSON mode prevents reasoning-oriented local models
                 # from surrounding the requested object with prose.  The
                 # response is still validated against the domain contract by

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -31,8 +32,11 @@ type machineConfig struct {
 	InstanceID     string `json:"instance_id"`
 	InstallProfile string `json:"install_profile"`
 	Network        struct {
-		Host string `json:"host"`
-		Port int    `json:"port"`
+		Mode                      string `json:"mode"`
+		Host                      string `json:"host"`
+		Port                      int    `json:"port"`
+		FirewallRemoteAddress     string `json:"firewall_remote_address"`
+		TrustedLANUnauthenticated bool   `json:"trusted_lan_unauthenticated"`
 	} `json:"network"`
 }
 
@@ -87,6 +91,14 @@ func runCLI(args []string) error {
 		return installService()
 	case "uninstall-service":
 		return uninstallService()
+	case "configure-profile":
+		return configureProfileCLI(args[1:])
+	case "configure-model-root":
+		return configureModelRootCLI(args[1:])
+	case "configure-firewall":
+		return configureFirewallCLI(args[1:])
+	case "remove-firewall":
+		return removeFirewallCLI(args[1:])
 	case "status":
 		return printStatus()
 	case "stop":
@@ -103,7 +115,7 @@ func runCLI(args []string) error {
 		fmt.Println(hostVersion)
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q (run, service, install-service, uninstall-service, status, stop, doctor, verify-release, upgrade, rollback, version)", args[0])
+		return fmt.Errorf("unknown command %q (run, service, install-service, uninstall-service, configure-profile, configure-model-root, configure-firewall, remove-firewall, status, stop, doctor, verify-release, upgrade, rollback, version)", args[0])
 	}
 }
 
@@ -160,6 +172,10 @@ func discover(configOverride string) (hostPaths, machineConfig, error) {
 			}
 		}
 	}
+	installRoot, err = absoluteFrom(installRoot, "")
+	if err != nil {
+		return hostPaths{}, machineConfig{}, fmt.Errorf("resolve install root: %w", err)
+	}
 	instanceRoot := os.Getenv("LOCAL_DRAMA_INSTANCE_ROOT")
 	if instanceRoot == "" {
 		if developmentRoot {
@@ -174,14 +190,25 @@ func discover(configOverride string) (hostPaths, machineConfig, error) {
 			instanceRoot = "/var/lib/local-drama-studio"
 		}
 	}
+	instanceRoot, err = absoluteFrom(instanceRoot, installRoot)
+	if err != nil {
+		return hostPaths{}, machineConfig{}, fmt.Errorf("resolve instance root: %w", err)
+	}
 	configPath := configOverride
+	configBase := ""
 	if configPath == "" {
 		configPath = os.Getenv("LOCAL_DRAMA_CONFIG")
+		configBase = instanceRoot
 	}
 	if configPath == "" {
 		configPath = filepath.Join(instanceRoot, "config", "config.json")
 	}
+	configPath, err = absoluteFrom(configPath, configBase)
+	if err != nil {
+		return hostPaths{}, machineConfig{}, fmt.Errorf("resolve machine config: %w", err)
+	}
 	config := machineConfig{SchemaVersion: 1, InstanceID: "default", InstallProfile: "DESKTOP"}
+	config.Network.Mode = "LOCAL_ONLY"
 	config.Network.Host = "127.0.0.1"
 	config.Network.Port = 3210
 	if raw, err := os.ReadFile(configPath); err == nil {
@@ -194,6 +221,9 @@ func discover(configOverride string) (hostPaths, machineConfig, error) {
 	if configuredHost := os.Getenv("LOCAL_DRAMA_HOST"); configuredHost != "" {
 		config.Network.Host = configuredHost
 	}
+	if configuredMode := os.Getenv("LOCAL_DRAMA_NETWORK_MODE"); configuredMode != "" {
+		config.Network.Mode = configuredMode
+	}
 	if configuredPort := os.Getenv("LOCAL_DRAMA_PORT"); configuredPort != "" {
 		port, parseErr := strconv.Atoi(configuredPort)
 		if parseErr != nil || port < 1 || port > 65535 {
@@ -205,6 +235,20 @@ func discover(configOverride string) (hostPaths, machineConfig, error) {
 		InstallRoot: installRoot, InstanceRoot: instanceRoot, ConfigPath: configPath,
 		RuntimeRoot: filepath.Join(instanceRoot, "runtime"),
 	}, config, nil
+}
+
+// absoluteFrom makes Host path discovery independent of the service or shell
+// working directory. Relative environment paths are anchored to their owning
+// root; explicit CLI paths keep normal current-directory semantics.
+func absoluteFrom(value string, base string) (string, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", errors.New("path is empty")
+	}
+	path := filepath.Clean(value)
+	if !filepath.IsAbs(path) && base != "" {
+		path = filepath.Join(base, path)
+	}
+	return filepath.Abs(path)
 }
 
 // resolveRelease fills the release-scope fields of paths: the active release
@@ -242,6 +286,12 @@ func resolveRelease(paths *hostPaths) error {
 		)
 	}
 	python := os.Getenv("LOCAL_DRAMA_PYTHON")
+	if python != "" {
+		python, err = absoluteFrom(python, releaseRoot)
+		if err != nil {
+			return err
+		}
+	}
 	if python == "" {
 		candidates := []string{
 			filepath.Join(releaseRoot, "runtime", "python", "python.exe"),
@@ -273,6 +323,9 @@ func resolveRelease(paths *hostPaths) error {
 func supervise(ctx context.Context, configOverride string) error {
 	paths, config, err := discover(configOverride)
 	if err != nil {
+		return err
+	}
+	if err := validateMachineNetwork(config); err != nil {
 		return err
 	}
 	if err := resolveRelease(&paths); err != nil {

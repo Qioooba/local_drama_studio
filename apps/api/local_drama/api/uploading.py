@@ -9,6 +9,7 @@ from urllib.parse import unquote
 from fastapi import Request
 
 from local_drama.domain.errors import DomainRuleError
+from local_drama.infrastructure.filesystem.path_policy import controlled_path, safe_filename
 
 
 @asynccontextmanager
@@ -31,8 +32,8 @@ async def receive_bounded_upload(
     and must promote/copy the temporary file into an application-owned library.
     """
     filename = unquote(request.headers.get("x-file-name", default_filename))
-    safe_filename = Path(filename).name[:180] or default_filename
-    if Path(safe_filename).suffix.lower() not in allowed_suffixes:
+    upload_name = safe_filename(filename, default=default_filename)
+    if Path(upload_name).suffix.lower() not in allowed_suffixes:
         raise DomainRuleError(
             type_error_code or f"{error_prefix}_TYPE_INVALID",
             type_error_message,
@@ -48,9 +49,10 @@ async def receive_bounded_upload(
                 )
         except ValueError as error:
             raise DomainRuleError(f"{error_prefix}_LENGTH_INVALID", "上传文件长度无效") from error
-    temporary_directory = request.app.state.settings.work_root / work_group / uuid.uuid4().hex
+    work_root = request.app.state.settings.work_root.resolve()
+    temporary_directory = controlled_path(work_root, Path(work_group) / uuid.uuid4().hex)
     temporary_directory.mkdir(parents=True, exist_ok=False)
-    temporary = temporary_directory / safe_filename
+    temporary = controlled_path(temporary_directory, upload_name)
     try:
         received_bytes = 0
         with temporary.open("xb") as destination:
@@ -66,7 +68,7 @@ async def receive_bounded_upload(
                 destination.write(chunk)
         if received_bytes == 0:
             raise DomainRuleError(f"{error_prefix}_EMPTY", empty_message)
-        yield temporary, safe_filename, received_bytes
+        yield temporary, upload_name, received_bytes
     finally:
         temporary.unlink(missing_ok=True)
         try:

@@ -17,6 +17,7 @@ from typing import Any, cast
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.video_geometry import h3_frame_count, h3_resolution
+from local_drama.infrastructure.filesystem.path_policy import canonical_relative_path
 
 # Fallback loader names; manifest ``authoritative_current_state.loader_assets``
 # overrides each key when present.  ``ref2va_unet_name`` is only consumed by the
@@ -274,7 +275,7 @@ class H3WorkflowFactory:
     def _validate_common(self, prompt: str, filename_prefix: str) -> None:
         if not prompt.strip():
             raise DomainRuleError("H3_PROMPT_REQUIRED", "H3 prompt 不能为空")
-        if not filename_prefix or Path(filename_prefix).is_absolute() or ".." in Path(filename_prefix).parts:
+        if canonical_relative_path(filename_prefix, code="H3_OUTPUT_PREFIX_INVALID") != filename_prefix:
             raise DomainRuleError("H3_OUTPUT_PREFIX_INVALID", "H3 输出 prefix 必须是相对路径")
 
     @staticmethod
@@ -417,7 +418,7 @@ class H3WorkflowFactory:
         ``tier`` (P1-7): same precedence as ``build_t2va`` — ``duration_seconds``
         is validated first, then the tier overrides width/height and length.
         """
-        if not first_frame or Path(first_frame).is_absolute() or ".." in Path(first_frame).parts:
+        if canonical_relative_path(first_frame, code="H3_FIRST_FRAME_INVALID") != first_frame:
             raise DomainRuleError("H3_FIRST_FRAME_INVALID", "H3 首帧必须是隔离 input root 内的相对文件名")
         if not 4.0 <= duration_seconds <= 15.0:
             raise DomainRuleError("H3_DURATION_INVALID", "H3 duration 必须在 4—15 秒之间")
@@ -526,7 +527,10 @@ class H3WorkflowFactory:
                 },
             )
         if first_frame_media_version_id:
-            if Path(first_frame_media_version_id).is_absolute() or ".." in Path(first_frame_media_version_id).parts:
+            if (
+                canonical_relative_path(first_frame_media_version_id, code="H3_FIRST_FRAME_INVALID")
+                != first_frame_media_version_id
+            ):
                 raise DomainRuleError("H3_FIRST_FRAME_INVALID", "H3 首帧必须是隔离 input root 内的相对文件名")
         else:
             raise DomainRuleError("H3_REF2VA_REFERENCE_REQUIRED", "Ref2V 至少需要一个参考输入（首帧参考图）")

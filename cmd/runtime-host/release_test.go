@@ -35,7 +35,7 @@ func writeTestManifest(t *testing.T, root string, entryPath string, content []by
 	}
 	manifest.Platform.OS, manifest.Platform.Arch = runtime.GOOS, runtime.GOARCH
 	manifest.Host.Protocol, manifest.Host.MinimumVersion = 1, "0.1.0"
-	manifest.ConfigSchema.Minimum, manifest.ConfigSchema.Target = 1, 1
+	manifest.ConfigSchema.Minimum, manifest.ConfigSchema.Target = 1, configSchemaSupported
 	raw, err := json.Marshal(manifest)
 	if err != nil {
 		t.Fatal(err)
@@ -48,7 +48,7 @@ func writeTestManifest(t *testing.T, root string, entryPath string, content []by
 		Channel:              "development",
 		HostProtocol:         1,
 		WorkerProtocol:       1,
-		ConfigSchema:         1,
+		ConfigSchema:         configSchemaSupported,
 		ProjectPackageSchema: 2,
 	}
 	identityRaw, err := json.Marshal(identity)

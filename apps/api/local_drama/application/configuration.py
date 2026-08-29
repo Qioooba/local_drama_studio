@@ -5,13 +5,13 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import UTC, datetime
-from pathlib import PurePosixPath
 from typing import Any
 
 from local_drama.application.delivery_presets import preset_items, require_preset
 from local_drama.domain.capabilities import normalize_capability
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.infrastructure.filesystem.path_policy import canonical_relative_path
 
 
 def _utc_now() -> str:
@@ -30,8 +30,7 @@ def _contract_hash(value: dict[str, Any]) -> str:
 
 def _validate_local_target(spec: dict[str, Any]) -> None:
     target_rel = str(spec.get("path_rel", ""))
-    if not target_rel or PurePosixPath(target_rel).is_absolute() or ".." in PurePosixPath(target_rel).parts:
-        raise DomainRuleError("INVALID_DELIVERY_TARGET", "交付目标必须是项目内相对路径")
+    canonical_relative_path(target_rel, code="INVALID_DELIVERY_TARGET")
 
 
 def _activate_project_delivery_target(

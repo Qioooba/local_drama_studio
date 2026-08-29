@@ -1,8 +1,9 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  discoverOllamaModels,
   getLocalLLMStatus,
   getLocalLLMProbeResult,
   probeLocalLLM,
@@ -13,6 +14,7 @@ import {
 import { LocalLLMConfigurationPanel } from "./LocalLLMConfigurationPanel";
 
 vi.mock("../story-workspace-v2/breakdownClient", () => ({
+  discoverOllamaModels: vi.fn(),
   getLocalLLMStatus: vi.fn(),
   getLocalLLMProbeResult: vi.fn(),
   probeLocalLLM: vi.fn(),
@@ -30,6 +32,23 @@ function renderWithClient(ui: React.ReactElement) {
 
 describe("LocalLLMConfigurationPanel", () => {
   beforeEach(() => {
+    vi.mocked(discoverOllamaModels).mockReset().mockResolvedValue({
+      catalog: {
+        provider: "OLLAMA_LOOPBACK",
+        base_url: "http://127.0.0.1:11434",
+        count: 4,
+        scanned_at: "2026-08-29T00:00:00+08:00",
+        read_only: true,
+        runtime_contacted: true,
+        mutated: false,
+        items: [
+          { name: "deepseek-r1:14b", model: "deepseek-r1:14b", modified_at: null, size_bytes: 9_000_000_000, digest: "a", format: "gguf", family: "qwen2", families: ["qwen2"], parameter_size: "14.8B", quantization_level: "Q4_K_M" },
+          { name: "llava:7b", model: "llava:7b", modified_at: null, size_bytes: 4_500_000_000, digest: "b", format: "gguf", family: "llava", families: ["llava"], parameter_size: "7B", quantization_level: "Q4_0" },
+          { name: "nomic-embed-text:latest", model: "nomic-embed-text:latest", modified_at: null, size_bytes: 280_000_000, digest: "c", format: "gguf", family: "nomic-bert", families: ["nomic-bert"], parameter_size: "137M", quantization_level: "F16" },
+          { name: "gemma2:9b", model: "gemma2:9b", modified_at: null, size_bytes: 5_400_000_000, digest: "d", format: "gguf", family: "gemma2", families: ["gemma2"], parameter_size: "9B", quantization_level: "Q4_K_M" },
+        ],
+      },
+    });
     vi.mocked(getLocalLLMStatus).mockReset().mockResolvedValue({
       status: {
         status: "PASS",
@@ -72,7 +91,18 @@ describe("LocalLLMConfigurationPanel", () => {
     vi.mocked(publishLocalLLMProfile).mockReset().mockResolvedValue({
       profile: {
         profile_version_id: "deepseek-prof-v1",
+        profile_code: "llm-openai-deepseek-v4-flash-vision-exp-llm-story-parse",
+        version_no: 1,
         status: "PUBLISHED",
+        publication: {
+          destination: "GLOBAL_CAPABILITY_CATALOG",
+          scope: "LOCAL_STUDIO",
+          consumer_scope: "ALL_PROJECTS",
+          capability: "LLM_STORY_PARSE",
+          model: "deepseek-v4-flash-vision-exp",
+          provider: "OPENAI_COMPAT",
+          published_at: "2026-08-29T00:33:29+08:00",
+        },
       },
     });
   });
@@ -91,10 +121,42 @@ describe("LocalLLMConfigurationPanel", () => {
       status: { status: "PASS", provider: "OLLAMA_LOOPBACK", base_url: "http://127.0.0.1:11434", model: "deepseek-r1:14b", has_api_key: false },
     });
     renderWithClient(<LocalLLMConfigurationPanel />);
-    expect(await screen.findByText(/http:\/\/127\.0\.0\.1:11434 · deepseek-r1:14b/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("当前配置").parentElement).toHaveTextContent("deepseek-r1:14b本机 Ollama · http://127.0.0.1:11434"));
     expect((screen.getByLabelText("预设模板 (Preset)") as HTMLSelectElement).value).toBe("ollama-local");
     expect(screen.queryByLabelText("Provider 协议")).not.toBeInTheDocument();
     expect(screen.queryByText(/安全警示：数据将离开本机/)).not.toBeInTheDocument();
+  });
+
+  it("automatically lists, categorizes, searches, and selects Ollama models", async () => {
+    vi.mocked(getLocalLLMStatus).mockResolvedValueOnce({
+      status: { status: "CONFIGURED", provider: "OLLAMA_LOOPBACK", base_url: "http://127.0.0.1:11434", model: "gemma2:9b", has_api_key: false },
+    });
+    renderWithClient(<LocalLLMConfigurationPanel />);
+
+    expect(await screen.findByRole("heading", { name: "本机 Ollama 模型" })).toBeInTheDocument();
+    await waitFor(() => expect(document.querySelector(".model-count-badge")).toHaveTextContent("4 个"));
+    const categoryFilters = within(screen.getByRole("group", { name: "按模型用途筛选" }));
+    expect(categoryFilters.getByRole("button", { name: /推理与策划\s*1/ })).toBeInTheDocument();
+    expect(categoryFilters.getByRole("button", { name: /视觉理解\s*1/ })).toBeInTheDocument();
+    expect(categoryFilters.getByRole("button", { name: /通用文本\s*1/ })).toBeInTheDocument();
+    expect(categoryFilters.getByRole("button", { name: /向量模型\s*1/ })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("搜索模型"), { target: { value: "llava" } });
+    const modelList = within(screen.getByRole("list", { name: "Ollama 模型列表" }));
+    expect(modelList.getByText("llava:7b")).toBeInTheDocument();
+    expect(modelList.queryByText("gemma2:9b")).not.toBeInTheDocument();
+
+    fireEvent.click(modelList.getByText("llava:7b"));
+    expect(screen.getByText("已选择")).toBeInTheDocument();
+    expect(screen.getByText("当前配置").parentElement).toHaveTextContent("llava:7b本机 Ollama · http://127.0.0.1:11434");
+  });
+
+  it("shows a recoverable Ollama connection error without hiding existing configuration", async () => {
+    vi.mocked(discoverOllamaModels).mockRejectedValueOnce(new Error("LOCAL_LLM_LOOPBACK_UNAVAILABLE"));
+    renderWithClient(<LocalLLMConfigurationPanel />);
+    expect(await screen.findByText("暂时无法读取本机 Ollama")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重试连接" })).toBeInTheDocument();
+    expect(await screen.findByLabelText("Model 名称")).toHaveValue("deepseek-v4-flash-vision-exp");
   });
 
   it("shows red outbound warning for remote endpoints and requires checkbox confirmation", async () => {
@@ -133,7 +195,7 @@ describe("LocalLLMConfigurationPanel", () => {
       status: { status: "PASS", provider: "OLLAMA_LOOPBACK", base_url: "http://127.0.0.1:11434", model: "qwen3:8b", has_api_key: false },
     });
     renderWithClient(<LocalLLMConfigurationPanel projectId="project-1" />);
-    expect(await screen.findByText(/http:\/\/127\.0\.0\.1:11434 · qwen3:8b/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("当前配置").parentElement).toHaveTextContent("qwen3:8b本机 Ollama · http://127.0.0.1:11434"));
     const button = await screen.findByRole("button", { name: /1. 测试 4 级连接/ });
     fireEvent.click(button);
     await waitFor(() => expect(submitLocalLLMProbe).toHaveBeenCalledWith("project-1", expect.objectContaining({
@@ -147,7 +209,7 @@ describe("LocalLLMConfigurationPanel", () => {
     await waitFor(() => expect(syncLocalLLMProfile).toHaveBeenCalledWith(expect.objectContaining({
       probe_job_id: "probe-job-1",
     })));
-    fireEvent.click(await screen.findByRole("button", { name: /3. 发布正式 Profile/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /3. 发布到全局能力目录/ }));
     await waitFor(() => expect(publishLocalLLMProfile).toHaveBeenCalledWith(expect.objectContaining({
       probeJobId: "probe-job-1",
     })));
@@ -170,7 +232,8 @@ describe("LocalLLMConfigurationPanel", () => {
   });
 
   it("completes sync and publish cycle", async () => {
-    renderWithClient(<LocalLLMConfigurationPanel />);
+    const onPublished = vi.fn();
+    renderWithClient(<LocalLLMConfigurationPanel onPublished={onPublished} />);
     const checkbox = await screen.findByLabelText(/我已知晓并允许数据离开本机出境调用/);
     fireEvent.click(checkbox);
 
@@ -193,7 +256,7 @@ describe("LocalLLMConfigurationPanel", () => {
     expect(await screen.findByText(/候选 Profile 已生成/)).toBeInTheDocument();
 
     // Publish
-    const publishBtn = screen.getByRole("button", { name: /3. 发布正式 Profile/ });
+    const publishBtn = screen.getByRole("button", { name: /3. 发布到全局能力目录/ });
     expect(publishBtn).not.toBeDisabled();
     fireEvent.click(publishBtn);
 
@@ -206,7 +269,16 @@ describe("LocalLLMConfigurationPanel", () => {
       );
     });
 
-    expect(await screen.findByText(/已正式发布（PUBLISHED）/)).toBeInTheDocument();
+    expect(await screen.findByText("发布完成")).toBeInTheDocument();
+    expect(screen.getByText("系统 / 能力与模型 / 能力目录")).toBeInTheDocument();
+    expect(screen.getByText("本机全局 · 所有项目可选")).toBeInTheDocument();
+    expect(screen.getAllByText("deepseek-v4-flash-vision-exp").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "在能力目录中定位" }));
+    expect(onPublished).toHaveBeenCalledWith(expect.objectContaining({
+      profileVersionId: "deepseek-prof-v1",
+      capability: "LLM_STORY_PARSE",
+      model: "deepseek-v4-flash-vision-exp",
+    }));
     expect(publishBtn).toBeDisabled();
   });
 
@@ -215,7 +287,7 @@ describe("LocalLLMConfigurationPanel", () => {
       status: { status: "PASS", provider: "OLLAMA_LOOPBACK", base_url: "http://127.0.0.1:11434", model: "deepseek-r1:14b", has_api_key: false },
     });
     renderWithClient(<LocalLLMConfigurationPanel />);
-    expect(await screen.findByText(/http:\/\/127\.0\.0\.1:11434 · deepseek-r1:14b/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("当前配置").parentElement).toHaveTextContent("deepseek-r1:14b本机 Ollama · http://127.0.0.1:11434"));
 
     fireEvent.click(screen.getByRole("button", { name: /1. 测试 4 级连接/ }));
     expect(await screen.findByText(/4 级测试连接全部通过/)).toBeInTheDocument();
@@ -225,10 +297,10 @@ describe("LocalLLMConfigurationPanel", () => {
     expect(screen.queryByText(/4 级测试连接全部通过/)).not.toBeInTheDocument();
     expect(document.querySelectorAll(".probe-level-list .probe-badge.pass")).toHaveLength(0);
     expect(document.querySelectorAll(".probe-level-list .probe-badge.pending")).toHaveLength(4);
-    expect(screen.getByRole("button", { name: /3. 发布正式 Profile/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /3. 发布到全局能力目录/ })).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText("预设模板 (Preset)"), { target: { value: "ollama-local" } });
     expect(screen.queryByLabelText("Provider 协议")).not.toBeInTheDocument();
-    expect(screen.getByText(/http:\/\/127\.0\.0\.1:11434 · deepseek-r1:14b/)).toBeInTheDocument();
+    expect(screen.getByText("当前配置").parentElement).toHaveTextContent("deepseek-r1:14b本机 Ollama · http://127.0.0.1:11434");
   });
 });

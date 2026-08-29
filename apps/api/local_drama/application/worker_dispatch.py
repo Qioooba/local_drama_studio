@@ -20,6 +20,8 @@ class WorkerExecution:
     relative_path: str
     report: dict[str, Any] | None = None
     produced_bytes: int = 0
+    additional_artifacts: tuple[tuple[str, str], ...] = ()
+    after_artifacts_registered: Callable[[tuple[dict[str, Any], ...]], None] | None = None
 
 
 WorkerHandler = Callable[[dict[str, Any], Path], WorkerExecution]

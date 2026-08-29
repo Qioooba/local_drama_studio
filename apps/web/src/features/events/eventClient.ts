@@ -1,3 +1,5 @@
+import { API_CONTRACT_VERSION } from "../../generated/api";
+
 export type StudioEvent = {
   event_id: number;
   type: string;
@@ -41,7 +43,11 @@ export function subscribeStudioEvents({ projectId, eventTypes, onEvent }: Studio
 
   const connect = () => {
     if (stopped) return;
-    const query = new URLSearchParams({ after_event_id: String(cursor), follow: "true" });
+    const query = new URLSearchParams({
+      after_event_id: String(cursor),
+      follow: "true",
+      api_contract_version: API_CONTRACT_VERSION,
+    });
     if (projectId) query.set("project_id", projectId);
     source = new EventSource(`/api/v1/events?${query}`);
     source.onopen = () => { retryMs = 500; };

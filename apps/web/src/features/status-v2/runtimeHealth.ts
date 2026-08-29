@@ -1,14 +1,13 @@
-import type { HealthCheck } from "../../generated/api";
+import { requestJson, type HealthCheck } from "../../generated/api";
 
 export const runtimeHealthQueryKeys = {
+  live: ["system-health", "live"] as const,
   ready: ["system-health", "ready"] as const,
   dependencies: ["system-health", "dependencies"] as const,
 };
 
-export async function loadRuntimeHealth(path: "ready" | "dependencies"): Promise<HealthCheck> {
-  const response = await fetch(`/api/v1/health/${path}`);
-  if (!response.ok) throw new Error(`健康检查失败（HTTP ${response.status}）`);
-  return response.json() as Promise<HealthCheck>;
+export async function loadRuntimeHealth(path: "live" | "ready" | "dependencies"): Promise<HealthCheck> {
+  return requestJson<HealthCheck>(`/api/v1/health/${path}`);
 }
 
 export function isProductionRuntimeHealthy(ready?: HealthCheck, dependencies?: HealthCheck): boolean {

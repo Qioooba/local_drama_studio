@@ -4,6 +4,7 @@ import sqlite3
 
 from local_drama.infrastructure.database.backup import online_backup
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.model_platform.domain.capabilities import CAPABILITY_DEFINITIONS
 
 
 def test_g2_migration_is_real_wal_schema(database: Database) -> None:
@@ -26,10 +27,32 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         indexes = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
         working_slot_columns = {row[1] for row in connection.execute("PRAGMA table_info(shot_working_media_slots)")}
         quick_run_columns = {row[1] for row in connection.execute("PRAGMA table_info(quick_generation_runs)")}
-        assert version == "0068_local_ai_model_runtime"
+        execution_snapshot_columns = {row[1] for row in connection.execute("PRAGMA table_info(mp_execution_snapshots)")}
+        assert version == "0086_model_platform_quick_create_v2_runs"
+        seeded_capability_count = connection.execute("SELECT COUNT(*) FROM mp_capability_definitions").fetchone()[0]
+        embedding_definition = connection.execute(
+            "SELECT family, background_only FROM mp_capability_definitions WHERE code = 'EMBEDDING_TEXT'"
+        ).fetchone()
     assert {"provider_random_nonce", "director_recipe_version_id", "director_recipe_hash"} <= variant_columns
+    assert seeded_capability_count == len(CAPABILITY_DEFINITIONS)
+    assert tuple(embedding_definition) == ("RETRIEVAL", 1)
     assert {"quick_generation_runs", "quick_generation_candidates", "quick_generation_outputs", "quick_generation_events", "quick_generation_presets"} <= tables
     assert "model_parameters_json" in quick_run_columns
+    assert {"runtime_configuration_json", "model_bindings_json", "execution_binding_json"} <= execution_snapshot_columns
+    assert "mp_runtime_model_workflow_bindings" in tables
+    assert "mp_legacy_profile_version_crosswalks" in tables
+    assert "mp_business_selection_rollouts" in tables
+    assert "mp_scope_override_set_versions" in tables
+    assert {"mp_project_knowledge_index_runs", "mp_project_knowledge_index_batches", "mp_project_knowledge_vectors"} <= tables
+    assert {"mp_quick_create_v2_runs", "mp_quick_create_v2_steps"} <= tables
+    knowledge_index_columns = {row[1] for row in connection.execute("PRAGMA table_info(mp_project_knowledge_index_runs)")}
+    assert {"attempt_no", "retry_of_index_run_id"} <= knowledge_index_columns
+    quick_v2_run_columns = {row[1] for row in connection.execute("PRAGMA table_info(mp_quick_create_v2_runs)")}
+    quick_v2_step_columns = {row[1] for row in connection.execute("PRAGMA table_info(mp_quick_create_v2_steps)")}
+    assert {"idempotency_key", "selected_step_id", "final_step_id", "input_hash", "plan_json"} <= quick_v2_run_columns
+    assert {"execution_snapshot_id", "job_id", "input_artifact_id", "output_artifact_id", "content_hash"} <= quick_v2_step_columns
+    assignment_columns = {row[1] for row in connection.execute("PRAGMA table_info(mp_capability_assignments)")}
+    assert "override_set_version_id" in assignment_columns
     with database.connect() as connection:
         video_profile_column = next(row for row in connection.execute("PRAGMA table_info(quick_generation_runs)") if row[1] == "video_profile_version_id")
     assert video_profile_column[3] == 0
@@ -183,6 +206,36 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         "embedding_indexes",
         "embedding_chunks",
         "speech_alignment_runs",
+        "mp_compute_nodes",
+        "mp_model_libraries",
+        "mp_model_families",
+        "mp_model_releases",
+        "mp_model_artifacts",
+        "mp_model_artifact_locations",
+        "mp_model_components",
+        "mp_runtime_installations",
+        "mp_runtime_installation_versions",
+        "mp_runtime_instances",
+        "mp_runtime_model_installations",
+        "mp_capability_definitions",
+        "mp_capability_offerings",
+        "mp_parameter_contract_versions",
+        "mp_adapter_binding_contract_versions",
+        "mp_resource_policy_versions",
+        "mp_execution_profiles",
+        "mp_execution_profile_versions",
+        "mp_profile_publications",
+        "mp_capability_assignments",
+        "mp_discovery_runs",
+        "mp_discovery_observations",
+        "mp_validation_runs",
+        "mp_validation_evidence",
+        "mp_install_plans",
+        "mp_install_jobs",
+        "mp_execution_snapshots",
+        "mp_execution_job_links",
+        "mp_runtime_model_workflow_bindings",
+        "mp_comfy_capability_smoke_jobs",
     }
     assert expected <= tables
 

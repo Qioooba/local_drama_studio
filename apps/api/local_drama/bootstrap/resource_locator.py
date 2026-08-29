@@ -13,8 +13,11 @@ SOURCE_REPO_ROOT = Path(__file__).resolve().parents[4]
 STORAGE_ROOTS = ("data", "projects", "work", "cache", "logs", "backups")
 
 
-def _absolute(value: str | Path) -> Path:
-    return Path(value).expanduser().resolve()
+def _absolute(value: str | Path, *, base: Path | None = None) -> Path:
+    candidate = Path(value).expanduser()
+    if not candidate.is_absolute():
+        candidate = (base or Path.cwd()) / candidate
+    return candidate.resolve()
 
 
 @dataclass(frozen=True)
@@ -53,7 +56,11 @@ class ResourceLocator:
         else:
             instance_root = Path("/var/lib/local-drama-studio")
 
-        config_path = _absolute(configured_config) if configured_config else instance_root / "config" / "config.json"
+        config_path = (
+            _absolute(configured_config, base=instance_root)
+            if configured_config
+            else instance_root / "config" / "config.json"
+        )
         return cls(
             release_root=release_root,
             instance_root=instance_root,

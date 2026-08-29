@@ -9,11 +9,13 @@ from typing import Any
 from urllib.parse import quote
 
 from local_drama.application.export_archives import materialize_verified_export_archive
+from local_drama.application.local_artifacts import local_artifact_reference
 from local_drama.application.media import MediaService
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.atomic import replace_path
+from local_drama.infrastructure.filesystem.path_policy import controlled_path
 
 
 def _canonical(value: object) -> bytes:
@@ -235,13 +237,17 @@ class TimelineExportService:
             if manifest.get("schema_version") != "localdrama.timeline-export.v1" or manifest.get("export_hash") != export_hash:
                 raise ValueError("manifest identity mismatch")
             for file in manifest["files"]:
-                path = (final / file["rel_path"]).resolve()
-                if not path.is_relative_to(final) or not path.is_file() or path.is_symlink():
-                    raise ValueError("unsafe file")
+                path = controlled_path(
+                    final,
+                    str(file["rel_path"]),
+                    must_exist=True,
+                    require_file=True,
+                    code="TIMELINE_EXPORT_TAMPERED",
+                )
                 if path.stat().st_size != int(file["byte_size"]) or _sha256(path) != file["sha256"]:
                     raise ValueError("file integrity mismatch")
             return manifest
-        except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError, DomainRuleError) as error:
             raise DomainRuleError("TIMELINE_EXPORT_TAMPERED", "已有时间线导出不完整或已被修改，请保留现场并移走目录后重试") from error
 
     def export_revision(
@@ -268,9 +274,19 @@ class TimelineExportService:
 
     def download_archive(self, timeline_revision_id: str, rel_path: str) -> Path:
         revision, _items = self._snapshot(timeline_revision_id)
-        project_root = (self.settings.projects_root / str(revision["root_rel"])).resolve()
+        project_root = controlled_path(
+            self.settings.projects_root,
+            str(revision["root_rel"]),
+            must_exist=True,
+            code="PROJECT_ROOT_INVALID",
+        )
         allowed = (project_root / "05_timelines" / str(revision["episode_code"]) / "exports").resolve()
-        candidate = (project_root / rel_path).resolve()
+        candidate = controlled_path(
+            project_root,
+            rel_path,
+            must_exist=True,
+            code="TIMELINE_EXPORT_DOWNLOAD_NOT_ALLOWED",
+        )
         if candidate.parent != allowed or not candidate.name.startswith(("timeline-v", "jianying-v")):
             raise DomainRuleError("TIMELINE_EXPORT_DOWNLOAD_NOT_ALLOWED", "只能下载当前时间线已注册的导出")
         try:
@@ -311,7 +327,7 @@ class TimelineExportService:
             ],
         }
         export_hash = hashlib.sha256(_canonical(identity)).hexdigest()
-        project_root = (self.settings.projects_root / str(revision["root_rel"])).resolve()
+        project_root = self.settings.resolve_project_root(str(revision["root_rel"]))
         if not project_root.is_relative_to(self.settings.projects_root.resolve()) or not project_root.is_dir() or project_root.is_symlink():
             raise DomainRuleError("PROJECT_ROOT_INVALID", "项目根目录无效")
         base = project_root / "05_timelines" / str(revision["episode_code"]) / "exports"
@@ -514,7 +530,7 @@ class TimelineExportService:
             ],
         }
         export_hash = hashlib.sha256(_canonical(identity)).hexdigest()
-        project_root = (self.settings.projects_root / str(revision["root_rel"])).resolve()
+        project_root = self.settings.resolve_project_root(str(revision["root_rel"]))
         if not project_root.is_relative_to(self.settings.projects_root.resolve()) or not project_root.is_dir() or project_root.is_symlink():
             raise DomainRuleError("PROJECT_ROOT_INVALID", "项目根目录无效")
         base = project_root / "05_timelines" / str(revision["episode_code"]) / "exports"
@@ -590,10 +606,24 @@ class TimelineExportService:
 
     @staticmethod
     def _result(project_root: Path, final: Path, manifest: dict[str, Any], *, reused: bool) -> dict[str, Any]:
+        rel_path = final.relative_to(project_root).as_posix()
+        timeline_revision_id = str(manifest["timeline_revision_id"])
+        is_jianying = str(manifest.get("format") or "") == "jianying" or final.name.startswith("jianying-v")
+        artifact = local_artifact_reference(
+            root=project_root,
+            path=final,
+            scope="PROJECT",
+            kind="DIRECTORY",
+            display_name=f"{'剪映草稿' if is_jianying else '专业剪辑交换包'} · {final.name}",
+            download_url=f"/api/v1/timeline-revisions/{quote(timeline_revision_id, safe='')}/export:download?rel_path={quote(rel_path, safe='')}",
+            download_filename=f"{final.name}.zip",
+            error_code="TIMELINE_EXPORT_PATH_INVALID",
+        )
         return {
             "schema_version": "localdrama.timeline-export.v1",
             "status": "EXPORTED",
-            "rel_path": final.relative_to(project_root).as_posix(),
+            "artifact": artifact,
+            "rel_path": rel_path,
             "manifest_rel_path": (final / "manifest.json").relative_to(project_root).as_posix(),
             "files": manifest["files"],
             "export_hash": manifest["export_hash"],

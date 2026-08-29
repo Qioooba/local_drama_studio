@@ -19,6 +19,7 @@ from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.atomic import replace_path
+from local_drama.infrastructure.filesystem.path_policy import controlled_path, safe_filename
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".avi"}
@@ -42,14 +43,6 @@ def _hash_file(path: Path) -> tuple[str, int]:
             digest.update(chunk)
             size += len(chunk)
     return digest.hexdigest(), size
-
-
-def _safe_name(name: str) -> str:
-    candidate = Path(name).name
-    candidate = re.sub(r"[^A-Za-z0-9._-]+", "_", candidate)
-    if candidate in {"", ".", ".."}:
-        raise DomainRuleError("INVALID_SOURCE_NAME", "导入文件名无效")
-    return candidate[:180]
 
 
 def infer_media_kind(path: Path) -> str:
@@ -92,21 +85,7 @@ class MediaService:
             row = connection.execute("SELECT root_rel FROM projects WHERE id = ?", (project_id,)).fetchone()
         if row is None:
             raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
-        raw_root_rel = Path(str(row["root_rel"]))
-        projects_root = self.settings.projects_root.resolve()
-        # Project roots are persisted as project-relative IDs.  Reject
-        # absolute paths and traversal segments before Path joining so an
-        # absolute value that happens to point back inside projects_root cannot
-        # turn into an arbitrary file-root selector.
-        if raw_root_rel.is_absolute() or ".." in raw_root_rel.parts:
-            raise DomainRuleError("PATH_ESCAPE", "项目目录必须是受控 projects_root 下的相对路径")
-        candidate = projects_root / raw_root_rel
-        if candidate.is_symlink():
-            raise DomainRuleError("PATH_ESCAPE", "项目目录不能是 symlink")
-        root = candidate.resolve()
-        if not root.is_relative_to(projects_root):
-            raise DomainRuleError("PATH_ESCAPE", "项目目录超出受控 projects_root")
-        return root
+        return self.settings.resolve_project_root(str(row["root_rel"]))
 
     @staticmethod
     def _verify_content_size(item: dict[str, Any], source: Path) -> None:
@@ -126,7 +105,7 @@ class MediaService:
     def _copy_into_project(self, project_root: Path, source: Path, original_name: str) -> tuple[str, Path]:
         imports = project_root / "00_admin" / "imports"
         imports.mkdir(parents=True, exist_ok=True)
-        safe_name = _safe_name(original_name)
+        safe_name = safe_filename(original_name)
         rel = Path("00_admin") / "imports" / f"{uuid.uuid4().hex}-{safe_name}"
         destination = project_root / rel
         partial = destination.with_name(f".partial-{destination.name}")
@@ -462,9 +441,13 @@ class MediaService:
                 {"artifact_status": row["status"], "attempt_state": row["attempt_state"], "job_state": row["job_state"]},
             )
         work_root = self.settings.work_root.resolve()
-        source = (work_root / str(row["sandbox_rel_path"])).resolve()
-        if not source.is_relative_to(work_root) or not source.is_file() or source.is_symlink():
-            raise DomainRuleError("ARTIFACT_FILE_MISSING", "Artifact 文件缺失或路径越界", {"artifact_id": artifact_id})
+        source = controlled_path(
+            work_root,
+            str(row["sandbox_rel_path"]),
+            must_exist=True,
+            require_file=True,
+            code="ARTIFACT_FILE_MISSING",
+        )
         actual_sha256, actual_size = _hash_file(source)
         if actual_sha256 != str(row["sha256"]):
             raise DomainRuleError("ARTIFACT_INTEGRITY_FAILED", "Artifact 文件与已登记 hash 不一致", {"artifact_id": artifact_id})
@@ -704,10 +687,21 @@ class MediaService:
 
     def content_path(self, media_version_id: str) -> tuple[dict[str, Any], Path]:
         item = self.get_version(media_version_id)
-        root = (self.settings.projects_root / item["root_rel"]).resolve()
-        path = (root / item["rel_path"]).resolve()
-        if not path.is_relative_to(root) or not path.is_file():
-            raise DomainRuleError("MEDIA_FILE_MISSING", "媒体文件缺失或路径越界", {"media_version_id": media_version_id})
+        root = self._project_root(str(item["project_id"]))
+        try:
+            path = controlled_path(
+                root,
+                str(item["rel_path"]),
+                must_exist=True,
+                require_file=True,
+                code="MEDIA_FILE_MISSING",
+            )
+        except DomainRuleError as error:
+            raise DomainRuleError(
+                "MEDIA_FILE_MISSING",
+                "媒体文件缺失、路径越界或经过链接",
+                {"media_version_id": media_version_id},
+            ) from error
         return item, path
 
     def verify_content_integrity(self, media_version_id: str, *, connection: Any | None = None) -> dict[str, Any]:
@@ -821,6 +815,15 @@ class MediaService:
                 (str(uuid.uuid4()), media_version_id, kind, rel_path, source_sha, preset_hash, now, now),
             )
 
+    def _cache_path(self, relative: str | Path, *, must_exist: bool = False) -> Path:
+        return controlled_path(
+            self.settings.cache_root,
+            str(relative).replace("\\", "/"),
+            must_exist=must_exist,
+            require_file=must_exist,
+            code="MEDIA_CACHE_PATH_INVALID",
+        )
+
     def cached_video_thumbnail(
         self,
         source: Path,
@@ -858,10 +861,7 @@ class MediaService:
         if not safe_namespace:
             raise DomainRuleError("THUMBNAIL_CACHE_KEY_INVALID", "缩略图缓存键无效")
         relative = Path("thumbnails") / safe_namespace / size / f"{source_sha256}_{preset_hash[:16]}.webp"
-        destination = (self.settings.cache_root / relative).resolve()
-        cache_root = self.settings.cache_root.resolve()
-        if not destination.is_relative_to(cache_root):
-            raise DomainRuleError("THUMBNAIL_CACHE_PATH_INVALID", "缩略图缓存路径越界")
+        destination = self._cache_path(relative)
         destination.parent.mkdir(parents=True, exist_ok=True)
         if not destination.exists():
             partial = destination.with_suffix(".partial.webp")
@@ -917,10 +917,7 @@ class MediaService:
         preset = f"thumbnail-v2:{size}:{normalized_frame}"
         preset_hash = hashlib.sha256(preset.encode()).hexdigest()
         relative = Path("thumbnails") / safe_namespace / size / f"{source_sha256}_{preset_hash[:16]}.webp"
-        destination = (self.settings.cache_root / relative).resolve()
-        cache_root = self.settings.cache_root.resolve()
-        if not destination.is_relative_to(cache_root):
-            raise DomainRuleError("THUMBNAIL_CACHE_PATH_INVALID", "缩略图缓存路径越界")
+        destination = self._cache_path(relative)
         destination.parent.mkdir(parents=True, exist_ok=True)
         if not destination.exists():
             partial = destination.with_suffix(".partial.webp")
@@ -965,7 +962,7 @@ class MediaService:
                 relative = Path("thumbnails") / namespace / size / f"{item['sha256']}_{preset_hash[:16]}.webp"
             else:
                 relative = Path("thumbnails") / media_version_id / size / f"{item['sha256']}_{preset_hash[:16]}.webp"
-            destination = (self.settings.cache_root / relative).resolve()
+            destination = self._cache_path(relative)
             if not destination.is_relative_to(self.settings.cache_root.resolve()) or not destination.is_file() or destination.is_symlink():
                 raise DomainRuleError(
                     "MEDIA_DERIVATIVE_NOT_READY",
@@ -996,7 +993,7 @@ class MediaService:
         preset = "filmstrip-v1:5x1:320"
         preset_hash = hashlib.sha256(preset.encode()).hexdigest()
         relative = Path("filmstrips") / media_version_id / f"{item['sha256']}_{preset_hash[:16]}.webp"
-        destination = (self.settings.cache_root / relative).resolve()
+        destination = self._cache_path(relative)
         if not materialize:
             if not destination.is_relative_to(self.settings.cache_root.resolve()) or not destination.is_file() or destination.is_symlink():
                 raise DomainRuleError("MEDIA_DERIVATIVE_NOT_READY", "胶片条仍在后台生成或尚未提交", {"media_version_id": media_version_id, "kind": "FILMSTRIP"}, suggested_action="稍后重试，或提交媒体派生任务")
@@ -1018,7 +1015,7 @@ class MediaService:
         preset = "waveform-v2:640x128"
         preset_hash = hashlib.sha256(preset.encode()).hexdigest()
         relative = Path("waveforms") / media_version_id / f"{item['sha256']}_{preset_hash[:16]}.png"
-        destination = (self.settings.cache_root / relative).resolve()
+        destination = self._cache_path(relative)
         if not materialize:
             if not destination.is_relative_to(self.settings.cache_root.resolve()) or not destination.is_file() or destination.is_symlink():
                 raise DomainRuleError("MEDIA_DERIVATIVE_NOT_READY", "波形仍在后台生成或尚未提交", {"media_version_id": media_version_id, "kind": "WAVEFORM"}, suggested_action="稍后重试，或提交媒体派生任务")
@@ -1041,7 +1038,7 @@ class MediaService:
         preset = "proxy-v1:h264-crf28-max1280-aac96k"
         preset_hash = hashlib.sha256(preset.encode()).hexdigest()
         relative = Path("proxies") / media_version_id / f"{item['sha256']}_{preset_hash[:16]}.mp4"
-        destination = (self.settings.cache_root / relative).resolve()
+        destination = self._cache_path(relative)
         cache_root = self.settings.cache_root.resolve()
         if not materialize:
             if not destination.is_relative_to(cache_root) or not destination.is_file() or destination.is_symlink():

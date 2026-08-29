@@ -19,7 +19,7 @@ def _json(value: Any) -> str:
 
 def action_for_capability(capability: str) -> str | None:
     canonical = capability.strip().upper()
-    if canonical == "LLM_STORY_PARSE":
+    if canonical in {"LLM_STORY_PARSE", "LLM_EPISODE_PLAN", "LLM_STORYBOARD"}:
         return "TEXT_PLANNING"
     if canonical.startswith("IMAGE_"):
         return "TEXT_TO_IMAGE"

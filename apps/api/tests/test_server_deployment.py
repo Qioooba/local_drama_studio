@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from local_drama.api.contract_version import API_CONTRACT_HEADER, API_CONTRACT_VERSION
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.network_policy import is_allowed_runtime_host
@@ -24,6 +25,7 @@ def _lan_settings(tmp_path: Path, **overrides: object) -> Settings:
     values: dict[str, object] = {
         "network_mode": "LAN_SERVICE",
         "host": "0.0.0.0",
+        "trusted_lan_unauthenticated": True,
         "data_root": tmp_path / "data",
         "projects_root": tmp_path / "projects",
         "work_root": tmp_path / "work",
@@ -59,6 +61,11 @@ def test_lan_service_settings_accept_wildcard_and_lan_binds(tmp_path: Path) -> N
     assert _lan_settings(tmp_path, host="127.0.0.1").is_lan_service is True
 
 
+def test_lan_service_requires_explicit_trusted_lan_acceptance(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError, match="trusted_lan_unauthenticated=true"):
+        _lan_settings(tmp_path, trusted_lan_unauthenticated=False)
+
+
 def test_lan_service_settings_still_reject_hostnames(tmp_path: Path) -> None:
     with pytest.raises(ValidationError, match="literal IP"):
         _lan_settings(tmp_path, host="drama.internal.example")
@@ -91,6 +98,62 @@ def test_from_env_reads_network_mode_host_roots_and_limits(monkeypatch: pytest.M
     assert settings.work_root.name == "work"  # untouched default survives
     assert settings.upload_max_video_mb == 2048
     assert settings.tool_fallback_dirs == (str(tmp_path / "tools"), str(tmp_path / "tools2"))
+
+
+def test_relative_environment_roots_are_anchored_to_instance_not_process_cwd(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    instance = tmp_path / "instance"
+    unrelated_cwd = tmp_path / "launch-directory"
+    unrelated_cwd.mkdir()
+    monkeypatch.chdir(unrelated_cwd)
+    monkeypatch.setenv("LOCAL_DRAMA_INSTANCE_ROOT", str(instance))
+    monkeypatch.setenv("LOCAL_DRAMA_DATA_ROOT", "mutable-data")
+    monkeypatch.setenv("LOCAL_DRAMA_MODEL_LIBRARY_ROOTS", "models;shared/models")
+    settings = Settings.from_env()
+    assert settings.data_root == (instance / "mutable-data").resolve()
+    assert settings.model_library_roots == (
+        (instance / "models").resolve(),
+        (instance / "shared" / "models").resolve(),
+    )
+
+
+def test_remote_browser_cannot_submit_arbitrary_server_paths(tmp_path: Path) -> None:
+    settings = _lan_settings(tmp_path)
+    source = tmp_path / "private.txt"
+    source.write_text("server secret", encoding="utf-8")
+    origin = "http://10.8.0.20:3210"
+    headers = {"Host": "10.8.0.20:3210", "Origin": origin, API_CONTRACT_HEADER: API_CONTRACT_VERSION}
+    with TestClient(create_app(settings), client=("10.8.0.99", 50000)) as client:
+        token = client.get("/api/v1/session/bootstrap", headers=headers).json()["token"]
+        rejected = client.post(
+            "/api/v1/media:import",
+            headers={**headers, "X-Local-Instance-Token": token},
+            json={"project_id": "missing", "source_path": str(source), "media_kind": "OTHER"},
+        )
+    assert rejected.status_code == 422
+    assert rejected.json()["error"]["code"] == "SERVER_PATH_REMOTE_CLIENT"
+
+
+def test_lan_model_registration_requires_configured_library_and_member_file(tmp_path: Path) -> None:
+    model_root = tmp_path / "models"
+    model_root.mkdir()
+    allowed = model_root / "allowed.safetensors"
+    outside = tmp_path / "outside.safetensors"
+    allowed.write_bytes(b"model")
+    outside.write_bytes(b"model")
+    settings = _lan_settings(tmp_path, model_library_roots=(model_root,))
+    origin = "http://10.8.0.20:3210"
+    headers = {"Host": "10.8.0.20:3210", "Origin": origin, API_CONTRACT_HEADER: API_CONTRACT_VERSION}
+    with TestClient(create_app(settings), client=("10.8.0.99", 50000)) as client:
+        token = client.get("/api/v1/session/bootstrap", headers=headers).json()["token"]
+        rejected = client.post(
+            "/api/v1/model-registry/artifacts",
+            headers={**headers, "X-Local-Instance-Token": token},
+            json={"code": "outside", "kind": "T2V", "machine_path_ref": str(outside)},
+        )
+    assert rejected.status_code == 422
+    assert rejected.json()["error"]["code"] == "MODEL_LIBRARY_FILE_NOT_ALLOWED"
 
 
 def test_tool_fallback_dirs_resolve_executables(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

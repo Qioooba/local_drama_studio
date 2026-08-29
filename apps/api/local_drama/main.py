@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 
+from .api.routes.adaptation_plans import router as adaptation_plans_router
 from .api.routes.adapters import router as adapters_router
 from .api.routes.asset_bible import router as asset_bible_router
 from .api.routes.asset_proposals import router as asset_proposals_router
@@ -40,6 +41,7 @@ from .api.routes.imports import router as imports_router
 from .api.routes.jobs import router as jobs_router
 from .api.routes.llm import router as llm_router
 from .api.routes.media import router as media_router
+from .api.routes.model_platform_v2 import router as model_platform_v2_router
 from .api.routes.one_sentence_video_runs import router as one_sentence_video_runs_router
 from .api.routes.platform import router as platform_router
 from .api.routes.post_v2 import router as post_v2_router
@@ -73,7 +75,7 @@ from .errors import ApiError, api_error_handler, validation_error_handler
 from .infrastructure.database.sqlite import Database
 from .infrastructure.manifest import ManifestValidationError
 from .logging_setup import configure_logging, get_logger
-from .middleware import LocalOriginMiddleware, RequestContextMiddleware
+from .middleware import ApiContractMiddleware, LocalOriginMiddleware, RequestContextMiddleware
 from .platform import create_platform_services
 
 _LOGGER = get_logger("main")
@@ -131,8 +133,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_origins=list(resolved.allowed_origins),
             allow_credentials=False,
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
-            allow_headers=["Content-Type", "X-Local-Instance-Token", "X-Request-Id", "X-Trace-Id", "Idempotency-Key"],
-            expose_headers=["X-Local-Instance-Token", "ETag", "Content-Range", "Accept-Ranges", "Last-Modified", "X-Request-Id", "X-Trace-Id"],
+            allow_headers=["Content-Type", "X-API-Contract-Version", "X-Local-Instance-Token", "X-Request-Id", "X-Trace-Id", "Idempotency-Key"],
+            expose_headers=["X-API-Contract-Version", "X-Local-Instance-Token", "ETag", "Content-Range", "Accept-Ranges", "Last-Modified", "X-Request-Id", "X-Trace-Id"],
             max_age=600,
         )
     app.add_middleware(RequestContextMiddleware)
@@ -141,6 +143,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allowed_origins=resolved.allowed_origins,
         allow_same_origin_writes=resolved.is_lan_service,
     )
+    app.add_middleware(ApiContractMiddleware)
     app.add_exception_handler(ApiError, api_error_handler)
     app.add_exception_handler(RequestValidationError, validation_error_handler)
     app.include_router(health_router, prefix="/api/v1")
@@ -195,6 +198,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(asset_proposals_router, prefix="/api/v1")
     app.include_router(character_identity_packs_router, prefix="/api/v1")
     app.include_router(product_context_v2_router, prefix="/api/v2")
+    app.include_router(model_platform_v2_router, prefix="/api/v2")
+    app.include_router(adaptation_plans_router, prefix="/api/v2")
     app.include_router(shot_studio_v2_router, prefix="/api/v2")
     app.include_router(episode_production_v2_router, prefix="/api/v2")
     _mount_frontend(app, resolved)

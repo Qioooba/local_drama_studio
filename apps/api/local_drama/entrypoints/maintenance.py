@@ -23,6 +23,10 @@ from local_drama.bootstrap.config_migrations import migrate_config, restore_conf
 from local_drama.bootstrap.resource_locator import ResourceLocator
 from local_drama.config import Settings
 from local_drama.infrastructure.database.backup import online_backup
+from local_drama.infrastructure.database.sqlite import Database
+from local_drama.model_platform.application.offline_import_execution import HostOfflineImportExecutor
+from local_drama.model_platform.application.trusted_download_execution import HostTrustedDownloadExecutor
+from local_drama.model_platform.application.trusted_download_plan_execution import HostTrustedDownloadPlanExecutor
 from local_drama.platform import create_platform_services
 
 SCHEMA = "localdrama.maintenance-result.v1"
@@ -439,6 +443,51 @@ def create_diagnostics_bundle(
     )
 
 
+def import_offline_model(settings: Settings, plan_id: str, *, host_stopped_confirmed: bool) -> dict[str, Any]:
+    """Run one V2 offline import after an operator explicitly stops Host."""
+    if not host_stopped_confirmed:
+        raise ValueError("offline-model-import requires --confirm-host-stopped")
+    result = HostOfflineImportExecutor(Database(settings.database_path), settings).execute(plan_id)
+    return _result(
+        "model-platform.offline-import",
+        "PASS" if result.status == "IMPORTED" else "FAIL",
+        mutated=True,
+        details={
+            "install_plan_id": result.install_plan_id,
+            "install_job_id": result.install_job_id,
+            "status": result.status,
+            "verified_artifact_count": result.verified_artifact_count,
+            "imported_artifact_count": result.imported_artifact_count,
+            "quarantined": result.quarantined,
+        },
+    )
+
+
+def stage_downloaded_model(settings: Settings, bundle_reference: str, *, host_stopped_confirmed: bool) -> dict[str, Any]:
+    if not host_stopped_confirmed:
+        raise ValueError("stage-downloaded-model requires --confirm-host-stopped")
+    HostTrustedDownloadExecutor(settings).promote_bundle_to_staging(bundle_reference)
+    return _result("model-platform.stage-download", "PASS", mutated=True, details={"bundle_reference": bundle_reference})
+
+
+def download_trusted_model(settings: Settings, plan_id: str, *, host_stopped_confirmed: bool) -> dict[str, Any]:
+    """Run a durable trusted HTTPS plan and hand its verified package to staging."""
+    if not host_stopped_confirmed:
+        raise ValueError("trusted-model-download requires --confirm-host-stopped")
+    result = HostTrustedDownloadPlanExecutor(Database(settings.database_path), settings).execute(plan_id)
+    return _result(
+        "model-platform.trusted-download",
+        "PASS" if result.status == "STAGED" else "FAIL",
+        mutated=True,
+        details={
+            "install_plan_id": result.install_plan_id,
+            "install_job_id": result.install_job_id,
+            "status": result.status,
+            "downloaded_artifact_count": result.downloaded_artifact_count,
+        },
+    )
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="local-drama-maintenance")
     parser.add_argument("--config")
@@ -459,6 +508,15 @@ def _parser() -> argparse.ArgumentParser:
     recovery_restore.add_argument("source", type=Path)
     diagnostics = commands.add_parser("diagnostics-create")
     diagnostics.add_argument("--destination", type=Path)
+    offline_import = commands.add_parser("offline-model-import")
+    offline_import.add_argument("install_plan_id")
+    offline_import.add_argument("--confirm-host-stopped", action="store_true")
+    stage_download = commands.add_parser("stage-downloaded-model")
+    stage_download.add_argument("bundle_reference")
+    stage_download.add_argument("--confirm-host-stopped", action="store_true")
+    trusted_download = commands.add_parser("trusted-model-download")
+    trusted_download.add_argument("install_plan_id")
+    trusted_download.add_argument("--confirm-host-stopped", action="store_true")
     return parser
 
 
@@ -502,6 +560,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 result = create_recovery_set(settings, locator)
             elif args.command == "recovery-restore":
                 result = restore_recovery_set(settings, args.source)
+            elif args.command == "offline-model-import":
+                result = import_offline_model(
+                    settings,
+                    args.install_plan_id,
+                    host_stopped_confirmed=args.confirm_host_stopped,
+                )
+            elif args.command == "stage-downloaded-model":
+                result = stage_downloaded_model(
+                    settings,
+                    args.bundle_reference,
+                    host_stopped_confirmed=args.confirm_host_stopped,
+                )
+            elif args.command == "trusted-model-download":
+                result = download_trusted_model(
+                    settings,
+                    args.install_plan_id,
+                    host_stopped_confirmed=args.confirm_host_stopped,
+                )
             else:
                 result = create_diagnostics_bundle(settings, locator, args.destination)
     except Exception as error:

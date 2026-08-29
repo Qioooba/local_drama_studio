@@ -2,7 +2,26 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { routes } from "../../app/routeRegistry";
 import { getProfileVersion, type GenerationModel, type GenerationModelRoute } from "../../generated/api";
+import {
+  getModelPlatformQuickCreateV2DirectImageStatus,
+  getModelPlatformQuickCreateV2Run,
+  listModelPlatformQuickCreateV2Readiness,
+  previewModelPlatformQuickCreateV2DirectImage,
+  previewModelPlatformQuickCreateV2ImageCandidates,
+  previewModelPlatformQuickCreateV2ImageToVideo,
+  selectModelPlatformQuickCreateV2ImageCandidate,
+  submitModelPlatformQuickCreateV2DirectImage,
+  submitModelPlatformQuickCreateV2ImageCandidates,
+  submitModelPlatformQuickCreateV2ImageToVideo,
+  type ModelPlatformQuickCreateV2DirectImagePreview,
+  type ModelPlatformQuickCreateV2DirectImageStatus,
+  type ModelPlatformQuickCreateV2CandidatePlan,
+  type ModelPlatformQuickCreateV2ImageToVideoPreview,
+  type ModelPlatformQuickCreateV2Readiness,
+  type ModelPlatformQuickCreateV2Run,
+} from "../model-platform-v2/api";
 import { QuickGenerationModelSettings } from "./QuickGenerationModelSettings";
+import { LocalArtifactReference } from "../shared/LocalArtifactReference";
 import {
   cancelQuickGeneration,
   commitQuickGeneration,
@@ -145,6 +164,50 @@ function CandidateCard({ candidate, selected, locked, onSelect }: { candidate: Q
 }
 
 export function QuickGenerationWorkbench({ models }: Props) {
+  const [v2Readiness, setV2Readiness] = useState<ModelPlatformQuickCreateV2Readiness[] | null>(null);
+  const [v2DirectPreview, setV2DirectPreview] = useState<ModelPlatformQuickCreateV2DirectImagePreview | null>(null);
+  const [v2DirectJobId, setV2DirectJobId] = useState<string | null>(null);
+  const [v2DirectStatus, setV2DirectStatus] = useState<ModelPlatformQuickCreateV2DirectImageStatus | null>(null);
+  const [v2DirectBusy, setV2DirectBusy] = useState(false);
+  const [v2DirectError, setV2DirectError] = useState("");
+  const [v2I2VPlan, setV2I2VPlan] = useState<ModelPlatformQuickCreateV2CandidatePlan | null>(null);
+  const [v2I2VRun, setV2I2VRun] = useState<ModelPlatformQuickCreateV2Run | null>(null);
+  const [v2I2VPreview, setV2I2VPreview] = useState<ModelPlatformQuickCreateV2ImageToVideoPreview | null>(null);
+  const [v2I2VSelectedStepId, setV2I2VSelectedStepId] = useState("");
+  const [v2I2VSelectionConfirmed, setV2I2VSelectionConfirmed] = useState(false);
+  const [v2I2VBusy, setV2I2VBusy] = useState("");
+  const [v2I2VError, setV2I2VError] = useState("");
+  useEffect(() => { void listModelPlatformQuickCreateV2Readiness().then((result) => setV2Readiness(result.items)).catch(() => setV2Readiness(null)); }, []);
+  useEffect(() => {
+    if (!v2DirectJobId) { setV2DirectStatus(null); return undefined; }
+    let disposed = false;
+    const refresh = async () => {
+      try {
+        const result = await getModelPlatformQuickCreateV2DirectImageStatus(v2DirectJobId);
+        if (!disposed) setV2DirectStatus(result.execution);
+      } catch (error) {
+        if (!disposed) setV2DirectError(describeFailure(error));
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 3000);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [v2DirectJobId]);
+  useEffect(() => {
+    if (!v2I2VRun || ["SUCCEEDED", "FAILED", "CANCELLED"].includes(v2I2VRun.state)) return undefined;
+    let disposed = false;
+    const refresh = async () => {
+      try {
+        const result = await getModelPlatformQuickCreateV2Run(v2I2VRun.id);
+        if (!disposed) setV2I2VRun(result.run);
+      } catch (error) {
+        if (!disposed) setV2I2VError(describeFailure(error));
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 3000);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [v2I2VRun?.id, v2I2VRun?.state]);
   const llmRoutes = useMemo(() => executableRoutes(models, "TEXT_PLANNING"), [models]);
   const imageRoutes = useMemo(() => executableRoutes(models, "TEXT_TO_IMAGE"), [models]);
   const t2vRoutes = useMemo(() => executableRoutes(models, "TEXT_TO_VIDEO"), [models]);
@@ -246,6 +309,83 @@ export function QuickGenerationWorkbench({ models }: Props) {
     }
   }
 
+  async function previewV2DirectImage() {
+    if (story.trim().length < 2) return;
+    setV2DirectBusy(true); setV2DirectError(""); setV2DirectJobId(null); setV2DirectStatus(null);
+    try {
+      const result = await previewModelPlatformQuickCreateV2DirectImage({ prompt: story.trim(), run_overrides: {} });
+      setV2DirectPreview(result.preview);
+    } catch (error) {
+      setV2DirectPreview(null);
+      setV2DirectError(describeFailure(error));
+    } finally { setV2DirectBusy(false); }
+  }
+
+  async function submitV2DirectImage() {
+    if (!v2DirectPreview?.executable || story.trim().length < 2) return;
+    setV2DirectBusy(true); setV2DirectError("");
+    try {
+      const result = await submitModelPlatformQuickCreateV2DirectImage(
+        { prompt: story.trim(), expected_resolution_hash: v2DirectPreview.resolution_hash, run_overrides: {} },
+        newCommandKey(),
+      );
+      setV2DirectJobId(result.execution.job_id);
+    } catch (error) { setV2DirectError(describeFailure(error)); }
+    finally { setV2DirectBusy(false); }
+  }
+
+  async function previewV2I2VCandidates() {
+    if (story.trim().length < 2) return;
+    setV2I2VBusy("candidate-preview"); setV2I2VError(""); setV2I2VRun(null); setV2I2VPreview(null); setV2I2VSelectedStepId(""); setV2I2VSelectionConfirmed(false);
+    try {
+      const result = await previewModelPlatformQuickCreateV2ImageCandidates({ prompt: story.trim(), candidate_count: candidateCount });
+      setV2I2VPlan(result.plan);
+    } catch (error) { setV2I2VPlan(null); setV2I2VError(describeFailure(error)); }
+    finally { setV2I2VBusy(""); }
+  }
+
+  async function submitV2I2VCandidates() {
+    if (!v2I2VPlan?.executable || story.trim().length < 2) return;
+    setV2I2VBusy("candidate-submit"); setV2I2VError("");
+    try {
+      const result = await submitModelPlatformQuickCreateV2ImageCandidates({ prompt: story.trim(), candidates: v2I2VPlan.candidates }, newCommandKey());
+      const aggregate = await getModelPlatformQuickCreateV2Run(result.run.id);
+      setV2I2VRun(aggregate.run);
+    } catch (error) { setV2I2VError(describeFailure(error)); }
+    finally { setV2I2VBusy(""); }
+  }
+
+  async function selectV2I2VCandidate() {
+    if (!v2I2VRun || !v2I2VSelectedStepId || !v2I2VSelectionConfirmed) return;
+    setV2I2VBusy("candidate-select"); setV2I2VError("");
+    try {
+      const result = await selectModelPlatformQuickCreateV2ImageCandidate(v2I2VRun.id, v2I2VSelectedStepId);
+      setV2I2VRun(result.run); setV2I2VPreview(null);
+    } catch (error) { setV2I2VError(describeFailure(error)); }
+    finally { setV2I2VBusy(""); }
+  }
+
+  async function previewV2I2VVideo() {
+    if (!v2I2VRun) return;
+    setV2I2VBusy("video-preview"); setV2I2VError("");
+    try {
+      const result = await previewModelPlatformQuickCreateV2ImageToVideo(v2I2VRun.id);
+      setV2I2VPreview(result.preview);
+    } catch (error) { setV2I2VError(describeFailure(error)); }
+    finally { setV2I2VBusy(""); }
+  }
+
+  async function submitV2I2VVideo() {
+    if (!v2I2VRun || !v2I2VPreview?.executable) return;
+    setV2I2VBusy("video-submit"); setV2I2VError("");
+    try {
+      await submitModelPlatformQuickCreateV2ImageToVideo(v2I2VRun.id, v2I2VPreview.resolution_hash, newCommandKey());
+      const aggregate = await getModelPlatformQuickCreateV2Run(v2I2VRun.id);
+      setV2I2VRun(aggregate.run);
+    } catch (error) { setV2I2VError(describeFailure(error)); }
+    finally { setV2I2VBusy(""); }
+  }
+
   function changeMode(nextMode: QuickGenerationMode) {
     if (nextMode === mode) return;
     setMode(nextMode); setVideoParameters({}); setRun(null); setChosenCandidateId(""); setReviewConfirmed(false); setMessage("");
@@ -308,6 +448,7 @@ export function QuickGenerationWorkbench({ models }: Props) {
 
   return <section className="panel one-sentence-video quick-generation-workbench" aria-labelledby="quick-generation-title">
     <div className="one-sentence-video-heading"><div><p className="eyebrow">快速生成</p><h2 id="quick-generation-title">描述一个画面，直接得到作品</h2><p className="muted">先选择要完成的生成动作，再为每个步骤选择支持该动作的模型。同一视频模型可以同时提供文生视频和图生视频路线。</p></div><span className="status-pill neutral">不创建项目</span></div>
+    {v2Readiness ? <div className="quick-create-v2-readiness" role="status"><p className="muted">V2 迁移状态：{v2Readiness.every((item) => item.ready) ? "门禁已满足；V2 试运行可独立验证，不会改写 V1 记录。" : "部分能力尚未满足 V2 门禁；可查看阻塞原因。"}</p><details><summary>查看 V2 切流前置条件与试运行</summary><ul>{v2Readiness.map((item) => <li key={`${item.mode}:${item.capability_code}`}><strong>{routeLabel(item.mode as QuickGenerationMode)} · {item.capability_code}</strong><span>{item.ready ? "已满足 V2 合同" : item.blocker ?? "未满足 V2 合同"}</span></li>)}</ul>{mode === "TEXT_TO_IMAGE" ? <div className="quick-create-v2-readiness__direct"><strong>V2 单次文生图试运行</strong><p>只使用 V2 SYSTEM Assignment、冻结快照与 V2 Job；不会使用旧模型、旧参数或 V1 快速生成记录。</p>{!v2DirectPreview ? <button type="button" className="secondary" disabled={v2DirectBusy || story.trim().length < 2} onClick={() => void previewV2DirectImage()}>{v2DirectBusy ? "正在进行 V2 预检…" : "预检 V2 单次文生图"}</button> : <><p>{v2DirectPreview.executable ? "V2 合同已确认。提交后将在此处显示 V2 Job 状态与已验证制品。" : `V2 预检未通过：${v2DirectPreview.blockers.join("、") || "未满足合同"}`}</p>{v2DirectPreview.executable ? <button type="button" className="secondary" disabled={v2DirectBusy || Boolean(v2DirectJobId)} onClick={() => void submitV2DirectImage()}>{v2DirectBusy ? "正在提交 V2 Job…" : v2DirectJobId ? "V2 Job 已提交" : "确认提交 V2 单次文生图"}</button> : null}</>}{v2DirectJobId ? <div className="quick-create-v2-readiness__execution"><p>V2 Job：{v2DirectJobId}。它独立于当前 V1 快速生成记录。</p>{v2DirectStatus ? <><p><strong>{STATE_LABELS[v2DirectStatus.state] ?? v2DirectStatus.state}</strong>{typeof v2DirectStatus.progress.percent === "number" ? ` · ${v2DirectStatus.progress.percent}%` : ""}</p>{v2DirectStatus.artifacts.map((artifact) => <figure key={artifact.artifact_id}><img src={artifact.download_url} alt="V2 单次文生图结果" /><figcaption><a className="secondary" href={artifact.download_url} download>下载已验证图片</a></figcaption></figure>)}{v2DirectStatus.state === "SUCCEEDED" && v2DirectStatus.artifacts.length === 0 ? <p className="muted">任务已完成，正在等待已验证制品登记。</p> : null}{v2DirectStatus.error_code ? <p className="inline-error">{v2DirectStatus.error_code}{v2DirectStatus.error_detail_redacted ? `：${v2DirectStatus.error_detail_redacted}` : ""}</p> : null}</> : <p className="muted">正在读取 V2 Job 状态…</p>}</div> : null}{v2DirectError ? <p className="inline-error" role="alert">V2 试运行失败：{v2DirectError}</p> : null}</div> : null}{mode === "TEXT_TO_IMAGE_TO_VIDEO" ? <div className="quick-create-v2-readiness__direct"><strong>V2 候选图 → 图生视频试运行</strong><p>每张候选图、人工选择和视频任务都有独立 V2 快照；只能把本次已验证候选图交给图生视频。</p>{!v2I2VPlan ? <button type="button" className="secondary" disabled={Boolean(v2I2VBusy) || story.trim().length < 2} onClick={() => void previewV2I2VCandidates()}>{v2I2VBusy === "candidate-preview" ? "正在预检候选图…" : "预检 V2 候选图"}</button> : null}{v2I2VPlan && !v2I2VRun ? <div><p>{v2I2VPlan.executable ? `候选图合同已确认，将生成 ${v2I2VPlan.candidates.length} 张独立候选。` : `V2 候选图预检未通过：${v2I2VPlan.blockers.join("、") || "未满足合同"}`}</p>{v2I2VPlan.executable ? <button type="button" className="secondary" disabled={Boolean(v2I2VBusy)} onClick={() => void submitV2I2VCandidates()}>{v2I2VBusy === "candidate-submit" ? "正在提交候选图…" : "确认提交 V2 候选图"}</button> : null}</div> : null}{v2I2VRun ? <div className="quick-create-v2-readiness__execution"><p><strong>V2 聚合状态：{STATE_LABELS[v2I2VRun.state] ?? v2I2VRun.state}</strong> · {v2I2VRun.id}</p><div className="one-sentence-image-grid">{v2I2VRun.steps.filter((step) => step.kind === "IMAGE_CANDIDATE").map((step) => <article key={step.id} className={`one-sentence-image-card${step.id === v2I2VRun.selected_step_id ? " selected" : ""}`}><button type="button" className="one-sentence-image-choice" disabled={!step.output_artifact || Boolean(v2I2VRun.selected_step_id) || Boolean(v2I2VBusy)} aria-pressed={step.id === v2I2VSelectedStepId} onClick={() => { setV2I2VSelectedStepId(step.id); setV2I2VSelectionConfirmed(false); }}><span className="one-sentence-image-frame">{step.output_artifact ? <img src={step.output_artifact.download_url} alt={`V2 图片候选 ${step.step_no}`} loading="lazy" decoding="async" /> : <span className="one-sentence-image-placeholder">{STATE_LABELS[step.job_state] ?? step.job_state}</span>}</span><span className="one-sentence-image-meta"><strong>候选 {step.selection_rank ?? step.step_no}</strong><small>{STATE_LABELS[step.state] ?? step.state}</small></span></button>{step.error_code ? <p className="inline-error">{step.error_code}{step.error_detail_redacted ? `：${step.error_detail_redacted}` : ""}</p> : null}</article>)}</div>{v2I2VRun.state === "AWAITING_SELECTION" && !v2I2VRun.selected_step_id ? <div className="one-sentence-image-decision"><p>选择一张已验证图片后，才会开放图生视频预检。</p><label><input type="checkbox" checked={v2I2VSelectionConfirmed} onChange={(event) => setV2I2VSelectionConfirmed(event.target.checked)} />我已检查主体、构图、风格和画面质量，并确认将此图作为视频首帧。</label><button type="button" disabled={!v2I2VSelectedStepId || !v2I2VSelectionConfirmed || Boolean(v2I2VBusy)} onClick={() => void selectV2I2VCandidate()}>{v2I2VBusy === "candidate-select" ? "正在冻结选择…" : "确认选择首帧"}</button></div> : null}{v2I2VRun.state === "IMAGE_SELECTED" ? <div><p>{v2I2VPreview ? (v2I2VPreview.executable ? "图生视频合同已确认。" : `图生视频预检未通过：${v2I2VPreview.blockers.join("、") || "未满足合同"}`) : "首帧已冻结；请预检图生视频合同。"}</p>{!v2I2VPreview ? <button type="button" className="secondary" disabled={Boolean(v2I2VBusy)} onClick={() => void previewV2I2VVideo()}>{v2I2VBusy === "video-preview" ? "正在预检图生视频…" : "预检 V2 图生视频"}</button> : v2I2VPreview.executable ? <button type="button" disabled={Boolean(v2I2VBusy)} onClick={() => void submitV2I2VVideo()}>{v2I2VBusy === "video-submit" ? "正在提交图生视频…" : "确认提交 V2 图生视频"}</button> : null}</div> : null}{v2I2VRun.steps.filter((step) => step.kind === "VIDEO_I2V" && step.output_artifact).map((step) => <figure key={step.id}><video controls playsInline preload="none" src={step.output_artifact?.download_url} aria-label="V2 图生视频结果">浏览器不支持视频播放。</video><figcaption><a className="secondary" href={step.output_artifact?.download_url} download>下载已验证视频</a></figcaption></figure>)}</div> : null}{v2I2VError ? <p className="inline-error" role="alert">V2 图生视频试运行失败：{v2I2VError}</p> : null}</div> : null}</details></div> : null}
     <ol className="one-sentence-video-stepper" aria-label="生成进度" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>{steps.map((label, index) => <li key={label} className={index < currentStep ? "done" : index === currentStep ? "current" : ""} aria-current={index === currentStep ? "step" : undefined}><span>{index < currentStep ? "✓" : index + 1}</span>{label}</li>)}</ol>
 
     <fieldset className="one-sentence-video-mode"><legend>第一步：选择生成动作</legend>
@@ -345,7 +486,7 @@ export function QuickGenerationWorkbench({ models }: Props) {
     {run && (run.job_id || run.candidates.length > 0) && <div className="one-sentence-video-progress" role="status" aria-live="polite"><div><strong>{STATE_LABELS[run.state] ?? run.state}</strong><span>{run.stage}{run.job_id ? ` · 任务 ${run.job_id.slice(0, 8)}` : ""}{videoProgress !== null ? ` · ${videoProgress}%` : ""}{elapsedSeconds !== null ? ` · 已等待 ${Math.floor(elapsedSeconds / 60)} 分 ${elapsedSeconds % 60} 秒` : ""}</span><small className="muted">{TERMINAL_STATES.has(run.state) ? "本次后台任务已结束，作品记录仍可从本页打开。" : "本机生成可能需要较长时间；可以离开页面，稍后从最近生成继续查看。"}</small></div>{!TERMINAL_STATES.has(run.state) && run.state !== "AWAITING_SELECTION" && run.state !== "PLANNED" && <div className="one-sentence-video-actions"><button type="button" className="secondary" onClick={() => setObserving((value) => !value)}>{observing ? "停止观察" : "继续观察"}</button><button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => void execute("cancel", (signal) => cancelQuickGeneration(run.id, signal))}>取消生成</button></div>}</div>}
     {run?.state === "FAILED" && <section className="one-sentence-video-recovery"><strong>{run.error.message || "生成流程中断"}</strong><p className="muted">描述、规划、候选图、Seed 与检查点均已保留。</p><div className="one-sentence-video-actions"><button type="button" onClick={() => void execute("resume", (signal) => resumeQuickGeneration(run.id, signal))}>从检查点恢复</button><button type="button" className="secondary" onClick={() => void execute("retry", (signal) => retryQuickGeneration(run.id, "NEW_SEED", signal))}>使用新 Seed 重试</button></div></section>}
     {run?.state === "CANCELLED" && <p className="notice">生成已取消；已完成的候选图和执行记录仍会保留。</p>}
-    {run?.state === "SUCCEEDED" && run.output && <section className="one-sentence-video-result">{run.output.media_kind === "IMAGE" ? <img src={run.output.thumbnail_url} alt="快速生成的图片作品" /> : <video controls playsInline preload="metadata" poster={run.selected_image_output?.thumbnail_url} src={run.output.content_url} aria-label="快速生成的视频预览">浏览器不支持视频播放。</video>}<div><strong>{run.output.media_kind === "IMAGE" ? "图片已生成" : "视频已生成"}</strong><p className="muted">这是独立作品，不会出现在项目列表中。规划、候选选择和模型执行快照均随本次生成保留。</p><a className="secondary" href={run.output.content_url} download>下载{run.output.media_kind === "IMAGE" ? "图片" : "视频"}</a></div></section>}
+    {run?.state === "SUCCEEDED" && run.output && <section className="one-sentence-video-result">{run.output.media_kind === "IMAGE" ? <img src={run.output.thumbnail_url} alt="快速生成的图片作品" /> : <video controls playsInline preload="none" poster={run.selected_image_output?.thumbnail_url} src={run.output.content_url} aria-label="快速生成的视频预览">浏览器不支持视频播放。</video>}<div><strong>{run.output.media_kind === "IMAGE" ? "图片已生成" : "视频已生成"}</strong><p className="muted">这是独立作品，不会出现在项目列表中。规划、候选选择和模型执行快照均随本次生成保留。</p><LocalArtifactReference artifact={run.output.artifact} title="独立作品与保存位置" relativeLabel="数据目录相对路径" downloadLabel={`下载${run.output.media_kind === "IMAGE" ? "图片" : "视频"}`} /></div></section>}
     {run?.state === "SUCCEEDED" && !run.output && <p className="notice">生成任务已完成，作品登记仍在收口；可从最近生成继续查看。</p>}
     {message && <p role="alert" className="inline-error">{message}</p>}
     {recentRuns.length > 0 && <details className="one-sentence-video-recent"><summary>最近生成</summary><div>{recentRuns.map((item) => <button type="button" key={item.id} onClick={() => { setRun(item); setMode(item.mode); setStory(item.story.text); setLlmId(item.llm_profile_version_id); setImageId(item.image_profile_version_id ?? ""); setVideoId(item.video_profile_version_id ?? ""); setLlmParameters(item.model_parameters?.llm ?? {}); setImageParameters(item.model_parameters?.image ?? {}); setVideoParameters(item.model_parameters?.video ?? {}); setChosenCandidateId(item.selected_candidate_id ?? ""); setReviewConfirmed(false); }}><span><strong>{item.story.text}</strong><small>{routeLabel(item.mode)}</small></span><span>{STATE_LABELS[item.state] ?? item.state}</span></button>)}</div></details>}

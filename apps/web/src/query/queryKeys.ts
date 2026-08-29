@@ -81,4 +81,13 @@ export const queryKeys = {
     drafts: (projectId: string) => ["projects", projectId, "script-breakdown-drafts"] as const,
     sceneRanges: (episodeId: string) => ["source-passage", "scene-ranges", episodeId] as const,
   },
+  adaptationPlanning: {
+    all: ["adaptation-planning"] as const,
+    project: (projectId: string) => ["adaptation-planning", "project", projectId] as const,
+    sources: (projectId: string) => ["adaptation-planning", "project", projectId, "sources"] as const,
+    plans: (projectId: string) => ["adaptation-planning", "project", projectId, "plans"] as const,
+    preflight: (projectId: string, sourceVersionId: string, targetDurationMs: number) =>
+      ["adaptation-planning", "project", projectId, "preflight", { sourceVersionId, targetDurationMs }] as const,
+    workspace: (planId: string) => ["adaptation-planning", "workspace", planId] as const,
+  },
 } as const;

@@ -15,7 +15,7 @@ type BreakdownJobMonitorProps = {
   error: unknown;
   jobAction: string | null;
   onRefetch: () => void;
-  onMutate: (job: Job, action: "cancel" | "retry") => Promise<void>;
+  onMutate: (job: Job, action: "cancel" | "retry" | "delete") => Promise<void>;
   onDraftReady?: (job: Job) => void;
 };
 
@@ -56,6 +56,7 @@ export function BreakdownJobMonitor({
             const isLocalModelGenerating = state === "RUNNING" && phase === "CALLING_LOCAL_LLM";
             const canCancel = ["QUEUED", "CLAIMED", "RUNNING"].includes(state);
             const canRetry = ["FAILED", "NEEDS_ATTENTION", "ORPHANED"].includes(state);
+            const canDelete = ["SUCCEEDED", "FAILED", "CANCELLED", "NEEDS_ATTENTION", "ORPHANED"].includes(state);
             const subjectSession = String(job.subject_id ?? "");
             const jobSnapshot = job.input_snapshot && typeof job.input_snapshot === "object"
               ? job.input_snapshot as Record<string, unknown>
@@ -110,6 +111,11 @@ export function BreakdownJobMonitor({
                   {canRetry ? (
                     <button type="button" className="secondary" disabled={jobAction !== null} onClick={() => void onMutate(job, "retry")}>
                       {jobAction === `retry:${job.id}` ? "重新排队中…" : "失败重试"}
+                    </button>
+                  ) : null}
+                  {canDelete ? (
+                    <button type="button" className="secondary danger-outline" disabled={jobAction !== null} onClick={() => void onMutate(job, "delete")}>
+                      {jobAction === `delete:${job.id}` ? "删除中…" : "删除记录"}
                     </button>
                   ) : null}
                 </div>

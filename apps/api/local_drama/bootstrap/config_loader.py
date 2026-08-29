@@ -5,7 +5,9 @@ import re
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from local_drama.bootstrap.config_migrations import migrate_payload
 
 
 class NetworkConfig(BaseModel):
@@ -14,6 +16,7 @@ class NetworkConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = Field(default=3210, ge=1, le=65535)
     allowed_origins: tuple[str, ...] = ()
+    firewall_remote_address: str = "LocalSubnet"
     trusted_lan_unauthenticated: bool = False
 
 
@@ -40,13 +43,30 @@ class RuntimeConfig(BaseModel):
     llm_provider: str = "OLLAMA_LOOPBACK"
     llm_base_url: str = "http://127.0.0.1:11434"
     llm_model: str | None = None
+    model_root: Path | None = None
     model_library_roots: tuple[Path, ...] = ()
+    model_download_source_hosts: tuple[str, ...] = ()
     worker_channels: tuple[str, ...] = ("CPU", "GPU_H3")
+    local_ai_python: Path | None = None
+    local_ai_adapter: Path | None = None
+    local_ai_model_root: Path | None = None
+    latentsync_python: Path | None = None
+    latentsync_root: Path | None = None
+
+    @field_validator("model_download_source_hosts")
+    @classmethod
+    def validate_model_download_source_hosts(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        normalized = tuple(item.strip().casefold() for item in value if item.strip())
+        if any("/" in item or ":" in item or "@" in item or " " in item for item in normalized):
+            raise ValueError("model_download_source_hosts must contain host names only")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("model_download_source_hosts must not contain duplicates")
+        return normalized
 
 
 class MachineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    schema_version: Literal[1] = 1
+    schema_version: Literal[3] = 3
     instance_id: str = Field(default="default", pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
     environment: str = "production"
     install_profile: Literal["DESKTOP", "SERVER"] = "DESKTOP"
@@ -58,15 +78,29 @@ class MachineConfig(BaseModel):
     model_manifest: Path | None = None
 
 
-_VARIABLE = re.compile(r"\$\{(?P<name>RELEASE_ROOT|INSTANCE_ROOT)\}")
+_VARIABLE = re.compile(r"\$\{(?P<name>RELEASE_ROOT|INSTANCE_ROOT|MODEL_ROOT)\}")
 
 
-def _expand_path(path: Path | None, *, release_root: Path, instance_root: Path) -> Path | None:
+def _expand_path(
+    path: Path | None,
+    *,
+    release_root: Path,
+    instance_root: Path,
+    model_root: Path | None = None,
+) -> Path | None:
     if path is None:
         return None
     replacements = {"RELEASE_ROOT": str(release_root), "INSTANCE_ROOT": str(instance_root)}
+    if model_root is not None:
+        replacements["MODEL_ROOT"] = str(model_root)
+    missing = sorted({match.group("name") for match in _VARIABLE.finditer(str(path)) if match.group("name") not in replacements})
+    if missing:
+        raise ValueError(f"path references unavailable variables: {', '.join(missing)}")
     raw = _VARIABLE.sub(lambda match: replacements[match.group("name")], str(path))
-    return Path(raw).expanduser().resolve()
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        candidate = instance_root / candidate
+    return candidate.resolve()
 
 
 def load_machine_config(path: Path, *, release_root: Path, instance_root: Path) -> MachineConfig | None:
@@ -76,7 +110,10 @@ def load_machine_config(path: Path, *, release_root: Path, instance_root: Path) 
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise ValueError(f"machine config is not valid JSON: {path}") from error
-    config = MachineConfig.model_validate(payload)
+    # The installer/Host persists this migration under backup during upgrade.
+    # This pure fallback keeps source and developer imports read-only while
+    # honoring the exact same central migration ladder.
+    config = MachineConfig.model_validate(migrate_payload(payload))
     storage = config.storage.model_copy(
         update={
             name: _expand_path(getattr(config.storage, name), release_root=release_root, instance_root=instance_root)
@@ -87,12 +124,43 @@ def load_machine_config(path: Path, *, release_root: Path, instance_root: Path) 
         update={
             "ffmpeg": _expand_path(config.tools.ffmpeg, release_root=release_root, instance_root=instance_root),
             "ffprobe": _expand_path(config.tools.ffprobe, release_root=release_root, instance_root=instance_root),
+            "fallback_dirs": tuple(
+                str(_expand_path(Path(directory), release_root=release_root, instance_root=instance_root))
+                for directory in config.tools.fallback_dirs
+            ),
+        }
+    )
+    model_root = _expand_path(config.runtime.model_root, release_root=release_root, instance_root=instance_root)
+    runtime_paths = {
+        name: _expand_path(
+            getattr(config.runtime, name),
+            release_root=release_root,
+            instance_root=instance_root,
+            model_root=model_root,
+        )
+        for name in (
+            "local_ai_python",
+            "local_ai_adapter",
+            "local_ai_model_root",
+            "latentsync_python",
+            "latentsync_root",
+        )
+    }
+    runtime = config.runtime.model_copy(
+        update={
+            **runtime_paths,
+            "model_root": model_root,
+            "model_library_roots": tuple(
+                _expand_path(root, release_root=release_root, instance_root=instance_root, model_root=model_root)
+                for root in config.runtime.model_library_roots
+            ),
         }
     )
     return config.model_copy(
         update={
             "storage": storage,
             "tools": tools,
+            "runtime": runtime,
             "frontend_dist": _expand_path(config.frontend_dist, release_root=release_root, instance_root=instance_root),
             "model_manifest": _expand_path(config.model_manifest, release_root=release_root, instance_root=instance_root),
         }
@@ -112,8 +180,15 @@ def settings_values(config: MachineConfig) -> dict[str, Any]:
         "llm_provider": config.runtime.llm_provider,
         "llm_base_url": config.runtime.llm_base_url,
         "llm_model": config.runtime.llm_model,
+        "model_root": config.runtime.model_root,
         "model_library_roots": config.runtime.model_library_roots,
+        "model_download_source_hosts": config.runtime.model_download_source_hosts,
         "worker_channels": config.runtime.worker_channels,
+        "local_ai_python": config.runtime.local_ai_python,
+        "local_ai_adapter": config.runtime.local_ai_adapter,
+        "local_ai_model_root": config.runtime.local_ai_model_root,
+        "latentsync_python": config.runtime.latentsync_python,
+        "latentsync_root": config.runtime.latentsync_root,
         "tool_fallback_dirs": config.tools.fallback_dirs,
         "ffmpeg_override": config.tools.ffmpeg,
         "ffprobe_override": config.tools.ffprobe,

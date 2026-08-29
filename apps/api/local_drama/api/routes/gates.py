@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ipaddress
 from pathlib import Path
 
 from fastapi import APIRouter, Request
@@ -28,6 +27,7 @@ from local_drama.api.schemas.g7_model import (
     ModelLicenseEvidenceRequest,
     ModelRegistryScanRequest,
 )
+from local_drama.api.server_paths import require_configured_model_file, require_server_loopback
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.g6_readiness import G6ReadinessService
 from local_drama.application.g7_readiness import G7ReadinessService
@@ -44,23 +44,10 @@ from local_drama.platform.contracts import FilePickerRequest
 router = APIRouter(tags=["phase-gates"])
 
 
-def _require_server_dialog(request: Request) -> None:
-    if not request.app.state.settings.is_lan_service:
-        return
-    host = request.client.host if request.client else ""
-    try:
-        allowed = ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        allowed = host.casefold() in {"localhost", "testclient"}
-    if not allowed:
-        raise DomainRuleError("SERVER_DIALOG_REMOTE_CLIENT", "远程浏览器不能打开服务器桌面的文件选择器",
-                              suggested_action="请使用浏览器上传，或从管理员配置的服务端资源库选择")
-
-
 @router.post("/system/dialogs:model-file", operation_id="pickLocalModelFile")
 def pick_model_file(request: Request) -> dict[str, object]:
     try:
-        _require_server_dialog(request)
+        require_server_loopback(request, action="打开服务器文件选择器选择")
         selection = request.app.state.platform.file_picker.choose(
             FilePickerRequest("MODEL", "选择电脑中的模型文件", (".safetensors", ".ckpt", ".bin", ".pt", ".pth"))
         )
@@ -72,7 +59,7 @@ def pick_model_file(request: Request) -> dict[str, object]:
 @router.post("/system/dialogs:document-file", operation_id="pickLocalDocumentFile")
 def pick_document_file(request: Request) -> dict[str, object]:
     try:
-        _require_server_dialog(request)
+        require_server_loopback(request, action="打开服务器文件选择器选择")
         selection = request.app.state.platform.file_picker.choose(
             FilePickerRequest("DOCUMENT", "选择电脑中的剧本文档", (".txt", ".md", ".markdown", ".docx"))
         )
@@ -91,7 +78,7 @@ async def list_model_library_roots(request: Request) -> dict[str, object]:
 @router.post("/model-registry:scan", operation_id="scanLocalModelRegistry")
 async def scan_local_model_registry(payload: ModelRegistryScanRequest, request: Request) -> dict[str, object]:
     try:
-        requested = Path(payload.root_path).resolve()
+        requested = Path(payload.root_path).expanduser().resolve()
         configured = tuple(root.resolve() for root in request.app.state.settings.model_library_roots)
         if configured and requested not in configured:
             raise DomainRuleError("MODEL_LIBRARY_ROOT_NOT_ALLOWED", "只能扫描管理员配置的服务端模型库")
@@ -265,11 +252,12 @@ async def get_global_model_registry(request: Request) -> dict[str, object]:
 )
 async def register_global_model_reference(payload: LocalModelReferenceRequest, request: Request) -> dict[str, object]:
     try:
+        model_path = require_configured_model_file(request, payload.machine_path_ref)
         artifact = ModelCompatibilityService(request.app.state.database).register_local_reference(
             None,
             payload.code,
             payload.kind,
-            payload.machine_path_ref,
+            str(model_path),
             payload.license_note,
         )
         return {"artifact": artifact}
@@ -296,11 +284,12 @@ async def create_global_model_compatibility_report(payload: ModelCompatibilityRe
 @router.post("/projects/{project_id}/model-artifacts", status_code=201, operation_id="registerLocalModelReference")
 async def register_local_model_reference(project_id: str, payload: LocalModelReferenceRequest, request: Request) -> dict[str, object]:
     try:
+        model_path = require_configured_model_file(request, payload.machine_path_ref)
         artifact = ModelCompatibilityService(request.app.state.database).register_local_reference(
             project_id,
             payload.code,
             payload.kind,
-            payload.machine_path_ref,
+            str(model_path),
             payload.license_note,
         )
         return {"artifact": artifact}

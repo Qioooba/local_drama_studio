@@ -1,9 +1,9 @@
 [CmdletBinding()]
 param(
-    [int]$Port = 3210,
-    [string]$HostAddress = "127.0.0.1",
+    [int]$Port,
+    [string]$HostAddress,
     [ValidateSet("LOCAL_ONLY", "LAN_SERVICE")]
-    [string]$NetworkMode = "LOCAL_ONLY"
+    [string]$NetworkMode
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,18 +25,28 @@ finally {
 $env:LOCAL_DRAMA_INSTALL_ROOT = $RepositoryRoot
 $env:LOCAL_DRAMA_INSTANCE_ROOT = $RepositoryRoot
 $env:LOCAL_DRAMA_PYTHON = Join-Path $RepositoryRoot ".venv\Scripts\python.exe"
-$env:LOCAL_DRAMA_HOST = $HostAddress
-$env:LOCAL_DRAMA_PORT = [string]$Port
-$env:LOCAL_DRAMA_NETWORK_MODE = $NetworkMode
+if ($PSBoundParameters.ContainsKey("HostAddress")) {
+    $env:LOCAL_DRAMA_HOST = $HostAddress
+}
+if ($PSBoundParameters.ContainsKey("Port")) {
+    $env:LOCAL_DRAMA_PORT = [string]$Port
+}
+if ($PSBoundParameters.ContainsKey("NetworkMode")) {
+    $env:LOCAL_DRAMA_NETWORK_MODE = $NetworkMode
+}
 $Process = Start-Process -FilePath $HostBinary -ArgumentList @("run") -WorkingDirectory $RepositoryRoot -WindowStyle Hidden -PassThru
 $StatePath = Join-Path $RepositoryRoot "runtime\host-state.json"
+$MachineConfig = Get-Content -LiteralPath (Join-Path $RepositoryRoot "config\config.json") -Raw | ConvertFrom-Json
+$EffectiveHost = if ($PSBoundParameters.ContainsKey("HostAddress")) { $HostAddress } else { [string]$MachineConfig.network.host }
+$EffectivePort = if ($PSBoundParameters.ContainsKey("Port")) { $Port } else { [int]$MachineConfig.network.port }
+$EffectiveMode = if ($PSBoundParameters.ContainsKey("NetworkMode")) { $NetworkMode } else { [string]$MachineConfig.network.mode }
 for ($Attempt = 0; $Attempt -lt 240; $Attempt++) {
     Start-Sleep -Milliseconds 250
     if ($Process.HasExited) { throw "Runtime Host exited during startup with code $($Process.ExitCode)" }
     if (Test-Path -LiteralPath $StatePath) {
         $State = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
         if ($State.status -eq "RUNNING") {
-            Write-Output "LocalDramaStudio started via Runtime Host PID=$($Process.Id) API=$($State.api_pid) WORKER=$($State.worker_pid) http://${HostAddress}:$Port"
+            Write-Output "LocalDramaStudio started via Runtime Host PID=$($Process.Id) API=$($State.api_pid) WORKER=$($State.worker_pid) mode=$EffectiveMode bind=${EffectiveHost}:$EffectivePort"
             exit 0
         }
         if ($State.status -eq "MAINTENANCE_FAILED") { throw "Startup database maintenance failed; run Host doctor and inspect logs" }

@@ -155,7 +155,7 @@ export function QuickGenerationModelSettings({
       <label>模型
         <select value={profileVersionId} disabled={disabled} onChange={(event) => { setPresetId(""); setPresetName(""); onProfileChange(event.target.value); }}>
           <option value="">请选择支持当前动作的模型</option>
-          {choices.map(({ model, route }) => <option key={route.profile_version_id} value={route.profile_version_id}>{model.name} · {model.actions.map((item) => item === "TEXT_TO_VIDEO" ? "文生视频" : item === "IMAGE_TO_VIDEO" ? "图生视频" : item === "TEXT_TO_IMAGE" ? "文生图" : "文字规划").join(" / ")}{route.executable ? "" : ` · 路线未就绪（${route.status}）`}</option>)}
+          {choices.map(({ model, route }) => <option key={route.profile_version_id} value={route.profile_version_id} disabled={!route.executable}>{model.name} · {model.actions.map((item) => item === "TEXT_TO_VIDEO" ? "文生视频" : item === "IMAGE_TO_VIDEO" ? "图生视频" : item === "TEXT_TO_IMAGE" ? "文生图" : "文字规划").join(" / ")}{route.executable ? "" : ` · 路线未就绪（${route.status}，不可选）`}</option>)}
         </select>
       </label>
       {profileVersionId ? <ProfileExecutionDetailButton profileVersionId={profileVersionId} /> : null}

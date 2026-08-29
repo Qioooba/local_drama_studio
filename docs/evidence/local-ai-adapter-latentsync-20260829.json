@@ -1,0 +1,10 @@
+{
+  "task": "latentsync",
+  "status": "PASS",
+  "video_input": "F:\\AI_Projects\\h3\\local_drama_studio\\work\\local-model-tests\\latentsync-input.mp4",
+  "audio_input": "F:\\AI_Projects\\h3\\local_drama_studio\\work\\local-model-tests\\voxcpm2-test.wav",
+  "output": "F:\\AI_Projects\\h3\\local_drama_studio\\work\\local-model-tests\\latentsync-adapter-output.mp4",
+  "output_bytes": 1248456,
+  "inference_steps": 1,
+  "network_used": false
+}

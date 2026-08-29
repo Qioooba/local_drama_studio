@@ -1,0 +1,43 @@
+{
+  "status": "PASS",
+  "network_used": false,
+  "database": "F:\\AI_Projects\\h3\\local_drama_studio\\data\\local_drama.sqlite3",
+  "runtimes": {
+    "pytorch-local-ai": "6ea1c1ec-0570-52fc-89f2-8a71f91451d9",
+    "pytorch-latentsync": "ece59d11-15b7-55d0-93c3-8019c7d7d9cd"
+  },
+  "artifacts": {
+    "qwen3-embedding-8b": {
+      "id": "1b422e47-9b16-563e-b1d4-495d448062d9",
+      "sha256": "857a39ab5cae495157368b1152735152fd82873ccdf80a8cf222abb1ba515661",
+      "size_bytes": 15150575778
+    },
+    "voxcpm2": {
+      "id": "c7293ca8-0803-5170-827d-b937e87a9c62",
+      "sha256": "c4b78bd7fa86dfbacaaa8615f3302f691ec6f487af843c6056197c8603cc395b",
+      "size_bytes": 4960731866
+    },
+    "qwen3-asr-1.7b": {
+      "id": "48d29374-fc7a-57ac-8a0b-4298ed8b1aab",
+      "sha256": "eabe628eab97879b650e6fc704ed5eb90a8ce4899b88c9654e75922bd602c06b",
+      "size_bytes": 4087646324
+    },
+    "qwen3-forced-aligner-0.6b": {
+      "id": "7ad95152-3103-5fec-861e-3a78896bb0bc",
+      "sha256": "e31b404625bcbc431ad6010ae5c19743b8698eedf1e28fde05608f888915676c",
+      "size_bytes": 1847236856
+    },
+    "latentsync-1.6": {
+      "id": "00407cf1-1553-5c7c-82b3-9c3d39357fa2",
+      "sha256": "d24245f0542fde477c4d2a509b1539ecc80ac40fa639da22cd8fc101ea2aa598",
+      "size_bytes": 9635785477
+    }
+  },
+  "profiles": [
+    "local-suite-voxcpm2-tts",
+    "local-suite-voxcpm2-voice-clone",
+    "local-suite-qwen3-asr",
+    "local-suite-qwen3-alignment",
+    "local-suite-latentsync"
+  ]
+}

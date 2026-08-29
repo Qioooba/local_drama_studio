@@ -1,7 +1,7 @@
 {
   "schema_version": "localdrama.release-migration-contract.v1",
   "expected_heads": [
-    "0068_local_ai_model_runtime"
+    "0086_model_platform_quick_create_v2_runs"
   ],
   "upgrade_command": ".venv\\\\Scripts\\\\python.exe -m alembic upgrade heads",
   "rollback_policy": "restore_verified_pre_migration_backup_with_matching_code",
@@ -227,6 +227,143 @@
         "pytorch_single_gpu_runtime",
         "embedding_indexes_and_chunks",
         "speech_alignment_runs"
+      ]
+    },
+    {
+      "revision": "0069_job_history_deletion",
+      "facts": [
+        "reversible_job_history_deletion_metadata",
+        "jobs_deleted_at_index"
+      ]
+    },
+    {
+      "revision": "0070_model_platform_v2_foundation",
+      "facts": [
+        "independent_mp_model_runtime_capability_profile_schema",
+        "model_identity_separated_from_model_library_location",
+        "versioned_runtime_parameter_binding_and_resource_contracts",
+        "discovery_validation_and_install_lifecycle_records",
+        "capability_assignment_without_legacy_dual_write"
+      ]
+    },
+    {
+      "revision": "0070_adaptation_planning_foundation",
+      "facts": [
+        "immutable_long_form_adaptation_planning_foundation"
+      ]
+    },
+    {
+      "revision": "0071_model_platform_adaptation_merge",
+      "facts": [
+        "single_release_head_after_concurrent_foundation_migrations"
+      ]
+    },
+    {
+      "revision": "0072_adaptation_analysis_job_stage",
+      "facts": [
+        "adaptation_analysis_job_stage_definition"
+      ]
+    },
+    {
+      "revision": "0073_model_platform_execution_snapshots",
+      "facts": [
+        "immutable_v2_execution_snapshots_with_parameter_provenance"
+      ]
+    },
+    {
+      "revision": "0073_adaptation_plan_materialization",
+      "facts": [
+        "approved_adaptation_plan_materialization"
+      ]
+    },
+    {
+      "revision": "0074_model_platform_execution_jobs",
+      "facts": [
+        "v2_snapshot_to_job_one_to_one_link",
+        "model_platform_execution_job_stage"
+      ]
+    },
+    {
+      "revision": "0075_model_platform_adaptation_execution_merge",
+      "facts": [
+        "single_release_head_after_execution_and_materialization_migrations"
+      ]
+    },
+    {
+      "revision": "0076_model_platform_snapshot_runtime_configuration",
+      "facts": [
+        "runtime_configuration_frozen_with_v2_execution_snapshot"
+      ]
+    },
+    {
+      "revision": "0077_model_platform_snapshot_model_bindings",
+      "facts": [
+        "native_model_installation_bindings_frozen_with_v2_execution_snapshot",
+        "workers_do_not_re_resolve_live_profile_model_locator"
+      ]
+    },
+    {
+      "revision": "0078_model_platform_comfy_workflow_bindings",
+      "facts": [
+        "versioned_comfy_offering_to_workflow_bindings",
+        "workflow_schema_validation_evidence_bound_to_model_installation"
+      ]
+    },
+    {
+      "revision": "0079_model_platform_comfy_smoke_jobs",
+      "facts": [
+        "durable_comfy_capability_smoke_job_to_frozen_workflow_binding_link",
+        "model_platform_comfy_smoke_job_stage"
+      ]
+    },
+    {
+      "revision": "0080_model_platform_snapshot_execution_binding",
+      "facts": [
+        "profile_owned_execution_binding_frozen_with_v2_execution_snapshot",
+        "comfy_worker_never_re_resolves_live_profile_workflow_binding"
+      ]
+    },
+    {
+      "revision": "0081_model_platform_profile_version_crosswalks",
+      "facts": [
+        "operator_approved_legacy_to_v2_profile_version_crosswalks",
+        "shadow_comparison_never_infers_profile_equivalence_from_names_or_paths"
+      ]
+    },
+    {
+      "revision": "0082_model_platform_business_selection_rollouts",
+      "facts": [
+        "auditable_business_surface_capability_scope_cutover_eligibility",
+        "missing_or_shadow_gate_never_switches_execution"
+      ]
+    },
+    {
+      "revision": "0083_model_platform_scope_override_set_versions",
+      "facts": [
+        "immutable_profile_bound_scope_override_set_versions",
+        "capability_assignment_references_override_version_not_mutable_parameter_json"
+      ]
+    },
+    {
+      "revision": "0084_model_platform_project_knowledge_indexes",
+      "facts": [
+        "v2_project_knowledge_index_runs_batches_vectors",
+        "embedding_artifact_to_vector_provenance"
+      ]
+    },
+    {
+      "revision": "0085_model_platform_project_knowledge_retry_attempts",
+      "facts": [
+        "immutable_project_knowledge_retry_attempt_lineage",
+        "failed_attempt_never_overwrites_verified_embedding_evidence"
+      ]
+    },
+    {
+      "revision": "0086_model_platform_quick_create_v2_runs",
+      "facts": [
+        "v2_only_quick_create_run_and_step_lineage",
+        "candidate_selection_references_verified_v2_artifact",
+        "downstream_video_step_references_frozen_v2_job_snapshot_and_input_artifact"
       ]
     }
   ]

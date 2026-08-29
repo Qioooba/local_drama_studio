@@ -8,12 +8,15 @@ import subprocess
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from local_drama.application.export_archives import materialize_verified_export_archive
+from local_drama.application.local_artifacts import local_artifact_reference
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.atomic import replace_path
+from local_drama.infrastructure.filesystem.path_policy import controlled_path, safe_filename
 
 
 def _sha256(path: Path) -> str:
@@ -88,10 +91,12 @@ class ContactSheetExportService:
             if not isinstance(items, list) or not items:
                 raise ValueError("manifest has no items")
             for item in items:
-                original = (final / item["original_rel_path"]).resolve()
-                thumbnail = (final / item["thumbnail_rel_path"]).resolve()
-                if not original.is_relative_to(final) or not thumbnail.is_relative_to(final):
-                    raise ValueError("manifest path escapes export")
+                original = controlled_path(
+                    final, str(item["original_rel_path"]), must_exist=True, require_file=True, code="CONTACT_SHEET_EXPORT_TAMPERED"
+                )
+                thumbnail = controlled_path(
+                    final, str(item["thumbnail_rel_path"]), must_exist=True, require_file=True, code="CONTACT_SHEET_EXPORT_TAMPERED"
+                )
                 if (
                     not original.is_file()
                     or original.is_symlink()
@@ -106,7 +111,7 @@ class ContactSheetExportService:
             if not (final / "contact-sheet.html").is_file():
                 raise ValueError("contact sheet document missing")
             return len(items)
-        except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError, DomainRuleError) as error:
             raise DomainRuleError(
                 "CONTACT_SHEET_EXPORT_TAMPERED",
                 "已有联系表导出不完整或已被修改，请保留现场并人工移走该目录后重试",
@@ -117,7 +122,7 @@ class ContactSheetExportService:
         episode, items = self._selected_items(episode_id)
         if not items:
             raise DomainRuleError("CONTACT_SHEET_SELECTION_REQUIRED", "当前集没有已选择的图片或视频版本")
-        project_root = (self.settings.projects_root / str(episode["root_rel"])).resolve()
+        project_root = self.settings.resolve_project_root(str(episode["root_rel"]))
         if not project_root.is_relative_to(self.settings.projects_root.resolve()) or not project_root.is_dir() or project_root.is_symlink():
             raise DomainRuleError("PROJECT_ROOT_INVALID", "项目根目录无效")
         identity = [{key: item[key] for key in ("shot_id", "media_version_id", "selection_type", "sha256", "byte_size")} for item in items]
@@ -128,7 +133,7 @@ class ContactSheetExportService:
             if not final.is_dir() or final.is_symlink():
                 raise DomainRuleError("CONTACT_SHEET_EXPORT_TAMPERED", "联系表导出目标不是安全目录")
             verified_count = self._verify_existing(final, export_hash)
-            return self._result(project_root, final, export_hash, verified_count, reused=True)
+            return self._result(project_root, final, episode, export_hash, verified_count, reused=True)
         partial = base / f".contact-sheet.partial-{uuid.uuid4().hex}"
         try:
             originals = partial / "originals"
@@ -138,12 +143,17 @@ class ContactSheetExportService:
             manifest_items: list[dict[str, Any]] = []
             cards: list[str] = []
             for index, item in enumerate(items, start=1):
-                source = (project_root / str(item["rel_path"])).resolve()
-                if not source.is_relative_to(project_root) or source.is_symlink() or not source.is_file():
-                    raise DomainRuleError("MEDIA_PATH_INVALID", "已选媒体路径无效", {"media_version_id": item["media_version_id"]})
+                source = controlled_path(
+                    project_root,
+                    str(item["rel_path"]),
+                    must_exist=True,
+                    require_file=True,
+                    code="MEDIA_PATH_INVALID",
+                )
                 if source.stat().st_size != int(item["byte_size"]) or _sha256(source) != str(item["sha256"]):
                     raise DomainRuleError("SOURCE_INTEGRITY_FAILED", "已选媒体完整性校验失败", {"media_version_id": item["media_version_id"]})
-                stem = f"{index:03d}-{item['shot_code']}-{str(item['media_version_id'])[:8]}"
+                shot_file_code = safe_filename(str(item["shot_code"]), default=f"shot-{index:03d}")
+                stem = f"{index:03d}-{shot_file_code}-{str(item['media_version_id'])[:8]}"
                 original = originals / f"{stem}{source.suffix.lower()}"
                 shutil.copyfile(source, original)
                 if _sha256(original) != str(item["sha256"]):
@@ -171,13 +181,23 @@ class ContactSheetExportService:
         except Exception:
             shutil.rmtree(partial, ignore_errors=True)
             raise
-        return self._result(project_root, final, export_hash, len(items), reused=False)
+        return self._result(project_root, final, episode, export_hash, len(items), reused=False)
 
     def download_archive(self, episode_id: str, rel_path: str) -> Path:
         episode, _items = self._selected_items(episode_id)
-        project_root = (self.settings.projects_root / str(episode["root_rel"])).resolve()
+        project_root = controlled_path(
+            self.settings.projects_root,
+            str(episode["root_rel"]),
+            must_exist=True,
+            code="PROJECT_ROOT_INVALID",
+        )
         allowed = (project_root / "01_story" / "episodes" / str(episode["code"]) / "exports").resolve()
-        candidate = (project_root / rel_path).resolve()
+        candidate = controlled_path(
+            project_root,
+            rel_path,
+            must_exist=True,
+            code="CONTACT_SHEET_DOWNLOAD_NOT_ALLOWED",
+        )
         if candidate.parent != allowed or not candidate.name.startswith("contact-sheet-"):
             raise DomainRuleError("CONTACT_SHEET_DOWNLOAD_NOT_ALLOWED", "只能下载本集已注册的联系表导出")
         try:
@@ -188,5 +208,16 @@ class ContactSheetExportService:
         return materialize_verified_export_archive(candidate)
 
     @staticmethod
-    def _result(project_root: Path, final: Path, export_hash: str, item_count: int, *, reused: bool) -> dict[str, Any]:
-        return {"schema_version": "localdrama.contact-sheet.v1", "status": "EXPORTED", "rel_path": final.relative_to(project_root).as_posix(), "manifest_rel_path": (final / "manifest.json").relative_to(project_root).as_posix(), "contact_sheet_rel_path": (final / "contact-sheet.html").relative_to(project_root).as_posix(), "export_hash": export_hash, "item_count": item_count, "reused": reused, "database_mutated": False, "runtime_contacted": False, "network_contacted": False}
+    def _result(project_root: Path, final: Path, episode: dict[str, Any], export_hash: str, item_count: int, *, reused: bool) -> dict[str, Any]:
+        rel_path = final.relative_to(project_root).as_posix()
+        artifact = local_artifact_reference(
+            root=project_root,
+            path=final,
+            scope="PROJECT",
+            kind="DIRECTORY",
+            display_name=f"{episode['code']} · {episode['title']} · 联系表",
+            download_url=f"/api/v1/episodes/{quote(str(episode['id']), safe='')}/contact-sheet:download?rel_path={quote(rel_path, safe='')}",
+            download_filename=f"{final.name}.zip",
+            error_code="CONTACT_SHEET_EXPORT_PATH_INVALID",
+        )
+        return {"schema_version": "localdrama.contact-sheet.v1", "status": "EXPORTED", "artifact": artifact, "rel_path": rel_path, "manifest_rel_path": (final / "manifest.json").relative_to(project_root).as_posix(), "contact_sheet_rel_path": (final / "contact-sheet.html").relative_to(project_root).as_posix(), "export_hash": export_hash, "item_count": item_count, "reused": reused, "database_mutated": False, "runtime_contacted": False, "network_contacted": False}

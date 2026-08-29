@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from local_drama.api.schemas.common import LocalArtifactReference
 
 
 class CameraPlanResolveRequest(BaseModel):
@@ -36,6 +38,42 @@ class DocumentImportCommitRequest(BaseModel):
     expected_preview_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     source_paragraph_start: int | None = Field(default=None, ge=1)
     source_paragraph_end: int | None = Field(default=None, ge=1)
+
+
+class DocumentImportChapter(BaseModel):
+    title: str
+    start_paragraph: int = Field(ge=1)
+    end_paragraph: int = Field(ge=1)
+
+
+class DocumentImportPreview(BaseModel):
+    character_count: int = Field(ge=0)
+    paragraph_count: int = Field(ge=1)
+    paragraphs: list[str]
+    chapters: list[DocumentImportChapter] | None = None
+    preview_character_limit: int = Field(ge=1)
+    preview_truncated: bool
+    offset_unit: Literal["UNICODE_CODEPOINT"]
+    requires_llm_confirmation: Literal[True]
+
+
+class DocumentImportResult(BaseModel):
+    source_document_id: str = Field(min_length=1)
+    source_document_version_id: str = Field(min_length=1)
+    import_session_id: str = Field(min_length=1)
+    media_version_id: str = Field(min_length=1)
+    stored_source: LocalArtifactReference
+    status: Literal["PREVIEW_READY", "COMMITTED"]
+    preview_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    reused: bool | None = None
+    index_status: Literal["READY", "FAILED_RETRYABLE"]
+    preview: DocumentImportPreview
+
+
+class DocumentImportResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    import_result: DocumentImportResult = Field(alias="import")
 
 
 class SourceParagraphItem(BaseModel):

@@ -249,6 +249,38 @@ def test_jobs_server_pagination_is_bounded_and_cursored(workspace, database) -> 
     assert newest["updated_at"]
 
 
+def test_terminal_job_can_be_deleted_from_history_without_erasing_evidence(workspace, database) -> None:
+    project = _project(workspace, database, "g5_job_history_delete")
+    project_id = str(project["id"])
+    service = JobService(database, workspace)
+    active = _create(service, project_id, "delete-active")
+    with pytest.raises(DomainRuleError, match="运行中的任务不能删除"):
+        service.delete(str(active["id"]))
+
+    cancelled = service.cancel(str(active["id"]))
+    deleted = service.delete(str(cancelled["id"]))
+    assert deleted["deleted"] is True
+    assert service.list_jobs(project_id) == []
+    with pytest.raises(DomainRuleError, match="Job 不存在"):
+        service.get_job(str(cancelled["id"]))
+
+    replay = service.delete(str(cancelled["id"]))
+    assert replay["idempotent"] is True
+
+    via_api = _create(service, project_id, "delete-via-api")
+    service.cancel(str(via_api["id"]))
+    with TestClient(create_app(workspace)) as client:
+        response = client.delete(f"/api/v1/jobs/{via_api['id']}")
+        assert response.status_code == 200
+        assert response.json()["deleted"] is True
+        assert all(item["id"] != via_api["id"] for item in client.get(f"/api/v1/jobs?project_id={project_id}").json()["items"])
+
+    with database.connect() as connection:
+        stored = connection.execute("SELECT state, deleted_at FROM jobs WHERE id=?", (cancelled["id"],)).fetchone()
+        assert stored["state"] == "CANCELLED"
+        assert stored["deleted_at"]
+
+
 def test_real_local_worker_proxy_thumbnail_and_artifact_registration(workspace, database) -> None:
     project = _project(workspace, database, "g5_media")
     source = workspace.work_root / "worker-input.mp4"

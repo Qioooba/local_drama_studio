@@ -10,13 +10,16 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 
 from local_drama.api.schemas.g3 import KeyframeCandidateRequest, MediaImportRequest, MediaIntegrityRepairRequest
+from local_drama.api.schemas.local_artifacts import ContactSheetExportEnvelope
 from local_drama.api.schemas.motion_controls import MotionControlRequest
+from local_drama.api.server_paths import require_server_loopback
 from local_drama.api.uploading import receive_bounded_upload
 from local_drama.application.contact_sheets import ContactSheetExportService
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.media import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, MediaService
 from local_drama.application.motion_controls import MotionControlService
 from local_drama.domain.errors import DomainRuleError
+from local_drama.infrastructure.filesystem.path_policy import safe_filename
 
 router = APIRouter(tags=["media"])
 
@@ -25,7 +28,7 @@ def service(request: Request) -> MediaService:
     return MediaService(request.app.state.database, request.app.state.settings)
 
 
-@router.post("/episodes/{episode_id}/contact-sheet:export", operation_id="exportEpisodeContactSheet")
+@router.post("/episodes/{episode_id}/contact-sheet:export", operation_id="exportEpisodeContactSheet", response_model=ContactSheetExportEnvelope)
 async def export_episode_contact_sheet(episode_id: str, request: Request) -> dict[str, object]:
     try:
         result = ContactSheetExportService(request.app.state.database, request.app.state.settings).export_episode(episode_id)
@@ -46,6 +49,7 @@ async def download_episode_contact_sheet(episode_id: str, rel_path: str, request
 @router.post("/media:import", status_code=201, operation_id="importMedia")
 async def import_media(payload: MediaImportRequest, request: Request) -> dict[str, object]:
     try:
+        require_server_loopback(request, action="按绝对路径导入媒体到")
         media_service = service(request)
         if payload.media_kind == "IMAGE":
             source = Path(payload.source_path)
@@ -88,8 +92,8 @@ async def list_project_media_catalogue(
 async def upload_project_media(project_id: str, request: Request) -> dict[str, object]:
     """Register one bounded browser upload for images, videos, or audio without accepting a client path."""
     filename = unquote(request.headers.get("x-file-name", "upload.bin"))
-    safe_filename = Path(filename).name[:180] or "upload.bin"
-    suffix = Path(safe_filename).suffix.lower()
+    upload_name = safe_filename(filename, default="upload.bin")
+    suffix = Path(upload_name).suffix.lower()
     
     settings = request.app.state.settings
     if suffix in IMAGE_EXTENSIONS:

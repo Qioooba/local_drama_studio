@@ -34,7 +34,7 @@ class ComposeService:
             project = connection.execute("SELECT root_rel FROM projects WHERE id=?", (plan["project_id"],)).fetchone()
         if project is None:
             raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": plan["project_id"]})
-        project_root = (self.settings.projects_root / str(project["root_rel"])).resolve()
+        project_root = self.settings.resolve_project_root(str(project["root_rel"]))
         expected_root = self.settings.projects_root.resolve()
         if not project_root.is_relative_to(expected_root) or not project_root.is_dir():
             raise DomainRuleError("PROJECT_ROOT_INVALID", "项目根目录不存在或越界", {"project_id": plan["project_id"]})

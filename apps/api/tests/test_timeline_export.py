@@ -95,6 +95,10 @@ def test_timeline_export_writes_otio_edl_and_verified_manifest_without_database_
     assert exported["network_contacted"] is False
     project_root = workspace.projects_root / str(project["root_rel"])
     export_root = project_root / str(exported["rel_path"])
+    assert exported["artifact"]["kind"] == "DIRECTORY"
+    assert Path(exported["artifact"]["server_absolute_path"]) == export_root.resolve()
+    assert exported["artifact"]["download_filename"].endswith(".zip")
+    assert exported["artifact"]["download_url"].startswith(f"/api/v1/timeline-revisions/{timeline['id']}/export:download")
     manifest = json.loads((project_root / str(exported["manifest_rel_path"])).read_text(encoding="utf-8"))
     assert manifest["timeline_revision_id"] == timeline["id"]
     assert manifest["revision_hash"] == timeline["revision_hash"]

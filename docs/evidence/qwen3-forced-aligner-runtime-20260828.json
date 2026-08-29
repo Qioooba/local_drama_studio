@@ -1,0 +1,67 @@
+{
+  "task": "alignment",
+  "status": "PASS",
+  "model": "F:\\AI_Models\\LocalDramaStudio\\Services\\Qwen3-ForcedAligner-0.6B-hf",
+  "audio": "F:\\AI_Projects\\h3\\local_drama_studio\\work\\local-model-tests\\voxcpm2-test.wav",
+  "transcript": "本地导演台配音测试通过。",
+  "language": "Chinese",
+  "timestamps": [
+    {
+      "text": "本",
+      "start_time": 0.16,
+      "end_time": 0.24
+    },
+    {
+      "text": "地",
+      "start_time": 0.4,
+      "end_time": 0.56
+    },
+    {
+      "text": "导",
+      "start_time": 0.56,
+      "end_time": 0.64
+    },
+    {
+      "text": "演",
+      "start_time": 0.72,
+      "end_time": 0.8
+    },
+    {
+      "text": "台",
+      "start_time": 0.88,
+      "end_time": 1.12
+    },
+    {
+      "text": "配",
+      "start_time": 1.2,
+      "end_time": 1.28
+    },
+    {
+      "text": "音",
+      "start_time": 1.28,
+      "end_time": 1.44
+    },
+    {
+      "text": "测",
+      "start_time": 1.44,
+      "end_time": 1.6
+    },
+    {
+      "text": "试",
+      "start_time": 1.6,
+      "end_time": 1.76
+    },
+    {
+      "text": "通",
+      "start_time": 1.76,
+      "end_time": 1.92
+    },
+    {
+      "text": "过",
+      "start_time": 1.92,
+      "end_time": 2.08
+    }
+  ],
+  "elapsed_seconds": 6.001,
+  "network_used": false
+}

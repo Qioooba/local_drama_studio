@@ -14,6 +14,7 @@ from local_drama.application.media import MediaService
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.infrastructure.filesystem.path_policy import controlled_path
 
 
 def _now() -> str:
@@ -204,11 +205,14 @@ class SqliteAudioWorkspaceRepository:
         if str(media["project_id"]) != str(episode["project_id"]) or str(media["media_kind"]) != "AUDIO":
             raise DomainRuleError("AUDIO_BINDING_MEDIA_INVALID", "音轨必须引用同项目已验证的音频")
         self._validate_range(command, int(media.get("duration_ms") or 0))
-        root = (self.settings.projects_root / str(episode["root_rel"])).resolve()
-        candidate = root / str(command["license_evidence_path_rel"])
-        evidence_path = candidate.resolve()
-        if candidate.is_symlink() or not evidence_path.is_relative_to(root) or not evidence_path.is_file():
-            raise DomainRuleError("AUDIO_LICENSE_EVIDENCE_INVALID", "授权证据必须是项目内普通文件")
+        root = self.settings.resolve_project_root(str(episode["root_rel"]))
+        evidence_path = controlled_path(
+            root,
+            str(command["license_evidence_path_rel"]),
+            must_exist=True,
+            require_file=True,
+            code="AUDIO_LICENSE_EVIDENCE_INVALID",
+        )
         evidence_hash, evidence_size = _hash_file(evidence_path)
         evidence = {"schema_version": "localdrama.audio-license-evidence.v1", "path_rel": evidence_path.relative_to(root).as_posix(), "sha256": evidence_hash, "byte_size": evidence_size}
         key = str(command["idempotency_key"]).strip()

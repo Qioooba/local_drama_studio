@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { bindStoryAssetToShot, createStoryAsset, listShotStoryAssets, listStoryAssets, markShotReadyV2, putShotDraftV2, resolveProfileCameraPlan, unbindStoryAssetFromShot } from "../../generated/api";
@@ -64,6 +65,19 @@ describe("DirectorShotEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "按生成配置检查运镜能力" }));
     await waitFor(() => expect(resolveProfileCameraPlan).toHaveBeenCalledWith("profile-v1", expect.objectContaining({ shot_type: "CLOSEUP", movement: "PUSH_IN" })));
     expect(await screen.findByText(/模型原生支持/)).toBeTruthy();
+  });
+
+  it("never offers a published LLM profile as a camera execution profile", () => {
+    renderEditor(
+      { id: "shot-1", code: "S001", status: "DRAFT", current_revision_id: "revision-1", current_revision: {} },
+      [
+        { id: "llm", code: "story", title: "故事拆解", version_id: "llm-v1", capability: "LLM_STORY_PARSE", status: "PUBLISHED" },
+        { id: "video", code: "local-i2v", title: "本地 I2V", version_id: "video-v1", capability: "I2V", status: "PUBLISHED" },
+      ],
+    );
+
+    expect(screen.queryByRole("option", { name: /故事拆解/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /本地 I2V/ })).toBeInTheDocument();
   });
 
   it("keeps Production Ready blocked when the published Profile does not support camera", async () => {

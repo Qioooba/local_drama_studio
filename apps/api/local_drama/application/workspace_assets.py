@@ -12,6 +12,7 @@ from typing import Any
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.infrastructure.filesystem.path_policy import controlled_path
 
 
 def _utc_now() -> str:
@@ -51,10 +52,14 @@ class WorkspaceAssetService:
             raise DomainRuleError("WORKSPACE_ASSET_PROJECT_MISMATCH", "工作区资产必须属于当前项目")
         if row["integrity_status"] != "VERIFIED":
             raise DomainRuleError("WORKSPACE_ASSET_NOT_VERIFIED", "只有 VERIFIED 媒体版本可以授权")
-        project_root = (self.settings.projects_root / str(row["root_rel"])).resolve()
-        path = (project_root / str(row["rel_path"])).resolve()
-        if not path.is_relative_to(project_root) or path.is_symlink() or not path.is_file():
-            raise DomainRuleError("WORKSPACE_ASSET_PATH_INVALID", "工作区资产路径越界、缺失或为 symlink")
+        project_root = self.settings.resolve_project_root(str(row["root_rel"]))
+        path = controlled_path(
+            project_root,
+            str(row["rel_path"]),
+            must_exist=True,
+            require_file=True,
+            code="WORKSPACE_ASSET_PATH_INVALID",
+        )
         digest, size = _hash_file(path)
         if digest != str(row["sha256"]) or size != int(row["byte_size"]):
             raise DomainRuleError("WORKSPACE_ASSET_INTEGRITY_FAILED", "资产内容与登记 hash/size 不一致")

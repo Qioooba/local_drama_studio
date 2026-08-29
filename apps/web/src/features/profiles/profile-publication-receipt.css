@@ -1,0 +1,127 @@
+.profile-publication-target,
+.profile-publication-receipt {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.profile-publication-target {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 13px 14px;
+}
+
+.profile-publication-target__marker {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  margin-top: 5px;
+  border: 2px solid var(--info);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 10%, transparent);
+}
+
+.profile-publication-target > div {
+  display: grid;
+  gap: 3px;
+}
+
+.profile-publication-target small,
+.profile-publication-target span,
+.profile-publication-receipt header small {
+  color: var(--text-muted);
+}
+
+.profile-publication-target small {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.profile-publication-target span {
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.profile-publication-receipt {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-color: color-mix(in srgb, var(--approved) 38%, var(--border));
+  background: color-mix(in srgb, var(--approved) 7%, var(--surface));
+}
+
+.profile-publication-receipt header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.profile-publication-receipt header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.profile-publication-receipt h4 { margin: 0; font-size: 15px; }
+
+.profile-publication-receipt__check {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  border-radius: 50%;
+  background: var(--approved);
+}
+
+.profile-publication-receipt__check::after {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  width: 6px;
+  height: 9px;
+  border-right: 2px solid var(--surface);
+  border-bottom: 2px solid var(--surface);
+  content: "";
+  transform: rotate(42deg);
+}
+
+.profile-publication-receipt dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.profile-publication-receipt dl > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.profile-publication-receipt dt {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.profile-publication-receipt dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.profile-publication-receipt > button {
+  justify-self: start;
+  min-height: 40px;
+}
+
+@media (max-width: 620px) {
+  .profile-publication-receipt dl { grid-template-columns: 1fr; }
+  .profile-publication-receipt > button { width: 100%; }
+}

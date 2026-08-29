@@ -6,7 +6,7 @@ import { readStoryAssetTransfer, STORY_ASSET_MIME, storyAssetDropIssue, type Sto
 import { Dialog } from "../../components/ui/primitives";
 import { CAMERA_CURVES, CAMERA_DIRECTION_LABELS, CAMERA_DIRECTIONS, CAMERA_MOVEMENTS, COMPOSITIONS, SHOT_ASSET_ROLES, SHOT_TYPES } from "../shared/directorOptions";
 import { generateAssetCode } from "../shared/autoCode";
-import { canonicalCapabilityLabel } from "../preferences-v2/canonicalCapabilities";
+import { canonicalCapabilityLabel, normalizeCapability } from "../preferences-v2/canonicalCapabilities";
 import { ProfileExecutionDetailButton } from "../model-config/ProfileExecutionDetailButton";
 import { statusLabel } from "../shared/optionLabels";
 
@@ -15,6 +15,14 @@ const requiredNonEmpty = ["shot_type", "composition", "subject_action", "camera_
 const assetKindLabels: Record<string, string> = { CHARACTER: "角色", SCENE: "场景", PROP: "道具", COSTUME: "服装" };
 
 const emptyCamera: CameraPlan = { mode: "UNSUPPORTED", shot_type: "", movement: "", prompt_text: "", direction: "FORWARD", intensity: 0.5, curve: "LINEAR", profile_version_id: null };
+
+function isVideoProfile(profile: Profile) {
+  try {
+    return normalizeCapability(profile.capability).startsWith("VIDEO_");
+  } catch {
+    return false;
+  }
+}
 
 function cameraFrom(value: unknown): CameraPlan {
   if (!value || typeof value !== "object") return emptyCamera;
@@ -175,7 +183,7 @@ export function DirectorShotEditor({ shot, profiles = [], onChanged, projectId }
   const [fields, setFields] = useState<Record<string, string>>({});
   const [camera, setCamera] = useState<CameraPlan>(emptyCamera);
   const [freeze, setFreeze] = useState(true);
-  const publishedProfiles = useMemo(() => profiles.filter((item) => item.status === "PUBLISHED"), [profiles]);
+  const publishedProfiles = useMemo(() => profiles.filter((item) => item.status === "PUBLISHED" && isVideoProfile(item)), [profiles]);
   const readiness = shot?.production_readiness && typeof shot.production_readiness === "object" ? shot.production_readiness as { state?: string; blockers?: string[] } : undefined;
   useEffect(() => {
     setFields(Object.fromEntries(Object.keys(labels).filter((key) => key !== "camera_plan").map((key) => [key, current[key] === undefined || current[key] === null ? "" : String(current[key])])))

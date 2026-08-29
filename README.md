@@ -32,5 +32,7 @@
 
 > 安全提醒：`LAN_SERVICE` 沿用单用户信任模型（无登录鉴权）。请用防火墙把服务端口限制在可信网段。
 
+Windows 正式安装包默认选择“Trusted LAN server”，会原子合并 Server profile、安装延迟自动启动服务，并创建仅允许 Windows `LocalSubnet` 的 TCP 端口规则；安装时可取消该选项，切换为仅本机 Desktop 模式。升级会保留用户的存储、运行时、端口和 Origin 配置；切回 Desktop 或卸载时会删除该防火墙规则和服务。`LAN_SERVICE` 必须显式配置 `trusted_lan_unauthenticated=true`，避免在没有确认信任边界时静默开放。
+
 远程使用约定：Mac/其他电脑选择的剧本、媒体、LUT、授权证据和项目包均由浏览器上传到 Windows 服务端；导出物通过浏览器下载。模型权重保留在服务端，由 `LOCAL_DRAMA_MODEL_LIBRARY_ROOTS` 指定受控模型库，远程浏览器不会访问任意 Windows 路径，也不会触发服务器桌面的文件选择窗口。
 

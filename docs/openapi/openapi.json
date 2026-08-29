@@ -2742,9 +2742,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Exportprojectpackage"
+                  "$ref": "#/components/schemas/ProjectPackageExportEnvelope"
                 }
               }
             }
@@ -7746,9 +7744,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Importscriptdocument"
+                  "$ref": "#/components/schemas/DocumentImportResponse"
                 }
               }
             }
@@ -7791,9 +7787,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Uploadscriptdocument"
+                  "$ref": "#/components/schemas/DocumentImportResponse"
                 }
               }
             }
@@ -8437,6 +8431,48 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Getjob"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Delete Job",
+        "operationId": "deleteJob",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Deletejob"
                 }
               }
             }
@@ -9097,6 +9133,57 @@
         }
       }
     },
+    "/api/v1/local-llm/models": {
+      "get": {
+        "tags": [
+          "local-llm"
+        ],
+        "summary": "Discover Ollama Models",
+        "operationId": "discoverOllamaModels",
+        "parameters": [
+          {
+            "name": "base_url",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Base Url"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Discoverollamamodels"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/local-llm/probe": {
       "post": {
         "tags": [
@@ -9504,9 +9591,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Exportepisodecontactsheet"
+                  "$ref": "#/components/schemas/ContactSheetExportEnvelope"
                 }
               }
             }
@@ -11607,6 +11692,46 @@
         }
       }
     },
+    "/api/v1/quick-generation-outputs/{output_id}/download": {
+      "get": {
+        "tags": [
+          "quick-generations"
+        ],
+        "summary": "Output Download",
+        "operationId": "downloadQuickGenerationOutput",
+        "parameters": [
+          {
+            "name": "output_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Output Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/quick-generation-outputs/{output_id}/thumbnail": {
       "get": {
         "tags": [
@@ -12610,6 +12735,104 @@
                   "additionalProperties": true,
                   "type": "object",
                   "title": "Response Listprofiles"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/capability-options": {
+      "get": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "List Capability Options",
+        "description": "Return the server-owned selection model for one creator capability.",
+        "operationId": "listCapabilityOptions",
+        "parameters": [
+          {
+            "name": "capability",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "title": "Capability"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 36
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "episode_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 36
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "shot_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 36
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shot Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listcapabilityoptions"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -22015,6 +22238,3050 @@
         }
       }
     },
+    "/api/v2/model-platform/overview": {
+      "get": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Get Overview",
+        "description": "Return bounded, non-sensitive control-plane counts for the model center.\n\nDiscovery is deliberately reported separately from registered models.  A\nscanner observation is evidence only; it never means that a model is\ncomplete, verified, published, or executable.",
+        "operationId": "getModelPlatformOverview",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Getmodelplatformoverview"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/quick-create-v2-readiness": {
+      "get": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "List Quick Create V2 Readiness",
+        "description": "Show V2 SYSTEM eligibility only; Quick Create still submits through V1.",
+        "operationId": "listModelPlatformQuickCreateV2Readiness",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Listmodelplatformquickcreatev2Readiness"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/quick-create-v2/direct-image:preview": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Preview Quick Create V2 Direct Image",
+        "description": "Preview the first V2-only Quick Create command without creating a Job.",
+        "operationId": "previewModelPlatformQuickCreateV2DirectImage",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelPlatformQuickCreateV2DirectImagePreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Previewmodelplatformquickcreatev2Directimage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/quick-create-v2/direct-image:submit": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Submit Quick Create V2 Direct Image",
+        "description": "Queue a V2-only direct image command; it never calls the V1 quick aggregate.",
+        "operationId": "submitModelPlatformQuickCreateV2DirectImage",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelPlatformQuickCreateV2DirectImageSubmitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Submitmodelplatformquickcreatev2Directimage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/quick-create-v2/direct-image/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Get Quick Create V2 Direct Image Status",
+        "description": "Read a direct-image V2 Job without opening a generic Job or V1 record.",
+        "operationId": "getModelPlatformQuickCreateV2DirectImageStatus",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Getmodelplatformquickcreatev2Directimagestatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/quick-create-v2/image-candidates:preview": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Preview Quick Create V2 Image Candidates",
+        "description": "Plan a bounded V2 candidate set; no run or V1 record is created.",
+        "operationId": "previewModelPlatformQuickCreateV2ImageCandidates",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelPlatformQuickCreateV2ImageCandidatePreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Previewmodelplatformquickcreatev2Imagecandidates"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/quick-create-v2/image-candidates:submit": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Submit Quick Create V2 Image Candidates",
+        "description": "Create the V2 aggregate and one immutable V2 Job per candidate.",
+        "operationId": "submitModelPlatformQuickCreateV2ImageCandidates",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelPlatformQuickCreateV2ImageCandidateSubmitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Submitmodelplatformquickcreatev2Imagecandidates"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/quick-create-v2/runs/{run_id}/candidates/{step_id}:select": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Select Quick Create V2 Image Candidate",
+        "description": "Freeze exactly one verified V2 candidate; arbitrary artifact IDs are impossible here.",
+        "operationId": "selectModelPlatformQuickCreateV2ImageCandidate",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "step_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Step Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Selectmodelplatformquickcreatev2Imagecandidate"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/quick-create-v2/runs/{run_id}/image-to-video:preview": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Preview Quick Create V2 Image To Video",
+        "operationId": "previewModelPlatformQuickCreateV2ImageToVideo",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Previewmodelplatformquickcreatev2Imagetovideo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/quick-create-v2/runs/{run_id}/image-to-video:submit": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Submit Quick Create V2 Image To Video",
+        "operationId": "submitModelPlatformQuickCreateV2ImageToVideo",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelPlatformQuickCreateV2ImageToVideoSubmitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Submitmodelplatformquickcreatev2Imagetovideo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/quick-create-v2/runs/{run_id}": {
+      "get": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Get Quick Create V2 Run",
+        "description": "Read the V2 aggregate projection, exposing artifact downloads but never paths.",
+        "operationId": "getModelPlatformQuickCreateV2Run",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Getmodelplatformquickcreatev2Run"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/storage-policy": {
+      "get": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Get Storage Policy",
+        "description": "Expose configuration posture without disclosing server file locations.\n\nBrowser clients can understand which operational zones and discovery\nlibraries exist, but mutation stays in the authenticated machine/Host\nboundary. This is especially important for an unauthenticated LAN service.",
+        "operationId": "getModelPlatformStoragePolicy",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Getmodelplatformstoragepolicy"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/installation-plans": {
+      "get": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "List Installation Plans",
+        "description": "Return safe plan summaries; source bundle names and filesystem paths stay server-side.",
+        "operationId": "listModelPlatformInstallationPlans",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listmodelplatforminstallationplans"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/installation-targets": {
+      "get": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "List Installation Targets",
+        "description": "List safe V2 Library destinations without exposing their filesystem roots.",
+        "operationId": "listModelPlatformInstallationTargets",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Listmodelplatforminstallationtargets"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/installation-plans/offline": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Create Offline Import Plan",
+        "description": "Persist an immutable import contract without downloading or copying any model.",
+        "operationId": "createModelPlatformOfflineInstallationPlan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelPlatformOfflineImportPlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Createmodelplatformofflineinstallationplan"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/installation-plans/trusted-download": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Create Trusted Download Plan",
+        "description": "Persist an allowlisted HTTPS contract; only the Windows Host may download it.",
+        "operationId": "createModelPlatformTrustedDownloadPlan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelPlatformTrustedDownloadPlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Createmodelplatformtrusteddownloadplan"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/capabilities": {
+      "get": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "List Capabilities",
+        "operationId": "listModelPlatformCapabilities",
+        "parameters": [
+          {
+            "name": "business_surface",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Business Surface"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listmodelplatformcapabilities"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/discovery-observations": {
+      "get": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "List Discovery Observations",
+        "description": "List recent V2 scanner evidence without exposing runtime wiring.\n\nThis is intentionally an evidence view.  It contains no model-library\npath, endpoint, credential, raw adapter payload, or execution readiness.",
+        "operationId": "listModelPlatformDiscoveryObservations",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 36,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listmodelplatformdiscoveryobservations"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/registered-candidates": {
+      "get": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "List Registered Candidates",
+        "description": "List registered candidates with per-capability, fail-closed readiness.",
+        "operationId": "listModelPlatformRegisteredCandidates",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listmodelplatformregisteredcandidates"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/registered-candidates/{runtime_model_installation_id}/validation-history": {
+      "get": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "List Registered Candidate Validation History",
+        "description": "List safe, immutable validation facts without returning evidence payloads.",
+        "operationId": "listModelPlatformValidationHistory",
+        "parameters": [
+          {
+            "name": "runtime_model_installation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Runtime Model Installation Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listmodelplatformvalidationhistory"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/profile-versions": {
+      "get": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "List Profile Versions",
+        "description": "Recover safe V2 Profile lifecycle state after navigation or refresh.",
+        "operationId": "listModelPlatformProfileVersions",
+        "parameters": [
+          {
+            "name": "runtime_model_installation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Runtime Model Installation Id"
+            }
+          },
+          {
+            "name": "capability_code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Capability Code"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listmodelplatformprofileversions"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/registered-candidates/{runtime_model_installation_id}/capability-offerings/{capability_code}:smoke": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Smoke Registered Candidate Capability",
+        "description": "Run a real, implementation-bound capability smoke under service identity.",
+        "operationId": "smokeModelPlatformCapabilityOffering",
+        "parameters": [
+          {
+            "name": "runtime_model_installation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Runtime Model Installation Id"
+            }
+          },
+          {
+            "name": "capability_code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Capability Code"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Smokemodelplatformcapabilityoffering"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/registered-candidates/{runtime_model_installation_id}:verify-integrity": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Verify Registered Candidate Integrity",
+        "description": "Re-check a controlled ComfyUI/PyTorch model bundle under service identity.",
+        "operationId": "verifyModelPlatformInstallationIntegrity",
+        "parameters": [
+          {
+            "name": "runtime_model_installation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Runtime Model Installation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Verifymodelplatforminstallationintegrity"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/registered-candidates/{runtime_model_installation_id}/capability-offerings/{capability_code}:bind-workflow": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Bind Comfy Workflow",
+        "description": "Persist an explicit Comfy Offering→published Workflow binding after local schema validation.",
+        "operationId": "bindModelPlatformComfyWorkflow",
+        "parameters": [
+          {
+            "name": "runtime_model_installation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Runtime Model Installation Id"
+            }
+          },
+          {
+            "name": "capability_code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Capability Code"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelPlatformComfyWorkflowBindingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Bindmodelplatformcomfyworkflow"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/registered-candidates/{runtime_model_installation_id}/capability-offerings/{capability_code}/workflow-bindings": {
+      "get": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "List Comfy Workflow Bindings",
+        "description": "Recover safe binding IDs so a page refresh can resume Comfy smoke.",
+        "operationId": "listModelPlatformComfyWorkflowBindings",
+        "parameters": [
+          {
+            "name": "runtime_model_installation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Runtime Model Installation Id"
+            }
+          },
+          {
+            "name": "capability_code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Capability Code"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listmodelplatformcomfyworkflowbindings"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/registered-candidates/{runtime_model_installation_id}/capability-offerings/{capability_code}:queue-comfy-smoke": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Submit Comfy Capability Smoke",
+        "description": "Queue an immutable, bounded Comfy smoke; completion happens in Worker.",
+        "operationId": "submitModelPlatformComfyCapabilitySmoke",
+        "parameters": [
+          {
+            "name": "runtime_model_installation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Runtime Model Installation Id"
+            }
+          },
+          {
+            "name": "capability_code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Capability Code"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelPlatformComfySmokeSubmissionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Submitmodelplatformcomfycapabilitysmoke"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/registered-candidates/{runtime_model_installation_id}/capability-offerings/{capability_code}:provision-profile": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Provision Profile Template",
+        "description": "Create the installed V2 Profile template for a verified Offering.",
+        "operationId": "provisionModelPlatformProfileTemplate",
+        "parameters": [
+          {
+            "name": "runtime_model_installation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Runtime Model Installation Id"
+            }
+          },
+          {
+            "name": "capability_code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Capability Code"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ModelPlatformProfileProvisionRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Provisionmodelplatformprofiletemplate"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/profile-versions/{profile_version_id}:smoke": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Smoke Profile Template",
+        "description": "Run the persisted template's profile-level smoke; it cannot publish by itself.",
+        "operationId": "smokeModelPlatformProfileTemplate",
+        "parameters": [
+          {
+            "name": "profile_version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Smokemodelplatformprofiletemplate"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/profile-versions/{profile_version_id}:publish": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Publish Profile",
+        "description": "Publish only the immutable profile that owns the supplied passed smoke evidence.",
+        "operationId": "publishModelPlatformProfile",
+        "parameters": [
+          {
+            "name": "profile_version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Version Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelPlatformProfilePublishRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Publishmodelplatformprofile"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/discovery-runs:ollama": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Run Ollama Discovery",
+        "description": "Scan configured local Ollama tags under the API service identity.",
+        "operationId": "runModelPlatformOllamaDiscovery",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Runmodelplatformollamadiscovery"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/discovery-runs:model-lock": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Run Model Lock Discovery",
+        "description": "Scan configured libraries for ComfyUI and PyTorch lock entries.",
+        "operationId": "runModelPlatformModelLockDiscovery",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Runmodelplatformmodellockdiscovery"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/discovery-observations/{observation_id}:register": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Register Discovery Candidate",
+        "description": "Explicitly register one present observation as an unvalidated candidate.",
+        "operationId": "registerModelPlatformDiscoveryCandidate",
+        "parameters": [
+          {
+            "name": "observation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Observation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Registermodelplatformdiscoverycandidate"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/capability-resolution": {
+      "get": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Resolve Capability",
+        "operationId": "resolveModelPlatformCapability",
+        "parameters": [
+          {
+            "name": "capability_code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80,
+              "title": "Capability Code"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 36
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "episode_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 36
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "shot_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 36
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shot Id"
+            }
+          },
+          {
+            "name": "character_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 36
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Character Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Resolvemodelplatformcapability"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/system-capability-assignments": {
+      "get": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "List System Capability Assignments",
+        "description": "List safe V2 SYSTEM assignment/Profile options for the model center.\n\nValues are returned only for explicitly permitted, non-sensitive SYSTEM\noverride fields.  No runtime path, native locator, endpoint, secret or\nhidden Profile setting reaches the browser.",
+        "operationId": "listModelPlatformSystemCapabilityAssignments",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Listmodelplatformsystemcapabilityassignments"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/capability-assignment-catalog": {
+      "get": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "List Capability Assignment Catalog",
+        "description": "Return safe V2 assignment options for one verified business scope.\n\nThis is deliberately a control-plane read model.  It does not project V1\ngeneration preferences and cannot make a creator surface use V2.",
+        "operationId": "listModelPlatformCapabilityAssignmentCatalog",
+        "parameters": [
+          {
+            "name": "scope_type",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16,
+              "title": "Scope Type"
+            }
+          },
+          {
+            "name": "scope_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 36,
+              "default": "",
+              "title": "Scope Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listmodelplatformcapabilityassignmentcatalog"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/business-selection-shadow": {
+      "get": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Compare Business Selection",
+        "description": "Compare V1 creator selection and V2 assignment without submitting work.",
+        "operationId": "compareModelPlatformBusinessSelection",
+        "parameters": [
+          {
+            "name": "capability_code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80,
+              "title": "Capability Code"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 36,
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "episode_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 36
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "shot_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 36
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shot Id"
+            }
+          },
+          {
+            "name": "character_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 36
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Character Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Comparemodelplatformbusinessselection"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/business-selection-facade-evaluation": {
+      "get": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Evaluate Business Selection Facade",
+        "description": "Evaluate all V2 cutover preconditions without changing creator execution.",
+        "operationId": "evaluateModelPlatformBusinessSelectionFacade",
+        "parameters": [
+          {
+            "name": "business_surface",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80,
+              "title": "Business Surface"
+            }
+          },
+          {
+            "name": "capability_code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80,
+              "title": "Capability Code"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 36,
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "episode_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 36
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "shot_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 36
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shot Id"
+            }
+          },
+          {
+            "name": "character_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 36
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Character Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Evaluatemodelplatformbusinessselectionfacade"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/business-selection-rollouts": {
+      "get": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "List Business Selection Rollouts",
+        "description": "Read migration eligibility gates; a gate never switches execution itself.",
+        "operationId": "listModelPlatformBusinessSelectionRollouts",
+        "parameters": [
+          {
+            "name": "business_surface",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Business Surface"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listmodelplatformbusinessselectionrollouts"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Put Business Selection Rollout",
+        "description": "Persist an auditable cutover eligibility decision, without changing jobs.",
+        "operationId": "putModelPlatformBusinessSelectionRollout",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelPlatformBusinessSelectionRolloutPutRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Putmodelplatformbusinessselectionrollout"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/profile-version-crosswalks": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Approve Profile Crosswalk",
+        "operationId": "approveModelPlatformProfileCrosswalk",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelPlatformProfileCrosswalkApprovalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Approvemodelplatformprofilecrosswalk"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/profile-version-crosswalks/{crosswalk_id}:revoke": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Revoke Profile Crosswalk",
+        "operationId": "revokeModelPlatformProfileCrosswalk",
+        "parameters": [
+          {
+            "name": "crosswalk_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Crosswalk Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelPlatformProfileCrosswalkRevocationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Revokemodelplatformprofilecrosswalk"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/capability-assignments": {
+      "put": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Put Capability Assignment",
+        "operationId": "putModelPlatformCapabilityAssignment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CapabilityAssignmentPutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Putmodelplatformcapabilityassignment"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/execution-resolution:preview": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Preview Execution",
+        "description": "Resolve a capability to immutable V2 inputs without queuing work.",
+        "operationId": "previewModelPlatformExecution",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelPlatformExecutionPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Previewmodelplatformexecution"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/executions": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Submit Execution",
+        "description": "Queue a fresh, immutable V2 execution.\n\nThe production registry contains only handlers with an exact Worker\nimplementation and a completed runtime/Profile smoke gate. Everything\nelse remains fail-closed at submission time.",
+        "operationId": "submitModelPlatformExecution",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelPlatformExecutionPreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Submitmodelplatformexecution"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/project-knowledge-indexes": {
+      "get": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "List Project Knowledge Indexes",
+        "description": "List V2-only project knowledge indexing state without vectors or source text.",
+        "operationId": "listModelPlatformProjectKnowledgeIndexes",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 36,
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Listmodelplatformprojectknowledgeindexes"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Prepare Project Knowledge Index",
+        "description": "Create immutable text/chunk manifests; this endpoint never accepts paths or vectors.",
+        "operationId": "prepareModelPlatformProjectKnowledgeIndex",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelPlatformProjectKnowledgeIndexPrepareRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Preparemodelplatformprojectknowledgeindex"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/project-knowledge-indexes/{index_run_id}:queue": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Queue Project Knowledge Index",
+        "description": "Queue every prepared V2 knowledge batch with an immutable snapshot/Job binding.",
+        "operationId": "queueModelPlatformProjectKnowledgeIndex",
+        "parameters": [
+          {
+            "name": "index_run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Index Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Queuemodelplatformprojectknowledgeindex"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/project-knowledge-search": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Search Project Knowledge",
+        "description": "Embed server-received query text locally and search only verified V2 vectors.",
+        "operationId": "searchModelPlatformProjectKnowledge",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelPlatformProjectKnowledgeSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Searchmodelplatformprojectknowledge"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/projects/{project_id}/source-versions": {
+      "get": {
+        "tags": [
+          "adaptation-plans-v2"
+        ],
+        "summary": "List Source Versions",
+        "operationId": "listSourceVersionsForAdaptation",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdaptationPlanListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/projects/{project_id}/adaptation-plans:preflight": {
+      "post": {
+        "tags": [
+          "adaptation-plans-v2"
+        ],
+        "summary": "Preflight",
+        "operationId": "preflightAdaptationPlan",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdaptationPlanPreflightRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdaptationPlanPreflightResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/projects/{project_id}/adaptation-plans": {
+      "post": {
+        "tags": [
+          "adaptation-plans-v2"
+        ],
+        "summary": "Create Plan",
+        "operationId": "createAdaptationPlan",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdaptationPlanCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdaptationPlanCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "adaptation-plans-v2"
+        ],
+        "summary": "List Plans",
+        "operationId": "listAdaptationPlans",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdaptationPlanListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/adaptation-plans/{plan_id}/analysis-manifest": {
+      "post": {
+        "tags": [
+          "adaptation-plans-v2"
+        ],
+        "summary": "Prepare Analysis Manifest",
+        "operationId": "prepareAdaptationAnalysisManifest",
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Plan Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdaptationAnalysisManifestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/adaptation-plans/{plan_id}/analysis-readiness": {
+      "get": {
+        "tags": [
+          "adaptation-plans-v2"
+        ],
+        "summary": "Analysis Readiness",
+        "operationId": "getAdaptationAnalysisReadiness",
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Plan Id"
+            }
+          },
+          {
+            "name": "profile_version_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 36,
+              "title": "Profile Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdaptationAnalysisReadinessResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/adaptation-plans/{plan_id}/analysis-runs": {
+      "post": {
+        "tags": [
+          "adaptation-plans-v2"
+        ],
+        "summary": "Submit Analysis Run",
+        "operationId": "submitAdaptationAnalysisRun",
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Plan Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdaptationAnalysisSubmitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdaptationAnalysisSubmitResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/adaptation-plans/{plan_id}:approve": {
+      "post": {
+        "tags": [
+          "adaptation-plans-v2"
+        ],
+        "summary": "Approve Plan",
+        "operationId": "approveAdaptationPlan",
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Plan Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdaptationPlanApproveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdaptationPlanApproveResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/adaptation-plans/{plan_id}/materialization-preflight": {
+      "get": {
+        "tags": [
+          "adaptation-plans-v2"
+        ],
+        "summary": "Materialization Preflight",
+        "operationId": "preflightAdaptationMaterialization",
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Plan Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdaptationMaterializationPreflightResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/adaptation-plans/{plan_id}/materializations": {
+      "post": {
+        "tags": [
+          "adaptation-plans-v2"
+        ],
+        "summary": "Materialize Plan",
+        "operationId": "materializeAdaptationPlan",
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Plan Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdaptationMaterializeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdaptationMaterializeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/adaptation-plans/{plan_id}/workspace": {
+      "get": {
+        "tags": [
+          "adaptation-plans-v2"
+        ],
+        "summary": "Workspace",
+        "operationId": "getAdaptationPlanWorkspace",
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Plan Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdaptationPlanWorkspaceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/episodes/{episode_id}/shots/{shot_id}/studio": {
       "get": {
         "tags": [
@@ -23412,6 +26679,668 @@
           "occurred_at"
         ],
         "title": "ActivitySummary"
+      },
+      "AdaptationAnalysisManifestResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "run_status": {
+            "type": "string",
+            "title": "Run Status"
+          },
+          "total_nodes": {
+            "type": "integer",
+            "title": "Total Nodes"
+          },
+          "idempotent": {
+            "type": "boolean",
+            "title": "Idempotent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "run_status",
+          "total_nodes",
+          "idempotent"
+        ],
+        "title": "AdaptationAnalysisManifestResponse"
+      },
+      "AdaptationAnalysisReadinessResponse": {
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "title": "Plan Id"
+          },
+          "revision_id": {
+            "type": "string",
+            "title": "Revision Id"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile"
+          },
+          "execution": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Execution"
+          },
+          "blockers": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Blockers"
+          },
+          "read_only": {
+            "type": "boolean",
+            "title": "Read Only"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan_id",
+          "revision_id",
+          "run_id",
+          "profile",
+          "execution",
+          "blockers",
+          "read_only"
+        ],
+        "title": "AdaptationAnalysisReadinessResponse"
+      },
+      "AdaptationAnalysisSubmitRequest": {
+        "properties": {
+          "profile_version_id": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Profile Version Id"
+          },
+          "allow_remote_outbound": {
+            "type": "boolean",
+            "title": "Allow Remote Outbound",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_version_id"
+        ],
+        "title": "AdaptationAnalysisSubmitRequest"
+      },
+      "AdaptationAnalysisSubmitResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "run_status": {
+            "type": "string",
+            "title": "Run Status"
+          },
+          "job_count": {
+            "type": "integer",
+            "title": "Job Count"
+          },
+          "created_job_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Created Job Ids"
+          },
+          "provider_remote": {
+            "type": "boolean",
+            "title": "Provider Remote"
+          },
+          "idempotent": {
+            "type": "boolean",
+            "title": "Idempotent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "run_status",
+          "job_count",
+          "created_job_ids",
+          "provider_remote",
+          "idempotent"
+        ],
+        "title": "AdaptationAnalysisSubmitResponse"
+      },
+      "AdaptationMaterializationPreflightResponse": {
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "title": "Plan Id"
+          },
+          "revision_id": {
+            "type": "string",
+            "title": "Revision Id"
+          },
+          "artifact_status": {
+            "type": "string",
+            "title": "Artifact Status"
+          },
+          "strategy": {
+            "type": "string",
+            "const": "APPEND_NEW",
+            "title": "Strategy"
+          },
+          "ready": {
+            "type": "boolean",
+            "title": "Ready"
+          },
+          "blockers": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Blockers"
+          },
+          "existing_structure": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Existing Structure"
+          },
+          "would_create": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Would Create"
+          },
+          "manifest_sha256": {
+            "type": "string",
+            "title": "Manifest Sha256"
+          },
+          "already_materialized": {
+            "type": "boolean",
+            "title": "Already Materialized"
+          },
+          "mutated": {
+            "type": "boolean",
+            "title": "Mutated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan_id",
+          "revision_id",
+          "artifact_status",
+          "strategy",
+          "ready",
+          "blockers",
+          "existing_structure",
+          "would_create",
+          "manifest_sha256",
+          "already_materialized",
+          "mutated"
+        ],
+        "title": "AdaptationMaterializationPreflightResponse"
+      },
+      "AdaptationMaterializeRequest": {
+        "properties": {
+          "expected_content_sha256": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Expected Content Sha256"
+          },
+          "confirm_append": {
+            "type": "boolean",
+            "const": true,
+            "title": "Confirm Append"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expected_content_sha256",
+          "confirm_append"
+        ],
+        "title": "AdaptationMaterializeRequest"
+      },
+      "AdaptationMaterializeResponse": {
+        "properties": {
+          "materialization_id": {
+            "type": "string",
+            "title": "Materialization Id"
+          },
+          "plan_id": {
+            "type": "string",
+            "title": "Plan Id"
+          },
+          "revision_id": {
+            "type": "string",
+            "title": "Revision Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "strategy": {
+            "type": "string",
+            "const": "APPEND_NEW",
+            "title": "Strategy"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "idempotent": {
+            "type": "boolean",
+            "title": "Idempotent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "materialization_id",
+          "plan_id",
+          "revision_id",
+          "project_id",
+          "strategy",
+          "created_at",
+          "items",
+          "idempotent"
+        ],
+        "title": "AdaptationMaterializeResponse"
+      },
+      "AdaptationPlanApproveRequest": {
+        "properties": {
+          "expected_content_sha256": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Expected Content Sha256"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expected_content_sha256"
+        ],
+        "title": "AdaptationPlanApproveRequest"
+      },
+      "AdaptationPlanApproveResponse": {
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "title": "Plan Id"
+          },
+          "artifact_status": {
+            "type": "string",
+            "const": "APPROVED",
+            "title": "Artifact Status"
+          },
+          "revision_id": {
+            "type": "string",
+            "title": "Revision Id"
+          },
+          "approved_at": {
+            "type": "string",
+            "title": "Approved At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan_id",
+          "artifact_status",
+          "revision_id",
+          "approved_at"
+        ],
+        "title": "AdaptationPlanApproveResponse"
+      },
+      "AdaptationPlanCreateRequest": {
+        "properties": {
+          "source_document_version_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Source Document Version Id"
+          },
+          "source_paragraph_start": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Paragraph Start"
+          },
+          "source_paragraph_end": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Paragraph End"
+          },
+          "target_duration_ms": {
+            "type": "integer",
+            "maximum": 3600000.0,
+            "minimum": 10000.0,
+            "title": "Target Duration Ms",
+            "default": 120000
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "COMPLETE_WORK",
+              "SERIAL_INCREMENTAL",
+              "PRESEGMENTED_SCRIPT",
+              "SINGLE_EPISODE"
+            ],
+            "title": "Mode"
+          },
+          "episode_strategy": {
+            "type": "string",
+            "enum": [
+              "AI_ESTIMATE",
+              "FIXED_COUNT"
+            ],
+            "title": "Episode Strategy",
+            "default": "AI_ESTIMATE"
+          },
+          "requested_episode_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Episode Count"
+          },
+          "season_strategy": {
+            "type": "string",
+            "enum": [
+              "NONE",
+              "AI_SUGGESTED",
+              "FIXED_COUNT",
+              "INHERIT_EXISTING"
+            ],
+            "title": "Season Strategy",
+            "default": "AI_SUGGESTED"
+          },
+          "requested_season_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Season Count"
+          },
+          "profile_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_document_version_id",
+          "mode"
+        ],
+        "title": "AdaptationPlanCreateRequest"
+      },
+      "AdaptationPlanCreateResponse": {
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "title": "Plan Id"
+          },
+          "artifact_status": {
+            "type": "string",
+            "title": "Artifact Status"
+          },
+          "revision_id": {
+            "type": "string",
+            "title": "Revision Id"
+          },
+          "revision_no": {
+            "type": "integer",
+            "title": "Revision No"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "run_status": {
+            "type": "string",
+            "title": "Run Status"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "idempotent": {
+            "type": "boolean",
+            "title": "Idempotent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan_id",
+          "artifact_status",
+          "revision_id",
+          "revision_no",
+          "run_id",
+          "run_status",
+          "created_at",
+          "idempotent"
+        ],
+        "title": "AdaptationPlanCreateResponse"
+      },
+      "AdaptationPlanListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "AdaptationPlanListResponse"
+      },
+      "AdaptationPlanPreflightRequest": {
+        "properties": {
+          "source_document_version_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Source Document Version Id"
+          },
+          "source_paragraph_start": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Paragraph Start"
+          },
+          "source_paragraph_end": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Paragraph End"
+          },
+          "target_duration_ms": {
+            "type": "integer",
+            "maximum": 3600000.0,
+            "minimum": 10000.0,
+            "title": "Target Duration Ms",
+            "default": 120000
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_document_version_id"
+        ],
+        "title": "AdaptationPlanPreflightRequest"
+      },
+      "AdaptationPlanPreflightResponse": {
+        "properties": {
+          "source": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Source"
+          },
+          "scope": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Scope"
+          },
+          "diagnosis": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Diagnosis"
+          },
+          "execution": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Execution"
+          },
+          "warnings": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "scope",
+          "diagnosis",
+          "execution",
+          "warnings"
+        ],
+        "title": "AdaptationPlanPreflightResponse"
+      },
+      "AdaptationPlanWorkspaceResponse": {
+        "properties": {
+          "plan": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Plan"
+          },
+          "revision": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Revision"
+          },
+          "run": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Run"
+          },
+          "episodes": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Episodes"
+          },
+          "analysis_nodes": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Analysis Nodes"
+          },
+          "next_action": {
+            "type": "string",
+            "title": "Next Action"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan",
+          "revision",
+          "run",
+          "episodes",
+          "analysis_nodes",
+          "next_action"
+        ],
+        "title": "AdaptationPlanWorkspaceResponse"
       },
       "AllowedActions": {
         "properties": {
@@ -25702,6 +29631,80 @@
         ],
         "title": "CandidateFact"
       },
+      "CapabilityAssignmentPutRequest": {
+        "properties": {
+          "scope_type": {
+            "type": "string",
+            "enum": [
+              "SYSTEM",
+              "PROJECT",
+              "EPISODE",
+              "SHOT",
+              "CHARACTER"
+            ],
+            "title": "Scope Type"
+          },
+          "scope_id": {
+            "type": "string",
+            "maxLength": 36,
+            "title": "Scope Id",
+            "default": ""
+          },
+          "capability_code": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Capability Code"
+          },
+          "resolution_mode": {
+            "type": "string",
+            "enum": [
+              "AUTO",
+              "EXPLICIT"
+            ],
+            "title": "Resolution Mode"
+          },
+          "execution_profile_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Profile Version Id"
+          },
+          "overrides": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Overrides"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Reason",
+            "default": ""
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Actor",
+            "default": "local-user"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "scope_type",
+          "capability_code",
+          "resolution_mode"
+        ],
+        "title": "CapabilityAssignmentPutRequest"
+      },
       "CapabilityOption": {
         "properties": {
           "id": {
@@ -27077,6 +31080,92 @@
         "type": "object",
         "title": "ComposeSubmitRequest"
       },
+      "ContactSheetExport": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "localdrama.contact-sheet.v1",
+            "title": "Schema Version"
+          },
+          "status": {
+            "type": "string",
+            "const": "EXPORTED",
+            "title": "Status"
+          },
+          "artifact": {
+            "$ref": "#/components/schemas/LocalArtifactReference"
+          },
+          "rel_path": {
+            "type": "string",
+            "title": "Rel Path"
+          },
+          "manifest_rel_path": {
+            "type": "string",
+            "title": "Manifest Rel Path"
+          },
+          "contact_sheet_rel_path": {
+            "type": "string",
+            "title": "Contact Sheet Rel Path"
+          },
+          "export_hash": {
+            "type": "string",
+            "title": "Export Hash"
+          },
+          "item_count": {
+            "type": "integer",
+            "title": "Item Count"
+          },
+          "reused": {
+            "type": "boolean",
+            "title": "Reused"
+          },
+          "database_mutated": {
+            "type": "boolean",
+            "const": false,
+            "title": "Database Mutated"
+          },
+          "runtime_contacted": {
+            "type": "boolean",
+            "const": false,
+            "title": "Runtime Contacted"
+          },
+          "network_contacted": {
+            "type": "boolean",
+            "const": false,
+            "title": "Network Contacted"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "schema_version",
+          "status",
+          "artifact",
+          "rel_path",
+          "manifest_rel_path",
+          "contact_sheet_rel_path",
+          "export_hash",
+          "item_count",
+          "reused",
+          "database_mutated",
+          "runtime_contacted",
+          "network_contacted"
+        ],
+        "title": "ContactSheetExport"
+      },
+      "ContactSheetExportEnvelope": {
+        "properties": {
+          "export": {
+            "$ref": "#/components/schemas/ContactSheetExport"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "export"
+        ],
+        "title": "ContactSheetExportEnvelope"
+      },
       "ContinuityReferenceFact": {
         "properties": {
           "media_asset_id": {
@@ -27980,6 +32069,9 @@
             "type": "string",
             "title": "Status"
           },
+          "artifact": {
+            "$ref": "#/components/schemas/LocalArtifactReference"
+          },
           "rel_path": {
             "type": "string",
             "title": "Rel Path"
@@ -28061,6 +32153,7 @@
           "target_version_id",
           "target",
           "status",
+          "artifact",
           "rel_path",
           "manifest_sha256",
           "withdrawn_reason",
@@ -29456,6 +33549,31 @@
         ],
         "title": "DirectorRecipeVersionRequest"
       },
+      "DocumentImportChapter": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "start_paragraph": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Start Paragraph"
+          },
+          "end_paragraph": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "End Paragraph"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "start_paragraph",
+          "end_paragraph"
+        ],
+        "title": "DocumentImportChapter"
+      },
       "DocumentImportCommitRequest": {
         "properties": {
           "expected_preview_hash": {
@@ -29496,6 +33614,71 @@
         ],
         "title": "DocumentImportCommitRequest"
       },
+      "DocumentImportPreview": {
+        "properties": {
+          "character_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Character Count"
+          },
+          "paragraph_count": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Paragraph Count"
+          },
+          "paragraphs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Paragraphs"
+          },
+          "chapters": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DocumentImportChapter"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapters"
+          },
+          "preview_character_limit": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Preview Character Limit"
+          },
+          "preview_truncated": {
+            "type": "boolean",
+            "title": "Preview Truncated"
+          },
+          "offset_unit": {
+            "type": "string",
+            "const": "UNICODE_CODEPOINT",
+            "title": "Offset Unit"
+          },
+          "requires_llm_confirmation": {
+            "type": "boolean",
+            "const": true,
+            "title": "Requires Llm Confirmation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "character_count",
+          "paragraph_count",
+          "paragraphs",
+          "preview_character_limit",
+          "preview_truncated",
+          "offset_unit",
+          "requires_llm_confirmation"
+        ],
+        "title": "DocumentImportPreview"
+      },
       "DocumentImportRequest": {
         "properties": {
           "source_path": {
@@ -29509,6 +33692,95 @@
           "source_path"
         ],
         "title": "DocumentImportRequest"
+      },
+      "DocumentImportResponse": {
+        "properties": {
+          "import": {
+            "$ref": "#/components/schemas/DocumentImportResult"
+          }
+        },
+        "type": "object",
+        "required": [
+          "import"
+        ],
+        "title": "DocumentImportResponse"
+      },
+      "DocumentImportResult": {
+        "properties": {
+          "source_document_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Source Document Id"
+          },
+          "source_document_version_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Source Document Version Id"
+          },
+          "import_session_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Import Session Id"
+          },
+          "media_version_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Media Version Id"
+          },
+          "stored_source": {
+            "$ref": "#/components/schemas/LocalArtifactReference"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PREVIEW_READY",
+              "COMMITTED"
+            ],
+            "title": "Status"
+          },
+          "preview_hash": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Preview Hash"
+          },
+          "reused": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reused"
+          },
+          "index_status": {
+            "type": "string",
+            "enum": [
+              "READY",
+              "FAILED_RETRYABLE"
+            ],
+            "title": "Index Status"
+          },
+          "preview": {
+            "$ref": "#/components/schemas/DocumentImportPreview"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_document_id",
+          "source_document_version_id",
+          "import_session_id",
+          "media_version_id",
+          "stored_source",
+          "status",
+          "preview_hash",
+          "index_status",
+          "preview"
+        ],
+        "title": "DocumentImportResult"
       },
       "EditAudioClipFact": {
         "properties": {
@@ -33699,6 +37971,63 @@
         "type": "object",
         "title": "LLMProfileSyncRequest"
       },
+      "LocalArtifactReference": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "PROJECT",
+              "DATA"
+            ],
+            "title": "Scope"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "FILE",
+              "DIRECTORY"
+            ],
+            "title": "Kind"
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Display Name"
+          },
+          "server_absolute_path": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Server Absolute Path"
+          },
+          "rel_path": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Rel Path"
+          },
+          "download_url": {
+            "type": "string",
+            "pattern": "^/api/v1/",
+            "title": "Download Url"
+          },
+          "download_filename": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Download Filename"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "scope",
+          "kind",
+          "display_name",
+          "server_absolute_path",
+          "rel_path",
+          "download_url",
+          "download_filename"
+        ],
+        "title": "LocalArtifactReference"
+      },
       "LocalModelReferenceRequest": {
         "properties": {
           "code": {
@@ -34230,6 +38559,661 @@
           "license_status"
         ],
         "title": "ModelLicenseEvidenceRequest"
+      },
+      "ModelPlatformBusinessSelectionRolloutPutRequest": {
+        "properties": {
+          "business_surface": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Business Surface"
+          },
+          "capability_code": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Capability Code"
+          },
+          "scope_type": {
+            "type": "string",
+            "enum": [
+              "PROJECT",
+              "EPISODE",
+              "SHOT"
+            ],
+            "title": "Scope Type"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "SHADOW",
+              "CUTOVER_APPROVED"
+            ],
+            "title": "State"
+          },
+          "approval_reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Approval Reason"
+          },
+          "approved_by": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Approved By"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "business_surface",
+          "capability_code",
+          "scope_type",
+          "state",
+          "approval_reason",
+          "approved_by"
+        ],
+        "title": "ModelPlatformBusinessSelectionRolloutPutRequest",
+        "description": "Operator approval to let the migration Facade evaluate a V2 cutover."
+      },
+      "ModelPlatformComfySmokeSubmissionRequest": {
+        "properties": {
+          "workflow_binding_id": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Workflow Binding Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workflow_binding_id"
+        ],
+        "title": "ModelPlatformComfySmokeSubmissionRequest",
+        "description": "Submit one already schema-validated binding to the bounded GPU smoke queue."
+      },
+      "ModelPlatformComfyWorkflowBindingRequest": {
+        "properties": {
+          "workflow_version_id": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Workflow Version Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workflow_version_id"
+        ],
+        "title": "ModelPlatformComfyWorkflowBindingRequest",
+        "description": "Reference an already published immutable workflow; no graph is sent from UI."
+      },
+      "ModelPlatformExecutionPreviewRequest": {
+        "properties": {
+          "capability_code": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Capability Code"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "episode_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Episode Id"
+          },
+          "shot_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shot Id"
+          },
+          "character_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Id"
+          },
+          "semantic_inputs": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Semantic Inputs"
+          },
+          "run_overrides": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Run Overrides"
+          },
+          "expected_resolution_hash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Resolution Hash"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "capability_code"
+        ],
+        "title": "ModelPlatformExecutionPreviewRequest",
+        "description": "Business-only V2 execution input; runtime wiring stays server-side."
+      },
+      "ModelPlatformExpectedInstallArtifact": {
+        "properties": {
+          "relative_path": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Relative Path"
+          },
+          "sha256": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Sha256"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Size Bytes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "relative_path",
+          "sha256",
+          "size_bytes"
+        ],
+        "title": "ModelPlatformExpectedInstallArtifact",
+        "description": "A browser may declare integrity facts, never a server-side source path."
+      },
+      "ModelPlatformOfflineImportPlanRequest": {
+        "properties": {
+          "target_library_id": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Target Library Id"
+          },
+          "release_code": {
+            "type": "string",
+            "maxLength": 140,
+            "minLength": 1,
+            "title": "Release Code"
+          },
+          "bundle_reference": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Bundle Reference"
+          },
+          "license_id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "License Id"
+          },
+          "expected_artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/ModelPlatformExpectedInstallArtifact"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Expected Artifacts"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target_library_id",
+          "release_code",
+          "bundle_reference",
+          "license_id",
+          "expected_artifacts"
+        ],
+        "title": "ModelPlatformOfflineImportPlanRequest",
+        "description": "Create a durable plan only; Host-owned import is a separate operation."
+      },
+      "ModelPlatformProfileCrosswalkApprovalRequest": {
+        "properties": {
+          "legacy_execution_profile_version_id": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Legacy Execution Profile Version Id"
+          },
+          "v2_execution_profile_version_id": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "V2 Execution Profile Version Id"
+          },
+          "approval_reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Approval Reason"
+          },
+          "approved_by": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Approved By"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "legacy_execution_profile_version_id",
+          "v2_execution_profile_version_id",
+          "approval_reason",
+          "approved_by"
+        ],
+        "title": "ModelPlatformProfileCrosswalkApprovalRequest",
+        "description": "A human-reviewed V1-to-V2 ProfileVersion migration decision."
+      },
+      "ModelPlatformProfileCrosswalkRevocationRequest": {
+        "properties": {
+          "revocation_reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Revocation Reason"
+          },
+          "revoked_by": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Revoked By"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revocation_reason",
+          "revoked_by"
+        ],
+        "title": "ModelPlatformProfileCrosswalkRevocationRequest"
+      },
+      "ModelPlatformProfileProvisionRequest": {
+        "properties": {
+          "workflow_binding_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Binding Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ModelPlatformProfileProvisionRequest",
+        "description": "Comfy needs an explicit real-smoke binding; other runtimes need none."
+      },
+      "ModelPlatformProfilePublishRequest": {
+        "properties": {
+          "validation_run_id": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Validation Run Id"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "validation_run_id",
+          "reason"
+        ],
+        "title": "ModelPlatformProfilePublishRequest",
+        "description": "Explicit publication confirmation; a successful real smoke is required."
+      },
+      "ModelPlatformProjectKnowledgeIndexPrepareRequest": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Project Id"
+          },
+          "source_document_version_id": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Source Document Version Id"
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Actor",
+            "default": "local-user"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "source_document_version_id"
+        ],
+        "title": "ModelPlatformProjectKnowledgeIndexPrepareRequest",
+        "description": "Prepare server-owned source text for a V2 Embedding index run."
+      },
+      "ModelPlatformProjectKnowledgeSearchRequest": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Project Id"
+          },
+          "query": {
+            "type": "string",
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Query"
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "default": 8
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "query"
+        ],
+        "title": "ModelPlatformProjectKnowledgeSearchRequest",
+        "description": "Server-only semantic query; clients never provide an embedding vector."
+      },
+      "ModelPlatformQuickCreateV2DirectImagePreviewRequest": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 2,
+            "title": "Prompt"
+          },
+          "run_overrides": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Run Overrides"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "title": "ModelPlatformQuickCreateV2DirectImagePreviewRequest",
+        "description": "The first explicit V2-only Quick Create surface; no legacy IDs accepted."
+      },
+      "ModelPlatformQuickCreateV2DirectImageSubmitRequest": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 2,
+            "title": "Prompt"
+          },
+          "run_overrides": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Run Overrides"
+          },
+          "expected_resolution_hash": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Expected Resolution Hash"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "prompt",
+          "expected_resolution_hash"
+        ],
+        "title": "ModelPlatformQuickCreateV2DirectImageSubmitRequest"
+      },
+      "ModelPlatformQuickCreateV2ImageCandidateItem": {
+        "properties": {
+          "ordinal": {
+            "type": "integer",
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Ordinal"
+          },
+          "seed": {
+            "type": "integer",
+            "exclusiveMaximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Seed"
+          },
+          "resolution_hash": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Resolution Hash"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "ordinal",
+          "seed",
+          "resolution_hash"
+        ],
+        "title": "ModelPlatformQuickCreateV2ImageCandidateItem"
+      },
+      "ModelPlatformQuickCreateV2ImageCandidatePreviewRequest": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 2,
+            "title": "Prompt"
+          },
+          "candidate_count": {
+            "type": "integer",
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Candidate Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "prompt",
+          "candidate_count"
+        ],
+        "title": "ModelPlatformQuickCreateV2ImageCandidatePreviewRequest"
+      },
+      "ModelPlatformQuickCreateV2ImageCandidateSubmitRequest": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 2,
+            "title": "Prompt"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/ModelPlatformQuickCreateV2ImageCandidateItem"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Candidates"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "prompt",
+          "candidates"
+        ],
+        "title": "ModelPlatformQuickCreateV2ImageCandidateSubmitRequest"
+      },
+      "ModelPlatformQuickCreateV2ImageToVideoSubmitRequest": {
+        "properties": {
+          "expected_resolution_hash": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Expected Resolution Hash"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_resolution_hash"
+        ],
+        "title": "ModelPlatformQuickCreateV2ImageToVideoSubmitRequest"
+      },
+      "ModelPlatformTrustedDownloadArtifact": {
+        "properties": {
+          "relative_path": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Relative Path"
+          },
+          "sha256": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Sha256"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Size Bytes"
+          },
+          "source_url": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 12,
+            "title": "Source Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "relative_path",
+          "sha256",
+          "size_bytes",
+          "source_url"
+        ],
+        "title": "ModelPlatformTrustedDownloadArtifact",
+        "description": "A planned HTTPS source, validated against the machine-owned allowlist."
+      },
+      "ModelPlatformTrustedDownloadPlanRequest": {
+        "properties": {
+          "target_library_id": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Target Library Id"
+          },
+          "release_code": {
+            "type": "string",
+            "maxLength": 140,
+            "minLength": 1,
+            "title": "Release Code"
+          },
+          "bundle_reference": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Bundle Reference"
+          },
+          "license_id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "License Id"
+          },
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/ModelPlatformTrustedDownloadArtifact"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Artifacts"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target_library_id",
+          "release_code",
+          "bundle_reference",
+          "license_id",
+          "artifacts"
+        ],
+        "title": "ModelPlatformTrustedDownloadPlanRequest",
+        "description": "Persist a download plan only; the Windows Host performs network I/O later."
       },
       "ModelRegistryScanRequest": {
         "properties": {
@@ -35711,6 +40695,91 @@
           "rel_path"
         ],
         "title": "ProjectPackageDryRunRequest"
+      },
+      "ProjectPackageExport": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "EXPORTED",
+            "title": "Status"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "artifact": {
+            "$ref": "#/components/schemas/LocalArtifactReference"
+          },
+          "rel_path": {
+            "type": "string",
+            "title": "Rel Path"
+          },
+          "byte_size": {
+            "type": "integer",
+            "title": "Byte Size"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "entry_count": {
+            "type": "integer",
+            "title": "Entry Count"
+          },
+          "expanded_bytes": {
+            "type": "integer",
+            "title": "Expanded Bytes"
+          },
+          "reused": {
+            "type": "boolean",
+            "title": "Reused"
+          },
+          "database_mutated": {
+            "type": "boolean",
+            "const": false,
+            "title": "Database Mutated"
+          },
+          "runtime_contacted": {
+            "type": "boolean",
+            "const": false,
+            "title": "Runtime Contacted"
+          },
+          "network_contacted": {
+            "type": "boolean",
+            "const": false,
+            "title": "Network Contacted"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "project_id",
+          "artifact",
+          "rel_path",
+          "byte_size",
+          "sha256",
+          "entry_count",
+          "expanded_bytes",
+          "reused",
+          "database_mutated",
+          "runtime_contacted",
+          "network_contacted"
+        ],
+        "title": "ProjectPackageExport"
+      },
+      "ProjectPackageExportEnvelope": {
+        "properties": {
+          "package": {
+            "$ref": "#/components/schemas/ProjectPackageExport"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "package"
+        ],
+        "title": "ProjectPackageExportEnvelope"
       },
       "ProjectProductionPlanRequest": {
         "properties": {
@@ -42106,6 +47175,9 @@
             "const": "EXPORTED",
             "title": "Status"
           },
+          "artifact": {
+            "$ref": "#/components/schemas/LocalArtifactReference"
+          },
           "rel_path": {
             "type": "string",
             "title": "Rel Path"
@@ -42147,6 +47219,7 @@
         "required": [
           "schema_version",
           "status",
+          "artifact",
           "rel_path",
           "manifest_rel_path",
           "files",

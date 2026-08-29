@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 
 from local_drama.api.schemas.g3 import CameraPlanResolveRequest, ProfileBindingRequest, ProfileContractDraftRequest, ProfileEvidencePublishRequest
+from local_drama.application.capability_options import CapabilityOptionService
 from local_drama.application.configuration import ConfigurationService
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.generation_model_catalog import build_generation_model_catalog
 from local_drama.application.profiles import ProfileService
+from local_drama.application.queries.generation_preferences import GenerationPreferenceQueryService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.errors import ApiError
+from local_drama.infrastructure.database.generation_preference_repository import SqliteGenerationPreferenceRepository
 from local_drama.infrastructure.manifest import ManifestValidationError
 
 router = APIRouter(tags=["profiles"])
@@ -16,6 +19,27 @@ router = APIRouter(tags=["profiles"])
 
 def service(request: Request) -> ProfileService:
     return ProfileService(request.app.state.database, request.app.state.settings.manifest_path)
+
+
+def capability_preference_resolver(request: Request):
+    def resolve(
+        *,
+        project_id: str,
+        capability: str,
+        episode_id: str | None = None,
+        shot_id: str | None = None,
+    ) -> dict[str, object]:
+        with request.app.state.database.connect() as connection:
+            return GenerationPreferenceQueryService(
+                SqliteGenerationPreferenceRepository(connection)
+            ).resolve(
+                project_id=project_id,
+                capability=capability,
+                episode_id=episode_id,
+                shot_id=shot_id,
+            )
+
+    return resolve
 
 
 @router.get("/profiles/manifest", operation_id="getModelManifest")
@@ -36,6 +60,39 @@ async def list_profiles(request: Request) -> dict[str, object]:
             "models": build_generation_model_catalog(items),
             "manifest": profile_service.get_manifest(),
         }
+    except ManifestValidationError as error:
+        raise ApiError("MANIFEST_INVALID", str(error), status_code=503) from error
+
+
+@router.get(
+    "/capability-options",
+    operation_id="listCapabilityOptions",
+    response_model=dict[str, object],
+)
+async def list_capability_options(
+    request: Request,
+    capability: str = Query(..., min_length=1, max_length=120),
+    project_id: str | None = Query(default=None, max_length=36),
+    episode_id: str | None = Query(default=None, max_length=36),
+    shot_id: str | None = Query(default=None, max_length=36),
+) -> dict[str, object]:
+    """Return the server-owned selection model for one creator capability."""
+    try:
+        settings = request.app.state.settings
+        return CapabilityOptionService(
+            service(request),
+            capability_preference_resolver(request),
+            configured_llm_provider=settings.llm_provider,
+            configured_llm_base_url=settings.llm_base_url,
+            configured_llm_model=settings.llm_model,
+        ).list_options(
+            capability=capability,
+            project_id=project_id,
+            episode_id=episode_id,
+            shot_id=shot_id,
+        )
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
     except ManifestValidationError as error:
         raise ApiError("MANIFEST_INVALID", str(error), status_code=503) from error
 

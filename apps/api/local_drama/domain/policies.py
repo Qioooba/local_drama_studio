@@ -50,6 +50,8 @@ def validate_project_code(code: str) -> None:
 
     if not re.fullmatch(r"[a-z][a-z0-9_]{1,63}", code):
         raise DomainRuleError("INVALID_PROJECT_CODE", "项目 code 必须是 2—64 位小写 ASCII、数字或下划线")
+    if code.upper() in {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}:
+        raise DomainRuleError("INVALID_PROJECT_CODE", "项目 code 不能使用 Windows 保留设备名")
 
 
 def validate_project_spec(*, episode_count: int, aspect_ratio: str | None, fps_num: int | None, fps_den: int | None,

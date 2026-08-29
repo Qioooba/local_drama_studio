@@ -8,9 +8,11 @@ from local_drama.api.schemas.g3 import (
     BreakdownRequest,
     DocumentImportCommitRequest,
     DocumentImportRequest,
+    DocumentImportResponse,
     SourceParagraphPageResponse,
     SourcePassageResponse,
 )
+from local_drama.api.server_paths import require_server_loopback
 from local_drama.api.uploading import receive_bounded_upload
 from local_drama.application.breakdown_apply import BreakdownApplyService
 from local_drama.application.breakdown_revisions import BreakdownRevisionService
@@ -26,15 +28,28 @@ def service(request: Request) -> DocumentImportService:
     return DocumentImportService(request.app.state.database, request.app.state.settings)
 
 
-@router.post("/projects/{project_id}/imports", status_code=201, operation_id="importScriptDocument")
+@router.post(
+    "/projects/{project_id}/imports",
+    status_code=201,
+    response_model=DocumentImportResponse,
+    response_model_exclude_none=True,
+    operation_id="importScriptDocument",
+)
 async def import_script(project_id: str, payload: DocumentImportRequest, request: Request) -> dict[str, object]:
     try:
+        require_server_loopback(request, action="按绝对路径导入文档到")
         return {"import": service(request).import_document(project_id, payload.source_path)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
 
-@router.post("/projects/{project_id}/imports:upload", status_code=201, operation_id="uploadScriptDocument")
+@router.post(
+    "/projects/{project_id}/imports:upload",
+    status_code=201,
+    response_model=DocumentImportResponse,
+    response_model_exclude_none=True,
+    operation_id="uploadScriptDocument",
+)
 async def upload_script(project_id: str, request: Request) -> dict[str, object]:
     """Register one bounded browser upload for script documents (.txt, .md, .docx)."""
     try:

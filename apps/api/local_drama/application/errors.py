@@ -10,6 +10,17 @@ def api_error_from_domain(error: DomainRuleError) -> ApiError:
     elif error.code.endswith("_NOT_FOUND") or error.code in {"PROJECT_NOT_FOUND", "SHOT_NOT_FOUND"}:
         status = 404
     elif error.code in {
+        "MP_PROFILE_CROSSWALK_FIELDS_REQUIRED",
+        "MP_PROFILE_CROSSWALK_LEGACY_NOT_PUBLISHED",
+        "MP_PROFILE_CROSSWALK_LEGACY_CAPABILITY_UNKNOWN",
+        "MP_PROFILE_CROSSWALK_V2_NOT_PUBLISHED",
+        "MP_PROFILE_CROSSWALK_CAPABILITY_MISMATCH",
+        "MP_PROFILE_CROSSWALK_PARAMETER_CONTRACT_MISMATCH",
+    }:
+        status = 400
+    elif error.code in {
+        "MP_PROFILE_CROSSWALK_ACTIVE_MAPPING_EXISTS",
+        "MP_PROFILE_CROSSWALK_NOT_APPROVED",
         "REVISION_CONFLICT",
         "INVALID_STATE_TRANSITION",
         "PROJECT_CODE_EXISTS",

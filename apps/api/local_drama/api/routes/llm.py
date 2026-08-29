@@ -36,6 +36,14 @@ async def status(
         raise api_error_from_domain(error) from error
 
 
+@router.get("/local-llm/models", operation_id="discoverOllamaModels", response_model=dict[str, object])
+async def discover_ollama_models(request: Request, base_url: str | None = None) -> dict[str, object]:
+    try:
+        return {"catalog": service(request).discover_ollama_models(base_url=base_url)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.post("/local-llm/probe", operation_id="probeLocalLLM")
 async def probe_llm(
     request: Request,

@@ -1,0 +1,10 @@
+{
+  "task": "asr",
+  "status": "PASS",
+  "model": "F:\\AI_Models\\LocalDramaStudio\\Services\\Qwen3-ASR-1.7B-hf",
+  "audio": "F:\\AI_Projects\\h3\\local_drama_studio\\work\\local-model-tests\\voxcpm2-test.wav",
+  "language": "Chinese",
+  "transcription": "本地导演台配音测试通过。",
+  "elapsed_seconds": 10.605,
+  "network_used": false
+}

@@ -351,6 +351,10 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
         assert delivery_operation.json()["result_type"] == "DELIVERY"
         delivery = delivery_operation.json()["result"]
         assert delivery["status"] == "VERIFIED"
+        assert delivery["artifact"]["kind"] == "FILE"
+        assert delivery["artifact"]["download_url"] == f"/api/v1/delivery-packages/{delivery['id']}/download"
+        assert delivery["artifact"]["download_filename"].endswith(".mp4")
+        assert Path(delivery["artifact"]["server_absolute_path"]).is_file()
         assert client.get(f"/api/v1/delivery-packages/{delivery['id']}:verify").json()["delivery"]["status"] == "VERIFIED"
         observed = client.get(f"/api/v1/episodes/{episode['id']}/timeline-status")
         assert observed.status_code == 200, observed.text

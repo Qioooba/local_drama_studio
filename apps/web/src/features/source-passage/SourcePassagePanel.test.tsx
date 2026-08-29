@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SourcePassagePanel } from "./SourcePassagePanel";
+import { apiJsonResponse } from "../../test/apiResponse";
 
 function payload(start: number, end: number, options: { total?: number; hasMore?: boolean } = {}) {
   return {
@@ -30,8 +31,8 @@ afterEach(() => vi.restoreAllMocks());
 describe("SourcePassagePanel", () => {
   it("requests bounded pages and navigates without loading the whole document", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(new Response(JSON.stringify(payload(8_000, 16_000)), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(payload(16_000, 20_000, { hasMore: false })), { status: 200 }));
+      .mockResolvedValueOnce(apiJsonResponse(payload(8_000, 16_000)))
+      .mockResolvedValueOnce(apiJsonResponse(payload(16_000, 20_000, { hasMore: false })));
     renderPanel();
 
     expect(await screen.findByText("片段 8000-16000")).toBeTruthy();
@@ -46,8 +47,8 @@ describe("SourcePassagePanel", () => {
 
   it("shows an actionable error and retries the same bounded range", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(new Response(JSON.stringify({ detail: { message: "本地原文暂不可读" } }), { status: 503 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(payload(8_000, 16_000)), { status: 200 }));
+      .mockResolvedValueOnce(apiJsonResponse({ error: { code: "SOURCE_UNAVAILABLE", message: "本地原文暂不可读" } }, { status: 503 }))
+      .mockResolvedValueOnce(apiJsonResponse(payload(8_000, 16_000)));
     renderPanel();
 
     expect(await screen.findByText("本地原文暂不可读")).toBeTruthy();

@@ -39,16 +39,15 @@ import {
   withdrawDeliveryPackage,
   freezeEpisodeTimelineV2,
 } from "./api";
+import { apiJsonResponse } from "../test/apiResponse";
 
 describe("generated G8 timeline client", () => {
   const fetchMock = vi.fn();
 
   beforeEach(() => {
-    fetchMock.mockImplementation(async (path: string) => ({
-      ok: true,
-      headers: { get: () => null },
-      json: async () => path.endsWith("/session/bootstrap") ? { token: "test-token", mode: "LOCAL_ONLY" } : {},
-    }));
+    fetchMock.mockImplementation(async (path: string) => apiJsonResponse(
+      path.endsWith("/session/bootstrap") ? { token: "test-token", mode: "LOCAL_ONLY" } : {},
+    ));
     vi.stubGlobal("fetch", fetchMock);
   });
 
@@ -85,7 +84,10 @@ describe("generated G8 timeline client", () => {
     await planEpisodeTimelineRefresh("episode/1");
     await commitEpisodeTimelineRefresh("episode/1", "plan/hash");
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/v1/episodes/episode%2F1/timeline-refresh:plan", undefined);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/episodes/episode%2F1/timeline-refresh:plan",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/episodes/episode%2F1/timeline-refresh:commit", expect.objectContaining({
       method: "POST",
       body: JSON.stringify({ expected_plan_hash: "plan/hash" }),
@@ -94,12 +96,18 @@ describe("generated G8 timeline client", () => {
 
   it("loads the global season and episode context with one project catalog request", async () => {
     await getProjectEpisodeCatalog("project/one");
-    expect(fetchMock).toHaveBeenCalledWith("/api/v1/projects/project%2Fone/episode-catalog", undefined);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/projects/project%2Fone/episode-catalog",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
   });
 
   it("loads first-production milestones through one read-only setup request", async () => {
     await getProjectCreatorSetup("project/one");
-    expect(fetchMock).toHaveBeenCalledWith("/api/v1/projects/project%2Fone/creator-setup", undefined);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/projects/project%2Fone/creator-setup",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
   });
 
   it("appends one project episode through the encoded transactional structure endpoint", async () => {
@@ -117,21 +125,19 @@ describe("generated G8 timeline client", () => {
     fetchMock.mockImplementation(async (path: string, init?: RequestInit) => {
       if (path.endsWith("/session/bootstrap")) {
         bootstrapCalls += 1;
-        return { ok: true, headers: { get: () => null }, json: async () => ({ token: bootstrapCalls === 1 ? "old-token" : "new-token", mode: "LOCAL_ONLY" }) };
+        return apiJsonResponse({ token: bootstrapCalls === 1 ? "old-token" : "new-token", mode: "LOCAL_ONLY" });
       }
       mutationCalls += 1;
       const token = new Headers(init?.headers).get("X-Local-Instance-Token");
       if (mutationCalls === 1) {
         expect(token).toBe("old-token");
-        return {
-          ok: false,
-          status: 403,
-          headers: { get: () => "request-old" },
-          json: async () => ({ error: { code: "CSRF_TOKEN_REQUIRED", message: "instance token expired" } }),
-        };
+        return apiJsonResponse(
+          { error: { code: "CSRF_TOKEN_REQUIRED", message: "instance token expired" } },
+          { status: 403, headers: { "X-Request-Id": "request-old" } },
+        );
       }
       expect(token).toBe("new-token");
-      return { ok: true, headers: { get: () => null }, json: async () => ({ saved: true }) };
+      return apiJsonResponse({ saved: true });
     });
 
     await expect(requestJson<{ saved: boolean }>("/api/v1/test-write", { method: "POST" }, "http://127.0.0.1:3999")).resolves.toEqual({ saved: true });
@@ -219,11 +225,8 @@ describe("generated G8 timeline client", () => {
   });
 
   it("surfaces structured API failures with a traceable request ID", async () => {
-    fetchMock.mockResolvedValueOnce({
-      ok: false,
-      status: 409,
-      headers: { get: (name: string) => name === "X-Request-Id" ? "req-header-fallback" : null },
-      json: async () => ({
+    fetchMock.mockResolvedValueOnce(apiJsonResponse(
+      {
         error: {
           code: "REVISION_CONFLICT",
           message: "版本已变化",
@@ -231,8 +234,9 @@ describe("generated G8 timeline client", () => {
           retryable: true,
           suggested_action: "刷新后重试",
         },
-      }),
-    });
+      },
+      { status: 409, headers: { "X-Request-Id": "req-header-fallback" } },
+    ));
 
     const error = await getFrameAnchor("stale-anchor").catch((reason: unknown) => reason);
     expect(error).toBeInstanceOf(ApiRequestError);

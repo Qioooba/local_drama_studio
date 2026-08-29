@@ -1003,11 +1003,16 @@ class ProfileService:
             }.get(candidate_capability)
             if expected_workflow_capability is None and image_capability:
                 expected_workflow_capability = "SDXL_T2I_CANDIDATE"
-            if expected_workflow_capability is None or workflow_capability != expected_workflow_capability:
+            accepted_workflow_capabilities = {
+                value
+                for value in (expected_workflow_capability, candidate_capability)
+                if value is not None
+            }
+            if not accepted_workflow_capabilities or workflow_capability not in accepted_workflow_capabilities:
                 raise DomainRuleError(
                     "PROFILE_EVIDENCE_CAPABILITY_MISMATCH",
                     "Workflow capability 与待发布 Profile capability 不一致",
-                    {"expected": expected_workflow_capability, "actual": workflow_capability},
+                    {"expected": sorted(accepted_workflow_capabilities), "actual": workflow_capability},
                 )
             evidence = connection.execute(
                 """SELECT mv.id AS media_version_id, mv.integrity_status, mv.source_artifact_id,

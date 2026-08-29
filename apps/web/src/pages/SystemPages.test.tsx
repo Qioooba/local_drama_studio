@@ -10,6 +10,7 @@ import { SystemWorkflowsPage } from "./SystemWorkflowsPage";
 import { AppShell } from "../layouts/AppShell";
 import { queryKeys } from "../query/queryKeys";
 import { notifyDraftDirty } from "../features/drafts/draftGuard";
+import { apiJsonResponse } from "../test/apiResponse";
 
 const api = vi.hoisted(() => ({
   getCapacitySnapshot: vi.fn(), getDiagnostics: vi.fn(), getEpisodeTimelineStatus: vi.fn(), getProjectCreatorSetup: vi.fn(), getProjectEpisodeCatalog: vi.fn(), getStoryboardWorkspace: vi.fn(), listAuditEvents: vi.fn(), listEpisodes: vi.fn(), listJobsPage: vi.fn(), listProfiles: vi.fn(), listProjects: vi.fn(), listSeasons: vi.fn(), listWorkflowVersions: vi.fn(), runDiagnostics: vi.fn(),
@@ -28,6 +29,8 @@ vi.mock("../features/shared/ComfyLabPanel", () => ({
   ComfyLabPanel: () => <section aria-label="Comfy 开发工具">Comfy 开发工具</section>,
 }));
 
+let systemAssignmentItems: Array<Record<string, unknown>> = [];
+
 function mount(node: React.ReactNode, path = "/") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}>{node}</MemoryRouter></QueryClientProvider>);
@@ -36,6 +39,76 @@ function mount(node: React.ReactNode, path = "/") {
 describe("V2 system workspaces", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    systemAssignmentItems = [];
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = typeof input === "string" ? input : input instanceof Request ? input.url : input.toString();
+      if (path.endsWith("/api/v1/session/bootstrap")) {
+        return Promise.resolve(apiJsonResponse({ token: "system-pages-token", mode: "LOCAL_ONLY" }));
+      }
+      if (path.endsWith("/api/v2/model-platform/overview")) {
+        return Promise.resolve(apiJsonResponse({ overview: {
+          capability_count: 35, registered_model_release_count: 0, runtime_installation_count: 0,
+          discovery_observation_count: 0, published_profile_count: 0,
+        }, read_only: true }));
+      }
+      if (path.endsWith("/api/v2/model-platform/storage-policy")) {
+        return Promise.resolve(apiJsonResponse({ storage_policy: {
+          model_root_configured: true, root_kind: "INSTANCE_DEFAULT", discovery_library_count: 4,
+          discovery_libraries: ["ComfyUI 模型库", "PyTorch 模型库", "Ollama 模型库", "音频模型库"],
+          operational_areas: ["下载队列", "暂存区", "隔离区"], configuration_authority: "HOST_CLI", absolute_paths_exposed: false,
+        }, read_only: true }));
+      }
+      if (path.endsWith("/api/v2/model-platform/business-selection-rollouts")) {
+        return Promise.resolve(apiJsonResponse({ items: [], count: 0, read_only: true, execution_switched: false }));
+      }
+      if (path.endsWith("/api/v2/model-platform/system-capability-assignments")) {
+        return Promise.resolve(apiJsonResponse({ items: systemAssignmentItems, count: systemAssignmentItems.length, read_only: true, scope_type: "SYSTEM" }));
+      }
+      if (path.endsWith("/api/v2/model-platform/capability-assignments")) {
+        return Promise.resolve(apiJsonResponse({ status: "SAVED" }));
+      }
+      if (path.endsWith("/api/v2/model-platform/capabilities")) {
+        return Promise.resolve(apiJsonResponse({ items: [
+          { code: "LLM_STORY_PARSE", title: "故事拆解", family: "TEXT", input_modalities: ["TEXT"], output_modalities: ["TEXT"], business_surfaces: ["story"], background_only: false },
+          { code: "EMBEDDING_TEXT", title: "文本向量化", family: "RETRIEVAL", input_modalities: ["TEXT"], output_modalities: ["VECTOR"], business_surfaces: ["project-knowledge"], background_only: true },
+        ], count: 2, read_only: true }));
+      }
+      if (path.endsWith("/api/v2/model-platform/discovery-observations")) {
+        return Promise.resolve(apiJsonResponse({ items: [
+          { id: "observation-qwen", native_id: "qwen3.8:27b", runtime_kind: "OLLAMA", presence: "PRESENT", size_bytes: 17179869184, candidate_capabilities: ["LLM_STORY_PARSE"], metadata: { family: "qwen3" }, observed_at: "2026-08-29T01:00:00Z", discovery_run_status: "SUCCEEDED" },
+        ], count: 1, read_only: true }));
+      }
+      if (path.endsWith("/api/v2/model-platform/registered-candidates")) {
+        return Promise.resolve(apiJsonResponse({ items: [{
+          runtime_model_installation_id: "runtime-model-qwen", model_release_id: "release-qwen", model_release_code: "ollama-qwen3-8-27b", model_title: "qwen3.8:27b",
+          runtime_kind: "OLLAMA", install_state: "DISCOVERED", integrity_status: "NOT_RUN", readiness_status: "VALIDATION_REQUIRED", assignable_capability_count: 0,
+          blockers: ["CAPABILITY_SMOKE_NOT_PASSED", "PROFILE_REQUIRED"],
+          capabilities: [{ code: "LLM_STORY_PARSE", title: "故事拆解", offering_validation_status: "NOT_RUN", profile_version_count: 0, published_profile_count: 0, workflow_binding_count: 0, workflow_schema_validated_count: 0, readiness_status: "VALIDATION_REQUIRED", blockers: ["CAPABILITY_SMOKE_NOT_PASSED", "PROFILE_REQUIRED"] }],
+        }], count: 1, read_only: true }));
+      }
+      if (path.endsWith("/api/v2/model-platform/registered-candidates/runtime-model-qwen/validation-history")) {
+        return Promise.resolve(apiJsonResponse({ items: [{
+          validation_run_id: "validation-qwen", target: "CAPABILITY", capability_code: "LLM_STORY_PARSE",
+          validation_kind: "CAPABILITY_SMOKE", status: "SMOKE_PASSED", occurred_at: "2026-08-29T02:01:00Z",
+        }], count: 1, read_only: true, evidence_payload_exposed: false }));
+      }
+      if (path.endsWith("/api/v2/model-platform/profile-versions")) {
+        return Promise.resolve(apiJsonResponse({ items: [], count: 0, read_only: true }));
+      }
+      if (path.endsWith("/api/v2/model-platform/registered-candidates/runtime-model-qwen/capability-offerings/LLM_STORY_PARSE:smoke")) {
+        return Promise.resolve(apiJsonResponse({ validation: { validation_run_id: "smoke-qwen", runtime_model_installation_id: "runtime-model-qwen", capability_code: "LLM_STORY_PARSE", status: "SMOKE_PASSED", installation_ready: false } }));
+      }
+      if (path.endsWith("/api/v2/model-platform/discovery-runs:ollama")) {
+        return Promise.resolve(apiJsonResponse({ discovery_run: { id: "scan-ollama", status: "SUCCEEDED", observation_count: 1 } }));
+      }
+      if (path.endsWith("/api/v2/model-platform/discovery-runs:model-lock")) {
+        return Promise.resolve(apiJsonResponse({ discovery_runs: [{ id: "scan-lock", status: "SUCCEEDED", observation_count: 2 }] }));
+      }
+      if (path.endsWith("/api/v2/model-platform/discovery-observations/observation-qwen:register")) {
+        return Promise.resolve(apiJsonResponse({ candidate: { model_release_id: "release-qwen", model_release_code: "ollama-qwen3-8-27b", runtime_model_installation_id: "runtime-model-qwen", created: true, validation_status: "NOT_RUN" } }));
+      }
+      return Promise.resolve(apiJsonResponse({ message: `Unexpected request: ${path}` }, { status: 404 }));
+    }));
     api.listProjects.mockResolvedValue({ items: [{ id: "project-1", title: "北方小院" }] });
     api.listSeasons.mockResolvedValue({ items: [{ id: "season-1", code: "S01", title: "第一季" }, { id: "season-2", code: "S02", title: "第二季" }] });
     api.listEpisodes.mockImplementation((seasonId: string) => Promise.resolve({ items: seasonId === "season-2"
@@ -58,8 +131,8 @@ describe("V2 system workspaces", () => {
     api.listWorkflowVersions.mockResolvedValue({ items: [], runtime_contacted: false });
     api.listJobsPage.mockResolvedValue({ items: [{ id: "job-1", type: "GENERATION_VARIANT", project_id: "project-1", state: "FAILED", channel: "GPU_H3", priority: 50, max_attempts: 3, revision: 2 }], next_cursor: null, cursor: 0, limit: 100 });
     api.getCapacitySnapshot.mockResolvedValue({ snapshot: { scope: { project_id: null }, observed_at: "2026-08-20", jobs_by_state: {}, jobs_by_channel: {}, queued_count: 0, oldest_queued_age_seconds: null, active_attempt_count: 0, active_worker_count: 0, gpu_active_count: 0, gpu_concurrency_limit: 1, completed_last_24h: 0, observation_status: "OBSERVED_NOT_BENCHMARKED", webhook_status: "LOOPBACK_EXPLICIT_BOUNDED", would_create_jobs: false, runtime_contacted: false, network_contacted: false, mutated: false } });
-    api.getDiagnostics.mockResolvedValue({ run: { status: "DEGRADED", checks: [{ code: "COMFY", status: "WARN", observed: {} }] } });
-    api.runDiagnostics.mockResolvedValue({ run: { status: "HEALTHY", checks: [{ code: "COMFY", status: "PASS", observed: {} }] } });
+    api.getDiagnostics.mockResolvedValue({ run: { id: "diagnostic-1", status: "DEGRADED", created_at: "2026-08-29T01:00:00Z", checks: [{ code: "COMFYUI_LOOPBACK", category: "runtime", status: "WARN", observed: { reason: "ConnectionRefusedError" } }] } });
+    api.runDiagnostics.mockResolvedValue({ run: { id: "diagnostic-2", status: "HEALTHY", created_at: "2026-08-29T02:00:00Z", checks: [{ code: "COMFYUI_LOOPBACK", category: "runtime", status: "PASS", observed: { status_code: 200 } }] } });
     api.listAuditEvents.mockResolvedValue({ items: [], next_cursor: null, cursor: 0, limit: 50, filters: {}, local_only: true, network_contacted: false, mutated: false });
   });
 
@@ -108,24 +181,45 @@ describe("V2 system workspaces", () => {
 
   it("runs explicit diagnostics and keeps audit read-only", async () => {
     mount(<DiagnosticsPage />);
-    expect(await screen.findByText("DEGRADED")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "运行诊断" }));
-    expect(await screen.findByText("HEALTHY")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: /审计历史/i }));
+    expect(await screen.findByRole("heading", { name: "有 1 项需要留意" })).toBeInTheDocument();
+    expect(screen.getByText("图像与视频生成服务")).toBeInTheDocument();
+    expect(screen.queryByText("DEGRADED")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "重新检查" }));
+    expect(await screen.findByRole("heading", { name: "生产环境可用" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /操作记录/i }));
     await waitFor(() => expect(api.listAuditEvents).toHaveBeenCalled());
   });
 
   it("keeps system capability publishing separate from project capability binding", async () => {
     mount(<ModelsPage />);
-    expect(await screen.findByRole("heading", { name: "能力与模型中心" })).toBeInTheDocument();
-    expect(screen.getByText(/资源登记一次即可供所有项目使用/)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "一次接入，所有项目复用" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "能力与模型" })).toBeInTheDocument();
+    expect(screen.getByText("接入本机模型或模型服务，验证后发布为创作能力。")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "能力优先的模型中心" })).toBeInTheDocument();
+    expect(screen.getByText("扫描发现")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "最近发现的本机模型" })).toBeInTheDocument();
+    expect(screen.getAllByText("qwen3.8:27b")).toHaveLength(2);
+    expect(screen.getByText("文件/标签已发现")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "已登记候选的能力门禁" })).toBeInTheDocument();
+    expect(screen.getAllByText("需要验证").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("能力冒烟未通过").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByText("查看验证记录"));
+    expect(await screen.findByText("能力冒烟")).toBeInTheDocument();
+    expect(screen.getAllByText(/LLM_STORY_PARSE/).length).toBeGreaterThan(1);
+    expect(screen.queryByText(/127\.0\.0\.1/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "运行能力冒烟" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("LLM_STORY_PARSE 能力冒烟通过，其余声明能力仍需验证。");
+    fireEvent.click(screen.getByRole("button", { name: "扫描 Ollama" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Ollama 扫描完成：发现 1 条记录。");
+    fireEvent.click(screen.getByRole("button", { name: "登记候选" }));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("已登记候选模型：ollama-qwen3-8-27b。下一步需要验证与发布。"));
+    expect(screen.getByText(/扫描只产生候选证据，不会自动发布或影响创作任务。/)).toBeInTheDocument();
+    expect(screen.queryByText(/所有项目复用/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "打开专家配置" })).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "执行配置契约" })).not.toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "模型与服务" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "接入与验证" })).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "故事拆解模型" })).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "生成偏好任务" })).not.toBeInTheDocument();
-    expect(api.listProfiles).toHaveBeenCalledOnce();
+    expect(api.listProfiles).not.toHaveBeenCalled();
     expect(api.listWorkflowVersions).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "打开专家配置" }));
@@ -133,6 +227,57 @@ describe("V2 system workspaces", () => {
     await waitFor(() => expect(api.listWorkflowVersions).toHaveBeenCalledOnce());
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "执行配置契约" })).not.toBeInTheDocument());
+  });
+
+  it("deep-links to and highlights the exact version returned by publishing", async () => {
+    api.listProfiles.mockResolvedValue({ items: [{
+      id: "profile-qwen",
+      code: "local-llm-ollama-qwen3-8-27b",
+      title: "OLLAMA_LOOPBACK qwen3.8:27b QC_VISUAL 候选 Profile",
+      version_id: "published-qwen-v1",
+      version_no: 1,
+      capability: "QC_VISUAL",
+      status: "PUBLISHED",
+    }] });
+
+    mount(<ModelsPage />, "/system/capabilities?view=catalog&published=published-qwen-v1");
+
+    expect(await screen.findByText("已定位到刚发布的版本")).toBeInTheDocument();
+    const capability = screen.getAllByText("画面画质质检").at(-1)?.closest("article");
+    expect(capability).toHaveAttribute("aria-current", "true");
+    expect(capability).toHaveTextContent("v1 · 已发布");
+  });
+
+  it("limits system assignment editing to published Profile and safe declared fields", async () => {
+    systemAssignmentItems = [{
+      capability_code: "EMBEDDING_TEXT", title: "文本向量化", family: "RETRIEVAL", background_only: true,
+      assignment: { resolution_mode: "AUTO", execution_profile_version_id: null, revision: null, overrides: {}, has_unrenderable_override: false },
+      profiles: [{
+        profile_version_id: "embedding-profile-v1", profile_code: "embedding-default", profile_title: "Qwen3 文本向量", version_no: 1,
+        system_override_fields: [{ name: "max_length", label: "最大文本长度", help: "", schema: { type: "integer", minimum: 1, maximum: 8192, default: 4096 } }],
+      }],
+    }];
+
+    mount(<ModelsPage />);
+
+    expect(await screen.findByRole("heading", { name: "为 V2 设置默认 Profile 与受控参数" })).toBeInTheDocument();
+    const panel = screen.getByRole("heading", { name: "为 V2 设置默认 Profile 与受控参数" }).closest("section")!;
+    expect(within(panel).getByText("文本向量化")).toBeInTheDocument();
+    expect(within(panel).queryByText(/模型路径|原生 locator|endpoint|密钥|Python/)).not.toBeInTheDocument();
+    fireEvent.click(within(panel).getByLabelText("固定已发布 Profile"));
+    fireEvent.change(within(panel).getByLabelText("已发布 Profile"), { target: { value: "embedding-profile-v1" } });
+    fireEvent.change(within(panel).getByLabelText("最大文本长度"), { target: { value: "2048" } });
+    expect(within(panel).getByLabelText("变更理由")).toBeInTheDocument();
+    fireEvent.change(within(panel).getByLabelText("变更理由"), { target: { value: "索引长度已审核" } });
+    fireEvent.change(within(panel).getByLabelText("操作人"), { target: { value: "release-operator" } });
+    fireEvent.click(within(panel).getByRole("button", { name: "保存系统能力设置" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("范围参数已版本化并写入审计");
+    const request = vi.mocked(fetch).mock.calls.find(([input]) => String(input).endsWith("/api/v2/model-platform/capability-assignments"));
+    expect(request).toBeDefined();
+    expect(JSON.parse(String((request?.[1] as RequestInit).body))).toEqual({
+      scope_type: "SYSTEM", scope_id: "", capability_code: "EMBEDDING_TEXT", resolution_mode: "EXPLICIT",
+      execution_profile_version_id: "embedding-profile-v1", overrides: { max_length: 2048 }, reason: "索引长度已审核", actor: "release-operator",
+    });
   });
 
   it("gives workflow publishing its own system owner instead of nesting it in Models", async () => {

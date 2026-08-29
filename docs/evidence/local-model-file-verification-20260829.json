@@ -1,0 +1,354 @@
+{
+  "schema_version": "localdrama.model-verification.v1",
+  "canonical_root": "F:\\AI_Models\\LocalDramaStudio",
+  "models": [
+    {
+      "code": "qwen-image-2512-q5-k-m",
+      "status": "PASS",
+      "files": [
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\ComfyUI\\diffusion_models\\Qwen-Image-2512\\qwen-image-2512-Q5_K_M.gguf",
+          "expected_bytes": 15000074784,
+          "status": "PASS",
+          "actual_bytes": 15000074784,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\ComfyUI\\text_encoders\\Qwen-Image\\qwen_2.5_vl_7b_fp8_scaled.safetensors",
+          "expected_bytes": 9384670680,
+          "status": "PASS",
+          "actual_bytes": 9384670680,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\ComfyUI\\vae\\Qwen-Image\\qwen_image_vae.safetensors",
+          "expected_bytes": 253806246,
+          "status": "PASS",
+          "actual_bytes": 253806246,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "code": "qwen-image-edit-2511-q5-k-m",
+      "status": "PASS",
+      "files": [
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\ComfyUI\\diffusion_models\\Qwen-Image-Edit-2511\\qwen-image-edit-2511-Q5_K_M.gguf",
+          "expected_bytes": 15027501664,
+          "status": "PASS",
+          "actual_bytes": 15027501664,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\ComfyUI\\text_encoders\\Qwen-Image\\qwen_2.5_vl_7b_fp8_scaled.safetensors",
+          "expected_bytes": 9384670680,
+          "status": "PASS",
+          "actual_bytes": 9384670680,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\ComfyUI\\vae\\Qwen-Image\\qwen_image_vae.safetensors",
+          "expected_bytes": 253806246,
+          "status": "PASS",
+          "actual_bytes": 253806246,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "code": "qwen-image-edit-2511-multiple-angles-lora",
+      "status": "PASS",
+      "files": [
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\ComfyUI\\loras\\Qwen-Image-Edit-2511\\qwen-image-edit-2511-multiple-angles-lora.safetensors",
+          "expected_bytes": 295140688,
+          "status": "PASS",
+          "actual_bytes": 295140688,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "code": "minimax-h3-fl2va",
+      "status": "PASS",
+      "files": [
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\ComfyUI\\diffusion_models\\MiniMax-H3\\minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+          "expected_bytes": 20970379616,
+          "status": "PASS",
+          "actual_bytes": 20970379616,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\ComfyUI\\text_encoders\\MiniMax-H3\\qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+          "expected_bytes": 15687142551,
+          "status": "PASS",
+          "actual_bytes": 15687142551,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\ComfyUI\\vae\\MiniMax-H3\\minimax_h3_video_vae_fp16.safetensors",
+          "expected_bytes": 5207808496,
+          "status": "PASS",
+          "actual_bytes": 5207808496,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\ComfyUI\\vae\\MiniMax-H3\\minimax_h3_audio_vae_fp32.safetensors",
+          "expected_bytes": 605254808,
+          "status": "PASS",
+          "actual_bytes": 605254808,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "code": "minimax-h3-ref2va",
+      "status": "PASS",
+      "files": [
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\ComfyUI\\diffusion_models\\MiniMax-H3\\minimax_h3_ref2va_int8_convrot.safetensors",
+          "expected_bytes": 20970379616,
+          "status": "PASS",
+          "actual_bytes": 20970379616,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\ComfyUI\\text_encoders\\MiniMax-H3\\qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+          "expected_bytes": 15687142551,
+          "status": "PASS",
+          "actual_bytes": 15687142551,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\ComfyUI\\vae\\MiniMax-H3\\minimax_h3_video_vae_fp16.safetensors",
+          "expected_bytes": 5207808496,
+          "status": "PASS",
+          "actual_bytes": 5207808496,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\ComfyUI\\vae\\MiniMax-H3\\minimax_h3_audio_vae_fp32.safetensors",
+          "expected_bytes": 605254808,
+          "status": "PASS",
+          "actual_bytes": 605254808,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\ComfyUI\\loras\\MiniMax-H3\\minimax_h3_turbo_v4_step600_ema.safetensors",
+          "expected_bytes": 779849816,
+          "status": "PASS",
+          "actual_bytes": 779849816,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "code": "ace-step-1.5-xl-sft",
+      "status": "PASS",
+      "files": [
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\ComfyUI\\diffusion_models\\ACE-Step-1.5\\acestep_v1.5_xl_sft_bf16.safetensors",
+          "expected_bytes": 9974719930,
+          "status": "PASS",
+          "actual_bytes": 9974719930,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\ComfyUI\\text_encoders\\ACE-Step-1.5\\qwen_0.6b_ace15.safetensors",
+          "expected_bytes": 1191588248,
+          "status": "PASS",
+          "actual_bytes": 1191588248,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\ComfyUI\\text_encoders\\ACE-Step-1.5\\qwen_4b_ace15.safetensors",
+          "expected_bytes": 8379154232,
+          "status": "PASS",
+          "actual_bytes": 8379154232,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\ComfyUI\\vae\\ACE-Step-1.5\\ace_1.5_vae.safetensors",
+          "expected_bytes": 337431732,
+          "status": "PASS",
+          "actual_bytes": 337431732,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "code": "qwen3-embedding-8b",
+      "status": "PASS",
+      "files": [
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\Services\\Qwen3-Embedding-8B\\model-00001-of-00004.safetensors",
+          "expected_bytes": 4900037024,
+          "status": "PASS",
+          "actual_bytes": 4900037024,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\Services\\Qwen3-Embedding-8B\\model-00002-of-00004.safetensors",
+          "expected_bytes": 4915959512,
+          "status": "PASS",
+          "actual_bytes": 4915959512,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\Services\\Qwen3-Embedding-8B\\model-00003-of-00004.safetensors",
+          "expected_bytes": 4983067656,
+          "status": "PASS",
+          "actual_bytes": 4983067656,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\Services\\Qwen3-Embedding-8B\\model-00004-of-00004.safetensors",
+          "expected_bytes": 335570376,
+          "status": "PASS",
+          "actual_bytes": 335570376,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "code": "voxcpm2",
+      "status": "PASS",
+      "files": [
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\Services\\VoxCPM2\\model.safetensors",
+          "expected_bytes": 4580080592,
+          "status": "PASS",
+          "actual_bytes": 4580080592,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\Services\\VoxCPM2\\audiovae.pth",
+          "expected_bytes": 376951122,
+          "status": "PASS",
+          "actual_bytes": 376951122,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "code": "latentsync-1.6",
+      "status": "PASS",
+      "files": [
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\Services\\LatentSync-1.6\\latentsync_unet.pt",
+          "expected_bytes": 5072222488,
+          "status": "PASS",
+          "actual_bytes": 5072222488,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\Services\\LatentSync-1.6\\stable_syncnet.pt",
+          "expected_bytes": 1605328746,
+          "status": "PASS",
+          "actual_bytes": 1605328746,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\Services\\LatentSync-1.6\\whisper\\tiny.pt",
+          "expected_bytes": 75572083,
+          "status": "PASS",
+          "actual_bytes": 75572083,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\Services\\LatentSync-1.6\\auxiliary\\i3d_torchscript.pt",
+          "expected_bytes": 51235320,
+          "status": "PASS",
+          "actual_bytes": 51235320,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\Services\\LatentSync-1.6\\auxiliary\\koniq_pretrained.pkl",
+          "expected_bytes": 109768650,
+          "status": "PASS",
+          "actual_bytes": 109768650,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\Services\\LatentSync-1.6\\auxiliary\\sfd_face.pth",
+          "expected_bytes": 89844381,
+          "status": "PASS",
+          "actual_bytes": 89844381,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\Services\\LatentSync-1.6\\auxiliary\\syncnet_v2.model",
+          "expected_bytes": 54573114,
+          "status": "PASS",
+          "actual_bytes": 54573114,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\Services\\LatentSync-1.6\\auxiliary\\vgg16-397923af.pth",
+          "expected_bytes": 553433881,
+          "status": "PASS",
+          "actual_bytes": 553433881,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\Services\\LatentSync-1.6\\auxiliary\\vit_g_hybrid_pt_1200e_ssv2_ft.pth",
+          "expected_bytes": 2023804201,
+          "status": "PASS",
+          "actual_bytes": 2023804201,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "code": "qwen3-asr-1.7b-hf",
+      "status": "PASS",
+      "files": [
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\Services\\Qwen3-ASR-1.7B-hf\\model.safetensors",
+          "expected_bytes": 4076193080,
+          "status": "PASS",
+          "actual_bytes": 4076193080,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\Services\\Qwen3-ASR-1.7B-hf\\tokenizer.json",
+          "expected_bytes": 11429653,
+          "status": "PASS",
+          "actual_bytes": 11429653,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "code": "qwen3-forced-aligner-0.6b-hf",
+      "status": "PASS",
+      "files": [
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\Services\\Qwen3-ForcedAligner-0.6B-hf\\model.safetensors",
+          "expected_bytes": 1835545960,
+          "status": "PASS",
+          "actual_bytes": 1835545960,
+          "valid": true
+        },
+        {
+          "path": "F:\\AI_Models\\LocalDramaStudio\\Services\\Qwen3-ForcedAligner-0.6B-hf\\tokenizer.json",
+          "expected_bytes": 11429842,
+          "status": "PASS",
+          "actual_bytes": 11429842,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "code": "qwen3.8-27b",
+      "status": "PASS",
+      "ollama_model": "qwen3.8:27b",
+      "files": []
+    }
+  ],
+  "all_complete": true,
+  "network_contacted": false,
+  "ollama_probe": "LOOPBACK_ONLY"
+}

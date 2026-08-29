@@ -24,6 +24,8 @@ export const routes = {
   home: () => "/",
   projects: () => "/projects",
   quickCreate: () => "/quick-create",
+  adaptationPlans: (projectId: string) => "/projects/" + encode(projectId) + "/story/plans",
+  adaptationPlan: (projectId: string, planId: string) => "/projects/" + encode(projectId) + "/story/plans/" + encode(planId),
   projectHome: (projectId: string) => `/projects/${encode(projectId)}`,
   story: (projectId: string) => `/projects/${encode(projectId)}/story`,
   storyWorkspace: (projectId: string) => `/projects/${encode(projectId)}/story`,
@@ -48,6 +50,8 @@ export const ROUTE_REGISTRY: Record<string, RouteMetadata> = {
   home: { id: "home", scope: "GLOBAL", title: "工作台", pathPattern: "/" },
   projects: { id: "projects", scope: "GLOBAL", title: "项目", pathPattern: "/projects" },
   quickCreate: { id: "quickCreate", scope: "GLOBAL", title: "快速生成", pathPattern: "/quick-create" },
+  adaptationPlans: { id: "adaptationPlans", scope: "PROJECT", title: "改编规划", pathPattern: "/projects/:projectId/story/plans", parentRouteId: "story" },
+  adaptationPlan: { id: "adaptationPlan", scope: "PROJECT", title: "改编规划", pathPattern: "/projects/:projectId/story/plans/:planId", parentRouteId: "adaptationPlans" },
   projectHome: { id: "projectHome", scope: "PROJECT", title: "首页", pathPattern: "/projects/:projectId", parentRouteId: "projects" },
   story: { id: "story", scope: "PROJECT", title: "故事", pathPattern: "/projects/:projectId/story", parentRouteId: "projectHome" },
   assets: { id: "assets", scope: "PROJECT", title: "资产", pathPattern: "/projects/:projectId/assets", parentRouteId: "projectHome" },
@@ -87,6 +91,12 @@ export function parseRouteContext(pathname: string): RouteContext {
   }
   const lab = clean.match(/^\/projects\/([^/]+)\/labs(?:\/([^/]+))?$/);
   if (lab) { const projectId = decode(lab[1]); if (!projectId) return empty(); return { routeId: lab[2] ? "visualLab" : "visualLabs", scope: "PROJECT", projectId, episodeId: null, shotId: null }; }
+  const adaptationPlan = clean.match(/^\/projects\/([^/]+)\/story\/plans(?:\/([^/]+))?$/);
+  if (adaptationPlan) {
+    const projectId = decode(adaptationPlan[1]);
+    if (!projectId) return empty();
+    return { routeId: adaptationPlan[2] ? "adaptationPlan" : "adaptationPlans", scope: "PROJECT", projectId, episodeId: null, shotId: null };
+  }
   const project = clean.match(/^\/projects\/([^/]+)(?:\/(story|assets|settings)(?:\/([^/]+))?)?$/);
   if (project) { const projectId = decode(project[1]); if (!projectId) return empty(); return { routeId: project[2] === "story" ? "story" : project[2] === "assets" ? "assets" : project[2] === "settings" ? "settings" : "projectHome", scope: "PROJECT", projectId, episodeId: null, shotId: null }; }
   return empty();

@@ -11,6 +11,7 @@ from local_drama.bootstrap.build_identity import load_build_identity
 from local_drama.bootstrap.config_loader import load_machine_config, settings_values
 from local_drama.bootstrap.resource_locator import ResourceLocator
 from local_drama.domain.network_policy import NetworkMode, normalize_network_mode, validate_bind_host
+from local_drama.infrastructure.filesystem.path_policy import absolute_path, controlled_path, is_reparse_point
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -81,8 +82,15 @@ class Settings(BaseModel):
     upload_max_document_mb: int = Field(default=25, gt=0)
     upload_max_project_resource_mb: int = Field(default=50, gt=0)
     upload_max_project_package_mb: int = Field(default=2048, gt=0)
+    model_root: Path | None = Field(default=None, exclude=True)
     model_library_roots: tuple[Path, ...] = ()
+    model_download_source_hosts: tuple[str, ...] = ()
     worker_channels: tuple[str, ...] = ("CPU", "GPU_H3")
+    local_ai_python: Path | None = Field(default=None, exclude=True)
+    local_ai_adapter: Path | None = Field(default=None, exclude=True)
+    local_ai_model_root: Path | None = Field(default=None, exclude=True)
+    latentsync_python: Path | None = Field(default=None, exclude=True)
+    latentsync_root: Path | None = Field(default=None, exclude=True)
     frontend_dist_root: Path | None = None
     model_manifest_override: Path | None = None
     trusted_lan_unauthenticated: bool = False
@@ -98,10 +106,64 @@ class Settings(BaseModel):
     @model_validator(mode="after")
     def resolve_dependent_settings(self) -> "Settings":
         self.host = validate_bind_host(self.host, self.network_mode)
+        if self.is_lan_service and not self.trusted_lan_unauthenticated:
+            raise ValueError(
+                "LAN_SERVICE requires explicit trusted_lan_unauthenticated=true "
+                "until administrator authentication is configured"
+            )
+        if not self.is_lan_service and self.trusted_lan_unauthenticated:
+            raise ValueError("LOCAL_ONLY must not enable trusted_lan_unauthenticated")
+        self.release_root = absolute_path(self.release_root)
+        self.instance_root = absolute_path(self.instance_root)
+        for field_name in (
+            "data_root",
+            "projects_root",
+            "work_root",
+            "cache_root",
+            "logs_root",
+            "backups_root",
+        ):
+            setattr(self, field_name, absolute_path(getattr(self, field_name), base=self.instance_root))
+        storage_roots = (
+            self.data_root,
+            self.projects_root,
+            self.work_root,
+            self.cache_root,
+            self.logs_root,
+            self.backups_root,
+        )
+        if len(set(storage_roots)) != len(storage_roots):
+            raise ValueError("mutable storage roots must resolve to distinct directories")
+        for field_name in (
+            "ffmpeg_override",
+            "ffprobe_override",
+            "local_ai_python",
+            "local_ai_adapter",
+            "local_ai_model_root",
+            "latentsync_python",
+            "latentsync_root",
+            "model_root",
+            "frontend_dist_root",
+            "model_manifest_override",
+        ):
+            value = getattr(self, field_name)
+            if value is not None:
+                setattr(self, field_name, absolute_path(value, base=self.instance_root))
+        self.model_library_roots = tuple(
+            absolute_path(root, base=self.instance_root) for root in self.model_library_roots
+        )
+        self.model_download_source_hosts = tuple(item.strip().casefold() for item in self.model_download_source_hosts if item.strip())
+        self.tool_fallback_dirs = tuple(
+            str(absolute_path(directory, base=self.instance_root)) for directory in self.tool_fallback_dirs
+        )
         if self.comfy_input_root is None:
             self.comfy_input_root = self.work_root / "comfy-production" / "input"
+        else:
+            self.comfy_input_root = absolute_path(self.comfy_input_root, base=self.instance_root)
         if self.comfy_output_root is None:
             self.comfy_output_root = self.work_root / "comfy-production" / "output"
+        else:
+            self.comfy_output_root = absolute_path(self.comfy_output_root, base=self.instance_root)
         return self
 
     @property
@@ -188,6 +250,20 @@ class Settings(BaseModel):
     def workflow_packages_root(self) -> Path:
         return self.work_root / "workflow_packages"
 
+    def resolve_project_root(self, root_rel: str | Path, *, must_exist: bool = True) -> Path:
+        """Resolve the canonical database ``projects.root_rel`` contract."""
+        root = controlled_path(
+            self.projects_root,
+            root_rel,
+            must_exist=must_exist,
+            code="PATH_ESCAPE",
+        )
+        if must_exist and (not root.is_dir() or is_reparse_point(root)):
+            from local_drama.domain.errors import DomainRuleError
+
+            raise DomainRuleError("PATH_ESCAPE", "项目目录不存在或不是安全目录")
+        return root
+
     @property
     def resolved_frontend_dist_root(self) -> Path | None:
         configured = self.frontend_dist_root
@@ -209,7 +285,11 @@ class Settings(BaseModel):
             release_root=locator.release_root,
             instance_root=locator.instance_root,
         )
-        values: dict[str, Any] = settings_values(machine_config) if machine_config is not None else {}
+        # A packaged instance always starts from instance-owned mutable roots.
+        # A partial machine config must never fall back to source/build paths.
+        values: dict[str, Any] = locator.storage_roots()
+        if machine_config is not None:
+            values.update(settings_values(machine_config))
         values.update(
             {
                 "release_root": locator.release_root,
@@ -218,9 +298,6 @@ class Settings(BaseModel):
             }
         )
         if machine_config is None and locator.packaged:
-            # The locator owns the field-name → directory-name mapping
-            # (data_root → <instance>/data, never <instance>/data_root).
-            values.update(locator.storage_roots())
             values["frontend_dist_root"] = locator.frontend_dist
             values["model_manifest_override"] = locator.default_manifest_path
         for field_name in ("host", "environment", "mode", "network_mode", "comfy_base_url", "llm_provider", "llm_base_url", "llm_model", "llm_api_key"):
@@ -247,11 +324,7 @@ class Settings(BaseModel):
             # Comma-separated list of additional allowed origins (e.g. a LAN
             # origin like http://192.168.1.120:5173 for cross-machine dev
             # access). Appends to the loopback defaults; never replaces them.
-            extra = tuple(
-                origin.strip()
-                for origin in os.environ["LOCAL_DRAMA_ALLOWED_ORIGINS"].split(",")
-                if origin.strip()
-            )
+            extra = tuple(origin.strip() for origin in os.environ["LOCAL_DRAMA_ALLOWED_ORIGINS"].split(",") if origin.strip())
             if extra:
                 defaults = cls.model_fields["allowed_origins"].default
                 values["allowed_origins"] = tuple(defaults) + extra
@@ -263,10 +336,18 @@ class Settings(BaseModel):
             env_name = f"LOCAL_DRAMA_{field_name.upper()}"
             if env_name in os.environ:
                 values[field_name] = Path(os.environ[env_name])
+        for field_name in (
+            "local_ai_python",
+            "local_ai_adapter",
+            "local_ai_model_root",
+            "latentsync_python",
+            "latentsync_root",
+        ):
+            env_name = f"LOCAL_DRAMA_{field_name.upper()}"
+            if env_name in os.environ:
+                values[field_name] = Path(os.environ[env_name])
         if "LOCAL_DRAMA_TOOL_FALLBACK_DIRS" in os.environ:
-            values["tool_fallback_dirs"] = tuple(
-                part.strip() for part in os.environ["LOCAL_DRAMA_TOOL_FALLBACK_DIRS"].split(";") if part.strip()
-            )
+            values["tool_fallback_dirs"] = tuple(part.strip() for part in os.environ["LOCAL_DRAMA_TOOL_FALLBACK_DIRS"].split(";") if part.strip())
         if "LOCAL_DRAMA_FFMPEG" in os.environ:
             values["ffmpeg_override"] = Path(os.environ["LOCAL_DRAMA_FFMPEG"])
         if "LOCAL_DRAMA_FFPROBE" in os.environ:
@@ -283,15 +364,17 @@ class Settings(BaseModel):
             if env_name in os.environ:
                 values[field_name] = int(os.environ[env_name])
         if "LOCAL_DRAMA_MODEL_LIBRARY_ROOTS" in os.environ:
-            values["model_library_roots"] = tuple(
-                Path(part.strip()) for part in os.environ["LOCAL_DRAMA_MODEL_LIBRARY_ROOTS"].split(";") if part.strip()
-            )
+            values["model_library_roots"] = tuple(Path(part.strip()) for part in os.environ["LOCAL_DRAMA_MODEL_LIBRARY_ROOTS"].split(";") if part.strip())
+        if "LOCAL_DRAMA_MODEL_DOWNLOAD_SOURCE_HOSTS" in os.environ:
+            values["model_download_source_hosts"] = tuple(part.strip() for part in os.environ["LOCAL_DRAMA_MODEL_DOWNLOAD_SOURCE_HOSTS"].split(";") if part.strip())
+        if "LOCAL_DRAMA_MODEL_ROOT" in os.environ:
+            values["model_root"] = Path(os.environ["LOCAL_DRAMA_MODEL_ROOT"])
         if "LOCAL_DRAMA_FRONTEND_DIST" in os.environ:
             values["frontend_dist_root"] = Path(os.environ["LOCAL_DRAMA_FRONTEND_DIST"])
         return cls(**values)
 
     def ensure_roots(self) -> None:
-        for path in (
+        paths = [
             self.data_root,
             self.projects_root,
             self.work_root,
@@ -299,5 +382,16 @@ class Settings(BaseModel):
             self.logs_root,
             self.backups_root,
             self.workflow_packages_root,
-        ):
+        ]
+        if self.model_root is not None:
+            paths.extend((
+                self.model_root,
+                self.model_root / "downloads",
+                self.model_root / "staging",
+                self.model_root / "quarantine",
+            ))
+        paths.extend(self.model_library_roots)
+        for path in paths:
             path.mkdir(parents=True, exist_ok=True)
+            if not path.is_dir() or is_reparse_point(path):
+                raise ValueError(f"mutable storage root is not a safe directory: {path}")

@@ -1,8 +1,8 @@
 import { useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ErrorState, Skeleton, TabPanel, Tabs } from "../components/ui";
+import { DiagnosticsOverview } from "../features/diagnostics/DiagnosticsOverview";
 import { AuditHistoryPanel } from "../features/shared/AuditHistoryPanel";
-import { DiagnosticPanel } from "../features/status/ReadinessPanels";
 import { GlobalSearchPanel } from "../features/shared/GlobalSearchPanel";
 import { getDiagnostics, listProjects, runDiagnostics } from "../generated/api";
 import { queryKeys } from "../query/queryKeys";
@@ -27,31 +27,22 @@ export function diagnosticErrorMessage(error: unknown): string {
 }
 
 const DIAGNOSTIC_TABS = [
-  { id: "env", label: "本机环境检查" },
-  { id: "audit", label: "审计历史" },
-  { id: "search", label: "全局检索" },
+  { id: "env", label: "环境状态" },
+  { id: "audit", label: "操作记录" },
+  { id: "search", label: "跨项目查找" },
 ];
 
 /** Engineering diagnostics stay explicit and separate from creator workspaces. */
 export function DiagnosticsPage() {
-  let projectId: string | null = null;
-  let setSearchParams: ((next: URLSearchParams, opts?: { replace?: boolean }) => void) | null = null;
-  let searchParams = new URLSearchParams();
-  try {
-    const params = useParams();
-    const [sp, ssp] = useSearchParams();
-    searchParams = sp;
-    setSearchParams = ssp;
-    projectId = params?.projectId || sp.get("project");
-  } catch {
-    projectId = null;
-  }
+  const params = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const projectId = params.projectId || searchParams.get("project");
   const requestedView = searchParams.get("view");
   const activeTab = DIAGNOSTIC_TABS.some((item) => item.id === requestedView) ? requestedView! : "env";
   const selectTab = (view: string) => {
     const next = new URLSearchParams(searchParams);
     if (view === "env") next.delete("view"); else next.set("view", view);
-    setSearchParams?.(next, { replace: true });
+    setSearchParams(next, { replace: true });
   };
 
   const projects = useQuery({ queryKey: queryKeys.projects.list({ limit: 100 }), queryFn: () => listProjects({ limit: 100 }) });
@@ -74,12 +65,12 @@ export function DiagnosticsPage() {
       <div className="panel-heading">
         <div>
           <p className="eyebrow">系统区</p>
-          <h2>诊断、审计与运维检索</h2>
+          <h2>系统状态与记录</h2>
         </div>
-        <span className="status-pill neutral">本机事实 · 创作区外</span>
+        <span className="status-pill neutral">只读 · 本机事实</span>
       </div>
       <p className="muted">
-        诊断检查本机数据库、FFmpeg、Comfy 与运行时清单；审计历史保持只读、追加和脱敏；全局检索提供跨剧目无泄漏实体定位。
+        查看当前生产依赖、追溯系统操作，或跨项目定位镜头、资产与任务。
       </p>
 
       <div className="system-workspace-tabs">
@@ -87,57 +78,42 @@ export function DiagnosticsPage() {
       </div>
 
       <TabPanel id="env" selectedId={activeTab}>
-        <section className="panel" aria-labelledby="diagnostics-local-title">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">显式检查</p>
-              <h3 id="diagnostics-local-title">本机环境检查</h3>
-            </div>
-            <button type="button" className="primary-action" onClick={() => run.mutate()} disabled={run.isPending}>
-              {run.isPending ? "检查中…" : "运行诊断"}
-            </button>
-          </div>
-          {run.isPending ? (
-            <p className="diagnostic-run-progress" role="status">
-              正在逐项检查 Comfy、LLM、FFmpeg 与本机清单，通常需要 10–60 秒，请勿重复点击。
-            </p>
-          ) : null}
-          {diagnostics.isPending ? (
-            <Skeleton label="正在读取诊断记录" lines={4} />
-          ) : diagnostics.error ? (
-            <ErrorState description={`诊断读取失败：${diagnosticErrorMessage(diagnostics.error)}`} onRetry={() => void diagnostics.refetch()} />
+        <div className="system-workspace-stack">
+          {diagnostics.isPending && !run.data ? (
+            <section className="panel"><Skeleton label="正在读取最近一次环境检查" lines={4} /></section>
+          ) : diagnostics.error && !run.data ? (
+            <section className="panel"><ErrorState description={`环境状态读取失败：${diagnosticErrorMessage(diagnostics.error)}`} onRetry={() => void diagnostics.refetch()} /></section>
           ) : (
-            <DiagnosticPanel run={run.data?.run ?? diagnostics.data?.run ?? null} />
+            <DiagnosticsOverview
+              run={run.data?.run ?? diagnostics.data?.run ?? null}
+              running={run.isPending}
+              onRun={() => run.mutate()}
+            />
           )}
           {run.error ? (
             <div className="inline-error diagnostic-run-error" role="alert">
-              <span>诊断运行失败：{diagnosticErrorMessage(run.error)}</span>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => { run.reset(); void diagnostics.refetch(); }}
-                disabled={diagnostics.isFetching}
-              >
-                {diagnostics.isFetching ? "正在重新读取…" : "重新读取诊断记录"}
+              <span>本次检查未完成：{diagnosticErrorMessage(run.error)}</span>
+              <button type="button" className="secondary" onClick={() => { run.reset(); void diagnostics.refetch(); }} disabled={diagnostics.isFetching}>
+                {diagnostics.isFetching ? "正在读取…" : "保留并读取上次结果"}
               </button>
             </div>
           ) : null}
-        </section>
+        </div>
       </TabPanel>
 
       <TabPanel id="audit" selectedId={activeTab}>
         <div className="system-workspace-stack">
-          <section className="panel" aria-label="审计项目范围">
+          <section className="system-scope-bar" aria-label="操作记录范围">
             <label>
-              审计项目范围
+              查看范围
               <select
-                aria-label="审计项目范围"
+                aria-label="操作记录项目范围"
                 value={projectId ?? ""}
                 onChange={(event) => {
                   const next = new URLSearchParams(searchParams);
                   if (event.target.value) next.set("project", event.target.value);
                   else next.delete("project");
-                  if (setSearchParams) setSearchParams(next, { replace: true });
+                  setSearchParams(next, { replace: true });
                 }}
               >
                 <option value="">全部项目</option>
@@ -148,13 +124,34 @@ export function DiagnosticsPage() {
                 ))}
               </select>
             </label>
+            <span>{projectId ? "只显示所选项目的操作" : "显示所有项目及系统级操作"}</span>
           </section>
+          {projects.error ? <p className="inline-error" role="alert">项目范围读取失败，当前仍可查看全部记录。</p> : null}
           <AuditHistoryPanel projectId={projectId} />
         </div>
       </TabPanel>
 
       <TabPanel id="search" selectedId={activeTab}>
         <div className="system-workspace-stack">
+          <section className="system-scope-bar" aria-label="查找范围">
+            <label>
+              查看范围
+              <select
+                aria-label="跨项目查找范围"
+                value={projectId ?? ""}
+                onChange={(event) => {
+                  const next = new URLSearchParams(searchParams);
+                  if (event.target.value) next.set("project", event.target.value);
+                  else next.delete("project");
+                  setSearchParams(next, { replace: true });
+                }}
+              >
+                <option value="">所有项目</option>
+                {projects.data?.items.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}
+              </select>
+            </label>
+            <span>{projectId ? "结果限定在所选项目" : "结果可来自任意项目"}</span>
+          </section>
           <GlobalSearchPanel projectId={projectId ?? undefined} />
         </div>
       </TabPanel>

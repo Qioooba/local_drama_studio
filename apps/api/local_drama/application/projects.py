@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import shutil
 import uuid
 from datetime import UTC, datetime
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, cast
 
 from local_drama.domain.capabilities import normalize_capability
@@ -19,6 +18,13 @@ from local_drama.domain.policies import (
 )
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.atomic import replace_path
+from local_drama.infrastructure.filesystem.path_policy import (
+    canonical_relative_path,
+    controlled_path,
+    is_reparse_point,
+    iter_controlled_files,
+    safe_filename,
+)
 from local_drama.infrastructure.filesystem.template import TEMPLATE_VERSION, build_project_tree
 
 from .reviews import ReviewService
@@ -55,7 +61,25 @@ def _canonical_profile_bindings(bindings: list[dict[str, str]]) -> list[dict[str
 class ProjectService:
     def __init__(self, database: Database, projects_root: Path) -> None:
         self.database = database
-        self.projects_root = projects_root
+        self.projects_root = projects_root.resolve()
+
+    def _project_root(self, project: dict[str, Any]) -> Path:
+        try:
+            root = controlled_path(
+                self.projects_root,
+                str(project["root_rel"]),
+                must_exist=True,
+                code="PROJECT_ROOT_INVALID",
+            )
+        except DomainRuleError as error:
+            raise DomainRuleError(
+                "PROJECT_ROOT_INVALID",
+                "项目目录不存在、越界或经过链接",
+                {"project_id": str(project.get("id") or "")},
+            ) from error
+        if not root.is_dir() or is_reparse_point(root):
+            raise DomainRuleError("PROJECT_ROOT_INVALID", "项目目录不存在或不安全")
+        return root
 
     def create_project(
         self,
@@ -328,9 +352,7 @@ class ProjectService:
             raise DomainRuleError("DUPLICATE_PROFILE_CAPABILITY", "同一 capability 只能绑定一个 Profile")
         if delivery_target is not None:
             path_rel = str(delivery_target.get("spec", {}).get("path_rel", ""))
-            path = PurePosixPath(path_rel)
-            if not path_rel or path.is_absolute() or ".." in path.parts:
-                raise DomainRuleError("INVALID_DELIVERY_TARGET", "交付目标必须是项目内相对路径")
+            canonical_relative_path(path_rel, code="INVALID_DELIVERY_TARGET")
         with self.database.connect() as connection:
             if production_plan is not None and connection.execute("SELECT 1 FROM production_plans WHERE code=?", (production_plan.get("code"),)).fetchone():
                 raise DomainRuleError("PRODUCTION_PLAN_CODE_EXISTS", "ProductionPlan code 已存在")
@@ -356,10 +378,7 @@ class ProjectService:
     def get_project_detail(self, project_id: str) -> dict[str, Any]:
         """Return project facts together with its server-resolved filesystem location."""
         project = self.get_project(project_id)
-        projects_root = self.projects_root.resolve()
-        project_root = (projects_root / str(project["root_rel"])).resolve()
-        if not project_root.is_relative_to(projects_root):
-            raise DomainRuleError("PROJECT_ROOT_INVALID", "项目目录越界", {"project_id": project_id})
+        project_root = self._project_root(project)
         project["absolute_root_path"] = str(project_root)
         return project
 
@@ -378,44 +397,33 @@ class ProjectService:
                 {"kind": normalized_kind, "allowed": sorted(PROJECT_RESOURCE_POLICIES)},
             )
         bounded_limit = max(1, min(int(limit), 500))
-        projects_root = self.projects_root.resolve()
-        project_root = (projects_root / str(project["root_rel"])).resolve()
-        if project_root.is_symlink() or not project_root.is_dir() or not project_root.is_relative_to(projects_root):
-            raise DomainRuleError("PROJECT_ROOT_INVALID", "项目目录不存在或不安全", {"project_id": project_id})
+        project_root = self._project_root(project)
 
         relative_root, allowed_suffixes = PROJECT_RESOURCE_POLICIES[normalized_kind]
         resources: list[dict[str, Any]] = []
         truncated = False
         for scan_relative_root in (relative_root,):
-            scan_root = (project_root / scan_relative_root).resolve()
-            if not scan_root.is_relative_to(project_root) or not scan_root.is_dir() or scan_root.is_symlink():
+            try:
+                scan_root = controlled_path(project_root, scan_relative_root, must_exist=True, code="PROJECT_RESOURCE_PATH_INVALID")
+            except DomainRuleError:
                 continue
-            for current, directory_names, file_names in os.walk(scan_root, followlinks=False):
-                current_path = Path(current)
-                directory_names[:] = sorted(name for name in directory_names if not (current_path / name).is_symlink())
-                for file_name in sorted(file_names):
-                    candidate = current_path / file_name
-                    if candidate.suffix.lower() not in allowed_suffixes or candidate.is_symlink():
-                        continue
-                    resolved = candidate.resolve()
-                    if not resolved.is_relative_to(project_root) or not resolved.is_file():
-                        continue
-                    try:
-                        byte_size = resolved.stat().st_size
-                    except OSError:
-                        continue
-                    resources.append(
-                        {
-                            "path_rel": resolved.relative_to(project_root).as_posix(),
-                            "name": resolved.name,
-                            "suffix": resolved.suffix.lower(),
-                            "byte_size": byte_size,
-                        }
-                    )
-                    if len(resources) >= bounded_limit:
-                        truncated = True
-                        break
-                if truncated:
+            for resolved in sorted(iter_controlled_files(scan_root)):
+                if resolved.suffix.lower() not in allowed_suffixes:
+                    continue
+                try:
+                    byte_size = resolved.stat().st_size
+                except OSError:
+                    continue
+                resources.append(
+                    {
+                        "path_rel": resolved.relative_to(project_root).as_posix(),
+                        "name": resolved.name,
+                        "suffix": resolved.suffix.lower(),
+                        "byte_size": byte_size,
+                    }
+                )
+                if len(resources) >= bounded_limit:
+                    truncated = True
                     break
             if truncated:
                 break
@@ -438,14 +446,11 @@ class ProjectService:
         if normalized_kind not in PROJECT_RESOURCE_POLICIES:
             raise DomainRuleError("PROJECT_LOCAL_RESOURCE_KIND_INVALID", "项目资源用途无效")
         relative_root, allowed_suffixes = PROJECT_RESOURCE_POLICIES[normalized_kind]
-        safe_name = Path(original_name).name[:180]
+        safe_name = safe_filename(original_name, default="resource.bin")
         suffix = Path(safe_name).suffix.lower()
         if not safe_name or suffix not in allowed_suffixes:
             raise DomainRuleError("PROJECT_LOCAL_RESOURCE_TYPE_INVALID", "文件格式不符合所选项目资源用途")
-        projects_root = self.projects_root.resolve()
-        project_root = (projects_root / str(project["root_rel"])).resolve()
-        if project_root.is_symlink() or not project_root.is_dir() or not project_root.is_relative_to(projects_root):
-            raise DomainRuleError("PROJECT_ROOT_INVALID", "项目目录不存在或不安全", {"project_id": project_id})
+        project_root = self._project_root(project)
         destination_root = (project_root / relative_root).resolve()
         if not destination_root.is_relative_to(project_root):
             raise DomainRuleError("PATH_ESCAPE", "项目资源目录越界")

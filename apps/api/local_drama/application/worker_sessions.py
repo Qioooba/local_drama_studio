@@ -446,7 +446,11 @@ class WorkerSupervisor:
                             sleep=self._sleep,
                         )
                     if result is None:
-                        local_channels = [channel for channel in requested_channels if channel != "GPU_H3"]
+                        # ComfyGenerationService explicitly excludes V2 model
+                        # executions.  Keep GPU_H3 here so LocalMediaWorker can
+                        # claim the frozen V2 snapshot after legacy Comfy jobs
+                        # have had their dedicated consumer opportunity.
+                        local_channels = requested_channels
                         if local_channels:
                             result = worker.run_once(worker_id, local_channels, worker_session_id=session_id)
                 except Exception as error:

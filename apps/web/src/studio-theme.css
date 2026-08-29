@@ -84,17 +84,6 @@ code, .project-code, .tabular-nums {
 .brand-lockup .eyebrow { margin: 0 0 1px; color: #828b9d; font-size: 8px; letter-spacing: .2em; }
 .brand-lockup h1 { color: #f8f9fc; font-size: 13px; font-weight: 720; letter-spacing: .02em; }
 
-.topbar-context { min-width: 0; gap: 10px; }
-.context-selectors { gap: 6px; }
-.context-selectors label { color: #778195; }
-.context-selectors select {
-  min-height: 38px;
-  border-color: var(--border);
-  border-radius: 8px;
-  color: #e8ebf2;
-  background: #111620;
-}
-.context-selectors select:hover { border-color: rgba(169, 149, 255, .48); background: #161b27; }
 
 .layout { min-height: calc(100vh - 60px); }
 .sidebar {
@@ -519,7 +508,6 @@ tr:hover td { background: rgba(255, 255, 255, .018); }
   .brand-lockup .brand-mark { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 10px; }
   .brand-lockup .eyebrow { display: none; }
   .brand-lockup h1 { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-  .topbar-context { flex: 0 0 auto; gap: 6px; }
   .mobile-nav-toggle,
   .topbar .command-trigger,
   .local-runtime-indicator summary { min-width: 44px; min-height: 44px; padding: 0 10px; }

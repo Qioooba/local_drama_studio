@@ -72,6 +72,11 @@ export function StoryWorkspacePage() {
       <div className="story-header-actions"><button type="button" className="secondary story-flow-toggle" onClick={() => setNavOpen((value) => !value)} aria-expanded={navOpen}>选择阶段</button><Link className="secondary v2-inline-link" to={`/projects/${projectId}`}>返回项目总览</Link></div>
     </header>
 
+    <nav className="story-adaptation-link" aria-label="故事工作区目的地">
+      <Link className="secondary v2-inline-link" to={"/projects/" + projectId + "/story/plans"}>改编规划</Link>
+      <span className="muted">先审阅整剧规划，再进入逐集拆解。</span>
+    </nav>
+
     <section className="story-project-location" aria-labelledby="story-project-location-label">
       <div className="story-project-location__value">
         <span id="story-project-location-label">服务器项目目录</span>

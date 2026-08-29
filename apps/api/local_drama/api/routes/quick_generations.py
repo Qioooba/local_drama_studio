@@ -140,6 +140,21 @@ async def output_content(output_id: str, request: Request) -> FileResponse:
         raise api_error_from_domain(error) from error
 
 
+@output_router.get("/{output_id}/download", operation_id="downloadQuickGenerationOutput")
+async def output_download(output_id: str, request: Request) -> FileResponse:
+    try:
+        output, path = await run_in_threadpool(service(request).content_path, output_id)
+        artifact = output["artifact"]
+        return FileResponse(
+            path,
+            media_type=str(output["mime_type"]),
+            filename=str(artifact["download_filename"]),
+            headers={"ETag": f'"{output["sha256"]}"'},
+        )
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @output_router.get("/{output_id}/thumbnail", operation_id="getQuickGenerationOutputThumbnail")
 async def output_thumbnail(output_id: str, request: Request, size: str = "small", frame: str = "poster") -> FileResponse:
     try:

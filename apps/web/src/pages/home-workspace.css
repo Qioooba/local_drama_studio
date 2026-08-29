@@ -1,10 +1,10 @@
 .home-workspace { gap: 20px; }
 
 .home-overview {
-  display: flex;
+  display: grid;
   min-height: 132px;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: flex-end;
-  justify-content: space-between;
   gap: 32px;
   padding: 24px 26px;
   border: 1px solid var(--border);
@@ -13,8 +13,10 @@
   box-shadow: var(--shadow-panel);
 }
 .home-overview h2 { margin-bottom: 8px; }
-.home-overview .muted { max-width: 720px; margin: 0; }
-.home-overview__actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.home-overview .muted { max-width: 620px; margin: 0; }
+.home-overview__actions { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: 10px; }
+.home-overview__actions .primary-action,
+.home-overview__actions .secondary { width: auto; min-width: 132px; white-space: nowrap; }
 
 .home-metrics {
   overflow: hidden;
@@ -116,7 +118,7 @@
 }
 
 @media (max-width: 900px) {
-  .home-overview { align-items: flex-start; flex-direction: column; }
+  .home-overview { grid-template-columns: 1fr; align-items: flex-start; }
   .home-overview__actions { justify-content: flex-start; }
   .home-primary-grid { grid-template-columns: 1fr; }
   .home-system-grid { grid-template-columns: 1fr; }

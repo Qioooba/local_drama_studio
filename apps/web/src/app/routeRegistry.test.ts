@@ -6,6 +6,8 @@ describe("canonical route registry", () => {
     expect(routes.home()).toBe("/");
     expect(routes.quickCreate()).toBe("/quick-create");
     expect(routes.projects()).toBe("/projects");
+    expect(routes.adaptationPlans("p 1")).toBe("/projects/p%201/story/plans");
+    expect(routes.adaptationPlan("p1", "plan 1")).toBe("/projects/p1/story/plans/plan%201");
     expect(routes.settings("p 1", "quality")).toBe("/projects/p%201/settings/quality");
     expect(routes.shotStudio("p1", "e1", "s1")).toBe("/projects/p1/episodes/e1/studio/s1");
     expect(routes.episodeProduction("p1", "e1")).toBe("/projects/p1/episodes/e1/production");
@@ -19,6 +21,8 @@ describe("canonical route registry", () => {
   it("parses canonical contexts", () => {
     expect(parseRouteContext("/").routeId).toBe("home");
     expect(parseRouteContext("/quick-create").routeId).toBe("quickCreate");
+    expect(parseRouteContext("/projects/p1/story/plans")).toMatchObject({ routeId: "adaptationPlans", scope: "PROJECT", projectId: "p1" });
+    expect(parseRouteContext("/projects/p1/story/plans/plan1")).toMatchObject({ routeId: "adaptationPlan", scope: "PROJECT", projectId: "p1" });
     expect(parseRouteContext("/projects/p1/settings/quality").routeId).toBe("settings");
     expect(parseRouteContext("/system/capabilities").routeId).toBe("systemCapabilities");
     expect(parseRouteContext("/projects/p1/episodes/e1/studio/s1")).toEqual({ routeId: "shotStudioShot", scope: "EPISODE", projectId: "p1", episodeId: "e1", shotId: "s1" });

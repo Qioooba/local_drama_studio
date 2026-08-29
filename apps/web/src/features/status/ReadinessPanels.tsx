@@ -219,7 +219,7 @@ export function ModelCompatibilityPanel({
         ))}
       </div>
       <p className="muted">平台只保存本机绝对路径、hash 和兼容性，不捆绑、上传或重新分发模型。{projectId ? "项目许可证存证只证明当前项目的使用依据。" : "这里登记的是系统资源，登记一次即可供所有项目选择；具体项目仍可保留自己的许可证存证。"}</p>
-      {onEvidenceImported && <LocalModelReferenceForm projectId={projectId} onRegistered={onEvidenceImported} />}
+      {onEvidenceImported && <LocalModelReferenceForm onRegistered={onEvidenceImported} />}
       {projectId && onEvidenceImported && (
         <>
           <ModelLicenseEvidenceForm
@@ -482,42 +482,6 @@ export function ProjectList({
             {project.status}
           </span>
         </button>
-      ))}
-    </div>
-  );
-}
-
-export function DiagnosticPanel({
-  run,
-}: {
-  run: {
-    status: string;
-    checks: Array<{
-      code: string;
-      status: string;
-      observed: Record<string, unknown>;
-    }>;
-  } | null;
-}) {
-  if (!run)
-    return (
-      <p className="empty-state">
-        还没有诊断记录；点击“运行诊断”执行本机只读检查。
-      </p>
-    );
-  const statusClass = (status: string) =>
-    `status-${String(status).toLowerCase()}`;
-  return (
-    <div className="diagnostic-grid">
-      <div className="diagnostic-status">
-        <span>整体状态</span>
-        <strong className={statusClass(run.status)}>{run.status}</strong>
-      </div>
-      {run.checks.map((check, index) => (
-        <div className="diagnostic-row" key={`${check.code}-${index}`}>
-          <span>{check.code}</span>
-          <strong className={statusClass(check.status)}>{check.status}</strong>
-        </div>
       ))}
     </div>
   );

@@ -1,12 +1,23 @@
 import { useMutation } from "@tanstack/react-query";
 import { exportJianyingTimeline, exportTimelineRevision } from "../../generated/api";
+import { LocalArtifactReference } from "../shared/LocalArtifactReference";
 
 export function TimelineExportPanel({ timelineRevisionId, subtitleRevisionId }: { timelineRevisionId: string | null; subtitleRevisionId: string | null }) {
   const standard = useMutation({ mutationFn: () => exportTimelineRevision(timelineRevisionId as string, "standard") });
   const jianying = useMutation({ mutationFn: () => exportJianyingTimeline(timelineRevisionId as string, subtitleRevisionId ?? undefined) });
   return <div className="timeline-v2-export">
-    <article><div><strong>专业剪辑交换包（OTIO + EDL）</strong><p>从冻结版本生成两种供专业剪辑软件读取的交换文件，并附带文件校验清单。</p></div><button type="button" className="secondary" disabled={!timelineRevisionId || standard.isPending} onClick={() => standard.mutate()}>{standard.isPending ? "校验并导出中…" : "导出专业交换包"}</button>{standard.isError && <p className="inline-error" role="alert">{standard.error instanceof Error ? standard.error.message : String(standard.error)}</p>}{standard.data && <p className="export-result" role="status">{standard.data.export.reused ? "已复验并复用" : "已导出"} {standard.data.export.files.length} 个文件：<code>{standard.data.export.rel_path}</code> <a className="secondary" href={`/api/v1/timeline-revisions/${encodeURIComponent(timelineRevisionId ?? "")}/export:download?rel_path=${encodeURIComponent(standard.data.export.rel_path)}`} download>下载压缩包</a></p>}</article>
-    <article><div><strong>剪映草稿（兼容 CapCut）</strong><p>复制引用媒体并生成剪映草稿{subtitleRevisionId ? "，同时写入当前字幕版本" : "；当前没有可附带的字幕版本"}。</p></div><button type="button" className="secondary" disabled={!timelineRevisionId || jianying.isPending} onClick={() => jianying.mutate()}>{jianying.isPending ? "生成草稿中…" : "导出剪映草稿"}</button>{jianying.isError && <p className="inline-error" role="alert">{jianying.error instanceof Error ? jianying.error.message : String(jianying.error)}</p>}{jianying.data && <p className="export-result" role="status">{jianying.data.export.reused ? "已复验并复用" : "已导出"} {jianying.data.export.files.length} 个文件：<code>{jianying.data.export.rel_path}</code> <a className="secondary" href={`/api/v1/timeline-revisions/${encodeURIComponent(timelineRevisionId ?? "")}/export:download?rel_path=${encodeURIComponent(jianying.data.export.rel_path)}`} download>下载压缩包</a></p>}</article>
+    <article>
+      <div><strong>专业剪辑交换包（OTIO + EDL）</strong><p>从冻结版本生成两种供专业剪辑软件读取的交换文件，并附带文件校验清单。</p></div>
+      <button type="button" className="secondary" disabled={!timelineRevisionId || standard.isPending} onClick={() => standard.mutate()}>{standard.isPending ? "校验并导出中…" : "导出专业交换包"}</button>
+      {standard.isError && <p className="inline-error" role="alert">{standard.error instanceof Error ? standard.error.message : String(standard.error)}</p>}
+      {standard.data && <LocalArtifactReference artifact={standard.data.export.artifact} title={standard.data.export.reused ? "已复验并复用" : "已导出"} note={`${standard.data.export.files.length} 个文件，附带完整性清单。`} downloadLabel="下载压缩包" />}
+    </article>
+    <article>
+      <div><strong>剪映草稿（兼容 CapCut）</strong><p>复制引用媒体并生成剪映草稿{subtitleRevisionId ? "，同时写入当前字幕版本" : "；当前没有可附带的字幕版本"}。</p></div>
+      <button type="button" className="secondary" disabled={!timelineRevisionId || jianying.isPending} onClick={() => jianying.mutate()}>{jianying.isPending ? "生成草稿中…" : "导出剪映草稿"}</button>
+      {jianying.isError && <p className="inline-error" role="alert">{jianying.error instanceof Error ? jianying.error.message : String(jianying.error)}</p>}
+      {jianying.data && <LocalArtifactReference artifact={jianying.data.export.artifact} title={jianying.data.export.reused ? "已复验并复用" : "已导出"} note={`${jianying.data.export.files.length} 个文件，媒体已随草稿打包。`} downloadLabel="下载压缩包" />}
+    </article>
     {!timelineRevisionId && <p className="timeline-policy-note">请先冻结一个时间线版本，导出按钮才会开放；导出失败不会修改时间线或项目数据。</p>}
   </div>;
 }

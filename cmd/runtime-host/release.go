@@ -118,7 +118,7 @@ func verifyRelease(root string) (releaseManifest, error) {
 	if actualPlatform != wantedPlatform {
 		return releaseManifest{}, fmt.Errorf("release platform %s does not match %s", actualPlatform, wantedPlatform)
 	}
-	if manifest.Host.Protocol != 1 || manifest.ConfigSchema.Target != 1 {
+	if manifest.Host.Protocol != hostProtocolSupported || manifest.ConfigSchema.Target != configSchemaSupported {
 		return releaseManifest{}, errors.New("release protocol is not compatible with this Host")
 	}
 	// The payload's version.json is the single source of version truth; the

@@ -13,6 +13,7 @@ from typing import Any, cast
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.infrastructure.filesystem.path_policy import controlled_path
 
 from .media import MediaService
 
@@ -489,10 +490,14 @@ class ReviewService:
             raise DomainRuleError("EPISODE_RENDER_NOT_VERIFIED", "只有完整性 VERIFIED 的整集渲染可以审核")
         if self.settings is None:
             raise DomainRuleError("MEDIA_SERVICE_UNAVAILABLE", "本地设置未配置")
-        project_root = (self.settings.projects_root / str(render["root_rel"])).resolve()
-        render_path = (project_root / str(render["rel_path"])).resolve()
-        if not render_path.is_relative_to(project_root) or not render_path.is_file() or render_path.is_symlink():
-            raise DomainRuleError("EPISODE_RENDER_FILE_MISSING", "整集渲染文件缺失或路径越界")
+        project_root = self.settings.resolve_project_root(str(render["root_rel"]))
+        render_path = controlled_path(
+            project_root,
+            str(render["rel_path"]),
+            must_exist=True,
+            require_file=True,
+            code="EPISODE_RENDER_FILE_MISSING",
+        )
         digest = hashlib.sha256(render_path.read_bytes()).hexdigest()
         if not hmac.compare_digest(digest, str(render["sha256"])):
             raise DomainRuleError("EPISODE_RENDER_INTEGRITY_FAILED", "整集渲染文件 hash 与登记值不一致")

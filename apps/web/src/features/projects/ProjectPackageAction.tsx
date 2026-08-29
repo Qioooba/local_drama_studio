@@ -9,6 +9,7 @@ import {
   stageProjectPackage,
   uploadProjectPackage,
 } from "../../generated/api";
+import { LocalArtifactReference } from "../shared/LocalArtifactReference";
 
 type IdentityMode = "REBIND_EXISTING" | "IMPORT_AS_COPY_REWRITE_IDENTITY";
 type InboxPackage = { name: string; byte_size: number; modified_at: string };
@@ -46,7 +47,7 @@ export function ProjectPackageAction({ projectId, onImported }: { projectId: str
   return <section className="project-package-action" aria-labelledby="project-package-title">
     <div><strong id="project-package-title">v2 标准项目包</strong><p className="muted">导出逐项记录 SHA-256。导入只读取固定本地 inbox，先暂存预检，再明确决定重写身份或仅恢复缺失目录；不会覆盖现有项目目录。</p></div>
     <div className="action-row"><button type="button" className="secondary" onClick={() => exportPackage.mutate()} disabled={busy}>{exportPackage.isPending ? "导出校验中…" : "导出并 dry-run"}</button><button type="button" className="secondary" onClick={() => rebuild.mutate()} disabled={busy}>{rebuild.isPending ? "重建缩略图中…" : "重建项目缩略图"}</button></div>
-    {exportPackage.data && <p>包：{exportPackage.data.package.rel_path} · {exportPackage.data.package.entry_count} entries · SHA {String(exportPackage.data.package.sha256 ?? "").slice(0, 12) || "—"}… <a className="secondary" href={`/api/v1/projects/${encodeURIComponent(projectId)}/packages:download?rel_path=${encodeURIComponent(exportPackage.data.package.rel_path)}`} download>下载到当前电脑</a></p>}
+    {exportPackage.data && <LocalArtifactReference artifact={exportPackage.data.package.artifact} title={exportPackage.data.package.reused ? "项目包已复验并复用" : "项目包已导出"} note={`${exportPackage.data.package.entry_count} entries · SHA ${String(exportPackage.data.package.sha256 ?? "").slice(0, 12) || "—"}…`} />}
     {inspect.data && <p><strong>{inspect.data.dry_run.status}</strong> · 展开 {inspect.data.dry_run.expanded_bytes} bytes · {inspect.data.dry_run.blockers.join("、") || "哈希 / 结构 / 磁盘 PASS"}</p>}
     <form className="package-import-form" onSubmit={submitStage}>
       <p className="muted">从当前电脑选择 .ldspkg，浏览器先上传到服务端受控 inbox，再执行结构、哈希、展开体积与身份预检。</p>

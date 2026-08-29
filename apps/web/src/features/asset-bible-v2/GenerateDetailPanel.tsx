@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { listProfiles, type Profile } from "../../generated/api";
 import type { StoryAssetReference, StoryAssetState } from "./api";
-import { ProfileExecutionDetailButton } from "../model-config/ProfileExecutionDetailButton";
+import { CapabilityPicker, useCapabilityOptions } from "../model-config/CapabilityPicker";
 import type { MultiViewSettings } from "./multiviewClient";
 import { bindDetailReference, getAssetDetailHistory, isDetailBatchActive, preflightAssetDetail, submitAssetDetail, type DetailBatch, type DetailKind, type DetailPreflight } from "./detailClient";
 import "./GenerateMultiViewPanel.css";
@@ -18,7 +17,7 @@ type Props = { projectId: string; assetId: string; assetStatus: string; states: 
 export function GenerateDetailPanel({ projectId, assetId, assetStatus, states, baseReferences, initialBatches, onReferencesChanged }: Props) {
   const [assetStateId, setAssetStateId] = useState("");
   const [profileVersionId, setProfileVersionId] = useState("");
-  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const profileOptions = useCapabilityOptions("IMAGE_EDIT", { projectId });
   const [preflight, setPreflight] = useState<DetailPreflight | null>(null);
   const [batches, setBatches] = useState(initialBatches);
   const [busy, setBusy] = useState<string | null>(null);
@@ -28,11 +27,6 @@ export function GenerateDetailPanel({ projectId, assetId, assetStatus, states, b
   const [background, setBackground] = useState<MultiViewSettings["background"]>("CLEAN");
   useEffect(() => { setBatches(initialBatches); }, [initialBatches]);
   useEffect(() => { setAssetStateId(""); setProfileVersionId(""); setPreflight(null); setError(null); }, [assetId]);
-  useEffect(() => {
-    let cancelled = false;
-    void listProfiles().then(({ items }) => { if (!cancelled) setProfiles(items.filter((item) => item.capability === "IMAGE_EDIT" && item.status === "PUBLISHED")); }).catch(() => { if (!cancelled) setProfiles([]); });
-    return () => { cancelled = true; };
-  }, [projectId]);
   const settings = useMemo<MultiViewSettings>(() => ({ asset_state_id: assetStateId || null, profile_version_id: profileVersionId || null, consistency_strength: consistency, background, requested_slots: selectedSlots }), [assetStateId, background, consistency, profileVersionId, selectedSlots]);
   useEffect(() => { setPreflight(null); }, [settings]);
   const active = batches.some(isDetailBatchActive);
@@ -51,7 +45,7 @@ export function GenerateDetailPanel({ projectId, assetId, assetStatus, states, b
   return <section className="panel multiview-panel" aria-labelledby={`detail-title-${assetId}`}>
     <div className="panel-heading"><div><p className="eyebrow">角色细节</p><h4 id={`detail-title-${assetId}`}>生成近景细节</h4></div><span className={`status-pill ${hasHero ? "state-ready" : "state-blocked"}`}>{hasHero ? "主参考已就绪" : "缺少主参考"}</span></div>
     <p className="muted">系统会以锁定的主参考分别生成面部、服装和识别性细节。每项都是独立任务并保留各自历史，单项失败不会丢失其他成功结果，也不会覆盖旧参考。</p>
-    <div className="multiview-controls"><label>造型状态<select value={assetStateId} onChange={(event) => setAssetStateId(event.target.value)}><option value="">基础角色</option>{states.map((state) => <option value={state.id} key={state.id}>{state.label}</option>)}</select></label><label>生成模型配置<select aria-label="近景细节生成模型配置" value={profileVersionId} onChange={(event) => setProfileVersionId(event.target.value)}><option value="">自动使用项目偏好</option>{profiles.map((profile) => <option value={profile.version_id} key={profile.version_id}>{profile.title} · 第 {profile.version_no ?? "?"} 版</option>)}</select></label><ProfileExecutionDetailButton profileVersionId={profileVersionId} /><label>一致性<select value={consistency} onChange={(event) => setConsistency(event.target.value as typeof consistency)}><option value="HIGH">高</option><option value="MEDIUM">中</option><option value="LOW">低</option></select></label><label>背景<select value={background} onChange={(event) => setBackground(event.target.value as typeof background)}><option value="CLEAN">干净背景</option><option value="TRANSPARENT">透明背景</option><option value="ORIGINAL">保留原背景</option></select></label></div>
+    <div className="multiview-controls"><label>造型状态<select value={assetStateId} onChange={(event) => setAssetStateId(event.target.value)}><option value="">基础角色</option>{states.map((state) => <option value={state.id} key={state.id}>{state.label}</option>)}</select></label><CapabilityPicker capability="IMAGE_EDIT" label="近景细节生成方式" value={profileVersionId} onChange={setProfileVersionId} query={profileOptions} disabled={busy !== null} migrationBusinessSurface="assets" /><label>一致性<select value={consistency} onChange={(event) => setConsistency(event.target.value as typeof consistency)}><option value="HIGH">高</option><option value="MEDIUM">中</option><option value="LOW">低</option></select></label><label>背景<select value={background} onChange={(event) => setBackground(event.target.value as typeof background)}><option value="CLEAN">干净背景</option><option value="TRANSPARENT">透明背景</option><option value="ORIGINAL">保留原背景</option></select></label></div>
     <fieldset><legend>本批次细节槽</legend><div className="action-row">{SLOTS.map((slot) => <label key={slot.kind}><input type="checkbox" checked={selectedSlots.includes(slot.kind)} onChange={(event) => setSelectedSlots((current) => event.target.checked ? [...current, slot.kind] : current.filter((item) => item !== slot.kind))} />{slot.label}</label>)}</div></fieldset>
     <div className="multiview-actions"><button className="secondary" type="button" disabled={busy !== null || assetStatus !== "ACTIVE" || selectedSlots.length === 0} onClick={() => void runPreflight()}>{busy === "preflight" ? "预检中…" : `预检 ${selectedSlots.length} 个近景细节`}</button><button className="primary-action" type="button" disabled={!preflight?.ready || busy !== null} onClick={() => void submit()}>{busy === "submit" ? "提交中…" : `确认生成 ${selectedSlots.length} 个独立槽`}</button></div>
     {preflight && <div className={`multiview-preflight ${preflight.ready ? "ready" : "blocked"}`} role="status"><strong>{preflight.ready ? `预检通过 · 将创建 ${preflight.would_create_jobs} 个任务` : `预检阻挡 · ${preflight.blockers.length} 项`}</strong>{preflight.blockers.map((item) => <div className="multiview-blocker" key={item.code}><span>{item.message}</span><code>{item.code}</code></div>)}</div>}

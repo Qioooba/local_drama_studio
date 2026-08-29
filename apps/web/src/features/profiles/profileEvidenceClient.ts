@@ -1,4 +1,4 @@
-import { bootstrapLocalSession } from "../../generated/api";
+import { requestJson, type ProfileVersionDetail } from "../../generated/api";
 
 export type I2VEvidenceProbePlan = {
   status: "READY" | "BLOCKED";
@@ -12,31 +12,6 @@ export type I2VEvidenceProbePlan = {
   };
   confirmation_required: true;
 };
-
-async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const method = (init?.method ?? "GET").toUpperCase();
-  let secured = init;
-  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
-    const session = await bootstrapLocalSession();
-    const headers = new Headers(init?.headers);
-    headers.set("X-Local-Instance-Token", session.token);
-    secured = { ...init, headers };
-  }
-  const response = await fetch(path, secured);
-  if (!response.ok) {
-    let message = `${response.status} ${response.statusText}`;
-    try {
-      const payload = await response.json() as { error?: { message?: string }; detail?: string | { message?: string } };
-      message = payload.error?.message
-        ?? (typeof payload.detail === "string" ? payload.detail : payload.detail?.message)
-        ?? message;
-    } catch {
-      // Keep the HTTP status when a proxy returns non-JSON.
-    }
-    throw new Error(message);
-  }
-  return response.json() as Promise<T>;
-}
 
 export function planI2VEvidenceProbe(projectId: string, profileVersionId: string, workflowVersionId: string) {
   const query = new URLSearchParams({
@@ -94,7 +69,7 @@ export function submitI2VEvidenceProbe(projectId: string, profileVersionId: stri
 }
 
 export function finalizeI2VEvidenceProbe(projectId: string, jobId: string) {
-  return requestJson<{ media: { media_version_id: string }; profile_version: { id: string; version_no: number; status: string } }>(
+  return requestJson<{ media: { media_version_id: string }; profile_version: ProfileVersionDetail }>(
     `/api/v1/projects/${encodeURIComponent(projectId)}/gates/g6/i2v-probe:finalize`,
     {
       method: "POST",
@@ -143,7 +118,7 @@ export function submitT2IEvidenceProbe(projectId: string, profileVersionId: stri
 }
 
 export function finalizeT2IEvidenceProbe(projectId: string, jobId: string) {
-  return requestJson<{ media: { media_version_id: string }; profile_version: { id: string; version_no: number; status: string } }>(
+  return requestJson<{ media: { media_version_id: string }; profile_version: ProfileVersionDetail }>(
     `/api/v1/projects/${encodeURIComponent(projectId)}/gates/g6/t2i-probe:finalize`,
     {
       method: "POST",

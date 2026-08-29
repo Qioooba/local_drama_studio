@@ -5,8 +5,8 @@
     "NFR-TEST-001"
   ],
   "status": "PARTIAL",
-  "observed_at": "2026-08-28T15:03:37.337222+00:00",
-  "git_revision": "25c885e9784c6c5529381ecd9f2af9bd2bed16cd",
+  "observed_at": "2026-08-29T06:03:09.557044+00:00",
+  "git_revision": "f0c9e0ea8ddbf6d1813a3ecbe763733d2e4f85a9",
   "deterministic_contracts_passed": true,
   "hard_failures": [],
   "dependencies": {
@@ -24,6 +24,10 @@
     },
     "domain_forbidden_imports": [],
     "application_infrastructure_warnings": [
+      {
+        "file": "apps/api/local_drama/application/adaptation_analysis_execution.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
+      },
       {
         "file": "apps/api/local_drama/application/asset_multiview.py",
         "import": "local_drama.infrastructure.database.generation_preference_repository"
@@ -89,6 +93,10 @@
         "import": "local_drama.infrastructure.filesystem.atomic"
       },
       {
+        "file": "apps/api/local_drama/application/comfy_jobs.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
+      },
+      {
         "file": "apps/api/local_drama/application/comfy_lab.py",
         "import": "local_drama.infrastructure.comfy"
       },
@@ -105,12 +113,20 @@
         "import": "local_drama.infrastructure.database.sqlite"
       },
       {
+        "file": "apps/api/local_drama/application/configuration.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
+      },
+      {
         "file": "apps/api/local_drama/application/contact_sheets.py",
         "import": "local_drama.infrastructure.database.sqlite"
       },
       {
         "file": "apps/api/local_drama/application/contact_sheets.py",
         "import": "local_drama.infrastructure.filesystem.atomic"
+      },
+      {
+        "file": "apps/api/local_drama/application/contact_sheets.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
       },
       {
         "file": "apps/api/local_drama/application/creative_entries.py",
@@ -129,8 +145,16 @@
         "import": "local_drama.infrastructure.manifest"
       },
       {
+        "file": "apps/api/local_drama/application/dialogue.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
+      },
+      {
         "file": "apps/api/local_drama/application/documents.py",
         "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/documents.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
       },
       {
         "file": "apps/api/local_drama/application/effective_configuration.py",
@@ -145,12 +169,20 @@
         "import": "local_drama.infrastructure.database.sqlite"
       },
       {
+        "file": "apps/api/local_drama/application/episode_front_half_actions.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
+      },
+      {
         "file": "apps/api/local_drama/application/episode_production_runs.py",
         "import": "local_drama.infrastructure.adapters"
       },
       {
         "file": "apps/api/local_drama/application/episode_production_runs.py",
         "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/episode_production_runs.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
       },
       {
         "file": "apps/api/local_drama/application/episode_worker_actions.py",
@@ -205,6 +237,10 @@
         "import": "local_drama.infrastructure.ollama_runtime"
       },
       {
+        "file": "apps/api/local_drama/application/h3_workflows.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
+      },
+      {
         "file": "apps/api/local_drama/application/i2v_probe.py",
         "import": "local_drama.infrastructure.database.sqlite"
       },
@@ -213,8 +249,20 @@
         "import": "local_drama.infrastructure.database.sqlite"
       },
       {
+        "file": "apps/api/local_drama/application/jobs.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
+      },
+      {
+        "file": "apps/api/local_drama/application/local_artifacts.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
+      },
+      {
         "file": "apps/api/local_drama/application/local_llm.py",
         "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/local_llm.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
       },
       {
         "file": "apps/api/local_drama/application/local_llm.py",
@@ -229,8 +277,16 @@
         "import": "local_drama.infrastructure.filesystem.atomic"
       },
       {
+        "file": "apps/api/local_drama/application/media.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
+      },
+      {
         "file": "apps/api/local_drama/application/model_compatibility.py",
         "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/model_compatibility.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
       },
       {
         "file": "apps/api/local_drama/application/motion_controls.py",
@@ -274,6 +330,10 @@
       },
       {
         "file": "apps/api/local_drama/application/projects.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
+      },
+      {
+        "file": "apps/api/local_drama/application/projects.py",
         "import": "local_drama.infrastructure.filesystem.template"
       },
       {
@@ -283,6 +343,10 @@
       {
         "file": "apps/api/local_drama/application/project_packages.py",
         "import": "local_drama.infrastructure.filesystem.atomic"
+      },
+      {
+        "file": "apps/api/local_drama/application/project_packages.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
       },
       {
         "file": "apps/api/local_drama/application/project_packages.py",
@@ -313,8 +377,16 @@
         "import": "local_drama.infrastructure.filesystem.atomic"
       },
       {
+        "file": "apps/api/local_drama/application/quick_generations.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
+      },
+      {
         "file": "apps/api/local_drama/application/reviews.py",
         "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/reviews.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
       },
       {
         "file": "apps/api/local_drama/application/shot_editing.py",
@@ -333,6 +405,10 @@
         "import": "local_drama.infrastructure.filesystem.atomic"
       },
       {
+        "file": "apps/api/local_drama/application/storage_operations.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
+      },
+      {
         "file": "apps/api/local_drama/application/story_assets.py",
         "import": "local_drama.infrastructure.database.sqlite"
       },
@@ -349,6 +425,10 @@
         "import": "local_drama.infrastructure.filesystem.atomic"
       },
       {
+        "file": "apps/api/local_drama/application/timeline.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
+      },
+      {
         "file": "apps/api/local_drama/application/timeline_exports.py",
         "import": "local_drama.infrastructure.database.sqlite"
       },
@@ -357,12 +437,20 @@
         "import": "local_drama.infrastructure.filesystem.atomic"
       },
       {
+        "file": "apps/api/local_drama/application/timeline_exports.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
+      },
+      {
         "file": "apps/api/local_drama/application/timeline_status.py",
         "import": "local_drama.infrastructure.database.sqlite"
       },
       {
         "file": "apps/api/local_drama/application/visual_labs.py",
         "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/worker.py",
+        "import": "local_drama.infrastructure.database.adaptation_plan_repository"
       },
       {
         "file": "apps/api/local_drama/application/worker.py",
@@ -390,6 +478,10 @@
       },
       {
         "file": "apps/api/local_drama/application/workflows.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
+      },
+      {
+        "file": "apps/api/local_drama/application/workflows.py",
         "import": "local_drama.infrastructure.manifest"
       },
       {
@@ -403,9 +495,17 @@
       {
         "file": "apps/api/local_drama/application/workspace_assets.py",
         "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
+        "file": "apps/api/local_drama/application/workspace_assets.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
       }
     ],
     "route_infrastructure_warnings": [
+      {
+        "file": "apps/api/local_drama/api/routes/adaptation_plans.py",
+        "import": "local_drama.infrastructure.database.adaptation_plan_repository"
+      },
       {
         "file": "apps/api/local_drama/api/routes/adapters.py",
         "import": "local_drama.infrastructure.adapters"
@@ -451,6 +551,18 @@
         "import": "local_drama.infrastructure.database.sqlite"
       },
       {
+        "file": "apps/api/local_drama/api/routes/health.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
+      },
+      {
+        "file": "apps/api/local_drama/api/routes/media.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
+      },
+      {
+        "file": "apps/api/local_drama/api/routes/model_platform_v2.py",
+        "import": "local_drama.infrastructure.local_llm"
+      },
+      {
         "file": "apps/api/local_drama/api/routes/post_v2.py",
         "import": "local_drama.infrastructure.database.post_repository"
       },
@@ -468,7 +580,15 @@
       },
       {
         "file": "apps/api/local_drama/api/routes/profiles.py",
+        "import": "local_drama.infrastructure.database.generation_preference_repository"
+      },
+      {
+        "file": "apps/api/local_drama/api/routes/profiles.py",
         "import": "local_drama.infrastructure.manifest"
+      },
+      {
+        "file": "apps/api/local_drama/api/routes/projects.py",
+        "import": "local_drama.infrastructure.filesystem.path_policy"
       },
       {
         "file": "apps/api/local_drama/api/routes/qc_policies.py",
@@ -502,26 +622,26 @@
     "scope": "apps/web/src/**/*.tsx excluding generated client and tests",
     "recommended_limit_lines": 500,
     "warning_limit_lines": 700,
-    "component_count": 207,
+    "component_count": 232,
     "largest_components": [
       {
-        "path": "apps/web/src/features/projects/ScriptImportPanel.tsx",
-        "component": "ScriptImportPanel",
-        "lines": 673,
+        "path": "apps/web/src/features/profiles/ProfileConfigurationPanel.tsx",
+        "component": "ProfileContractsTask",
+        "lines": 644,
         "recommended_limit_exceeded": true,
         "warning_limit_exceeded": false
       },
       {
-        "path": "apps/web/src/features/profiles/ProfileConfigurationPanel.tsx",
-        "component": "ProfileContractsTask",
-        "lines": 620,
+        "path": "apps/web/src/features/projects/ScriptImportPanel.tsx",
+        "component": "ScriptImportPanel",
+        "lines": 614,
         "recommended_limit_exceeded": true,
         "warning_limit_exceeded": false
       },
       {
         "path": "apps/web/src/features/profiles/LocalLLMConfigurationPanel.tsx",
         "component": "LocalLLMConfigurationPanel",
-        "lines": 522,
+        "lines": 562,
         "recommended_limit_exceeded": true,
         "warning_limit_exceeded": false
       },
@@ -554,23 +674,23 @@
         "warning_limit_exceeded": false
       },
       {
+        "path": "apps/web/src/features/quick-create/QuickGenerationWorkbench.tsx",
+        "component": "QuickGenerationWorkbench",
+        "lines": 329,
+        "recommended_limit_exceeded": false,
+        "warning_limit_exceeded": false
+      },
+      {
         "path": "apps/web/src/features/preferences-v2/GenerationPreferencePanel.tsx",
         "component": "GenerationPreferencePanel",
-        "lines": 315,
+        "lines": 324,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       },
       {
-        "path": "apps/web/src/features/projects/CreativeLibrary.tsx",
-        "component": "CreativeLibrary",
-        "lines": 296,
-        "recommended_limit_exceeded": false,
-        "warning_limit_exceeded": false
-      },
-      {
-        "path": "apps/web/src/pages/AssetBiblePage.tsx",
-        "component": "AssetBiblePage",
-        "lines": 289,
+        "path": "apps/web/src/features/model-platform-v2/ModelPlatformCenter.tsx",
+        "component": "ModelPlatformCenter",
+        "lines": 300,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       }
@@ -579,21 +699,21 @@
       {
         "path": "apps/web/src/features/profiles/LocalLLMConfigurationPanel.tsx",
         "component": "LocalLLMConfigurationPanel",
-        "lines": 522,
+        "lines": 562,
         "recommended_limit_exceeded": true,
         "warning_limit_exceeded": false
       },
       {
         "path": "apps/web/src/features/profiles/ProfileConfigurationPanel.tsx",
         "component": "ProfileContractsTask",
-        "lines": 620,
+        "lines": 644,
         "recommended_limit_exceeded": true,
         "warning_limit_exceeded": false
       },
       {
         "path": "apps/web/src/features/projects/ScriptImportPanel.tsx",
         "component": "ScriptImportPanel",
-        "lines": 673,
+        "lines": 614,
         "recommended_limit_exceeded": true,
         "warning_limit_exceeded": false
       }
@@ -602,8 +722,9 @@
     "size_contract_passed": true
   },
   "domain_test_inventory": {
-    "domain_module_count": 11,
+    "domain_module_count": 13,
     "domain_modules_covered_by_tests": [
+      "apps/api/local_drama/domain/adaptation_planning.py",
       "apps/api/local_drama/domain/capabilities.py",
       "apps/api/local_drama/domain/character_identity_packs.py",
       "apps/api/local_drama/domain/director_intent.py",
@@ -613,14 +734,15 @@
       "apps/api/local_drama/domain/generation_planning.py",
       "apps/api/local_drama/domain/network_policy.py",
       "apps/api/local_drama/domain/policies.py",
+      "apps/api/local_drama/domain/source_text.py",
       "apps/api/local_drama/domain/timeline_formatting.py",
       "apps/api/local_drama/domain/video_geometry.py"
     ],
     "domain_modules_without_direct_test_import": [],
     "domain_rule_coverage_floor_passed": true,
-    "api_test_file_count": 169,
-    "api_test_function_count": 754,
-    "web_test_file_count": 113,
+    "api_test_file_count": 202,
+    "api_test_function_count": 928,
+    "web_test_file_count": 121,
     "coverage_method": "static import inventory; full pytest/Vitest and Playwright remain separate gates"
   },
   "regression_gate": {

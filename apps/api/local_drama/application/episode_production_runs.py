@@ -22,6 +22,7 @@ from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.policies import missing_shot_fields
 from local_drama.infrastructure.adapters import AdapterContractRegistry
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.infrastructure.filesystem.path_policy import controlled_path
 
 from .automation_workflows import AutomationWorkflowService
 from .capacity import CapacitySnapshotService
@@ -288,7 +289,7 @@ class EpisodeProductionRunService:
             comfy_message = f"Comfy adapter 已声明，loopback 实时探测可用（登记状态 {comfy_runtime_status}）"
         capacity = CapacitySnapshotService(self.database, self.settings).inspect(project_id)
         gpu_ok = capacity["gpu"].get("source") != "UNAVAILABLE" and bool(capacity["gpu"].get("name") or capacity["gpu"].get("total_bytes"))
-        project_root = (self.settings.projects_root / str(episode["root_rel"])).resolve()
+        project_root = self.settings.resolve_project_root(str(episode["root_rel"]))
         expected_projects_root = self.settings.projects_root.resolve()
         if not project_root.is_relative_to(expected_projects_root) or not project_root.is_dir():
             free_bytes = None
@@ -830,8 +831,15 @@ class EpisodeProductionRunService:
         if row is None:
             return None
         root = self.settings.work_root.resolve()
-        path = (root / str(row["sandbox_rel_path"])).resolve()
-        if not path.is_relative_to(root) or not path.is_file() or path.is_symlink():
+        try:
+            path = controlled_path(
+                root,
+                str(row["sandbox_rel_path"]),
+                must_exist=True,
+                require_file=True,
+                code="AUTOMATION_TASK_REPORT_INVALID",
+            )
+        except DomainRuleError:
             return None
         try:
             report = json.loads(path.read_text(encoding="utf-8"))

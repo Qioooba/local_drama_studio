@@ -17,7 +17,9 @@ from xml.etree import ElementTree
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.infrastructure.filesystem.path_policy import canonical_relative_path, controlled_path
 
+from .local_artifacts import local_artifact_reference
 from .media import DOCUMENT_EXTENSIONS, MediaService
 from .source_text import looks_like_source_heading, source_chapters, source_paragraphs
 
@@ -25,6 +27,7 @@ PREVIEW_PARAGRAPH_LIMIT = 20
 PREVIEW_PARAGRAPH_CHARACTER_LIMIT = 1_000
 PREVIEW_TOTAL_CHARACTER_LIMIT = 12_000
 PASSAGE_CHARACTER_LIMIT = 8_000
+SOURCE_STRUCTURE_VERSION = 2
 
 
 def _utc_now() -> str:
@@ -93,7 +96,7 @@ class DocumentImportService:
         media = self.media.import_file(project_id, source, purpose="SCRIPT_SOURCE", owner_type="PROJECT", actor=actor)
         if media.get("duplicate"):
             media = {**self.media.get_version(str(media["media_version_id"])), **media}
-        stored_source_path = self._stored_source_path(project_id, media)
+        stored_source = self._stored_source_reference(project_id, media, original_filename=source.name)
         digest = media["sha256"]
         with self.database.connect() as connection:
             existing_version = connection.execute(
@@ -103,9 +106,16 @@ class DocumentImportService:
                 (project_id, digest),
             ).fetchone()
             reusable_session = connection.execute(
-                "SELECT id FROM import_sessions WHERE source_document_version_id=? AND status IN ('PREVIEW_READY','COMMITTED') ORDER BY created_at DESC LIMIT 1",
+                "SELECT id, preview_json FROM import_sessions WHERE source_document_version_id=? AND status IN ('PREVIEW_READY','COMMITTED') ORDER BY created_at DESC LIMIT 1",
                 (existing_version["id"],),
             ).fetchone() if existing_version is not None else None
+            if reusable_session is not None:
+                try:
+                    reusable_preview = json.loads(str(reusable_session["preview_json"] or "{}"))
+                except json.JSONDecodeError:
+                    reusable_preview = {}
+                if reusable_preview.get("source_structure_version") != SOURCE_STRUCTURE_VERSION:
+                    reusable_session = None
         if reusable_session is not None:
             assert existing_version is not None
             session = self.get_session(str(reusable_session["id"]))
@@ -115,7 +125,7 @@ class DocumentImportService:
                 "source_document_version_id": str(existing_version["id"]),
                 "import_session_id": str(reusable_session["id"]),
                 "media_version_id": str(media["media_version_id"]),
-                "stored_source_path": stored_source_path,
+                "stored_source": stored_source,
                 "status": session["status"],
                 "preview": session["preview"],
                 "preview_hash": session["preview_hash"],
@@ -149,6 +159,7 @@ class DocumentImportService:
             preview_paragraphs.append(bounded)
             remaining_preview_characters -= len(bounded)
         preview = {
+            "source_structure_version": SOURCE_STRUCTURE_VERSION,
             "character_count": len(text),
             "paragraph_count": len(paragraphs),
             "paragraphs": preview_paragraphs,
@@ -204,7 +215,7 @@ class DocumentImportService:
             "source_document_version_id": source_version_id,
             "import_session_id": session_id,
             "media_version_id": media["media_version_id"],
-            "stored_source_path": stored_source_path,
+            "stored_source": stored_source,
             "status": "PREVIEW_READY",
             "preview": preview,
             "index_status": index_status,
@@ -212,19 +223,36 @@ class DocumentImportService:
         result["preview_hash"] = self.get_session(session_id)["preview_hash"]
         return result
 
-    def _stored_source_path(self, project_id: str, media: dict[str, Any]) -> str:
-        """Return the absolute path of the immutable project copy, never the browser's client path."""
+    def _stored_source_reference(
+        self,
+        project_id: str,
+        media: dict[str, Any],
+        *,
+        original_filename: str,
+    ) -> dict[str, str]:
+        """Return user-facing provenance for the immutable server copy."""
         project_root = self.media._project_root(project_id)
-        rel_path = Path(str(media.get("rel_path") or ""))
-        if rel_path.is_absolute() or ".." in rel_path.parts:
-            raise DomainRuleError("IMPORT_SOURCE_PATH_INVALID", "导入后的剧本文档路径无效")
-        try:
-            stored_path = (project_root / rel_path).resolve(strict=True)
-        except OSError as error:
-            raise DomainRuleError("IMPORT_SOURCE_PATH_MISSING", "导入后的剧本文档副本不存在") from error
-        if not stored_path.is_relative_to(project_root):
-            raise DomainRuleError("IMPORT_SOURCE_PATH_INVALID", "导入后的剧本文档路径超出项目目录")
-        return str(stored_path)
+        rel_path = canonical_relative_path(
+            str(media.get("rel_path") or ""), code="IMPORT_SOURCE_PATH_INVALID",
+        )
+        stored_path = controlled_path(
+            project_root,
+            rel_path,
+            must_exist=True,
+            require_file=True,
+            code="IMPORT_SOURCE_PATH_MISSING",
+        )
+        media_version_id = str(media["media_version_id"])
+        return local_artifact_reference(
+            root=project_root,
+            path=stored_path,
+            scope="PROJECT",
+            kind="FILE",
+            display_name=original_filename,
+            download_url=f"/api/v1/media-versions/{media_version_id}/content",
+            download_filename=original_filename,
+            error_code="IMPORT_SOURCE_PATH_INVALID",
+        )
 
     def _replace_search_index(self, project_id: str, source_document_id: str, title: str, text: str, actor: str) -> str:
         try:
@@ -276,9 +304,13 @@ class DocumentImportService:
         if row is None:
             raise DomainRuleError("SOURCE_DOCUMENT_VERSION_NOT_FOUND", "源文档版本不存在")
         project_root = self.media._project_root(str(row["project_id"]))
-        path = (project_root / str(row["extracted_text_rel"])).resolve()
-        if not path.is_relative_to(project_root) or not path.is_file():
-            raise DomainRuleError("IMPORT_EXTRACTED_TEXT_MISSING", "解析后的不可变文本缺失")
+        path = controlled_path(
+            project_root,
+            str(row["extracted_text_rel"]),
+            must_exist=True,
+            require_file=True,
+            code="IMPORT_EXTRACTED_TEXT_MISSING",
+        )
         passage, actual_end, has_more = self._read_passage(path, start, end)
         metadata = json.loads(str(row["metadata_json"] or "{}"))
         total = metadata.get("character_count")
@@ -362,9 +394,13 @@ class DocumentImportService:
         if not version or version.get("parse_status") != "PARSED":
             raise DomainRuleError("IMPORT_SOURCE_NOT_PARSED", "源文档版本尚未完成解析")
         project_root = self.media._project_root(str(session["project_id"]))
-        extracted_text = (project_root / str(version["extracted_text_rel"])).resolve()
-        if not extracted_text.is_relative_to(project_root) or not extracted_text.is_file():
-            raise DomainRuleError("IMPORT_EXTRACTED_TEXT_MISSING", "解析后的不可变文本缺失")
+        extracted_text = controlled_path(
+            project_root,
+            str(version["extracted_text_rel"]),
+            must_exist=True,
+            require_file=True,
+            code="IMPORT_EXTRACTED_TEXT_MISSING",
+        )
         text = extracted_text.read_text(encoding="utf-8")
         if hashlib.sha256(text.encode("utf-8")).hexdigest() != str(version["text_sha256"]):
             raise DomainRuleError("IMPORT_EXTRACTED_TEXT_CHANGED", "解析后的不可变文本 hash 已变化")
@@ -428,9 +464,13 @@ class DocumentImportService:
         metadata = json.loads(version["metadata_json"])
         self.media.verify_content_integrity(str(metadata["media_version_id"]))
         project_root = self.media._project_root(str(session["project_id"]))
-        extracted_text = (project_root / str(version["extracted_text_rel"])).resolve()
-        if not extracted_text.is_relative_to(project_root) or not extracted_text.is_file():
-            raise DomainRuleError("IMPORT_EXTRACTED_TEXT_MISSING", "解析后的不可变文本缺失")
+        extracted_text = controlled_path(
+            project_root,
+            str(version["extracted_text_rel"]),
+            must_exist=True,
+            require_file=True,
+            code="IMPORT_EXTRACTED_TEXT_MISSING",
+        )
         if hashlib.sha256(extracted_text.read_bytes()).hexdigest() != version["text_sha256"]:
             raise DomainRuleError("IMPORT_EXTRACTED_TEXT_CHANGED", "解析后的不可变文本 hash 已变化")
         paragraphs = source_paragraphs(extracted_text.read_text(encoding="utf-8"))

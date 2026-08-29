@@ -14,6 +14,8 @@ from enum import StrEnum
 from typing import Any, Mapping
 from urllib.parse import urlparse
 
+from local_drama.domain.errors import DomainRuleError
+
 GPU_EXCLUSIVE_RESOURCE = "GPU:0:EXCLUSIVE"
 SCHEDULER_GPU_EXCLUSIVE_RESOURCE = "GPU_H3_HEAVY"
 GPU_CHANNELS = frozenset({"GPU_H3", "GPU", "VIDEO_GPU"})
@@ -54,6 +56,18 @@ def gpu_runtime_for_job(job: Mapping[str, Any]) -> GpuRuntime | None:
 
     job_type = str(job.get("type") or "").strip().upper()
     snapshot = _snapshot(job)
+    if job_type == "MODEL_PLATFORM_EXECUTION":
+        runtime = str(snapshot.get("scheduler_runtime") or "").strip().upper()
+        if not runtime:
+            return None
+        try:
+            return GpuRuntime(runtime)
+        except ValueError as error:
+            raise DomainRuleError(
+                "MP_EXECUTION_SCHEDULER_RUNTIME_INVALID",
+                "V2 执行 Job 的冻结调度运行时无效。",
+                {"scheduler_runtime": runtime},
+            ) from error
     if job_type in PYTORCH_JOB_TYPES:
         return GpuRuntime.PYTORCH
     if job_type == "TTS_GENERATION" and str(snapshot.get("provider_kind") or "").upper() == "VOXCPM2_LOCAL":

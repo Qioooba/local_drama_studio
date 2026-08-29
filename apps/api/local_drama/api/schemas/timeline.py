@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from local_drama.api.schemas.common import LocalArtifactReference
+
 # Typed response contracts for the legacy timeline/delivery surface.  The
 # documented fields mirror the application services; ``extra="allow"`` is the
 # migration guard used by the comfy_lab sample so service-side additions are
@@ -207,6 +209,7 @@ class TimelineExportFile(_TimelineResponse):
 class TimelineExportResult(_TimelineResponse):
     schema_version: Literal["localdrama.timeline-export.v1"]
     status: Literal["EXPORTED"]
+    artifact: LocalArtifactReference
     rel_path: str
     manifest_rel_path: str
     files: list[TimelineExportFile]
@@ -541,6 +544,7 @@ class DeliveryPackage(_TimelineResponse):
     target_version_id: str
     target: dict[str, Any]
     status: str
+    artifact: LocalArtifactReference
     rel_path: str
     manifest_sha256: str
     withdrawn_reason: str | None

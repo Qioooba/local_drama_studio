@@ -1,0 +1,9 @@
+{
+  "task": "ollama",
+  "status": "PASS",
+  "model": "qwen3.8:27b",
+  "base_url": "http://127.0.0.1:11434",
+  "response": "本地导演模型测试通过",
+  "elapsed_seconds": 21.662,
+  "network_used": false
+}

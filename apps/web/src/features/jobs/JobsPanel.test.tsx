@@ -49,4 +49,11 @@ describe("JobsPanel", () => {
     expect(screen.getByText(/正在编码媒体 · 58%/)).toBeTruthy();
     expect(screen.getByText(/正在校验输入文件 · 优先级/)).toBeTruthy();
   });
+
+  it("offers deletion only for terminal tasks", () => {
+    const items = jobs().slice(0, 2);
+    items[1] = { ...items[1], state: "RUNNING" };
+    render(<MemoryRouter><JobsPanel jobs={items} loading={false} scopeKey="project-1" /></MemoryRouter>);
+    expect(screen.getAllByRole("button", { name: "删除记录" })).toHaveLength(1);
+  });
 });

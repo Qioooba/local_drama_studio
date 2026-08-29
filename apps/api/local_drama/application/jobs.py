@@ -15,6 +15,7 @@ from local_drama.application.job_resources import scheduler_resource_key
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.infrastructure.filesystem.path_policy import controlled_path
 
 QUEUED = "QUEUED"
 CLAIMED = "CLAIMED"
@@ -25,6 +26,7 @@ CANCEL_REQUESTED = "CANCEL_REQUESTED"
 CANCELLED = "CANCELLED"
 ORPHANED = "ORPHANED"
 NEEDS_ATTENTION = "NEEDS_ATTENTION"
+DELETABLE_JOB_STATES = {SUCCEEDED, FAILED, CANCELLED, ORPHANED, NEEDS_ATTENTION}
 
 
 def _utc_now() -> datetime:
@@ -302,7 +304,7 @@ class JobService:
 
     def get_job(self, job_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
-            row = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+            row = connection.execute("SELECT * FROM jobs WHERE id=? AND deleted_at IS NULL", (job_id,)).fetchone()
             if row is None:
                 raise DomainRuleError("JOB_NOT_FOUND", "Job 不存在", {"job_id": job_id})
             attempts = connection.execute("SELECT * FROM job_attempts WHERE job_id=? ORDER BY attempt_no", (job_id,)).fetchall()
@@ -333,7 +335,7 @@ class JobService:
         }
 
     def list_jobs(self, project_id: str | None = None, states: list[str] | None = None, limit: int = 100) -> list[dict[str, Any]]:
-        where: list[str] = []
+        where: list[str] = ["deleted_at IS NULL"]
         params: list[Any] = []
         if project_id:
             where.append("project_id=?")
@@ -349,7 +351,7 @@ class JobService:
 
     def list_jobs_page(self, project_id: str | None = None, states: list[str] | None = None, cursor: int = 0, limit: int = 100) -> dict[str, Any]:
         """Return a bounded server-side window and a deterministic offset cursor."""
-        where: list[str] = []
+        where: list[str] = ["deleted_at IS NULL"]
         params: list[Any] = []
         if project_id:
             where.append("project_id=?")
@@ -374,7 +376,7 @@ class JobService:
 
     def list_attempts(self, job_id: str) -> list[dict[str, Any]]:
         with self.database.connect() as connection:
-            job = connection.execute("SELECT id FROM jobs WHERE id=?", (job_id,)).fetchone()
+            job = connection.execute("SELECT id FROM jobs WHERE id=? AND deleted_at IS NULL", (job_id,)).fetchone()
             if job is None:
                 raise DomainRuleError("JOB_NOT_FOUND", "Job 不存在", {"job_id": job_id})
             rows = connection.execute("SELECT * FROM job_attempts WHERE job_id=? ORDER BY attempt_no", (job_id,)).fetchall()
@@ -387,6 +389,32 @@ class JobService:
             }
             for row in rows
         ]
+
+    def delete(self, job_id: str, *, actor: str = "local-user") -> dict[str, Any]:
+        """Remove a terminal Job from creator-facing history without erasing evidence."""
+        now = _iso(_utc_now())
+        with self.database.transaction() as connection:
+            row = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if row is None:
+                raise DomainRuleError("JOB_NOT_FOUND", "Job 不存在", {"job_id": job_id})
+            if row["deleted_at"] is not None:
+                return {"deleted": True, "job_id": job_id, "deleted_at": row["deleted_at"], "idempotent": True}
+            if str(row["state"]) not in DELETABLE_JOB_STATES:
+                raise DomainRuleError(
+                    "JOB_DELETE_ACTIVE_FORBIDDEN",
+                    "运行中的任务不能删除，请先取消并等待任务结束",
+                    {"job_id": job_id, "state": row["state"]},
+                )
+            connection.execute(
+                "UPDATE jobs SET deleted_at=?, updated_at=?, revision=revision+1 WHERE id=? AND deleted_at IS NULL",
+                (now, now, job_id),
+            )
+            event_id = self._emit(connection, "JOB_DELETED", str(row["project_id"]) if row["project_id"] else None, "JOB", job_id, {"state": row["state"]})
+            connection.execute(
+                "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, job_id, summary, metadata_redacted_json) VALUES (?, 'operator', 'JOB_DELETED', 'job', ?, ?, ?, ?)",
+                (actor, job_id, job_id, "任务已从任务列表删除", _json({"event_id": event_id, "state": row["state"]})),
+            )
+        return {"deleted": True, "job_id": job_id, "deleted_at": now, "idempotent": False}
 
     def attempt_events(self, attempt_id: str, *, cursor: int = 0, limit: int = 100) -> dict[str, Any]:
         normalized_limit = max(1, min(int(limit), 200))
@@ -411,11 +439,17 @@ class JobService:
         actor: str = "worker",
         *,
         worker_session_id: str | None = None,
+        job_types: list[str] | None = None,
+        exclude_job_types: list[str] | None = None,
     ) -> dict[str, Any] | None:
         if not worker_id:
             raise DomainRuleError("WORKER_ID_REQUIRED", "claim 必须提供 worker_id")
         if lease_seconds < 5 or lease_seconds > 3600:
             raise DomainRuleError("INVALID_LEASE", "lease_seconds 必须在 5—3600 之间")
+        normalized_types = tuple(dict.fromkeys(item.strip().upper() for item in (job_types or []) if isinstance(item, str) and item.strip()))
+        normalized_excluded = tuple(dict.fromkeys(item.strip().upper() for item in (exclude_job_types or []) if isinstance(item, str) and item.strip()))
+        if set(normalized_types) & set(normalized_excluded):
+            raise DomainRuleError("JOB_CLAIM_TYPE_FILTER_CONFLICT", "Job claim 的包含与排除类型不能重叠。")
         now = _utc_now()
         now_iso = _iso(now)
         expires = _iso(now + timedelta(seconds=lease_seconds))
@@ -443,10 +477,17 @@ class JobService:
             if channels:
                 channel_clause = f"AND j.channel IN ({','.join('?' for _ in channels)})"
                 params.extend(channels)
+            type_clause = ""
+            if normalized_types:
+                type_clause += f" AND j.type IN ({','.join('?' for _ in normalized_types)})"
+                params.extend(normalized_types)
+            if normalized_excluded:
+                type_clause += f" AND j.type NOT IN ({','.join('?' for _ in normalized_excluded)})"
+                params.extend(normalized_excluded)
             params.append(worker_id)
             candidates = connection.execute(
                 f"""SELECT j.* FROM jobs j
-                WHERE j.state='QUEUED' AND (j.next_run_at IS NULL OR j.next_run_at<=?) {channel_clause}
+                WHERE j.state='QUEUED' AND (j.next_run_at IS NULL OR j.next_run_at<=?) {channel_clause}{type_clause}
                 AND NOT EXISTS (SELECT 1 FROM job_attempts active JOIN jobs aj ON aj.id=active.job_id
                                 WHERE active.worker_id=? AND active.state IN ('CLAIMED','RUNNING') AND aj.channel=j.channel)
                 AND NOT EXISTS (SELECT 1 FROM job_dependencies d JOIN jobs dependency ON dependency.id=d.depends_on_job_id WHERE d.job_id=j.id AND dependency.state!='SUCCEEDED')
@@ -884,12 +925,16 @@ class JobService:
         if self.settings is None:
             raise DomainRuleError("WORKSPACE_REQUIRED", "artifact 注册需要本地 workspace")
         relative = Path(sandbox_path)
-        if relative.is_absolute() or ".." in relative.parts or relative.name.startswith(".partial"):
+        if relative.name.startswith(".partial"):
             raise DomainRuleError("INVALID_ARTIFACT_PATH", "artifact 必须是 work sandbox 内的完成文件")
         root = self.settings.work_root.resolve()
-        path = (root / relative).resolve()
-        if not path.is_relative_to(root) or not path.is_file() or path.is_symlink():
-            raise DomainRuleError("ARTIFACT_NOT_FOUND", "artifact 不存在、越界或为 symlink")
+        path = controlled_path(
+            root,
+            sandbox_path,
+            must_exist=True,
+            require_file=True,
+            code="ARTIFACT_NOT_FOUND",
+        )
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         size = path.stat().st_size
         now = _iso(_utc_now())
@@ -939,13 +984,14 @@ class JobService:
         artifact = dict(row)
         if artifact.get("status") != "VERIFIED":
             raise DomainRuleError("ARTIFACT_NOT_VERIFIED", "任务产物尚未通过校验，不能下载")
-        relative = Path(str(artifact.get("sandbox_rel_path") or ""))
-        if relative.is_absolute() or ".." in relative.parts or not relative.name:
-            raise DomainRuleError("INVALID_ARTIFACT_PATH", "任务产物路径无效")
         root = self.settings.work_root.resolve()
-        path = (root / relative).resolve()
-        if not path.is_relative_to(root) or not path.is_file() or path.is_symlink():
-            raise DomainRuleError("ARTIFACT_NOT_FOUND", "任务产物文件不存在、越界或为 symlink")
+        path = controlled_path(
+            root,
+            str(artifact.get("sandbox_rel_path") or ""),
+            must_exist=True,
+            require_file=True,
+            code="ARTIFACT_NOT_FOUND",
+        )
         return artifact, path
 
 

@@ -52,7 +52,7 @@ const MATRIX: Record<string, AuditItem> = {
   "../features/status/DialogueTTSPanel#DialogueTTSPanel": { status: "EQUIVALENT_V2", target: "episodes/:episodeId/audio", safeToRemoveFromLegacyApp: true, authority: "TTS generation/binding" },
   "../features/status/AudioTrackPanel#AudioTrackPanel": { status: "EQUIVALENT_V2", target: "episodes/:episodeId/audio", safeToRemoveFromLegacyApp: true, authority: "audio track binding" },
   "../features/status/ReadinessPanels#AdapterContractsPanel": { status: "SYSTEM_OR_TOOL", target: "/projects/:projectId/operations", safeToRemoveFromLegacyApp: true },
-  "../features/status/ReadinessPanels#DiagnosticPanel": { status: "SYSTEM_OR_TOOL", target: "/diagnostics", safeToRemoveFromLegacyApp: true },
+  "../features/diagnostics/DiagnosticsOverview#DiagnosticsOverview": { status: "SYSTEM_OR_TOOL", target: "/diagnostics", safeToRemoveFromLegacyApp: true },
   "../features/status/ReadinessPanels#G8ReadinessPanel": { status: "EQUIVALENT_V2", target: "episodes/:episodeId/delivery", safeToRemoveFromLegacyApp: true },
   "../features/status/ReadinessPanels#G9ReadinessPanel": { status: "SYSTEM_OR_TOOL", target: "/projects/:projectId/operations", safeToRemoveFromLegacyApp: true },
   "../features/status/ReadinessPanels#ModelCompatibilityPanel": { status: "SYSTEM_OR_TOOL", target: "/projects/:projectId/operations", safeToRemoveFromLegacyApp: true, authority: "model evidence import" },

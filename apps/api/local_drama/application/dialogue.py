@@ -6,12 +6,12 @@ import hashlib
 import json
 import uuid
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any, cast
 
 from local_drama.application.ports.dialogue import DialogueJobPort, DialogueMediaPort, DialogueUnitOfWork
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
+from local_drama.infrastructure.filesystem.path_policy import controlled_path
 from local_drama.platform import create_platform_services
 from local_drama.platform.contracts import TtsRuntime, TtsRuntimeError
 
@@ -469,15 +469,14 @@ class DialogueService:
             profile is None or profile["status"] != "PUBLISHED" or "TTS" not in str(profile["capability"]).upper()
         ):
             raise DomainRuleError("TTS_PROFILE_REQUIRED", "正式 TTS 音色必须绑定已发布 TTS Profile")
-        root = (self.settings.projects_root / str(project["root_rel"])).resolve()
-        candidate = root / license_evidence_path_rel
-        evidence = candidate.resolve()
-        relative_candidate = candidate.relative_to(root) if candidate.is_relative_to(root) else None
-        has_symlink_component = relative_candidate is not None and any(
-            (root / Path(*relative_candidate.parts[:index])).is_symlink() for index in range(1, len(relative_candidate.parts) + 1)
+        root = self.settings.resolve_project_root(str(project["root_rel"]))
+        evidence = controlled_path(
+            root,
+            license_evidence_path_rel,
+            must_exist=True,
+            require_file=True,
+            code="VOICE_LICENSE_EVIDENCE_INVALID",
         )
-        if relative_candidate is None or has_symlink_component or not evidence.is_relative_to(root) or not evidence.is_file():
-            raise DomainRuleError("VOICE_LICENSE_EVIDENCE_INVALID", "音色授权证据必须是项目内普通文件")
         digest = hashlib.sha256(evidence.read_bytes()).hexdigest()
         profile_id, now = str(uuid.uuid4()), _now()
         with self.database.transaction() as connection:

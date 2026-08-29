@@ -5,11 +5,11 @@ import { routes } from "../../app/routeRegistry";
 import {
   cancelJob,
   commitImportSession,
+  deleteJob,
   getImportSessionParagraphs,
   uploadScriptDocument,
   listEpisodes,
   listJobs,
-  listProfiles,
   listSeasons,
   retryJob,
   type DocumentImport,
@@ -17,7 +17,10 @@ import {
 } from "../../generated/api";
 import { requestScriptBreakdown } from "../story-workspace-v2/breakdownClient";
 import { queryKeys } from "../../query/queryKeys";
+import { CapabilityPicker, effectiveCapabilityProfile, useCapabilityOptions } from "../model-config/CapabilityPicker";
+import { LocalArtifactReference } from "../shared/LocalArtifactReference";
 import { BreakdownJobMonitor } from "./BreakdownJobMonitor";
+import { ProjectKnowledgeIndexPanel } from "./ProjectKnowledgeIndexPanel";
 
 function preferredInitialSourceRange(preview: DocumentImport["preview"]) {
   const paragraphCount = Math.max(1, Number(preview.paragraph_count ?? 1));
@@ -35,7 +38,6 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
   const fileInputId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
-  const [storedPathCopyState, setStoredPathCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [dragOver, setDragOver] = useState(false);
   const [prepared, setPrepared] = useState<DocumentImport | null>(null);
   const [committed, setCommitted] = useState(false);
@@ -55,10 +57,7 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
   const submittedJobIds = useRef(new Set<string>());
   const announcedReadyJobIds = useRef(new Set<string>());
 
-  const profiles = useQuery({
-    queryKey: queryKeys.profiles.list(),
-    queryFn: () => listProfiles(),
-  });
+  const breakdownOptions = useCapabilityOptions("LLM_STORY_PARSE", { projectId });
   const seasons = useQuery({
     queryKey: queryKeys.seasons.list(projectId),
     queryFn: () => listSeasons(projectId),
@@ -71,34 +70,14 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
   });
   const effectiveEpisodeId = targetEpisodeId || episodes.data?.items?.[0]?.id || "";
   const targetEpisode = episodes.data?.items?.find((episode) => episode.id === effectiveEpisodeId);
-  const breakdownModels = useMemo(() => {
-    const modelOptions = (profiles.data?.models ?? []).flatMap((model) => {
-      const route = model.routes.find(
-        (candidate) => candidate.capability === "LLM_STORY_PARSE" && candidate.status === "PUBLISHED",
-      );
-      return route ? [{
-        id: model.id,
-        name: model.name,
-        profileVersionId: route.profile_version_id,
-        profileTitle: route.profile_title,
-        versionNo: route.version_no,
-      }] : [];
-    });
-    if (modelOptions.length) return modelOptions;
-    return (profiles.data?.items ?? [])
-      .filter((profile) => profile.capability === "LLM_STORY_PARSE" && profile.status === "PUBLISHED")
-      .sort((left, right) => (right.version_no ?? 0) - (left.version_no ?? 0))
-      .map((profile) => ({
-        id: profile.id,
-        name: String(profile.model_bundle && typeof profile.model_bundle === "object" && "model" in profile.model_bundle
-          ? profile.model_bundle.model
-          : profile.title),
-        profileVersionId: profile.version_id,
-        profileTitle: profile.title,
-        versionNo: profile.version_no ?? 1,
-      }));
-  }, [profiles.data]);
-  const selectedBreakdownModel = breakdownModels.find((model) => model.profileVersionId === selectedBreakdownProfileId) ?? null;
+  const resolvedBreakdown = effectiveCapabilityProfile(breakdownOptions, selectedBreakdownProfileId);
+  const breakdownModels = useMemo(() => (breakdownOptions.data?.options ?? []).map((option) => ({
+    id: option.profile.id,
+    name: option.model.name,
+    profileVersionId: option.profile_version_id,
+    profileTitle: option.profile.title,
+    versionNo: option.profile.version_no,
+  })), [breakdownOptions.data?.options]);
   const breakdownJobQuery = useQuery({
     queryKey: queryKeys.scriptBreakdown.jobs(projectId),
     queryFn: () => listJobs(projectId),
@@ -108,28 +87,11 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
     queryKey: ["import-session-paragraphs", prepared?.import_session_id ?? "", paragraphPageStart, PARAGRAPH_PAGE_SIZE],
     queryFn: () => getImportSessionParagraphs(prepared!.import_session_id, paragraphPageStart, PARAGRAPH_PAGE_SIZE),
     enabled: Boolean(prepared?.import_session_id),
-    placeholderData: (previous) => previous,
   });
   const breakdownJobs = (breakdownJobQuery.data?.items ?? [])
     .filter((job) => job.type === "SCRIPT_BREAKDOWN_LOCAL_LLM")
     .slice(0, 5);
   const breakdownJobStateSignature = breakdownJobs.map((job) => `${job.id}:${job.state}`).join("|");
-  const storedSourcePath = prepared?.stored_source_path ?? "";
-
-  useEffect(() => setStoredPathCopyState("idle"), [storedSourcePath]);
-
-  useEffect(() => {
-    if (!breakdownModels.length) {
-      setSelectedBreakdownProfileId("");
-      return;
-    }
-    setSelectedBreakdownProfileId((current) => (
-      breakdownModels.some((model) => model.profileVersionId === current)
-        ? current
-        : breakdownModels[0].profileVersionId
-    ));
-  }, [breakdownModels]);
-
   useEffect(() => {
     const currentStates = new Map(breakdownJobs.map((job) => [job.id, String(job.state ?? "UNKNOWN")]));
     const previousStates = observedJobStates.current;
@@ -149,16 +111,6 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
     }
     observedJobStates.current = currentStates;
   }, [breakdownJobStateSignature, onDraftReady, projectId, queryClient]);
-
-  const copyStoredSourcePath = async () => {
-    if (!storedSourcePath) return;
-    try {
-      await navigator.clipboard.writeText(storedSourcePath);
-      setStoredPathCopyState("copied");
-    } catch {
-      setStoredPathCopyState("failed");
-    }
-  };
 
   const handleFileUpload = async (file: File | undefined) => {
     if (!file) return;
@@ -219,8 +171,8 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
       setError(`请选择有效的本集原文范围：1–${paragraphCount} 段。`);
       return;
     }
-    if (!selectedBreakdownModel) {
-      setError("请选择一个已发布的故事拆解模型。");
+    if (!resolvedBreakdown.ready || !resolvedBreakdown.profileVersionId) {
+      setError("当前没有可执行的故事拆解配置；请先处理下方显示的模型或执行路线问题。");
       return;
     }
     setPending("breakdown");
@@ -230,7 +182,7 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
       // Persist a durable Job. Worker calls the model independently.
       const submission = await requestScriptBreakdown(
         prepared.import_session_id,
-        selectedBreakdownModel.profileVersionId,
+        resolvedBreakdown.profileVersionId,
         effectiveEpisodeId,
         crypto.randomUUID(),
         { sourceParagraphStart, sourceParagraphEnd },
@@ -247,7 +199,7 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
     }
   };
 
-  const isLLMPass = Boolean(selectedBreakdownModel);
+  const isLLMPass = resolvedBreakdown.ready;
   const sourceRangeValid = Boolean(prepared) && sourceParagraphStart >= 1 && sourceParagraphEnd >= sourceParagraphStart && sourceParagraphEnd <= Number(prepared?.preview.paragraph_count ?? 0);
   const selectedParagraphCount = sourceRangeValid ? sourceParagraphEnd - sourceParagraphStart + 1 : 0;
   const importWorkflowStep = committed ? 4 : prepared ? 2 : 1;
@@ -267,6 +219,9 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
   const visibleParagraphEnd = paragraphPage.data?.end_paragraph
     ?? visibleParagraphs.at(-1)?.number
     ?? paragraphPageStart;
+  const paragraphRangeLabel = paragraphPage.isPending && !visibleParagraphs.length
+    ? `正在读取第 ${paragraphPageStart} 段起的正文…`
+    : `当前显示第 ${paragraphPageStart}–${visibleParagraphEnd} 段 · 单击起点，Shift + 单击终点`;
 
   const selectParagraph = (paragraphNumber: number, extend: boolean) => {
     if (extend && paragraphSelectionAnchor !== null) {
@@ -286,16 +241,20 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
     setParagraphPageStart(start);
   };
 
-  const mutateJob = async (job: Job, action: "cancel" | "retry") => {
+  const mutateJob = async (job: Job, action: "cancel" | "retry" | "delete") => {
+    if (action === "delete" && !window.confirm("确定删除这条任务记录吗？它会从任务列表移除，但已经生成并被项目引用的素材不会删除。")) return;
     setJobAction(`${action}:${job.id}`);
     setError(null);
     try {
       if (action === "cancel") await cancelJob(job.id);
-      else await retryJob(job.id);
+      else if (action === "retry") await retryJob(job.id);
+      else await deleteJob(job.id);
       await breakdownJobQuery.refetch();
       if (action === "retry") setBreakdownSuccess(`Job ${job.id.slice(0, 12)}… 已重新排队，将创建新的 Attempt。`);
+      if (action === "delete") setBreakdownSuccess("任务记录已从列表删除。");
     } catch (reason) {
-      setError(`${action === "cancel" ? "取消" : "重试"} AI 拆解任务失败：${String(reason)}`);
+      const actionLabel = action === "cancel" ? "取消" : action === "retry" ? "重试" : "删除";
+      setError(`${actionLabel} AI 拆解任务失败：${String(reason)}`);
     } finally {
       setJobAction(null);
     }
@@ -397,16 +356,12 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
             </span>
           </header>
 
-          {storedSourcePath && <section className="script-upload-location" aria-labelledby="script-upload-location-label">
-            <div className="script-upload-location__value">
-              <span id="script-upload-location-label">上传后服务器保存位置</span>
-              <code aria-label="上传文档服务器绝对路径" title={storedSourcePath}>{storedSourcePath}</code>
-              <small>{committed ? "已纳入项目版本记录，可通过来源信息追溯。" : "文件已复制到项目受控目录；确认前不会生成生产内容。"}</small>
-            </div>
-            <button type="button" className="secondary" onClick={() => void copyStoredSourcePath()}>
-              {storedPathCopyState === "copied" ? "已复制" : storedPathCopyState === "failed" ? "复制失败，请手动选择" : "复制路径"}
-            </button>
-          </section>}
+          {prepared?.stored_source && <LocalArtifactReference
+            artifact={prepared.stored_source}
+            title="原文件与项目副本"
+            note={committed ? "已纳入项目版本记录，可通过来源信息追溯。" : "文件已复制到项目受控目录；确认前不会生成生产内容。"}
+            downloadLabel="下载原稿"
+          />}
 
           <section className="manuscript-range-workspace" aria-labelledby="manuscript-range-title">
             <header className="manuscript-range-header">
@@ -422,7 +377,7 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
             </header>
 
             <div className="manuscript-browser">
-              <nav className="manuscript-chapter-nav" aria-label="识别到的章节">
+              <nav className="manuscript-chapter-nav" aria-label="识别到的章节" tabIndex={0}>
                 <div className="manuscript-pane-heading">
                   <strong>章节导航</strong>
                   <small>规则识别，可人工改选</small>
@@ -448,11 +403,17 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
                 )) : <p className="empty-state">未识别到章节标题。仍可在正文中连续选择，或输入精确段号。</p>}
               </nav>
 
-              <div className="manuscript-paragraph-pane">
+              <div
+                className="manuscript-paragraph-pane"
+                role="region"
+                aria-labelledby="manuscript-paragraph-heading"
+                aria-busy={paragraphPage.isFetching}
+                tabIndex={0}
+              >
                 <div className="manuscript-paragraph-toolbar">
                   <div className="manuscript-pane-heading">
-                    <strong>正文段落</strong>
-                    <small>当前显示第 {paragraphPageStart}–{visibleParagraphEnd} 段 · 单击起点，Shift + 单击终点</small>
+                    <strong id="manuscript-paragraph-heading">正文段落</strong>
+                    <small>{paragraphRangeLabel}</small>
                   </div>
                   <div className="manuscript-page-actions" aria-label="正文分页">
                     <button
@@ -555,6 +516,10 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
           </div>
 
           {committed && (
+            <ProjectKnowledgeIndexPanel projectId={projectId} sourceDocumentVersionId={prepared.source_document_version_id} />
+          )}
+
+          {committed && (
             <div className="breakdown-trigger-area">
               <div className="section-title breakdown-trigger-title">
                 <span>让 AI 整理场次、镜头和对白</span>
@@ -564,28 +529,17 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
                 系统会在后台生成可编辑草稿并保留原文引用，<strong>不会自动批准、应用或覆盖你的生产内容</strong>。
               </p>
               <div className="breakdown-target-fields" aria-label="拆解模型与草稿对应分集">
-                <label className="breakdown-model-field">
-                  拆解模型
-                  <select
-                    aria-label="AI 拆解模型"
-                    value={selectedBreakdownProfileId}
-                    onChange={(event) => setSelectedBreakdownProfileId(event.target.value)}
-                    disabled={profiles.isPending || breakdownModels.length === 0 || pending !== null}
-                  >
-                    {profiles.isPending ? <option value="">正在读取全局模型清单…</option> : null}
-                    {!profiles.isPending && breakdownModels.length === 0 ? <option value="">没有可用模型</option> : null}
-                    {breakdownModels.map((model) => (
-                      <option key={model.profileVersionId} value={model.profileVersionId}>
-                        {model.name}
-                      </option>
-                    ))}
-                  </select>
-                  <small>
-                    {selectedBreakdownModel
-                      ? `本次使用“${selectedBreakdownModel.name}”；对应已发布执行配置 ${selectedBreakdownModel.profileTitle} v${selectedBreakdownModel.versionNo}。提交后会冻结到任务中。`
-                      : "这里只列出全局能力清单中已发布的故事拆解模型。"}
-                  </small>
-                </label>
+                <CapabilityPicker
+                  capability="LLM_STORY_PARSE"
+                  className="breakdown-model-field"
+                  label="拆解模型"
+                  description="自动选择会遵循项目偏好；提交时仍会把最终 Profile 版本和模型身份冻结到后台任务。"
+                  value={selectedBreakdownProfileId}
+                  onChange={setSelectedBreakdownProfileId}
+                  query={breakdownOptions}
+                  disabled={pending !== null}
+                  migrationBusinessSurface="story"
+                />
                 <section className="breakdown-destination" aria-labelledby="breakdown-destination-title">
                   <header className="breakdown-destination__header">
                     <small>本次草稿去向</small>
@@ -658,16 +612,6 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
                 >
                   {pending === "breakdown" ? `正在为${targetEpisodeLabel}准备草稿…` : targetEpisode ? `为${targetEpisodeLabel}生成拆解草稿` : "生成拆解草稿"}
                 </button>
-                {!isLLMPass && !profiles.isPending && (
-                  <span className="breakdown-runtime-warning" role="status">
-                    尚无已发布的故事拆解模型。<Link to={routes.systemCapabilities()}>前往能力与模型完成接入和发布</Link>。
-                  </span>
-                )}
-                {profiles.error ? (
-                  <span className="breakdown-runtime-warning" role="alert">
-                    模型清单读取失败。<button type="button" className="text-action" onClick={() => void profiles.refetch()}>重新读取</button>
-                  </span>
-                ) : null}
               </div>
               {breakdownSuccess && (
                 <div className="frame-feedback success breakdown-submit-success" role="status">

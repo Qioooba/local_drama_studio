@@ -75,6 +75,72 @@ def test_local_llm_client_openai_compat_initialization() -> None:
     assert client_v1._endpoint_url("/v1/chat/completions") == "https://api.deepseek.com/v1/chat/completions"
 
 
+def test_ollama_model_catalog_is_read_only_and_preserves_runtime_metadata(workspace, monkeypatch) -> None:
+    contacted_base_urls: list[str] = []
+
+    def local_catalog(self):
+        contacted_base_urls.append(self.base_url)
+        return [
+            {
+                "name": "qwen3:8b",
+                "model": "qwen3:8b",
+                "modified_at": "2026-08-28T12:00:00Z",
+                "size": 5_200_000_000,
+                "digest": "sha256:catalog-test",
+                "details": {
+                    "format": "gguf",
+                    "family": "qwen3",
+                    "families": ["qwen3"],
+                    "parameter_size": "8.2B",
+                    "quantization_level": "Q4_K_M",
+                },
+            }
+        ]
+
+    monkeypatch.setattr(
+        "local_drama.infrastructure.local_llm.LocalLLMClient.tags",
+        local_catalog,
+    )
+
+    remote_default = workspace.model_copy(update={
+        "llm_provider": "OPENAI_COMPAT",
+        "llm_base_url": "https://api.deepseek.com",
+        "llm_model": "deepseek-chat",
+    })
+    with TestClient(create_app(remote_default)) as client:
+        response = client.get("/api/v1/local-llm/models")
+
+    assert response.status_code == 200
+    catalog = response.json()["catalog"]
+    assert catalog["provider"] == "OLLAMA_LOOPBACK"
+    assert catalog["base_url"] == "http://127.0.0.1:11434"
+    assert catalog["count"] == 1
+    assert catalog["read_only"] is True
+    assert catalog["runtime_contacted"] is True
+    assert catalog["mutated"] is False
+    assert contacted_base_urls == ["http://127.0.0.1:11434"]
+    assert catalog["items"][0] == {
+        "name": "qwen3:8b",
+        "model": "qwen3:8b",
+        "modified_at": "2026-08-28T12:00:00Z",
+        "size_bytes": 5_200_000_000,
+        "digest": "sha256:catalog-test",
+        "format": "gguf",
+        "family": "qwen3",
+        "families": ["qwen3"],
+        "parameter_size": "8.2B",
+        "quantization_level": "Q4_K_M",
+    }
+
+
+def test_ollama_model_catalog_rejects_public_endpoints(workspace) -> None:
+    with TestClient(create_app(workspace)) as client:
+        response = client.get("/api/v1/local-llm/models", params={"base_url": "http://example.com:11434"})
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "LOCAL_ONLY_ENDPOINT_REQUIRED"
+
+
 def test_local_llm_client_openai_compat_probe_four_levels(monkeypatch) -> None:
     client = LocalLLMClient(
         "https://api.deepseek.com",
@@ -101,6 +167,39 @@ def test_local_llm_client_openai_compat_probe_four_levels(monkeypatch) -> None:
     assert levels["level_3_model"]["passed"] is True
     assert levels["level_4_inference"]["passed"] is True
     assert probe_result["model_present"] is True
+
+
+def test_local_llm_client_ollama_probe_disables_thinking(monkeypatch) -> None:
+    client = LocalLLMClient("http://127.0.0.1:11434", "qwen3.8:27b", provider="OLLAMA_LOOPBACK")
+    captured: dict[str, object] = {}
+
+    def mock_request(path: str, payload=None, timeout_seconds=None):
+        if path == "/api/tags":
+            return {"models": [{"name": "qwen3.8:27b"}]}
+        captured.update(payload or {})
+        return {"response": '{"ready":true}'}
+
+    monkeypatch.setattr(client, "_request", mock_request)
+
+    result = client.probe(load_test=True)
+
+    assert result["status"] == "PASS"
+    assert captured["think"] is False
+    assert captured["options"] == {"temperature": 0, "num_predict": 32}
+
+
+def test_local_llm_client_ollama_chat_json_disables_thinking(monkeypatch) -> None:
+    client = LocalLLMClient("http://127.0.0.1:11434", "qwen3.8:27b", provider="OLLAMA_LOOPBACK")
+    captured: dict[str, object] = {}
+
+    def mock_request(path: str, payload=None, timeout_seconds=None):
+        captured.update(payload or {})
+        return {"message": {"content": '{"ready":true}'}}
+
+    monkeypatch.setattr(client, "_request", mock_request)
+
+    assert client.chat_json("Return JSON.", "Ready?") == {"ready": True}
+    assert captured["think"] is False
 
 
 def test_local_llm_client_openai_compat_probe_auth_failure(monkeypatch) -> None:
@@ -270,6 +369,16 @@ def test_sync_and_publish_openai_compat_profile(workspace, database, monkeypatch
         allow_remote_outbound=True,
     )
     assert published["status"] == "PUBLISHED"
+    assert published["profile_code"] == candidate["profile_code"]
+    assert published["version_no"] == 1
+    publication = published["publication"]
+    assert publication["destination"] == "GLOBAL_CAPABILITY_CATALOG"
+    assert publication["scope"] == "LOCAL_STUDIO"
+    assert publication["consumer_scope"] == "ALL_PROJECTS"
+    assert publication["capability"] == "LLM_STORY_PARSE"
+    assert publication["model"] == "deepseek-v4-flash-vision-exp"
+    assert publication["provider"] == "OPENAI_COMPAT"
+    assert publication["published_at"]
 
 
 def test_deepseek_expands_one_sentence_video_prompt_without_persisting_key(workspace, database, monkeypatch) -> None:

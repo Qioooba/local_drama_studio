@@ -1,12 +1,13 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "instance_id": "default",
   "install_profile": "SERVER",
   "network": {
     "mode": "LAN_SERVICE",
     "host": "0.0.0.0",
     "port": 3210,
-    "trusted_lan_unauthenticated": false
+    "firewall_remote_address": "LocalSubnet",
+    "trusted_lan_unauthenticated": true
   },
   "storage": {
     "data_root": "${INSTANCE_ROOT}/data",
@@ -17,6 +18,14 @@
     "logs_root": "${INSTANCE_ROOT}/logs"
   },
   "runtime": {
+    "model_root": "${INSTANCE_ROOT}/models",
+    "model_library_roots": [
+      "${MODEL_ROOT}/libraries/comfyui",
+      "${MODEL_ROOT}/libraries/pytorch",
+      "${MODEL_ROOT}/libraries/ollama",
+      "${MODEL_ROOT}/libraries/audio"
+    ],
+    "model_download_source_hosts": [],
     "worker_channels": ["CPU", "GPU_H3"]
   },
   "tools": {

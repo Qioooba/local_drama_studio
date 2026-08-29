@@ -8,6 +8,7 @@ from typing import Literal
 from fastapi import APIRouter, Header, Request
 from fastapi.responses import FileResponse
 
+from local_drama.api.schemas.local_artifacts import ProjectPackageExportEnvelope
 from local_drama.api.schemas.projects import (
     EpisodeSceneRangeRequest,
     ProjectCreateRequest,
@@ -26,6 +27,7 @@ from local_drama.application.errors import api_error_from_domain
 from local_drama.application.project_packages import ProjectPackageService
 from local_drama.application.projects import PROJECT_RESOURCE_POLICIES, ProjectService
 from local_drama.domain.errors import DomainRuleError
+from local_drama.infrastructure.filesystem.path_policy import controlled_path, iter_controlled_files
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -195,7 +197,7 @@ async def copy_project_template(project_id: str, payload: ProjectTemplateCopyReq
         raise api_error_from_domain(error) from error
 
 
-@router.post("/{project_id}/packages:export", operation_id="exportProjectPackage")
+@router.post("/{project_id}/packages:export", operation_id="exportProjectPackage", response_model=ProjectPackageExportEnvelope)
 async def export_project_package(project_id: str, request: Request) -> dict[str, object]:
     try:
         return {"package": package_service(request).export(project_id)}
@@ -232,10 +234,8 @@ async def restore_project(project_id: str, request: Request) -> dict[str, object
 async def project_health(project_id: str, request: Request) -> dict[str, object]:
     try:
         project = service(request).get_project(project_id)
-        root = (request.app.state.settings.projects_root / project["root_rel"]).resolve()
+        root = request.app.state.settings.resolve_project_root(str(project["root_rel"]), must_exist=False)
         projects_root = request.app.state.settings.projects_root.resolve()
-        if not root.is_relative_to(projects_root):
-            raise DomainRuleError("PATH_ESCAPE", "项目根目录越界")
         referenced: set[str] = set()
         missing: list[str] = []
         size_mismatch: list[str] = []
@@ -246,12 +246,20 @@ async def project_health(project_id: str, request: Request) -> dict[str, object]
                 (project_id,),
             ).fetchall()
         for row in media_rows:
-            rel = Path(str(row["rel_path"])).as_posix()
+            rel = str(row["rel_path"])
             referenced.add(rel)
-            path = (root / rel).resolve()
-            if not path.is_relative_to(root) or not path.is_file() or path.is_symlink():
+            try:
+                path = controlled_path(
+                    root,
+                    rel,
+                    must_exist=True,
+                    require_file=True,
+                    code="MEDIA_PATH_INVALID",
+                )
+            except DomainRuleError:
                 missing.append(rel)
-            elif path.stat().st_size != int(row["byte_size"]):
+                continue
+            if path.stat().st_size != int(row["byte_size"]):
                 size_mismatch.append(rel)
             else:
                 digest = _sha256_file(path)
@@ -259,9 +267,7 @@ async def project_health(project_id: str, request: Request) -> dict[str, object]
                     hash_mismatch.append(rel)
         orphan_files: list[str] = []
         if root.is_dir():
-            for path in root.rglob("*"):
-                if not path.is_file() or path.is_symlink():
-                    continue
+            for path in iter_controlled_files(root):
                 rel = path.relative_to(root).as_posix()
                 if rel not in referenced and not rel.startswith("exports/"):
                     orphan_files.append(rel)

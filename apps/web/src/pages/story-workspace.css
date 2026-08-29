@@ -3,6 +3,7 @@
 .story-workspace-header h2 { margin: 3px 0 7px; }
 .story-workspace-header p { max-width: 720px; margin: 0; }
 .story-header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.story-adaptation-link { display: flex; align-items: center; gap: 10px; }
 .story-flow-toggle { display: none; }
 .story-project-location { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-width: 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-muted); }
 .story-project-location__value { display: grid; gap: 4px; min-width: 0; }
@@ -29,6 +30,7 @@
   .story-workspace-header { align-items: stretch; flex-direction: column; }
 }
 @media (max-width: 560px) {
+  .story-adaptation-link { align-items: stretch; flex-direction: column; }
   .story-project-location { align-items: stretch; flex-direction: column; }
   .story-project-location > button { justify-content: center; width: 100%; }
   .story-stage-section { padding: 12px; }

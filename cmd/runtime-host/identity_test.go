@@ -212,3 +212,24 @@ func TestVerifyReleaseRejectsMissingIdentity(t *testing.T) {
 		t.Fatal("payload without version identity unexpectedly passed verification")
 	}
 }
+
+func TestAbsoluteFromAnchorsRelativeServicePaths(t *testing.T) {
+	base := t.TempDir()
+	resolved, err := absoluteFrom(filepath.Join("instance", "data"), base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := filepath.Abs(filepath.Join(base, "instance", "data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != want {
+		t.Fatalf("resolved path = %q, want %q", resolved, want)
+	}
+}
+
+func TestAbsoluteFromRejectsEmptyPath(t *testing.T) {
+	if _, err := absoluteFrom("  ", t.TempDir()); err == nil {
+		t.Fatal("expected empty path to be rejected")
+	}
+}

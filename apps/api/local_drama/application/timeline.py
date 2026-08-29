@@ -24,6 +24,7 @@ from queue import Empty, Queue
 from time import monotonic
 from typing import Any, Callable, cast
 
+from local_drama.application.local_artifacts import local_artifact_reference
 from local_drama.application.media import _hash_file
 from local_drama.application.ports.timeline import TimelineMediaPort, TimelineUnitOfWork
 from local_drama.application.subtitle_styles import DEFAULT_SUBTITLE_STYLE, validate_style
@@ -42,6 +43,7 @@ from local_drama.domain.timeline_formatting import (
     subtitle_time,
 )
 from local_drama.infrastructure.filesystem.atomic import replace_path
+from local_drama.infrastructure.filesystem.path_policy import canonical_relative_path, controlled_path
 
 
 def _build_media_service(database: TimelineUnitOfWork, settings: Settings) -> TimelineMediaPort:
@@ -143,30 +145,24 @@ class TimelineService:
 
     def _project_root(self, episode_id: str) -> Path:
         episode = self._episode(episode_id)
-        root = (self.settings.projects_root / str(episode["root_rel"])).resolve()
-        if not root.is_relative_to(self.settings.projects_root.resolve()):
-            raise DomainRuleError("PATH_ESCAPE", "项目根目录越界")
-        return root
+        return self.settings.resolve_project_root(str(episode["root_rel"]))
 
     def _project_root_for_project(self, project_id: str) -> Path:
         with self.database.connect() as connection:
             row = connection.execute("SELECT root_rel FROM projects WHERE id=?", (project_id,)).fetchone()
         if row is None:
             raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
-        root = (self.settings.projects_root / str(row["root_rel"])).resolve()
-        if not root.is_relative_to(self.settings.projects_root.resolve()):
-            raise DomainRuleError("PATH_ESCAPE", "项目根目录越界")
-        return root
+        return self.settings.resolve_project_root(str(row["root_rel"]))
 
     def _resolve_lut_file(self, project_id: str, path_rel: str) -> Path:
-        candidate_rel = Path(path_rel)
-        if candidate_rel.is_absolute() or ".." in candidate_rel.parts or not path_rel.strip():
-            raise DomainRuleError("POST_PROCESS_LUT_PATH_INVALID", "LUT 文件必须是项目内相对路径")
         root = self._project_root_for_project(project_id)
-        candidate = root / candidate_rel
-        resolved = candidate.resolve()
-        if candidate.is_symlink() or not resolved.is_file() or not resolved.is_relative_to(root):
-            raise DomainRuleError("POST_PROCESS_LUT_FILE_INVALID", "LUT 文件必须是项目内普通文件")
+        resolved = controlled_path(
+            root,
+            path_rel,
+            must_exist=True,
+            require_file=True,
+            code="POST_PROCESS_LUT_FILE_INVALID",
+        )
         if resolved.suffix.lower() != ".cube":
             raise DomainRuleError("POST_PROCESS_LUT_FORMAT_INVALID", "当前只接受 .cube LUT 文件")
         return resolved
@@ -708,11 +704,14 @@ class TimelineService:
             raise DomainRuleError("SUBTITLE_SOURCE_PROJECT_MISMATCH", "字幕权威剧本必须属于同一项目")
         if version["source_kind"] != "SCRIPT" or version["parse_status"] != "PARSED" or not version["extracted_text_rel"]:
             raise DomainRuleError("SUBTITLE_SCRIPT_SOURCE_INVALID", "字幕权威来源必须是已解析的剧本文档版本")
-        project_root = (self.settings.projects_root / str(episode["root_rel"])).resolve()
-        source_candidate = project_root / str(version["extracted_text_rel"])
-        source_path = source_candidate.resolve()
-        if source_candidate.is_symlink() or not source_path.is_relative_to(project_root) or not source_path.is_file():
-            raise DomainRuleError("SUBTITLE_SCRIPT_SOURCE_INVALID", "剧本提取文本不存在或路径不安全")
+        project_root = self.settings.resolve_project_root(str(episode["root_rel"]))
+        source_path = controlled_path(
+            project_root,
+            str(version["extracted_text_rel"]),
+            must_exist=True,
+            require_file=True,
+            code="SUBTITLE_SCRIPT_SOURCE_INVALID",
+        )
         source_text = source_path.read_text(encoding="utf-8")
         text_sha256 = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
         if text_sha256 != version["text_sha256"]:
@@ -845,8 +844,14 @@ class TimelineService:
             raise DomainRuleError("FRAME_ANCHOR_POSITION_REQUIRED", "必须且只能提供 time_us、frame_index 或 FIRST/LAST position_mode 之一")
         if (source_time_us is not None and source_time_us < 0) or (source_frame_index is not None and source_frame_index < 0):
             raise DomainRuleError("FRAME_ANCHOR_POSITION_REQUIRED", "time_us/frame_index 必须为非负整数")
-        project_root = (self.settings.projects_root / source["root_rel"]).resolve()
-        source_path = (project_root / source["rel_path"]).resolve()
+        project_root = self.settings.resolve_project_root(str(source["root_rel"]))
+        source_path = controlled_path(
+            project_root,
+            str(source["rel_path"]),
+            must_exist=True,
+            require_file=True,
+            code="FRAME_ANCHOR_SOURCE_INVALID",
+        )
         timestamps = self._video_frame_timestamps(source_path)
         requested_time_us = source_time_us
         if position_mode is not None:
@@ -1158,9 +1163,8 @@ class TimelineService:
                 if step["mode"] != "DESHAKE":
                     raise DomainRuleError("POST_PROCESS_STABILIZE_INVALID", "防抖当前只支持本地 FFmpeg deshake")
             elif step["kind"] == "LUT_3D":
-                path_rel = str(step.get("path_rel", "")).strip()
-                if not path_rel or Path(path_rel).is_absolute() or ".." in Path(path_rel).parts:
-                    raise DomainRuleError("POST_PROCESS_LUT_PATH_INVALID", "LUT_3D 必须提供项目内相对 path_rel")
+                path_rel = canonical_relative_path(str(step.get("path_rel", "")), code="POST_PROCESS_LUT_PATH_INVALID")
+                step["path_rel"] = path_rel
                 if Path(path_rel).suffix.lower() != ".cube":
                     raise DomainRuleError("POST_PROCESS_LUT_FORMAT_INVALID", "当前只接受 .cube LUT 文件")
             normalized.append(step)
@@ -1479,7 +1483,7 @@ class TimelineService:
         if bindings:
             input_snapshot["render_mode"] = "MIXED_AUDIO"
             input_snapshot["audio_bindings"] = self._binding_snapshot(bindings)
-        project_root = (self.settings.projects_root / episode["root_rel"]).resolve()
+        project_root = self.settings.resolve_project_root(str(episode["root_rel"]))
         if not force_rerender:
             existing = self._existing_render(timeline_revision_id, input_snapshot, project_root)
             if existing is not None:
@@ -1544,7 +1548,7 @@ class TimelineService:
         if bindings:
             snapshot["render_mode"] = "MIXED_AUDIO"
             snapshot["audio_bindings"] = self._binding_snapshot(bindings)
-        project_root = (self.settings.projects_root / episode["root_rel"]).resolve()
+        project_root = self.settings.resolve_project_root(str(episode["root_rel"]))
         existing = self._existing_render(timeline_revision_id, snapshot, project_root)
         return {
             "project_id": str(episode["project_id"]), "episode_id": str(episode["id"]),
@@ -1588,7 +1592,7 @@ class TimelineService:
         }
         if bindings:
             input_snapshot["audio_bindings"] = self._binding_snapshot(bindings)
-        project_root = (self.settings.projects_root / episode["root_rel"]).resolve()
+        project_root = self.settings.resolve_project_root(str(episode["root_rel"]))
         existing = self._existing_render(timeline_revision_id, input_snapshot, project_root)
         return {
             "project_id": str(episode["project_id"]),
@@ -1656,7 +1660,7 @@ class TimelineService:
         }
         if bindings:
             input_snapshot["audio_bindings"] = self._binding_snapshot(bindings)
-        project_root = (self.settings.projects_root / episode["root_rel"]).resolve()
+        project_root = self.settings.resolve_project_root(str(episode["root_rel"]))
         if not force_rerender:
             existing = self._existing_render(timeline_revision_id, input_snapshot, project_root)
             if existing is not None:
@@ -1699,8 +1703,15 @@ class TimelineService:
                 continue
             if _hash(snapshot) != expected:
                 continue
-            path = (project_root / str(row["rel_path"])).resolve()
-            if not path.is_relative_to(project_root) or path.is_symlink() or not path.is_file():
+            try:
+                path = controlled_path(
+                    project_root,
+                    str(row["rel_path"]),
+                    must_exist=True,
+                    require_file=True,
+                    code="EPISODE_RENDER_FILE_INVALID",
+                )
+            except DomainRuleError:
                 continue
             digest, size = _hash_file(path)
             if not hmac.compare_digest(digest, str(row["sha256"])):
@@ -2250,14 +2261,14 @@ class TimelineService:
             ).fetchone()
         if row is None:
             raise DomainRuleError("EPISODE_RENDER_NOT_FOUND", "整集渲染版本不存在")
-        project_root = (self.settings.projects_root / str(row["root_rel"])).resolve()
-        projects_root = self.settings.projects_root.resolve()
-        if project_root.is_symlink() or not project_root.is_dir() or not project_root.is_relative_to(projects_root):
-            raise DomainRuleError("EPISODE_RENDER_FILE_INVALID", "整集渲染项目目录不存在或路径越界")
-        candidate = project_root / str(row["rel_path"])
-        render_path = candidate.resolve()
-        if candidate.is_symlink() or not render_path.is_file() or not render_path.is_relative_to(project_root):
-            raise DomainRuleError("EPISODE_RENDER_FILE_MISSING", "整集渲染文件缺失或路径越界")
+        project_root = self.settings.resolve_project_root(str(row["root_rel"]))
+        render_path = controlled_path(
+            project_root,
+            str(row["rel_path"]),
+            must_exist=True,
+            require_file=True,
+            code="EPISODE_RENDER_FILE_MISSING",
+        )
         digest, _ = _hash_file(render_path)
         if not hmac.compare_digest(digest, str(row["sha256"])):
             raise DomainRuleError("EPISODE_RENDER_INTEGRITY_FAILED", "整集渲染文件 hash 与登记值不一致")
@@ -2340,23 +2351,26 @@ class TimelineService:
         path_value = spec.get("path_rel")
         if not isinstance(path_value, str) or not path_value.strip():
             raise DomainRuleError("DELIVERY_TARGET_SPEC_INCOMPLETE", "交付目标必须显式指定项目内 path_rel")
-        path_rel = path_value.strip()
+        path_rel = canonical_relative_path(path_value, code="INVALID_DELIVERY_TARGET")
         if str(target["status"]) != "ACTIVE":
             raise DomainRuleError("DELIVERY_TARGET_VERSION_INACTIVE", "只能使用当前 ACTIVE 的交付目标版本创建新候选")
-        if Path(path_rel).is_absolute() or ".." in Path(path_rel).parts:
-            raise DomainRuleError("INVALID_DELIVERY_TARGET", "交付目标路径越界")
-        project_root = (self.settings.projects_root / render["root_rel"]).resolve()
-        source = (project_root / render["rel_path"]).resolve()
-        if not source.is_file() or not source.is_relative_to(project_root) or source.is_symlink():
-            raise DomainRuleError("EPISODE_RENDER_FILE_MISSING", "整集渲染文件缺失、为 symlink 或路径越界")
+        project_root = self.settings.resolve_project_root(str(render["root_rel"]))
+        source = controlled_path(
+            project_root,
+            str(render["rel_path"]),
+            must_exist=True,
+            require_file=True,
+            code="EPISODE_RENDER_FILE_MISSING",
+        )
         source_hash, _ = _hash_file(source)
         if source_hash != str(render["sha256"]):
             raise DomainRuleError("EPISODE_RENDER_INTEGRITY_FAILED", "整集渲染文件 hash 与登记值不一致")
         package_id = str(uuid.uuid4())
-        delivery_parent = (project_root / path_rel).resolve()
-        destination_base = (delivery_parent / str(render["episode_code"])).resolve()
-        if not delivery_parent.is_relative_to(project_root) or not destination_base.is_relative_to(project_root):
-            raise DomainRuleError("PATH_ESCAPE", "交付目标目录越界")
+        delivery_parent = controlled_path(project_root, path_rel, code="INVALID_DELIVERY_TARGET")
+        episode_code = canonical_relative_path(str(render["episode_code"]), code="INVALID_EPISODE_CODE")
+        if "/" in episode_code:
+            raise DomainRuleError("INVALID_EPISODE_CODE", "分集编码必须是单个安全路径段")
+        destination_base = controlled_path(delivery_parent, episode_code, code="PATH_ESCAPE")
         base_rel = destination_base.relative_to(project_root).as_posix()
         with self.database.connect() as connection:
             base_package = connection.execute("SELECT COUNT(*) AS count FROM delivery_packages WHERE rel_path=?", (base_rel,)).fetchone()
@@ -2366,15 +2380,19 @@ class TimelineService:
         if int(base_package["count"] or 0) == 0:
             destination_dir = destination_base
         else:
-            destination_dir = (delivery_parent / str(render["episode_code"]) / f"delivery-{package_id}").resolve()
+            destination_dir = controlled_path(
+                delivery_parent,
+                f"{episode_code}/delivery-{package_id}",
+                code="PATH_ESCAPE",
+            )
         if destination_dir.exists():
             raise DomainRuleError("DELIVERY_DESTINATION_OCCUPIED", "交付目标目录已存在，系统不会覆盖既有文件")
         partial_dir = destination_dir.with_name(f".{destination_dir.name}.partial-{package_id}")
         destination_dir.parent.mkdir(parents=True, exist_ok=True)
         partial_dir.mkdir(parents=True, exist_ok=False)
-        destination = destination_dir / f"{render['episode_code']}.mp4"
-        partial_output = partial_dir / f"{render['episode_code']}.mp4"
-        watermark_text_path = partial_dir / f"{render['episode_code']}.watermark.txt"
+        destination = destination_dir / f"{episode_code}.mp4"
+        partial_output = partial_dir / f"{episode_code}.mp4"
+        watermark_text_path = partial_dir / f"{episode_code}.watermark.txt"
         try:
             if watermark_config and bool(watermark_config.get("enabled", True)):
                 watermark_text_path.write_text(str(watermark_config["text"]), encoding="utf-8")
@@ -2403,7 +2421,7 @@ class TimelineService:
         delivery_manifest_files = [
             {"rel_path": destination.relative_to(project_root).as_posix(), "sha256": file_hash, "byte_size": byte_size}
         ]
-        delivered_watermark = destination_dir / f"{render['episode_code']}.watermark.txt"
+        delivered_watermark = destination_dir / f"{episode_code}.watermark.txt"
         if delivered_watermark.is_file():
             watermark_hash, watermark_size = _hash_file(delivered_watermark)
             delivery_manifest_files.append(
@@ -2488,6 +2506,29 @@ class TimelineService:
         with self.database.connect() as connection:
             files = connection.execute("SELECT * FROM delivery_files WHERE delivery_package_id=? ORDER BY rel_path", (package_id,)).fetchall()
             events = connection.execute("SELECT id, action, manifest_sha256, note, created_at, created_by FROM delivery_events WHERE delivery_package_id=? ORDER BY created_at, id", (package_id,)).fetchall()
+        file_items = [self._delivery_file_dict(row) for row in files]
+        video_file = next((item for item in file_items if Path(str(item["rel_path"])).suffix.lower() == ".mp4"), None)
+        if video_file is None:
+            raise DomainRuleError("DELIVERY_VIDEO_NOT_FOUND", "交付包不包含可下载的视频文件")
+        project_root = self.settings.resolve_project_root(str(package["root_rel"]))
+        video_path = controlled_path(
+            project_root,
+            str(video_file["rel_path"]),
+            must_exist=True,
+            require_file=True,
+            code="DELIVERY_FILE_INVALID",
+        )
+        download_filename = f"{package['episode_code']}-{package_id[:8]}.mp4"
+        artifact = local_artifact_reference(
+            root=project_root,
+            path=video_path,
+            scope="PROJECT",
+            kind="FILE",
+            display_name=f"{package['episode_code']} · {package['target_title']} · {download_filename}",
+            download_url=f"/api/v1/delivery-packages/{package_id}/download",
+            download_filename=download_filename,
+            error_code="DELIVERY_FILE_INVALID",
+        )
         return {
             "id": str(package["id"]),
             "episode_id": str(package["episode_id"]),
@@ -2496,6 +2537,7 @@ class TimelineService:
             "target_version_id": str(package["target_version_id"]),
             "target": {"code": str(package["target_code"]), "title": str(package["target_title"]), "transport": str(package["transport"]), "version_no": int(package["version_no"]), "spec": json.loads(str(package["target_spec_json"] or "{}"))},
             "status": str(package["status"]),
+            "artifact": artifact,
             "rel_path": str(package["rel_path"]),
             "manifest_sha256": str(package["manifest_sha256"] or ""),
             "withdrawn_reason": package["withdrawn_reason"],
@@ -2506,7 +2548,7 @@ class TimelineService:
             "created_at": str(package["created_at"]),
             "updated_at": str(package["updated_at"]),
             "revision": int(package["revision"]),
-            "files": [self._delivery_file_dict(row) for row in files],
+            "files": file_items,
             "events": [{"id": str(row["id"]), "action": str(row["action"]), "manifest_sha256": row["manifest_sha256"], "note": row["note"], "created_at": str(row["created_at"]), "created_by": str(row["created_by"])} for row in events],
             "runtime_contacted": False,
             "network_contacted": False,
@@ -2537,9 +2579,7 @@ class TimelineService:
             raise DomainRuleError("DELIVERY_PACKAGE_NOT_FOUND", "交付包不存在")
         if str(package["status"]) not in {"VERIFIED", "WITHDRAWN"}:
             raise DomainRuleError("DELIVERY_NOT_VERIFIED", "只有 manifest verify 通过的交付包可以下载")
-        root = (self.settings.projects_root / str(package["root_rel"])).resolve()
-        if not root.is_dir() or root.is_symlink() or not root.is_relative_to(self.settings.projects_root.resolve()):
-            raise DomainRuleError("DELIVERY_PATH_INVALID", "交付项目目录不存在或越界")
+        root = self.settings.resolve_project_root(str(package["root_rel"]))
         with self.database.connect() as connection:
             row = connection.execute(
                 "SELECT rel_path, sha256, byte_size FROM delivery_files WHERE delivery_package_id=? AND lower(rel_path) LIKE '%.mp4' ORDER BY rel_path LIMIT 1",
@@ -2547,10 +2587,13 @@ class TimelineService:
             ).fetchone()
         if row is None:
             raise DomainRuleError("DELIVERY_VIDEO_NOT_FOUND", "交付包不包含可下载的视频文件")
-        rel = Path(str(row["rel_path"]))
-        path = (root / rel).resolve()
-        if rel.is_absolute() or ".." in rel.parts or path.is_symlink() or not path.is_file() or not path.is_relative_to(root):
-            raise DomainRuleError("DELIVERY_FILE_INVALID", "交付文件缺失或路径越界")
+        path = controlled_path(
+            root,
+            str(row["rel_path"]),
+            must_exist=True,
+            require_file=True,
+            code="DELIVERY_FILE_INVALID",
+        )
         # Downloads are a material hand-off even though the file itself is
         # immutable.  Persist a bounded audit event with only the package
         # manifest/file fingerprints (never a path outside the project or
@@ -2578,17 +2621,24 @@ class TimelineService:
             files = connection.execute("SELECT * FROM delivery_files WHERE delivery_package_id=? ORDER BY rel_path", (package_id,)).fetchall()
         if package is None:
             raise DomainRuleError("DELIVERY_PACKAGE_NOT_FOUND", "交付包不存在")
-        root = (self.settings.projects_root / package["root_rel"]).resolve()
+        root = self.settings.resolve_project_root(str(package["root_rel"]))
         checks: list[dict[str, Any]] = []
-        root_valid = root.is_dir() and not root.is_symlink() and root.is_relative_to(self.settings.projects_root.resolve())
         manifest_payload: dict[str, Any] | None = None
         manifest_path: Path | None = None
         verification_source: Path | None = None
         for file in files:
-            rel_path = Path(str(file["rel_path"]))
-            safe_rel = not rel_path.is_absolute() and ".." not in rel_path.parts
-            path = (root / rel_path).resolve() if root_valid and safe_rel else root / "__invalid_delivery_path__"
-            safe_file = safe_rel and root_valid and path.is_relative_to(root) and not path.is_symlink() and path.is_file()
+            try:
+                path = controlled_path(
+                    root,
+                    str(file["rel_path"]),
+                    must_exist=True,
+                    require_file=True,
+                    code="DELIVERY_FILE_INVALID",
+                )
+                safe_file = True
+            except DomainRuleError:
+                path = root / "__invalid_delivery_path__"
+                safe_file = False
             actual = hashlib.sha256(path.read_bytes()).hexdigest() if safe_file else None
             actual_size = path.stat().st_size if safe_file else None
             if safe_file and verification_source is None and not str(file["rel_path"]).lower().endswith("manifest.json"):

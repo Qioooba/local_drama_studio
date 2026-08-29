@@ -67,18 +67,6 @@ export type ProjectOption = { id: string; code: string; title: string };
 export type SeasonOption = { id: string; code: string; title: string };
 export type EpisodeOption = { id: string; code: string; title: string; production_status?: string };
 export type ShotOption = { id: string; code: string; shot_type?: string; status?: string };
-export type ProfileOption = {
-  id: string;
-  code: string;
-  title: string;
-  version_id: string;
-  version_no?: number;
-  capability: string;
-  status: string;
-  override_schema?: Record<string, unknown>;
-  model_bundle?: Record<string, unknown>;
-};
-
 export type PreferencePutPayload = {
   owner_type: PreferenceOwnerType;
   owner_id: string;

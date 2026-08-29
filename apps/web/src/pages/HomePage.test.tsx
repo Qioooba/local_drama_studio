@@ -4,14 +4,19 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getCapacitySnapshot, listProfiles, listProjects, listWorkflowVersions } from "../generated/api";
 import { HomePage } from "./HomePage";
+import { apiJsonResponse } from "../test/apiResponse";
 
 vi.mock("../features/projects/ProjectCreateWizard", () => ({ ProjectCreateWizard: () => <button type="button">新建项目</button> }));
-vi.mock("../generated/api", () => ({
-  getCapacitySnapshot: vi.fn(),
-  listProfiles: vi.fn(),
-  listProjects: vi.fn(),
-  listWorkflowVersions: vi.fn(),
-}));
+vi.mock("../generated/api", async (loadOriginal) => {
+  const original = await loadOriginal<typeof import("../generated/api")>();
+  return {
+    ...original,
+    getCapacitySnapshot: vi.fn(),
+    listProfiles: vi.fn(),
+    listProjects: vi.fn(),
+    listWorkflowVersions: vi.fn(),
+  };
+});
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -25,7 +30,7 @@ describe("HomePage global workspace", () => {
       const body = path === "dependencies"
         ? { status: "HEALTHY", checks: { ffmpeg: "discovered", database: "ok", comfy_designer: "ready", production_profiles: "synced_candidates", worker_supervisor: "ready:CPU,GPU_H3" } }
         : { status: "HEALTHY", checks: { database: "ok" } };
-      return { ok: true, json: async () => body } as Response;
+      return apiJsonResponse(body);
     }));
     vi.mocked(listProjects).mockResolvedValue({ items: [
       { id: "p-old", code: "OLD", title: "旧项目", status: "DRAFT", revision: 1, updated_at: "2026-08-01T00:00:00Z" },

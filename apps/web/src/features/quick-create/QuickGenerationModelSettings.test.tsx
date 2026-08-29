@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
+import "@testing-library/jest-dom/vitest";
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getProfileVersion, type GenerationModel } from "../../generated/api";
@@ -12,7 +13,10 @@ vi.mock("./quickGenerationClient", () => ({
   createQuickGenerationPreset: vi.fn(), deleteQuickGenerationPreset: vi.fn(), updateQuickGenerationPreset: vi.fn(), listQuickGenerationPresets: vi.fn(),
 }));
 
-const models = [{ id: "model", name: "H3 视频模型", category: "VIDEO", capabilities: ["VIDEO_T2V"], actions: ["TEXT_TO_VIDEO"], executable: true, routes: [{ action: "TEXT_TO_VIDEO", capability: "VIDEO_T2V", profile_version_id: "video-1", profile_title: "H3 视频模型", version_no: 1, status: "PUBLISHED", workflow_version_id: "workflow-1", executable: true }] }] as GenerationModel[];
+const models = [
+  { id: "model", name: "H3 视频模型", category: "VIDEO", capabilities: ["VIDEO_T2V"], actions: ["TEXT_TO_VIDEO"], executable: true, routes: [{ action: "TEXT_TO_VIDEO", capability: "VIDEO_T2V", profile_version_id: "video-1", profile_title: "H3 视频模型", version_no: 1, status: "PUBLISHED", workflow_version_id: "workflow-1", executable: true }] },
+  { id: "candidate", name: "候选视频模型", category: "VIDEO", capabilities: ["VIDEO_T2V"], actions: ["TEXT_TO_VIDEO"], executable: false, routes: [{ action: "TEXT_TO_VIDEO", capability: "VIDEO_T2V", profile_version_id: "video-candidate", profile_title: "候选视频模型", version_no: 1, status: "CANDIDATE_UNVERIFIED", workflow_version_id: null, executable: false }] },
+] as GenerationModel[];
 
 function Harness() {
   const [profileId, setProfileId] = useState("video-1");
@@ -37,5 +41,13 @@ describe("QuickGenerationModelSettings", () => {
     expect((steps as HTMLInputElement).value).toBe("24");
     fireEvent.change(steps, { target: { value: "36" } });
     expect((steps as HTMLInputElement).value).toBe("36");
+  });
+
+  it("keeps an unavailable route visible for diagnosis but prevents selecting it", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><Harness /></QueryClientProvider>);
+
+    const unavailable = await screen.findByRole("option", { name: /候选视频模型.*不可选/ });
+    expect(unavailable).toBeDisabled();
   });
 });

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuditHistoryPanel } from "./AuditHistoryPanel";
 import { getAuditProof, listAuditEvents } from "../../generated/api";
@@ -19,13 +20,23 @@ describe("AuditHistoryPanel", () => {
   it("loads project-scoped redacted history and follows a stable cursor", async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={queryClient}><AuditHistoryPanel projectId="project-1" /></QueryClientProvider>);
-    expect(await screen.findByText("REVIEW_SUBMITTED")).toBeTruthy();
-    expect(screen.getByText(/仅本地/)).toBeTruthy();
+    expect(await screen.findByText("人工审核已提交")).toBeTruthy();
+    expect(screen.getByText(/只读/)).toBeTruthy();
+    expect(screen.getAllByText(/提交了审核决定/).length).toBeGreaterThan(0);
     await waitFor(() => expect(listAuditEvents).toHaveBeenCalledWith(expect.objectContaining({ project_id: "project-1", cursor: 0, limit: 50 })));
-    fireEvent.click(screen.getByRole("button", { name: "更早事件" }));
+    fireEvent.click(screen.getByRole("button", { name: "更早记录" }));
     await waitFor(() => expect(listAuditEvents).toHaveBeenLastCalledWith(expect.objectContaining({ project_id: "project-1", cursor: 4, limit: 50 })));
     fireEvent.click(screen.getByRole("button", { name: "生成哈希证明" }));
-    expect(await screen.findByText(/导出证明/)).toBeTruthy();
+    expect(await screen.findByText(/哈希证明已生成/)).toBeTruthy();
     expect(getAuditProof).toHaveBeenCalledWith(expect.objectContaining({ project_id: "project-1" }), 1000);
+  });
+
+  it("reports proof failures instead of silently swallowing them", async () => {
+    vi.mocked(getAuditProof).mockRejectedValueOnce(new Error("证明服务暂不可用"));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><AuditHistoryPanel /></QueryClientProvider>);
+    await screen.findByText("人工审核已提交");
+    fireEvent.click(screen.getByRole("button", { name: "生成哈希证明" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("证明服务暂不可用");
   });
 });

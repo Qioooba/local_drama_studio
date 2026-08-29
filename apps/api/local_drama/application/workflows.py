@@ -11,11 +11,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from local_drama.application.comfy_smoke_contract import has_comfy_smoke_contract, parse_comfy_smoke_contract
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.comfy import ComfyClient
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.atomic import replace_path
+from local_drama.infrastructure.filesystem.path_policy import canonical_relative_path
 from local_drama.infrastructure.manifest import load_manifest
 
 # ComfyUI core builtins (nodes.py) and core comfy_extras used by the native
@@ -80,6 +82,7 @@ class WorkflowService:
     def _validate_code(code: str) -> None:
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,119}", code):
             raise DomainRuleError("WORKFLOW_CODE_INVALID", "workflow code 只能包含字母、数字、点、下划线和连字符")
+        canonical_relative_path(code, code="WORKFLOW_CODE_INVALID")
 
     def _write_package(self, code: str, version_no: int, payload: dict[str, Any]) -> str:
         relative = Path("workflow_packages") / code / f"v{version_no}.json"
@@ -206,6 +209,8 @@ class WorkflowService:
         graph_structure = self._validate_graph_structure(workflow)
         supply_chain = self._validate_node_supply_chain(workflow)
         self._validate_bindings(workflow, contract, node_bindings)
+        if has_comfy_smoke_contract(contract):
+            parse_comfy_smoke_contract(contract, node_bindings)
         if any(
             isinstance(value, str) and (value.startswith("\\") or ":\\" in value or value.startswith("/"))
             for node in workflow.values()

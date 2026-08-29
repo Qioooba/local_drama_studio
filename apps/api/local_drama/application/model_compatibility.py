@@ -15,6 +15,12 @@ from typing import Any
 
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.infrastructure.filesystem.path_policy import (
+    controlled_path,
+    is_reparse_point,
+    iter_controlled_files,
+    path_is_within_roots,
+)
 
 _MODEL_FILE_EXTENSIONS = frozenset({".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".gguf", ".onnx", ".tflite", ".mlx"})
 
@@ -125,18 +131,13 @@ class ModelCompatibilityService:
         root = Path(root_path).expanduser()
         if not root.is_absolute():
             raise DomainRuleError("MODEL_SCAN_ROOT_ABSOLUTE_REQUIRED", "扫描目录必须是本机绝对路径")
-        if root.is_symlink():
-            raise DomainRuleError("MODEL_SCAN_ROOT_INVALID", "模型扫描目录不能是 symlink")
         resolved_root = root.resolve()
-        if not resolved_root.is_dir():
+        if not resolved_root.is_dir() or is_reparse_point(root) or is_reparse_point(resolved_root):
             raise DomainRuleError("MODEL_SCAN_ROOT_INVALID", "模型扫描目录不存在、不是目录或为 symlink")
         files = [
             item
-            for item in resolved_root.rglob("*")
-            if item.is_file()
-            and not item.is_symlink()
-            and item.suffix.casefold() in _MODEL_FILE_EXTENSIONS
-            and item.resolve().is_relative_to(resolved_root)
+            for item in iter_controlled_files(resolved_root)
+            if item.suffix.casefold() in _MODEL_FILE_EXTENSIONS
         ]
         files.sort(key=lambda item: item.as_posix().casefold())
         candidate_count = len(files)
@@ -192,7 +193,7 @@ class ModelCompatibilityService:
         if not path.is_absolute():
             raise DomainRuleError("MODEL_ARTIFACT_PATH_ABSOLUTE_REQUIRED", "模型必须使用电脑上的绝对路径")
         resolved = path.resolve()
-        if not resolved.is_file() or resolved.is_symlink():
+        if not resolved.is_file() or is_reparse_point(path) or is_reparse_point(resolved):
             raise DomainRuleError("MODEL_ARTIFACT_PATH_INVALID", "模型路径缺失、不是文件或为 symlink")
         if resolved.suffix.casefold() not in _MODEL_FILE_EXTENSIONS:
             raise DomainRuleError(
@@ -270,7 +271,7 @@ class ModelCompatibilityService:
         if artifact is None:
             raise DomainRuleError("MODEL_ARTIFACT_NOT_FOUND", "模型 Artifact 不存在")
         path = Path(str(artifact["machine_path_ref"])).resolve()
-        if not path.is_file() or path.is_symlink():
+        if not path.is_file() or is_reparse_point(path):
             raise DomainRuleError("MODEL_ARTIFACT_PATH_INVALID", "模型路径缺失、不是文件或为 symlink")
         sha256, byte_size, header = _hash_and_header(path)
         component = str(artifact["kind"])
@@ -339,16 +340,17 @@ class ModelCompatibilityService:
             raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
         if artifact is None:
             raise DomainRuleError("MODEL_ARTIFACT_NOT_FOUND", "模型 Artifact 不存在")
-        project_root = (settings.projects_root / str(project["root_rel"])).resolve()
-        candidate = (project_root / evidence_path).resolve()
+        project_root = settings.resolve_project_root(str(project["root_rel"]))
         evidence_root = (project_root / "00_admin" / "licenses").resolve()
-        if Path(evidence_path).is_absolute() or not candidate.is_relative_to(evidence_root) or candidate.is_symlink() or not candidate.is_file():
+        candidate = controlled_path(
+            project_root,
+            evidence_path,
+            must_exist=True,
+            require_file=True,
+            code="MODEL_LICENSE_EVIDENCE_PATH_INVALID",
+        )
+        if not candidate.is_relative_to(evidence_root):
             raise DomainRuleError("MODEL_LICENSE_EVIDENCE_PATH_INVALID", "许可证证据必须位于项目 00_admin/licenses 内，且不能越界或为 symlink")
-        current = project_root
-        for part in Path(evidence_path).parts:
-            current = current / part
-            if current.is_symlink():
-                raise DomainRuleError("MODEL_LICENSE_EVIDENCE_PATH_INVALID", "许可证证据路径不能经过 symlink")
         try:
             payload = json.loads(candidate.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -356,7 +358,10 @@ class ModelCompatibilityService:
         if not isinstance(payload, dict):
             raise DomainRuleError("MODEL_LICENSE_EVIDENCE_INVALID", "许可证证据 JSON 顶层必须是 object")
         artifact_path = Path(str(artifact["machine_path_ref"])).resolve()
-        if not artifact_path.is_file() or artifact_path.is_symlink():
+        if not artifact_path.is_file() or artifact_path.is_symlink() or (
+            settings.is_lan_service
+            and not path_is_within_roots(artifact_path, settings.model_library_roots, require_file=True)
+        ):
             raise DomainRuleError("MODEL_ARTIFACT_PATH_INVALID", "模型路径缺失、不是文件或为 symlink")
         artifact_sha256, _, _ = _hash_and_header(artifact_path)
         declared_sha = str(payload.get("artifact_sha256", ""))

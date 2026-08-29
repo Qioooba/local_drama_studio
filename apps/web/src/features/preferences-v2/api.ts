@@ -4,12 +4,11 @@ import type {
   GenerationPreference,
   GenerationResolution,
   PreferencePutPayload,
-  ProfileOption,
   ProjectOption,
   SeasonOption,
   ShotOption,
 } from "./types";
-import { bootstrapLocalSession } from "../../generated/api";
+import { ApiRequestError, requestJson as generatedRequestJson } from "../../generated/api";
 
 const API_ROOT = "/api/v1";
 
@@ -32,36 +31,19 @@ export class PreferenceApiError extends Error implements ApiFailure {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const method = (init?.method ?? "GET").toUpperCase();
-  let securedInit = init;
-  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
-    const session = await bootstrapLocalSession();
-    const headers = new Headers(init?.headers);
-    headers.set("X-Local-Instance-Token", session.token);
-    securedInit = { ...init, headers };
-  }
-  const response = await fetch(`${API_ROOT}${path}`, securedInit);
-  const body = await response.json().catch(() => null) as {
-    error?: {
-      code?: string;
-      message?: string;
-      request_id?: string | null;
-      details?: Record<string, unknown>;
-      suggested_action?: string | null;
-    };
-  } | null;
-  if (!response.ok) {
-    const error = body?.error;
+  try {
+    return await generatedRequestJson<T>(`${API_ROOT}${path}`, init);
+  } catch (reason) {
+    if (!(reason instanceof ApiRequestError)) throw reason;
     throw new PreferenceApiError({
-      status: response.status,
-      code: error?.code ?? `HTTP_${response.status}`,
-      message: error?.message ?? "本机 API 请求失败",
-      requestId: error?.request_id ?? response.headers.get("X-Request-Id"),
-      details: error?.details ?? {},
-      suggestedAction: error?.suggested_action ?? null,
+      status: reason.status,
+      code: reason.code,
+      message: reason.message,
+      requestId: reason.requestId,
+      details: reason.details ?? {},
+      suggestedAction: reason.suggestedAction,
     });
   }
-  return body as T;
 }
 
 export async function listPreferenceProjects(): Promise<ProjectOption[]> {
@@ -81,11 +63,6 @@ export async function listPreferenceEpisodes(seasonId: string): Promise<EpisodeO
 
 export async function listPreferenceShots(episodeId: string): Promise<ShotOption[]> {
   const data = await requestJson<{ items: ShotOption[] }>(`/projects/episodes/${encodeURIComponent(episodeId)}/shots`);
-  return data.items;
-}
-
-export async function listPreferenceProfiles(): Promise<ProfileOption[]> {
-  const data = await requestJson<{ items: ProfileOption[] }>("/profiles");
   return data.items;
 }
 

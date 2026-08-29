@@ -13,7 +13,6 @@ import hashlib
 import json
 import mimetypes
 import os
-import re
 import shutil
 import uuid
 from collections.abc import Callable
@@ -25,6 +24,12 @@ from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.atomic import replace_path
+from local_drama.infrastructure.filesystem.path_policy import (
+    canonical_relative_path,
+    controlled_path,
+    is_reparse_point,
+    safe_filename,
+)
 
 CHUNK_SIZE = 1024 * 1024
 RECOVERABLE_STATES = ("STAGING", "STAGED", "FINALIZING", "FILE_COMMITTED", "NEEDS_ATTENTION")
@@ -36,14 +41,6 @@ def _utc_now() -> str:
 
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
-def _safe_name(value: str) -> str:
-    candidate = Path(value).name
-    candidate = re.sub(r"[^A-Za-z0-9._-]+", "_", candidate)
-    if candidate in {"", ".", ".."}:
-        raise DomainRuleError("INVALID_SOURCE_NAME", "导入文件名无效")
-    return candidate[:180]
 
 
 def _stream_hash(path: Path) -> tuple[str, int]:
@@ -92,7 +89,7 @@ class StorageOperationService:
     def _internal_root(self, name: str) -> Path:
         work_root = self.settings.work_root.resolve()
         candidate = work_root / name
-        if candidate.is_symlink():
+        if is_reparse_point(candidate):
             raise DomainRuleError("SYMLINK_REJECTED", f"{name} 不能是 symlink")
         candidate.mkdir(parents=True, exist_ok=True)
         resolved = candidate.resolve()
@@ -109,17 +106,7 @@ class StorageOperationService:
             row = connection.execute("SELECT root_rel FROM projects WHERE id=?", (project_id,)).fetchone()
         if row is None:
             raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
-        raw = Path(str(row["root_rel"]))
-        projects_root = self.settings.projects_root.resolve()
-        if raw.is_absolute() or ".." in raw.parts:
-            raise DomainRuleError("PATH_ESCAPE", "项目目录必须是受控 projects_root 下的相对路径")
-        candidate = projects_root / raw
-        if candidate.is_symlink():
-            raise DomainRuleError("PATH_ESCAPE", "项目目录不能是 symlink")
-        resolved = candidate.resolve()
-        if not resolved.is_relative_to(projects_root):
-            raise DomainRuleError("PATH_ESCAPE", "项目目录超出受控 projects_root")
-        return resolved
+        return self.settings.resolve_project_root(str(row["root_rel"]))
 
     @staticmethod
     def _reject_symlink_chain(path: Path) -> None:
@@ -127,7 +114,7 @@ class StorageOperationService:
         current = Path(absolute.anchor)
         for part in absolute.parts[1:]:
             current /= part
-            if current.is_symlink():
+            if is_reparse_point(current):
                 raise DomainRuleError("SYMLINK_REJECTED", "StorageOperation 不接受 symlink 路径")
 
     def _source_file(self, source_path: str | Path) -> Path:
@@ -145,19 +132,13 @@ class StorageOperationService:
 
     @staticmethod
     def _controlled_child(root: Path, relative: str | Path, *, must_exist: bool = False) -> Path:
-        raw = Path(relative)
-        if raw.is_absolute() or ".." in raw.parts:
-            raise DomainRuleError("PATH_TRAVERSAL_REJECTED", "StorageOperation 相对路径越界")
-        candidate = root / raw
+        canonical = canonical_relative_path(relative, code="PATH_TRAVERSAL_REJECTED")
         current = root
-        for part in raw.parts:
+        for part in canonical.split("/"):
             current /= part
-            if current.exists() and current.is_symlink():
+            if current.exists() and is_reparse_point(current):
                 raise DomainRuleError("SYMLINK_REJECTED", "StorageOperation 目标路径不能包含 symlink")
-        resolved = candidate.resolve(strict=must_exist)
-        if not resolved.is_relative_to(root.resolve()):
-            raise DomainRuleError("PATH_ESCAPE", "StorageOperation 目标路径越界")
-        return resolved
+        return controlled_path(root, canonical, must_exist=must_exist, code="PATH_ESCAPE")
 
     def _operation(self, row: Any, *, replay: bool = False) -> dict[str, Any]:
         result = dict(row)
@@ -209,7 +190,7 @@ class StorageOperationService:
         if not path.exists() and not path.is_symlink():
             self._set_error(operation_id, "QUARANTINED", reason, "待隔离文件已缺失；保留 ledger 供人工检查")
             return None
-        destination = self.quarantine_root / f"{operation_id}-{uuid.uuid4().hex[:8]}-{_safe_name(path.name)}"
+        destination = self.quarantine_root / f"{operation_id}-{uuid.uuid4().hex[:8]}-{safe_filename(path.name)}"
         try:
             shutil.move(str(path), str(destination))
         except OSError as error:
@@ -273,7 +254,7 @@ class StorageOperationService:
         key = idempotency_key or f"media-ingest:{project_id}:{operation_id}"
         if not key or len(key) > 200:
             raise DomainRuleError("STORAGE_IDEMPOTENCY_KEY_INVALID", "StorageOperation idempotency key 必须为 1—200 字符")
-        safe_source_name = _safe_name(source.name)
+        safe_source_name = safe_filename(source.name)
         relative = Path("storage-staging") / operation_id / safe_source_name
         request = {
             "purpose": purpose,
@@ -429,7 +410,7 @@ class StorageOperationService:
         project_root = self._project_root(project_id)
         relative = operation.get("destination_rel_path")
         if not relative:
-            relative = (Path("00_admin") / "imports" / f"{operation['id']}-{_safe_name(str(operation['source_name']))}").as_posix()
+            relative = (Path("00_admin") / "imports" / f"{operation['id']}-{safe_filename(str(operation['source_name']))}").as_posix()
             with self.database.transaction() as connection:
                 connection.execute(
                     """UPDATE storage_operations SET status='FINALIZING',destination_rel_path=?,

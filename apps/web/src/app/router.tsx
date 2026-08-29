@@ -26,6 +26,8 @@ const DirectorRecipesPage = lazy(() => import("../pages/DirectorRecipesPage").th
 const ProductionSettingsPage = lazy(() => import("../pages/ProductionSettingsPage").then((module) => ({ default: module.ProductionSettingsPage })));
 const ProjectCapabilitiesPage = lazy(() => import("../pages/ProjectCapabilitiesPage").then((module) => ({ default: module.ProjectCapabilitiesPage })));
 const StoryWorkspacePage = lazy(() => import("../pages/StoryWorkspacePage").then((module) => ({ default: module.StoryWorkspacePage })));
+const AdaptationPlanningPage = lazy(() => import("../features/story-adaptation/AdaptationPlanningPage").then((module) => ({ default: module.AdaptationPlanningPage })));
+const AdaptationPlanWorkspacePage = lazy(() => import("../features/story-adaptation/AdaptationPlanWorkspacePage").then((module) => ({ default: module.AdaptationPlanWorkspacePage })));
 const SystemWorkflowsPage = lazy(() => import("../pages/SystemWorkflowsPage").then((module) => ({ default: module.SystemWorkflowsPage })));
 const VisualLabListPage = lazy(() => import("../features/visual-lab/VisualLabListPage").then((module) => ({ default: module.VisualLabListPage })));
 const VisualLabWorkspacePage = lazy(() => import("../features/visual-lab/VisualLabWorkspacePage").then((module) => ({ default: module.VisualLabWorkspacePage })));
@@ -82,6 +84,8 @@ export const router = createBrowserRouter([
     path: "/projects/:projectId", element: <AppShell />, errorElement: <RouteErrorBoundary />, children: [
       { index: true, element: page(<ProjectHomePage />) },
       { path: "story", element: page(<StoryWorkspacePage />) },
+      { path: "story/plans", element: page(<AdaptationPlanningPage />) },
+      { path: "story/plans/:planId", element: page(<AdaptationPlanWorkspacePage />) },
       { path: "assets", element: page(<FeatureFlagRoute flag="ASSET_BIBLE_V2" fallbackView="projects"><AssetBiblePage /></FeatureFlagRoute>) },
       { path: "settings", element: <ProjectSettingsShell />, children: [
         { index: true, element: <Navigate to="production" replace /> },

@@ -24,6 +24,7 @@ from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.comfy import ComfyClient
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.atomic import replace_path
+from local_drama.infrastructure.filesystem.path_policy import controlled_path
 
 
 def _object_dict(value: object) -> dict[str, Any]:
@@ -64,6 +65,11 @@ class ComfyGenerationService:
             ["GPU_H3"],
             lease_seconds=self.GPU_LEASE_SECONDS,
             worker_session_id=worker_session_id,
+            # V2 model-platform executions use the same physical Comfy GPU,
+            # but their immutable snapshot/handler contract is intentionally
+            # owned by LocalMediaWorker.  Never let this legacy workflow
+            # compiler claim one and reinterpret its input snapshot.
+            exclude_job_types=["MODEL_PLATFORM_EXECUTION"],
         )
         if claim is None:
             return None
@@ -154,9 +160,13 @@ class ComfyGenerationService:
             if artifact is None or str(artifact["status"]) != "VERIFIED" or str(artifact["scope_kind"]) != "QUICK_GENERATION":
                 raise DomainRuleError("COMFY_ARTIFACT_BINDING_INVALID", "快捷作品输入必须来自已验证的快速生成产物")
             work_root = self.settings.work_root.resolve()
-            source = (work_root / str(artifact["sandbox_rel_path"])).resolve()
-            if not source.is_relative_to(work_root) or not source.is_file() or source.is_symlink():
-                raise DomainRuleError("COMFY_ARTIFACT_FILE_MISSING", "快捷作品输入文件不存在或已越过工作区")
+            source = controlled_path(
+                work_root,
+                str(artifact["sandbox_rel_path"]),
+                must_exist=True,
+                require_file=True,
+                code="COMFY_ARTIFACT_FILE_MISSING",
+            )
             input_root = self.settings.comfy_input_root.resolve()
             input_root.mkdir(parents=True, exist_ok=True)
             target_name = f"quick-{artifact_id}-{str(artifact['sha256'])[:12]}{source.suffix.lower()}"

@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://localdramastudio.local/schemas/config.v1.json",
+  "$id": "https://localdramastudio.local/schemas/config.v2.json",
   "title": "LocalDramaStudio machine configuration",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version"],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "instance_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", "default": "default"},
     "environment": {"type": "string", "default": "production"},
     "install_profile": {"enum": ["DESKTOP", "SERVER"], "default": "DESKTOP"},
@@ -18,7 +18,16 @@
         "host": {"type": "string", "default": "127.0.0.1"},
         "port": {"type": "integer", "minimum": 1, "maximum": 65535, "default": 3210},
         "allowed_origins": {"type": "array", "items": {"type": "string"}, "default": []},
-        "trusted_lan_unauthenticated": {"type": "boolean", "default": false}
+        "firewall_remote_address": {
+          "type": "string",
+          "default": "LocalSubnet",
+          "description": "Windows Firewall remote scope. Use LocalSubnet or an explicit comma-separated IP/CIDR allowlist."
+        },
+        "trusted_lan_unauthenticated": {
+          "type": "boolean",
+          "default": false,
+          "description": "Explicit acceptance of the trusted-LAN/no-login security model. Required for LAN_SERVICE until administrator authentication is configured."
+        }
       }
     },
     "storage": {
@@ -50,8 +59,14 @@
         "llm_provider": {"type": "string", "default": "OLLAMA_LOOPBACK"},
         "llm_base_url": {"type": "string", "default": "http://127.0.0.1:11434"},
         "llm_model": {"type": ["string", "null"]},
+        "model_root": {"type": ["string", "null"], "description": "Machine-owned ModelRoot. Model identity remains path-free; libraries/downloads/staging live beneath this root."},
         "model_library_roots": {"type": "array", "items": {"type": "string"}, "default": []},
-        "worker_channels": {"type": "array", "items": {"type": "string"}, "default": ["CPU", "GPU_H3"]}
+        "worker_channels": {"type": "array", "items": {"type": "string"}, "default": ["CPU", "GPU_H3"]},
+        "local_ai_python": {"type": ["string", "null"]},
+        "local_ai_adapter": {"type": ["string", "null"]},
+        "local_ai_model_root": {"type": ["string", "null"]},
+        "latentsync_python": {"type": ["string", "null"]},
+        "latentsync_root": {"type": ["string", "null"]}
       }
     },
     "frontend_dist": {"type": ["string", "null"]},

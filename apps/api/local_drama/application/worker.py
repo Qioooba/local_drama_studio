@@ -11,6 +11,7 @@ from queue import Empty, Queue
 from time import monotonic
 from typing import Any, Callable
 
+from local_drama.application.adaptation_analysis_execution import AdaptationAnalysisExecutionService
 from local_drama.application.automation_workflows import AutomationWorkflowService
 from local_drama.application.background_operations import BackgroundOperationService
 from local_drama.application.configuration import ConfigurationService
@@ -24,6 +25,7 @@ from local_drama.application.local_llm import LocalLLMService
 from local_drama.application.media import MediaService
 from local_drama.application.timeline import TimelineService
 from local_drama.application.worker_dispatch import WorkerExecution, WorkerHandler, WorkerJobDispatcher
+from local_drama.application.worker_handlers.adaptation_analysis import run_adaptation_analysis_job
 from local_drama.application.worker_handlers.automation_task import advance_automation_run, run_automation_task
 from local_drama.application.worker_handlers.delivery_build import run_delivery_build_job
 from local_drama.application.worker_handlers.episode_compose import run_episode_compose_job
@@ -36,8 +38,13 @@ from local_drama.application.worker_handlers.tts_job import run_tts_job
 from local_drama.application.worker_handlers.video_enhancement import run_video_enhancement_job
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
+from local_drama.infrastructure.database.adaptation_plan_repository import SqliteAdaptationPlanRepository
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.atomic import write_atomic
+from local_drama.model_platform.application.comfy_capability_smoke_execution import ComfyCapabilitySmokeWorker
+from local_drama.model_platform.application.execution_job_links import ExecutionJobLinkService
+from local_drama.model_platform.application.production_execution_registry import production_worker_execution_handlers
+from local_drama.model_platform.application.worker_execution_handlers import WorkerExecutionHandlerRegistry
 from local_drama.platform import create_platform_services
 from local_drama.platform.contracts import TtsRuntime
 
@@ -75,6 +82,26 @@ def _make_local_llm_probe_handler(
             atomic_writer=worker._atomic_file,
             cancel_check=worker._cancel_requested,
             report_progress=worker._report_progress,
+        )
+
+    return handler
+
+
+def _make_adaptation_analysis_handler(
+    worker: LocalMediaWorker,
+) -> Callable[[dict[str, Any], Path], tuple[str, str]]:
+    def handler(job: dict[str, Any], output_root: Path) -> tuple[str, str]:
+        return run_adaptation_analysis_job(
+            job,
+            output_root,
+            work_root=worker.settings.work_root,
+            analysis=AdaptationAnalysisExecutionService(
+                SqliteAdaptationPlanRepository(worker.database, worker.settings),
+                worker.settings,
+                LocalLLMService(worker.database, worker.settings),
+            ),
+            atomic_writer=worker._atomic_file,
+            on_progress=worker._report_progress,
         )
 
     return handler
@@ -166,6 +193,7 @@ _EXTRACTED_HANDLER_PROVIDERS: dict[str, Callable[[LocalMediaWorker], Callable[[d
     "SEGMENTED_EPISODE_COMPOSE": lambda worker: _make_timeline_job_handler(worker, run_segmented_compose_job),
     "VIDEO_ENHANCEMENT": lambda worker: _make_timeline_job_handler(worker, run_video_enhancement_job),
     "LOCAL_LLM_PROBE": _make_local_llm_probe_handler,
+    "ADAPTATION_ANALYSIS_LOCAL_LLM": _make_adaptation_analysis_handler,
     "MEDIA_DERIVATIVE": _make_media_job_handler,
     "MEDIA_THUMBNAIL": _make_media_job_handler,
     "MEDIA_PROXY": _make_media_job_handler,
@@ -182,6 +210,8 @@ class LocalMediaWorker:
         tts_runtime: TtsRuntime | None = None,
         *,
         gpu_coordinator: Any | None = None,
+        model_execution_handlers: WorkerExecutionHandlerRegistry | None = None,
+        comfy_smoke_worker_factory: Callable[[], ComfyCapabilitySmokeWorker] | None = None,
     ) -> None:
         self.database = database
         self.settings = settings
@@ -189,6 +219,8 @@ class LocalMediaWorker:
         self.media = MediaService(database, settings, ffmpeg_runner=self._ffmpeg)
         self.tts_runtime = tts_runtime or create_platform_services(settings).tts_runtime
         self.gpu_coordinator = gpu_coordinator
+        self.model_execution_handlers = model_execution_handlers or production_worker_execution_handlers(settings)
+        self.comfy_smoke_worker_factory = comfy_smoke_worker_factory or (lambda: ComfyCapabilitySmokeWorker(database, settings))
         self._active_job_context: tuple[str, str, str] | None = None
         self._last_cancel_check = 0.0
         self._last_progress_heartbeat = 0.0
@@ -203,6 +235,33 @@ class LocalMediaWorker:
         output = output_root / "result.txt"
         self._atomic_file(output, lambda target: target.write_text(f"job={job['id']}\nworker={worker_id}\n", encoding="utf-8"))
         return WorkerExecution("TEXT_RESULT", output.relative_to(self.settings.work_root).as_posix())
+
+    def _run_model_platform_execution(self, job: dict[str, Any], output_root: Path) -> WorkerExecution:
+        """Execute only the snapshot linked to the claimed V2 Job."""
+        snapshot = ExecutionJobLinkService(self.database).load_for_worker(str(job["id"]))
+        from local_drama.model_platform.application.project_knowledge_indexing import ProjectKnowledgeIndexCompletionService
+        from local_drama.model_platform.application.quick_create_v2_runs import QuickCreateV2RunService
+
+        completion = ProjectKnowledgeIndexCompletionService(self.database, self.settings)
+        quick_create = QuickCreateV2RunService(self.database)
+        try:
+            if self._report_progress({"phase": "MODEL_EXECUTION", "percent": 25}, force=True):
+                raise DomainRuleError("JOB_CANCELLED", "V2 模型执行已取消，不会调用 adapter。")
+            kind, relative_path = self.model_execution_handlers.execute(snapshot, output_root)
+        except DomainRuleError as error:
+            completion.record_failure_if_project_knowledge_batch(snapshot, error.code)
+            raise
+        return WorkerExecution(
+            kind,
+            relative_path,
+            after_artifacts_registered=lambda artifacts: (
+                completion.record_if_project_knowledge_batch(snapshot, artifacts),
+                quick_create.record_artifacts_for_job(str(job["id"]), artifacts),
+            ),
+        )
+
+    def _run_comfy_capability_smoke(self, job: dict[str, Any], output_root: Path) -> WorkerExecution:
+        return self.comfy_smoke_worker_factory().execute(job, output_root)
 
     def _set_expected_duration_ms(self, duration_ms: int | None) -> None:
         """Own the FFmpeg progress state that handlers feed before encoding."""
@@ -518,6 +577,8 @@ class LocalMediaWorker:
             job_type: adapt(handler) for job_type, handler in simple_handlers.items()
         }
         handlers["CPU_TEST"] = lambda job, root: self._run_cpu_test(job, root, worker_id)
+        handlers["MODEL_PLATFORM_EXECUTION"] = self._run_model_platform_execution
+        handlers["MODEL_PLATFORM_COMFY_SMOKE"] = self._run_comfy_capability_smoke
         handlers["SCRIPT_BREAKDOWN_LOCAL_LLM"] = lambda job, root: self._run_script_breakdown_with_heartbeat(
             job, root, attempt_id=attempt_id, token=token, worker_id=worker_id,
         )
@@ -590,7 +651,11 @@ class LocalMediaWorker:
                     raise DomainRuleError("JOB_CANCELLED", "后台任务已取消，本次输出不会登记")
                 if self._report_progress({"phase": "FINALIZING", "percent": 97}, force=True):
                     raise DomainRuleError("JOB_CANCELLED", "后台任务已取消，本次输出不会提交为成功")
-            artifact = self.jobs.register_artifact(attempt_id, execution.kind, execution.relative_path)
+            artifacts = [self.jobs.register_artifact(attempt_id, execution.kind, execution.relative_path)]
+            for kind, relative_path in execution.additional_artifacts:
+                artifacts.append(self.jobs.register_artifact(attempt_id, kind, relative_path))
+            if execution.after_artifacts_registered is not None:
+                execution.after_artifacts_registered(tuple(artifacts))
             result = self.jobs.complete(attempt_id, token, worker_id, success=True)
             advance_error: str | None = None
             if execution.report is not None:
@@ -600,7 +665,7 @@ class LocalMediaWorker:
                     execution.produced_bytes,
                     workflow_steps=AutomationWorkflowService(self.database),
                 )
-            payload: dict[str, Any] = {"job": job, "attempt": attempt, "artifact": artifact, "result": result}
+            payload: dict[str, Any] = {"job": job, "attempt": attempt, "artifact": artifacts[0], "artifacts": artifacts, "result": result}
             if advance_error is not None:
                 payload["advance_error"] = advance_error
             return payload

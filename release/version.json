@@ -4,6 +4,6 @@
   "host_protocol": 1,
   "minimum_host_version": "0.1.0",
   "worker_protocol": 1,
-  "config_schema": 1,
+  "config_schema": 2,
   "project_package_schema": 2
 }

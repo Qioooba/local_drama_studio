@@ -1,4 +1,4 @@
-import { requestJson, type Job } from "../../generated/api";
+import { requestJson, type Job, type LocalArtifactReference } from "../../generated/api";
 
 export type QuickGenerationMode = "TEXT_TO_IMAGE" | "TEXT_TO_VIDEO" | "TEXT_TO_IMAGE_TO_VIDEO";
 export type QuickGenerationPromptTarget = "KEYFRAME" | "VIDEO";
@@ -6,7 +6,7 @@ export type QuickGenerationParameters = Record<string, string | number | boolean
 export type QuickGenerationPreset = { id: string; name: string; capability: string; execution_profile_version_id: string; parameters: QuickGenerationParameters; favorite: boolean; model_title: string; model_version_no: number; model_status: string; revision: number };
 export type QuickOutputSpec = { width: number; height: number; frame_count: number; fps: number; duration_seconds: number; target_duration_ms: number; aspect_ratio: string; source: "PUBLISHED_WORKFLOW" | "RUN_PARAMETERS"; editable: true };
 export type QuickImageSpec = { width: number; height: number; aspect_ratio: string; source: "PUBLISHED_WORKFLOW" | "RUN_PARAMETERS"; editable: true };
-export type QuickGenerationOutput = { id: string; run_id: string; candidate_id?: string | null; media_kind: "IMAGE" | "VIDEO"; mime_type: string; byte_size: number; sha256: string; content_url: string; thumbnail_url: string };
+export type QuickGenerationOutput = { id: string; run_id: string; candidate_id?: string | null; media_kind: "IMAGE" | "VIDEO"; mime_type: string; byte_size: number; sha256: string; content_url: string; thumbnail_url: string; artifact: LocalArtifactReference };
 export type QuickGenerationPlan = {
   schema_version: string; mode: QuickGenerationMode; story: string; language: "zh-CN" | "en-US";
   video_plan: { title: string; video_prompt: string; keyframe_prompt: string; director_intent: Record<string, unknown>; camera_movement: string; provider: string; model: string; remote: boolean };

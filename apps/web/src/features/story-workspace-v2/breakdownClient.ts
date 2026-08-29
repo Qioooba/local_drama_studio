@@ -33,6 +33,30 @@ export interface LocalLLMStatus {
   message?: string;
 }
 
+export interface OllamaModelCatalogItem {
+  name: string;
+  model: string;
+  modified_at?: string | null;
+  size_bytes: number;
+  digest: string;
+  format: string;
+  family: string;
+  families: string[];
+  parameter_size: string;
+  quantization_level: string;
+}
+
+export interface OllamaModelCatalog {
+  provider: "OLLAMA_LOOPBACK";
+  base_url: string;
+  items: OllamaModelCatalogItem[];
+  count: number;
+  scanned_at: string;
+  read_only: true;
+  runtime_contacted: true;
+  mutated: false;
+}
+
 export interface BreakdownSubmission {
   job: Job;
   automatic_apply: false;
@@ -68,6 +92,16 @@ export interface PublishLocalLLMProfileParams {
   probeJobId?: string;
 }
 
+export interface LocalLLMPublication {
+  destination: "GLOBAL_CAPABILITY_CATALOG";
+  scope: "LOCAL_STUDIO";
+  consumer_scope: "ALL_PROJECTS";
+  capability: string;
+  model: string;
+  provider: string;
+  published_at: string;
+}
+
 export async function getLocalLLMStatus(params?: {
   provider?: string;
   base_url?: string;
@@ -81,6 +115,13 @@ export async function getLocalLLMStatus(params?: {
   if (params?.live_probe !== undefined) query.set("live_probe", String(params.live_probe));
   const qs = query.toString();
   return requestJson(qs ? `/api/v1/local-llm/status?${qs}` : "/api/v1/local-llm/status");
+}
+
+export async function discoverOllamaModels(baseUrl?: string): Promise<{ catalog: OllamaModelCatalog }> {
+  const query = new URLSearchParams();
+  if (baseUrl) query.set("base_url", baseUrl);
+  const qs = query.toString();
+  return requestJson(qs ? `/api/v1/local-llm/models?${qs}` : "/api/v1/local-llm/models");
 }
 
 export async function probeLocalLLM(
@@ -118,7 +159,7 @@ export async function syncLocalLLMProfile(
 
 export async function publishLocalLLMProfile(
   params: PublishLocalLLMProfileParams | string
-): Promise<{ profile: { profile_version_id: string; status: string; probe?: LocalLLMStatus } }> {
+): Promise<{ profile: { profile_version_id: string; profile_code: string; version_no: number; status: string; publication: LocalLLMPublication; probe?: LocalLLMStatus } }> {
   const body =
     typeof params === "string"
       ? { profile_version_id: params }

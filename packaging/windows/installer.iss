@@ -25,12 +25,13 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 DisableProgramGroupPage=yes
+UsePreviousTasks=yes
 UninstallDisplayIcon={app}\host\local-drama-host.exe
 VersionInfoVersion={#ReleaseVersion}
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"
-Name: "service"; Description: "Run as a Windows service (server mode)"; GroupDescription: "Runtime mode:"; Flags: unchecked
+Name: "service"; Description: "Trusted LAN server (Windows service, browser access, no application login)"; GroupDescription: "Runtime mode:"
 
 [Dirs]
 Name: "{commonappdata}\LocalDramaStudio"; Permissions: users-modify; Tasks: not service
@@ -40,14 +41,22 @@ Name: "{commonappdata}\LocalDramaStudio\projects"
 Name: "{commonappdata}\LocalDramaStudio\backups"
 Name: "{commonappdata}\LocalDramaStudio\logs"
 Name: "{commonappdata}\LocalDramaStudio\runtime"
+Name: "{commonappdata}\LocalDramaStudio\models"
+Name: "{commonappdata}\LocalDramaStudio\models\downloads"
+Name: "{commonappdata}\LocalDramaStudio\models\staging"
+Name: "{commonappdata}\LocalDramaStudio\models\quarantine"
+Name: "{commonappdata}\LocalDramaStudio\models\libraries\comfyui"
+Name: "{commonappdata}\LocalDramaStudio\models\libraries\pytorch"
+Name: "{commonappdata}\LocalDramaStudio\models\libraries\ollama"
+Name: "{commonappdata}\LocalDramaStudio\models\libraries\audio"
 
 [Files]
 Source: "{#PackageRoot}\host\local-drama-host.exe"; DestDir: "{app}\host"; Flags: ignoreversion
 Source: "{#PackageRoot}\host\local-drama-launcher.exe"; DestDir: "{app}\host"; Flags: ignoreversion
 Source: "{#PackageRoot}\payload\*"; DestDir: "{app}\versions\{#ReleaseVersion}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#PackageRoot}\active-release.json"; DestDir: "{app}"; Flags: onlyifdoesntexist
-Source: "{#SourcePath}\config.desktop.json"; DestDir: "{commonappdata}\LocalDramaStudio\config"; DestName: "config.json"; Flags: onlyifdoesntexist uninsneveruninstall; Tasks: not service
-Source: "{#SourcePath}\config.server.json"; DestDir: "{commonappdata}\LocalDramaStudio\config"; DestName: "config.json"; Flags: onlyifdoesntexist uninsneveruninstall; Tasks: service
+Source: "{#SourcePath}\config.desktop.json"; DestDir: "{app}\config-templates"; Flags: ignoreversion
+Source: "{#SourcePath}\config.server.json"; DestDir: "{app}\config-templates"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Local Drama Studio"; Filename: "{app}\host\local-drama-launcher.exe"; WorkingDir: "{app}"; Tasks: not service
@@ -55,16 +64,34 @@ Name: "{autodesktop}\Local Drama Studio"; Filename: "{app}\host\local-drama-laun
 Name: "{group}\Runtime diagnostics"; Filename: "{app}\host\local-drama-host.exe"; Parameters: "doctor"
 
 [Run]
+; A first installation needs a config before release maintenance can create its
+; database recovery set. Existing installations deliberately skip these two
+; bootstrap entries: the candidate release migrates their config first.
+Filename: "{app}\host\local-drama-host.exe"; Parameters: "configure-profile --template ""{app}\config-templates\config.desktop.json"""; Description: "Bootstrap desktop profile"; Flags: runhidden waituntilterminated; Tasks: not service; Check: MachineConfigMissing
+Filename: "{app}\host\local-drama-host.exe"; Parameters: "configure-profile --template ""{app}\config-templates\config.server.json"""; Description: "Bootstrap trusted LAN server profile"; Flags: runhidden waituntilterminated; Tasks: service; Check: MachineConfigMissing
 Filename: "{app}\host\local-drama-host.exe"; Parameters: "upgrade --bundle ""{app}\versions\{#ReleaseVersion}"""; Description: "Verify release and upgrade database"; Flags: runhidden waituntilterminated
+; Apply only the profile-owned fields after config migration. User-owned
+; settings are merged and preserved by the Host, with a pre-change backup.
+Filename: "{app}\host\local-drama-host.exe"; Parameters: "configure-profile --template ""{app}\config-templates\config.desktop.json"""; Description: "Configure desktop profile"; Flags: runhidden waituntilterminated; Tasks: not service
+Filename: "{app}\host\local-drama-host.exe"; Parameters: "configure-profile --template ""{app}\config-templates\config.server.json"""; Description: "Configure trusted LAN server profile"; Flags: runhidden waituntilterminated; Tasks: service
+Filename: "{app}\host\local-drama-host.exe"; Parameters: "remove-firewall"; Description: "Remove LAN firewall access"; Flags: runhidden waituntilterminated; Tasks: not service
+Filename: "{app}\host\local-drama-host.exe"; Parameters: "uninstall-service"; Description: "Remove Windows service for desktop mode"; Flags: runhidden waituntilterminated; Tasks: not service
+Filename: "{app}\host\local-drama-host.exe"; Parameters: "configure-firewall"; Description: "Allow the configured service port from the configured trusted subnet"; Flags: runhidden waituntilterminated; Tasks: service
 Filename: "{app}\host\local-drama-host.exe"; Parameters: "install-service"; Description: "Install Windows service"; Flags: runhidden waituntilterminated; Tasks: service
 Filename: "{sys}\sc.exe"; Parameters: "start LocalDramaStudio"; Description: "Start Windows service"; Flags: runhidden waituntilterminated; Tasks: service
 Filename: "{app}\host\local-drama-launcher.exe"; Description: "Start Local Drama Studio"; Flags: nowait postinstall skipifsilent; Tasks: not service
 
 [UninstallRun]
 Filename: "{app}\host\local-drama-host.exe"; Parameters: "stop"; Flags: runhidden waituntilterminated; RunOnceId: "StopRuntime"
+Filename: "{app}\host\local-drama-host.exe"; Parameters: "remove-firewall"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "RemoveFirewall"
 Filename: "{app}\host\local-drama-host.exe"; Parameters: "uninstall-service"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "RemoveService"
 
 [Code]
+function MachineConfigMissing(): Boolean;
+begin
+  Result := not FileExists(ExpandConstant('{commonappdata}\LocalDramaStudio\config\config.json'));
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   HostPath: String;

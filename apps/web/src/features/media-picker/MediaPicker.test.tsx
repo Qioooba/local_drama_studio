@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MediaPicker } from "./MediaPicker";
+import { apiJsonResponse } from "../../test/apiResponse";
 
 const item = {
   media_version_id: "version-1",
@@ -28,7 +29,7 @@ describe("MediaPicker", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("shows only thumbnail cards and returns the immutable version selection", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [item] }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(apiJsonResponse({ items: [item] })));
     const onChange = renderPicker();
     const card = await screen.findByRole("radio", { name: /hero\.png/ });
     const thumbnail = document.querySelector(".media-picker-card img");
@@ -41,9 +42,9 @@ describe("MediaPicker", () => {
   it("uploads an image and selects the returned version", async () => {
     const fetch = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
-      if (url.includes("/session/bootstrap")) return new Response(JSON.stringify({ token: "local-token", mode: "LOCAL_ONLY" }), { status: 200 });
-      if (url.includes("/media:upload")) return new Response(JSON.stringify({ media: { media_version_id: "uploaded-version" } }), { status: 201 });
-      return new Response(JSON.stringify({ items: [] }), { status: 200 });
+      if (url.includes("/session/bootstrap")) return apiJsonResponse({ token: "local-token", mode: "LOCAL_ONLY" });
+      if (url.includes("/media:upload")) return apiJsonResponse({ media: { media_version_id: "uploaded-version" } }, { status: 201 });
+      return apiJsonResponse({ items: [] });
     });
     vi.stubGlobal("fetch", fetch);
     const onChange = renderPicker();
@@ -55,7 +56,7 @@ describe("MediaPicker", () => {
 
   it("lists AUDIO semantically without requesting an image or original media", async () => {
     const audio = { ...item, media_version_id: "audio-version", source_name: "dialogue-preview.wav", mime_type: "audio/wav", media_kind: "AUDIO", duration_ms: 4200 };
-    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [audio] }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    const fetch = vi.fn().mockResolvedValue(apiJsonResponse({ items: [audio] }));
     vi.stubGlobal("fetch", fetch);
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><MediaPicker projectId="project-1" mediaKind="AUDIO" allowUpload={false} value="" onChange={vi.fn()} label="音频选择器" /></QueryClientProvider>);

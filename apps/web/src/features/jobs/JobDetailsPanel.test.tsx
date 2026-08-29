@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { JobDetailsPanel } from "./JobDetailsPanel";
+import { apiJsonResponse } from "../../test/apiResponse";
 
 const job = {
   id: "job-1",
@@ -39,7 +40,7 @@ describe("JobDetailsPanel", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("renders terminal truth and disables an already promoted artifact", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ job }), { status: 200 }));
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(apiJsonResponse({ job }));
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><JobDetailsPanel jobId="job-1" /></QueryClientProvider>);
 
@@ -69,7 +70,7 @@ describe("JobDetailsPanel", () => {
         artifacts: [],
       }],
     };
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ job: failed }), { status: 200 }));
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(apiJsonResponse({ job: failed }));
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><JobDetailsPanel jobId="job-1" /></QueryClientProvider>);
 
@@ -84,7 +85,7 @@ describe("JobDetailsPanel", () => {
       progress: { phase: "SAMPLING", percent: 0.38, step_percent: 0.625 },
       attempts: [{ ...job.attempts[0], state: "RUNNING", progress: { phase: "SAMPLING", percent: 0.38, step_percent: 0.625 }, artifacts: [] }],
     };
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ job: running }), { status: 200 }));
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(apiJsonResponse({ job: running }));
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><JobDetailsPanel jobId="job-1" /></QueryClientProvider>);
 

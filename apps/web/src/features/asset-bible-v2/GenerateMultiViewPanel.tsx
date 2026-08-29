@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { listProfiles, type Profile } from "../../generated/api";
 import type { StoryAssetReference, StoryAssetState } from "./api";
-import { ProfileExecutionDetailButton } from "../model-config/ProfileExecutionDetailButton";
+import { CapabilityPicker, useCapabilityOptions } from "../model-config/CapabilityPicker";
 import {
   bindMultiViewReference,
   getAssetMultiViewHistory,
@@ -59,6 +58,7 @@ function thumbnailUrl(mediaVersionId: string): string {
 export function GenerateMultiViewPanel({ projectId, assetId, assetKind, assetStatus, states, baseReferences, initialBatches, onReferencesChanged }: Props) {
   const [assetStateId, setAssetStateId] = useState("");
   const [profileVersionId, setProfileVersionId] = useState("");
+  const profileOptions = useCapabilityOptions("IMAGE_MULTI_VIEW", { projectId });
   const [consistency, setConsistency] = useState<MultiViewSettings["consistency_strength"]>("HIGH");
   const [background, setBackground] = useState<MultiViewSettings["background"]>("CLEAN");
   const [preflight, setPreflight] = useState<MultiViewPreflight | null>(null);
@@ -66,8 +66,6 @@ export function GenerateMultiViewPanel({ projectId, assetId, assetKind, assetSta
   const [busy, setBusy] = useState<"preflight" | "submit" | null>(null);
   const [bindingKey, setBindingKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [profilesState, setProfilesState] = useState<"loading" | "ready" | "error">("loading");
   const [batchBindReport, setBatchBindReport] = useState<{ batchId: string; succeeded: number; failed: Array<{ kind: MultiViewKind; reason: string }> } | null>(null);
   const [policyViews, setPolicyViews] = useState<MultiViewKind[]>(["FRONT", "LEFT", "RIGHT"]);
 
@@ -76,27 +74,6 @@ export function GenerateMultiViewPanel({ projectId, assetId, assetKind, assetSta
     setAssetStateId(""); setProfileVersionId(""); setPreflight(null); setBatches(initialBatches); setError(null); setBatchBindReport(null);
   }, [assetId]); // initialBatches is intentionally synchronized by the effect above.
 
-  useEffect(() => {
-    let cancelled = false;
-    setProfilesState("loading");
-    void listProfiles()
-      .then(({ items }) => {
-        if (cancelled) return;
-        const matching = items
-          .filter((profile) => profile.capability === "IMAGE_MULTI_VIEW" && profile.status === "PUBLISHED")
-          .sort((left, right) => left.title.localeCompare(right.title, "zh-CN") || (right.version_no ?? 0) - (left.version_no ?? 0));
-        setProfiles(matching);
-        setProfileVersionId((current) => current && !matching.some((profile) => profile.version_id === current) ? "" : current);
-        setProfilesState("ready");
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setProfiles([]);
-        setProfileVersionId("");
-        setProfilesState("error");
-      });
-    return () => { cancelled = true; };
-  }, [projectId]);
   useEffect(() => {
     let cancelled = false;
     void getDirectorRecipeBinding(projectId).then((binding) => {
@@ -215,24 +192,16 @@ export function GenerateMultiViewPanel({ projectId, assetId, assetKind, assetSta
     <fieldset><legend>本批次需要的视图</legend><div className="action-row">{VIEWS.map((view) => <label key={view.kind}><input type="checkbox" checked={policyViews.includes(view.kind)} onChange={(event) => setPolicyViews((current) => event.target.checked ? [...new Set([...current, view.kind])] : current.filter((item) => item !== view.kind))} />{view.label}</label>)}</div><small className="muted">初始值来自当前项目绑定的 Director Recipe；可为本批次显式覆盖。</small></fieldset>
     <details className="multiview-advanced">
       <summary>指定生成模型（可选）</summary>
-      <label htmlFor={`multiview-profile-${assetId}`}>已发布的三视图生成模型</label>
-      <select
-        id={`multiview-profile-${assetId}`}
+      <CapabilityPicker
+        capability="IMAGE_MULTI_VIEW"
+        label="三视图生成方式"
+        description="自动使用项目偏好；指定版本只覆盖本批次，并会冻结到每个独立任务。"
         value={profileVersionId}
-        disabled={profilesState === "loading"}
-        aria-describedby={`multiview-profile-help-${assetId}`}
-        onChange={(event) => setProfileVersionId(event.target.value)}
-      >
-        <option value="">自动使用项目偏好</option>
-        {profiles.map((profile) => <option key={profile.version_id} value={profile.version_id}>{profile.title} · 第 {profile.version_no ?? "?"} 版</option>)}
-      </select>
-      <ProfileExecutionDetailButton profileVersionId={profileVersionId} />
-      <small id={`multiview-profile-help-${assetId}`} className={`multiview-profile-help${profilesState === "error" ? " is-error" : ""}`} role={profilesState === "loading" ? "status" : profilesState === "error" ? "alert" : undefined}>
-        {profilesState === "loading" && "正在读取已发布的三视图生成模型…"}
-        {profilesState === "error" && "Profile 目录暂不可用；AUTO 仍可运行只读预检，由服务端返回真实解析结果。"}
-        {profilesState === "ready" && profiles.length === 0 && "暂无已发布的 IMAGE_MULTI_VIEW Profile；AUTO 仍可运行预检。"}
-        {profilesState === "ready" && profiles.length > 0 && "只列出能力匹配且已发布的不可变版本；AUTO 仍为默认。"}
-      </small>
+        onChange={setProfileVersionId}
+        query={profileOptions}
+        migrationBusinessSurface="assets"
+        disabled={busy !== null}
+      />
     </details>
 
     <div className="multiview-actions">

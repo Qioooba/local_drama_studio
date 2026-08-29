@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   listGenerationPreferences,
   listPreferenceEpisodes,
-  listPreferenceProfiles,
   listPreferenceProjects,
   listPreferenceSeasons,
   listPreferenceShots,
@@ -16,6 +15,7 @@ import type { GenerationPreference, PreferenceMode, PreferenceOwnerType } from "
 import { RecommendationFacts } from "./RecommendationFacts";
 import { ProfileOverrideFields } from "../model-config/ProfileOverrideFields";
 import { EffectiveConfigurationPreview } from "../model-config/EffectiveConfigurationPreview";
+import { CapabilityPicker, useCapabilityOptions } from "../model-config/CapabilityPicker";
 import { ModelInspectorDrawer } from "../model-config/ModelInspectorDrawer";
 import { CAPABILITY_LABELS, creatorProfileTitle, type CanonicalCapability } from "./canonicalCapabilities";
 import "./preferences.css";
@@ -79,7 +79,6 @@ export function GenerationPreferencePanel({ initialProjectId }: { initialProject
   const [inspectorVersionId, setInspectorVersionId] = useState<string | null>(null);
 
   const projects = useQuery({ queryKey: ["preference-v2", "projects"], queryFn: listPreferenceProjects });
-  const profiles = useQuery({ queryKey: ["preference-v2", "profiles"], queryFn: listPreferenceProfiles });
   const seasons = useQuery({
     queryKey: ["preference-v2", "seasons", projectId],
     queryFn: () => listPreferenceSeasons(projectId),
@@ -130,6 +129,7 @@ export function GenerationPreferencePanel({ initialProjectId }: { initialProject
   }, [shotId, shots.data]);
 
   const ownerId = ownerType === "PROJECT" ? projectId : ownerType === "EPISODE" ? episodeId : shotId;
+  const capabilityOptions = useCapabilityOptions(capability, { projectId, episodeId, shotId });
   const current = preferenceFor(preferences.data ?? [], ownerType, ownerId, capability);
   const currentIdentity = current ? `${current.preference_set_id}:${current.current_version_id}:${current.revision}` : `new:${ownerType}:${ownerId}:${capability}`;
 
@@ -143,16 +143,20 @@ export function GenerationPreferencePanel({ initialProjectId }: { initialProject
     setLocalError(null);
   }, [currentIdentity]); // Reload the draft only when the selected immutable version changes.
 
-  const publishedProfiles = (profiles.data ?? []).filter(
-    (profile) => profile.status === "PUBLISHED" && profile.capability.toUpperCase() === capability,
-  );
-  const selectedProfile = publishedProfiles.find((profile) => profile.version_id === profileVersionId) ?? null;
+  const selectedProfile = capabilityOptions.data?.options.find((profile) => profile.profile_version_id === profileVersionId) ?? null;
+  const selectedProfileDetail = useQuery({
+    queryKey: ["profile-execution-detail", "selected", profileVersionId],
+    queryFn: () => getProfileVersion(profileVersionId),
+    enabled: Boolean(mode === "EXPLICIT" && profileVersionId),
+  });
   const inspector = useQuery({
     queryKey: ["profile-execution-detail", inspectorVersionId],
     queryFn: () => getProfileVersion(inspectorVersionId as string),
     enabled: Boolean(inspectorVersionId),
   });
-  const resolvedSchema = resolution.data?.profile?.override_schema ?? selectedProfile?.override_schema ?? {};
+  const resolvedSchema = mode === "EXPLICIT"
+    ? selectedProfileDetail.data?.profile_version.execution?.override_schema ?? {}
+    : resolution.data?.profile?.override_schema ?? {};
   const save = useMutation({
     mutationFn: async () => {
       if (!projectId || !ownerId) throw new Error("请先选择完整的偏好作用域");
@@ -173,6 +177,7 @@ export function GenerationPreferencePanel({ initialProjectId }: { initialProject
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["preference-v2", "preferences", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["preference-v2", "resolution", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["capability-options"] }),
       ]);
     },
     onError: (error) => {
@@ -321,14 +326,18 @@ export function GenerationPreferencePanel({ initialProjectId }: { initialProject
 
           {mode === "EXPLICIT" && (
             <div className="editor-field-group">
-              <label className="editor-field">生成能力版本
-                <select value={profileVersionId} onChange={(event) => setProfileVersionId(event.target.value)} required>
-                  <option value="">选择可用版本</option>
-                  {publishedProfiles.map((profile) => <option key={profile.version_id} value={profile.version_id}>{creatorProfileTitle(profile.title)} · 第 {profile.version_no ?? "?"} 版</option>)}
-                </select>
-                {publishedProfiles.length === 0 && <small className="field-error">这项用途还没有可用的已发布能力版本。</small>}
-              </label>
-              {selectedProfile ? <button type="button" className="secondary profile-detail-button" onClick={() => setInspectorVersionId(selectedProfile.version_id)}>{inspector.isPending && inspectorVersionId === selectedProfile.version_id ? "读取详情中…" : "查看执行详情"}</button> : null}
+              <CapabilityPicker
+                capability={capability}
+                label="固定生成能力版本"
+                description="这里只允许选择服务器确认可执行的已发布版本；不可用版本会保留原因但不能保存。"
+                value={profileVersionId}
+                onChange={setProfileVersionId}
+                query={capabilityOptions}
+                allowAuto={false}
+                showDetails={false}
+                disabled={save.isPending}
+              />
+              {selectedProfile ? <button type="button" className="secondary profile-detail-button" onClick={() => setInspectorVersionId(selectedProfile.profile_version_id)}>{inspector.isPending && inspectorVersionId === selectedProfile.profile_version_id ? "读取详情中…" : "查看执行详情"}</button> : null}
             </div>
           )}
 
@@ -339,7 +348,7 @@ export function GenerationPreferencePanel({ initialProjectId }: { initialProject
               <small>{auditNote.length}/1000 · 保存范围、能力和选择方式会由系统自动记录</small>
             </label>
             {mode === "AUTO" ? <p className="muted">自动选择模式只保存所需能力，不固定某个生成配置的专属参数；改为固定版本后才能调整对应参数。</p> : <ProfileOverrideFields schema={resolvedSchema} value={settings} scope={ownerType} onChange={setSettings} disabled={save.isPending} />}
-            {mode === "EXPLICIT" && selectedProfile ? <small className="field-help">当前参数来自 {creatorProfileTitle(selectedProfile.title)} v{selectedProfile.version_no ?? "?"} 的声明契约；未知字段不会被静默保存。</small> : null}
+            {mode === "EXPLICIT" && selectedProfile ? <small className="field-help">当前参数来自 {creatorProfileTitle(selectedProfile.profile.title)} v{selectedProfile.profile.version_no} 的声明契约；未知字段不会被静默保存。</small> : null}
           </details>
 
           {projectId && capability && (

@@ -1,0 +1,10 @@
+{
+  "task": "embedding",
+  "status": "PASS",
+  "model": "F:\\AI_Models\\LocalDramaStudio\\Services\\Qwen3-Embedding-8B",
+  "dimension": 4096,
+  "semantic_score": 0.7587890625,
+  "unrelated_score": 0.318359375,
+  "elapsed_seconds": 15.717,
+  "network_used": false
+}
