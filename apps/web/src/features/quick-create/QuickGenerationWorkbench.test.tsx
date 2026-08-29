@@ -102,7 +102,7 @@ describe("QuickGenerationWorkbench", () => {
     });
     renderWorkbench();
 
-    expect(await screen.findByText(/部分能力尚未满足 V2 门禁；可查看阻塞原因/)).toBeTruthy();
+    expect(await screen.findByText(/部分能力尚未满足切换条件；可查看阻塞原因/)).toBeTruthy();
     expect(screen.getByText("QUICK_CREATE_V2_MULTI_STAGE_PIPELINE_REQUIRED")).toBeTruthy();
     expect(screen.getByRole("button", { name: "生成执行规划" })).toBeTruthy();
   });

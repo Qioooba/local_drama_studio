@@ -337,7 +337,7 @@ export function G8ReadinessPanel({ readiness }: { readiness: G8Readiness }) {
       <div className="panel-heading">
         <div>
           <p className="eyebrow">正式交付就绪</p>
-          <h3 id="g8-readiness-title">整集音频、字幕、时间线与交付门禁</h3>
+          <h3 id="g8-readiness-title">整集音频、字幕、时间线与交付就绪检查</h3>
         </div>
         <span
           className={`status-pill${readiness.status === "PASS" ? "" : " neutral"}`}

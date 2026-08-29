@@ -19,6 +19,7 @@ import { ContinuityPanel } from "../features/production/ContinuityPanel";
 import { adoptShotWorkingVersionV2, createKeyframeCandidate, getShotContinuityContextV2, getShotStudioV2, listEpisodeProductionShotsV2, submitShotGenerationV2, type ShotStudioCandidate } from "../generated/api";
 import { DirectorSourcePassage } from "../features/source-passage/DirectorSourcePassage";
 import { MediaPicker } from "../features/media-picker/MediaPicker";
+import { MediaThumbnail } from "../features/shared/MediaThumbnail";
 import { Dialog } from "../components/ui";
 import "../features/director-v2/director-desk.css";
 
@@ -403,7 +404,18 @@ export function DirectorDeskPage() {
     if (shotChooser.isLoading) return <div className="director-loading" role="status">正在读取本集镜头…</div>;
     if (shotChooser.error) return <div className="director-error" role="alert"><strong>无法读取镜头列表</strong><span>{shotChooser.error instanceof Error ? shotChooser.error.message : String(shotChooser.error)}</span><button type="button" className="secondary" onClick={() => void shotChooser.refetch()}>重试</button></div>;
     const chooserItems = shotChooser.data?.items ?? [];
-    return <section className="director-shot-choice" aria-labelledby="director-shot-choice-title"><div><p className="eyebrow">镜头工作台</p><h2 id="director-shot-choice-title">先选择要处理的镜头</h2><p>未指定镜头时不会静默打开第一镜，也不会启用生成、重抽或工作采用。</p></div>{chooserItems.length ? <nav aria-label="选择镜头">{chooserItems.map((shot, index) => <Link key={shot.shot_id} to={routes.shotStudio(projectId, episodeId, shot.shot_id)}><span>{shot.shot_code || `镜头 ${index + 1}`}</span><small>{STATUS_LABELS[shot.overall_state] ?? shot.overall_state}</small></Link>)}</nav> : <p className="empty-state">本集还没有镜头，请先在分集策划中创建镜头。</p>}<Link className="secondary v2-inline-link" to={routes.episodePlan(projectId, episodeId)}>返回分集策划</Link></section>;
+    const storyboardThumbnail = (mediaVersionId: string) => `/api/v1/media-versions/${encodeURIComponent(mediaVersionId)}/thumbnail?size=medium&frame=poster`;
+    return <section className="director-shot-choice" aria-labelledby="director-shot-choice-title"><div><p className="eyebrow">镜头工作台</p><h2 id="director-shot-choice-title">先选择要处理的镜头</h2><p>未指定镜头时不会静默打开第一镜，也不会启用生成、重抽或工作采用。</p></div>{chooserItems.length ? <nav className="director-storyboard-grid" aria-label="故事板矩阵">{chooserItems.map((shot) => {
+      const slots = shot.material_slots ?? [];
+      const keyframeVersion = slots.find((slot) => slot.kind === "KEYFRAME")?.selected_version_id ?? null;
+      const videoSlot = slots.find((slot) => slot.kind === "VIDEO");
+      return (
+        <Link key={shot.shot_id} className="director-storyboard-card" to={routes.shotStudio(projectId, episodeId, shot.shot_id)}>
+          <span className="director-storyboard-thumb">{keyframeVersion ? <MediaThumbnail src={storyboardThumbnail(keyframeVersion)} alt="" fallbackLabel="关键帧待生成" loading="lazy" decoding="async" /> : <DeskIcon name="frame" />}</span>
+          <span className="director-storyboard-meta"><strong>{shot.shot_code || shot.shot_id.slice(0, 8)}</strong><small>{STATUS_LABELS[shot.overall_state] ?? shot.overall_state}{videoSlot?.candidate_count ? ` · ${videoSlot.candidate_count} 候选` : ""}</small></span>
+        </Link>
+      );
+    })}</nav> : <p className="empty-state">本集还没有镜头，请先在分集策划中创建镜头。</p>}<Link className="secondary v2-inline-link" to={routes.episodePlan(projectId, episodeId)}>返回分集策划</Link></section>;
   }
   if (desk.isLoading) return <div className="director-loading" role="status">正在打开导演台…</div>;
   if (desk.error) return <div className="director-error" role="alert"><strong>导演台暂时无法打开</strong><span>{desk.error instanceof Error ? desk.error.message : String(desk.error)}</span><Link to={`/projects/${projectId}/episodes/${episodeId}/plan`}>返回分集规划</Link></div>;

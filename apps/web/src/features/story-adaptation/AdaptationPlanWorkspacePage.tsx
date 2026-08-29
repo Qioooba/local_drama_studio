@@ -213,7 +213,7 @@ export function AdaptationPlanWorkspacePage() {
           <div><dt>发布策略</dt><dd>仅追加，不覆盖</dd></div>
           <div><dt>来源证据</dt><dd>随分集保留</dd></div>
         </dl>
-        {materialization.data.already_materialized || isMaterialized ? <p className="adaptation-publish-success" role="status">这份规划修订已经发布为真实季集；重复提交不会再新增内容。</p> : materialization.data.ready ? <div className="adaptation-submit-run">
+        {materialization.data.already_materialized || isMaterialized ? <p className="adaptation-publish-success" role="status">这份规划修订已经发布为真实季集；重复提交不会再新增内容。<Link to={routes.projectHome(projectId)}>前往项目首页查看新分集</Link></p> : materialization.data.ready ? <div className="adaptation-submit-run">
           <label><input type="checkbox" checked={confirmAppend} onChange={(event) => setConfirmAppend(event.target.checked)} />我确认本次只会追加上述真实季集，不会覆盖项目内已有内容。</label>
           <button type="button" className="primary" disabled={!confirmAppend || publish.isPending} onClick={() => publish.mutate()}>{publish.isPending ? "正在发布真实结构…" : "确认并追加发布"}</button>
           {publish.isError ? <p className="inline-error" role="alert">发布失败：{String(publish.error)}</p> : null}

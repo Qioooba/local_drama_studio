@@ -44,6 +44,11 @@ const NEXT_ACTION_LABELS: Record<string, string> = {
   OPEN_POST_EDIT: "进入后期合成",
   OPEN_SHOT_PLANNING: "从镜头策划开始",
 };
+const NEXT_ACTION_ROUTES: Record<string, (projectId: string, episodeId: string) => string> = {
+  MONITOR_ACTIVE_JOBS: (projectId) => routes.systemJobs(projectId),
+  OPEN_POST_EDIT: (projectId, episodeId) => routes.postEdit(projectId, episodeId),
+  OPEN_SHOT_PLANNING: (projectId, episodeId) => routes.episodePlan(projectId, episodeId),
+};
 const BLOCKER_LABELS: Record<string, string> = {
   SHOT_INTENT_INCOMPLETE: "镜头策划未完成",
   MACHINE_QC_REQUIRES_ATTENTION: "机器质检未通过",
@@ -167,7 +172,7 @@ export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId
       <article><span>镜头</span><strong>{summary.shot_count}</strong></article>
       <article className={summary.attention_count ? "attention" : ""}><span>待处理</span><strong>{summary.attention_count}</strong></article>
       <article><span>活动任务</span><strong>{summary.active_job_count}</strong></article>
-      <article><span>下一步</span><strong>{NEXT_ACTION_LABELS[summary.next_action] ?? "查看本集状态"}</strong></article>
+      <article><span>下一步</span><strong>{(() => { const label = NEXT_ACTION_LABELS[summary.next_action] ?? "查看本集状态"; const target = NEXT_ACTION_ROUTES[summary.next_action]?.(projectId, episodeId); return target ? <Link to={target}>{label}</Link> : label; })()}</strong></article>
     </section>
 
     <section className="episode-production-run" aria-label="整集生产运行">

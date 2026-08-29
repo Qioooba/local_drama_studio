@@ -189,7 +189,7 @@ export function ShotGenerationInspector({
         <div><dt>预计耗时</dt><dd>{secondsLabel(perTake?.duration_seconds)}</dd></div>
         <div><dt>预计显存</dt><dd>{bytesLabel(perTake?.vram_bytes)}</dd></div>
         <div><dt>预计磁盘</dt><dd>{bytesLabel(perTake?.disk_bytes)}</dd></div>
-        <div><dt>磁盘门禁</dt><dd>{diskGate?.blocking === true ? "阻塞" : "通过"}</dd></div>
+        <div><dt>磁盘空间</dt><dd>{diskGate?.blocking === true ? "不足" : "充足"}</dd></div>
       </dl>
       {prepared.plan.blockers?.length ? <ul>{prepared.plan.blockers.map((item, index) => <li key={`${String(item.code ?? "blocker")}-${index}`}>{String(item.message ?? item.code ?? "生成条件未满足")}</li>)}</ul> : null}
     </section>}

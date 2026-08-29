@@ -202,14 +202,14 @@ export function CapabilityPicker({
           onToggle={(event) => setMigrationAuditOpen((event.currentTarget as HTMLDetailsElement).open)}
         >
           <summary>V2 迁移双读对账（只读，不改变本次提交）</summary>
-          {migrationAudit.isPending || facadeEvaluation.isPending ? <p className="muted" aria-live="polite">正在分别解析旧业务链、V2 能力分配和 Facade 门禁…</p> : null}
+          {migrationAudit.isPending || facadeEvaluation.isPending ? <p className="muted" aria-live="polite">正在分别解析旧业务链、V2 能力分配和切换就绪状态…</p> : null}
           {migrationAudit.error ? (
             <p className="capability-picker__error" role="alert">
               V2 对账读取失败：{String(migrationAudit.error.message || migrationAudit.error)}
               <button type="button" className="text-action" onClick={() => void migrationAudit.refetch()}>重试</button>
             </p>
           ) : null}
-          {facadeEvaluation.error ? <p className="capability-picker__error" role="alert">Facade 门禁读取失败：{String(facadeEvaluation.error.message || facadeEvaluation.error)}</p> : null}
+          {facadeEvaluation.error ? <p className="capability-picker__error" role="alert">切换就绪状态读取失败：{String(facadeEvaluation.error.message || facadeEvaluation.error)}</p> : null}
           {migrationAudit.data ? <MigrationAuditSummary comparison={migrationAudit.data.comparison} facade={facadeEvaluation.data?.evaluation} /> : null}
         </details>
       ) : null}
@@ -232,7 +232,7 @@ function MigrationAuditSummary({ comparison, facade }: { comparison: ModelPlatfo
     <span>旧链：{comparison.legacy_resolution.ready ? `${comparison.legacy_resolution.source} · 可执行` : comparison.legacy_resolution.blocked_reason || "不可执行"}</span>
     <span>V2：{comparison.v2_resolution.ready ? `${comparison.v2_resolution.resolution_reason} · 可执行` : comparison.v2_resolution.blocked_reason || "不可执行"}</span>
     <span>参数合同：{parameters.matches ? `字段、约束和有效默认值已一致（${parameters.common_fields.length} 项；参数值未返回）` : parameterContractIssue(parameters)}</span>
-    {facade ? <span>Facade：{facade.decision === "CUTOVER_CANDIDATE" ? "可进入切换候选，但当前提交仍固定走旧链" : `保持旧链（${facade.blockers.join("、") || "门禁未满足"}）`}</span> : <span>Facade：此页面尚未声明业务 surface，只展示双读对账。</span>}
+    {facade ? <span>Facade：{facade.decision === "CUTOVER_CANDIDATE" ? "可进入切换候选，但当前提交仍固定走旧链" : `保持旧链（${facade.blockers.join("、") || "切换条件未满足"}）`}</span> : <span>Facade：此页面尚未声明业务 surface，只展示双读对账。</span>}
     <small>{detail.reason}</small>
   </div>;
 }

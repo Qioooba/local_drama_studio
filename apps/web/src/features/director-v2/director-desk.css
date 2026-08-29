@@ -1827,3 +1827,55 @@
 .director-shot-choice nav a:focus-visible { border-color: var(--creative, var(--accent)); }
 .director-shot-choice nav small { color: var(--text-muted); }
 .director-shot-choice > a.secondary { justify-self: start; width: max-content; }
+
+/* Storyboard matrix: the no-shot entry renders every shot as a thumbnail card. */
+.director-shot-choice .director-storyboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-3, 12px);
+  margin: var(--space-4, 16px) 0;
+}
+
+.director-storyboard-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 10px;
+  background: var(--surface, #161616);
+  color: inherit;
+  text-decoration: none;
+}
+
+.director-storyboard-card:hover,
+.director-storyboard-card:focus-visible {
+  border-color: var(--accent, #4f8cff);
+}
+
+.director-storyboard-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #0d0d0d;
+}
+
+.director-storyboard-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.director-storyboard-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.director-storyboard-meta small {
+  color: var(--muted, #9a9a9a);
+}

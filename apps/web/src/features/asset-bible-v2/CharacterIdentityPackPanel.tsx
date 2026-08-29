@@ -357,7 +357,7 @@ export function CharacterIdentityPackPanel({
         </div>}
 
         {missingSlots.length === 0 && approvalBlockers.length > 0 && <div className="identity-pack-blocker" role="alert">
-          <div><strong>媒体证据未通过门禁</strong><span>{approvalBlockers.map((blocker) => `${blocker.slot_kind ? `${blocker.slot_kind}：` : ""}${blocker.message}`).join("；")}</span></div>
+          <div><strong>媒体证据未通过检查</strong><span>{approvalBlockers.map((blocker) => `${blocker.slot_kind ? `${blocker.slot_kind}：` : ""}${blocker.message}`).join("；")}</span></div>
         </div>}
 
         <div className="identity-slots-grid">
@@ -379,7 +379,7 @@ export function CharacterIdentityPackPanel({
         </div>
 
         {editable && <div className="identity-pack-approval-bar">
-          <div><strong>{approvalReady ? "三视图已齐全" : "批准门禁未通过"}</strong><span>{approvalReady ? "仍需人工填写审核说明并确认锁定。" : "FRONT / LEFT / RIGHT 必须是三个不同的 VERIFIED 图片版本。"}</span></div>
+          <div><strong>{approvalReady ? "三视图已齐全" : "批准条件未满足"}</strong><span>{approvalReady ? "仍需人工填写审核说明并确认锁定。" : "FRONT / LEFT / RIGHT 必须是三个不同的 VERIFIED 图片版本。"}</span></div>
           <button type="button" className="primary-action" onClick={() => setApprovalOpen(true)} disabled={!approvalReady || loading} title={!approvalReady ? "请先补齐三个不同的必需视角" : undefined}>人工审核并批准</button>
         </div>}
 
