@@ -32,6 +32,7 @@ from .media import MediaService, infer_media_kind
 from .queries.generation_preferences import GenerationPreferenceQueryService
 from .queries.qc_policies import QcPolicyQueryService
 from .reviews import ReviewService
+from .timeline import TimelineService
 
 ACTIVE_JOB_STATES = {"QUEUED", "CLAIMED", "RUNNING", "CANCEL_REQUESTED"}
 FAILED_JOB_STATES = {"FAILED", "NEEDS_ATTENTION", "ORPHANED"}
@@ -53,6 +54,7 @@ class EpisodeWorkerActionService:
         self.jobs = JobService(database, settings)
         self.media = MediaService(database, settings)
         self.reviews = ReviewService(database, settings)
+        self.timeline = TimelineService(database, settings)
         # 0045's policy resolver can be injected without coupling the worker to
         # a policy persistence adapter.  Installations without a policy retain
         # the safe, bounded product default of one automatic reroll per shot.
@@ -277,10 +279,65 @@ class EpisodeWorkerActionService:
         return None
 
     @staticmethod
+    def _end_frame_role(profile: dict[str, Any]) -> str | None:
+        try:
+            contract = json.loads(str(profile.get("input_contract_json") or "{}"))
+        except (TypeError, ValueError):
+            return None
+        slots = contract.get("input_slots", contract) if isinstance(contract, dict) else {}
+        if not isinstance(slots, dict):
+            return None
+        spec = slots.get("END_FRAME")
+        if isinstance(spec, dict) and int(spec.get("max", 1)) >= 1:
+            return "END_FRAME"
+        return None
+
+    def _last_frame_anchor(self, source_media_version_id: str) -> dict[str, Any]:
+        """Reuse the freshest LAST_FRAME anchor for a source video, else extract one."""
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT id, extracted_media_version_id FROM frame_anchors WHERE source_media_version_id=? AND role_hint='LAST_FRAME' AND is_stale=0 ORDER BY created_at DESC, id DESC LIMIT 1",
+                (source_media_version_id,),
+            ).fetchone()
+        if row is not None:
+            return {"id": str(row["id"]), "extracted_media_version_id": str(row["extracted_media_version_id"]), "reused": True}
+        anchor = self.timeline.create_frame_anchor(
+            source_media_version_id, position_mode="LAST_FRAME", role_hint="LAST_FRAME", actor="episode-run-auto",
+        )
+        return {"id": str(anchor["id"]), "extracted_media_version_id": str(anchor["extracted_media_version_id"]), "reused": False}
+
+    def _end_frame_chain(self, shot: dict[str, Any], previous_shot: dict[str, Any] | None, fields: dict[str, Any]) -> dict[str, Any]:
+        """Resolve the previous shot's last frame as this shot's END_FRAME input.
+
+        Scene cuts break the chain on purpose: a new environment must not
+        inherit the previous scene's closing frame.  Anything that prevents a
+        trustworthy chain is a SKIPPED reason, never a blocker.
+        """
+        if previous_shot is None:
+            return {"status": "SKIPPED", "reason": "NO_PREDECESSOR"}
+        previous_fields = self._fields(previous_shot)
+        if str(fields.get("environment") or "").strip() != str(previous_fields.get("environment") or "").strip():
+            return {"status": "SKIPPED", "reason": "SCENE_CUT"}
+        previous_video = self._shot_video(str(previous_shot["id"]))
+        if previous_video is None:
+            return {"status": "SKIPPED", "reason": "PREDECESSOR_VIDEO_MISSING"}
+        anchor = self._last_frame_anchor(str(previous_video["media_version_id"]))
+        return {
+            "status": "CHAINED",
+            "frame_anchor_id": anchor["id"],
+            "media_version_id": anchor["extracted_media_version_id"],
+            "source_media_version_id": str(previous_video["media_version_id"]),
+            "anchor_reused": anchor["reused"],
+        }
+
+    @staticmethod
     def _seed(run_id: str, shot_id: str) -> int:
         return int(hashlib.sha256(f"{run_id}:{shot_id}".encode()).hexdigest()[:12], 16) % 2_147_483_647
 
-    def _submit_shot(self, project_id: str, shot: dict[str, Any], run_id: str, task_id: str, *, take_index: int = 0) -> dict[str, Any]:
+    def _submit_shot(
+        self, project_id: str, shot: dict[str, Any], run_id: str, task_id: str, *,
+        take_index: int = 0, previous_shot: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         shot_id = str(shot["id"])
         keyframe = self._approved_keyframe(shot_id)
         if keyframe is None:
@@ -293,6 +350,13 @@ class EpisodeWorkerActionService:
         if role is None:
             return {"shot_id": shot_id, "shot_code": str(shot["code"]), "status": "BLOCKED", "code": "FIRST_FRAME_SLOT_REQUIRED"}
 
+        fields = self._fields(shot)
+        end_frame_chain: dict[str, Any] = {"status": "SLOT_ABSENT"}
+        end_bindings: tuple[VariantInput, ...] = ()
+        if self._end_frame_role(profile) is not None:
+            end_frame_chain = self._end_frame_chain(shot, previous_shot, fields)
+            if end_frame_chain["status"] == "CHAINED":
+                end_bindings = (VariantInput("END_FRAME", str(end_frame_chain["media_version_id"]), 0, None),)
         with self.database.connect() as connection:
             intent = connection.execute(
                 """SELECT * FROM generation_intents WHERE project_id=? AND owner_type='SHOT' AND owner_id=?
@@ -301,7 +365,6 @@ class EpisodeWorkerActionService:
             ).fetchone()
         if intent is None:
             intent = self.generation.create_intent(project_id, "SHOT", shot_id, "I2V_FORMAL", "Episode production shot video")
-        fields = self._fields(shot)
         seed = (self._seed(run_id, shot_id) + take_index) % 2_147_483_647
         prompt_parts = [fields.get("creative_intent"), fields.get("composition"), fields.get("subject_action"), fields.get("environment")]
         parameters: dict[str, object] = {
@@ -313,7 +376,7 @@ class EpisodeWorkerActionService:
             variant_type="BASE", parent_variant_id=None, branch_reason=f"EPISODE_PRODUCTION_RUN_TAKE_{take_index + 1}",
             prompt_revision_id=None, profile_version_id=str(profile["id"]), parameter_set=parameters,
             seed_policy="EXPLICIT", explicit_seed=seed,
-            bindings=(VariantInput(role, str(keyframe["media_version_id"]), 0, None),),
+            bindings=(VariantInput(role, str(keyframe["media_version_id"]), 0, None), *end_bindings),
         )
         try:
             preflight = self.generation.preflight_variant(str(intent["id"]), plan)
@@ -325,13 +388,15 @@ class EpisodeWorkerActionService:
         return {
             "shot_id": shot_id, "shot_code": str(shot["code"]), "status": "SUBMITTED",
             "variant_id": str(submitted["variant"]["id"]), "job_id": str(submitted["job"]["id"]), "take_index": take_index,
+            "end_frame_chain": end_frame_chain,
         }
 
     def video_generation(self, episode_id: str, run_id: str, task_id: str, *, target_take_count: int = 1) -> tuple[dict[str, Any], int]:
         target_take_count = max(1, min(int(target_take_count), 4))
         project_id, shots = self._episode(episode_id)
         items: list[dict[str, Any]] = []
-        for shot in shots:
+        for index, shot in enumerate(shots):
+            previous_shot = shots[index - 1] if index > 0 else None
             shot_id = str(shot["id"])
             jobs = self._variant_jobs(shot_id)
             promoted = self._promote_completed_outputs([item for item in jobs if str(item["state"]) == "SUCCEEDED"])
@@ -356,7 +421,7 @@ class EpisodeWorkerActionService:
                     continue
             missing = target_take_count - available_count - len(active_jobs) - len(dispatched_for_shot)
             submissions = [
-                self._submit_shot(project_id, shot, run_id, task_id, take_index=len(jobs) + offset)
+                self._submit_shot(project_id, shot, run_id, task_id, take_index=len(jobs) + offset, previous_shot=previous_shot)
                 for offset in range(missing)
             ]
             submission_blockers = [item for item in submissions if item["status"] == "BLOCKED"]

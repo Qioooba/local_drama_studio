@@ -659,3 +659,101 @@ def test_qc_auto_select_fills_empty_selection_and_never_overrides(workspace, dat
     assert repeat["produced"]["items"][0]["auto_selection"]["status"] == "ALREADY_CURRENT"
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM selections WHERE media_version_id=?", (media_version_id,)).fetchone()[0] == 1
+
+
+def test_end_frame_chain_skips_scene_cuts_and_chains_same_scene(workspace, database) -> None:
+    service = EpisodeWorkerActionService(database, workspace)
+    current = {"id": "shot-2", "code": "S002", "fields_json": None}
+    previous = {"id": "shot-1", "code": "S001"}
+
+    assert service._end_frame_chain(current, None, {})["reason"] == "NO_PREDECESSOR"
+
+    current_fields = {"environment": "雨夜霓虹街头"}
+    previous_fields = {"environment": "废墟实验室"}
+    result = service._end_frame_chain(current, previous, current_fields)
+    assert result["status"] == "SKIPPED"
+    assert result["reason"] == "SCENE_CUT"
+
+    same_scene_fields = {"environment": "废墟实验室"}
+    service._fields = lambda _shot: previous_fields  # type: ignore[method-assign]
+    result = service._end_frame_chain(current, previous, same_scene_fields)
+    assert result["status"] == "SKIPPED"
+    assert result["reason"] == "PREDECESSOR_VIDEO_MISSING"
+
+    service._shot_video = lambda _shot_id: {"media_version_id": "prev-video-1"}  # type: ignore[method-assign]
+    extracted: list[str] = []
+
+    def _fake_anchor(source_media_version_id: str) -> dict:
+        extracted.append(source_media_version_id)
+        return {"id": "anchor-1", "extracted_media_version_id": "anchor-image-1", "reused": False}
+
+    service._last_frame_anchor = _fake_anchor  # type: ignore[method-assign]
+    chained = service._end_frame_chain(current, previous, same_scene_fields)
+    assert chained == {
+        "status": "CHAINED",
+        "frame_anchor_id": "anchor-1",
+        "media_version_id": "anchor-image-1",
+        "source_media_version_id": "prev-video-1",
+        "anchor_reused": False,
+    }
+    assert extracted == ["prev-video-1"]
+
+
+def test_end_frame_role_detects_slot_from_profile_contract() -> None:
+    with_slot = {"input_contract_json": '{"input_slots": {"FIRST_FRAME": {"max": 1}, "END_FRAME": {"max": 1}}}'}
+    without_slot = {"input_contract_json": '{"input_slots": {"FIRST_FRAME": {"max": 1}, "REFERENCE_IMAGE": {"max": 4}}}'}
+    assert EpisodeWorkerActionService._end_frame_role(with_slot) == "END_FRAME"
+    assert EpisodeWorkerActionService._end_frame_role(without_slot) is None
+
+
+def test_last_frame_anchor_reuses_fresh_anchor_before_extracting(workspace, database) -> None:
+    projects = ProjectService(database, workspace.projects_root)
+    project, _episode_row = _episode(workspace, database, "anchor_reuse")
+    shot = projects.create_shot(str(_episode_row["id"]), "S001", 2_000)
+    video_source = workspace.work_root / "anchor-reuse-src.mp4"
+    subprocess.run(
+        [workspace.ffmpeg_path, "-f", "lavfi", "-i", "color=c=blue:s=160x90:d=2", "-pix_fmt", "yuv420p", "-an", "-y", str(video_source)],
+        check=True,
+        capture_output=True,
+    )
+    video_version = str(MediaService(database, workspace).import_file(
+        str(project["id"]), video_source,
+        purpose="SHOT_VIDEO", owner_type="SHOT", owner_id=str(shot["id"]), media_kind="VIDEO", stage="PROXY",
+    )["media_version_id"])
+    image_source = workspace.work_root / "anchor-reuse-frame.png"
+    subprocess.run(
+        [workspace.ffmpeg_path, "-f", "lavfi", "-i", "color=c=blue:s=160x90:d=1", "-frames:v", "1", "-y", str(image_source)],
+        check=True,
+        capture_output=True,
+    )
+    image_version = str(MediaService(database, workspace).import_file(
+        str(project["id"]), image_source,
+        purpose="FRAME_ANCHOR", owner_type="MEDIA_VERSION", owner_id=video_version, media_kind="IMAGE", stage="PROXY",
+    )["media_version_id"])
+
+    service = EpisodeWorkerActionService(database, workspace)
+    with database.transaction() as connection:
+        connection.execute(
+            """INSERT INTO frame_anchors (id, source_media_version_id, source_time_us, source_frame_index,
+            extracted_media_version_id, role_hint, sha256, approval_id, created_at, updated_at, created_by,
+            revision, schema_version, requested_time_us, resolved_time_us, source_sha256, extraction_method, is_stale)
+            VALUES ('anchor-existing', ?, 1_000_000, 23, ?, 'LAST_FRAME', ?, NULL,
+            '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 'test', 1, 'v2', NULL, 1_000_000, ?,
+            'FFPROBE_PTS_FRAME_INDEX', 0)""",
+            (video_version, image_version, "a" * 64, "b" * 64),
+        )
+    reused = service._last_frame_anchor(video_version)
+    assert reused == {"id": "anchor-existing", "extracted_media_version_id": image_version, "reused": True}
+
+    with database.transaction() as connection:
+        connection.execute("UPDATE frame_anchors SET is_stale=1 WHERE id='anchor-existing'")
+    extracted: list[str] = []
+
+    def _fake_create(source_media_version_id: str, **_kwargs) -> dict:
+        extracted.append(source_media_version_id)
+        return {"id": "anchor-new", "extracted_media_version_id": "anchor-image-new"}
+
+    service.timeline.create_frame_anchor = _fake_create  # type: ignore[method-assign]
+    fresh = service._last_frame_anchor(video_version)
+    assert fresh["id"] == "anchor-new" and fresh["reused"] is False
+    assert extracted == [video_version]
