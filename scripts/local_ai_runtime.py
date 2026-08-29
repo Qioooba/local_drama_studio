@@ -84,8 +84,15 @@ def _embedding_smoke(
 
 
 def _voxcpm_smoke(
-    model_root: Path, audio_output: Path, text: str = "本地导演台配音测试通过。"
+    model_root: Path,
+    audio_output: Path,
+    text: str = "本地导演台配音测试通过。",
+    *,
+    prompt_audio: Path | None = None,
+    prompt_text: str | None = None,
 ) -> dict[str, Any]:
+    import inspect
+
     import numpy as np
     import soundfile as sf
     from voxcpm import VoxCPM
@@ -99,13 +106,25 @@ def _voxcpm_smoke(
         optimize=False,
         device="cuda",
     )
-    waveform = model.generate(
-        text=text,
-        inference_timesteps=4,
-        min_len=2,
-        max_len=192,
-        retry_badcase=False,
-    )
+    generate_kwargs: dict[str, Any] = {
+        "text": text,
+        "inference_timesteps": 4,
+        "min_len": 2,
+        "max_len": 192,
+        "retry_badcase": False,
+    }
+    if prompt_audio is not None:
+        # Zero-shot cloning is only requested by production voice profiles; the
+        # smoke default (no --prompt-audio) must keep working on every install.
+        parameters = inspect.signature(model.generate).parameters
+        if "prompt_wav_path" not in parameters:
+            raise RuntimeError("VOXCPM_PROMPT_UNSUPPORTED: installed VoxCPM lacks prompt_wav_path")
+        generate_kwargs["prompt_wav_path"] = str(prompt_audio.resolve())
+        if prompt_text:
+            if "prompt_text" not in parameters:
+                raise RuntimeError("VOXCPM_PROMPT_UNSUPPORTED: installed VoxCPM lacks prompt_text")
+            generate_kwargs["prompt_text"] = prompt_text
+    waveform = model.generate(**generate_kwargs)
     samples = np.asarray(waveform, dtype=np.float32).reshape(-1)
     if (
         samples.size < 4800
@@ -270,6 +289,8 @@ def main() -> int:
     parser.add_argument("--include-vectors", action="store_true")
     parser.add_argument("--transcript")
     parser.add_argument("--language", default="Chinese")
+    parser.add_argument("--prompt-audio", type=Path)
+    parser.add_argument("--prompt-text")
     parser.add_argument("--ollama-base-url", default="http://127.0.0.1:11434")
     parser.add_argument("--ollama-model", default="qwen3.8:27b")
     parser.add_argument("--output", type=Path)
@@ -288,6 +309,8 @@ def main() -> int:
             args.model_root,
             audio_output,
             (args.text or ["本地导演台配音测试通过。"])[0],
+            prompt_audio=args.prompt_audio,
+            prompt_text=args.prompt_text,
         )
     elif args.task == "asr":
         if args.audio_input is None or not args.audio_input.is_file():

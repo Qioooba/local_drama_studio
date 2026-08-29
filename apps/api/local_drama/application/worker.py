@@ -41,6 +41,7 @@ from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.adaptation_plan_repository import SqliteAdaptationPlanRepository
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.atomic import write_atomic
+from local_drama.infrastructure.local_ai_subprocess import LocalAiSubprocessRuntime
 from local_drama.model_platform.application.comfy_capability_smoke_execution import ComfyCapabilitySmokeWorker
 from local_drama.model_platform.application.execution_job_links import ExecutionJobLinkService
 from local_drama.model_platform.application.production_execution_registry import production_worker_execution_handlers
@@ -163,6 +164,7 @@ def _make_tts_job_handler(
             media_ops=worker.media,
             run_ffmpeg=worker._ffmpeg,
             atomic_writer=worker._atomic_file,
+            voxcpm_runtime=worker.voxcpm_runtime,
         )
 
     return handler
@@ -221,6 +223,9 @@ class LocalMediaWorker:
         self.jobs = JobService(database, settings)
         self.media = MediaService(database, settings, ffmpeg_runner=self._ffmpeg)
         self.tts_runtime = tts_runtime or create_platform_services(settings).tts_runtime
+        self.voxcpm_runtime = (
+            LocalAiSubprocessRuntime(settings) if settings.local_ai_python is not None else None
+        )
         self.gpu_coordinator = gpu_coordinator
         self.model_execution_handlers = model_execution_handlers or production_worker_execution_handlers(settings)
         self.comfy_smoke_worker_factory = comfy_smoke_worker_factory or (lambda: ComfyCapabilitySmokeWorker(database, settings))

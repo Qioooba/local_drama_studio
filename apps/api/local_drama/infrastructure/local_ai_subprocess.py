@@ -88,10 +88,22 @@ class LocalAiSubprocessRuntime:
             arguments.extend(("--text", value))
         return self.run_task("embedding", arguments)
 
-    def synthesize(self, text: str, output_path: Path) -> LocalAiExecution:
+    def synthesize(
+        self,
+        text: str,
+        output_path: Path,
+        *,
+        prompt_audio: Path | None = None,
+        prompt_text: str | None = None,
+    ) -> LocalAiExecution:
         if not text.strip():
             raise ValueError("speech text must not be empty")
-        return self.run_task("voxcpm2", ("--text", text, "--audio-output", str(output_path)))
+        arguments = ["--text", text, "--audio-output", str(output_path)]
+        if prompt_audio is not None:
+            arguments += ("--prompt-audio", str(prompt_audio))
+        if prompt_text:
+            arguments += ("--prompt-text", prompt_text)
+        return self.run_task("voxcpm2", arguments)
 
     def transcribe(self, audio_path: Path) -> LocalAiExecution:
         return self.run_task("asr", ("--audio-input", str(audio_path)))

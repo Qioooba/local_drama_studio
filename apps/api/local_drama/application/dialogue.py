@@ -611,13 +611,20 @@ class DialogueService:
             raise DomainRuleError("TTS_JOB_TEXT_STALE", "正式 TTS Job 只能使用最新对白文本 revision")
         if voice is None or voice["status"] != "ACTIVE" or str(voice["project_id"]) != str(text_revision["project_id"]):
             raise DomainRuleError("VOICE_PROFILE_NOT_ACTIVE", "TTS Job 音色必须是同项目 ACTIVE 版本")
+        voice_ref = str(voice["voice_ref"])
+        if voice_ref.startswith("sapi:"):
+            provider_kind = "WINDOWS_SAPI_LOCAL"
+        elif voice_ref.startswith("voxcpm2:"):
+            provider_kind = "VOXCPM2_LOCAL"
+        else:
+            provider_kind = None
         if (
             profile is None
             or profile["status"] != "PUBLISHED"
             or "TTS" not in str(profile["capability"]).upper()
-            or not str(voice["voice_ref"]).startswith("sapi:")
+            or provider_kind is None
         ):
-            raise DomainRuleError("TTS_PUBLISHED_LOCAL_PROFILE_REQUIRED", "正式 TTS Job 必须绑定 Published 本地 SAPI TTS Profile")
+            raise DomainRuleError("TTS_PUBLISHED_LOCAL_PROFILE_REQUIRED", "正式 TTS Job 必须绑定 Published 本地 TTS Profile（sapi: 或 voxcpm2: 音色）")
         snapshot = {
             "schema_version": "localdrama.tts-job.v1",
             "text_revision_id": text_revision_id,
@@ -630,7 +637,7 @@ class DialogueService:
             "emotion": emotion,
             "speech_rate": speech_rate,
             "provider_profile_version_id": str(profile["id"]),
-            "provider_kind": "WINDOWS_SAPI_LOCAL",
+            "provider_kind": provider_kind,
             "network_allowed": False,
         }
         if self.jobs is None:
