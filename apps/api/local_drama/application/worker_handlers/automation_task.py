@@ -89,7 +89,7 @@ class AutomationTimelinePort(Protocol):
         ...
 
     def plan_tts_subtitle_draft(
-        self, episode_id: str, *, source_document_version_id: str | None = None
+        self, episode_id: str, *, source_document_version_id: str | None = None, align_words: bool = False
     ) -> dict[str, Any]:  # pragma: no cover - protocol boundary
         ...
 
@@ -360,7 +360,7 @@ def _automation_subtitle(
     """
     requested_source = str(payload.get("source_document_version_id") or "").strip() or None
     try:
-        draft = timeline_factory().plan_tts_subtitle_draft(episode_id, source_document_version_id=requested_source)
+        draft = timeline_factory().plan_tts_subtitle_draft(episode_id, source_document_version_id=requested_source, align_words=True)
     except DomainRuleError as error:
         return _automation_failure(error.code, error.message), 0
     if draft["status"] == "BLOCKED" or not draft["cues"]:
@@ -384,6 +384,7 @@ def _automation_subtitle(
         "cue_count": len(draft["cues"]),
         "missing_count": len(draft["missing"]),
         "timing_authority": str(draft["timing_authority"]),
+        "aligned_lines": int((draft.get("summary") or {}).get("aligned_lines") or 0),
         "source_document_version_id": draft.get("source_document_version_id"),
     }
     report = _automation_report(

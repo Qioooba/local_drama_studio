@@ -63,6 +63,70 @@ def _srt_time(value: int) -> str:
     return subtitle_time(value)
 
 
+ALIGNED_CUE_MAX_CHARS = 14
+_SENTENCE_BREAKS = "。！？；!?;"
+
+
+def split_aligned_cue(
+    text: str,
+    words: list[dict[str, Any]],
+    line_start_us: int,
+    media_duration_us: int,
+) -> list[dict[str, Any]]:
+    """Split one line's cue into word-timed sub-cues from ForcedAligner output.
+
+    ``words`` are ``{"text", "start_time", "end_time"}`` seconds relative to the
+    line audio; times are scaled into the line's timeline window.  Returns []
+    when the alignment is unusable so the caller falls back to duration timing.
+    """
+    if media_duration_us <= 0 or not words:
+        return []
+    valid: list[tuple[str, float, float]] = []
+    for word in words:
+        if not isinstance(word, dict):
+            continue
+        token = str(word.get("text") or "").strip()
+        try:
+            start_s = float(word.get("start_time"))
+            end_s = float(word.get("end_time"))
+        except (TypeError, ValueError):
+            continue
+        if token and 0.0 <= start_s <= end_s:
+            valid.append((token, start_s, end_s))
+    if not valid:
+        return []
+    audio_end_s = max(end_s for _token, _start_s, end_s in valid)
+    scale = media_duration_us / max(1, int(audio_end_s * 1_000_000))
+
+    chunks: list[list[tuple[str, float, float]]] = []
+    current: list[tuple[str, float, float]] = []
+    for word in valid:
+        current.append(word)
+        joined = "".join(item[0] for item in current)
+        ends_sentence = word[0][-1:] in _SENTENCE_BREAKS
+        if len(joined) >= ALIGNED_CUE_MAX_CHARS or ends_sentence:
+            chunks.append(current)
+            current = []
+    if current:
+        chunks.append(current)
+    if not chunks:
+        return []
+
+    cues: list[dict[str, Any]] = []
+    for chunk in chunks:
+        chunk_start_s = chunk[0][1]
+        chunk_end_s = chunk[-1][2]
+        start_us = line_start_us + min(media_duration_us, max(0, int(chunk_start_s * 1_000_000 * scale)))
+        end_us = line_start_us + min(media_duration_us, max(0, int(chunk_end_s * 1_000_000 * scale)))
+        if end_us <= start_us:
+            end_us = min(line_start_us + media_duration_us, start_us + 100_000)
+        cue_text = "".join(item[0] for item in chunk).strip()
+        if not cue_text or end_us <= start_us:
+            continue
+        cues.append({"start_us": start_us, "end_us": end_us, "text": cue_text})
+    return cues
+
+
 class TimelineService:
     def __init__(self, database: TimelineUnitOfWork, settings: Settings, media: TimelineMediaPort | None = None) -> None:
         self.database = database
@@ -251,11 +315,27 @@ class TimelineService:
             "items": [{**dict(item), "parameters": json.loads(item["parameters_json"])} for item in items],
         }
 
+    def build_tts_aligner(self) -> Callable[[Path, str], list[dict[str, Any]]] | None:
+        """Return a ForcedAligner callable when the local AI runtime exists."""
+        if not self.settings.local_ai_python:
+            return None
+        from local_drama.infrastructure.local_ai_subprocess import LocalAiSubprocessRuntime
+
+        runtime = LocalAiSubprocessRuntime(self.settings)
+
+        def align(audio_path: Path, transcript: str) -> list[dict[str, Any]]:
+            execution = runtime.align(audio_path, transcript)
+            timestamps = execution.payload.get("timestamps")
+            return timestamps if isinstance(timestamps, list) else []
+
+        return align
+
     def plan_tts_subtitle_draft(
         self,
         episode_id: str,
         *,
         source_document_version_id: str | None = None,
+        align_words: bool = False,
     ) -> dict[str, Any]:
         """Build a read-only subtitle draft from current TTS selections.
 
@@ -343,6 +423,8 @@ class TimelineService:
         previous_end = 0
         normalized_source, _ = _normalized_text_with_offsets(source_text) if source_text else ("", [])
         source_cursor = 0
+        aligner = self.build_tts_aligner() if align_words else None
+        aligned_lines = 0
         for row in lines:
             line_id = str(row["id"])
             if not row["selection_id"]:
@@ -380,24 +462,40 @@ class TimelineService:
             end_us = start_us + duration_us
             per_shot_cursor[shot_id] = max(0, end_us - shot_start_us.get(shot_id, start_us))
             previous_end = end_us
+            line_evidence = {
+                "line_id": line_id,
+                "line_code": str(row["code"]),
+                "speaker": str(row["speaker"]),
+                "shot_id": shot_id or None,
+                "text_revision_id": str(row["text_revision_id"]),
+                "text_revision_no": int(row["text_revision_no"]),
+                "text_hash": str(row["text_hash"]),
+                "selection_id": str(row["selection_id"]),
+                "tts_candidate_id": str(row["tts_candidate_id"]),
+                "media_version_id": str(row["media_version_id"]),
+                "media_sha256": str(row["media_sha256"]),
+                "media_duration_ms": int(row["duration_ms"] or 0) or None,
+                "timing_basis": "SELECTED_TTS_MEDIA_EXTENDED_FOR_CPS" if duration_us > media_duration_us else "SELECTED_TTS_MEDIA",
+            }
+            if aligner is not None and media_duration_us > 0:
+                try:
+                    _, audio_path = self.media.content_path(str(row["media_version_id"]))
+                    words = aligner(audio_path, text)
+                except Exception:
+                    words = []
+                sub_cues = split_aligned_cue(text, words, start_us, media_duration_us)
+                if sub_cues:
+                    cues.extend(sub_cues)
+                    end_us = sub_cues[-1]["end_us"]
+                    per_shot_cursor[shot_id] = max(0, end_us - shot_start_us.get(shot_id, start_us))
+                    previous_end = max(previous_end, end_us)
+                    line_evidence["timing_basis"] = "FORCED_ALIGNMENT"
+                    line_evidence["cue_count"] = len(sub_cues)
+                    aligned_lines += 1
+                    evidence.append(line_evidence)
+                    continue
             cues.append({"start_us": start_us, "end_us": end_us, "text": text})
-            evidence.append(
-                {
-                    "line_id": line_id,
-                    "line_code": str(row["code"]),
-                    "speaker": str(row["speaker"]),
-                    "shot_id": shot_id or None,
-                    "text_revision_id": str(row["text_revision_id"]),
-                    "text_revision_no": int(row["text_revision_no"]),
-                    "text_hash": str(row["text_hash"]),
-                    "selection_id": str(row["selection_id"]),
-                    "tts_candidate_id": str(row["tts_candidate_id"]),
-                    "media_version_id": str(row["media_version_id"]),
-                    "media_sha256": str(row["media_sha256"]),
-                    "media_duration_ms": int(row["duration_ms"] or 0) or None,
-                    "timing_basis": "SELECTED_TTS_MEDIA_EXTENDED_FOR_CPS" if duration_us > media_duration_us else "SELECTED_TTS_MEDIA",
-                }
-            )
+            evidence.append(line_evidence)
 
         if not lines:
             blockers.append({"code": "DIALOGUE_LINES_REQUIRED", "message": "本集还没有对白文本。"})
@@ -420,7 +518,7 @@ class TimelineService:
             "missing": missing,
             "blockers": blockers,
             "warnings": warnings,
-            "summary": {"dialogue_count": len(lines), "cue_count": len(cues), "missing_count": len(missing), "duration_us": previous_end},
+            "summary": {"dialogue_count": len(lines), "cue_count": len(cues), "missing_count": len(missing), "duration_us": previous_end, "aligned_lines": aligned_lines},
             "text_authority": "SCRIPT",
             "timing_authority": "SELECTED_TTS_MEDIA",
             "requires_human_review": True,
