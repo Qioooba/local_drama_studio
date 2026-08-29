@@ -230,7 +230,7 @@ class ApiContractMiddleware(BaseHTTPMiddleware):
         ):
             if observed != API_CONTRACT_VERSION:
                 request_id, _trace_id = _ensure_request_context(request)
-                response = JSONResponse(
+                response: Response = JSONResponse(
                     status_code=409,
                     content={
                         "error": {

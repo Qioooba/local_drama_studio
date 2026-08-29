@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -78,7 +79,7 @@ class CapabilitySmokeService:
             {"runtime_kind": str(candidate["runtime_kind"]), "capability_code": str(candidate["capability_code"])},
         )
 
-    def _smoke_ollama(self, candidate) -> CapabilitySmokeResult:
+    def _smoke_ollama(self, candidate: sqlite3.Row) -> CapabilitySmokeResult:
         base_url = self._verified_ollama_base_url(str(candidate["configuration_json"]))
         try:
             probe = self.ollama_client_factory(base_url, str(candidate["native_locator"])).probe(load_test=True)
@@ -91,7 +92,7 @@ class CapabilitySmokeService:
         status = "SMOKE_PASSED" if probe.get("status") == "PASS" else "FAILED"
         return self._record(candidate, status=status, result=_redacted_probe(probe))
 
-    def _smoke_pytorch_embedding(self, candidate) -> CapabilitySmokeResult:
+    def _smoke_pytorch_embedding(self, candidate: sqlite3.Row) -> CapabilitySmokeResult:
         """Load the controlled local Qwen embedding adapter under service identity."""
         try:
             receipt = self.embedding_smoke_factory()
@@ -102,9 +103,9 @@ class CapabilitySmokeService:
             result = {"adapter": "pytorch.embedding.qwen3", "passed": False, "error_code": "PYTORCH_EMBEDDING_SMOKE_FAILED"}
         return self._record(candidate, status=status, result=result)
 
-    def _candidate(self, runtime_model_installation_id: str, capability_code: str):
+    def _candidate(self, runtime_model_installation_id: str, capability_code: str) -> sqlite3.Row:
         with self.database.connect() as connection:
-            row = connection.execute(
+            row: sqlite3.Row | None = connection.execute(
                 """SELECT installation.id AS runtime_model_installation_id,installation.native_locator,
                           runtime.kind AS runtime_kind,runtime_version.id AS runtime_installation_version_id,runtime_version.configuration_json,
                           offering.id AS offering_id,capability.code AS capability_code
@@ -137,7 +138,7 @@ class CapabilitySmokeService:
             )
         return service_url
 
-    def _record(self, candidate, *, status: str, result: dict[str, object]) -> CapabilitySmokeResult:
+    def _record(self, candidate: sqlite3.Row, *, status: str, result: dict[str, object]) -> CapabilitySmokeResult:
         now = _utc_now()
         validation_run_id = str(uuid.uuid4())
         with self.database.transaction() as connection:

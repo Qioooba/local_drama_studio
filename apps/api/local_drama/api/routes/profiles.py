@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Callable
+
 from fastapi import APIRouter, Query, Request
 
 from local_drama.api.schemas.g3 import CameraPlanResolveRequest, ProfileBindingRequest, ProfileContractDraftRequest, ProfileEvidencePublishRequest
@@ -21,7 +23,7 @@ def service(request: Request) -> ProfileService:
     return ProfileService(request.app.state.database, request.app.state.settings.manifest_path)
 
 
-def capability_preference_resolver(request: Request):
+def capability_preference_resolver(request: Request) -> Callable[..., dict[str, object]]:
     def resolve(
         *,
         project_id: str,

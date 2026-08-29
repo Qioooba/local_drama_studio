@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, Mapping, Protocol
+from typing import Any, Mapping, Protocol, cast
 
 from local_drama.domain.errors import DomainRuleError
 from local_drama.model_platform.application.local_model_catalog import DECLARED_MODEL_CAPABILITIES
@@ -208,7 +208,7 @@ class ModelLockRuntimeAdapter:
                     runtime_kind=self.runtime_kind,
                     native_locator=code,
                     digest=None,
-                    size_bytes=sum(int(file["expected_size_bytes"]) for file in file_observations),
+                    size_bytes=sum(int(cast(int, file["expected_size_bytes"])) for file in file_observations),
                     modified_at=None,
                     presence=presence,
                     metadata={"release_code": code, "files": tuple(file_observations), "declared_runtime": runtime_value},
@@ -279,7 +279,7 @@ def _ollama_metadata(tag: Mapping[str, Any], details: Mapping[str, Any]) -> dict
 
 
 def _candidate_capabilities(metadata: Mapping[str, object]) -> tuple[CapabilityCandidate, ...]:
-    native_capabilities = set(metadata.get("capabilities") or ())
+    native_capabilities = set(cast("tuple[str, ...]", metadata.get("capabilities") or ()))
     candidates: list[CapabilityCandidate] = []
     if native_capabilities.intersection({"completion", "generate", "chat"}):
         candidates.extend(

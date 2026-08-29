@@ -24,7 +24,7 @@ _TEMPLATE = "comfy.workflow.profile.v1"
 def make_comfy_workflow_handler(
     settings: Settings,
     *,
-    workflows: WorkflowService | None = None,
+    workflows: WorkflowService | WorkflowServicePlaceholder | None = None,
     comfy: ComfyClient | None = None,
 ) -> Callable[[WorkerExecutionSnapshot, Path], tuple[str, str]]:
     """Build the only formal V2 handler for Profile-owned Comfy workflows."""
@@ -80,10 +80,10 @@ class WorkflowServicePlaceholder:
             self._service = WorkflowService(Database(self.settings.database_path), self.settings)
         return self._service
 
-    def get_version(self, version_id: str):
+    def get_version(self, version_id: str) -> dict[str, Any]:
         return self._resolve().get_version(version_id)
 
-    def compile_semantic_inputs(self, version_id: str, semantic_inputs: dict[str, Any]):
+    def compile_semantic_inputs(self, version_id: str, semantic_inputs: dict[str, Any]) -> dict[str, Any]:
         return self._resolve().compile_semantic_inputs(version_id, semantic_inputs)
 
 

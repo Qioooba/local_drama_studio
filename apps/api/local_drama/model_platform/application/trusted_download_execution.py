@@ -8,7 +8,9 @@ import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from http.client import HTTPMessage
 from pathlib import Path
+from typing import IO
 
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
@@ -29,14 +31,16 @@ class TrustedDownloadRequest:
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001,ANN201
+    def redirect_request(
+        self, req: urllib.request.Request, fp: IO[bytes], code: int, msg: str, headers: HTTPMessage, newurl: str
+    ) -> urllib.request.Request | None:
         raise urllib.error.HTTPError(req.full_url, code, "redirects are not permitted", headers, fp)
 
 
 class HostTrustedDownloadExecutor:
     """Download one declared artifact into ModelRoot downloads, never a library."""
 
-    def __init__(self, settings: Settings, *, opener=None) -> None:
+    def __init__(self, settings: Settings, *, opener: urllib.request.OpenerDirector | None = None) -> None:
         self.settings = settings
         self.opener = opener or urllib.request.build_opener(_NoRedirect())
 

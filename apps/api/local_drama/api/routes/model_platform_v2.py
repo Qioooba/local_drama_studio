@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 
 from fastapi import APIRouter, Header, Query, Request
 from starlette.concurrency import run_in_threadpool
@@ -36,7 +37,7 @@ from local_drama.model_platform.application.business_selection_rollouts import (
     BusinessSelectionRolloutService,
 )
 from local_drama.model_platform.application.business_selection_shadow import BusinessSelectionShadowService
-from local_drama.model_platform.application.candidate_readiness import CandidateReadinessService
+from local_drama.model_platform.application.candidate_readiness import CandidateReadinessService, RegisteredCandidateReadiness
 from local_drama.model_platform.application.capability_resolution import (
     CapabilityAssignmentRequest,
     CapabilityAssignmentService,
@@ -54,6 +55,7 @@ from local_drama.model_platform.application.generation_capability_configuration_
 from local_drama.model_platform.application.installation_integrity import InstallationIntegrityService
 from local_drama.model_platform.application.installation_plans import (
     ExpectedInstallArtifact,
+    InstallationPlan,
     InstallationPlanService,
     OfflineImportPlanRequest,
     TrustedDownloadArtifact,
@@ -76,6 +78,7 @@ from local_drama.model_platform.application.project_knowledge_retrieval import P
 from local_drama.model_platform.application.quick_create_direct_execution import QuickCreateV2DirectImageService
 from local_drama.model_platform.application.quick_create_readiness import QuickCreateV2ReadinessService
 from local_drama.model_platform.application.quick_create_v2_image_candidates import (
+    QuickCreateV2ImageCandidatePlan,
     QuickCreateV2ImageCandidatePreview,
     QuickCreateV2ImageCandidateService,
 )
@@ -1181,10 +1184,11 @@ def _json_list(value: object) -> list[str]:
     return [str(item) for item in decoded if item] if isinstance(decoded, list) else []
 
 
-def _public_discovery_observation(row: object) -> dict[str, object]:
+def _public_discovery_observation(row: sqlite3.Row) -> dict[str, object]:
     """Build the read-safe discovery projection consumed by the model center."""
     observed = _json_object(getattr(row, "__getitem__", lambda _: "{}")("observed_json"))
-    metadata = observed.get("metadata") if isinstance(observed.get("metadata"), dict) else {}
+    raw_metadata = observed.get("metadata")
+    metadata: dict[str, object] = raw_metadata if isinstance(raw_metadata, dict) else {}
     candidates = observed.get("candidate_capabilities")
     capability_candidates = [
         str(item.get("capability"))
@@ -1225,7 +1229,7 @@ def _safe_native_locator(value: str) -> bool:
     return bool(cleaned) and "/" not in cleaned and "\\" not in cleaned and not windows_drive_path
 
 
-def _public_candidate_readiness(candidate) -> dict[str, object]:
+def _public_candidate_readiness(candidate: RegisteredCandidateReadiness) -> dict[str, object]:
     return {
         "runtime_model_installation_id": candidate.runtime_model_installation_id,
         "model_release_id": candidate.model_release_id,
@@ -1254,7 +1258,7 @@ def _public_candidate_readiness(candidate) -> dict[str, object]:
     }
 
 
-def _public_candidate_plan(plan) -> dict[str, object]:
+def _public_candidate_plan(plan: QuickCreateV2ImageCandidatePlan) -> dict[str, object]:
     """Project the V2 candidate preflight without workflow wiring or seeds beyond the frozen command."""
     return {
         "execution_profile_version_id": plan.execution_profile_version_id,
@@ -1267,7 +1271,7 @@ def _public_candidate_plan(plan) -> dict[str, object]:
     }
 
 
-def _public_offline_import_plan(plan) -> dict[str, object]:
+def _public_offline_import_plan(plan: InstallationPlan) -> dict[str, object]:
     """Expose plan state without bundle references, paths or source wiring."""
     return {
         "id": plan.id,

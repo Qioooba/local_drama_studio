@@ -13,7 +13,7 @@ import sqlite3
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, TypedDict
+from typing import Any, Callable, Literal, TypedDict
 from urllib.parse import urlparse
 
 from local_drama.application.local_artifacts import local_artifact_reference
@@ -508,7 +508,7 @@ class QuickGenerationService:
             media, path = self.media.content_path(str(item["legacy_media_version_id"]))
             relative = Path(*str(media.get("rel_path") or path.name).replace("\\", "/").split("/"))
             reference_root = path.parents[max(0, len(relative.parts) - 1)]
-            scope = "PROJECT"
+            scope: Literal["PROJECT", "DATA"] = "PROJECT"
         else:
             reference_root = self.settings.data_root.resolve()
             path = controlled_path(

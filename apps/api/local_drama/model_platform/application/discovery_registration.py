@@ -67,7 +67,8 @@ class DiscoveryRegistrationService:
                 )
 
             runtime_kind = str(row["kind"])
-            metadata = observed.get("metadata") if isinstance(observed.get("metadata"), dict) else {}
+            raw_metadata = observed.get("metadata")
+            metadata: dict[str, Any] = raw_metadata if isinstance(raw_metadata, dict) else {}
             family_code = _code(f"{runtime_kind.lower()}-{metadata.get('family') or metadata.get('release_code') or native_locator}")
             family = connection.execute("SELECT id FROM mp_model_families WHERE code=?", (family_code,)).fetchone()
             if family is None:

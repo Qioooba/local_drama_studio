@@ -140,10 +140,13 @@ def _v2_fields(row: Mapping[str, Any]) -> tuple[dict[str, dict[str, object]], tu
     schema = _object(row["schema_json"])
     ui_schema = _object(row["ui_schema_json"])
     payload = _object(row["payload_json"])
-    properties = schema.get("properties") if isinstance(schema.get("properties"), Mapping) else {}
-    ui_properties = ui_schema.get("properties") if isinstance(ui_schema.get("properties"), Mapping) else {}
+    raw_properties = schema.get("properties")
+    properties: Mapping[str, Any] = raw_properties if isinstance(raw_properties, Mapping) else {}
+    raw_ui_properties = ui_schema.get("properties")
+    ui_properties: Mapping[str, Any] = raw_ui_properties if isinstance(raw_ui_properties, Mapping) else {}
     required = {str(item) for item in schema.get("required", []) if isinstance(item, str)}
-    defaults = payload.get("defaults") if isinstance(payload.get("defaults"), Mapping) else {}
+    raw_defaults = payload.get("defaults")
+    defaults: Mapping[str, Any] = raw_defaults if isinstance(raw_defaults, Mapping) else {}
     locks = payload.get("locked_values", payload.get("locks", {}))
     locked = locks if isinstance(locks, Mapping) else {}
     result: dict[str, dict[str, object]] = {}
@@ -155,7 +158,8 @@ def _v2_fields(row: Mapping[str, Any]) -> tuple[dict[str, dict[str, object]], tu
         if _unsafe(name):
             unsafe.append(name)
             continue
-        ui_field = ui_properties.get(name) if isinstance(ui_properties.get(name), Mapping) else {}
+        raw_ui_field = ui_properties.get(name)
+        ui_field: Mapping[str, Any] = raw_ui_field if isinstance(raw_ui_field, Mapping) else {}
         field = {**dict(raw_field), "scopes": ui_field.get("scopes")}
         default = locked[name] if name in locked else defaults[name] if name in defaults else raw_field.get("default", _missing())
         result[name] = _shape(field, default=default, required=name in required)

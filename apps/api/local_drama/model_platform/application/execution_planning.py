@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
@@ -179,7 +180,7 @@ class ExecutionPlanningService:
             resolution_hash=resolution_hash,
         )
 
-    def _load_published_profile(self, profile_id: str, capability_code: str):
+    def _load_published_profile(self, profile_id: str, capability_code: str) -> sqlite3.Row:
         with self.database.connect() as connection:
             profile = connection.execute(
                 """SELECT profile.id AS profile_id,profile.payload_json,profile.payload_hash,
@@ -198,7 +199,7 @@ class ExecutionPlanningService:
             ).fetchone()
         if profile is None:
             raise DomainRuleError("MP_EXECUTION_PROFILE_NOT_PUBLISHED", "已解析 Profile 在提交前不再是当前能力的已发布版本。")
-        return profile
+        return cast(sqlite3.Row, profile)
 
 
 def _validate_semantic_inputs(value: Mapping[str, Any]) -> None:

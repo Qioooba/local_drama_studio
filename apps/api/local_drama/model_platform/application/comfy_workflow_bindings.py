@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -137,9 +138,9 @@ class ComfyWorkflowBindingService:
             for row in rows
         )
 
-    def _candidate(self, runtime_model_installation_id: str, capability_code: str):
+    def _candidate(self, runtime_model_installation_id: str, capability_code: str) -> sqlite3.Row:
         with self.database.connect() as connection:
-            row = connection.execute(
+            row: sqlite3.Row | None = connection.execute(
                 """SELECT installation.id,installation.install_state,runtime.kind AS runtime_kind,
                           offering.capability_definition_id AS capability_id,capability.code AS capability_code
                    FROM mp_runtime_model_installations installation

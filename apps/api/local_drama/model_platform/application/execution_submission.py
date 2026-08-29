@@ -57,7 +57,7 @@ class ExecutionSubmissionService:
         if preview.execution_profile_version_id is None or preview.adapter_code is None:
             raise DomainRuleError("MP_EXECUTION_NOT_READY", "当前能力没有可提交的 V2 Profile。")
         handler = self.handlers.resolve(preview.capability_code, preview.adapter_code)
-        scheduler_snapshot = {"execution_snapshot_id": None, "content_hash": None}
+        scheduler_snapshot: dict[str, str | None] = {"execution_snapshot_id": None, "content_hash": None}
         if handler.gpu_runtime:
             scheduler_snapshot["scheduler_runtime"] = handler.gpu_runtime.strip().upper()
         scope = _job_scope(request.scope)

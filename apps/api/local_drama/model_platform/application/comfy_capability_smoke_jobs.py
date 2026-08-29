@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -107,9 +108,9 @@ class ComfyCapabilitySmokeSubmissionService:
             idempotent_replay=bool(job.get("idempotent_replay")),
         )
 
-    def _binding(self, workflow_binding_id: str):
+    def _binding(self, workflow_binding_id: str) -> sqlite3.Row:
         with self.database.connect() as connection:
-            row = connection.execute(
+            row: sqlite3.Row | None = connection.execute(
                 """SELECT binding.id,binding.workflow_version_id,binding.workflow_content_hash,
                           binding.runtime_model_installation_id,binding.capability_definition_id,
                           capability.code AS capability_code

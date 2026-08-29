@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from local_drama.application.comfy_smoke_contract import parse_comfy_smoke_contract
+from local_drama.application.comfy_smoke_contract import ComfySmokeContract, parse_comfy_smoke_contract
 from local_drama.application.worker_dispatch import WorkerExecution
 from local_drama.application.workflows import WorkflowService
 from local_drama.config import Settings
@@ -65,7 +66,7 @@ class ComfyCapabilitySmokeWorker:
             self.completion.record_failure(str(job.get("id") or ""), "MP_COMFY_SMOKE_EXECUTION_FAILED")
             raise DomainRuleError("MP_COMFY_SMOKE_EXECUTION_FAILED", "Comfy capability smoke 本机执行失败。") from error
 
-    def _frozen_contract(self, job: Mapping[str, Any]):
+    def _frozen_contract(self, job: Mapping[str, Any]) -> tuple[sqlite3.Row, dict[str, Any], ComfySmokeContract]:
         snapshot = job.get("input_snapshot")
         if not isinstance(snapshot, dict) or snapshot.get("schema_version") != "localdramastudio.comfy-capability-smoke-job.v1":
             raise DomainRuleError("MP_COMFY_SMOKE_SNAPSHOT_INVALID", "Comfy smoke Job 快照无效。")
@@ -134,9 +135,9 @@ class ComfyCapabilitySmokeCompletionService:
             None,
         )
 
-    def _facts(self, job_id: str):
+    def _facts(self, job_id: str) -> sqlite3.Row:
         with self.database.connect() as connection:
-            row = connection.execute(
+            row: sqlite3.Row | None = connection.execute(
                 """SELECT smoke.workflow_binding_id,smoke.workflow_version_id,smoke.workflow_content_hash,smoke.smoke_contract_hash,
                           smoke.runtime_model_installation_id,smoke.capability_definition_id,
                           offering.id AS offering_id,installation.runtime_installation_version_id,capability.code AS capability_code
@@ -153,7 +154,7 @@ class ComfyCapabilitySmokeCompletionService:
             raise DomainRuleError("MP_COMFY_SMOKE_JOB_LINK_NOT_FOUND", "Comfy smoke Job 缺少可验证的 Offering 链接。")
         return row
 
-    def _record(self, facts, status: str, result: Mapping[str, Any], evidence: Mapping[str, Any], artifact_ref: str | None) -> None:
+    def _record(self, facts: sqlite3.Row, status: str, result: Mapping[str, Any], evidence: Mapping[str, Any], artifact_ref: str | None) -> None:
         now = _utc_now()
         with self.database.transaction() as connection:
             run_id = str(uuid.uuid4())

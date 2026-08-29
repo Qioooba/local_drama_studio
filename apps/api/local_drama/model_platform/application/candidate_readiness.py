@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from local_drama.infrastructure.database.sqlite import Database
@@ -65,7 +67,7 @@ class CandidateReadinessService:
             ).fetchall()
             return tuple(self._read_installation(connection, row) for row in installations)
 
-    def _read_installation(self, connection, installation) -> RegisteredCandidateReadiness:
+    def _read_installation(self, connection: sqlite3.Connection, installation: sqlite3.Row) -> RegisteredCandidateReadiness:
         offerings = connection.execute(
             """SELECT capability.code,capability.title,offering.validation_status,
                       COUNT(DISTINCT profile.id) AS profile_version_count,
@@ -139,6 +141,8 @@ def _capability_readiness(
     workflow_schema_validated_count: int,
     installation_ready: bool,
 ) -> CandidateCapabilityReadiness:
+    status: str
+    blockers: tuple[str, ...]
     if published_profile_count and installation_ready:
         status, blockers = "ASSIGNABLE", ()
     elif published_profile_count:
@@ -177,7 +181,7 @@ def _candidate_status(capabilities: tuple[CandidateCapabilityReadiness, ...], bl
     return "VALIDATION_REQUIRED"
 
 
-def _dedupe(values) -> tuple[str, ...]:
+def _dedupe(values: Iterable[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(values))
 
 

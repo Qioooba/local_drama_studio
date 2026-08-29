@@ -39,7 +39,8 @@ def _text(value: Any) -> str:
 
 
 def _model_identity(profile: dict[str, Any]) -> tuple[str, str]:
-    bundle = profile.get("model_bundle") if isinstance(profile.get("model_bundle"), dict) else {}
+    raw_bundle: Any = profile.get("model_bundle")
+    bundle: dict[str, Any] = raw_bundle if isinstance(raw_bundle, dict) else {}
     model = _text(bundle.get("model_family") or bundle.get("model") or bundle.get("model_ref"))
     provider = _text(bundle.get("provider") or "LOCAL").upper()
     return model or _text(profile.get("title") or profile.get("code") or "未命名模型"), provider
@@ -130,11 +131,13 @@ class CapabilityOptionService:
 
     def _option(self, profile: dict[str, Any], capability: str) -> dict[str, Any]:
         detail = self.profiles.get_version(_text(profile.get("version_id")))
-        execution = detail.get("execution") if isinstance(detail.get("execution"), dict) else {}
-        runtime = execution.get("runtime") if isinstance(execution.get("runtime"), dict) else None
-        workflow = execution.get("workflow") if isinstance(execution.get("workflow"), dict) else None
-        connection = execution.get("provider_connection") if isinstance(execution.get("provider_connection"), dict) else None
-        components = execution.get("components") if isinstance(execution.get("components"), list) else []
+        raw_execution: Any = detail.get("execution")
+        execution: dict[str, Any] = raw_execution if isinstance(raw_execution, dict) else {}
+        runtime: dict[str, Any] | None = execution.get("runtime") if isinstance(execution.get("runtime"), dict) else None
+        workflow: dict[str, Any] | None = execution.get("workflow") if isinstance(execution.get("workflow"), dict) else None
+        connection: dict[str, Any] | None = execution.get("provider_connection") if isinstance(execution.get("provider_connection"), dict) else None
+        raw_components: Any = execution.get("components")
+        components: list[Any] = raw_components if isinstance(raw_components, list) else []
         model_name, provider = _model_identity(detail)
         status = _text(detail.get("status")).upper()
         blockers: list[dict[str, str]] = []

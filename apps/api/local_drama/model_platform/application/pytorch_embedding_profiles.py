@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Callable
+from typing import Callable, cast
 
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
@@ -102,9 +103,9 @@ class PyTorchEmbeddingProfileService:
         )
         return PyTorchEmbeddingProfileSmokeResult(validation.validation_run_id, profile_version_id, validation.status)
 
-    def _candidate(self, runtime_model_installation_id: str, capability_code: str):
+    def _candidate(self, runtime_model_installation_id: str, capability_code: str) -> sqlite3.Row:
         with self.database.connect() as connection:
-            row = connection.execute(
+            row: sqlite3.Row | None = connection.execute(
                 """SELECT installation.id AS runtime_model_installation_id,installation.native_locator,
                           runtime.kind AS runtime_kind,runtime_version.id AS runtime_version_id,runtime_version.status AS runtime_status,
                           offering.validation_status,capability.id AS capability_id,capability.code AS capability_code
@@ -127,7 +128,7 @@ class PyTorchEmbeddingProfileService:
             raise DomainRuleError("MP_PROFILE_OFFERING_NOT_READY", "Qwen3 Embedding Offering 尚未完成真实 smoke 或 Runtime 未激活。")
         return row
 
-    def _profile(self, profile_version_id: str):
+    def _profile(self, profile_version_id: str) -> dict[str, object]:
         with self.database.connect() as connection:
             row = connection.execute(
                 """SELECT profile.id,profile.payload_json,profile.payload_hash,capability.code AS capability_code,
@@ -143,7 +144,7 @@ class PyTorchEmbeddingProfileService:
             installation = connection.execute(
                 """SELECT native_locator FROM mp_runtime_model_installations
                    WHERE id=? AND runtime_installation_version_id=? AND install_state='READY'""",
-                (payload["runtime_model_installation_ids"][0], row["runtime_version_id"]),
+                (cast(list[str], payload["runtime_model_installation_ids"])[0], row["runtime_version_id"]),
             ).fetchone() if row is not None and payload is not None else None
         if (
             row is None
@@ -158,7 +159,7 @@ class PyTorchEmbeddingProfileService:
             raise DomainRuleError("MP_PROFILE_SMOKE_IMPLEMENTATION_UNAVAILABLE", "该 Profile 没有已安装的 Qwen3 Embedding smoke 实现。")
         return dict(row)
 
-    def _source_smoke(self, profile) -> str:
+    def _source_smoke(self, profile: dict[str, object]) -> str:
         payload = _payload(profile["payload_json"])
         with self.database.connect() as connection:
             row = connection.execute(
@@ -170,7 +171,7 @@ class PyTorchEmbeddingProfileService:
                      AND run.status='SMOKE_PASSED' AND capability.code=? AND installation.id=?
                      AND EXISTS (SELECT 1 FROM mp_validation_evidence evidence WHERE evidence.validation_run_id=run.id)
                    ORDER BY run.finished_at DESC,run.created_at DESC,run.id DESC LIMIT 1""",
-                (_CAPABILITY, payload["runtime_model_installation_ids"][0]),
+                (_CAPABILITY, cast(list[str], payload["runtime_model_installation_ids"])[0]),
             ).fetchone()
         if row is None:
             raise DomainRuleError("MP_PROFILE_VALIDATION_SOURCE_INVALID", "Profile 绑定的 Embedding Offering 没有可用的真实 smoke 证据。")
@@ -203,13 +204,13 @@ def _payload(value: object) -> dict[str, object]:
     identifiers = payload.get("runtime_model_installation_ids") if isinstance(payload, dict) else None
     if not isinstance(identifiers, list) or len(identifiers) != 1 or not isinstance(identifiers[0], str) or not identifiers[0].strip():
         raise DomainRuleError("MP_PROFILE_PAYLOAD_INVALID", "Embedding Profile 必须且只能绑定一个模型安装。")
-    return payload
+    return cast(dict[str, object], payload)
 
 
 def _redacted_receipt(receipt: dict[str, object]) -> dict[str, object]:
     semantic, unrelated = receipt.get("semantic_score"), receipt.get("unrelated_score")
     ordering = isinstance(semantic, (int, float)) and isinstance(unrelated, (int, float)) and float(semantic) > float(unrelated)
-    passed = receipt.get("task") == "embedding" and receipt.get("status") == "PASS" and receipt.get("network_used") is False and receipt.get("dimension") == 4096 and isinstance(receipt.get("count"), int) and int(receipt["count"]) >= 3 and ordering
+    passed = receipt.get("task") == "embedding" and receipt.get("status") == "PASS" and receipt.get("network_used") is False and receipt.get("dimension") == 4096 and isinstance(receipt.get("count"), int) and int(cast(int, receipt["count"])) >= 3 and ordering
     return {"adapter": "pytorch.embedding.qwen3", "passed": passed, "dimension": receipt.get("dimension") if isinstance(receipt.get("dimension"), int) else None, "count": receipt.get("count") if isinstance(receipt.get("count"), int) else None, "semantic_ordering": ordering, "network_used": receipt.get("network_used") is False}
 
 

@@ -37,7 +37,8 @@ class AdaptationAnalysisExecutionService:
         self.llm = llm
 
     def execute_node(self, job: dict[str, Any], *, on_progress: ProgressCallback) -> dict[str, Any]:
-        snapshot = job.get("input_snapshot") if isinstance(job.get("input_snapshot"), dict) else {}
+        raw_snapshot: Any = job.get("input_snapshot")
+        snapshot: dict[str, Any] = raw_snapshot if isinstance(raw_snapshot, dict) else {}
         self._validate_snapshot(job, snapshot)
         on_progress({"phase": "VERIFYING_INPUT", "percent": 10})
         context = self._load_context(job, snapshot)
@@ -158,7 +159,8 @@ class AdaptationAnalysisExecutionService:
             end = int(snapshot.get("context_source_end") or 0)
             if end <= start:
                 raise DomainRuleError("ADAPTATION_NODE_RANGE_INVALID", "原稿分块缺少有效上下文范围")
-            return context["source_text"][start:end]
+            source_text: str = context["source_text"]
+            return source_text[start:end]
         upstream = [item for item in context["upstream"] if item["output"].get("planning_state") == "SUCCEEDED"]
         if not upstream:
             raise DomainRuleError("ADAPTATION_UPSTREAM_NOT_READY", "上游分析节点尚未完成")

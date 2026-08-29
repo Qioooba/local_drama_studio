@@ -10,6 +10,7 @@ readiness and handler before it can select V2.
 from __future__ import annotations
 
 import json
+import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -179,7 +180,7 @@ def _validate_identity(business_surface: str, capability_code: str, scope_type: 
     return surface, definition.code, scope
 
 
-def _audit(connection, actor: str, rollout_id: str, action: str, summary: str, metadata: dict[str, str]) -> None:
+def _audit(connection: sqlite3.Connection, actor: str, rollout_id: str, action: str, summary: str, metadata: dict[str, str]) -> None:
     connection.execute(
         """INSERT INTO audit_events
         (actor,role_context,action,subject_type,subject_id,before_revision,after_revision,summary,metadata_redacted_json)

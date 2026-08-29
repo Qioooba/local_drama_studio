@@ -13,7 +13,7 @@ import hashlib
 import json
 import shutil
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
@@ -54,7 +54,7 @@ def _artifact_id(value: Any) -> str | None:
         return None
     if set(value) != {"artifact_id"} or not isinstance(value.get("artifact_id"), str) or not value["artifact_id"].strip():
         raise DomainRuleError("MP_COMFY_ARTIFACT_REFERENCE_INVALID", "V2 Comfy 制品引用必须且只能包含 artifact_id。")
-    return value["artifact_id"].strip()
+    return cast(str, value["artifact_id"]).strip()
 
 
 def _verified_image_artifact(database: Database, artifact_id: str) -> Mapping[str, str]:

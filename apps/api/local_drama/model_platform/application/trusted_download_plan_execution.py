@@ -72,7 +72,7 @@ class HostTrustedDownloadPlanExecutor:
 
     def _plan(self, install_plan_id: str) -> sqlite3.Row:
         with self.database.connect() as connection:
-            row = connection.execute(
+            row: sqlite3.Row | None = connection.execute(
                 "SELECT id,source_json,expected_json,status FROM mp_install_plans WHERE id=?", (install_plan_id,)
             ).fetchone()
         if row is None:
@@ -118,7 +118,7 @@ class HostTrustedDownloadPlanExecutor:
             )
 
 
-def _download_contract(source_value: object, expected_value: object) -> tuple[str, tuple[Mapping[str, object], ...]]:
+def _download_contract(source_value: object, expected_value: object) -> tuple[str, tuple[Mapping[str, str | int], ...]]:
     source = _json_object(source_value)
     expected = _json_object(expected_value)
     if source.get("kind") != "TRUSTED_HTTPS":
@@ -136,7 +136,7 @@ def _download_contract(source_value: object, expected_value: object) -> tuple[st
         if path in source_by_path:
             raise DomainRuleError("MP_TRUSTED_DOWNLOAD_PLAN_INVALID", "可信下载来源组件重复。")
         source_by_path[path] = item["source_url"]
-    artifacts: list[Mapping[str, object]] = []
+    artifacts: list[dict[str, str | int]] = []
     for item in raw_expected:
         if not isinstance(item, dict):
             raise DomainRuleError("MP_TRUSTED_DOWNLOAD_PLAN_INVALID", "可信下载预期组件无效。")

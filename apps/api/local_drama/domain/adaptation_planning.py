@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Final
+from collections.abc import Sequence
+from typing import Final, Protocol
 
 ADAPTATION_MODES: Final[frozenset[str]] = frozenset(
     {"COMPLETE_WORK", "SERIAL_INCREMENTAL", "PRESEGMENTED_SCRIPT", "SINGLE_EPISODE"}
@@ -17,6 +18,22 @@ _CHUNK_MAX_BODY_CHARACTERS: Final[int] = 6_000
 _CHUNK_CONTEXT_PARAGRAPHS: Final[int] = 2
 
 
+class SourceUnitLike(Protocol):
+    """Structural view of one numbered source unit, e.g. SourceParagraph."""
+
+    @property
+    def number(self) -> int: ...
+
+    @property
+    def text(self) -> str: ...
+
+    @property
+    def start(self) -> int: ...
+
+    @property
+    def end(self) -> int: ...
+
+
 def _fingerprint(value: object) -> str:
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
@@ -24,7 +41,7 @@ def _fingerprint(value: object) -> str:
 
 def analysis_manifest_nodes(
     *,
-    records: list[object],
+    records: Sequence[SourceUnitLike],
     source_paragraph_start: int,
     source_paragraph_end: int,
     source_text_sha256: str,
@@ -43,8 +60,8 @@ def analysis_manifest_nodes(
     if not selected:
         return []
 
-    chunks: list[list[object]] = []
-    current: list[object] = []
+    chunks: list[list[SourceUnitLike]] = []
+    current: list[SourceUnitLike] = []
     current_size = 0
     for record in selected:
         text_size = len(str(record.text))

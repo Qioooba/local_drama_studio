@@ -134,7 +134,7 @@ class ExecutionSnapshotService:
         return ExecutionSnapshot(snapshot_id, content_hash)
 
 
-def _json_value(value: object) -> object:
+def _json_value(value: object) -> dict[str, Any]:
     try:
         parsed = json.loads(str(value))
     except (TypeError, ValueError) as error:

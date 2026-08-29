@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Callable, Protocol
+from typing import Any, Callable, Protocol
 
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
@@ -139,9 +140,9 @@ class OllamaTextProfileService:
     def publish(self, profile_version_id: str, validation_run_id: str, reason: str) -> None:
         ProfilePublicationService(self.database).publish(profile_version_id, validation_run_id=validation_run_id, reason=reason)
 
-    def _candidate(self, runtime_model_installation_id: str, capability_code: str):
+    def _candidate(self, runtime_model_installation_id: str, capability_code: str) -> sqlite3.Row:
         with self.database.connect() as connection:
-            row = connection.execute(
+            row: sqlite3.Row | None = connection.execute(
                 """SELECT installation.id AS runtime_model_installation_id,release.code AS release_code,family.title AS model_title,
                           runtime_version.id AS runtime_version_id,runtime.kind AS runtime_kind,runtime_version.status AS runtime_status,
                           offering.validation_status,capability.id AS capability_id,capability.code AS capability_code,capability.title AS capability_title
@@ -204,9 +205,9 @@ class OllamaTextProfileService:
             "resource_policy_version_id": resource_id,
         }
 
-    def _profile(self, profile_version_id: str):
+    def _profile(self, profile_version_id: str) -> dict[str, object]:
         with self.database.connect() as connection:
-            row = connection.execute(
+            row: sqlite3.Row | None = connection.execute(
                 """SELECT profile.id,profile.payload_json,profile.payload_hash,capability.code AS capability_code,
                           runtime_version.id AS runtime_version_id,runtime_version.configuration_json,
                           runtime_version.status AS runtime_status,runtime.kind AS runtime_kind
@@ -232,7 +233,7 @@ class OllamaTextProfileService:
             raise DomainRuleError("MP_PROFILE_RUNTIME_NOT_ACTIVE", "Profile 所属 RuntimeVersion 未激活，不能运行 Profile smoke。")
         return {**dict(row), "native_locator": str(installation["native_locator"])}
 
-    def _source_smoke(self, profile) -> str:
+    def _source_smoke(self, profile: dict[str, object]) -> str:
         payload = _profile_payload(str(profile["payload_json"]))
         installation_ids = payload["runtime_model_installation_ids"]
         with self.database.connect() as connection:
@@ -265,7 +266,7 @@ class OllamaTextProfileService:
         return LocalLLMClient(base_url, model, provider="OLLAMA_LOOPBACK", allow_private_network=self.settings.network_mode.value == "LAN_SERVICE")
 
 
-def _profile_payload(value: str) -> dict[str, object]:
+def _profile_payload(value: str) -> dict[str, Any]:
     try:
         payload = json.loads(value)
     except (TypeError, ValueError) as error:
@@ -273,6 +274,7 @@ def _profile_payload(value: str) -> dict[str, object]:
     ids = payload.get("runtime_model_installation_ids") if isinstance(payload, dict) else None
     if not isinstance(ids, list) or len(ids) != 1 or not isinstance(ids[0], str) or not ids[0].strip():
         raise DomainRuleError("MP_PROFILE_PAYLOAD_INVALID", "Ollama 文本 Profile 必须且只能绑定一个模型安装。")
+    assert isinstance(payload, dict)
     return payload
 
 

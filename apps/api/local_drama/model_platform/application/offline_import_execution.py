@@ -16,7 +16,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, cast
 
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
@@ -75,7 +75,7 @@ class HostOfflineImportExecutor:
             for artifact in expected:
                 source = controlled_path(
                     bundle_root,
-                    artifact["relative_path"],
+                    cast(str, artifact["relative_path"]),
                     must_exist=True,
                     require_file=True,
                     code="MP_OFFLINE_BUNDLE_PATH_INVALID",
@@ -110,7 +110,7 @@ class HostOfflineImportExecutor:
             ).fetchone()
         if row is None:
             raise DomainRuleError("MP_OFFLINE_IMPORT_PLAN_NOT_FOUND", "离线导入计划不存在。")
-        return row
+        return cast(sqlite3.Row, row)
 
     def _configured_target_library(self, library_id: str, root_text: str) -> Path:
         try:

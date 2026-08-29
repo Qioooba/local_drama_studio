@@ -21,7 +21,8 @@ def _migrate_v1_to_v2(raw: dict[str, Any]) -> dict[str, Any]:
     dedicated data volume without changing Profile or model identities.
     """
     result = dict(raw)
-    runtime = dict(result.get("runtime") if isinstance(result.get("runtime"), dict) else {})
+    raw_runtime: Any = result.get("runtime")
+    runtime = dict(raw_runtime if isinstance(raw_runtime, dict) else {})
     runtime.setdefault("model_root", "${INSTANCE_ROOT}/models")
     roots = runtime.get("model_library_roots")
     if not isinstance(roots, list) or not roots:
@@ -39,7 +40,8 @@ def _migrate_v1_to_v2(raw: dict[str, Any]) -> dict[str, Any]:
 def _migrate_v2_to_v3(raw: dict[str, Any]) -> dict[str, Any]:
     """Make trusted online model sources an explicit machine-owned policy."""
     result = dict(raw)
-    runtime = dict(result.get("runtime") if isinstance(result.get("runtime"), dict) else {})
+    raw_runtime: Any = result.get("runtime")
+    runtime = dict(raw_runtime if isinstance(raw_runtime, dict) else {})
     runtime.setdefault("model_download_source_hosts", [])
     result["runtime"] = runtime
     result["schema_version"] = 3

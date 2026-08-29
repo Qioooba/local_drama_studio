@@ -920,8 +920,10 @@ class LocalLLMService:
             name = str(raw.get("name") or raw.get("model") or "").strip()
             if not name:
                 continue
-            details = raw.get("details") if isinstance(raw.get("details"), dict) else {}
-            families = details.get("families") if isinstance(details.get("families"), list) else []
+            raw_details: Any = raw.get("details")
+            details: dict[str, Any] = raw_details if isinstance(raw_details, dict) else {}
+            raw_families: Any = details.get("families")
+            families: list[Any] = raw_families if isinstance(raw_families, list) else []
             items.append(
                 {
                     "name": name,

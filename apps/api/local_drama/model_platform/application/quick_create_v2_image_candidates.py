@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass
-from typing import Callable, Sequence
+from typing import Any, Callable, Sequence
 
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.model_platform.application.capability_resolution import CapabilityScopeContext
 from local_drama.model_platform.application.execution_planning import ExecutionPlanningService, ExecutionPreviewRequest
+from local_drama.model_platform.application.execution_snapshots import ExecutionSnapshot
 from local_drama.model_platform.application.execution_submission import ExecutionSubmissionService
 from local_drama.model_platform.application.production_execution_registry import production_execution_handlers
 from local_drama.model_platform.application.quick_create_readiness import candidate_image_profile_contract_blocker
@@ -122,10 +123,14 @@ class QuickCreateV2ImageCandidateService:
         snapshots: list[str] = []
         for item, _preview in previews:
             request = _request(prompt, item.seed, expected_resolution_hash=item.resolution_hash)
-            submitted = self.submissions.submit(
-                request,
-                f"quick-create-v2:run:{run.id}:image:{item.ordinal}",
-                after_linked_in_transaction=lambda connection, job, snapshot, item=item: self.runs.attach_step_in_transaction(
+
+            def after_linked_in_transaction(
+                connection: Any,
+                job: dict[str, Any],
+                snapshot: ExecutionSnapshot,
+                item: QuickCreateV2ImageCandidatePreview = item,
+            ) -> None:
+                self.runs.attach_step_in_transaction(
                     connection,
                     run.id,
                     step_no=item.ordinal,
@@ -135,7 +140,12 @@ class QuickCreateV2ImageCandidateService:
                     job_id=str(job["id"]),
                     selection_rank=item.ordinal,
                     payload={"seed": item.seed, "resolution_hash": item.resolution_hash},
-                ),
+                )
+
+            submitted = self.submissions.submit(
+                request,
+                f"quick-create-v2:run:{run.id}:image:{item.ordinal}",
+                after_linked_in_transaction=after_linked_in_transaction,
             )
             jobs.append(str(submitted.job["id"]))
             snapshots.append(submitted.execution_snapshot_id)

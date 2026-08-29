@@ -1271,8 +1271,8 @@ class SqliteAdaptationPlanRepository:
                 raise DomainRuleError("ADAPTATION_LLM_OUTPUT_INVALID", "分集引用了不属于当前运行的原稿分块")
             duration = item.get("estimated_duration_ms")
             estimated_duration_ms = int(duration) if isinstance(duration, int) and 10_000 <= duration <= 3_600_000 else target_duration_ms
-            arc_ordinal = item.get("arc_ordinal") if isinstance(item.get("arc_ordinal"), int) else None
-            season_ordinal = item.get("season_ordinal") if isinstance(item.get("season_ordinal"), int) else None
+            arc_ordinal: Any = item.get("arc_ordinal") if isinstance(item.get("arc_ordinal"), int) else None
+            season_ordinal: Any = item.get("season_ordinal") if isinstance(item.get("season_ordinal"), int) else None
             episode_id = _stable_id(f"adaptation-episode-row:{revision_id}:{ordinal}")
             connection.execute(
                 """INSERT OR IGNORE INTO adaptation_episode_items

@@ -6,22 +6,22 @@ import math
 import struct
 import uuid
 from dataclasses import dataclass
-from typing import Callable, Mapping, Sequence
+from typing import Any, Callable, Mapping, Protocol, Sequence
 
 from local_drama.application.gpu_runtime import GpuRuntimeCoordinator
 from local_drama.application.job_resources import GpuRuntime
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
-from local_drama.infrastructure.local_ai_subprocess import LocalAiSubprocessRuntime
+from local_drama.infrastructure.local_ai_subprocess import LocalAiExecution, LocalAiSubprocessRuntime
 from local_drama.model_platform.application.capability_resolution import CapabilityScopeContext
 from local_drama.model_platform.application.execution_planning import ExecutionPlanningService, ExecutionPreviewRequest
 
 _DIMENSION = 4096
 
 
-class QueryEmbeddingRuntime:
-    def embed(self, texts: Sequence[str], *, instruction: str | None = None): ...
+class QueryEmbeddingRuntime(Protocol):
+    def embed(self, texts: Sequence[str], *, instruction: str | None = None) -> LocalAiExecution: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,7 +98,7 @@ class ProjectKnowledgeRetrievalService:
         )
         return preview.execution_profile_version_id, tuple(ranked[:bounded_limit])
 
-    def _vectors(self, project_id: str, profile_version_id: str) -> list[Mapping[str, object]]:
+    def _vectors(self, project_id: str, profile_version_id: str) -> list[Mapping[str, Any]]:
         with self.database.connect() as connection:
             rows = connection.execute(
                 """SELECT run.id AS index_run_id,run.source_document_version_id,vector.ordinal,vector.source_start,
@@ -113,7 +113,7 @@ class ProjectKnowledgeRetrievalService:
         # owns the retrieval projection. A failed later attempt never erases a
         # previous verified index.
         selected_run_by_source: dict[str, str] = {}
-        selected: list[Mapping[str, object]] = []
+        selected: list[Mapping[str, Any]] = []
         for row in rows:
             source = str(row["source_document_version_id"])
             run_id = str(row["index_run_id"])
@@ -148,7 +148,7 @@ def _query_vector(receipt: object) -> list[float]:
     return vector
 
 
-def _unpack_vector(value: object) -> list[float]:
+def _unpack_vector(value: bytes) -> list[float]:
     raw = bytes(value)
     if len(raw) != _DIMENSION * 4:
         raise DomainRuleError("MP_PROJECT_KNOWLEDGE_VECTOR_INVALID", "已验证向量的 float32 长度不正确。")

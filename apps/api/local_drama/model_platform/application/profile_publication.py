@@ -234,7 +234,7 @@ def _assert_profile_runtime_bindings(connection: sqlite3.Connection, draft: Prof
         )
 
 
-def _assert_source_capability_smoke(connection: sqlite3.Connection, profile, result: Mapping[str, Any]) -> None:
+def _assert_source_capability_smoke(connection: sqlite3.Connection, profile: sqlite3.Row, result: Mapping[str, Any]) -> None:
     source_id = result.get("source_capability_validation_run_id")
     if not isinstance(source_id, str) or not source_id.strip():
         raise DomainRuleError(

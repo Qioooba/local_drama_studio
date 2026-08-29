@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Mapping
 
 from local_drama.domain.errors import DomainRuleError
 
 
-def validate_assignment_scope(connection, *, scope_type: str, scope_id: str) -> None:
+def validate_assignment_scope(connection: sqlite3.Connection, *, scope_type: str, scope_id: str) -> None:
     """Require a non-system assignment target to exist before it is persisted.
 
     Capability assignments intentionally use a polymorphic scope instead of a
@@ -19,7 +20,7 @@ def validate_assignment_scope(connection, *, scope_type: str, scope_id: str) -> 
     _project_id_for_scope(connection, scope_type=scope_type, scope_id=scope_id)
 
 
-def validate_scope_context(connection, scoped_ids: Mapping[str, str]) -> None:
+def validate_scope_context(connection: sqlite3.Connection, scoped_ids: Mapping[str, str]) -> None:
     """Ensure all supplied resolution IDs belong to the same project."""
     owners = {
         scope_type: _project_id_for_scope(connection, scope_type=scope_type, scope_id=scope_id)
@@ -34,7 +35,7 @@ def validate_scope_context(connection, scoped_ids: Mapping[str, str]) -> None:
         )
 
 
-def _project_id_for_scope(connection, *, scope_type: str, scope_id: str) -> str:
+def _project_id_for_scope(connection: sqlite3.Connection, *, scope_type: str, scope_id: str) -> str:
     queries = {
         "PROJECT": ("SELECT id AS project_id FROM projects WHERE id=?", (scope_id,)),
         "EPISODE": (

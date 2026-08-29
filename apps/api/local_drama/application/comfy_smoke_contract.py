@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -48,7 +49,7 @@ def parse_comfy_smoke_contract(contract: Mapping[str, Any], node_bindings: Mappi
         role = str(raw_role).strip()
         if not role or role not in node_bindings:
             raise DomainRuleError("WORKFLOW_SMOKE_INPUT_UNBOUND", "smoke_contract 只能写入已有的语义 node binding。", {"role": role})
-        if not isinstance(value, (str, int, float, bool)) or isinstance(value, float) and not value.isfinite():
+        if not isinstance(value, (str, int, float, bool)) or isinstance(value, float) and not math.isfinite(value):
             raise DomainRuleError("WORKFLOW_SMOKE_INPUT_INVALID", "smoke 输入只允许有限的字符串、数字或布尔值。", {"role": role})
         if isinstance(value, str):
             cleaned = value.strip()

@@ -199,7 +199,7 @@ class InstallationPlanService:
             ).fetchall()
         return [_to_public_plan(row) for row in rows]
 
-    def list_targets(self) -> list[InstallationTarget]:
+    def list_targets(self) -> Sequence[InstallationTarget]:
         """Expose only safe destination identities that remain service-managed."""
         configured = {str(root.resolve()) for root in self.settings.model_library_roots}
         with self.database.connect() as connection:
@@ -215,7 +215,7 @@ class InstallationPlanService:
 
     def _target_library(self, library_id: str) -> sqlite3.Row:
         with self.database.connect() as connection:
-            row = connection.execute(
+            row: sqlite3.Row | None = connection.execute(
                 "SELECT id,code,root_path_local,read_only FROM mp_model_libraries WHERE id=?", (library_id,)
             ).fetchone()
         if row is None:
@@ -272,9 +272,12 @@ def _to_public_plan(row: sqlite3.Row) -> InstallationPlan:
         for item in valid_artifacts
         if isinstance(item, dict) and isinstance(item.get("size_bytes"), int) and item["size_bytes"] > 0
     )
-    source_kind = source.get("kind") if isinstance(source.get("kind"), str) else "UNKNOWN"
-    release_code = expected.get("release_code") if isinstance(expected.get("release_code"), str) else "未声明发布版"
-    license_id = license_record.get("license_id") if isinstance(license_record.get("license_id"), str) else "未记录"
+    raw_kind = source.get("kind")
+    source_kind = raw_kind if isinstance(raw_kind, str) else "UNKNOWN"
+    raw_release_code = expected.get("release_code")
+    release_code = raw_release_code if isinstance(raw_release_code, str) else "未声明发布版"
+    raw_license_id = license_record.get("license_id")
+    license_id = raw_license_id if isinstance(raw_license_id, str) else "未记录"
     return InstallationPlan(
         id=str(row["id"]),
         target_library_id=str(row["target_library_id"]),

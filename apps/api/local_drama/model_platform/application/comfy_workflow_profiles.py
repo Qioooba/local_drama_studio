@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Mapping
 
-from local_drama.application.comfy_smoke_contract import parse_comfy_smoke_contract
+from local_drama.application.comfy_smoke_contract import ComfySmokeContract, parse_comfy_smoke_contract
 from local_drama.application.workflows import WorkflowService
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
@@ -123,7 +123,7 @@ class ComfyWorkflowProfileService:
         )
         return ComfyWorkflowProfileSmokeResult(validation.validation_run_id, profile_version_id, validation.status)
 
-    def _binding(self, runtime_model_installation_id: str, capability_code: str, workflow_binding_id: str | None):
+    def _binding(self, runtime_model_installation_id: str, capability_code: str, workflow_binding_id: str | None) -> dict[str, Any]:
         if not workflow_binding_id or not workflow_binding_id.strip():
             raise DomainRuleError("MP_COMFY_PROFILE_WORKFLOW_BINDING_REQUIRED", "Comfy Profile 必须明确选择已真实冒烟通过的工作流绑定。")
         with self.database.connect() as connection:
@@ -154,7 +154,7 @@ class ComfyWorkflowProfileService:
             raise DomainRuleError("MP_COMFY_PROFILE_OFFERING_NOT_READY", "Comfy Offering、运行时和指定工作流绑定必须全部就绪。")
         return dict(row)
 
-    def _profile(self, profile_version_id: str):
+    def _profile(self, profile_version_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
         with self.database.connect() as connection:
             profile = connection.execute(
                 """SELECT profile.id,profile.payload_json,profile.payload_hash,profile.workflow_version_id,
@@ -191,7 +191,7 @@ class ComfyWorkflowProfileService:
         result_binding["smoke_contract_hash"] = execution["smoke_contract_hash"]
         return dict(profile), result_binding
 
-    def _workflow_smoke(self, binding: Mapping[str, Any], workflow: Mapping[str, Any]):
+    def _workflow_smoke(self, binding: Mapping[str, Any], workflow: Mapping[str, Any]) -> ComfySmokeContract:
         if workflow.get("status") != "PUBLISHED" or str(workflow.get("content_hash") or "") != str(binding["workflow_content_hash"]):
             raise DomainRuleError("MP_COMFY_PROFILE_WORKFLOW_STALE", "Comfy Profile 绑定的工作流版本不再可用。")
         smoke = parse_comfy_smoke_contract(workflow.get("contract", {}), workflow.get("node_bindings", {}))
@@ -231,7 +231,7 @@ class ComfyWorkflowProfileService:
         binding_id = str(uuid.uuid5(uuid.NAMESPACE_URL, "localdramastudio:comfy-workflow:binding:v1"))
         resource_id = str(uuid.uuid5(uuid.NAMESPACE_URL, "localdramastudio:comfy-workflow:resource:v1"))
         schema = {"type": "object", "properties": {}, "additionalProperties": False}
-        ui_schema = {"properties": {}}
+        ui_schema: dict[str, object] = {"properties": {}}
         binding = {"adapter_code": _ADAPTER_CODE, "template": "v1", "transport": "LOOPBACK_HTTP"}
         resource = {"network_policy": {"mode": "LOCAL_ONLY"}, "gpu_runtime": "COMFY", "exclusive_gpu": True}
         now = _utc_now()

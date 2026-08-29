@@ -78,7 +78,8 @@ class ParameterContract:
     def _field_ui(self, name: str) -> Mapping[str, Any]:
         properties = self.ui_schema.get("properties")
         if isinstance(properties, Mapping) and isinstance(properties.get(name), Mapping):
-            return properties[name]
+            field_ui: Mapping[str, Any] = properties[name]
+            return field_ui
         return {}
 
 

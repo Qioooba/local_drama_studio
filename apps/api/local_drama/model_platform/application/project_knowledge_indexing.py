@@ -5,12 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import sqlite3
 import struct
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping, cast
 
 from local_drama.application.source_text import source_paragraphs
 from local_drama.config import Settings
@@ -19,6 +20,7 @@ from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.path_policy import controlled_path
 from local_drama.model_platform.application.capability_resolution import CapabilityScopeContext
 from local_drama.model_platform.application.execution_planning import ExecutionPlanningService, ExecutionPreviewRequest
+from local_drama.model_platform.application.execution_snapshots import ExecutionSnapshot
 from local_drama.model_platform.application.execution_submission import ExecutionSubmissionService
 from local_drama.model_platform.application.production_execution_registry import production_execution_handlers
 
@@ -95,7 +97,7 @@ class ProjectKnowledgeIndexPreparationService:
                 )
         return ProjectKnowledgeIndexPreparation(run_id, first.execution_profile_version_id, len(chunks), False, "PREPARED", attempt_no)
 
-    def _source(self, project_id: str, source_document_version_id: str):
+    def _source(self, project_id: str, source_document_version_id: str) -> sqlite3.Row:
         with self.database.connect() as connection:
             row = connection.execute(
                 """SELECT version.extracted_text_rel,version.text_sha256 FROM source_document_versions version
@@ -105,7 +107,7 @@ class ProjectKnowledgeIndexPreparationService:
             ).fetchone()
         if row is None or not str(row["extracted_text_rel"] or ""):
             raise DomainRuleError("MP_PROJECT_KNOWLEDGE_SOURCE_NOT_FOUND", "源文本版本不存在、未解析或不属于当前项目。")
-        return row
+        return cast(sqlite3.Row, row)
 
     def _read_source(self, project_id: str, relative: str) -> str:
         with self.database.connect() as connection:
@@ -167,8 +169,11 @@ class ProjectKnowledgeIndexQueueService:
                 submitted = self.submissions.submit(
                     request,
                     f"project-knowledge-index:{index_run_id}:{batch_id}",
-                    after_linked_in_transaction=lambda connection, job, snapshot, batch_id=batch_id: self._link_batch_in_transaction(
-                        connection, index_run_id, batch_id, str(job["id"]), snapshot.id
+                    after_linked_in_transaction=cast(
+                        "Callable[[Any, dict[str, Any], ExecutionSnapshot], None]",
+                        lambda connection, job, snapshot, batch_id=batch_id: self._link_batch_in_transaction(
+                            connection, index_run_id, batch_id, str(job["id"]), snapshot.id
+                        ),
                     ),
                 )
                 jobs.append(str(submitted.job["id"]))
@@ -282,8 +287,11 @@ class ProjectKnowledgeIndexCompletionService:
                        (id,index_run_id,batch_id,ordinal,source_start,source_end,text_sha256,vector_f32,created_at)
                        VALUES (?,?,?,?,?,?,?,?,?)""",
                     (
-                        str(uuid.uuid4()), run_id, batch_id, int(item["ordinal"]), int(item["source_start"]),
-                        int(item["source_end"]), str(item["text_sha256"]), _pack_vector(vector), now,
+                        str(uuid.uuid4()), run_id, batch_id,
+                        int(cast(int, item["ordinal"])),
+                        int(cast(int, item["source_start"])),
+                        int(cast(int, item["source_end"])),
+                        str(item["text_sha256"]), _pack_vector(vector), now,
                     ),
                 )
             connection.execute(

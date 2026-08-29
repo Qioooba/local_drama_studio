@@ -10,7 +10,7 @@ from typing import Callable, Protocol, Sequence
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.filesystem.atomic import write_atomic
-from local_drama.infrastructure.local_ai_subprocess import LocalAiSubprocessRuntime
+from local_drama.infrastructure.local_ai_subprocess import LocalAiExecution, LocalAiSubprocessRuntime
 from local_drama.model_platform.application.execution_job_links import WorkerExecutionSnapshot
 
 _HANDLER_CODE = "pytorch.embedding.qwen3"
@@ -19,7 +19,7 @@ _NATIVE_LOCATOR = "qwen3-embedding-8b"
 
 
 class EmbeddingRuntime(Protocol):
-    def embed(self, texts: Sequence[str], *, instruction: str | None = None): ...
+    def embed(self, texts: Sequence[str], *, instruction: str | None = None) -> LocalAiExecution: ...
 
 
 def make_pytorch_embedding_handler(

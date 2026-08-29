@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, cast
 
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
@@ -100,16 +100,19 @@ class QuickCreateV2ImageToVideoService:
         submitted = self.submissions.submit(
             request,
             f"quick-create-v2:run:{source.run_id}:video:{idempotency_key}",
-            after_linked_in_transaction=lambda connection, job, snapshot: self.runs.attach_step_in_transaction(
-                connection,
-                source.run_id,
-                step_no=self.runs.next_step_no_in_transaction(connection, source.run_id),
-                step_kind="VIDEO_I2V",
-                capability_code=_CAPABILITY,
-                execution_snapshot_id=snapshot.id,
-                job_id=str(job["id"]),
-                input_artifact_id=source.artifact_id,
-                payload={"selected_image_step_id": source.selected_step_id, "resolution_hash": expected_resolution_hash},
+            after_linked_in_transaction=cast(
+                Callable[..., None],
+                lambda connection, job, snapshot: self.runs.attach_step_in_transaction(
+                    connection,
+                    source.run_id,
+                    step_no=self.runs.next_step_no_in_transaction(connection, source.run_id),
+                    step_kind="VIDEO_I2V",
+                    capability_code=_CAPABILITY,
+                    execution_snapshot_id=snapshot.id,
+                    job_id=str(job["id"]),
+                    input_artifact_id=source.artifact_id,
+                    payload={"selected_image_step_id": source.selected_step_id, "resolution_hash": expected_resolution_hash},
+                ),
             ),
         )
         return QuickCreateV2ImageToVideoSubmission(

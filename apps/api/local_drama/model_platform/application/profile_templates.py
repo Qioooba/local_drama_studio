@@ -8,10 +8,22 @@ from dataclasses import dataclass
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
-from local_drama.model_platform.application.comfy_workflow_profiles import ComfyWorkflowProfileService
-from local_drama.model_platform.application.ollama_text_profiles import OllamaTextProfileService
+from local_drama.model_platform.application.comfy_workflow_profiles import (
+    ComfyWorkflowProfileService,
+    ComfyWorkflowProfileSmokeResult,
+    ProvisionedComfyWorkflowProfile,
+)
+from local_drama.model_platform.application.ollama_text_profiles import (
+    OllamaProfileSmokeResult,
+    OllamaTextProfileService,
+    ProvisionedOllamaProfile,
+)
 from local_drama.model_platform.application.profile_publication import ProfilePublicationService
-from local_drama.model_platform.application.pytorch_embedding_profiles import PyTorchEmbeddingProfileService
+from local_drama.model_platform.application.pytorch_embedding_profiles import (
+    ProvisionedPyTorchEmbeddingProfile,
+    PyTorchEmbeddingProfileService,
+    PyTorchEmbeddingProfileSmokeResult,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +49,11 @@ class ProfileTemplateService:
 
     def provision(self, runtime_model_installation_id: str, capability_code: str, *, workflow_binding_id: str | None = None) -> ProvisionedProfileTemplate:
         runtime_kind = self._offering_runtime_kind(runtime_model_installation_id, capability_code)
+        result: (
+            ProvisionedOllamaProfile
+            | ProvisionedPyTorchEmbeddingProfile
+            | ProvisionedComfyWorkflowProfile
+        )
         if runtime_kind == "OLLAMA":
             result = OllamaTextProfileService(self.database, self.settings).provision(runtime_model_installation_id, capability_code)
         elif runtime_kind == "PYTORCH_PROCESS":
@@ -49,6 +66,11 @@ class ProfileTemplateService:
 
     def smoke(self, profile_version_id: str) -> ProfileTemplateSmokeResult:
         template = self._profile_template(profile_version_id)
+        result: (
+            OllamaProfileSmokeResult
+            | PyTorchEmbeddingProfileSmokeResult
+            | ComfyWorkflowProfileSmokeResult
+        )
         if template == "ollama.text.profile.v1":
             result = OllamaTextProfileService(self.database, self.settings).smoke(profile_version_id)
         elif template == "pytorch.embedding.qwen3.profile.v1":

@@ -12,7 +12,11 @@ from pathlib import Path
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
-from local_drama.model_platform.application.runtime_adapters import ModelLockRuntimeAdapter, lock_path_prefix_for_library
+from local_drama.model_platform.application.runtime_adapters import (
+    ModelLockRuntimeAdapter,
+    NativeModelObservation,
+    lock_path_prefix_for_library,
+)
 from local_drama.model_platform.domain.models import RuntimeKind
 from local_drama.model_platform.domain.states import PresenceStatus
 
@@ -57,7 +61,7 @@ class InstallationIntegrityService:
         result = _safe_result(kind, observation)
         return self._record(candidate, status=status, result=result)
 
-    def _candidate(self, runtime_model_installation_id: str):
+    def _candidate(self, runtime_model_installation_id: str) -> dict[str, str]:
         with self.database.connect() as connection:
             row = connection.execute(
                 """SELECT installation.id AS runtime_model_installation_id,installation.native_locator,
@@ -128,7 +132,7 @@ class InstallationIntegrityService:
         return InstallationIntegrityResult(validation_run_id, candidate["runtime_model_installation_id"], status, install_state)
 
 
-def _safe_result(kind: RuntimeKind, observation) -> dict[str, object]:
+def _safe_result(kind: RuntimeKind, observation: NativeModelObservation | None) -> dict[str, object]:
     files = observation.metadata.get("files") if observation is not None else ()
     components = [
         {

@@ -19,7 +19,15 @@ _CAPABILITIES = frozenset({"LLM_STORY_PARSE", "LLM_EPISODE_PLAN", "LLM_STORYBOAR
 
 
 class OllamaStructuredClient(Protocol):
-    def chat_json(self, system: str, user: str, images=None, *, json_schema=None, inference_options=None) -> dict[str, object]: ...
+    def chat_json(
+        self,
+        system: str,
+        user: str,
+        images: list[str] | None = None,
+        *,
+        json_schema: dict[str, object] | None = None,
+        inference_options: dict[str, object] | None = None,
+    ) -> dict[str, object]: ...
 
 
 def make_ollama_text_handler(
@@ -85,6 +93,7 @@ def _prompts(snapshot: WorkerExecutionSnapshot) -> tuple[str, str]:
     user = snapshot.semantic_inputs.get("user_prompt")
     if not all(isinstance(value, str) and value.strip() and len(value) <= 8192 for value in (system, user)):
         raise DomainRuleError("MP_OLLAMA_TEXT_INPUT_INVALID", "Ollama V2 文本任务需要 1—8192 字符的 system_prompt 与 user_prompt。")
+    assert isinstance(system, str) and isinstance(user, str)
     return system.strip(), user.strip()
 
 

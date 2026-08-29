@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -226,7 +227,7 @@ class CapabilityAssignmentService:
         return CapabilityResolution(canonical_code, str(default["id"]), "LATEST_PUBLISHED_DEFAULT", tuple(chain), {}, None)
 
 
-def _is_published_profile(connection, profile_version_id: str, capability_id: str) -> bool:
+def _is_published_profile(connection: sqlite3.Connection, profile_version_id: str, capability_id: str) -> bool:
     return connection.execute(
         """SELECT 1 FROM mp_execution_profile_versions version
         JOIN mp_profile_publications publication ON publication.execution_profile_version_id=version.id
@@ -235,8 +236,10 @@ def _is_published_profile(connection, profile_version_id: str, capability_id: st
     ).fetchone() is not None
 
 
-def _published_profile_parameter_contract(connection, profile_version_id: str, capability_id: str):
-    return connection.execute(
+def _published_profile_parameter_contract(
+    connection: sqlite3.Connection, profile_version_id: str, capability_id: str
+) -> sqlite3.Row | None:
+    row: sqlite3.Row | None = connection.execute(
         """SELECT profile.id AS profile_id,profile.payload_json,parameter.schema_json,parameter.ui_schema_json
         FROM mp_execution_profile_versions profile
         JOIN mp_profile_publications publication ON publication.execution_profile_version_id=profile.id
@@ -244,9 +247,10 @@ def _published_profile_parameter_contract(connection, profile_version_id: str, c
         WHERE profile.id=? AND profile.capability_definition_id=? AND publication.status='PUBLISHED'""",
         (profile_version_id, capability_id),
     ).fetchone()
+    return row
 
 
-def _validate_assignment_overrides(*, profile, scope_type: str, overrides: Mapping[str, Any]) -> None:
+def _validate_assignment_overrides(*, profile: sqlite3.Row, scope_type: str, overrides: Mapping[str, Any]) -> None:
     if not overrides:
         return
     payload = _object_json(profile["payload_json"], "MP_ASSIGNMENT_PROFILE_PARAMETER_POLICY_INVALID")
@@ -274,7 +278,7 @@ def _validate_assignment_overrides(*, profile, scope_type: str, overrides: Mappi
 
 
 def _create_scope_override_set_version(
-    connection,
+    connection: sqlite3.Connection,
     *,
     scope_type: str,
     scope_id: str,
@@ -318,7 +322,7 @@ def _create_scope_override_set_version(
 
 
 def _load_scope_override_values(
-    connection,
+    connection: sqlite3.Connection,
     override_set_version_id: object,
     *,
     scope_type: str,
@@ -345,7 +349,7 @@ def _load_scope_override_values(
     return _object_json(row["values_json"], "MP_ASSIGNMENT_OVERRIDE_STORAGE_INVALID")
 
 
-def _audit_override_set(connection, actor: str, override_set_version_id: str, summary: str, metadata: Mapping[str, Any]) -> None:
+def _audit_override_set(connection: sqlite3.Connection, actor: str, override_set_version_id: str, summary: str, metadata: Mapping[str, Any]) -> None:
     connection.execute(
         """INSERT INTO audit_events
         (actor,role_context,action,subject_type,subject_id,before_revision,after_revision,summary,metadata_redacted_json)

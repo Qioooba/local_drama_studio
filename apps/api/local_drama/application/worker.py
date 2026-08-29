@@ -91,6 +91,9 @@ def _make_adaptation_analysis_handler(
     worker: LocalMediaWorker,
 ) -> Callable[[dict[str, Any], Path], tuple[str, str]]:
     def handler(job: dict[str, Any], output_root: Path) -> tuple[str, str]:
+        def on_progress(progress: dict[str, Any]) -> None:
+            worker._report_progress(progress)
+
         return run_adaptation_analysis_job(
             job,
             output_root,
@@ -101,7 +104,7 @@ def _make_adaptation_analysis_handler(
                 LocalLLMService(worker.database, worker.settings),
             ),
             atomic_writer=worker._atomic_file,
-            on_progress=worker._report_progress,
+            on_progress=on_progress,
         )
 
     return handler
@@ -251,13 +254,15 @@ class LocalMediaWorker:
         except DomainRuleError as error:
             completion.record_failure_if_project_knowledge_batch(snapshot, error.code)
             raise
+
+        def after_artifacts_registered(artifacts: tuple[dict[str, Any], ...]) -> None:
+            completion.record_if_project_knowledge_batch(snapshot, artifacts)
+            quick_create.record_artifacts_for_job(str(job["id"]), artifacts)
+
         return WorkerExecution(
             kind,
             relative_path,
-            after_artifacts_registered=lambda artifacts: (
-                completion.record_if_project_knowledge_batch(snapshot, artifacts),
-                quick_create.record_artifacts_for_job(str(job["id"]), artifacts),
-            ),
+            after_artifacts_registered=after_artifacts_registered,
         )
 
     def _run_comfy_capability_smoke(self, job: dict[str, Any], output_root: Path) -> WorkerExecution:

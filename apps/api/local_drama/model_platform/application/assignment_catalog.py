@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
@@ -35,7 +35,7 @@ class CapabilityAssignmentCatalogService:
                         **profile,
                         "system_override_fields": profile.pop("override_fields"),
                     }
-                    for profile in item["profiles"]
+                    for profile in cast(list[dict[str, object]], item["profiles"])
                 ],
             }
             for item in self.list_scope("SYSTEM", "")
@@ -92,7 +92,7 @@ class CapabilityAssignmentCatalogService:
             options = profile_options[capability_code]
             current_profile_id = str(row["execution_profile_version_id"]) if row["execution_profile_version_id"] else None
             selected = next((item for item in options if item["profile_version_id"] == current_profile_id), None)
-            allowed_names = {str(item["name"]) for item in selected.get("override_fields", [])} if selected else set()
+            allowed_names = {str(item["name"]) for item in cast(list[dict[str, object]], selected.get("override_fields", []))} if selected else set()
             persisted = _object(row["values_json"])
             unsafe_persisted = sorted(name for name in persisted if name not in allowed_names)
             result.append({
@@ -116,16 +116,16 @@ def _profile_option(row: Mapping[str, Any], scope_type: str) -> dict[str, object
     schema = _object(row["schema_json"])
     ui_schema = _object(row["ui_schema_json"])
     payload = _object(row["payload_json"])
-    properties = schema.get("properties") if isinstance(schema.get("properties"), Mapping) else {}
-    ui_properties = ui_schema.get("properties") if isinstance(ui_schema.get("properties"), Mapping) else {}
+    properties = cast(Mapping[str, object], schema.get("properties") if isinstance(schema.get("properties"), Mapping) else {})
+    ui_properties = cast(Mapping[str, object], ui_schema.get("properties") if isinstance(ui_schema.get("properties"), Mapping) else {})
     allowed = {str(value) for value in payload.get("allowed_override_fields", ()) if isinstance(value, str) and value}
     locked_values = payload.get("locked_values", payload.get("locks", {}))
     locked = set(locked_values) if isinstance(locked_values, Mapping) else set()
     fields: list[dict[str, object]] = []
     for raw_name, raw_schema in properties.items():
         name = str(raw_name)
-        ui = ui_properties.get(name) if isinstance(ui_properties.get(name), Mapping) else {}
-        scopes = ui.get("scopes") if isinstance(ui.get("scopes"), list) else []
+        ui = cast(Mapping[str, object], ui_properties.get(name) if isinstance(ui_properties.get(name), Mapping) else {})
+        scopes = cast(list[object], ui.get("scopes") if isinstance(ui.get("scopes"), list) else [])
         if (
             not isinstance(raw_schema, Mapping)
             or name not in allowed
