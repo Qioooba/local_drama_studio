@@ -49,7 +49,10 @@ class WorkerVoxcpmRuntimePort(Protocol):
 
 
 class WorkerTtsMediaOpsPort(Protocol):
-    """Output verification capability required by TTS handlers."""
+    """Verified content access + output verification for TTS handlers."""
+
+    def content_path(self, media_version_id: str) -> tuple[dict[str, Any], Path]:  # pragma: no cover - protocol boundary
+        ...
 
     def probe_output(self, path: Path, kind: str) -> dict[str, Any]:  # pragma: no cover - protocol boundary
         ...
@@ -129,9 +132,16 @@ def run_tts_job(
         if not voice_ref.startswith("voxcpm2:") or not voice_ref.removeprefix("voxcpm2:").strip():
             raise DomainRuleError("TTS_VOICE_REF_INVALID", "VoxCPM2 Job 必须使用 voxcpm2:<参考音频>[|<参考文本>] 音色引用")
         reference = voice_ref.removeprefix("voxcpm2:").strip()
-        prompt_audio, _, prompt_text = reference.partition("|")
-        if not prompt_audio.strip():
+        prompt_audio_ref, _, prompt_text = reference.partition("|")
+        if not prompt_audio_ref.strip():
             raise DomainRuleError("TTS_VOICE_REF_INVALID", "VoxCPM2 音色引用缺少参考音频路径")
+        if prompt_audio_ref.startswith("media:"):
+            # Cloned voices pin the reference as a project media version; the
+            # worker resolves it through integrity-checked content access.
+            _meta, prompt_audio_path = media_ops.content_path(prompt_audio_ref.removeprefix("media:"))
+            prompt_audio: Path | None = prompt_audio_path
+        else:
+            prompt_audio = Path(prompt_audio_ref.strip())
         raw_output = output_root / "speech.voxcpm2.wav"
 
         def synthesize(target: Path) -> None:
@@ -139,7 +149,7 @@ def run_tts_job(
                 voxcpm_runtime.synthesize(
                     text,
                     target,
-                    prompt_audio=Path(prompt_audio.strip()),
+                    prompt_audio=prompt_audio,
                     prompt_text=prompt_text.strip() or None,
                 )
             except TtsRuntimeError as error:

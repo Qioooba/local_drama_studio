@@ -10,6 +10,7 @@ import { createStoryAssetReference, createStoryAssetState, getAssetBible } from 
 import { GenerateMultiViewPanel } from "../features/asset-bible-v2/GenerateMultiViewPanel";
 import { CharacterIdentityPackPanel } from "../features/asset-bible-v2/CharacterIdentityPackPanel";
 import { GenerateExpressionPanel } from "../features/asset-bible-v2/GenerateExpressionPanel";
+import { VoiceClonePanel } from "../features/asset-bible-v2/VoiceClonePanel";
 import { GenerateDetailPanel } from "../features/asset-bible-v2/GenerateDetailPanel";
 import { SceneBiblePanel, type SceneReferenceKind } from "../features/asset-bible-v2/SceneBiblePanel";
 import { AssetUsagePanel } from "../features/asset-bible-v2/AssetUsagePanel";
@@ -266,6 +267,13 @@ export function AssetBiblePage() {
                 baseReferences={selected.base_references}
                 initialBatches={selected.expression_generations ?? []}
                 onReferencesChanged={refresh}
+              />}
+              {selected.asset.kind === "CHARACTER" && <VoiceClonePanel
+                key={`voice-clone:${selected.asset.id}`}
+                projectId={projectId as string}
+                assetId={selected.asset.id}
+                assetName={selected.asset.name}
+                onChanged={refresh}
               />}
               {selected.asset.kind === "CHARACTER" && <GenerateDetailPanel
                 key={`detail:${selected.asset.id}`}

@@ -573,6 +573,10 @@ export async function finalizeLipsyncJob(jobId: string, baseUrl = ''): Promise<{
   return requestJson(`/api/v2/lipsync-jobs/${encodeURIComponent(jobId)}:finalize`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }, baseUrl);
 }
 
+export async function cloneCharacterVoice(projectId: string, assetId: string, payload: { media_version_id: string; title: string; transcript: string; consent: boolean }, baseUrl = ''): Promise<{ voice: Record<string, unknown>; binding: Record<string, unknown>; reference_media_version_id: string }> {
+  return requestJson(`/api/v1/story-assets/${encodeURIComponent(assetId)}/voice-clone`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, project_id: projectId }) }, baseUrl);
+}
+
 export async function resolveEffectiveConfiguration(payload: { project_id: string; episode_id?: string | null; shot_id?: string | null; capability_code: string; requested_profile_version_id?: string | null; run_overrides?: Record<string, unknown> }, baseUrl = ''): Promise<{ configuration: EffectiveConfiguration }> {
   return requestJson('/api/v1/generation/effective-configuration:resolve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }

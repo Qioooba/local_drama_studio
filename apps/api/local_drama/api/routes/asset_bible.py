@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import TypeVar
 
 from fastapi import APIRouter, Request
+from pydantic import BaseModel
 
 from local_drama.api.schemas.asset_bible import (
     AssetDetailPreflightRequest,
@@ -25,6 +26,7 @@ from local_drama.application.asset_multiview import AssetDetailService, AssetExp
 from local_drama.application.commands.asset_bible import AssetBibleCommandService
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.queries.asset_bible import AssetBibleQueryService
+from local_drama.application.voice_clone import VoiceCloneService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.asset_bible_repository import SqliteAssetBibleRepository
 from local_drama.infrastructure.database.sqlite import Database
@@ -208,3 +210,32 @@ async def set_shot_asset_state(shot_id: str, payload: ShotAssetStateBindRequest,
         return {"binding": _run_command(request, lambda service: service.set_shot_asset_state(shot_id=shot_id, **payload.model_dump()))}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
+
+
+class CharacterVoiceCloneRequest(BaseModel):
+    media_version_id: str
+    title: str = ""
+    transcript: str = ""
+    consent: bool = False
+
+
+@router.post("/story-assets/{asset_id}/voice-clone", status_code=201, operation_id="cloneCharacterVoice")
+async def clone_character_voice(asset_id: str, payload: CharacterVoiceCloneRequest, request: Request) -> dict[str, object]:
+    project_id = _asset_project(request, asset_id)
+    try:
+        result = VoiceCloneService(_database(request), request.app.state.settings).clone_character_voice(
+            project_id,
+            asset_id,
+            media_version_id=payload.media_version_id,
+            title=payload.title,
+            transcript=payload.transcript,
+            consent=payload.consent,
+        )
+        return {
+            "voice": result["voice"],
+            "binding": result["binding"],
+            "reference_media_version_id": result["reference_media_version_id"],
+        }
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
