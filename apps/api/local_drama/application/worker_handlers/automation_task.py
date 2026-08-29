@@ -50,7 +50,9 @@ class EpisodeWorkerActionsPort(Protocol):
     ) -> tuple[dict[str, Any], int]:  # pragma: no cover - protocol boundary
         ...
 
-    def qc(self, episode_id: str, run_id: str, task_id: str) -> tuple[dict[str, Any], int]:  # pragma: no cover - protocol boundary
+    def qc(
+        self, episode_id: str, run_id: str, task_id: str, *, auto_select: bool = False
+    ) -> tuple[dict[str, Any], int]:  # pragma: no cover - protocol boundary
         ...
 
 
@@ -401,7 +403,9 @@ def run_automation_task(
             episode_id, run_id, task_id, target_take_count=target_take_count,
         )
     elif action == "QC":
-        report, produced_extra = episode_worker_actions_factory().qc(episode_id, run_id, task_id)
+        mode_policy = payload.get("mode_policy", {})
+        auto_select = bool(mode_policy.get("auto_select_videos", False)) if isinstance(mode_policy, dict) else False
+        report, produced_extra = episode_worker_actions_factory().qc(episode_id, run_id, task_id, auto_select=auto_select)
     elif action == "TTS_BATCH":
         report, produced_extra = _automation_tts_batch(dialogue_factory(), episode_id, run_id, task_id)
     elif action == "TIMELINE_ASSEMBLY":

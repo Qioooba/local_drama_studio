@@ -66,9 +66,9 @@ BACK_HALF_ACTIONS = ("VIDEO_GENERATION", "QC")
 FRONT_HALF_REPORT_BUDGET_BYTES = 8 * 1024 * 1024
 TERMINAL_JOB_STATES = {"SUCCEEDED", "FAILED", "CANCELLED"}
 PRODUCTION_MODE_POLICIES: dict[str, dict[str, Any]] = {
-    "DRAFT": {"target_take_count": 1, "label": "草稿", "intent": "快速验证叙事与节奏"},
-    "BALANCED": {"target_take_count": 2, "label": "平衡", "intent": "兼顾候选空间与本机耗时"},
-    "QUALITY": {"target_take_count": 4, "label": "精品", "intent": "为正式选择保留更多候选"},
+    "DRAFT": {"target_take_count": 1, "label": "草稿", "intent": "快速验证叙事与节奏", "auto_select_videos": True},
+    "BALANCED": {"target_take_count": 2, "label": "平衡", "intent": "兼顾候选空间与本机耗时", "auto_select_videos": True},
+    "QUALITY": {"target_take_count": 4, "label": "精品", "intent": "为正式选择保留更多候选", "auto_select_videos": False},
 }
 CHECKPOINT_POLICIES = frozenset({"AUTO_CONTINUE", "AFTER_ASSETS", "AFTER_SHOT_PLAN", "BEFORE_VIDEO", "ON_EXCEPTION"})
 

@@ -615,3 +615,47 @@ def test_timeline_assembly_action_assembles_then_skips(workspace, database) -> N
     assert second[2]["machine_check"]["status"] == "SKIPPED"
     assert second[2]["machine_check"]["code"] == "TIMELINE_ALREADY_CURRENT"
     assert second[2]["produced"]["timeline_revision_id"] == revision_id
+
+
+def test_qc_auto_select_fills_empty_selection_and_never_overrides(workspace, database) -> None:
+    project, episode = _episode(workspace, database, "qc_auto_select")
+    projects_service = ProjectService(database, workspace.projects_root)
+    shot = projects_service.create_shot(str(episode["id"]), "S001", 2_000)
+
+    source = workspace.work_root / "qc-auto-select.mp4"
+    subprocess.run(
+        [workspace.ffmpeg_path, "-f", "lavfi", "-i", "color=c=red:s=160x90:d=2", "-pix_fmt", "yuv420p", "-an", "-y", str(source)],
+        check=True,
+        capture_output=True,
+    )
+    media = MediaService(database, workspace).import_file(
+        str(project["id"]),
+        source,
+        purpose="SHOT_VIDEO",
+        owner_type="SHOT",
+        owner_id=str(shot["id"]),
+        media_kind="VIDEO",
+        stage="PROXY",
+    )
+    media_version_id = str(media["media_version_id"])
+    service = EpisodeWorkerActionService(database, workspace)
+
+    manual_only, _ = service.qc(str(episode["id"]), "run-a", "task-a")
+    assert manual_only["produced"]["items"][0]["status"] == "PASS"
+    assert "auto_selection" not in manual_only["produced"]["items"][0]
+    with database.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM selections WHERE media_version_id=?", (media_version_id,)).fetchone()[0] == 0
+
+    first, _ = service.qc(str(episode["id"]), "run-a", "task-a", auto_select=True)
+    item = first["produced"]["items"][0]
+    assert item["status"] == "PASS"
+    assert item["auto_selection"] == {"status": "SELECTED", "selection_type": "PROXY_WINNER"}
+    assert first["machine_check"]["auto_selected_shots"] == 1
+    with database.connect() as connection:
+        rows = connection.execute("SELECT selection_type, created_by FROM selections WHERE media_version_id=?", (media_version_id,)).fetchall()
+    assert [tuple(row) for row in rows] == [("PROXY_WINNER", "episode-run-auto")]
+
+    repeat, _ = service.qc(str(episode["id"]), "run-a", "task-a", auto_select=True)
+    assert repeat["produced"]["items"][0]["auto_selection"]["status"] == "ALREADY_CURRENT"
+    with database.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM selections WHERE media_version_id=?", (media_version_id,)).fetchone()[0] == 1

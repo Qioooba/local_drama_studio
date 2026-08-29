@@ -421,7 +421,24 @@ class EpisodeWorkerActionService:
                 )
         return {"status": "REROLL_SUBMITTED", "parent_variant_id": variant_id, "variant_id": str(result["variant"]["id"]), "job_id": str(result["job"]["id"]), "max_auto_rerolls": limit}
 
-    def qc(self, episode_id: str, run_id: str, task_id: str) -> tuple[dict[str, Any], int]:
+    def _auto_select_video(self, video: dict[str, Any], media_version_id: str) -> dict[str, Any]:
+        """Fill an empty timeline selection with the QC-passing video.
+
+        Auto-selection only fills the slot: when a human already selected or
+        approved a version for this asset the fact stands and the run must not
+        override it.  The selection type matches the media stage because
+        select_version refuses to record a FORMAL_SELECTION on a PROXY version.
+        """
+        if str(video.get("approved_version_id") or "") or str(video.get("selected_version_id") or ""):
+            return {"status": "ALREADY_CURRENT"}
+        selection_type = "FORMAL_SELECTION" if str(video["stage"]) == "FORMAL" else "PROXY_WINNER"
+        try:
+            self.reviews.select_version(media_version_id, selection_type, actor="episode-run-auto")
+        except DomainRuleError as error:
+            return {"status": "BLOCKED", "code": error.code, "selection_type": selection_type}
+        return {"status": "SELECTED", "selection_type": selection_type}
+
+    def qc(self, episode_id: str, run_id: str, task_id: str, *, auto_select: bool = False) -> tuple[dict[str, Any], int]:
         project_id, shots = self._episode(episode_id)
         items: list[dict[str, Any]] = []
         for shot in shots:
@@ -440,6 +457,8 @@ class EpisodeWorkerActionService:
                 "machine_check_run_id": str(check["id"]), "status": str(check["status"]),
                 "human_approval_created": False,
             }
+            if str(check["status"]) == "PASS" and auto_select:
+                item["auto_selection"] = self._auto_select_video(video, media_version_id)
             if str(check["status"]) != "PASS" and video.get("variant_id"):
                 policy_decision = self._qc_policy_decision(str(video["variant_id"]), str(check["id"]))
                 if policy_decision is not None and str(policy_decision["disposition"]) != "AUTO_REROLL_ALLOWED":
@@ -456,10 +475,14 @@ class EpisodeWorkerActionService:
         passed = [item for item in items if item["status"] == "PASS"]
         attention = [item for item in items if item["status"] != "PASS"]
         status = "PASS" if not attention else "NEEDS_HITL"
+        auto_selected = [item for item in items if isinstance(item.get("auto_selection"), dict) and item["auto_selection"].get("status") == "SELECTED"]
         evidence = {
             "status": status, "ok": not attention, "checked_shots": len(shots), "passed_shots": len(passed),
             "attention_shots": attention, "evidence_type": "MACHINE_QC_ONLY",
             "human_approval_status": "PENDING", "human_approval_created": False,
+            "auto_selected_shots": len(auto_selected),
         }
         summary = f"逐镜机器 QC：PASS {len(passed)}，待处理 {len(attention)}；QC evidence 不等于人工批准"
+        if auto_selected:
+            summary += f"；自动采用 {len(auto_selected)} 镜"
         return self._report(status, evidence, {"items": items}, summary), 0
