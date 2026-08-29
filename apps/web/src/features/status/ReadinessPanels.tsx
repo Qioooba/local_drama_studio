@@ -1,6 +1,5 @@
 import {
   type G8Readiness,
-  type G9Readiness,
   type ModelCompatibilitySnapshot,
   type ProjectConfiguration,
   type TimelineStatus,
@@ -386,66 +385,6 @@ export function G8ReadinessPanel({ readiness }: { readiness: G8Readiness }) {
   );
 }
 
-const g9CheckLabels: Record<string, string> = {
-  LAZY_GRAPH_READ_MODEL: "懒加载画布 read model",
-  LAYOUT_DEPENDENCY_ISOLATION: "布局与业务依赖隔离",
-  PREFLIGHT_PERSISTENCE: "执行先行 preflight",
-  VISIBLE_NODE_PERFORMANCE_UAT: "100—300 节点性能 UAT",
-  ACCESSIBILITY_ROUTE_UAT: "三视图键盘 / 可访问性 UAT",
-};
-
-export function G9ReadinessPanel({ readiness }: { readiness: G9Readiness }) {
-  return (
-    <section
-      className="panel gate-readiness"
-      aria-labelledby="g9-readiness-title"
-    >
-      <div className="panel-heading">
-        <div>
-          <p className="eyebrow">生产规模就绪</p>
-          <h3 id="g9-readiness-title">业务画布与生产效率门禁</h3>
-        </div>
-        <span
-          className={`status-pill${readiness.status === "PASS" ? "" : " neutral"}`}
-        >
-          {readiness.status === "PASS" ? "通过" : "进行中"}
-        </span>
-      </div>
-      <p className="muted">
-        只读区分生产图事实与规模 fixture 证据；不会创建镜头、布局、执行计划或
-        Job。当前集：{readiness.episode.code} · {readiness.episode.title}
-      </p>
-      <ol className="gate-checks">
-        {readiness.checks.map((check) => (
-          <li className={check.passed ? "passed" : "blocked"} key={check.code}>
-            <GateStatusIcon passed={check.passed} />
-            <div className="gate-check-body">
-              <strong>{g9CheckLabels[check.code] ?? check.code}</strong>
-              {check.count !== undefined && (
-                <small>{check.count} 项真实观测</small>
-              )}
-              <small>{check.detail}</small>
-            </div>
-          </li>
-        ))}
-      </ol>
-      {readiness.next_required_action && (
-        <p className="gate-next">
-          <strong>下一项真实动作：</strong>
-          {g9CheckLabels[readiness.next_required_action] ??
-            readiness.next_required_action}
-          。fixture 不会被当作生产退出证据。
-        </p>
-      )}
-      <div className="canvas-status">
-        <span>生产镜头：{readiness.evidence.production_total_shots}</span>
-        <span>可见行：{readiness.evidence.production_visible_rows}</span>
-        <span>实验节点：{readiness.evidence.visual_lab_node_count}</span>
-        <span>实验快照：{readiness.evidence.visual_lab_snapshot_count}</span>
-      </div>
-    </section>
-  );
-}
 
 export function ProjectList({
   projects,

@@ -271,65 +271,6 @@ class ReviewService:
             "status": "SELECTED",
         }
 
-    def formal_selection_candidates(self, project_id: str) -> list[dict[str, Any]]:
-        with self.database.connect() as connection:
-            rows = connection.execute(
-                """SELECT mv.id AS media_version_id, mv.media_asset_id, mv.version_no, mv.stage, mv.sha256,
-                mv.integrity_status, ma.project_id, ma.media_kind, ma.approved_version_id, ma.revision,
-                rd.id AS review_id, rd.decision, rd.is_stale, rd.created_at AS reviewed_at
-                FROM media_versions mv JOIN media_assets ma ON ma.id=mv.media_asset_id
-                LEFT JOIN review_decisions rd ON rd.id=(SELECT r2.id FROM review_decisions r2 WHERE r2.subject_type='MEDIA_VERSION' AND r2.subject_id=mv.id ORDER BY r2.created_at DESC LIMIT 1)
-                WHERE ma.project_id=? AND ma.media_kind='VIDEO' AND mv.stage='FORMAL'
-                ORDER BY mv.created_at DESC""",
-                (project_id,),
-            ).fetchall()
-        return [dict(row) for row in rows]
-
-    def formal_selection_preflight(self, project_id: str, media_version_ids: list[str]) -> dict[str, Any]:
-        if not media_version_ids:
-            raise DomainRuleError("EMPTY_FORMAL_SELECTION", "正式交付选择不能为空")
-        if len(set(media_version_ids)) != len(media_version_ids):
-            raise DomainRuleError("DUPLICATE_FORMAL_SELECTION", "正式交付选择不能重复")
-        candidates = {str(item["media_version_id"]): item for item in self.formal_selection_candidates(project_id)}
-        items: list[dict[str, Any]] = []
-        for media_version_id in media_version_ids:
-            row = candidates.get(media_version_id)
-            blockers: list[str] = []
-            if row is None:
-                blockers.append("FORMAL_VIDEO_NOT_FOUND_OR_PROJECT_MISMATCH")
-                item: dict[str, Any] = {"media_version_id": media_version_id, "status": "BLOCKED", "blockers": blockers}
-            else:
-                if str(row["approved_version_id"] or "") != media_version_id:
-                    blockers.append("FORMAL_APPROVAL_REQUIRED")
-                if str(row["decision"] or "") != "APPROVED" or int(row["is_stale"] or 0) != 0:
-                    blockers.append("LATEST_HUMAN_APPROVAL_REQUIRED")
-                if str(row["integrity_status"]) != "VERIFIED":
-                    blockers.append("MEDIA_INTEGRITY_REQUIRED")
-                item = {"media_version_id": media_version_id, "media_asset_id": str(row["media_asset_id"]), "source_revision": int(row.get("revision") or 0), "status": "READY" if not blockers else "BLOCKED", "blockers": blockers}
-            items.append(item)
-        plan_hash = hashlib.sha256(_json({"project_id": project_id, "items": items}).encode("utf-8")).hexdigest()
-        return {"project_id": project_id, "status": "READY" if all(item["status"] == "READY" for item in items) else "BLOCKED", "plan_hash": plan_hash, "items": items, "would_mutate": False}
-
-    def commit_formal_selection(self, project_id: str, media_version_ids: list[str], plan_hash: str, actor: str = "local-user") -> dict[str, Any]:
-        plan = self.formal_selection_preflight(project_id, media_version_ids)
-        if not hmac.compare_digest(str(plan["plan_hash"]), plan_hash):
-            raise DomainRuleError("FORMAL_SELECTION_PLAN_STALE", "正式交付选择预检已过期，请重新预检")
-        if plan["status"] != "READY":
-            raise DomainRuleError("FORMAL_SELECTION_BLOCKED", "存在未通过正式批准或完整性检查的版本", {"items": plan["items"]})
-        now = _utc_now()
-        selected: list[dict[str, Any]] = []
-        with self.database.transaction() as connection:
-            for item in plan["items"]:
-                asset = connection.execute("SELECT id, revision FROM media_assets WHERE id=?", (item["media_asset_id"],)).fetchone()
-                if asset is None:
-                    raise DomainRuleError("MEDIA_ASSET_NOT_FOUND", "正式交付选择的媒体资产不存在")
-                selection_id = str(uuid.uuid4())
-                connection.execute("INSERT INTO selections (id, media_asset_id, media_version_id, selection_type, source_revision, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, 'FORMAL_SELECTION', ?, ?, ?, ?, 1, 'v2')", (selection_id, item["media_asset_id"], item["media_version_id"], asset["revision"], now, now, actor))
-                connection.execute("UPDATE media_assets SET selected_version_id=?, version_counter=version_counter+1, revision=revision+1, updated_at=? WHERE id=?", (item["media_version_id"], now, item["media_asset_id"]))
-                selected.append({"id": selection_id, "media_asset_id": item["media_asset_id"], "media_version_id": item["media_version_id"], "selection_type": "FORMAL_SELECTION", "status": "SELECTED"})
-            connection.execute("INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'producer', 'FORMAL_SELECTION_BATCH_COMMITTED', 'project', ?, ?, ?)", (actor, project_id, "批量选择已批准正式视频用于交付", _json({"count": len(selected), "media_version_ids": media_version_ids})))
-        return {"project_id": project_id, "status": "COMMITTED", "items": selected}
-
     def _subject_revision(self, media: dict[str, Any]) -> int:
         with self.database.connect() as connection:
             row = connection.execute("SELECT revision FROM media_assets WHERE id=?", (media["media_asset_id"],)).fetchone()
