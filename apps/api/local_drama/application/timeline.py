@@ -438,6 +438,59 @@ class TimelineService:
         latest subtitle facts.  It reads and hashes local media but performs no
         database writes and never freezes a revision by itself.
         """
+        return self._timeline_assembly_plan(episode_id, require_stale_revision=True)
+
+    def assemble_episode_timeline(self, episode_id: str, *, actor: str = "local-user") -> dict[str, Any]:
+        """Create or refresh the frozen timeline from current adopted facts.
+
+        Used by the episode production run's TIMELINE_ASSEMBLY action so a run
+        can produce a first-cut timeline without a prior manual revision.  The
+        first assembly needs no existing revision; when the latest revision is
+        already current the call is an idempotent SKIPPED no-op instead of
+        creating a duplicate revision.
+        """
+        plan = self._timeline_assembly_plan(episode_id, require_stale_revision=False)
+        if plan["status"] != "READY":
+            return {"status": "BLOCKED", "blockers": plan["blockers"], "warnings": plan["warnings"], "mutated": False}
+        with self.database.connect() as connection:
+            latest = connection.execute(
+                "SELECT id, revision_no, status FROM timeline_revisions WHERE episode_id=? ORDER BY revision_no DESC LIMIT 1",
+                (episode_id,),
+            ).fetchone()
+        if latest is not None and str(latest["status"]).upper() != "STALE":
+            return {
+                "status": "SKIPPED",
+                "reason": "TIMELINE_ALREADY_CURRENT",
+                "timeline_revision_id": str(latest["id"]),
+                "revision_no": int(latest["revision_no"]),
+                "mutated": False,
+            }
+        source = plan["source_timeline"] or {}
+        revision = self.create_timeline_revision(
+            episode_id,
+            plan["items"],
+            {
+                "schema_version": "localdrama.timeline-editor.v2",
+                "source": "AUTOMATION_RUN_ASSEMBLY",
+                "refreshed_from_timeline_revision_id": source.get("id"),
+                "refreshed_from_timeline_revision_hash": source.get("revision_hash"),
+                "selected_videos": plan["selected_videos"],
+                "audio_binding_ids": plan["audio_binding_ids"],
+                "subtitle_revision_id": plan["subtitle_revision_id"],
+                "requires_human_confirmation": False,
+            },
+            status="FROZEN",
+            actor=actor,
+        )
+        with self.database.transaction() as connection:
+            connection.execute(
+                "INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json) VALUES (?,'producer','TIMELINE_AUTO_ASSEMBLED','timeline_revision',?,'按当前采用事实自动组装并冻结时间线',?)",
+                (actor, str(revision["id"]), _json({"episode_id": episode_id, "source_timeline_revision_id": source.get("id"), "plan_hash": plan["plan_hash"]})),
+            )
+        return {"status": "CREATED", "timeline": revision, "plan_hash": plan["plan_hash"], "source_timeline_revision_id": source.get("id"), "mutated": True}
+
+    def _timeline_assembly_plan(self, episode_id: str, *, require_stale_revision: bool) -> dict[str, Any]:
+        """Shared read-only assembly plan for stale refresh and run assembly."""
         episode = self._episode(episode_id)
         with self.database.connect() as connection:
             latest = connection.execute(
@@ -454,8 +507,9 @@ class TimelineService:
         blockers: list[dict[str, Any]] = []
         warnings: list[dict[str, Any]] = []
         if latest is None:
-            blockers.append({"code": "TIMELINE_REVISION_REQUIRED", "message": "本集还没有可恢复的时间线 revision。"})
-        elif str(latest["status"]).upper() != "STALE":
+            if require_stale_revision:
+                blockers.append({"code": "TIMELINE_REVISION_REQUIRED", "message": "本集还没有可恢复的时间线 revision。"})
+        elif require_stale_revision and str(latest["status"]).upper() != "STALE":
             blockers.append({"code": "TIMELINE_NOT_STALE", "message": "最新时间线并未失效；请在时间线工作台完成普通编辑或冻结。"})
         if selections["has_more"]:
             blockers.append({"code": "TIMELINE_SHOT_LIMIT_EXCEEDED", "message": "本集镜头超过 500 个安全上限，请先拆分分集。"})

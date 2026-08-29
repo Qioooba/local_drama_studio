@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -23,6 +24,7 @@ from local_drama.application.episode_worker_actions import EpisodeWorkerActionSe
 from local_drama.application.jobs import JobService
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
+from local_drama.application.reviews import ReviewService
 from local_drama.application.timeline import TimelineService
 from local_drama.application.worker import LocalMediaWorker
 from local_drama.application.worker_handlers.automation_task import run_automation_task
@@ -51,6 +53,7 @@ def test_stage_definitions_and_front_half_action_mapping() -> None:
     assert ACTION_STAGE["VIDEO_GENERATION"] == "VIDEO"
     assert ACTION_STAGE["QC"] == "COMPOSE_QC"
     assert ACTION_STAGE["TTS_BATCH"] == "AUDIO_SUBTITLE"
+    assert ACTION_STAGE["TIMELINE_ASSEMBLY"] == "COMPOSE_QC"
     assert ACTION_STAGE["RENDER"] == "COMPOSE_QC"
     assert ACTION_STAGE["DELIVERY"] == "COMPOSE_QC"
 
@@ -89,8 +92,9 @@ def test_front_half_dag_workflow_generation(workspace, database) -> None:
     assert actions[6] == "VIDEO_GENERATION"
     assert actions[7] == "QC"
     assert actions[8] == "TTS_BATCH"
-    assert actions[9] == "RENDER"
-    assert actions[10] == "DELIVERY"
+    assert actions[9] == "TIMELINE_ASSEMBLY"
+    assert actions[10] == "RENDER"
+    assert actions[11] == "DELIVERY"
 
 
 def _episode(workspace, database, code: str) -> tuple[dict, dict]:
@@ -537,3 +541,77 @@ def test_one_failed_shot_retry_does_not_replay_ready_shot(
     by_shot = {item["shot_id"]: item for item in report["produced"]["items"]}
     assert by_shot["shot-ready"]["status"] == "READY_FOR_QC"
     assert by_shot["shot-failed"]["status"] == "RETRIED"
+
+def test_timeline_assembly_action_assembles_then_skips(workspace, database) -> None:
+    project, episode = _episode(workspace, database, "handler_timeline_assembly")
+    projects_service = ProjectService(database, workspace.projects_root)
+    shot = projects_service.create_shot(str(episode["id"]), "S001", 2_000)
+
+    source = workspace.work_root / "handler-timeline-assembly.mp4"
+    subprocess.run(
+        [workspace.ffmpeg_path, "-f", "lavfi", "-i", "color=c=teal:s=160x90:d=2", "-pix_fmt", "yuv420p", "-an", "-y", str(source)],
+        check=True,
+        capture_output=True,
+    )
+    media = MediaService(database, workspace).import_file(
+        str(project["id"]),
+        source,
+        purpose="SHOT_VIDEO",
+        owner_type="SHOT",
+        owner_id=str(shot["id"]),
+        media_kind="VIDEO",
+        stage="PROXY",
+    )
+    ReviewService(database, workspace).select_version(str(media["media_version_id"]), "PROXY_WINNER")
+
+    action = "TIMELINE_ASSEMBLY"
+    automation = AutomationWorkflowService(database)
+    workflow = automation.create_workflow(
+        str(project["id"]),
+        code="handler-timeline-assembly",
+        title="TIMELINE_ASSEMBLY handler",
+        mode="BATCH_AUTOMATED",
+        nodes=[{"id": "episode", "type": "EPISODE_PRODUCTION_TASK"}],
+        batch_items=[
+            {"key": action, "payload": {"action": action, "episode_id": str(episode["id"])}},
+        ],
+        conditions=[
+            {"field": "machine_check.status", "operator": "EQ", "value": "NEEDS_HITL", "action": "PAUSE_HITL"},
+        ],
+        max_iterations=3,
+        max_tasks=3,
+        max_disk_bytes=1_000_000,
+        human_gate="ON_CONDITION",
+    )
+    run = automation.start_run(
+        str(workflow["id"]), plan_hash=str(workflow["plan_hash"]),
+        idempotency_key="handler-run-timeline-assembly",
+    )
+    job = JobService(database, workspace).get_job(str(run["tasks"][0]["job_id"]))
+    output_root = workspace.work_root / "timeline-assembly-handler-tests"
+
+    def execute_automation() -> tuple[str, str, dict, int]:
+        return run_automation_task(
+            job,
+            output_root,
+            worker_id="handler-test",
+            work_root=workspace.work_root,
+            database=database,
+            front_half_actions_factory=lambda: EpisodeFrontHalfActionService(database, workspace),
+            episode_worker_actions_factory=lambda: EpisodeWorkerActionService(database, workspace),
+            dialogue_factory=lambda: DialogueService(database, workspace, jobs=JobService(database, workspace), media=MediaService(database, workspace)),
+            configuration_factory=lambda: ConfigurationService(database),
+            timeline_factory=lambda: TimelineService(database, workspace),
+            atomic_writer=write_atomic,
+        )
+
+    first = execute_automation()
+    assert first[2]["action"] == "TIMELINE_ASSEMBLY"
+    assert first[2]["machine_check"]["status"] == "PASS"
+    revision_id = first[2]["machine_check"]["timeline_revision_id"]
+    assert revision_id
+
+    second = execute_automation()
+    assert second[2]["machine_check"]["status"] == "SKIPPED"
+    assert second[2]["machine_check"]["code"] == "TIMELINE_ALREADY_CURRENT"
+    assert second[2]["produced"]["timeline_revision_id"] == revision_id

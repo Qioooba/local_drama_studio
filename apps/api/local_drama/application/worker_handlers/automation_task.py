@@ -76,6 +76,11 @@ class AutomationConfigurationPort(Protocol):
 class AutomationTimelinePort(Protocol):
     """Timeline render/delivery/subtitle capabilities for automation actions."""
 
+    def assemble_episode_timeline(
+        self, episode_id: str, *, actor: str = "local-user"
+    ) -> dict[str, Any]:  # pragma: no cover - protocol boundary
+        ...
+
     def render_episode(
         self, timeline_revision_id: str, *, force_rerender: bool = False, actor: str = "local-user"
     ) -> dict[str, Any]:  # pragma: no cover - protocol boundary
@@ -183,6 +188,38 @@ def _automation_tts_batch(dialogue: AutomationDialoguePort, episode_id: str, run
     }
     summary = f"整集 TTS 批量提交完成：提交 {counts['submitted']}、跳过 {counts['skipped']}、失败 {counts['failed']}"
     return _automation_report("PASS", machine_check, produced, summary), 0
+
+
+def _automation_timeline_assembly(
+    timeline_factory: Callable[[], AutomationTimelinePort],
+    episode_id: str,
+) -> tuple[dict[str, Any], int]:
+    """Assemble (or reuse) the frozen episode timeline from adopted facts.
+
+    BLOCKED means the current selections cannot build a timeline yet (missing
+    adopted videos, integrity failures, ...); reporting FAIL lets step_run
+    pause the run per its checkpoint policy instead of rendering a broken cut.
+    """
+    try:
+        result = timeline_factory().assemble_episode_timeline(episode_id, actor="local-user")
+    except DomainRuleError as error:
+        return _automation_failure(error.code, error.message), 0
+    status = str(result.get("status"))
+    if status == "SKIPPED":
+        machine_check = {"status": "SKIPPED", "ok": False, "code": "TIMELINE_ALREADY_CURRENT", "detail": "最新时间线仍与当前采用事实一致，跳过重组"}
+        return _automation_report("SKIPPED", machine_check, {"timeline_revision_id": str(result.get("timeline_revision_id") or "")}, "时间线已是最新，跳过自动组装"), 0
+    if status == "BLOCKED":
+        blockers = result.get("blockers", [])
+        machine_check = {"status": "FAIL", "ok": False, "code": "TIMELINE_ASSEMBLY_BLOCKED", "detail": "当前采用事实不足以组装时间线", "blockers": blockers}
+        return _automation_report("FAIL", machine_check, {"blockers": blockers}, f"时间线自动组装被阻塞（{len(blockers)} 项）"), 0
+    revision = result.get("timeline") or {}
+    machine_check = {
+        "status": "PASS",
+        "ok": True,
+        "timeline_revision_id": str(revision.get("id", "")),
+        "revision_no": revision.get("revision_no"),
+    }
+    return _automation_report("PASS", machine_check, {"timeline_revision_id": str(revision.get("id", ""))}, "时间线已按当前采用事实自动组装并冻结"), 0
 
 
 def _automation_render(
@@ -367,6 +404,8 @@ def run_automation_task(
         report, produced_extra = episode_worker_actions_factory().qc(episode_id, run_id, task_id)
     elif action == "TTS_BATCH":
         report, produced_extra = _automation_tts_batch(dialogue_factory(), episode_id, run_id, task_id)
+    elif action == "TIMELINE_ASSEMBLY":
+        report, produced_extra = _automation_timeline_assembly(timeline_factory, episode_id)
     elif action == "RENDER":
         report, produced_extra = _automation_render(database, timeline_factory, episode_id)
     elif action == "DELIVERY":

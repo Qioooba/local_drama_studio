@@ -93,3 +93,63 @@ def test_stale_timeline_refresh_rechecks_plan_and_creates_new_frozen_revision(wo
     assert after["timeline"]["latest_frozen"]["id"] == timeline["id"]
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM audit_events WHERE action='TIMELINE_STALE_REFRESH_COMMITTED' AND subject_id=?", (timeline["id"],)).fetchone()[0] == 1
+
+
+def test_assemble_episode_timeline_creates_skips_then_refreshes(workspace, database) -> None:
+    projects = ProjectService(database, workspace.projects_root)
+    project = projects.create_project(
+        code="timeline_auto_assemble",
+        title="Timeline auto assemble",
+        episode_count=1,
+        aspect_ratio="16:9",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=2_000,
+        allow_unconfigured_capabilities=True,
+    )
+    project_id = str(project["id"])
+    season = projects.list_seasons(project_id)[0]
+    episode = projects.list_episodes(str(season["id"]))[0]
+    episode_id = str(episode["id"])
+    shot = projects.create_shot(episode_id, "S001", 2_000)
+
+    source = workspace.work_root / "timeline-auto-assemble.mp4"
+    subprocess.run(
+        [workspace.ffmpeg_path, "-f", "lavfi", "-i", "color=c=teal:s=160x90:d=2", "-pix_fmt", "yuv420p", "-an", "-y", str(source)],
+        check=True,
+        capture_output=True,
+    )
+    media = MediaService(database, workspace).import_file(
+        project_id,
+        source,
+        purpose="SHOT_VIDEO",
+        owner_type="SHOT",
+        owner_id=str(shot["id"]),
+        media_kind="VIDEO",
+        stage="PROXY",
+    )
+    ReviewService(database, workspace).select_version(str(media["media_version_id"]), "PROXY_WINNER")
+    service = TimelineService(database, workspace)
+
+    created = service.assemble_episode_timeline(episode_id, actor="automation-run")
+    assert created["status"] == "CREATED"
+    assert created["timeline"]["status"] == "FROZEN"
+    assert created["timeline"]["input_snapshot"]["source"] == "AUTOMATION_RUN_ASSEMBLY"
+    assert created["timeline"]["items"][0]["end_us"] == 2_000_000
+    first_revision_id = str(created["timeline"]["id"])
+
+    skipped = service.assemble_episode_timeline(episode_id, actor="automation-run")
+    assert skipped["status"] == "SKIPPED"
+    assert skipped["reason"] == "TIMELINE_ALREADY_CURRENT"
+    assert str(skipped["timeline_revision_id"]) == first_revision_id
+    assert skipped["mutated"] is False
+
+    with database.transaction() as connection:
+        connection.execute("UPDATE timeline_revisions SET status='STALE' WHERE id=?", (first_revision_id,))
+    refreshed = service.assemble_episode_timeline(episode_id, actor="automation-run")
+    assert refreshed["status"] == "CREATED"
+    assert refreshed["timeline"]["revision_no"] == 2
+    assert str(refreshed["source_timeline_revision_id"]) == first_revision_id
+
+    with database.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM audit_events WHERE action='TIMELINE_AUTO_ASSEMBLED' AND subject_id=?", (str(refreshed["timeline"]["id"]),)).fetchone()[0] == 1
