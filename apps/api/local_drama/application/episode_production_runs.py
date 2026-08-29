@@ -127,11 +127,21 @@ class EpisodeProductionRunService:
                 configured.append(int(value))
         base = max(configured) if configured else int(PRODUCTION_MODE_POLICIES["BALANCED"]["target_take_count"])
         source = "PROFILE_RESOURCE_POLICY" if configured else "SAFE_FALLBACK"
-        return {
-            "DRAFT": {"target_take_count": max(1, round(base / 2)), "label": "草稿", "intent": "快速验证叙事与节奏", "source": source},
-            "BALANCED": {"target_take_count": base, "label": "平衡", "intent": "使用已绑定视频 Profile 的默认候选数", "source": source},
-            "QUALITY": {"target_take_count": min(16, max(base + 1, base * 2)), "label": "精品", "intent": "在 Profile 默认候选数上扩大选择空间", "source": source},
-        }
+        policies: dict[str, dict[str, Any]] = {}
+        for mode in ("DRAFT", "BALANCED", "QUALITY"):
+            # Start from the canonical policy table so product flags
+            # (auto_select_videos, label, intent) survive the per-profile
+            # take-count override; only the take count itself is negotiable.
+            policy = dict(PRODUCTION_MODE_POLICIES[mode])
+            if mode == "DRAFT":
+                policy["target_take_count"] = max(1, round(base / 2))
+            elif mode == "BALANCED":
+                policy["target_take_count"] = base
+            else:
+                policy["target_take_count"] = min(16, max(base + 1, base * 2))
+            policy["source"] = source
+            policies[mode] = policy
+        return policies
 
     @staticmethod
     def _checkpoint_policy(checkpoint_policy: str) -> str:

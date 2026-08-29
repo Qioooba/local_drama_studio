@@ -364,6 +364,13 @@ def _automation_subtitle(
     except DomainRuleError as error:
         return _automation_failure(error.code, error.message), 0
     if draft["status"] == "BLOCKED" or not draft["cues"]:
+        source_blockers = {"SUBTITLE_SOURCE_REQUIRED", "SUBTITLE_SOURCE_AMBIGUOUS"}
+        blocker_codes = {str(blocker.get("code")) for blocker in draft["blockers"]}
+        if draft["status"] == "BLOCKED" and blocker_codes and blocker_codes <= source_blockers:
+            # A rough cut is a valid outcome without subtitles: missing script
+            # authority is a configuration gap, not a production failure.
+            machine_check = {"status": "SKIPPED", "ok": False, "code": "SUBTITLE_SOURCE_REQUIRED", "detail": "本集没有已应用的剧本权威，字幕跳过（粗剪不依赖字幕）"}
+            return _automation_report("SKIPPED", machine_check, {"blockers": draft["blockers"]}, "字幕跳过：本集缺少剧本权威"), 0
         machine_check = {"status": "FAIL", "ok": False, "code": "SUBTITLE_DRAFT_BLOCKED", "detail": "字幕草稿无法构建", "blockers": draft["blockers"]}
         return _automation_report("FAIL", machine_check, {"blockers": draft["blockers"]}, "字幕草稿被阻塞，无法创建 revision"), 0
     try:

@@ -160,7 +160,7 @@ def test_video_action_submits_mode_target_candidate_count(
     monkeypatch.setattr(service, "_shot_video", lambda _shot_id: None)
     monkeypatch.setattr(service, "_shot_video_count", lambda _shot_id: 0)
 
-    def submit(_project_id, _shot, _run_id, _task_id, *, take_index=0):
+    def submit(_project_id, _shot, _run_id, _task_id, *, take_index=0, previous_shot=None):
         submitted_take_indexes.append(take_index)
         return {
             "shot_id": "shot-mode",
@@ -216,7 +216,7 @@ def test_quality_retry_still_fills_all_remaining_candidate_slots(
     monkeypatch.setattr(service, "_shot_video_count", lambda _shot_id: 0)
     monkeypatch.setattr(service.jobs, "retry", lambda _job_id, actor: {"id": "failed-job"})
 
-    def submit(_project_id, _shot, _run_id, _task_id, *, take_index=0):
+    def submit(_project_id, _shot, _run_id, _task_id, *, take_index=0, previous_shot=None):
         submitted_take_indexes.append(take_index)
         return {
             "shot_id": str(_shot["id"]),
