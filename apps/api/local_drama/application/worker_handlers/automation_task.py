@@ -88,6 +88,11 @@ class AutomationTimelinePort(Protocol):
     ) -> dict[str, Any]:  # pragma: no cover - protocol boundary
         ...
 
+    def plan_tts_subtitle_draft(
+        self, episode_id: str, *, source_document_version_id: str | None = None
+    ) -> dict[str, Any]:  # pragma: no cover - protocol boundary
+        ...
+
     def render_episode(
         self, timeline_revision_id: str, *, force_rerender: bool = False, actor: str = "local-user"
     ) -> dict[str, Any]:  # pragma: no cover - protocol boundary
@@ -186,12 +191,17 @@ def _automation_tts_batch(dialogue: AutomationDialoguePort, episode_id: str, run
     result = dialogue.submit_episode_tts_batch(episode_id, idempotency_key_prefix=prefix, actor="local-user")
     counts = {key: int(result["counts"].get(key, 0)) for key in ("submitted", "skipped", "failed")}
     machine_check = {"status": "PASS", "ok": True, "counts": counts, "job_count": counts["submitted"]}
+    submitted = [
+        {"line_id": str(item["line_id"]), "code": str(item["code"]), "job_id": str(item["job_id"])}
+        for item in result["submitted"]
+    ]
     produced = {
         "counts": counts,
-        "submitted": [
-            {"line_id": str(item["line_id"]), "code": str(item["code"]), "job_id": str(item["job_id"])}
-            for item in result["submitted"]
-        ],
+        # "items" is the dependency-attach contract consumed by
+        # advance_automation_run: the next workflow task must wait for the
+        # actual TTS Jobs, not just for this submission report.
+        "items": [{"submissions": submitted}],
+        "submitted": submitted,
     }
     summary = f"整集 TTS 批量提交完成：提交 {counts['submitted']}、跳过 {counts['skipped']}、失败 {counts['failed']}"
     return _automation_report("PASS", machine_check, produced, summary), 0
@@ -338,51 +348,43 @@ def _automation_delivery(
 
 
 def _automation_subtitle(
-    database: AutomationPersistencePort,
-    dialogue: AutomationDialoguePort,
     timeline_factory: Callable[[], AutomationTimelinePort],
     episode_id: str,
     payload: dict[str, Any],
 ) -> tuple[dict[str, Any], int]:
-    """Placeholder-capable SUBTITLE action (not used by the v1 template).
+    """Create the episode subtitle revision from adopted TTS facts.
 
-    Cues are derived from the episode dialogue lines in order; timing is an
-    estimated speaking-rate projection because the executor never fabricates
-    ASR alignment.  The script-authority check in create_subtitle_revision
-    still guards the text, so non-verbatim derived text fails closed with
-    SUBTITLE_SCRIPT_AUTHORITY_MISMATCH instead of silently writing subtitles.
+    The draft planner already derives line-level timing from selected TTS
+    media durations and fails closed against script text drift
+    (SUBTITLE_SCRIPT_AUTHORITY_MISMATCH); the executor only commits the draft.
     """
-    lines = dialogue.list_lines(episode_id)
-    cues: list[dict[str, Any]] = []
-    cursor_us = 0
-    for line in lines:
-        revisions = line.get("text_revisions") or []
-        if not revisions:
-            continue
-        text = str(revisions[-1]["text"]).strip()
-        if not text:
-            continue
-        duration_us = max(1_000_000, len(text) * 200_000)
-        cues.append({"start_us": cursor_us, "end_us": cursor_us + duration_us, "text": text})
-        cursor_us += duration_us
-    if not cues:
-        return _automation_failure("SUBTITLE_NO_DIALOGUE", "该集没有可派生字幕的对白"), 0
-    authority = {
-        "text_authority": "SCRIPT",
-        "source_document_version_id": str(payload.get("source_document_version_id") or ""),
-    }
+    requested_source = str(payload.get("source_document_version_id") or "").strip() or None
     try:
-        revision = timeline_factory().create_subtitle_revision(episode_id, cues, authority=authority, actor="local-user")
+        draft = timeline_factory().plan_tts_subtitle_draft(episode_id, source_document_version_id=requested_source)
+    except DomainRuleError as error:
+        return _automation_failure(error.code, error.message), 0
+    if draft["status"] == "BLOCKED" or not draft["cues"]:
+        machine_check = {"status": "FAIL", "ok": False, "code": "SUBTITLE_DRAFT_BLOCKED", "detail": "字幕草稿无法构建", "blockers": draft["blockers"]}
+        return _automation_report("FAIL", machine_check, {"blockers": draft["blockers"]}, "字幕草稿被阻塞，无法创建 revision"), 0
+    try:
+        revision = timeline_factory().create_subtitle_revision(episode_id, draft["cues"], authority=draft["authority"], actor="local-user")
     except DomainRuleError as error:
         return _automation_failure(error.code, error.message), 0
     machine_check = {
         "status": "PASS",
         "ok": True,
         "subtitle_revision_id": str(revision["id"]),
-        "cue_count": len(cues),
-        "timing_source": "ESTIMATED_SPEAKING_RATE",
+        "cue_count": len(draft["cues"]),
+        "missing_count": len(draft["missing"]),
+        "timing_authority": str(draft["timing_authority"]),
+        "source_document_version_id": draft.get("source_document_version_id"),
     }
-    report = _automation_report("PASS", machine_check, {"subtitle_revision_id": str(revision["id"]), "cue_count": len(cues)}, "字幕 revision 创建完成（文本权威为剧本原文，时间为估算）")
+    report = _automation_report(
+        "PASS",
+        machine_check,
+        {"subtitle_revision_id": str(revision["id"]), "cue_count": len(draft["cues"]), "missing": draft["missing"]},
+        "字幕 revision 创建完成（时间权威为已采用 TTS 媒体，文本权威为剧本原文）",
+    )
     return report, 0
 
 
@@ -457,7 +459,7 @@ def run_automation_task(
     elif action == "DELIVERY":
         report, produced_extra = _automation_delivery(database, configuration_factory(), timeline_factory, episode_id)
     elif action == "SUBTITLE":
-        report, produced_extra = _automation_subtitle(database, dialogue_factory(), timeline_factory, episode_id, payload)
+        report, produced_extra = _automation_subtitle(timeline_factory, episode_id, payload)
     else:
         raise DomainRuleError("AUTOMATION_ACTION_UNSUPPORTED", "不支持的自动化任务 action", {"action": action})
     report = {

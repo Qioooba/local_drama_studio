@@ -431,6 +431,33 @@ class TimelineService:
             "mutated": False,
         }
 
+    def _dialogue_selection_rows(self, episode_id: str) -> list[dict[str, Any]]:
+        """Bounded dialogue facts for assembly: latest text + latest selection."""
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """SELECT dl.id,dl.code,dl.shot_id,
+                    dtr.id AS text_revision_id,
+                    dcs.id AS selection_id,dcs.source_text_revision_id,
+                    tc.id AS tts_candidate_id,tc.media_version_id,
+                    mv.duration_ms,mv.integrity_status
+                FROM dialogue_lines dl
+                JOIN dialogue_text_revisions dtr ON dtr.id=(
+                    SELECT latest.id FROM dialogue_text_revisions latest
+                    WHERE latest.dialogue_line_id=dl.id ORDER BY latest.revision_no DESC LIMIT 1
+                )
+                LEFT JOIN dialogue_candidate_selections dcs ON dcs.id=(
+                    SELECT latest_selection.id FROM dialogue_candidate_selections latest_selection
+                    WHERE latest_selection.dialogue_line_id=dl.id
+                    ORDER BY latest_selection.created_at DESC,latest_selection.id DESC LIMIT 1
+                )
+                LEFT JOIN tts_candidates tc ON tc.id=dcs.tts_candidate_id
+                LEFT JOIN media_versions mv ON mv.id=tc.media_version_id
+                WHERE dl.episode_id=?
+                ORDER BY dl.code,dl.id""",
+                (episode_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def plan_stale_timeline_refresh(self, episode_id: str) -> dict[str, Any]:
         """Recheck current upstream facts before replacing a stale timeline.
 
@@ -470,7 +497,7 @@ class TimelineService:
             episode_id,
             plan["items"],
             {
-                "schema_version": "localdrama.timeline-editor.v2",
+                "schema_version": "localdrama.timeline-editor.v3",
                 "source": "AUTOMATION_RUN_ASSEMBLY",
                 "refreshed_from_timeline_revision_id": source.get("id"),
                 "refreshed_from_timeline_revision_hash": source.get("revision_hash"),
@@ -583,6 +610,62 @@ class TimelineService:
                 }
             )
 
+        dialogue_lines = self._dialogue_selection_rows(episode_id)
+        dialogue_items: list[dict[str, Any]] = []
+        dialogue_missing: list[dict[str, Any]] = []
+        shot_clip_start_us = {str(item["parameters"]["shot_id"]): int(item["start_us"]) for item in video_items}
+        dialogue_cursor: dict[str, int] = {}
+        for row in dialogue_lines:
+            line_id = str(row["id"])
+            if not row["selection_id"]:
+                dialogue_missing.append({"line_id": line_id, "code": str(row["code"]), "reason": "TTS_SELECTION_MISSING"})
+                continue
+            if str(row["source_text_revision_id"] or "") != str(row["text_revision_id"]):
+                dialogue_missing.append({"line_id": line_id, "code": str(row["code"]), "reason": "TTS_SELECTION_STALE"})
+                continue
+            if not row["media_version_id"] or str(row["integrity_status"] or "") != "VERIFIED":
+                dialogue_missing.append({"line_id": line_id, "code": str(row["code"]), "reason": "TTS_MEDIA_UNVERIFIED"})
+                continue
+            shot_id = str(row["shot_id"] or "")
+            if shot_id not in shot_clip_start_us:
+                dialogue_missing.append({"line_id": line_id, "code": str(row["code"]), "reason": "SHOT_VIDEO_MISSING"})
+                continue
+            try:
+                media, path = self.media.content_path(str(row["media_version_id"]))
+                actual_sha, actual_size = _hash_file(path)
+                if (
+                    str(media["project_id"]) != str(episode["project_id"])
+                    or str(media["media_kind"]) != "AUDIO"
+                    or not hmac.compare_digest(actual_sha, str(media["sha256"]))
+                    or actual_size != int(media["byte_size"])
+                ):
+                    raise DomainRuleError("SOURCE_INTEGRITY_FAILED", "采用对白音频完整性校验失败")
+            except DomainRuleError as error:
+                dialogue_missing.append({"line_id": line_id, "code": str(row["code"]), "reason": error.code})
+                continue
+            start_us = shot_clip_start_us[shot_id] + dialogue_cursor.get(shot_id, 0)
+            duration_us = max(100_000, int(row["duration_ms"] or 0) * 1000)
+            end_us = start_us + duration_us
+            dialogue_items.append(
+                {
+                    "track_type": "DIALOGUE",
+                    "media_version_id": str(row["media_version_id"]),
+                    "start_us": start_us,
+                    "end_us": end_us,
+                    "parameters": {
+                        "dialogue_line_id": line_id,
+                        "line_code": str(row["code"]),
+                        "tts_candidate_id": str(row["tts_candidate_id"]),
+                        "selection_id": str(row["selection_id"]),
+                        "gain_db": 0.0,
+                        "loop_enabled": False,
+                        "fade_in_us": 0,
+                        "fade_out_us": 0,
+                    },
+                }
+            )
+            dialogue_cursor[shot_id] = end_us - shot_clip_start_us[shot_id]
+
         source_timeline = dict(latest) if latest is not None else None
         subtitle_snapshot = (
             {"id": str(subtitle["id"]), "revision_no": int(subtitle["revision_no"]), "content_hash": str(subtitle["content_hash"]), "status": str(subtitle["status"])}
@@ -595,7 +678,7 @@ class TimelineService:
             "selected_videos": selected_videos,
             "audio_bindings": self._binding_snapshot(audio_bindings),
             "subtitle_revision": subtitle_snapshot,
-            "items": [*video_items, *audio_items],
+            "items": [*video_items, *audio_items, *dialogue_items],
         }
         plan_hash = _hash(snapshot)
         return {
@@ -603,11 +686,12 @@ class TimelineService:
             "status": "READY" if not blockers else "BLOCKED",
             "plan_hash": plan_hash,
             "source_timeline": source_timeline,
-            "summary": {"shot_count": len(selections["items"]), "video_count": len(video_items), "audio_count": len(audio_items), "subtitle_count": 1 if subtitle else 0, "duration_us": cursor_us},
-            "items": [*video_items, *audio_items],
+            "summary": {"shot_count": len(selections["items"]), "video_count": len(video_items), "audio_count": len(audio_items), "dialogue_count": len(dialogue_items), "subtitle_count": 1 if subtitle else 0, "duration_us": cursor_us},
+            "items": [*video_items, *audio_items, *dialogue_items],
             "selected_videos": selected_videos,
             "audio_binding_ids": [str(binding["id"]) for binding in audio_bindings],
             "subtitle_revision_id": str(subtitle["id"]) if subtitle else None,
+            "dialogue_missing": dialogue_missing,
             "blockers": blockers,
             "warnings": warnings,
             "would_create_status": "FROZEN",
@@ -629,7 +713,7 @@ class TimelineService:
             episode_id,
             plan["items"],
             {
-                "schema_version": "localdrama.timeline-editor.v2",
+                "schema_version": "localdrama.timeline-editor.v3",
                 "source": "DELIVERY_STALE_REFRESH",
                 "refresh_plan_hash": plan["plan_hash"],
                 "refreshed_from_timeline_revision_id": source.get("id"),

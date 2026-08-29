@@ -54,6 +54,7 @@ def test_stage_definitions_and_front_half_action_mapping() -> None:
     assert ACTION_STAGE["QC"] == "COMPOSE_QC"
     assert ACTION_STAGE["TTS_BATCH"] == "AUDIO_SUBTITLE"
     assert ACTION_STAGE["TTS_FINALIZE"] == "AUDIO_SUBTITLE"
+    assert ACTION_STAGE["SUBTITLE"] == "AUDIO_SUBTITLE"
     assert ACTION_STAGE["TIMELINE_ASSEMBLY"] == "COMPOSE_QC"
     assert ACTION_STAGE["RENDER"] == "COMPOSE_QC"
     assert ACTION_STAGE["DELIVERY"] == "COMPOSE_QC"
@@ -94,9 +95,10 @@ def test_front_half_dag_workflow_generation(workspace, database) -> None:
     assert actions[7] == "QC"
     assert actions[8] == "TTS_BATCH"
     assert actions[9] == "TTS_FINALIZE"
-    assert actions[10] == "TIMELINE_ASSEMBLY"
-    assert actions[11] == "RENDER"
-    assert actions[12] == "DELIVERY"
+    assert actions[10] == "SUBTITLE"
+    assert actions[11] == "TIMELINE_ASSEMBLY"
+    assert actions[12] == "RENDER"
+    assert actions[13] == "DELIVERY"
 
 
 def _episode(workspace, database, code: str) -> tuple[dict, dict]:
