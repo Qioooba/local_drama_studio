@@ -517,6 +517,7 @@ export function DirectorDeskPage() {
             {inspectorContext === "generate" && (parentVariantId
               ? <><div className="director-section-head"><strong>继续探索候选</strong><Link to={routes.settings(projectId, "capabilities")}>管理项目能力</Link></div><div className="director-placeholder-list">{resolvedGeneration.map((resolution) => <span key={resolution.capability ?? "unknown"}><strong>{resolution.profile?.title ?? resolution.profile?.code ?? "自动匹配能力"}</strong>{resolution.blocked_reason ? ` · 阻塞：${resolution.blocked_reason}` : " · 可用"}<small>系统按镜头、分集、项目的优先级自动解析</small></span>)}</div><button type="button" className="director-button primary wide" disabled={!desk.data?.allowed_actions.generate} onClick={() => setResampleOpen(true)}>从当前候选创建分支</button><p className="director-help">创意重抽创建新 Variant；任务执行失败应在任务详情重试。</p></>
               : <ShotGenerationInspector
+                projectId={projectId}
                 shotId={selected.id}
                 shotCode={selected.code}
                 shotRevision={selected.revision}

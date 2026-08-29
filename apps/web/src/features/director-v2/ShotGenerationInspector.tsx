@@ -1,20 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
   createShotGenerationIntentV2,
+  getProfileVersion,
   preflightShotGenerationV2,
+  putGenerationPreference,
   submitShotGenerationV2,
   type ShotBaseGenerationPreflightCommand,
   type ShotGenerationPreflight,
   type ShotStudio,
 } from "../../generated/api";
+import { ProfileOverrideFields } from "../model-config/ProfileOverrideFields";
 import { composePromptFromIntent, deriveShotSeed } from "../generation/generationDefaults";
 
 type CurrentShot = ShotStudio["current_shot"];
 type ApprovedFrame = { media_version_id: string; take_no?: number | null };
 
 interface ShotGenerationInspectorProps {
+  projectId: string;
   shotId: string;
   shotCode: string;
   shotRevision: number;
@@ -43,6 +47,7 @@ function secondsLabel(value: unknown): string {
 }
 
 export function ShotGenerationInspector({
+  projectId,
   shotId,
   shotCode,
   shotRevision,
@@ -74,6 +79,7 @@ export function ShotGenerationInspector({
   const [sourceMediaVersionId, setSourceMediaVersionId] = useState("");
   const [prompt, setPrompt] = useState("");
   const [seed, setSeed] = useState("");
+  const [parameters, setParameters] = useState<Record<string, unknown>>({});
   const [prepared, setPrepared] = useState<{ command: ShotBaseGenerationPreflightCommand; plan: ShotGenerationPreflight; submitKey: string } | null>(null);
 
   useEffect(() => {
@@ -87,6 +93,40 @@ export function ShotGenerationInspector({
       setSourceMediaVersionId(approvedFrames[0]?.media_version_id ?? "");
     }
   }, [approvedFrames, sourceMediaVersionId]);
+
+  useEffect(() => {
+    setParameters(
+      videoResolution?.effective_settings && typeof videoResolution.effective_settings === "object"
+        ? { ...(videoResolution.effective_settings as Record<string, unknown>) }
+        : {},
+    );
+  }, [videoResolution?.effective_settings, profileVersionId]);
+
+  const profileContract = useQuery({
+    queryKey: ["shot-generation-profile-contract", profileVersionId],
+    queryFn: () => getProfileVersion(profileVersionId),
+    enabled: Boolean(profileVersionId),
+    staleTime: 60_000,
+  });
+  const overrideSchema = profileContract.data?.profile_version.execution?.override_schema;
+  const queryClient = useQueryClient();
+  const saveParameters = useMutation({
+    mutationFn: async () => {
+      return putGenerationPreference(projectId, {
+        owner_type: "SHOT",
+        owner_id: shotId,
+        capability: "VIDEO_I2V",
+        resolution_mode: "EXPLICIT",
+        execution_profile_version_id: profileVersionId,
+        settings: parameters,
+        reason: `导演台镜头参数覆盖（${shotCode}）`,
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["shot-studio-v2", projectId, shotId] });
+      await onSubmitted("镜头参数已保存为默认；重新检查生成方案即可按新参数预检。");
+    },
+  });
 
   const invalidatePlan = () => setPrepared(null);
   const preflightMutation = useMutation({
@@ -175,6 +215,17 @@ export function ShotGenerationInspector({
       <span>可复现 seed</span>
       <input inputMode="numeric" value={seed} onChange={(event) => { setSeed(event.target.value); invalidatePlan(); }} />
     </label>
+    <details className="shot-generation-params">
+      <summary>镜头生成参数 <span>{profileContract.isPending ? "读取中…" : overrideSchema ? "仅显示本镜头可覆盖项" : "由模型决定"}</span></summary>
+      {profileContract.isPending ? <p className="muted" role="status">正在读取参数契约…</p> : profileContract.error ? <p className="inline-error" role="alert">参数契约读取失败：{String(profileContract.error)}</p> : <ProfileOverrideFields schema={overrideSchema} value={parameters} sources={videoResolution?.setting_sources ?? undefined} scope="SHOT" onChange={(next) => setParameters(next)} />}
+      <div className="shot-generation-actions">
+        <button type="button" className="director-button ghost" disabled={!profileVersionId || saveParameters.isPending} onClick={() => saveParameters.mutate()}>
+          {saveParameters.isPending ? "保存中…" : "保存为镜头默认"}
+        </button>
+        <small className="director-help">保存后本镜的手动生成与整集一键运行都会使用这些参数。</small>
+      </div>
+      {saveParameters.error && <p className="director-error" role="alert">{saveParameters.error instanceof Error ? saveParameters.error.message : String(saveParameters.error)}</p>}
+    </details>
     <div className="shot-generation-actions">
       <button type="button" className="director-button ghost" disabled={!canGenerate || preflightMutation.isPending || submitMutation.isPending} onClick={() => preflightMutation.mutate()}>
         {preflightMutation.isPending ? "检查中…" : "检查生成方案"}

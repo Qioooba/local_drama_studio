@@ -213,7 +213,7 @@ export type ShotStudio = {
     dialogue: ShotDialogueProjection;
     qc_summary: { subject_id: string | null; latest_run: Record<string, unknown> | null; results: Array<Record<string, unknown>> };
     review_summary: { subject_id: string | null; count: number; latest: Record<string, unknown> | null };
-    generation_preferences: { resolutions: Array<{ capability: string; profile_version_id: string | null; source: string; blocked_reason: string | null; profile: { code: string; title: string; version_no: number; capability: string; status: string } | null }>; available: boolean };
+    generation_preferences: { resolutions: Array<{ capability: string; profile_version_id: string | null; source: string; blocked_reason: string | null; effective_settings: Record<string, unknown> | null; setting_sources: Record<string, string> | null; profile: { code: string; title: string; version_no: number; capability: string; status: string; override_schema: Record<string, unknown> | null } | null }>; available: boolean };
     generation_intents: ShotGenerationIntent[];
     capability_options: ShotStudioCapabilityOption[];
     active_jobs: Array<Record<string, unknown>>;
@@ -551,6 +551,12 @@ export async function listCapabilityOptions(payload: { capability: string; proje
 
 export async function getProfileVersion(profileVersionId: string, baseUrl = ''): Promise<{ profile_version: ProfileVersionDetail }> {
   return requestJson(`/api/v1/profile-versions/${encodeURIComponent(profileVersionId)}`, undefined, baseUrl);
+}
+
+export type GenerationPreferenceCommand = { owner_type: 'PROJECT' | 'EPISODE' | 'SHOT'; owner_id: string; capability: string; resolution_mode: 'AUTO' | 'EXPLICIT'; execution_profile_version_id?: string | null; settings?: Record<string, unknown>; reason: string; expected_revision?: number | null };
+
+export async function putGenerationPreference(projectId: string, payload: GenerationPreferenceCommand, baseUrl = ''): Promise<{ preference: Record<string, unknown> }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/generation-preferences`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
 export async function resolveEffectiveConfiguration(payload: { project_id: string; episode_id?: string | null; shot_id?: string | null; capability_code: string; requested_profile_version_id?: string | null; run_overrides?: Record<string, unknown> }, baseUrl = ''): Promise<{ configuration: EffectiveConfiguration }> {

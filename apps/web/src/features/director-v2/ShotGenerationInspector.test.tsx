@@ -14,6 +14,8 @@ vi.mock("../../generated/api", () => ({
   createShotGenerationIntentV2: vi.fn(),
   preflightShotGenerationV2: vi.fn(),
   submitShotGenerationV2: vi.fn(),
+  getProfileVersion: vi.fn(),
+  putGenerationPreference: vi.fn(),
 }));
 
 function currentShot(approved = true): ShotStudio["current_shot"] {
@@ -50,7 +52,15 @@ function currentShot(approved = true): ShotStudio["current_shot"] {
         profile_version_id: "profile-1",
         source: "SHOT",
         blocked_reason: null,
-        profile: { code: "i2v", title: "本地 I2V", version_no: 1, capability: "VIDEO_I2V", status: "PUBLISHED" },
+        effective_settings: { steps: 20 },
+        setting_sources: { steps: "PREFERENCE" },
+        profile: {
+          code: "i2v", title: "本地 I2V", version_no: 1, capability: "VIDEO_I2V", status: "PUBLISHED",
+          override_schema: { fields: {
+            steps: { type: "integer", label: "步数", scopes: ["SHOT"], minimum: 10, maximum: 60, default: 20 },
+            cfg: { type: "number", label: "CFG", scopes: ["RUN"], default: 6.5 },
+          } },
+        },
       }],
     },
     generation_intents: [],
@@ -60,6 +70,7 @@ function currentShot(approved = true): ShotStudio["current_shot"] {
 function renderInspector(approved = true, onSubmitted = vi.fn(), shot = currentShot(approved)) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(<QueryClientProvider client={client}><MemoryRouter><ShotGenerationInspector
+    projectId="project-1"
     shotId="shot-1"
     shotCode="SHOT-001"
     shotRevision={4}
@@ -152,5 +163,40 @@ describe("ShotGenerationInspector", () => {
       plan_hash: "a".repeat(64),
     })));
     expect(onSubmitted).toHaveBeenCalledWith("首个视频候选已排队（任务 job-1）。");
+  });
+});
+
+describe("ShotGenerationInspector shot parameter drawer", () => {
+  it("saves SHOT-scope parameters and hides RUN-only fields", async () => {
+    const { getProfileVersion, putGenerationPreference } = await import("../../generated/api");
+    vi.mocked(getProfileVersion).mockResolvedValue({
+      profile_version: {
+        id: "profile-1",
+        execution: { override_schema: { fields: {
+          steps: { type: "integer", label: "步数", scopes: ["SHOT"], minimum: 10, maximum: 60, default: 20 },
+          cfg: { type: "number", label: "CFG", scopes: ["RUN"], default: 6.5 },
+        } } },
+      },
+    } as never);
+    vi.mocked(putGenerationPreference).mockResolvedValue({ preference: {} } as never);
+    const onSubmitted = vi.fn().mockResolvedValue(undefined);
+    renderInspector(true, onSubmitted);
+
+    fireEvent.click(screen.getByText(/镜头生成参数/));
+    const stepsInput = await screen.findByLabelText(/步数/);
+    expect(screen.queryByLabelText(/CFG/)).toBeNull();
+    fireEvent.change(stepsInput, { target: { value: "36" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存为镜头默认" }));
+
+    await waitFor(() => expect(putGenerationPreference).toHaveBeenCalledTimes(1));
+    expect(putGenerationPreference).toHaveBeenCalledWith("project-1", expect.objectContaining({
+      owner_type: "SHOT",
+      owner_id: "shot-1",
+      capability: "VIDEO_I2V",
+      resolution_mode: "EXPLICIT",
+      execution_profile_version_id: "profile-1",
+      settings: expect.objectContaining({ steps: 36 }),
+    }));
+    await waitFor(() => expect(onSubmitted).toHaveBeenCalled());
   });
 });
