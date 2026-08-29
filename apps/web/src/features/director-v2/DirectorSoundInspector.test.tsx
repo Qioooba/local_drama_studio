@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,7 +12,15 @@ import { DirectorSoundInspector } from "./DirectorSoundInspector";
 
 vi.mock("../../generated/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../generated/api")>();
-  return { ...actual, adoptDialogueWorkingAudioV2: vi.fn(), putShotDialogueDraftV2: vi.fn(), submitDialogueTtsGenerationV2: vi.fn() };
+  return {
+    ...actual,
+    adoptDialogueWorkingAudioV2: vi.fn(),
+    putShotDialogueDraftV2: vi.fn(),
+    submitDialogueTtsGenerationV2: vi.fn(),
+    listShotLipsyncJobs: vi.fn().mockResolvedValue({ items: [], shot_id: "shot-1" }),
+    createShotLipsyncJob: vi.fn(),
+    finalizeLipsyncJob: vi.fn(),
+  };
 });
 
 const dialogue: ShotDialogueProjection = {
@@ -30,7 +39,8 @@ const dialogue: ShotDialogueProjection = {
 
 function renderInspector(value: ShotDialogueProjection = dialogue) {
   const onChanged = vi.fn().mockResolvedValue(undefined);
-  const rendered = render(<MemoryRouter><DirectorSoundInspector projectId="project-1" shotId="shot-1" shotCode="S012" shotRevision={3} dialogue={value} canEdit reviewHref="/review" onChanged={onChanged} /></MemoryRouter>);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const rendered = render(<QueryClientProvider client={client}><MemoryRouter><DirectorSoundInspector projectId="project-1" shotId="shot-1" shotCode="S012" shotRevision={3} dialogue={value} videoOptions={[{ id: "video-1", label: "候选 v1" }]} canEdit reviewHref="/review" onChanged={onChanged} /></MemoryRouter></QueryClientProvider>);
   return { onChanged, container: rendered.container };
 }
 

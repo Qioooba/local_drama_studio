@@ -506,6 +506,7 @@ export function DirectorDeskPage() {
               {designSection === "sound" && <DirectorSoundInspector
                 projectId={projectId}
                 shotId={selected.id}
+                videoOptions={[...(desk.data?.current_shot.current_media?.media_kind === "VIDEO" ? [{ id: desk.data.current_shot.current_media.media_version_id, label: `当前工作版本 ${desk.data.current_shot.current_media.version_no ?? ""}` }] : []), ...candidates.filter((item) => item.media_kind === "VIDEO" && item.integrity_status === "VERIFIED").map((item) => ({ id: item.media_version_id, label: `候选 v${item.version_no}${item.take_no ? ` · take ${item.take_no}` : ""}` }))]}
                 shotCode={selected.code}
                 shotRevision={selected.revision}
                 dialogue={desk.data?.current_shot.dialogue ?? { lines: [], total: 0 }}

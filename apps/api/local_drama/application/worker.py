@@ -30,6 +30,7 @@ from local_drama.application.worker_handlers.automation_task import advance_auto
 from local_drama.application.worker_handlers.delivery_build import run_delivery_build_job
 from local_drama.application.worker_handlers.episode_compose import run_episode_compose_job
 from local_drama.application.worker_handlers.experiment_cell import run_experiment_cell
+from local_drama.application.worker_handlers.lipsync_job import run_lipsync_job
 from local_drama.application.worker_handlers.local_llm_probe import run_local_llm_probe_job
 from local_drama.application.worker_handlers.media_derivative import run_media_job
 from local_drama.application.worker_handlers.script_breakdown import run_script_breakdown_job
@@ -170,6 +171,25 @@ def _make_tts_job_handler(
     return handler
 
 
+def _make_lipsync_job_handler(
+    worker: LocalMediaWorker,
+) -> Callable[[dict[str, Any], Path], tuple[str, str]]:
+    """Bind the extracted LIPSYNC_GENERATION flow to runner-owned ports."""
+
+    def handler(job: dict[str, Any], output_root: Path) -> tuple[str, str]:
+        return run_lipsync_job(
+            job,
+            output_root,
+            work_root=worker.settings.work_root,
+            database=worker.database,
+            lipsync_runtime=worker.voxcpm_runtime,
+            media_ops=worker.media,
+            atomic_writer=worker._atomic_file,
+        )
+
+    return handler
+
+
 def _make_experiment_cell_handler(
     worker: LocalMediaWorker,
 ) -> Callable[[dict[str, Any], Path], tuple[str, str]]:
@@ -203,6 +223,7 @@ _EXTRACTED_HANDLER_PROVIDERS: dict[str, Callable[[LocalMediaWorker], Callable[[d
     "MEDIA_THUMBNAIL": _make_media_job_handler,
     "MEDIA_PROXY": _make_media_job_handler,
     "TTS_GENERATION": _make_tts_job_handler,
+    "LIPSYNC_GENERATION": _make_lipsync_job_handler,
     "EXPERIMENT_CELL": _make_experiment_cell_handler,
 }
 

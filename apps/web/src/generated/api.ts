@@ -559,6 +559,20 @@ export async function putGenerationPreference(projectId: string, payload: Genera
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/generation-preferences`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
+export type ShotLipsyncJobSummary = { id: string; state: string; created_at: string; updated_at: string | null; output_media_version_id: string | null };
+
+export async function createShotLipsyncJob(shotId: string, payload: { video_media_version_id: string; audio_media_version_id: string; idempotency_key: string }, baseUrl = ''): Promise<{ job: { id: string; state: string } }> {
+  return requestJson(`/api/v2/shots/${encodeURIComponent(shotId)}/lipsync-jobs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function listShotLipsyncJobs(shotId: string, baseUrl = ''): Promise<{ items: ShotLipsyncJobSummary[]; shot_id: string }> {
+  return requestJson(`/api/v2/shots/${encodeURIComponent(shotId)}/lipsync-jobs`, undefined, baseUrl);
+}
+
+export async function finalizeLipsyncJob(jobId: string, baseUrl = ''): Promise<{ media: { id: string; media_kind: string; purpose: string }; idempotent_replay: boolean }> {
+  return requestJson(`/api/v2/lipsync-jobs/${encodeURIComponent(jobId)}:finalize`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }, baseUrl);
+}
+
 export async function resolveEffectiveConfiguration(payload: { project_id: string; episode_id?: string | null; shot_id?: string | null; capability_code: string; requested_profile_version_id?: string | null; run_overrides?: Record<string, unknown> }, baseUrl = ''): Promise<{ configuration: EffectiveConfiguration }> {
   return requestJson('/api/v1/generation/effective-configuration:resolve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }

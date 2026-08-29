@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Query, Request
-from pydantic import TypeAdapter
+from pydantic import BaseModel, TypeAdapter
 
 from local_drama.api.schemas.shot_studio import (
     AudioWorkingAdoptionCommand,
@@ -34,6 +34,7 @@ from local_drama.application.errors import api_error_from_domain
 from local_drama.application.frame_bridges import FrameBridgeCommandService
 from local_drama.application.generation import GenerationService
 from local_drama.application.jobs import JobService
+from local_drama.application.lipsync import LipsyncService
 from local_drama.application.media import MediaService
 from local_drama.application.shot_studio import ShotStudioQueryService
 from local_drama.application.shot_studio_commands import ShotStudioCommandService
@@ -45,6 +46,13 @@ from local_drama.infrastructure.database.shot_studio_repository import SqliteSho
 
 router = APIRouter(tags=["shot-studio-v2"])
 shot_generation_response_adapter: TypeAdapter[ShotGenerationResponse] = TypeAdapter(ShotGenerationResponse)
+
+
+class ShotLipsyncJobRequest(BaseModel):
+    video_media_version_id: str
+    audio_media_version_id: str
+    idempotency_key: str
+
 
 
 def service(request: Request) -> ShotStudioQueryService:
@@ -61,6 +69,15 @@ def generation_service(request: Request) -> GenerationService:
 
 def frame_bridge_service(request: Request) -> FrameBridgeCommandService:
     return FrameBridgeCommandService(request.app.state.database)
+
+
+def lipsync_service(request: Request) -> LipsyncService:
+    return LipsyncService(
+        request.app.state.database,
+        request.app.state.settings,
+        jobs=JobService(request.app.state.database, request.app.state.settings),
+        media=MediaService(request.app.state.database, request.app.state.settings),
+    )
 
 
 def dialogue_service(request: Request) -> DialogueService:
@@ -294,6 +311,48 @@ async def create_shot_generation_intent(
         return ShotGenerationIntentResponse.model_validate({"intent": result})
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
+
+
+@router.post(
+    "/shots/{shot_id}/lipsync-jobs",
+    operation_id="createShotLipsyncJob",
+    status_code=201,
+)
+async def create_shot_lipsync_job(shot_id: str, payload: ShotLipsyncJobRequest, request: Request) -> dict[str, object]:
+    try:
+        job = lipsync_service(request).create_job(
+            shot_id,
+            video_media_version_id=payload.video_media_version_id,
+            audio_media_version_id=payload.audio_media_version_id,
+            idempotency_key=payload.idempotency_key,
+        )
+        return {"job": {"id": str(job["id"]), "state": str(job["state"])}}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get(
+    "/shots/{shot_id}/lipsync-jobs",
+    operation_id="listShotLipsyncJobs",
+)
+async def list_shot_lipsync_jobs(shot_id: str, request: Request, limit: int = Query(default=20, ge=1, le=50)) -> dict[str, object]:
+    try:
+        return lipsync_service(request).list_shot_jobs(shot_id, limit=limit)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post(
+    "/lipsync-jobs/{job_id}:finalize",
+    operation_id="finalizeLipsyncJob",
+)
+async def finalize_lipsync_job(job_id: str, request: Request) -> dict[str, object]:
+    try:
+        result = lipsync_service(request).finalize_job(job_id)
+        return {"media": result["media"], "idempotent_replay": result["idempotent_replay"]}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
 
 
 @router.post(

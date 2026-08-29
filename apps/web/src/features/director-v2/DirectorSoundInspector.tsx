@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ApiRequestError,
   adoptDialogueWorkingAudioV2,
+  createShotLipsyncJob,
+  finalizeLipsyncJob,
+  listShotLipsyncJobs,
   putShotDialogueDraftV2,
   submitDialogueTtsGenerationV2,
   type DialogueTtsCandidateFact,
@@ -17,6 +21,7 @@ type DirectorSoundInspectorProps = {
   shotCode: string;
   shotRevision: number;
   dialogue: ShotDialogueProjection;
+  videoOptions: Array<{ id: string; label: string }>;
   canEdit: boolean;
   reviewHref: string;
   onChanged: () => Promise<unknown>;
@@ -34,10 +39,46 @@ function candidateLabel(candidate: DialogueTtsCandidateFact) {
   return `${candidate.emotion} · ${candidate.speech_rate}× · ${candidate.model_ref}`;
 }
 
-export function DirectorSoundInspector({ projectId, shotId, shotCode, shotRevision, dialogue, canEdit, reviewHref, onChanged }: DirectorSoundInspectorProps) {
+export function DirectorSoundInspector({ projectId, shotId, shotCode, shotRevision, dialogue, videoOptions, canEdit, reviewHref, onChanged }: DirectorSoundInspectorProps) {
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [saving, setSaving] = useState(false);
   const [pendingTtsLineId, setPendingTtsLineId] = useState<string | null>(null);
+  const [lipsyncVideoId, setLipsyncVideoId] = useState("");
+  const [lipsyncAudioId, setLipsyncAudioId] = useState("");
+  const queryClient = useQueryClient();
+  const lipsyncJobs = useQuery({
+    queryKey: ["shot-lipsync-jobs", shotId],
+    queryFn: () => listShotLipsyncJobs(shotId),
+    enabled: Boolean(shotId),
+    refetchInterval: (query) => (query.state.data?.items ?? []).some((item) => ["QUEUED", "CLAIMED", "RUNNING"].includes(item.state)) ? 4000 : false,
+  });
+  const pendingFinalizeRef = useRef(new Set<string>());
+  const jobs = lipsyncJobs.data?.items ?? [];
+  useEffect(() => {
+    for (const entry of jobs) {
+      if (entry.state === "SUCCEEDED" && !entry.output_media_version_id && !pendingFinalizeRef.current.has(entry.id)) {
+        pendingFinalizeRef.current.add(entry.id);
+        void finalizeLipsyncJob(entry.id)
+          .then(() => queryClient.invalidateQueries({ queryKey: ["shot-lipsync-jobs", shotId] }))
+          .catch(() => pendingFinalizeRef.current.delete(entry.id));
+      }
+    }
+  }, [jobs, queryClient, shotId]);
+  const audioOptions = dialogue.lines
+    .map((line) => line.working_selection)
+    .filter((selection): selection is NonNullable<typeof selection> => Boolean(selection));
+  const lipsyncCreate = useMutation({
+    mutationFn: async () => {
+      return createShotLipsyncJob(shotId, {
+        video_media_version_id: lipsyncVideoId,
+        audio_media_version_id: lipsyncAudioId,
+        idempotency_key: `lipsync:${shotId}:${crypto.randomUUID()}`,
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["shot-lipsync-jobs", shotId] });
+    },
+  });
   const [pendingAdoptionId, setPendingAdoptionId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
   const [failure, setFailure] = useState("");
@@ -168,6 +209,20 @@ export function DirectorSoundInspector({ projectId, shotId, shotCode, shotRevisi
         </ul>}
       </article>)}
     </div>}
+    <details className="director-lipsync">
+      <summary>一键唇形对齐（LatentSync）</summary>
+      <p className="director-help">把本镜视频与已采用的对白音频交给本机 LatentSync，生成口型匹配的新视频版本；任务在本机 GPU 队列执行。</p>
+      <label>视频<select value={lipsyncVideoId} onChange={(event) => setLipsyncVideoId(event.target.value)} disabled={!canEdit}><option value="">选择本镜视频候选</option>{videoOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+      <label>对白音频<select value={lipsyncAudioId} onChange={(event) => setLipsyncAudioId(event.target.value)} disabled={!canEdit}><option value="">选择已采用的对白音频</option>{audioOptions.map((selection) => <option key={selection.media_version_id} value={selection.media_version_id}>{selection.media_version_id.slice(0, 8)}（已采用）</option>)}</select></label>
+      <button type="button" className="director-button primary wide" disabled={!canEdit || !lipsyncVideoId || !lipsyncAudioId || lipsyncCreate.isPending} onClick={() => lipsyncCreate.mutate()}>{lipsyncCreate.isPending ? "排队中…" : "生成口型对齐视频"}</button>
+      {lipsyncCreate.error && <p className="director-sound-state error" role="alert">{errorMessage(lipsyncCreate.error)}</p>}
+      {jobs.length > 0 && <ul className="director-lipsync-jobs">
+        {jobs.map((entry) => <li key={entry.id}>
+          <div><strong>{entry.id.slice(0, 8)}</strong><span>{entry.state}</span></div>
+          {entry.output_media_version_id && <video controls preload="none" src={mediaContentUrl(entry.output_media_version_id)} aria-label="唇形对齐输出视频" />}
+        </li>)}
+      </ul>}
+    </details>
     {failure && <p className="director-sound-state error" role="alert">{failure}</p>}
     {feedback && <p className="director-sound-state" role="status">{feedback}</p>}
     <p className="director-help">“采用”只确定制作中的工作声音，不等于正式批准。需要批准或退回时，<Link to={reviewHref}>前往审核工作区</Link>。</p>
