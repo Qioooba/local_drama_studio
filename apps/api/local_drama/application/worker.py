@@ -104,6 +104,7 @@ def _make_adaptation_analysis_handler(
                 SqliteAdaptationPlanRepository(worker.database, worker.settings),
                 worker.settings,
                 LocalLLMService(worker.database, worker.settings),
+                database=worker.database,
             ),
             atomic_writer=worker._atomic_file,
             on_progress=on_progress,

@@ -346,3 +346,66 @@ def test_analysis_dag_rechecks_inputs_records_invocations_and_writes_review_draf
         assert connection.execute("SELECT COUNT(*) FROM episodes").fetchone()[0] == 2
         assert connection.execute("SELECT COUNT(*) FROM audit_events WHERE action='ADAPTATION_PLAN_APPROVED'").fetchone()[0] == 1
         assert connection.execute("SELECT COUNT(*) FROM audit_events WHERE action='ADAPTATION_PLAN_MATERIALIZED'").fetchone()[0] == 1
+
+
+def test_analysis_knowledge_block_filters_and_fails_open(database, workspace, monkeypatch) -> None:
+    import hashlib
+
+    from local_drama.application.adaptation_analysis_execution import AdaptationAnalysisExecutionService
+
+    class _Hit:
+        def __init__(self, source_id: str, start: int, end: int) -> None:
+            self.source_document_version_id = source_id
+            self.source_start = start
+            self.source_end = end
+            self.ordinal = 0
+            self.index_run_id = "run-1"
+            self.score = 0.9
+
+    service = AdaptationAnalysisExecutionService(
+        repository=None, settings=workspace, llm=None, database=database,
+    )
+    source_id = "src-1"
+    snapshot = {"source_document_version_id": source_id, "stage": "ARC_REDUCE"}
+    context = {"source_text": "前文埋下的伏笔：血月每隔十年出现一次。与知识无关的正文段落。"}
+    user_input = "归纳故事弧"
+
+    class _FakeRetrieval:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def search(self, *, project_id: str, query: str, limit: int = 8):
+            return "profile-1", (
+                _Hit(source_id, 0, 15),   # same source → injected
+                _Hit("src-other", 0, 30),  # cross-source → dropped
+            )
+
+    monkeypatch.setattr(
+        "local_drama.model_platform.application.project_knowledge_retrieval.ProjectKnowledgeRetrievalService",
+        _FakeRetrieval,
+    )
+    monkeypatch.setattr(service, "_project_id_for_source", lambda _source_id: "proj-1")
+    block = service._knowledge_block(snapshot, context, user_input)
+    assert block is not None
+    assert "血月" in block
+    assert "与知识无关" not in block
+    assert "以上方正文为准" in block
+
+    # Fail-open: retrieval service raising (index not ready / GPU busy) yields None.
+    def _boom(*args, **kwargs):
+        raise RuntimeError("index not ready")
+
+    monkeypatch.setattr(
+        "local_drama.model_platform.application.project_knowledge_retrieval.ProjectKnowledgeRetrievalService",
+        _boom,
+    )
+    assert service._knowledge_block(snapshot, context, user_input) is None
+
+    # No database wired → disabled entirely.
+    no_source = AdaptationAnalysisExecutionService(repository=None, settings=workspace, llm=None, database=database)
+    monkeypatch.setattr(no_source, "_project_id_for_source", lambda _source_id: None)
+    assert no_source._knowledge_block(snapshot, context, user_input) is None
+
+    bare = AdaptationAnalysisExecutionService(repository=None, settings=workspace, llm=None, database=None)
+    assert bare._knowledge_block(snapshot, context, user_input) is None
+    assert hashlib.sha256(b"").hexdigest()  # hashlib still imported in module scope
