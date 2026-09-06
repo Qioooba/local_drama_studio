@@ -72,6 +72,56 @@ def test_api_contract_discovery_and_business_request_version_are_consistent(tmp_
     assert matched.status_code == 200
 
 
+def test_api_contract_allows_native_reads_but_still_rejects_explicit_stale_versions(tmp_path: Path) -> None:
+    settings = Settings(
+        data_root=tmp_path / "data",
+        projects_root=tmp_path / "projects",
+        work_root=tmp_path / "work",
+        cache_root=tmp_path / "cache",
+        logs_root=tmp_path / "logs",
+        backups_root=tmp_path / "backups",
+    )
+    with TestClient(create_app(settings), client=("127.0.0.1", 51234)) as client:
+        native_read = client.get("/api/v1/session/bootstrap")
+        stale_read = client.get(
+            "/api/v1/session/bootstrap",
+            headers={API_CONTRACT_HEADER: "localdrama.api.stale"},
+        )
+        matched_write = client.post(
+            "/api/v1/system/contract",
+            headers={
+                API_CONTRACT_HEADER: API_CONTRACT_VERSION,
+                "X-Local-Instance-Token": native_read.json()["token"],
+            },
+        )
+    assert native_read.status_code == 200
+    assert native_read.headers[API_CONTRACT_HEADER] == API_CONTRACT_VERSION
+    assert stale_read.status_code == 409
+    assert matched_write.status_code == 405
+
+
+def test_validation_errors_redact_unserializable_raw_request_input(tmp_path: Path) -> None:
+    settings = Settings(
+        data_root=tmp_path / "data",
+        projects_root=tmp_path / "projects",
+        work_root=tmp_path / "work",
+        cache_root=tmp_path / "cache",
+        logs_root=tmp_path / "logs",
+        backups_root=tmp_path / "backups",
+    )
+    secret = "prompt-that-must-not-be-echoed"
+    with TestClient(create_app(settings)) as client:
+        response = client.post(
+            "/api/v2/model-platform/quick-create-v2/direct-image:preview",
+            content=f'{{"prompt":"{secret}"}}'.encode(),
+            headers={"Content-Type": "application/octet-stream"},
+        )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert secret not in response.text
+    assert response.headers[API_CONTRACT_HEADER] == API_CONTRACT_VERSION
+
+
 def test_ready_reports_g2_database_boundary(tmp_path: Path) -> None:
     settings = Settings(
         data_root=tmp_path / "data",

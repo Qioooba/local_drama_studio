@@ -8,11 +8,11 @@ function SectionNav({ items }: { items: Array<{ to: string; label: string; end?:
 export function PostShell() {
   const { projectId = "", episodeId = "" } = useParams();
   return <section className="workspace-section-shell">
-    <header className="workspace-section-head"><div><p className="eyebrow">本集后期</p><h2>审阅、声音与编辑</h2></div></header>
+    <header className="workspace-section-head workspace-section-head--compact"><div><p className="eyebrow">后期成片</p><h2>只处理整集质检、声音与剪辑</h2></div><p>一般从“剪辑成片”开始；只有发现问题时才进入质检或声音修正。</p></header>
     <SectionNav items={[
-      { to: routes.postReview(projectId, episodeId), label: "审核" },
-      { to: routes.postAudio(projectId, episodeId), label: "声音" },
-      { to: routes.postEdit(projectId, episodeId), label: "编辑" },
+      { to: routes.postEdit(projectId, episodeId), label: "剪辑成片" },
+      { to: routes.postReview(projectId, episodeId), label: "问题质检" },
+      { to: routes.postAudio(projectId, episodeId), label: "声音修正" },
     ]} />
     <Outlet />
   </section>;

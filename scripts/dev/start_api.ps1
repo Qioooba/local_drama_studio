@@ -18,3 +18,6 @@ $env:LOCAL_DRAMA_NETWORK_MODE = $NetworkMode
 $Arguments = @("-m", "local_drama.entrypoints.api", "--host", $HostAddress, "--port", [string]$Port)
 if ($Reload) { $Arguments += "--reload" }
 & $Python @Arguments
+$ProcessExitCode = $LASTEXITCODE
+if ($null -eq $ProcessExitCode) { $ProcessExitCode = 1 }
+exit $ProcessExitCode

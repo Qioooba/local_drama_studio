@@ -105,6 +105,68 @@ describe("CharacterIdentityPackPanel", () => {
     expect(client.approveCharacterIdentityPackVersion).not.toHaveBeenCalled();
   });
 
+  it("explicitly reuses active project-level views, authorizes each media, and does not bind episode/script data", async () => {
+    prime();
+    const projectReferences = ["FRONT", "LEFT", "RIGHT"].map((kind) => ({
+      id: `ref-${kind.toLowerCase()}`,
+      project_id: "prj-1",
+      story_asset_id: "char-1",
+      asset_state_id: null,
+      media_version_id: `media-${kind.toLowerCase()}`,
+      reference_kind: kind,
+      label: `项目三视图 · ${kind}`,
+      priority: 10,
+      is_locked: true,
+      yaw_deg: null,
+      pitch_deg: null,
+      status: "ACTIVE",
+      revision: 1,
+    }));
+    const versions = ["FRONT", "LEFT", "RIGHT"].map((kind, index) => ({
+      ...baseVersion,
+      slots_map: Object.fromEntries(["FRONT", "LEFT", "RIGHT"].slice(0, index + 1).map((slot) => [slot, `media-${slot.toLowerCase()}`])),
+      slots: [],
+      missing_required_slots: ["FRONT", "LEFT", "RIGHT"].slice(index + 1),
+    }));
+    vi.mocked(client.setCharacterIdentityPackSlot)
+      .mockResolvedValueOnce({ version: versions[0] })
+      .mockResolvedValueOnce({ version: versions[1] })
+      .mockResolvedValueOnce({ version: versions[2] });
+
+    render(<CharacterIdentityPackPanel projectId="prj-1" storyAssetId="char-1" assetName="主角林远" baseReferences={projectReferences} />);
+
+    expect(await screen.findByText("可复用项目级角色参考")).toBeTruthy();
+    expect(screen.getByText(/不会把本集或脚本的镜头绑定当作身份包参考/)).toBeTruthy();
+    const reuse = screen.getByRole("button", { name: "复用缺失项目引用（FRONT / LEFT / RIGHT）" });
+    fireEvent.click(reuse);
+
+    await waitFor(() => expect(authorizeWorkspaceAsset).toHaveBeenNthCalledWith(1, "prj-1", "media-front"));
+    await waitFor(() => expect(authorizeWorkspaceAsset).toHaveBeenNthCalledWith(2, "prj-1", "media-left"));
+    await waitFor(() => expect(authorizeWorkspaceAsset).toHaveBeenNthCalledWith(3, "prj-1", "media-right"));
+    expect(client.setCharacterIdentityPackSlot).toHaveBeenNthCalledWith(1, "v-1", { slot_kind: "FRONT", media_version_id: "media-front" });
+    expect(client.setCharacterIdentityPackSlot).toHaveBeenNthCalledWith(2, "v-1", { slot_kind: "LEFT", media_version_id: "media-left" });
+    expect(client.setCharacterIdentityPackSlot).toHaveBeenNthCalledWith(3, "v-1", { slot_kind: "RIGHT", media_version_id: "media-right" });
+    expect(await screen.findByText(/不会修改本集或脚本的镜头绑定/)).toBeTruthy();
+  });
+
+  it("does not offer project reuse for foreign, state-scoped, inactive, or ambiguous references", async () => {
+    prime();
+    const references = [
+      { id: "foreign", project_id: "other-project", story_asset_id: "char-1", asset_state_id: null, media_version_id: "foreign-front", reference_kind: "FRONT", label: "", priority: 1, is_locked: true, yaw_deg: null, pitch_deg: null, status: "ACTIVE", revision: 1 },
+      { id: "state", project_id: "prj-1", story_asset_id: "char-1", asset_state_id: "state-1", media_version_id: "state-left", reference_kind: "LEFT", label: "", priority: 1, is_locked: true, yaw_deg: null, pitch_deg: null, status: "ACTIVE", revision: 1 },
+      { id: "inactive", project_id: "prj-1", story_asset_id: "char-1", asset_state_id: null, media_version_id: "inactive-right", reference_kind: "RIGHT", label: "", priority: 1, is_locked: true, yaw_deg: null, pitch_deg: null, status: "ARCHIVED", revision: 1 },
+      { id: "duplicate-a", project_id: "prj-1", story_asset_id: "char-1", asset_state_id: null, media_version_id: "active-front-a", reference_kind: "FRONT", label: "", priority: 1, is_locked: true, yaw_deg: null, pitch_deg: null, status: "ACTIVE", revision: 1 },
+      { id: "duplicate-b", project_id: "prj-1", story_asset_id: "char-1", asset_state_id: null, media_version_id: "active-front-b", reference_kind: "FRONT", label: "", priority: 2, is_locked: true, yaw_deg: null, pitch_deg: null, status: "ACTIVE", revision: 1 },
+    ];
+
+    render(<CharacterIdentityPackPanel projectId="prj-1" storyAssetId="char-1" assetName="主角林远" baseReferences={references} />);
+
+    await screen.findByText(/缺少必需视角：FRONT \/ LEFT \/ RIGHT/);
+    expect(screen.queryByRole("button", { name: /复用缺失项目引用/ })).toBeNull();
+    expect(screen.getByText(/以下视角存在多个项目候选，请逐槽选择：FRONT/)).toBeTruthy();
+    expect(client.setCharacterIdentityPackSlot).not.toHaveBeenCalled();
+  });
+
   it("uses the project media picker instead of a UUID text field", async () => {
     prime();
     const updated = {

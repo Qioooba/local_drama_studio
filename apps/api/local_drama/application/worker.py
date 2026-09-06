@@ -19,7 +19,7 @@ from local_drama.application.dialogue import DialogueService
 from local_drama.application.episode_front_half_actions import EpisodeFrontHalfActionService
 from local_drama.application.episode_worker_actions import EpisodeWorkerActionService
 from local_drama.application.generation import GenerationService
-from local_drama.application.job_resources import gpu_runtime_for_job
+from local_drama.application.job_resources import GpuRuntime, gpu_runtime_for_job
 from local_drama.application.jobs import JobService
 from local_drama.application.local_llm import LocalLLMService
 from local_drama.application.media import MediaService
@@ -35,6 +35,7 @@ from local_drama.application.worker_handlers.local_llm_probe import run_local_ll
 from local_drama.application.worker_handlers.media_derivative import run_media_job
 from local_drama.application.worker_handlers.script_breakdown import run_script_breakdown_job
 from local_drama.application.worker_handlers.segmented_compose import run_segmented_compose_job
+from local_drama.application.worker_handlers.story_pipeline_draft import run_story_pipeline_draft_job
 from local_drama.application.worker_handlers.tts_job import run_tts_job
 from local_drama.application.worker_handlers.video_enhancement import run_video_enhancement_job
 from local_drama.config import Settings
@@ -43,12 +44,56 @@ from local_drama.infrastructure.database.adaptation_plan_repository import Sqlit
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.atomic import write_atomic
 from local_drama.infrastructure.local_ai_subprocess import LocalAiSubprocessRuntime
+from local_drama.infrastructure.service_composition import (
+    build_asset_image_completion,
+    build_pipeline_orchestrator,
+    build_shot_keyframe_completion,
+)
 from local_drama.model_platform.application.comfy_capability_smoke_execution import ComfyCapabilitySmokeWorker
-from local_drama.model_platform.application.execution_job_links import ExecutionJobLinkService
+from local_drama.model_platform.application.execution_job_links import ExecutionJobLinkService, WorkerExecutionSnapshot
 from local_drama.model_platform.application.production_execution_registry import production_worker_execution_handlers
 from local_drama.model_platform.application.worker_execution_handlers import WorkerExecutionHandlerRegistry
 from local_drama.platform import create_platform_services
 from local_drama.platform.contracts import TtsRuntime
+
+
+def _worker_error_detail(error: DomainRuleError) -> str:
+    """Persist a bounded, already-redacted diagnostic for operator recovery."""
+
+    details = error.details if isinstance(error.details, dict) else {}
+    detail = error.message
+    stderr = details.get("stderr_redacted")
+    if isinstance(stderr, str) and stderr.strip():
+        detail = f"{detail}（stderr：{stderr.strip()}）"
+    returncode = details.get("returncode")
+    if isinstance(returncode, int):
+        detail = f"{detail}；returncode={returncode}"
+    path_suffix = details.get("path_suffix")
+    path_exists = details.get("path_exists")
+    path_size_bytes = details.get("path_size_bytes")
+    if path_suffix or path_exists is not None or path_size_bytes is not None:
+        detail = (
+            f"{detail}；输入文件 suffix={path_suffix or '-'}"
+            f", exists={str(bool(path_exists)).lower()}, size_bytes={path_size_bytes}"
+        )
+    return detail
+
+
+def llama_cpp_activation_context(snapshot: WorkerExecutionSnapshot) -> dict[str, object]:
+    """Translate a frozen llama.cpp V2 snapshot into lease activation facts."""
+
+    if snapshot.adapter_code != "llama.chat.v1" or len(snapshot.model_bindings) != 1:
+        raise DomainRuleError(
+            "MP_LLAMA_TEXT_MODEL_BINDING_INVALID",
+            "托管 llama.cpp V2 Job 必须在租约前冻结一个 GGUF 模型绑定。",
+        )
+    locator = snapshot.model_bindings[0].get("native_locator")
+    if not isinstance(locator, str) or not locator.strip():
+        raise DomainRuleError(
+            "MP_LLAMA_TEXT_MODEL_BINDING_INVALID",
+            "托管 llama.cpp V2 Job 的 GGUF 模型定位符无效。",
+        )
+    return {"model_locator": locator.strip()}
 
 
 def _make_delivery_build_handler(
@@ -209,6 +254,25 @@ def _make_experiment_cell_handler(
     return handler
 
 
+def _make_story_pipeline_draft_handler(
+    worker: LocalMediaWorker,
+) -> Callable[[dict[str, Any], Path], tuple[str, str]]:
+    """Bind the persistent story-draft workflow to queue-owned lifecycle ports."""
+
+    def handler(job: dict[str, Any], output_root: Path) -> tuple[str, str]:
+        return run_story_pipeline_draft_job(
+            job,
+            output_root,
+            work_root=worker.settings.work_root,
+            pipeline=build_pipeline_orchestrator(worker.database, worker.settings),
+            atomic_writer=worker._atomic_file,
+            cancel_check=worker._cancel_requested,
+            report_progress=worker._report_progress,
+        )
+
+    return handler
+
+
 # Declarative registry: job type -> business handler factory.
 # Every queue-dispatched job family's business flow lives under
 # application/worker_handlers; the runner binds each flow to its ports through
@@ -226,6 +290,7 @@ _EXTRACTED_HANDLER_PROVIDERS: dict[str, Callable[[LocalMediaWorker], Callable[[d
     "TTS_GENERATION": _make_tts_job_handler,
     "LIPSYNC_GENERATION": _make_lipsync_job_handler,
     "EXPERIMENT_CELL": _make_experiment_cell_handler,
+    "STORY_PIPELINE_DRAFT": _make_story_pipeline_draft_handler,
 }
 
 
@@ -634,14 +699,36 @@ class LocalMediaWorker:
         handlers["AUTOMATION_WORKFLOW_TASK"] = automation
         return WorkerJobDispatcher(handlers)
 
+    def _gpu_activation_context(
+        self,
+        job: dict[str, Any],
+        runtime: GpuRuntime | None,
+    ) -> dict[str, object] | None:
+        """Resolve immutable runtime activation facts before entering a lease."""
+
+        if runtime is not GpuRuntime.LLAMA_CPP or str(job.get("type") or "") != "MODEL_PLATFORM_EXECUTION":
+            return None
+        snapshot = ExecutionJobLinkService(self.database).load_for_worker(str(job["id"]))
+        return llama_cpp_activation_context(snapshot)
+
+    def _wait_for_gpu(self) -> None:
+        if self._report_progress({"phase": "WAITING_FOR_GPU"}, force=True):
+            raise DomainRuleError("JOB_CANCELLED", "等待显卡期间已取消，不会启动模型")
+
     def run_once(
         self,
         worker_id: str,
         channels: list[str] | None = None,
         *,
         worker_session_id: str | None = None,
+        job_types: list[str] | None = None,
     ) -> dict[str, Any] | None:
-        claim = self.jobs.claim(worker_id, channels or ["CPU"], worker_session_id=worker_session_id)
+        claim = self.jobs.claim(
+            worker_id,
+            channels or ["CPU"],
+            worker_session_id=worker_session_id,
+            job_types=job_types,
+        )
         if claim is None:
             return None
         job = claim["job"]
@@ -667,13 +754,18 @@ class LocalMediaWorker:
                 raise DomainRuleError("JOB_CANCELLED", "后台任务已取消，不会开始新的处理步骤")
             dispatcher = self._dispatcher(attempt_id=attempt_id, token=token, worker_id=worker_id)
             runtime = gpu_runtime_for_job(job)
+            activation_context = self._gpu_activation_context(job, runtime)
             if runtime is not None and self.gpu_coordinator is not None:
                 with self.gpu_coordinator.session(
                     runtime,
                     owner_kind="JOB_ATTEMPT",
                     owner_ref=attempt_id,
                     retain_if_same_runtime_waiting=True,
+                    activation_context=activation_context,
+                    on_wait=self._wait_for_gpu,
                 ):
+                    if self._report_progress({"phase": "EXECUTING"}, force=True):
+                        raise DomainRuleError("JOB_CANCELLED", "已取消，不会启动模型任务")
                     execution = dispatcher.execute(job, output_root)
             else:
                 execution = dispatcher.execute(job, output_root)
@@ -689,6 +781,16 @@ class LocalMediaWorker:
             if execution.after_artifacts_registered is not None:
                 execution.after_artifacts_registered(tuple(artifacts))
             result = self.jobs.complete(attempt_id, token, worker_id, success=True)
+            asset_completion = build_asset_image_completion(self.database, self.settings)
+            try:
+                asset_completion.finalize_job(str(job["id"]), artifacts)
+            except DomainRuleError as error:
+                asset_completion.record_finalization_failure(str(job["id"]), error)
+            keyframe_completion = build_shot_keyframe_completion(self.database, self.settings)
+            try:
+                keyframe_completion.finalize_job(str(job["id"]), artifacts)
+            except DomainRuleError as error:
+                keyframe_completion.record_failure(str(job["id"]), error)
             advance_error: str | None = None
             if execution.report is not None:
                 advance_error = advance_automation_run(
@@ -708,7 +810,7 @@ class LocalMediaWorker:
                 worker_id,
                 success=False,
                 error_code=error.code,
-                error_detail_redacted=error.message,
+                error_detail_redacted=_worker_error_detail(error),
                 retryable=self._retryable_error(error.code),
             )
             return {"job": job, "attempt": attempt, "result": result, "error": error.code}
@@ -730,6 +832,22 @@ class LocalMediaWorker:
             return {"job": job, "attempt": attempt, "result": result, "error": code}
         finally:
             self._active_job_context = None
+
+    def run_media_derivative_once(
+        self,
+        worker_id: str,
+        channels: list[str],
+        *,
+        worker_session_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Prefer one lightweight creator preview before another long decode."""
+
+        return self.run_once(
+            worker_id,
+            channels,
+            worker_session_id=worker_session_id,
+            job_types=["MEDIA_DERIVATIVE"],
+        )
 
     def run_until_idle(
         self,

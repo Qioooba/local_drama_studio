@@ -1,13 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { createMemoryRouter, RouterProvider, useParams } from "react-router-dom";
 import { AppShell } from "../layouts/AppShell";
 import { ProjectHomePage } from "../pages/ProjectHomePage";
 import { AssetBiblePage } from "../pages/AssetBiblePage";
 import { DirectorDeskPage } from "../pages/DirectorDeskPage";
 import { EpisodePlanPage } from "../pages/EpisodePlanPage";
-import { EpisodeRunPage } from "../pages/EpisodeRunPage";
 import { EpisodeReviewPage } from "../pages/EpisodeReviewPage";
 import { AudioPage } from "../pages/AudioPage";
 import { TimelinePage } from "../pages/TimelinePage";
@@ -67,7 +66,7 @@ vi.mock("../generated/api", () => ({
 }));
 
 vi.mock("../features/episode-production-v2/EpisodeProductionWorkspace", () => ({
-  EpisodeProductionWorkspace: ({ projectId, episodeId }: { projectId: string; episodeId: string }) => <section aria-label="整集生产工作台">{projectId}/{episodeId}</section>,
+  EpisodeProductionWorkspace: ({ projectId, episodeId }: { projectId: string; episodeId: string }) => <section aria-label="本集 Agent 制作">{projectId}/{episodeId}</section>,
 }));
 
 vi.mock("../features/episode-review-v2/EpisodeReviewWorkspace", () => ({
@@ -111,7 +110,7 @@ function renderAt(path: string) {
           ] },
           { path: "episodes/:episodeId/plan", element: <EpisodePlanPage /> },
           { path: "episodes/:episodeId/studio/:shotId?", element: <DirectorDeskPage /> },
-          { path: "episodes/:episodeId/production", element: <EpisodeRunPage /> },
+          { path: "episodes/:episodeId/production", element: <EpisodePlanPage /> },
           { path: "episodes/:episodeId/post", element: <PostShell />, children: [
             { path: "review", element: <EpisodeReviewPage /> },
             { path: "audio", element: <AudioPage /> },
@@ -135,25 +134,66 @@ describe("V2 router foundation", () => {
     renderAt("/projects/proj-1");
     expect((await screen.findAllByText("项目首页")).length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "全局工作台" }).getAttribute("href")).toBe("/");
-    expect(screen.getByRole("link", { name: "能力与模型" }).getAttribute("href")).toBe("/system/capabilities");
+    expect(screen.getByRole("link", { name: "能力与模型" }).getAttribute("href")).toBe("/projects/proj-1/models");
     expect(screen.getByRole("link", { name: "诊断与审计" }).getAttribute("href")).toBe("/system/diagnostics?project=proj-1");
     expect((await screen.findAllByText("分集")).length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { name: "制作进度" })).toBeTruthy();
   });
 
+  it("provides an in-panel close action for the mobile navigation", async () => {
+    renderAt("/projects/proj-1");
+    const trigger = await screen.findByRole("button", { name: "打开主导航" });
+    fireEvent.click(trigger);
+    expect(screen.getByRole("button", { name: "关闭主导航" })).toBeTruthy();
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭主导航" }));
+    expect(screen.queryByRole("button", { name: "关闭主导航" })).toBeNull();
+    expect(screen.getByRole("button", { name: "打开主导航" }).getAttribute("aria-expanded")).toBe("false");
+  });
+
   it("deep-links into the asset bible page", async () => {
     renderAt("/projects/proj-1/assets");
-    expect(screen.getByRole("heading", { name: "角色、场景、道具与服装" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "人物、场景与关键道具" })).toBeTruthy();
+  });
+
+  it.each([
+    ["project-a", "episode-a"],
+    ["project-b", "episode-b"],
+  ])("replaces episode content when switching to project assets (%s)", async (projectId, episodeId) => {
+    function EpisodeProbe() {
+      const params = useParams();
+      return <section aria-label="本集 Agent 制作">{params.projectId}/{params.episodeId}</section>;
+    }
+    function AssetsProbe() {
+      const params = useParams();
+      return <section aria-label="核心资产页">{params.projectId}</section>;
+    }
+    const router = createMemoryRouter([
+      { path: "/projects/:projectId", element: <AppShell />, children: [
+        { path: "assets", element: <AssetsProbe /> },
+        { path: "episodes/:episodeId/plan", element: <EpisodeProbe /> },
+      ] },
+    ], { initialEntries: [`/projects/${projectId}/episodes/${episodeId}/plan`] });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
+
+    expect((await screen.findByRole("region", { name: "本集 Agent 制作" })).textContent).toBe(`${projectId}/${episodeId}`);
+    fireEvent.click(screen.getByRole("link", { name: "核心资产" }));
+    expect((await screen.findByRole("region", { name: "核心资产页" })).textContent).toBe(projectId);
+    expect(screen.queryByRole("region", { name: "本集 Agent 制作" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "当前分集与制作阶段" })).toBeNull();
+    expect(router.state.location.pathname).toBe(`/projects/${projectId}/assets`);
   });
 
   it("deep-links into episode plan and director desk with optional shot id", async () => {
     renderAt("/projects/proj-1/episodes/ep-9/plan");
-    expect(await screen.findByRole("tablist", { name: "分集策划任务" })).toBeTruthy();
+    expect(await screen.findByRole("region", { name: "本集 Agent 制作" })).toBeTruthy();
     cleanup();
     renderAt("/projects/proj-1/episodes/ep-9/studio");
-    expect(await screen.findByRole("heading", { name: "先选择要处理的镜头" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: /一集 · \d+ 个镜头/ })).toBeTruthy();
     expect(screen.getByRole("link", { name: /S042/ }).getAttribute("href")).toBe(
-      "/projects/proj-1/episodes/ep-9/studio/shot-42",
+      "/projects/proj-1/episodes/ep-9/studio/shot-42?focus=generate",
     );
     expect(screen.queryByRole("button", { name: /生成|重抽|批准/ })).toBeNull();
     cleanup();
@@ -170,8 +210,8 @@ describe("V2 router foundation", () => {
     expect(second.getAttribute("aria-pressed")).toBe("true");
     fireEvent.keyDown(window, { key: "[" });
     expect(first.getAttribute("aria-pressed")).toBe("true");
-    fireEvent.keyDown(window, { key: "a" });
-    expect(screen.getByRole("tab", { name: "角色场景" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(window, { key: "g" });
+    expect(screen.getByRole("tab", { name: "AI 生成" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.queryByRole("alertdialog")).toBeNull();
     fireEvent.keyDown(window, { key: "c" });
     expect(screen.getByRole("dialog", { name: "并排比较候选" })).toBeTruthy();
@@ -195,7 +235,7 @@ describe("V2 router foundation", () => {
   });
 
   it.each([
-    ["production", "整集生产工作台"],
+    ["production", "本集 Agent 制作"],
     ["post/review", "整集审核工作台"],
     ["post/audio", "整集声音工作台"],
     ["post/edit?view=export", "时间线编排器"],

@@ -153,6 +153,47 @@ def _create_approved_pack(ctx, database, *, code: str = "APPROVED_PACK"):
     return pack, service.approve_pack_version(version["id"], comment="人工核对三视图、状态与授权通过")
 
 
+def test_new_pack_bootstraps_verified_authorized_three_view_story_references(workspace, database) -> None:
+    ctx = _setup_character_and_media(workspace, database)
+    now = "2026-08-21T01:00:00Z"
+    with database.transaction() as connection:
+        for reference_kind, media_key in (("FRONT", "front_mv"), ("LEFT", "left_mv"), ("RIGHT", "right_mv")):
+            connection.execute(
+                """INSERT INTO story_asset_references
+                (id,project_id,story_asset_id,asset_state_id,media_version_id,reference_kind,
+                 label,priority,is_locked,yaw_deg,pitch_deg,metadata_json,status,
+                 created_at,updated_at,created_by,revision,schema_version)
+                VALUES (?,?,?,?,?,?,?,100,1,NULL,NULL,'{}','ACTIVE',?,?,?,1,'v1')""",
+                (
+                    str(uuid.uuid4()),
+                    ctx["project_id"],
+                    ctx["character"]["id"],
+                    None,
+                    ctx[media_key],
+                    reference_kind,
+                    reference_kind,
+                    now,
+                    now,
+                    "test",
+                ),
+            )
+
+    pack = CharacterIdentityPackService(database).create_pack(
+        ctx["project_id"],
+        ctx["character"]["id"],
+        "BOOTSTRAPPED_LOOK",
+        "基础造型",
+    )
+    version = CharacterIdentityPackService(database).get_version(pack["versions"][0]["id"])
+
+    assert version["slots_map"] == {
+        "FRONT": ctx["front_mv"],
+        "LEFT": ctx["left_mv"],
+        "RIGHT": ctx["right_mv"],
+    }
+    assert version["approval_ready"] is True
+
+
 def test_character_identity_pack_lifecycle_and_immutability(workspace, database) -> None:
     ctx = _setup_character_and_media(workspace, database)
     pack_svc = CharacterIdentityPackService(database)
@@ -501,6 +542,53 @@ def test_only_current_approved_pack_binds_and_superseded_or_retired_versions_sta
     with pytest.raises(DomainRuleError) as retired_mutation:
         service.set_version_slot(v2["id"], "FACE", ctx["front_mv"])
     assert retired_mutation.value.code == "APPROVED_PACK_IMMUTABLE"
+
+
+def test_episode_sync_applies_one_current_approved_pack_to_every_character_binding(workspace, database) -> None:
+    ctx = _setup_character_and_media(workspace, database)
+    service = CharacterIdentityPackService(database)
+    _, approved = _create_approved_pack(ctx, database, code="EPISODE_SYNC")
+    shot_ids = [
+        _create_shot(database, ctx["project_id"], "S_SYNC_01"),
+        _create_shot(database, ctx["project_id"], "S_SYNC_02"),
+    ]
+    story_assets = StoryAssetService(database, workspace)
+    for shot_id in shot_ids:
+        story_assets.bind_asset_to_shot(shot_id, ctx["character"]["id"], "main")
+
+    with database.connect() as connection:
+        episode_id = str(connection.execute("SELECT episode_id FROM shots WHERE id=?", (shot_ids[0],)).fetchone()["episode_id"])
+    result = service.sync_episode_identity_packs(episode_id)
+
+    assert result == {
+        "episode_id": episode_id,
+        "project_id": ctx["project_id"],
+        "updated_binding_count": 2,
+        "character_count": 1,
+    }
+    with database.connect() as connection:
+        rows = connection.execute(
+            "SELECT identity_pack_version_id FROM shot_asset_bindings WHERE shot_id IN (?,?) ORDER BY shot_id",
+            tuple(shot_ids),
+        ).fetchall()
+    assert {str(row["identity_pack_version_id"]) for row in rows} == {approved["id"]}
+
+
+def test_episode_sync_refuses_to_guess_between_multiple_active_character_looks(workspace, database) -> None:
+    ctx = _setup_character_and_media(workspace, database)
+    service = CharacterIdentityPackService(database)
+    _create_approved_pack(ctx, database, code="LOOK_ONE")
+    _create_approved_pack(ctx, database, code="LOOK_TWO")
+    shot_id = _create_shot(database, ctx["project_id"], "S_AMBIGUOUS")
+    StoryAssetService(database, workspace).bind_asset_to_shot(shot_id, ctx["character"]["id"], "main")
+
+    with database.connect() as connection:
+        episode_id = str(connection.execute("SELECT episode_id FROM shots WHERE id=?", (shot_id,)).fetchone()["episode_id"])
+    with pytest.raises(DomainRuleError) as blocked:
+        service.sync_episode_identity_packs(episode_id)
+
+    assert blocked.value.code == "EPISODE_IDENTITY_PACK_SYNC_BLOCKED"
+    assert blocked.value.details["ambiguous_assets"][0]["asset_id"] == ctx["character"]["id"]
 
 
 def test_compare_impact_and_retire_preserve_traceable_history(workspace, database) -> None:

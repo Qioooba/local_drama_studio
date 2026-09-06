@@ -51,17 +51,38 @@ class ComposeService:
             "estimate_inputs": {"video_bytes": video_bytes, "audio_bytes": audio_bytes},
             "filesystem_source": "PROJECT_ROOT",
         }
-        return {**plan, "status": "BLOCKED" if blocking else "READY", "disk_gate": disk_gate, "blockers": [disk_gate] if blocking else []}
+        production_spec = plan.get("production_spec")
+        production_blocked = isinstance(production_spec, dict) and str(production_spec.get("status")) != "READY"
+        blockers = [*plan.get("blockers", []), *([disk_gate] if blocking else [])]
+        return {
+            **plan,
+            "status": "BLOCKED" if (blockers or production_blocked) else "READY",
+            "disk_gate": disk_gate,
+            "blockers": blockers,
+        }
 
     def submit(self, timeline_revision_id: str, *, force_rerender: bool = False, idempotency_key: str | None = None) -> dict[str, Any]:
         plan = self.preflight(timeline_revision_id, force_rerender=force_rerender)
-        if plan["existing_render"] is not None and not force_rerender:
-            return {"preflight": plan, "job": None, "render": plan["existing_render"], "idempotent_replay": True}
         if plan["status"] != "READY":
+            source_blockers = [item for item in plan.get("blockers", []) if str(item.get("code", "")).startswith(("TIMELINE_SOURCE_", "FFPROBE_"))]
+            if source_blockers:
+                raise DomainRuleError(
+                    "COMPOSE_SOURCE_DURATION_BLOCKED", source_blockers[0]["message"],
+                    {"timeline_revision_id": timeline_revision_id, "blockers": source_blockers},
+                )
+            production_spec = plan.get("production_spec")
+            if isinstance(production_spec, dict) and str(production_spec.get("status")) != "READY":
+                raise DomainRuleError(
+                    "COMPOSE_PRODUCTION_SPEC_BLOCKED",
+                    "整集合成被项目生产规格阻塞；请先修复交付画布或 VIDEO workflow 能力",
+                    {"timeline_revision_id": timeline_revision_id, "production_spec": production_spec},
+                )
             raise DomainRuleError(
                 "COMPOSE_DISK_PREFLIGHT_BLOCKED", "Compose 输出及临时文件所需项目磁盘空间不足",
                 {"timeline_revision_id": timeline_revision_id, "disk_gate": plan["disk_gate"]},
             )
+        if plan["existing_render"] is not None and not force_rerender:
+            return {"preflight": plan, "job": None, "render": plan["existing_render"], "idempotent_replay": True}
         fingerprint = str(plan["compose_fingerprint"])
         if force_rerender and not idempotency_key:
             raise DomainRuleError("IDEMPOTENCY_KEY_REQUIRED", "显式重新渲染必须提供 Idempotency-Key，防止网络重试重复创建版本")
@@ -70,6 +91,7 @@ class ComposeService:
             "schema_version": "localdrama.episode-compose-job.v1",
             "timeline_revision_id": timeline_revision_id,
             "compose_fingerprint": fingerprint,
+            "renderer_contract": plan["input_snapshot"].get("renderer_contract"),
             "force_rerender": force_rerender,
             "force_command_id": idempotency_key if force_rerender else None,
             "local_only": True,

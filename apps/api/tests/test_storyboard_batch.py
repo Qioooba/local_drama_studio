@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from local_drama.application.projects import ProjectService
+from local_drama.application.dialogue import DialogueService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.shot_studio_command_repository import shot_studio_command_service
 from local_drama.main import create_app
@@ -86,6 +87,20 @@ def test_batch_plan_reports_item_conflicts_and_commit_is_atomic(workspace, datab
     with pytest.raises(DomainRuleError) as stale:
         service.commit_storyboard_batch(episode_id, {"ordered_shot_ids": ids, "edits": [], "copies": []}, "0" * 64)
     assert stale.value.code == "STORYBOARD_PLAN_STALE"
+
+
+def test_storyboard_projects_latest_structured_dialogue_without_rewriting_director_history(workspace, database) -> None:
+    service, episode, shots = _episode(workspace, database)
+    episode_id, shot_id = str(episode["id"]), str(shots[0]["id"])
+    original = service.get_storyboard_workspace(episode_id)["items"][0]
+    dialogue = DialogueService(database, workspace)
+    line = dialogue.create_line(episode_id, code="L01", speaker="林晚", text="原句", pronunciation={}, shot_id=shot_id)
+    dialogue.revise_text(str(line["id"]), expected_revision_no=1, text="谁发出的文件？", pronunciation={})
+    current = service.get_storyboard_workspace(episode_id)["items"]
+    assert current[0]["current_dialogue"] == "林晚：谁发出的文件？"
+    assert current[0]["fields"] == original["fields"]
+    assert current[0]["current_revision_id"] == original["current_revision_id"]
+    assert current[1]["current_dialogue"] is None
 
 
 def test_storyboard_api_exposes_three_views_and_explicit_plan_commit(workspace, database) -> None:

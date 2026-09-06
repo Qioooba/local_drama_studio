@@ -18,6 +18,9 @@ type BreakdownJobMonitorProps = {
   onMutate: (job: Job, action: "cancel" | "retry" | "delete") => Promise<void>;
   onDraftReady?: (job: Job) => void;
 };
+const JOB_STATE_LABELS: Record<string, string> = { QUEUED: "已排队", CLAIMED: "已领取", RUNNING: "运行中", SUCCEEDED: "草稿已就绪", FAILED: "运行失败", CANCELLED: "已取消", NEEDS_ATTENTION: "需要处理", ORPHANED: "等待恢复" };
+const JOB_PHASE_LABELS: Record<string, string> = { WAITING_FOR_WORKER: "等待后台服务", CALLING_LOCAL_LLM: "本地模型生成中", DRAFT_READY: "待审核草稿已保存", FAILED: "运行未完成" };
+const JOB_ERROR_LABELS: Record<string, string> = { LOCAL_LLM_LOOPBACK_UNAVAILABLE: "本地模型服务暂不可用" };
 
 export function BreakdownJobMonitor({
   projectId,
@@ -71,10 +74,10 @@ export function BreakdownJobMonitor({
                     <strong>{subjectSession ? `导入会话 ${subjectSession.slice(0, 12)}…` : "剧本拆解"}</strong>
                     <small>模型：{frozenModelLabel} · Job {job.id.slice(0, 12)}… · 失败重试沿用此模型</small>
                   </div>
-                  <span className={`status-pill state-${state.toLowerCase()}`}>{state}</span>
+                  <span className={`status-pill state-${state.toLowerCase()}`}>{JOB_STATE_LABELS[state] ?? "状态待确认"}</span>
                 </div>
                 <label className="breakdown-progress-label">
-                  <span>{isLocalModelGenerating ? "本地模型正在生成（worker 心跳正常）" : phase}</span>
+                  <span>{isLocalModelGenerating ? "本地模型正在生成（worker 心跳正常）" : JOB_PHASE_LABELS[phase] ?? (phase === state ? "等待下一步" : phase)}</span>
                   <span>{isLocalModelGenerating ? "运行中" : `${Math.round(boundedProgress)}%`}</span>
                   <progress
                     value={isLocalModelGenerating ? undefined : boundedProgress}
@@ -87,7 +90,7 @@ export function BreakdownJobMonitor({
                 ) : null}
                 {job.last_error_code ? (
                   <p className="inline-error" role="alert">
-                    {job.last_error_code}：{String(job.last_error_detail_redacted ?? "请检查本地模型与 worker 后重试。")}
+                    {JOB_ERROR_LABELS[job.last_error_code] ?? "任务未完成"}：{String(job.last_error_detail_redacted ?? "请检查本地模型与后台服务后重试。")}
                   </p>
                 ) : null}
                 {state === "SUCCEEDED" ? (
@@ -99,7 +102,7 @@ export function BreakdownJobMonitor({
                   </div>
                 ) : null}
                 {state === "CANCEL_REQUESTED" ? (
-                  <p className="muted">正在等待本地 Ollama 调用返回；取消会在草稿持久化前再次检查。</p>
+                  <p className="muted">正在等待本地 llama.cpp 调用返回；取消会在草稿持久化前再次检查。</p>
                 ) : null}
                 <div className="breakdown-job-actions">
                   <Link className="secondary v2-inline-link" to={`${routes.systemJobs(projectId)}&job=${encodeURIComponent(job.id)}`}>查看任务详情</Link>

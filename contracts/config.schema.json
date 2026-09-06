@@ -56,8 +56,8 @@
       "additionalProperties": false,
       "properties": {
         "comfy_base_url": {"type": "string", "default": "http://127.0.0.1:8188"},
-        "llm_provider": {"type": "string", "default": "OLLAMA_LOOPBACK"},
-        "llm_base_url": {"type": "string", "default": "http://127.0.0.1:11434"},
+        "llm_provider": {"type": "string", "default": "LLAMA_CPP_MANAGED"},
+        "llm_base_url": {"type": "string", "default": "http://127.0.0.1:28088"},
         "llm_model": {"type": ["string", "null"]},
         "model_root": {"type": ["string", "null"], "description": "Machine-owned ModelRoot. Model identity remains path-free; libraries/downloads/staging live beneath this root."},
         "model_library_roots": {"type": "array", "items": {"type": "string"}, "default": []},

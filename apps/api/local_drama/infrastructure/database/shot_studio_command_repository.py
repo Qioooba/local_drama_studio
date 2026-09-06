@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -8,6 +9,8 @@ from typing import TYPE_CHECKING, Any
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.policies import VALID_SHOT_TRANSITIONS, require_transition
 from local_drama.infrastructure.database.sqlite import Database
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from local_drama.application.shot_studio_commands import ShotStudioCommandService
@@ -273,6 +276,18 @@ class SqliteShotStudioCommandRepository:
                         ),
                     ),
                 )
+        if slot_type == "VIDEO" and not replayed:
+            try:
+                from local_drama.application.frame_chaining import FrameChainingService
+
+                FrameChainingService(self.database).auto_chain_shot_tail_to_next(
+                    str(media["shot_id"]),
+                    tail_media_version_id=media_version_id,
+                    actor=actor,
+                )
+            except Exception as err:
+                logger.warning("Auto frame chaining failed after adopting video: %s", err)
+
         return {
             "id": slot_id,
             "shot_id": str(media["shot_id"]),

@@ -36,7 +36,7 @@ function ShotColumn({ shot, label }: { shot: ContinuityShot | null; label: strin
     <div className="continuity-references">
       <small>已选/已批参考 · {shot.references.length}</small>
       {shot.references.map((reference) => <div className="continuity-reference" key={reference.media_version_id}>
-        {reference.media_kind === "IMAGE" || reference.media_kind === "VIDEO" ? <img src={`/api/v1/media-versions/${encodeURIComponent(reference.media_version_id)}/thumbnail?size=small&frame=poster`} alt={`${shot.code} 连续性参考的小尺寸缩略图`} loading="lazy" decoding="async" /> : <span className="media-kind-placeholder" aria-hidden="true">{reference.media_kind}</span>}
+        {reference.media_kind === "IMAGE" || reference.media_kind === "VIDEO" ? <img src={`/api/v1/media-versions/${encodeURIComponent(reference.media_version_id)}/thumbnail?size=small&frame=poster`} alt={`${shot.code} 连续性参考的小尺寸缩略图`} loading="eager" decoding="async" onError={(e) => { e.currentTarget.style.display = "none"; }} /> : <span className="media-kind-placeholder" aria-hidden="true">{reference.media_kind}</span>}
         <span><strong>{reference.selection_state}</strong><small>{reference.purpose} · v{reference.version_no} · {reference.integrity_status}</small></span>
       </div>)}
       {shot.references.length === 0 && <span className="muted">无已选或已批参考</span>}

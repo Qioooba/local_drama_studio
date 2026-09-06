@@ -1,6 +1,6 @@
 import { useId, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { listProjectMedia, mediaThumbnailUrl, uploadProjectMediaFile, type MediaCatalogueItem } from "./mediaPickerClient";
+import { listProjectMedia, mediaDisplayName, mediaThumbnailUrl, uploadProjectMediaFile, type MediaCatalogueItem } from "./mediaPickerClient";
 import { fallbackToOriginalVideo, mediaContentUrl, mediaProxyUrl } from "../shared/mediaPlaybackPolicy";
 import "./media-picker.css";
 
@@ -51,7 +51,7 @@ export function MediaPicker({ projectId, value, onChange, disabled = false, labe
   return <div className="media-picker" aria-label={label}>
     <div className="media-picker-toolbar">
       <label htmlFor={searchId}>搜索项目媒体</label>
-      <input id={searchId} type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="文件名、用途或阶段" disabled={disabled} />
+      <input id={searchId} type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="人物名、视角、文件名、用途或阶段" disabled={disabled} />
       {allowUpload && <><label className={`secondary media-picker-upload${disabled || uploading ? " disabled" : ""}`} htmlFor={uploadId}>{uploading ? "上传中…" : uploadBtnText}</label>
       <input id={uploadId} className="media-picker-file" type="file" accept={acceptType} disabled={disabled || uploading} onChange={(event) => void upload(event.target.files?.[0])} /></>}
     </div>
@@ -69,16 +69,16 @@ export function MediaPicker({ projectId, value, onChange, disabled = false, labe
         disabled={disabled}
         onClick={() => onChange(item.media_version_id, item)}
       >
-        {mediaKind === "AUDIO" ? <span className="media-kind-placeholder" aria-hidden="true">AUDIO</span> : <img src={mediaThumbnailUrl(item.media_version_id)} alt="" loading="lazy" decoding="async" />}
-        <span className="media-picker-name">{item.source_name || (mediaKind === "AUDIO" ? "未命名音频" : mediaKind === "VIDEO" ? "未命名视频" : "未命名图片")}</span>
+        {mediaKind === "AUDIO" ? <span className="media-kind-placeholder" aria-hidden="true">AUDIO</span> : <img src={mediaThumbnailUrl(item.media_version_id)} alt="" loading="eager" decoding="async" onError={(e) => { e.currentTarget.style.display = "none"; }} />}
+        <span className="media-picker-name">{mediaDisplayName(item)}</span>
         <span className="muted">版本 {item.version_no} · {item.stage} · {readableSize(item.byte_size)}</span>
       </button>)}
     </div>}
 
     {value && <div className="media-picker-selection" role="status">
-      <strong>已选择：</strong>{selected ? `${selected.source_name || `未命名${mediaKind === "AUDIO" ? "音频" : mediaKind === "VIDEO" ? "视频" : "图片"}`} · 不可变版本 ${selected.version_no}` : "已选择的不可变媒体版本"}
+      <strong>已选择：</strong>{selected ? `${mediaDisplayName(selected)} · 不可变版本 ${selected.version_no}` : "已选择的不可变媒体版本"}
       <details><summary>高级：查看版本标识</summary><code>{value}</code></details>
     </div>}
-    {value && <div className="media-picker-preview" aria-label="已选媒体预览">{mediaKind === "VIDEO" && <video controls preload="none" playsInline poster={`/api/v1/media-versions/${encodeURIComponent(value)}/thumbnail?size=medium&frame=poster`} src={mediaProxyUrl(value)} data-original-src={mediaContentUrl(value)} onError={fallbackToOriginalVideo} />}{mediaKind === "AUDIO" && <audio controls preload="metadata" src={mediaContentUrl(value)} />}{mediaKind === "IMAGE" && <img src={`/api/v1/media-versions/${encodeURIComponent(value)}/thumbnail?size=medium&frame=poster`} alt={selected?.source_name ? `${selected.source_name} 预览` : "已选图片预览"} />}</div>}
+    {value && <div className="media-picker-preview" aria-label="已选媒体预览">{mediaKind === "VIDEO" && <video controls preload="none" playsInline poster={`/api/v1/media-versions/${encodeURIComponent(value)}/thumbnail?size=medium&frame=poster`} src={mediaProxyUrl(value)} data-original-src={mediaContentUrl(value)} onError={fallbackToOriginalVideo} />}{mediaKind === "AUDIO" && <audio controls preload="metadata" src={mediaContentUrl(value)} />}{mediaKind === "IMAGE" && <img loading="eager" decoding="async" src={`/api/v1/media-versions/${encodeURIComponent(value)}/thumbnail?size=medium&frame=poster`} alt={selected?.source_name ? `${selected.source_name} 预览` : "已选图片预览"} onError={(e) => { e.currentTarget.style.display = "none"; }} />}</div>}
   </div>;
 }

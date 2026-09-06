@@ -124,4 +124,16 @@ describe("ShotNavigator", () => {
     expect((screen.getByLabelText("拖动镜头 S01") as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/筛选\/搜索时暂停排序/)).toBeTruthy();
   });
+
+  it("preserves query params when clicking another shot card and avoids re-navigating active shot", () => {
+    renderNavigator("/projects/p1/episodes/e1/studio/s1?batch=s1%2Cs2&batchIndex=0");
+    const s2Link = screen.getByRole("link", { name: /S02/i });
+    expect(s2Link.getAttribute("href")).toBe("/projects/p1/episodes/e1/studio/s2?batch=s1%2Cs2&batchIndex=0");
+
+    const s1Link = screen.getByRole("link", { name: /S01/i });
+    expect(s1Link.getAttribute("aria-current")).toBe("true");
+    const clickEvent = new MouseEvent("click", { cancelable: true, bubbles: true });
+    s1Link.dispatchEvent(clickEvent);
+    expect(clickEvent.defaultPrevented).toBe(true);
+  });
 });

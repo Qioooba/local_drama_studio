@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
+from local_drama.application.dialogue import DialogueService
 from local_drama.main import create_app
 
 
@@ -63,6 +64,27 @@ def test_audio_workspace_v2_tracks_mix_revision_and_gaps(workspace, database) ->
         assert workspace_response["tracks"][0]["allowed_actions"] == ["UPDATE_MIX_TRACK", "REMOVE_MIX_TRACK"]
         assert "license_evidence_path_rel" not in workspace_response["tracks"][0]
         assert workspace_response["project_id"] == project["id"]
+
+
+def test_audio_workspace_v2_exposes_canonical_dialogue_text_revision_number(workspace, database) -> None:
+    _project, episode, _media, _evidence = _fixture(workspace, database)
+    projects = ProjectService(database, workspace.projects_root)
+    shot = projects.create_shot(str(episode["id"]), "AUDIO-DIALOGUE-001", 1_000)
+    DialogueService(database, workspace).create_line(
+        str(episode["id"]),
+        code="DL-AUDIO-001",
+        speaker="沈砚",
+        text="灯还亮着。",
+        pronunciation={},
+        shot_id=str(shot["id"]),
+    )
+
+    with TestClient(create_app(workspace)) as client:
+        response = client.get(f"/api/v2/episodes/{episode['id']}/post/audio")
+        assert response.status_code == 200, response.text
+        line = response.json()["workspace"]["dialogue_references"][0]
+        assert line["text_revision_no"] == 1
+        assert "revision_no" not in line
 
 
 def test_audio_track_v2_update_remove_are_revision_safe_idempotent_and_audited(workspace, database) -> None:

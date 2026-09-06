@@ -10,9 +10,9 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
+from local_drama.application.ports.database import DatabaseUnitOfWork
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
-from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.path_policy import controlled_path
 
 from .media import MediaService
@@ -100,10 +100,10 @@ TEMPLATES: tuple[dict[str, Any], ...] = (
 
 
 class ReviewService:
-    def __init__(self, database: Database, settings: Settings | None = None) -> None:
+    def __init__(self, database: DatabaseUnitOfWork, settings: Settings | None = None) -> None:
         self.database = database
         self.settings = settings
-        self.media = MediaService(database, settings) if settings is not None else None
+        self.media = MediaService(cast(Any, database), settings) if settings is not None else None
 
     def ensure_templates(self, actor: str = "system") -> int:
         now = _utc_now()
@@ -285,6 +285,39 @@ class ReviewService:
                 (media_version_id,),
             ).fetchone()
         return str(row["status"]) if row else None
+
+    def _stored_machine_check(self, media_version_id: str, policy_version: str) -> dict[str, Any] | None:
+        """Return the latest immutable check for a subject/policy, if present.
+
+        Media versions are immutable review subjects.  Replaying the same
+        machine-check command therefore returns its existing evidence instead
+        of creating another run or changing the media catalogue.
+        """
+        with self.database.connect() as connection:
+            run = connection.execute(
+                """SELECT * FROM machine_check_runs
+                WHERE subject_type='MEDIA_VERSION' AND subject_id=? AND policy_version=?
+                ORDER BY created_at DESC,id DESC LIMIT 1""",
+                (media_version_id, policy_version),
+            ).fetchone()
+            if run is None:
+                return None
+            result_rows = connection.execute(
+                "SELECT item_id,result,details_json FROM machine_check_results WHERE run_id=? ORDER BY item_id",
+                (run["id"],),
+            ).fetchall()
+        return {
+            "id": str(run["id"]),
+            "subject_type": "MEDIA_VERSION",
+            "subject_id": media_version_id,
+            "policy_version": str(run["policy_version"]),
+            "status": str(run["status"]),
+            "results": [
+                {"item_id": str(item["item_id"]), "result": str(item["result"]), "details": json.loads(str(item["details_json"]))}
+                for item in result_rows
+            ],
+            "idempotent_replay": True,
+        }
 
     def create_video_annotation(
         self,
@@ -751,6 +784,14 @@ class ReviewService:
         media = self._media(media_version_id)
         if self.media is None:
             raise DomainRuleError("MEDIA_SERVICE_UNAVAILABLE", "媒体服务未配置")
+        effective_policy = policy_version
+        if media["media_kind"] == "AUDIO":
+            effective_policy = "g8_audio_qc_v1"
+        elif media["media_kind"] == "VIDEO" and media["stage"] == "FORMAL" and policy_version == "g4_media_qc_v1":
+            effective_policy = "g6_formal_video_qc_v1"
+        stored = self._stored_machine_check(media_version_id, effective_policy)
+        if stored is not None:
+            return stored
         _, path = self.media.content_path(media_version_id)
         results: list[dict[str, Any]] = []
         file_ok = path.is_file() and path.stat().st_size == int(media["byte_size"])
@@ -795,16 +836,39 @@ class ReviewService:
             if policy_version == "g4_media_qc_v1":
                 policy_version = "g6_formal_video_qc_v1"
         if media["media_kind"] == "AUDIO":
+            streams = probe.get("streams") if isinstance(probe, dict) and isinstance(probe.get("streams"), list) else []
+            audio_stream = next((item for item in streams if isinstance(item, dict) and item.get("codec_type") == "audio"), {})
+            format_info = probe.get("format") if isinstance(probe, dict) and isinstance(probe.get("format"), dict) else {}
+            duration_value = audio_stream.get("duration") or format_info.get("duration")
+            try:
+                duration_ms = round(float(duration_value) * 1000) if duration_value is not None else None
+            except (TypeError, ValueError):
+                duration_ms = None
+            codec_name = str(audio_stream.get("codec_name") or "").strip()
+            try:
+                sample_rate_hz = int(audio_stream.get("sample_rate")) if audio_stream.get("sample_rate") is not None else None
+            except (TypeError, ValueError):
+                sample_rate_hz = None
+            try:
+                channels = int(audio_stream.get("channels")) if audio_stream.get("channels") is not None else None
+            except (TypeError, ValueError):
+                channels = None
+            channel_layout = str(audio_stream.get("channel_layout") or "").strip() or None
             metrics = self.media.audio_qc_metrics(media_version_id)
             integrated_lufs = float(metrics["integrated_lufs"])
             true_peak_dbfs = float(metrics["true_peak_dbfs"])
             peak_dbfs = float(metrics["peak_dbfs"])
             results.extend(
                 [
+                    {"item_id": "duration", "result": "PASS" if duration_ms and duration_ms > 0 else "FAIL", "details": {"duration_ms": duration_ms, "source": "ffprobe"}},
+                    {"item_id": "codec", "result": "PASS" if codec_name else "FAIL", "details": {"codec_name": codec_name or None, "source": "ffprobe"}},
+                    {"item_id": "sample_rate", "result": "PASS" if sample_rate_hz and sample_rate_hz > 0 else "FAIL", "details": {"sample_rate_hz": sample_rate_hz, "source": "ffprobe"}},
+                    {"item_id": "channels", "result": "PASS" if channels and channels > 0 else "FAIL", "details": {"channels": channels, "channel_layout": channel_layout, "source": "ffprobe"}},
                     {"item_id": "integrated_loudness", "result": "PASS" if -30 <= integrated_lufs <= -14 else "FAIL", "details": {"value_lufs": integrated_lufs, "minimum_lufs": -30, "maximum_lufs": -14}},
                     {"item_id": "true_peak", "result": "PASS" if true_peak_dbfs <= -1 else "FAIL", "details": {"value_dbfs": true_peak_dbfs, "maximum_dbfs": -1}},
                     {"item_id": "peak", "result": "PASS" if peak_dbfs < -0.1 else "FAIL", "details": {"value_dbfs": peak_dbfs, "maximum_dbfs_exclusive": -0.1}},
                     {"item_id": "clipping", "result": "FAIL" if metrics["clipping_detected"] else "PASS", "details": {"detected": metrics["clipping_detected"]}},
+                    {"item_id": "silence", "result": "FAIL" if metrics["silence_all"] else "PASS", "details": {"detected": metrics["silence_detected"], "all_silent": metrics["silence_all"], "segment_count": metrics["silence_segment_count"], "duration_ms": metrics["silence_duration_ms"], "segments": metrics["silence_segments"], "threshold_db": metrics["silence_threshold_db"], "minimum_duration_ms": metrics["silence_min_duration_ms"]}},
                 ]
             )
             policy_version = "g8_audio_qc_v1"
@@ -828,6 +892,7 @@ class ReviewService:
             "policy_version": policy_version,
             "status": status,
             "results": results,
+            "idempotent_replay": False,
         }
 
     def review_context(self, media_version_id: str) -> dict[str, Any]:

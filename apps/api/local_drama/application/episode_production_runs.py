@@ -16,7 +16,6 @@ from typing import Any, cast
 
 from local_drama.domain.capabilities import (
     VIDEO_GENERATION_CAPABILITIES,
-    normalize_capability,
 )
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.policies import missing_shot_fields
@@ -29,6 +28,8 @@ from .capacity import CapacitySnapshotService
 from .diagnostics import _probe_loopback
 from .episode_front_half_actions import EpisodeFrontHalfActionService
 from .jobs import JobService
+from .keyframe_references import approved_keyframes_for_shots
+from .production_spec_resolution import effective_video_profile
 
 STAGE_DEFINITIONS = (
     ("STORY_ANALYSIS", "故事解析", ("STORY_READY",)),
@@ -46,6 +47,7 @@ ACTION_STAGE = {
     "ASSET_IDENTITY": "ASSET_EXTRACTION",
     "ASSET_COMPLETION": "ASSET_COMPLETION",
     "EPISODE_PLAN": "SHOT_PLANNING",
+    "KEYFRAME_GENERATION": "SHOT_IMAGE",
     "KEYFRAME_CHECK": "SHOT_IMAGE",
     "VIDEO_GENERATION": "VIDEO",
     "QC": "COMPOSE_QC",
@@ -198,13 +200,30 @@ class EpisodeProductionRunService:
                 JOIN director_recipe_versions drv ON drv.id=b.recipe_version_id WHERE b.project_id=?""",
                 (project_id,),
             ).fetchone()
-            profiles = connection.execute(
-                """SELECT ppb.capability,ppb.status AS binding_status,epv.id,epv.status,
-                epv.model_bundle_json,epv.resource_policy_json FROM project_profile_bindings ppb
-                JOIN execution_profile_versions epv ON epv.id=ppb.execution_profile_version_id
-                WHERE ppb.project_id=?""",
-                (project_id,),
-            ).fetchall()
+            # Use the same project-scoped resolver as the production-spec and
+            # shot-ready commands.  A project AUTO preference can resolve to a
+            # published profile without a project_profile_bindings row; the
+            # old binding-only query incorrectly treated that valid setup as a
+            # missing production capability.
+            resolved_profile = effective_video_profile(connection, project_id)
+            profiles: list[dict[str, Any]] = []
+            if resolved_profile is not None:
+                profile = dict(resolved_profile)
+                profile["binding_status"] = "EFFECTIVE"
+                # The shared resolver returns the canonical parsed profile. A
+                # preflight snapshot also needs the persisted resource/model
+                # policy fields used for capacity and mode calculations.
+                profile_row = connection.execute(
+                    """SELECT model_bundle_json,resource_policy_json
+                    FROM execution_profile_versions
+                    WHERE id=? AND status='PUBLISHED'""",
+                    (str(profile["id"]),),
+                ).fetchone()
+                if profile_row is not None:
+                    profile.update(dict(profile_row))
+                profile.setdefault("model_bundle_json", _canonical(profile.get("model_bundle") or {}))
+                profile.setdefault("resource_policy_json", _canonical(profile.get("resources") or {}))
+                profiles.append(profile)
             runtimes = connection.execute("SELECT code,status,transport,base_url FROM local_runtimes ORDER BY code").fetchall()
             models = connection.execute("SELECT code,machine_path_ref,status FROM model_artifacts ORDER BY code").fetchall()
             dialogue_count = int(connection.execute("SELECT COUNT(*) FROM dialogue_lines WHERE episode_id=?", (episode_id,)).fetchone()[0])
@@ -255,15 +274,11 @@ class EpisodeProductionRunService:
             missing = sorted(set(required_character_refs) - available)
             if missing:
                 missing_required_references.append({"shot_id": str(binding["shot_id"]), "asset_id": str(binding["id"]), "asset_code": str(binding["code"]), "effective_asset_state_id": effective_state_id, "missing_reference_kinds": missing})
-        video_profiles: list[Any] = []
-        for row in profiles:
-            try:
-                cap = normalize_capability(str(row["capability"]))
-            except ValueError:
-                cap = str(row["capability"])
-            if cap in VIDEO_GENERATION_CAPABILITIES:
-                video_profiles.append(row)
-        valid_profiles = [row for row in video_profiles if str(row["binding_status"]) == "ACTIVE" and str(row["status"]) in {"ACTIVE", "PUBLISHED"}]
+        video_profiles = [
+            row for row in profiles
+            if str(row.get("capability") or "").upper() in VIDEO_GENERATION_CAPABILITIES
+        ]
+        valid_profiles = [row for row in video_profiles if str(row.get("binding_status")) == "EFFECTIVE" and str(row.get("status")) == "PUBLISHED"]
         available_mode_policies = self._resolved_mode_policies(valid_profiles)
         mode_policy = dict(available_mode_policies[production_mode])
         declared_model_refs: set[str] = set()
@@ -332,7 +347,18 @@ class EpisodeProductionRunService:
             self._check("SCRIPT_SHOT_PLAN_MISSING", "剧本与镜头计划", bool(shots) and not incomplete_shots, "镜头计划已具备可生产 revision" if shots and not incomplete_shots else "存在缺失或未 production-ready 的镜头", {"shot_count": len(shots), "incomplete_shots": incomplete_shots}),
             self._check("CRITICAL_ASSETS_MISSING", "关键资产", bool(shots) and not missing_asset_shots and not invalid_assets, "每个镜头的关键资产均有有效 canonical reference" if shots and not missing_asset_shots and not invalid_assets else "镜头未绑定关键资产，或资产缺少 canonical reference", {"binding_count": len(bindings), "missing_asset_shots": missing_asset_shots, "invalid_asset_codes": invalid_assets}),
             self._check("ASSET_REFERENCE_REQUIREMENTS_MISSING", "生效资产状态与参考图", not missing_required_references, "生效角色状态满足 Director Recipe 的参考图要求" if not missing_required_references else "部分镜头的生效角色状态缺少 Recipe 要求的已验证参考图", {"required_character_refs": required_character_refs, "missing": missing_required_references, "director_recipe_version_id": str(recipe["id"]) if recipe else None, "director_recipe_hash": str(recipe["recipe_hash"]) if recipe else None}),
-            self._check("PROFILE_CAPABILITY_MISSING", "生成 Profile 能力", bool(valid_profiles), "已绑定发布的视频生成 Profile" if valid_profiles else "项目缺少 ACTIVE/PUBLISHED 视频生成 Profile", {"profile_version_ids": [str(row["id"]) for row in valid_profiles]}),
+            self._check(
+                "PROFILE_CAPABILITY_MISSING",
+                "生成 Profile 能力",
+                bool(valid_profiles),
+                "已解析项目生效的已发布视频生成 Profile" if valid_profiles else "项目没有可用的已发布视频生成 Profile",
+                {
+                    "profile_version_ids": [str(row["id"]) for row in valid_profiles],
+                    "effective_profile_version_id": str(valid_profiles[0]["id"]) if valid_profiles else None,
+                    "effective_profile_capability": str(valid_profiles[0]["capability"]) if valid_profiles else None,
+                    "resolution_source": "EFFECTIVE_VIDEO_PROFILE",
+                },
+            ),
             self._check("LOCAL_MODEL_FILES_MISSING", "本地模型文件", bool(usable_models), "已发现可用的本地模型文件" if usable_models else "未发现状态有效且文件存在的本地模型", {"declared_model_refs": sorted(declared_model_refs), "usable_model_codes": [str(row["code"]) for row in usable_models]}),
             self._check("COMFY_ADAPTER_UNAVAILABLE", "Comfy/Adapter", comfy_ok, comfy_message, {"contract_status": comfy_contract_status, "registered_runtime_status": comfy_runtime_status, "probe_status": comfy_probe_status, "probe": comfy_probe_evidence}),
             self._check("GPU_CAPACITY_UNAVAILABLE", "GPU/容量", gpu_ok, "本机 GPU 容量信息可用" if gpu_ok else "本地 manifest 未提供 GPU 容量", {"gpu": capacity["gpu"], "gpu_active_count": capacity["gpu_active_count"], "gpu_concurrency_limit": capacity["gpu_concurrency_limit"]}),
@@ -405,6 +431,12 @@ class EpisodeProductionRunService:
             ],
             "asset_reference_requirements": {"required": required_character_refs, "missing": missing_required_references, "recipe_hash": str(recipe["recipe_hash"]) if recipe else None},
             "profiles": [{"id": str(row["id"]), "capability": str(row["capability"]), "status": str(row["status"]), "binding_status": str(row["binding_status"])} for row in profiles],
+            "effective_video_profile": {
+                "id": str(valid_profiles[0]["id"]) if valid_profiles else None,
+                "capability": str(valid_profiles[0]["capability"]) if valid_profiles else None,
+                "status": str(valid_profiles[0]["status"]) if valid_profiles else None,
+                "workflow_version_id": str(valid_profiles[0].get("workflow_version_id")) if valid_profiles and valid_profiles[0].get("workflow_version_id") else None,
+            },
             "models": [{"code": str(row["code"]), "path": str(row["machine_path_ref"]), "status": str(row["status"])} for row in models],
         }
         if _include_checkpoint_in_fingerprint:
@@ -490,7 +522,8 @@ class EpisodeProductionRunService:
 
     def _workflow_for_snapshot(self, episode: dict[str, Any], preflight: dict[str, Any], *, actor: str) -> dict[str, Any]:
         episode_id = str(episode["id"])
-        code = f"EPISODE_RUN_{episode_id.replace('-', '')[:16]}_{preflight['input_fingerprint'][:12]}"
+        # A new plan revision must never reuse a frozen, validation-only plan.
+        code = f"EPISODE_RUN_V2_{episode_id.replace('-', '')[:16]}_{preflight['input_fingerprint'][:12]}"
         workflows = self.automation.list_workflows(str(episode["project_id"]), include_archived=True)["items"]
         prior = next((item for item in workflows if item["code"] == code), None)
         if prior:
@@ -508,6 +541,9 @@ class EpisodeProductionRunService:
             # front-half vertical slice.
             actions.append("KEYFRAME_CHECK")
         if not front_half_only:
+            # Creation and human approval are separate stages. Read-only
+            # front-half probes deliberately retain their original actions.
+            actions.insert(actions.index("KEYFRAME_CHECK"), "KEYFRAME_GENERATION")
             actions.extend(BACK_HALF_ACTIONS)
             if preflight.get("tts_enabled", True):
                 actions.extend(["TTS_BATCH", "TTS_FINALIZE", "SUBTITLE"])
@@ -618,20 +654,16 @@ class EpisodeProductionRunService:
             shot_count = int(connection.execute("SELECT COUNT(*) FROM shots WHERE episode_id=? AND archived_at IS NULL", (episode_id,)).fetchone()[0])
             plan_ready = int(connection.execute("SELECT COUNT(*) FROM shots WHERE episode_id=? AND archived_at IS NULL AND current_revision_id IS NOT NULL AND status IN ('READY','GENERATING','REVIEW','APPROVED')", (episode_id,)).fetchone()[0])
             asset_ready = int(connection.execute("SELECT COUNT(DISTINCT s.id) FROM shots s JOIN shot_asset_bindings sab ON sab.shot_id=s.id JOIN story_assets sa ON sa.id=sab.asset_id WHERE s.episode_id=? AND s.archived_at IS NULL AND sa.status='ACTIVE' AND sa.canonical_media_version_id IS NOT NULL", (episode_id,)).fetchone()[0])
-            keyframes = int(connection.execute(
-                """SELECT COUNT(DISTINCT ma.owner_id) FROM media_assets ma
-                JOIN media_versions mv ON mv.id=ma.approved_version_id
-                JOIN shots s ON s.id=ma.owner_id
-                WHERE s.episode_id=? AND s.archived_at IS NULL
-                AND ma.owner_type='SHOT' AND ma.purpose='KEYFRAME'
-                AND ma.media_kind='IMAGE' AND mv.stage='KEYFRAME'
-                AND mv.integrity_status='VERIFIED' AND EXISTS (
-                  SELECT 1 FROM review_decisions rd
-                  WHERE rd.subject_type='MEDIA_VERSION' AND rd.subject_id=mv.id
-                  AND rd.decision='APPROVED' AND rd.is_stale=0
-                )""",
+            keyframe_shots = connection.execute(
+                """SELECT s.id FROM shots s
+                WHERE s.episode_id=? AND s.archived_at IS NULL""",
                 (episode_id,),
-            ).fetchone()[0])
+            ).fetchall()
+            keyframes = len(approved_keyframes_for_shots(
+                connection,
+                (str(row["id"]) for row in keyframe_shots),
+                project_id=str(run["project_id"]),
+            ))
             videos = int(connection.execute(
                 """SELECT COUNT(DISTINCT shot_id) FROM (
                 SELECT ma.owner_id AS shot_id FROM media_assets ma JOIN media_versions mv ON mv.media_asset_id=ma.id

@@ -20,6 +20,8 @@ from local_drama.domain.policies import missing_shot_fields
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.path_policy import controlled_path
 
+from .keyframe_references import approved_keyframes_for_shots
+
 
 def _decode(value: object, fallback: Any) -> Any:
     try:
@@ -209,19 +211,29 @@ class EpisodeFrontHalfActionService:
                 ORDER BY sab.shot_id,sab.asset_id,sab.role_in_shot""",
                 (episode_id,),
             ).fetchall()
-            keyframes = connection.execute(
-                """SELECT s.id AS shot_id,ma.approved_version_id,
-                rd.id AS review_decision_id,rd.revision AS review_revision,rd.is_stale
-                FROM shots s LEFT JOIN media_assets ma
-                  ON ma.owner_type='SHOT' AND ma.owner_id=s.id
-                  AND ma.purpose='KEYFRAME' AND ma.media_kind='IMAGE'
-                LEFT JOIN review_decisions rd
-                  ON rd.subject_type='MEDIA_VERSION' AND rd.subject_id=ma.approved_version_id
-                  AND rd.decision='APPROVED'
+            episode_shots = connection.execute(
+                """SELECT s.id FROM shots s
                 WHERE s.episode_id=? AND s.archived_at IS NULL
-                ORDER BY s.id,ma.id,rd.id""",
+                ORDER BY CAST(s.order_key AS REAL),s.code""",
                 (episode_id,),
             ).fetchall()
+            approved_keyframes = approved_keyframes_for_shots(
+                connection,
+                (str(row["id"]) for row in episode_shots),
+                project_id=project_id,
+            )
+            keyframes = [
+                {
+                    "shot_id": str(row["id"]),
+                    "approved_version_id": approved_keyframes.get(str(row["id"]), {}).get("media_version_id"),
+                    "review_decision_id": approved_keyframes.get(str(row["id"]), {}).get("review_decision_id"),
+                    "review_revision": approved_keyframes.get(str(row["id"]), {}).get("review_revision"),
+                    "is_stale": approved_keyframes.get(str(row["id"]), {}).get("is_stale"),
+                    "owner_type": approved_keyframes.get(str(row["id"]), {}).get("owner_type"),
+                    "owner_id": approved_keyframes.get(str(row["id"]), {}).get("owner_id"),
+                }
+                for row in episode_shots
+            ]
         return {
             "source": {
                 "import_session_id": source.get("import_session_id"),
@@ -530,28 +542,23 @@ class EpisodeFrontHalfActionService:
         )
 
     def keyframe_check(self, episode_id: str) -> tuple[dict[str, Any], int]:
+        episode = self._episode(episode_id)
         with self.database.connect() as connection:
             rows = connection.execute(
-                """SELECT s.id,s.code,EXISTS(
-                  SELECT 1 FROM media_assets ma
-                  JOIN media_versions mv ON mv.id=ma.approved_version_id
-                  WHERE ma.owner_type='SHOT' AND ma.owner_id=s.id
-                  AND ma.purpose='KEYFRAME' AND ma.media_kind='IMAGE'
-                  AND mv.stage='KEYFRAME' AND mv.integrity_status='VERIFIED'
-                  AND EXISTS (
-                    SELECT 1 FROM review_decisions rd
-                    WHERE rd.subject_type='MEDIA_VERSION' AND rd.subject_id=mv.id
-                    AND rd.decision='APPROVED' AND rd.is_stale=0
-                  )
-                ) AS approved
+                """SELECT s.id,s.code
                 FROM shots s WHERE s.episode_id=? AND s.archived_at IS NULL
                 ORDER BY CAST(s.order_key AS REAL),s.code""",
                 (episode_id,),
             ).fetchall()
+            approved = approved_keyframes_for_shots(
+                connection,
+                (str(row["id"]) for row in rows),
+                project_id=str(episode["project_id"]),
+            )
         shots = [dict(row) for row in rows]
         missing = [
             {"shot_id": str(shot["id"]), "shot_code": str(shot["code"])}
-            for shot in shots if not bool(shot["approved"])
+            for shot in shots if str(shot["id"]) not in approved
         ]
         if not shots or missing:
             return self._report(

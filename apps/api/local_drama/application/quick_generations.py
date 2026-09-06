@@ -556,7 +556,12 @@ class QuickGenerationService:
 
     def get(self, run_id: str, *, reconcile: bool = True) -> dict[str, Any]:
         item = self._row(run_id)
-        if reconcile and item["mode"] in IMAGE_MODES and item["stage"] == "IMAGE_GENERATING":
+        if (
+            reconcile
+            and item["state"] not in TERMINAL_STATES
+            and item["mode"] in IMAGE_MODES
+            and item["stage"] == "IMAGE_GENERATING"
+        ):
             self._reconcile_candidates(run_id)
             item = self._row(run_id)
         if reconcile and item.get("job_id") and item["state"] in {"COMMITTING", "GENERATING", "CANCELLING"}:

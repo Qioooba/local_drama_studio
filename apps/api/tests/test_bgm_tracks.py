@@ -10,11 +10,13 @@ import pytest
 
 from local_drama.application.compose import ComposeService
 from local_drama.application.documents import DocumentImportService
+from local_drama.application.jobs import JobService
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
 from local_drama.application.timeline import TimelineService
 from local_drama.application.worker import LocalMediaWorker
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.timeline_formatting import snapshot_hash
 from local_drama.infrastructure.database.audio_repository import SqliteAudioWorkspaceRepository
 
 
@@ -118,7 +120,7 @@ def test_render_mixes_bgm_audio_stream_with_real_ffmpeg(workspace, database) -> 
     audio_streams = [stream for stream in streams if stream.get("codec_type") == "audio"]
     assert audio_streams, "渲染产物必须包含混音后的音频流"
     assert audio_streams[0]["codec_name"] == "aac"
-    assert 900 <= render["probe"]["duration_ms"] <= 1100
+    assert render["probe"]["duration_ms"] == 1_000
     render_path = project_root / render["rel_path"]
     assert render_path.is_file()
     # Execution log records timeline-duration normalization and all mix stages.
@@ -152,6 +154,22 @@ def test_render_without_bindings_honors_timeline_duration_contract(workspace, da
     assert replay["compose_fingerprint"] == render["compose_fingerprint"]
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM episode_render_versions WHERE timeline_revision_id=?", (timeline["id"],)).fetchone()[0] == 1
+
+    # A historical render produced before the duration contract upgrade must
+    # not be replayed by the ordinary compose action.
+    with database.connect() as connection:
+        legacy_snapshot = json.loads(
+            str(connection.execute("SELECT input_snapshot_json FROM episode_render_versions WHERE id=?", (render["id"],)).fetchone()[0])
+        )
+    legacy_snapshot["renderer_contract"] = "TIMELINE_DURATION_AND_SUBTITLE_V3"
+    with database.transaction() as connection:
+        connection.execute(
+            "UPDATE episode_render_versions SET input_snapshot_json=? WHERE id=?",
+            (json.dumps(legacy_snapshot, ensure_ascii=False, sort_keys=True), render["id"]),
+        )
+    upgraded = service.render_episode(str(timeline["id"]))
+    assert upgraded["id"] != render["id"]
+    assert upgraded["input_snapshot"]["renderer_contract"] == "TIMELINE_SOURCE_COVERAGE_V5"
 
     forced = service.render_episode(str(timeline["id"]), force_rerender=True)
     assert forced["id"] != render["id"]
@@ -201,7 +219,7 @@ def test_render_extends_short_source_and_burns_selected_subtitle(workspace, data
     render = service.render_episode(str(timeline["id"]))
 
     assert 1_150 <= render["probe"]["duration_ms"] <= 1_300
-    assert render["input_snapshot"]["renderer_contract"] == "TIMELINE_DURATION_AND_SUBTITLE_V2"
+    assert render["input_snapshot"]["renderer_contract"] == "TIMELINE_SOURCE_COVERAGE_V5"
     assert render["input_snapshot"]["subtitle_revision"] == {
         "id": subtitle["id"],
         "revision_no": subtitle["revision_no"],
@@ -257,3 +275,65 @@ def test_compose_uses_durable_job_and_reuses_running_and_completed_fingerprint(w
     assert completed["render"]["compose_fingerprint"] == preflight["compose_fingerprint"]
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM episode_render_versions").fetchone()[0] == 1
+
+
+def test_compose_contract_change_invalidates_legacy_render_and_job_identity(workspace, database) -> None:
+    """A renderer implementation change must create a fresh compose job."""
+
+    project, episode = _project_and_episode(workspace, database)
+    media = MediaService(database, workspace).import_file(
+        str(project["id"]), _video(workspace, "compose-contract-change.mp4"), purpose="SHOT_VIDEO", media_kind="VIDEO",
+    )
+    timeline_service = TimelineService(database, workspace)
+    timeline = timeline_service.create_timeline_revision(
+        str(episode["id"]),
+        [{"track_type": "VIDEO", "media_version_id": str(media["media_version_id"]), "start_us": 0, "end_us": 1_000_000, "parameters": {}}],
+        {"source": "compose-contract-change-test"},
+    )
+    old_render = timeline_service.render_episode(str(timeline["id"]))
+    with database.connect() as connection:
+        old_snapshot = json.loads(
+            str(connection.execute("SELECT input_snapshot_json FROM episode_render_versions WHERE id=?", (old_render["id"],)).fetchone()[0])
+        )
+    old_snapshot["renderer_contract"] = "TIMELINE_DURATION_AND_SUBTITLE_V3"
+    old_fingerprint = snapshot_hash(old_snapshot)
+    with database.transaction() as connection:
+        connection.execute(
+            "UPDATE episode_render_versions SET input_snapshot_json=? WHERE id=?",
+            (json.dumps(old_snapshot, ensure_ascii=False, sort_keys=True), old_render["id"]),
+        )
+
+    # Model the durable queue row left behind by the previous renderer.  The
+    # current submit path must not replay its old idempotency key after the
+    # contract bump, even though its source timeline is unchanged.
+    legacy_job = JobService(database, workspace).create_job(
+        str(project["id"]),
+        "EPISODE_COMPOSE",
+        "TIMELINE_REVISION",
+        str(timeline["id"]),
+        "CPU",
+        {
+            "schema_version": "localdrama.episode-compose-job.v1",
+            "timeline_revision_id": str(timeline["id"]),
+            "compose_fingerprint": old_fingerprint,
+            "renderer_contract": "TIMELINE_DURATION_AND_SUBTITLE_V3",
+            "force_rerender": False,
+            "force_command_id": None,
+            "local_only": True,
+            "network_contacted": False,
+        },
+        f"compose:{timeline['id']}:{old_fingerprint}",
+        priority=10,
+        max_attempts=2,
+    )
+
+    compose = ComposeService(database, workspace)
+    plan = compose.preflight(str(timeline["id"]))
+    assert plan["existing_render"] is None
+    assert plan["input_snapshot"]["renderer_contract"] == "TIMELINE_SOURCE_COVERAGE_V5"
+    assert plan["compose_fingerprint"] != old_fingerprint
+    submitted = compose.submit(str(timeline["id"]))
+    assert submitted["job"]["id"] != legacy_job["id"]
+    assert submitted["job"]["idempotent_replay"] is False
+    assert submitted["job"]["idempotency_key"] == f"compose:{timeline['id']}:{plan['compose_fingerprint']}"
+    assert submitted["job"]["input_snapshot"]["compose_fingerprint"] == plan["compose_fingerprint"]

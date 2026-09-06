@@ -70,7 +70,7 @@ describe("ProjectKnowledgeIndexPanel", () => {
     }], count: 1, read_only: true });
     vi.mocked(searchModelPlatformProjectKnowledge).mockResolvedValue({ search: {
       execution_profile_version_id: "profile-1",
-      items: [{ index_run_id: "knowledge-1", source_document_version_id: "source-v1", ordinal: 2, source_start: 12, source_end: 26, score: 0.884 }],
+      items: [{ index_run_id: "knowledge-1", source_document_version_id: "source-v1", ordinal: 2, source_start: 12, source_end: 26, excerpt: "沈砚把照骨灯护在怀里。", score: 0.884 }],
     } });
     renderPanel();
     const input = await screen.findByPlaceholderText("输入一个与当前文档有关的问题");
@@ -78,6 +78,7 @@ describe("ProjectKnowledgeIndexPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "检索" }));
     await waitFor(() => expect(searchModelPlatformProjectKnowledge).toHaveBeenCalledWith("project-1", "主角做了什么？", 5));
     expect(await screen.findByText("命中第 2 段")).toBeInTheDocument();
+    expect(screen.getByText("沈砚把照骨灯护在怀里。")).toBeInTheDocument();
     expect(screen.getByText(/原文偏移 12–26/)).toBeInTheDocument();
   });
 });

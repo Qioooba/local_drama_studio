@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from local_drama.application.character_identity_packs import CharacterIdentityPackService
+from local_drama.application.configuration import ConfigurationService
 from local_drama.application.experiments import ExperimentService
 from local_drama.application.generation import GenerationService
 from local_drama.application.jobs import JobService
@@ -28,7 +29,7 @@ from local_drama.main import create_app
 
 
 def _project(workspace, database, code: str) -> dict[str, object]:
-    return ProjectService(database, workspace.projects_root).create_project(
+    project = ProjectService(database, workspace.projects_root).create_project(
         code=code,
         title=code,
         episode_count=1,
@@ -38,6 +39,34 @@ def _project(workspace, database, code: str) -> dict[str, object]:
         target_duration_ms=60000,
         allow_unconfigured_capabilities=True,
     )
+    # GenerationService now fails closed unless every VIDEO project has a
+    # canonical ProductionPlan.  Keep this shared fixture aligned with the
+    # real page flow instead of weakening the runtime guard in tests.
+    ConfigurationService(database).create_plan_binding(
+        str(project["id"]),
+        "project-production-plan",
+        f"{code} production plan",
+        {
+            "schema_version": "localdrama.production-plan.v2",
+            "presentation": {
+                "aspect_ratio": "16:9",
+                "width": 2560,
+                "height": 1440,
+                "fps": {"numerator": 24, "denominator": 1},
+            },
+            "generation": {
+                "upscale": {
+                    "enabled": True,
+                    "required": True,
+                    "stage": "COMPOSE_QC",
+                    "executor": "builtin:ffmpeg",
+                    "target": "PRESENTATION_SPEC",
+                    "fit": "LETTERBOX",
+                },
+            },
+        },
+    )
+    return project
 
 
 def _image(workspace, database, project_id: str, name: str) -> str:
@@ -154,7 +183,20 @@ def _published_profile(workspace, database) -> str:
                 workflow_version_id,
                 workflow_id,
                 "a" * 64,
-                json.dumps({"1": {"class_type": "LoadImage", "inputs": {"image": "", "seed": 0}}}),
+                json.dumps(
+                    {
+                        "1": {"class_type": "LoadImage", "inputs": {"image": "", "seed": 0}},
+                        # Keep this shared published fixture representative of
+                        # the real proxy VIDEO graph.  ProductionSpec resolves
+                        # fixed graph geometry only from an authored
+                        # CreateVideo node; omitting it would turn unrelated
+                        # variant assertions into a production-plan blocker.
+                        "2": {
+                            "class_type": "CreateVideo",
+                            "inputs": {"images": ["1", 0], "width": 864, "height": 480, "fps": 24},
+                        },
+                    }
+                ),
                 json.dumps(
                     {
                         "FIRST_FRAME": {"node_id": "1", "input": "image", "type": "image"},
@@ -236,6 +278,15 @@ def test_input_slots_accepts_legacy_required_inputs_metadata_envelope() -> None:
 
     current = {"input_slots": {"FIRST_FRAME": {"min": 1, "max": 1}}, "transport": "LOOPBACK_HTTP"}
     assert set(GenerationService._input_slots(current)) == {"FIRST_FRAME"}
+
+    mixed = {
+        "input_slots": {
+            "PROMPT": {"min": 1, "max": 1},
+            "OUTPUT_PREFIX": {"min": 0, "max": 1},
+            "FIRST_FRAME": {"min": 1, "max": 1},
+        }
+    }
+    assert set(GenerationService._media_input_slots(mixed)) == {"FIRST_FRAME"}
 
     with pytest.raises(DomainRuleError, match="带约束的对象"):
         GenerationService._input_slots({"input_slots": {"FIRST_FRAME": ["not", "an", "object"]}})

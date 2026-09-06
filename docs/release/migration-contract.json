@@ -1,7 +1,7 @@
 {
   "schema_version": "localdrama.release-migration-contract.v1",
   "expected_heads": [
-    "0086_model_platform_quick_create_v2_runs"
+    "0094_project_target_duration"
   ],
   "upgrade_command": ".venv\\\\Scripts\\\\python.exe -m alembic upgrade heads",
   "rollback_policy": "restore_verified_pre_migration_backup_with_matching_code",
@@ -364,6 +364,64 @@
         "v2_only_quick_create_run_and_step_lineage",
         "candidate_selection_references_verified_v2_artifact",
         "downstream_video_step_references_frozen_v2_job_snapshot_and_input_artifact"
+      ]
+    },
+    {
+      "revision": "0087_gpu_runtime_llama_cpp",
+      "facts": [
+        "managed_llama_cpp_single_gpu_runtime",
+        "llama_cpp_lease_and_resident_state_check_constraints"
+      ]
+    },
+    {
+      "revision": "0088_pipeline_runs",
+      "facts": [
+        "persistent_story_pipeline_runs"
+      ]
+    },
+    {
+      "revision": "0089_pipeline_llm_mode",
+      "facts": [
+        "story_pipeline_llm_extraction_provenance"
+      ]
+    },
+    {
+      "revision": "0090_pipeline_draft_review",
+      "facts": [
+        "durable_story_pipeline_jobs",
+        "isolated_reviewable_story_drafts",
+        "explicit_atomic_story_draft_apply"
+      ]
+    },
+    {
+      "revision": "0091_asset_image_generation_batches",
+      "facts": [
+        "recoverable_cross_asset_hero_image_batches",
+        "per_asset_generation_variant_and_job_lineage",
+        "safe_first_hero_auto_binding_without_overwrite"
+      ]
+    },
+    {
+      "revision": "0092_shot_keyframe_generation_batches",
+      "facts": [
+        "recoverable_episode_shot_first_and_end_frame_batches",
+        "per_frame_generation_variant_and_job_lineage",
+        "verified_image_frame_anchor_support"
+      ]
+    },
+    {
+      "revision": "0093_shot_prompt_bundle_snapshots",
+      "facts": [
+        "immutable_prompt_bundle_input_snapshot_on_keyframe_batches_and_items",
+        "workflow_aware_negative_prompt_binding_or_avoid_fallback",
+        "page_user_prompt_override_provenance_and_frozen_generation_snapshot"
+      ]
+    },
+    {
+      "revision": "0094_project_target_duration",
+      "facts": [
+        "projects.target_duration_ms",
+        "project_default_duration_compatibility_backfill"
       ]
     }
   ]

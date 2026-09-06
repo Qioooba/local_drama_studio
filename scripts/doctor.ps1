@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = 'Continue'
+$ErrorActionPreference = 'Continue'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Write-Host "=== LocalDramaStudio V2 本机环境与健康诊断 (Doctor) ===" -ForegroundColor Cyan
 Write-Host ("项目根目录: " + $repoRoot)
@@ -42,7 +42,7 @@ if (Test-Path -LiteralPath $dbPath) {
   Write-Host "[Database] SQLite: 未初始化 (运行 scripts/start.ps1 或 alembic upgrade head 自动建表)" -ForegroundColor Yellow
 }
 
-# 4. 端口与后台服务联通性 (8188 ComfyUI, 11434 Ollama)
+# 4. 端口与后台服务联通性 (8188 ComfyUI, 28088 Llama Gateway / Server)
 $comfyConn = Test-NetConnection -ComputerName 127.0.0.1 -Port 8188 -InformationLevel Quiet -WarningAction SilentlyContinue
 if ($comfyConn) {
   Write-Host "[Loopback] ComfyUI (127.0.0.1:8188): 在线 (Online)" -ForegroundColor Green
@@ -50,11 +50,11 @@ if ($comfyConn) {
   Write-Host "[Loopback] ComfyUI (127.0.0.1:8188): 离线 (Offline - 生成时将排队或降级本地预览)" -ForegroundColor Yellow
 }
 
-$llmConn = Test-NetConnection -ComputerName 127.0.0.1 -Port 11434 -InformationLevel Quiet -WarningAction SilentlyContinue
+$llmConn = Test-NetConnection -ComputerName 127.0.0.1 -Port 28088 -InformationLevel Quiet -WarningAction SilentlyContinue
 if ($llmConn) {
-  Write-Host "[Loopback] Ollama LLM (127.0.0.1:11434): 在线 (Online)" -ForegroundColor Green
+  Write-Host "[Loopback] Llama LLM (127.0.0.1:28088): 在线 (Online)" -ForegroundColor Green
 } else {
-  Write-Host "[Loopback] Ollama LLM (127.0.0.1:11434): 离线 (Offline - 建议启动本机 Ollama)" -ForegroundColor Yellow
+  Write-Host "[Loopback] Llama LLM (127.0.0.1:28088): 待机/离线 (Standby/Offline - 按需托管启动)" -ForegroundColor Yellow
 }
 
 # 5. 受控目录健康检查

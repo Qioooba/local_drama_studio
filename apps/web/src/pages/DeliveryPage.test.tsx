@@ -2,11 +2,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { commitEpisodeTimelineRefresh, getEpisodeTimelineStatus, getG8Readiness, getProjectConfiguration, planEpisodeTimelineRefresh, reviewInbox } from "../generated/api";
+import { commitEpisodeTimelineRefresh, getEpisodePostOverviewV2, getEpisodeTimelineStatus, getG8Readiness, getProjectConfiguration, planEpisodeTimelineRefresh, reviewInbox } from "../generated/api";
 import { DeliveryPage } from "./DeliveryPage";
 
 vi.mock("../generated/api", () => ({
   getEpisodeTimelineStatus: vi.fn(),
+  getEpisodePostOverviewV2: vi.fn(),
   getProjectConfiguration: vi.fn(),
   reviewInbox: vi.fn(),
   getG8Readiness: vi.fn(),
@@ -18,7 +19,7 @@ vi.mock("../features/status/ReadinessPanels", () => ({
   G8ReadinessPanel: () => <div>G8ReadinessPanel</div>,
 }));
 vi.mock("../features/production/DeliveryWorkflowPanel", () => ({
-  DeliveryWorkflowPanel: ({ focus }: { focus?: string }) => <div>DeliveryWorkflowPanel {focus}</div>,
+  DeliveryWorkflowPanel: ({ focus, onRenderStarted, onRenderCreated, onDeliveryCreated }: { focus?: string; onRenderStarted?: () => void; onRenderCreated?: (renderId: string) => void; onDeliveryCreated?: (deliveryId: string) => void }) => <div>DeliveryWorkflowPanel {focus}{focus === "COMPOSE" ? <><button type="button" onClick={() => onRenderStarted?.()}>测试开始整集渲染</button><button type="button" onClick={() => onRenderCreated?.("render-new")}>测试完成整集渲染</button><button type="button" onClick={() => onDeliveryCreated?.("delivery-new")}>测试创建交付候选</button></> : null}</div>,
 }));
 vi.mock("../features/production/EpisodeContactSheetAction", () => ({
   EpisodeContactSheetAction: () => <div>EpisodeContactSheetAction</div>,
@@ -31,6 +32,7 @@ describe("DeliveryPage (009F)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getEpisodeTimelineStatus).mockResolvedValue({ status: {} } as never);
+    vi.mocked(getEpisodePostOverviewV2).mockResolvedValue({ overview: { review: { approved_render_id: null } } } as never);
     vi.mocked(getProjectConfiguration).mockResolvedValue({ configuration: {} } as never);
     vi.mocked(reviewInbox).mockResolvedValue({ items: [] } as never);
     vi.mocked(getG8Readiness).mockResolvedValue({ readiness: {} } as never);
@@ -116,6 +118,55 @@ describe("DeliveryPage (009F)", () => {
     await waitFor(() => expect(next.disabled).toBe(false));
     fireEvent.click(next);
     expect(screen.getByText("DeliveryWorkflowPanel COMPOSE")).toBeTruthy();
+  });
+
+  it("does not hydrate an old delivery candidate when its render or target is not current", async () => {
+    vi.mocked(getEpisodeTimelineStatus).mockResolvedValue({ status: {
+      timeline: { latest: { id: "timeline-1", status: "FROZEN" } },
+      renders: { latest: { id: "render-current" } },
+      delivery: { latest: { id: "delivery-old", episode_render_version_id: "render-old", target_version_id: "target-old", status: "VERIFIED", human_review_status: "APPROVED" } },
+    } } as never);
+    vi.mocked(getProjectConfiguration).mockResolvedValue({ configuration: { selected_delivery_target_version_id: "target-current" } } as never);
+    vi.mocked(getEpisodePostOverviewV2).mockResolvedValue({ overview: { review: { approved_render_id: "render-current" } } } as never);
+
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter initialEntries={["/projects/project-1/episodes/ep-1/delivery?view=compose"]}>
+          <Routes><Route path="/projects/:projectId/episodes/:episodeId/delivery" element={<DeliveryPage />} /></Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("最新整集成片已批准，可以提交交付候选。")) .toBeTruthy();
+    expect(screen.queryByText(/当前交付候选对应最新/)).toBeNull();
+    expect((screen.getByRole("button", { name: "下一步：审核成片 →" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("clears the previous delivery state while a new render is queued", async () => {
+    vi.mocked(getEpisodeTimelineStatus).mockResolvedValue({ status: {
+      timeline: { latest: { id: "timeline-1", status: "FROZEN" } },
+      renders: { latest: { id: "render-old" } },
+      delivery: { latest: { id: "delivery-old", episode_render_version_id: "render-old", target_version_id: "target-current", status: "VERIFIED" } },
+    } } as never);
+    vi.mocked(getProjectConfiguration).mockResolvedValue({ configuration: { selected_delivery_target_version_id: "target-current" } } as never);
+    vi.mocked(getEpisodePostOverviewV2).mockResolvedValue({ overview: { review: { approved_render_id: "render-old" } } } as never);
+
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter initialEntries={["/projects/project-1/episodes/ep-1/delivery?view=compose"]}>
+          <Routes><Route path="/projects/:projectId/episodes/:episodeId/delivery" element={<DeliveryPage />} /></Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText(/当前交付候选对应最新/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "测试开始整集渲染" }));
+    expect(await screen.findByText(/整集渲染正在后台处理/)).toBeTruthy();
+    expect(screen.queryByText(/当前交付候选对应最新/)).toBeNull();
+    expect((screen.getByRole("button", { name: "下一步：审核成片 →" }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "测试完成整集渲染" }));
+    expect(await screen.findByRole("link", { name: "整集审核工作区" })).toBeTruthy();
   });
 
   it("rechecks stale inputs and only freezes after explicit confirmation", async () => {

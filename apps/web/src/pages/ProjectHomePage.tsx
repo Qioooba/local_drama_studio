@@ -18,10 +18,9 @@ export function ProjectHomePage() {
     season: { id: season.id, code: season.code, title: season.title, number: season.number, display_order: season.display_order },
     episodes: season.episodes.slice().sort((a, b) => orderValue(a) - orderValue(b) || a.code.localeCompare(b.code)),
   }));
-  const episodes = groups.flatMap((group) => group.episodes);
   const targetTo = (target: ProductRouteTarget) => {
     if (target.kind === "PROJECT_STRUCTURE") return "#project-structure";
-    if (target.kind === "STORY") return `${routes.story(projectId)}#story-import`;
+    if (target.kind === "STORY") return routes.story(projectId);
     if (target.kind === "ASSETS") return routes.assets(projectId);
     if (target.kind === "SETTINGS") return routes.settings(projectId, target.section ?? "production");
     if (target.kind === "SHOT_STUDIO" && target.episode_id) return `${routes.shotStudio(projectId, target.episode_id)}${target.focus ? `?focus=${encodeURIComponent(target.focus)}` : ""}`;
@@ -49,7 +48,11 @@ export function ProjectHomePage() {
 
     <section id="project-structure" className="panel" aria-labelledby="project-structure-title">
       <div className="panel-heading"><div><p className="eyebrow">系列结构</p><h3 id="project-structure-title">季度与分集</h3></div></div>
-      <ProjectStructureAppendPanel projectId={projectId} seasons={groups.map((group) => ({ ...group.season, episodes: group.episodes }))} projectDefaultDurationMs={Number(episodes[0]?.target_duration_ms) || undefined} />
+      <ProjectStructureAppendPanel
+        projectId={projectId}
+        seasons={groups.map((group) => ({ ...group.season, episodes: group.episodes }))}
+        projectDefaultDurationMs={Number(overview.data?.project.target_duration_ms) || undefined}
+      />
     </section>
   </div>;
 }

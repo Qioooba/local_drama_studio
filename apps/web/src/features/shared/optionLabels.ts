@@ -76,6 +76,7 @@ export const STATUS_LABELS: Record<string, string> = {
   ORPHANED: "执行器已失联",
   PARTIALLY_APPLIED: "已部分应用",
   PAUSED_HITL: "等待人工确认",
+  PAUSED: "已暂停",
   PENDING: "等待中",
   PLANNED: "已规划",
   PRODUCTION_READY: "可进入正式生产",
@@ -88,6 +89,7 @@ export const STATUS_LABELS: Record<string, string> = {
   VERIFIED: "已验证",
   WAITING: "等待中",
   CLAIMED: "正在处理",
+  CANCEL_REQUESTED: "正在取消",
   CORRUPT: "文件异常",
   EXPIRED: "已过期",
   INACTIVE: "已停用",
@@ -103,10 +105,17 @@ export const STATUS_LABELS: Record<string, string> = {
  * backend enum. The stable enum remains available in advanced/debug details.
  */
 export const JOB_TYPE_LABELS: Record<string, string> = {
+  STORY_PIPELINE_DRAFT: "AI 全剧规划",
+  SCRIPT_BREAKDOWN_LOCAL_LLM: "AI 分集方案与分镜",
   GENERATION_VARIANT: "生成镜头候选",
+  PROFILE_EVIDENCE_PROBE: "验证模型真实出图或视频",
+  AUTOMATION_WORKFLOW_TASK: "推进分集制作步骤",
   MEDIA_DERIVATIVE: "生成媒体预览",
   MEDIA_THUMBNAIL: "生成缩略图",
+  EPISODE_COMPOSE: "合成整集视频",
+  SEGMENTED_EPISODE_COMPOSE: "分段合成整集视频",
   EPISODE_RENDER: "合成整集视频",
+  DELIVERY_BUILD: "制作交付包",
   DELIVERY_PACKAGE: "制作交付包",
   DIALOGUE_TTS: "生成对白配音",
   POST_PROCESS: "画面后期处理",
@@ -127,7 +136,7 @@ export const JOB_PHASE_LABELS: Record<string, string> = {
 export const JOB_CHANNEL_LABELS: Record<string, string> = {
   CPU: "常规处理",
   GPU: "显卡处理",
-  GPU_H3: "H3 显卡生成",
+  GPU_H3: "显卡生成",
   LOCAL: "本机处理",
 };
 

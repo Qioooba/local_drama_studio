@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from local_drama.domain.capabilities import normalize_capability
+from local_drama.domain.duration import DEFAULT_PROJECT_TARGET_DURATION_MS, MAX_TARGET_DURATION_MS
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.policies import (
     VALID_PROJECT_TRANSITIONS,
@@ -90,7 +91,7 @@ class ProjectService:
         aspect_ratio: str | None,
         fps_num: int | None,
         fps_den: int | None,
-        target_duration_ms: int,
+        target_duration_ms: int = DEFAULT_PROJECT_TARGET_DURATION_MS,
         allow_unconfigured_capabilities: bool,
         season_count: int = 1,
         width: int | None = None,
@@ -121,8 +122,8 @@ class ProjectService:
         )
         if not title or len(title) > 200:
             raise DomainRuleError("INVALID_PROJECT_TITLE", "项目标题必须是 1—200 个字符")
-        if target_duration_ms <= 0:
-            raise DomainRuleError("INVALID_TARGET_DURATION", "target_duration_ms 必须大于 0")
+        if isinstance(target_duration_ms, bool) or not isinstance(target_duration_ms, int) or not 0 < target_duration_ms <= MAX_TARGET_DURATION_MS:
+            raise DomainRuleError("INVALID_TARGET_DURATION", "target_duration_ms 必须大于 0 且不超过 24 小时")
         profile_bindings = _canonical_profile_bindings(profile_bindings or [])
         self._validate_creation_bindings(production_plan, profile_bindings, delivery_target, require_complete=not allow_unconfigured_capabilities)
         project_id = str(uuid.uuid4())
@@ -136,8 +137,8 @@ class ProjectService:
                     raise DomainRuleError("PROJECT_CODE_EXISTS", "项目 code 已存在", {"code": code})
                 connection.execute(
                     """INSERT INTO projects (id, code, title, status, template_version, root_rel, aspect_ratio, fps_num,
-                    fps_den,width,height,primary_language,subtitle_mode,subtitle_language,created_at,updated_at,created_by)
-                    VALUES (?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    fps_den,width,height,primary_language,subtitle_mode,subtitle_language,target_duration_ms,created_at,updated_at,created_by)
+                    VALUES (?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         project_id,
                         code,
@@ -152,6 +153,7 @@ class ProjectService:
                         primary_language,
                         subtitle_mode,
                         subtitle_language,
+                        target_duration_ms,
                         now,
                         now,
                         actor,
@@ -262,7 +264,7 @@ class ProjectService:
         aspect_ratio: str | None,
         fps_num: int | None,
         fps_den: int | None,
-        target_duration_ms: int,
+        target_duration_ms: int = DEFAULT_PROJECT_TARGET_DURATION_MS,
         allow_unconfigured_capabilities: bool,
         season_count: int = 1,
         width: int | None = None,
@@ -291,8 +293,8 @@ class ProjectService:
         )
         if not title or len(title) > 200:
             raise DomainRuleError("INVALID_PROJECT_TITLE", "项目标题必须是 1—200 个字符")
-        if target_duration_ms <= 0:
-            raise DomainRuleError("INVALID_TARGET_DURATION", "target_duration_ms 必须大于 0")
+        if isinstance(target_duration_ms, bool) or not isinstance(target_duration_ms, int) or not 0 < target_duration_ms <= MAX_TARGET_DURATION_MS:
+            raise DomainRuleError("INVALID_TARGET_DURATION", "target_duration_ms 必须大于 0 且不超过 24 小时")
         profile_bindings = _canonical_profile_bindings(profile_bindings or [])
         self._validate_creation_bindings(production_plan, profile_bindings, delivery_target, require_complete=False)
         with self.database.connect() as connection:
@@ -815,6 +817,161 @@ class ProjectService:
             )
         return self.get_project(project_id)
 
+    def update_project_target_duration(
+        self,
+        project_id: str,
+        target_duration_ms: int,
+        expected_revision: int,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Update the project default without rewriting any episode.
+
+        Each episode already stores its resolved target.  This command is
+        intentionally separate from the episode update path so a caller must
+        explicitly choose an episode-level override or a project-level
+        default change; neither operation silently propagates to existing
+        production plans.
+        """
+
+        if isinstance(target_duration_ms, bool) or not isinstance(target_duration_ms, int) or not 0 < target_duration_ms <= MAX_TARGET_DURATION_MS:
+            raise DomainRuleError("INVALID_TARGET_DURATION", "目标时长必须大于 0 且不超过 24 小时")
+        now = _utc_now()
+        with self.database.transaction() as connection:
+            current = connection.execute(
+                "SELECT id, revision, target_duration_ms FROM projects WHERE id=?",
+                (project_id,),
+            ).fetchone()
+            if current is None:
+                raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
+            result = connection.execute(
+                "UPDATE projects SET target_duration_ms=?, updated_at=?, revision=revision+1 WHERE id=? AND revision=?",
+                (target_duration_ms, now, project_id, expected_revision),
+            )
+            if result.rowcount != 1:
+                latest = connection.execute("SELECT revision FROM projects WHERE id=?", (project_id,)).fetchone()
+                raise DomainRuleError(
+                    "REVISION_CONFLICT",
+                    "项目已被其他标签页或后台任务修改",
+                    {"current_revision": int(latest["revision"]) if latest else None, "submitted_revision": expected_revision},
+                )
+            connection.execute(
+                """INSERT INTO audit_events
+                (actor, role_context, action, subject_type, subject_id, before_revision, after_revision, summary, metadata_redacted_json)
+                VALUES (?, 'producer', 'PROJECT_TARGET_DURATION_UPDATED', 'project', ?, ?, ?, ?, ?)""",
+                (
+                    actor,
+                    project_id,
+                    expected_revision,
+                    expected_revision + 1,
+                    "更新项目默认单集目标时长",
+                    _json({
+                        "before_target_duration_ms": current["target_duration_ms"],
+                        "after_target_duration_ms": target_duration_ms,
+                        "existing_episodes_unchanged": True,
+                    }),
+                ),
+            )
+            connection.execute(
+                """INSERT INTO outbox_events (type,project_id,subject_type,subject_id,payload_json)
+                VALUES ('project.changed',?,'project',?,?)""",
+                (project_id, project_id, _json({"action": "PROJECT_TARGET_DURATION_UPDATED", "revision": expected_revision + 1})),
+            )
+        return self.get_project(project_id)
+
+    def apply_project_target_duration(
+        self,
+        project_id: str,
+        episode_ids: list[str],
+        expected_revision: int,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Explicitly apply the current default to selected existing episodes.
+
+        This is the only project-level propagation command.  It updates the
+        resolved value on the chosen episodes in one transaction and leaves
+        every unselected episode, shot, and production-plan revision intact;
+        callers can then deliberately replan the affected episodes.
+        """
+
+        normalized_ids = list(dict.fromkeys(str(item).strip() for item in episode_ids if str(item).strip()))
+        if not normalized_ids or len(normalized_ids) > 200:
+            raise DomainRuleError("EPISODES_REQUIRED", "至少选择一个分集，最多一次应用 200 个分集")
+        placeholders = ",".join("?" for _ in normalized_ids)
+        now = _utc_now()
+        with self.database.transaction() as connection:
+            project = connection.execute(
+                "SELECT id, revision, target_duration_ms FROM projects WHERE id=?",
+                (project_id,),
+            ).fetchone()
+            if project is None:
+                raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
+            if int(project["revision"]) != expected_revision:
+                raise DomainRuleError(
+                    "REVISION_CONFLICT",
+                    "项目已被其他标签页或后台任务修改",
+                    {"current_revision": int(project["revision"]), "submitted_revision": expected_revision},
+                )
+            target_duration_ms = int(project["target_duration_ms"] or DEFAULT_PROJECT_TARGET_DURATION_MS)
+            rows = connection.execute(
+                f"""SELECT e.id,e.revision,e.target_duration_ms
+                FROM episodes e JOIN seasons s ON s.id=e.season_id
+                WHERE s.project_id=? AND e.id IN ({placeholders})""",
+                (project_id, *normalized_ids),
+            ).fetchall()
+            found_ids = {str(row["id"]) for row in rows}
+            missing = [episode_id for episode_id in normalized_ids if episode_id not in found_ids]
+            if missing:
+                raise DomainRuleError(
+                    "EPISODE_PROJECT_MISMATCH",
+                    "所选分集不存在或不属于当前项目",
+                    {"project_id": project_id, "episode_ids": missing},
+                )
+            connection.execute(
+                f"UPDATE episodes SET target_duration_ms=?, updated_at=?, revision=revision+1 WHERE id IN ({placeholders})",
+                (target_duration_ms, now, *normalized_ids),
+            )
+            connection.execute(
+                "UPDATE projects SET updated_at=?, revision=revision+1 WHERE id=? AND revision=?",
+                (now, project_id, expected_revision),
+            )
+            connection.execute(
+                """INSERT INTO audit_events
+                (actor, role_context, action, subject_type, subject_id, before_revision, after_revision, summary, metadata_redacted_json)
+                VALUES (?, 'producer', 'PROJECT_TARGET_DURATION_APPLIED', 'project', ?, ?, ?, ?, ?)""",
+                (
+                    actor,
+                    project_id,
+                    expected_revision,
+                    expected_revision + 1,
+                    "将项目默认单集目标时长应用到选定分集",
+                    _json({
+                        "episode_count": len(normalized_ids),
+                        "episode_ids": normalized_ids,
+                        "target_duration_ms": target_duration_ms,
+                        "requires_replan": True,
+                    }),
+                ),
+            )
+            connection.execute(
+                """INSERT INTO outbox_events (type,project_id,subject_type,subject_id,payload_json)
+                VALUES ('project.changed',?,'project',?,?)""",
+                (
+                    project_id,
+                    project_id,
+                    _json({
+                        "action": "PROJECT_TARGET_DURATION_APPLIED",
+                        "episode_ids": normalized_ids,
+                        "revision": expected_revision + 1,
+                    }),
+                ),
+            )
+        return {
+            "project": self.get_project(project_id),
+            "episode_ids": normalized_ids,
+            "target_duration_ms": target_duration_ms,
+            "requires_replan": True,
+        }
+
     def transition_project(self, project_id: str, target: str, actor: str = "local-user") -> dict[str, Any]:
         with self.database.transaction() as connection:
             row = connection.execute("SELECT status, revision FROM projects WHERE id = ?", (project_id,)).fetchone()
@@ -882,7 +1039,7 @@ class ProjectService:
         create_new_season: bool,
         season_title: str | None,
         episode_title: str,
-        target_duration_ms: int,
+        target_duration_ms: int | None,
         actor: str = "local-user",
         request_id: str | None = None,
     ) -> dict[str, Any]:
@@ -891,7 +1048,11 @@ class ProjectService:
         normalized_season_title = (season_title or "").strip()
         if not normalized_episode_title or len(normalized_episode_title) > 200:
             raise DomainRuleError("INVALID_EPISODE_TITLE", "分集标题必须是 1—200 个字符")
-        if target_duration_ms <= 0 or target_duration_ms > 86_400_000:
+        if target_duration_ms is not None and (
+            isinstance(target_duration_ms, bool)
+            or not isinstance(target_duration_ms, int)
+            or not 0 < target_duration_ms <= MAX_TARGET_DURATION_MS
+        ):
             raise DomainRuleError("INVALID_TARGET_DURATION", "目标时长必须大于 0 且不超过 24 小时")
         if create_new_season == bool(season_id):
             raise DomainRuleError("SEASON_TARGET_REQUIRED", "必须选择已有季度，或明确新建季度（二选一）")
@@ -899,11 +1060,16 @@ class ProjectService:
         now = _utc_now()
         created_season = False
         with self.database.transaction() as connection:
-            project = connection.execute("SELECT id,status FROM projects WHERE id=?", (project_id,)).fetchone()
+            project = connection.execute("SELECT id,status,target_duration_ms FROM projects WHERE id=?", (project_id,)).fetchone()
             if project is None:
                 raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
             if str(project["status"]) == "ARCHIVED":
                 raise DomainRuleError("PROJECT_ARCHIVED", "归档项目不能追加季度或分集；请先恢复项目")
+            resolved_target_duration_ms = (
+                target_duration_ms
+                if target_duration_ms is not None
+                else int(project["target_duration_ms"] or DEFAULT_PROJECT_TARGET_DURATION_MS)
+            )
 
             if create_new_season:
                 next_season_number = int(
@@ -967,7 +1133,7 @@ class ProjectService:
                 """INSERT INTO episodes (id,season_id,number,display_order,code,title,narrative_status,
                 production_status,target_duration_ms,source_range_json,created_at,updated_at,created_by)
                 VALUES (?,?,?,?,?,?,'OUTLINE','NOT_STARTED',?,'{}',?,?,?)""",
-                (episode_id, season_id, next_episode_number, next_episode_order, episode_code, normalized_episode_title, target_duration_ms, now, now, actor),
+                (episode_id, season_id, next_episode_number, next_episode_order, episode_code, normalized_episode_title, resolved_target_duration_ms, now, now, actor),
             )
             connection.execute("UPDATE projects SET updated_at=?,revision=revision+1 WHERE id=?", (now, project_id))
             connection.execute(
@@ -1246,11 +1412,25 @@ class ProjectService:
                 WHERE sh.episode_id=? AND sh.archived_at IS NULL ORDER BY CAST(sh.order_key AS REAL),sh.code""",
                 (episode_id,),
             ).fetchall()
+            dialogue_by_shot: dict[str, list[str]] = {}
+            for line in connection.execute(
+                """SELECT dl.shot_id,dl.speaker,tr.text FROM dialogue_lines dl
+                JOIN dialogue_text_revisions tr ON tr.id=(
+                  SELECT latest.id FROM dialogue_text_revisions latest
+                  WHERE latest.dialogue_line_id=dl.id ORDER BY latest.revision_no DESC LIMIT 1)
+                WHERE dl.episode_id=? AND dl.shot_id IS NOT NULL ORDER BY dl.code,dl.id""",
+                (episode_id,),
+            ).fetchall():
+                dialogue_by_shot.setdefault(str(line["shot_id"]), []).append(
+                    f"{line['speaker']}：{line['text']}"
+                )
         items = []
         elapsed_ms = 0
         for ordinal, row in enumerate(rows, start=1):
             item = dict(row)
             item["fields"] = json.loads(str(item.pop("fields_json") or "{}"))
+            # Project live dialogue separately; immutable director revisions remain intact.
+            item["current_dialogue"] = "\n".join(dialogue_by_shot[str(item["id"])]) if str(item["id"]) in dialogue_by_shot else None
             item["display_ordinal"] = ordinal
             item["timeline_start_ms"] = elapsed_ms
             elapsed_ms += int(item["target_duration_ms"])

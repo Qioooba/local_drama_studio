@@ -15,6 +15,11 @@ const seasons = [
   ] },
 ];
 
+const staleDeliveredSeasons = [{
+  id: "season-stale", code: "S01", title: "第一季", number: 1,
+  episodes: [{ id: "episode-stale", code: "EP01", title: "旧交付", number: 1, production_status: "NEEDS_UPDATE", preview_render_id: "render-stale", preview_media_version_id: null }],
+}];
+
 const overview = (nextAction: { title: string; description: string; label: string; reason_code?: string; target: ProductRouteTarget } = {
   title: "导入并拆解故事", description: "从原文建立可审阅的故事事实。", label: "进入故事",
   reason_code: "reviewable_story_draft_count", target: { kind: "STORY", project_id: "project-1" },
@@ -56,7 +61,7 @@ describe("ProjectHomePage v2 overview", () => {
     fireEvent.click(screen.getByRole("button", { name: "大图" }));
     expect(screen.getByRole("button", { name: "大图" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("heading", { name: "导入并拆解故事" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "进入故事" }).getAttribute("href")).toBe("/projects/project-1/story#story-import");
+    expect(screen.getByRole("link", { name: "进入故事" }).getAttribute("href")).toBe("/projects/project-1/story");
     expect(screen.getByRole("link", { name: /第 1 集 已交付，查看交付/ }).getAttribute("href")).toContain("/delivery");
     expect(screen.getAllByText("继续制作")).toHaveLength(2);
   });
@@ -77,5 +82,17 @@ describe("ProjectHomePage v2 overview", () => {
     renderPage();
     expect(await screen.findByRole("heading", { name: "完成 EP02 的第一镜" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "打开镜头工作台" }).getAttribute("href")).toBe("/projects/project-1/episodes/episode-2/studio?focus=design");
+  });
+
+  it("does not present a historical delivery as current when the episode needs upstream updates", async () => {
+    vi.mocked(getProjectOverviewV2).mockResolvedValue({
+      ...overview(),
+      seasons: staleDeliveredSeasons,
+    } as never);
+    renderPage();
+
+    expect(await screen.findByRole("link", { name: "第 1 集 旧交付，继续制作" })).toBeTruthy();
+    expect(screen.getByText("需更新")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /查看交付/ })).toBeNull();
   });
 });

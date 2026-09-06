@@ -6,6 +6,8 @@ import {
   adoptDialogueWorkingAudioV2,
   createShotLipsyncJob,
   finalizeLipsyncJob,
+  finalizeTTSJob,
+  retryJob,
   listShotLipsyncJobs,
   putShotDialogueDraftV2,
   submitDialogueTtsGenerationV2,
@@ -20,6 +22,7 @@ type DirectorSoundInspectorProps = {
   shotId: string;
   shotCode: string;
   shotRevision: number;
+  shotDurationMs?: number;
   dialogue: ShotDialogueProjection;
   videoOptions: Array<{ id: string; label: string }>;
   canEdit: boolean;
@@ -39,8 +42,10 @@ function candidateLabel(candidate: DialogueTtsCandidateFact) {
   return `${candidate.emotion} · ${candidate.speech_rate}× · ${candidate.model_ref}`;
 }
 
-export function DirectorSoundInspector({ projectId, shotId, shotCode, shotRevision, dialogue, videoOptions, canEdit, reviewHref, onChanged }: DirectorSoundInspectorProps) {
+export function DirectorSoundInspector({ projectId, shotId, shotCode, shotRevision, shotDurationMs, dialogue, videoOptions, canEdit, reviewHref, onChanged }: DirectorSoundInspectorProps) {
   const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [speechRate, setSpeechRate] = useState(1);
+  const selectedDurationMs = dialogue.lines.reduce((total, line) => total + (line.candidates.find((candidate) => candidate.selected && !candidate.is_stale)?.duration_ms ?? 0), 0);
   const [saving, setSaving] = useState(false);
   const [pendingTtsLineId, setPendingTtsLineId] = useState<string | null>(null);
   const [lipsyncVideoId, setLipsyncVideoId] = useState("");
@@ -83,6 +88,38 @@ export function DirectorSoundInspector({ projectId, shotId, shotCode, shotRevisi
   const [feedback, setFeedback] = useState("");
   const [failure, setFailure] = useState("");
   const commandKeys = useRef(new Map<string, string>());
+  const ttsFinalizing = useRef(new Set<string>());
+  const [ttsActionId, setTtsActionId] = useState<string | null>(null);
+  const ttsJobs = dialogue.lines.flatMap((line) => line.jobs ?? []);
+  const hasActiveTts = ttsJobs.some((job) => ["QUEUED", "CLAIMED", "RUNNING", "CANCEL_REQUESTED"].includes(job.state));
+  useEffect(() => {
+    if (!hasActiveTts) return;
+    const timer = window.setInterval(() => { void onChanged(); }, 3000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveTts, onChanged]);
+
+  const collectTts = async (jobId: string) => {
+    try {
+      await finalizeTTSJob(jobId);
+      await onChanged();
+    } catch (error) { setFailure(`声音候选登记失败：${errorMessage(error)}`); }
+  };
+  useEffect(() => {
+    if (!canEdit) return;
+    for (const job of ttsJobs) {
+      if (job.state === "SUCCEEDED" && !job.registered && !ttsFinalizing.current.has(job.id)) {
+        ttsFinalizing.current.add(job.id);
+        void collectTts(job.id);
+      }
+    }
+  }, [dialogue, canEdit]);
+
+  const retryTts = async (jobId: string) => {
+    setTtsActionId(jobId); setFailure("");
+    try { await retryJob(jobId); await onChanged(); }
+    catch (error) { setFailure(errorMessage(error)); }
+    finally { setTtsActionId(null); }
+  };
 
   const commandKey = (identity: string) => {
     const existing = commandKeys.current.get(identity);
@@ -142,13 +179,13 @@ export function DirectorSoundInspector({ projectId, shotId, shotCode, shotRevisi
     if (!line.voice_binding) return;
     setPendingTtsLineId(line.id);
     setFailure("");
-    const identity = `tts:${line.id}:${line.current_text.revision_no}:${line.voice_binding.voice_profile_version_id}`;
+    const identity = `tts:${line.id}:${line.current_text.revision_no}:${line.voice_binding.voice_profile_version_id}:${speechRate}`;
     try {
       await submitDialogueTtsGenerationV2(line.id, {
         expected_text_revision_no: line.current_text.revision_no,
         voice_profile_version_id: line.voice_binding.voice_profile_version_id,
         emotion: "neutral",
-        speech_rate: 1,
+        speech_rate: speechRate,
         idempotency_key: commandKey(identity),
       });
       commandKeys.current.delete(identity);
@@ -183,6 +220,8 @@ export function DirectorSoundInspector({ projectId, shotId, shotCode, shotRevisi
   return <section className="director-sound-inspector" aria-labelledby="director-sound-title">
     <div className="director-section-head"><strong id="director-sound-title">{shotCode} · 对白与声音候选</strong><Link to={`/projects/${projectId}/assets`}>管理角色音色</Link></div>
     <p className="director-help">这里维护镜头对白、生成 TTS 候选并采用工作声音。BGM、环境声和音效属于后期音频时间线，不在镜头检查器重复编辑。</p>
+    {shotDurationMs != null && <p className={selectedDurationMs > shotDurationMs ? "director-sound-state error" : "director-help"}>已采用对白合计 {(selectedDurationMs / 1000).toFixed(2)} 秒 / 镜头 {(shotDurationMs / 1000).toFixed(2)} 秒{selectedDurationMs > shotDurationMs ? `，超出 ${((selectedDurationMs - shotDurationMs) / 1000).toFixed(2)} 秒。请调整台词或语速后重生配音；超出时不能合成。` : ""}</p>}
+    <label className="director-help">新候选语速<select aria-label="新候选语速" value={speechRate} onChange={(event) => setSpeechRate(Number(event.target.value))} disabled={!canEdit || pendingTtsLineId !== null}>{[0.75, 1, 1.1, 1.2, 1.35, 1.5, 2].map((rate) => <option key={rate} value={rate}>{rate}×</option>)}</select></label>
 
     <div className="director-dialogue-editor">
       <div className="director-sound-subhead"><strong>{draft.lineId ? "编辑对白新版本" : "新增对白"}</strong>{draft.lineId && <button type="button" className="director-text-button" onClick={() => setDraft(emptyDraft())}>取消编辑</button>}</div>
@@ -197,13 +236,20 @@ export function DirectorSoundInspector({ projectId, shotId, shotCode, shotRevisi
       {dialogue.lines.map((line) => <article key={line.id} className="director-dialogue-card">
         <header><div><strong>{line.code} · {line.speaker}</strong><small>文本 v{line.current_text.revision_no}</small></div><button type="button" className="director-text-button" disabled={!canEdit} onClick={() => editLine(line)}>编辑</button></header>
         <p>{line.current_text.text}</p>
-        <div className="director-dialogue-voice"><span>{line.voice_binding ? `${line.voice_binding.voice_title} · ${line.voice_binding.voice_code}` : "未匹配角色音色"}</span><button type="button" className="director-button secondary" disabled={!canEdit || pendingTtsLineId !== null || !line.voice_binding?.provider_profile_version_id} onClick={() => void submitTts(line)}>{pendingTtsLineId === line.id ? "提交中…" : "生成 TTS 候选"}</button></div>
+        <div className="director-dialogue-voice"><span>{line.voice_binding ? `${line.voice_binding.voice_title} · ${line.voice_binding.voice_code}` : "未匹配角色音色"}</span><button type="button" className="director-button secondary" disabled={!canEdit || pendingTtsLineId !== null || !line.voice_binding?.provider_profile_version_id || (line.jobs ?? []).some((job) => ["QUEUED", "CLAIMED", "RUNNING", "CANCEL_REQUESTED"].includes(job.state))} onClick={() => void submitTts(line)}>{pendingTtsLineId === line.id ? "提交中…" : "生成 TTS 候选"}</button></div>
+        {(line.jobs ?? []).filter((job) => !job.registered).map((job) => <div key={job.id} className="director-sound-state">
+          <span>{({ QUEUED: "声音任务排队中", CLAIMED: "声音任务已领取", RUNNING: "正在生成声音", SUCCEEDED: "声音文件已完成，正在登记候选", FAILED: "声音生成失败", CANCEL_REQUESTED: "正在取消声音任务", CANCELLED: "声音任务已取消" } as Record<string, string>)[job.state] ?? job.state}</span>
+          {job.last_error_detail_redacted && <small>{job.last_error_detail_redacted}</small>}
+          {["FAILED", "ORPHANED", "NEEDS_ATTENTION"].includes(job.state) && <button type="button" disabled={!canEdit || ttsActionId !== null} onClick={() => void retryTts(job.id)}>重试声音任务</button>}
+          {job.state === "SUCCEEDED" && <button type="button" disabled={!canEdit} onClick={() => void collectTts(job.id)}>收取已完成声音</button>}
+        </div>)}
         {!line.voice_binding && <small className="director-sound-warning">说话人须与本镜已绑定角色的名称或编码一致，并先绑定音色。</small>}
         {line.voice_binding && !line.voice_binding.provider_profile_version_id && <small className="director-sound-warning">该音色尚未绑定 Published 本地 TTS Profile。</small>}
         {line.candidates.length === 0 ? <p className="director-sound-state">尚无声音候选。</p> : <ul className="director-tts-candidates">
           {line.candidates.map((candidate) => <li key={candidate.id} className={candidate.selected ? "selected" : undefined}>
             <div><strong>{candidateLabel(candidate)}</strong><span>{candidate.selected ? "当前工作声音" : candidate.is_stale ? "基于旧文本" : candidate.status}</span></div>
             <audio controls preload="none" src={mediaContentUrl(candidate.media_version_id)} aria-label={`${line.code} TTS 候选试听`} />
+            <small>{candidate.duration_ms == null ? "候选时长待登记" : `候选时长 ${(candidate.duration_ms / 1000).toFixed(2)} 秒`}</small>
             <button type="button" className="director-button secondary" disabled={!canEdit || candidate.is_stale || candidate.selected || candidate.status !== "READY" || pendingAdoptionId !== null} onClick={() => void adoptCandidate(line, candidate)}>{pendingAdoptionId === candidate.id ? "采用中…" : candidate.selected ? "已采用" : candidate.is_stale ? "候选已失效" : "采用为工作声音"}</button>
           </li>)}
         </ul>}

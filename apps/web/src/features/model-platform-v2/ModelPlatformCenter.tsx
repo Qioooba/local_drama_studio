@@ -22,7 +22,7 @@ import {
   publishModelPlatformProfile,
   putModelPlatformCapabilityAssignment,
   runModelPlatformModelLockDiscovery,
-  runModelPlatformOllamaDiscovery,
+  runModelPlatformLlamaCppDiscovery,
   registerModelPlatformDiscoveryObservation,
   smokeModelPlatformCapabilityOffering,
   smokeModelPlatformProfile,
@@ -278,7 +278,7 @@ function SystemCapabilityAssignmentsPanel({ items, error, saving, onSave }: { it
 }
 
 function runtimeLabel(kind: string) {
-  return ({ OLLAMA: "Ollama", COMFYUI: "ComfyUI", PYTORCH_PROCESS: "PyTorch", OS_NATIVE: "Windows 原生" })[kind] ?? kind;
+  return ({ LLAMA_CPP_MANAGED: "llama.cpp", OLLAMA: "Ollama（兼容）", COMFYUI: "ComfyUI", PYTORCH_PROCESS: "PyTorch", OS_NATIVE: "Windows 原生" })[kind] ?? kind;
 }
 
 function presenceLabel(presence: string) {
@@ -319,6 +319,16 @@ function validationStatusLabel(status: string) {
   return ({ INTEGRITY_PASSED: "通过", SMOKE_PASSED: "通过", FAILED: "失败" })[status] ?? status;
 }
 
+function profileSmokeFailureLabel(code: string | null) {
+  return ({
+    PROFILE_OUTPUT_CONTRACT_MISMATCH: "模型返回内容不符合 Profile 输出合同",
+    LOCAL_LLM_EMPTY_RESPONSE: "模型没有返回结构化内容",
+    LOCAL_LLM_OUTPUT_INVALID: "模型返回的 JSON 结构无效",
+    LOCAL_LLM_LOOPBACK_UNAVAILABLE: "本机语言模型服务无法连接",
+    PROFILE_SMOKE_FAILED: "验证未通过",
+  })[code ?? "PROFILE_SMOKE_FAILED"] ?? `验证失败（${code}）`;
+}
+
 function formatBytes(value: number | null) {
   if (value === null || value < 0) return "大小未报告";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -353,10 +363,10 @@ function DiscoveryObservationList({ items, onRegister, registeringId }: { items:
   return <section className="model-platform-discovery" aria-labelledby="model-platform-discovery-title">
     <div className="panel-heading">
       <div><p className="eyebrow">扫描证据</p><h4 id="model-platform-discovery-title">最近发现的本机模型</h4></div>
-      <span className="status-pill">{items.length} 条观察</span>
+      <span className="status-pill">{items.length} 个当前资源</span>
     </div>
-    <p className="muted">这是各运行时的只读扫描结果。发现资源后仍需完成完整性、冒烟验证和发布，才可能在业务页被选择。</p>
-    {items.length === 0 ? <div className="model-platform-discovery-empty"><strong>尚未记录扫描结果</strong><span>接入并运行 Ollama、ComfyUI 或 PyTorch 的 V2 扫描后，模型会按其原生运行时显示在这里。</span></div> : <ul className="model-platform-discovery-list">
+    <p className="muted">每个运行时资源只显示最近一次成功扫描结果，历史证据仍保留在服务端审计中。发现资源后仍需完成完整性、冒烟验证和发布，才可能在业务页被选择。</p>
+    {items.length === 0 ? <div className="model-platform-discovery-empty"><strong>尚未记录扫描结果</strong><span>接入并运行 llama.cpp、ComfyUI 或 PyTorch 的 V2 扫描后，模型会按其原生运行时显示在这里。</span></div> : <ul className="model-platform-discovery-list">
       {items.map((item) => <li key={item.id}>
         <div className="model-platform-discovery-list__identity"><strong>{item.native_id}</strong><small>{runtimeLabel(item.runtime_kind)} · {formatBytes(item.size_bytes)}</small></div>
         <div className="model-platform-discovery-list__facts"><span>{presenceLabel(item.presence)}</span>{item.candidate_capabilities.length > 0 ? <small>候选能力：{item.candidate_capabilities.join("、")}</small> : <small>尚未声明候选能力</small>}<button type="button" className="secondary" disabled={item.presence !== "PRESENT" || registeringId !== null} onClick={() => onRegister(item.id)}>{registeringId === item.id ? "正在登记…" : "登记候选"}</button></div>
@@ -366,7 +376,7 @@ function DiscoveryObservationList({ items, onRegister, registeringId }: { items:
 }
 
 function canSmokeCapability(candidate: ModelPlatformRegisteredCandidate, capabilityCode: string) {
-  return (candidate.runtime_kind === "OLLAMA" && capabilityCode.startsWith("LLM_"))
+  return ((candidate.runtime_kind === "LLAMA_CPP_MANAGED" || candidate.runtime_kind === "OLLAMA") && capabilityCode.startsWith("LLM_"))
     || (candidate.runtime_kind === "PYTORCH_PROCESS" && capabilityCode === "EMBEDDING_TEXT");
 }
 
@@ -417,7 +427,7 @@ function RegisteredCandidateList({ items, onSmoke, smokingKey, onVerifyIntegrity
                 <div><button type="button" className="secondary" onClick={() => onOpenWorkflowBinding(null)} disabled={bindingWorkflowKey !== null || queueingComfySmokeKey !== null || provisioningKey !== null}>取消</button>{selectedBinding ? canProvisionComfy ? <button type="button" className="secondary" disabled={!selectedBinding.capability_smoke_passed || provisioningKey !== null} onClick={() => onProvisionProfile(candidate.runtime_model_installation_id, capability.code, selectedBinding.id)}>{provisioningKey === key ? "正在创建 Profile…" : selectedBinding.capability_smoke_passed ? "创建标准 Profile" : "该工作流尚未通过真实冒烟"}</button> : <button type="button" className="secondary" disabled={queueingComfySmokeKey !== null} onClick={() => onQueueComfySmoke(candidate.runtime_model_installation_id, capability.code, selectedBinding.id)}>{queueingComfySmokeKey === key ? "正在排队…" : "排队真实 Comfy 冒烟"}</button> : <button type="button" className="secondary" disabled={!workflowSelections[key] || workflowOptionsLoading || workflowBindingsLoading || bindingWorkflowKey !== null} onClick={() => onBindWorkflow(candidate.runtime_model_installation_id, capability.code, workflowSelections[key])}>{bindingWorkflowKey === key ? "正在验证并绑定…" : "验证并绑定"}</button>}</div>
                 <small>{selectedBinding ? canProvisionComfy ? selectedBinding.capability_smoke_passed ? "此 Profile 会冻结已产物验证的工作流绑定和输出合同。" : "请先为该工作流排队真实 Comfy 冒烟；其他工作流的通过记录不能替代它。" : "Worker 将执行冻结 smoke 合同；结果请在任务中心查看。" : "仅验证节点与输入 schema；不会执行图或生成产物。"}</small>
               </div> : null}
-              {canSmokeCapability(candidate, capability.code) && capability.offering_validation_status !== "SMOKE_PASSED" ? <button type="button" className="secondary" disabled={smokingKey !== null} onClick={() => onSmoke(candidate.runtime_model_installation_id, capability.code)}>{smokingKey === key ? "正在冒烟验证…" : "运行能力冒烟"}</button> : null}
+              {canSmokeCapability(candidate, capability.code) ? <button type="button" className="secondary" disabled={smokingKey !== null} onClick={() => onSmoke(candidate.runtime_model_installation_id, capability.code)}>{smokingKey === key ? "正在冒烟验证…" : capability.offering_validation_status === "SMOKE_PASSED" ? "重新运行能力冒烟" : "运行能力冒烟"}</button> : null}
               {canProvision && !profileAction ? <button type="button" className="secondary" disabled={provisioningKey !== null} onClick={() => onProvisionProfile(candidate.runtime_model_installation_id, capability.code)}>{provisioningKey === key ? "正在创建 Profile…" : "创建标准 Profile"}</button> : null}
               {profileAction && !profileAction.validationRunId ? <button type="button" className="secondary" disabled={smokingProfileKey !== null} onClick={() => onSmokeProfile(key, profileAction.profileVersionId)}>{smokingProfileKey === key ? "正在验证 Profile…" : "运行 Profile smoke"}</button> : null}
               {profileAction?.validationRunId ? <button type="button" className="primary" disabled={publishingProfileKey !== null} onClick={() => onPublishProfile(key, profileAction.profileVersionId, profileAction.validationRunId!)}>{publishingProfileKey === key ? "正在发布…" : "发布为可选能力"}</button> : null}
@@ -500,16 +510,18 @@ export function ModelPlatformCenter({ onOpenConnections }: { onOpenConnections: 
       queryClient.invalidateQueries({ queryKey: ["model-platform-v2", "profile-versions"] }),
     ]);
   };
-  const ollamaScan = useMutation({
-    mutationFn: runModelPlatformOllamaDiscovery,
+  const llamaCppScan = useMutation({
+    mutationFn: runModelPlatformLlamaCppDiscovery,
     onSuccess: async ({ discovery_run: run }) => {
-      setScanMessage(`Ollama 扫描完成：发现 ${run.observation_count} 条记录。`);
+      installationIntegrity.reset();
+      setScanMessage(`llama.cpp 扫描完成：发现 ${run.observation_count} 条记录。`);
       await refreshDiscovery();
     },
   });
   const modelLockScan = useMutation({
     mutationFn: runModelPlatformModelLockDiscovery,
     onSuccess: async ({ discovery_runs: runs }) => {
+      installationIntegrity.reset();
       const observationCount = runs.reduce((sum, run) => sum + run.observation_count, 0);
       setScanMessage(`ComfyUI / PyTorch 扫描完成：发现 ${observationCount} 条记录。`);
       await refreshDiscovery();
@@ -545,6 +557,7 @@ export function ModelPlatformCenter({ onOpenConnections }: { onOpenConnections: 
         : `${validation.capability_code} 能力冒烟未通过，请查看运行时与模型日志。`);
       await queryClient.invalidateQueries({ queryKey: ["model-platform-v2", "registered-candidates"] });
       await queryClient.invalidateQueries({ queryKey: ["model-platform-v2", "profile-versions"] });
+      await queryClient.invalidateQueries({ queryKey: ["model-platform-v2", "validation-history"] });
     },
   });
   const profileProvision = useMutation({
@@ -558,9 +571,21 @@ export function ModelPlatformCenter({ onOpenConnections }: { onOpenConnections: 
   });
   const profileSmoke = useMutation({
     mutationFn: ({ key, profileVersionId }: { key: string; profileVersionId: string }) => smokeModelPlatformProfile(profileVersionId),
-    onSuccess: ({ validation }, variables) => {
-      setProfileActions((current) => ({ ...current, [variables.key]: { profileVersionId: validation.profile_version_id, validationRunId: validation.validation_run_id } }));
-      setScanMessage(validation.status === "SMOKE_PASSED" ? "Profile smoke 已通过。发布前请确认它会成为系统范围内可选择的能力。" : "Profile smoke 未通过；该 Profile 不能发布。");
+    onSuccess: async ({ validation }, variables) => {
+      setProfileActions((current) => ({
+        ...current,
+        [variables.key]: validation.status === "SMOKE_PASSED"
+          ? { profileVersionId: validation.profile_version_id, validationRunId: validation.validation_run_id }
+          : { profileVersionId: validation.profile_version_id },
+      }));
+      setScanMessage(validation.status === "SMOKE_PASSED"
+        ? "Profile smoke 已通过。发布前请确认它会成为系统范围内可选择的能力。"
+        : `Profile smoke 未通过：${profileSmokeFailureLabel(validation.failure_code)}。可修复后重新运行，未通过的记录不能发布。`);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["model-platform-v2", "registered-candidates"] }),
+        queryClient.invalidateQueries({ queryKey: ["model-platform-v2", "profile-versions"] }),
+        queryClient.invalidateQueries({ queryKey: ["model-platform-v2", "validation-history"] }),
+      ]);
     },
   });
   const profilePublish = useMutation({
@@ -576,6 +601,7 @@ export function ModelPlatformCenter({ onOpenConnections }: { onOpenConnections: 
         queryClient.invalidateQueries({ queryKey: ["model-platform-v2", "overview"] }),
         queryClient.invalidateQueries({ queryKey: ["model-platform-v2", "registered-candidates"] }),
         queryClient.invalidateQueries({ queryKey: ["model-platform-v2", "profile-versions"] }),
+        queryClient.invalidateQueries({ queryKey: ["model-platform-v2", "system-capability-assignments"] }),
       ]);
     },
   });
@@ -683,11 +709,11 @@ export function ModelPlatformCenter({ onOpenConnections }: { onOpenConnections: 
     <section className="model-platform-discovery-actions" aria-label="模型扫描操作">
       <div><strong>以本机服务身份扫描</strong><span>扫描只更新候选证据；不会下载、删除、发布或切换模型。</span></div>
       <div className="model-platform-discovery-actions__controls">
-        <button type="button" className="secondary" disabled={ollamaScan.isPending || modelLockScan.isPending} onClick={() => ollamaScan.mutate()}>扫描 Ollama</button>
-        <button type="button" className="secondary" disabled={ollamaScan.isPending || modelLockScan.isPending} onClick={() => modelLockScan.mutate()}>扫描 ComfyUI / PyTorch</button>
+        <button type="button" className="secondary" disabled={llamaCppScan.isPending || modelLockScan.isPending} onClick={() => llamaCppScan.mutate()}>扫描 llama.cpp / GGUF</button>
+        <button type="button" className="secondary" disabled={llamaCppScan.isPending || modelLockScan.isPending} onClick={() => modelLockScan.mutate()}>扫描 ComfyUI / PyTorch</button>
       </div>
       {scanMessage ? <p role="status">{scanMessage}</p> : null}
-      {ollamaScan.error || modelLockScan.error || offlineImportPlan.error || trustedDownloadPlan.error || candidateSmoke.error || installationIntegrity.error || comfyWorkflowBinding.error || comfySmokeSubmission.error || profileProvision.error || profileSmoke.error || profilePublish.error || systemAssignmentSave.error ? <p className="model-platform-discovery-actions__error" role="alert">操作失败：{String(ollamaScan.error ?? modelLockScan.error ?? offlineImportPlan.error ?? trustedDownloadPlan.error ?? candidateSmoke.error ?? installationIntegrity.error ?? comfyWorkflowBinding.error ?? comfySmokeSubmission.error ?? profileProvision.error ?? profileSmoke.error ?? profilePublish.error ?? systemAssignmentSave.error)}。请检查运行时接入、模型库、参数合同或所需 Adapter。</p> : null}
+      {llamaCppScan.error || modelLockScan.error || offlineImportPlan.error || trustedDownloadPlan.error || candidateSmoke.error || installationIntegrity.error || comfyWorkflowBinding.error || comfySmokeSubmission.error || profileProvision.error || profileSmoke.error || profilePublish.error || systemAssignmentSave.error ? <p className="model-platform-discovery-actions__error" role="alert">操作失败：{String(llamaCppScan.error ?? modelLockScan.error ?? offlineImportPlan.error ?? trustedDownloadPlan.error ?? candidateSmoke.error ?? installationIntegrity.error ?? comfyWorkflowBinding.error ?? comfySmokeSubmission.error ?? profileProvision.error ?? profileSmoke.error ?? profilePublish.error ?? systemAssignmentSave.error)}。请检查运行时接入、模型库、参数合同或所需 Adapter。</p> : null}
     </section>
 
     <DiscoveryObservationList items={discoveries.data?.items ?? []} onRegister={(observationId) => candidateRegistration.mutate(observationId)} registeringId={candidateRegistration.isPending ? candidateRegistration.variables ?? null : null} />

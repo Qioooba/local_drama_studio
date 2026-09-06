@@ -72,6 +72,14 @@ def test_release_migration_contract_matches_graph_and_package_authority() -> Non
         "0084_model_platform_project_knowledge_indexes",
         "0085_model_platform_project_knowledge_retry_attempts",
         "0086_model_platform_quick_create_v2_runs",
+        "0087_gpu_runtime_llama_cpp",
+        "0088_pipeline_runs",
+        "0089_pipeline_llm_mode",
+        "0090_pipeline_draft_review",
+        "0091_asset_image_generation_batches",
+        "0092_shot_keyframe_generation_batches",
+        "0093_shot_prompt_bundle_snapshots",
+        "0094_project_target_duration",
     ]
     graph = {revision.revision for revision in scripts.walk_revisions()}
     assert set(revisions).issubset(graph)

@@ -563,6 +563,11 @@ class DialogueService:
             "model_ref": model_ref.strip(),
             "candidate_kind": candidate_kind,
         }
+        voice_evidence = provenance["voice_license_evidence"]
+        if isinstance(voice_evidence, dict) and str(voice["voice_ref"]).startswith(("sapi:", "voxcpm2:")):
+            provenance["provenance"] = str(voice_evidence.get("provenance") or "PROJECT_LOCAL_EVIDENCE")
+            provenance["distribution_scope"] = str(voice_evidence.get("distribution_scope") or "LOCAL_TEST_ONLY")
+            provenance["commercial_authorization"] = bool(voice_evidence.get("commercial_authorization", False))
         if not provenance["emotion"] or not provenance["model_ref"]:
             raise DomainRuleError("TTS_PROVENANCE_REQUIRED", "TTS 候选必须记录情绪和 model ref")
         with self.database.transaction() as connection:
@@ -639,6 +644,8 @@ class DialogueService:
             "provider_profile_version_id": str(profile["id"]),
             "provider_kind": provider_kind,
             "network_allowed": False,
+            "synthesis_scope": "LOCAL_TEST_ONLY",
+            "commercial_authorization": False,
         }
         if self.jobs is None:
             raise DomainRuleError("DIALOGUE_JOB_PORT_REQUIRED", "对白生成任务端口未配置")
@@ -954,6 +961,93 @@ class DialogueService:
                 (actor, version_id, _json({"voice_ref": voice_ref, "smoke_sha256": digest, "network_contacted": False})),
             )
         return {"id": version_id, "code": code, "version_no": 1, "capability": "TTS", "status": "PUBLISHED", "evidence": evidence}
+
+    def publish_project_local_sapi_profile(
+        self,
+        project_id: str,
+        *,
+        voice_ref: str,
+        smoke_text: str = "本机语音合成验收通过",
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Create a project profile only after a real local SAPI probe.
+
+        A Windows-installed voice is not a commercial licence.  The project
+        profile therefore carries an explicit ``LOCAL_OS_INSTALLED`` source
+        provenance and ``LOCAL_TEST_ONLY`` distribution scope.  Keeping this
+        fact in the existing evidence JSON preserves compatibility with the
+        v2 schema while making the restriction visible to every TTS snapshot
+        and to the page that performs the action.
+        """
+
+        with self.database.connect() as connection:
+            project = connection.execute("SELECT id FROM projects WHERE id=?", (project_id,)).fetchone()
+        if project is None:
+            raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
+
+        published = self.publish_local_sapi_profile(voice_ref, smoke_text, actor=actor)
+        provider_profile_version_id = str(published["id"])
+        published_evidence = dict(published.get("evidence") or {})
+        discovered_voice = dict(published_evidence.get("voice") or {})
+        now = _now()
+        evidence = {
+            "schema_version": "localdrama.voice-source-evidence.v1",
+            "provenance": "LOCAL_OS_INSTALLED",
+            "distribution_scope": "LOCAL_TEST_ONLY",
+            "commercial_authorization": False,
+            "runtime": "WINDOWS_SAPI_LOCAL",
+            "voice_ref": voice_ref.strip(),
+            "voice": discovered_voice,
+            "provider_profile_version_id": provider_profile_version_id,
+            "smoke_sha256": published_evidence.get("smoke_sha256"),
+            "smoke_path_rel": published_evidence.get("smoke_path_rel"),
+            "ffprobe": published_evidence.get("ffprobe"),
+            "network_contacted": False,
+            "validated_at": published_evidence.get("validated_at") or now,
+        }
+        # A stable code makes the page action idempotent while retaining the
+        # normal per-project version history if a later probe changes.
+        code = "sapi-local-" + hashlib.sha1(voice_ref.strip().encode("utf-8")).hexdigest()[:16]
+        title = f"{discovered_voice.get('name') or voice_ref.strip()} · 本机测试音色"
+        with self.database.transaction() as connection:
+            existing = connection.execute(
+                """SELECT id FROM voice_profile_versions
+                   WHERE project_id=? AND voice_ref=? AND provider_profile_version_id=? AND status='ACTIVE'
+                   ORDER BY version_no DESC LIMIT 1""",
+                (project_id, voice_ref.strip(), provider_profile_version_id),
+            ).fetchone()
+            if existing is not None:
+                profile_id = str(existing["id"])
+            else:
+                next_no = int(
+                    connection.execute(
+                        "SELECT COALESCE(MAX(version_no),0)+1 FROM voice_profile_versions WHERE project_id=? AND code=?",
+                        (project_id, code),
+                    ).fetchone()[0]
+                )
+                profile_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"local-drama:project-sapi:{project_id}:{voice_ref.strip()}:{next_no}"))
+                connection.execute(
+                    """INSERT INTO voice_profile_versions
+                    (id,project_id,code,version_no,title,voice_ref,license_status,license_evidence_json,
+                     provider_profile_version_id,status,created_at,updated_at,created_by,revision,schema_version)
+                    VALUES (?,?,?,?,?,?,?,?,?,'ACTIVE',?,?,?,1,'v2')""",
+                    (
+                        profile_id, project_id, code, next_no, title, voice_ref.strip(), "VERIFIED_LOCAL",
+                        _json(evidence), provider_profile_version_id, now, now, actor,
+                    ),
+                )
+                connection.execute(
+                    """INSERT INTO audit_events
+                    (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
+                    VALUES (?,'audio_editor','LOCAL_SAPI_PROJECT_PROFILE_CREATED','voice_profile_version',?,
+                    '真实本机 SAPI 探测后创建仅限本机验收的项目音色版本',?)""",
+                    (actor, profile_id, _json({"project_id": project_id, "voice_ref": voice_ref.strip(), "provenance": evidence["provenance"], "distribution_scope": evidence["distribution_scope"], "commercial_authorization": False})),
+                )
+        result = self.get_voice_profile(profile_id)
+        result["provenance"] = "LOCAL_OS_INSTALLED"
+        result["distribution_scope"] = "LOCAL_TEST_ONLY"
+        result["commercial_authorization"] = False
+        return result
 
     def list_lines(self, episode_id: str) -> list[dict[str, Any]]:
         with self.database.connect() as connection:

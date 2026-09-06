@@ -95,7 +95,7 @@ class DiscoveryRegistrationService:
                         release_code,
                         native_locator,
                         digest,
-                        "OLLAMA_TAG" if runtime_kind == "OLLAMA" else "MODEL_LOCK_BUNDLE",
+                        {"OLLAMA": "OLLAMA_TAG", "LLAMA_CPP_MANAGED": "GGUF"}.get(runtime_kind, "MODEL_LOCK_BUNDLE"),
                         _optional_text(metadata.get("quantization_level")),
                         _json({"discovery_observation_id": observation_id, "runtime_kind": runtime_kind}),
                         now,

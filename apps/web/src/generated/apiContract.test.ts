@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { ApiContractError, parseDocumentImportEnvelope } from "./api";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiContractError, ApiRequestError, parseDocumentImportEnvelope, requestJson } from "./api";
+
+afterEach(() => vi.unstubAllGlobals());
 
 const validImport = {
   import: {
@@ -46,5 +48,20 @@ describe("document import API contract", () => {
   ])("rejects malformed and legacy envelopes before React receives them", (payload) => {
     expect(() => parseDocumentImportEnvelope(payload)).toThrow(ApiContractError);
     expect(() => parseDocumentImportEnvelope(payload)).toThrow(/DOCUMENT_IMPORT_CONTRACT_INVALID/);
+  });
+});
+
+describe("request error classification", () => {
+  it("keeps a headerless 500 as a request failure instead of misreporting an API version mismatch", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ error: { code: "INTERNAL_ERROR", message: "声音工作区读取失败" } }),
+      { status: 500, headers: { "Content-Type": "application/json" } },
+    )));
+
+    await expect(requestJson("/api/v2/episodes/episode-1/post/audio")).rejects.toMatchObject({
+      name: "ApiRequestError",
+      code: "INTERNAL_ERROR",
+      status: 500,
+    } satisfies Partial<ApiRequestError>);
   });
 });

@@ -3,6 +3,8 @@ import { requestJson } from "../../generated/api";
 export type RuntimeEnvironmentVersion = { id: string; runtime_environment_id: string; version_no: number; status: string; manifest: Record<string, unknown>; environment_fingerprint: string; validation: { status?: string; blockers?: Array<{ code: string; message: string }> } };
 export type RuntimeEnvironment = { id: string; code: string; title: string; status: string; version_count?: number };
 const json = (value: unknown) => ({ headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) });
+export type WorkflowAppContract = { id: string; status: string; capability: string; contract: Record<string, unknown>; bindings: Record<string, unknown>; semantic_phases: unknown[] };
+export const listWorkflowAppContracts = (id: string) => requestJson<{ items: WorkflowAppContract[]; binding: { contract_version_id: string; runtime_environment_version_id: string } | null }>(`/api/v1/workflow-versions/${encodeURIComponent(id)}/app-contracts`);
 export const listRuntimeEnvironments = () => requestJson<{ items: RuntimeEnvironment[] }>("/api/v1/runtime-environments");
 export const getRuntimeEnvironment = (id: string) => requestJson<{ environment: RuntimeEnvironment; versions: RuntimeEnvironmentVersion[] }>(`/api/v1/runtime-environments/${encodeURIComponent(id)}`);
 export const createRuntimeEnvironment = (payload: Record<string, unknown>) => requestJson<{ runtime_environment: { environment: RuntimeEnvironment; versions: RuntimeEnvironmentVersion[] } }>("/api/v1/runtime-environments", { method: "POST", ...json(payload) });
@@ -14,4 +16,3 @@ export const stopRuntime = (id: string, instanceId: string) => requestJson<Recor
 export const createAppContract = (workflowVersionId: string, payload: Record<string, unknown>) => requestJson<{ app_contract: { id: string; status: string; validation: { status: string; blockers: Array<{ code: string; message: string }> } } }>(`/api/v1/workflow-versions/${encodeURIComponent(workflowVersionId)}/app-contracts`, { method: "POST", ...json(payload) });
 export const publishAppContract = (id: string) => requestJson<{ app_contract: { id: string; status: string } }>(`/api/v1/workflow-app-contracts/${encodeURIComponent(id)}:publish`, { method: "POST" });
 export const bindWorkflowRuntime = (workflowVersionId: string, contractVersionId: string, runtimeVersionId: string) => requestJson<{ binding: Record<string, unknown> }>(`/api/v1/workflow-versions/${encodeURIComponent(workflowVersionId)}/runtime-binding`, { method: "PUT", ...json({ contract_version_id: contractVersionId, runtime_environment_version_id: runtimeVersionId }) });
-

@@ -70,6 +70,18 @@ def test_txt_markdown_and_docx_preview_then_idempotent_commit_preserve_source(wo
             assert committed.json()["commit"]["status"] == "COMMITTED"
             assert committed.json()["commit"]["idempotent"] is False
             assert committed.json()["commit"]["source_preserved"] is True
+            latest = client.get(f"/api/v1/projects/{project_id}/imports/latest")
+            assert latest.status_code == 200, latest.text
+            restored = latest.json()["latest"]
+            assert restored["import"]["import_session_id"] == result["import_session_id"]
+            assert restored["import"]["status"] == "COMMITTED"
+            assert restored["source_name"] == source.name
+            assert restored["selected_range"] == {
+                "source_paragraph_start": 1,
+                "source_paragraph_end": result["preview"]["paragraph_count"],
+                "source_paragraph_count": result["preview"]["paragraph_count"],
+                "selection_mode": "FULL_DOCUMENT_DEFAULT",
+            }
             repeated = client.post(
                 f"/api/v1/import-sessions/{result['import_session_id']}:commit",
                 json={"expected_preview_hash": result["preview_hash"]},
@@ -95,7 +107,7 @@ def test_txt_markdown_and_docx_preview_then_idempotent_commit_preserve_source(wo
         assert connection.execute("SELECT COUNT(*) FROM audit_events WHERE action='IMPORT_SESSION_COMMITTED'").fetchone()[0] == 3
 
 
-def test_unsupported_document_does_not_create_source_or_session(workspace, database) -> None:
+def test_malformed_pdf_does_not_create_source_or_session(workspace, database) -> None:
     project = _project(workspace, database)
     source = workspace.work_root / "script.pdf"
     source.write_bytes(b"not a supported document")
@@ -104,9 +116,9 @@ def test_unsupported_document_does_not_create_source_or_session(workspace, datab
     try:
         service.import_document(str(project["id"]), source)
     except Exception as error:
-        assert getattr(error, "code", None) == "UNSUPPORTED_DOCUMENT_TYPE"
+        assert getattr(error, "code", None) == "DOCUMENT_PARSE_FAILED"
     else:
-        raise AssertionError("unsupported document import must fail")
+        raise AssertionError("malformed PDF import must fail")
 
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM source_documents").fetchone()[0] == 0

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { routes } from "../../app/routeRegistry";
 import {
@@ -35,6 +35,7 @@ import {
 } from "./profileEvidenceClient";
 import "./profile-configuration.css";
 import { WorkflowDefinitionForm } from "./WorkflowDefinitionForm";
+import { EvidenceImageInputs } from "./EvidenceImageInputs";
 import { ProfileContractEditors } from "./ProfileContractEditors";
 import { ModelInspectorDrawer } from "../model-config/ModelInspectorDrawer";
 import { PRODUCTION_TIER_LABELS, STATUS_LABELS, optionLabel } from "../shared/optionLabels";
@@ -127,7 +128,12 @@ export function ProfileConfigurationPanel(props: ProfileConfigurationPanelProps)
   );
 }
 
-function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDirtyChange, onPublished }: { profiles: Profile[]; workflows: WorkflowVersionSummary[]; projectId?: string; onChanged: () => void; onDirtyChange?: (dirty: boolean) => void; onPublished?: (receipt: ProfilePublicationReceiptData) => void }) {
+function ProfileContractsTask({ profiles: persistedProfiles, workflows, projectId, onChanged, onDirtyChange, onPublished }: { profiles: Profile[]; workflows: WorkflowVersionSummary[]; projectId?: string; onChanged: () => void; onDirtyChange?: (dirty: boolean) => void; onPublished?: (receipt: ProfilePublicationReceiptData) => void }) {
+  // Publication returns before the parent catalogue refresh. Keep that authoritative
+  // result available so selection and its receipt survive the refresh boundary.
+  const [publishedProfile, setPublishedProfile] = useState<Profile | null>(null);
+  const profiles = useMemo(() => publishedProfile && !persistedProfiles.some((item) => item.version_id === publishedProfile.version_id)
+    ? [...persistedProfiles, publishedProfile] : persistedProfiles, [persistedProfiles, publishedProfile]);
   const preferredId = profiles.find((item) => item.status === "PUBLISHED")?.version_id ?? profiles[0]?.version_id ?? null;
   const [selectedId, setSelectedId] = useState<string | null>(preferredId);
   const [draftId, setDraftId] = useState<string | null>(null);
@@ -144,14 +150,20 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
   const [keyframeSourceId, setKeyframeSourceId] = useState("");
   const [keyframeConfirmed, setKeyframeConfirmed] = useState(false);
   const [keyframePreviewJobId, setKeyframePreviewJobId] = useState<string | null>(null);
+  const [referenceImages, setReferenceImages] = useState<Record<string, string>>({});
+  const [referenceConfirmed, setReferenceConfirmed] = useState<Record<string, boolean>>({});
   const publishedI2VWorkflows = workflows.filter(
     (item) => item.status === "PUBLISHED" && item.contract.capability === "H3_FL2VA_I2V_CANDIDATE",
   );
   const publishedT2IWorkflows = workflows.filter(
-    (item) => item.status === "PUBLISHED" && item.contract.capability === "SDXL_T2I_CANDIDATE",
+    (item) => item.status === "PUBLISHED" && (
+      item.contract.capability === "SDXL_T2I_CANDIDATE"
+      || String(item.contract.capability ?? "").startsWith("IMAGE_")
+    ),
   );
   const preferredEvidenceWorkflowId = publishedI2VWorkflows[0]?.id ?? "";
   const [evidenceWorkflowId, setEvidenceWorkflowId] = useState(preferredEvidenceWorkflowId);
+  const initializedEvidenceProfile = useRef<string | null>(null);
 
   const profileCollections = useMemo(() => {
     const collections = new Map<string, ProfileCollection>();
@@ -216,6 +228,8 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
     setProbeJobId(null);
     setProbeConfirmOpen(false);
     setKeyframeSourceId("");
+    setReferenceImages({});
+    setReferenceConfirmed({});
     setKeyframeConfirmed(false);
     setKeyframePreviewJobId(null);
   }, [current?.id]);
@@ -223,6 +237,13 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
   useEffect(() => {
     const isImageDraft = Boolean(current && current.status === "DRAFT" && String(current.capability).startsWith("IMAGE_"));
     if (isImageDraft) {
+      const frozenWorkflowId = String(current?.execution?.workflow?.id ?? "");
+      if (initializedEvidenceProfile.current !== current?.id && frozenWorkflowId && publishedT2IWorkflows.some((item) => item.id === frozenWorkflowId)) {
+        initializedEvidenceProfile.current = current?.id ?? null;
+        if (evidenceWorkflowId !== frozenWorkflowId) setEvidenceWorkflowId(frozenWorkflowId);
+        return;
+      }
+      initializedEvidenceProfile.current = current?.id ?? null;
       if (evidenceWorkflowId && publishedT2IWorkflows.some((item) => item.id === evidenceWorkflowId)) return;
       setEvidenceWorkflowId(publishedT2IWorkflows[0]?.id ?? "");
       setProbePlan(null);
@@ -292,6 +313,7 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
       };
       setFeedback(null);
       setPublicationReceipt(receipt);
+      setPublishedProfile({ ...selected!, id: current!.execution_profile_id, version_id: data.profile_version.id, version_no: data.profile_version.version_no, status: "PUBLISHED" });
       setSelectedId(data.profile_version.id);
       setDraftId(null);
       onChanged();
@@ -305,12 +327,18 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
   });
 
   const isImageEvidence = Boolean(current && String(current.capability).startsWith("IMAGE_"));
+  const needsImageReference = Boolean(current && ["IMAGE_MULTI_VIEW", "IMAGE_EDIT", "IMAGE_EXPRESSION"].includes(String(current.capability)));
+  const referenceRoles = Object.keys((workflows.find((item) => item.id === evidenceWorkflowId)?.contract.input_slots ?? {}) as Record<string, unknown>)
+    .filter((role) => /^REFERENCE_IMAGE_[123]$/.test(role)).sort();
+  const hasIdentityInputs = isImageEvidence && referenceRoles.length > 0;
+  const referenceInputsReady = referenceRoles.every((role) => referenceImages[role] && referenceConfirmed[role]);
+  const activeReferenceImages = hasIdentityInputs ? Object.fromEntries(referenceRoles.map((role) => [role, referenceImages[role] ?? ""])) : undefined;
 
-  const evidencePlan = useMutation({
+  const evidencePlan = useMutation<{ plan: I2VEvidenceProbePlan | T2IEvidenceProbePlan }, Error, void>({
     mutationFn: () => {
       if (!projectId || !current || !evidenceWorkflowId) throw new Error("真实证据探测需要当前项目、DRAFT Profile 与显式 Workflow 版本。");
       return isImageEvidence
-        ? planT2IEvidenceProbe(projectId, current.id, evidenceWorkflowId)
+        ? planT2IEvidenceProbe(projectId, current.id, evidenceWorkflowId, needsImageReference && !hasIdentityInputs ? keyframeSourceId : undefined, activeReferenceImages)
         : planI2VEvidenceProbe(projectId, current.id, evidenceWorkflowId);
     },
     onSuccess: ({ plan }) => {
@@ -383,13 +411,13 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
   });
   const keyframePreviewReady = keyframePreviewJob.data?.job.state === "SUCCEEDED";
 
-  const evidenceSubmit = useMutation({
+  const evidenceSubmit = useMutation<{ job: { id: string; state: string }; plan: I2VEvidenceProbePlan | T2IEvidenceProbePlan }, Error, void>({
     mutationFn: () => {
       if (!projectId || !current || !probePlan || probePlan.status !== "READY") {
         throw new Error("请先获得 READY 的证据探测计划。");
       }
       return isImageEvidence
-        ? submitT2IEvidenceProbe(projectId, current.id, evidenceWorkflowId, probePlan.plan_hash)
+        ? submitT2IEvidenceProbe(projectId, current.id, evidenceWorkflowId, probePlan.plan_hash, needsImageReference && !hasIdentityInputs ? keyframeSourceId : undefined, activeReferenceImages)
         : submitI2VEvidenceProbe(projectId, current.id, evidenceWorkflowId, probePlan.plan_hash);
     },
     onSuccess: ({ job }) => {
@@ -404,7 +432,25 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
     queryKey: ["profile-evidence-job", probeJobId],
     queryFn: () => getJob(probeJobId!),
     enabled: Boolean(probeJobId),
+    refetchInterval: (query) => ["QUEUED", "RUNNING"].includes(String(query.state.data?.job.state)) ? 1500 : false,
   });
+  const restoredEvidenceJob = useRef<string | null>(null);
+  useEffect(() => {
+    const job = evidenceJob.data?.job;
+    if (!job || job.id !== probeJobId || restoredEvidenceJob.current === job.id) return;
+    restoredEvidenceJob.current = job.id;
+    const snapshot = job.input_snapshot as Record<string, unknown> | undefined;
+    if (typeof snapshot?.workflow_version_id === "string") setEvidenceWorkflowId(snapshot.workflow_version_id);
+    if (Array.isArray(snapshot?.media_bindings)) {
+      const refs: Record<string, string> = {};
+      for (const binding of snapshot.media_bindings) {
+        if (/^REFERENCE_IMAGE_[123]$/.test(String(binding.role)) && typeof binding.media_version_id === "string") refs[binding.role] = binding.media_version_id;
+      }
+      setReferenceImages(refs);
+      setReferenceConfirmed({});
+    }
+    setProbePlan(null);
+  }, [probeJobId, evidenceJob.data]);
   const evidenceJobs = useQuery({
     queryKey: ["profile-evidence-jobs", projectId, current?.id],
     queryFn: () => listJobs(projectId),
@@ -433,6 +479,7 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
       };
       setFeedback(null);
       setPublicationReceipt(receipt);
+      setPublishedProfile({ ...selected!, id: data.profile_version.execution_profile_id, code: data.profile_version.code, title: data.profile_version.title, capability: data.profile_version.capability, version_id: data.profile_version.id, version_no: data.profile_version.version_no, status: "PUBLISHED" });
       setSelectedId(data.profile_version.id);
       setDraftId(null);
       onChanged();
@@ -587,6 +634,53 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
                     </small>
                   </div>
                   {!projectId ? <p className="inline-error">请从具体项目的 Models 页面进入，证据不能跨项目猜测。</p> : null}
+                  {hasIdentityInputs && <EvidenceImageInputs key={`${current.id}:${evidenceWorkflowId}`} projectId={projectId} roles={referenceRoles} values={referenceImages} confirmed={referenceConfirmed}
+                    onChange={(role, value) => { setReferenceImages((before) => ({ ...before, [role]: value })); setReferenceConfirmed((before) => ({ ...before, [role]: false })); setProbePlan(null); }}
+                    onConfirm={(role, value) => { setReferenceConfirmed((before) => ({ ...before, [role]: value })); setProbePlan(null); }} />}
+                  {needsImageReference && !hasIdentityInputs ? (
+                    <fieldset className="profile-evidence-keyframe">
+                      <legend>真实人物参考图</legend>
+                      <p>从当前项目选择一张已生成并校验过的真实角色图片。该不可变媒体会绑定到 Workflow 的 FIRST_FRAME，不能使用工作流内置占位图。</p>
+                      <ProjectMediaVersionSelect
+                        projectId={projectId}
+                        value={keyframeSourceId}
+                        onChange={(value) => {
+                          setKeyframeSourceId(value);
+                          setKeyframeConfirmed(false);
+                          setKeyframePreviewJobId(null);
+                          setProbePlan(null);
+                          if (value) prepareKeyframePreview.mutate(value);
+                        }}
+                        label="人物参考图片"
+                        mediaKinds={["IMAGE"]}
+                        disabled={evidenceSubmit.isPending}
+                        required
+                      />
+                      {projectId && keyframeSourceId && keyframePreviewReady ? (
+                        <figure className="profile-evidence-keyframe__preview">
+                          <img
+                            src={`/api/v1/media-versions/${encodeURIComponent(keyframeSourceId)}/thumbnail?size=medium&frame=poster`}
+                            alt="待绑定的多视图人物参考图"
+                            width="320"
+                            height="568"
+                          />
+                          <figcaption>请根据页面实际画面确认人物身份、服装和全身结构。</figcaption>
+                        </figure>
+                      ) : null}
+                      {projectId && keyframeSourceId && !keyframePreviewReady ? (
+                        <p role="status">{prepareKeyframePreview.isPending || keyframePreviewJob.isPending ? "正在准备安全预览…" : keyframePreviewJob.data?.job.state === "FAILED" ? "预览生成失败，请重新选择图片或查看任务详情。" : "安全预览正在后台生成…"}</p>
+                      ) : null}
+                      <label className="profile-evidence-keyframe__confirmation">
+                        <input
+                          type="checkbox"
+                          checked={keyframeConfirmed}
+                          onChange={(event) => { setKeyframeConfirmed(event.target.checked); setProbePlan(null); }}
+                          disabled={!keyframeSourceId || !keyframePreviewReady || evidenceSubmit.isPending}
+                        />
+                        <span>我已查看真实预览，确认这是当前项目的有效人物参考图，可用于多视图一致性验证。</span>
+                      </label>
+                    </fieldset>
+                  ) : null}
                   {!isImageEvidence ? (
                     <fieldset className="profile-evidence-keyframe">
                       <legend>首次启用：准备验证首帧</legend>
@@ -652,7 +746,10 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
                       value={evidenceWorkflowId}
                       onChange={(event) => {
                         setEvidenceWorkflowId(event.target.value);
+                        setProbeJobId(null);
                         setProbePlan(null);
+                        setReferenceImages({});
+                        setReferenceConfirmed({});
                       }}
                     >
                       <option value="">{isImageEvidence ? "请选择已发布的图像生成工作流" : "请选择已发布的首帧生成工作流"}</option>
@@ -665,13 +762,17 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
                     <small>证据与发布会冻结此精确 Workflow；不会沿用 Profile 中的旧版本或静默选择最新项。</small>
                   </label>
                   {probePlan ? (
-                    <dl>
+                    <><dl>
                       <div><dt>预检</dt><dd>{probePlan.status}</dd></div>
                       {isImageEvidence ? null : (
                         <div><dt>首帧</dt><dd>{(probePlan as I2VEvidenceProbePlan).snapshot.approved_keyframe?.media_version_id.slice(0, 12) ?? "缺失"}</dd></div>
                       )}
+                      {needsImageReference ? (
+                        <div><dt>人物参考图</dt><dd>{(probePlan as T2IEvidenceProbePlan).snapshot.source_reference?.asset_name ?? (probePlan as T2IEvidenceProbePlan).snapshot.source_reference?.media_version_id.slice(0, 12) ?? "缺失"}</dd></div>
+                      ) : null}
                       <div><dt>Workflow</dt><dd>{probePlan.snapshot.workflow?.id.slice(0, 12) ?? "缺失"}</dd></div>
                     </dl>
+                    <details className="job-input-snapshot"><summary>查看本次验证提示词</summary><pre>{JSON.stringify(probePlan.snapshot.semantic_inputs, null, 2)}</pre></details></>
                   ) : null}
                   {probeJobId ? (
                     <p role="status">Job {probeJobId.slice(0, 12)}… · {evidenceJob.data?.job.state ?? (evidenceJob.isPending ? "读取中" : "待刷新")}</p>
@@ -681,7 +782,7 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
                     <select value={probeJobId ?? ""} onChange={(event) => setProbeJobId(event.target.value || null)} disabled={!projectId || evidenceJobs.isLoading}>
                       <option value="">{evidenceJobs.isLoading ? "正在读取项目验证任务…" : "选择此模型配置的验证任务"}</option>
                       {probeJobId && !recoverableEvidenceJobs.some((job) => job.id === probeJobId) ? <option value={probeJobId}>当前会话任务 · {probeJobId.slice(0, 12)}</option> : null}
-                      {recoverableEvidenceJobs.map((job) => <option key={job.id} value={job.id}>{optionLabel(STATUS_LABELS, job.state)} · 任务 {job.id.slice(0, 12)}{job.finished_at ? ` · ${new Date(job.finished_at).toLocaleString()}` : ""}</option>)}
+                      {recoverableEvidenceJobs.map((job) => <option key={job.id} value={job.id}>{optionLabel(STATUS_LABELS, evidenceJob.data?.job.id === job.id ? evidenceJob.data.job.state : job.state)} · 任务 {job.id.slice(0, 12)}{job.finished_at ? ` · ${new Date(job.finished_at).toLocaleString()}` : ""}</option>)}
                     </select>
                     <small>页面刷新后可恢复；最终发布仍由服务端核对 Profile、执行指纹、首帧与 VERIFIED 产物。</small>
                   </label>
@@ -690,7 +791,7 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
                     <button type="button" className="secondary" disabled={evidenceCompatibility.isPending} onClick={() => evidenceCompatibility.mutate()}>
                       {evidenceCompatibility.isPending ? "验证中…" : "验证 capability 兼容性"}
                     </button>
-                    <button type="button" className="secondary" disabled={!projectId || evidencePlan.isPending || evidenceSubmit.isPending} onClick={() => evidencePlan.mutate()}>
+                    <button type="button" className="secondary" disabled={!projectId || evidencePlan.isPending || evidenceSubmit.isPending || (hasIdentityInputs ? !referenceInputsReady : needsImageReference && (!keyframeSourceId || !keyframeConfirmed || !keyframePreviewReady))} onClick={() => evidencePlan.mutate()}>
                       {evidencePlan.isPending ? "预检中…" : "预检真实证据探测"}
                     </button>
                     <button type="button" className="secondary" disabled={probePlan?.status !== "READY" || evidenceSubmit.isPending || Boolean(probeJobId)} onClick={() => setProbeConfirmOpen(true)}>
@@ -717,7 +818,7 @@ function ProfileContractsTask({ profiles, workflows, projectId, onChanged, onDir
                       </>
                     )}
                   >
-                    <p>将以当前 DRAFT Profile、{isImageEvidence ? "已发布的 SDXL T2I Workflow" : "已批准首帧和 Published Workflow"}创建一个本机 GPU_H3 证据 Job。</p>
+                    <p>将以当前 DRAFT Profile、{needsImageReference ? "页面已审核的人物参考图和显式选择的已发布图像 Workflow" : isImageEvidence ? "当前显式选择的已发布图像 Workflow" : "已批准首帧和 Published Workflow"}创建一个本机 GPU_H3 证据 Job。</p>
                     <p className="muted">只创建一次；关闭或取消不会提交任务。</p>
                   </Dialog>
                 </section>
@@ -986,6 +1087,14 @@ function WorkflowVersionsTask({
                 ) : (
                   <small className="workflow-validation-required">发布或回滚前必须重新执行本地验证。</small>
                 )}
+                {validation?.schema_errors?.length ? <div className="inline-error" role="alert">
+                  <strong>工作流参数与本机环境不匹配</strong>
+                  <ul>{validation.schema_errors.map((issue, index) => <li key={index}>
+                    节点 {String(issue.node_id)}（{String(issue.class_type)}）· {String(issue.input)}：{String(issue.error)}
+                    {issue.value !== undefined && <div>当前值：<code>{String(issue.value)}</code></div>}
+                    {Array.isArray(issue.allowed_values) && <details><summary>查看本机允许值（{issue.allowed_values.length}）</summary><ul>{issue.allowed_values.map((value, i) => <li key={i}><code>{String(value)}</code></li>)}</ul></details>}
+                  </li>)}</ul>
+                </div> : null}
               </article>
             );
           })}

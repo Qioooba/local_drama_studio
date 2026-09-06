@@ -1,8 +1,9 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { Dialog, Drawer, StatusBadge } from "../../components/ui";
+import { Dialog, Drawer, StatusBadge, MediaThumb } from "../../components/ui";
 import { authorizeWorkspaceAsset } from "../../generated/api";
 import { MediaPicker } from "../media-picker/MediaPicker";
 import { generateMachineCode } from "../shared/autoCode";
+import type { StoryAssetReference } from "./api";
 import {
   type CharacterIdentityPack,
   type CharacterIdentityPackVersion,
@@ -53,6 +54,8 @@ export interface CharacterIdentityPackPanelProps {
   projectId: string;
   storyAssetId: string;
   assetName: string;
+  /** Active BASE references from this character's project asset record. */
+  baseReferences?: StoryAssetReference[];
   initialPackId?: string;
   onVersionApproved?: (versionId: string) => void;
   onRequestMissingSlots?: (missingSlots: string[]) => void;
@@ -62,6 +65,7 @@ export function CharacterIdentityPackPanel({
   projectId,
   storyAssetId,
   assetName,
+  baseReferences = [],
   initialPackId,
   onVersionApproved,
   onRequestMissingSlots,
@@ -82,6 +86,7 @@ export function CharacterIdentityPackPanel({
   const [retireReason, setRetireReason] = useState("");
   const [comparison, setComparison] = useState<IdentityPackVersionComparison | null>(null);
   const [impact, setImpact] = useState<IdentityPackVersionImpact | null>(null);
+  const [reuseMessage, setReuseMessage] = useState<string | null>(null);
 
   const refreshPacks = async (preferredPackId?: string) => {
     const response = await listCharacterIdentityPacks(storyAssetId);
@@ -285,6 +290,38 @@ export function CharacterIdentityPackPanel({
   const missingSlots = activeVersion?.missing_required_slots ?? STANDARD_SLOTS
     .filter((slot) => slot.required && !activeVersion?.slots_map?.[slot.kind])
     .map((slot) => slot.kind);
+  const editable = Boolean(activeVersion && !IMMUTABLE_STATUSES.has(activeVersion.status));
+  const projectReferenceCandidates = useMemo(() => {
+    const requiredKinds = new Set<string>(STANDARD_SLOTS.filter((slot) => slot.required).map((slot) => slot.kind));
+    const candidates = new Map<string, StoryAssetReference[]>();
+    for (const reference of baseReferences) {
+      const kind = String(reference.reference_kind || "").toUpperCase();
+      if (!requiredKinds.has(kind)) continue;
+      if (String(reference.status || "").toUpperCase() !== "ACTIVE") continue;
+      // AssetBiblePage passes BASE references here, but keep both ownership
+      // checks at the boundary so a stale or hand-crafted DTO cannot cross
+      // project/character scope during a reuse action.
+      if (reference.project_id !== projectId || reference.story_asset_id !== storyAssetId || reference.asset_state_id !== null) continue;
+      const current = candidates.get(kind) ?? [];
+      current.push(reference);
+      candidates.set(kind, current);
+    }
+    return candidates;
+  }, [baseReferences, projectId, storyAssetId]);
+  const reusableProjectReferences = useMemo(() => missingSlots.map((slotKind) => {
+    const matches = projectReferenceCandidates.get(slotKind) ?? [];
+    return matches.length === 1 ? { slotKind, reference: matches[0] } : null;
+  }).filter((item): item is { slotKind: string; reference: StoryAssetReference } => Boolean(item)), [missingSlots, projectReferenceCandidates]);
+  const ambiguousReuseSlots = useMemo(() => missingSlots.filter((slotKind) => (projectReferenceCandidates.get(slotKind)?.length ?? 0) > 1), [missingSlots, projectReferenceCandidates]);
+  const reusableMediaIds = new Set(reusableProjectReferences.map((item) => item.reference.media_version_id));
+  const hasDuplicateReusableMedia = reusableMediaIds.size !== reusableProjectReferences.length;
+  const canReuseProjectReferences = Boolean(
+    editable
+      && reusableProjectReferences.length === missingSlots.length
+      && missingSlots.length > 0
+      && ambiguousReuseSlots.length === 0
+      && !hasDuplicateReusableMedia,
+  );
   const requiredUnique = new Set(
     STANDARD_SLOTS
       .filter((slot) => slot.required)
@@ -293,8 +330,31 @@ export function CharacterIdentityPackPanel({
   ).size === 3;
   const approvalReady = Boolean(activeVersion?.approval_ready ?? (missingSlots.length === 0 && requiredUnique));
   const approvalBlockers = activeVersion?.approval_blockers ?? [];
-  const editable = Boolean(activeVersion && !IMMUTABLE_STATUSES.has(activeVersion.status));
   const versionOptions = useMemo(() => activePack?.versions ?? [], [activePack]);
+
+  const reuseProjectReferences = async () => {
+    if (!activeVersion || !canReuseProjectReferences) return;
+    setLoading(true); setError(null); setReuseMessage(null);
+    try {
+      let latestVersion = activeVersion;
+      for (const { slotKind, reference } of reusableProjectReferences) {
+        // Reuse is explicit and operator-triggered: authorization is recorded
+        // for this project before the exact MediaVersion is bound to the pack.
+        await authorizeWorkspaceAsset(projectId, reference.media_version_id);
+        const response = await setCharacterIdentityPackSlot(latestVersion.id, {
+          slot_kind: slotKind,
+          media_version_id: reference.media_version_id,
+        });
+        latestVersion = response.version;
+        setActiveVersion(latestVersion);
+      }
+      setReuseMessage(`已复用 ${reusableProjectReferences.length} 个项目级角色参考并绑定到当前草稿。此操作不会修改本集或脚本的镜头绑定。`);
+    } catch (requestError) {
+      setError(errorText(requestError, "复用项目级参考失败"));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return <section className="identity-pack-panel" aria-labelledby={`identity-pack-title-${storyAssetId}`}>
     <header className="identity-pack-header">
@@ -356,6 +416,18 @@ export function CharacterIdentityPackPanel({
           <button type="button" className="secondary" onClick={() => onRequestMissingSlots?.(missingSlots)} disabled={!onRequestMissingSlots}>生成缺失三视图</button>
         </div>}
 
+        {editable && missingSlots.length > 0 && (reusableProjectReferences.length > 0 || ambiguousReuseSlots.length > 0) && <div className="identity-pack-reuse" role="status">
+          <div>
+            <strong>可复用项目级角色参考</strong>
+            <span>仅检查当前项目、当前角色的 ACTIVE BASE 引用；不会把本集或脚本的镜头绑定当作身份包参考。</span>
+            {ambiguousReuseSlots.length > 0 && <small>以下视角存在多个项目候选，请逐槽选择：{ambiguousReuseSlots.join(" / ")}</small>}
+            {hasDuplicateReusableMedia && ambiguousReuseSlots.length === 0 && <small>项目候选复用了同一 MediaVersion，无法自动组成三个不同视角；请逐槽选择。</small>}
+          </div>
+          {canReuseProjectReferences && <button type="button" className="secondary" onClick={() => void reuseProjectReferences()} disabled={loading}>{loading ? "授权并绑定中…" : `复用缺失项目引用（${missingSlots.join(" / ")}）`}</button>}
+        </div>}
+
+        {reuseMessage && <p className="review-success" role="status">{reuseMessage}</p>}
+
         {missingSlots.length === 0 && approvalBlockers.length > 0 && <div className="identity-pack-blocker" role="alert">
           <div><strong>媒体证据未通过检查</strong><span>{approvalBlockers.map((blocker) => `${blocker.slot_kind ? `${blocker.slot_kind}：` : ""}${blocker.message}`).join("；")}</span></div>
         </div>}
@@ -367,7 +439,7 @@ export function CharacterIdentityPackPanel({
             return <article key={slot.kind} className={`identity-slot-card${slot.required ? " required" : ""}${mediaId ? " filled" : ""}`} data-testid={`slot-${slot.kind}`}>
               <div className="identity-slot-title"><strong>{slot.label}</strong><span>{slot.kind} · {slot.angle}</span></div>
               <div className="identity-slot-preview">
-                {mediaId ? <img src={thumbnailUrl(mediaId)} alt={`${assetName} ${slot.label}参考缩略图`} loading="lazy" decoding="async" /> : <div className="identity-slot-empty"><strong>{slot.required ? "必需参考缺失" : "可选参考"}</strong><span>{slot.required ? "选择图片或生成此视角" : "可补充更多身份细节"}</span></div>}
+                {mediaId ? <MediaThumb src={thumbnailUrl(mediaId)} alt={`${assetName} ${slot.label}参考缩略图`} loading="eager" aspectRatio="3 / 4" /> : <div className="identity-slot-empty"><strong>{slot.required ? "必需参考缺失" : "可选参考"}</strong><span>{slot.required ? "选择图片或生成此视角" : "可补充更多身份细节"}</span></div>}
               </div>
               {mediaId && <div className="identity-slot-evidence"><span>{slotRecord?.integrity_status ?? "VERIFIED"}</span><span>{slotRecord?.authorization_status === "AUTHORIZED" ? "项目授权有效" : slotRecord?.authorization_status === "REVOKED" ? "项目授权已撤回" : "授权状态待校验"}</span><details><summary>版本证据</summary><code>{mediaId}</code></details></div>}
               {editable && <div className="identity-slot-actions">

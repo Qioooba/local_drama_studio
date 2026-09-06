@@ -87,14 +87,16 @@ The product has two intentionally separate paths:
 
 ### Project production
 
-1. Select project/episode/shot and GenerationIntent.
-2. Choose mode: text-to-image, image-to-video, text-to-video, reference-to-video, or capability-driven advanced mode.
-3. Bind semantic inputs. Inputs must be registered MediaVersions; thumbnails load by default.
-4. Choose an explicitly published CapabilityProfileVersion. Never silently fallback.
-5. Configure prompt/camera/duration/seed using profile schema.
-6. Run preflight showing jobs, runtime, GPU exclusivity, time/disk estimate and blockers.
-7. Confirm exact action in a semantic dialog.
-8. Compare candidates, review, select winner, then separately approve/promote.
+The normal episode path is an Agent-orchestrated **Episode creation** workspace:
+
+1. Inherit story authority plus project-level visual, output and model settings.
+2. Present five creator-facing stages: episode plan and new assets, key imagery, video, audio/subtitles, compose/QC.
+3. Ask only for quality, checkpoint strategy and whether dialogue audio is included.
+4. Run the canonical production preflight and durable workflow. Stop on the chosen checkpoint or any exception.
+5. Show only the stage summary and items that require attention. Route exceptional shots to the Shot Studio.
+6. Keep resolution, aspect ratio, frame rate and model routing in project settings instead of repeating them per episode.
+
+Shot Studio remains the advanced and exception path. There, a creator may select a shot and GenerationIntent, bind registered MediaVersions, choose an explicitly published CapabilityProfileVersion, configure profile-declared parameters, compare candidates, select a working version and separately approve it. Never silently fallback or collapse selection into approval.
 
 Quick generation must never synthesize placeholder projects, episodes, shots, GenerationIntents, MediaVersions, or review records. Converting a standalone artifact into project material, if added later, must be an explicit user action with its own provenance event.
 

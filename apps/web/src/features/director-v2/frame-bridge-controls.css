@@ -35,6 +35,10 @@
 .frame-bridge-message.error { color: #a33d20; }
 .frame-bridge-empty { min-height: 120px; place-content: center; place-items: center; text-align: center; }
 .frame-bridge-empty span { color: #686e69; font-size: 10px; }
+.frame-bridge-working-start { display: grid; gap: 4px; width: min(100%, 300px); padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-muted); }
+.frame-bridge-working-start small { color: var(--text-muted); font-size: 10px; }
+.frame-bridge-working-start strong { color: var(--text); font-size: 12px; }
+.frame-bridge-working-start span { color: var(--creative); font-size: 11px; }
 .frame-bridge-controls button:focus-visible { outline: 3px solid #f49a79; outline-offset: 2px; }
 @media (max-width: 460px) { .frame-bridge-actions, .frame-candidate-drop-grid { grid-template-columns: 1fr; }.frame-bridge-conflict { grid-template-columns: 1fr; }.frame-bridge-conflict button { width: 100%; }.frame-bridge-controls-head { align-items: start; flex-direction: column; }.frame-bridge-state { justify-items: start; } }
 @media (prefers-reduced-motion: reduce) { .frame-bridge-controls * { transition-duration: .01ms !important; animation-duration: .01ms !important; } }

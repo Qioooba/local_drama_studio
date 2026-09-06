@@ -1,4 +1,4 @@
-"""Versioned TXT/Markdown/DOCX source import with non-destructive previews."""
+"""Versioned novel/script imports with non-destructive text previews."""
 
 from __future__ import annotations
 
@@ -12,7 +12,10 @@ import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 from xml.etree import ElementTree
+
+from pypdf import PdfReader
 
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
@@ -28,6 +31,7 @@ PREVIEW_PARAGRAPH_CHARACTER_LIMIT = 1_000
 PREVIEW_TOTAL_CHARACTER_LIMIT = 12_000
 PASSAGE_CHARACTER_LIMIT = 8_000
 SOURCE_STRUCTURE_VERSION = 2
+EPUB_MAX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
 
 
 def _utc_now() -> str:
@@ -62,9 +66,78 @@ def _read_docx(path: Path) -> str:
     return "\n\n".join(paragraphs)
 
 
+def _read_pdf(path: Path) -> str:
+    try:
+        reader = PdfReader(path)
+        pages = [(page.extract_text() or "").strip() for page in reader.pages]
+    except Exception as error:
+        raise DomainRuleError("DOCUMENT_PARSE_FAILED", "PDF 文档无法解析或已加密") from error
+    text = "\n\n".join(page for page in pages if page)
+    if not text.strip():
+        raise DomainRuleError("DOCUMENT_TEXT_EMPTY", "PDF 没有可提取文字；扫描版请先完成 OCR")
+    return text
+
+
+def _xml_local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1].lower()
+
+
+def _epub_document_text(payload: bytes) -> str:
+    try:
+        root = ElementTree.fromstring(payload)
+    except ElementTree.ParseError:
+        return ""
+    blocks: list[str] = []
+    for node in root.iter():
+        if _xml_local_name(node.tag) not in {"p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote"}:
+            continue
+        text = "".join(node.itertext())
+        text = re.sub(r"\s+", " ", text).strip()
+        if text:
+            blocks.append(text)
+    return "\n\n".join(blocks)
+
+
+def _read_epub(path: Path) -> str:
+    try:
+        with zipfile.ZipFile(path) as archive:
+            container = ElementTree.fromstring(archive.read("META-INF/container.xml"))
+            rootfile = next(
+                node.attrib["full-path"] for node in container.iter() if _xml_local_name(node.tag) == "rootfile"
+            )
+            package = ElementTree.fromstring(archive.read(rootfile))
+            base = Path(rootfile).parent
+            manifest = {
+                str(node.attrib.get("id")): str(node.attrib.get("href"))
+                for node in package.iter()
+                if _xml_local_name(node.tag) == "item" and node.attrib.get("id") and node.attrib.get("href")
+            }
+            ordered = [
+                unquote(manifest[str(node.attrib.get("idref"))].split("#", 1)[0].split("?", 1)[0])
+                for node in package.iter()
+                if _xml_local_name(node.tag) == "itemref" and str(node.attrib.get("idref")) in manifest
+            ]
+            selected_names = [(base / href).as_posix() for href in ordered]
+            expanded_size = sum(archive.getinfo(name).file_size for name in selected_names)
+            if expanded_size > EPUB_MAX_UNCOMPRESSED_BYTES:
+                raise DomainRuleError("DOCUMENT_TOO_LARGE_EXPANDED", "EPUB 解压后的正文超过 100 MB，请拆分后导入")
+            chapters = [_epub_document_text(archive.read(name)) for name in selected_names]
+    except (OSError, KeyError, StopIteration, zipfile.BadZipFile, ElementTree.ParseError) as error:
+        raise DomainRuleError("DOCUMENT_PARSE_FAILED", "EPUB 文档结构无效") from error
+    text = "\n\n".join(chapter for chapter in chapters if chapter.strip())
+    if not text.strip():
+        raise DomainRuleError("DOCUMENT_TEXT_EMPTY", "EPUB 没有可提取的正文")
+    return text
+
+
 def _read_text(path: Path) -> str:
-    if path.suffix.lower() == ".docx":
+    suffix = path.suffix.lower()
+    if suffix == ".docx":
         return _read_docx(path)
+    if suffix == ".pdf":
+        return _read_pdf(path)
+    if suffix == ".epub":
+        return _read_epub(path)
     raw = path.read_bytes()
     for encoding in ("utf-8-sig", "gb18030"):
         try:
@@ -83,7 +156,7 @@ class DocumentImportService:
     def import_document(self, project_id: str, source_path: str | Path, actor: str = "local-user") -> dict[str, Any]:
         source = Path(source_path)
         if source.suffix.lower() not in DOCUMENT_EXTENSIONS:
-            raise DomainRuleError("UNSUPPORTED_DOCUMENT_TYPE", "剧本文档仅支持 TXT、Markdown、DOCX")
+            raise DomainRuleError("UNSUPPORTED_DOCUMENT_TYPE", "原稿仅支持 TXT、Markdown、DOCX、PDF、EPUB")
         if source.is_symlink():
             raise DomainRuleError("INVALID_SOURCE_FILE", "剧本文档导入不接受 symlink")
         try:
@@ -222,6 +295,65 @@ class DocumentImportService:
         }
         result["preview_hash"] = self.get_session(session_id)["preview_hash"]
         return result
+
+    def latest_for_project(self, project_id: str) -> dict[str, Any] | None:
+        """Restore the latest durable script-import workflow for a project."""
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """SELECT id FROM import_sessions
+                   WHERE project_id=? AND session_kind='SCRIPT'
+                     AND status IN ('PREVIEW_READY','COMMITTED')
+                   ORDER BY updated_at DESC,created_at DESC,id DESC LIMIT 1""",
+                (project_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        session = self.get_session(str(row["id"]))
+        version = session.get("source_document_version")
+        if not isinstance(version, dict):
+            raise DomainRuleError("IMPORT_SOURCE_VERSION_MISSING", "最近导入会话缺少源文档版本，无法恢复")
+        try:
+            metadata = json.loads(str(version.get("metadata_json") or "{}"))
+        except json.JSONDecodeError as error:
+            raise DomainRuleError("IMPORT_SOURCE_METADATA_INVALID", "最近导入会话的源文档元数据无效") from error
+        media_version_id = metadata.get("media_version_id") if isinstance(metadata, dict) else None
+        if not isinstance(media_version_id, str) or not media_version_id:
+            raise DomainRuleError("IMPORT_MEDIA_VERSION_MISSING", "最近导入会话缺少受控原文件版本")
+        media = self.media.get_version(media_version_id)
+        source_name = str(version.get("source_name") or "已导入原稿")
+        selected_range = next(
+            (
+                item.get("payload") for item in reversed(session["items"])
+                if item.get("item_type") == "SOURCE_BODY_RANGE" and isinstance(item.get("payload"), dict)
+            ),
+            None,
+        )
+        with self.database.connect() as connection:
+            indexed = connection.execute(
+                """SELECT 1 FROM fts_search
+                   WHERE project_id=? AND subject_type='SOURCE_DOCUMENT' AND subject_id=? LIMIT 1""",
+                (project_id, str(version["source_document_id"])),
+            ).fetchone()
+        return {
+            "import": {
+                "source_document_id": str(version["source_document_id"]),
+                "source_document_version_id": str(session["source_document_version_id"]),
+                "import_session_id": str(session["id"]),
+                "media_version_id": media_version_id,
+                "stored_source": self._stored_source_reference(
+                    project_id,
+                    {**media, "media_version_id": media_version_id},
+                    original_filename=source_name,
+                ),
+                "status": str(session["status"]),
+                "preview_hash": str(session["preview_hash"]),
+                "preview": session["preview"],
+                "index_status": "READY" if indexed is not None else "FAILED_RETRYABLE",
+                "reused": True,
+            },
+            "source_name": source_name,
+            "selected_range": selected_range,
+        }
 
     def _stored_source_reference(
         self,

@@ -30,7 +30,7 @@ describe("AssetProposalReviewPanel batch decisions", () => {
   it("previews merge/create counts and processes every explicitly selected proposal", async () => {
     renderPanel();
     fireEvent.click(await screen.findByRole("checkbox", { name: "选择全部 2 条建议" }));
-    expect(screen.getByText("将合并 1 个精确同名角色，新建 1 个独立角色。")).toBeInTheDocument();
+    expect(screen.getByText("将合并 1 个精确同名资产，新建 1 个独立资产。")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "确认处理所选 2 项" }));
 
     await waitFor(() => expect(decideAssetProposal).toHaveBeenCalledTimes(2));
@@ -49,11 +49,22 @@ describe("AssetProposalReviewPanel batch decisions", () => {
     expect(screen.getByText(/孩子：Error: code 冲突/)).toBeInTheDocument();
   });
 
+  it("keeps the batch result visible after the pending list refreshes to empty", async () => {
+    vi.mocked(listAssetProposals).mockReset().mockResolvedValueOnce(proposals).mockResolvedValue([]);
+    renderPanel();
+    fireEvent.click(await screen.findByRole("checkbox", { name: "选择全部 2 条建议" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认处理所选 2 项" }));
+
+    expect(await screen.findByText("没有待处理的资产身份建议。")).toBeInTheDocument();
+    expect(screen.getByText("批量结果：成功 2 · 失败 0")).toBeInTheDocument();
+    expect(screen.getByText("已处理：母亲、孩子")).toBeInTheDocument();
+  });
+
   it("automatically derives the asset code instead of asking the creator for a machine identifier", async () => {
     renderPanel();
     expect(await screen.findByText(generateAssetCode("CHARACTER", "孩子"))).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: /独立资产编号/ })).toBeNull();
-    fireEvent.click(screen.getAllByRole("button", { name: "保留为独立角色" })[1]);
+    fireEvent.click(screen.getAllByRole("button", { name: "创建独立资产" })[1]);
     await waitFor(() => expect(decideAssetProposal).toHaveBeenCalledWith(proposals[1], "CREATE_NEW", expect.objectContaining({ newAssetCode: expect.stringMatching(/^CHAR_/) })));
   });
 });

@@ -127,6 +127,40 @@ describe("QuickGenerationWorkbench", () => {
     expect(getModelPlatformQuickCreateV2DirectImageStatus).toHaveBeenCalledWith("v2-job");
   });
 
+  it("invalidates a V2 direct-image preview when the prompt changes", async () => {
+    vi.mocked(listModelPlatformQuickCreateV2Readiness).mockResolvedValue({
+      items: [{ mode: "TEXT_TO_IMAGE", capability_code: "IMAGE_CONCEPT", execution_profile_version_id: "image-v2", ready: true, blocker: null }],
+      read_only: true,
+      execution_switched: false,
+    });
+    renderWorkbench();
+    fireEvent.click(screen.getByRole("radio", { name: /^文生图 可选择/ }));
+    const prompt = screen.getByRole("textbox", { name: "你想看到什么？" });
+    fireEvent.change(prompt, { target: { value: "雨夜的橘猫" } });
+    fireEvent.click(await screen.findByText("查看 V2 切流前置条件与试运行"));
+    fireEvent.click(screen.getByRole("button", { name: "预检 V2 单次文生图" }));
+    expect(await screen.findByRole("button", { name: "确认提交 V2 单次文生图" })).toBeTruthy();
+
+    fireEvent.change(prompt, { target: { value: "清晨的白鹿" } });
+    expect(screen.queryByRole("button", { name: "确认提交 V2 单次文生图" })).toBeNull();
+    expect(screen.getByRole("button", { name: "预检 V2 单次文生图" })).toBeTruthy();
+    expect(submitModelPlatformQuickCreateV2DirectImage).not.toHaveBeenCalled();
+  });
+
+  it("invalidates a V2 candidate plan when the requested candidate count changes", async () => {
+    renderWorkbench();
+    fireEvent.click(screen.getByRole("radio", { name: /^文生图，再图生视频/ }));
+    fireEvent.change(screen.getByRole("textbox", { name: "你想看到什么？" }), { target: { value: "雨夜的橘猫" } });
+    fireEvent.click(await screen.findByText("查看 V2 切流前置条件与试运行"));
+    fireEvent.click(screen.getByRole("button", { name: "预检 V2 候选图" }));
+    expect(await screen.findByRole("button", { name: "确认提交 V2 候选图" })).toBeTruthy();
+
+    fireEvent.change(screen.getByRole("spinbutton", { name: "每批图片候选数" }), { target: { value: "6" } });
+    expect(screen.queryByRole("button", { name: "确认提交 V2 候选图" })).toBeNull();
+    expect(screen.getByRole("button", { name: "预检 V2 候选图" })).toBeTruthy();
+    expect(submitModelPlatformQuickCreateV2ImageCandidates).not.toHaveBeenCalled();
+  });
+
   it("runs the V2 candidate-to-video trial through a selected V2 artifact only", async () => {
     renderWorkbench();
     fireEvent.click(screen.getByRole("radio", { name: /^文生图，再图生视频/ }));

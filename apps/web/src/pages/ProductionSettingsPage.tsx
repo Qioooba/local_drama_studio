@@ -50,6 +50,14 @@ export function ProductionSettingsPage() {
   return <div className="v2-page production-settings-page settings-section-page">
     <div className="panel-heading"><div><p className="eyebrow">{copy.eyebrow}</p><h3>{copy.title}</h3></div><span className="status-pill neutral">仅影响当前项目</span></div>
     <p className="muted">{copy.description}</p>
+    <section className="settings-scope-note" aria-label="项目与账号范围说明">
+      <div>
+        <p className="eyebrow">设置范围</p>
+        <h4>配置保存在当前项目</h4>
+      </div>
+      <p>画幅、时长和生成偏好以当前项目保存的配置为准；已有分集的独立设置会保留。切换项目后，请核对该项目的生效规格。</p>
+      <p className="muted">当前本机版无登录和账号权限系统，项目分类不提供账号之间的访问隔离。</p>
+    </section>
 
     {section === "production" && <ProductionSettingsOverview projectId={projectId} />}
 

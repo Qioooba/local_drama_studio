@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import "@testing-library/jest-dom/vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getProjectConfiguration, listProjects } from "../generated/api";
@@ -54,5 +55,16 @@ describe("ProductionSettingsPage routed sections", () => {
     expect(await screen.findByText("MediaDerivativeMaintenancePanel")).toBeTruthy();
     expect(screen.getByText("ProjectPackageAction")).toBeTruthy();
     expect(await screen.findByText("ProjectTemplateCopyAction")).toBeTruthy();
+  });
+
+  it("explains local account scope and keeps production dimensions project/episode scoped", async () => {
+    renderSection("production");
+
+    const scope = await screen.findByRole("region", { name: "项目与账号范围说明" });
+    expect(scope).toHaveTextContent("当前本机版无登录和账号权限系统");
+    expect(scope).toHaveTextContent("画幅、时长和生成偏好以当前项目保存的配置为准");
+    expect(scope).toHaveTextContent("已有分集的独立设置会保留");
+    expect(scope).not.toHaveTextContent("本次页面验收");
+    expect(scope).not.toHaveTextContent("480×854");
   });
 });

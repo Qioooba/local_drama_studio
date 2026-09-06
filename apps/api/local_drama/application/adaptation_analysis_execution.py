@@ -168,7 +168,7 @@ class AdaptationAnalysisExecutionService:
             model = str(bundle.get("model") or selected_connection.get("model") or "").strip()
             base_url = str(selected_connection["base_url"]).strip()
         else:
-            provider = str(bundle.get("provider") or capability.get("provider") or "OLLAMA_LOOPBACK").upper()
+            provider = str(bundle.get("provider") or capability.get("provider") or "LLAMA_CPP_MANAGED").upper()
             model = str(bundle.get("model") or capability.get("model") or "").strip()
             base_url = str(capability.get("base_url") or self.settings.llm_base_url).strip()
         if not model:

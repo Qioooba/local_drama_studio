@@ -25,24 +25,41 @@ from local_drama.api.schemas.shot_studio import (
     ShotGenerationPreflightResponse,
     ShotGenerationRequest,
     ShotGenerationResponse,
+    ShotKeyframeBatchListResponse,
+    ShotKeyframeBatchPlanRequest,
+    ShotKeyframeBatchPlanResponse,
+    ShotKeyframeBatchSubmitRequest,
+    ShotKeyframeBatchSubmitResponse,
+    ShotLipsyncFinalizeResponse,
+    ShotLipsyncJobListResponse,
+    ShotLipsyncJobResponse,
     ShotMarkReadyRequest,
     ShotStudioResponse,
     ShotWorkingAdoptionResponse,
+    StoryboardGenerationBatchPlanRequest,
+    StoryboardGenerationBatchPlanResponse,
+    StoryboardGenerationBatchSubmitRequest,
+    StoryboardGenerationBatchSubmitResponse,
 )
+from local_drama.application.automation_workflows import AutomationWorkflowService
 from local_drama.application.dialogue import DialogueService
+from local_drama.application.episode_worker_actions import EpisodeWorkerActionService
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.frame_bridges import FrameBridgeCommandService
 from local_drama.application.generation import GenerationService
 from local_drama.application.jobs import JobService
 from local_drama.application.lipsync import LipsyncService
 from local_drama.application.media import MediaService
+from local_drama.application.shot_keyframe_generation import ShotKeyframeGenerationBatchService
 from local_drama.application.shot_studio import ShotStudioQueryService
 from local_drama.application.shot_studio_commands import ShotStudioCommandService
+from local_drama.application.storyboard_generation_batches import StoryboardGenerationBatchService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.shot_studio_command_repository import (
     SqliteShotStudioCommandRepository,
 )
 from local_drama.infrastructure.database.shot_studio_repository import SqliteShotStudioReadRepository
+from local_drama.infrastructure.service_composition import build_shot_keyframe_batch
 
 router = APIRouter(tags=["shot-studio-v2"])
 shot_generation_response_adapter: TypeAdapter[ShotGenerationResponse] = TypeAdapter(ShotGenerationResponse)
@@ -87,6 +104,112 @@ def dialogue_service(request: Request) -> DialogueService:
         jobs=JobService(request.app.state.database, request.app.state.settings),
         media=MediaService(request.app.state.database, request.app.state.settings),
     )
+
+
+def storyboard_generation_batch_service(request: Request) -> StoryboardGenerationBatchService:
+    return StoryboardGenerationBatchService(
+        EpisodeWorkerActionService(request.app.state.database, request.app.state.settings),
+        AutomationWorkflowService(request.app.state.database),
+    )
+
+
+def shot_keyframe_batch_service(request: Request) -> ShotKeyframeGenerationBatchService:
+    return build_shot_keyframe_batch(request.app.state.database, request.app.state.settings)
+
+
+@router.post(
+    "/episodes/{episode_id}/shot-keyframe-batches:plan",
+    operation_id="planShotKeyframeBatchV2",
+    response_model=ShotKeyframeBatchPlanResponse,
+)
+async def plan_shot_keyframe_batch(episode_id: str, payload: ShotKeyframeBatchPlanRequest, request: Request) -> ShotKeyframeBatchPlanResponse:
+    try:
+        return ShotKeyframeBatchPlanResponse.model_validate({"plan": shot_keyframe_batch_service(request).plan(
+            episode_id,
+            targets=[item.model_dump() for item in payload.targets],
+            frame_strategy=payload.frame_strategy,
+            candidate_count=payload.candidate_count,
+            profile_version_id=payload.profile_version_id,
+            prompt_bundle=payload.prompt_bundle.model_dump(exclude_none=True) if payload.prompt_bundle is not None else None,
+        )})
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post(
+    "/episodes/{episode_id}/shot-keyframe-batches:submit",
+    status_code=201,
+    operation_id="submitShotKeyframeBatchV2",
+    response_model=ShotKeyframeBatchSubmitResponse,
+)
+async def submit_shot_keyframe_batch(episode_id: str, payload: ShotKeyframeBatchSubmitRequest, request: Request) -> ShotKeyframeBatchSubmitResponse:
+    try:
+        return ShotKeyframeBatchSubmitResponse.model_validate({"batch": shot_keyframe_batch_service(request).submit(
+            episode_id,
+            targets=[item.model_dump() for item in payload.targets],
+            frame_strategy=payload.frame_strategy,
+            candidate_count=payload.candidate_count,
+            profile_version_id=payload.profile_version_id,
+            prompt_bundle=payload.prompt_bundle.model_dump(exclude_none=True) if payload.prompt_bundle is not None else None,
+            expected_plan_hash=payload.expected_plan_hash,
+            idempotency_key=payload.idempotency_key,
+        )})
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get(
+    "/episodes/{episode_id}/shot-keyframe-batches",
+    operation_id="listShotKeyframeBatchesV2",
+    response_model=ShotKeyframeBatchListResponse,
+)
+async def list_shot_keyframe_batches(episode_id: str, request: Request, limit: int = Query(default=10, ge=1, le=20)) -> ShotKeyframeBatchListResponse:
+    try:
+        return ShotKeyframeBatchListResponse.model_validate({"items": shot_keyframe_batch_service(request).list_batches(episode_id, limit=limit)})
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post(
+    "/episodes/{episode_id}/storyboard-generation-batches:plan",
+    operation_id="planStoryboardGenerationBatchV2",
+    response_model=StoryboardGenerationBatchPlanResponse,
+)
+async def plan_storyboard_generation_batch(
+    episode_id: str,
+    payload: StoryboardGenerationBatchPlanRequest,
+    request: Request,
+) -> StoryboardGenerationBatchPlanResponse:
+    try:
+        return StoryboardGenerationBatchPlanResponse.model_validate(
+            {"plan": storyboard_generation_batch_service(request).plan(episode_id, [item.model_dump() for item in payload.targets])}
+        )
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post(
+    "/episodes/{episode_id}/storyboard-generation-batches:submit",
+    operation_id="submitStoryboardGenerationBatchV2",
+    response_model=StoryboardGenerationBatchSubmitResponse,
+    status_code=201,
+)
+async def submit_storyboard_generation_batch(
+    episode_id: str,
+    payload: StoryboardGenerationBatchSubmitRequest,
+    request: Request,
+) -> StoryboardGenerationBatchSubmitResponse:
+    try:
+        return StoryboardGenerationBatchSubmitResponse.model_validate(
+            {"batch": storyboard_generation_batch_service(request).submit(
+                episode_id,
+                [item.model_dump() for item in payload.targets],
+                expected_plan_hash=payload.expected_plan_hash,
+                idempotency_key=payload.idempotency_key,
+            )}
+        )
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
 
 
 @router.get(
@@ -251,7 +374,7 @@ async def put_shot_draft(shot_id: str, payload: ShotDraftRequest, request: Reque
     try:
         result = command_service(request).save_draft(
             shot_id,
-            payload.fields.model_dump(),
+            payload.fields.model_dump(exclude_unset=True),
             freeze=payload.freeze,
             expected_revision_no=payload.expected_revision_no,
         )
@@ -269,7 +392,7 @@ async def mark_shot_ready(shot_id: str, payload: ShotMarkReadyRequest, request: 
     try:
         result = command_service(request).mark_ready(
             shot_id,
-            draft=payload.draft.model_dump() if payload.draft is not None else None,
+            draft=payload.draft.model_dump(exclude_unset=True) if payload.draft is not None else None,
             freeze=payload.freeze,
             expected_revision_no=payload.expected_revision_no,
         )
@@ -316,9 +439,10 @@ async def create_shot_generation_intent(
 @router.post(
     "/shots/{shot_id}/lipsync-jobs",
     operation_id="createShotLipsyncJob",
+    response_model=ShotLipsyncJobResponse,
     status_code=201,
 )
-async def create_shot_lipsync_job(shot_id: str, payload: ShotLipsyncJobRequest, request: Request) -> dict[str, object]:
+async def create_shot_lipsync_job(shot_id: str, payload: ShotLipsyncJobRequest, request: Request) -> ShotLipsyncJobResponse:
     try:
         job = lipsync_service(request).create_job(
             shot_id,
@@ -326,7 +450,7 @@ async def create_shot_lipsync_job(shot_id: str, payload: ShotLipsyncJobRequest, 
             audio_media_version_id=payload.audio_media_version_id,
             idempotency_key=payload.idempotency_key,
         )
-        return {"job": {"id": str(job["id"]), "state": str(job["state"])}}
+        return ShotLipsyncJobResponse.model_validate({"job": {"id": str(job["id"]), "state": str(job["state"])}})
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -334,10 +458,11 @@ async def create_shot_lipsync_job(shot_id: str, payload: ShotLipsyncJobRequest, 
 @router.get(
     "/shots/{shot_id}/lipsync-jobs",
     operation_id="listShotLipsyncJobs",
+    response_model=ShotLipsyncJobListResponse,
 )
-async def list_shot_lipsync_jobs(shot_id: str, request: Request, limit: int = Query(default=20, ge=1, le=50)) -> dict[str, object]:
+async def list_shot_lipsync_jobs(shot_id: str, request: Request, limit: int = Query(default=20, ge=1, le=50)) -> ShotLipsyncJobListResponse:
     try:
-        return lipsync_service(request).list_shot_jobs(shot_id, limit=limit)
+        return ShotLipsyncJobListResponse.model_validate(lipsync_service(request).list_shot_jobs(shot_id, limit=limit))
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -345,11 +470,12 @@ async def list_shot_lipsync_jobs(shot_id: str, request: Request, limit: int = Qu
 @router.post(
     "/lipsync-jobs/{job_id}:finalize",
     operation_id="finalizeLipsyncJob",
+    response_model=ShotLipsyncFinalizeResponse,
 )
-async def finalize_lipsync_job(job_id: str, request: Request) -> dict[str, object]:
+async def finalize_lipsync_job(job_id: str, request: Request) -> ShotLipsyncFinalizeResponse:
     try:
         result = lipsync_service(request).finalize_job(job_id)
-        return {"media": result["media"], "idempotent_replay": result["idempotent_replay"]}
+        return ShotLipsyncFinalizeResponse.model_validate({"media": result["media"], "idempotent_replay": result["idempotent_replay"]})
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

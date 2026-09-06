@@ -47,7 +47,7 @@ Name: "{commonappdata}\LocalDramaStudio\models\staging"
 Name: "{commonappdata}\LocalDramaStudio\models\quarantine"
 Name: "{commonappdata}\LocalDramaStudio\models\libraries\comfyui"
 Name: "{commonappdata}\LocalDramaStudio\models\libraries\pytorch"
-Name: "{commonappdata}\LocalDramaStudio\models\libraries\ollama"
+Name: "{commonappdata}\LocalDramaStudio\models\libraries\gguf"
 Name: "{commonappdata}\LocalDramaStudio\models\libraries\audio"
 
 [Files]

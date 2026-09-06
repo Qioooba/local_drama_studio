@@ -97,6 +97,43 @@ def test_publish_local_sapi_profile_rejects_unscanned_voice(workspace, database,
         raise AssertionError("undiscovered voice must fail closed")
 
 
+def test_project_local_sapi_profile_records_local_only_scope_after_real_probe(workspace, database, monkeypatch) -> None:
+    def fake_run(*_args, **kwargs):
+        if "env" not in kwargs:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps([{"name": "Microsoft Huihui Desktop", "culture": "zh-CN", "gender": "Female", "age": "Adult"}]),
+                stderr="",
+            )
+        output = Path(kwargs["env"]["LOCAL_DRAMA_TTS_OUTPUT"])
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"RIFF" + b"\x00" * 256)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("local_drama.platform.windows.tts.shutil.which", lambda _name: "powershell.exe")
+    monkeypatch.setattr("local_drama.platform.windows.tts.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "local_drama.application.media.MediaService._probe",
+        lambda *_args, **_kwargs: {"probe_status": "PASS", "streams": [{"codec_type": "audio", "codec_name": "pcm_s16le"}], "format": {"duration": "0.25"}},
+    )
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="project_local_sapi", title="Project local SAPI", episode_count=1, aspect_ratio="9:16", fps_num=24, fps_den=1, target_duration_ms=1000, allow_unconfigured_capabilities=True,
+    )
+    profile = DialogueService(database, workspace, media=MediaService(database, workspace)).publish_project_local_sapi_profile(
+        str(project["id"]), voice_ref="sapi:Microsoft Huihui Desktop", smoke_text="本机测试",
+    )
+    evidence = profile["license_evidence"]
+    assert profile["provenance"] == "LOCAL_OS_INSTALLED"
+    assert profile["distribution_scope"] == "LOCAL_TEST_ONLY"
+    assert profile["commercial_authorization"] is False
+    assert evidence["provenance"] == "LOCAL_OS_INSTALLED"
+    assert evidence["distribution_scope"] == "LOCAL_TEST_ONLY"
+    replay = DialogueService(database, workspace, media=MediaService(database, workspace)).publish_project_local_sapi_profile(
+        str(project["id"]), voice_ref="sapi:Microsoft Huihui Desktop", smoke_text="本机测试",
+    )
+    assert replay["id"] == profile["id"]
+
+
 def _published_sapi_profile(database) -> str:
     with database.transaction() as connection:
         connection.execute("INSERT INTO execution_profiles (id,code,title) VALUES ('sapi-tts','sapi-local-tts','Windows SAPI local TTS')")
@@ -141,12 +178,14 @@ def test_real_windows_sapi_job_artifact_promotion_and_formal_candidate(workspace
     )
     profile_id = _published_sapi_profile(database)
     service = DialogueService(database, workspace)
+    shot = ProjectService(database, workspace.projects_root).create_shot(str(episode["id"]), "SAPI-SHOT", 10_000)
     line = service.create_line(
         str(episode["id"]),
         code="DLG-SAPI-001",
         speaker="测试说话人",
         text="你好，这是本机离线语音任务。",
         pronunciation={},
+        shot_id=str(shot["id"]),
     )
     text_revision_id = str(line["text_revisions"][0]["id"])
     voice = service.create_voice_profile(
@@ -196,6 +235,12 @@ def test_real_windows_sapi_job_artifact_promotion_and_formal_candidate(workspace
     assert worker_result["artifact"]["kind"] == "TTS_AUDIO"
     output = workspace.work_root / str(worker_result["artifact"]["sandbox_rel_path"])
     assert output.is_file() and output.stat().st_size > 44
+    from local_drama.infrastructure.database.shot_studio_repository import SqliteShotStudioReadRepository
+    from local_drama.api.schemas.shot_studio import ShotDialogueProjection
+    with database.connect() as connection:
+        pending = ShotDialogueProjection.model_validate(SqliteShotStudioReadRepository._dialogue(connection, project_id, str(shot["id"])))
+    assert pending.lines[0].jobs[0].state == "SUCCEEDED"
+    assert pending.lines[0].jobs[0].registered is False
     with TestClient(create_app(workspace)) as client:
         finalized_response = client.post(f"/api/v1/tts-jobs/{job['id']}:finalize")
         assert finalized_response.status_code == 201, finalized_response.text
@@ -209,6 +254,10 @@ def test_real_windows_sapi_job_artifact_promotion_and_formal_candidate(workspace
     assert int(finalized["media"]["duration_ms"]) > 0
     assert finalized_replay["candidate"]["id"] == finalized["candidate"]["id"]
     assert finalized_replay["idempotent_replay"] is True
+    with database.connect() as connection:
+        ready = ShotDialogueProjection.model_validate(SqliteShotStudioReadRepository._dialogue(connection, project_id, str(shot["id"])))
+    assert ready.lines[0].jobs[0].registered is True
+    assert ready.lines[0].candidates[0].id == finalized["candidate"]["id"]
     assert finalized["candidate"]["provenance"]["provider_profile_version_id"] == profile_id
     assert finalized["candidate"]["provenance"]["media_sha256"] == finalized["media"]["sha256"]
 

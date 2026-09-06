@@ -32,6 +32,7 @@ const DIAGNOSTIC_CHECKS: Record<string, { title: string; description: string }> 
   COMFYUI_LOOPBACK: { title: "图像与视频生成服务", description: "检查 ComfyUI 是否可以从当前部署范围访问。" },
   H3_CANDIDATE_LAYOUT: { title: "H3 视频模型", description: "检查 H3 视频生成所需的模型组件是否齐全。" },
   LOCAL_LLM_LOOPBACK: { title: "本地语言模型", description: "检查当前语言模型能否完成一次实际推理。" },
+  LOCAL_EXECUTOR: { title: "本机任务执行器", description: "确认有排队任务时，本机执行器已在服务内运行并能自动接管。" },
   FFMPEG: { title: "视频处理", description: "检查视频转码、合成和导出所需的 FFmpeg。" },
   FFPROBE: { title: "媒体读取", description: "检查读取视频时长、分辨率和编码所需的 FFprobe。" },
   DISK_SPACE: { title: "项目存储空间", description: "检查素材、缓存和生成结果是否有足够空间。" },
@@ -46,7 +47,8 @@ const DIAGNOSTIC_CHECKS: Record<string, { title: string; description: string }> 
 const DIAGNOSTIC_REMEDIATIONS: Record<string, string> = {
   COMFYUI_LOOPBACK: "启动已配置的 ComfyUI 服务后重新检查。系统不会自动下载组件或切换到公网服务。",
   H3_CANDIDATE_LAYOUT: "补齐模型清单指定的 H3 配套文件后重新检查。系统不会下载或改写模型目录。",
-  LOCAL_LLM_LOOPBACK: "在能力与模型中选择本机语言模型，并确认 Ollama 已启动。",
+  LOCAL_LLM_LOOPBACK: "在能力与模型中选择本机语言模型，并确认 llama-server 已启动。",
+  LOCAL_EXECUTOR: "本机应用服务恢复后会自动接管已排队任务；若持续没有执行器，请重新启动应用服务后重新检查。页面不会要求输入命令。",
   FFMPEG: "安装 FFmpeg，或在系统配置中填写其程序路径。",
   FFPROBE: "安装 FFprobe，或在系统配置中填写其程序路径。",
   GPU_MANIFEST: "确认 NVIDIA 显卡可被系统识别后重新检查。",
@@ -154,6 +156,12 @@ export function diagnosticObservedSummary(code: string, observed: Record<string,
     }
     case "LOCAL_LLM_LOOPBACK":
       return observed.model ? `当前模型：${String(observed.model)}；实际推理${Number(observed.probe_level_passed ?? 0) >= 4 ? "成功" : "尚未通过"}` : `检查结果：${diagnosticReasonLabel(observed.error_code ?? observed.reason)}`;
+    case "LOCAL_EXECUTOR": {
+      const queued = Number(observed.queued_count ?? 0);
+      const workers = Number(observed.active_worker_count ?? 0);
+      const active = Number(observed.active_attempt_count ?? 0);
+      return queued > 0 && workers === 0 ? `有 ${queued} 个任务排队，但没有可用执行器` : `执行器 ${workers} 个；排队 ${queued} 个；正在处理 ${active} 个`;
+    }
     case "FFMPEG":
     case "FFPROBE": {
       if (!observed.version) return `检查结果：${diagnosticReasonLabel(observed.reason)}`;

@@ -100,6 +100,8 @@ def run_tts_job(
         or "TTS" not in str(profile["capability"]).upper()
         or provider_kind not in {"WINDOWS_SAPI_LOCAL", "VOXCPM2_LOCAL"}
         or snapshot.get("network_allowed") is not False
+        or snapshot.get("synthesis_scope", "LOCAL_TEST_ONLY") != "LOCAL_TEST_ONLY"
+        or snapshot.get("commercial_authorization", False) is not False
         or str(snapshot.get("text_hash")) != str(text_revision["text_hash"])
         or str(snapshot.get("text")) != str(text_revision["text"])
         or str(snapshot.get("voice_ref")) != str(voice["voice_ref"])

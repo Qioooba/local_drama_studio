@@ -361,7 +361,8 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
         status = observed.json()["status"]
         assert status["timeline"]["revision_count"] == 2
         assert status["subtitles"]["revision_count"] == 3
-        assert status["audio"] == {"binding_count": 1, "verified_local_count": 1}
+        assert status["audio"]["binding_count"] == 1
+        assert status["audio"]["verified_local_count"] == 1
         assert status["renders"]["count"] == 1
         assert status["renders"]["verified_count"] == 1
         assert status["renders"]["latest"]["evidence_status"] == "VERIFIED"
@@ -369,6 +370,9 @@ def test_g8_real_timeline_frame_enhancement_render_delivery_and_recovery(workspa
         assert status["renders"]["latest"]["ffmpeg_command"]["returncode"] == 0
         assert status["delivery"]["count"] == 1
         assert status["delivery"]["verified_count"] == 1
+        assert status["delivery"]["latest"]["target_version_id"] == target["version_id"]
+        assert status["delivery"]["latest"]["human_review_status"] == "PENDING"
+        assert status["delivery"]["latest"]["platform_review_status"] == "PENDING"
         assert status["read_only"] is True
         assert status["runtime_contacted"] is False and status["network_contacted"] is False and status["mutated"] is False
 
@@ -576,7 +580,7 @@ def _delivery_render_fixture(workspace, database, client, *, approve: bool) -> t
     render = client.post(f"/api/v1/timeline-revisions/{timeline['id']}:render").json()["render"]
     if approve:
         _approve_render_v2(client, render, comment="交付需求测试批准")
-    target = ConfigurationService(database).create_delivery_target(project_id, "delivery-requirements", "Delivery requirements", "LOCAL_FILESYSTEM", {"path_rel": "06_delivery/delivery-requirements", "width": 320, "height": 180, "fps": 24, "bitrate": "1M", "audio_codec": "AAC", "subtitles": "SIDECAR"})
+    target = ConfigurationService(database).create_delivery_target(project_id, "delivery-requirements", "Delivery requirements", "LOCAL_FILESYSTEM", {"path_rel": "06_delivery/delivery-requirements", "width": 320, "height": 180, "fps": 24, "bitrate": "1M", "audio_codec": "AAC", "subtitles": "NONE"})
     return project, render, target
 
 
@@ -595,6 +599,42 @@ def test_delivery_candidate_requires_approved_render_and_target_versions_are_exp
         assert selected.status_code == 200, selected.text
         config = client.get(f"/api/v1/projects/{project['id']}/configuration").json()["configuration"]
         assert config["selected_delivery_target_version_id"] == target_v2["version_id"]
+
+
+def test_delivery_candidate_requires_approval_for_the_latest_render_only(workspace, database) -> None:
+    """A historical approval must not make an older render deliverable."""
+
+    with TestClient(create_app(workspace)) as client:
+        project, first_render, target = _delivery_render_fixture(workspace, database, client, approve=True)
+        rerender_response = client.post(
+            f"/api/v1/timeline-revisions/{first_render['timeline_revision_id']}:render",
+            json={"timeline_revision_id": first_render["timeline_revision_id"], "force_rerender": True},
+        )
+        assert rerender_response.status_code == 201, rerender_response.text
+        latest_render = rerender_response.json()["render"]
+        assert latest_render["id"] != first_render["id"]
+
+        for path in (
+            "/api/v1/delivery-packages",
+            "/api/v1/delivery-packages:submit",
+        ):
+            blocked = client.post(
+                path,
+                json={"episode_render_version_id": first_render["id"], "target_version_id": target["version_id"]},
+            )
+            assert blocked.status_code == 422, blocked.text
+            assert blocked.json()["error"]["code"] == "EPISODE_RENDER_APPROVAL_REQUIRED"
+
+        _approve_render_v2(client, latest_render, comment="当前最新整集版本审核通过")
+        delivered = client.post(
+            "/api/v1/delivery-packages",
+            json={"episode_render_version_id": latest_render["id"], "target_version_id": target["version_id"]},
+        )
+        assert delivered.status_code == 201, delivered.text
+        delivery_id = delivered.json()["delivery"]["id"]
+        detail = client.get(f"/api/v1/delivery-packages/{delivery_id}")
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["delivery"]["episode_render_version_id"] == latest_render["id"]
 
 
 def test_delivery_manifest_history_verify_and_withdraw_preserve_files(workspace, database) -> None:
@@ -642,3 +682,81 @@ def test_delivery_manifest_history_verify_and_withdraw_preserve_files(workspace,
         assert history.status_code == 200
         history_items = history.json()["items"]
         assert {item["id"] for item in history_items} >= {first["id"], second["id"]}
+
+
+def test_delivery_both_materializes_frozen_subtitle_sidecar_and_verifies_contract(workspace, database) -> None:
+    project = _project(workspace, database)
+    project_id = str(project["id"])
+    project_service = ProjectService(database, workspace.projects_root)
+    season = project_service.list_seasons(project_id)[0]
+    episode = project_service.list_episodes(str(season["id"]))[0]
+    source = MediaService(database, workspace).import_file(project_id, _video(workspace), purpose="SHOT_VIDEO", media_kind="VIDEO")
+    script_path = workspace.work_root / "delivery-sidecar-script.txt"
+    script_path.write_text("沈砚说：雨还没有落地。", encoding="utf-8")
+    script = DocumentImportService(database, workspace).import_document(project_id, script_path)
+
+    with TestClient(create_app(workspace)) as client:
+        subtitle_response = client.post(
+            f"/api/v1/episodes/{episode['id']}/subtitle-revisions",
+            json={
+                "format": "SRT",
+                "authority": {"text_authority": "SCRIPT", "source_document_version_id": script["source_document_version_id"]},
+                "cues": [{"start_us": 0, "end_us": 1_000_000, "text": "沈砚说：雨还没有落地。"}],
+            },
+        )
+        assert subtitle_response.status_code == 201, subtitle_response.text
+        subtitle = subtitle_response.json()["subtitle"]
+        timeline_response = client.post(
+            f"/api/v1/episodes/{episode['id']}/timeline-revisions",
+            json={
+                "items": [{"track_type": "VIDEO", "media_version_id": source["media_version_id"], "start_us": 0, "end_us": 1_000_000, "parameters": {}}],
+                "input_snapshot": {"source": "delivery-sidecar", "subtitle_revision_id": subtitle["id"]},
+            },
+        )
+        assert timeline_response.status_code == 201, timeline_response.text
+        timeline = timeline_response.json()["timeline"]
+        render = client.post(f"/api/v1/timeline-revisions/{timeline['id']}:render").json()["render"]
+        _approve_render_v2(client, render, comment="侧车字幕交付测试批准")
+        target = ConfigurationService(database).create_delivery_target(
+            project_id,
+            "delivery-sidecar",
+            "Delivery sidecar",
+            "LOCAL_FILESYSTEM",
+            {"path_rel": "06_delivery/delivery-sidecar", "width": 320, "height": 180, "fps": 24, "audio_codec": "AAC", "subtitles": "BOTH"},
+        )
+        built = client.post("/api/v1/delivery-packages", json={"episode_render_version_id": render["id"], "target_version_id": target["version_id"]})
+        assert built.status_code == 201, built.text
+        delivery = built.json()["delivery"]
+        media_files = delivery["files"]
+        sidecar = next(item for item in media_files if str(item["rel_path"]).endswith(".srt"))
+        package_dir = workspace.projects_root / str(project["root_rel"]) / str(delivery["rel_path"])
+        sidecar_path = workspace.projects_root / str(project["root_rel"]) / str(sidecar["rel_path"])
+        assert sidecar_path.is_file()
+        assert sidecar_path.read_text(encoding="utf-8") == subtitle["content_text"]
+        manifest = json.loads((package_dir / "manifest.json").read_text(encoding="utf-8"))
+        assert manifest["target"]["spec"]["subtitles"] == "BOTH"
+        assert manifest["subtitles"]["id"] == subtitle["id"]
+        assert manifest["subtitles"]["status"] == "DRAFT"
+        assert manifest["subtitles"]["delivery_mode"] == "BOTH"
+        assert manifest["subtitles"]["sidecar"] == sidecar
+        assert client.get(f"/api/v1/delivery-packages/{delivery['id']}:verify").json()["delivery"]["status"] == "VERIFIED"
+        verified = client.get(f"/api/v1/delivery-packages/{delivery['id']}:verify").json()["delivery"]
+        assert verified["delivery_contract_check"]["ok"] is True
+        assert verified["delivery_contract_check"]["sidecar_rel_path"] == sidecar["rel_path"]
+        package_files = client.get(f"/api/v1/delivery-packages/{delivery['id']}/files").json()["items"]
+        assert any(str(item["rel_path"]).endswith(".srt") for item in package_files)
+
+
+def test_delivery_sidecar_fails_closed_without_frozen_subtitle(workspace, database) -> None:
+    with TestClient(create_app(workspace)) as client:
+        project, render, _ = _delivery_render_fixture(workspace, database, client, approve=True)
+        target = ConfigurationService(database).create_delivery_target(
+            str(project["id"]),
+            "delivery-sidecar-required",
+            "Delivery sidecar required",
+            "LOCAL_FILESYSTEM",
+            {"path_rel": "06_delivery/sidecar-required", "subtitles": "SIDECAR"},
+        )
+        blocked = client.post("/api/v1/delivery-packages", json={"episode_render_version_id": render["id"], "target_version_id": target["version_id"]})
+        assert blocked.status_code == 422, blocked.text
+        assert blocked.json()["error"]["code"] == "DELIVERY_SUBTITLE_REQUIRED"

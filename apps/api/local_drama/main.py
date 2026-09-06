@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 import secrets
 import sqlite3
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -43,6 +45,7 @@ from .api.routes.llm import router as llm_router
 from .api.routes.media import router as media_router
 from .api.routes.model_platform_v2 import router as model_platform_v2_router
 from .api.routes.one_sentence_video_runs import router as one_sentence_video_runs_router
+from .api.routes.pipeline import router as pipeline_router
 from .api.routes.platform import router as platform_router
 from .api.routes.post_v2 import router as post_v2_router
 from .api.routes.product_context_v2 import router as product_context_v2_router
@@ -69,6 +72,7 @@ from .api.routes.workflow_runtime import router as workflow_runtime_router
 from .api.routes.workflows import router as workflows_router
 from .application.profiles import ProfileService
 from .application.reviews import ReviewService
+from .application.worker_sessions import WorkerSupervisor
 from .config import Settings
 from .domain.errors import DomainRuleError
 from .errors import ApiError, api_error_handler, validation_error_handler
@@ -81,6 +85,36 @@ from .platform import create_platform_services
 _LOGGER = get_logger("main")
 
 
+def _start_embedded_worker(app: FastAPI, settings: Settings) -> tuple[threading.Event, threading.Thread] | None:
+    """Run a durable queue consumer only for a directly launched API.
+
+    Runtime Host keeps the production two-process topology and sets the guard
+    below. A direct API process otherwise owns the worker so a creator never
+    has to open a terminal to continue a queued project task.
+    """
+    if os.environ.get("LOCAL_DRAMA_EMBEDDED_WORKER") != "1":
+        return None
+    stop_requested = threading.Event()
+    worker_id = f"embedded-api-{settings.instance_id}-{os.getpid()}"
+
+    def run() -> None:
+        try:
+            WorkerSupervisor(app.state.database, settings).run_until_idle(
+                worker_id,
+                channels=list(settings.worker_channels),
+                max_jobs=None,
+                idle_poll_seconds=1.0,
+                should_stop=stop_requested.is_set,
+            )
+        except BaseException:
+            _LOGGER.exception("embedded_worker_stopped worker_id=%s", worker_id)
+
+    thread = threading.Thread(target=run, name=f"local-drama-{worker_id}", daemon=True)
+    thread.start()
+    _LOGGER.info("embedded_worker_started worker_id=%s", worker_id)
+    return stop_requested, thread
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
@@ -91,9 +125,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             with app.state.database.connect() as connection:
                 connection.execute("SELECT 1 FROM local_runtimes LIMIT 1")
             app.state.manifest_sync = ProfileService(app.state.database, settings.manifest_path).sync_manifest(actor="startup")
-            # Starting the API must remain local and deterministic. LLM discovery,
-            # probing, candidate synchronization, and publishing are explicit user
-            # actions because they can contact a loopback or remote model service.
             app.state.llm_sync = None
             app.state.review_templates = ReviewService(app.state.database, settings).ensure_templates(actor="startup")
         else:
@@ -108,7 +139,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         app.state.manifest_sync = None
         app.state.llm_sync = None
-    yield
+    worker = _start_embedded_worker(app, settings)
+    app.state.embedded_worker = worker
+    try:
+        yield
+    finally:
+        if worker is not None:
+            stop_requested, thread = worker
+            stop_requested.set()
+            thread.join(timeout=5.0)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -172,6 +211,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(llm_router, prefix="/api/v1")
     app.include_router(media_router, prefix="/api/v1")
     app.include_router(one_sentence_video_runs_router, prefix="/api/v1")
+    app.include_router(pipeline_router, prefix="/api/v1")
     app.include_router(quick_generations_router, prefix="/api/v1")
     app.include_router(quick_generation_outputs_router, prefix="/api/v1")
     app.include_router(quick_generation_presets_router, prefix="/api/v1")

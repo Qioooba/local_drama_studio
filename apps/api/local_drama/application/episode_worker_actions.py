@@ -18,7 +18,11 @@ from local_drama.config import Settings
 from local_drama.domain.capabilities import VIDEO_GENERATION_CAPABILITIES
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.generation import VariantPlan
-from local_drama.domain.policies import VariantInput
+from local_drama.domain.policies import VariantInput, missing_shot_fields
+from local_drama.domain.shot_prompt import compose_shot_prompt
+from local_drama.infrastructure.database.episode_production_repository import (
+    SqliteEpisodeProductionReadRepository,
+)
 from local_drama.infrastructure.database.generation_preference_repository import (
     SqliteGenerationPreferenceRepository,
 )
@@ -28,6 +32,8 @@ from local_drama.infrastructure.database.sqlite import Database
 from .commands.qc_policies import QcPolicyCommandService
 from .generation import GenerationService
 from .jobs import JobService
+from .keyframe_references import approved_keyframe_for_shot, approved_keyframes_for_shots
+from .shot_keyframe_generation import ShotKeyframeGenerationBatchService
 from .media import MediaService, infer_media_kind
 from .queries.generation_preferences import GenerationPreferenceQueryService
 from .queries.qc_policies import QcPolicyQueryService
@@ -59,6 +65,54 @@ class EpisodeWorkerActionService:
         # a policy persistence adapter.  Installations without a policy retain
         # the safe, bounded product default of one automatic reroll per shot.
         self.qc_reroll_limit_resolver = qc_reroll_limit_resolver
+        self.keyframe_batches = ShotKeyframeGenerationBatchService(
+            database, settings, generation=self.generation,
+            preference_resolver_factory=lambda connection: GenerationPreferenceQueryService(
+                SqliteGenerationPreferenceRepository(connection)
+            ),
+        )
+
+    def keyframe_generation(
+        self, episode_id: str, run_id: str, task_id: str, *, candidate_count: int = 1,
+    ) -> tuple[dict[str, Any], int]:
+        """Dispatch through the shared batch authority; never approve outputs.
+
+        The subsequent check depends on these jobs and remains a human gate.
+        A task retry reuses the batch's idempotency key rather than creating a
+        second generation queue or changing an existing frozen batch.
+        """
+        project_id, shots = self._episode(episode_id)
+        with self.database.connect() as connection:
+            approved = approved_keyframes_for_shots(
+                connection, (str(shot["id"]) for shot in shots), project_id=project_id,
+            )
+        targets = [
+            {"shot_id": str(shot["id"]), "expected_revision": int(shot["revision"])}
+            for shot in shots if str(shot["id"]) not in approved
+        ]
+        reused = [{"shot_id": shot_id, "status": "APPROVED_REUSED", **fact} for shot_id, fact in approved.items()]
+        if not targets:
+            return self._report("PASS", {"status": "PASS"}, {"items": reused}, "全部镜头已有人工批准关键帧"), 0
+        args = {"targets": targets, "frame_strategy": "FIRST_ONLY", "candidate_count": candidate_count}
+        plan = self.keyframe_batches.plan(episode_id, **args)
+        # The interactive batch screen allows a partial submission. A full
+        # episode stage must expose every blocker before spending on the rest.
+        if not plan["valid"] or plan["issues"] or plan["summary"]["blocked"]:
+            return self._report(
+                "NEEDS_HITL", {"status": "NEEDS_HITL", "code": "SHOT_KEYFRAME_BATCH_BLOCKED", "issues": plan["issues"]},
+                {"items": reused, "plan": plan}, "关键帧生成配置或镜头内容需修正，请到镜头画面检查",
+            ), 0
+        batch = self.keyframe_batches.submit(
+            episode_id, **args, expected_plan_hash=plan["plan_hash"],
+            idempotency_key=f"episode-keyframes:{run_id}:{task_id}", actor="episode-worker",
+        )
+        failed = [item for item in batch["items"] if item["status"] in {"FAILED", "CANCELLED"}]
+        status = "NEEDS_HITL" if failed else "PASS"
+        return self._report(
+            status, {"status": status, "code": "SHOT_KEYFRAME_GENERATION_FAILED" if failed else "KEYFRAMES_DISPATCHED", "issues": failed},
+            {"items": [*reused, *batch["items"]], "batch_id": batch["id"]},
+            "关键帧生成失败，请到任务中心修复后继续" if failed else "已提交关键帧，生成完成后逐镜人工审核",
+        ), 0
 
     def _qc_reroll_limit(self, project_id: str, episode_id: str, shot_id: str) -> int:
         try:
@@ -100,12 +154,83 @@ class EpisodeWorkerActionService:
             if episode is None:
                 raise DomainRuleError("EPISODE_NOT_FOUND", "集不存在", {"episode_id": episode_id})
             rows = connection.execute(
-                """SELECT s.id,s.code,s.target_duration_ms,sr.fields_json
+                """SELECT s.id,s.code,s.target_duration_ms,s.status,s.revision,s.current_revision_id,sr.fields_json
                 FROM shots s LEFT JOIN shot_revisions sr ON sr.id=s.current_revision_id
                 WHERE s.episode_id=? AND s.archived_at IS NULL ORDER BY CAST(s.order_key AS REAL),s.code""",
                 (episode_id,),
             ).fetchall()
         return str(episode["project_id"]), [dict(row) for row in rows]
+
+    def video_generation_preflight(
+        self,
+        episode_id: str,
+        *,
+        target_shot_ids: tuple[str, ...],
+    ) -> dict[str, Any]:
+        """Read-only, bounded preflight shared by batch commands and workers."""
+        project_id, episode_shots = self._episode(episode_id)
+        requested_ids = tuple(dict.fromkeys(str(item).strip() for item in target_shot_ids if str(item).strip()))
+        if not requested_ids:
+            raise DomainRuleError("SHOT_BATCH_EMPTY", "批量生成至少需要一个镜头")
+        if len(requested_ids) > 100:
+            raise DomainRuleError("SHOT_BATCH_TOO_LARGE", "单次批量生成最多包含 100 个镜头")
+        by_id = {str(shot["id"]): shot for shot in episode_shots}
+        unknown_ids = [shot_id for shot_id in requested_ids if shot_id not in by_id]
+        if unknown_ids:
+            raise DomainRuleError(
+                "SHOT_BATCH_SCOPE_INVALID",
+                "批量生成包含不属于当前集的镜头",
+                {"episode_id": episode_id, "shot_ids": unknown_ids},
+            )
+        items: list[dict[str, Any]] = []
+        for shot_id in requested_ids:
+            shot = by_id[shot_id]
+            fields = self._fields(shot)
+            blockers: list[dict[str, Any]] = []
+            missing = missing_shot_fields(fields)
+            if missing:
+                blockers.append({"code": "SHOT_NOT_PRODUCTION_READY", "missing_fields": missing})
+            keyframe = self._approved_keyframe(shot_id)
+            if keyframe is None:
+                blockers.append({"code": "APPROVED_KEYFRAME_REQUIRED"})
+            profile: dict[str, Any] | None = None
+            try:
+                profile = self._video_profile(project_id, shot_id)
+            except DomainRuleError as error:
+                blockers.append({"code": error.code})
+            first_frame_role = self._first_frame_role(profile) if profile is not None else None
+            if profile is not None and first_frame_role is None:
+                blockers.append({"code": "FIRST_FRAME_SLOT_REQUIRED"})
+            items.append(
+                {
+                    "shot_id": shot_id,
+                    "shot_code": str(shot["code"]),
+                    "shot_revision": int(shot["revision"]),
+                    "shot_revision_id": str(shot["current_revision_id"] or ""),
+                    "prompt": compose_shot_prompt(fields, shot_code=str(shot["code"])),
+                    "prompt_modifiers": list(fields.get("prompt_modifiers") or []),
+                    "profile_version_id": str(profile["id"]) if profile is not None else None,
+                    "keyframe_media_version_id": str(keyframe["media_version_id"]) if keyframe is not None else None,
+                    "first_frame_role": first_frame_role,
+                    "status": "READY" if not blockers else "BLOCKED",
+                    "blockers": blockers,
+                }
+            )
+        fingerprint_payload = {
+            "episode_id": episode_id,
+            "project_id": project_id,
+            "items": items,
+        }
+        return {
+            **fingerprint_payload,
+            "status": "READY" if all(item["status"] == "READY" for item in items) else "BLOCKED",
+            "input_fingerprint": hashlib.sha256(
+                json.dumps(fingerprint_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            ).hexdigest(),
+            "runtime_contacted": False,
+            "network_contacted": False,
+            "mutated": False,
+        }
 
     @staticmethod
     def _fields(shot: dict[str, Any]) -> dict[str, Any]:
@@ -125,7 +250,7 @@ class EpisodeWorkerActionService:
                 JOIN media_assets ma ON ma.owner_type='GENERATION_VARIANT' AND ma.owner_id=gv.id
                 JOIN media_versions mv ON mv.media_asset_id=ma.id
                 WHERE gi.owner_type='SHOT' AND gi.owner_id=? AND ma.media_kind='VIDEO'
-                AND mv.integrity_status='VERIFIED'
+                AND gv.is_stale=0 AND mv.integrity_status='VERIFIED'
                 ORDER BY CASE WHEN ma.approved_version_id=mv.id THEN 0 WHEN ma.selected_version_id=mv.id THEN 1 ELSE 2 END,
                 mv.created_at DESC,mv.id DESC LIMIT 1""",
                 (shot_id,),
@@ -153,12 +278,48 @@ class EpisodeWorkerActionService:
                 JOIN media_assets ma ON ma.owner_type='GENERATION_VARIANT' AND ma.owner_id=gv.id
                 JOIN media_versions mv ON mv.media_asset_id=ma.id
                 WHERE gi.owner_type='SHOT' AND gi.owner_id=? AND ma.media_kind='VIDEO'
-                AND mv.integrity_status='VERIFIED'
+                AND gv.is_stale=0 AND mv.integrity_status='VERIFIED'
                 UNION SELECT mv.id FROM media_assets ma JOIN media_versions mv ON mv.media_asset_id=ma.id
                 WHERE ma.owner_type='SHOT' AND ma.owner_id=? AND ma.media_kind='VIDEO'
                 AND mv.integrity_status='VERIFIED')""",
                 (shot_id, shot_id),
             ).fetchone()[0])
+
+    def _stale_working_media_shots(self, episode_id: str, shot_ids: set[str]) -> set[str]:
+        """Resolve dynamic working-media staleness from the episode read model.
+
+        ``generation_variants.is_stale`` covers persisted invalidation, while
+        the production read model also compares frozen prompt/profile/reference
+        inputs with the current project/episode/shot context.  The latter is
+        what surfaces ``WORKING_MEDIA_STALE`` in the episode UI.  Reusing that
+        authority here keeps dispatch and the page in agreement and prevents a
+        verified historical candidate from satisfying the current run.
+        """
+        if not shot_ids:
+            return set()
+        try:
+            facts = SqliteEpisodeProductionReadRepository(self.database).shot_facts(
+                episode_id,
+                cursor=0,
+                limit=max(100, len(shot_ids)),
+                states=set(),
+            )
+        except DomainRuleError as error:
+            # Unit seams may provide an in-memory _episode projection without a
+            # persisted episode.  A real production call has already resolved
+            # the episode above, so only that test seam gets the empty result;
+            # all other domain failures remain visible to the caller.
+            if error.code == "EPISODE_NOT_FOUND":
+                return set()
+            raise
+        stale: set[str] = set()
+        for item in facts.get("items", []):
+            item_id = str(item.get("shot_id") or "")
+            if item_id not in shot_ids:
+                continue
+            if any(str(blocker.get("code") or "") == "WORKING_MEDIA_STALE" for blocker in item.get("blockers", [])):
+                stale.add(item_id)
+        return stale
 
     def _variant_jobs(self, shot_id: str) -> list[dict[str, Any]]:
         with self.database.connect() as connection:
@@ -209,17 +370,7 @@ class EpisodeWorkerActionService:
 
     def _approved_keyframe(self, shot_id: str) -> dict[str, Any] | None:
         with self.database.connect() as connection:
-            row = connection.execute(
-                """SELECT mv.id AS media_version_id FROM media_assets ma
-                JOIN media_versions mv ON mv.id=ma.approved_version_id
-                WHERE ma.owner_type='SHOT' AND ma.owner_id=? AND ma.purpose='KEYFRAME'
-                AND ma.media_kind='IMAGE' AND mv.stage='KEYFRAME' AND mv.integrity_status='VERIFIED'
-                AND EXISTS (SELECT 1 FROM review_decisions rd WHERE rd.subject_type='MEDIA_VERSION'
-                  AND rd.subject_id=mv.id AND rd.decision='APPROVED' AND rd.is_stale=0)
-                ORDER BY mv.created_at DESC,mv.id DESC LIMIT 1""",
-                (shot_id,),
-            ).fetchone()
-        return dict(row) if row else None
+            return approved_keyframe_for_shot(connection, shot_id)
 
     def _video_profile(self, project_id: str, shot_id: str) -> dict[str, Any]:
         """Resolve the exact shot-level preference used by the generation UI.
@@ -366,9 +517,8 @@ class EpisodeWorkerActionService:
         if intent is None:
             intent = self.generation.create_intent(project_id, "SHOT", shot_id, "I2V_FORMAL", "Episode production shot video")
         seed = (self._seed(run_id, shot_id) + take_index) % 2_147_483_647
-        prompt_parts = [fields.get("creative_intent"), fields.get("composition"), fields.get("subject_action"), fields.get("environment")]
         parameters: dict[str, object] = {
-            "PROMPT": ", ".join(str(item).strip() for item in prompt_parts if str(item or "").strip()),
+            "PROMPT": compose_shot_prompt(fields, shot_code=str(shot["code"])),
             "SEED": seed,
             "DURATION_SECONDS": round(float(fields.get("target_duration_ms") or shot.get("target_duration_ms") or 4000) / 1000, 3),
         }
@@ -391,18 +541,65 @@ class EpisodeWorkerActionService:
             "end_frame_chain": end_frame_chain,
         }
 
-    def video_generation(self, episode_id: str, run_id: str, task_id: str, *, target_take_count: int = 1) -> tuple[dict[str, Any], int]:
+    def video_generation(
+        self,
+        episode_id: str,
+        run_id: str,
+        task_id: str,
+        *,
+        target_take_count: int = 1,
+        target_shot_ids: tuple[str, ...] | None = None,
+        force_new_take: bool = False,
+    ) -> tuple[dict[str, Any], int]:
         target_take_count = max(1, min(int(target_take_count), 4))
-        project_id, shots = self._episode(episode_id)
+        project_id, episode_shots = self._episode(episode_id)
+        requested_ids = tuple(dict.fromkeys(str(item).strip() for item in (target_shot_ids or ()) if str(item).strip()))
+        episode_ids = {str(shot["id"]) for shot in episode_shots}
+        unknown_ids = sorted(set(requested_ids) - episode_ids)
+        if unknown_ids:
+            raise DomainRuleError(
+                "SHOT_BATCH_SCOPE_INVALID",
+                "批量生成包含不属于当前集的镜头",
+                {"episode_id": episode_id, "shot_ids": unknown_ids},
+            )
+        shots = [shot for shot in episode_shots if not requested_ids or str(shot["id"]) in requested_ids]
+        stale_working_media_shots = self._stale_working_media_shots(
+            episode_id,
+            {str(shot["id"]) for shot in shots},
+        )
         items: list[dict[str, Any]] = []
-        for index, shot in enumerate(shots):
-            previous_shot = shots[index - 1] if index > 0 else None
+        episode_index = {str(shot["id"]): index for index, shot in enumerate(episode_shots)}
+        for shot in shots:
+            index = episode_index[str(shot["id"])]
+            previous_shot = episode_shots[index - 1] if index > 0 else None
             shot_id = str(shot["id"])
             jobs = self._variant_jobs(shot_id)
             promoted = self._promote_completed_outputs([item for item in jobs if str(item["state"]) == "SUCCEEDED"])
             video = self._shot_video(shot_id)
             active_jobs = [item for item in jobs if str(item["state"]) in ACTIVE_JOB_STATES]
             available_count = self._shot_video_count(shot_id)
+            stale_working_media = shot_id in stale_working_media_shots
+            if force_new_take or stale_working_media:
+                submission = self._submit_shot(
+                    project_id,
+                    shot,
+                    run_id,
+                    task_id,
+                    take_index=len(jobs),
+                    previous_shot=previous_shot,
+                )
+                items.append(
+                    {
+                        **submission,
+                        "candidate_count": available_count,
+                        "target_take_count": 1,
+                        "forced_new_take": True,
+                        "stale_working_media": stale_working_media,
+                        "refresh_reason": "WORKING_MEDIA_DEPENDENCY_CHANGED" if stale_working_media else None,
+                        "promoted_media_version_ids": promoted,
+                    }
+                )
+                continue
             if video is not None and available_count >= target_take_count:
                 items.append({"shot_id": shot_id, "shot_code": str(shot["code"]), "status": "READY_FOR_QC", "media_version_id": str(video["media_version_id"]), "candidate_count": available_count, "target_take_count": target_take_count, "promoted_media_version_ids": promoted})
                 continue
@@ -449,6 +646,8 @@ class EpisodeWorkerActionService:
             "dispatched_or_active": len(dispatched), "blocked_shots": blocked,
             "evidence_type": "GENERATION_DISPATCH", "human_approval_created": False,
             "target_take_count": target_take_count,
+            "target_shot_ids": list(requested_ids),
+            "force_new_take": force_new_take,
         }
         summary = f"逐镜视频调度：可 QC {len(ready)}，已调度/运行 {len(dispatched)}，阻塞 {len(blocked)}"
         return self._report(status, evidence, {"items": items}, summary), 0

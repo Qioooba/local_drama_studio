@@ -123,6 +123,23 @@
   border-radius: 8px;
 }
 
+.identity-pack-reuse {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--info);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--info) 7%, var(--surface));
+}
+
+.identity-pack-reuse > div { display: grid; gap: 4px; min-width: 0; }
+.identity-pack-reuse span,
+.identity-pack-reuse small { color: var(--text-muted); font-size: 13px; }
+.identity-pack-reuse button { min-height: 44px; }
+
 .identity-pack-blocker { border: 1px solid var(--attention); background: color-mix(in srgb, var(--attention) 8%, var(--surface)); }
 .identity-pack-approval-bar { border: 1px solid var(--border); background: var(--surface-muted); }
 .identity-pack-blocker > div,
@@ -132,7 +149,7 @@
 
 .identity-slots-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   gap: 12px;
 }
 
@@ -156,13 +173,14 @@
 .identity-slot-preview {
   display: grid;
   place-items: center;
-  aspect-ratio: 3 / 4;
+  height: 260px;
   overflow: hidden;
   border-radius: 6px;
   background: var(--surface-muted);
 }
 
 .identity-slot-preview img { width: 100%; height: 100%; object-fit: contain; }
+.identity-slot-preview > .ui-media-thumb-container { width: 100%; height: 100%; }
 
 .identity-slot-empty { display: grid; gap: 4px; padding: 16px; text-align: center; color: var(--text-muted); }
 .identity-slot-empty span { font-size: 12px; }
@@ -184,17 +202,12 @@
 .identity-pack-result p { color: var(--text-muted); }
 .identity-pack-result ul { margin-bottom: 0; padding-left: 20px; }
 
-@media (max-width: 1280px) {
-  .identity-slots-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
 @media (max-width: 1024px) {
   .identity-pack-header,
   .identity-pack-version-summary,
   .identity-pack-approval-bar,
   .identity-pack-blocker { flex-direction: column; align-items: stretch; }
-  .identity-pack-create,
-  .identity-slots-grid { grid-template-columns: 1fr; }
+  .identity-pack-create { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

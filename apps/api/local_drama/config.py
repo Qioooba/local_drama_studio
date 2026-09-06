@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 from pathlib import Path
 from typing import Any
@@ -63,10 +64,37 @@ class Settings(BaseModel):
     comfy_base_url: str = "http://127.0.0.1:8188"
     comfy_output_root: Path | None = None
     comfy_input_root: Path | None = None
-    llm_provider: str = "OLLAMA_LOOPBACK"
-    llm_base_url: str = "http://127.0.0.1:11434"
+    # Kept only as a compatibility endpoint for importing historical Ollama
+    # profiles; managed llama.cpp is the project default runtime.
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    llm_provider: str = "LLAMA_CPP_MANAGED"
+    llm_base_url: str = "http://127.0.0.1:28088"
     llm_model: str | None = None
     llm_api_key: str | None = None
+    # Managed llama.cpp runtime (LLAMA_CPP_MANAGED provider).  The coordinator
+    # spawns llama-server from these values; llm_base_url is derived from the
+    # host/port so the client and the child can never point at different
+    # endpoints. MTP is typed because its current llama.cpp arguments are
+    # lifecycle-owned; llama_server_args is reserved for other optional flags.
+    llama_server_bin: Path | None = Field(default=None, exclude=True)
+    llama_model_path: Path | None = Field(default=None, exclude=True)
+    llama_server_host: str = "127.0.0.1"
+    llama_server_port: int = Field(default=8101, ge=1, le=65535)
+    # Optional always-on HTTP gateway. The gateway owns the public endpoint;
+    # llama-server binds a separate loopback-only port and is loaded on demand.
+    llama_gateway_enabled: bool = False
+    llama_gateway_host: str = "127.0.0.1"
+    llama_gateway_port: int = Field(default=28088, ge=1, le=65535)
+    llama_idle_timeout_seconds: int = Field(default=300, ge=10, le=86400)
+    llama_ctx_size: int = Field(default=8192, gt=0)
+    llama_gpu_layers: int = Field(default=99, ge=0)
+    llama_flash_attn: str = Field(default="auto", pattern="^(on|off|auto)$")
+    llama_kv_cache_type: str = Field(default="q8_0", pattern="^(|f16|bf16|q8_0|q4_0)$")
+    llama_mtp_enabled: bool = False
+    llama_mtp_draft_tokens: int = Field(default=2, ge=1, le=16)
+    llama_server_args: tuple[str, ...] = ()
+    llama_startup_timeout_seconds: float = Field(default=180.0, gt=0)
+    gpu_switch_min_free_ratio: float = Field(default=0.80, ge=0.05, le=1.0)
     allowed_origins: tuple[str, ...] = (
         "http://127.0.0.1:3210",
         "http://localhost:3210",
@@ -145,6 +173,8 @@ class Settings(BaseModel):
             "model_root",
             "frontend_dist_root",
             "model_manifest_override",
+            "llama_server_bin",
+            "llama_model_path",
         ):
             value = getattr(self, field_name)
             if value is not None:
@@ -164,6 +194,20 @@ class Settings(BaseModel):
             self.comfy_output_root = self.work_root / "comfy-production" / "output"
         else:
             self.comfy_output_root = absolute_path(self.comfy_output_root, base=self.instance_root)
+        if (self.llm_provider or "").strip().upper() == "LLAMA_CPP_MANAGED":
+            # Single source of truth for the managed endpoint: derive it from
+            # the launcher settings so llm_base_url cannot drift from the
+            # port the coordinator actually binds. A local managed runtime
+            # never carries credentials, and the model alias defaults to the
+            # GGUF file stem so the OpenAI-compatible client and llama-server
+            # --alias agree without duplicate configuration.
+            endpoint_host = self.llama_gateway_host if self.llama_gateway_enabled else self.llama_server_host
+            endpoint_port = self.llama_gateway_port if self.llama_gateway_enabled else self.llama_server_port
+            client_host = "127.0.0.1" if endpoint_host in {"0.0.0.0", "::", "*"} else endpoint_host
+            self.llm_base_url = f"http://{client_host}:{endpoint_port}"
+            self.llm_api_key = None
+            if not (self.llm_model or "").strip() and self.llama_model_path is not None:
+                self.llm_model = self.llama_model_path.stem
         return self
 
     @property
@@ -300,10 +344,45 @@ class Settings(BaseModel):
         if machine_config is None and locator.packaged:
             values["frontend_dist_root"] = locator.frontend_dist
             values["model_manifest_override"] = locator.default_manifest_path
-        for field_name in ("host", "environment", "mode", "network_mode", "comfy_base_url", "llm_provider", "llm_base_url", "llm_model", "llm_api_key"):
+        for field_name in (
+            "host",
+            "environment",
+            "mode",
+            "network_mode",
+            "comfy_base_url",
+            "ollama_base_url",
+            "llm_provider",
+            "llm_base_url",
+            "llm_model",
+            "llm_api_key",
+        ):
             env_name = f"LOCAL_DRAMA_{field_name.upper()}"
             if env_name in os.environ:
                 values[field_name] = os.environ[env_name]
+        for field_name in (
+            "llama_server_host",
+            "llama_gateway_host",
+            "llama_server_port",
+            "llama_gateway_port",
+            "llama_gateway_enabled",
+            "llama_idle_timeout_seconds",
+            "llama_ctx_size",
+            "llama_gpu_layers",
+            "llama_flash_attn",
+            "llama_kv_cache_type",
+            "llama_mtp_enabled",
+            "llama_mtp_draft_tokens",
+            "llama_startup_timeout_seconds",
+            "gpu_switch_min_free_ratio",
+        ):
+            env_name = f"LOCAL_DRAMA_{field_name.upper()}"
+            if env_name in os.environ:
+                values[field_name] = os.environ[env_name]
+        if "LOCAL_DRAMA_LLAMA_SERVER_ARGS" in os.environ:
+            # Space-separated with shlex quoting. Lifecycle-owned arguments
+            # (model, endpoint, context, KV cache and MTP) are configured via
+            # typed settings and may not be overridden here.
+            values["llama_server_args"] = tuple(shlex.split(os.environ["LOCAL_DRAMA_LLAMA_SERVER_ARGS"]))
         # Support alternative/convenience environment variable aliases for OpenAI compatibility
         if "LOCAL_DRAMA_OPENAI_COMPAT_BASE_URL" in os.environ and "llm_base_url" not in values:
             values["llm_base_url"] = os.environ["LOCAL_DRAMA_OPENAI_COMPAT_BASE_URL"]
@@ -342,6 +421,8 @@ class Settings(BaseModel):
             "local_ai_model_root",
             "latentsync_python",
             "latentsync_root",
+            "llama_server_bin",
+            "llama_model_path",
         ):
             env_name = f"LOCAL_DRAMA_{field_name.upper()}"
             if env_name in os.environ:

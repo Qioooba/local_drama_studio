@@ -51,7 +51,7 @@ def run_lipsync_job(
     *,
     work_root: Path,
     database: LipsyncPersistencePort,
-    lipsync_runtime: LipsyncRuntimePort,
+    lipsync_runtime: LipsyncRuntimePort | None,
     media_ops: LipsyncMediaPort,
     atomic_writer: AtomicWriter,
 ) -> tuple[str, str]:

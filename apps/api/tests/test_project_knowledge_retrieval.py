@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+import hashlib
+import json
 from types import MappingProxyType
 
 from local_drama.model_platform.application.execution_planning import ExecutionPreview
@@ -34,6 +36,16 @@ def _vector(value: float) -> bytes:
     return struct.pack("<4096f", *([value] * 4096))
 
 
+def _row(run_id: str, source_id: str, vector: float, *, text: str = "灯还亮着"):
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return {
+        "index_run_id": run_id, "source_document_version_id": source_id, "ordinal": 1,
+        "source_start": 0, "source_end": len(text), "text_sha256": digest,
+        "chunk_manifest_json": json.dumps([{"ordinal": 1, "text": text}]),
+        "vector_f32": _vector(vector),
+    }
+
+
 def test_query_receipt_and_cosine_are_strictly_4096_dimension() -> None:
     receipt = {"task": "embedding", "status": "PASS", "network_used": False, "dimension": 4096, "count": 1, "vectors": [[1] * 4096]}
     vector = _query_vector(receipt)
@@ -43,9 +55,9 @@ def test_query_receipt_and_cosine_are_strictly_4096_dimension() -> None:
 
 def test_retrieval_uses_newest_successful_attempt_per_source_version() -> None:
     rows = [
-        {"index_run_id": "run-new", "source_document_version_id": "source-a", "ordinal": 1, "source_start": 0, "source_end": 3, "vector_f32": _vector(1.0)},
-        {"index_run_id": "run-old", "source_document_version_id": "source-a", "ordinal": 1, "source_start": 0, "source_end": 3, "vector_f32": _vector(0.0)},
-        {"index_run_id": "run-b", "source_document_version_id": "source-b", "ordinal": 1, "source_start": 4, "source_end": 6, "vector_f32": _vector(0.5)},
+        _row("run-new", "source-a", 1.0),
+        _row("run-old", "source-a", 0.0),
+        _row("run-b", "source-b", 0.5),
     ]
     service = object.__new__(ProjectKnowledgeRetrievalService)
     service.database = _Database(rows)
@@ -82,7 +94,7 @@ def test_search_uses_v2_profile_and_gpu_lease_before_ranking() -> None:
             yield {}
 
     service = object.__new__(ProjectKnowledgeRetrievalService)
-    service.database = _Database([{"index_run_id": "run-1", "source_document_version_id": "source-1", "ordinal": 1, "source_start": 1, "source_end": 8, "vector_f32": _vector(1.0)}])
+    service.database = _Database([_row("run-1", "source-1", 1.0, text="沈砚拿走了灯")])
     service.planning = _Planning()
     service.runtime_factory = lambda: _Runtime()
     service.gpu_coordinator = _Gpu()
@@ -91,4 +103,5 @@ def test_search_uses_v2_profile_and_gpu_lease_before_ranking() -> None:
 
     assert profile == "profile-1"
     assert [(item.index_run_id, item.score) for item in hits] == [("run-1", 1.0)]
+    assert hits[0].excerpt == "沈砚拿走了灯"
     assert service.gpu_coordinator.entered is True

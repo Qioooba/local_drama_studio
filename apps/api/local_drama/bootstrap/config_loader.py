@@ -40,9 +40,27 @@ class ToolsConfig(BaseModel):
 class RuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     comfy_base_url: str = "http://127.0.0.1:8188"
-    llm_provider: str = "OLLAMA_LOOPBACK"
-    llm_base_url: str = "http://127.0.0.1:11434"
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    llm_provider: str = "LLAMA_CPP_MANAGED"
+    llm_base_url: str = "http://127.0.0.1:28088"
     llm_model: str | None = None
+    llama_server_bin: Path | None = None
+    llama_model_path: Path | None = None
+    llama_server_host: str = "127.0.0.1"
+    llama_server_port: int = Field(default=8101, ge=1, le=65535)
+    llama_gateway_enabled: bool = False
+    llama_gateway_host: str = "127.0.0.1"
+    llama_gateway_port: int = Field(default=28088, ge=1, le=65535)
+    llama_idle_timeout_seconds: int = Field(default=300, ge=10, le=86400)
+    llama_ctx_size: int = Field(default=8192, gt=0)
+    llama_gpu_layers: int = Field(default=99, ge=0)
+    llama_flash_attn: str = Field(default="auto", pattern="^(on|off|auto)$")
+    llama_kv_cache_type: str = Field(default="q8_0", pattern="^(|f16|bf16|q8_0|q4_0)$")
+    llama_mtp_enabled: bool = False
+    llama_mtp_draft_tokens: int = Field(default=2, ge=1, le=16)
+    llama_server_args: tuple[str, ...] = ()
+    llama_startup_timeout_seconds: float = Field(default=180.0, gt=0)
+    gpu_switch_min_free_ratio: float = Field(default=0.80, ge=0.05, le=1.0)
     model_root: Path | None = None
     model_library_roots: tuple[Path, ...] = ()
     model_download_source_hosts: tuple[str, ...] = ()
@@ -144,6 +162,8 @@ def load_machine_config(path: Path, *, release_root: Path, instance_root: Path) 
             "local_ai_model_root",
             "latentsync_python",
             "latentsync_root",
+            "llama_server_bin",
+            "llama_model_path",
         )
     }
     runtime = config.runtime.model_copy(
@@ -177,9 +197,27 @@ def settings_values(config: MachineConfig) -> dict[str, Any]:
         "port": config.network.port,
         "trusted_lan_unauthenticated": config.network.trusted_lan_unauthenticated,
         "comfy_base_url": config.runtime.comfy_base_url,
+        "ollama_base_url": config.runtime.ollama_base_url,
         "llm_provider": config.runtime.llm_provider,
         "llm_base_url": config.runtime.llm_base_url,
         "llm_model": config.runtime.llm_model,
+        "llama_server_bin": config.runtime.llama_server_bin,
+        "llama_model_path": config.runtime.llama_model_path,
+        "llama_server_host": config.runtime.llama_server_host,
+        "llama_server_port": config.runtime.llama_server_port,
+        "llama_gateway_enabled": config.runtime.llama_gateway_enabled,
+        "llama_gateway_host": config.runtime.llama_gateway_host,
+        "llama_gateway_port": config.runtime.llama_gateway_port,
+        "llama_idle_timeout_seconds": config.runtime.llama_idle_timeout_seconds,
+        "llama_ctx_size": config.runtime.llama_ctx_size,
+        "llama_gpu_layers": config.runtime.llama_gpu_layers,
+        "llama_flash_attn": config.runtime.llama_flash_attn,
+        "llama_kv_cache_type": config.runtime.llama_kv_cache_type,
+        "llama_mtp_enabled": config.runtime.llama_mtp_enabled,
+        "llama_mtp_draft_tokens": config.runtime.llama_mtp_draft_tokens,
+        "llama_server_args": config.runtime.llama_server_args,
+        "llama_startup_timeout_seconds": config.runtime.llama_startup_timeout_seconds,
+        "gpu_switch_min_free_ratio": config.runtime.gpu_switch_min_free_ratio,
         "model_root": config.runtime.model_root,
         "model_library_roots": config.runtime.model_library_roots,
         "model_download_source_hosts": config.runtime.model_download_source_hosts,

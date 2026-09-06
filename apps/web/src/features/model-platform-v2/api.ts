@@ -360,6 +360,7 @@ export type ModelPlatformProjectKnowledgeSearchHit = {
   ordinal: number;
   source_start: number;
   source_end: number;
+  excerpt: string;
   score: number;
 };
 
@@ -584,7 +585,7 @@ export function provisionModelPlatformProfile(runtimeModelInstallationId: string
 }
 
 export function smokeModelPlatformProfile(profileVersionId: string) {
-  return requestJson<{ validation: { validation_run_id: string; profile_version_id: string; status: string } }>(
+  return requestJson<{ validation: { validation_run_id: string; profile_version_id: string; status: string; failure_code: string | null } }>(
     `/api/v2/model-platform/profile-versions/${encodeURIComponent(profileVersionId)}:smoke`,
     { method: "POST" },
   );
@@ -627,6 +628,10 @@ export function submitModelPlatformComfyCapabilitySmoke(runtimeModelInstallation
 
 export function runModelPlatformOllamaDiscovery() {
   return requestJson<{ discovery_run: { id: string; status: string; observation_count: number } }>("/api/v2/model-platform/discovery-runs:ollama", { method: "POST" });
+}
+
+export function runModelPlatformLlamaCppDiscovery() {
+  return requestJson<{ discovery_run: { id: string; status: string; observation_count: number } }>("/api/v2/model-platform/discovery-runs:llama-cpp", { method: "POST" });
 }
 
 export function runModelPlatformModelLockDiscovery() {

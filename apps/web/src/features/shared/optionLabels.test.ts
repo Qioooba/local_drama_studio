@@ -9,6 +9,7 @@ describe("下拉框中文标签", () => {
 
   it("覆盖常见后台状态且保留未知扩展值", () => {
     expect(optionLabel(STATUS_LABELS, "PUBLISHED")).toBe("已发布");
+    expect(optionLabel(STATUS_LABELS, "CANCEL_REQUESTED")).toBe("正在取消");
     expect(optionLabel(STATUS_LABELS, "FUTURE_STATUS")).toBe("FUTURE_STATUS");
   });
 
@@ -20,6 +21,10 @@ describe("下拉框中文标签", () => {
   it("普通界面不泄露未知后台枚举", () => {
     expect(statusLabel("FUTURE_STATUS")).toBe("状态未知");
     expect(userFacingLabel(JOB_TYPE_LABELS, "GENERATION_VARIANT")).toBe("生成镜头候选");
+    expect(userFacingLabel(JOB_TYPE_LABELS, "STORY_PIPELINE_DRAFT")).toBe("AI 全剧规划");
+    expect(userFacingLabel(JOB_TYPE_LABELS, "EPISODE_COMPOSE")).toBe("合成整集视频");
+    expect(userFacingLabel(JOB_TYPE_LABELS, "SEGMENTED_EPISODE_COMPOSE")).toBe("分段合成整集视频");
+    expect(userFacingLabel(JOB_TYPE_LABELS, "DELIVERY_BUILD")).toBe("制作交付包");
     expect(userFacingLabel(JOB_TYPE_LABELS, "FUTURE_JOB")).toBe("未识别类型");
   });
 });

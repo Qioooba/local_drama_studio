@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi.testclient import TestClient
 
 from local_drama.main import create_app
@@ -453,6 +455,7 @@ def test_project_knowledge_search_api_accepts_text_only_and_returns_v2_provenanc
                 ordinal = 4
                 source_start = 18
                 source_end = 46
+                excerpt = "他推开门，走进了房间。"
                 score = 0.91
 
             return "profile-v2", (_Hit(),)
@@ -473,7 +476,7 @@ def test_project_knowledge_search_api_accepts_text_only_and_returns_v2_provenanc
             "execution_profile_version_id": "profile-v2",
             "items": [{
                 "index_run_id": "run-2", "source_document_version_id": "source-v1", "ordinal": 4,
-                "source_start": 18, "source_end": 46, "score": 0.91,
+                "source_start": 18, "source_end": 46, "excerpt": "他推开门，走进了房间。", "score": 0.91,
             }],
         }
     }
@@ -511,6 +514,34 @@ def test_model_platform_discovery_list_is_read_only_and_redacts_runtime_wiring(w
     }]
     assert "base_url" not in str(payload)
     assert "F:/private" not in str(payload)
+
+
+def test_model_platform_discovery_list_returns_only_the_latest_observation_per_runtime_resource(workspace, database) -> None:
+    with database.transaction() as connection:
+        for suffix, observed_at, presence in (
+            ("old", "2026-08-29T01:00:00+00:00", "MISSING"),
+            ("new", "2026-08-29T02:00:00+00:00", "PRESENT"),
+        ):
+            connection.execute(
+                """INSERT INTO mp_discovery_runs
+                (id,library_id,runtime_installation_version_id,source,status,summary_json,started_at,finished_at,created_at,updated_at)
+                VALUES (?,NULL,NULL,'TEST','SUCCEEDED','{}',?,?,?,?)""",
+                (f"scan-{suffix}", observed_at, observed_at, observed_at, observed_at),
+            )
+            connection.execute(
+                """INSERT INTO mp_discovery_observations
+                (id,discovery_run_id,native_id,kind,observed_json,content_hint,status,created_at,updated_at)
+                VALUES (?,?, 'embedding','PYTORCH_PROCESS',?,NULL,?,?,?)""",
+                (f"observation-{suffix}", f"scan-{suffix}", json.dumps({"presence": presence}), presence, observed_at, observed_at),
+            )
+
+    with TestClient(create_app(workspace)) as client:
+        response = client.get("/api/v2/model-platform/discovery-observations")
+
+    assert response.status_code == 200
+    assert response.json()["count"] == 1
+    assert response.json()["items"][0]["id"] == "observation-new"
+    assert response.json()["items"][0]["presence"] == "PRESENT"
 
 
 def test_model_platform_registered_candidates_expose_readiness_not_runtime_wiring(workspace, database) -> None:
@@ -802,7 +833,7 @@ def test_model_platform_ollama_profile_routes_require_explicit_provision_smoke_a
         )
 
     assert provision.json() == {"profile": {"profile_version_id": "profile-1", "profile_code": "ollama-qwen-llm-story-parse", "created": True}}
-    assert smoke.json() == {"validation": {"validation_run_id": "profile-validation-1", "profile_version_id": "profile-1", "status": "SMOKE_PASSED"}}
+    assert smoke.json() == {"validation": {"validation_run_id": "profile-validation-1", "profile_version_id": "profile-1", "status": "SMOKE_PASSED", "failure_code": None}}
     assert publish.json() == {"profile": {"profile_version_id": "profile-1", "status": "PUBLISHED"}}
 
 

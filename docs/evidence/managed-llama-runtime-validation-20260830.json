@@ -1,0 +1,112 @@
+{
+  "schema_version": "localdrama.managed-llama-validation.v1",
+  "generated_at": "2026-08-30T14:24:00+08:00",
+  "status": "PASS",
+  "machine": {
+    "gpu": "NVIDIA GeForce RTX 3090 Ti",
+    "vram_mib": 24564,
+    "driver_version": "610.62"
+  },
+  "runtime": {
+    "version": "0.3.0-dev",
+    "build": 10689,
+    "commit": "57291f264",
+    "path": "F:/AI_Models/LocalDramaStudio/Runtimes/llama.cpp/b10689/llama-server.exe",
+    "packages": [
+      {
+        "name": "llama-b10689-bin-win-cuda-12.4-x64.zip",
+        "sha256": "1c98e0c4eb7f8cbaec0349a57cf7ab2f3f8bfd41743e56bdd1d27e21b5738cf0"
+      },
+      {
+        "name": "cudart-llama-bin-win-cuda-12.4-x64.zip",
+        "sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6"
+      }
+    ]
+  },
+  "model": {
+    "path": "F:/AI_Models/LocalDramaStudio/Ollama/gguf/Qwen3.8-27B-Q4_K_M.gguf",
+    "source_blob_sha256": "f5f1dd8920d417aac2718b0bda3403da274301efdd6760b4f0f4b864ff2ad57d",
+    "bytes": 16810714464,
+    "container": "GGUF v3",
+    "quantization": "Q4_K_M",
+    "storage": "NTFS hard link to existing Ollama model layer"
+  },
+  "baseline": {
+    "startup_seconds": 25.266,
+    "gpu_before_mib": 1666,
+    "gpu_loaded_mib": 17775,
+    "gpu_after_stop_mib": 1554,
+    "json_schema_inference_seconds": 1.125,
+    "output": {"ready": true, "runtime": "llama.cpp"}
+  },
+  "mtp": {
+    "arguments": ["--spec-type", "draft-mtp", "--spec-draft-n-max", "2"],
+    "startup_seconds": 28.812,
+    "gpu_before_mib": 1547,
+    "gpu_loaded_mib": 19382,
+    "gpu_after_stop_mib": 1542,
+    "json_schema_inference_seconds": 1.078,
+    "output": {"ready": true, "runtime": "llama.cpp", "speculation": "mtp"}
+  },
+  "coordinator": {
+    "status_during": "READY",
+    "resident_runtime_during": "LLAMA_CPP",
+    "heartbeat_observed": true,
+    "release_reason": "COMPLETED",
+    "status_after": "IDLE",
+    "active_lease_after": null,
+    "gpu_after_mib": 1547
+  },
+  "windows_process_tree_stop": {
+    "real_server_pid": 15080,
+    "startup_seconds": 27.687,
+    "gpu_loaded_mib": 17705,
+    "stopped": true,
+    "pid_alive_after": false,
+    "gpu_after_mib": 1543
+  },
+  "model_platform": {
+    "discovery_status": "SUCCEEDED",
+    "discovery_seconds": 63.469,
+    "observations": 1,
+    "model_release_code": "llama-cpp-managed-qwen35-f5f1dd8920d4",
+    "installation_id": "80b72c08-c245-43a7-9846-cbfa2fb5372a",
+    "capability_smokes": {
+      "LLM_STORY_PARSE": "SMOKE_PASSED",
+      "LLM_EPISODE_PLAN": "SMOKE_PASSED",
+      "LLM_STORYBOARD": "SMOKE_PASSED",
+      "LLM_PROMPT_REWRITE": "SMOKE_PASSED"
+    },
+    "installation_state": "READY",
+    "runtime_version_state": "ACTIVE",
+    "profile_version_id": "5d4909f8-a38c-436b-b8e5-c4b53324160c",
+    "profile_smoke": "SMOKE_PASSED",
+    "publication": "PUBLISHED",
+    "gpu_state_after": "IDLE",
+    "gpu_after_mib": 1544
+  },
+  "live_llama_to_comfy_switch": {
+    "comfy_version": "0.33.1",
+    "comfy_endpoint": "http://127.0.0.1:8188",
+    "gpu_before_mib": 1776,
+    "gpu_with_llama_resident_mib": 18141,
+    "device_wide_gate_completed_while_llama_resident": false,
+    "switch_seconds": 4.438,
+    "llama_running_in_comfy_session": false,
+    "gpu_in_comfy_session_mib": 1767,
+    "device_wide_gate_completed_after_llama_stop": true,
+    "gate_errors": [],
+    "coordinator_status_after": "IDLE",
+    "active_lease_after": null,
+    "gpu_after_mib": 1767,
+    "final_gpu_after_comfy_shutdown_mib": 1538,
+    "telemetry_finding": "ComfyUI system_stats remained allocator-local while llama.cpp held CUDA memory; nvidia-smi is therefore the primary device-wide release oracle and Comfy telemetry is fallback-only."
+  },
+  "limitations": [
+    {
+      "check": "MTP performance A/B",
+      "status": "NOT_CLAIMED",
+      "reason": "single short structured-output samples validate compatibility, not throughput"
+    }
+  ]
+}

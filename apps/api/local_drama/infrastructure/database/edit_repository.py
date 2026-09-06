@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.dialogue_timing import assert_dialogue_timing, dialogue_timing_issues
 from local_drama.infrastructure.database.sqlite import Database
 
 
@@ -59,21 +60,34 @@ class SqliteEpisodeEditRepository:
                 CASE WHEN compatibility_status IN ('WARNING','ATTENTION') THEN 1 ELSE 0 END
                 FROM shot_transition_constraints
               ) GROUP BY shot_id
+            ), working_slot AS (
+              SELECT ws.shot_id, ws.media_version_id
+              FROM shot_working_media_slots ws
+              JOIN media_versions mv ON mv.id=ws.media_version_id
+              JOIN media_assets ma ON ma.id=mv.media_asset_id
+              WHERE ws.slot_type='VIDEO' AND ma.media_kind='VIDEO'
             ), selected AS (
-              SELECT s.id AS shot_id,se.media_version_id,
+              SELECT s.id AS shot_id,
+              COALESCE(ws.media_version_id, se.media_version_id) AS media_version_id,
               ROW_NUMBER() OVER (PARTITION BY s.id ORDER BY
-                CASE se.selection_type WHEN 'FORMAL_SELECTION' THEN 2 ELSE 1 END DESC,
+                CASE WHEN ws.media_version_id IS NOT NULL THEN 3
+                     WHEN se.selection_type = 'FORMAL_SELECTION' THEN 2 ELSE 1 END DESC,
                 se.created_at DESC,se.id DESC) AS rank_no
               FROM shots s
-              JOIN selections se
-              JOIN media_versions selected_mv ON selected_mv.id=se.media_version_id
-              JOIN media_assets ma ON ma.id=selected_mv.media_asset_id
+              LEFT JOIN working_slot ws ON ws.shot_id=s.id
+              LEFT JOIN selections se ON se.selection_type IN ('FORMAL_SELECTION','PROXY_WINNER')
+              LEFT JOIN media_versions selected_mv ON selected_mv.id=se.media_version_id
+              LEFT JOIN media_assets ma ON ma.id=selected_mv.media_asset_id
               LEFT JOIN generation_variants gv ON ma.owner_type='GENERATION_VARIANT' AND ma.owner_id=gv.id
               LEFT JOIN generation_intents gi ON gi.id=gv.intent_id
-              WHERE s.episode_id=? AND ma.media_kind='VIDEO' AND selected_mv.mime_type LIKE 'video/%'
-                AND se.selection_type IN ('FORMAL_SELECTION','PROXY_WINNER')
-                AND ((ma.owner_type='SHOT' AND ma.owner_id=s.id)
-                  OR (gi.owner_type='SHOT' AND gi.owner_id=s.id))
+              WHERE s.episode_id=? AND (
+                ws.media_version_id IS NOT NULL
+                OR (
+                  ma.media_kind='VIDEO' AND selected_mv.mime_type LIKE 'video/%'
+                  AND ((ma.owner_type='SHOT' AND ma.owner_id=s.id)
+                    OR (gi.owner_type='SHOT' AND gi.owner_id=s.id))
+                )
+              )
             )
             SELECT s.id AS shot_id,s.code AS shot_code,s.target_duration_ms,
               selected.media_version_id,mv.source_name,mv.duration_ms AS source_duration_ms,mv.sha256 AS media_sha256,
@@ -254,7 +268,18 @@ class SqliteEpisodeEditRepository:
         freshness = "EMPTY" if latest is None else ("CURRENT" if latest_fingerprint == upstream["fingerprint"] and str(latest["status"]) != "STALE" else "STALE")
         video_clips = self._timeline_video_clips(latest, upstream["video"]) if latest is not None and freshness == "CURRENT" else self._upstream_video_clips(upstream["video"])
         audio_clips = self._audio_facts(upstream, video_clips)
-        issues: list[dict[str, Any]] = []
+        shot_for_line = {str(line["id"]): str(line.get("shot_id") or "") for line in upstream["dialogue"]}
+        timing_items = [
+            {**clip, "track_type": "VIDEO", "parameters": {"shot_id": str(clip["shot_id"])}}
+            for clip in video_clips
+        ] + [
+            {**clip, "track_type": "DIALOGUE", "parameters": {"dialogue_line_id": clip["id"], "shot_id": shot_for_line.get(str(clip["id"]), "")}}
+            for clip in audio_clips if clip["lane"] == "DIALOGUE"
+        ]
+        issues: list[dict[str, Any]] = [
+            {"code": issue["code"], "severity": "BLOCKER", "message": issue["message"], "subject_id": issue["shot_id"], "owner_route": "SHOT_STUDIO"}
+            for issue in dialogue_timing_issues(timing_items)
+        ]
         for item in upstream["video"]:
             if not item["media_version_id"]:
                 issues.append({"code": "VIDEO_SELECTION_MISSING", "severity": "BLOCKER", "message": f"{item['shot_code']} 尚未采用视频", "subject_id": item["shot_id"], "owner_route": "SHOT_STUDIO"})
@@ -385,11 +410,12 @@ class SqliteEpisodeEditRepository:
                     duration = max(100_000, int(line.get("duration_ms") or 0) * 1000)
                     start = shot_starts[shot_id] + offsets.get(shot_id, 0)
                     offsets[shot_id] = offsets.get(shot_id, 0) + duration
-                    items.append({"track_type": "DIALOGUE", "media_version_id": str(line["media_version_id"]), "start_us": start, "end_us": start + duration, "parameters": {"dialogue_line_id": str(line["id"]), "tts_candidate_id": line["tts_candidate_id"], "gain_db": 0.0}})
+                    items.append({"track_type": "DIALOGUE", "media_version_id": str(line["media_version_id"]), "start_us": start, "end_us": start + duration, "parameters": {"dialogue_line_id": str(line["id"]), "shot_id": shot_id, "tts_candidate_id": line["tts_candidate_id"], "gain_db": 0.0}})
             if command["include_music_and_sfx"]:
                 for track in upstream["audio"]:
                     items.append({"track_type": str(track["track_type"]), "media_version_id": str(track["media_version_id"]), "start_us": int(track["start_us"]), "end_us": int(track["end_us"]), "parameters": {"audio_binding_id": str(track["id"]), "gain_db": float(track["gain_db"]), "loop_enabled": bool(track["loop_enabled"]), "fade_in_us": int(track["fade_in_us"]), "fade_out_us": int(track["fade_out_us"])}})
             items.sort(key=lambda item: (int(item["start_us"]), str(item["track_type"]), str(item["media_version_id"])))
+            assert_dialogue_timing(items)
             subtitle = upstream["subtitle"] if command["include_subtitles"] else None
             snapshot = {"schema_version": "localdrama.timeline-editor.v3", "upstream_fingerprint": upstream["fingerprint"], "audio_mix_revision": upstream["audio_mix_revision"], "subtitle_revision_id": subtitle["revision_id"] if subtitle else None, "subtitle_content_hash": subtitle["content_hash"] if subtitle else None, "include_dialogue": bool(command["include_dialogue"]), "include_music_and_sfx": bool(command["include_music_and_sfx"]), "include_subtitles": bool(command["include_subtitles"]), "requires_human_confirmation": True}
             created = self._insert_revision(connection, episode_id, items, snapshot, "DRAFT", actor, now)
@@ -422,6 +448,7 @@ class SqliteEpisodeEditRepository:
                 raise DomainRuleError("TIMELINE_UPSTREAM_CONFLICT", "冻结前上游事实已变化，请重新载入并创建草稿")
             episode = self._episode(connection, episode_id)
             items = json.loads(str(source["content_json"] or "[]"))
+            assert_dialogue_timing(items)
             frozen_snapshot = {**snapshot, "schema_version": "localdrama.timeline-editor.v3", "frozen_from_timeline_revision_id": timeline_revision_id, "frozen_at": now}
             created = self._insert_revision(connection, episode_id, items, frozen_snapshot, "FROZEN", actor, now)
             result = {**created, "outcome": "FROZEN", "idempotent_replay": False}

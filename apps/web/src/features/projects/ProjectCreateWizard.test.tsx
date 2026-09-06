@@ -8,7 +8,11 @@ vi.mock("../../generated/api", () => ({ planProjectCreation: vi.fn(), createProj
 
 const draftPlan = {
   status: "READY_WITH_CONFIGURATION_BLOCKERS" as const,
-  checks: [{ code: "PROJECT_ROOT_AVAILABLE", passed: true }],
+  checks: [
+    { code: "PROJECT_CODE_AVAILABLE", passed: true },
+    { code: "PROJECT_ROOT_AVAILABLE", passed: true },
+    { code: "PROJECT_ROOT_SPACE", passed: true },
+  ],
   blockers: [],
   configuration_blockers: ["PROFILE_NOT_BOUND", "PRODUCTION_PLAN_NOT_BOUND", "DELIVERY_TARGET_NOT_BOUND"],
   accepted_unconfigured: true,
@@ -69,6 +73,8 @@ describe("ProjectCreateWizard", () => {
     expect(screen.queryByText("同时配置现有模型")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "继续并自动检查" }));
     await screen.findByText("创作就绪");
+    expect(screen.getByText("本机空间充足")).toBeTruthy();
+    expect(screen.queryByText("PROJECT_ROOT_SPACE")).toBeNull();
     expect(planProjectCreation).toHaveBeenCalledTimes(1);
     const payload = vi.mocked(planProjectCreation).mock.calls[0][0];
     expect(payload).toMatchObject({
@@ -88,6 +94,25 @@ describe("ProjectCreateWizard", () => {
     fireEvent.click(screen.getByRole("button", { name: "创建并进入故事工作区" }));
     await waitFor(() => expect(onCreated).toHaveBeenCalled());
     expect(createProject).toHaveBeenCalledWith(payload);
+  });
+
+  it("explains a failed storage check without claiming that space is sufficient", async () => {
+    vi.mocked(planProjectCreation).mockResolvedValueOnce({ plan: {
+      ...draftPlan,
+      status: "BLOCKED",
+      checks: [{ code: "PROJECT_ROOT_SPACE", passed: false }],
+      blockers: ["PROJECT_ROOT_SPACE"],
+    } });
+    renderWizard();
+    openAndName();
+    fireEvent.click(screen.getByRole("button", { name: "继续设置制作规格" }));
+    fireEvent.click(screen.getByRole("button", { name: "继续并自动检查" }));
+    await screen.findByText("已阻塞");
+    expect(screen.getAllByText("项目存储空间不足，请释放空间后重新检查").length).toBeGreaterThan(0);
+    expect(screen.queryByText("本机空间充足")).toBeNull();
+    expect(screen.queryByText("PROJECT_ROOT_SPACE")).toBeNull();
+    expect(screen.getByRole("button", { name: "创建并进入故事工作区" })).toHaveProperty("disabled", true);
+    expect(createProject).not.toHaveBeenCalled();
   });
 
   it("generates identifiers automatically without asking for machine codes", () => {

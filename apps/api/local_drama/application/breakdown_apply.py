@@ -22,6 +22,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from local_drama.application.breakdown_contracts import director_intent_fields, normalized_entity_name
 from local_drama.application.breakdown_revisions import load_effective_breakdown_draft
 from local_drama.application.local_llm import validate_scene_dialogue_grounding, validate_scene_distinctness, validate_scene_source_grounding
 from local_drama.config import Settings
@@ -46,7 +47,7 @@ def _parse_dialogue_entries(value: Any) -> list[dict[str, str]]:
     Supported shapes (the breakdown schema allows any JSON value here):
 
     * ``"角色名：台词"`` / ``"角色名:台词"`` — one line per entry
-    * ``"台词"`` — plain text without a speaker (caller applies the fallback)
+    * ``"台词"`` — plain text with an unresolved speaker requiring review
     * ``{"speaker": "...", "text": "..."}`` — structured object
     * a list mixing any of the above
     """
@@ -216,17 +217,25 @@ class BreakdownApplyService:
                 connection.execute("SELECT COUNT(*) FROM dialogue_lines WHERE episode_id=?", (episode_id,)).fetchone()[0]
             )
             extracted_characters: dict[str, int] = {}
+            asset_aliases = self._asset_aliases(connection, project_id)
+            # Source scene numbers belong to a draft, whereas master scene codes
+            # belong to the whole project. Allocate once inside the apply
+            # transaction; episode_scene_ranges retains each local scene number.
+            master_scene_numbers = [
+                int(match.group(1))
+                for row in connection.execute("SELECT code FROM scenes WHERE project_id=?", (project_id,))
+                if (match := re.fullmatch(r"SC(\d+)", str(row["code"])))
+            ]
+            next_master_scene_number = max(master_scene_numbers, default=0) + 1
 
             for scene in selected_scenes:
                 scene_no = int(scene.get("scene_no", 0))
                 title = str(scene.get("title") or f"第{scene_no}场").strip()
-                summary = str(scene.get("summary") or "").strip()
                 character_names = [str(name).strip() for name in (scene.get("characters") or []) if str(name).strip()]
                 for name in character_names:
                     extracted_characters[name] = extracted_characters.get(name, 0) + 1
-                scene_code = f"SC{scene_no:02d}"
-                if connection.execute("SELECT 1 FROM scenes WHERE project_id=? AND code=?", (project_id, scene_code)).fetchone():
-                    raise DomainRuleError("SCENE_CODE_CONFLICT", "同一项目的母本场次 code 必须唯一", {"code": scene_code})
+                scene_code = f"SC{next_master_scene_number:02d}"
+                next_master_scene_number += 1
                 scene_id = str(uuid.uuid4())
                 connection.execute(
                     """INSERT INTO scenes (id,project_id,code,title,location,time_of_day,created_at,updated_at,created_by,revision,schema_version)
@@ -271,17 +280,17 @@ class BreakdownApplyService:
                     ).fetchone()[0]
                     shot_id = str(uuid.uuid4())
                     revision_id = str(uuid.uuid4())
-                    fields = {
-                        "visual": str(shot.get("visual") or "").strip(),
-                        "action": str(shot.get("action") or "").strip(),
-                        "dialogue": shot.get("dialogue", ""),
-                        "summary": summary,
-                    }
+                    fields = director_intent_fields(
+                        shot,
+                        scene,
+                        duration_ms=duration_ms,
+                        source_revision_id=str(effective_revision["id"]) if effective_revision else None,
+                    )
                     connection.execute(
                         """INSERT INTO shots (id, episode_id, scene_id, code, order_key, target_duration_ms, shot_type, status,
                         current_revision_id, created_at, updated_at, created_by, revision, schema_version)
-                        VALUES (?, ?, ?, ?, ?, ?, 'STANDARD', 'DRAFT', ?, ?, ?, ?, 1, 'v2')""",
-                        (shot_id, episode_id, scene_id, shot_code, str(float(maximum) + 1), duration_ms, revision_id, now, now, actor),
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, 1, 'v2')""",
+                        (shot_id, episode_id, scene_id, shot_code, str(float(maximum) + 1), duration_ms, fields["shot_type"], revision_id, now, now, actor),
                     )
                     connection.execute(
                         """INSERT INTO shot_revisions (id, shot_id, revision_no, fields_json, is_frozen, created_at, updated_at, created_by)
@@ -290,9 +299,19 @@ class BreakdownApplyService:
                     )
                     created_shots += 1
 
-                    fallback_speaker = character_names[0] if character_names else "旁白"
+                    # Resolve every entity through one alias-aware index. Ambiguous
+                    # aliases intentionally remain unbound for human review.
+                    per_shot_characters = [str(name).strip() for name in (shot.get("characters") or character_names) if str(name).strip()]
+                    per_shot_props = [str(name).strip() for name in (shot.get("props") or []) if str(name).strip()]
+                    self._bind_assets(connection, shot_id, asset_aliases, "CHARACTER", per_shot_characters, "main", now, actor)
+                    self._bind_assets(connection, shot_id, asset_aliases, "SCENE", [title, str(scene.get("location") or "")], "location", now, actor)
+                    self._bind_assets(connection, shot_id, asset_aliases, "PROP", per_shot_props, "prop", now, actor)
+
                     for entry in _parse_dialogue_entries(shot.get("dialogue")):
-                        speaker = (entry.get("speaker") or fallback_speaker).strip()
+                        # Scene membership is not evidence of who spoke. Preserve
+                        # the line visibly unresolved so voice matching cannot
+                        # silently turn an attribution guess into generated audio.
+                        speaker = (entry.get("speaker") or "待确认说话人").strip()
                         text = entry.get("text", "").strip()
                         if not text:
                             continue
@@ -412,6 +431,74 @@ class BreakdownApplyService:
             "applied": fully_applied,
             "effective_draft_revision_id": effective_revision["id"] if effective_revision else None,
         }
+
+    @staticmethod
+    def _asset_aliases(connection: Any, project_id: str) -> dict[str, dict[str, set[str]]]:
+        aliases: dict[str, dict[str, set[str]]] = {kind: {} for kind in ("CHARACTER", "SCENE", "PROP", "COSTUME")}
+
+        def add(kind: str, name: object, asset_id: object) -> None:
+            key = normalized_entity_name(name)
+            if key:
+                aliases.setdefault(kind, {}).setdefault(key, set()).add(str(asset_id))
+
+        rows = connection.execute(
+            "SELECT id,kind,name,extra_json FROM story_assets WHERE project_id=? AND status='ACTIVE'",
+            (project_id,),
+        ).fetchall()
+        for row in rows:
+            kind, asset_id = str(row["kind"]), str(row["id"])
+            add(kind, row["name"], asset_id)
+            try:
+                extra = json.loads(str(row["extra_json"] or "{}"))
+            except (TypeError, json.JSONDecodeError):
+                extra = {}
+            dossier = extra.get("text_dossier") if isinstance(extra, dict) else None
+            if isinstance(dossier, dict):
+                for alias in dossier.get("aliases") or []:
+                    add(kind, alias, asset_id)
+        proposals = connection.execute(
+            """SELECT kind,name,evidence_json,resolved_asset_id FROM story_asset_proposals
+            WHERE project_id=? AND resolved_asset_id IS NOT NULL AND status IN ('ACCEPTED_NEW','ACCEPTED_MERGE')""",
+            (project_id,),
+        ).fetchall()
+        for row in proposals:
+            kind, asset_id = str(row["kind"]), str(row["resolved_asset_id"])
+            add(kind, row["name"], asset_id)
+            try:
+                evidence = json.loads(str(row["evidence_json"] or "{}"))
+            except (TypeError, json.JSONDecodeError):
+                evidence = {}
+            if isinstance(evidence, dict):
+                for alias in evidence.get("aliases") or []:
+                    add(kind, alias, asset_id)
+        return aliases
+
+    @staticmethod
+    def _bind_assets(
+        connection: Any,
+        shot_id: str,
+        aliases: dict[str, dict[str, set[str]]],
+        kind: str,
+        names: list[str],
+        role: str,
+        now: str,
+        actor: str,
+    ) -> None:
+        bound: set[str] = set()
+        for name in names:
+            matches = aliases.get(kind, {}).get(normalized_entity_name(name), set())
+            if len(matches) != 1:
+                continue
+            asset_id = next(iter(matches))
+            if asset_id in bound:
+                continue
+            connection.execute(
+                """INSERT OR IGNORE INTO shot_asset_bindings
+                (id,shot_id,asset_id,role_in_shot,created_at,created_by,revision,schema_version)
+                VALUES (?,?,?,?,?,?,1,'v2')""",
+                (str(uuid.uuid4()), shot_id, asset_id, role, now, actor),
+            )
+            bound.add(asset_id)
 
     @staticmethod
     def _source_ranges_by_scene(confidence: dict[str, Any]) -> dict[int, tuple[int, int]]:

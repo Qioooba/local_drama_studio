@@ -147,7 +147,7 @@ export function ShotAssetSection({ projectId, shotId, canEdit = true }: { projec
     })}</ul> : <p className="muted">本镜头尚未绑定故事资产。</p>}
     {assets.isLoading && <p className="muted" role="status">正在读取项目故事资产…</p>}
     {!assets.isLoading && available.length > 0 && <div className="shot-asset-catalogue" aria-label="可绑定故事资产">{available.map((asset) => <article key={asset.id} draggable={canEdit} onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData(STORY_ASSET_MIME, JSON.stringify({ id: asset.id, project_id: asset.project_id, kind: asset.kind, code: asset.code, name: asset.name, status: asset.status })); }}>
-      {asset.canonical_media_version_id ? <img src={`/api/v1/media-versions/${encodeURIComponent(asset.canonical_media_version_id)}/thumbnail?size=small&frame=poster`} alt="" loading="lazy" decoding="async" /> : <span className="shot-asset-card-placeholder" aria-hidden="true">{assetKindLabels[asset.kind]?.slice(0, 1) ?? "资"}</span>}
+      {asset.canonical_media_version_id ? <img src={`/api/v1/media-versions/${encodeURIComponent(asset.canonical_media_version_id)}/thumbnail?size=small&frame=poster`} alt="" loading="eager" decoding="async" onError={(e) => { e.currentTarget.style.display = "none"; }} /> : <span className="shot-asset-card-placeholder" aria-hidden="true">{assetKindLabels[asset.kind]?.slice(0, 1) ?? "资"}</span>}
       <div><strong>{asset.name}</strong><small>{asset.code} · {assetKindLabels[asset.kind] ?? asset.kind}</small></div>
       <button type="button" disabled={!canEdit} onClick={() => requestBind(asset)} aria-label={`选择 ${asset.code} ${asset.name}`}>选择</button>
     </article>)}</div>}

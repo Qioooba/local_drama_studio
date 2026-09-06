@@ -62,6 +62,17 @@ async def validation_error_handler(request: Request, exc: Exception) -> JSONResp
         raise exc
     request_id = getattr(request.state, "request_id", None)
     errors = exc.errors()
+    # Never echo raw rejected input. Besides avoiding accidental disclosure of
+    # prompts or credentials, this keeps byte bodies and exception contexts
+    # out of JSON serialization while preserving actionable field diagnostics.
+    public_errors = [
+        {
+            "type": str(err.get("type", "validation_error")),
+            "loc": [str(part) for part in err.get("loc", [])],
+            "msg": str(err.get("msg", "验证失败")),
+        }
+        for err in errors
+    ]
     messages: list[str] = []
     for err in errors:
         loc = [str(part) for part in err.get("loc", []) if part != "body"]
@@ -73,7 +84,7 @@ async def validation_error_handler(request: Request, exc: Exception) -> JSONResp
         code="VALIDATION_ERROR",
         message=f"参数校验失败: {combined}",
         request_id=request_id,
-        details={"errors": errors},
+        details={"errors": public_errors},
         retryable=False,
     )
     return JSONResponse(

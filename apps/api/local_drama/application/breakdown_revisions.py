@@ -9,6 +9,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Mapping
 
+from local_drama.application.breakdown_contracts import validated_breakdown_shot_duration
 from local_drama.application.local_llm import (
     validate_scene_dialogue_grounding,
     validate_scene_distinctness,
@@ -163,9 +164,10 @@ class BreakdownRevisionService:
         for position, shot in enumerate(shots):
             if not isinstance(shot, dict) or position >= len(original_nos) or int(shot.get("shot_no", 0)) != original_nos[position]:
                 raise DomainRuleError("BREAKDOWN_SCENE_STRUCTURE_LOCKED", "修订时不能修改镜头编号或顺序")
-            duration = float(shot.get("duration_seconds", 0))
-            if duration <= 0 or duration > 3600:
-                raise DomainRuleError("INVALID_TARGET_DURATION", "镜头时长必须大于 0 且不超过 3600 秒")
+            duration = validated_breakdown_shot_duration(
+                shot.get("duration_seconds"),
+                error_code="BREAKDOWN_SHOT_DURATION_INVALID",
+            )
             visual = str(shot.get("visual") or "").strip()
             action = str(shot.get("action") or "").strip()
             dialogue = shot.get("dialogue", "")

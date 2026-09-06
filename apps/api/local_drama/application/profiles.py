@@ -31,6 +31,32 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def _merge_input_slot_contract(profile_slot: dict[str, Any], workflow_slot: dict[str, Any]) -> dict[str, Any]:
+    """Merge the profile cardinality contract with workflow type metadata.
+
+    Profile contracts use ``min``/``max`` while workflow packages use
+    ``required``/``kind``.  Those are complementary schemas, so comparing the
+    dictionaries for exact equality rejects valid published workflows.
+    """
+
+    for key in set(profile_slot).intersection(workflow_slot):
+        if profile_slot[key] != workflow_slot[key]:
+            raise DomainRuleError(
+                "PROFILE_WORKFLOW_INPUT_CONFLICT",
+                "Profile 与 workflow 对同一 input slot 的约束不一致",
+                {"field": key, "profile": profile_slot[key], "workflow": workflow_slot[key]},
+            )
+    if "required" in workflow_slot and "min" in profile_slot:
+        profile_required = int(profile_slot["min"]) > 0
+        if profile_required != bool(workflow_slot["required"]):
+            raise DomainRuleError(
+                "PROFILE_WORKFLOW_INPUT_CONFLICT",
+                "Profile 与 workflow 对同一 input slot 的必填约束不一致",
+                {"profile_min": profile_slot["min"], "workflow_required": workflow_slot["required"]},
+            )
+    return {**workflow_slot, **profile_slot}
+
+
 def _code(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")[:120]
 
@@ -1008,6 +1034,10 @@ class ProfileService:
                 for value in (expected_workflow_capability, candidate_capability)
                 if value is not None
             }
+            if str(candidate["workflow_version_id"] or "") == workflow_version_id:
+                accepted_workflow_capabilities.add(workflow_capability)
+            if candidate_capability in {"IMAGE_CONCEPT", "IMAGE_CHARACTER", "IMAGE_SCENE"}:
+                accepted_workflow_capabilities.add("IMAGE_CONCEPT")
             if not accepted_workflow_capabilities or workflow_capability not in accepted_workflow_capabilities:
                 raise DomainRuleError(
                     "PROFILE_EVIDENCE_CAPABILITY_MISMATCH",
@@ -1133,13 +1163,16 @@ class ProfileService:
                 raise DomainRuleError("PROFILE_INPUT_CONTRACT_INVALID", "Profile input_slots 契约无效")
             merged_slots = dict(declared_slots)
             for slot_name, workflow_slot in workflow_input_slots.items():
-                if slot_name in merged_slots and merged_slots[slot_name] != workflow_slot:
-                    raise DomainRuleError(
-                        "PROFILE_WORKFLOW_INPUT_CONFLICT",
-                        "Profile 与 workflow 对同一 input slot 的约束不一致",
-                        {"slot": slot_name, "profile": merged_slots[slot_name], "workflow": workflow_slot},
-                    )
-                merged_slots[slot_name] = workflow_slot
+                if not isinstance(workflow_slot, dict):
+                    raise DomainRuleError("WORKFLOW_INPUT_CONTRACT_INVALID", "Workflow input slot 契约无效", {"slot": slot_name})
+                profile_slot = merged_slots.get(slot_name)
+                if profile_slot is not None and not isinstance(profile_slot, dict):
+                    raise DomainRuleError("PROFILE_INPUT_CONTRACT_INVALID", "Profile input slot 契约无效", {"slot": slot_name})
+                merged_slots[slot_name] = (
+                    _merge_input_slot_contract(profile_slot, workflow_slot)
+                    if isinstance(profile_slot, dict)
+                    else dict(workflow_slot)
+                )
             input_contract["input_slots"] = merged_slots
             input_contract["transport"] = "LOOPBACK_HTTP"
             connection.execute(

@@ -9,6 +9,7 @@ from local_drama.api.schemas.g3 import (
     DocumentImportCommitRequest,
     DocumentImportRequest,
     DocumentImportResponse,
+    LatestDocumentImportResponse,
     SourceParagraphPageResponse,
     SourcePassageResponse,
 )
@@ -51,7 +52,7 @@ async def import_script(project_id: str, payload: DocumentImportRequest, request
     operation_id="uploadScriptDocument",
 )
 async def upload_script(project_id: str, request: Request) -> dict[str, object]:
-    """Register one bounded browser upload for script documents (.txt, .md, .docx)."""
+    """Register one bounded browser upload for supported novel/script documents."""
     try:
         maximum_mb = request.app.state.settings.uploads.document_mb
         async with receive_bounded_upload(
@@ -62,11 +63,25 @@ async def upload_script(project_id: str, request: Request) -> dict[str, object]:
             default_filename="script.txt",
             error_prefix="DOCUMENT_UPLOAD",
             type_error_code="UNSUPPORTED_DOCUMENT_TYPE",
-            type_error_message="剧本文档仅支持 TXT、Markdown、DOCX",
+            type_error_message="原稿仅支持 TXT、Markdown、DOCX、PDF、EPUB",
             too_large_message=f"剧本文档不能超过 {maximum_mb} MB",
             empty_message="请选择非空剧本文档",
         ) as (temporary, _safe_filename, _received_bytes):
             return {"import": service(request).import_document(project_id, temporary)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get(
+    "/projects/{project_id}/imports/latest",
+    response_model=LatestDocumentImportResponse,
+    response_model_exclude_none=True,
+    operation_id="getLatestProjectScriptImport",
+)
+async def get_latest_project_script_import(project_id: str, request: Request) -> dict[str, object]:
+    """Restore the latest durable preview/commit instead of relying on browser state."""
+    try:
+        return {"latest": service(request).latest_for_project(project_id)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

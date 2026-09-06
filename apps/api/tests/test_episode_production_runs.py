@@ -90,15 +90,13 @@ def test_front_half_dag_workflow_generation(workspace, database) -> None:
     assert actions[2] == "ASSET_IDENTITY"
     assert actions[3] == "ASSET_COMPLETION"
     assert actions[4] == "EPISODE_PLAN"
-    assert actions[5] == "KEYFRAME_CHECK"
-    assert actions[6] == "VIDEO_GENERATION"
-    assert actions[7] == "QC"
-    assert actions[8] == "TTS_BATCH"
-    assert actions[9] == "TTS_FINALIZE"
-    assert actions[10] == "SUBTITLE"
-    assert actions[11] == "TIMELINE_ASSEMBLY"
-    assert actions[12] == "RENDER"
-    assert actions[13] == "DELIVERY"
+    assert actions[5:] == ["KEYFRAME_GENERATION", "KEYFRAME_CHECK", "VIDEO_GENERATION", "QC", "TTS_BATCH", "TTS_FINALIZE", "SUBTITLE", "TIMELINE_ASSEMBLY", "RENDER", "DELIVERY"]
+    assert "_V2_" in workflow["code"]
+
+    readonly = service._workflow_for_snapshot(
+        episode_context, {**preflight, "front_half_only": True, "input_fingerprint": "b" * 64}, actor="test",
+    )
+    assert [item["payload"]["action"] for item in readonly["definition"]["batch_items"]] == actions[:5] + ["KEYFRAME_CHECK"]
 
 
 def _episode(workspace, database, code: str) -> tuple[dict, dict]:

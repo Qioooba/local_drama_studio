@@ -11,6 +11,7 @@ import {
   listEpisodes,
   listJobs,
   listSeasons,
+  requestJson,
   retryJob,
   type DocumentImport,
   type Job,
@@ -32,6 +33,23 @@ function preferredInitialSourceRange(preview: DocumentImport["preview"]) {
 }
 
 const PARAGRAPH_PAGE_SIZE = 40;
+
+type LatestProjectScriptImport = {
+  latest: null | {
+    import: DocumentImport;
+    source_name: string;
+    selected_range: null | {
+      source_paragraph_start: number;
+      source_paragraph_end: number;
+      source_paragraph_count: number;
+      selection_mode: "EXPLICIT" | "FULL_DOCUMENT_DEFAULT";
+    };
+  };
+};
+
+function getLatestProjectScriptImport(projectId: string): Promise<LatestProjectScriptImport> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/imports/latest`);
+}
 
 export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: string; onDraftReady?: (job: Job) => void }) {
   const queryClient = useQueryClient();
@@ -58,6 +76,10 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
   const announcedReadyJobIds = useRef(new Set<string>());
 
   const breakdownOptions = useCapabilityOptions("LLM_STORY_PARSE", { projectId });
+  const latestImport = useQuery({
+    queryKey: ["project-script-import", projectId, "latest"],
+    queryFn: () => getLatestProjectScriptImport(projectId),
+  });
   const seasons = useQuery({
     queryKey: queryKeys.seasons.list(projectId),
     queryFn: () => listSeasons(projectId),
@@ -93,6 +115,20 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
     .slice(0, 5);
   const breakdownJobStateSignature = breakdownJobs.map((job) => `${job.id}:${job.state}`).join("|");
   useEffect(() => {
+    const restored = latestImport.data?.latest;
+    if (prepared || !restored) return;
+    setPrepared(restored.import);
+    setCommitted(restored.import.status === "COMMITTED");
+    setSelectedFileName(restored.source_name);
+    const range = restored.selected_range
+      ? { start: restored.selected_range.source_paragraph_start, end: restored.selected_range.source_paragraph_end }
+      : preferredInitialSourceRange(restored.import.preview);
+    setSourceParagraphStart(range.start);
+    setSourceParagraphEnd(range.end);
+    setParagraphPageStart(range.start);
+    setParagraphSelectionAnchor(null);
+  }, [latestImport.data, prepared]);
+  useEffect(() => {
     const currentStates = new Map(breakdownJobs.map((job) => [job.id, String(job.state ?? "UNKNOWN")]));
     const previousStates = observedJobStates.current;
     if (previousStates) {
@@ -115,8 +151,8 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
   const handleFileUpload = async (file: File | undefined) => {
     if (!file) return;
     const name = file.name.toLowerCase();
-    if (!name.endsWith(".txt") && !name.endsWith(".md") && !name.endsWith(".markdown") && !name.endsWith(".docx")) {
-      setUploadError("该文件无法上传。请选择 TXT、Markdown 或 DOCX 文档。");
+    if (!name.endsWith(".txt") && !name.endsWith(".md") && !name.endsWith(".markdown") && !name.endsWith(".docx") && !name.endsWith(".pdf") && !name.endsWith(".epub")) {
+      setUploadError("该文件无法上传。请选择 TXT、Markdown、DOCX、PDF 或 EPUB 文档。");
       return;
     }
     setPending("upload");
@@ -207,6 +243,7 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
   const targetDurationSeconds = targetEpisode ? Math.round(Number(targetEpisode.target_duration_ms ?? 0) / 1000) : 0;
   const targetDurationMinimum = Math.round(targetDurationSeconds * 0.8);
   const targetDurationMaximum = Math.round(targetDurationSeconds * 1.2);
+  const targetMinimumShotCount = Math.ceil(targetDurationMinimum / 15);
   const visibleParagraphs = paragraphPage.data?.items ?? (paragraphPageStart === 1
     ? (prepared?.preview.paragraphs ?? []).map((text, index) => ({
         number: index + 1,
@@ -264,7 +301,7 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
     <section className="subpanel script-import-panel" aria-labelledby="script-import-title">
       <div className="section-title">
         <span id="script-import-title">小说与剧本文档导入</span>
-        <small>支持 TXT、Markdown、DOCX</small>
+        <small>支持 TXT、Markdown、DOCX、PDF、EPUB</small>
       </div>
 
       <ol className="import-workflow-steps" aria-label="剧本文档导入进度">
@@ -312,7 +349,7 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
           id={fileInputId}
           ref={fileInputRef}
           type="file"
-          accept=".txt,.md,.markdown,.docx"
+          accept=".txt,.md,.markdown,.docx,.pdf,.epub"
           aria-label="选择本地文档"
           className="script-upload-input"
           disabled={pending !== null}
@@ -325,9 +362,9 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
         <p className="script-upload-file-name">
           {selectedFileName
             ? pending === "upload" ? `正在上传：${selectedFileName}` : `已上传：${selectedFileName}`
-            : "从本地电脑上传原稿"}
+            : latestImport.isPending ? "正在恢复项目最近导入…" : "从本地电脑上传原稿"}
         </p>
-        <p className="script-upload-guidance">选择或拖入 TXT、Markdown、DOCX 文件，上传完成后自动解析预览。</p>
+        <p className="script-upload-guidance">选择或拖入 TXT、Markdown、DOCX、PDF、EPUB 文件，上传完成后自动解析预览。扫描版 PDF 请先 OCR。</p>
         <div className="script-upload-actions">
           <button
             type="button"
@@ -342,6 +379,7 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
         </div>
       </div>
       {uploadError && <p className="inline-error script-upload-error" role="alert">{uploadError}</p>}
+      {latestImport.error && !prepared ? <p className="inline-error script-upload-error" role="alert">恢复最近导入失败：{String(latestImport.error)}</p> : null}
 
       {prepared && (
         <div className="import-preview" aria-label="剧本文档解析预览">
@@ -587,9 +625,10 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
                       <dl>
                         <div><dt>目标成片</dt><dd>{targetDurationSeconds} 秒</dd></div>
                         <div><dt>草稿时长范围</dt><dd>{targetDurationMinimum}–{targetDurationMaximum} 秒</dd></div>
+                        <div><dt>最低镜头量</dt><dd>至少 {targetMinimumShotCount} 镜</dd></div>
                         <div><dt>使用正文</dt><dd>第 {sourceParagraphStart}–{sourceParagraphEnd} 段</dd></div>
                       </dl>
-                      <small>章节标题会从模型输入中排除；原文件、段落偏移和版本记录保持不变。</small>
+                      <small>AI 会按目标时长拆出足量镜头；章节标题会从模型输入中排除，原文件、段落偏移和版本记录保持不变。</small>
                     </div>
                   ) : (
                     <div className="breakdown-destination__empty" role="status">

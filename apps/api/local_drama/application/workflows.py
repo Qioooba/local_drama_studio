@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import Any
 
 from local_drama.application.comfy_smoke_contract import has_comfy_smoke_contract, parse_comfy_smoke_contract
+from local_drama.application.workflow_contracts import effective_workflow_contract
 from local_drama.config import Settings
+from local_drama.domain.comfy_schema_validation import validate_comfy_inputs
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.comfy import ComfyClient
 from local_drama.infrastructure.database.sqlite import Database
@@ -309,7 +311,9 @@ class WorkflowService:
     def compile_semantic_inputs(self, version_id: str, semantic_inputs: dict[str, Any]) -> dict[str, Any]:
         version = self.get_version(version_id)
         workflow = copy.deepcopy(version["workflow"])
-        bindings = version["node_bindings"]
+        with self.database.connect() as connection:
+            effective = effective_workflow_contract(connection, version_id)
+        bindings = effective["workflow_bindings"]
         for role, value in semantic_inputs.items():
             binding = bindings.get(role)
             if not isinstance(binding, dict) or not binding.get("node_id") or not binding.get("input"):
@@ -323,6 +327,8 @@ class WorkflowService:
             "workflow_version_id": version_id,
             "workflow": workflow,
             "semantic_inputs": semantic_inputs,
+            "contract_source": effective["source"],
+            "contract_id": effective["contract_id"],
             "compiled_hash": compiled_hash,
             "content_hash": version["content_hash"],
             "effect_report": {
@@ -341,38 +347,11 @@ class WorkflowService:
         available = set(object_info)
         required = {str(node.get("class_type")) for node in version["workflow"].values() if isinstance(node, dict) and node.get("class_type")}
         missing = sorted(required - available)
-        schema_errors: list[dict[str, Any]] = []
-        for node_id, node in version["workflow"].items():
-            if not isinstance(node, dict):
-                continue
-            node_schema = object_info.get(str(node.get("class_type")))
-            schema_inputs = node_schema.get("input") if isinstance(node_schema, dict) else None
-            if not isinstance(schema_inputs, dict):
-                continue
-            allowed_inputs: set[str] = set()
-            dynamic_input_prefixes: list[str] = []
-            for group in ("required", "optional", "hidden"):
-                values = schema_inputs.get(group)
-                if isinstance(values, dict):
-                    allowed_inputs.update(str(name) for name in values)
-                    for dynamic_name, definition in values.items():
-                        if not (
-                            isinstance(definition, list)
-                            and definition
-                            and definition[0] == "COMFY_AUTOGROW_V3"
-                            and len(definition) > 1
-                            and isinstance(definition[1], dict)
-                        ):
-                            continue
-                        template = definition[1].get("template", {})
-                        prefix = template.get("prefix") if isinstance(template, dict) else None
-                        if isinstance(prefix, str) and prefix:
-                            dynamic_input_prefixes.append(f"{dynamic_name}.{prefix}")
-            if allowed_inputs:
-                for input_name in node.get("inputs", {}):
-                    name = str(input_name)
-                    if name not in allowed_inputs and not any(name.startswith(prefix) for prefix in dynamic_input_prefixes):
-                        schema_errors.append({"node_id": str(node_id), "class_type": str(node.get("class_type")), "input": str(input_name), "error": "INPUT_NOT_DECLARED"})
+        with self.database.connect() as connection:
+            effective = effective_workflow_contract(connection, version_id)
+        schema_errors = validate_comfy_inputs(
+            version["workflow"], object_info, effective["workflow_bindings"],
+        )
         runtime_layout: dict[str, Any] | None = None
         if "H3" in str(version["contract"].get("capability", "")).upper():
             from local_drama.application.h3_workflows import H3WorkflowFactory

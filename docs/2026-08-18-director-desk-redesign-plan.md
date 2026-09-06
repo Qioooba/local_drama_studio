@@ -309,3 +309,16 @@
 - 商汤 Seko：[优设网三视图实测](https://www.uisdc.com/hangye/seko) · [商汤官网](https://www.sensetime.com/cn/news/seko-3-0-ai-1)
 - 万兴剧厂：[万兴官网](http://ori-www.wondershare.cn/new/details/id/1186.html)
 - 同栈开源：[comfyui-auto-drama](https://github.com/qiukaihui/comfyui-auto-drama) · [MiniMax-H3-Codex-Drama](https://github.com/chiphoton/MiniMax-H3-Codex-Drama)
+
+---
+
+## 9. 2026-08-30 实施校准
+
+本轮只补齐原方案已经定义、且能复用现有领域能力的部分，没有把导演台扩张成第二套 NLE：
+
+- **F2 / B3 / O1 / 阶段 D（部分完成）**：导演台新增按需展开的「本集同步预览」，读取既有 Edit v2 聚合事实，并与后期编辑页复用同一个多轨渲染组件。导演台只允许播放头定位和镜头跳转；时长、转场、排序、保存与冻结仍由后期编辑页拥有。
+- **F7 / B7 / 阶段 E（批量规划完成）**：选中镜头先走无副作用预检，再显式提交到既有 Automation Workflow；每镜仍创建独立 Variant / Job，失败可恢复，批量操作不覆盖旧 Take，也不自动采用或批准。
+- **统一视觉修饰**：作为 `DirectorIntentV3.prompt_modifiers` 的显式持久化事实进入共享提示词编译器；单镜与批量生产使用同一编译规则，避免页面拼接出不同 Prompt。
+- **仍未实施**：导演台内的时间线写入、排序或删除，以及 AUTO_BRIDGE。本轮没有为满足视觉布局而复制后期命令，也没有把机器检查提升为人工批准。
+
+外部建议中的一键修脸、2D/3D 机位、智能 BGM 和无明确工作流的 QuickCreate 导入不属于本方案当前阶段，继续留待真实需求与模型能力证据出现后再评估。

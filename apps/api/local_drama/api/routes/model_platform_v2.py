@@ -61,7 +61,11 @@ from local_drama.model_platform.application.installation_plans import (
     TrustedDownloadArtifact,
     TrustedDownloadPlanRequest,
 )
-from local_drama.model_platform.application.model_lock_discovery import ModelLockDiscoveryOrchestrator
+from local_drama.model_platform.application.llama_cpp_discovery import LlamaCppDiscoveryOrchestrator
+from local_drama.model_platform.application.model_lock_discovery import (
+    ModelLockDiscoveryOrchestrator,
+    configured_model_lock_runtime_ids,
+)
 from local_drama.model_platform.application.ollama_discovery import OllamaDiscoveryOrchestrator
 from local_drama.model_platform.application.production_execution_registry import production_execution_handlers
 from local_drama.model_platform.application.profile_catalog import ProfileCatalogService
@@ -97,14 +101,29 @@ async def get_overview(request: Request) -> dict[str, object]:
     scanner observation is evidence only; it never means that a model is
     complete, verified, published, or executable.
     """
+    active_model_lock_runtimes = configured_model_lock_runtime_ids(request.app.state.settings)
+    active_runtime_placeholders = ",".join("?" for _ in active_model_lock_runtimes) or "NULL"
     with request.app.state.database.connect() as connection:
         row = connection.execute(
-            """SELECT
+            f"""SELECT
               (SELECT COUNT(*) FROM mp_capability_definitions) AS capability_count,
               (SELECT COUNT(*) FROM mp_model_releases) AS registered_model_release_count,
               (SELECT COUNT(*) FROM mp_runtime_installations) AS runtime_installation_count,
-              (SELECT COUNT(*) FROM mp_discovery_observations) AS discovery_observation_count,
+              (SELECT COUNT(*) FROM (
+                 SELECT ROW_NUMBER() OVER (
+                   PARTITION BY COALESCE(runtime_version.runtime_installation_id, run.runtime_installation_version_id, run.source || ':' || observation.kind),
+                                observation.native_id
+                   ORDER BY observation.created_at DESC, observation.id DESC
+                 ) AS current_rank
+                 FROM mp_discovery_observations observation
+                 JOIN mp_discovery_runs run ON run.id=observation.discovery_run_id
+                 LEFT JOIN mp_runtime_installation_versions runtime_version
+                   ON runtime_version.id=run.runtime_installation_version_id
+                 WHERE run.status='SUCCEEDED'
+                   AND (run.source<>'MODEL_LOCK' OR runtime_version.runtime_installation_id IN ({active_runtime_placeholders}))
+              ) current_observation WHERE current_rank=1) AS discovery_observation_count,
               (SELECT COUNT(*) FROM mp_profile_publications WHERE status='PUBLISHED') AS published_profile_count"""
+            , active_model_lock_runtimes,
         ).fetchone()
     return {
         "overview": {
@@ -474,15 +493,32 @@ async def list_discovery_observations(
     This is intentionally an evidence view.  It contains no model-library
     path, endpoint, credential, raw adapter payload, or execution readiness.
     """
+    active_model_lock_runtimes = configured_model_lock_runtime_ids(request.app.state.settings)
+    active_runtime_placeholders = ",".join("?" for _ in active_model_lock_runtimes) or "NULL"
     with request.app.state.database.connect() as connection:
         rows = connection.execute(
-            """SELECT observation.id,observation.native_id,observation.kind,observation.observed_json,observation.status,
-                      observation.created_at,run.id AS discovery_run_id,run.status AS discovery_run_status,
-                      run.finished_at,run.summary_json
-               FROM mp_discovery_observations observation
-               JOIN mp_discovery_runs run ON run.id=observation.discovery_run_id
-               ORDER BY observation.created_at DESC,observation.id DESC LIMIT ?""",
-            (limit,),
+            f"""WITH ranked_observations AS (
+                 SELECT observation.id,observation.native_id,observation.kind,observation.observed_json,observation.status,
+                        observation.created_at,run.id AS discovery_run_id,run.status AS discovery_run_status,
+                        run.finished_at,run.summary_json,
+                        ROW_NUMBER() OVER (
+                          PARTITION BY COALESCE(runtime_version.runtime_installation_id, run.runtime_installation_version_id, run.source || ':' || observation.kind),
+                                       observation.native_id
+                          ORDER BY observation.created_at DESC,observation.id DESC
+                        ) AS current_rank
+                 FROM mp_discovery_observations observation
+                 JOIN mp_discovery_runs run ON run.id=observation.discovery_run_id
+                 LEFT JOIN mp_runtime_installation_versions runtime_version
+                   ON runtime_version.id=run.runtime_installation_version_id
+                 WHERE run.status='SUCCEEDED'
+                   AND (run.source<>'MODEL_LOCK' OR runtime_version.runtime_installation_id IN ({active_runtime_placeholders}))
+               )
+               SELECT id,native_id,kind,observed_json,status,created_at,discovery_run_id,
+                      discovery_run_status,finished_at,summary_json
+               FROM ranked_observations
+               WHERE current_rank=1
+               ORDER BY created_at DESC,id DESC LIMIT ?""",
+            (*active_model_lock_runtimes, limit),
         ).fetchall()
     items = [_public_discovery_observation(row) for row in rows]
     return {"items": items, "count": len(items), "read_only": True}
@@ -734,7 +770,12 @@ async def smoke_profile_template(profile_version_id: str, request: Request) -> d
     """Run the persisted template's profile-level smoke; it cannot publish by itself."""
     try:
         result = ProfileTemplateService(request.app.state.database, request.app.state.settings).smoke(profile_version_id)
-        return {"validation": {"validation_run_id": result.validation_run_id, "profile_version_id": result.profile_version_id, "status": result.status}}
+        return {"validation": {
+            "validation_run_id": result.validation_run_id,
+            "profile_version_id": result.profile_version_id,
+            "status": result.status,
+            "failure_code": getattr(result, "failure_code", None),
+        }}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -769,6 +810,16 @@ async def run_ollama_discovery(request: Request) -> dict[str, object]:
             allow_private_network=settings.network_mode.value == "LAN_SERVICE",
         )
         run = OllamaDiscoveryOrchestrator(request.app.state.database, settings).scan(client)
+        return {"discovery_run": {"id": run.id, "status": run.status, "observation_count": run.observation_count}}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/discovery-runs:llama-cpp", operation_id="runModelPlatformLlamaCppDiscovery")
+async def run_llama_cpp_discovery(request: Request) -> dict[str, object]:
+    """Scan the configured GGUF directory under the managed llama.cpp identity."""
+    try:
+        run = LlamaCppDiscoveryOrchestrator(request.app.state.database, request.app.state.settings).scan()
         return {"discovery_run": {"id": run.id, "status": run.status, "observation_count": run.observation_count}}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
@@ -1166,6 +1217,7 @@ async def search_project_knowledge(
                         "ordinal": item.ordinal,
                         "source_start": item.source_start,
                         "source_end": item.source_end,
+                        "excerpt": item.excerpt,
                         "score": item.score,
                     }
                     for item in hits

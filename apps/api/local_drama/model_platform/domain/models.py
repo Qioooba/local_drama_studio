@@ -9,6 +9,10 @@ from pathlib import PurePosixPath, PureWindowsPath
 
 class RuntimeKind(str, Enum):
     OLLAMA = "OLLAMA"
+    # A llama-server child process owned by the application's GPU runtime
+    # coordinator (LLAMA_CPP scheduler runtime); distinct from OLLAMA because
+    # its lifecycle is process-managed rather than service-managed.
+    LLAMA_CPP_MANAGED = "LLAMA_CPP_MANAGED"
     COMFYUI = "COMFYUI"
     PYTORCH_PROCESS = "PYTORCH_PROCESS"
     OS_NATIVE = "OS_NATIVE"

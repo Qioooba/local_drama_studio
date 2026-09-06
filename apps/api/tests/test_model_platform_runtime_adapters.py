@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+from local_drama.application.documents import DocumentImportService
+from local_drama.application.projects import ProjectService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.model_platform.application.candidate_readiness import CandidateReadinessService
 from local_drama.model_platform.application.capability_resolution import CapabilityScopeContext
@@ -11,6 +13,10 @@ from local_drama.model_platform.application.discovery_registration import Discov
 from local_drama.model_platform.application.execution_planning import ExecutionPlanningService, ExecutionPreviewRequest
 from local_drama.model_platform.application.installation_integrity import InstallationIntegrityService
 from local_drama.model_platform.application.model_lock_discovery import ModelLockDiscoveryOrchestrator
+from local_drama.model_platform.application.project_knowledge_indexing import (
+    ProjectKnowledgeIndexPreparationService,
+    ProjectKnowledgeIndexQueueService,
+)
 from local_drama.model_platform.application.ollama_discovery import OllamaDiscoveryOrchestrator
 from local_drama.model_platform.application.ollama_text_profiles import OllamaTextProfileService
 from local_drama.model_platform.application.profile_catalog import ProfileCatalogService
@@ -43,6 +49,15 @@ class _TextCatalog:
     def show(self, model: str):
         assert model == "qwen3.8:27b"
         return {"capabilities": ["completion"], "details": {"family": "qwen"}}
+
+
+class _VisionTextCatalog:
+    def tags(self):
+        return [{"name": "qwen3.8:27b", "digest": "vision-text-digest", "size": 1, "details": {"family": "qwen"}}]
+
+    def show(self, model: str):
+        assert model == "qwen3.8:27b"
+        return {"capabilities": ["completion", "vision"], "details": {"family": "qwen"}}
 
 
 class _PassingOllamaProbe:
@@ -255,6 +270,48 @@ def test_ollama_text_capability_smoke_records_redacted_evidence_and_only_marks_c
     assert '"level_4_inference":true' in evidence
 
 
+def test_unimplemented_native_vision_offering_does_not_deadlock_validated_text_profiles(workspace, database) -> None:
+    run = OllamaDiscoveryOrchestrator(database, workspace).scan(_VisionTextCatalog())
+    with database.connect() as connection:
+        observation = connection.execute(
+            "SELECT id FROM mp_discovery_observations WHERE discovery_run_id=?", (run.id,)
+        ).fetchone()
+    registered = DiscoveryRegistrationService(database).register(str(observation["id"]))
+    service = CapabilitySmokeService(
+        database,
+        workspace,
+        ollama_client_factory=lambda _url, _model: _PassingOllamaProbe(),
+    )
+
+    for capability in ("LLM_STORY_PARSE", "LLM_EPISODE_PLAN", "LLM_STORYBOARD"):
+        result = service.smoke(registered.runtime_model_installation_id, capability)
+        assert result.installation_ready is False
+    final = service.smoke(registered.runtime_model_installation_id, "LLM_PROMPT_REWRITE")
+
+    with database.connect() as connection:
+        installation_state = connection.execute(
+            "SELECT install_state FROM mp_runtime_model_installations WHERE id=?",
+            (registered.runtime_model_installation_id,),
+        ).fetchone()["install_state"]
+        vision_status = connection.execute(
+            """SELECT offering.validation_status FROM mp_capability_offerings offering
+               JOIN mp_capability_definitions capability ON capability.id=offering.capability_definition_id
+               WHERE offering.runtime_model_installation_id=? AND capability.code='QC_VISUAL'""",
+            (registered.runtime_model_installation_id,),
+        ).fetchone()["validation_status"]
+    assert final.installation_ready is True
+    assert final.runtime_active is True
+    assert installation_state == "READY"
+    assert vision_status == "NOT_RUN"
+    candidate = next(
+        item for item in CandidateReadinessService(database).list()
+        if item.runtime_model_installation_id == registered.runtime_model_installation_id
+    )
+    assert candidate.readiness_status == "PROFILE_REQUIRED"
+    assert candidate.blockers == ("PROFILE_REQUIRED",)
+    assert next(item for item in candidate.capabilities if item.code == "QC_VISUAL").readiness_status == "VALIDATION_REQUIRED"
+
+
 def test_verified_ollama_offering_becomes_publishable_profile_and_executable_preview(workspace, database) -> None:
     run = OllamaDiscoveryOrchestrator(database, workspace).scan(_TextCatalog())
     with database.connect() as connection:
@@ -430,6 +487,37 @@ def test_model_lock_orchestrator_maps_the_default_split_windows_libraries(worksp
     }
 
 
+def test_model_lock_scan_reconciles_a_configured_library_slot_after_host_path_migration(workspace, database, tmp_path) -> None:
+    old_root = tmp_path / "old" / "pytorch"
+    new_root = tmp_path / "new" / "pytorch"
+    (old_root / "Embedding").mkdir(parents=True)
+    (new_root / "Embedding").mkdir(parents=True)
+    (old_root / "Embedding" / "model.safetensors").write_bytes(b"1234")
+    (new_root / "Embedding" / "model.safetensors").write_bytes(b"1234")
+    lock = tmp_path / "model-lock.json"
+    lock.write_text(json.dumps({"models": [
+        {"code": "embedding", "runtime": "PYTORCH", "files": [{"path": "Services/Embedding/model.safetensors", "bytes": 4, "format": "SAFETENSORS"}]},
+    ]}), encoding="utf-8")
+
+    old_settings = workspace.model_copy(update={"model_library_roots": (old_root,)})
+    ModelLockDiscoveryOrchestrator(database, old_settings, lock_path=lock).scan()
+    new_settings = workspace.model_copy(update={"model_library_roots": (new_root,)})
+    result = ModelLockDiscoveryOrchestrator(database, new_settings, lock_path=lock).scan()
+
+    with database.connect() as connection:
+        library = connection.execute("SELECT root_path_local FROM mp_model_libraries").fetchone()
+        observation = connection.execute(
+            "SELECT id FROM mp_discovery_observations WHERE discovery_run_id=? AND native_id='embedding'",
+            (result.runs[0].id,),
+        ).fetchone()
+    assert library["root_path_local"] == str(new_root.resolve())
+    registered = DiscoveryRegistrationService(database).register(str(observation["id"]))
+    verified = InstallationIntegrityService(database, new_settings, lock_path=lock).verify(
+        registered.runtime_model_installation_id
+    )
+    assert verified.status == "INTEGRITY_PASSED"
+
+
 def test_model_lock_orchestrator_scans_each_runtime_with_a_library_binding(workspace, database, tmp_path) -> None:
     library_root = tmp_path / "models"
     (library_root / "ComfyUI" / "models").mkdir(parents=True)
@@ -570,6 +658,24 @@ def test_pytorch_embedding_capability_smoke_uses_offline_adapter_receipt_and_act
             run_overrides={"instruction": "为本项目检索故事设定"},
         )
     )
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="embedding_knowledge_index",
+        title="Embedding knowledge index",
+        episode_count=1,
+        aspect_ratio="16:9",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=60_000,
+        allow_unconfigured_capabilities=True,
+    )
+    source = workspace.work_root / "embedding-knowledge.txt"
+    source.write_text("药铺雨夜。\n\n沈砚守着照骨灯。", encoding="utf-8")
+    imported = DocumentImportService(database, workspace).import_document(str(project["id"]), source)
+    prepared_index = ProjectKnowledgeIndexPreparationService(database, settings).prepare(
+        project_id=str(project["id"]),
+        source_document_version_id=str(imported["source_document_version_id"]),
+    )
+    queued_index = ProjectKnowledgeIndexQueueService(database).queue(prepared_index.index_run_id)
 
     with database.connect() as connection:
         installation_state = connection.execute(
@@ -591,6 +697,10 @@ def test_pytorch_embedding_capability_smoke_uses_offline_adapter_receipt_and_act
     assert runtime_state == "ACTIVE"
     assert profile_smoke.status == "SMOKE_PASSED"
     assert preview.executable is True
+    assert preview.adapter_code == "pytorch.embedding.qwen3"
+    assert prepared_index.status == "PREPARED"
+    assert prepared_index.chunk_count == 2
+    assert queued_index.queued_batch_count == 1
     assert preview.execution_profile_version_id == provisioned.profile_version_id
     assert preview.resolved_parameters["instruction"].value == "为本项目检索故事设定"
     assert '"dimension":4096' in evidence

@@ -11,6 +11,23 @@ from local_drama.domain.errors import DomainRuleError
 from local_drama.main import create_app
 
 
+def test_runtime_model_options_preserve_exact_runtime_filenames(workspace, monkeypatch):
+    from local_drama.infrastructure.comfy import ComfyClient
+    monkeypatch.setattr(ComfyClient, "object_info", lambda self: {
+        "UnetLoaderGGUF": {"input": {"required": {"unet_name": [["Qwen\\edit.gguf"]]}}},
+        "CLIPLoader": {"input": {"required": {"clip_name": [["Qwen\\clip.safetensors"]]}}},
+        "VAELoader": {"input": {"required": {"vae_name": [["Qwen\\vae.safetensors"]]}}},
+    })
+    with TestClient(create_app(workspace)) as client:
+        response = client.get("/api/v1/workflow-definitions/QWEN_IDENTITY_3/runtime-options")
+        assert response.status_code == 200, response.text
+        fields = response.json()["fields"]
+        assert fields["model"]["options"] == [{"value": "Qwen\\edit.gguf", "label": "Qwen\\edit.gguf"}]
+        assert fields["text_encoder"]["options"][0]["value"] == "Qwen\\clip.safetensors"
+        assert fields["vae"]["options"][0]["value"] == "Qwen\\vae.safetensors"
+        assert "prompt" not in fields
+
+
 class _SuccessfulDesigner:
     def queue_prompt(self, workflow, *, client_id):
         assert workflow
@@ -19,7 +36,7 @@ class _SuccessfulDesigner:
 
     def wait_history(self, prompt_id, timeout_seconds):
         assert prompt_id == "designer-prompt-1"
-        assert timeout_seconds == 30.0
+        assert timeout_seconds == 240.0
         return {"prompt_id": prompt_id, "status": "success", "history": {}}
 
 

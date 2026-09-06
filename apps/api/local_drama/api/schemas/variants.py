@@ -28,6 +28,7 @@ class VariantPlanRequest(BaseModel):
     provider_random_nonce: str | None = Field(default=None, min_length=36, max_length=36)
     expected_effective_configuration_fingerprint: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     bindings: list[VariantInputRequest] = Field(default_factory=list, max_length=100)
+    prompt_bundle: dict[str, Any] | None = None
 
     def to_domain(self) -> VariantPlan:
         return VariantPlan(
@@ -42,6 +43,7 @@ class VariantPlanRequest(BaseModel):
             bindings=tuple(VariantInput(item.role, item.media_version_id, item.ordinal, item.weight) for item in self.bindings),
             provider_random_nonce=self.provider_random_nonce,
             expected_effective_configuration_fingerprint=self.expected_effective_configuration_fingerprint,
+            prompt_bundle=dict(self.prompt_bundle) if self.prompt_bundle is not None else None,
         )
 
 

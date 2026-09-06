@@ -7,7 +7,7 @@ export type AssetBibleItem = {
   active_state_id: string | null;
   voice: { voice_profile_version_id: string; voice_code: string; voice_title: string; status: string } | null;
   usage: { episode_ids: string[]; episodes: string[]; shots: Array<{ binding_id?: string; role_in_shot?: string; asset_state_id?: string | null; shot_id?: string; shot_code?: string; shot_status?: string; episode_id?: string; episode_code?: string; scene_id?: string | null; scene_code?: string | null; scene_title?: string | null } & Record<string, unknown>>; shot_count: number };
-  readiness: { level: "READY" | "BASIC" | "EMPTY" | "STALE"; missing: string[] };
+  readiness: { level: "READY" | "BASIC" | "EMPTY" | "STALE"; required?: string[]; missing: string[] };
   multiview_generations?: import("./multiviewClient").MultiViewBatch[];
   expression_generations?: import("./expressionClient").ExpressionBatch[];
   detail_generations?: import("./detailClient").DetailBatch[];

@@ -80,3 +80,27 @@ def test_job_compiler_applies_frozen_runtime_snapshot_to_graph(workspace, databa
     assert "4" not in workflow and "12" not in workflow
     assert "audio" not in workflow["13"]["inputs"]
     assert evidence["effective_configuration_fingerprint"].startswith("sha256:")
+
+
+def test_acceleration_off_preserves_workflow_authored_lora_chain(workspace, database) -> None:
+    workflow = {
+        "1": {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": "qwen.gguf"}},
+        "2": {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": ["1", 0],
+                "lora_name": "Qwen-Image-Edit-2511\\qwen-image-edit-2511-multiple-angles-lora.safetensors",
+                "strength_model": 1.0,
+            },
+        },
+        "5": {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["2", 0], "shift": 3.1}},
+    }
+
+    evidence = ComfyGenerationService(database, workspace)._apply_effective_configuration(
+        workflow,
+        {"effective_settings": {"acceleration": "OFF"}, "fingerprint": "sha256:" + "b" * 64},
+    )
+
+    assert "2" in workflow
+    assert workflow["5"]["inputs"]["model"] == ["2", 0]
+    assert evidence["lora_nodes"] == []

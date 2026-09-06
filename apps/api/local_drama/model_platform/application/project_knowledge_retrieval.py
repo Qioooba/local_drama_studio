@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import math
+import json
+import hashlib
 import struct
 import uuid
 from dataclasses import dataclass
@@ -31,6 +33,7 @@ class ProjectKnowledgeSearchHit:
     ordinal: int
     source_start: int
     source_end: int
+    excerpt: str
     score: float
 
 
@@ -90,6 +93,7 @@ class ProjectKnowledgeRetrievalService:
                     ordinal=int(row["ordinal"]),
                     source_start=int(row["source_start"]),
                     source_end=int(row["source_end"]),
+                    excerpt=_verified_excerpt(row),
                     score=_cosine(query_vector, _unpack_vector(row["vector_f32"])),
                 )
                 for row in rows
@@ -102,9 +106,10 @@ class ProjectKnowledgeRetrievalService:
         with self.database.connect() as connection:
             rows = connection.execute(
                 """SELECT run.id AS index_run_id,run.source_document_version_id,vector.ordinal,vector.source_start,
-                          vector.source_end,vector.vector_f32
+                          vector.source_end,vector.text_sha256,vector.vector_f32,batch.chunk_manifest_json
                    FROM mp_project_knowledge_index_runs run
                    JOIN mp_project_knowledge_vectors vector ON vector.index_run_id=run.id
+                   JOIN mp_project_knowledge_index_batches batch ON batch.id=vector.batch_id AND batch.index_run_id=run.id
                    WHERE run.project_id=? AND run.execution_profile_version_id=? AND run.status='SUCCEEDED'
                    ORDER BY run.source_document_version_id,run.attempt_no DESC,vector.ordinal""",
                 (project_id, profile_version_id),
@@ -121,6 +126,25 @@ class ProjectKnowledgeRetrievalService:
             if selected_run == run_id:
                 selected.append(dict(row))
         return selected
+
+
+def _verified_excerpt(row: Mapping[str, Any]) -> str:
+    try:
+        manifest = json.loads(str(row["chunk_manifest_json"]))
+    except (KeyError, TypeError, ValueError) as error:
+        raise DomainRuleError("MP_PROJECT_KNOWLEDGE_MANIFEST_INVALID", "知识库命中文本清单已损坏。") from error
+    if not isinstance(manifest, list):
+        raise DomainRuleError("MP_PROJECT_KNOWLEDGE_MANIFEST_INVALID", "知识库命中文本清单不是数组。")
+    ordinal = int(row["ordinal"])
+    expected_hash = str(row["text_sha256"])
+    for item in manifest:
+        if not isinstance(item, dict) or int(item.get("ordinal") or 0) != ordinal:
+            continue
+        text = item.get("text")
+        if not isinstance(text, str) or not text or hashlib.sha256(text.encode("utf-8")).hexdigest() != expected_hash:
+            break
+        return text
+    raise DomainRuleError("MP_PROJECT_KNOWLEDGE_MANIFEST_INVALID", "知识库命中文本与已验证向量不一致。")
 
 
 def _query_vector(receipt: object) -> list[float]:

@@ -1,4 +1,5 @@
 .story-workspace { scroll-behavior: smooth; }
+.story-workspace--simple { width: min(100%, 1180px); margin-inline: auto; }
 .story-workspace-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
 .story-workspace-header h2 { margin: 3px 0 7px; }
 .story-workspace-header p { max-width: 720px; margin: 0; }

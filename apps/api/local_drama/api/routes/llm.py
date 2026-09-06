@@ -51,7 +51,7 @@ async def probe_llm(
 ) -> dict[str, object]:
     try:
         from urllib.parse import urlparse
-        resolved_provider = (payload.provider or request.app.state.settings.llm_provider or "OLLAMA_LOOPBACK").strip().upper()
+        resolved_provider = (payload.provider or request.app.state.settings.llm_provider or "LLAMA_CPP_MANAGED").strip().upper()
         resolved_base_url = (payload.base_url or request.app.state.settings.llm_base_url).strip()
         parsed = urlparse(resolved_base_url)
         is_remote = endpoint_is_remote(resolved_base_url)

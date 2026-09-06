@@ -33,10 +33,10 @@ describe("AIDraftReviewPanel", () => {
     vi.mocked(listSeasons).mockResolvedValue({ items: seasonItems });
     vi.mocked(listEpisodes).mockResolvedValue({ items: episodeItems });
   });
-  it("labels persisted suggestions as not applied and exposes an explicit apply action", async () => {
+  it("labels persisted suggestions as awaiting review and exposes an explicit apply action", async () => {
     vi.mocked(listScriptBreakdownDrafts).mockResolvedValue({ automatic_apply: false, requires_human_action: true, items: [{ ...draftItem }] });
     renderPanel();
-    expect(await screen.findByText(/DRAFT_READY · NOT_APPLIED/)).toBeTruthy();
+    expect(await screen.findByText(/^待审核$/)).toBeTruthy();
     expect(screen.getByText("1 个建议场次 · 2 个建议镜头")).toBeTruthy();
     expect(screen.getByText(/证据完整 · 置信度 80%/)).toBeTruthy();
     fireEvent.click(screen.getByText(/展开完整草稿/));
@@ -47,6 +47,50 @@ describe("AIDraftReviewPanel", () => {
     expect(screen.getByLabelText("选择目标集")).toBeTruthy();
     expect((screen.getByRole("button", { name: "应用到成片" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByText(/已应用/)).toBeNull();
+  });
+  it("renders structured model dialogue as readable speaker text", async () => {
+    vi.mocked(listScriptBreakdownDrafts).mockResolvedValue({
+      automatic_apply: false,
+      requires_human_action: true,
+      items: [{
+        ...draftItem,
+        draft: { scenes: [{
+          scene_no: 1,
+          title: "主殿对峙",
+          shots: [{ shot_no: 1, visual: "林枫握剑", action: "抬眼", dialogue: { speaker: "林枫", text: "此剑不交。" }, duration_seconds: 5 }],
+        }] },
+      }],
+    });
+    renderPanel();
+    fireEvent.click(await screen.findByText(/展开完整草稿/));
+    expect(screen.getByText("对白：林枫：此剑不交。")).toBeTruthy();
+    expect(screen.queryByText(/\[object Object\]/)).toBeNull();
+  });
+  it("identifies one-click story pipeline drafts and shows their duration contract", async () => {
+    vi.mocked(listEpisodes).mockResolvedValue({ items: [{ ...episodeItems[0], target_duration_ms: 120_000 }] });
+    vi.mocked(listScriptBreakdownDrafts).mockResolvedValue({
+      automatic_apply: false,
+      requires_human_action: true,
+      items: [{
+        ...draftItem,
+        evidence_status: "LEGACY_INCOMPLETE",
+        draft: { scenes: [{ scene_no: 1, title: "主殿", shots: [{ shot_no: 1, visual: "对峙", action: "拔剑", dialogue: "", duration_seconds: 122 }] }] },
+        confidence: {
+          source: "story_pipeline",
+          provider: "OLLAMA_LOOPBACK",
+          model: "qwen3.8:27b",
+          profile_version_id: "profile-v1",
+          target_episode_id: "ep-1",
+          target_duration_seconds: 120,
+          total_duration_seconds: 122,
+          pipeline_duration_contract_status: "PASS",
+        },
+      }],
+    });
+    renderPanel();
+    expect(await screen.findByText(/完整文字建档 · OLLAMA_LOOPBACK \/ qwen3.8:27b/)).toHaveTextContent("时长通过 122 / 120 秒");
+    expect(screen.queryByText(/历史草稿/)).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
   it("applies a draft to the target episode and shows the result summary", async () => {
     vi.mocked(listScriptBreakdownDrafts).mockResolvedValue({ automatic_apply: false, requires_human_action: true, items: [{ ...draftItem }] });
@@ -81,6 +125,17 @@ describe("AIDraftReviewPanel", () => {
       characters: ["林默"],
     })));
     expect(vi.mocked(reviseScriptBreakdownDraftScene).mock.calls[0][2].shots[0].duration_seconds).toBe(4.5);
+  });
+  it("blocks a human revision that violates the generated-shot duration contract", async () => {
+    vi.mocked(listScriptBreakdownDrafts).mockResolvedValue({ automatic_apply: false, requires_human_action: true, items: [{ ...draftItem }] });
+    renderPanel();
+    fireEvent.click(await screen.findByText(/展开完整草稿/));
+    fireEvent.click(screen.getByRole("button", { name: "编辑场 1" }));
+    fireEvent.change(screen.getByLabelText("场 1 镜 1 时长"), { target: { value: "16" } });
+    fireEvent.change(screen.getByLabelText("场 1 修改说明"), { target: { value: "验证时长上限" } });
+    expect(screen.getByRole("alert")).toHaveTextContent("单镜时长必须在 1–15 秒之间");
+    expect(screen.getByRole("button", { name: "保存人工修订" })).toBeDisabled();
+    expect(reviseScriptBreakdownDraftScene).not.toHaveBeenCalled();
   });
   it("applies only selected scenes and keeps completed scenes locked", async () => {
     const twoSceneDraft: ScriptBreakdownDraft = {
@@ -232,7 +287,7 @@ describe("AIDraftReviewPanel", () => {
       items: [{ ...draftItem, status: "APPLIED", application_status: "APPLIED", requires_human_action: false }],
     });
     renderPanel();
-    expect(await screen.findByText(/APPLIED · APPLIED/)).toBeTruthy();
+    expect(await screen.findByText(/^已应用$/)).toBeTruthy();
     expect(screen.getByText(/已应用：本草稿的场次\/镜头\/对白已落地为生产实体/)).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
   });

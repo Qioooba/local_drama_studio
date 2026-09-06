@@ -22,6 +22,8 @@ from typing import Any, Callable, Protocol
 
 from local_drama.domain.errors import DomainRuleError
 
+from ..keyframe_references import approved_keyframes_for_shots
+
 AtomicWriter = Callable[[Path, Callable[[Path], object]], None]
 ProgressCallback = Callable[[dict[str, Any]], None]
 
@@ -45,8 +47,20 @@ class FrontHalfActionPort(Protocol):
 class EpisodeWorkerActionsPort(Protocol):
     """Episode production actions exposed to worker executions."""
 
+    def keyframe_generation(
+        self, episode_id: str, run_id: str, task_id: str, *, candidate_count: int = 1,
+    ) -> tuple[dict[str, Any], int]:  # pragma: no cover - protocol boundary
+        ...
+
     def video_generation(
-        self, episode_id: str, run_id: str, task_id: str, *, target_take_count: int = 1
+        self,
+        episode_id: str,
+        run_id: str,
+        task_id: str,
+        *,
+        target_take_count: int = 1,
+        target_shot_ids: tuple[str, ...] | None = None,
+        force_new_take: bool = False,
     ) -> tuple[dict[str, Any], int]:  # pragma: no cover - protocol boundary
         ...
 
@@ -162,25 +176,42 @@ def _automation_episode(database: AutomationPersistencePort, episode_id: str) ->
 def _automation_keyframe_check(database: AutomationPersistencePort, episode_id: str) -> tuple[dict[str, Any], int]:
     with database.connect() as connection:
         shots = connection.execute(
-            "SELECT id, code FROM shots WHERE episode_id=? ORDER BY CAST(order_key AS REAL), code",
+            """SELECT s.id,s.code,se.project_id FROM shots s
+            JOIN episodes e ON e.id=s.episode_id
+            JOIN seasons se ON se.id=e.season_id
+            WHERE s.episode_id=? AND s.archived_at IS NULL
+            ORDER BY CAST(s.order_key AS REAL),s.code""",
             (episode_id,),
         ).fetchall()
-        missing: list[dict[str, str]] = []
-        for shot in shots:
-            approved = connection.execute(
-                """SELECT 1 FROM media_assets ma JOIN media_versions mv ON mv.id=ma.approved_version_id
-                WHERE ma.owner_type='SHOT' AND ma.owner_id=? AND ma.purpose='KEYFRAME'
-                AND ma.media_kind='IMAGE' AND mv.stage='KEYFRAME' AND mv.integrity_status='VERIFIED'
-                LIMIT 1""",
-                (str(shot["id"]),),
-            ).fetchone()
-            if approved is None:
-                missing.append({"shot_id": str(shot["id"]), "shot_code": str(shot["code"])})
+        project_id = str(shots[0]["project_id"]) if shots else None
+        approved = approved_keyframes_for_shots(
+            connection,
+            (str(shot["id"]) for shot in shots),
+            project_id=project_id,
+        )
+        missing = [
+            {"shot_id": str(shot["id"]), "shot_code": str(shot["code"])}
+            for shot in shots if str(shot["id"]) not in approved
+        ]
     if missing:
-        machine_check: dict[str, Any] = {"status": "NEEDS_HITL", "ok": False, "checked_shots": len(shots), "missing_shots": missing}
         summary = f"{len(missing)} 个镜头缺少已批准关键帧，等待人工确认"
+        machine_check: dict[str, Any] = {
+            "status": "NEEDS_HITL",
+            "ok": False,
+            "code": "APPROVED_KEYFRAME_REQUIRED",
+            "detail": "镜头缺少未过期的人工批准关键帧",
+            "checked_shots": len(shots),
+            "missing_shots": missing,
+        }
     else:
-        machine_check = {"status": "PASS", "ok": True, "checked_shots": len(shots), "missing_shots": []}
+        machine_check = {
+            "status": "PASS",
+            "ok": True,
+            "code": "APPROVED_KEYFRAMES_VERIFIED",
+            "detail": "全部镜头关键帧均有未过期的人工批准证据",
+            "checked_shots": len(shots),
+            "missing_shots": [],
+        }
         summary = "全部镜头关键帧已有人工批准"
     report = _automation_report(str(machine_check["status"]), machine_check, {"checked_shots": len(shots), "missing_shot_count": len(missing)}, summary)
     return report, 0
@@ -446,11 +477,22 @@ def run_automation_task(
         # approved_version authority.  New Episode Production snapshots
         # set front_half_managed and require an explicit ReviewDecision.
         report, produced_extra = _automation_keyframe_check(database, episode_id)
+    elif action == "KEYFRAME_GENERATION":
+        mode_policy = payload.get("mode_policy", {})
+        count = int(mode_policy.get("target_take_count", 1)) if isinstance(mode_policy, dict) else 1
+        report, produced_extra = episode_worker_actions_factory().keyframe_generation(
+            episode_id, run_id, task_id, candidate_count=max(1, min(4, count)),
+        )
     elif action == "VIDEO_GENERATION":
         mode_policy = payload.get("mode_policy", {})
         target_take_count = int(mode_policy.get("target_take_count", 2)) if isinstance(mode_policy, dict) else 2
         report, produced_extra = episode_worker_actions_factory().video_generation(
-            episode_id, run_id, task_id, target_take_count=target_take_count,
+            episode_id,
+            run_id,
+            task_id,
+            target_take_count=target_take_count,
+            target_shot_ids=tuple(str(item) for item in payload.get("target_shot_ids", []) if str(item).strip()),
+            force_new_take=bool(payload.get("force_new_take", False)),
         )
     elif action == "QC":
         mode_policy = payload.get("mode_policy", {})

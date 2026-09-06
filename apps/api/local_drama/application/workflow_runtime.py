@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.shot_keyframe_route import SHOT_KEYFRAME_SINGLE_FRAME, validate_shot_keyframe_route
 from local_drama.infrastructure.comfy import ComfyClient
 from local_drama.infrastructure.database.sqlite import Database
 
@@ -188,6 +189,16 @@ class WorkflowRuntimeService:
             unknown = [str(item) for item in phase["node_ids"] if str(item) not in workflow]
             if unknown:
                 blockers.append({"code": "WORKFLOW_PHASE_NODE_MISSING", "message": f"语义阶段引用不存在节点：{','.join(unknown)}"})
+        if str(capability).strip().upper() == SHOT_KEYFRAME_SINGLE_FRAME:
+            route = validate_shot_keyframe_route(
+                route_capability=capability,
+                profile_capability="",
+                workflow_capability="",
+                contract=contract,
+                bindings=bindings,
+                workflow=workflow,
+            )
+            blockers.extend(route["blockers"])
         return {"status": "BLOCKED" if blockers else "PASS", "blockers": blockers}
 
     def create_contract(self, workflow_version_id: str, capability: str, contract: dict[str, Any], bindings: dict[str, Any], semantic_phases: list[dict[str, Any]], actor: str = "local-user") -> dict[str, Any]:
@@ -208,6 +219,14 @@ class WorkflowRuntimeService:
                 (contract_id, workflow_version_id, version_no, capability, _json(contract), _json(bindings), _json(semantic_phases), _hash(content), "DRAFT" if validation["status"] == "PASS" else "INVALID", now, now, actor),
             )
         return {**self.get_contract(contract_id), "validation": validation}
+
+    def list_workflow_contracts(self, workflow_version_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            if connection.execute("SELECT id FROM workflow_versions WHERE id=?", (workflow_version_id,)).fetchone() is None:
+                raise DomainRuleError("WORKFLOW_VERSION_NOT_FOUND", "工作流版本不存在")
+            rows = connection.execute("SELECT id FROM workflow_app_contract_versions WHERE workflow_version_id=? ORDER BY created_at DESC,id DESC", (workflow_version_id,)).fetchall()
+            binding = connection.execute("SELECT * FROM workflow_runtime_bindings WHERE workflow_version_id=?", (workflow_version_id,)).fetchone()
+        return {"items": [self.get_contract(str(row["id"])) for row in rows], "binding": dict(binding) if binding else None}
 
     def get_contract(self, contract_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:

@@ -5,8 +5,8 @@
     "NFR-TEST-001"
   ],
   "status": "PARTIAL",
-  "observed_at": "2026-08-29T06:03:09.557044+00:00",
-  "git_revision": "f0c9e0ea8ddbf6d1813a3ecbe763733d2e4f85a9",
+  "observed_at": "2026-08-30T09:12:02.095297+00:00",
+  "git_revision": "0cec547bcbb3a78d5b547181d86c2f11f457ae19",
   "deterministic_contracts_passed": true,
   "hard_failures": [],
   "dependencies": {
@@ -230,11 +230,7 @@
       },
       {
         "file": "apps/api/local_drama/application/gpu_runtime.py",
-        "import": "local_drama.infrastructure.comfy"
-      },
-      {
-        "file": "apps/api/local_drama/application/gpu_runtime.py",
-        "import": "local_drama.infrastructure.ollama_runtime"
+        "import": "local_drama.infrastructure.gpu_lifecycle_adapters"
       },
       {
         "file": "apps/api/local_drama/application/h3_workflows.py",
@@ -251,6 +247,10 @@
       {
         "file": "apps/api/local_drama/application/jobs.py",
         "import": "local_drama.infrastructure.filesystem.path_policy"
+      },
+      {
+        "file": "apps/api/local_drama/application/lipsync.py",
+        "import": "local_drama.infrastructure.database.sqlite"
       },
       {
         "file": "apps/api/local_drama/application/local_artifacts.py",
@@ -382,10 +382,6 @@
       },
       {
         "file": "apps/api/local_drama/application/reviews.py",
-        "import": "local_drama.infrastructure.database.sqlite"
-      },
-      {
-        "file": "apps/api/local_drama/application/reviews.py",
         "import": "local_drama.infrastructure.filesystem.path_policy"
       },
       {
@@ -429,6 +425,10 @@
         "import": "local_drama.infrastructure.filesystem.path_policy"
       },
       {
+        "file": "apps/api/local_drama/application/timeline.py",
+        "import": "local_drama.infrastructure.local_ai_subprocess"
+      },
+      {
         "file": "apps/api/local_drama/application/timeline_exports.py",
         "import": "local_drama.infrastructure.database.sqlite"
       },
@@ -449,6 +449,10 @@
         "import": "local_drama.infrastructure.database.sqlite"
       },
       {
+        "file": "apps/api/local_drama/application/voice_clone.py",
+        "import": "local_drama.infrastructure.database.sqlite"
+      },
+      {
         "file": "apps/api/local_drama/application/worker.py",
         "import": "local_drama.infrastructure.database.adaptation_plan_repository"
       },
@@ -459,6 +463,10 @@
       {
         "file": "apps/api/local_drama/application/worker.py",
         "import": "local_drama.infrastructure.filesystem.atomic"
+      },
+      {
+        "file": "apps/api/local_drama/application/worker.py",
+        "import": "local_drama.infrastructure.local_ai_subprocess"
       },
       {
         "file": "apps/api/local_drama/application/worker_sessions.py",
@@ -622,7 +630,7 @@
     "scope": "apps/web/src/**/*.tsx excluding generated client and tests",
     "recommended_limit_lines": 500,
     "warning_limit_lines": 700,
-    "component_count": 232,
+    "component_count": 234,
     "largest_components": [
       {
         "path": "apps/web/src/features/profiles/ProfileConfigurationPanel.tsx",
@@ -634,21 +642,21 @@
       {
         "path": "apps/web/src/features/projects/ScriptImportPanel.tsx",
         "component": "ScriptImportPanel",
-        "lines": 614,
+        "lines": 635,
         "recommended_limit_exceeded": true,
         "warning_limit_exceeded": false
       },
       {
         "path": "apps/web/src/features/profiles/LocalLLMConfigurationPanel.tsx",
         "component": "LocalLLMConfigurationPanel",
-        "lines": 562,
+        "lines": 574,
         "recommended_limit_exceeded": true,
         "warning_limit_exceeded": false
       },
       {
         "path": "apps/web/src/pages/DirectorDeskPage.tsx",
         "component": "DirectorDeskPage",
-        "lines": 482,
+        "lines": 496,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       },
@@ -676,7 +684,7 @@
       {
         "path": "apps/web/src/features/quick-create/QuickGenerationWorkbench.tsx",
         "component": "QuickGenerationWorkbench",
-        "lines": 329,
+        "lines": 339,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       },
@@ -690,7 +698,7 @@
       {
         "path": "apps/web/src/features/model-platform-v2/ModelPlatformCenter.tsx",
         "component": "ModelPlatformCenter",
-        "lines": 300,
+        "lines": 314,
         "recommended_limit_exceeded": false,
         "warning_limit_exceeded": false
       }
@@ -699,7 +707,7 @@
       {
         "path": "apps/web/src/features/profiles/LocalLLMConfigurationPanel.tsx",
         "component": "LocalLLMConfigurationPanel",
-        "lines": 562,
+        "lines": 574,
         "recommended_limit_exceeded": true,
         "warning_limit_exceeded": false
       },
@@ -713,7 +721,7 @@
       {
         "path": "apps/web/src/features/projects/ScriptImportPanel.tsx",
         "component": "ScriptImportPanel",
-        "lines": 614,
+        "lines": 635,
         "recommended_limit_exceeded": true,
         "warning_limit_exceeded": false
       }
@@ -722,7 +730,7 @@
     "size_contract_passed": true
   },
   "domain_test_inventory": {
-    "domain_module_count": 13,
+    "domain_module_count": 14,
     "domain_modules_covered_by_tests": [
       "apps/api/local_drama/domain/adaptation_planning.py",
       "apps/api/local_drama/domain/capabilities.py",
@@ -734,15 +742,16 @@
       "apps/api/local_drama/domain/generation_planning.py",
       "apps/api/local_drama/domain/network_policy.py",
       "apps/api/local_drama/domain/policies.py",
+      "apps/api/local_drama/domain/shot_prompt.py",
       "apps/api/local_drama/domain/source_text.py",
       "apps/api/local_drama/domain/timeline_formatting.py",
       "apps/api/local_drama/domain/video_geometry.py"
     ],
     "domain_modules_without_direct_test_import": [],
     "domain_rule_coverage_floor_passed": true,
-    "api_test_file_count": 202,
-    "api_test_function_count": 928,
-    "web_test_file_count": 121,
+    "api_test_file_count": 212,
+    "api_test_function_count": 1025,
+    "web_test_file_count": 124,
     "coverage_method": "static import inventory; full pytest/Vitest and Playwright remain separate gates"
   },
   "regression_gate": {

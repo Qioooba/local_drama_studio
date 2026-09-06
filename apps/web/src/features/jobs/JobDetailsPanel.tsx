@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getJob, promoteJobArtifactToMedia, type JobArtifact } from "../../generated/api";
+import { finalizeTTSJob, getJob, promoteJobArtifactToMedia, transformJobArtifactImage, type JobArtifact } from "../../generated/api";
 import { queryKeys } from "../../query/queryKeys";
 import { MEDIA_PURPOSE_LABELS, MEDIA_PURPOSE_OPTIONS } from "../shared/formOptions";
 import { ARTIFACT_KIND_LABELS, MEDIA_KIND_LABELS, MEDIA_STAGE_LABELS, statusLabel, userFacingLabel } from "../shared/optionLabels";
@@ -41,6 +41,7 @@ export function JobDetailsPanel({ jobId, onChanged }: { jobId: string | null; on
   const [purpose, setPurpose] = useState<(typeof MEDIA_PURPOSE_OPTIONS)[number]>("GENERATED_OUTPUT");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ttsCandidateId, setTtsCandidateId] = useState<string | null>(null);
   if (!jobId) return null;
   const job = detail.data?.job;
   const promote = async (artifact: JobArtifact) => {
@@ -50,6 +51,28 @@ export function JobDetailsPanel({ jobId, onChanged }: { jobId: string | null; on
       if (!detectedKind) throw new Error("该产物不是可登记的图片、视频或音频文件");
       const result = await promoteJobArtifactToMedia(artifact.id, { purpose, media_kind: detectedKind, stage });
       setMessage(`产物已登记为媒体版本：${String(result.media.media_version_id ?? result.media.id ?? "已完成").slice(0, 16)}`);
+      await detail.refetch();
+      onChanged?.();
+    } catch (caught) { setError(String(caught)); }
+    finally { setBusy(null); }
+  };
+  const mirror = async (artifact: JobArtifact) => {
+    setBusy(`mirror:${artifact.id}`); setError(null); setMessage(null);
+    try {
+      const result = await transformJobArtifactImage(artifact.id, { transform: "HORIZONTAL_MIRROR", purpose, stage });
+      setMessage(`已水平镜像并登记为可追溯新图片：${String(result.media.media_version_id ?? result.media.id ?? "已完成").slice(0, 16)}`);
+      onChanged?.();
+    } catch (caught) { setError(String(caught)); }
+    finally { setBusy(null); }
+  };
+  const finalizeTts = async () => {
+    if (!job || job.type !== "TTS_GENERATION" || job.state !== "SUCCEEDED") return;
+    setBusy(`tts-finalize:${job.id}`); setError(null); setMessage(null); setTtsCandidateId(null);
+    try {
+      const result = await finalizeTTSJob(job.id);
+      const candidateId = String(result.result.candidate?.id ?? "");
+      setTtsCandidateId(candidateId || null);
+      setMessage(`TTS 已登记为对白候选${candidateId ? `：${candidateId.slice(0, 16)}…` : ""}；可回到对应镜头试听并采用。`);
       await detail.refetch();
       onChanged?.();
     } catch (caught) { setError(String(caught)); }
@@ -78,21 +101,33 @@ export function JobDetailsPanel({ jobId, onChanged }: { jobId: string | null; on
         {job.attempts?.length ? job.attempts.map((attempt) => {
           const attemptState = String(attempt.state ?? "UNKNOWN");
           return <article className="job-attempt" key={String(attempt.id)}>
-            <div><strong>第 {String(attempt.attempt_no ?? "?")} 次执行</strong><span className={`status-pill state-${attemptState.toLowerCase()}`}>{statusLabel(attemptState)}</span></div>
+            <div className="job-attempt-header"><strong>第 {String(attempt.attempt_no ?? "?")} 次执行</strong><span className={`status-pill state-${attemptState.toLowerCase()}`}>{statusLabel(attemptState)}</span></div>
             {attempt.progress && Object.keys(attempt.progress).length > 0 && <small className="muted">进度：{progressText(attemptState, attempt.progress)}</small>}
             {attempt.error_code && <small className="inline-error"><strong>{attempt.error_code}</strong>{attempt.error_detail_redacted ? `：${attempt.error_detail_redacted}` : ""}</small>}
             {(attempt.artifacts ?? []).length ? <div className="artifact-list">{(attempt.artifacts ?? []).map((artifact) => {
               const detectedKind = artifactMediaKind(artifact);
               const promoted = Boolean(artifact.promoted_media_version_id);
+              const canFinalizeTts = job.type === "TTS_GENERATION" && job.state === "SUCCEEDED" && artifact.kind === "TTS_AUDIO" && artifact.status === "VERIFIED";
               const mediaLabel = detectedKind ? userFacingLabel(MEDIA_KIND_LABELS, detectedKind, "媒体") : null;
               const downloadable = artifact.status === "VERIFIED" && Boolean(detectedKind);
               const filename = artifact.sandbox_rel_path.replaceAll("\\", "/").split("/").pop() || "未命名产物";
-              return <div className="artifact-row" key={artifact.id}><span><strong>{filename}</strong> · {userFacingLabel(ARTIFACT_KIND_LABELS, artifact.kind, "任务产物")} · {statusLabel(artifact.status)} · 校验指纹 {String(artifact.sha256 ?? "").slice(0, 12) || "—"}…{mediaLabel ? ` · ${mediaLabel}` : " · 不能登记为媒体"}</span><div className="artifact-actions">{downloadable && <a className="secondary" href={`/api/v1/artifacts/${encodeURIComponent(artifact.id)}/download`} download={filename}>{`下载${mediaLabel ?? "媒体"}到当前电脑`}</a>}<button className="secondary" type="button" onClick={() => void promote(artifact)} disabled={busy !== null || artifact.status !== "VERIFIED" || !detectedKind || promoted}>{busy === artifact.id ? "登记中…" : promoted && mediaLabel ? `已登记为${mediaLabel}` : mediaLabel ? `登记为${mediaLabel}` : "不可登记"}</button></div></div>;
+              const artifactUrl = `/api/v1/artifacts/${encodeURIComponent(artifact.id)}/download`;
+              return <div className="artifact-row" key={artifact.id}>
+                {downloadable && <figure className="artifact-preview">
+                  {detectedKind === "IMAGE" && <img loading="eager" decoding="async" src={artifactUrl} alt={`已验证产物预览：${filename}`} onError={(e) => { e.currentTarget.style.display = "none"; }} />}
+                  {detectedKind === "VIDEO" && <video src={artifactUrl} controls preload="none" aria-label={`已验证产物预览：${filename}`} />}
+                  {detectedKind === "AUDIO" && <audio src={artifactUrl} controls preload="none" aria-label={`已验证产物预览：${filename}`} />}
+                  <figcaption>页面直读已验证产物 · {filename}</figcaption>
+                </figure>}
+                <span><strong>{filename}</strong> · {userFacingLabel(ARTIFACT_KIND_LABELS, artifact.kind, "任务产物")} · {statusLabel(artifact.status)} · 校验指纹 {String(artifact.sha256 ?? "").slice(0, 12) || "—"}…{mediaLabel ? ` · ${mediaLabel}` : " · 不能登记为媒体"}</span>
+                <div className="artifact-actions">{downloadable && <a className="secondary" href={artifactUrl} download={filename}>{`下载${mediaLabel ?? "媒体"}到当前电脑`}</a>}{detectedKind === "IMAGE" && <button className="secondary" type="button" onClick={() => void mirror(artifact)} disabled={busy !== null || artifact.status !== "VERIFIED"}>{busy === `mirror:${artifact.id}` ? "镜像并登记中…" : "水平镜像并登记为新图片"}</button>}{canFinalizeTts && <button className="secondary" type="button" onClick={() => void finalizeTts()} disabled={busy !== null}>{busy === `tts-finalize:${job.id}` ? "TTS 登记中…" : "完成 TTS 登记"}</button>}<button className="secondary" type="button" onClick={() => void promote(artifact)} disabled={busy !== null || artifact.status !== "VERIFIED" || !detectedKind || promoted}>{busy === artifact.id ? "登记中…" : promoted && mediaLabel ? `已登记为${mediaLabel}` : mediaLabel ? `登记为${mediaLabel}` : "不可登记"}</button></div>
+              </div>;
             })}</div> : <small className="muted">本次执行暂无已验证产物。</small>}
           </article>;
         }) : <p className="empty-state">该任务还没有执行记录。</p>}
       </div>
       {message && <p className="review-success" role="status">{message}</p>}
+      {ttsCandidateId && job.scope_episode_id && job.scope_shot_id && <a className="secondary" href={`/projects/${encodeURIComponent(String(job.project_id))}/episodes/${encodeURIComponent(String(job.scope_episode_id))}/studio/${encodeURIComponent(String(job.scope_shot_id))}?focus=sound`}>回到对应镜头试听与采用</a>}
       {error && <p className="inline-error" role="alert">产物登记失败：{error}</p>}
     </>}
   </section>;

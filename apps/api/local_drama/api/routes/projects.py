@@ -13,6 +13,8 @@ from local_drama.api.schemas.projects import (
     EpisodeSceneRangeRequest,
     ProjectCreateRequest,
     ProjectEpisodeAppendRequest,
+    ProjectTargetDurationApplyRequest,
+    ProjectTargetDurationUpdateRequest,
     ProjectPackageDryRunRequest,
     ProjectTemplateCopyRequest,
     ProjectUpdateRequest,
@@ -161,6 +163,38 @@ async def upload_project_local_resource(project_id: str, request: Request, kind:
 async def update_project(project_id: str, payload: ProjectUpdateRequest, request: Request) -> dict[str, object]:
     try:
         return {"project": service(request).update_project_title(project_id, payload.title, payload.expected_revision)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.patch("/{project_id}/target-duration", operation_id="updateProjectTargetDuration")
+async def update_project_target_duration(project_id: str, payload: ProjectTargetDurationUpdateRequest, request: Request) -> dict[str, object]:
+    """Change only the project's default; existing episodes stay resolved."""
+    try:
+        return {
+            "project": service(request).update_project_target_duration(
+                project_id,
+                payload.target_duration_ms,
+                payload.expected_revision,
+                actor="local-user",
+            )
+        }
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/{project_id}/target-duration:apply", operation_id="applyProjectTargetDuration")
+async def apply_project_target_duration(project_id: str, payload: ProjectTargetDurationApplyRequest, request: Request) -> dict[str, object]:
+    """Explicitly apply the current project default to selected episodes."""
+    try:
+        return {
+            "application": service(request).apply_project_target_duration(
+                project_id,
+                payload.episode_ids,
+                payload.expected_revision,
+                actor="local-user",
+            )
+        }
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

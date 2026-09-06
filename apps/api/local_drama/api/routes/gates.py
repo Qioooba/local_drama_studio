@@ -9,6 +9,8 @@ from local_drama.api.schemas.g3 import (
     I2VEvidenceKeyframePrepareRequest,
     I2VEvidenceProbeFinalizeRequest,
     I2VEvidenceProbeSubmitRequest,
+    T2IEvidenceProbeSubmitRequest,
+    T2IEvidenceProbePlanRequest,
 )
 from local_drama.api.schemas.g7 import (
     BrandKitRequest,
@@ -61,7 +63,7 @@ def pick_document_file(request: Request) -> dict[str, object]:
     try:
         require_server_loopback(request, action="打开服务器文件选择器选择")
         selection = request.app.state.platform.file_picker.choose(
-            FilePickerRequest("DOCUMENT", "选择电脑中的剧本文档", (".txt", ".md", ".markdown", ".docx"))
+            FilePickerRequest("DOCUMENT", "选择电脑中的小说或剧本文档", (".txt", ".md", ".markdown", ".docx", ".pdf", ".epub"))
         )
         return {"selection": selection.public()}
     except DomainRuleError as error:
@@ -170,11 +172,12 @@ async def plan_g6_t2i_probe(
     request: Request,
     profile_version_id: str | None = None,
     workflow_version_id: str | None = None,
+    source_media_version_id: str | None = None,
 ) -> dict[str, object]:
     try:
         return {
             "plan": T2IProbePlanService(request.app.state.database).plan(
-                project_id, profile_version_id, workflow_version_id
+                project_id, profile_version_id, workflow_version_id, source_media_version_id
             )
         }
     except DomainRuleError as error:
@@ -183,7 +186,7 @@ async def plan_g6_t2i_probe(
 
 @router.post("/projects/{project_id}/gates/g6/t2i-probe:submit", status_code=201, operation_id="submitG6T2IEvidenceProbe")
 async def submit_g6_t2i_probe(
-    project_id: str, payload: I2VEvidenceProbeSubmitRequest, request: Request,
+    project_id: str, payload: T2IEvidenceProbeSubmitRequest, request: Request,
 ) -> dict[str, object]:
     try:
         return T2IProbePlanService(request.app.state.database, request.app.state.settings).submit(
@@ -192,7 +195,20 @@ async def submit_g6_t2i_probe(
             payload.workflow_version_id,
             payload.plan_hash,
             payload.idempotency_key,
+            payload.source_media_version_id,
+            payload.reference_media_version_ids,
         )
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/projects/{project_id}/gates/g6/t2i-probe:plan", operation_id="planG6T2IReferenceProbe")
+async def plan_g6_t2i_reference_probe(project_id: str, payload: T2IEvidenceProbePlanRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"plan": T2IProbePlanService(request.app.state.database).plan(
+            project_id, payload.profile_version_id, payload.workflow_version_id,
+            reference_media_version_ids=payload.reference_media_version_ids,
+        )}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

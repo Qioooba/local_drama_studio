@@ -65,7 +65,13 @@ def _project_and_llm_profile(database, *, model: str, status: str = "PUBLISHED")
 
 def test_capability_options_explain_configured_but_unpublished_runtime(workspace, database) -> None:
     project_id, published_id = _project_and_llm_profile(database, model="deepseek-r1:14b")
-    configured = workspace.model_copy(update={"llm_model": "qwen3.8:27b", "llm_provider": "OLLAMA_LOOPBACK"})
+    configured = workspace.model_copy(
+        update={
+            "llm_model": "qwen3.8:27b",
+            "llm_provider": "OLLAMA_LOOPBACK",
+            "llm_base_url": "http://127.0.0.1:11434",
+        }
+    )
 
     result = _capability_service(database, configured).list_options(
         capability="LLM_STORY_PARSE", project_id=project_id
@@ -75,6 +81,8 @@ def test_capability_options_explain_configured_but_unpublished_runtime(workspace
     assert result["selection"]["profile_version_id"] == published_id
     assert result["options"][0]["model"]["name"] == "deepseek-r1:14b"
     assert result["options"][0]["selectable"] is True
+    assert result["options"][0]["requires_reference_image"] is False
+    assert result["options"][0]["supports_text_to_image"] is False
     assert result["configured_runtime"] == {
         "provider": "OLLAMA_LOOPBACK",
         "base_url": "http://127.0.0.1:11434",

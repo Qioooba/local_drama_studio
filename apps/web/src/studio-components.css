@@ -101,7 +101,7 @@ code, pre, kbd, samp, output, time, .tabular-nums,
 #root .shell .mobile-nav-toggle:hover,
 #root .shell .mobile-nav-toggle[aria-expanded="true"] {
   border-color: rgba(142, 118, 255, .55);
-  color: #fff;
+  color: var(--text);
   background: rgba(124, 92, 255, .14);
 }
 
@@ -112,6 +112,8 @@ code, pre, kbd, samp, output, time, .tabular-nums,
 #root .shell a.secondary,
 #root .shell .episode-primary-action,
 #root .shell .episode-danger-action {
+  min-width: 32px;
+  min-height: 32px;
   box-sizing: border-box;
   border-radius: var(--control-radius);
   font-size: 12px;
@@ -170,14 +172,16 @@ code, pre, kbd, samp, output, time, .tabular-nums,
 
 #root .shell :is(.primary-action, .episode-primary-action, button[type="submit"]):not(:disabled) {
   border: 1px solid rgba(178, 162, 255, .48);
-  color: #fff;
-  background: linear-gradient(180deg, #886eff 0%, #6f54ed 100%);
+  color: var(--on-creative-compact, #fff);
+  background-color: #6f54ed;
+  background-image: linear-gradient(180deg, #886eff 0%, #6f54ed 100%);
   box-shadow: inset 0 1px rgba(255, 255, 255, .18), 0 6px 18px rgba(91, 64, 211, .22);
 }
 
 #root .shell :is(.primary-action, .episode-primary-action, button[type="submit"]):hover:not(:disabled) {
   border-color: rgba(206, 197, 255, .7);
-  background: linear-gradient(180deg, #927aff 0%, #7659f2 100%);
+  background-color: #7659f2;
+  background-image: linear-gradient(180deg, #927aff 0%, #7659f2 100%);
   box-shadow: inset 0 1px rgba(255, 255, 255, .22), 0 8px 24px rgba(91, 64, 211, .3);
 }
 
@@ -200,7 +204,7 @@ code, pre, kbd, samp, output, time, .tabular-nums,
   button:not([class]):not([role="menuitem"]):not([role="option"]):not([role="tab"])
 ):hover:not(:disabled) {
   border-color: var(--control-border-hover);
-  color: #fff;
+  color: var(--text);
   background-color: var(--control-bg-hover);
 }
 

@@ -82,3 +82,26 @@ apps/api/.nav*/
 
 # ad-hoc pytest capture logs
 pytest_*.txt
+
+# ad-hoc scratch and agent artifacts
+scratch/
+artifacts/
+*.bak*
+check_desk2.mjs
+ux_audit.mjs
+prod_refs.txt
+shot_studio_*.png
+scripts/audit_ui_full_matrix.mjs
+scripts/dcom-default-launch-*.bin
+scripts/*.log
+scripts/*.reg
+scripts/rdp-*
+scripts/bootstrap-rdp-*
+scripts/compare-rdp-*
+scripts/dump-rdp-*
+scripts/export-recent-logon-failures.ps1
+scripts/repair-rdp-*
+scripts/restart-termservice-isolated.ps1
+scripts/run-sfc-and-test-rdp.ps1
+scripts/trace-*
+tests/e2e/temp-results/

@@ -12,6 +12,7 @@ from local_drama.application.breakdown_revisions import BreakdownRevisionService
 from local_drama.application.documents import DocumentImportService
 from local_drama.application.local_llm import LocalLLMService
 from local_drama.application.projects import ProjectService
+from local_drama.application.story_assets import StoryAssetService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.main import create_app
 
@@ -112,7 +113,8 @@ def test_apply_draft_materializes_scenes_shots_and_dialogue(workspace, database)
         assert [row["code"] for row in shots] == ["EPISODE_001-01-01", "EPISODE_001-01-02", "EPISODE_001-02-01", "EPISODE_001-02-02"]
         assert [row["target_duration_ms"] for row in shots] == [4000, 3000, 5000, 2000]
         assert [row["scene_id"] for row in shots] == [scenes[0]["id"], scenes[0]["id"], scenes[1]["id"], scenes[1]["id"]]
-        assert all(row["shot_type"] == "STANDARD" and row["status"] == "DRAFT" for row in shots)
+        assert [row["shot_type"] for row in shots] == ["CLOSEUP", "MEDIUM", "WIDE", "EXTREME_CLOSEUP"]
+        assert all(row["status"] == "DRAFT" for row in shots)
         revisions = connection.execute(
             """SELECT sr.* FROM shot_revisions sr JOIN shots s ON s.id=sr.shot_id
             WHERE s.episode_id=? ORDER BY CAST(s.order_key AS REAL)""",
@@ -125,12 +127,17 @@ def test_apply_draft_materializes_scenes_shots_and_dialogue(workspace, database)
         first_fields = json.loads(revisions[0]["fields_json"])
         assert first_fields["visual"] == "近景" and first_fields["action"] == "开门"
         assert first_fields["dialogue"] == "母亲：你回来了。" and first_fields["summary"] == "母亲迎回孩子"
+        assert first_fields["schema_version"] == "director-intent.v3"
+        assert first_fields["shot_type"] == "CLOSEUP"
+        assert first_fields["composition"]["preset"] == "LEFT_THIRD"
+        assert first_fields["subject_action"] == "开门"
+        assert first_fields["suggestion_sources"]["pipeline"]["source_kind"] == "APPLIED_BREAKDOWN_DRAFT"
         lines = connection.execute("SELECT * FROM dialogue_lines WHERE episode_id=? ORDER BY code", (episode["id"],)).fetchall()
         assert [(row["speaker"], row["shot_id"] is not None) for row in lines] == [
             ("母亲", True),
             ("孩子", True),
             ("邻居", True),
-            ("邻居", True),
+            ("待确认说话人", True),
         ]
         assert [row["code"] for row in lines] == ["AI-DL-0001", "AI-DL-0002", "AI-DL-0003", "AI-DL-0004"]
         text_revisions = connection.execute(
@@ -208,6 +215,42 @@ def test_human_scene_revision_is_append_only_and_application_freezes_revision(wo
     assert applied_error.value.code == "BREAKDOWN_SCENE_ALREADY_APPLIED"
 
 
+def test_apply_binds_existing_character_scene_and_prop_by_name_or_alias(workspace, database) -> None:
+    draft = {
+        "scenes": [{
+            "scene_no": 1,
+            "title": "雨夜仓库",
+            "location": "旧仓库",
+            "summary": "阿舟找到照骨灯",
+            "characters": ["阿舟"],
+            "shots": [{
+                "shot_no": 1, "visual": "中景", "action": "阿舟举起灯盏", "dialogue": "",
+                "duration_seconds": 4, "characters": ["阿舟"], "props": ["灯盏"],
+            }],
+        }],
+    }
+    project, episode, draft_id = _persisted_draft(workspace, database, draft=draft)
+    assets = StoryAssetService(database, workspace)
+    character = assets.create_asset(
+        str(project["id"]), "CHARACTER", "CHAR_LINZHOU", "林舟",
+        extra={"text_dossier": {"aliases": ["阿舟"]}},
+    )
+    scene = assets.create_asset(str(project["id"]), "SCENE", "SCENE_WAREHOUSE", "旧仓库")
+    prop = assets.create_asset(
+        str(project["id"]), "PROP", "PROP_LAMP", "照骨灯",
+        extra={"text_dossier": {"aliases": ["灯盏"]}},
+    )
+
+    BreakdownApplyService(database, workspace).apply_draft(draft_id, str(episode["id"]))
+    with database.connect() as connection:
+        rows = connection.execute(
+            "SELECT asset_id,role_in_shot FROM shot_asset_bindings ORDER BY role_in_shot,asset_id"
+        ).fetchall()
+    assert {(str(row["asset_id"]), str(row["role_in_shot"])) for row in rows} == {
+        (str(character["id"]), "main"), (str(scene["id"]), "location"), (str(prop["id"]), "prop"),
+    }
+
+
 def test_human_scene_revision_rejects_stale_root_revision(workspace, database) -> None:
     _project, _episode, draft_id = _persisted_draft(workspace, database)
     with pytest.raises(DomainRuleError) as stale_error:
@@ -219,6 +262,23 @@ def test_human_scene_revision_rejects_stale_root_revision(workspace, database) -
             change_note="过期页面保存",
         )
     assert stale_error.value.code == "BREAKDOWN_DRAFT_REVISION_CONFLICT"
+
+
+def test_human_scene_revision_enforces_the_same_shot_duration_contract_as_generation(workspace, database) -> None:
+    _project, _episode, draft_id = _persisted_draft(workspace, database)
+    revised_scene = json.loads(json.dumps(_rich_draft()["scenes"][0]))
+    revised_scene["shots"][0]["duration_seconds"] = 16
+
+    with pytest.raises(DomainRuleError) as duration_error:
+        BreakdownRevisionService(database).revise_scene(
+            draft_id,
+            1,
+            revised_scene,
+            expected_revision=1,
+            change_note="验证单镜时长上限",
+        )
+
+    assert duration_error.value.code == "BREAKDOWN_SHOT_DURATION_INVALID"
 
 
 def test_apply_rejects_a_persisted_duration_contract_mismatch_before_any_write(workspace, database) -> None:
@@ -466,18 +526,31 @@ def test_apply_draft_missing_or_not_ready_is_rejected(workspace, database) -> No
     assert caught.value.code == "BREAKDOWN_DRAFT_NOT_READY"
 
 
-def test_apply_draft_rolls_back_on_scene_code_conflict(workspace, database) -> None:
+def test_apply_draft_allocates_project_codes_after_existing_scenes(workspace, database) -> None:
     project, episode, draft_id = _persisted_draft(workspace, database)
     ProjectService(database, workspace.projects_root).create_scene(str(project["id"]), "SC01", "已存在场次")
-    with pytest.raises(DomainRuleError) as caught:
-        BreakdownApplyService(database, workspace).apply_draft(draft_id, str(episode["id"]))
-    assert caught.value.code == "SCENE_CODE_CONFLICT"
+    BreakdownApplyService(database, workspace).apply_draft(draft_id, str(episode["id"]))
     with database.connect() as connection:
-        assert connection.execute("SELECT COUNT(*) FROM scenes WHERE project_id=?", (project["id"],)).fetchone()[0] == 1
-        assert connection.execute("SELECT COUNT(*) FROM shots WHERE episode_id=?", (episode["id"],)).fetchone()[0] == 0
-        assert connection.execute("SELECT COUNT(*) FROM dialogue_lines WHERE episode_id=?", (episode["id"],)).fetchone()[0] == 0
-        assert connection.execute("SELECT COUNT(*) FROM episode_scene_ranges WHERE episode_id=?", (episode["id"],)).fetchone()[0] == 0
-        assert connection.execute("SELECT status FROM script_breakdown_drafts WHERE id=?", (draft_id,)).fetchone()["status"] == "DRAFT_READY"
+        assert [row[0] for row in connection.execute("SELECT code FROM scenes WHERE project_id=? ORDER BY code", (project["id"],))] == ["SC01", "SC02", "SC03"]
+        assert [row[0] for row in connection.execute("SELECT ordinal FROM episode_scene_ranges WHERE episode_id=? ORDER BY ordinal", (episode["id"],))] == [1, 2]
+        assert connection.execute("SELECT COUNT(*) FROM shots WHERE episode_id=?", (episode["id"],)).fetchone()[0] == 4
+
+
+def test_two_episodes_can_apply_drafts_with_the_same_local_scene_numbers(workspace, database) -> None:
+    projects = ProjectService(database, workspace.projects_root)
+    project = projects.create_project(code="two_episode_scenes", title="两集场次", episode_count=2,
+        aspect_ratio="9:16", fps_num=24, fps_den=1, target_duration_ms=60_000,
+        allow_unconfigured_capabilities=True)
+    season = projects.list_seasons(str(project["id"]))[0]
+    episodes = projects.list_episodes(str(season["id"]))
+    for episode in episodes:
+        _, _, draft_id = _persisted_draft(workspace, database, project=project)
+        BreakdownApplyService(database, workspace).apply_draft(draft_id, str(episode["id"]))
+    with database.connect() as connection:
+        assert [row[0] for row in connection.execute("SELECT code FROM scenes WHERE project_id=? ORDER BY code", (project["id"],))] == ["SC01", "SC02", "SC03", "SC04"]
+        for episode in episodes:
+            assert [row[0] for row in connection.execute("SELECT ordinal FROM episode_scene_ranges WHERE episode_id=? ORDER BY ordinal", (episode["id"],))] == [1, 2]
+            assert connection.execute("SELECT COUNT(*) FROM shots WHERE episode_id=?", (episode["id"],)).fetchone()[0] == 4
 
 
 def test_apply_draft_api_and_http_errors(workspace, database) -> None:

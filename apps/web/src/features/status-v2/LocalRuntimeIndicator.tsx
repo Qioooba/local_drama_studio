@@ -67,7 +67,7 @@ export function LocalRuntimeIndicator() {
   };
 
   return <details ref={detailsRef} className={`local-runtime-indicator ${state}`}>
-    <summary ref={summaryRef} aria-label={`${label}，展开查看详情`} onKeyDown={(event) => {
+    <summary ref={summaryRef} title={label} aria-label={`${label}，展开查看详情`} onKeyDown={(event) => {
       if (event.key !== "Escape" || !detailsRef.current?.open) return;
       event.preventDefault();
       closeDetails();

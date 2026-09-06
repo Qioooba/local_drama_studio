@@ -41,6 +41,49 @@ def category_for_capability(capability: str) -> str | None:
     return None
 
 
+def route_is_executable(
+    *,
+    action: str,
+    status: str,
+    workflow_version_id: str | None,
+    model_bundle: dict[str, Any] | None = None,
+) -> bool:
+    """Return whether the published profile has the execution binding its action needs.
+
+    Text planning profiles execute through their declared local/remote LLM
+    provider and therefore do not have a ComfyUI workflow. Media generation
+    profiles remain fail-closed unless an immutable workflow version is bound.
+    """
+    if status != "PUBLISHED":
+        return False
+    if action == "TEXT_PLANNING":
+        return True
+    if workflow_version_id is None:
+        return False
+    route_status = str((model_bundle or {}).get("route_status") or "").strip().upper()
+    # Historical profiles can remain immutable and PUBLISHED because jobs
+    # reference them, but an explicit negative runtime verdict must remove
+    # them from new creator-facing execution choices.
+    return not any(marker in route_status for marker in ("UNVERIFIED", "BLOCKED", "RETIRED"))
+
+
+def _preference_score(
+    *,
+    action: str,
+    declared_model: str,
+    model_bundle: dict[str, Any],
+    preferred_llm_model: str | None,
+) -> int:
+    if action == "TEXT_PLANNING":
+        return 100 if preferred_llm_model and declared_model.casefold() == preferred_llm_model.casefold() else 0
+    verification = model_bundle.get("runtime_verification")
+    if isinstance(verification, dict) and str(verification.get("status") or "").upper() == "PASS":
+        return 90
+    if str(model_bundle.get("route_status") or "").upper() == "PRODUCTION_WORKFLOW_VERIFIED":
+        return 80
+    return 0
+
+
 def _identity(profile: dict[str, Any], category: str) -> tuple[str, str]:
     raw_bundle = profile.get("model_bundle")
     bundle: dict[str, Any] = raw_bundle if isinstance(raw_bundle, dict) else {}
@@ -65,7 +108,11 @@ def _display_name(profile: dict[str, Any], declared: str, category: str) -> str:
     return {"TEXT": "文字模型", "IMAGE": "图片模型", "VIDEO": "视频模型"}[category]
 
 
-def build_generation_model_catalog(profiles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def build_generation_model_catalog(
+    profiles: list[dict[str, Any]],
+    *,
+    preferred_llm_model: str | None = None,
+) -> list[dict[str, Any]]:
     grouped: dict[str, dict[str, Any]] = {}
     for profile in profiles:
         capability = str(profile.get("capability") or "").upper()
@@ -91,6 +138,17 @@ def build_generation_model_catalog(profiles: list[dict[str, Any]]) -> list[dict[
             model["actions"].append(action)
         status = str(profile.get("status") or "UNKNOWN").upper()
         workflow_version_id = str(profile.get("workflow_version_id") or "").strip() or None
+        raw_bundle = profile.get("model_bundle")
+        model_bundle = raw_bundle if isinstance(raw_bundle, dict) else {}
+        model["preference_score"] = max(
+            int(model.get("preference_score") or 0),
+            _preference_score(
+                action=action,
+                declared_model=declared,
+                model_bundle=model_bundle,
+                preferred_llm_model=preferred_llm_model,
+            ),
+        )
         model["routes"].append(
             {
                 "action": action,
@@ -100,7 +158,12 @@ def build_generation_model_catalog(profiles: list[dict[str, Any]]) -> list[dict[
                 "version_no": int(profile.get("version_no") or 1),
                 "status": status,
                 "workflow_version_id": workflow_version_id,
-                "executable": status == "PUBLISHED" and workflow_version_id is not None,
+                "executable": route_is_executable(
+                    action=action,
+                    status=status,
+                    workflow_version_id=workflow_version_id,
+                    model_bundle=model_bundle,
+                ),
             }
         )
     models = list(grouped.values())
@@ -109,4 +172,12 @@ def build_generation_model_catalog(profiles: list[dict[str, Any]]) -> list[dict[
         model["actions"].sort()
         model["routes"].sort(key=lambda item: (item["action"], not item["executable"], -item["version_no"]))
         model["executable"] = any(route["executable"] for route in model["routes"])
-    return sorted(models, key=lambda item: (item["category"], item["name"].casefold(), item["id"]))
+    models.sort(
+        key=lambda item: (
+            item["category"],
+            -int(item.pop("preference_score", 0)),
+            item["name"].casefold(),
+            item["id"],
+        )
+    )
+    return models

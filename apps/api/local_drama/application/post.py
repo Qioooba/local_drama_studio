@@ -26,6 +26,7 @@ class PostQueryService:
         limit: int,
         target_kinds: set[str],
         include_resolved: bool,
+        target_id: str | None = None,
     ) -> dict[str, Any]:
         facts = self.reader.review_target_facts(
             episode_id,
@@ -33,6 +34,7 @@ class PostQueryService:
             limit=max(1, min(limit, 100)),
             target_kinds=target_kinds,
             include_resolved=include_resolved,
+            target_id=target_id,
         )
         return {
             **facts,

@@ -33,11 +33,12 @@ function formatSeconds(value: number): string {
 
 function dialogueText(value: unknown): string {
   if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(dialogueText).filter(Boolean).join("；");
   if (value && typeof value === "object" && !Array.isArray(value)) {
     const entry = value as Record<string, unknown>;
     if (typeof entry.text === "string") return typeof entry.speaker === "string" && entry.speaker ? `${entry.speaker}：${entry.text}` : entry.text;
   }
-  return value == null ? "" : JSON.stringify(value);
+  return value == null ? "" : "";
 }
 
 function SceneRevisionEditor({
@@ -69,7 +70,8 @@ function SceneRevisionEditor({
     duration_seconds: Math.max(0, Number(shot.duration_seconds ?? 0)),
   })));
   const [changeNote, setChangeNote] = useState("");
-  const valid = Boolean(title.trim() && changeNote.trim().length >= 2 && shots.every((shot) => shot.duration_seconds > 0));
+  const durationIsValid = (value: number) => Number.isFinite(value) && value >= 1 && value <= 15;
+  const valid = Boolean(title.trim() && changeNote.trim().length >= 2 && shots.every((shot) => durationIsValid(shot.duration_seconds)));
   const updateShot = (index: number, field: "visual" | "action" | "dialogue" | "duration_seconds", value: string | number) => {
     setShots((current) => current.map((shot, position) => position === index ? { ...shot, [field]: value } : shot));
   };
@@ -83,7 +85,7 @@ function SceneRevisionEditor({
       <label>画面<textarea aria-label={`场 ${sceneNo} 镜 ${shot.shot_no} 画面`} value={shot.visual} maxLength={4000} onChange={(event) => updateShot(index, "visual", event.target.value)} /></label>
       <label>动作<textarea aria-label={`场 ${sceneNo} 镜 ${shot.shot_no} 动作`} value={shot.action} maxLength={4000} onChange={(event) => updateShot(index, "action", event.target.value)} /></label>
       <label>对白<textarea aria-label={`场 ${sceneNo} 镜 ${shot.shot_no} 对白`} value={String(shot.dialogue)} maxLength={8000} onChange={(event) => updateShot(index, "dialogue", event.target.value)} /></label>
-      <label>时长（秒）<input aria-label={`场 ${sceneNo} 镜 ${shot.shot_no} 时长`} type="number" min="0.1" max="3600" step="0.1" value={shot.duration_seconds} onChange={(event) => updateShot(index, "duration_seconds", Number(event.target.value))} /></label>
+      <label>时长（秒）<input aria-label={`场 ${sceneNo} 镜 ${shot.shot_no} 时长`} type="number" min="1" max="15" step="0.1" value={shot.duration_seconds} aria-invalid={!durationIsValid(shot.duration_seconds)} onChange={(event) => updateShot(index, "duration_seconds", Number(event.target.value))} />{!durationIsValid(shot.duration_seconds) && <small className="inline-error" role="alert">单镜时长必须在 1–15 秒之间</small>}</label>
     </fieldset>)}
     <label>修改说明<input aria-label={`场 ${sceneNo} 修改说明`} value={changeNote} maxLength={500} onChange={(event) => setChangeNote(event.target.value)} placeholder="例如：校正动作与镜头节奏" /></label>
     <div className="inline-control"><button type="button" className="secondary" onClick={onCancel} disabled={busy}>取消</button><button type="button" disabled={!valid || busy} onClick={() => onSave({
@@ -137,7 +139,7 @@ function DraftTree({
           <strong>镜 {String(shot.shot_no ?? shotIndex + 1)}</strong>
           {Boolean(shot.visual) && <span>画面：{String(shot.visual)}</span>}
           {Boolean(shot.action) && <span>动作：{String(shot.action)}</span>}
-          {Boolean(shot.dialogue) && <span>对白：{String(shot.dialogue)}</span>}
+          {Boolean(dialogueText(shot.dialogue)) && <span>对白：{dialogueText(shot.dialogue)}</span>}
           <small>{formatSeconds(Math.max(0, Number(shot.duration_seconds ?? 0)))} 秒</small>
         </li>)}</ol></>}
       </section>;
@@ -228,18 +230,24 @@ export function AIDraftReviewPanel({ projectId }: { projectId: string }) {
       const episode = episodes.data?.items.find((candidate) => candidate.id === selected);
       const draftSeconds = item.human_edited ? durationSeconds(item) : item.confidence.normalized_total_duration_seconds ?? item.confidence.total_duration_seconds ?? durationSeconds(item);
       const targetSeconds = Number(episode?.target_duration_ms ?? 0) / 1_000;
-      const durationMismatch = Boolean(targetSeconds > 0 && Math.abs(draftSeconds - targetSeconds) > Math.max(0.5, targetSeconds * 0.05) && item.confidence.duration_contract_status !== "PASS");
+      const pipelineDraft = item.confidence.source === "story_pipeline";
+      const durationContractPassed = item.confidence.duration_contract_status === "PASS" || item.confidence.pipeline_duration_contract_status === "PASS";
+      const durationMismatch = Boolean(targetSeconds > 0 && Math.abs(draftSeconds - targetSeconds) > Math.max(0.5, targetSeconds * 0.05) && !durationContractPassed);
       const blockers = item.application_blockers ?? [];
       const canApply = Boolean(selected && selectedSceneNos.length > 0 && reviewed[item.id] && !durationMismatch && blockers.length === 0 && !busy);
       const modelSeconds = item.confidence.model_total_duration_seconds;
       return <article key={item.id}>
-        <div><strong>{item.source_document_title}</strong><span>{item.status} · {applied ? "APPLIED" : partiallyApplied ? "PARTIALLY_APPLIED" : "NOT_APPLIED"}</span></div>
+        <div><strong>{item.source_document_title}</strong><span>{applied ? "已应用" : partiallyApplied ? "部分应用" : item.status === "DRAFT_READY" ? "待审核" : item.status}</span></div>
         <p>{scenes.length} 个建议场次 · {shotCount} 个建议镜头</p>
-        <p className="draft-evidence">{item.evidence_status === "COMPLETE" ? "证据完整 · 置信度 " + Math.round((item.confidence.confidence?.overall ?? 0) * 100) + "% · " + questions.length + " 个待确认问题 · " + passages.length + " 条原文引用" : "历史草稿 · 未记录完整 Profile/置信度/问题/原文引用，不补造证据"}</p>
+        <p className="draft-evidence">{pipelineDraft
+          ? `完整文字建档 · ${item.confidence.provider ?? "本地模型"} / ${item.confidence.model ?? "模型未记录"} · 时长${durationContractPassed ? "通过" : "待确认"} ${formatSeconds(draftSeconds)} / ${formatSeconds(Number(item.confidence.target_duration_seconds ?? targetSeconds))} 秒`
+          : item.evidence_status === "COMPLETE"
+            ? "证据完整 · 置信度 " + Math.round((item.confidence.confidence?.overall ?? 0) * 100) + "% · " + questions.length + " 个待确认问题 · " + passages.length + " 条原文引用"
+            : "历史草稿 · 未记录完整 Profile/置信度/问题/原文引用，不补造证据"}</p>
         {item.human_edited && <p className="frame-feedback success">人工修订 v{item.effective_draft_revision_no} · 原始模型输出已保留；应用将采用当前修订。</p>}
         <small>{item.source_document_code} · Profile {item.profile_version_id ?? "历史未记录"} · 需要人工确认：{applied ? "否" : "是"} · 不会自动应用</small>
         {!applied && <DraftTree item={item} selectedSceneNos={selectedSceneNos} onToggleScene={(sceneNo, selected) => setSelectedScenes((current) => ({ ...current, [item.id]: selected ? [...new Set([...(current[item.id] ?? remainingSceneNos), sceneNo])].sort((left, right) => left - right) : (current[item.id] ?? remainingSceneNos).filter((candidate) => candidate !== sceneNo) }))} onReviseScene={(sceneNo, payload) => revise.mutate({ draftId: item.id, sceneNo, payload })} revisingSceneNo={revise.isPending && revise.variables?.draftId === item.id ? revise.variables.sceneNo : undefined} revisionError={revise.error && revise.variables?.draftId === item.id ? revise.error : undefined} />}
-        {modelSeconds !== undefined && item.confidence.duration_adjustment_status === "NORMALIZED_TO_TARGET" && <p className="review-guidance">模型原始合计 {formatSeconds(modelSeconds)} 秒，已按目标确定性归一到 {formatSeconds(draftSeconds)} 秒；场景与动作未改。</p>}
+        {modelSeconds !== undefined && item.confidence.duration_adjustment_status === "NORMALIZED_TO_TARGET" && <p className="review-guidance">模型原始合计 {formatSeconds(modelSeconds)} 秒，系统仅将镜头时长确定性归一到 {formatSeconds(draftSeconds)} 秒；{item.human_edited ? `当前内容采用人工修订 v${item.effective_draft_revision_no}。` : "场景与动作未改。"}</p>}
         {(item.confidence.stripped_ungrounded_dialogue_count ?? 0) > 0 && <p className="review-guidance">检测到 {item.confidence.stripped_ungrounded_dialogue_count} 镜对白无法逐字对齐本场原文；已确定性清空并记录原输出哈希。</p>}
         {(item.confidence.extractive_fallback_scene_count ?? 0) > 0 && <p className="review-guidance">检测到 {item.confidence.extractive_fallback_scene_count} 场与引用原文匹配不足；已替换为逐句原文安全镜头并记录原场景哈希。</p>}
         {durationMismatch && <p className="inline-error" role="alert">草稿总时长 {formatSeconds(draftSeconds)} 秒 · 目标 {formatSeconds(targetSeconds)} 秒，超出允许偏差，禁止应用。请重新生成或调整目标集。</p>}

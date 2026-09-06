@@ -13,6 +13,11 @@ from local_drama.model_platform.application.comfy_workflow_profiles import (
     ComfyWorkflowProfileSmokeResult,
     ProvisionedComfyWorkflowProfile,
 )
+from local_drama.model_platform.application.llama_cpp_text_profiles import (
+    LlamaCppProfileSmokeResult,
+    LlamaCppTextProfileService,
+    ProvisionedLlamaCppProfile,
+)
 from local_drama.model_platform.application.ollama_text_profiles import (
     OllamaProfileSmokeResult,
     OllamaTextProfileService,
@@ -38,6 +43,7 @@ class ProfileTemplateSmokeResult:
     validation_run_id: str
     profile_version_id: str
     status: str
+    failure_code: str | None
 
 
 class ProfileTemplateService:
@@ -51,11 +57,14 @@ class ProfileTemplateService:
         runtime_kind = self._offering_runtime_kind(runtime_model_installation_id, capability_code)
         result: (
             ProvisionedOllamaProfile
+            | ProvisionedLlamaCppProfile
             | ProvisionedPyTorchEmbeddingProfile
             | ProvisionedComfyWorkflowProfile
         )
         if runtime_kind == "OLLAMA":
             result = OllamaTextProfileService(self.database, self.settings).provision(runtime_model_installation_id, capability_code)
+        elif runtime_kind == "LLAMA_CPP_MANAGED":
+            result = LlamaCppTextProfileService(self.database, self.settings).provision(runtime_model_installation_id, capability_code)
         elif runtime_kind == "PYTORCH_PROCESS":
             result = PyTorchEmbeddingProfileService(self.database, self.settings).provision(runtime_model_installation_id, capability_code)
         elif runtime_kind == "COMFYUI":
@@ -68,18 +77,26 @@ class ProfileTemplateService:
         template = self._profile_template(profile_version_id)
         result: (
             OllamaProfileSmokeResult
+            | LlamaCppProfileSmokeResult
             | PyTorchEmbeddingProfileSmokeResult
             | ComfyWorkflowProfileSmokeResult
         )
         if template == "ollama.text.profile.v1":
             result = OllamaTextProfileService(self.database, self.settings).smoke(profile_version_id)
+        elif template == "llama_cpp.text.profile.v1":
+            result = LlamaCppTextProfileService(self.database, self.settings).smoke(profile_version_id)
         elif template == "pytorch.embedding.qwen3.profile.v1":
             result = PyTorchEmbeddingProfileService(self.database, self.settings).smoke(profile_version_id)
         elif template == "comfy.workflow.profile.v1":
             result = ComfyWorkflowProfileService(self.database, self.settings).smoke(profile_version_id)
         else:
             raise DomainRuleError("MP_PROFILE_SMOKE_IMPLEMENTATION_UNAVAILABLE", "该 Profile 模板没有已安装的真实 smoke 实现。")
-        return ProfileTemplateSmokeResult(result.validation_run_id, result.profile_version_id, result.status)
+        return ProfileTemplateSmokeResult(
+            result.validation_run_id,
+            result.profile_version_id,
+            result.status,
+            self._safe_failure_code(result.validation_run_id, result.status),
+        )
 
     def publish(self, profile_version_id: str, validation_run_id: str, reason: str) -> None:
         ProfilePublicationService(self.database).publish(profile_version_id, validation_run_id=validation_run_id, reason=reason)
@@ -112,3 +129,23 @@ class ProfileTemplateService:
         if not isinstance(template, str) or not template.strip():
             raise DomainRuleError("MP_PROFILE_TEMPLATE_UNAVAILABLE", "Profile 未声明可执行的 V2 模板。")
         return template
+
+    def _safe_failure_code(self, validation_run_id: str, status: str) -> str | None:
+        if status == "SMOKE_PASSED":
+            return None
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT result_json FROM mp_validation_runs WHERE id=? AND target_kind='EXECUTION_PROFILE_VERSION'",
+                (validation_run_id,),
+            ).fetchone()
+        if row is None:
+            return "PROFILE_SMOKE_FAILED"
+        try:
+            result = json.loads(str(row["result_json"]))
+        except (TypeError, ValueError):
+            return "PROFILE_SMOKE_FAILED"
+        if isinstance(result, dict) and isinstance(result.get("error_code"), str):
+            return str(result["error_code"])
+        if isinstance(result, dict) and result.get("output_contract_verified") is False:
+            return "PROFILE_OUTPUT_CONTRACT_MISMATCH"
+        return "PROFILE_SMOKE_FAILED"

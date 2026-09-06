@@ -56,6 +56,7 @@ export type DirectorIntentV3 = {
   transition_plan: Record<string, unknown> | null;
   sound_plan: Record<string, unknown> | null;
   creative_intent: string;
+  prompt_modifiers: string[];
   suggestion_sources: Record<string, Record<string, unknown>>;
   staging: StagingBoardValue | null;
   staging_3d: Director3DValue | null;
@@ -175,6 +176,7 @@ export function normalizeDirectorIntent(fields: Record<string, unknown>, fallbac
     dialogue: Array.isArray(fields.dialogue) || typeof fields.dialogue === "string" ? fields.dialogue : null,
     environment: text(fields.environment), continuity: text(fields.continuity), transition_plan: Object.keys(object(fields.transition_plan)).length ? object(fields.transition_plan) : null,
     sound_plan: Object.keys(object(fields.sound_plan)).length ? object(fields.sound_plan) : null, creative_intent: text(fields.creative_intent) ?? "",
+    prompt_modifiers: Array.isArray(fields.prompt_modifiers) ? fields.prompt_modifiers.filter((item): item is string => typeof item === "string" && Boolean(item.trim())) : [],
     suggestion_sources: Object.fromEntries(Object.entries(object(fields.suggestion_sources)).filter((entry): entry is [string, Record<string, unknown>] => Boolean(entry[1] && typeof entry[1] === "object" && !Array.isArray(entry[1])))),
     staging: fields.staging && typeof fields.staging === "object" ? fields.staging as StagingBoardValue : null,
     staging_3d: fields.staging_3d && typeof fields.staging_3d === "object" ? fields.staging_3d as Director3DValue : null,

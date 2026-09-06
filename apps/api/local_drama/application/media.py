@@ -24,7 +24,7 @@ from local_drama.infrastructure.filesystem.path_policy import controlled_path, s
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".avi"}
 AUDIO_EXTENSIONS = {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".aac"}
-DOCUMENT_EXTENSIONS = {".txt", ".md", ".markdown", ".docx"}
+DOCUMENT_EXTENSIONS = {".txt", ".md", ".markdown", ".docx", ".pdf", ".epub"}
 
 
 def _utc_now() -> str:
@@ -268,17 +268,21 @@ class MediaService:
 
     def submit_default_derivatives(self, media_version_id: str) -> list[dict[str, Any]]:
         item = self.get_version(media_version_id)
-        kinds = {
-            "IMAGE": ("THUMBNAIL",),
-            "VIDEO": ("THUMBNAIL", "FILMSTRIP"),
-            "AUDIO": ("WAVEFORM",),
-        }.get(str(item["media_kind"]), ())
+        media_kind = str(item["media_kind"])
+        requests: list[tuple[str, str]] = {
+            # Asset detail cards request medium while compact lists request
+            # small.  Both are explicit immutable derivatives; generating
+            # only small left the primary creator surface as a placeholder.
+            "IMAGE": [("THUMBNAIL", "small"), ("THUMBNAIL", "medium")],
+            "VIDEO": [("THUMBNAIL", "small"), ("THUMBNAIL", "medium"), ("FILMSTRIP", "small")],
+            "AUDIO": [("WAVEFORM", "small")],
+        }.get(media_kind, [])
         # Profile evidence and motion-control clips are machine inputs rather
         # than creator playback surfaces.  Avoid doubling their storage while
         # still proxying imported, generated and enhanced review videos.
-        if str(item["media_kind"]) == "VIDEO" and str(item["stage"]).upper() != "PROXY" and str(item["purpose"]).upper() not in {"PROFILE_EVIDENCE", "MOTION_CONTROL"}:
-            kinds = (*kinds, "PROXY")
-        return [self.submit_derivative(media_version_id, kind) for kind in kinds]
+        if media_kind == "VIDEO" and str(item["purpose"]).upper() not in {"PROFILE_EVIDENCE", "MOTION_CONTROL"}:
+            requests.append(("PROXY", "small"))
+        return [self.submit_derivative(media_version_id, kind, size=size) for kind, size in requests]
 
     def backfill_project_derivatives(self, project_id: str, *, cursor: int = 0, limit: int = 50) -> dict[str, Any]:
         """Submit missing-era default derivative jobs in bounded catalogue pages.
@@ -557,6 +561,130 @@ class MediaService:
             "probe": probe,
         }
 
+    def transform_job_image_artifact(
+        self,
+        artifact_id: str,
+        *,
+        transform: str = "HORIZONTAL_MIRROR",
+        purpose: str = "ASSET_REFERENCE",
+        stage: str = "KEYFRAME",
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Create an immutable, auditable image transform from a verified job artifact."""
+        if str(transform).strip().upper() != "HORIZONTAL_MIRROR":
+            raise DomainRuleError("ARTIFACT_IMAGE_TRANSFORM_INVALID", "目前只支持水平镜像")
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """SELECT a.*, ja.state AS attempt_state, j.state AS job_state, j.project_id,
+                j.subject_type, j.subject_id
+                FROM artifacts a JOIN job_attempts ja ON ja.id=a.job_attempt_id
+                JOIN jobs j ON j.id=ja.job_id WHERE a.id=?""",
+                (artifact_id,),
+            ).fetchone()
+        if row is None:
+            raise DomainRuleError("ARTIFACT_NOT_FOUND", "Job artifact 不存在", {"artifact_id": artifact_id})
+        if row["status"] != "VERIFIED" or row["attempt_state"] != "SUCCEEDED" or row["job_state"] != "SUCCEEDED":
+            raise DomainRuleError("ARTIFACT_NOT_PROMOTABLE", "只有成功 Attempt 的 VERIFIED artifact 可以派生")
+        source = controlled_path(
+            self.settings.work_root.resolve(),
+            str(row["sandbox_rel_path"]),
+            must_exist=True,
+            require_file=True,
+            code="ARTIFACT_FILE_MISSING",
+        )
+        actual_sha256, _actual_size = _hash_file(source)
+        if actual_sha256 != str(row["sha256"]):
+            raise DomainRuleError("ARTIFACT_INTEGRITY_FAILED", "Artifact 文件与已登记 hash 不一致", {"artifact_id": artifact_id})
+        if infer_media_kind(source) != "IMAGE":
+            raise DomainRuleError("ARTIFACT_IMAGE_TRANSFORM_UNSUPPORTED", "只有图片产物可以水平镜像")
+        ffmpeg = Path(str(self.settings.ffmpeg_path or ""))
+        if not ffmpeg.exists():
+            raise DomainRuleError("FFMPEG_NOT_FOUND", "水平镜像需要项目配置的 FFmpeg")
+        transform_root = self.settings.work_root / "artifact-transforms"
+        transform_root.mkdir(parents=True, exist_ok=True)
+        # Keep the staged source name deliberately short: the immutable import
+        # destination also prefixes a storage-operation UUID, and Windows paths
+        # can otherwise exceed the legacy MAX_PATH boundary.
+        transformed = transform_root / f"mirror-{uuid.uuid4().hex[:8]}.png"
+        try:
+            result = subprocess.run(
+                [str(ffmpeg), "-v", "error", "-y", "-i", str(source), "-vf", "hflip", "-frames:v", "1", str(transformed)],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            if result.returncode != 0 or not transformed.exists():
+                raise DomainRuleError(
+                    "ARTIFACT_IMAGE_TRANSFORM_FAILED",
+                    "水平镜像失败",
+                    {"stderr_redacted": result.stderr[-500:]},
+                )
+            transformed_sha256, _ = _hash_file(transformed)
+            if transformed_sha256 == actual_sha256:
+                raise DomainRuleError("ARTIFACT_IMAGE_TRANSFORM_NO_CHANGE", "镜像没有改变图片，无需创建派生版本")
+            original = self.promote_job_artifact(artifact_id, purpose=purpose, media_kind="IMAGE", stage=stage, actor=actor)
+            imported = self.import_file(
+                str(row["project_id"]),
+                transformed,
+                purpose=purpose,
+                owner_type=str(row["subject_type"]),
+                owner_id=str(row["subject_id"]),
+                media_kind="IMAGE",
+                stage=stage,
+                actor=actor,
+            )
+            with self.database.transaction() as connection:
+                current = connection.execute("SELECT import_source,parent_version_id FROM media_versions WHERE id=?", (str(imported["media_version_id"]),)).fetchone()
+                if current["import_source"] == "JOB_ARTIFACT_TRANSFORM" and current["parent_version_id"] == original["media_version_id"]:
+                    return {**imported, "source_artifact_id": artifact_id, "source_sha256": actual_sha256, "transform": "HORIZONTAL_MIRROR"}
+                connection.execute(
+                    """UPDATE media_versions SET stage=?,import_source='JOB_ARTIFACT_TRANSFORM',
+                    source_job_attempt_id=?,parent_version_id=?,updated_at=?,revision=revision+1
+                    WHERE id=? AND source_artifact_id IS NULL""",
+                    (
+                        stage,
+                        str(row["job_attempt_id"]),
+                        str(original["media_version_id"]),
+                        _utc_now(),
+                        str(imported["media_version_id"]),
+                    ),
+                )
+                connection.execute(
+                    """UPDATE media_assets SET purpose=?,metadata_json=?,updated_at=?,revision=revision+1
+                    WHERE id=?""",
+                    (
+                        purpose,
+                        _json({
+                            "source_artifact_id": artifact_id,
+                            "source_sha256": actual_sha256,
+                            "transform": "HORIZONTAL_MIRROR",
+                            "source_path_not_retained": True,
+                        }),
+                        _utc_now(),
+                        str(imported["media_asset_id"]),
+                    ),
+                )
+                connection.execute(
+                    """INSERT INTO audit_events
+                    (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json)
+                    VALUES (?, 'producer', 'JOB_ARTIFACT_IMAGE_TRANSFORMED', 'media_version', ?, ?, ?)""",
+                    (
+                        actor,
+                        str(imported["media_version_id"]),
+                        "从已验证图片产物创建可追溯的水平镜像媒体",
+                        _json({"source_artifact_id": artifact_id, "source_sha256": actual_sha256, "transform": "HORIZONTAL_MIRROR"}),
+                    ),
+                )
+            return {
+                **imported,
+                "source_artifact_id": artifact_id,
+                "source_sha256": actual_sha256,
+                "transform": "HORIZONTAL_MIRROR",
+            }
+        finally:
+            transformed.unlink(missing_ok=True)
+
     def derive_version(self, media_asset_id: str, parent_version_id: str, stage: str, actor: str = "local-user") -> dict[str, Any]:
         parent = self.get_version(parent_version_id)
         if parent["media_asset_id"] != media_asset_id:
@@ -644,8 +772,16 @@ class MediaService:
                 parameters.append(f"{normalized_kind.lower()}/%")
         if normalized_query:
             escaped = normalized_query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            clauses.append("(LOWER(COALESCE(mv.source_name,'')) LIKE ? ESCAPE '\\' OR LOWER(ma.purpose) LIKE ? ESCAPE '\\' OR LOWER(mv.stage) LIKE ? ESCAPE '\\')")
-            parameters.extend([f"%{escaped}%"] * 3)
+            clauses.append("""(LOWER(COALESCE(mv.source_name,'')) LIKE ? ESCAPE '\\'
+                OR LOWER(ma.purpose) LIKE ? ESCAPE '\\' OR LOWER(mv.stage) LIKE ? ESCAPE '\\'
+                OR EXISTS (SELECT 1 FROM character_identity_pack_slots ips
+                    JOIN character_identity_pack_versions ipv ON ipv.id=ips.pack_version_id
+                    JOIN character_identity_packs ip ON ip.id=ipv.pack_id AND ip.current_version_id=ipv.id
+                    JOIN story_assets sa ON sa.id=ip.story_asset_id
+                    WHERE ips.media_version_id=mv.id AND ip.project_id=ma.project_id
+                    AND ip.status='ACTIVE' AND ipv.status='APPROVED'
+                    AND (LOWER(sa.name) LIKE ? ESCAPE '\\' OR LOWER(ips.slot_kind) LIKE ? ESCAPE '\\')))""")
+            parameters.extend([f"%{escaped}%"] * 5)
         parameters.append(bounded_limit)
         with self.database.connect() as connection:
             rows = connection.execute(
@@ -657,7 +793,27 @@ class MediaService:
                 ORDER BY mv.updated_at DESC, mv.id DESC LIMIT ?""",
                 parameters,
             ).fetchall()
-        return [dict(row) for row in rows]
+            items = [dict(row) for row in rows]
+            identities: dict[str, list[dict[str, Any]]] = {}
+            if items:
+                placeholders = ",".join("?" for _ in items)
+                references = connection.execute(
+                    f"""SELECT ips.media_version_id, ips.slot_kind, sa.id AS story_asset_id,
+                    sa.name AS character_name, ipv.id AS pack_version_id, ipv.version_no AS pack_version_no
+                    FROM character_identity_pack_slots ips
+                    JOIN character_identity_pack_versions ipv ON ipv.id=ips.pack_version_id
+                    JOIN character_identity_packs ip ON ip.id=ipv.pack_id AND ip.current_version_id=ipv.id
+                    JOIN story_assets sa ON sa.id=ip.story_asset_id
+                    WHERE ip.project_id=? AND ip.status='ACTIVE' AND ipv.status='APPROVED'
+                    AND ips.media_version_id IN ({placeholders}) ORDER BY sa.code, ips.slot_kind""",
+                    [project_id, *[item["media_version_id"] for item in items]],
+                ).fetchall()
+                for reference in references:
+                    reference = dict(reference)
+                    identities.setdefault(reference.pop("media_version_id"), []).append(reference)
+        for item in items:
+            item["identity_references"] = identities.get(item["media_version_id"], [])
+        return items
 
     def get_asset(self, media_asset_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
@@ -1072,7 +1228,7 @@ class MediaService:
         self._cache_entry(media_version_id, "PROXY", relative.as_posix(), item["sha256"], preset_hash)
         return destination, "video/mp4"
 
-    def audio_qc_metrics(self, media_version_id: str) -> dict[str, float | bool | str]:
+    def audio_qc_metrics(self, media_version_id: str) -> dict[str, Any]:
         item, source = self.content_path(media_version_id)
         if item["media_kind"] != "AUDIO":
             raise DomainRuleError("AUDIO_QC_REQUIRES_AUDIO", "响度与削波检查只支持 AUDIO MediaVersion")
@@ -1092,18 +1248,92 @@ class MediaService:
         if result.returncode != 0:
             raise DomainRuleError("AUDIO_QC_FAILED", "FFmpeg 音频技术检查失败", {"stderr_redacted": result.stderr[-500:]})
         summary = result.stderr.rsplit("Summary:", 1)[-1]
-        lufs_match = re.search(r"Integrated loudness:[\s\S]*?I:\s*(-?\d+(?:\.\d+)?)\s+LUFS", summary)
-        true_peak_match = re.search(r"True peak:[\s\S]*?Peak:\s*(-?\d+(?:\.\d+)?)\s+dBFS", summary)
-        peak_matches = re.findall(r"Peak level dB:\s*(-?\d+(?:\.\d+)?)", result.stderr)
+        metric_number = r"(-?(?:\d+(?:\.\d+)?|inf))"
+        lufs_match = re.search(rf"Integrated loudness:[\s\S]*?I:\s*{metric_number}\s+LUFS", summary, re.IGNORECASE)
+        true_peak_match = re.search(rf"True peak:[\s\S]*?Peak:\s*{metric_number}\s+dBFS", summary, re.IGNORECASE)
+        peak_matches = re.findall(rf"Peak level dB:\s*{metric_number}", result.stderr, re.IGNORECASE)
         if not lufs_match or not true_peak_match or not peak_matches:
             raise DomainRuleError("AUDIO_QC_PARSE_FAILED", "无法从本机 FFmpeg 输出解析响度或峰值")
         integrated_lufs = float(lufs_match.group(1))
         true_peak_dbfs = float(true_peak_match.group(1))
         peak_dbfs = float(peak_matches[-1])
+
+        # Keep silence detection as a real local media observation.  A short
+        # pause is reported for reviewer context, while an all-silent file is
+        # the only silence condition that fails the G8 machine gate.
+        try:
+            silence_result = subprocess.run(
+                [ffmpeg, "-hide_banner", "-nostats", "-i", str(source), "-af", "silencedetect=n=-60dB:d=0.25", "-f", "null", "-"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise DomainRuleError("AUDIO_QC_FAILED", "音频静音检查执行失败", {"reason": type(error).__name__}) from error
+        if silence_result.returncode != 0:
+            raise DomainRuleError("AUDIO_QC_FAILED", "FFmpeg 音频静音检查失败", {"stderr_redacted": silence_result.stderr[-500:]})
+        silence_segments: list[dict[str, Any]] = []
+        pending_start: float | None = None
+        for line in silence_result.stderr.splitlines():
+            start_match = re.search(r"silence_start:\s*(-?\d+(?:\.\d+)?)", line)
+            if start_match:
+                pending_start = float(start_match.group(1))
+                continue
+            end_match = re.search(r"silence_end:\s*(-?\d+(?:\.\d+)?).*?silence_duration:\s*(-?\d+(?:\.\d+)?)", line)
+            if end_match and pending_start is not None:
+                end_seconds = float(end_match.group(1))
+                duration_seconds = max(0.0, float(end_match.group(2)))
+                silence_segments.append(
+                    {
+                        "start_seconds": round(max(0.0, pending_start), 3),
+                        "end_seconds": round(max(0.0, end_seconds), 3),
+                        "duration_ms": round(duration_seconds * 1000),
+                    }
+                )
+                pending_start = None
+        if pending_start is not None:
+            # silencedetect emits only silence_start when silence reaches EOF;
+            # use the already-probed duration to preserve that evidence.
+            probe = item.get("probe") if isinstance(item.get("probe"), dict) else {}
+            format_info = probe.get("format") if isinstance(probe.get("format"), dict) else {}
+            streams = probe.get("streams") if isinstance(probe.get("streams"), list) else []
+            audio_stream = next((stream for stream in streams if isinstance(stream, dict) and stream.get("codec_type") == "audio"), {})
+            duration_value = audio_stream.get("duration") or format_info.get("duration")
+            try:
+                duration_seconds = max(float(duration_value), pending_start)
+            except (TypeError, ValueError):
+                duration_seconds = pending_start
+            silence_segments.append(
+                {
+                    "start_seconds": round(max(0.0, pending_start), 3),
+                    "end_seconds": round(max(0.0, duration_seconds), 3),
+                    "duration_ms": round(max(0.0, duration_seconds - pending_start) * 1000),
+                }
+            )
+        probe = item.get("probe") if isinstance(item.get("probe"), dict) else {}
+        format_info = probe.get("format") if isinstance(probe.get("format"), dict) else {}
+        streams = probe.get("streams") if isinstance(probe.get("streams"), list) else []
+        audio_stream = next((stream for stream in streams if isinstance(stream, dict) and stream.get("codec_type") == "audio"), {})
+        duration_value = audio_stream.get("duration") or format_info.get("duration")
+        try:
+            duration_seconds = max(0.0, float(duration_value))
+        except (TypeError, ValueError):
+            duration_seconds = 0.0
+        silence_duration_ms = sum(int(segment["duration_ms"]) for segment in silence_segments)
+        duration_ms = round(duration_seconds * 1000) if duration_seconds > 0 else 0
+        all_silent = bool(duration_ms > 0 and silence_duration_ms >= max(1, duration_ms - 50))
         return {
             "policy_version": "g8_audio_qc_v1",
             "integrated_lufs": integrated_lufs,
             "true_peak_dbfs": true_peak_dbfs,
             "peak_dbfs": peak_dbfs,
             "clipping_detected": peak_dbfs >= -0.1,
+            "silence_detected": bool(silence_segments),
+            "silence_all": all_silent,
+            "silence_segment_count": len(silence_segments),
+            "silence_duration_ms": silence_duration_ms,
+            "silence_segments": silence_segments,
+            "silence_threshold_db": -60,
+            "silence_min_duration_ms": 250,
         }

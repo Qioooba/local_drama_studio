@@ -2,20 +2,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { adoptShotWorkingVersionV2, createKeyframeCandidate, getShotContinuityContextV2, getShotStudioV2, listEpisodeProductionShotsV2, submitShotGenerationV2 } from "../generated/api";
+import { adoptShotWorkingVersionV2, getShotStudioV2, getStoryboardWorkspace, listEpisodeProductionShotsV2, submitShotGenerationV2 } from "../generated/api";
 import { DirectorDeskPage } from "./DirectorDeskPage";
 
 vi.mock("../generated/api", () => ({
   adoptShotWorkingVersionV2: vi.fn(),
-  createKeyframeCandidate: vi.fn(),
   listEpisodeProductionShotsV2: vi.fn(),
-  getShotContinuityContextV2: vi.fn(),
+  getStoryboardWorkspace: vi.fn(),
   getShotStudioV2: vi.fn(),
   submitShotGenerationV2: vi.fn(),
-}));
-
-vi.mock("../features/media-picker/MediaPicker", () => ({
-  MediaPicker: ({ onChange }: { onChange: (id: string) => void }) => <button type="button" onClick={() => onChange("source-image-1")}>选择测试项目图片</button>,
 }));
 
 vi.mock("../features/events/useProjectEventInvalidation", () => ({
@@ -87,20 +82,20 @@ describe("DirectorDeskPage (PR-CUR-002)", () => {
   beforeEach(() => {
     vi.mocked(adoptShotWorkingVersionV2).mockReset().mockResolvedValue({ adoption: { id: "slot-1", shot_id: "shot-201", media_asset_id: "asset-1", media_version_id: "media-1", slot_type: "KEYFRAME", selection_type: "KEYFRAME", status: "ADOPTED", replayed: false } });
     window.localStorage.clear();
-    vi.mocked(getShotContinuityContextV2).mockResolvedValue({ continuity: {} } as never);
     vi.mocked(listEpisodeProductionShotsV2).mockResolvedValue({ items: mockDeskData().shot_nav.items.map((shot) => ({ shot_id: shot.id, shot_code: shot.code, overall_state: shot.status })) } as never);
+    vi.mocked(getStoryboardWorkspace).mockResolvedValue({ storyboard: { items: mockDeskData().shot_nav.items.map((shot) => ({ id: shot.id, code: shot.code, target_duration_ms: shot.target_duration_ms, fields: { subject_action: "主角推开大门", dialogue: "谁在那里？" } })) } } as never);
     vi.mocked(getShotStudioV2).mockResolvedValue(mockDeskData("shot-201", "EP01_S01", 0) as never);
   });
 
   it("requires an explicit shot selection before loading write-capable Director tools", async () => {
     renderDesk("/projects/proj-1/episodes/ep-1/studio");
 
-    expect(await screen.findByRole("heading", { name: "先选择要处理的镜头" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "一集 · 3 个镜头" })).toBeTruthy();
     expect(getShotStudioV2).not.toHaveBeenCalled();
     expect(screen.getByRole("link", { name: /EP01_S02/ }).getAttribute("href")).toBe(
-      "/projects/proj-1/episodes/ep-1/studio/shot-202",
+      "/projects/proj-1/episodes/ep-1/studio/shot-202?focus=generate",
     );
-    expect(screen.queryByRole("button", { name: "重抽当前镜头" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "重新生成当前镜头" })).toBeNull();
   });
 
   it("deep-links directly to Shot 2 without falling back to Shot 1 and generates exact /generation/:shotId href", async () => {
@@ -128,16 +123,16 @@ describe("DirectorDeskPage (PR-CUR-002)", () => {
 
   it("opens the generation inspector from both a deep link and the empty-candidate action", async () => {
     const deepLinked = renderDesk("/projects/proj-1/episodes/ep-1/studio/shot-201?focus=generate");
-    expect(await screen.findByText("本镜视频候选")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "根据首尾帧生成候选" })).toBeTruthy();
     expect(deepLinked.container.querySelector(".director-inspector-container")?.classList.contains("drawer-open")).toBe(true);
-    expect(screen.getByRole("tab", { name: "生成" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "AI 生成" }).getAttribute("aria-selected")).toBe("true");
     deepLinked.unmount();
 
     const fromEmptyState = renderDesk();
     expect(await screen.findByText(/EP01_S01 · 主角登场/)).toBeTruthy();
     fireEvent.click(screen.getByRole("link", { name: /生成首个候选/i }));
     expect(fromEmptyState.container.querySelector(".director-inspector-container")?.classList.contains("drawer-open")).toBe(true);
-    expect(screen.getByRole("tab", { name: "生成" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "AI 生成" }).getAttribute("aria-selected")).toBe("true");
   });
 
   it("does not revive legacy revision media after the canonical working-media slot is empty", async () => {
@@ -151,19 +146,6 @@ describe("DirectorDeskPage (PR-CUR-002)", () => {
 
     expect(await screen.findByText(/EP01_S01 · 主角登场/)).toBeTruthy();
     expect(screen.queryByRole("img", { name: /当前选中媒体/ })).toBeNull();
-  });
-
-  it("creates a shot keyframe candidate from an explicitly selected project image without auto-approval", async () => {
-    vi.mocked(createKeyframeCandidate).mockResolvedValue({ media: { id: "keyframe-4", duplicate: false } } as never);
-    renderDesk();
-    expect(await screen.findByText(/EP01_S01 · 主角登场/)).toBeTruthy();
-    fireEvent.keyDown(window, { key: "g" });
-    fireEvent.click(screen.getByRole("button", { name: "从项目图片创建关键帧候选" }));
-    expect(screen.getByRole("dialog", { name: "为 EP01_S01 创建关键帧候选" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "选择测试项目图片" }));
-    fireEvent.click(screen.getByRole("button", { name: "确认创建候选" }));
-    await waitFor(() => expect(createKeyframeCandidate).toHaveBeenCalledWith("source-image-1", "shot-201"));
-    expect(await screen.findByText("已创建本镜关键帧候选；仍需显式选择并在审核页批准。")).toBeTruthy();
   });
 
   it("restores a selected-shot batch from the URL and advances while preserving progress", async () => {
@@ -207,14 +189,10 @@ describe("DirectorDeskPage (PR-CUR-002)", () => {
     expect(navContainer?.classList.contains("drawer-open")).toBe(true);
     expect(inspectorContainer?.classList.contains("drawer-open")).toBe(false);
 
-    fireEvent.click(screen.getByRole("button", { name: "管理来源与锁定" }));
-    expect(navContainer?.classList.contains("drawer-open")).toBe(false);
-    expect(inspectorContainer?.classList.contains("drawer-open")).toBe(true);
-    expect(inspectorContainer?.classList.contains("drawer-open")).toBe(true);
-    expect(screen.getByRole("tab", { name: "连贯性" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText("AI 自动衔接")).toBeTruthy();
   });
 
-  it("supports keyboard shortcuts N, I, Escape and tab shortcuts G, F, A, Enter", async () => {
+  it("supports keyboard shortcuts N, I, Escape and AI draw shortcut G", async () => {
     const { container } = renderDesk();
 
     expect(await screen.findByText(/EP01_S01 · 主角登场/)).toBeTruthy();
@@ -241,19 +219,7 @@ describe("DirectorDeskPage (PR-CUR-002)", () => {
     // Press 'G' to switch to generate tab and open inspector drawer
     fireEvent.keyDown(window, { key: "g" });
     expect(inspectorContainer?.classList.contains("drawer-open")).toBe(true);
-    expect(screen.getByRole("tab", { name: "生成" }).getAttribute("aria-selected")).toBe("true");
-
-    // Press 'F' to switch to continuity tab
-    fireEvent.keyDown(window, { key: "f" });
-    expect(screen.getByRole("tab", { name: "连贯性" }).getAttribute("aria-selected")).toBe("true");
-
-    // Press 'A' to switch to assets tab
-    fireEvent.keyDown(window, { key: "a" });
-    expect(screen.getByRole("tab", { name: "角色场景" }).getAttribute("aria-selected")).toBe("true");
-
-    // Press 'Enter' to switch to picture tab
-    fireEvent.keyDown(window, { key: "Enter" });
-    expect(screen.getByRole("tab", { name: "画面" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "AI 生成" }).getAttribute("aria-selected")).toBe("true");
   });
 
   it("lets a nested shared dialog consume Escape without also closing the Inspector", async () => {
@@ -286,49 +252,40 @@ describe("DirectorDeskPage (PR-CUR-002)", () => {
     vi.mocked(submitShotGenerationV2).mockResolvedValue({ operation: "REROLL", variant: { id: "variant-2", intent_id: "intent-1", status: "PLANNED", variant_no: 2 }, job: { id: "job-2", state: "QUEUED" }, reroll: { retry: false, parent_variant_id: "variant-1" } });
     renderDesk();
     await screen.findByText(/Take 1/);
-    fireEvent.click(screen.getByRole("button", { name: "重抽当前镜头" }));
-    expect(screen.queryByLabelText("新 Seed")).toBeNull();
-    expect(screen.getByText(/自动生成不同的可复现随机值/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "构图不对" }));
-    fireEvent.click(screen.getByRole("button", { name: "创建并排队" }));
+    fireEvent.click(screen.getByRole("button", { name: "重新生成当前镜头" }));
     await waitFor(() => expect(submitShotGenerationV2).toHaveBeenCalled());
     const generatedSeed = vi.mocked(submitShotGenerationV2).mock.calls[0][1].explicit_seed;
     expect(Number.isInteger(generatedSeed)).toBe(true);
     expect(generatedSeed).not.toBe(42);
-    expect(submitShotGenerationV2).toHaveBeenCalledWith("shot-201", expect.objectContaining({ parent_variant_id: "variant-1", reason_code: "COMPOSITION_FIX", explicit_seed: generatedSeed, profile_version_id: undefined }));
+    expect(submitShotGenerationV2).toHaveBeenCalledWith("shot-201", expect.objectContaining({ parent_variant_id: "variant-1", reason_code: "USER_REROLL", explicit_seed: generatedSeed }));
   });
 
-  it("creates a model branch with the effective VIDEO_I2V Profile and preserves the parent seed", async () => {
-    const data = mockDeskData();
-    data.current_shot.candidates = [{
-      id: "variant-1", intent_id: "intent-1", variant_no: 1, variant_type: "BASE", parent_variant_id: null,
-      branch_reason: "UI_BASE_GENERATION", seed_policy: "EXPLICIT", explicit_seed: 42,
-      capability_profile_version_id: "profile-v13", status: "SUCCEEDED",
-      is_stale: false, stale_reason: null, media_asset_id: "asset-1", media_kind: "VIDEO",
-      media_version_id: "media-1", version_no: 1, take_no: 1, stage: "FORMAL", rel_path: "video.mp4",
-      mime_type: "video/mp4", duration_ms: 5000, integrity_status: "VERIFIED", selected: true,
-      approved: false, created_at: "2026-08-22T00:00:00Z",
-    }] as never;
-    data.current_shot.generation_preferences = {
-      resolutions: [{
-        capability: "VIDEO_I2V",
-        profile_version_id: "profile-v18",
-        source: "SHOT",
-        profile: { code: "h3-native-i2v", title: "H3 Native I2V", version_no: 18 },
-      }],
-    } as never;
-    vi.mocked(getShotStudioV2).mockResolvedValue(data as never);
-    vi.mocked(submitShotGenerationV2).mockResolvedValue({ operation: "REROLL", variant: { id: "variant-2", intent_id: "intent-1", status: "PLANNED", variant_no: 2 }, job: { id: "job-2", state: "QUEUED" }, reroll: { retry: false, parent_variant_id: "variant-1" } });
-    renderDesk();
-    await screen.findByText(/Take 1/);
-    fireEvent.click(screen.getByRole("button", { name: "重抽当前镜头" }));
+  it("switches shots smoothly without unmounting desk or flashing full-page loading indicator", async () => {
+    let resolveShot2!: (data: unknown) => void;
+    const shot2Promise = new Promise((resolve) => {
+      resolveShot2 = resolve;
+    });
 
-    expect((screen.getByRole("radio", { name: /改用当前推荐能力 v18/ }) as HTMLInputElement).checked).toBe(true);
-    expect(screen.queryByLabelText("新 Seed")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "创建并排队" }));
+    vi.mocked(getShotStudioV2).mockImplementation((_epId, shotId) => {
+      if (shotId === "shot-202") return shot2Promise as never;
+      return Promise.resolve(mockDeskData("shot-201", "EP01_S01", 0) as never);
+    });
 
-    await waitFor(() => expect(submitShotGenerationV2).toHaveBeenCalledWith(
-      "shot-201", expect.objectContaining({ parent_variant_id: "variant-1", reason_code: "IDENTITY_FIX", explicit_seed: undefined, profile_version_id: "profile-v18" }),
-    ));
+    renderDesk("/projects/proj-1/episodes/ep-1/studio/shot-201");
+    expect(await screen.findByText(/EP01_S01 · 主角登场/)).toBeTruthy();
+
+    // Click on Shot 2 in ShotNavigator
+    const shot2Card = screen.getByRole("link", { name: /EP01_S02/i });
+    fireEvent.click(shot2Card);
+
+    // Verify the desk does NOT unmount or show the full-screen loading indicator
+    expect(screen.queryByText("正在打开导演台…")).toBeNull();
+    // Navigator and stage remain mounted
+    expect(screen.getByRole("complementary", { name: "镜头导航" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "当前镜头媒体舞台" })).toBeTruthy();
+
+    // Resolve Shot 2
+    resolveShot2(mockDeskData("shot-202", "EP01_S02", 1));
+    expect(await screen.findByText(/EP01_S02 · 主角登场/)).toBeTruthy();
   });
 });

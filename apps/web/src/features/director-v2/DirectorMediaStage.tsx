@@ -90,27 +90,126 @@ export function DirectorMediaStage({ media, comparisonMedia = null, label, badge
 
   const restart = async () => { const video = videoRef.current; if (!video || error) return; video.currentTime = 0; setCurrentTime(0); setLoading(true); try { await video.play(); } catch (playError) { setLoading(false); setError(playError instanceof Error ? playError.message : "视频无法播放"); } };
 
-  return <div className={`director-media-stage${isVideo ? " is-video" : " is-image"} view-${viewMode}${detailZoom ? " detail-zoom" : ""}`}>
-    {!media ? <div className="director-stage-empty"><StageIcon name="frame" /><strong>{emptyTitle}</strong><span>{emptyDescription}</span>{onEmptyAction && <button type="button" className="director-button primary" onClick={onEmptyAction}>{emptyActionLabel}</button>}</div>
-      : isVideo ? <>
-        <video ref={videoRef} src={mediaProxyUrl(media.mediaVersionId)} data-original-src={directorContentUrl(media.mediaVersionId)} poster={directorThumbnailUrl(media.mediaVersionId)} preload="none" playsInline muted={muted} aria-label={`${label} 视频预览`} onClick={() => void togglePlayback()} onWaiting={() => setLoading(true)} onCanPlay={() => setLoading(false)} onPlaying={() => { setPlaying(true); setLoading(false); }} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)} onLoadedMetadata={(event) => { if (Number.isFinite(event.currentTarget.duration)) setDuration(event.currentTarget.duration); }} onError={(event) => { if (fallbackToOriginalVideo(event)) return; setLoading(false); setPlaying(false); setError("视频读取失败；请检查媒体完整性或任务产物。"); }} />
-        {!playing && !loading && !error && <button type="button" className="director-media-stage__center-play" aria-label="播放视频（Space）" onClick={() => void togglePlayback()}><StageIcon name="play" /></button>}
-        {loading && <div className="director-media-stage__loading" role="status"><span aria-hidden="true" />正在读取视频 Range…</div>}
-        {error && <div className="director-media-stage__error" role="alert"><strong>无法播放当前视频</strong><span>{error}</span><button type="button" onClick={() => { setError(null); videoRef.current?.load(); }}>重新加载</button></div>}
-        <div className="director-media-stage__controls" aria-label="视频播放控制"><button type="button" aria-label={playing ? "暂停（Space）" : "播放（Space）"} onClick={() => void togglePlayback()} disabled={Boolean(error)}><StageIcon name={playing ? "pause" : "play"} /></button><button type="button" aria-label="从头播放" onClick={() => void restart()} disabled={Boolean(error)}><StageIcon name="restart" /></button><span aria-label={`播放时间 ${formatTime(currentTime)}，总时长 ${formatTime(duration)}`}>{formatTime(currentTime)} / {formatTime(duration)}</span><input aria-label="视频进度" type="range" min="0" max={Math.max(duration, .01)} step="0.05" value={Math.min(currentTime, duration || 0)} disabled={!duration || Boolean(error)} onChange={(event) => { const next = Number(event.target.value); if (videoRef.current) videoRef.current.currentTime = next; setCurrentTime(next); }} /><button type="button" aria-label={muted ? "取消静音" : "静音"} aria-pressed={muted} onClick={() => setMuted((value) => !value)}><StageIcon name={muted ? "muted" : "volume"} /></button></div>
-      </> : media.thumbnailReady === false
-        ? <span className="media-thumbnail-fallback" role="img" aria-label={`${label}缩略图待生成`}><span aria-hidden="true">◫</span><small>缩略图待生成</small></span>
-        : <MediaThumbnail src={directorThumbnailUrl(showComparison && comparisonMedia ? comparisonMedia.mediaVersionId : media.mediaVersionId)} alt={`${label}${showComparison ? " 对照" : ""}图片缩略图`} fallbackLabel={`${label}缩略图待生成`} loading="eager" decoding="async" />}
-    {media && <div className="director-media-stage__view-tools" aria-label="画面检查工具">
-      <button type="button" aria-pressed={viewMode === "fit"} onClick={() => { setViewMode("fit"); setDetailZoom(false); }}>适合</button>
-      <button type="button" aria-pressed={viewMode === "actual"} onClick={() => { setViewMode("actual"); setDetailZoom(false); }}>100%</button>
-      <button type="button" aria-pressed={detailZoom} onClick={() => setDetailZoom((value) => !value)}>细节 ×2</button>
-      <button type="button" aria-pressed={gridVisible} onClick={() => setGridVisible((value) => !value)}>九宫格</button>
-      <button type="button" aria-pressed={safeFrameVisible} onClick={() => setSafeFrameVisible((value) => !value)}>安全框</button>
-      {canFlicker && <button type="button" aria-pressed={showComparison} onPointerDown={() => setShowComparison(true)} onPointerUp={() => setShowComparison(false)} onPointerCancel={() => setShowComparison(false)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setShowComparison(true); }} onKeyUp={() => setShowComparison(false)}>按住闪切</button>}
-    </div>}
-    {gridVisible && <div className="director-media-stage__grid" aria-hidden="true" />}
-    {safeFrameVisible && <div className="director-media-stage__safe-frame" aria-hidden="true"><span>标题安全区</span></div>}
-    {badges.length > 0 && <div className="director-media-badges">{badges.map((badge) => <span key={badge}>{badge}</span>)}</div>}
-  </div>;
+  return (
+    <div className={`director-media-stage${isVideo ? " is-video" : " is-image"} view-${viewMode}${detailZoom ? " detail-zoom" : ""}`}>
+      <div className="director-media-stage__canvas">
+        {!media ? (
+          <div className="director-stage-empty">
+            <StageIcon name="frame" />
+            <strong>{emptyTitle}</strong>
+            <span>{emptyDescription}</span>
+            {onEmptyAction && <button type="button" className="director-button primary" onClick={onEmptyAction}>{emptyActionLabel}</button>}
+          </div>
+        ) : isVideo ? (
+          <>
+            <video
+              ref={videoRef}
+              src={mediaProxyUrl(media.mediaVersionId)}
+              data-original-src={directorContentUrl(media.mediaVersionId)}
+              poster={directorThumbnailUrl(media.mediaVersionId)}
+              preload="none"
+              playsInline
+              muted={muted}
+              aria-label={`${label} 视频预览`}
+              onClick={() => void togglePlayback()}
+              onWaiting={() => setLoading(true)}
+              onCanPlay={() => setLoading(false)}
+              onPlaying={() => { setPlaying(true); setLoading(false); }}
+              onPause={() => setPlaying(false)}
+              onEnded={() => setPlaying(false)}
+              onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+              onLoadedMetadata={(event) => { if (Number.isFinite(event.currentTarget.duration)) setDuration(event.currentTarget.duration); }}
+              onError={(event) => {
+                if (fallbackToOriginalVideo(event)) return;
+                setLoading(false);
+                setPlaying(false);
+                setError("视频读取失败；请检查媒体完整性或任务产物。");
+              }}
+            />
+            {!playing && !loading && !error && (
+              <button type="button" className="director-media-stage__center-play" aria-label="播放视频（Space）" onClick={() => void togglePlayback()}>
+                <StageIcon name="play" />
+              </button>
+            )}
+            {loading && <div className="director-media-stage__loading" role="status"><span aria-hidden="true" />正在读取视频 Range…</div>}
+            {error && (
+              <div className="director-media-stage__error" role="alert">
+                <strong>无法播放当前视频</strong>
+                <span>{error}</span>
+                <button type="button" onClick={() => { setError(null); videoRef.current?.load(); }}>重新加载</button>
+              </div>
+            )}
+          </>
+        ) : media.thumbnailReady === false ? (
+          <span className="media-thumbnail-fallback" role="img" aria-label={`${label}缩略图待生成`}>
+            <span aria-hidden="true">◫</span>
+            <small>缩略图待生成</small>
+          </span>
+        ) : (
+          <MediaThumbnail
+            src={directorThumbnailUrl(showComparison && comparisonMedia ? comparisonMedia.mediaVersionId : media.mediaVersionId)}
+            alt={`${label}${showComparison ? " 对照" : ""}图片缩略图`}
+            fallbackLabel={`${label}缩略图待生成`}
+            loading="eager"
+            decoding="async"
+          />
+        )}
+        {media && (
+          <div className="director-media-stage__view-tools" aria-label="画面检查工具">
+            <button type="button" aria-pressed={viewMode === "fit"} onClick={() => { setViewMode("fit"); setDetailZoom(false); }}>适合</button>
+            <button type="button" aria-pressed={viewMode === "actual"} onClick={() => { setViewMode("actual"); setDetailZoom(false); }}>100%</button>
+            <button type="button" aria-pressed={detailZoom} onClick={() => setDetailZoom((value) => !value)}>细节 ×2</button>
+            <button type="button" aria-pressed={gridVisible} onClick={() => setGridVisible((value) => !value)}>九宫格</button>
+            <button type="button" aria-pressed={safeFrameVisible} onClick={() => setSafeFrameVisible((value) => !value)}>安全框</button>
+            {canFlicker && (
+              <button
+                type="button"
+                aria-pressed={showComparison}
+                onPointerDown={() => setShowComparison(true)}
+                onPointerUp={() => setShowComparison(false)}
+                onPointerCancel={() => setShowComparison(false)}
+                onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setShowComparison(true); }}
+                onKeyUp={() => setShowComparison(false)}
+              >
+                按住闪切
+              </button>
+            )}
+          </div>
+        )}
+        {gridVisible && <div className="director-media-stage__grid" aria-hidden="true" />}
+        {safeFrameVisible && <div className="director-media-stage__safe-frame" aria-hidden="true"><span>标题安全区</span></div>}
+        {badges.length > 0 && <div className="director-media-badges">{badges.map((badge) => <span key={badge}>{badge}</span>)}</div>}
+      </div>
+      {isVideo && media && (
+        <div className="director-media-stage__controls" aria-label="视频播放控制">
+          <button type="button" aria-label={playing ? "暂停（Space）" : "播放（Space）"} onClick={() => void togglePlayback()} disabled={Boolean(error)}>
+            <StageIcon name={playing ? "pause" : "play"} />
+          </button>
+          <button type="button" aria-label="从头播放" onClick={() => void restart()} disabled={Boolean(error)}>
+            <StageIcon name="restart" />
+          </button>
+          <span aria-label={`播放时间 ${formatTime(currentTime)}，总时长 ${formatTime(duration)}`}>
+            {formatTime(currentTime)} / {formatTime(duration)}
+          </span>
+          <input
+            aria-label="视频进度"
+            type="range"
+            min="0"
+            max={Math.max(duration, 0.01)}
+            step="0.05"
+            value={Math.min(currentTime, duration || 0)}
+            disabled={!duration || Boolean(error)}
+            onChange={(event) => {
+              const next = Number(event.target.value);
+              if (videoRef.current) videoRef.current.currentTime = next;
+              setCurrentTime(next);
+            }}
+          />
+          <button type="button" aria-label={muted ? "取消静音" : "静音"} aria-pressed={muted} onClick={() => setMuted((value) => !value)}>
+            <StageIcon name={muted ? "muted" : "volume"} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }

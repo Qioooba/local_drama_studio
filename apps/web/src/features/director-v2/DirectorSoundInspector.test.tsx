@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   adoptDialogueWorkingAudioV2,
+  finalizeTTSJob,
   putShotDialogueDraftV2,
   submitDialogueTtsGenerationV2,
   type ShotDialogueProjection,
@@ -20,6 +21,8 @@ vi.mock("../../generated/api", async (importOriginal) => {
     listShotLipsyncJobs: vi.fn().mockResolvedValue({ items: [], shot_id: "shot-1" }),
     createShotLipsyncJob: vi.fn(),
     finalizeLipsyncJob: vi.fn(),
+    finalizeTTSJob: vi.fn(),
+    retryJob: vi.fn(),
   };
 });
 
@@ -40,12 +43,20 @@ const dialogue: ShotDialogueProjection = {
 function renderInspector(value: ShotDialogueProjection = dialogue) {
   const onChanged = vi.fn().mockResolvedValue(undefined);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const rendered = render(<QueryClientProvider client={client}><MemoryRouter><DirectorSoundInspector projectId="project-1" shotId="shot-1" shotCode="S012" shotRevision={3} dialogue={value} videoOptions={[{ id: "video-1", label: "候选 v1" }]} canEdit reviewHref="/review" onChanged={onChanged} /></MemoryRouter></QueryClientProvider>);
+  const rendered = render(<QueryClientProvider client={client}><MemoryRouter><DirectorSoundInspector projectId="project-1" shotId="shot-1" shotCode="S012" shotRevision={3} shotDurationMs={2000} dialogue={value} videoOptions={[{ id: "video-1", label: "候选 v1" }]} canEdit reviewHref="/review" onChanged={onChanged} /></MemoryRouter></QueryClientProvider>);
   return { onChanged, container: rendered.container };
 }
 
 describe("DirectorSoundInspector", () => {
+  it("shows a spoken overrun and submits the user-selected speech rate", async () => {
+    renderInspector({ ...dialogue, lines: [{ ...dialogue.lines[0], candidates: [{ ...dialogue.lines[0].candidates[0], duration_ms: 3500, selected: true }] }] });
+    expect(screen.getByText(/超出 1.50 秒/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("新候选语速"), { target: { value: "1.2" } });
+    fireEvent.click(screen.getByRole("button", { name: "生成 TTS 候选" }));
+    await waitFor(() => expect(submitDialogueTtsGenerationV2).toHaveBeenCalledWith("line-1", expect.objectContaining({ speech_rate: 1.2 })));
+  });
   beforeEach(() => {
+    vi.mocked(finalizeTTSJob).mockReset().mockResolvedValue({} as never);
     vi.mocked(putShotDialogueDraftV2).mockReset().mockResolvedValue({ dialogue: { shot_id: "shot-1", line_id: "line-1", code: "DLG-012", speaker: "阿宁", line_revision: 2, text_revision: dialogue.lines[0].current_text, idempotent_replay: false } });
     vi.mocked(submitDialogueTtsGenerationV2).mockReset().mockResolvedValue({ line_id: "line-1", text_revision_id: "text-1", text_revision_no: 1, job: { id: "job-1", state: "QUEUED", subject_kind: "DIALOGUE_TEXT_REVISION", scope_project_id: "project-1", scope_episode_id: "episode-1", scope_shot_id: "shot-1", stage_code: "AUDIO_SUBTITLE", idempotent_replay: false } });
     vi.mocked(adoptDialogueWorkingAudioV2).mockReset().mockResolvedValue({ adoption: { id: "selection-1", dialogue_line_id: "line-1", tts_candidate_id: "candidate-1", media_version_id: "audio-1", source_text_revision_id: "text-1", status: "ADOPTED", idempotent_replay: false } });
@@ -58,6 +69,20 @@ describe("DirectorSoundInspector", () => {
     expect(screen.getByLabelText("DLG-012 TTS 候选试听").getAttribute("src")).toBe("/api/v1/media-versions/audio-1/content");
     expect(screen.getByText(/BGM、环境声和音效属于后期音频时间线/)).not.toBeNull();
     expect(container.textContent).not.toContain("分集音频轨道");
+  });
+
+  it("registers completed speech jobs without generating speech again", async () => {
+    const { onChanged } = renderInspector({ total: 1, lines: [{ ...dialogue.lines[0], candidates: [], jobs: [{ id: "completed-tts", state: "SUCCEEDED", registered: false, last_error_code: null, last_error_detail_redacted: null }] }] });
+    await waitFor(() => expect(finalizeTTSJob).toHaveBeenCalledWith("completed-tts"));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+    expect(submitDialogueTtsGenerationV2).not.toHaveBeenCalled();
+  });
+
+  it("shows active TTS and prevents duplicate submission", () => {
+    renderInspector({ total: 1, lines: [{ ...dialogue.lines[0], candidates: [], jobs: [{ id: "running-tts", state: "RUNNING", registered: false, last_error_code: null, last_error_detail_redacted: null }] }] });
+    expect(screen.getByText("正在生成声音")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "生成 TTS 候选" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(finalizeTTSJob).not.toHaveBeenCalled();
   });
 
   it("submits typed TTS and working-adoption commands", async () => {

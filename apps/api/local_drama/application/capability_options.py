@@ -12,6 +12,7 @@ from typing import Any, Protocol
 
 from local_drama.domain.capabilities import normalize_capability
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.image_input_roles import COMFY_IMAGE_INPUT_ROLES
 
 _READY_RUNTIME_STATES = {"AVAILABLE", "READY", "RUNNING", "PUBLISHED", "CONFIGURED"}
 _BLOCKED_RUNTIME_STATES = {"BLOCKED", "BLOCKED_OFFLINE", "FAILED", "DISABLED", "REVOKED", "STOPPED"}
@@ -48,6 +49,27 @@ def _model_identity(profile: dict[str, Any]) -> tuple[str, str]:
 
 def _requires_workflow(capability: str) -> bool:
     return capability.startswith("IMAGE_") or capability.startswith("VIDEO_")
+
+
+def _input_slots(input_contract: Any) -> dict[str, Any]:
+    if not isinstance(input_contract, dict):
+        return {}
+    slots = input_contract.get("input_slots")
+    if isinstance(slots, dict):
+        return {str(role): spec for role, spec in slots.items() if isinstance(spec, dict)}
+    metadata = {"transport", "local_only", "requires_explicit_validation", "required_inputs", "required_nodes", "provider_kind"}
+    return {str(role): spec for role, spec in input_contract.items() if str(role) not in metadata and isinstance(spec, dict)}
+
+
+def _profile_image_contract(input_contract: Any) -> tuple[bool, bool, list[str]]:
+    slots = _input_slots(input_contract)
+    prompt = slots.get("PROMPT")
+    has_prompt = bool(prompt) and int(prompt.get("min", 0) or 0) > 0
+    requires_reference_image = any(
+        str(role) in COMFY_IMAGE_INPUT_ROLES and (int(spec.get("min", 0) or 0) > 0 or spec.get("required") is True)
+        for role, spec in slots.items()
+    )
+    return requires_reference_image, has_prompt and not requires_reference_image, sorted(slots)
 
 
 class CapabilityOptionService:
@@ -175,6 +197,7 @@ class CapabilityOptionService:
             warnings.append({"code": "RUNTIME_STATUS_UNCONFIRMED", "message": f"运行时状态为 {runtime_status}，提交时仍会再次预检"})
 
         selectable = not blockers
+        requires_reference_image, supports_text_to_image, input_slot_names = _profile_image_contract(detail.get("input_contract"))
         return {
             "profile_version_id": _text(detail.get("id")),
             "profile": {
@@ -205,6 +228,9 @@ class CapabilityOptionService:
                 if isinstance(execution.get("fingerprints"), dict)
                 else None
             ),
+            "input_slots": input_slot_names,
+            "requires_reference_image": requires_reference_image,
+            "supports_text_to_image": supports_text_to_image,
         }
 
     def _resolution(

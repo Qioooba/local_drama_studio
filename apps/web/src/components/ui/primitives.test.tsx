@@ -44,6 +44,17 @@ function ToastTestConsumer() {
 }
 
 describe("shared UI primitives", () => {
+  it("keeps cached thumbnails visible and resets failures only for a different source", () => {
+    const { rerender } = render(<MediaThumb src="/api/v1/media-versions/a/thumbnail" alt="角色图" />);
+    expect(screen.getByRole("img", { name: "角色图" })).toBeVisible();
+    fireEvent.error(screen.getByRole("img", { name: "角色图" }));
+    expect(screen.getByRole("img", { name: "角色图：缩略图加载失败" })).toBeVisible();
+    rerender(<MediaThumb src="/api/v1/media-versions/a/thumbnail" alt="角色图" />);
+    expect(screen.getByText("缩略图加载失败")).toBeVisible();
+    rerender(<MediaThumb src="/api/v1/media-versions/b/thumbnail" alt="角色图" />);
+    expect(screen.getByRole("img", { name: "角色图" })).toBeVisible();
+    expect(screen.queryByText("缩略图加载失败")).toBeNull();
+  });
   it("never lets MediaThumb request an original content endpoint", () => {
     const { rerender } = render(<MediaThumb src="/api/v1/media-versions/mv-1/content" alt="镜头图" />);
     expect(screen.queryByRole("img", { name: "镜头图" })).not.toBeInTheDocument();

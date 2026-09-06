@@ -439,6 +439,44 @@ class CharacterIdentityPackService:
                 if state is None or state["story_asset_id"] != story_asset_id:
                     raise DomainRuleError("ASSET_STATE_MISMATCH", "所选状态不属于该角色资产")
 
+            reference_rows = connection.execute(
+                """SELECT r.reference_kind,r.media_version_id,
+                mv.version_no AS media_version_no,mv.sha256,mv.byte_size,mv.integrity_status,
+                ma.media_kind,ma.project_id AS media_project_id,
+                waa.id AS current_authorization_id,waa.authorization_status,
+                waa.license_status,waa.sha256 AS authorization_sha256,
+                waa.byte_size AS authorization_byte_size,waa.revision AS authorization_revision
+                FROM story_asset_references r
+                JOIN media_versions mv ON mv.id=r.media_version_id
+                JOIN media_assets ma ON ma.id=mv.media_asset_id
+                LEFT JOIN workspace_asset_authorizations waa
+                  ON waa.project_id=r.project_id AND waa.media_version_id=r.media_version_id
+                WHERE r.project_id=? AND r.story_asset_id=? AND r.status='ACTIVE'
+                  AND r.reference_kind IN ('FRONT','LEFT','RIGHT')
+                  AND ((? IS NULL AND r.asset_state_id IS NULL) OR r.asset_state_id=?)
+                ORDER BY r.reference_kind,r.is_locked DESC,r.priority ASC,r.updated_at DESC,r.id""",
+                (project_id, story_asset_id, asset_state_id, asset_state_id),
+            ).fetchall()
+            initial_references: dict[str, dict[str, Any]] = {}
+            for reference_row in reference_rows:
+                slot_kind = str(reference_row["reference_kind"])
+                if slot_kind in initial_references:
+                    continue
+                reference = dict(reference_row)
+                reference["slot_kind"] = slot_kind
+                try:
+                    self._validate_slot_row({"project_id": project_id}, reference)
+                except DomainRuleError:
+                    # A story reference may predate workspace authorization.  It
+                    # remains visible as a reference but is never silently copied
+                    # into an approvable identity pack.
+                    continue
+                initial_references[slot_kind] = reference
+            initial_slots = {
+                slot_kind: str(reference["media_version_id"])
+                for slot_kind, reference in initial_references.items()
+            }
+
             try:
                 connection.execute(
                     """INSERT INTO character_identity_packs
@@ -455,14 +493,41 @@ class CharacterIdentityPackService:
                 (id, pack_id, project_id, story_asset_id, asset_state_id, version_no,
                  status, slots_json, generator_job_id, approval_metadata_json,
                  created_at, updated_at, created_by, revision, schema_version)
-                VALUES (?, ?, ?, ?, ?, 1, 'DRAFT', '{}', NULL, '{}', ?, ?, ?, 1, 'v1')""",
-                (version_id, pack_id, project_id, story_asset_id, asset_state_id, now, now, actor),
+                VALUES (?, ?, ?, ?, ?, 1, 'DRAFT', ?, NULL, '{}', ?, ?, ?, 1, 'v1')""",
+                (version_id, pack_id, project_id, story_asset_id, asset_state_id, _json(initial_slots), now, now, actor),
             )
+            for slot_kind, reference in initial_references.items():
+                connection.execute(
+                    """INSERT INTO character_identity_pack_slots
+                    (id,pack_version_id,slot_kind,media_version_id,is_primary,
+                     generation_profile_version_id,authorization_id,created_at,created_by,schema_version)
+                    VALUES (?,?,?,?,1,NULL,?,?,?,'v1')""",
+                    (
+                        str(uuid.uuid4()),
+                        version_id,
+                        slot_kind,
+                        reference["media_version_id"],
+                        reference["current_authorization_id"],
+                        now,
+                        actor,
+                    ),
+                )
             connection.execute(
                 """INSERT INTO audit_events
                 (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json)
                 VALUES (?, 'producer', 'CHARACTER_IDENTITY_PACK_CREATED', 'character_identity_pack', ?, ?, ?)""",
-                (actor, pack_id, f"创建角色身份包 {clean_code}", _json({"name": name, "version_id": version_id})),
+                (
+                    actor,
+                    pack_id,
+                    f"创建角色身份包 {clean_code}",
+                    _json(
+                        {
+                            "name": name,
+                            "version_id": version_id,
+                            "bootstrapped_reference_slots": sorted(initial_slots),
+                        }
+                    ),
+                ),
             )
 
         return self.get_pack(pack_id)
@@ -871,6 +936,140 @@ class CharacterIdentityPackService:
             )
 
         return {"shot_id": shot_id, "story_asset_id": story_asset_id, "identity_pack_version_id": pack_version_id}
+
+    def sync_episode_identity_packs(
+        self,
+        episode_id: str,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Bind each character reference in an episode to its current approved pack.
+
+        This is an explicit episode-level operator action.  It intentionally
+        refuses to guess when a character has multiple active looks, because
+        choosing a costume/look is a creative decision that belongs at shot
+        level.  A single active look can be applied safely and atomically to
+        every shot that already references that character.
+        """
+        now = _now()
+        with self.database.transaction() as connection:
+            episode = connection.execute(
+                """SELECT e.id,se.project_id
+                FROM episodes e JOIN seasons se ON se.id=e.season_id
+                WHERE e.id=?""",
+                (episode_id,),
+            ).fetchone()
+            if episode is None:
+                raise DomainRuleError("EPISODE_NOT_FOUND", "剧集不存在")
+
+            bindings = connection.execute(
+                """SELECT sab.id,sab.shot_id,sab.asset_id,a.code AS asset_code,a.name AS asset_name
+                FROM shot_asset_bindings sab
+                JOIN shots sh ON sh.id=sab.shot_id
+                JOIN story_assets a ON a.id=sab.asset_id AND a.kind='CHARACTER'
+                WHERE sh.episode_id=? AND sh.archived_at IS NULL AND a.status='ACTIVE'
+                ORDER BY sh.order_key,sh.id,sab.id""",
+                (episode_id,),
+            ).fetchall()
+            if not bindings:
+                return {
+                    "episode_id": episode_id,
+                    "project_id": str(episode["project_id"]),
+                    "updated_binding_count": 0,
+                    "character_count": 0,
+                }
+
+            asset_ids = sorted({str(row["asset_id"]) for row in bindings})
+            selected_versions: dict[str, sqlite3.Row] = {}
+            missing_assets: list[dict[str, str]] = []
+            ambiguous_assets: list[dict[str, Any]] = []
+            for asset_id in asset_ids:
+                candidates = connection.execute(
+                    """SELECT v.*,p.id AS identity_pack_id,p.name AS identity_pack_name,
+                    p.current_version_id,p.status AS pack_status
+                    FROM character_identity_packs p
+                    JOIN character_identity_pack_versions v ON v.id=p.current_version_id
+                    WHERE p.project_id=? AND p.story_asset_id=? AND p.status='ACTIVE'
+                    AND v.status='APPROVED'
+                    ORDER BY p.updated_at DESC,p.id""",
+                    (episode["project_id"], asset_id),
+                ).fetchall()
+                asset = next(row for row in bindings if str(row["asset_id"]) == asset_id)
+                if not candidates:
+                    missing_assets.append(
+                        {
+                            "asset_id": asset_id,
+                            "asset_code": str(asset["asset_code"]),
+                            "asset_name": str(asset["asset_name"]),
+                        }
+                    )
+                    continue
+                if len(candidates) > 1:
+                    ambiguous_assets.append(
+                        {
+                            "asset_id": asset_id,
+                            "asset_code": str(asset["asset_code"]),
+                            "asset_name": str(asset["asset_name"]),
+                            "candidate_pack_ids": [str(row["identity_pack_id"]) for row in candidates],
+                        }
+                    )
+                    continue
+                self._validated_content(connection, candidates[0], require_three_view=True)
+                selected_versions[asset_id] = candidates[0]
+
+            if missing_assets or ambiguous_assets:
+                raise DomainRuleError(
+                    "EPISODE_IDENTITY_PACK_SYNC_BLOCKED",
+                    "本集角色身份包尚不能统一应用",
+                    {
+                        "episode_id": episode_id,
+                        "missing_assets": missing_assets,
+                        "ambiguous_assets": ambiguous_assets,
+                    },
+                    suggested_action="先批准缺失角色的身份包；多造型角色请在镜头页逐镜选择",
+                )
+
+            updated = 0
+            version_ids: set[str] = set()
+            for binding in bindings:
+                version = selected_versions[str(binding["asset_id"])]
+                version_id = str(version["id"])
+                version_ids.add(version_id)
+                result = connection.execute(
+                    """UPDATE shot_asset_bindings
+                    SET identity_pack_version_id=?,
+                        asset_state_id=COALESCE(?,asset_state_id),
+                        revision=revision+1
+                    WHERE id=? AND COALESCE(identity_pack_version_id,'')<>?""",
+                    (version_id, version["asset_state_id"], binding["id"], version_id),
+                )
+                updated += int(result.rowcount)
+
+            connection.execute(
+                """INSERT INTO audit_events
+                (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
+                VALUES (?,'producer','EPISODE_CHARACTER_IDENTITY_PACKS_SYNCED','episode',?,?,?)""",
+                (
+                    actor,
+                    episode_id,
+                    "将本集角色引用同步到当前已批准身份包",
+                    _json(
+                        {
+                            "character_count": len(asset_ids),
+                            "binding_count": len(bindings),
+                            "updated_binding_count": updated,
+                            "pack_version_ids": sorted(version_ids),
+                            "synced_at": now,
+                        }
+                    ),
+                ),
+            )
+
+        return {
+            "episode_id": episode_id,
+            "project_id": str(episode["project_id"]),
+            "updated_binding_count": updated,
+            "character_count": len(asset_ids),
+        }
 
     def get_shot_character_packs(self, shot_id: str) -> list[dict[str, Any]]:
         with self.database.connect() as connection:

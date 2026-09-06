@@ -16,8 +16,8 @@ def test_model_platform_release_gate_verifies_configured_windows_contract(tmp_pa
     database.parent.mkdir()
     migrate(database)
     config = instance / "config.json"
-    config.write_text(json.dumps({"schema_version": 2, "runtime": {"model_root": "${INSTANCE_ROOT}/models", "model_library_roots": ["${MODEL_ROOT}/libraries/comfyui", "${MODEL_ROOT}/libraries/pytorch", "${MODEL_ROOT}/libraries/ollama", "${MODEL_ROOT}/libraries/audio"]}}), encoding="utf-8")
-    for name in ("downloads", "staging", "quarantine", "libraries/comfyui", "libraries/pytorch", "libraries/ollama", "libraries/audio"):
+    config.write_text(json.dumps({"schema_version": 2, "runtime": {"model_root": "${INSTANCE_ROOT}/models", "model_library_roots": ["${MODEL_ROOT}/libraries/comfyui", "${MODEL_ROOT}/libraries/pytorch", "${MODEL_ROOT}/libraries/gguf", "${MODEL_ROOT}/libraries/audio"]}}), encoding="utf-8")
+    for name in ("downloads", "staging", "quarantine", "libraries/comfyui", "libraries/pytorch", "libraries/gguf", "libraries/audio"):
         (instance / "models" / name).mkdir(parents=True, exist_ok=True)
     result = verify(config_path=config, release_root=release, instance_root=instance, database_path=database)
     assert result["status"] == "PASS"
@@ -34,10 +34,10 @@ def test_model_platform_release_gate_rejects_operational_directory_as_library(tm
     database.parent.mkdir()
     migrate(database)
     model_root = instance / "models"
-    for name in ("downloads", "staging", "quarantine", "libraries/comfyui", "libraries/pytorch", "libraries/ollama", "libraries/audio"):
+    for name in ("downloads", "staging", "quarantine", "libraries/comfyui", "libraries/pytorch", "libraries/gguf", "libraries/audio"):
         (model_root / name).mkdir(parents=True, exist_ok=True)
     config = instance / "config.json"
-    config.write_text(json.dumps({"schema_version": 2, "runtime": {"model_root": "${INSTANCE_ROOT}/models", "model_library_roots": ["${MODEL_ROOT}/downloads", "${MODEL_ROOT}/libraries/pytorch", "${MODEL_ROOT}/libraries/ollama", "${MODEL_ROOT}/libraries/audio"]}}), encoding="utf-8")
+    config.write_text(json.dumps({"schema_version": 2, "runtime": {"model_root": "${INSTANCE_ROOT}/models", "model_library_roots": ["${MODEL_ROOT}/downloads", "${MODEL_ROOT}/libraries/pytorch", "${MODEL_ROOT}/libraries/gguf", "${MODEL_ROOT}/libraries/audio"]}}), encoding="utf-8")
     result = verify(config_path=config, release_root=release, instance_root=instance, database_path=database)
     assert result["status"] == "FAIL"
     assert next(item for item in result["checks"] if item["code"] == "MODEL_LIBRARIES")["status"] == "FAIL"
@@ -52,10 +52,10 @@ def test_model_platform_release_gate_rejects_published_profile_without_worker_ha
     database.parent.mkdir()
     migrate(database)
     model_root = instance / "models"
-    for name in ("downloads", "staging", "quarantine", "libraries/comfyui", "libraries/pytorch", "libraries/ollama", "libraries/audio"):
+    for name in ("downloads", "staging", "quarantine", "libraries/comfyui", "libraries/pytorch", "libraries/gguf", "libraries/audio"):
         (model_root / name).mkdir(parents=True, exist_ok=True)
     config = instance / "config.json"
-    config.write_text(json.dumps({"schema_version": 2, "runtime": {"model_root": "${INSTANCE_ROOT}/models", "model_library_roots": ["${MODEL_ROOT}/libraries/comfyui", "${MODEL_ROOT}/libraries/pytorch", "${MODEL_ROOT}/libraries/ollama", "${MODEL_ROOT}/libraries/audio"]}}), encoding="utf-8")
+    config.write_text(json.dumps({"schema_version": 2, "runtime": {"model_root": "${INSTANCE_ROOT}/models", "model_library_roots": ["${MODEL_ROOT}/libraries/comfyui", "${MODEL_ROOT}/libraries/pytorch", "${MODEL_ROOT}/libraries/gguf", "${MODEL_ROOT}/libraries/audio"]}}), encoding="utf-8")
     with sqlite3.connect(database) as connection:
         capability_id = connection.execute("SELECT id FROM mp_capability_definitions WHERE code='EMBEDDING_TEXT'").fetchone()[0]
         connection.execute(

@@ -11,6 +11,18 @@ const defaultStyle: SubtitleStyle = { font: "Microsoft YaHei", size: 48, color: 
 
 const defaultCues: CueDraft[] = [{ start_us: 0, end_us: 2_000_000, text: "" }];
 
+function cueValidationIssue(cues: CueDraft[]) {
+  if (cues.length === 0) return "请至少添加一条字幕";
+  for (let index = 0; index < cues.length; index += 1) {
+    const cue = cues[index];
+    if (!Number.isInteger(cue.start_us) || !Number.isInteger(cue.end_us)) return `第 ${index + 1} 条字幕时间必须是整数微秒`;
+    if (cue.end_us <= cue.start_us) return `第 ${index + 1} 条字幕结束时间必须晚于开始时间`;
+    if (!cue.text.trim()) return `请填写第 ${index + 1} 条字幕文本`;
+    if (index > 0 && cue.start_us < cues[index - 1].end_us) return `第 ${index}、${index + 1} 条字幕时间不能重叠`;
+  }
+  return null;
+}
+
 export function SubtitleRevisionPanel({ episodeId, projectId = "", defaultSourceDocumentVersionId = "", autoDeriveTTS = false, onCreated }: { episodeId: string; projectId?: string; defaultSourceDocumentVersionId?: string; autoDeriveTTS?: boolean; onCreated?: () => void }) {
   const [format, setFormat] = useState("SRT");
   const [sourceDocumentVersionId, setSourceDocumentVersionId] = useState(defaultSourceDocumentVersionId);
@@ -165,11 +177,12 @@ export function SubtitleRevisionPanel({ episodeId, projectId = "", defaultSource
     }
   };
 
+  const cueIssue = cueValidationIssue(cues);
   const submit = async () => {
     setPending(true); setError(null); setSuccess(null);
     try {
       if (!sourceDocumentVersionId.trim()) throw new Error("必须先选择已解析的源剧本文档版本");
-      if (cues.length === 0) throw new Error("字幕至少需要一条 cue");
+      if (cueIssue) throw new Error(cueIssue);
       const normalizedCues = cues.map((cue) => {
         const startUs = cue.start_us, endUs = cue.end_us, text = cue.text?.trim();
         if (!Number.isInteger(startUs) || !Number.isInteger(endUs) || !text) throw new Error("cue 需要整数 start_us/end_us 和非空 text");
@@ -179,7 +192,7 @@ export function SubtitleRevisionPanel({ episodeId, projectId = "", defaultSource
       const result = await createSubtitleRevision(episodeId, { format, cues: normalizedCues, style, authority: { text_authority: "SCRIPT", source_document_version_id: sourceDocumentVersionId.trim() } });
       setSuccess(`已创建字幕 revision v${result.subtitle.revision_no} · ${result.subtitle.format} · ${result.subtitle.cues.length} 条；样式 ${style.font}/${style.size}px`);
       onCreated?.();
-    } catch (caught) { setError(`字幕 revision 创建失败：${String(caught)}`); }
+    } catch (caught) { setError(`字幕 revision 创建失败：${caught instanceof Error ? caught.message : String(caught)}`); }
     finally { setPending(false); }
   };
   return <section className="panel subtitle-revision-panel" aria-labelledby="subtitle-revision-title">
@@ -238,7 +251,7 @@ export function SubtitleRevisionPanel({ episodeId, projectId = "", defaultSource
       </div>}
       <p className="muted">ASS 输出包含 [V4+ Styles] 样式块；SRT 忽略样式，但样式对象会随每个 cue 持久化到 subtitle_cues.style_json。</p>
     </div>}
-    <div className="action-row"><button className="primary-action" type="button" onClick={() => void submit()} disabled={pending || !sourceDocumentVersionId} title={!sourceDocumentVersionId ? sourceDocumentsState === "loading" ? "正在读取可用的源剧本文档" : "请先选择已解析的源剧本文档" : undefined}>{pending ? "校验并保存中…" : "创建字幕 revision"}</button><span className="muted">{!sourceDocumentVersionId ? "需要先选择源剧本文档；" : ""}重叠、空文本、CPS 超限会被服务端拒绝</span></div>
+    <div className="action-row"><button className="primary-action" type="button" onClick={() => void submit()} disabled={pending || !sourceDocumentVersionId || Boolean(cueIssue)} title={!sourceDocumentVersionId ? sourceDocumentsState === "loading" ? "正在读取可用的源剧本文档" : "请先选择已解析的源剧本文档" : cueIssue ?? undefined}>{pending ? "校验并保存中…" : "创建字幕 revision"}</button><span className="muted">{!sourceDocumentVersionId ? "需要先选择源剧本文档" : cueIssue ?? "提交时还会检查阅读速度和服务端契约"}</span></div>
     {error && <p className="inline-error" role="alert">{error}</p>}{success && <p className="review-success" role="status">{success}</p>}
   </section>;
 }

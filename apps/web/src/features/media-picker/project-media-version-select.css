@@ -1,0 +1,16 @@
+.project-media-version-select {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.project-media-version-select :is(input, select) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+}
+
+.project-media-version-select :is(label, small) {
+  overflow-wrap: anywhere;
+}

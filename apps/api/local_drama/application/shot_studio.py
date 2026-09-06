@@ -31,16 +31,21 @@ class ShotStudioQueryService:
             for item in resolutions
             if isinstance(item, dict) and item.get("profile_version_id")
         ]
-        can_generate = not bool(
+        has_executable_capability = bool(capability_options)
+        production_blocked = any(
+            str(item.get("code") or "").startswith(("PRODUCTION_", "WORKFLOW_PRODUCTION_", "VIDEO_WORKFLOW_"))
+            for item in blockers
+            if isinstance(item, dict)
+        )
+        can_generate = has_executable_capability and not bool(
             blocking_codes
             & {
                 "PROFILE_NOT_BOUND",
                 "PRODUCTION_PLAN_NOT_BOUND",
                 "DIRECTOR_FIELDS_MISSING",
                 "SHOT_NOT_PRODUCTION_READY",
-                "GENERATION_CAPABILITY_UNAVAILABLE",
             }
-        )
+        ) and not production_blocked
         current_media = current.get("current_media")
         review_subject_id = (
             current_media.get("media_version_id")

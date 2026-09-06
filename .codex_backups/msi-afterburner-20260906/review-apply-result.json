@@ -1,0 +1,12 @@
+﻿{
+    "Status":  "applied-and-verified",
+    "AppliedAt":  "2026-09-06T01:03:36.5400368+08:00",
+    "PowerLimitW":  350.4,
+    "FanAutomatic":  true,
+    "CoreOffsetKHz":  0,
+    "MemoryOffsetKHz":  0,
+    "ThermalTargetC":  78,
+    "StartupArgument":  "/s -Profile2",
+    "BackupDirectory":  "F:\\AI_Projects\\h3\\local_drama_studio\\.codex_backups\\msi-afterburner-20260906\\before-review-apply-20260906-010325-915",
+    "GPUProfileSHA256":  "1C3A147FDE1606D9B488F1BF15D0B1E14F498ECF907A43A1DC89644B6EBEFBB5"
+}

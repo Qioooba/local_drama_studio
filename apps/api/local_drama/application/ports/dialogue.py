@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import sqlite3
-from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any, Protocol
 
+from .database import DatabaseUnitOfWork
 
-class DialogueUnitOfWork(Protocol):
-    def connect(self) -> AbstractContextManager[sqlite3.Connection]: ...
 
-    def transaction(self) -> AbstractContextManager[sqlite3.Connection]: ...
+class DialogueUnitOfWork(DatabaseUnitOfWork, Protocol):
+    """Dialogue persistence uses the shared SQLite unit-of-work contract."""
 
 
 class DialogueJobPort(Protocol):

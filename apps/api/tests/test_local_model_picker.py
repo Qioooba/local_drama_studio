@@ -12,7 +12,7 @@ from local_drama.platform.contracts import FilePickerRequest
 def _request(kind: str) -> FilePickerRequest:
     if kind == "MODEL":
         return FilePickerRequest("MODEL", "选择模型", (".safetensors", ".ckpt", ".bin", ".pt", ".pth"))
-    return FilePickerRequest("DOCUMENT", "选择文档", (".txt", ".md", ".markdown", ".docx"))
+    return FilePickerRequest("DOCUMENT", "选择文档", (".txt", ".md", ".markdown", ".docx", ".pdf", ".epub"))
 
 
 def test_picker_returns_existing_path_without_copy_or_upload(workspace, monkeypatch) -> None:

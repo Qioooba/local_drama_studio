@@ -45,6 +45,7 @@ class AppContextResponse(StrictModel):
 
 class ProjectSummary(EntitySummary):
     revision: int
+    target_duration_ms: int | None = None
 
 
 class EpisodeSummary(StrictModel):

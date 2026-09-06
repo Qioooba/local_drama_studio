@@ -2,8 +2,10 @@
 
 The database lease serializes API and worker processes.  Runtime adapters own
 the actual model eviction because CUDA memory can only be released by the
-process that allocated it.  Switching is strict; idle cleanup is best-effort
-and leaves an auditable DEGRADED state instead of corrupting a completed Job.
+process that allocated it; the coordinator dispatches to them polymorphically
+(``prepare`` evicts every other runtime, ``cleanup`` evicts the leased one).
+Switching is strict; idle cleanup is best-effort and leaves an auditable
+DEGRADED state instead of corrupting a completed Job.
 """
 
 from __future__ import annotations
@@ -13,15 +15,14 @@ import time
 import uuid
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Any, Iterator
-from urllib.parse import urlparse
+from typing import Any, Callable, Iterator, Mapping
 
 from local_drama.application.job_resources import GPU_EXCLUSIVE_RESOURCE, GpuRuntime, gpu_runtime_for_job
 from local_drama.application.ports.database import DatabaseUnitOfWork
+from local_drama.application.ports.gpu_lifecycle import GpuEvictMode, GpuLifecycleAdapterRegistry, GpuMemoryReleaseGate
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
-from local_drama.infrastructure.comfy import ComfyClient
-from local_drama.infrastructure.ollama_runtime import OllamaRuntimeClient
+from local_drama.infrastructure.gpu_lifecycle_adapters import build_gpu_lifecycle_components
 
 
 def _now() -> datetime:
@@ -35,8 +36,6 @@ def _iso(value: datetime) -> str:
 class GpuRuntimeCoordinator:
     LEASE_SECONDS = 120
     HEARTBEAT_SECONDS = 20
-    SWITCH_TIMEOUT_SECONDS = 30.0
-    MIN_FREE_RATIO = 0.80
 
     def __init__(
         self,
@@ -45,23 +44,36 @@ class GpuRuntimeCoordinator:
         *,
         comfy: Any | None = None,
         ollama: Any | None = None,
+        llama_manager: Any | None = None,
+        adapters: GpuLifecycleAdapterRegistry | None = None,
+        memory_gate: GpuMemoryReleaseGate | None = None,
+        system_probe: Any | None = None,
         sleep: Any = time.sleep,
     ) -> None:
         self.database = database
         self.settings = settings
-        self.comfy = comfy or ComfyClient(
-            settings.comfy_base_url,
-            settings.comfy_output_root,
-            timeout_seconds=5,
-            allow_private_network=settings.allows_private_network,
-        )
-        llm_host = (urlparse(settings.llm_base_url).hostname or "").casefold()
-        self.ollama = ollama or (
-            OllamaRuntimeClient(settings.llm_base_url, timeout_seconds=10)
-            if llm_host in {"127.0.0.1", "localhost", "::1"}
-            else None
-        )
         self._sleep = sleep
+        # Adapters are passive at construction time; nothing is started,
+        # unloaded, or probed until a lease is actually prepared.
+        if (adapters is None) is not (memory_gate is None):
+            raise ValueError("adapters and memory_gate must be injected together")
+        if adapters is not None and system_probe is not None:
+            raise ValueError("system_probe belongs to the default lifecycle wiring")
+        if adapters is None:
+            components = build_gpu_lifecycle_components(
+                settings,
+                comfy=comfy,
+                ollama=ollama,
+                llama_manager=llama_manager,
+                system_probe=system_probe,
+                sleep=sleep,
+            )
+            self.adapters = components.adapters
+            self.memory_gate = components.memory_gate
+        else:
+            self.adapters = adapters
+            assert memory_gate is not None
+            self.memory_gate = memory_gate
 
     def acquire(self, runtime: GpuRuntime, *, owner_kind: str, owner_ref: str) -> dict[str, str]:
         current = _now()
@@ -168,66 +180,36 @@ class GpuRuntimeCoordinator:
                 ),
             )
 
-    @staticmethod
-    def _queue_is_empty(queue: dict[str, Any]) -> bool:
-        return not list(queue.get("queue_running") or []) and not list(queue.get("queue_pending") or [])
-
-    def _wait_for_free_vram(self) -> dict[str, Any]:
-        deadline = time.monotonic() + self.SWITCH_TIMEOUT_SECONDS
-        last: dict[str, Any] = {}
-        while True:
-            stats = self.comfy.system_stats()
-            devices = list(stats.get("devices") or [])
-            if not devices:
-                return stats
-            device = devices[0] if isinstance(devices[0], dict) else {}
-            total = int(device.get("vram_total") or 0)
-            free = int(device.get("vram_free") or 0)
-            last = {"vram_total": total, "vram_free": free}
-            if total <= 0 or free / total >= self.MIN_FREE_RATIO:
-                return last
-            if time.monotonic() >= deadline:
-                raise DomainRuleError(
-                    "GPU_VRAM_NOT_RELEASED",
-                    "运行时已请求卸载模型，但显存未在时限内释放",
-                    last,
-                    suggested_action="检查是否有项目外 CUDA 进程占用显存",
-                )
-            self._sleep(0.25)
-
-    def prepare(self, runtime: GpuRuntime, *, owner_ref: str) -> None:
-        if runtime in {GpuRuntime.OLLAMA, GpuRuntime.PYTORCH}:
-            comfy_available = True
-            try:
-                queue = self.comfy.queue()
-            except DomainRuleError as error:
-                if error.code == "COMFY_LOOPBACK_UNAVAILABLE":
-                    if runtime is GpuRuntime.OLLAMA:
-                        self._mark_ready(runtime, owner_ref)
-                        return
-                    comfy_available = False
-                    queue = {"queue_running": [], "queue_pending": []}
-                else:
-                    raise
-            if not self._queue_is_empty(queue):
-                raise DomainRuleError("GPU_RUNTIME_EXTERNAL_COMFY_BUSY", "ComfyUI 仍有运行或排队任务，拒绝抢占显存")
-            if comfy_available:
-                self.comfy.free_memory(unload_models=True, free_memory=True)
-                self._wait_for_free_vram()
-        if runtime in {GpuRuntime.COMFY, GpuRuntime.PYTORCH}:
-            if self.ollama is None:
-                self._mark_ready(runtime, owner_ref)
-                return
-            try:
-                self.ollama.unload_all()
-                waiter = getattr(self.ollama, "wait_until_unloaded", None)
-                if callable(waiter):
-                    waiter(timeout_seconds=self.SWITCH_TIMEOUT_SECONDS)
-            except DomainRuleError as error:
-                # A stopped Ollama service owns no VRAM. Other lifecycle errors
-                # remain fatal because they leave ownership uncertain.
-                if error.code != "OLLAMA_RUNTIME_UNAVAILABLE":
-                    raise
+    def prepare(
+        self,
+        runtime: GpuRuntime,
+        *,
+        owner_ref: str,
+        activation_context: Mapping[str, object] | None = None,
+    ) -> None:
+        # Evict every other runtime that can hold the device, in adapter
+        # order: the managed llama-server child dies first so the ComfyUI
+        # VRAM gate verifies its release before the target loads.
+        for adapter in self.adapters.others(runtime):
+            adapter.evict(GpuEvictMode.SWITCH)
+        # A warm runtime may intentionally survive between leases (the LLM
+        # gateway idle window and back-to-back queued jobs both do this).
+        # Re-adopt/reuse it instead of demanding that its own VRAM be free.
+        # Other runtimes were still evicted above, preserving exclusivity.
+        with self.database.connect() as connection:
+            state = connection.execute(
+                "SELECT resident_runtime FROM gpu_runtime_state WHERE resource_key=?",
+                (GPU_EXCLUSIVE_RESOURCE,),
+            ).fetchone()
+        if state is not None and str(state["resident_runtime"] or "") == runtime.value:
+            self.adapters.get(runtime).activate(activation_context)
+            self._mark_ready(runtime, owner_ref)
+            return
+        # Verify only after every old runtime has been evicted. Keeping this
+        # gate inside the Comfy adapter made an Ollama -> llama.cpp switch
+        # inspect VRAM before Ollama had been unloaded.
+        self.memory_gate.wait_until_released()
+        self.adapters.get(runtime).activate(activation_context)
         self._mark_ready(runtime, owner_ref)
 
     def _same_runtime_waiting(self, runtime: GpuRuntime) -> bool:
@@ -240,27 +222,11 @@ class GpuRuntimeCoordinator:
 
     def cleanup(self, runtime: GpuRuntime, *, retain_if_same_runtime_waiting: bool) -> bool:
         if retain_if_same_runtime_waiting and self._same_runtime_waiting(runtime):
+            # Back-to-back jobs on one runtime keep weights resident; the
+            # managed llama-server survives here and the next lease reuses it.
             return True
-        if runtime is GpuRuntime.OLLAMA:
-            if self.ollama is None:
-                raise DomainRuleError("OLLAMA_RUNTIME_UNMANAGED", "本机 Ollama Runtime 未配置为可管理的 loopback endpoint")
-            try:
-                self.ollama.unload_all()
-                waiter = getattr(self.ollama, "wait_until_unloaded", None)
-                if callable(waiter):
-                    waiter(timeout_seconds=self.SWITCH_TIMEOUT_SECONDS)
-            except DomainRuleError as error:
-                if error.code != "OLLAMA_RUNTIME_UNAVAILABLE":
-                    raise
-        elif runtime is GpuRuntime.COMFY:
-            queue = self.comfy.queue()
-            if not self._queue_is_empty(queue):
-                raise DomainRuleError("GPU_RUNTIME_COMFY_STILL_BUSY", "ComfyUI 任务未终止，不能释放模型")
-            self.comfy.free_memory(unload_models=True, free_memory=True)
-            self._wait_for_free_vram()
-        # PYTORCH jobs execute in one-shot child processes. Process exit is the
-        # authoritative CUDA release boundary, so no external runtime endpoint
-        # remains to unload here.
+        self.adapters.get(runtime).evict(GpuEvictMode.RELEASE)
+        self.memory_gate.wait_until_released()
         with self.database.transaction() as connection:
             connection.execute(
                 """UPDATE gpu_runtime_state SET resident_runtime=NULL,updated_at=? WHERE resource_key=?""",
@@ -276,8 +242,20 @@ class GpuRuntimeCoordinator:
         owner_kind: str,
         owner_ref: str,
         retain_if_same_runtime_waiting: bool = False,
+        activation_context: Mapping[str, object] | None = None,
+        on_wait: Callable[[], None] | None = None,
     ) -> Iterator[dict[str, str]]:
-        lease = self.acquire(runtime, owner_kind=owner_kind, owner_ref=owner_ref)
+        while True:
+            try:
+                lease = self.acquire(runtime, owner_kind=owner_kind, owner_ref=owner_ref)
+                break
+            except DomainRuleError as error:
+                if error.code != "GPU_RUNTIME_BUSY" or on_wait is None:
+                    raise
+                # Resource contention is waiting, not an execution failure. The
+                # owner keeps its job lease alive and checks cancellation here.
+                on_wait()
+                self._sleep(1)
         stop = threading.Event()
         heartbeat_errors: list[BaseException] = []
 
@@ -293,7 +271,7 @@ class GpuRuntimeCoordinator:
         thread.start()
         succeeded = False
         try:
-            self.prepare(runtime, owner_ref=owner_ref)
+            self.prepare(runtime, owner_ref=owner_ref, activation_context=activation_context)
             yield lease
             if heartbeat_errors:
                 raise DomainRuleError("GPU_RUNTIME_LEASE_LOST", "执行期间单卡 GPU 运行时租约丢失")

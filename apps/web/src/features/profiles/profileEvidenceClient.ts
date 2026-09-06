@@ -86,22 +86,29 @@ export type T2IEvidenceProbePlan = {
   snapshot: {
     workflow: { id: string; content_hash: string } | null;
     candidate_profile: { id: string; execution_fingerprint: string } | null;
+    source_reference: { media_version_id: string; asset_id?: string | null; asset_name?: string | null; sha256: string; byte_size: number } | null;
+    reference_inputs?: Array<{ role: string; media_version_id: string; sha256: string }>;
     semantic_inputs: Record<string, unknown>;
   };
   confirmation_required: true;
 };
 
-export function planT2IEvidenceProbe(projectId: string, profileVersionId: string, workflowVersionId: string) {
+export function planT2IEvidenceProbe(projectId: string, profileVersionId: string, workflowVersionId: string, sourceMediaVersionId?: string, references?: Record<string, string>) {
+  if (references) return requestJson<{ plan: T2IEvidenceProbePlan }>(`/api/v1/projects/${encodeURIComponent(projectId)}/gates/g6/t2i-probe:plan`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ profile_version_id: profileVersionId, workflow_version_id: workflowVersionId, reference_media_version_ids: references }),
+  });
   const query = new URLSearchParams({
     profile_version_id: profileVersionId,
     workflow_version_id: workflowVersionId,
   });
+  if (sourceMediaVersionId) query.set("source_media_version_id", sourceMediaVersionId);
   return requestJson<{ plan: T2IEvidenceProbePlan }>(
     `/api/v1/projects/${encodeURIComponent(projectId)}/gates/g6/t2i-probe-plan?${query}`,
   );
 }
 
-export function submitT2IEvidenceProbe(projectId: string, profileVersionId: string, workflowVersionId: string, planHash: string) {
+export function submitT2IEvidenceProbe(projectId: string, profileVersionId: string, workflowVersionId: string, planHash: string, sourceMediaVersionId?: string, references?: Record<string, string>) {
   return requestJson<{ job: { id: string; state: string }; plan: T2IEvidenceProbePlan }>(
     `/api/v1/projects/${encodeURIComponent(projectId)}/gates/g6/t2i-probe:submit`,
     {
@@ -111,6 +118,8 @@ export function submitT2IEvidenceProbe(projectId: string, profileVersionId: stri
         profile_version_id: profileVersionId,
         workflow_version_id: workflowVersionId,
         plan_hash: planHash,
+        source_media_version_id: sourceMediaVersionId || undefined,
+        reference_media_version_ids: references,
         idempotency_key: globalThis.crypto?.randomUUID?.() ?? `t2i-evidence-${Date.now()}`,
       }),
     },

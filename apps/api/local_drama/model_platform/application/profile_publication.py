@@ -182,6 +182,38 @@ class ProfilePublicationService:
                 (str(uuid.uuid4()), profile_version_id, validation_run_id, now, reason, now, now),
             )
 
+    def retire(self, profile_version_id: str, *, reason: str) -> None:
+        """Retire an unassigned V2 profile while preserving immutable history."""
+
+        now = _utc_now()
+        with self.database.transaction() as connection:
+            publication = connection.execute(
+                """SELECT status FROM mp_profile_publications
+                   WHERE execution_profile_version_id=?""",
+                (profile_version_id,),
+            ).fetchone()
+            if publication is None:
+                raise DomainRuleError("MP_PROFILE_PUBLICATION_NOT_FOUND", "待退休的 V2 ProfileVersion 尚未发布。")
+            if str(publication["status"]) == "RETIRED":
+                return
+            if connection.execute(
+                """SELECT 1 FROM mp_capability_assignments
+                   WHERE execution_profile_version_id=?""",
+                (profile_version_id,),
+            ).fetchone():
+                raise DomainRuleError("MP_PROFILE_VERSION_IN_USE", "能力分配仍引用该 V2 ProfileVersion，不能退休。")
+            if connection.execute(
+                "SELECT 1 FROM jobs WHERE execution_profile_version_id=?",
+                (profile_version_id,),
+            ).fetchone():
+                raise DomainRuleError("MP_PROFILE_VERSION_HAS_JOBS", "已有 Job 快照引用该 V2 ProfileVersion，不能退休。")
+            connection.execute(
+                """UPDATE mp_profile_publications
+                   SET status='RETIRED',retired_at=?,reason=?,updated_at=?
+                   WHERE execution_profile_version_id=?""",
+                (now, reason, now, profile_version_id),
+            )
+
 
 def _assert_references_exist(connection: sqlite3.Connection, draft: ProfileVersionDraft) -> None:
     checks = (

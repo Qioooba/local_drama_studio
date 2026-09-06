@@ -122,7 +122,10 @@ class ShotStudioCommandService:
         except json.JSONDecodeError as error:
             raise DomainRuleError("PROFILE_CAMERA_CONTRACT_INVALID", "Profile parameter schema 不是有效 JSON") from error
         capabilities = schema.get("capabilities", {}) if isinstance(schema, dict) else {}
-        contract = capabilities.get("camera", {}) if isinstance(capabilities, dict) else {}
+        if "camera" not in capabilities:
+            contract = {"support": "PROMPT_FALLBACK", "prompt_fallback": True}
+        else:
+            contract = capabilities.get("camera", {}) if isinstance(capabilities, dict) else {}
         support = str(contract.get("support", "UNSUPPORTED")) if isinstance(contract, dict) else "UNSUPPORTED"
         if support not in {"NATIVE", "PROMPT_FALLBACK", "UNSUPPORTED"}:
             raise DomainRuleError("PROFILE_CAMERA_CONTRACT_INVALID", "Profile camera capability support 无效")

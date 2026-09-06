@@ -6,7 +6,7 @@ export type StudioIconName =
   | "activity" | "assets" | "book" | "check-circle" | "clapperboard"
   | "close" | "cpu" | "export" | "flask" | "grid" | "home" | "magic"
   | "menu" | "more" | "pin" | "play-circle" | "search" | "settings"
-  | "shield" | "sliders" | "sparkles" | "timeline" | "tools" | "waveform"
+  | "shield" | "sidebar" | "sliders" | "sparkles" | "timeline" | "tools" | "waveform"
   | "workflow" | "undo" | "redo";
 
 function iconProps(props: IconProps): IconProps {
@@ -46,6 +46,7 @@ export function StudioIcon({ name, ...props }: IconProps & { name: StudioIconNam
     case "search": return <svg {...common}><circle cx="8.7" cy="8.7" r="5.5" /><path d="m12.8 12.8 4 4" /></svg>;
     case "settings": return <svg {...common}><circle cx="10" cy="10" r="2.4" /><path d="M16.5 11.5v-3l-2-.7-.6-1.4.9-1.9-2.2-1.2-1.4 1.5H9.7L8.3 3.3 6.1 4.5 7 6.4l-.6 1.4-2 .7v3l2 .7.6 1.4-.9 1.9 2.2 1.2 1.4-1.5h1.5l1.4 1.5 2.2-1.2-.9-1.9.6-1.4z" /></svg>;
     case "shield": return <svg {...common}><path d="M10 2.8 16 5v4.7c0 3.8-2.5 6.3-6 7.5-3.5-1.2-6-3.7-6-7.5V5z" /><path d="m7.2 10 1.8 1.8 3.8-4" /></svg>;
+    case "sidebar": return <svg {...common}><rect x="3" y="3.5" width="14" height="13" rx="1.8" /><path d="M7.5 3.5v13" /></svg>;
     case "sliders": return <svg {...common}><path d="M4 3v14M10 3v14M16 3v14M2 7h4M8 13h4M14 8h4" /><circle cx="4" cy="7" r="1.4" fill="currentColor" stroke="none" /><circle cx="10" cy="13" r="1.4" fill="currentColor" stroke="none" /><circle cx="16" cy="8" r="1.4" fill="currentColor" stroke="none" /></svg>;
     case "sparkles": return <svg {...common}><path d="M10 2.5c.5 3.3 2 5 5 5.5-3 .5-4.5 2.2-5 5.5-.5-3.3-2-5-5-5.5 3-.5 4.5-2.2 5-5.5ZM15.5 12.5c.2 1.5.9 2.3 2.2 2.5-1.3.2-2 1-2.2 2.5-.2-1.5-.9-2.3-2.2-2.5 1.3-.2 2-1 2.2-2.5Z" /></svg>;
     case "timeline": return <svg {...common}><path d="M3 5h14M3 10h14M3 15h14M6 3v4M13 8v4M9 13v4" /></svg>;
@@ -63,6 +64,10 @@ export function StudioMarkIcon(props: IconProps) {
 
 export function ChevronRightIcon(props: IconProps) {
   return <svg {...iconProps(props)}><path d="m7.5 4.5 5 5.5-5 5.5" /></svg>;
+}
+
+export function ChevronLeftIcon(props: IconProps) {
+  return <svg {...iconProps(props)}><path d="m12.5 4.5-5 5.5 5 5.5" /></svg>;
 }
 
 export function StatusDotIcon(props: IconProps) {

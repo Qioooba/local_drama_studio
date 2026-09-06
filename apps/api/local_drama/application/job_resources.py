@@ -20,6 +20,7 @@ GPU_EXCLUSIVE_RESOURCE = "GPU:0:EXCLUSIVE"
 SCHEDULER_GPU_EXCLUSIVE_RESOURCE = "GPU_H3_HEAVY"
 GPU_CHANNELS = frozenset({"GPU_H3", "GPU", "VIDEO_GPU"})
 OLLAMA_PROVIDERS = frozenset({"OLLAMA", "OLLAMA_LOOPBACK"})
+LLAMA_CPP_PROVIDERS = frozenset({"LLAMA_CPP_MANAGED"})
 PYTORCH_JOB_TYPES = frozenset(
     {
         "ASR_ALIGNMENT",
@@ -35,6 +36,9 @@ class GpuRuntime(StrEnum):
     COMFY = "COMFY"
     OLLAMA = "OLLAMA"
     PYTORCH = "PYTORCH"
+    # A llama-server child process owned by this application's GPU runtime
+    # coordinator; distinct from OLLAMA because eviction is process exit.
+    LLAMA_CPP = "LLAMA_CPP"
 
 
 def _snapshot(job: Mapping[str, Any]) -> dict[str, Any]:
@@ -79,7 +83,14 @@ def gpu_runtime_for_job(job: Mapping[str, Any]) -> GpuRuntime | None:
 
     if job_type not in {"SCRIPT_BREAKDOWN_LOCAL_LLM", "LOCAL_LLM_PROBE"}:
         return None
-    provider = str(snapshot.get("provider") or "OLLAMA_LOOPBACK").strip().upper()
+    provider = str(snapshot.get("provider") or "LLAMA_CPP_MANAGED").strip().upper()
+    if provider in LLAMA_CPP_PROVIDERS:
+        # The managed llama-server endpoint is spawned by this machine's GPU
+        # runtime coordinator on a settings-derived loopback port; the lease
+        # owns its lifecycle. A non-loading probe never starts the server.
+        if job_type == "LOCAL_LLM_PROBE" and not bool(snapshot.get("load_test", True)):
+            return None
+        return GpuRuntime.LLAMA_CPP
     if provider not in OLLAMA_PROVIDERS:
         return None
     endpoint = urlparse(str(snapshot.get("base_url") or "http://127.0.0.1:11434"))

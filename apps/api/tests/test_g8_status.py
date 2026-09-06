@@ -5,6 +5,7 @@ import subprocess
 
 from fastapi.testclient import TestClient
 
+from local_drama.application.audio_requirements import canonical_audio_requirements
 from local_drama.application.dialogue import DialogueService
 from local_drama.application.g8_readiness import G8ReadinessService
 from local_drama.application.g9_readiness import G9ReadinessService
@@ -64,6 +65,28 @@ def test_g8_readiness_is_read_only_and_reports_formal_exit_blockers(workspace, d
     assert response.json()["readiness"]["next_required_action"] == "THREE_REAL_SHOTS"
 
 
+def test_g8_audio_requirements_follow_canonical_dialogue_and_cue_facts(workspace, database) -> None:
+    service = ProjectService(database, workspace.projects_root)
+    project = service.create_project(code="g8_audio_policy", title="G8 audio policy", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1, target_duration_ms=1000, allow_unconfigured_capabilities=True)
+    season = service.list_seasons(str(project["id"]))[0]
+    episode = service.list_episodes(str(season["id"]))[0]
+
+    empty = G8ReadinessService(database).inspect(str(project["id"]), str(episode["id"]))
+    audio_check = next(item for item in empty["checks"] if item["code"] == "DIALOGUE_BGM_SFX")
+    assert audio_check["passed"] is True
+    assert audio_check["required_tracks"] == []
+    assert audio_check["requirements"] == {"dialogue_lines": 0, "caption_cues": 0, "music_cues": 0, "sfx_cues": 0}
+    assert next(item for item in empty["checks"] if item["code"] == "SUBTITLES")["passed"] is True
+
+    dialogue = DialogueService(database, workspace)
+    line = dialogue.create_line(str(episode["id"]), code="DLG-FACT-001", speaker="甲", text="有事实依据的对白", pronunciation={})
+    with database.connect() as connection:
+        requirements = canonical_audio_requirements(connection, str(episode["id"]))
+    assert line["text_revisions"]
+    assert requirements["required_tracks"] == ["DIALOGUE"]
+    assert requirements["subtitle_required"] is True
+
+
 def test_g8_counts_timeline_shots_for_generation_variant_owned_videos(workspace, database) -> None:
     service = ProjectService(database, workspace.projects_root)
     project = service.create_project(code="g8_variant_video", title="G8 variant video", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1, target_duration_ms=3000, allow_unconfigured_capabilities=True)
@@ -100,7 +123,7 @@ def test_g8_counts_timeline_shots_for_generation_variant_owned_videos(workspace,
     result = G8ReadinessService(database).inspect(str(project["id"]), str(episode["id"]))
     assert result["checks"][0]["passed"] is True
     assert result["checks"][0]["count"] == 3
-    assert result["next_required_action"] == "DIALOGUE_BGM_SFX"
+    assert result["next_required_action"] == "APPROVED_EPISODE_RENDER"
 
     audio_source = workspace.work_root / "g8-timeline-audio.wav"
     subprocess.run(

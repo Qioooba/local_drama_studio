@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from local_drama.application.comfy_jobs import ComfyGenerationService
 from local_drama.application.jobs import JobService
 from local_drama.application.media import MediaService
@@ -230,15 +232,16 @@ def test_background_recovery_finds_provider_success_without_manual_attempt_id(wo
     assert artifacts == 1
 
 
-def test_submit_materializes_verified_media_binding_inside_isolated_input_root(workspace, database, monkeypatch) -> None:
+@pytest.mark.parametrize("roles", [("FIRST_FRAME",), ("REFERENCE_IMAGE_1", "REFERENCE_IMAGE_2", "REFERENCE_IMAGE_3")])
+def test_submit_materializes_verified_media_binding_inside_isolated_input_root(workspace, database, monkeypatch, roles) -> None:
     workspace = workspace.model_copy(update={"comfy_input_root": workspace.work_root / "comfy-production" / "input"})
     workflow_service = WorkflowService(database, workspace)
     version = workflow_service.register_package(
         "comfy_media_binding",
         "Comfy media binding",
-        {"1": {"class_type": "LoadImage", "inputs": {"image": "pending.png"}}},
+        {str(i): {"class_type": "LoadImage", "inputs": {"image": "pending.png"}} for i, _ in enumerate(roles, 1)},
         {},
-        {"FIRST_FRAME": {"node_id": "1", "input": "image"}},
+        {role: {"node_id": str(i), "input": "image"} for i, role in enumerate(roles, 1)},
     )
     _publish_offline(workflow_service, str(version["id"]))
     project = ProjectService(database, workspace.projects_root).create_project(
@@ -258,6 +261,12 @@ def test_submit_materializes_verified_media_binding_inside_isolated_input_root(w
         )
     )
     media = MediaService(database, workspace).import_file(str(project["id"]), source, media_kind="IMAGE")
+    media_ids = [media["media_version_id"]]
+    original_bytes = source.read_bytes()
+    for i in range(1, len(roles)):
+        different = workspace.work_root / f"source-{i}.png"
+        different.write_bytes(original_bytes + bytes([i]))
+        media_ids.append(MediaService(database, workspace).import_file(str(project["id"]), different, media_kind="IMAGE")["media_version_id"])
     jobs = JobService(database, workspace)
     jobs.create_job(
         str(project["id"]),
@@ -268,7 +277,7 @@ def test_submit_materializes_verified_media_binding_inside_isolated_input_root(w
         {
             "workflow_version_id": str(version["id"]),
             "semantic_inputs": {},
-            "media_bindings": [{"role": "FIRST_FRAME", "media_version_id": media["media_version_id"], "ordinal": 0}],
+            "media_bindings": [{"role": role, "media_version_id": media_id, "ordinal": 0} for role, media_id in zip(roles, media_ids)],
         },
         "comfy-media-binding",
     )
@@ -285,6 +294,11 @@ def test_submit_materializes_verified_media_binding_inside_isolated_input_root(w
     filename = captured["1"]["inputs"]["image"]
     assert filename.startswith(str(media["media_version_id"]))
     assert (workspace.comfy_input_root / filename).read_bytes() == source.read_bytes()
+    for i, media_id in enumerate(media_ids, 1):
+        input_name = captured[str(i)]["inputs"]["image"]
+        assert input_name.startswith(media_id)
+        assert (workspace.comfy_input_root / input_name).exists()
+    assert len({captured[str(i)]["inputs"]["image"] for i in range(1, len(roles) + 1)}) == len(roles)
 
 
 def test_submit_drops_undeclared_metadata_roles_but_compiles_declared_ones(workspace, database, monkeypatch) -> None:
@@ -355,6 +369,8 @@ def test_submit_drops_undeclared_metadata_roles_but_compiles_declared_ones(works
 
 
 def test_run_once_binds_worker_session_and_polls_to_success(workspace, database, monkeypatch) -> None:
+    import json
+    from contextlib import contextmanager
     service, _unused_attempt_id = _active_attempt(workspace, database)
     # _active_attempt claims its fixture, so create a fresh service/database
     # fixture dedicated to the production run_once bridge.
@@ -397,7 +413,26 @@ def test_run_once_binds_worker_session_and_polls_to_success(workspace, database,
         channels=["GPU_H3"],
     )
     service = ComfyGenerationService(database, workspace)
-    monkeypatch.setattr(service.comfy, "queue_prompt", lambda *_args, **_kwargs: {"prompt_id": "bridge-prompt"})
+    runtime_events = []
+
+    class WaitingCoordinator:
+        @contextmanager
+        def session(self, _runtime, *, on_wait, **_kwargs):
+            on_wait()
+            with database.connect() as connection:
+                row = connection.execute("SELECT progress_json FROM jobs WHERE id=?", (job["id"],)).fetchone()
+            assert json.loads(row["progress_json"])["phase"] == "WAITING_FOR_GPU"
+            runtime_events.append("acquired")
+            yield
+            runtime_events.append("released")
+
+    service.gpu_coordinator = WaitingCoordinator()
+
+    def queue_after_acquisition(*_args, **_kwargs):
+        assert runtime_events == ["acquired"]
+        return {"prompt_id": "bridge-prompt"}
+
+    monkeypatch.setattr(service.comfy, "queue_prompt", queue_after_acquisition)
     monkeypatch.setattr(
         service,
         "poll_attempt",
@@ -410,6 +445,7 @@ def test_run_once_binds_worker_session_and_polls_to_success(workspace, database,
     )
     result = service.run_once("gpu-worker", worker_session_id=str(session["id"]), sleep=lambda _seconds: None)
     assert result is not None and result["poll"]["status"] == "SUCCEEDED"
+    assert runtime_events == ["acquired", "released"]
     with database.connect() as connection:
         attempt = connection.execute("SELECT worker_session_id FROM job_attempts WHERE job_id=?", (job["id"],)).fetchone()
     assert attempt is not None and attempt["worker_session_id"] == session["id"]

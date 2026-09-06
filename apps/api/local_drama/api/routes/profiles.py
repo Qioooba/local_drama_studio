@@ -59,7 +59,10 @@ async def list_profiles(request: Request) -> dict[str, object]:
         items = profile_service.list_profiles()
         return {
             "items": items,
-            "models": build_generation_model_catalog(items),
+            "models": build_generation_model_catalog(
+                items,
+                preferred_llm_model=request.app.state.settings.llm_model,
+            ),
             "manifest": profile_service.get_manifest(),
         }
     except ManifestValidationError as error:

@@ -10,6 +10,7 @@ import {
 import { Drawer } from "../../components/ui";
 import { SHOT_TYPES } from "../shared/directorOptions";
 import { getDirectorRecipeBinding } from "../recipes-v2/api";
+import { StoryboardBatchActions } from "../director-v2/StoryboardBatchActions";
 import "../episode-plan-v2/episode-plan-shot-table.css";
 
 type View = "TABLE" | "STORYBOARD" | "TIMELINE";
@@ -469,6 +470,7 @@ export function StoryboardBatchWorkbench({ projectId, episodeId }: { projectId?:
         <button type="button" disabled={!selectedIds.length || batchReady.isPending} onClick={() => batchReady.mutate()}>{batchReady.isPending ? "正在逐镜提交…" : "批量 Production Ready"}</button>
         <p className="muted">资产与 Ready 各镜独立提交；失败不会伪装为整批成功。</p>
         {batchResults.length > 0 && <div className="episode-plan-batch-result" aria-live="polite"><strong>批量结果：成功 {batchResults.filter((item) => item.ok).length} · 失败 {batchResults.filter((item) => !item.ok).length}</strong>{batchResults.filter((item) => !item.ok).map((item) => <p className="episode-plan-batch-failure" key={item.shotId}>{byId.get(item.shotId)?.code ?? item.shotId}：{item.message}</p>)}</div>}
+        <StoryboardBatchActions episodeId={episodeId} selectedShotIds={selectedIds} onChanged={async () => { await query.refetch(); }} />
       </div>
     </Drawer>
 

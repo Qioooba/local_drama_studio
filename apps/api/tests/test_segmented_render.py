@@ -50,7 +50,7 @@ def test_render_segmented_episode_concats_two_real_videos(workspace, database) -
     second = media.import_file(str(project["id"]), _video(workspace, "segment-2.mp4", 1.0), purpose="SHOT_VIDEO", media_kind="VIDEO")
     timeline = TimelineService(database, workspace).create_timeline_revision(
         str(episode["id"]),
-        [{"track_type": "VIDEO", "media_version_id": str(first["media_version_id"]), "start_us": 0, "end_us": 1_000_000, "parameters": {}}],
+        [{"track_type": "VIDEO", "media_version_id": str(first["media_version_id"]), "start_us": 0, "end_us": 2_000_000, "parameters": {}}],
         {"source": "segmented-render-test"},
     )
     segments = [
@@ -70,6 +70,7 @@ def test_render_segmented_episode_concats_two_real_videos(workspace, database) -
     assert render["revision"] == 1
     assert render["input_snapshot"]["schema_version"] == "localdrama.episode-render-input.v1"
     assert render["input_snapshot"]["render_mode"] == "SEGMENTED_CONCAT"
+    assert render["input_snapshot"]["renderer_contract"] == "TIMELINE_SOURCE_COVERAGE_V5"
     assert len(render["input_snapshot"]["segments"]) == 2
     assert render["ffmpeg_command"]["executor"] == "builtin:ffmpeg"
     assert render["ffmpeg_command"]["returncode"] == 0

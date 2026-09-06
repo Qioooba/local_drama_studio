@@ -14,7 +14,7 @@ import {
   type ComfyLabStatus,
 } from "../../generated/api";
 
-const ACTION_TIMEOUT_MS = 45_000;
+const ACTION_TIMEOUT_MS = 270_000;
 
 export function ComfyLabPanel() {
   const [status, setStatus] = useState<ComfyLabStatus | null>(null);

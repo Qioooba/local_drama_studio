@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import pytest
 
 from fastapi.testclient import TestClient
 
@@ -155,7 +156,8 @@ def test_assemble_episode_timeline_creates_skips_then_refreshes(workspace, datab
         assert connection.execute("SELECT COUNT(*) FROM audit_events WHERE action='TIMELINE_AUTO_ASSEMBLED' AND subject_id=?", (str(refreshed["timeline"]["id"]),)).fetchone()[0] == 1
 
 
-def test_assemble_episode_timeline_places_selected_dialogue_audio(workspace, database) -> None:
+@pytest.mark.parametrize("audio_seconds", [1.5, 3.5])
+def test_assemble_episode_timeline_places_selected_dialogue_audio(workspace, database, audio_seconds) -> None:
     import uuid as _uuid
 
     from local_drama.application.dialogue import DialogueService
@@ -199,7 +201,7 @@ def test_assemble_episode_timeline_places_selected_dialogue_audio(workspace, dat
 
     audio_source = workspace.work_root / "dialogue-assemble-line.wav"
     subprocess.run(
-        [workspace.ffmpeg_path, "-f", "lavfi", "-i", "sine=frequency=440:duration=1.5", "-ar", "48000", "-ac", "1", "-y", str(audio_source)],
+        [workspace.ffmpeg_path, "-f", "lavfi", "-i", f"sine=frequency=440:duration={audio_seconds}", "-ar", "48000", "-ac", "1", "-y", str(audio_source)],
         check=True,
         capture_output=True,
     )
@@ -233,6 +235,17 @@ def test_assemble_episode_timeline_places_selected_dialogue_audio(workspace, dat
         )
 
     created = TimelineService(database, workspace).assemble_episode_timeline(episode_id, actor="automation-run")
+    if audio_seconds > 2:
+        assert created["status"] == "BLOCKED"
+        issue = next(item for item in created["blockers"] if item["code"] == "DIALOGUE_EXCEEDS_SHOT_DURATION")
+        assert issue["shot_id"] == str(shot["id"])
+        assert issue["overrun_us"] == 1_500_000
+        assert created["mutated"] is False
+        from local_drama.infrastructure.database.edit_repository import SqliteEpisodeEditRepository
+        edit = SqliteEpisodeEditRepository(database).workspace(episode_id)
+        assert any(item["code"] == issue["code"] for item in edit["issues"])
+        assert "CREATE_DRAFT" not in edit["allowed_actions"]
+        return
     assert created["status"] == "CREATED"
     items = created["timeline"]["items"]
     dialogue_items = [item for item in items if item["track_type"] == "DIALOGUE"]

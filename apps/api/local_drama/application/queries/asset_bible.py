@@ -102,15 +102,25 @@ class AssetBibleQueryService:
         }
 
     def _readiness(self, asset: dict[str, Any], states: list[dict[str, Any]], state_refs: dict[str | None, list[dict[str, Any]]]) -> dict[str, Any]:
-        has_hero = bool(state_refs.get(None)) or any(str(item.get("reference_kind")) == "HERO" for items in state_refs.values() for item in items)
+        required_by_kind = {
+            "CHARACTER": ("HERO", "FRONT", "LEFT", "RIGHT"),
+            "SCENE": ("HERO",),
+            "PROP": ("HERO",),
+            "COSTUME": ("HERO", "FRONT", "BACK"),
+        }
+        required_kinds = required_by_kind.get(str(asset.get("kind") or "").upper(), ("HERO",))
+        references = [item for items in state_refs.values() for item in items]
+        has_hero = bool(asset.get("canonical_media_version_id")) or any(str(item.get("reference_kind")) == "HERO" for item in references)
         missing: list[str] = []
-        for required in ("FRONT", "LEFT", "RIGHT"):
+        for required in required_kinds:
+            if required == "HERO":
+                if not has_hero:
+                    missing.append(required)
+                continue
             present = any(str(item.get("reference_kind")) == required for items in state_refs.values() for item in items)
             if not present:
                 missing.append(required)
-        if not has_hero:
-            missing.insert(0, "HERO")
         level = "READY" if not missing else "BASIC" if has_hero else "EMPTY"
         if str(asset["status"]) == "ARCHIVED":
             level = "STALE"
-        return {"level": level, "missing": missing}
+        return {"level": level, "required": list(required_kinds), "missing": missing}

@@ -29,7 +29,7 @@ def _migrate_v1_to_v2(raw: dict[str, Any]) -> dict[str, Any]:
         runtime["model_library_roots"] = [
             "${MODEL_ROOT}/libraries/comfyui",
             "${MODEL_ROOT}/libraries/pytorch",
-            "${MODEL_ROOT}/libraries/ollama",
+            "${MODEL_ROOT}/libraries/gguf",
             "${MODEL_ROOT}/libraries/audio",
         ]
     result["runtime"] = runtime

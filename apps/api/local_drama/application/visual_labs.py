@@ -105,7 +105,7 @@ class VisualLabService:
             item["metadata"] = json.loads(item.pop("metadata_json") or "{}")
             edge_payload.append(item)
         document_payload = dict(document)
-        document_payload["viewport"] = json.loads(document_payload.pop("viewport_json") or '{"x":0,"y":0,"zoom":1}')
+        document_payload["viewport"] = json.loads(document_payload.pop("viewport_json", None) or '{"x":0,"y":0,"zoom":1}')
         return {"document": document_payload, "nodes": node_payload, "edges": edge_payload}
 
     @staticmethod

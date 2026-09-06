@@ -7,6 +7,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.model_platform.application.offering_readiness import supports_installed_smoke
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,11 +111,16 @@ class CandidateReadinessService:
             )
             for row in offerings
         )
-        blockers = _dedupe(blocker for item in capabilities for blocker in item.blockers)
+        managed_capabilities = tuple(
+            item for item in capabilities
+            if supports_installed_smoke(str(installation["runtime_kind"]), item.code)
+        )
+        aggregate_capabilities = managed_capabilities or capabilities
+        blockers = _dedupe(blocker for item in aggregate_capabilities for blocker in item.blockers)
         if not capabilities:
             blockers = ("CAPABILITY_MAPPING_REQUIRED",)
         assignable_count = sum(item.readiness_status == "ASSIGNABLE" for item in capabilities)
-        readiness_status = _candidate_status(capabilities, blockers)
+        readiness_status = _candidate_status(aggregate_capabilities, blockers)
         return RegisteredCandidateReadiness(
             runtime_model_installation_id=str(installation["id"]),
             model_release_id=str(installation["release_id"]),
@@ -178,6 +184,8 @@ def _candidate_status(capabilities: tuple[CandidateCapabilityReadiness, ...], bl
         return "INSTALLATION_VERIFICATION_REQUIRED"
     if "PROFILE_SMOKE_AND_PUBLICATION_REQUIRED" in blockers:
         return "PROFILE_PUBLICATION_REQUIRED"
+    if "PROFILE_REQUIRED" in blockers and "CAPABILITY_SMOKE_NOT_PASSED" not in blockers:
+        return "PROFILE_REQUIRED"
     return "VALIDATION_REQUIRED"
 
 

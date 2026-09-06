@@ -40,4 +40,53 @@ describe("ShellToolbar", () => {
     expect(onProjectChange).toHaveBeenCalledWith("project-2");
     expect(onEpisodeChange).toHaveBeenCalledWith("episode-2");
   });
+
+  it("disambiguates only duplicate project titles with project code or a stable id", () => {
+    render(<MemoryRouter><ShellToolbar
+      baseCommands={[]}
+      commandContext={{ projectId: "project-a", episodeId: undefined, navigate: vi.fn() }}
+      episodeCatalogPending={false}
+      mobileNavOpen={false}
+      mobileNavTriggerRef={{ current: null }}
+      onEpisodeChange={vi.fn()}
+      onProjectChange={vi.fn()}
+      onToggleMobileNav={vi.fn()}
+      projectId="project-a"
+      projects={[
+        { id: "project-a", title: "同名项目", code: "NOVEL-A" },
+        { id: "project-b", title: "同名项目", code: "NOVEL-B" },
+        { id: "project-c", title: "唯一项目", code: "UNIQUE" },
+        { id: "project-d", title: "无编码同名" },
+        { id: "project-e", title: "无编码同名" },
+      ]}
+      seasons={[]}
+    /></MemoryRouter>);
+
+    const select = screen.getByRole("combobox", { name: "当前项目" });
+    expect(within(select).getByRole("option", { name: "同名项目 · NOVEL-A" })).toBeTruthy();
+    expect(within(select).getByRole("option", { name: "同名项目 · NOVEL-B" })).toBeTruthy();
+    expect(within(select).getByRole("option", { name: "唯一项目" })).toBeTruthy();
+    expect(within(select).getByRole("option", { name: "无编码同名 · project-d" })).toBeTruthy();
+    expect(within(select).getByRole("option", { name: "无编码同名 · project-e" })).toBeTruthy();
+  });
+
+  it("uses a stable id when duplicate projects also share a code", () => {
+    render(<MemoryRouter><ShellToolbar
+      baseCommands={[]}
+      commandContext={{ projectId: "project-a", episodeId: undefined, navigate: vi.fn() }}
+      episodeCatalogPending={false}
+      mobileNavOpen={false}
+      mobileNavTriggerRef={{ current: null }}
+      onEpisodeChange={vi.fn()}
+      onProjectChange={vi.fn()}
+      onToggleMobileNav={vi.fn()}
+      projectId="project-a"
+      projects={[{ id: "project-a", title: "同名项目", code: "SAME" }, { id: "project-b", title: "同名项目", code: "SAME" }]}
+      seasons={[]}
+    /></MemoryRouter>);
+
+    const select = screen.getByRole("combobox", { name: "当前项目" });
+    expect(within(select).getByRole("option", { name: "同名项目 · project-a" })).toBeTruthy();
+    expect(within(select).getByRole("option", { name: "同名项目 · project-b" })).toBeTruthy();
+  });
 });

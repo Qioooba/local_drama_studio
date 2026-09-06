@@ -12,8 +12,13 @@ import sqlite3
 from typing import Any
 
 from local_drama.application.queries.generation_preferences import GenerationPreferenceQueryService
+from local_drama.application.production_spec_resolution import project_production_spec
 from local_drama.domain.errors import DomainRuleError
-from local_drama.domain.policies import missing_shot_fields
+from local_drama.domain.policies import (
+    SHOT_READINESS_ACTIONS,
+    is_shot_production_ready,
+    missing_shot_fields,
+)
 from local_drama.infrastructure.database.generation_preference_repository import SqliteGenerationPreferenceRepository
 from local_drama.infrastructure.database.sqlite import Database
 
@@ -96,6 +101,7 @@ class SqliteShotStudioReadRepository:
             )
             review_summary, qc_summary = self._quality(connection, media["current_media"])
             preferences = self._preferences(connection, project_id, episode_id, shot_id)
+            production_spec = self._production_spec(connection, project_id)
             dialogue = self._dialogue(connection, project_id, shot_id)
             generation_intents = [
                 dict(row)
@@ -106,7 +112,7 @@ class SqliteShotStudioReadRepository:
                     (shot_id,),
                 ).fetchall()
             ]
-            blockers = self._blockers(connection, project_id, shot, revision_fields, frame_bridge, media, preferences)
+            blockers = self._blockers(connection, project_id, shot, revision_fields, frame_bridge, media, preferences, production_spec)
 
         return {
             "project": {
@@ -114,6 +120,7 @@ class SqliteShotStudioReadRepository:
                 "code": context["project_code"],
                 "name": context["project_title"],
                 "aspect_ratio": context["aspect_ratio"],
+                "production_spec": production_spec,
             },
             "episode": {
                 "id": context["episode_id"],
@@ -139,6 +146,13 @@ class SqliteShotStudioReadRepository:
                     "group_code": shot["group_code"],
                     "group_title": shot["group_title"],
                 },
+                "shot_readiness": {
+                    "status": str(shot["status"]),
+                    "ready": is_shot_production_ready(
+                        shot["status"], shot["current_revision_id"], revision_fields
+                    ),
+                    "allowed_actions": list(SHOT_READINESS_ACTIONS),
+                },
                 "current_revision": None
                 if shot["current_revision_id"] is None
                 else {
@@ -159,6 +173,7 @@ class SqliteShotStudioReadRepository:
                 "qc_summary": qc_summary,
                 "review_summary": review_summary,
                 "generation_preferences": preferences,
+                "production_spec": production_spec,
                 "generation_intents": generation_intents,
                 "active_jobs": active_jobs,
                 "blockers": blockers,
@@ -371,7 +386,7 @@ class SqliteShotStudioReadRepository:
             )
             SELECT gv.id,gv.intent_id,gv.variant_no,gv.variant_type,gv.parent_variant_id,gv.branch_reason,
             gv.seed_policy,gv.explicit_seed,gv.capability_profile_version_id,
-            gv.status,gv.is_stale,gv.stale_reason,gi.purpose,ma.id AS media_asset_id,ma.media_kind,
+            gv.status,gv.is_stale,gv.stale_reason,gi.purpose,kfi.frame_role,ma.id AS media_asset_id,ma.media_kind,
             mv.id AS media_version_id,mv.version_no,mv.take_no,mv.stage,mv.rel_path,mv.mime_type,mv.duration_ms,
             mv.integrity_status,mv.created_at,
             EXISTS(SELECT 1 FROM media_cache_entries mce WHERE mce.media_version_id=mv.id
@@ -382,6 +397,7 @@ class SqliteShotStudioReadRepository:
             FROM generation_intents gi JOIN generation_variants gv ON gv.intent_id=gi.id
             LEFT JOIN media_assets ma ON ma.owner_type='GENERATION_VARIANT' AND ma.owner_id=gv.id
             LEFT JOIN media_versions mv ON mv.media_asset_id=ma.id
+            LEFT JOIN shot_keyframe_generation_batch_items kfi ON kfi.variant_id=gv.id
             LEFT JOIN current_slots current_slot ON current_slot.media_version_id=mv.id
             WHERE gi.owner_type='SHOT' AND gi.owner_id=?
             ORDER BY gv.created_at DESC,gv.variant_no DESC,mv.version_no DESC""",
@@ -438,6 +454,7 @@ class SqliteShotStudioReadRepository:
             candidate["approved"] = str(candidate.get("approved_version_id") or "") == target_version_id
             candidate["thumbnail_ready"] = bool(candidate["thumbnail_ready"])
             candidate["candidate_source"] = "VISUAL_LAB"
+            candidate["frame_role"] = None
             candidate.pop("approved_version_id", None)
             candidates.append(candidate)
             candidate_versions.add(media_version_id)
@@ -502,15 +519,34 @@ class SqliteShotStudioReadRepository:
         if not line_rows:
             return {"lines": [], "total": 0}
 
+        jobs_by_text: dict[str, list[dict[str, Any]]] = {}
+        for job in connection.execute(
+            """SELECT j.id,j.subject_id AS text_revision_id,j.state,j.last_error_code,j.last_error_detail_redacted,
+            EXISTS(SELECT 1 FROM job_attempts ja JOIN artifacts a ON a.job_attempt_id=ja.id
+              JOIN media_versions mv ON mv.source_artifact_id=a.id
+              JOIN tts_candidates tc ON tc.media_version_id=mv.id
+              WHERE ja.job_id=j.id AND tc.dialogue_text_revision_id=j.subject_id) AS registered
+            FROM jobs j WHERE j.project_id=? AND j.type='TTS_GENERATION'
+            AND j.subject_id IN (SELECT dtr.id FROM dialogue_text_revisions dtr
+              JOIN dialogue_lines dl ON dl.id=dtr.dialogue_line_id WHERE dl.shot_id=?)
+            ORDER BY j.created_at DESC,j.id DESC""",
+            (project_id, shot_id),
+        ).fetchall():
+            item = dict(job)
+            text_id = str(item.pop("text_revision_id"))
+            item["registered"] = bool(item["registered"])
+            jobs_by_text.setdefault(text_id, []).append(item)
+
         candidate_rows = connection.execute(
             """SELECT tc.id,tc.dialogue_text_revision_id,tc.voice_profile_version_id,tc.media_version_id,
-            tc.emotion,tc.speech_rate,tc.seed,tc.model_ref,tc.candidate_kind,tc.status,tc.created_at,
+            tc.emotion,tc.speech_rate,tc.seed,tc.model_ref,tc.candidate_kind,tc.status,tc.created_at,mv.duration_ms,
             dtr.dialogue_line_id,
             CASE WHEN dtr.id=(SELECT latest.id FROM dialogue_text_revisions latest
               WHERE latest.dialogue_line_id=dtr.dialogue_line_id ORDER BY latest.revision_no DESC LIMIT 1) THEN 0 ELSE 1 END AS is_stale,
             CASE WHEN tc.id=(SELECT dcs.tts_candidate_id FROM dialogue_candidate_selections dcs
               WHERE dcs.dialogue_line_id=dtr.dialogue_line_id ORDER BY dcs.created_at DESC,dcs.id DESC LIMIT 1) THEN 1 ELSE 0 END AS selected
             FROM tts_candidates tc
+            LEFT JOIN media_versions mv ON mv.id=tc.media_version_id
             JOIN dialogue_text_revisions dtr ON dtr.id=tc.dialogue_text_revision_id
             JOIN dialogue_lines dl ON dl.id=dtr.dialogue_line_id
             WHERE dl.shot_id=?
@@ -578,6 +614,7 @@ class SqliteShotStudioReadRepository:
                     },
                     "voice_binding": voices.get(str(row["speaker"]).casefold()),
                     "candidates": candidates_by_line.get(line_id, [])[:20],
+                    "jobs": jobs_by_text.get(str(row["text_revision_id"]), []),
                     "working_selection": selections.get(line_id),
                 }
             )
@@ -817,11 +854,13 @@ class SqliteShotStudioReadRepository:
         adjacent = connection.execute(
             """WITH ordered AS (SELECT id,code,scene_id,ROW_NUMBER() OVER (ORDER BY CAST(order_key AS REAL),code,id) idx
             FROM shots WHERE episode_id=? AND archived_at IS NULL),
-            current AS (SELECT idx FROM ordered WHERE id=?) SELECT id,code,idx-(SELECT idx FROM current) delta FROM ordered
+            current AS (SELECT idx FROM ordered WHERE id=?) SELECT id,code,scene_id,idx-(SELECT idx FROM current) delta FROM ordered
             WHERE idx BETWEEN (SELECT idx FROM current)-1 AND (SELECT idx FROM current)+1 ORDER BY idx""",
             (episode_id, shot_id),
         ).fetchall()
         by_delta = {int(row["delta"]): row for row in adjacent}
+
+        working_start = self._working_keyframe_anchor(connection, shot_id)
 
         def boundary(from_row: sqlite3.Row | None, to_row: sqlite3.Row | None) -> dict[str, Any] | None:
             if from_row is None or to_row is None:
@@ -835,6 +874,12 @@ class SqliteShotStudioReadRepository:
                 return None
             previous_end = self._anchor(connection, constraint["from_anchor_id"], constraint)
             current_start = self._anchor(connection, constraint["to_anchor_id"], constraint, inherited_from=previous_end)
+            # An explicit transition anchor is authoritative, including when it
+            # is stale or its referenced anchor is missing.  Only an unset
+            # transition may fall back to the approved working keyframe that
+            # Shot Studio already exposes as the current selection.
+            if current_start is None and not constraint["to_anchor_id"] and str(to_row["id"]) == shot_id:
+                current_start = working_start
             same_scene = bool(from_row["scene_id"] and from_row["scene_id"] == to_row["scene_id"])
             conflict = str(constraint["compatibility_status"]).upper() in {"BLOCKED", "CONFLICT", "INCOMPATIBLE"}
             stale = bool(constraint["is_stale"] or (previous_end and previous_end["stale"]) or (current_start and current_start["stale"]))
@@ -889,11 +934,56 @@ class SqliteShotStudioReadRepository:
         )
         return {
             "previous": previous,
-            "current_start": previous["current_start"] if previous else None,
+            "current_start": previous["current_start"] if previous else working_start,
             "current_end": following["previous_end"] if following else None,
             "next": following,
             "compatibility": compatibility,
             "stale": stale,
+        }
+
+    @staticmethod
+    def _working_keyframe_anchor(
+        connection: sqlite3.Connection, shot_id: str
+    ) -> dict[str, Any] | None:
+        """Project an approved working keyframe as a read-only start-frame fact.
+
+        Frame Bridge commands still operate on real ``frame_anchors`` and
+        transition constraints.  This derived anchor only closes the read gap
+        for a shot whose own approved keyframe is already selected but has no
+        incoming transition anchor (notably the first shot in an episode).
+        """
+
+        row = connection.execute(
+            """SELECT ws.media_version_id,mv.rel_path,mv.stage,mv.integrity_status,
+            ma.media_kind,ma.approved_version_id
+            FROM shot_working_media_slots ws
+            JOIN media_versions mv ON mv.id=ws.media_version_id
+            JOIN media_assets ma ON ma.id=mv.media_asset_id
+            WHERE ws.shot_id=? AND ws.slot_type='KEYFRAME'
+            ORDER BY ws.updated_at DESC,ws.id DESC LIMIT 1""",
+            (shot_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        media_version_id = str(row["media_version_id"])
+        if (
+            str(row["approved_version_id"] or "") != media_version_id
+            or str(row["media_kind"] or "").upper() != "IMAGE"
+            or str(row["stage"] or "").upper() != "KEYFRAME"
+            or str(row["integrity_status"] or "").upper() != "VERIFIED"
+        ):
+            return None
+        return {
+            "anchor_id": f"working-keyframe:{media_version_id}:FIRST_FRAME",
+            "source_media_version_id": media_version_id,
+            "media_version_id": media_version_id,
+            "rel_path": row["rel_path"],
+            "role_hint": "FIRST_FRAME",
+            "inherited_from_anchor_id": None,
+            "source": "GENERATED",
+            "status": "GENERATED",
+            "stale": False,
+            "stale_reason": None,
         }
 
     @staticmethod
@@ -1011,6 +1101,17 @@ class SqliteShotStudioReadRepository:
         return {"resolutions": resolutions, "available": True}
 
     @staticmethod
+    def _production_spec(connection: sqlite3.Connection, project_id: str) -> dict[str, Any]:
+        """Resolve the project delivery spec against the selected VIDEO workflow."""
+
+        plan_row = connection.execute(
+            "SELECT ppv.plan_json FROM projects p JOIN production_plan_versions ppv ON ppv.id=p.production_plan_version_id WHERE p.id=?",
+            (project_id,),
+        ).fetchone()
+        plan = _json(plan_row["plan_json"], {}) if plan_row is not None else None
+        return project_production_spec(connection, project_id, plan)
+
+    @staticmethod
     def _blockers(
         connection: sqlite3.Connection,
         project_id: str,
@@ -1019,6 +1120,7 @@ class SqliteShotStudioReadRepository:
         frame_bridge: dict[str, Any],
         media: dict[str, Any],
         preferences: dict[str, Any],
+        production_spec: dict[str, Any],
     ) -> list[dict[str, Any]]:
         blockers: list[dict[str, Any]] = []
 
@@ -1032,16 +1134,23 @@ class SqliteShotStudioReadRepository:
             EXISTS(SELECT 1 FROM delivery_targets WHERE project_id=? AND status='ACTIVE') delivery_bound""",
             (project_id, project_id, project_id),
         ).fetchone()
-        if not bindings["profile_bound"]:
+        has_profile = bool(bindings["profile_bound"]) or any(
+            bool(r.get("profile_version_id")) for r in preferences.get("resolutions", [])
+        )
+        if not has_profile:
             add("PROFILE_NOT_BOUND", "项目尚未绑定执行 Profile", "PROJECT")
         if not bindings["plan_bound"]:
-            add("PRODUCTION_PLAN_NOT_BOUND", "项目尚未绑定生产计划", "PROJECT")
+            add("PRODUCTION_PLAN_NOT_BOUND", "项目尚未绑定生产计划", "PROJECT", False)
         if not bindings["delivery_bound"]:
             add("DELIVERY_TARGET_NOT_BOUND", "项目尚未绑定交付目标", "PROJECT", False)
+        if production_spec.get("status") != "READY":
+            for issue in production_spec.get("blockers", []):
+                if isinstance(issue, dict):
+                    add(str(issue.get("code") or "PRODUCTION_SPEC_BLOCKED"), str(issue.get("message") or "生产规格无法执行"), "GENERATION")
         missing = missing_shot_fields(fields)
         if missing:
             add("DIRECTOR_FIELDS_MISSING", "镜头导演字段不完整：" + ", ".join(missing))
-        if shot["status"] not in {"READY", "GENERATING", "REVIEW", "APPROVED"}:
+        if not is_shot_production_ready(shot["status"], shot["current_revision_id"], fields):
             add("SHOT_NOT_PRODUCTION_READY", "镜头尚未标记为可生产")
         if frame_bridge["stale"]:
             add("FRAME_BRIDGE_STALE", "首尾帧来源已变化，需要重新继承", "CONTINUITY")

@@ -101,6 +101,9 @@ describe("V2 system workspaces", () => {
       if (path.endsWith("/api/v2/model-platform/discovery-runs:ollama")) {
         return Promise.resolve(apiJsonResponse({ discovery_run: { id: "scan-ollama", status: "SUCCEEDED", observation_count: 1 } }));
       }
+      if (path.endsWith("/api/v2/model-platform/discovery-runs:llama-cpp")) {
+        return Promise.resolve(apiJsonResponse({ discovery_run: { id: "scan-llama-cpp", status: "SUCCEEDED", observation_count: 1 } }));
+      }
       if (path.endsWith("/api/v2/model-platform/discovery-runs:model-lock")) {
         return Promise.resolve(apiJsonResponse({ discovery_runs: [{ id: "scan-lock", status: "SUCCEEDED", observation_count: 2 }] }));
       }
@@ -179,6 +182,23 @@ describe("V2 system workspaces", () => {
     await waitFor(() => expect(router.state.location.search).toBe(""));
   });
 
+  it("disambiguates duplicate project names in the jobs scope selector", async () => {
+    api.listProjects.mockResolvedValue({ items: [
+      { id: "project-a", title: "同名项目", code: "NOVEL-A" },
+      { id: "project-b", title: "同名项目", code: "NOVEL-B" },
+      { id: "project-c", title: "唯一项目", code: "UNIQUE" },
+    ] });
+    api.listJobsPage.mockResolvedValue({ items: [], next_cursor: null, cursor: 0, limit: 100 });
+    mount(<JobsPage />);
+
+    const select = await screen.findByRole("combobox", { name: "后台任务范围" });
+    expect(await within(select).findByRole("option", { name: "同名项目 · NOVEL-A" })).toBeInTheDocument();
+    expect(await within(select).findByRole("option", { name: "同名项目 · NOVEL-B" })).toBeInTheDocument();
+    expect(await within(select).findByRole("option", { name: "唯一项目" })).toBeInTheDocument();
+    fireEvent.change(select, { target: { value: "project-a" } });
+    expect(await screen.findByText("当前范围：同名项目 · NOVEL-A · 已读取 0 个任务")).toBeInTheDocument();
+  });
+
   it("runs explicit diagnostics and keeps audit read-only", async () => {
     mount(<DiagnosticsPage />);
     expect(await screen.findByRole("heading", { name: "有 1 项需要留意" })).toBeInTheDocument();
@@ -208,8 +228,8 @@ describe("V2 system workspaces", () => {
     expect(screen.queryByText(/127\.0\.0\.1/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "运行能力冒烟" }));
     expect(await screen.findByRole("status")).toHaveTextContent("LLM_STORY_PARSE 能力冒烟通过，其余声明能力仍需验证。");
-    fireEvent.click(screen.getByRole("button", { name: "扫描 Ollama" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("Ollama 扫描完成：发现 1 条记录。");
+    fireEvent.click(screen.getByRole("button", { name: "扫描 llama.cpp / GGUF" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("llama.cpp 扫描完成：发现 1 条记录。");
     fireEvent.click(screen.getByRole("button", { name: "登记候选" }));
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("已登记候选模型：ollama-qwen3-8-27b。下一步需要验证与发布。"));
     expect(screen.getByText(/扫描只产生候选证据，不会自动发布或影响创作任务。/)).toBeInTheDocument();
@@ -305,8 +325,8 @@ describe("V2 system workspaces", () => {
     expect(projectNavigation).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "任务与机器", level: 2 })).toBeInTheDocument();
     expect(within(projectNavigation).getByRole("link", { name: "项目首页" })).toBeVisible();
-    expect(within(projectNavigation).getByRole("link", { name: "故事" })).toBeVisible();
-    expect(within(projectNavigation).getByRole("link", { name: "资产" })).toBeVisible();
+    expect(within(projectNavigation).getByRole("link", { name: "AI 制作" })).toBeVisible();
+    expect(within(projectNavigation).getByRole("link", { name: "核心资产" })).toBeVisible();
     expect(screen.getByRole("link", { name: "打开任务中心" })).toBeVisible();
     expect(within(projectNavigation).queryByText("系统区")).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("combobox", { name: "当前项目" })).toHaveValue("project-1"));
@@ -344,19 +364,18 @@ describe("V2 system workspaces", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
 
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "当前分集" })).toHaveValue("episode-1"));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "切换当前分集" })).toHaveValue("episode-1"));
     expect(screen.queryByRole("combobox", { name: "当前季度" })).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "当前镜头" })).not.toBeInTheDocument();
-    const projectNav = screen.getByRole("navigation", { name: "主导航" });
-    expect(within(projectNav).getByRole("link", { name: "策划" })).toBeInTheDocument();
-    expect(within(projectNav).getByRole("link", { name: "镜头" })).toBeInTheDocument();
-    expect(within(projectNav).getByRole("link", { name: "生产" })).toBeInTheDocument();
-    expect(within(projectNav).getByRole("link", { name: "后期" })).toBeInTheDocument();
-    expect(within(projectNav).getByRole("link", { name: "交付" })).toBeInTheDocument();
+    const episodeNav = screen.getByRole("navigation", { name: "本集制作阶段" });
+    expect(within(episodeNav).getByRole("link", { name: /本集生成/ })).toBeInTheDocument();
+    expect(within(episodeNav).getByRole("link", { name: /镜头修正/ })).toBeInTheDocument();
+    expect(within(episodeNav).getByRole("link", { name: /后期成片/ })).toBeInTheDocument();
+    expect(within(episodeNav).getByRole("link", { name: /交付/ })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "当前位置" })).toHaveTextContent("北方小院");
     expect(screen.getByRole("navigation", { name: "当前位置" })).toHaveTextContent("第一季 / 第一集");
 
-    fireEvent.change(screen.getByRole("combobox", { name: "当前分集" }), { target: { value: "episode-2" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "切换当前分集" }), { target: { value: "episode-2" } });
     await waitFor(() => expect(router.state.location.pathname).toBe("/projects/project-1/episodes/episode-2/studio"));
   });
 
@@ -402,9 +421,11 @@ describe("V2 system workspaces", () => {
     expect(await screen.findByText("项目内容")).toBeInTheDocument();
     const navigation = screen.getByRole("navigation", { name: "主导航" });
     expect(within(navigation).getByText("当前项目")).toBeInTheDocument();
-    expect(within(navigation).getByText("项目工具")).toBeInTheDocument();
-    expect(within(navigation).getByRole("link", { name: "设置" })).toBeVisible();
-    expect(within(navigation).getByRole("link", { name: "Visual Lab" })).toBeVisible();
+    expect(within(navigation).queryByText("项目工具")).not.toBeInTheDocument();
+    const advanced = within(navigation).getByText("高级设置与系统").closest("details");
+    expect(advanced).not.toHaveAttribute("open");
+    expect(within(navigation).getByRole("link", { name: "项目设置" })).toBeInTheDocument();
+    expect(within(navigation).getByRole("link", { name: "Visual Lab" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "打开任务中心" })).toBeVisible();
     expect(within(navigation).queryByRole("link", { name: "模型与能力" })).not.toBeInTheDocument();
   });
@@ -423,7 +444,7 @@ describe("V2 system workspaces", () => {
     render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
 
     fireEvent.click(await screen.findByRole("button", { name: "修改草稿" }));
-    fireEvent.click(screen.getByRole("link", { name: "故事" }));
+    fireEvent.click(screen.getByRole("link", { name: "AI 制作" }));
     expect(await screen.findByRole("dialog", { name: "当前页面有未保存内容" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "取消切换" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "放弃并切换" })).toBeInTheDocument();

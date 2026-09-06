@@ -105,7 +105,7 @@ class SqliteAudioWorkspaceRepository:
     def _dialogue_references(connection: sqlite3.Connection, episode_id: str) -> list[dict[str, Any]]:
         rows = connection.execute(
             """SELECT dl.id AS line_id,dl.code AS line_code,dl.shot_id,s.code AS shot_code,dl.speaker,
-            dtr.text,dtr.id AS text_revision_id,dtr.revision_no,
+            dtr.text,dtr.id AS text_revision_id,dtr.revision_no AS text_revision_no,
             dcs.tts_candidate_id AS selected_tts_candidate_id,tc.media_version_id AS selected_media_version_id,
             mv.duration_ms AS selected_media_duration_ms,tc.candidate_kind AS selected_candidate_kind,
             CASE WHEN dcs.source_text_revision_id IS NOT NULL AND dcs.source_text_revision_id<>dtr.id THEN 1 ELSE 0 END AS selection_stale

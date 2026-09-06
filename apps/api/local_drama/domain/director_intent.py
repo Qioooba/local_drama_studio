@@ -70,7 +70,15 @@ def normalize_director_intent_v3(fields: dict[str, object]) -> dict[str, Any]:
         "staging": _object(source.get("staging")) or None,
         "staging_3d": _object(source.get("staging_3d")) or None,
     }
+    if "prompt_modifiers" in source:
+        normalized["prompt_modifiers"] = _prompt_modifiers(source.get("prompt_modifiers"))
     return normalized
+
+
+def _prompt_modifiers(value: object) -> list[str]:
+    from .shot_prompt import normalize_prompt_modifiers
+
+    return normalize_prompt_modifiers(value)
 
 
 def validate_director_intent_v3_payload(fields: dict[str, object]) -> None:
@@ -87,3 +95,8 @@ def validate_director_intent_v3_payload(fields: dict[str, object]) -> None:
     target_duration_ms = fields.get("target_duration_ms")
     if target_duration_ms is not None and (isinstance(target_duration_ms, bool) or not isinstance(target_duration_ms, int) or target_duration_ms <= 0):
         raise DomainRuleError("DIRECTOR_INTENT_DURATION_INVALID", "镜头目标时长必须是正整数毫秒")
+    modifiers = fields.get("prompt_modifiers", [])
+    if not isinstance(modifiers, list) or len(modifiers) > 20 or any(
+        not isinstance(item, str) or not item.strip() or len(item.strip()) > 80 for item in modifiers
+    ):
+        raise DomainRuleError("DIRECTOR_INTENT_PROMPT_MODIFIERS_INVALID", "提示词修饰符必须是至多 20 个、每项不超过 80 字的非空字符串")

@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
+from local_drama.api.schemas.common import ShotReadinessFact
 from local_drama.api.schemas.director_desk import (
     DirectorDeskEpisode,
     DirectorDeskProject,
@@ -14,12 +15,206 @@ from local_drama.api.schemas.projects import DirectorIntentV3
 from local_drama.api.schemas.variants import RerollReasonCode
 from local_drama.domain.generation import VariantPlan
 from local_drama.domain.policies import VariantInput
+from local_drama.domain.shot_prompt_bundle import DEFAULT_SHOT_NEGATIVE_PROMPT
 
 JsonObject = dict[str, JsonValue]
 
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class ShotPromptBundleRequest(StrictModel):
+    """Page-editable prompt fields; compiler metadata is server-owned."""
+
+    base_prompt: str | None = Field(default=None, max_length=4000)
+    positive_override: str = Field(default="", max_length=4000)
+    negative_prompt: str = Field(default=DEFAULT_SHOT_NEGATIVE_PROMPT, max_length=4000)
+    provenance: Literal["AI_GENERATED", "PAGE_USER_EDIT"] = "AI_GENERATED"
+    frame_reframe_mode: Literal["NONE", "SINGLE_MOMENT"] = "NONE"
+
+
+class StoryboardGenerationBatchTarget(StrictModel):
+    shot_id: str = Field(min_length=1, max_length=64)
+    expected_revision: int = Field(ge=1)
+
+
+class StoryboardGenerationBatchPlanRequest(StrictModel):
+    targets: list[StoryboardGenerationBatchTarget] = Field(min_length=1, max_length=100)
+
+
+class StoryboardGenerationBatchSubmitRequest(StoryboardGenerationBatchPlanRequest):
+    expected_plan_hash: str = Field(pattern="^[0-9a-f]{64}$")
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+
+class ShotKeyframeBatchPlanRequest(StrictModel):
+    targets: list[StoryboardGenerationBatchTarget] = Field(min_length=1, max_length=100)
+    frame_strategy: Literal["FIRST_ONLY", "FIRST_AND_LAST"] = "FIRST_ONLY"
+    candidate_count: int = Field(default=2, ge=1, le=4)
+    profile_version_id: str | None = Field(default=None, min_length=1, max_length=64)
+    prompt_bundle: ShotPromptBundleRequest | None = None
+
+
+class ShotKeyframeBatchSubmitRequest(ShotKeyframeBatchPlanRequest):
+    expected_plan_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+
+class ShotKeyframeBatchPlanItem(StrictModel):
+    shot_id: str
+    shot_code: str
+    shot_revision: int = Field(ge=1)
+    frame_role: Literal["FIRST_FRAME", "END_FRAME"]
+    candidate_index: int = Field(ge=1, le=4)
+    capability: str
+    profile_version_id: str | None = None
+    shot_keyframe_route: JsonObject = Field(default_factory=dict)
+    identity_inputs: JsonObject = Field(default_factory=dict)
+    workflow_bindings: JsonObject = Field(default_factory=dict)
+    semantic_inputs: JsonObject = Field(default_factory=dict)
+    prompt: str
+    prompt_bundle: JsonObject
+    status: Literal["READY", "BLOCKED"]
+    blockers: list[JsonObject]
+
+
+class ShotKeyframeBatchPlanSummary(StrictModel):
+    shots: int = Field(ge=1, le=100)
+    jobs: int = Field(ge=0)
+    blocked: int = Field(ge=0)
+
+
+class ShotKeyframeBatchPlanFact(StrictModel):
+    episode_id: str
+    project_id: str
+    targets: list[StoryboardGenerationBatchTarget]
+    frame_strategy: Literal["FIRST_ONLY", "FIRST_AND_LAST"]
+    candidate_count: int = Field(ge=1, le=4)
+    prompt_bundle: JsonObject | None = None
+    execution_contract: JsonObject = Field(default_factory=dict)
+    items: list[ShotKeyframeBatchPlanItem]
+    plan_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    valid: bool
+    issues: list[JsonObject]
+    summary: ShotKeyframeBatchPlanSummary
+    runtime_contacted: Literal[False]
+    network_contacted: Literal[False]
+    mutated: Literal[False]
+
+
+class ShotKeyframeBatchPlanResponse(StrictModel):
+    plan: ShotKeyframeBatchPlanFact
+
+
+class ShotKeyframeBatchItemFact(StrictModel):
+    id: str
+    shot_id: str
+    shot_code: str
+    frame_role: Literal["FIRST_FRAME", "END_FRAME"]
+    candidate_index: int = Field(ge=1, le=4)
+    status: str
+    job_id: str | None = None
+    job_state: str | None = None
+    media_version_id: str | None = None
+    prompt_bundle: JsonObject | None = None
+    error: JsonObject | None = None
+
+
+class ShotKeyframeBatchSummary(StrictModel):
+    total: int = Field(ge=0)
+    succeeded: int = Field(ge=0)
+    failed: int = Field(ge=0)
+    active: int = Field(ge=0)
+
+
+class ShotKeyframeBatchFact(StrictModel):
+    id: str
+    project_id: str
+    episode_id: str
+    frame_strategy: Literal["FIRST_ONLY", "FIRST_AND_LAST"]
+    candidate_count: int = Field(ge=1, le=4)
+    prompt_bundle: JsonObject | None = None
+    status: str
+    plan_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    created_at: str
+    summary: ShotKeyframeBatchSummary
+    items: list[ShotKeyframeBatchItemFact]
+    idempotent_replay: bool | None = None
+
+
+class ShotKeyframeBatchSubmitResponse(StrictModel):
+    batch: ShotKeyframeBatchFact
+
+
+class ShotKeyframeBatchListResponse(StrictModel):
+    items: list[ShotKeyframeBatchFact]
+
+
+class StoryboardGenerationBatchPlanSummary(StrictModel):
+    selected: int = Field(ge=1, le=100)
+    ready: int = Field(ge=0, le=100)
+    blocked: int = Field(ge=0, le=100)
+
+
+class StoryboardGenerationBatchPlanFact(StrictModel):
+    episode_id: str
+    project_id: str
+    targets: list[StoryboardGenerationBatchTarget]
+    input_fingerprint: str
+    plan_hash: str = Field(pattern="^[0-9a-f]{64}$")
+    valid: bool
+    issues: list[JsonObject]
+    items: list[JsonObject]
+    summary: StoryboardGenerationBatchPlanSummary
+    runtime_contacted: Literal[False]
+    network_contacted: Literal[False]
+    mutated: Literal[False]
+
+
+class StoryboardGenerationBatchPlanResponse(StrictModel):
+    plan: StoryboardGenerationBatchPlanFact
+
+
+class StoryboardGenerationBatchSubmissionFact(StrictModel):
+    plan_hash: str = Field(pattern="^[0-9a-f]{64}$")
+    workflow_id: str
+    run_id: str
+    status: str
+    task_count: int = Field(ge=0)
+    selected_shot_ids: list[str]
+    idempotent_replay: bool
+
+
+class StoryboardGenerationBatchSubmitResponse(StrictModel):
+    batch: StoryboardGenerationBatchSubmissionFact
+
+
+class ShotLipsyncJobFact(StrictModel):
+    id: str
+    state: str
+
+
+class ShotLipsyncJobResponse(StrictModel):
+    job: ShotLipsyncJobFact
+
+
+class ShotLipsyncJobListItem(StrictModel):
+    id: str
+    state: str
+    created_at: str
+    updated_at: str
+    output_media_version_id: str | None = None
+
+
+class ShotLipsyncJobListResponse(StrictModel):
+    shot_id: str
+    items: list[ShotLipsyncJobListItem]
+
+
+class ShotLipsyncFinalizeResponse(StrictModel):
+    media: JsonObject
+    idempotent_replay: bool
 
 
 class ShotDraftRequest(StrictModel):
@@ -115,6 +310,7 @@ class ShotBaseGenerationPreflightRequest(StrictModel):
     expected_effective_configuration_fingerprint: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     bindings: list[ShotGenerationBindingRequest] = Field(default_factory=list, max_length=100)
     expected_shot_revision: int = Field(ge=1)
+    prompt_bundle: ShotPromptBundleRequest | None = None
 
     def to_domain(self) -> VariantPlan:
         return VariantPlan(
@@ -129,6 +325,7 @@ class ShotBaseGenerationPreflightRequest(StrictModel):
             bindings=tuple(VariantInput(item.role, item.media_version_id, item.ordinal, item.weight) for item in self.bindings),
             provider_random_nonce=self.provider_random_nonce,
             expected_effective_configuration_fingerprint=self.expected_effective_configuration_fingerprint,
+            prompt_bundle=self.prompt_bundle.model_dump(exclude_none=True) if self.prompt_bundle is not None else None,
         )
 
 
@@ -167,6 +364,12 @@ class ShotGenerationPreflightFact(StrictModel):
     disk_gate: JsonObject
     blockers: list[JsonObject]
     effective_configuration: JsonObject
+    # VIDEO preflight now exposes the resolved production contract that is
+    # frozen into the eventual execution snapshot.  Keep this at the typed
+    # boundary so the strict response model cannot reject the canonical
+    # production-spec read model returned by GenerationService.
+    production_spec: JsonObject | None = None
+    prompt_bundle: JsonObject | None = None
     would_persist_variant: Literal[False]
     would_create_job: Literal[False]
     reproducibility: JsonObject
@@ -334,6 +537,7 @@ class MediaProjection(StrictModel):
     is_stale: bool = False
     stale_reason: str | None = None
     purpose: str | None = None
+    frame_role: Literal["FIRST_FRAME", "END_FRAME"] | None = None
     media_asset_id: str | None = None
     media_kind: str | None = None
     media_version_id: str
@@ -553,6 +757,7 @@ class DialogueVoiceBindingFact(StrictModel):
 
 
 class DialogueTtsCandidateFact(StrictModel):
+    duration_ms: int | None = None
     id: str
     dialogue_text_revision_id: str
     voice_profile_version_id: str
@@ -577,6 +782,14 @@ class DialogueWorkingSelectionFact(StrictModel):
     created_at: str
 
 
+class DialogueTtsJobFact(StrictModel):
+    id: str
+    state: str
+    registered: bool
+    last_error_code: str | None = None
+    last_error_detail_redacted: str | None = None
+
+
 class ShotDialogueLineFact(StrictModel):
     id: str
     code: str
@@ -585,6 +798,7 @@ class ShotDialogueLineFact(StrictModel):
     current_text: DialogueTextRevisionFact
     voice_binding: DialogueVoiceBindingFact | None = None
     candidates: list[DialogueTtsCandidateFact]
+    jobs: list[DialogueTtsJobFact] = Field(default_factory=list)
     working_selection: DialogueWorkingSelectionFact | None = None
 
 
@@ -737,6 +951,7 @@ class ShotContinuityContextResponse(StrictModel):
 
 class CurrentShotAggregate(StrictModel):
     shot: ShotFact
+    shot_readiness: ShotReadinessFact
     current_revision: ShotRevisionFact | None = None
     source_context: SourceContextFact
     intent_suggestions: IntentSuggestions
@@ -750,6 +965,7 @@ class CurrentShotAggregate(StrictModel):
     qc_summary: QcSummary
     review_summary: ReviewSummary
     generation_preferences: GenerationPreferences
+    production_spec: JsonObject | None = None
     generation_intents: list[ShotGenerationIntentFact]
     capability_options: list[CapabilityOption]
     active_jobs: list[ActiveJobFact]

@@ -17,6 +17,51 @@ def jobs_test_app(workspace, database) -> FastAPI:
     return app
 
 
+def test_mirror_of_promoted_image_preserves_original_and_replays(workspace, database, monkeypatch):
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    fake_ffmpeg = workspace.work_root / "ffmpeg.exe"
+    fake_ffmpeg.write_bytes(b"test executable placeholder")
+    workspace = workspace.model_copy(update={"ffmpeg_path": str(fake_ffmpeg)})
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="mirror_lineage", title="Mirror lineage", episode_count=1,
+        aspect_ratio="16:9", fps_num=24, fps_den=1, target_duration_ms=60000,
+        allow_unconfigured_capabilities=True,
+    )
+    jobs = JobService(database, workspace)
+    jobs.create_job(str(project["id"]), "IMAGE_GENERATION", "PROJECT", str(project["id"]), "CPU", {}, "mirror-lineage")
+    claim = jobs.claim("mirror-test", ["CPU"])
+    source = workspace.work_root / "original.png"
+    source.write_bytes(b"original asymmetric image fixture")
+    attempt = claim["attempt"]
+    artifact = jobs.register_artifact(str(attempt["id"]), "COMFY_OUTPUT", "original.png")
+    jobs.complete(str(attempt["id"]), str(attempt["lease_token"]), "mirror-test", success=True)
+
+    def transform_fixture(command, **kwargs):
+        assert command[command.index("-vf") + 1] == "hflip"
+        Path(command[-1]).write_bytes(b"mirrored asymmetric image fixture")
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr("local_drama.application.media.subprocess.run", transform_fixture)
+    monkeypatch.setattr(MediaService, "_probe", lambda *args: {"probe_status": "PASS", "streams": []})
+    service = MediaService(database, workspace)
+    original = service.promote_job_artifact(str(artifact["id"]), media_kind="IMAGE")
+    first = service.transform_job_image_artifact(str(artifact["id"]))
+    replay = service.transform_job_image_artifact(str(artifact["id"]))
+    assert first["media_version_id"] == replay["media_version_id"]
+    assert first["media_version_id"] != original["media_version_id"]
+    original_fact = service.get_version(str(original["media_version_id"]))
+    derived = service.get_version(str(first["media_version_id"]))
+    assert original_fact["source_artifact_id"] == artifact["id"]
+    assert derived["source_artifact_id"] is None
+    assert derived["parent_version_id"] == original["media_version_id"]
+    assert derived["import_source"] == "JOB_ARTIFACT_TRANSFORM"
+    assert source.read_bytes() == b"original asymmetric image fixture"
+    with database.connect() as connection:
+        assert connection.execute("SELECT count(*) FROM audit_events WHERE action='JOB_ARTIFACT_IMAGE_TRANSFORMED'").fetchone()[0] == 1
+
+
 def test_verified_success_artifact_promotes_once_with_lineage(workspace, database) -> None:
     project = ProjectService(database, workspace.projects_root).create_project(
         code="artifact_promotion",

@@ -366,6 +366,9 @@ func supervise(ctx context.Context, configOverride string) error {
 	}
 
 	api := pythonCommand(ctx, paths, "local_drama.entrypoints.api", "--config", paths.ConfigPath)
+	// Runtime Host owns the durable external worker below; prevent the API
+	// direct-launch fallback from creating a duplicate queue consumer.
+	api.Env = append(api.Env, "LOCAL_DRAMA_MANAGED_WORKER=1")
 	if err := api.Start(); err != nil {
 		return fmt.Errorf("start API: %w", err)
 	}

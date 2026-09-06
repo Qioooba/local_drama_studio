@@ -98,7 +98,7 @@ export function ProjectKnowledgeIndexPanel({ projectId, sourceDocumentVersionId 
       </label>
       <button type="submit" className="secondary" disabled={searching || !query.trim()}>{searching ? "正在本机检索…" : "检索"}</button>
       {hits !== null && <ol className="project-knowledge-search-hits" aria-label="知识检索命中">
-        {hits.length ? hits.map((hit) => <li key={`${hit.index_run_id}:${hit.ordinal}`}><strong>命中第 {hit.ordinal} 段</strong><span>相似度 {hit.score.toFixed(3)} · 原文偏移 {hit.source_start}–{hit.source_end}</span></li>) : <li>没有返回命中。</li>}
+        {hits.length ? hits.map((hit) => <li key={`${hit.index_run_id}:${hit.ordinal}`}><strong>命中第 {hit.ordinal} 段</strong><p>{hit.excerpt}</p><span>相似度 {hit.score.toFixed(3)} · 原文偏移 {hit.source_start}–{hit.source_end}</span></li>) : <li>没有返回命中。</li>}
       </ol>}
     </form>}
     <small className="muted">Embedding Profile 由系统/项目模型配置控制；没有可执行 Profile 时，准备动作会安全拒绝。<Link to={routes.systemCapabilities()}>打开模型中心</Link></small>

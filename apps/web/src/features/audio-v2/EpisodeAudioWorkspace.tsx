@@ -21,6 +21,11 @@ const FOCUS_ITEMS: Array<{ id: AudioFocus; label: string }> = [
   { id: "gaps", label: "缺口与证据" },
 ];
 const TRACK_LABELS: Record<string, string> = { BGM: "背景音乐", SFX: "音效" };
+const GAP_LABELS: Record<string, string> = {
+  DIALOGUE_TTS_MISSING: "缺少已采用的对白语音",
+  DIALOGUE_TTS_STALE: "对白语音已过期",
+  AUDIO_LICENSE_EVIDENCE_MISSING: "缺少声音授权证据",
+};
 
 function commandKey(prefix: string) {
   return `${prefix}:${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`}`;
@@ -83,7 +88,7 @@ export function EpisodeAudioWorkspace({ projectId, episodeId }: { projectId: str
         {selectedTrack ? <TrackInspector track={selectedTrack} mixRevision={data.mix_revision} onSaved={refresh} /> : <p className="empty-state">添加或选择一条音轨，试听并调整混音。</p>}
       </div>
     </section> : null}
-    {focus === "gaps" ? <section className="post-audio-gaps"><header><div><p className="eyebrow">进入编辑前</p><h3>声音缺口与证据</h3></div><span>{data.gaps.length} 项</span></header>{data.gaps.length === 0 ? <p className="empty-state">当前没有已知声音缺口。</p> : data.gaps.map((gap) => <article key={`${gap.code}:${gap.subject_id ?? gap.message}`}><strong>{gap.message}</strong><small>{gap.code}</small>{gap.owner_route === "SHOT_STUDIO" ? <Link className="secondary" to={routes.shotStudio(projectId, episodeId)}>返回镜头对白</Link> : gap.owner_route === "REVIEW" ? <Link className="secondary" to={routes.postReview(projectId, episodeId)}>前往审核</Link> : null}</article>)}</section> : null}
+    {focus === "gaps" ? <section className="post-audio-gaps"><header><div><p className="eyebrow">进入编辑前</p><h3>声音缺口与证据</h3></div><span>{data.gaps.length} 项</span></header>{data.gaps.length === 0 ? <p className="empty-state">当前没有已知声音缺口。</p> : data.gaps.map((gap) => <article key={`${gap.code}:${gap.subject_id ?? gap.message}`}><strong>{gap.message}</strong><small>{GAP_LABELS[gap.code] ?? "需要处理的声音证据"}</small>{gap.owner_route === "SHOT_STUDIO" ? <Link className="secondary" to={routes.shotStudio(projectId, episodeId)}>返回镜头对白</Link> : gap.owner_route === "REVIEW" ? <Link className="secondary" to={routes.postReview(projectId, episodeId)}>前往审核</Link> : null}</article>)}</section> : null}
   </div>;
 }
 

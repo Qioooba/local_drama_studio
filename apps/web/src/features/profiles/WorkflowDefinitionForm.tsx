@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   instantiateWorkflowDefinition,
   listWorkflowDefinitions,
+  getWorkflowDefinitionRuntimeOptions,
   type WorkflowDefinition,
   type WorkflowDefinitionField,
 } from "../../generated/api";
@@ -32,6 +33,9 @@ export function WorkflowDefinitionForm({ disabled, onCreated }: { disabled: bool
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [runtimeOptions, setRuntimeOptions] = useState<Record<string, Array<{ value: string | number | boolean; label: string }>>>({});
+  const [optionsBusy, setOptionsBusy] = useState(false);
+  const [optionsLoaded, setOptionsLoaded] = useState(false);
 
   const selected = definitions.find((item) => item.code === definitionCode) ?? null;
   const regularFields = useMemo(() => selected ? Object.entries(selected.fields).filter(([, field]) => !field.advanced) : [], [selected]);
@@ -62,6 +66,22 @@ export function WorkflowDefinitionForm({ disabled, onCreated }: { disabled: bool
     setCode(DEFAULT_CODES[next.code] ?? next.code.toLowerCase());
     setTitle(next.title);
     setAdvancedOpen(false);
+    setRuntimeOptions({});
+    setOptionsLoaded(false);
+  };
+
+  const runtimeFields = selected ? Object.entries(selected.fields).filter(([, field]) => field.runtime_input) : [];
+  const runtimeValuesValid = runtimeFields.every(([name]) => optionsLoaded && (runtimeOptions[name] ?? []).some((option) => option.value === values[name]));
+  const loadRuntimeOptions = async () => {
+    setOptionsBusy(true);
+    setError(null);
+    try {
+      const result = await getWorkflowDefinitionRuntimeOptions(definitionCode);
+      setRuntimeOptions(Object.fromEntries(Object.entries(result.fields).map(([name, field]) => [name, field.options])));
+      setOptionsLoaded(true);
+    } catch (caught) {
+      setError(`本机模型选项读取失败：${String(caught)}`);
+    } finally { setOptionsBusy(false); }
   };
 
   const updateValue = (name: string, field: WorkflowDefinitionField, raw: string | boolean) => {
@@ -76,7 +96,12 @@ export function WorkflowDefinitionForm({ disabled, onCreated }: { disabled: bool
     const inputId = `workflow-definition-${definitionCode}-${name}`;
     return <label key={name} htmlFor={inputId} className={field.type === "textarea" ? "workflow-create-form__wide" : undefined}>
       {field.label}
-      {field.type === "enum" ? (
+      {field.runtime_input ? (
+        <select id={inputId} value={String(value)} disabled={!optionsLoaded || optionsBusy} onChange={(event) => updateValue(name, field, event.target.value)}>
+          {!(runtimeOptions[name] ?? []).some((option) => option.value === value) && <option value={String(value)}>{optionsLoaded ? "请选择本机已安装文件" : "先读取本机模型选项"}</option>}
+          {(runtimeOptions[name] ?? []).map((option) => <option key={String(option.value)} value={String(option.value)}>{option.label}</option>)}
+        </select>
+      ) : field.type === "enum" ? (
         <select id={inputId} value={String(value)} onChange={(event) => updateValue(name, field, event.target.value)}>
           {(field.options ?? []).map((option) => <option key={String(option.value)} value={String(option.value)}>{option.label}</option>)}
         </select>
@@ -119,7 +144,7 @@ export function WorkflowDefinitionForm({ disabled, onCreated }: { disabled: bool
     </div>
     {open && selected ? <form className="workflow-create-form" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
       <label htmlFor="workflow-definition-selector">工作流类型
-        <select id="workflow-definition-selector" value={definitionCode} onChange={(event) => chooseDefinition(event.target.value)}>
+        <select id="workflow-definition-selector" value={definitionCode} disabled={busy || optionsBusy} onChange={(event) => chooseDefinition(event.target.value)}>
           {definitions.map((item) => <option key={item.code} value={item.code} disabled={!item.available}>{item.title}{item.available ? "" : "（当前环境不可用）"}</option>)}
         </select>
       </label>
@@ -130,13 +155,17 @@ export function WorkflowDefinitionForm({ disabled, onCreated }: { disabled: bool
         <span>能力：{selected.capability} · 输出：{selected.output_kind}</span>
         <span>运行时语义槽：{Object.keys(selected.semantic_bindings).join("、") || "无"}</span>
       </div>
+      {runtimeFields.length > 0 && <div className="workflow-create-form__wide">
+        <button type="button" onClick={() => void loadRuntimeOptions()} disabled={disabled || busy || optionsBusy}>{optionsBusy ? "读取中…" : "读取本机模型选项"}</button>
+        <small>从当前 ComfyUI 环境读取实际文件名，请在下拉框中选择。{optionsLoaded && !runtimeValuesValid ? "仍有模型文件未选择或已不可用。" : ""}</small>
+      </div>}
       {regularFields.map(renderField)}
       {advancedFields.length > 0 && <details className="workflow-create-form__wide" open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
         <summary>高级图参数（{advancedFields.length} 项）</summary>
         <div className="workflow-create-form">{advancedFields.map(renderField)}</div>
       </details>}
       <div className="workflow-create-form__wide profile-editor-actions">
-        <button type="submit" className="primary-action" disabled={disabled || busy || !selected.available}>{busy ? "服务端编译中…" : "创建不可变候选版本"}</button>
+        <button type="submit" className="primary-action" disabled={disabled || busy || optionsBusy || !runtimeValuesValid || !selected.available}>{busy ? "服务端编译中…" : "创建不可变候选版本"}</button>
       </div>
     </form> : null}
     {message && <p className="review-success" role="status">{message}</p>}

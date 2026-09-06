@@ -17,6 +17,7 @@ from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.comfy import ComfyClient
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.model_platform.application.offering_readiness import reconcile_offering_readiness
 from local_drama.model_platform.application.comfy_execution_support import assert_comfy_outputs, copy_comfy_outputs
 
 
@@ -171,23 +172,14 @@ class ComfyCapabilitySmokeCompletionService:
                 (str(uuid.uuid4()), run_id, "CAPABILITY_SMOKE", _hash(evidence), _json(evidence), artifact_ref, now, now),
             )
             connection.execute("UPDATE mp_capability_offerings SET validation_status=?,updated_at=? WHERE id=?", (status, now, facts["offering_id"]))
-            remaining = connection.execute(
-                "SELECT COUNT(*) FROM mp_capability_offerings WHERE runtime_model_installation_id=? AND validation_status!='SMOKE_PASSED'",
-                (facts["runtime_model_installation_id"],),
-            ).fetchone()[0]
-            if status == "SMOKE_PASSED" and int(remaining) == 0:
-                connection.execute("UPDATE mp_runtime_model_installations SET install_state='READY',updated_at=? WHERE id=?", (now, facts["runtime_model_installation_id"]))
-                runtime_remaining = connection.execute(
-                    """SELECT COUNT(*) FROM mp_capability_offerings offering
-                       JOIN mp_runtime_model_installations installation ON installation.id=offering.runtime_model_installation_id
-                       WHERE installation.runtime_installation_version_id=? AND offering.validation_status!='SMOKE_PASSED'""",
-                    (facts["runtime_installation_version_id"],),
-                ).fetchone()[0]
-                if int(runtime_remaining) == 0:
-                    connection.execute("UPDATE mp_runtime_installation_versions SET status='ACTIVE',updated_at=? WHERE id=?", (now, facts["runtime_installation_version_id"]))
-            elif status == "FAILED":
-                connection.execute("UPDATE mp_runtime_model_installations SET install_state='VALIDATION_FAILED',updated_at=? WHERE id=?", (now, facts["runtime_model_installation_id"]))
-                connection.execute("UPDATE mp_runtime_installation_versions SET status='DEGRADED',updated_at=? WHERE id=?", (now, facts["runtime_installation_version_id"]))
+            reconcile_offering_readiness(
+                connection,
+                runtime_model_installation_id=str(facts["runtime_model_installation_id"]),
+                runtime_installation_version_id=str(facts["runtime_installation_version_id"]),
+                runtime_kind="COMFYUI",
+                latest_status=status,
+                updated_at=now,
+            )
 
 
 def _json(value: Mapping[str, Any]) -> str:

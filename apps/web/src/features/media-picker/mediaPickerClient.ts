@@ -11,7 +11,15 @@ export type MediaCatalogueItem = {
   updated_at: string;
   purpose: string;
   media_kind: string;
+  identity_references?: Array<{ character_name: string; slot_kind: string; pack_version_no: number; pack_version_id: string; story_asset_id: string }>;
 };
+
+export function mediaDisplayName(item: MediaCatalogueItem): string {
+  const views: Record<string, string> = { FRONT: "正面", LEFT: "左侧", RIGHT: "右侧", BACK: "背面", FACE: "面部" };
+  return item.identity_references?.length
+    ? item.identity_references.map((reference) => `${reference.character_name} · ${views[reference.slot_kind] ?? reference.slot_kind} · 已批准身份包 v${reference.pack_version_no}`).join(" / ")
+    : item.source_name || "未命名媒体";
+}
 
 export async function listProjectMedia(projectId: string, query: string, mediaKind = "IMAGE"): Promise<MediaCatalogueItem[]> {
   const search = new URLSearchParams({ q: query, media_kind: mediaKind, limit: "60" });

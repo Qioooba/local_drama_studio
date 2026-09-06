@@ -59,6 +59,8 @@ class ComfyLabService:
 
     def _configuration(self) -> dict[str, Any]:
         saved = self._read_configuration_file()
+        attached_endpoint = str(saved.get("attached_endpoint", "")).strip()
+        attached = str(saved.get("mode", "")).upper() == "ATTACHED_LOOPBACK" and attached_endpoint.startswith("http://127.0.0.1:")
         python_raw = os.environ.get("LOCAL_DRAMA_COMFY_DESIGNER_PYTHON", "").strip() or str(saved.get("python_path", "")).strip()
         root_raw = os.environ.get("LOCAL_DRAMA_COMFY_DESIGNER_ROOT", "").strip() or str(saved.get("root_path", "")).strip()
         port_raw = os.environ.get("LOCAL_DRAMA_COMFY_DESIGNER_PORT", "").strip() or str(saved.get("port", 8188)).strip()
@@ -68,7 +70,7 @@ class ComfyLabService:
             port = 0
         python = Path(python_raw).expanduser().resolve() if python_raw else None
         root = Path(root_raw).expanduser().resolve() if root_raw else None
-        configured = bool(
+        configured = attached or bool(
             python
             and root
             and port > 0
@@ -82,7 +84,8 @@ class ComfyLabService:
             "python": str(python) if python else None,
             "root": str(root) if root else None,
             "port": port,
-            "endpoint": f"http://127.0.0.1:{port}" if port > 0 else None,
+            "endpoint": attached_endpoint if attached else (f"http://127.0.0.1:{port}" if port > 0 else None),
+            "attached": attached,
             "source": "ENVIRONMENT" if os.environ.get("LOCAL_DRAMA_COMFY_DESIGNER_PYTHON", "").strip() else "SAVED" if saved else "NONE",
         }
 
@@ -116,6 +119,13 @@ class ComfyLabService:
         return roots
 
     def discover(self, *, apply: bool = False) -> dict[str, Any]:
+        attached_endpoint: str | None = None
+        if self.settings.config_path is not None:
+            try:
+                ComfyClient(str(self.settings.comfy_base_url), timeout_seconds=2.0).system_stats()
+                attached_endpoint = str(self.settings.comfy_base_url)
+            except (DomainRuleError, OSError):
+                attached_endpoint = None
         candidates: list[dict[str, Any]] = []
         for root in self._candidate_roots():
             python_paths = [
@@ -131,18 +141,33 @@ class ComfyLabService:
                         candidates.append(item)
         applied = False
         if apply:
-            if not candidates:
+            if candidates:
+                self.configure(candidates[0]["python_path"], candidates[0]["root_path"], candidates[0]["port"])
+                applied = True
+            elif attached_endpoint:
+                payload = {
+                    "schema_version": "localdrama.comfy-lab-launch.v1",
+                    "mode": "ATTACHED_LOOPBACK",
+                    "attached_endpoint": attached_endpoint,
+                    "port": int(attached_endpoint.rsplit(":", 1)[-1]),
+                    "updated_at": _now(),
+                }
+                self.sandbox_root.mkdir(parents=True, exist_ok=True)
+                partial = self.configuration_path.with_name(f".partial-{uuid.uuid4().hex}.json")
+                partial.write_text(_json(payload) + "\n", encoding="utf-8")
+                replace_path(partial, self.configuration_path)
+                applied = True
+            else:
                 raise DomainRuleError(
                     "COMFY_LAB_INSTALLATION_NOT_FOUND",
                     "没有在有限的常见位置发现可启动的 ComfyUI",
                     {"searched_roots": [str(path) for path in self._candidate_roots()]},
                     suggested_action="在高级配置中选择 ComfyUI 根目录和 Python，或把 ComfyUI 放到常见目录",
                 )
-            self.configure(candidates[0]["python_path"], candidates[0]["root_path"], candidates[0]["port"])
-            applied = True
         return {
             "status": "CONFIGURED" if applied or self._configuration()["configured"] else "FOUND" if candidates else "NOT_FOUND",
             "candidates": candidates,
+            "attached_endpoint": attached_endpoint,
             "applied": applied,
             "configuration": self._configuration(),
             "searched_roots": [str(path) for path in self._candidate_roots()],
@@ -190,11 +215,18 @@ class ComfyLabService:
 
     def _status(self) -> dict[str, Any]:
         config = self._configuration()
+        attached_running = False
+        if config.get("attached") and config.get("endpoint"):
+            try:
+                ComfyClient(str(config["endpoint"]), timeout_seconds=2.0).system_stats()
+                attached_running = True
+            except (DomainRuleError, OSError):
+                attached_running = False
         state = self._read_state()
         pid = int(state.get("pid", 0)) if state and str(state.get("pid", "0")).isdigit() else None
         alive = self._pid_alive(pid)
         return {
-            "status": "RUNNING" if alive else "STOPPED",
+            "status": "RUNNING" if alive or attached_running else "STOPPED",
             "pid": pid if alive else None,
             "session_id": state.get("session_id") if state else None,
             "started_at": state.get("started_at") if state and alive else None,
@@ -205,6 +237,8 @@ class ComfyLabService:
             "local_only": True,
             "network_contacted": False,
             "stale_state": bool(state and not alive),
+            "attached": bool(config.get("attached")),
+            "lifecycle_owned": not bool(config.get("attached")),
         }
 
     def status(self) -> dict[str, Any]:
@@ -231,7 +265,7 @@ class ComfyLabService:
             raise DomainRuleError("COMFY_LAB_LAUNCH_NOT_CONFIGURED", "ComfyUI Designer 未配置本机 endpoint")
         return ComfyClient(
             str(config["endpoint"]),
-            self.sandbox_root / "output",
+            self.settings.comfy_output_root if config.get("attached") else self.sandbox_root / "output",
             allow_private_network=self.settings.allows_private_network,
         )
 
@@ -290,6 +324,8 @@ class ComfyLabService:
         return {**self._status(), "session_id": session_id, "status": "STARTING", "runtime_contacted": False, "network_contacted": False}
 
     def stop(self) -> dict[str, Any]:
+        if self._configuration().get("attached"):
+            return {**self._status(), "runtime_contacted": False, "network_contacted": False}
         state = self._read_state()
         pid = int(state.get("pid", 0)) if state and str(state.get("pid", "0")).isdigit() else None
         if pid and self._pid_alive(pid):
@@ -302,6 +338,8 @@ class ComfyLabService:
         return {**self._status(), "status": "STOPPED", "runtime_contacted": False, "network_contacted": False}
 
     def restart(self) -> dict[str, Any]:
+        if self._configuration().get("attached"):
+            return {**self._status(), "runtime_contacted": False, "network_contacted": False}
         self.stop()
         return self.start()
 
@@ -405,7 +443,7 @@ class ComfyLabService:
         runtime = client or self._client()
         result = runtime.queue_prompt(workflow, client_id=f"local-drama-designer-{uuid.uuid4().hex}")
         prompt_id = str(result["prompt_id"])
-        history = runtime.wait_history(prompt_id, timeout_seconds=30.0)
+        history = runtime.wait_history(prompt_id, timeout_seconds=240.0)
         passed = history.get("status") == "success"
         evidence = {
             "status": "PASS" if passed else "BLOCKED",

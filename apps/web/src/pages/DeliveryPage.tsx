@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { routes } from "../app/routeRegistry";
 import { ConceptGuide, Dialog } from "../components/ui";
-import { commitEpisodeTimelineRefresh, getEpisodeTimelineStatus, getG8Readiness, getProjectConfiguration, planEpisodeTimelineRefresh, reviewInbox } from "../generated/api";
+import { commitEpisodeTimelineRefresh, getEpisodePostOverviewV2, getEpisodeTimelineStatus, getG8Readiness, getProjectConfiguration, planEpisodeTimelineRefresh, reviewInbox } from "../generated/api";
 import { DeliveryWorkflowPanel } from "../features/production/DeliveryWorkflowPanel";
 import { EpisodeContactSheetAction } from "../features/production/EpisodeContactSheetAction";
 import { PostProcessPanel } from "../features/generation/PostProcessPanel";
@@ -11,6 +11,7 @@ import { G8ReadinessPanel } from "../features/status/ReadinessPanels";
 import "./creative-workspaces.css";
 
 type DeliveryStep = "preflight" | "compose" | "review" | "package";
+type DeliveryAssociation = { id: string; renderId: string; targetVersionId: string };
 
 const DELIVERY_STEPS = new Set<DeliveryStep>(["preflight", "compose", "review", "package"]);
 const DELIVERY_STEPS_UI: Array<{ id: DeliveryStep; label: string }> = [
@@ -43,7 +44,8 @@ export function DeliveryPage() {
   const { projectId, episodeId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const [createdRenderId, setCreatedRenderId] = useState<string | null>(null);
-  const [createdDeliveryId, setCreatedDeliveryId] = useState<string | null>(null);
+  const [createdDelivery, setCreatedDelivery] = useState<DeliveryAssociation | null>(null);
+  const [renderJobPending, setRenderJobPending] = useState(false);
   const [refreshConfirmOpen, setRefreshConfirmOpen] = useState(false);
   const [refreshFeedback, setRefreshFeedback] = useState("");
   const requestedStep = searchParams.get("view") as DeliveryStep | null;
@@ -56,7 +58,8 @@ export function DeliveryPage() {
       return next;
     }, { replace: true });
   };
-  const status = useQuery({ queryKey: ["episode", episodeId, "timeline-status"], queryFn: () => getEpisodeTimelineStatus(episodeId as string), enabled: Boolean(episodeId), refetchInterval: 10_000 });
+  const status = useQuery({ queryKey: ["episode", episodeId, "timeline-status"], queryFn: () => getEpisodeTimelineStatus(episodeId as string), enabled: Boolean(episodeId), refetchOnMount: "always", refetchInterval: 10_000 });
+  const postOverview = useQuery({ queryKey: ["post-v2", episodeId, "overview"], queryFn: () => getEpisodePostOverviewV2(episodeId as string), enabled: Boolean(episodeId), refetchOnMount: "always", refetchInterval: 10_000 });
   const configuration = useQuery({ queryKey: ["project", projectId, "configuration"], queryFn: () => getProjectConfiguration(projectId as string), enabled: Boolean(projectId) });
   const reviewVideos = useQuery({ queryKey: ["delivery", projectId, episodeId, "review-videos"], queryFn: () => reviewInbox(projectId, "", { episode_id: episodeId, media_kind: "VIDEO" }), enabled: Boolean(projectId && episodeId) && activeStep === "package" });
   const g8Readiness = useQuery({ queryKey: ["delivery", projectId, episodeId, "g8-readiness"], queryFn: () => getG8Readiness(projectId as string, episodeId as string), enabled: Boolean(projectId && episodeId) && activeStep === "preflight" });
@@ -73,20 +76,52 @@ export function DeliveryPage() {
     onSuccess: async (result) => {
       setRefreshConfirmOpen(false);
       setRefreshFeedback(`已从最新采用事实创建冻结时间线 v${result.timeline.revision_no}；可以继续交付预检。`);
-      await Promise.all([status.refetch(), g8Readiness.refetch()]);
+      await Promise.all([status.refetch(), postOverview.refetch(), g8Readiness.refetch()]);
     },
     onError: (error) => setRefreshFeedback(`恢复未完成：${error instanceof Error ? error.message : String(error)}`),
   });
-  const activeError = status.error ?? configuration.error ?? (activeStep === "preflight" ? g8Readiness.error : null) ?? (activeStep === "package" ? reviewVideos.error : null);
+  const activeError = status.error ?? postOverview.error ?? configuration.error ?? (activeStep === "preflight" ? g8Readiness.error : null) ?? (activeStep === "package" ? reviewVideos.error : null);
   const timelineRevisionId = snapshot?.timeline?.latest?.id && !timelineIsStale ? String(snapshot.timeline.latest.id) : null;
-  const renderId = createdRenderId ?? (snapshot?.renders?.latest?.id ? String(snapshot.renders.latest.id) : null);
+  const renderId = renderJobPending ? null : createdRenderId ?? (snapshot?.renders?.latest?.id ? String(snapshot.renders.latest.id) : null);
   const targetVersionId = configuration.data?.configuration?.selected_delivery_target_version_id ? String(configuration.data.configuration.selected_delivery_target_version_id) : null;
-  const deliveryId = createdDeliveryId ?? (snapshot?.delivery?.latest?.id ? String(snapshot.delivery.latest.id) : null);
-  const latestDeliveryState = String(snapshot?.delivery?.latest?.status ?? "").toUpperCase();
-  const latestHumanReviewState = String(snapshot?.delivery?.latest?.human_review_status ?? "").toUpperCase();
+  const latestDelivery = snapshot?.delivery?.latest;
+  const latestDeliveryRenderId = latestDelivery?.episode_render_version_id ? String(latestDelivery.episode_render_version_id) : null;
+  const latestDeliveryTargetVersionId = latestDelivery?.target_version_id ? String(latestDelivery.target_version_id) : null;
+  const snapshotDeliveryMatchesCurrent = Boolean(
+    latestDeliveryRenderId && latestDeliveryRenderId === renderId
+      && latestDeliveryTargetVersionId && latestDeliveryTargetVersionId === targetVersionId,
+  );
+  const snapshotDeliveryId = snapshotDeliveryMatchesCurrent && latestDelivery?.id ? String(latestDelivery.id) : null;
+  const createdDeliveryId = createdDelivery?.renderId === renderId && createdDelivery.targetVersionId === targetVersionId ? createdDelivery.id : null;
+  const deliveryId = createdDeliveryId ?? snapshotDeliveryId;
+  const currentDelivery = deliveryId && latestDelivery?.id && String(latestDelivery.id) === deliveryId ? latestDelivery : null;
+  const latestDeliveryState = String(currentDelivery?.status ?? "").toUpperCase();
+  const latestHumanReviewState = String(currentDelivery?.human_review_status ?? "").toUpperCase();
+  const approvedRenderId = postOverview.data?.overview?.review?.approved_render_id ? String(postOverview.data.overview.review.approved_render_id) : null;
+  const renderApprovalReady = Boolean(renderId && approvedRenderId === renderId);
+  const renderReviewHref = renderId ? `${routes.postReview(projectId, episodeId)}?targetKind=EPISODE_RENDER_VERSION&targetId=${encodeURIComponent(renderId)}` : null;
+  const handleRenderStarted = () => {
+    setRenderJobPending(true);
+    setCreatedDelivery(null);
+  };
+  const handleRenderCreated = (id: string) => {
+    setRenderJobPending(false);
+    setCreatedRenderId(id);
+    setCreatedDelivery(null);
+  };
+  const handleRenderFailed = () => {
+    setRenderJobPending(false);
+    void Promise.all([status.refetch(), postOverview.refetch()]);
+  };
+  const handleDeliveryCreated = (id: string) => {
+    if (renderId && targetVersionId) setCreatedDelivery({ id, renderId, targetVersionId });
+  };
+  const refreshDeliveryFacts = () => {
+    void Promise.all([status.refetch(), postOverview.refetch()]);
+  };
   const completedSteps: Partial<Record<DeliveryStep, boolean>> = {
     preflight: Boolean(timelineRevisionId && targetVersionId),
-    compose: Boolean(renderId && deliveryId),
+    compose: Boolean(renderId && deliveryId && renderApprovalReady),
     review: latestHumanReviewState === "APPROVED",
     package: ["VERIFIED", "DELIVERED", "PUBLISHED"].includes(latestDeliveryState) && latestHumanReviewState === "APPROVED",
   };
@@ -97,9 +132,13 @@ export function DeliveryPage() {
     renderId,
     targetVersionId,
     deliveryId,
-    onRenderCreated: setCreatedRenderId,
-    onDeliveryCreated: setCreatedDeliveryId,
-    onChanged: () => void status.refetch(),
+    renderApprovalReady,
+    renderReviewHref,
+    onRenderStarted: handleRenderStarted,
+    onRenderCreated: handleRenderCreated,
+    onRenderFailed: handleRenderFailed,
+    onDeliveryCreated: handleDeliveryCreated,
+    onChanged: refreshDeliveryFacts,
   };
   return <div className="v2-page creative-task-page delivery-workspace-v2">
     <div className="panel-heading"><div><p className="eyebrow">合成与交付</p><h2>从冻结时间线创建可验证成片</h2></div><Link className="secondary v2-inline-link" to={routes.postEdit(projectId, episodeId)}>返回编辑</Link></div>
@@ -130,7 +169,7 @@ export function DeliveryPage() {
       </div>}
       {activeStep === "compose" && <div className="delivery-step-panel" role="region" aria-label="合成候选">
         <DeliveryWorkflowPanel {...workflowProps} focus="COMPOSE" />
-        <div className="creative-task-command"><span>{deliveryId ? "交付候选已创建，可以进入成片审核。" : "先完成整集渲染并创建交付候选；后台任务完成后本页会恢复结果。"}</span><button className="secondary" type="button" disabled={!deliveryId} onClick={() => selectStep("review")}>下一步：审核成片 →</button></div>
+        <div className="creative-task-command"><span>{renderJobPending ? "整集渲染正在后台处理；完成后页面会自动切换到新成片，旧交付候选不会用于本次审核。" : deliveryId && renderApprovalReady ? "当前交付候选对应最新且已批准的整集成片，可以进入成片审核。" : deliveryId ? "已有交付候选，但最新整集批准尚未确认；请刷新审核状态后继续。" : renderApprovalReady ? "最新整集成片已批准，可以提交交付候选。" : renderId && renderReviewHref ? <>请先在<a href={renderReviewHref}>整集审核工作区</a>批准最新成片，再提交交付候选。</> : "先完成整集渲染；完成后需在整集审核工作区批准，再创建交付候选。"}</span><button className="secondary" type="button" disabled={!deliveryId || !renderApprovalReady || renderJobPending} onClick={() => selectStep("review")}>下一步：审核成片 →</button></div>
       </div>}
       {activeStep === "review" && <div className="delivery-step-panel" role="region" aria-label="审核成片">
         <DeliveryWorkflowPanel {...workflowProps} focus="REVIEW" />

@@ -47,7 +47,7 @@ def test_platform_config_templates_match_runtime_contract(tmp_path: Path) -> Non
         assert config.runtime.model_library_roots == (
             (tmp_path / "instance" / "models" / "libraries" / "comfyui").resolve(),
             (tmp_path / "instance" / "models" / "libraries" / "pytorch").resolve(),
-            (tmp_path / "instance" / "models" / "libraries" / "ollama").resolve(),
+            (tmp_path / "instance" / "models" / "libraries" / "gguf").resolve(),
             (tmp_path / "instance" / "models" / "libraries" / "audio").resolve(),
         )
         if relative == "packaging/windows/config.server.json":
@@ -108,7 +108,7 @@ def test_v1_config_migrates_to_model_root_v2_then_becomes_idempotent(tmp_path: P
     assert payload["runtime"]["model_library_roots"] == [
         "${MODEL_ROOT}/libraries/comfyui",
         "${MODEL_ROOT}/libraries/pytorch",
-        "${MODEL_ROOT}/libraries/ollama",
+        "${MODEL_ROOT}/libraries/gguf",
         "${MODEL_ROOT}/libraries/audio",
     ]
     assert Path(str(migrated["backup"])).is_file()

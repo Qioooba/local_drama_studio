@@ -22,7 +22,7 @@ def default_override_schema(capability: str) -> dict[str, Any]:
                     "minimum": 0.0,
                     "maximum": 2.0,
                     "step": 0.05,
-                    "scopes": ["RUN"],
+                    "scopes": ["PROJECT", "EPISODE", "RUN"],
                 },
                 "top_p": {
                     "type": "number",
@@ -32,7 +32,7 @@ def default_override_schema(capability: str) -> dict[str, Any]:
                     "minimum": 0.05,
                     "maximum": 1.0,
                     "step": 0.05,
-                    "scopes": ["RUN"],
+                    "scopes": ["PROJECT", "EPISODE", "RUN"],
                 },
                 "max_tokens": {
                     "type": "integer",
@@ -42,7 +42,7 @@ def default_override_schema(capability: str) -> dict[str, Any]:
                     "minimum": 256,
                     "maximum": 8192,
                     "step": 128,
-                    "scopes": ["RUN"],
+                    "scopes": ["PROJECT", "EPISODE", "RUN"],
                 },
             },
         }

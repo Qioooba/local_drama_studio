@@ -39,6 +39,11 @@ class VariantPlan:
     bindings: tuple[VariantInput, ...]
     provider_random_nonce: str | None = None
     expected_effective_configuration_fingerprint: str | None = None
+    expected_identity_pack_snapshot_hash: str | None = None
+    # Canonical shot prompt audit bundle.  Kept optional for legacy/generic
+    # generation commands; shot UI commands provide it and freeze the fully
+    # compiled value into the job input snapshot.
+    prompt_bundle: dict[str, Any] | None = None
 
     def validate(self, *, variant_id: str, ancestors: set[str], allowed_roles: set[str]) -> None:
         if self.variant_type not in VALID_VARIANT_TYPES:

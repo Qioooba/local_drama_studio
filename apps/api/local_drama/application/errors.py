@@ -19,6 +19,8 @@ def api_error_from_domain(error: DomainRuleError) -> ApiError:
     }:
         status = 400
     elif error.code in {
+        "PIPELINE_ALREADY_RUNNING",
+        "PIPELINE_STATE_INVALID",
         "MP_PROFILE_CROSSWALK_ACTIVE_MAPPING_EXISTS",
         "MP_PROFILE_CROSSWALK_NOT_APPROVED",
         "REVISION_CONFLICT",

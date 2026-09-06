@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -84,6 +84,17 @@ class AssetMultiViewPreflightRequest(BaseModel):
     consistency_strength: str = Field(default="HIGH", pattern=r"^(LOW|MEDIUM|HIGH)$")
     background: str = Field(default="CLEAN", pattern=r"^(CLEAN|TRANSPARENT|ORIGINAL)$")
     requested_slots: list[str] | None = Field(default=None, min_length=1, max_length=16)
+    prompt_bundle: dict[str, Any] | None = None
+    seed_offset: int = Field(default=0, ge=0, le=10_000_000)
+
+
+class AssetMultiViewPromptDraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    asset_state_id: str | None = Field(default=None, min_length=1, max_length=36)
+    consistency_strength: str = Field(default="HIGH", pattern=r"^(LOW|MEDIUM|HIGH)$")
+    background: str = Field(default="CLEAN", pattern=r"^(CLEAN|TRANSPARENT|ORIGINAL)$")
+    requested_slots: list[str] = Field(min_length=1, max_length=6)
+    revision_guidance: str = Field(default="", max_length=2000)
 
 
 class AssetMultiViewSubmitRequest(AssetMultiViewPreflightRequest):
@@ -106,4 +117,19 @@ class AssetDetailPreflightRequest(AssetMultiViewPreflightRequest):
 
 class AssetDetailSubmitRequest(AssetDetailPreflightRequest):
     plan_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+
+class AssetImageBatchPlanRequest(BaseModel):
+    """Select formal assets whose missing HERO images should be generated."""
+
+    model_config = ConfigDict(extra="forbid")
+    asset_kind: Literal["CHARACTER", "SCENE", "PROP", "COSTUME"]
+    asset_ids: list[str] = Field(min_length=1, max_length=100)
+    profile_version_id: str | None = Field(default=None, min_length=1, max_length=36)
+    mode: Literal["MISSING_ONLY"] = "MISSING_ONLY"
+
+
+class AssetImageBatchSubmitRequest(AssetImageBatchPlanRequest):
+    expected_plan_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     idempotency_key: str = Field(min_length=1, max_length=200)

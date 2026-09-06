@@ -82,6 +82,11 @@ async def create_contract(workflow_version_id: str, payload: WorkflowAppContract
     return {"app_contract": _guard(lambda: _service(request).create_contract(workflow_version_id, payload.capability, payload.contract, payload.bindings, payload.semantic_phases))}
 
 
+@router.get("/workflow-versions/{workflow_version_id}/app-contracts", operation_id="listWorkflowAppContracts")
+async def list_workflow_contracts(workflow_version_id: str, request: Request) -> dict[str, object]:
+    return _guard(lambda: _service(request).list_workflow_contracts(workflow_version_id))
+
+
 @router.get("/workflow-app-contracts/{contract_id}", operation_id="getWorkflowAppContract")
 async def get_contract(contract_id: str, request: Request) -> dict[str, object]:
     return {"app_contract": _guard(lambda: _service(request).get_contract(contract_id))}

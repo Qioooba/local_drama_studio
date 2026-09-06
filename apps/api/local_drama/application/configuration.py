@@ -8,8 +8,15 @@ from datetime import UTC, datetime
 from typing import Any
 
 from local_drama.application.delivery_presets import preset_items, require_preset
+from local_drama.application.production_spec_resolution import project_production_spec as _project_production_spec
 from local_drama.domain.capabilities import normalize_capability
+from local_drama.domain.duration import DEFAULT_PROJECT_TARGET_DURATION_MS
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.production_spec import (
+    PRODUCTION_PLAN_SCHEMA_VERSION,
+    canonical_production_plan,
+    canonical_production_plan_code,
+)
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.path_policy import canonical_relative_path
 
@@ -72,23 +79,110 @@ class ConfigurationService:
         self.database = database
 
     def create_plan_binding(self, project_id: str, code: str, title: str, plan: dict[str, Any], actor: str = "local-user") -> dict[str, Any]:
-        plan_id = str(uuid.uuid4())
+        """Save the project's canonical ProductionPlan as a new immutable version.
+
+        ``production_plans`` is the stable identity and its ``code`` is
+        globally unique.  The settings editor submits a user intent code, but
+        the server owns the durable project-scoped identity so changing from a
+        landscape to a portrait delivery canvas cannot create a duplicate
+        global code or a second current plan.  Every save is serialized by the
+        database transaction, retires the previous active version, and binds
+        the new version in the same transaction.
+        """
+
+        persisted_plan = plan
+        if str(plan.get("schema_version") or "") == PRODUCTION_PLAN_SCHEMA_VERSION:
+            persisted_plan = canonical_production_plan(plan)
+        requested_code = str(code or "").strip()
+        requested_title = str(title or "").strip()
+        if not requested_code or not requested_title:
+            raise DomainRuleError("INVALID_PRODUCTION_PLAN", "ProductionPlan code/title 不能为空")
+
         version_id = str(uuid.uuid4())
         binding_id = str(uuid.uuid4())
         now = _utc_now()
         with self.database.transaction() as connection:
-            project = connection.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+            project = connection.execute(
+                "SELECT id, production_plan_version_id FROM projects WHERE id = ?", (project_id,)
+            ).fetchone()
             if project is None:
                 raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
-            if not code.strip() or not title.strip():
-                raise DomainRuleError("INVALID_PRODUCTION_PLAN", "ProductionPlan code/title 不能为空")
+
+            canonical_code = canonical_production_plan_code(project_id)
+            current = None
+            current_version_id = str(project["production_plan_version_id"] or "").strip()
+            if current_version_id:
+                current = connection.execute(
+                    """SELECT pp.id AS production_plan_id, pp.code, pp.title,
+                    ppv.id AS version_id, ppv.version_no, ppv.status
+                    FROM production_plan_versions ppv
+                    JOIN production_plans pp ON pp.id=ppv.production_plan_id
+                    WHERE ppv.id=?""",
+                    (current_version_id,),
+                ).fetchone()
+            if current is None:
+                current = connection.execute(
+                    """SELECT pp.id AS production_plan_id, pp.code, pp.title,
+                    ppv.id AS version_id, ppv.version_no, ppv.status
+                    FROM project_plan_bindings ppb
+                    JOIN production_plan_versions ppv ON ppv.id=ppb.production_plan_version_id
+                    JOIN production_plans pp ON pp.id=ppv.production_plan_id
+                    WHERE ppb.project_id=?""",
+                    (project_id,),
+                ).fetchone()
+
+            # Projects created before the canonical identity was introduced
+            # may still point at a resolution-specific plan code.  Preserve
+            # that row as history and create the project-scoped plan on the
+            # first canonical save.  Later saves reuse the same identity.
+            reuse_identity = current is not None and str(current["code"]) == canonical_code
+            if reuse_identity:
+                plan_id = str(current["production_plan_id"])
+                latest = connection.execute(
+                    "SELECT COALESCE(MAX(version_no), 0) AS version_no FROM production_plan_versions WHERE production_plan_id=?",
+                    (plan_id,),
+                ).fetchone()
+                next_version = int(latest["version_no"] or 0) + 1
+                connection.execute(
+                    "UPDATE production_plans SET title=?, updated_at=?, revision=revision+1 WHERE id=?",
+                    (requested_title, now, plan_id),
+                )
+            else:
+                # The canonical code is derived from the project id, so a
+                # collision indicates inconsistent persisted state rather than
+                # something safe to resolve by reusing another project's plan.
+                collision = connection.execute(
+                    "SELECT id FROM production_plans WHERE code=?", (canonical_code,)
+                ).fetchone()
+                if collision is not None:
+                    raise DomainRuleError(
+                        "PRODUCTION_PLAN_CODE_CONFLICT",
+                        "当前项目的 canonical ProductionPlan code 已被其他记录占用，请先修复配置冲突",
+                        {"code": canonical_code},
+                    )
+                plan_id = str(uuid.uuid4())
+                next_version = 1
+                connection.execute(
+                    "INSERT INTO production_plans (id, code, title, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, ?, ?, ?, 1, 'v2')",
+                    (plan_id, canonical_code, requested_title, now, now, actor),
+                )
+
+            # Retire the old active version in the same transaction.  Existing
+            # jobs keep their immutable snapshots, and unrelated projects are
+            # never changed.
+            if current is not None and not reuse_identity:
+                connection.execute(
+                    "UPDATE production_plan_versions SET status='RETIRED', updated_at=?, revision=revision+1 WHERE production_plan_id=? AND status='ACTIVE'",
+                    (now, str(current["production_plan_id"])),
+                )
+            if reuse_identity:
+                connection.execute(
+                    "UPDATE production_plan_versions SET status='RETIRED', updated_at=?, revision=revision+1 WHERE production_plan_id=? AND status='ACTIVE'",
+                    (now, plan_id),
+                )
             connection.execute(
-                "INSERT INTO production_plans (id, code, title, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, ?, ?, ?, 1, 'v2')",
-                (plan_id, code, title, now, now, actor),
-            )
-            connection.execute(
-                "INSERT INTO production_plan_versions (id, production_plan_id, version_no, plan_json, status, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, 1, ?, 'ACTIVE', ?, ?, ?, 1, 'v2')",
-                (version_id, plan_id, _json(plan), now, now, actor),
+                "INSERT INTO production_plan_versions (id, production_plan_id, version_no, plan_json, status, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?, ?, 1, 'v2')",
+                (version_id, plan_id, next_version, _json(persisted_plan), now, now, actor),
             )
             connection.execute(
                 "INSERT INTO project_plan_bindings (id, project_id, production_plan_version_id, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, ?, ?, ?, 1, 'v2') ON CONFLICT(project_id) DO UPDATE SET production_plan_version_id=excluded.production_plan_version_id, updated_at=excluded.updated_at, revision=project_plan_bindings.revision+1",
@@ -99,11 +193,42 @@ class ConfigurationService:
             )
             connection.execute(
                 "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'producer', 'PRODUCTION_PLAN_BOUND', 'project', ?, ?, ?)",
-                (actor, project_id, "绑定 ProductionPlan", _json({"production_plan_version_id": version_id})),
+                (
+                    actor,
+                    project_id,
+                    "保存 ProductionPlan 新版本",
+                    _json(
+                        {
+                            "production_plan_id": plan_id,
+                            "production_plan_version_id": version_id,
+                            "version_no": next_version,
+                            "canonical_code": canonical_code,
+                            "requested_code": requested_code,
+                            "identity_reused": reuse_identity,
+                        }
+                    ),
+                ),
             )
-        return {"production_plan_id": plan_id, "production_plan_version_id": version_id, "project_id": project_id, "plan": plan}
+        return {
+            "production_plan_id": plan_id,
+            "production_plan_version_id": version_id,
+            "project_id": project_id,
+            "code": canonical_code,
+            "version_no": next_version,
+            "plan": persisted_plan,
+        }
 
     def create_delivery_target(self, project_id: str, code: str, title: str, transport: str, spec: dict[str, Any], actor: str = "local-user") -> dict[str, Any]:
+        """Create a target identity, or append a version to an existing code.
+
+        ``delivery_targets`` intentionally has one stable identity per
+        project/code.  The custom settings editor can submit the same
+        generated code again (for example after changing the inherited
+        canvas), so treating that normal edit as a second identity would
+        surface a raw UNIQUE constraint failure.  Reusing the existing
+        identity and creating an immutable active version keeps old delivery
+        packages addressable while making the new specification current.
+        """
         if transport != "LOCAL_FILESYSTEM":
             raise DomainRuleError("REMOTE_TRANSPORT_DISABLED", "LOCAL_ONLY 首版只允许 LOCAL_FILESYSTEM 交付")
         _validate_local_target(spec)
@@ -113,14 +238,57 @@ class ConfigurationService:
         with self.database.transaction() as connection:
             if connection.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone() is None:
                 raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
+            # The conflict target is project-scoped, matching the database
+            # invariant.  This is safe under concurrent local submissions:
+            # one caller creates the identity and the other appends a version
+            # after SQLite resolves the same-project conflict.
             connection.execute(
-                "INSERT INTO delivery_targets (id, project_id, code, title, transport, target_spec_json, status, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, 1, 'v2')",
+                """INSERT INTO delivery_targets
+                (id, project_id, code, title, transport, target_spec_json, status,
+                 created_at, updated_at, created_by, revision, schema_version)
+                VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, 1, 'v2')
+                ON CONFLICT(project_id, code) DO NOTHING""",
                 (target_id, project_id, code, title, transport, _json(spec), now, now, actor),
             )
-            connection.execute(
-                "INSERT INTO delivery_target_versions (id, delivery_target_id, version_no, target_spec_json, status, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, 1, ?, 'ACTIVE', ?, ?, ?, 1, 'v2')",
-                (version_id, target_id, _json(spec), now, now, actor),
-            )
+            target = connection.execute(
+                "SELECT * FROM delivery_targets WHERE project_id=? AND code=?",
+                (project_id, code),
+            ).fetchone()
+            if target is None:
+                raise DomainRuleError("DELIVERY_TARGET_NOT_FOUND", "交付目标创建后无法读取当前项目目标")
+            identity_created = str(target["id"]) == target_id
+            if not identity_created:
+                if str(target["transport"]) != transport:
+                    raise DomainRuleError("DELIVERY_TARGET_TRANSPORT_IMMUTABLE", "交付目标 transport 不可跨版本改变")
+                latest = connection.execute(
+                    "SELECT COALESCE(MAX(version_no), 0) AS version_no FROM delivery_target_versions WHERE delivery_target_id=?",
+                    (str(target["id"]),),
+                ).fetchone()
+                next_version = int(latest["version_no"] or 0) + 1
+                target_id = str(target["id"])
+                connection.execute(
+                    """INSERT INTO delivery_target_versions
+                    (id, delivery_target_id, version_no, target_spec_json, status,
+                     created_at, updated_at, created_by, revision, schema_version)
+                    VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?, ?, 1, 'v2')""",
+                    (version_id, target_id, next_version, _json(spec), now, now, actor),
+                )
+                connection.execute(
+                    "UPDATE delivery_targets SET title=?, target_spec_json=?, updated_at=?, revision=revision+1 WHERE id=?",
+                    (title.strip(), _json(spec), now, target_id),
+                )
+                audit_action = "DELIVERY_TARGET_VERSION_CREATED"
+                audit_summary = "创建并启用本地交付目标新版本"
+                audit_metadata = {"project_id": project_id, "target_id": target_id, "version_no": next_version, "transport": transport, "code_reused": True}
+            else:
+                next_version = 1
+                connection.execute(
+                    "INSERT INTO delivery_target_versions (id, delivery_target_id, version_no, target_spec_json, status, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, 1, ?, 'ACTIVE', ?, ?, ?, 1, 'v2')",
+                    (version_id, target_id, _json(spec), now, now, actor),
+                )
+                audit_action = "DELIVERY_TARGET_CREATED"
+                audit_summary = "创建并启用本地交付目标"
+                audit_metadata = {"project_id": project_id, "transport": transport, "auto_selected": True}
             _activate_project_delivery_target(
                 connection,
                 project_id=project_id,
@@ -129,8 +297,8 @@ class ConfigurationService:
                 now=now,
             )
             connection.execute(
-                "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'producer', 'DELIVERY_TARGET_CREATED', 'delivery_target', ?, ?, ?)",
-                (actor, target_id, "创建并启用本地交付目标", _json({"project_id": project_id, "transport": transport, "auto_selected": True})),
+                "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'producer', ?, 'delivery_target', ?, ?, ?)",
+                (actor, audit_action, target_id, audit_summary, _json(audit_metadata)),
             )
         return {
             "id": target_id,
@@ -140,6 +308,7 @@ class ConfigurationService:
             "title": title,
             "transport": transport,
             "spec": spec,
+            "version_no": next_version,
             "status": "ACTIVE",
         }
 
@@ -380,7 +549,7 @@ class ConfigurationService:
         """
         with self.database.connect() as connection:
             project = connection.execute(
-                "SELECT id, code, title, production_plan_version_id FROM projects WHERE id=?",
+                "SELECT id, code, title, revision, target_duration_ms, production_plan_version_id FROM projects WHERE id=?",
                 (project_id,),
             ).fetchone()
             if project is None:
@@ -464,13 +633,22 @@ class ConfigurationService:
             for row in targets
         ]
         active_targets = [item for item in target_items if item["target_status"] == "ACTIVE" and item["version_status"] == "ACTIVE"]
+        with self.database.connect() as connection:
+            production_spec = _project_production_spec(connection, str(project["id"]), parsed_plan)
         return {
-            "project": {"id": str(project["id"]), "code": str(project["code"]), "title": str(project["title"])},
+            "project": {
+                "id": str(project["id"]),
+                "code": str(project["code"]),
+                "title": str(project["title"]),
+                "revision": int(project["revision"]),
+                "target_duration_ms": int(project["target_duration_ms"] or DEFAULT_PROJECT_TARGET_DURATION_MS),
+            },
             "production_plan": ({
                 "id": str(plan["production_plan_id"]), "code": str(plan["code"]), "title": str(plan["title"]),
                 "version_id": str(plan["version_id"]), "version_no": int(plan["version_no"]),
                 "status": str(plan["status"]), "plan": parsed_plan,
             } if plan else None),
+            "production_spec": production_spec,
             "profile_bindings": profile_items,
             "delivery_targets": target_items,
             "selected_delivery_target_version_id": active_targets[0]["version_id"] if len(active_targets) == 1 else None,

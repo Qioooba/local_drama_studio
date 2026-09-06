@@ -121,7 +121,7 @@ class SqliteEpisodeProductionTransitionRepository:
                 jobs = connection.execute(
                     """SELECT j.id,j.project_id FROM automation_workflow_run_tasks t
                     JOIN jobs j ON j.id=t.job_id WHERE t.run_id=? AND j.state='NEEDS_ATTENTION'
-                    AND j.last_error_code='AUTOMATION_MANUAL_PAUSE'""",
+                    AND j.last_error_code IN ('AUTOMATION_HITL_REQUIRED','AUTOMATION_MANUAL_PAUSE')""",
                     (run_id,),
                 ).fetchall()
                 for job in jobs:

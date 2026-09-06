@@ -12,6 +12,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+from local_drama.application.audio_requirements import canonical_audio_requirements
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
 
@@ -75,6 +76,7 @@ class G8ReadinessService:
                 str(row["track_type"]).upper() for row in audio_rows
                 if row["audio_binding_id"] is not None or (str(row["track_type"]).upper() == "DIALOGUE" and row["tts_candidate_id"] is not None)
             }
+            audio_requirements = canonical_audio_requirements(connection, eid)
             declared_audio = sum(
                 1
                 for row in audio_rows
@@ -122,17 +124,22 @@ class G8ReadinessService:
             },
             {
                 "code": "DIALOGUE_BGM_SFX",
-                "passed": {"DIALOGUE", "BGM", "SFX"}.issubset(audio_tracks),
+                "passed": set(audio_requirements["required_tracks"]).issubset(audio_tracks),
                 "count": len(audio_rows),
-                "required_tracks": ["DIALOGUE", "BGM", "SFX"],
+                "required_tracks": audio_requirements["required_tracks"],
                 "observed_tracks": sorted(audio_tracks),
-                "detail": f"最新时间线必须实际引用规范化的对白、BGM、SFX 三类本地音轨（环境归入 SFX，音乐归入 BGM）；{declared_audio} 条含用户授权记录",
+                "requirements": audio_requirements["counts"],
+                "detail": (
+                    "本集没有显式对白、配乐或音效 cue，不要求人为制造音轨。"
+                    if not audio_requirements["required_tracks"]
+                    else f"最新时间线必须实际引用本集有事实依据的音轨（{', '.join(audio_requirements['required_tracks'])}）；{declared_audio} 条含用户授权记录"
+                ),
             },
             {
                 "code": "SUBTITLES",
-                "passed": subtitle_count > 0,
+                "passed": not audio_requirements["subtitle_required"] or subtitle_count > 0,
                 "count": subtitle_count,
-                "detail": "至少一个真实字幕 revision",
+                "detail": "本集没有对白或字幕 cue，不要求字幕 revision。" if not audio_requirements["subtitle_required"] else "至少一个真实字幕 revision",
             },
             {
                 "code": "TIMELINE_INPUT_LOCKED",
@@ -173,6 +180,7 @@ class G8ReadinessService:
                 "delivery_id": str(delivery["id"]) if delivery else None,
                 "tamper_event_id": str(tamper_event["id"]) if tamper_event else None,
                 "audio_tracks": sorted(audio_tracks),
+                "audio_requirements": audio_requirements,
                 "subtitle_revision_count": subtitle_count,
             },
             "observed_at": _now(),

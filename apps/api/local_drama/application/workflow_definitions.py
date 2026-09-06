@@ -12,8 +12,11 @@ from typing import Any, Callable
 
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.image_input_roles import COMFY_IMAGE_INPUT_ROLES, IDENTITY_REFERENCE_ROLES
+from local_drama.infrastructure.comfy import ComfyClient
 
 from .h3_workflows import H3WorkflowFactory, production_tiers_payload
+from .qwen_identity_workflows import build_qwen_identity_workflow
 
 WorkflowCompiler = Callable[[Settings, dict[str, Any]], dict[str, Any]]
 
@@ -31,6 +34,7 @@ def _field(
     advanced: bool = False,
     help_text: str = "",
     effect: str = "GRAPH",
+    runtime_input: tuple[str, str] | None = None,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "type": field_type,
@@ -43,6 +47,8 @@ def _field(
     }
     if options is not None:
         result["options"] = options
+    if runtime_input is not None:
+        result["runtime_input"] = {"class_type": runtime_input[0], "input": runtime_input[1]}
     if minimum is not None:
         result["minimum"] = minimum
     if maximum is not None:
@@ -223,9 +229,63 @@ WORKFLOW_DEFINITIONS: dict[str, WorkflowDefinition] = {
 }
 
 
+def _qwen_identity_definition(count: int) -> WorkflowDefinition:
+    fields = {
+        "model": _field("string", "Qwen Edit GGUF 模型文件", "Qwen-Image-Edit-2511/qwen-image-edit-2511-Q5_K_M.gguf", runtime_input=("UnetLoaderGGUF", "unet_name")),
+        "text_encoder": _field("string", "文本编码器文件", "Qwen-Image/qwen_2.5_vl_7b_fp8_scaled.safetensors", runtime_input=("CLIPLoader", "clip_name")),
+        "vae": _field("string", "VAE 文件", "Qwen-Image/qwen_image_vae.safetensors", runtime_input=("VAELoader", "vae_name")),
+        "prompt": _field("textarea", "验证占位提示词", "根据人物参考图生成单镜头电影画面", effect="SEMANTIC_DEFAULT"),
+        "negative_prompt": _field("textarea", "负面提示词", "拼贴，多画幅，变形，多余肢体，文字，水印", effect="SEMANTIC_DEFAULT"),
+        "seed": _field("integer", "验证 Seed", 260906, minimum=0, maximum=2**63 - 1, effect="SEMANTIC_DEFAULT"),
+        "width": _field("integer", "宽度", 480, minimum=256, maximum=2048, step=16),
+        "height": _field("integer", "高度", 832, minimum=256, maximum=2048, step=16),
+        "steps": _field("integer", "采样步数", 20, minimum=1, maximum=100),
+        "cfg": _field("number", "CFG", 4.0, minimum=1, maximum=10, step=0.1),
+        "filename_prefix": _field("string", "输出前缀", "local_drama/identity_keyframe", effect="SEMANTIC_DEFAULT"),
+    }
+    bindings = {
+        "PROMPT": {"node_id": "5", "input": "prompt"},
+        "NEGATIVE_PROMPT": {"node_id": "6", "input": "prompt"},
+        "SEED": {"node_id": "8", "input": "seed"},
+        "WIDTH": {"node_id": "7", "input": "width"}, "HEIGHT": {"node_id": "7", "input": "height"},
+        "STEPS": {"node_id": "8", "input": "steps"}, "CFG": {"node_id": "8", "input": "cfg"},
+    }
+    for i, role in enumerate(IDENTITY_REFERENCE_ROLES[:count], 1):
+        fields[f"reference_image_{i}"] = _field("string", f"验证人物参考图 {i}", f"runtime/identity-{i}.png",
+            help_text="Comfy input 内相对文件名；正式镜头生成会替换为已批准身份包的正面图。", effect="SEMANTIC_DEFAULT")
+        bindings[role] = {"node_id": str(10 + i), "input": "image"}
+    return WorkflowDefinition(f"QWEN_IDENTITY_{count}", f"Qwen {count} 人物参考关键帧",
+        "将人物参考图分别接入 Qwen Edit 图像条件，重新构图为一个镜头；不使用多视角 LoRA 或拼接。",
+        "IMAGE_CONCEPT", "IMAGE", fields, bindings,
+        {"transport": "LOOPBACK_HTTP", "worker_policy": "ONE_GPU_TASK"},
+        lambda _settings, values: build_qwen_identity_workflow(values, count))
+
+
+for _reference_count in (1, 2, 3):
+    _definition = _qwen_identity_definition(_reference_count)
+    WORKFLOW_DEFINITIONS[_definition.code] = _definition
+
+
 class WorkflowDefinitionService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+
+    def runtime_options(self, code: str, client: ComfyClient) -> dict[str, Any]:
+        definition = self.get(code)
+        schema = client.object_info()
+        fields = {}
+        for name, field in definition.fields.items():
+            source = field.get("runtime_input")
+            if not source:
+                continue
+            node = schema.get(source["class_type"], {})
+            groups = node.get("input", {})
+            spec = groups.get("required", {}).get(source["input"]) or groups.get("optional", {}).get(source["input"])
+            choices = spec[0] if isinstance(spec, list) and spec else None
+            if choices == "COMBO" and len(spec) > 1 and isinstance(spec[1], dict):
+                choices = spec[1].get("options")
+            fields[name] = {"options": [_option(value, str(value)) for value in choices] if isinstance(choices, list) else [], "runtime_input": source}
+        return {"definition_code": definition.code, "fields": fields, "runtime_contacted": True}
 
     def list_definitions(self) -> list[dict[str, Any]]:
         result = []
@@ -297,9 +357,9 @@ class WorkflowDefinitionService:
         values = {name: self._normalize_value(name, spec, parameters.get(name)) for name, spec in definition.fields.items()}
         workflow = definition.compiler(self.settings, values)
         input_slots = {
-            role: {"required": role in {"FIRST_FRAME", "REFERENCE_IMAGE"}, "min": 1 if role in {"FIRST_FRAME", "REFERENCE_IMAGE"} else 0, "max": 1}
+            role: {"required": True, "min": 1, "max": 1, "allowed_media_kinds": ["IMAGE"]}
             for role in definition.semantic_bindings
-            if role in {"FIRST_FRAME", "REFERENCE_IMAGE"}
+            if role in COMFY_IMAGE_INPUT_ROLES
         }
         parameter_effects = {name: spec["effect"] for name, spec in definition.fields.items()}
         if definition.code.startswith("H3_"):

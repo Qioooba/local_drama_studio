@@ -146,7 +146,14 @@ def _request_context(request: Request) -> dict[str, str | None]:
     }
 
 
-def _log_request(event: str, request: Request, *, status_code: int | None = None, duration_ms: float | None = None, error: str | None = None) -> None:
+def _log_request(
+    event: str,
+    request: Request,
+    *,
+    status_code: int | None = None,
+    duration_ms: float | None = None,
+    error: BaseException | str | None = None,
+) -> None:
     payload: dict[str, object] = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "level": "ERROR" if error else "INFO",
@@ -161,9 +168,24 @@ def _log_request(event: str, request: Request, *, status_code: int | None = None
     if duration_ms is not None:
         payload["duration_ms"] = round(duration_ms, 3)
     if error:
-        # Exception text is intentionally reduced to a type, never request data.
-        payload["error_type"] = error
-        payload["error_code"] = error
+        if isinstance(error, BaseException):
+            # Keep engine-level diagnostics (for example, a missing column or
+            # placeholder count) while excluding request payloads and SQL
+            # parameters. Application storage errors may expose a fixed safe
+            # stage for actionable diagnosis.
+            message = " ".join(str(error).split())[:300]
+            payload["error_type"] = type(error).__name__
+            payload["error_code"] = type(error).__name__
+            payload["error_message"] = message
+            stage = getattr(error, "stage", None)
+            if isinstance(stage, str) and stage:
+                payload["error_stage"] = stage
+            cause_type = getattr(error, "cause_type", None)
+            if isinstance(cause_type, str) and cause_type:
+                payload["error_cause_type"] = cause_type
+        else:
+            payload["error_type"] = error
+            payload["error_code"] = error
     _OBSERVABILITY_LOG.info(json.dumps(payload, ensure_ascii=False, sort_keys=True))
 
 
@@ -186,7 +208,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
                 "request.failed",
                 request,
                 duration_ms=(time.perf_counter() - started) * 1000,
-                error=type(error).__name__,
+                error=error,
             )
             raise
         response.headers["X-Request-Id"] = request_id
@@ -204,8 +226,10 @@ class ApiContractMiddleware(BaseHTTPMiddleware):
     """Make mixed API/UI releases fail before a route payload is consumed.
 
     The version is advertised on every response. Network clients must send the
-    same version for business endpoints; health and contract discovery remain
-    readable so an incompatible UI can explain the required recovery action.
+    same version for state-changing endpoints. Read-only requests may omit the
+    header because browser-native image, video, and download elements cannot
+    attach it; typed clients still validate the advertised response version.
+    A stale version is rejected whenever a client explicitly supplies one.
     """
 
     _DISCOVERY_PATHS = frozenset(
@@ -221,7 +245,8 @@ class ApiContractMiddleware(BaseHTTPMiddleware):
         is_api_request = request.url.path.startswith("/api/")
         in_process_test = request.client is not None and request.client.host == "testclient"
         observed = request.headers.get(API_CONTRACT_HEADER) or request.query_params.get("api_contract_version")
-        enforce_request_version = not in_process_test or observed is not None
+        state_changing = request.method in {"POST", "PUT", "PATCH", "DELETE"}
+        enforce_request_version = (state_changing and not in_process_test) or observed is not None
         if (
             is_api_request
             and request.method != "OPTIONS"

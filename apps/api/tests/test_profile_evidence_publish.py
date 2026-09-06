@@ -7,9 +7,24 @@ import pytest
 
 from local_drama.application.jobs import JobService
 from local_drama.application.media import MediaService
-from local_drama.application.profiles import ProfileService
+from local_drama.application.profiles import ProfileService, _merge_input_slot_contract
 from local_drama.application.projects import ProjectService
 from local_drama.domain.errors import DomainRuleError
+
+
+def test_input_slot_merge_accepts_equivalent_cardinality_and_workflow_metadata() -> None:
+    assert _merge_input_slot_contract(
+        {"min": 1, "max": 1},
+        {"kind": "TEXT", "required": True},
+    ) == {"kind": "TEXT", "required": True, "min": 1, "max": 1}
+
+
+def test_input_slot_merge_rejects_required_cardinality_conflict() -> None:
+    with pytest.raises(DomainRuleError, match="必填约束不一致"):
+        _merge_input_slot_contract(
+            {"min": 0, "max": 1},
+            {"kind": "TEXT", "required": True},
+        )
 
 
 def _create_evidence_job(database, jobs, project_id, profile_version_id, workflow_id, key, media_bindings=None):

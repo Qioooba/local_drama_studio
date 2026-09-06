@@ -13,6 +13,12 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
+from local_drama.application.breakdown_contracts import (
+    BREAKDOWN_DURATION_TOLERANCE_RATIO,
+    BREAKDOWN_MAX_SHOT_SECONDS,
+    BREAKDOWN_MIN_SHOT_SECONDS,
+    validated_breakdown_shot_duration,
+)
 from local_drama.application.jobs import JobService
 from local_drama.application.source_text import looks_like_source_heading, source_paragraphs
 from local_drama.config import Settings
@@ -482,14 +488,15 @@ def _validate_breakdown_output(
         for shot_index, shot in enumerate(scene["shots"], start=1):
             if not isinstance(shot, dict) or not shot_fields.issubset(shot):
                 raise DomainRuleError("LOCAL_LLM_OUTPUT_INVALID", "本地 LLM shot 不符合拆镜 schema", {"scene_index": scene_index, "shot_index": shot_index})
-            duration = shot.get("duration_seconds")
-            if not isinstance(duration, (int, float)) or isinstance(duration, bool) or not math.isfinite(float(duration)) or float(duration) <= 0:
-                raise DomainRuleError(
-                    "LOCAL_LLM_OUTPUT_INVALID",
-                    "每个镜头 duration_seconds 必须是大于 0 的有限数字",
-                    {"scene_index": scene_index, "shot_index": shot_index},
+            try:
+                duration = validated_breakdown_shot_duration(
+                    shot.get("duration_seconds"),
+                    error_code="LOCAL_LLM_OUTPUT_INVALID",
                 )
-            total_duration_seconds += float(duration)
+            except DomainRuleError as error:
+                error.details.update({"scene_index": scene_index, "shot_index": shot_index})
+                raise
+            total_duration_seconds += duration
     if target_duration_seconds is not None:
         target_duration_seconds = float(target_duration_seconds)
         if not math.isfinite(target_duration_seconds) or target_duration_seconds <= 0:
@@ -751,50 +758,70 @@ def _normalize_breakdown_durations(
     value: dict[str, Any],
     target_duration_seconds: float,
     *,
-    minimum_shot_seconds: float = 1.0,
-    maximum_shot_seconds: float = 15.0,
+    minimum_shot_seconds: float = BREAKDOWN_MIN_SHOT_SECONDS,
+    maximum_shot_seconds: float = BREAKDOWN_MAX_SHOT_SECONDS,
+    duration_tolerance_ratio: float = BREAKDOWN_DURATION_TOLERANCE_RATIO,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Fit model-proposed shot timings to the episode budget without changing content."""
+    """Fit model-proposed shot timings to the allowed episode-duration window."""
     normalized = json.loads(_json(value))
     shots = [shot for scene in normalized.get("scenes", []) if isinstance(scene, dict) for shot in scene.get("shots", []) if isinstance(shot, dict)]
     durations: list[float] = []
     for index, shot in enumerate(shots, start=1):
-        duration = shot.get("duration_seconds")
-        if not isinstance(duration, (int, float)) or isinstance(duration, bool) or not math.isfinite(float(duration)) or float(duration) <= 0:
-            raise DomainRuleError(
-                "LOCAL_LLM_OUTPUT_INVALID",
-                "每个镜头 duration_seconds 必须是大于 0 的有限数字",
-                {"shot_index": index},
-            )
-        durations.append(float(duration))
+        raw_duration = shot.get("duration_seconds")
+        if isinstance(raw_duration, str):
+            try:
+                cleaned = re.sub(r"[^\d.]+", "", raw_duration)
+                raw_duration = float(cleaned) if cleaned else None
+            except (ValueError, TypeError):
+                raw_duration = None
+        if not isinstance(raw_duration, (int, float)) or not math.isfinite(float(raw_duration)) or float(raw_duration) <= 0:
+            raw_duration = max(minimum_shot_seconds, min(maximum_shot_seconds, target_duration_seconds / max(1, len(shots))))
+        duration = min(maximum_shot_seconds, max(minimum_shot_seconds, float(raw_duration)))
+        durations.append(duration)
     if not durations:
         return normalized, {"duration_adjustment_status": "NOT_REQUIRED", "model_total_duration_seconds": 0.0}
     original_total = sum(durations)
-    if target_duration_seconds * 0.8 <= original_total <= target_duration_seconds * 1.2:
-        return normalized, {
-            "duration_adjustment_status": "NOT_REQUIRED",
-            "model_total_duration_seconds": original_total,
-            "normalized_total_duration_seconds": original_total,
-            "duration_adjustment_ratio": 1.0,
-        }
+    allowed_minimum = target_duration_seconds * (1 - duration_tolerance_ratio)
+    allowed_maximum = target_duration_seconds * (1 + duration_tolerance_ratio)
+    durations_within_shot_bounds = all(minimum_shot_seconds <= duration <= maximum_shot_seconds for duration in durations)
     minimum_total = len(durations) * minimum_shot_seconds
     maximum_total = len(durations) * maximum_shot_seconds
-    if target_duration_seconds < minimum_total or target_duration_seconds > maximum_total:
+    feasible_minimum = max(allowed_minimum, minimum_total)
+    feasible_maximum = min(allowed_maximum, maximum_total)
+    if feasible_minimum > feasible_maximum:
         raise DomainRuleError(
             "LOCAL_LLM_DURATION_UNSATISFIABLE",
-            "当前镜头数量无法在单镜 1–15 秒约束内满足目标分集时长",
+            "当前镜头数量无法在单镜 1–15 秒约束内进入目标分集时长容差范围",
             {
                 "shot_count": len(durations),
                 "target_duration_seconds": target_duration_seconds,
+                "allowed_minimum_duration_seconds": allowed_minimum,
+                "allowed_maximum_duration_seconds": allowed_maximum,
                 "minimum_total_duration_seconds": minimum_total,
                 "maximum_total_duration_seconds": maximum_total,
             },
         )
 
-    ratio = target_duration_seconds / original_total
+    # Prefer the configured target whenever the per-shot bounds can represent
+    # it.  The tolerance remains a feasibility window for underspecified
+    # model output, but it must not silently turn a near miss (for example
+    # 114 seconds for a 120-second episode) into the persisted plan.
+    adjustment_target = min(max(target_duration_seconds, feasible_minimum), feasible_maximum)
+    if (
+        abs(original_total - adjustment_target) <= 0.0005
+        and durations_within_shot_bounds
+    ):
+        return normalized, {
+            "duration_adjustment_status": "NOT_REQUIRED",
+            "model_total_duration_seconds": original_total,
+            "normalized_total_duration_seconds": original_total,
+            "duration_adjustment_ratio": 1.0,
+            "duration_adjustment_target_seconds": adjustment_target,
+        }
+    ratio = adjustment_target / original_total
     adjusted = [min(maximum_shot_seconds, max(minimum_shot_seconds, duration * ratio)) for duration in durations]
     for _ in range(len(adjusted) + 2):
-        residual = target_duration_seconds - sum(adjusted)
+        residual = adjustment_target - sum(adjusted)
         if abs(residual) < 1e-6:
             break
         eligible = [
@@ -808,7 +835,7 @@ def _normalize_breakdown_durations(
         for index in eligible:
             adjusted[index] = min(maximum_shot_seconds, max(minimum_shot_seconds, adjusted[index] + share))
     adjusted = [round(duration, 3) for duration in adjusted]
-    rounding_residual = round(target_duration_seconds - sum(adjusted), 3)
+    rounding_residual = round(adjustment_target - sum(adjusted), 3)
     for index in reversed(range(len(adjusted))):
         candidate = adjusted[index] + rounding_residual
         if minimum_shot_seconds <= candidate <= maximum_shot_seconds:
@@ -821,6 +848,7 @@ def _normalize_breakdown_durations(
         "model_total_duration_seconds": original_total,
         "normalized_total_duration_seconds": sum(adjusted),
         "duration_adjustment_ratio": ratio,
+        "duration_adjustment_target_seconds": adjustment_target,
     }
 
 
@@ -848,8 +876,8 @@ class LocalLLMService:
         if explicit_key and explicit_key.strip():
             return explicit_key.strip()
         resolved_provider = str(provider or (capability_json or {}).get("provider") or self.settings.llm_provider or "OLLAMA_LOOPBACK").strip().upper()
-        if resolved_provider in {"OLLAMA", "OLLAMA_LOOPBACK"}:
-            # A local Ollama runtime must not inherit a remote/cloud key from
+        if resolved_provider in {"OLLAMA", "OLLAMA_LOOPBACK", "LLAMA_CPP_MANAGED", "LLAMA_CPP"}:
+            # A local Ollama/llama.cpp loopback runtime must not inherit a remote/cloud key from
             # the process environment or the legacy DeepSeek credential.
             return None
         if self.settings.llm_api_key and self.settings.llm_api_key.strip():
@@ -1756,6 +1784,7 @@ class LocalLLMService:
         target_episode_id: str | None = None,
         source_paragraph_start: int | None = None,
         source_paragraph_end: int | None = None,
+        automatic_apply: bool = False,
         actor: str = "local-user",
     ) -> dict[str, Any]:
         """Persist a local-LLM request as a Job without contacting Ollama.
@@ -1810,8 +1839,13 @@ class LocalLLMService:
                     "maximum_character_count": _BREAKDOWN_MAX_SOURCE_CHARACTERS,
                 },
             )
+        from local_drama.application.breakdown_execution import resolve_breakdown_execution
+
+        with self.database.connect() as connection:
+            execution = resolve_breakdown_execution(connection, str(row["project_id"]), target_episode_id, profile_version_id)
         snapshot = {
-            "schema_version": "localdrama.script-breakdown-job.v3",
+            "schema_version": "localdrama.script-breakdown-job.v4",
+            "inference_options": execution["inference_options"],
             "import_session_id": session_id,
             "source_document_version_id": str(row["source_document_version_id"]),
             "source_sha256": str(row["source_sha256"]),
@@ -1821,8 +1855,8 @@ class LocalLLMService:
             "model": model,
             "base_url": base_url,
             "provider": str(runtime_contract.get("provider") or "OLLAMA_LOOPBACK").strip().upper(),
-            "automatic_apply": False,
-            "requires_human_action": True,
+            "automatic_apply": automatic_apply,
+            "requires_human_action": not automatic_apply,
             "source_paragraph_start": selected_start,
             "source_paragraph_end": selected_end,
             "source_paragraph_count": paragraph_count,
@@ -1844,7 +1878,15 @@ class LocalLLMService:
             # prevents a broken prompt/model from being hammered automatically.
             max_attempts=1,
             actor=actor,
+            scope_episode_id=target_episode_id if automatic_apply else None,
+            stage_code="SHOT_PLANNING" if automatic_apply else None,
         )
+
+    def apply_generated_breakdown(self, draft_id: str, episode_id: str) -> dict[str, Any]:
+        """Apply a validated draft requested by the episode Agent path."""
+        from local_drama.application.breakdown_apply import BreakdownApplyService
+
+        return BreakdownApplyService(self.database, self.settings).apply_draft(draft_id, episode_id)
 
     def _assert_job_can_persist(self, job_id: str, session_id: str) -> None:
         with self.database.connect() as connection:
@@ -1884,6 +1926,7 @@ class LocalLLMService:
             str(row["project_id"]),
             str(input_snapshot.get("target_episode_id")) if input_snapshot and input_snapshot.get("target_episode_id") else None,
         )
+        automatic_apply = bool(input_snapshot.get("automatic_apply")) if input_snapshot is not None else False
         if input_snapshot is not None:
             expected = {
                 "import_session_id": session_id,
@@ -1894,8 +1937,8 @@ class LocalLLMService:
                 "profile_capability_sha256": _sha256_json(runtime_contract),
                 "model": model,
                 "base_url": base_url,
-                "automatic_apply": False,
-                "requires_human_action": True,
+                "automatic_apply": automatic_apply,
+                "requires_human_action": not automatic_apply,
                 **(target or {}),
             }
             if any(input_snapshot.get(key) != value for key, value in expected.items()):
@@ -1912,8 +1955,8 @@ class LocalLLMService:
                     "profile_version_id": profile_version_id,
                     "draft": json.loads(str(existing["draft_json"])),
                     "idempotent_replay": True,
-                    "automatic_apply": False,
-                    "requires_human_action": True,
+                    "automatic_apply": automatic_apply,
+                    "requires_human_action": not automatic_apply,
                 }
         if on_progress:
             on_progress({"phase": "CALLING_LOCAL_LLM", "percent": 20})
@@ -1944,12 +1987,13 @@ class LocalLLMService:
         duration_contract = ""
         if target:
             target_seconds = float(target["target_duration_seconds"])
-            minimum_seconds = target_seconds * 0.8
-            maximum_seconds = target_seconds * 1.2
+            minimum_seconds = target_seconds * (1 - BREAKDOWN_DURATION_TOLERANCE_RATIO)
+            maximum_seconds = target_seconds * (1 + BREAKDOWN_DURATION_TOLERANCE_RATIO)
+            minimum_shots = math.ceil(minimum_seconds / BREAKDOWN_MAX_SHOT_SECONDS)
             duration_contract = (
                 f" 本次草稿只面向 {target['target_episode_code']}，目标成片时长为 {target_seconds:g} 秒。"
                 f" 所有镜头 duration_seconds 的合计必须在 {minimum_seconds:g} 到 {maximum_seconds:g} 秒之间；"
-                "单镜建议 1 到 15 秒。不要通过增加原文不存在的剧情来凑时长，应压缩镜头数量与节奏。"
+                f"至少返回 {minimum_shots} 个镜头，单镜建议 {BREAKDOWN_MIN_SHOT_SECONDS:g} 到 {BREAKDOWN_MAX_SHOT_SECONDS:g} 秒。不要通过增加原文不存在的剧情来凑时长，应压缩镜头数量与节奏。"
             )
         response_schema = json.loads(_json(_BREAKDOWN_RESPONSE_SCHEMA))
         response_schema["properties"]["source_passages"]["items"]["properties"]["paragraph_no"]["maximum"] = len(paragraph_offsets)
@@ -1957,6 +2001,10 @@ class LocalLLMService:
         required_paragraph_instruction = (
             f" 必须覆盖的 P 编号全集是 {sorted(paragraph_offsets)}；返回前自检所有 scene.source_paragraph_nos 的并集必须与这个全集完全相同，不得缺号或越界。"
         )
+        merged_inference_options = {
+            "num_ctx": _BREAKDOWN_CONTEXT_TOKENS,
+            **(execution_snapshot.get("inference_options") or {}),
+        }
         output = LocalLLMClient(
             base_url,
             model,
@@ -1969,7 +2017,7 @@ class LocalLLMService:
             + duration_contract,
             numbered_source_text,
             json_schema=response_schema,
-            inference_options={"num_ctx": _BREAKDOWN_CONTEXT_TOKENS},
+            inference_options=merged_inference_options,
         )
         if job_id:
             self._assert_job_can_persist(job_id, session_id)
@@ -2036,8 +2084,8 @@ class LocalLLMService:
                 (
                     draft_id,
                     job_id,
-                    "本地 LLM 完成剧本拆解草稿（等待人工应用）",
-                    _json({"session_id": session_id, "profile_version_id": profile_version_id, "model": model, "job_id": job_id, "automatic_apply": False}),
+                    "本地 LLM 完成剧本拆解草稿" + ("（已自动应用至本集）" if automatic_apply else "（等待人工应用）"),
+                    _json({"session_id": session_id, "profile_version_id": profile_version_id, "model": model, "job_id": job_id, "automatic_apply": automatic_apply}),
                 ),
             )
         if on_progress:
@@ -2048,8 +2096,8 @@ class LocalLLMService:
             "profile_version_id": profile_version_id,
             "draft": draft,
             "idempotent_replay": False,
-            "automatic_apply": False,
-            "requires_human_action": True,
+            "automatic_apply": automatic_apply,
+            "requires_human_action": not automatic_apply,
         }
 
     def list_breakdown_drafts(self, project_id: str) -> list[dict[str, Any]]:

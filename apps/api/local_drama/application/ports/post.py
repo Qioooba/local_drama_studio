@@ -16,4 +16,5 @@ class PostReadPort(Protocol):
         limit: int,
         target_kinds: set[str],
         include_resolved: bool,
+        target_id: str | None = None,
     ) -> dict[str, Any]: ...

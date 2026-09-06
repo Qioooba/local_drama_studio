@@ -79,17 +79,36 @@
 .edit-clip-inspector > small { color: var(--text-muted); line-height: 1.55; }
 .edit-reorder { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .edit-timeline { min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: #0c0e12; color: #f1f2f6; }
-.edit-timeline-scroll { max-width: 100%; overflow-x: auto; scrollbar-gutter: stable; }
-.edit-timeline-content { position: relative; min-width: 900px; padding: 10px 12px 12px 112px; }
-.edit-ruler { display: flex; justify-content: space-between; height: 26px; color: #8f95a3; font-size: 10px; font-variant-numeric: tabular-nums; }
-.edit-playhead { position: absolute; z-index: 4; top: 4px; bottom: 10px; width: 1px; margin-left: 112px; background: #ff6b62; pointer-events: none; }
+.edit-timeline-scroll { max-width: 100%; overflow-x: auto; scrollbar-gutter: stable; -webkit-overflow-scrolling: touch; }
+.edit-timeline-content { --lane-head-w: 100px; position: relative; min-width: 900px; padding: 10px 12px 12px 0; cursor: grab; }
+.edit-timeline-content:active { cursor: grabbing; }
+.edit-ruler { display: flex; justify-content: space-between; height: 26px; color: #8f95a3; font-size: 10px; font-variant-numeric: tabular-nums; margin-left: var(--lane-head-w); }
+.edit-playhead { position: absolute; z-index: 4; top: 4px; bottom: 10px; width: 1px; margin-left: 0; background: #ff6b62; pointer-events: none; }
 .edit-playhead::before { position: absolute; top: 0; left: -5px; width: 11px; height: 8px; border-radius: 2px; background: #ff6b62; content: ""; }
-.edit-lane { position: relative; display: grid; min-height: 54px; margin-bottom: 5px; }
-.edit-lane > header { position: absolute; right: calc(100% + 12px); display: grid; width: 88px; height: 100%; align-content: center; }
+.edit-playhead-hit {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  bottom: 0;
+  width: 22px;
+  margin-left: -11px;
+  cursor: ew-resize;
+  touch-action: none;
+  background: transparent;
+}
+.edit-playhead-hit:hover + .edit-playhead,
+.edit-playhead-hit:active + .edit-playhead,
+.edit-playhead:hover {
+  background: #ff8b84;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.22);
+}
+.edit-lane { position: relative; display: grid; grid-template-columns: 88px 1fr; gap: 12px; min-height: 54px; margin-bottom: 5px; align-items: stretch; }
+.edit-lane > header { position: sticky; left: 0; z-index: 2; display: grid; width: 88px; height: 100%; min-height: 54px; align-content: center; background: #0c0e12; border-radius: 6px; padding: 6px; box-sizing: border-box; }
 .edit-lane > header strong { color: #b9a8ff; font-size: 11px; }
 .edit-lane > header span { overflow: hidden; color: #8f95a3; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .edit-lane.is-disabled { opacity: .38; }
-.edit-lane-rail { position: relative; min-height: 54px; overflow: hidden; border: 1px solid #282c34; border-radius: 6px; background: #14171d; }
+.edit-lane-rail { position: relative; min-height: 54px; overflow: hidden; border: 1px solid #282c34; border-radius: 6px; background: #14171d; min-width: 0; }
+.edit-lane-rail { cursor: pointer; }
 .edit-lane-rail > em { position: absolute; top: 18px; left: 10px; color: #737986; font-size: 10px; }
 .edit-timeline-clip { position: absolute; top: 5px; bottom: 5px; display: grid; min-width: 28px; align-content: center; overflow: hidden; padding: 3px 7px; border: 1px solid transparent; border-radius: 5px; color: #f6f7fb; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 button.edit-timeline-clip { cursor: pointer; }
@@ -129,7 +148,8 @@ button.edit-timeline-clip { cursor: pointer; }
   .edit-savebar { position: static; }
   .edit-savebar .action-row { display: grid; grid-template-columns: 1fr; }
   .edit-track-toggles { flex-wrap: wrap; }
-  .edit-timeline-content { padding-left: 84px; }
-  .edit-playhead { margin-left: 84px; }
+  .edit-timeline-content { --lane-head-w: 72px; }
+  .edit-lane { grid-template-columns: 60px 1fr; gap: 8px; }
   .edit-lane > header { width: 60px; }
+  .edit-ruler { margin-left: var(--lane-head-w); }
 }

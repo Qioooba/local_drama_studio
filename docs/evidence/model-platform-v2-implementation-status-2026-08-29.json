@@ -1,0 +1,97 @@
+{
+  "schema_version": "localdramastudio.model-platform-v2-implementation-status.v1",
+  "created_at": "2026-08-29T08:00:00Z",
+  "scope": "《模型平台重构与 Windows Server 部署设计》V2 实施收尾与开发实例接入",
+  "offline_gates": {
+    "backend_tests": {
+      "command": "python -m pytest -m 'not comfyui' (scripts/test_api_safe.ps1)",
+      "result": "994 passed, 1 skipped in 1624.92s",
+      "status": "PASS"
+    },
+    "mypy_strict": {
+      "command": "mypy local_drama (strict=true, apps/api)",
+      "result": "Success: no issues found in 381 source files",
+      "note": "本会话起点为 166 个错误；已全部以类型化方式清零，无 type: ignore",
+      "status": "PASS"
+    },
+    "ruff": {
+      "result": "All checks passed",
+      "status": "PASS"
+    },
+    "maintainability_audit": {
+      "result": "hard_failures=[]；为两个新 domain 模块补充了领域规则测试",
+      "status": "PASS"
+    },
+    "release_gate": {
+      "command": "python scripts/model_platform_release_gate.py --config config/config.json --release-root . --instance-root . --database data/local_drama.sqlite3",
+      "checks": {
+        "MODEL_ROOT": "PASS",
+        "MODEL_LIBRARIES": "PASS",
+        "MODEL_OPERATIONAL_ISOLATION": "PASS",
+        "DATABASE_INTEGRITY": "PASS",
+        "MIGRATION_HEAD": "PASS",
+        "PROJECT_KNOWLEDGE_V2_SCHEMA": "PASS",
+        "PUBLISHED_PROFILE_HANDLER_COVERAGE": "PASS"
+      },
+      "status": "PASS"
+    }
+  },
+  "database": {
+    "migration": "0069_job_history_deletion -> 0086_model_platform_quick_create_v2_runs",
+    "integrity": "ok",
+    "head_matches_contract": true,
+    "backup": "由 maintenance.upgrade_database 自动创建"
+  },
+  "machine_layout": {
+    "config_schema": 3,
+    "model_root": "F:/AI_Models/LocalDramaStudio",
+    "model_library_roots": [
+      "F:/AI_Models/LocalDramaStudio/ComfyUI",
+      "F:/AI_Models/LocalDramaStudio/PyTorch",
+      "F:/AI_Models/LocalDramaStudio/Ollama",
+      "F:/AI_Models/LocalDramaStudio/Audio"
+    ],
+    "renames": [
+      "F:/AI_Models/LocalDramaStudio/Services -> F:/AI_Models/LocalDramaStudio/PyTorch（同卷原子改名，规范 pytorch 库命名；lock 前缀 Services/ 经 runtime_adapters.shim 正确解析）"
+    ],
+    "scripts_updated": [
+      "scripts/local_ai_runtime.py",
+      "scripts/register_local_ai_services.py"
+    ],
+    "user_env_updated": "LOCAL_DRAMA_MODEL_LIBRARY_ROOTS 已更新为四库；此前残留的 ComfyUI;Services 旧值曾覆盖 config.json 导致发现扫描错位"
+  },
+  "discovery_verification": {
+    "method": "服务层离线扫描（OllamaDiscoveryOrchestrator / ModelLockDiscoveryOrchestrator），只读",
+    "results": {
+      "OLLAMA": {"qwen3.8:27b": "PRESENT", "candidate_capabilities": ["LLM_STORY_PARSE", "LLM_EPISODE_PLAN", "LLM_STORYBOARD", "LLM_PROMPT_REWRITE", "QC_VISUAL"]},
+      "COMFYUI": {"ace-step-1.5-xl-sft": "PRESENT", "minimax-h3-fl2va": "PRESENT", "minimax-h3-ref2va": "PRESENT", "qwen-image-2512-q5-k-m": "PRESENT", "qwen-image-edit-2511-multiple-angles-lora": "PRESENT", "qwen-image-edit-2511-q5-k-m": "PRESENT"},
+      "PYTORCH_PROCESS": {"latentsync-1.6": "PRESENT", "qwen3-asr-1.7b-hf": "PRESENT", "qwen3-embedding-8b": "PRESENT", "qwen3-forced-aligner-0.6b-hf": "PRESENT", "voxcpm2": "PRESENT"}
+    },
+    "summary": "12/12 受控模型资产 PRESENT；V2 目录 35 个能力定义、4 个运行时安装",
+    "publication_state": "0 个已发布 V2 Profile——按设计保持 fail-closed：须在模型中心完成 登记→完整性验证→能力 smoke→Profile smoke→发布 后方可生产使用"
+  },
+  "frontend": {
+    "tests": "122 files / 474 tests passed",
+    "fixes": [
+      "DiagnosticsOverview：陈旧提示移除第二个 role=\"status\"（同一视图只保留一个 live region）",
+      "QuickGenerationWorkbench：V2 图生视频结果视频改为 preload=\"none\"（media-url-policy 门禁：视频加载必须用户主动）",
+      "QuickGenerationWorkbench 测试：聚合 run mock 改为模拟真实后端状态机（选择冻结后 AWAITING_SELECTION→IMAGE_SELECTED）",
+      "DirectorShotEditor / QuickGenerationModelSettings 测试：按仓库惯例补 @testing-library/jest-dom/vitest 导入"
+    ]
+  },
+  "backend_fixes_in_this_session": [
+    "architecture debt/boundaries：adaptation_analysis_queue / adaptation_analysis_execution 全部 SQL 下沉到 SqliteAdaptationPlanRepository，服务改为依赖 AdaptationPlanningRepository 端口（保留单事务与 fail-closed 校验语义；JobService 经 create_job 回调注入）",
+    "application/source_text 纯文本工具下沉为 domain/source_text，旧模块保留 re-export 兼容",
+    "api_error_from_domain 增加 400 类（crosswalk 拒绝族）并把 ACTIVE_MAPPING_EXISTS/NOT_APPROVED 归入 409",
+    "test_pytorch_embedding_execution 负例修正为 EMBEDDING_TEXT×ollama.chat.v1（测试名语义：embedding 只能经已安装 handler 执行；保留 ollama.chat.v1 生产声明以维持发布门禁与 Ollama V2 链路）",
+    "为 domain/source_text 与 domain/adaptation_planning 新增领域规则测试"
+  ],
+  "services": {
+    "restart": "local-drama-host stop/start（scripts/start.ps1），API/Worker 已运行最终代码",
+    "bind": "0.0.0.0:3210 LAN_SERVICE（与配置一致）"
+  },
+  "remaining_operator_steps": [
+    "在模型中心 UI 对候选模型执行 登记为 Model Release → 完整性验证 → 能力 smoke → Profile 发布（需要真实 ComfyUI/Ollama 运行证据，不允许跳过）",
+    "Windows Server 干净机 UAT：按 docs/release/windows-server-v2-model-platform-runbook.md 执行安装/升级/回滚与发布门禁"
+  ]
+}

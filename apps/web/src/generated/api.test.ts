@@ -67,6 +67,16 @@ describe("generated G8 timeline client", () => {
     );
     const mutation = fetchMock.mock.calls.find(([path]) => path === "/api/v1/episodes/episode%2F1/timeline-revisions");
     expect(new Headers(mutation?.[1]?.headers).get("X-Local-Instance-Token")).toBe("test-token");
+    expect(new Headers(mutation?.[1]?.headers).get("Content-Type")).toBe("application/json");
+  });
+
+  it("adds JSON content type centrally without overriding an explicit media type", async () => {
+    await requestJson("/api/v1/json", { method: "POST", body: JSON.stringify({ prompt: "雨夜" }) });
+    await requestJson("/api/v1/text", { method: "POST", headers: { "Content-Type": "text/plain" }, body: "plain" });
+    const jsonCall = fetchMock.mock.calls.find(([path]) => path === "/api/v1/json");
+    const textCall = fetchMock.mock.calls.find(([path]) => path === "/api/v1/text");
+    expect(new Headers(jsonCall?.[1]?.headers).get("Content-Type")).toBe("application/json");
+    expect(new Headers(textCall?.[1]?.headers).get("Content-Type")).toBe("text/plain");
   });
 
   it("uses the typed Edit v2 aggregate and separate draft/freeze commands", async () => {

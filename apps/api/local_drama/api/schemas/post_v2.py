@@ -95,6 +95,7 @@ class ReviewTargetFact(StrictModel):
     label: str
     media_kind: str | None = None
     stage: str | None = None
+    is_adopted: bool = False
     duration_ms: int | None = Field(default=None, ge=0)
     subject_revision: int = Field(ge=0)
     integrity_status: str

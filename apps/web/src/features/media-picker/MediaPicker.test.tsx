@@ -39,6 +39,12 @@ describe("MediaPicker", () => {
     expect(onChange).toHaveBeenCalledWith("version-1", expect.objectContaining({ source_name: "hero.png" }));
   });
 
+  it("names approved identity references by character and camera view", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(apiJsonResponse({ items: [{ ...item, identity_references: [{ character_name: "林晚", slot_kind: "FRONT", pack_version_no: 1 }] }] })));
+    renderPicker();
+    expect(await screen.findByRole("radio", { name: /林晚 · 正面 · 已批准身份包 v1/ })).toBeTruthy();
+  });
+
   it("uploads an image and selects the returned version", async () => {
     const fetch = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);

@@ -65,9 +65,17 @@ function getDefaultContentForKind(kind: string, title: string): Record<string, s
 }
 
 const FIELD_LABELS: Record<string, string> = {
-  name: "名称", title: "标题", appearance: "外观特征", personality: "性格", background: "人物背景", motivation: "核心动机",
-  location: "地点", atmosphere: "氛围", visual_features: "画面特征", synopsis: "故事梗概", theme: "主题", setting: "时代与世界",
-  visual_tone: "视觉基调", timbre: "音色", tone: "说话语气", reference: "参考方向", description: "设定描述",
+  name: "名称", title: "标题", introduction: "完整介绍", description: "设定描述", aliases: "别名", role: "角色定位",
+  biography: "人物小传", appearance: "外观特征", costume: "服装造型", personality: "性格", background: "人物背景",
+  motivation: "核心动机", skills: "能力", weakness: "弱点", arc: "人物弧光", relationships: "人物关系", voice: "声音特征",
+  location: "地点", geography: "空间地理", architecture: "建筑风貌", layout: "空间布局", atmosphere: "氛围", lighting: "环境光线",
+  time: "时间特征", color_palette: "色彩方案", key_elements: "关键元素", story_function: "剧情作用", visual_features: "画面特征",
+  material: "材质", function: "功能", story_significance: "剧情意义", owner: "归属", rules: "使用规则", visual_prompt: "后续文生图描述",
+  logline: "一句话梗概", synopsis: "故事梗概", genre: "类型", audience: "目标观众", themes: "主题", theme: "主题",
+  tone: "整体语气", worldview: "世界观", world_rules: "世界规则", timeline: "时间线", central_conflict: "核心冲突",
+  narrative_structure: "叙事结构", visual_style: "视觉风格", color_language: "色彩语言", taboos: "创作禁区", ending_direction: "结局方向",
+  setting: "时代与世界", visual_tone: "视觉基调", timbre: "音色", reference: "参考方向",
+  pipeline_run_id: "来源草案运行", media_generation_started: "已启动媒体生成",
 };
 const FIELD_HINTS: Record<string, string> = {
   appearance: "例如：深色风衣、短发、眼神坚毅", personality: "例如：沉着冷静、行动力强", background: "人物经历与重要前史",

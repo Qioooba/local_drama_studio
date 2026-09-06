@@ -18,7 +18,6 @@ const DeliveryPage = lazy(() => import("../pages/DeliveryPage").then((module) =>
 const ModelsPage = lazy(() => import("../pages/ModelsPage").then((module) => ({ default: module.ModelsPage })));
 const JobsPage = lazy(() => import("../pages/JobsPage").then((module) => ({ default: module.JobsPage })));
 const DiagnosticsPage = lazy(() => import("../pages/DiagnosticsPage").then((module) => ({ default: module.DiagnosticsPage })));
-const EpisodeRunPage = lazy(() => import("../pages/EpisodeRunPage").then((module) => ({ default: module.EpisodeRunPage })));
 const ProjectsPage = lazy(() => import("../pages/ProjectsPage").then((module) => ({ default: module.ProjectsPage })));
 const QuickCreatePage = lazy(() => import("../pages/QuickCreatePage").then((module) => ({ default: module.QuickCreatePage })));
 const QcPoliciesPage = lazy(() => import("../pages/QcPoliciesPage").then((module) => ({ default: module.QcPoliciesPage })));
@@ -64,6 +63,12 @@ function LegacyEpisodeRedirect({ target }: { target: "studio" | "generate" | "pr
   return <Navigate to={{ pathname: to, search: location.search, hash: location.hash }} replace />;
 }
 
+function EpisodeProductionRedirect() {
+  const { projectId = "", episodeId = "" } = useParams();
+  const location = useLocation();
+  return <Navigate to={{ pathname: routes.episodePlan(projectId, episodeId), search: location.search, hash: location.hash }} replace />;
+}
+
 function LegacyGlobalRedirect({ target }: { target: "capabilities" | "jobs" | "diagnostics" | "workflows" }) {
   const location = useLocation();
   return <Navigate to={{ pathname: `/system/${target}`, search: location.search, hash: location.hash }} replace />;
@@ -103,9 +108,9 @@ export const router = createBrowserRouter([
       { path: "episodes/:episodeId/plan", element: page(<EpisodePlanPage />) },
       { path: "episodes/:episodeId/studio", element: page(<FeatureFlagRoute flag="DIRECTOR_DESK_V2" fallbackView="projects"><DirectorDeskPage /></FeatureFlagRoute>) },
       { path: "episodes/:episodeId/studio/:shotId", element: page(<FeatureFlagRoute flag="DIRECTOR_DESK_V2" fallbackView="projects"><DirectorDeskPage /></FeatureFlagRoute>) },
-      { path: "episodes/:episodeId/production", element: page(<FeatureFlagRoute flag="EPISODE_AGENT_RUN_V2" fallbackView="projects"><EpisodeRunPage /></FeatureFlagRoute>) },
+      { path: "episodes/:episodeId/production", element: <EpisodeProductionRedirect /> },
       { path: "episodes/:episodeId/post", element: <PostShell />, children: [
-        { index: true, element: <Navigate to="review" replace /> },
+        { index: true, element: <Navigate to="edit" replace /> },
         { path: "review", element: page(<EpisodeReviewPage />) },
         { path: "audio", element: page(<AudioPage />) },
         { path: "edit", element: page(<TimelinePage />) },
@@ -116,7 +121,7 @@ export const router = createBrowserRouter([
       { path: "director-recipes", element: <LegacyProjectRedirect target="directing" /> },
       { path: "production-settings", element: <LegacyProjectRedirect target="settings" /> },
       { path: "operations", element: <LegacyProjectRedirect target="settings" /> },
-      { path: "models", element: <LegacyProjectRedirect target="capabilities" /> },
+      { path: "models", element: page(<ModelsPage />) },
       { path: "jobs", element: <LegacyProjectRedirect target="jobs" /> },
       { path: "diagnostics", element: <LegacyProjectRedirect target="diagnostics" /> },
       { path: "lab", element: <LegacyProjectRedirect target="workflows" /> },

@@ -45,22 +45,31 @@ export function StatusBadge({ children, tone = "neutral" }: { children?: ReactNo
   return <span className={`ui-status-badge ui-status-badge--${tone}`}>{children ?? tone}</span>;
 }
 
-export function MediaThumb({
-  src,
-  alt,
-  emptyLabel = "暂无缩略图",
-  aspectRatio = "16 / 9",
-  objectFit = "contain",
-  className = "",
-}: {
+type MediaThumbProps = {
   src?: string | null;
   alt: string;
   emptyLabel?: string;
   aspectRatio?: CSSProperties["aspectRatio"];
   objectFit?: CSSProperties["objectFit"];
   className?: string;
-}) {
+  loading?: "eager" | "lazy";
+};
+
+export function MediaThumb(props: MediaThumbProps) {
+  return <MediaThumbImage key={props.src ?? "empty"} {...props} />;
+}
+
+function MediaThumbImage({
+  src,
+  alt,
+  emptyLabel = "暂无缩略图",
+  aspectRatio = "16 / 9",
+  objectFit = "contain",
+  className = "",
+  loading = "lazy",
+}: MediaThumbProps) {
   const [failed, setFailed] = useState(false);
+
   const isApiMedia = Boolean(src && /\/(?:media-versions|episode-renders)\//i.test(src));
   const safeSrc =
     src &&
@@ -68,29 +77,41 @@ export function MediaThumb({
     (!isApiMedia || /\/thumbnail(?:[/?#]|$)/i.test(src))
       ? src
       : null;
+
   if (!safeSrc || failed) {
     return (
       <div
         className={`ui-media-thumb ui-media-thumb--empty ${className}`.trim()}
         style={{ aspectRatio }}
         role="img"
-        aria-label={`${alt}：${emptyLabel}`}
+        aria-label={`${alt}：${failed ? "缩略图加载失败" : emptyLabel}`}
       >
         <span aria-hidden="true">▧</span>
-        <small>{emptyLabel}</small>
+        <small>{failed ? "缩略图加载失败" : emptyLabel}</small>
       </div>
     );
   }
+
   return (
-    <img
-      className={`ui-media-thumb ${className}`.trim()}
-      src={safeSrc}
-      alt={alt}
-      loading="lazy"
-      decoding="async"
-      style={{ aspectRatio, objectFit }}
-      onError={() => setFailed(true)}
-    />
+    <div
+      className={`ui-media-thumb-container ${className}`.trim()}
+      style={{ aspectRatio, position: "relative", overflow: "hidden", borderRadius: "8px" }}
+    >
+      <img
+        className={`ui-media-thumb ${className}`.trim()}
+        src={safeSrc}
+        alt={alt}
+        loading={loading}
+        decoding="async"
+        style={{
+          aspectRatio,
+          objectFit,
+          width: "100%",
+          height: "100%",
+        }}
+        onError={() => setFailed(true)}
+      />
+    </div>
   );
 }
 

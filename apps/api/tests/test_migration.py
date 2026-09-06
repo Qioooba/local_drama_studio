@@ -26,9 +26,11 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         foreign_keys = connection.execute("PRAGMA foreign_keys").fetchone()[0]
         indexes = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
         working_slot_columns = {row[1] for row in connection.execute("PRAGMA table_info(shot_working_media_slots)")}
+        keyframe_batch_columns = {row[1] for row in connection.execute("PRAGMA table_info(shot_keyframe_generation_batches)")}
+        keyframe_item_columns = {row[1] for row in connection.execute("PRAGMA table_info(shot_keyframe_generation_batch_items)")}
         quick_run_columns = {row[1] for row in connection.execute("PRAGMA table_info(quick_generation_runs)")}
         execution_snapshot_columns = {row[1] for row in connection.execute("PRAGMA table_info(mp_execution_snapshots)")}
-        assert version == "0086_model_platform_quick_create_v2_runs"
+        assert version == "0094_project_target_duration"
         seeded_capability_count = connection.execute("SELECT COUNT(*) FROM mp_capability_definitions").fetchone()[0]
         embedding_definition = connection.execute(
             "SELECT family, background_only FROM mp_capability_definitions WHERE code = 'EMBEDDING_TEXT'"
@@ -38,6 +40,8 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
     assert tuple(embedding_definition) == ("RETRIEVAL", 1)
     assert {"quick_generation_runs", "quick_generation_candidates", "quick_generation_outputs", "quick_generation_events", "quick_generation_presets"} <= tables
     assert "model_parameters_json" in quick_run_columns
+    assert "input_snapshot_json" in keyframe_batch_columns
+    assert "input_snapshot_json" in keyframe_item_columns
     assert {"runtime_configuration_json", "model_bindings_json", "execution_binding_json"} <= execution_snapshot_columns
     assert "mp_runtime_model_workflow_bindings" in tables
     assert "mp_legacy_profile_version_crosswalks" in tables
@@ -70,7 +74,7 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
     assert {"progress_json", "started_at", "finished_at"} <= attempt_columns
     with database.connect() as connection:
         project_columns = {row[1] for row in connection.execute("PRAGMA table_info(projects)")}
-    assert {"width", "height", "primary_language", "subtitle_mode", "subtitle_language"} <= project_columns
+    assert {"width", "height", "primary_language", "subtitle_mode", "subtitle_language", "target_duration_ms"} <= project_columns
     assert foreign_keys == 1
     assert {
         "ix_media_assets_owner",

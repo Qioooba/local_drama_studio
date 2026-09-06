@@ -1,14 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getEpisodeTimelineStatus, getG8Readiness, getProjectConfiguration, reviewInbox } from "../generated/api";
+import { getEpisodePostOverviewV2, getEpisodeTimelineStatus, getG8Readiness, getProjectConfiguration, reviewInbox } from "../generated/api";
 import { DeliveryPage } from "./DeliveryPage";
 import { EpisodePlanPage } from "./EpisodePlanPage";
 
-vi.mock("../generated/api", () => ({ getEpisodeTimelineStatus: vi.fn(), getG8Readiness: vi.fn(), getProjectConfiguration: vi.fn(), reviewInbox: vi.fn() }));
+vi.mock("../generated/api", () => ({ getEpisodePostOverviewV2: vi.fn(), getEpisodeTimelineStatus: vi.fn(), getG8Readiness: vi.fn(), getProjectConfiguration: vi.fn(), reviewInbox: vi.fn() }));
 vi.mock("../features/projects/ScriptImportPanel", () => ({ ScriptImportPanel: () => null }));
+vi.mock("../features/episode-production-v2/EpisodeProductionWorkspace", () => ({ EpisodeProductionWorkspace: () => <section aria-label="本集 Agent 制作">单集自动生产</section> }));
 vi.mock("../features/projects/AIDraftReviewPanel", () => ({ AIDraftReviewPanel: () => null }));
 vi.mock("../features/projects/StoryboardBatchWorkbench", () => ({ StoryboardBatchWorkbench: () => null }));
 vi.mock("../features/episode-plan-v2/ShotGroupPlanner", () => ({ ShotGroupPlanner: () => null }));
@@ -30,15 +31,16 @@ describe("P12 creation entry migration", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getEpisodeTimelineStatus).mockResolvedValue({ status: { timeline: { latest: null }, renders: { latest: null }, delivery: { latest: null } } } as never);
+    vi.mocked(getEpisodePostOverviewV2).mockResolvedValue({ overview: { review: { approved_render_id: null } } } as never);
     vi.mocked(getProjectConfiguration).mockResolvedValue({ configuration: {} } as never);
     vi.mocked(getG8Readiness).mockResolvedValue({ readiness: {} } as never);
     vi.mocked(reviewInbox).mockResolvedValue({ items: [{ media_version_id: "opaque-media", media_asset_id: "asset", project_id: "project-1", episode_id: "episode-1", episode_code: "EP01", shot_code: "S012", media_kind: "VIDEO", stage: "PROXY", decision: null, is_stale: 0 }] });
   });
 
-  it("keeps scene ranges in Episode Plan and retires the duplicate prompt owner", async () => {
+  it("routes Episode Plan through one Agent workspace and retires duplicate expert tabs", async () => {
     renderRoute("/projects/project-1/episodes/episode-1/plan", <EpisodePlanPage />);
-    fireEvent.click(screen.getByRole("tab", { name: "场景与分组" }));
-    expect(await screen.findByText("场次范围 episode-1")).toBeTruthy();
+    expect(await screen.findByRole("region", { name: "本集 Agent 制作" })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "场景与分组" })).toBeNull();
     expect(screen.queryByRole("tab", { name: "提示词快照" })).toBeNull();
   });
 

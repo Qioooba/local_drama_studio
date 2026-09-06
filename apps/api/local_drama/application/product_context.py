@@ -6,14 +6,74 @@ from typing import Any
 from local_drama.application.ports.product_context import ProductContextReadPort
 
 MILESTONE_ORDER = (
-    "episode_count",
     "reviewable_story_draft_count",
+    "episode_count",
     "active_story_asset_count",
     "production_plan_count",
     "published_profile_binding_count",
     "shot_intent_count",
     "shot_generation_job_count",
 )
+
+_EPISODE_EVIDENCE_KEYS = (
+    "_render_review_decision",
+    "_render_review_stale",
+    "_delivery_status",
+    "_delivery_human_review_status",
+    "_production_attention",
+)
+
+
+def derive_episode_production_status(episode: dict[str, Any]) -> str:
+    """Project immutable production evidence into the episode card state.
+
+    ``episodes.production_status`` is a legacy authoring field and is not
+    updated by the render/delivery workflows.  The overview therefore derives
+    the current state from the latest verified render and its linked review or
+    delivery package.  Evidence takes precedence when present; otherwise the
+    persisted authoring status remains the compatibility fallback.
+    """
+    stored = str(episode.get("production_status") or "NOT_STARTED").strip().upper() or "NOT_STARTED"
+    render_id = episode.get("preview_render_id")
+    media_id = episode.get("preview_media_version_id")
+    review_decision = str(episode.get("_render_review_decision") or "").strip().upper() or None
+    review_stale = bool(episode.get("_render_review_stale"))
+    delivery_status = str(episode.get("_delivery_status") or "").strip().upper() or None
+    delivery_review = str(episode.get("_delivery_human_review_status") or "").strip().upper() or None
+    has_evidence = bool(render_id or media_id or delivery_status)
+    if not has_evidence:
+        return stored
+
+    # A historical render/package is not current delivery evidence when the
+    # episode's present production facts require attention.  The project home
+    # must never turn a previously delivered artifact into a false green state
+    # after its working media, timeline, or production plan has changed.
+    if bool(episode.get("_production_attention")):
+        return "NEEDS_UPDATE"
+
+    render_approved = bool(render_id) and review_decision == "APPROVED" and not review_stale
+    delivery_verified = delivery_status == "VERIFIED"
+    delivery_approved = delivery_verified and delivery_review == "APPROVED"
+    if delivery_approved and (render_approved or review_decision is None):
+        return "DELIVERED"
+    if render_approved:
+        return "APPROVED"
+    return "IN_PROGRESS"
+
+
+def _normalize_episode(episode: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(episode)
+    normalized["production_status"] = derive_episode_production_status(episode)
+    for key in _EPISODE_EVIDENCE_KEYS:
+        normalized.pop(key, None)
+    return normalized
+
+
+def _normalize_seasons(seasons: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {**season, "episodes": [_normalize_episode(episode) for episode in season.get("episodes", [])]}
+        for season in seasons
+    ]
 
 
 class ProductContextQueryService:
@@ -40,9 +100,10 @@ class ProductContextQueryService:
     def project_overview(self, project_id: str) -> dict[str, Any]:
         facts = self.reader.project_overview_facts(project_id)
         milestones = facts["milestones"]
-        episodes = [episode for season in facts["seasons"] for episode in season["episodes"]]
+        seasons = _normalize_seasons(facts["seasons"])
+        episodes = [episode for season in seasons for episode in season["episodes"]]
         unfinished = next(
-            (episode for episode in episodes if str(episode["production_status"]).upper() not in {"DELIVERED", "APPROVED"}),
+            (episode for episode in episodes if str(episode.get("production_status") or "").upper() not in {"DELIVERED", "APPROVED"}),
             episodes[0] if episodes else None,
         )
         next_action = self._next_action(project_id, milestones, unfinished)
@@ -59,7 +120,7 @@ class ProductContextQueryService:
             "project": facts["project"],
             "next_action": next_action,
             "blockers": blockers,
-            "seasons": facts["seasons"],
+            "seasons": seasons,
             "recent_activity": facts["recent_activity"],
             "observed_at": datetime.now(UTC).isoformat(),
             "read_only": True,
@@ -90,7 +151,7 @@ class ProductContextQueryService:
                 continue
             titles = {
                 "episode_count": ("建立季度与分集", "先确定系列结构，后续故事与生产才有明确归属。", "管理系列结构"),
-                "reviewable_story_draft_count": ("导入并拆解故事", "从原文建立可审阅、可追溯的故事事实。", "进入故事"),
+                "reviewable_story_draft_count": ("导入小说并生成全剧草案", "从原文一次生成可审阅的分集、故事圣经、资产档案与镜头草稿。", "开始一键分析"),
                 "active_story_asset_count": ("建立核心角色和场景", "把拆解提案确认成全剧唯一资产。", "进入资产"),
                 "production_plan_count": ("确认生产规格", "选择当前项目的制作默认值和交付约束。", "配置生产"),
                 "published_profile_binding_count": ("绑定创作能力", "为项目选择已发布的图像、视频和声音能力。", "配置能力"),

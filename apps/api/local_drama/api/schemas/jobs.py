@@ -51,5 +51,20 @@ class ArtifactPromoteRequest(BaseModel):
     stage: str = Field(default="PROXY", min_length=1, max_length=24)
 
 
+class ArtifactImageTransformRequest(BaseModel):
+    transform: str = Field(default="HORIZONTAL_MIRROR", pattern="^HORIZONTAL_MIRROR$")
+    purpose: str = Field(default="ASSET_REFERENCE", min_length=1, max_length=64)
+    stage: str = Field(default="KEYFRAME", min_length=1, max_length=24)
+
+
 class JobCloneRequest(BaseModel):
     input_overrides: dict[str, Any] = Field(default_factory=dict)
+
+
+class JobBatchActionRequest(BaseModel):
+    job_ids: list[str] | None = None
+    project_id: str | None = None
+
+
+class JobBatchDeleteRequest(BaseModel):
+    job_ids: list[str] = Field(default_factory=list)

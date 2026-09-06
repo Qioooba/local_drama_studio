@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from local_drama.application.h3_workflows import H3WorkflowFactory
 from local_drama.application.local_llm import LocalLLMService
 from local_drama.application.workflows import WorkflowService
+from local_drama.application.workflow_definitions import WorkflowDefinitionService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.generation_contracts import CameraPlan, PerformanceBinding, TimedDirection, resolve_camera_plan
 from local_drama.infrastructure.comfy import ComfyClient
@@ -29,6 +30,28 @@ class _OfflineComfyContract:
 
     def object_info(self) -> dict[str, object]:
         return {"LoadImage": {}, "SaveImage": {}}
+
+
+def test_invalid_installed_model_blocks_workflow_publication(workspace, database):
+    compiled = WorkflowDefinitionService(workspace).instantiate("QWEN_IDENTITY_3", {})
+    service = WorkflowService(database, workspace)
+    version = service.register_package("invalid_model_names", "Invalid model names", compiled["workflow"], compiled["contract"], compiled["node_bindings"], compiled["runtime_contract"])
+
+    class Runtime:
+        base_url = "http://127.0.0.1:8188"
+
+        def object_info(self):
+            nodes = {node["class_type"]: {} for node in compiled["workflow"].values()}
+            nodes["CLIPLoader"] = {"input": {"required": {"clip_name": [["Qwen\\clip.safetensors"]], "type": [["qwen_image"]]}, "optional": {"device": [["default"]]}}}
+            return nodes
+
+    validation = service.validate_against_comfy(version["id"], Runtime())
+    assert validation["status"] == "BLOCKED"
+    assert validation["schema_errors"][0]["input"] == "clip_name"
+    assert validation["schema_errors"][0]["allowed_values"] == ["Qwen\\clip.safetensors"]
+    with pytest.raises(DomainRuleError) as blocked:
+        service.publish(version["id"], validation["validation_id"])
+    assert blocked.value.code == "WORKFLOW_VALIDATION_REQUIRED"
 
 
 class _OfflineAutogrowContract:

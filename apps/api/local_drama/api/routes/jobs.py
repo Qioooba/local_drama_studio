@@ -12,7 +12,10 @@ from fastapi.routing import APIRoute
 
 from local_drama.api.schemas.jobs import (
     ArtifactPromoteRequest,
+    ArtifactImageTransformRequest,
     ArtifactRegisterRequest,
+    JobBatchActionRequest,
+    JobBatchDeleteRequest,
     JobClaimRequest,
     JobCloneRequest,
     JobCompleteRequest,
@@ -109,6 +112,22 @@ async def complete(attempt_id: str, payload: JobCompleteRequest, request: Reques
         raise api_error_from_domain(error) from error
 
 
+@router.post("/jobs/{job_id}:pause", operation_id="pauseJob")
+async def pause(job_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"job": service(request).pause(job_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/jobs/{job_id}:resume", operation_id="resumeJob")
+async def resume(job_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"job": service(request).resume(job_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.post("/jobs/{job_id}:cancel", operation_id="cancelJob")
 async def cancel(job_id: str, request: Request) -> dict[str, object]:
     try:
@@ -121,6 +140,46 @@ async def cancel(job_id: str, request: Request) -> dict[str, object]:
 async def retry(job_id: str, request: Request) -> dict[str, object]:
     try:
         return {"job": service(request).retry(job_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/jobs:batch-pause", operation_id="batchPauseJobs")
+async def batch_pause(payload: JobBatchActionRequest, request: Request) -> dict[str, object]:
+    try:
+        return service(request).batch_pause(job_ids=payload.job_ids, project_id=payload.project_id)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/jobs:batch-resume", operation_id="batchResumeJobs")
+async def batch_resume(payload: JobBatchActionRequest, request: Request) -> dict[str, object]:
+    try:
+        return service(request).batch_resume(job_ids=payload.job_ids, project_id=payload.project_id)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/jobs:batch-cancel", operation_id="batchCancelJobs")
+async def batch_cancel(payload: JobBatchActionRequest, request: Request) -> dict[str, object]:
+    try:
+        return service(request).batch_cancel(job_ids=payload.job_ids, project_id=payload.project_id)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/jobs:batch-retry", operation_id="batchRetryJobs")
+async def batch_retry(payload: JobBatchActionRequest, request: Request) -> dict[str, object]:
+    try:
+        return service(request).batch_retry(job_ids=payload.job_ids, project_id=payload.project_id)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/jobs:batch-delete", operation_id="batchDeleteJobs")
+async def batch_delete(payload: JobBatchDeleteRequest, request: Request) -> dict[str, object]:
+    try:
+        return service(request).batch_delete(job_ids=payload.job_ids)
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -167,6 +226,22 @@ async def promote_artifact(artifact_id: str, payload: ArtifactPromoteRequest, re
             artifact_id,
             purpose=payload.purpose,
             media_kind=payload.media_kind,
+            stage=payload.stage,
+        )
+        media["derivative_jobs"] = media_service.submit_default_derivatives(str(media["media_version_id"]))
+        return {"media": media}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/artifacts/{artifact_id}:transform-image", status_code=201, operation_id="transformJobArtifactImage")
+def transform_artifact_image(artifact_id: str, payload: ArtifactImageTransformRequest, request: Request) -> dict[str, object]:
+    try:
+        media_service = MediaService(request.app.state.database, request.app.state.settings)
+        media = media_service.transform_job_image_artifact(
+            artifact_id,
+            transform=payload.transform,
+            purpose=payload.purpose,
             stage=payload.stage,
         )
         media["derivative_jobs"] = media_service.submit_default_derivatives(str(media["media_version_id"]))

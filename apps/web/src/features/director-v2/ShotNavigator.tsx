@@ -6,6 +6,7 @@ import { persistDirectorBatch, readDirectorBatch } from "./directorBatchState";
 import type { ShotStudioShotNavItem } from "../../generated/api";
 import { routes } from "../../app/routeRegistry";
 import { MediaThumbnail } from "../shared/MediaThumbnail";
+import { StoryboardBatchActions } from "./StoryboardBatchActions";
 
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: "草稿",
@@ -15,6 +16,11 @@ const STATUS_LABELS: Record<string, string> = {
   FAILED: "失败",
   SELECTED: "已选中",
   APPROVED: "已批准",
+};
+const OPERATION_STATUS_LABELS: Record<string, string> = {
+  MISSING: "待生成", BLOCKED: "已阻塞", QUEUED: "已排队", RUNNING: "生成中",
+  FAILED: "失败", NEEDS_ATTENTION: "需处理", ORPHANED: "待恢复", STALE: "已过期",
+  CURRENT: "当前", OK: "正常", CONFLICT: "有冲突",
 };
 
 type ShotNavigatorProps = {
@@ -39,6 +45,7 @@ function FrameIcon() {
 
 export function ShotNavigator({ shots, selectedId, projectId, episodeId, totalShots = shots.length, windowStart = 0, windowEnd = shots.length, canEdit = false, onChanged }: ShotNavigatorProps) {
   const [query, setQuery] = useState("");
+  const [compactView, setCompactView] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedShots, setSelectedShots] = useState<Set<string>>(() => new Set());
   const [selectionOnly, setSelectionOnly] = useState(false);
@@ -133,7 +140,21 @@ export function ShotNavigator({ shots, selectedId, projectId, episodeId, totalSh
 
   return (
     <aside className="director-shot-nav" aria-label="镜头导航">
-      <div className="director-zone-title"><div><span>镜头导航</span><strong>{shots.length === totalShots ? `${totalShots} 镜` : `${windowStart + 1}–${windowEnd} / ${totalShots} 镜`}</strong></div></div>
+      <div className="director-zone-title">
+        <div>
+          <span>镜头导航</span>
+          <strong>{shots.length === totalShots ? `${totalShots} 镜` : `${windowStart + 1}–${windowEnd} / ${totalShots} 镜`}</strong>
+        </div>
+        <button
+          type="button"
+          className={`director-view-mode-btn${compactView ? " active" : ""}`}
+          aria-pressed={compactView}
+          title={compactView ? "切换为卡片视图" : "切换为紧凑列表"}
+          onClick={() => setCompactView(!compactView)}
+        >
+          {compactView ? "卡片" : "紧凑"}
+        </button>
+      </div>
       {shots.length !== totalShots && <small className="director-nav-window-note">当前为所选镜头附近的有界窗口；切换镜头会自动加载相邻范围。</small>}
       <label className="director-search"><span className="sr-only">搜索镜头</span><input type="search" value={query} onChange={(event) => { setQuery(event.target.value); setSelectionOnly(false); }} placeholder="搜索镜号或内容" /></label>
       <div className="director-nav-filters" aria-label="筛选镜头">{[["all", "全部"], ["failed", "失败"], ["stale", "已过期"], ["review", "待审"]].map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value && !selectionOnly} onClick={() => chooseFilter(value)}>{label}</button>)}</div>
@@ -147,10 +168,11 @@ export function ShotNavigator({ shots, selectedId, projectId, episodeId, totalSh
           <Link to={routes.postReview(projectId, episodeId)}>审核入口</Link>
           <Link to={routes.episodeProduction(projectId, episodeId)}>生产入口</Link>
         </div>}
+        {selectedShots.size > 0 && <StoryboardBatchActions episodeId={episodeId} selectedShotIds={selectedForBatch.map((shot) => shot.id)} disabled={!canEdit} onChanged={onChanged} />}
         <small>{reorderEnabled ? "拖动手柄或用上下按钮提交正式排序。" : "筛选/搜索时暂停排序；批量入口不会伪造批量提交。"}</small>
         {reorderMutation.error && <p role="alert">排序失败：{reorderMutation.error instanceof Error ? reorderMutation.error.message : String(reorderMutation.error)}</p>}
       </div>
-      <div className="director-shot-list" aria-busy={reorderMutation.isPending}>
+      <div className={`director-shot-list${compactView ? " compact-mode" : ""}`} aria-busy={reorderMutation.isPending}>
         {grouped.map((group) => <section className="director-scene-group" key={`${group.key}-${group.shots[0]?.id ?? "empty"}`} aria-label={group.label}><h3><span>{group.label}</span><small>{group.shots.length} 镜</small></h3>{group.shots.map((shot) => {
           const status = STATUS_LABELS[shot.status] ?? shot.status;
           const shotIndex = shots.findIndex((item) => item.id === shot.id);
@@ -171,9 +193,21 @@ export function ShotNavigator({ shots, selectedId, projectId, episodeId, totalSh
                 <button type="button" aria-label={`上移镜头 ${shot.code}`} disabled={!reorderEnabled || shotIndex <= 0 || reorderMutation.isPending} onClick={() => moveRelative(shot.id, -1)}>↑</button>
                 <button type="button" aria-label={`下移镜头 ${shot.code}`} disabled={!reorderEnabled || shotIndex >= shots.length - 1 || reorderMutation.isPending} onClick={() => moveRelative(shot.id, 1)}>↓</button>
               </div>
-              <Link className={`director-shot-card${selectedId === shot.id ? " selected" : ""}`} aria-current={selectedId === shot.id ? "true" : undefined} to={routes.shotStudio(projectId, episodeId, shot.id)}>
+              <Link
+                className={`director-shot-card${selectedId === shot.id ? " selected" : ""}`}
+                aria-current={selectedId === shot.id ? "true" : undefined}
+                to={{
+                  pathname: routes.shotStudio(projectId, episodeId, shot.id),
+                  search: searchParams.toString() ? `?${searchParams.toString()}` : "",
+                }}
+                onClick={(event) => {
+                  if (selectedId === shot.id) {
+                    event.preventDefault();
+                  }
+                }}
+              >
                 <span className="director-shot-thumb">{shot.thumbnail_media_version_id ? <MediaThumbnail src={thumbnailUrl(shot.thumbnail_media_version_id)} alt="" fallbackLabel="镜头缩略图待生成" loading="lazy" decoding="async" /> : <FrameIcon />}</span>
-                <span className="director-shot-copy"><span><strong>{shot.code}</strong><small>{shot.job_status ?? shot.continuity_status}</small></span><span>{shot.group_code ? `${shot.group_code} · ${shot.group_title ?? "镜头组"}` : shot.scene_code ? `${shot.scene_code} · ${shot.scene_title ?? "场景"}` : "镜头生产单元"}</span><small className={`shot-state state-${shot.status.toLowerCase()}`}>{status}</small></span>
+                <span className="director-shot-copy"><span><strong>{shot.code}</strong><small>{OPERATION_STATUS_LABELS[String(shot.job_status ?? shot.continuity_status ?? "").toUpperCase()] ?? "状态待确认"}</small></span><span>{shot.group_code ? `${shot.group_code} · ${shot.group_title ?? "镜头组"}` : shot.scene_code ? `${shot.scene_code} · ${shot.scene_title ?? "场景"}` : "镜头生产单元"}</span><small className={`shot-state state-${shot.status.toLowerCase()}`}>{status}</small></span>
               </Link>
             </div>
           );

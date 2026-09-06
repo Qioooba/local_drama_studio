@@ -36,6 +36,7 @@ function ProjectPreview({ project }: { project: HomeProject }) {
       emptyLabel="暂无图片或视频"
       objectFit="cover"
       className="home-project-row__media"
+      loading="eager"
     />
     {src && project.preview_media_kind === "VIDEO" ? <small className="home-project-row__media-kind">视频</small> : null}
   </div>;

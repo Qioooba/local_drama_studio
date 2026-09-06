@@ -4,10 +4,10 @@ import { routes } from "../app/routeRegistry";
 import { StudioIcon } from "../components/icons";
 import { CommandPalette } from "../features/commands/CommandPalette";
 import type { CommandContext, StudioCommand } from "../features/commands/commandRegistry";
+import { projectDisplayLabels, type ProjectLabelInput } from "../features/shared/projectLabels";
 import { LocalRuntimeIndicator } from "../features/status-v2/LocalRuntimeIndicator";
 import "./shell-toolbar.css";
 
-type ProjectOption = { id: string; title: string };
 type EpisodeOption = { id: string; title: string };
 type SeasonOption = { id: string; title: string; episodes: EpisodeOption[] };
 
@@ -22,8 +22,9 @@ type ShellToolbarProps = {
   onProjectChange: (projectId: string) => void;
   onToggleMobileNav: () => void;
   projectId?: string;
-  projects: ProjectOption[];
+  projects: ProjectLabelInput[];
   seasons: SeasonOption[];
+  showEpisodeSwitcher?: boolean;
 };
 
 /**
@@ -44,13 +45,15 @@ export function ShellToolbar({
   projectId,
   projects,
   seasons,
+  showEpisodeSwitcher = true,
 }: ShellToolbarProps) {
+  const projectLabels = projectDisplayLabels(projects);
   return <div className="shell-toolbar" role="group" aria-label="全局工具">
     <button
       ref={mobileNavTriggerRef}
       type="button"
       className="mobile-nav-toggle"
-      aria-label="打开主导航"
+      aria-label={mobileNavOpen ? "收起主导航" : "打开主导航"}
       aria-expanded={mobileNavOpen}
       onClick={onToggleMobileNav}
     >
@@ -67,17 +70,19 @@ export function ShellToolbar({
         <span>项目</span>
         <select
           aria-label="当前项目"
+          title="当前项目"
           value={projectId ?? ""}
           onChange={(event) => onProjectChange(event.target.value)}
         >
           <option value="">全部项目</option>
-          {projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}
+          {projects.map((project) => <option key={project.id} value={project.id}>{projectLabels.get(project.id)}</option>)}
         </select>
       </label>
-      {projectId && <label className="shell-context-field shell-context-field--episode">
+      {projectId && showEpisodeSwitcher && <label className="shell-context-field shell-context-field--episode">
         <span>分集</span>
         <select
           aria-label="当前分集"
+          title="当前分集"
           value={episodeId ?? ""}
           disabled={episodeCatalogPending || seasons.length === 0}
           onChange={(event) => onEpisodeChange(event.target.value)}
@@ -91,7 +96,7 @@ export function ShellToolbar({
     </div>
 
     <div className="shell-system-tools" role="group" aria-label="系统状态与任务">
-      <Link className="shell-system-action" to={routes.systemJobs(projectId)} aria-label="打开任务中心">
+      <Link className="shell-system-action" to={routes.systemJobs(projectId)} aria-label="打开任务中心" title="任务中心">
         <StudioIcon name="activity" />
         <span>任务中心</span>
       </Link>

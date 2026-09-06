@@ -13,6 +13,17 @@ function durationLabel(durationMs: number | null) {
   return `${(durationMs / 1000).toFixed(2)}s`;
 }
 
+function candidateNumber(candidate: ShotStudioCandidate, candidates: ShotStudioCandidate[], fallbackIndex: number) {
+  const match = candidate.branch_reason?.match(/_CANDIDATE_(\d+)/i);
+  if (match) return Number(match[1]);
+  const roleCandidates = candidates.filter((c) => c.frame_role === candidate.frame_role);
+  if (roleCandidates.length > 1) {
+    const roleIdx = roleCandidates.findIndex((c) => c.media_version_id === candidate.media_version_id);
+    if (roleIdx >= 0) return roleIdx + 1;
+  }
+  return candidate.take_no ?? candidate.variant_no ?? fallbackIndex + 1;
+}
+
 export function CandidateCompareDialog({ candidates, initialCandidateId, onClose }: { candidates: ShotStudioCandidate[]; initialCandidateId?: string | null; onClose: () => void }) {
   const initial = useMemo(() => {
     const preferred = initialCandidateId ? candidates.find((candidate) => candidate.media_version_id === initialCandidateId) : undefined;
@@ -59,14 +70,39 @@ export function CandidateCompareDialog({ candidates, initialCandidateId, onClose
     <section className="compare-dialog" role="dialog" aria-modal="true" aria-labelledby="candidate-compare-title">
       <header><div><span className="director-kicker">2-up / 4-up Compare</span><h2 id="candidate-compare-title">并排比较候选</h2><p>同一组播放控制只影响这里的视频；采用与批准仍回到 Takes 区分别执行。</p></div><button ref={closeRef} type="button" className="compare-close" aria-label="关闭候选比较" onClick={onClose}>关闭</button></header>
       <div className="compare-picker" aria-label="选择比较候选">
-        {candidates.map((candidate, index) => <label key={candidate.media_version_id} className={selectedIds.includes(candidate.media_version_id) ? "selected" : ""}><input type="checkbox" checked={selectedIds.includes(candidate.media_version_id)} disabled={!selectedIds.includes(candidate.media_version_id) && selectedIds.length >= 4} onChange={() => toggleCandidate(candidate.media_version_id)} /><span>Take {candidate.take_no ?? index + 1}</span><small>{candidate.approved ? "已批准" : candidate.selected ? "已采用" : candidate.is_stale ? "已失效" : "待比较"}</small></label>)}
+        {candidates.map((candidate, index) => {
+          const num = candidateNumber(candidate, candidates, index);
+          const roleLabel = candidate.frame_role === "END_FRAME"
+            ? `尾帧 #${num}`
+            : candidate.frame_role === "FIRST_FRAME"
+              ? `首帧 #${num}`
+              : `Take ${candidate.take_no ?? num}`;
+          return (
+            <label key={candidate.media_version_id} className={selectedIds.includes(candidate.media_version_id) ? "selected" : ""}>
+              <input type="checkbox" checked={selectedIds.includes(candidate.media_version_id)} disabled={!selectedIds.includes(candidate.media_version_id) && selectedIds.length >= 4} onChange={() => toggleCandidate(candidate.media_version_id)} />
+              <span>{roleLabel}</span>
+              <small>{candidate.approved ? "已批准" : candidate.selected ? "已采用" : candidate.is_stale ? "已失效" : "待比较"}</small>
+            </label>
+          );
+        })}
       </div>
       <div className="compare-controls"><button type="button" onClick={() => void togglePlayback()} disabled={!selected.some((candidate) => candidate.media_kind === "VIDEO")}>{playing ? "全部暂停" : "全部播放"} <kbd>Space</kbd></button><button type="button" onClick={restart} disabled={!selected.some((candidate) => candidate.media_kind === "VIDEO")}>回到开头</button><span>已选择 {selected.length} / 4</span></div>
       <div className={`compare-grid compare-count-${selected.length}`}>
-        {selected.map((candidate, index) => <figure key={candidate.media_version_id}>
-          <div className="compare-media">{candidate.media_kind === "VIDEO" ? <video ref={(node) => { if (node) videoRefs.current.set(candidate.media_version_id, node); else videoRefs.current.delete(candidate.media_version_id); }} src={mediaProxyUrl(candidate.media_version_id)} data-original-src={mediaContentUrl(candidate.media_version_id)} poster={thumbnailUrl(candidate.media_version_id)} preload="none" muted playsInline onError={fallbackToOriginalVideo} onPlay={() => setPlaying(true)} onPause={() => { if ([...videoRefs.current.values()].every((video) => video.paused)) setPlaying(false); }} /> : <MediaThumbnail src={thumbnailUrl(candidate.media_version_id)} alt={`候选 ${index + 1}`} fallbackLabel="候选缩略图待生成" />}</div>
-          <figcaption><strong>Take {candidate.take_no ?? index + 1}</strong><span>{candidate.stage ?? "未知阶段"} · {durationLabel(candidate.duration_ms)}</span><span>{candidate.branch_reason || "原始候选"}</span>{candidate.is_stale && <em>输入已变化：{candidate.stale_reason ?? "需要重新生成"}</em>}</figcaption>
-        </figure>)}
+        {selected.map((candidate, index) => {
+          const masterIndex = candidates.findIndex((c) => c.media_version_id === candidate.media_version_id);
+          const num = candidateNumber(candidate, candidates, masterIndex >= 0 ? masterIndex : index);
+          const figureTitle = candidate.frame_role === "END_FRAME"
+            ? `尾帧 #${num}`
+            : candidate.frame_role === "FIRST_FRAME"
+              ? `首帧 #${num}`
+              : `Take ${candidate.take_no ?? num}`;
+          return (
+            <figure key={candidate.media_version_id}>
+              <div className="compare-media">{candidate.media_kind === "VIDEO" ? <video ref={(node) => { if (node) videoRefs.current.set(candidate.media_version_id, node); else videoRefs.current.delete(candidate.media_version_id); }} src={mediaProxyUrl(candidate.media_version_id)} data-original-src={mediaContentUrl(candidate.media_version_id)} poster={thumbnailUrl(candidate.media_version_id)} preload="none" muted playsInline onError={fallbackToOriginalVideo} onPlay={() => setPlaying(true)} onPause={() => { if ([...videoRefs.current.values()].every((video) => video.paused)) setPlaying(false); }} /> : <MediaThumbnail src={thumbnailUrl(candidate.media_version_id)} alt={`候选 ${index + 1}`} fallbackLabel="候选缩略图待生成" />}</div>
+              <figcaption><strong>{figureTitle}</strong><span>{candidate.stage ?? "未知阶段"} · {durationLabel(candidate.duration_ms)}</span><span>{candidate.branch_reason || "原始候选"}</span>{candidate.is_stale && <em>输入已变化：{candidate.stale_reason ?? "需要重新生成"}</em>}</figcaption>
+            </figure>
+          );
+        })}
         {selected.length === 0 && <div className="compare-empty">至少选择一个候选。最多可同时比较四个。</div>}
       </div>
     </section>

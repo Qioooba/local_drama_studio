@@ -75,9 +75,29 @@ def test_import_can_schedule_default_derivatives_without_duplicate_jobs(workspac
     service = MediaService(database, workspace)
     imported = service.import_file(str(project["id"]), source, schedule_derivatives=True)
     replayed = service.submit_default_derivatives(str(imported["media_version_id"]))
-    assert [job["input_snapshot"]["kind"] for job in imported["derivative_jobs"]] == ["THUMBNAIL", "FILMSTRIP", "PROXY"]
+    assert [(job["input_snapshot"]["kind"], job["input_snapshot"]["size"]) for job in imported["derivative_jobs"]] == [
+        ("THUMBNAIL", "small"), ("THUMBNAIL", "medium"), ("FILMSTRIP", "small"), ("PROXY", "small"),
+    ]
     assert [job["id"] for job in imported["derivative_jobs"]] == [job["id"] for job in replayed]
     assert all(job["idempotent_replay"] is True for job in replayed)
+
+
+def test_proxy_stage_video_also_schedules_creator_playback_proxy(workspace, database) -> None:
+    project = _project(workspace, database)
+    source = workspace.work_root / "proxy-stage-source.mp4"
+    subprocess.run(
+        [workspace.ffmpeg_path, "-f", "lavfi", "-i", "color=c=purple:s=160x90:d=1", "-pix_fmt", "yuv420p", "-an", "-y", str(source)],
+        check=True,
+        capture_output=True,
+    )
+
+    imported = MediaService(database, workspace).import_file(
+        str(project["id"]), source, stage="PROXY", schedule_derivatives=True
+    )
+
+    assert [(job["input_snapshot"]["kind"], job["input_snapshot"]["size"]) for job in imported["derivative_jobs"]] == [
+        ("THUMBNAIL", "small"), ("THUMBNAIL", "medium"), ("FILMSTRIP", "small"), ("PROXY", "small"),
+    ]
 
 
 def test_proxy_get_is_read_only_and_supports_range_after_worker_materializes(workspace, database) -> None:
@@ -145,12 +165,12 @@ def test_project_derivative_backfill_is_bounded_and_idempotent(workspace, databa
         )
     assert first.status_code == replay.status_code == second.status_code == 202
     assert first.json()["backfill"]["scanned"] == 1
-    assert len(first.json()["backfill"]["jobs"]) == 3
-    assert first.json()["backfill"]["submitted"] == 3
+    assert len(first.json()["backfill"]["jobs"]) == 4
+    assert first.json()["backfill"]["submitted"] == 4
     assert first.json()["backfill"]["replayed"] == 0
     assert first.json()["backfill"]["has_more"] is True
     assert first.json()["backfill"]["next_cursor"] == 1
     assert replay.json()["backfill"]["submitted"] == 0
-    assert replay.json()["backfill"]["replayed"] == 3
-    assert second.json()["backfill"]["submitted"] == 3
+    assert replay.json()["backfill"]["replayed"] == 4
+    assert second.json()["backfill"]["submitted"] == 4
     assert second.json()["backfill"]["has_more"] is False

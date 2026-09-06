@@ -37,7 +37,7 @@ const DEFAULT_STATE: CreationState = {
   code: "",
   seasons: 1,
   episodes: 10,
-  durationSeconds: 90,
+  durationSeconds: 120,
   format: DEFAULT_PROJECT_FORMAT,
   language: "zh-CN",
   subtitleMode: "BOTH",
@@ -69,11 +69,16 @@ const blockerLabels: Record<string, string> = {
   DELIVERY_TARGET_NOT_BOUND: "交付目标将在首次交付前补齐",
 };
 
-const checkLabels: Record<string, string> = {
-  PROJECT_ROOT_AVAILABLE: "项目目录可用",
-  PROJECT_CODE_AVAILABLE: "项目标识可用",
-  DISK_CAPACITY: "本机空间充足",
+const creationChecks: Record<string, { passed: string; failed: string }> = {
+  PROJECT_ROOT_AVAILABLE: { passed: "项目目录可用", failed: "项目目录已存在，请修改作品标题后重新检查" },
+  PROJECT_CODE_AVAILABLE: { passed: "项目标识可用", failed: "项目标识已被使用，请修改作品标题后重新检查" },
+  PROJECT_ROOT_SPACE: { passed: "本机空间充足", failed: "项目存储空间不足，请释放空间后重新检查" },
 };
+
+function creationCheckLabel(code: string, passed: boolean): string {
+  const check = creationChecks[code];
+  return check?.[passed ? "passed" : "failed"] ?? (passed ? "环境检查通过" : "环境检查未通过，请查看本机诊断");
+}
 
 function StepIndicator({ current }: { current: Step }) {
   const steps = [
@@ -203,9 +208,9 @@ export function ProjectCreateWizard({ onCreated }: {
         {preflight.isError && <div className="inline-error" role="alert"><strong>自动检查未完成</strong><p>{preflight.error instanceof Error ? preflight.error.message : String(preflight.error)}</p><button type="button" className="secondary" onClick={() => preflight.mutate(payload)}>重新检查</button></div>}
         {plan && <div className={`creator-preflight-result ${plan.status === "BLOCKED" ? "blocked" : "ready"}`}>
           <div className="creator-preflight-heading"><strong>{plan.status === "BLOCKED" ? "需要先处理一项问题" : "可以创建"}</strong><span className={`status-pill ${plan.status === "BLOCKED" ? "danger" : "state-ready"}`}>{plan.status === "READY" ? "制作配置就绪" : plan.status === "READY_WITH_CONFIGURATION_BLOCKERS" ? "创作就绪" : "已阻塞"}</span></div>
-          <ul className="creator-check-list">{plan.checks.map((check) => <li key={check.code} className={check.passed ? "passed" : "failed"}><span aria-hidden="true">{check.passed ? "✓" : "!"}</span>{checkLabels[check.code] ?? check.code}</li>)}</ul>
+          <ul className="creator-check-list">{plan.checks.map((check) => <li key={check.code} className={check.passed ? "passed" : "failed"}><span aria-hidden="true">{check.passed ? "✓" : "!"}</span>{creationCheckLabel(check.code, check.passed)}</li>)}</ul>
           <p>预计初始占用 {formatBytes(plan.estimated_bytes)}；目录与技术标识由系统管理。</p>
-          {plan.blockers.length > 0 && <ul className="creator-blocker-list">{plan.blockers.map((blocker) => <li key={blocker}>{blockerLabels[blocker] ?? blocker}</li>)}</ul>}
+          {plan.blockers.length > 0 && <ul className="creator-blocker-list">{plan.blockers.map((blocker) => <li key={blocker}>{blockerLabels[blocker] ?? creationCheckLabel(blocker, false)}</li>)}</ul>}
           {plan.configuration_blockers.length > 0 && <details className="creator-advanced-details"><summary>稍后需要完成的制作配置</summary><ul>{plan.configuration_blockers.map((blocker) => <li key={blocker}>{blockerLabels[blocker] ?? blocker}</li>)}</ul></details>}
         </div>}
         {create.isError && <p className="inline-error" role="alert">创建失败：{create.error instanceof Error ? create.error.message : String(create.error)}</p>}

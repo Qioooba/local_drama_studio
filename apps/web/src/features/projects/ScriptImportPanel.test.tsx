@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { cancelJob, commitImportSession, deleteJob, getImportSessionParagraphs, listCapabilityOptions, listEpisodes, listJobs, listSeasons, retryJob, uploadScriptDocument, type CapabilityOption, type CapabilityOptions } from "../../generated/api";
+import { cancelJob, commitImportSession, deleteJob, getImportSessionParagraphs, getLatestProjectScriptImport, listCapabilityOptions, listEpisodes, listJobs, listSeasons, retryJob, uploadScriptDocument, type CapabilityOption, type CapabilityOptions } from "../../generated/api";
 import { requestScriptBreakdown } from "../story-workspace-v2/breakdownClient";
 import { ScriptImportPanel } from "./ScriptImportPanel";
 import { queryKeys } from "../../query/queryKeys";
@@ -11,6 +11,7 @@ import { queryKeys } from "../../query/queryKeys";
 vi.mock("../../generated/api", () => ({
   commitImportSession: vi.fn(),
   getImportSessionParagraphs: vi.fn(),
+  getLatestProjectScriptImport: vi.fn(),
   listEpisodes: vi.fn(),
   listJobs: vi.fn(),
   listCapabilityOptions: vi.fn(),
@@ -106,6 +107,7 @@ async function uploadDocument(name = "episode.md") {
 
 describe("ScriptImportPanel", () => {
   beforeEach(() => {
+    vi.mocked(getLatestProjectScriptImport).mockReset().mockResolvedValue({ latest: null });
     vi.mocked(uploadScriptDocument).mockReset().mockResolvedValue({ import: imported });
     vi.mocked(commitImportSession).mockReset().mockResolvedValue({
       commit: {

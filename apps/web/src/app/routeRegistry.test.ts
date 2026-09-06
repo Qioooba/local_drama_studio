@@ -14,7 +14,7 @@ describe("canonical route registry", () => {
     expect(routes.postReview("p1", "e1")).toBe("/projects/p1/episodes/e1/post/review");
     expect(routes.postAudio("p1", "e1")).toBe("/projects/p1/episodes/e1/post/audio");
     expect(routes.postEdit("p1", "e1")).toBe("/projects/p1/episodes/e1/post/edit");
-    expect(routes.systemCapabilities("p1")).toBe("/system/capabilities");
+    expect(routes.systemCapabilities("p1")).toBe("/projects/p1/models");
     expect(routes.systemJobs("p1")).toBe("/system/jobs?project=p1");
   });
 
@@ -24,6 +24,7 @@ describe("canonical route registry", () => {
     expect(parseRouteContext("/projects/p1/story/plans")).toMatchObject({ routeId: "adaptationPlans", scope: "PROJECT", projectId: "p1" });
     expect(parseRouteContext("/projects/p1/story/plans/plan1")).toMatchObject({ routeId: "adaptationPlan", scope: "PROJECT", projectId: "p1" });
     expect(parseRouteContext("/projects/p1/settings/quality").routeId).toBe("settings");
+    expect(parseRouteContext("/projects/p1/assets")).toEqual({ routeId: "assets", scope: "PROJECT", projectId: "p1", episodeId: null, shotId: null });
     expect(parseRouteContext("/system/capabilities").routeId).toBe("systemCapabilities");
     expect(parseRouteContext("/projects/p1/episodes/e1/studio/s1")).toEqual({ routeId: "shotStudioShot", scope: "EPISODE", projectId: "p1", episodeId: "e1", shotId: "s1" });
     expect(parseRouteContext("/projects/p1/episodes/e1/production").routeId).toBe("episodeProduction");

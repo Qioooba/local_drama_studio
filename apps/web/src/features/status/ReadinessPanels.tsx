@@ -357,7 +357,8 @@ export function G8ReadinessPanel({ readiness }: { readiness: G8Readiness }) {
               {check.count !== undefined && (
                 <small>{check.count} 项真实证据</small>
               )}
-              <small>{g8CheckDetails[check.code] ?? "由系统核对当前制作证据"}</small>
+              <small>{check.code === "DIALOGUE_BGM_SFX" && (check.required_tracks?.length ?? 0) === 0 ? "本集无显式对白、配乐或音效 cue，不要求人为制造音轨" : g8CheckDetails[check.code] ?? "由系统核对当前制作证据"}</small>
+              {check.code === "DIALOGUE_BGM_SFX" && <small>本集要求：{check.required_tracks?.length ? check.required_tracks.join("、") : "无"}；已观察：{check.observed_tracks?.length ? check.observed_tracks.join("、") : "无"}</small>}
             </div>
           </li>
         ))}

@@ -1,0 +1,132 @@
+.episode-context-bar {
+  position: sticky;
+  z-index: 6;
+  top: 60px;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 0 18px;
+  padding: 8px;
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, .2));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-raised, #111620) 94%, transparent);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .18);
+  backdrop-filter: blur(18px) saturate(130%);
+}
+
+.episode-context-bar__switcher,
+.episode-context-bar__stages { display: flex; min-width: 0; align-items: center; gap: 5px; }
+
+.episode-context-bar__switcher button {
+  width: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+.episode-context-bar__switcher label { min-width: 0; }
+.episode-context-bar__switcher select {
+  width: clamp(220px, 26vw, 390px);
+  min-height: 38px;
+  padding-block: 0;
+  border-color: transparent;
+  color: var(--text);
+  background-color: rgba(255, 255, 255, .035);
+  font-weight: 700;
+  text-overflow: ellipsis;
+}
+
+.episode-context-bar__count {
+  padding: 0 6px;
+  color: var(--text-muted, #8f98a8);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.episode-context-bar__stages { flex: 0 0 auto; }
+.episode-context-bar__stages a {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border-radius: 8px;
+  color: var(--text-muted, #a7b0bf);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.episode-context-bar__stages a > span {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 10px;
+  opacity: .72;
+}
+
+.episode-context-bar__stages a:hover { color: var(--text); background: var(--surface-hover); }
+.episode-context-bar__stages a.active { color: var(--text); background: var(--accent-surface, rgba(124, 92, 255, .2)); box-shadow: inset 0 0 0 1px rgba(169, 149, 255, .28); }
+.episode-context-bar__stages a.active > span { color: var(--on-creative-compact); border-color: #b7a8ff; background: #b7a8ff; opacity: 1; }
+
+@media (max-width: 1040px) {
+  .episode-context-bar { position: static; align-items: stretch; flex-direction: column; }
+  .episode-context-bar__switcher select { width: min(100%, 520px); }
+  .episode-context-bar__switcher label { flex: 1 1 auto; }
+  .episode-context-bar__switcher label select { width: 100%; }
+  .episode-context-bar__stages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .episode-context-bar__stages a { justify-content: center; }
+}
+
+@media (max-width: 620px) {
+  .episode-context-bar { margin-inline: -6px; }
+  .episode-context-bar__count { display: none; }
+  .episode-context-bar__stages { gap: 3px; }
+  .episode-context-bar__stages a { min-width: 0; justify-content: center; padding-inline: 6px; font-size: 11px; }
+  .episode-context-bar__stages a > span { display: none; }
+}
+
+/* Studio Desk Mode: streamlined single-line episode strip */
+.studio-desk-mode > .episode-context-bar {
+  position: static;
+  margin: 0;
+  padding: 4px 14px;
+  border-radius: 0;
+  border-inline: 0;
+  border-top: 0;
+  border-bottom: 1px solid var(--desk-line, #2b3444);
+  background: var(--desk-dark-2, #111722);
+  min-height: 40px;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.studio-desk-mode > .episode-context-bar .episode-context-bar__switcher button {
+  width: 28px;
+  min-width: 28px;
+  min-height: 28px;
+}
+.studio-desk-mode > .episode-context-bar .episode-context-bar__switcher select {
+  min-height: 28px;
+  height: 28px;
+  font-size: 12px;
+}
+.studio-desk-mode > .episode-context-bar .episode-context-bar__stages a {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 11.5px;
+  gap: 5px;
+}
+.studio-desk-mode > .episode-context-bar .episode-context-bar__stages a > span {
+  width: 16px;
+  height: 16px;
+  font-size: 9px;
+}

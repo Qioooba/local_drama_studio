@@ -625,3 +625,59 @@ def test_worker_process_kill_is_reconciled_without_duplicate_attempt(workspace, 
     recovered_job = service.get_job(str(job["id"]))
     assert recovered_job["attempts"][0]["state"] == "ORPHANED"
     assert recovered_job["state"] == "QUEUED"
+
+
+def test_job_pause_resume_and_batch_operations(workspace, database) -> None:
+    project = _project(workspace, database, "g5_pause_resume")
+    project_id = str(project["id"])
+    service = JobService(database, workspace)
+    job1 = _create(service, project_id, "pause-1")
+    job2 = _create(service, project_id, "pause-2")
+    job3 = _create(service, project_id, "pause-3")
+
+    # 1. Single pause
+    paused1 = service.pause(str(job1["id"]))
+    assert paused1["state"] == "PAUSED"
+    # Worker cannot claim paused job
+    claim = service.claim("worker-1", ["CPU"])
+    assert claim is not None and claim["job"]["id"] == job2["id"]
+    service.complete(str(claim["attempt"]["id"]), str(claim["attempt"]["lease_token"]), "worker-1", success=True)
+
+    # 2. Single resume
+    resumed1 = service.resume(str(job1["id"]))
+    assert resumed1["state"] == "QUEUED"
+    claim = service.claim("worker-1", ["CPU"])
+    assert claim is not None and claim["job"]["id"] == job1["id"]
+    service.complete(str(claim["attempt"]["id"]), str(claim["attempt"]["lease_token"]), "worker-1", success=True)
+
+    # 3. Batch pause & batch resume via API client
+    with TestClient(create_app(workspace)) as client:
+        # Pause job3
+        res = client.post(f"/api/v1/jobs/{job3['id']}:pause")
+        assert res.status_code == 200
+        assert res.json()["job"]["state"] == "PAUSED"
+
+        # Resume job3
+        res = client.post(f"/api/v1/jobs/{job3['id']}:resume")
+        assert res.status_code == 200
+        assert res.json()["job"]["state"] == "QUEUED"
+
+        # Batch pause
+        res = client.post("/api/v1/jobs:batch-pause", json={"job_ids": [job3["id"]]})
+        assert res.status_code == 200
+        assert res.json()["paused_count"] == 1
+
+        # Batch resume
+        res = client.post("/api/v1/jobs:batch-resume", json={"job_ids": [job3["id"]]})
+        assert res.status_code == 200
+        assert res.json()["resumed_count"] == 1
+
+        # Batch cancel
+        res = client.post("/api/v1/jobs:batch-cancel", json={"job_ids": [job3["id"]]})
+        assert res.status_code == 200
+        assert res.json()["cancelled_count"] == 1
+
+        # Batch delete
+        res = client.post("/api/v1/jobs:batch-delete", json={"job_ids": [job3["id"]]})
+        assert res.status_code == 200
+        assert res.json()["deleted_count"] == 1

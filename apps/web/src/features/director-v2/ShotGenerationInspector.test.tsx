@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createShotGenerationIntentV2,
   preflightShotGenerationV2,
@@ -9,13 +9,17 @@ import {
   type ShotStudio,
 } from "../../generated/api";
 import { ShotGenerationInspector } from "./ShotGenerationInspector";
+import { planShotKeyframeBatch, submitShotKeyframeBatch } from "./shotKeyframeBatchApi";
 
 vi.mock("../../generated/api", () => ({
   createShotGenerationIntentV2: vi.fn(),
   preflightShotGenerationV2: vi.fn(),
   submitShotGenerationV2: vi.fn(),
-  getProfileVersion: vi.fn(),
-  putGenerationPreference: vi.fn(),
+}));
+
+vi.mock("./shotKeyframeBatchApi", () => ({
+  planShotKeyframeBatch: vi.fn(),
+  submitShotKeyframeBatch: vi.fn(),
 }));
 
 function currentShot(approved = true): ShotStudio["current_shot"] {
@@ -67,28 +71,155 @@ function currentShot(approved = true): ShotStudio["current_shot"] {
   } as unknown as ShotStudio["current_shot"];
 }
 
-function renderInspector(approved = true, onSubmitted = vi.fn(), shot = currentShot(approved)) {
+function renderInspector(approved = true, onSubmitted = vi.fn(), shot = currentShot(approved), fields: Record<string, unknown> = { subject_action: "向镜头走近", camera_plan: { movement: "PUSH_IN" } }, shotCode = "SHOT-001") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(<QueryClientProvider client={client}><MemoryRouter><ShotGenerationInspector
-    projectId="project-1"
+    episodeId="episode-1"
     shotId="shot-1"
-    shotCode="SHOT-001"
+    shotCode={shotCode}
     shotRevision={4}
-    fields={{ subject_action: "向镜头走近", camera_plan: { movement: "PUSH_IN" } }}
+    fields={fields}
     currentShot={shot}
     canGenerate
     reviewHref="/review"
-    onOpenKeyframePicker={vi.fn()}
     onSubmitted={onSubmitted}
   /></MemoryRouter></QueryClientProvider>);
   return onSubmitted;
 }
 
+function readyFramePlan(overrides: Record<string, unknown> = {}) {
+  return {
+    episode_id: "episode-1", project_id: "project-1", targets: [{ shot_id: "shot-1", expected_revision: 4 }],
+    frame_strategy: "FIRST_AND_LAST" as const, candidate_count: 4, plan_hash: "d".repeat(64), valid: true,
+    issues: [], summary: { shots: 1, jobs: 8, blocked: 0 },
+    execution_contract: {
+      source: "APP_CONTRACT", contract_id: "contract-1", runtime_environment_version_id: "runtime-1",
+      published_contract_bound: true, compiler_mode: "WORKFLOW_NEGATIVE_BINDING",
+      semantic_roles: ["NEGATIVE_PROMPT", "PROMPT", "SEED"],
+      workflow_bindings: {
+        PROMPT: { node_id: "5", input: "text" },
+        NEGATIVE_PROMPT: { node_id: "6", input: "text" },
+        SEED: { node_id: "8", input: "seed" },
+      },
+      seed_policy: "EXPLICIT_SUBMIT_SEED",
+    },
+    items: [{
+      shot_id: "shot-1", shot_code: "SHOT-001", shot_revision: 4, frame_role: "FIRST_FRAME" as const,
+      candidate_index: 1, profile_version_id: "profile-1",
+      shot_keyframe_route: { source: "APP_CONTRACT", contract_id: "contract-1", runtime_environment_version_id: "runtime-1", published_contract_bound: true },
+      workflow_bindings: {
+        PROMPT: { node_id: "5", input: "text" },
+        NEGATIVE_PROMPT: { node_id: "6", input: "text" },
+        SEED: { node_id: "8", input: "seed" },
+      },
+      semantic_inputs: { PROMPT: "服务端单画幅正向", NEGATIVE_PROMPT: "triptych, contact sheet", SEED: null },
+      prompt: "服务端单画幅正向",
+      prompt_bundle: {
+        schema_version: "localdrama.prompt-bundle.v1", base_prompt: "镜头事实", effective_base_prompt: "单一画面",
+        frame_role: "FIRST_FRAME" as const, frame_reframe_mode: "SINGLE_MOMENT" as const,
+        positive_override: "", negative_prompt: "triptych, contact sheet", provenance: "PAGE_USER_EDIT" as const,
+        compiler_mode: "WORKFLOW_NEGATIVE_BINDING", final_prompt: "服务端单画幅正向",
+      },
+      status: "READY" as const, blockers: [],
+    }],
+    ...overrides,
+  };
+}
+
 describe("ShotGenerationInspector", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("plans one first frame and invalidates that plan when the frame count changes", async () => {
+    vi.mocked(planShotKeyframeBatch).mockResolvedValue({ plan: readyFramePlan({ frame_strategy: "FIRST_ONLY", candidate_count: 1 }) });
+    renderInspector(false);
+    fireEvent.change(screen.getByLabelText("关键帧策略"), { target: { value: "FIRST_ONLY" } });
+    fireEvent.change(screen.getByLabelText("每种帧候选数"), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "验证生成计划" }));
+    await waitFor(() => expect(planShotKeyframeBatch).toHaveBeenCalledWith("episode-1", [{ shot_id: "shot-1", expected_revision: 4 }], "FIRST_ONLY", 1, expect.any(Object)));
+    await waitFor(() => expect((screen.getByRole("button", { name: "重新生成首尾帧" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.change(screen.getByLabelText("每种帧候选数"), { target: { value: "2" } });
+    expect((screen.getByRole("button", { name: "重新生成首尾帧" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(submitShotKeyframeBatch).not.toHaveBeenCalled();
+  });
+
   it("keeps approval distinct when no eligible first frame exists", () => {
     renderInspector(false);
-    expect(screen.getByText("缺少已批准关键帧")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "前往审核" }).getAttribute("href")).toBe("/review");
+    expect(screen.getByText("待生成")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "重新生成首尾帧" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "查看或替换推荐结果" }).getAttribute("href")).toBe("/review");
+  });
+
+  it("keeps the explicit frame regeneration action when an old working frame exists", async () => {
+    vi.mocked(planShotKeyframeBatch).mockResolvedValue({
+      plan: readyFramePlan(),
+    });
+    vi.mocked(submitShotKeyframeBatch).mockResolvedValue({
+      batch: { id: "batch-1", episode_id: "episode-1", project_id: "project-1", frame_strategy: "FIRST_AND_LAST", candidate_count: 4, status: "QUEUED", plan_hash: "d".repeat(64), created_at: "now", summary: { total: 8, succeeded: 0, failed: 0, active: 8 } },
+    });
+    const onSubmitted = renderInspector(true);
+    expect(screen.getByRole("button", { name: "重新生成首尾帧" })).toBeTruthy();
+    expect((screen.getByLabelText("反向提示词") as HTMLTextAreaElement).value).toContain("triptych");
+    expect((screen.getByRole("checkbox", { name: /单一画面重构/ }) as HTMLInputElement).checked).toBe(true);
+    const framePreviews = screen.getByLabelText("首尾帧输入草稿预览");
+    expect(framePreviews.textContent).toContain("首帧只呈现第一个视觉瞬间");
+    expect(framePreviews.textContent).toContain("尾帧只呈现最后一个视觉瞬间");
+    expect(createShotGenerationIntentV2).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "验证生成计划" }));
+    await waitFor(() => expect(screen.getByLabelText("服务端生成计划").textContent).toContain("contract-1"));
+    expect(screen.getByLabelText("服务端生成计划").textContent).toContain("服务端 NEGATIVE_PROMPT");
+    expect(screen.getByLabelText("服务端生成计划").textContent).not.toContain("Avoid:");
+    expect(submitShotKeyframeBatch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "重新生成首尾帧" }));
+    await waitFor(() => expect(submitShotKeyframeBatch).toHaveBeenCalledWith(
+      "episode-1",
+      [{ shot_id: "shot-1", expected_revision: 4 }],
+      "FIRST_AND_LAST",
+      4,
+      "d".repeat(64),
+      expect.any(String),
+      expect.objectContaining({ provenance: "AI_GENERATED", negative_prompt: expect.stringContaining("triptych"), frame_reframe_mode: "SINGLE_MOMENT" }),
+    ));
+    expect(onSubmitted).toHaveBeenCalledWith(expect.stringContaining("已排队 8 张"));
+  });
+
+  it("shows the server positive and negative inputs separately and keeps planning read-only", async () => {
+    vi.mocked(planShotKeyframeBatch).mockResolvedValue({ plan: readyFramePlan() });
+    renderInspector(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "验证生成计划" }));
+    await waitFor(() => expect(screen.getByLabelText("服务端生成计划")).toBeTruthy());
+    expect(screen.getByLabelText("服务端生成计划").textContent).toContain("服务端单画幅正向");
+    expect(screen.getByLabelText("服务端生成计划").textContent).toContain("triptych, contact sheet");
+    expect(screen.getByLabelText("输入草稿预览").textContent).not.toContain("最终提示词预览");
+    expect(submitShotKeyframeBatch).not.toHaveBeenCalled();
+  });
+
+  it("invalidates the plan when an editable prompt field changes", async () => {
+    vi.mocked(planShotKeyframeBatch).mockResolvedValue({ plan: readyFramePlan() });
+    renderInspector(true);
+    fireEvent.click(screen.getByRole("button", { name: "验证生成计划" }));
+    await waitFor(() => expect(screen.getByLabelText("服务端生成计划").textContent).toContain("计划与当前表单一致"));
+
+    fireEvent.change(screen.getByLabelText("正向提示词补充"), { target: { value: "改变构图" } });
+    expect((screen.getByRole("button", { name: "重新生成首尾帧" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByLabelText("服务端生成计划").textContent).toContain("表单已变化");
+    expect(submitShotKeyframeBatch).not.toHaveBeenCalled();
+  });
+
+  it("keeps submission disabled when the plan has no bound App Contract", async () => {
+    vi.mocked(planShotKeyframeBatch).mockResolvedValue({
+      plan: readyFramePlan({
+        execution_contract: { source: "WORKFLOW_VERSION", contract_id: null, runtime_environment_version_id: null, published_contract_bound: false, compiler_mode: "PROMPT_AVOID_FALLBACK", semantic_roles: ["PROMPT", "SEED"], workflow_bindings: {} },
+        items: [{ ...readyFramePlan().items[0], shot_keyframe_route: { source: "WORKFLOW_VERSION", contract_id: null, runtime_environment_version_id: null, published_contract_bound: false } }],
+        issues: [{ code: "SHOT_KEYFRAME_RUNTIME_BINDING_REQUIRED", message: "契约未绑定" }],
+        valid: false,
+      }),
+    });
+    renderInspector(true);
+    fireEvent.click(screen.getByRole("button", { name: "验证生成计划" }));
+    await waitFor(() => expect(screen.getByLabelText("服务端生成计划").textContent).toContain("契约未绑定"));
+    expect((screen.getByRole("button", { name: "重新生成首尾帧" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(submitShotKeyframeBatch).not.toHaveBeenCalled();
   });
 
   it("accepts the canonical approved working keyframe even when it has no generation Variant", () => {
@@ -104,8 +235,8 @@ describe("ShotGenerationInspector", () => {
     };
     renderInspector(false, vi.fn(), shot);
 
-    expect(screen.queryByText("缺少已批准关键帧")).toBeNull();
-    expect((screen.getByRole("combobox", { name: "已批准首帧" }) as HTMLSelectElement).value).toBe("working-keyframe-1");
+    expect(screen.getByText("已批准")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "生成视频候选" })).toBeTruthy();
   });
 
   it("preflights a typed BASE command before submitting the exact confirmed plan", async () => {
@@ -146,57 +277,49 @@ describe("ShotGenerationInspector", () => {
     } as never);
     const onSubmitted = renderInspector(true, vi.fn());
 
-    fireEvent.click(screen.getByRole("button", { name: "检查生成方案" }));
+    fireEvent.click(screen.getByRole("button", { name: "生成视频候选" }));
     await waitFor(() => expect(preflightShotGenerationV2).toHaveBeenCalledWith("shot-1", expect.objectContaining({
       operation: "BASE",
       stage_code: "VIDEO",
       intent_id: "intent-1",
       expected_shot_revision: 4,
       bindings: [{ role: "FIRST_FRAME", media_version_id: "frame-1", ordinal: 0 }],
+      prompt_bundle: expect.objectContaining({ base_prompt: expect.stringContaining("向镜头走近"), negative_prompt: expect.stringContaining("triptych") }),
     })));
-    expect(screen.getByText("方案可以提交")).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "确认并生成" }));
     await waitFor(() => expect(submitShotGenerationV2).toHaveBeenCalledWith("shot-1", expect.objectContaining({
       operation: "BASE",
       stage_code: "VIDEO",
       plan_hash: "a".repeat(64),
     })));
-    expect(onSubmitted).toHaveBeenCalledWith("首个视频候选已排队（任务 job-1）。");
+    expect(onSubmitted).toHaveBeenCalledWith("视频候选已排队（任务 job-1）。");
+    expect(planShotKeyframeBatch).not.toHaveBeenCalled();
   });
-});
 
-describe("ShotGenerationInspector shot parameter drawer", () => {
-  it("saves SHOT-scope parameters and hides RUN-only fields", async () => {
-    const { getProfileVersion, putGenerationPreference } = await import("../../generated/api");
-    vi.mocked(getProfileVersion).mockResolvedValue({
-      profile_version: {
-        id: "profile-1",
-        execution: { override_schema: { fields: {
-          steps: { type: "integer", label: "步数", scopes: ["SHOT"], minimum: 10, maximum: 60, default: 20 },
-          cfg: { type: "number", label: "CFG", scopes: ["RUN"], default: 6.5 },
-        } } },
-      },
-    } as never);
-    vi.mocked(putGenerationPreference).mockResolvedValue({ preference: {} } as never);
-    const onSubmitted = vi.fn().mockResolvedValue(undefined);
-    renderInspector(true, onSubmitted);
+  it("keeps both generation actions in one reachable rail and exposes pending/error feedback", async () => {
+    let resolvePlan: ((value: unknown) => void) | undefined;
+    vi.mocked(planShotKeyframeBatch).mockReturnValue(new Promise((resolve) => { resolvePlan = resolve; }) as never);
+    renderInspector(true);
 
-    fireEvent.click(screen.getByText(/镜头生成参数/));
-    const stepsInput = await screen.findByLabelText(/步数/);
-    expect(screen.queryByLabelText(/CFG/)).toBeNull();
-    fireEvent.change(stepsInput, { target: { value: "36" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存为镜头默认" }));
+    const rail = document.querySelector('[aria-label="镜头生成操作"]');
+    expect(rail).toBeTruthy();
+    expect(rail?.querySelectorAll(":scope > .shot-draw-action")).toHaveLength(2);
+    expect(rail?.querySelectorAll(".shot-draw-action-sticky")).toHaveLength(0);
 
-    await waitFor(() => expect(putGenerationPreference).toHaveBeenCalledTimes(1));
-    expect(putGenerationPreference).toHaveBeenCalledWith("project-1", expect.objectContaining({
-      owner_type: "SHOT",
-      owner_id: "shot-1",
-      capability: "VIDEO_I2V",
-      resolution_mode: "EXPLICIT",
-      execution_profile_version_id: "profile-1",
-      settings: expect.objectContaining({ steps: 36 }),
-    }));
-    await waitFor(() => expect(onSubmitted).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "验证生成计划" }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("正在验证生成计划"));
+    expect(createShotGenerationIntentV2).not.toHaveBeenCalled();
+    expect(preflightShotGenerationV2).not.toHaveBeenCalled();
+
+    resolvePlan?.({ plan: { valid: false, issues: [{ message: "测试阻塞" }] } });
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("测试阻塞"));
+    expect(submitShotKeyframeBatch).not.toHaveBeenCalled();
+  });
+
+  it("does not submit a frame redraw when the AI base prompt is empty", async () => {
+    const onSubmitted = renderInspector(true, vi.fn(), currentShot(true), {}, "");
+    fireEvent.click(screen.getByRole("button", { name: "验证生成计划" }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("缺少 AI 基础提示词"));
+    expect(planShotKeyframeBatch).not.toHaveBeenCalled();
+    expect(onSubmitted).not.toHaveBeenCalled();
   });
 });

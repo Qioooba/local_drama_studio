@@ -1,13 +1,24 @@
 import { createStoryAssetReference, type AssetBibleItem, type StoryAssetReference } from "./api";
-import { requestJson as generatedRequestJson } from "../../generated/api";
+import { getJob, promoteJobArtifactToMedia, requestJson as generatedRequestJson } from "../../generated/api";
 
 export type MultiViewKind = "FRONT" | "LEFT" | "RIGHT" | "BACK" | "TOP" | "BOTTOM";
+export type MultiViewPromptBundle = {
+  schema_version: "localdrama.asset-multiview-prompts.v1";
+  source: "LOCAL_LLM";
+  provider: string;
+  model: string;
+  content_hash?: string;
+  revision_guidance?: string;
+  items: Record<string, { positive_prompt: string; negative_prompt: string }>;
+};
 export type MultiViewSettings = {
   asset_state_id: string | null;
   profile_version_id: string | null;
   consistency_strength: "LOW" | "MEDIUM" | "HIGH";
   background: "CLEAN" | "TRANSPARENT" | "ORIGINAL";
   requested_slots?: string[];
+  prompt_bundle?: MultiViewPromptBundle | null;
+  seed_offset?: number;
 };
 
 export type MultiViewBlocker = {
@@ -76,6 +87,14 @@ async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
   return generatedRequestJson<T>(`/api/v1${path}`, init);
 }
 
+export function draftAssetMultiViewPrompts(assetId: string, settings: Pick<MultiViewSettings, "asset_state_id" | "consistency_strength" | "background" | "requested_slots"> & { revision_guidance?: string }): Promise<{ prompt_bundle: MultiViewPromptBundle }> {
+  return requestJson(`/story-assets/${encodeURIComponent(assetId)}/generate-multiview:prompts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+}
+
 export function preflightAssetMultiView(assetId: string, settings: MultiViewSettings): Promise<{ preflight: MultiViewPreflight }> {
   return requestJson(`/story-assets/${encodeURIComponent(assetId)}/generate-multiview:preflight`, {
     method: "POST",
@@ -95,6 +114,18 @@ export function submitAssetMultiView(assetId: string, settings: MultiViewSetting
 export async function getAssetMultiViewHistory(assetId: string): Promise<MultiViewBatch[]> {
   const result = await requestJson<{ asset_detail: AssetBibleItem }>(`/story-assets/${encodeURIComponent(assetId)}/detail`, { method: "GET" });
   return result.asset_detail.multiview_generations ?? [];
+}
+
+export async function collectMultiViewOutput(jobId: string): Promise<void> {
+  const { job } = await getJob(jobId);
+  if (job.state !== "SUCCEEDED") throw new Error("视图任务尚未成功，不能登记图片");
+  const images = job.attempts.filter((attempt) => attempt.state === "SUCCEEDED")
+    .flatMap((attempt) => attempt.artifacts ?? [])
+    .filter((artifact) => artifact.status === "VERIFIED" && /\.(png|jpe?g|webp)$/i.test(artifact.sandbox_rel_path));
+  if (!images.length) throw new Error("视图任务成功但没有已验证图片产物，请查看任务详情");
+  for (const artifact of images) {
+    await promoteJobArtifactToMedia(artifact.id, { purpose: "ASSET_REFERENCE", media_kind: "IMAGE", stage: "KEYFRAME" });
+  }
 }
 
 export function bindMultiViewReference(assetId: string, assetStateId: string | null, kind: MultiViewKind, mediaVersionId: string): Promise<{ reference: StoryAssetReference }> {

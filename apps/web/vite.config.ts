@@ -3,6 +3,9 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
+  // A running browser may still request chunks from the previous build.
+  // Content hashes keep releases isolated while preserving those open pages.
+  build: { emptyOutDir: false },
   server: {
     host: "0.0.0.0",
     port: 5173,

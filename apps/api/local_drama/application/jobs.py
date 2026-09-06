@@ -26,7 +26,8 @@ CANCEL_REQUESTED = "CANCEL_REQUESTED"
 CANCELLED = "CANCELLED"
 ORPHANED = "ORPHANED"
 NEEDS_ATTENTION = "NEEDS_ATTENTION"
-DELETABLE_JOB_STATES = {SUCCEEDED, FAILED, CANCELLED, ORPHANED, NEEDS_ATTENTION}
+PAUSED = "PAUSED"
+DELETABLE_JOB_STATES = {SUCCEEDED, FAILED, CANCELLED, ORPHANED, NEEDS_ATTENTION, PAUSED}
 
 
 def _utc_now() -> datetime:
@@ -591,12 +592,12 @@ class JobService:
             )
             connection.execute(
                 """UPDATE jobs
-                SET state=CASE WHEN state='CANCEL_REQUESTED' THEN state ELSE 'RUNNING' END,
+                SET state=CASE WHEN state IN ('CANCEL_REQUESTED', 'PAUSED') THEN state ELSE 'RUNNING' END,
                     progress_json=?, progress_updated_at=?, updated_at=?, revision=revision+1
                 WHERE id=?""",
                 (_json(progress_payload), now_iso, now_iso, row["job_id"]),
             )
-            projected_state = CANCEL_REQUESTED if str(row["job_state"]) == CANCEL_REQUESTED else RUNNING
+            projected_state = row["job_state"] if str(row["job_state"]) in {CANCEL_REQUESTED, PAUSED} else RUNNING
             self._sync_experiment_cell_status(connection, str(row["job_id"]), projected_state, now_iso)
             self._emit(connection, "JOB_HEARTBEAT", row["project_id"], "JOB_ATTEMPT", attempt_id, {"job_id": row["job_id"], "progress": progress_payload})
         return {
@@ -606,7 +607,7 @@ class JobService:
             "heartbeat_at": now_iso,
             "lease_expires_at": expires,
             "progress": progress_payload,
-            "cancel_requested": row["job_state"] == CANCEL_REQUESTED,
+            "cancel_requested": row["job_state"] in {CANCEL_REQUESTED, PAUSED},
         }
 
     def attach_provider(
@@ -692,6 +693,10 @@ class JobService:
             if job["state"] == CANCEL_REQUESTED:
                 attempt_state = CANCELLED
                 job_state = CANCELLED
+                next_run_at = None
+            elif job["state"] == PAUSED:
+                attempt_state = CANCELLED
+                job_state = PAUSED
                 next_run_at = None
             elif success:
                 attempt_state = SUCCEEDED
@@ -790,7 +795,7 @@ class JobService:
                 raise DomainRuleError("JOB_NOT_FOUND", "Job 不存在")
             if row["state"] in {SUCCEEDED, FAILED, CANCELLED}:
                 return self._job_response(row)
-            target = CANCELLED if row["state"] == QUEUED else CANCEL_REQUESTED
+            target = CANCELLED if row["state"] in {QUEUED, PAUSED} else CANCEL_REQUESTED
             connection.execute("UPDATE jobs SET state=?, cancel_requested_at=?, updated_at=?, revision=revision+1 WHERE id=?", (target, now, now, job_id))
             self._sync_experiment_cell_status(connection, job_id, target, now)
             self._emit(connection, "JOB_CANCEL_REQUESTED", row["project_id"], "JOB", job_id, {"state": target})
@@ -815,6 +820,187 @@ class JobService:
             self._emit(connection, "JOB_REQUEUED", row["project_id"], "JOB", job_id, {"reason": "explicit_retry"})
             updated = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
             return self._job_response(updated)
+
+
+    def pause(self, job_id: str, actor: str = "local-user") -> dict[str, Any]:
+        now = _iso(_utc_now())
+        with self.database.transaction() as connection:
+            row = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if row is None:
+                raise DomainRuleError("JOB_NOT_FOUND", "Job 不存在")
+            if row["state"] in {SUCCEEDED, FAILED, CANCELLED, PAUSED}:
+                return self._job_response(row)
+            unsettled_attempt = connection.execute(
+                "SELECT 1 FROM job_attempts WHERE job_id=? AND state NOT IN ('SUCCEEDED','FAILED','CANCELLED') LIMIT 1",
+                (job_id,),
+            ).fetchone()
+            cancel_req = now if unsettled_attempt is not None else None
+            connection.execute(
+                "UPDATE jobs SET state='PAUSED', cancel_requested_at=?, next_run_at=NULL, updated_at=?, revision=revision+1 WHERE id=?",
+                (cancel_req, now, job_id),
+            )
+            self._sync_experiment_cell_status(connection, job_id, PAUSED, now)
+            self._emit(connection, "JOB_PAUSED", row["project_id"], "JOB", job_id, {"state": PAUSED, "actor": actor})
+            updated = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+            return self._job_response(updated)
+
+    def resume(self, job_id: str, actor: str = "local-user") -> dict[str, Any]:
+        now = _iso(_utc_now())
+        with self.database.transaction() as connection:
+            row = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if row is None:
+                raise DomainRuleError("JOB_NOT_FOUND", "Job 不存在")
+            if row["state"] == PAUSED:
+                connection.execute(
+                    "UPDATE jobs SET state='QUEUED', next_run_at=?, cancel_requested_at=NULL, updated_at=?, revision=revision+1 WHERE id=?",
+                    (now, now, job_id),
+                )
+                self._sync_experiment_cell_status(connection, job_id, QUEUED, now)
+                self._emit(connection, "JOB_REQUEUED", row["project_id"], "JOB", job_id, {"reason": "resumed", "actor": actor})
+                updated = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+                return self._job_response(updated)
+            if row["state"] in {FAILED, NEEDS_ATTENTION, ORPHANED}:
+                return self.retry(job_id, actor=actor)
+            if row["state"] in {QUEUED, CLAIMED, RUNNING}:
+                return self._job_response(row)
+            raise DomainRuleError("JOB_NOT_RESUMABLE", f"状态为 {row['state']} 的任务无法开始或恢复")
+
+    def batch_pause(
+        self,
+        job_ids: list[str] | None = None,
+        project_id: str | None = None,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            if job_ids is not None:
+                if not job_ids:
+                    return {"paused_count": 0, "jobs": []}
+                placeholders = ",".join("?" for _ in job_ids)
+                rows = connection.execute(
+                    f"SELECT id FROM jobs WHERE id IN ({placeholders}) AND deleted_at IS NULL AND state NOT IN ('SUCCEEDED','FAILED','CANCELLED','PAUSED')",
+                    job_ids,
+                ).fetchall()
+            else:
+                scope_sql = "AND project_id=?" if project_id else ""
+                params = [project_id] if project_id else []
+                rows = connection.execute(
+                    f"SELECT id FROM jobs WHERE deleted_at IS NULL AND state IN ('QUEUED','CLAIMED','RUNNING') {scope_sql}",
+                    params,
+                ).fetchall()
+        results: list[dict[str, Any]] = []
+        for r in rows:
+            try:
+                results.append(self.pause(str(r["id"]), actor=actor))
+            except Exception:
+                pass
+        return {"paused_count": len(results), "jobs": results}
+
+    def batch_resume(
+        self,
+        job_ids: list[str] | None = None,
+        project_id: str | None = None,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            if job_ids is not None:
+                if not job_ids:
+                    return {"resumed_count": 0, "jobs": []}
+                placeholders = ",".join("?" for _ in job_ids)
+                rows = connection.execute(
+                    f"SELECT id FROM jobs WHERE id IN ({placeholders}) AND deleted_at IS NULL AND state IN ('PAUSED','FAILED','NEEDS_ATTENTION','ORPHANED')",
+                    job_ids,
+                ).fetchall()
+            else:
+                scope_sql = "AND project_id=?" if project_id else ""
+                params = [project_id] if project_id else []
+                rows = connection.execute(
+                    f"SELECT id FROM jobs WHERE deleted_at IS NULL AND state IN ('PAUSED','FAILED','NEEDS_ATTENTION','ORPHANED') {scope_sql}",
+                    params,
+                ).fetchall()
+        results: list[dict[str, Any]] = []
+        for r in rows:
+            try:
+                results.append(self.resume(str(r["id"]), actor=actor))
+            except Exception:
+                pass
+        return {"resumed_count": len(results), "jobs": results}
+
+    def batch_cancel(
+        self,
+        job_ids: list[str] | None = None,
+        project_id: str | None = None,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            if job_ids is not None:
+                if not job_ids:
+                    return {"cancelled_count": 0, "jobs": []}
+                placeholders = ",".join("?" for _ in job_ids)
+                rows = connection.execute(
+                    f"SELECT id FROM jobs WHERE id IN ({placeholders}) AND deleted_at IS NULL AND state NOT IN ('SUCCEEDED','FAILED','CANCELLED')",
+                    job_ids,
+                ).fetchall()
+            else:
+                scope_sql = "AND project_id=?" if project_id else ""
+                params = [project_id] if project_id else []
+                rows = connection.execute(
+                    f"SELECT id FROM jobs WHERE deleted_at IS NULL AND state NOT IN ('SUCCEEDED','FAILED','CANCELLED') {scope_sql}",
+                    params,
+                ).fetchall()
+        results: list[dict[str, Any]] = []
+        for r in rows:
+            try:
+                results.append(self.cancel(str(r["id"]), actor=actor))
+            except Exception:
+                pass
+        return {"cancelled_count": len(results), "jobs": results}
+
+    def batch_retry(
+        self,
+        job_ids: list[str] | None = None,
+        project_id: str | None = None,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            if job_ids is not None:
+                if not job_ids:
+                    return {"retried_count": 0, "jobs": []}
+                placeholders = ",".join("?" for _ in job_ids)
+                rows = connection.execute(
+                    f"SELECT id FROM jobs WHERE id IN ({placeholders}) AND deleted_at IS NULL AND state IN ('FAILED','NEEDS_ATTENTION','ORPHANED')",
+                    job_ids,
+                ).fetchall()
+            else:
+                scope_sql = "AND project_id=?" if project_id else ""
+                params = [project_id] if project_id else []
+                rows = connection.execute(
+                    f"SELECT id FROM jobs WHERE deleted_at IS NULL AND state IN ('FAILED','NEEDS_ATTENTION','ORPHANED') {scope_sql}",
+                    params,
+                ).fetchall()
+        results: list[dict[str, Any]] = []
+        for r in rows:
+            try:
+                results.append(self.retry(str(r["id"]), actor=actor))
+            except Exception:
+                pass
+        return {"retried_count": len(results), "jobs": results}
+
+    def batch_delete(
+        self,
+        job_ids: list[str],
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        if not job_ids:
+            return {"deleted_count": 0}
+        deleted_count = 0
+        for job_id in job_ids:
+            try:
+                res = self.delete(job_id, actor=actor)
+                if not res.get("idempotent"):
+                    deleted_count += 1
+            except Exception:
+                pass
+        return {"deleted_count": deleted_count}
 
     def clone(self, job_id: str, idempotency_key: str, input_overrides: dict[str, Any] | None = None, actor: str = "local-user") -> dict[str, Any]:
         source = self.get_job(job_id)

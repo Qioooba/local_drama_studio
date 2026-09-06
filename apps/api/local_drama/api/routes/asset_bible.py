@@ -11,7 +11,10 @@ from local_drama.api.schemas.asset_bible import (
     AssetDetailSubmitRequest,
     AssetExpressionPreflightRequest,
     AssetExpressionSubmitRequest,
+    AssetImageBatchPlanRequest,
+    AssetImageBatchSubmitRequest,
     AssetMultiViewPreflightRequest,
+    AssetMultiViewPromptDraftRequest,
     AssetMultiViewSubmitRequest,
     EpisodeAssetStateBindRequest,
     ShotAssetStateBindRequest,
@@ -22,6 +25,7 @@ from local_drama.api.schemas.asset_bible import (
     StoryAssetStateCreateRequest,
     StoryAssetStateUpdateRequest,
 )
+from local_drama.application.asset_image_generation import AssetImageGenerationBatchService
 from local_drama.application.asset_multiview import AssetDetailService, AssetExpressionService, AssetMultiViewService
 from local_drama.application.commands.asset_bible import AssetBibleCommandService
 from local_drama.application.errors import api_error_from_domain
@@ -30,6 +34,7 @@ from local_drama.application.voice_clone import VoiceCloneService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.asset_bible_repository import SqliteAssetBibleRepository
 from local_drama.infrastructure.database.sqlite import Database
+from local_drama.infrastructure.service_composition import build_asset_image_batch
 
 router = APIRouter(tags=["asset-bible"])
 
@@ -74,6 +79,10 @@ def _detail(request: Request) -> AssetDetailService:
     return AssetDetailService(_database(request), request.app.state.settings)
 
 
+def _asset_images(request: Request) -> AssetImageGenerationBatchService:
+    return build_asset_image_batch(_database(request), request.app.state.settings)
+
+
 @router.get("/projects/{project_id}/asset-bible", operation_id="getAssetBible")
 async def get_asset_bible(project_id: str, request: Request) -> dict[str, object]:
     try:
@@ -90,10 +99,50 @@ async def get_asset_bible_detail(asset_id: str, request: Request) -> dict[str, o
         raise api_error_from_domain(error) from error
 
 
+@router.post("/projects/{project_id}/asset-image-batches:plan", operation_id="planAssetImageGenerationBatch")
+async def plan_asset_image_generation_batch(project_id: str, payload: AssetImageBatchPlanRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"plan": _asset_images(request).plan(project_id, **payload.model_dump())}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/projects/{project_id}/asset-image-batches:submit", status_code=201, operation_id="submitAssetImageGenerationBatch")
+async def submit_asset_image_generation_batch(project_id: str, payload: AssetImageBatchSubmitRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"batch": _asset_images(request).submit(project_id, **payload.model_dump())}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/projects/{project_id}/asset-image-batches", operation_id="listAssetImageGenerationBatches")
+async def list_asset_image_generation_batches(project_id: str, request: Request, asset_kind: str | None = None, limit: int = 5) -> dict[str, object]:
+    try:
+        return {"items": _asset_images(request).list_batches(project_id, asset_kind=asset_kind, limit=limit)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get("/asset-image-batches/{batch_id}", operation_id="getAssetImageGenerationBatch")
+async def get_asset_image_generation_batch(batch_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"batch": _asset_images(request).get_batch(batch_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.post("/story-assets/{asset_id}/generate-multiview:preflight", operation_id="preflightAssetMultiView")
 async def preflight_asset_multiview(asset_id: str, payload: AssetMultiViewPreflightRequest, request: Request) -> dict[str, object]:
     try:
         return {"preflight": _multiview(request).preflight(asset_id, **payload.model_dump())}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/story-assets/{asset_id}/generate-multiview:prompts", operation_id="draftAssetMultiViewPrompts")
+def draft_asset_multiview_prompts(asset_id: str, payload: AssetMultiViewPromptDraftRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"prompt_bundle": _multiview(request).draft_prompts(asset_id, **payload.model_dump())}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -238,4 +287,3 @@ async def clone_character_voice(asset_id: str, payload: CharacterVoiceCloneReque
         }
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
-

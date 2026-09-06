@@ -5,6 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from local_drama.domain.director_intent import normalize_director_intent_v3
+from local_drama.domain.duration import DEFAULT_PROJECT_TARGET_DURATION_MS, MAX_TARGET_DURATION_MS
 
 
 class Rational(BaseModel):
@@ -39,7 +40,7 @@ class ProjectCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     episode_count: int = Field(ge=1)
     season_count: int = Field(default=1, ge=1)
-    target_duration_ms: int = Field(gt=0)
+    target_duration_ms: int = Field(default=DEFAULT_PROJECT_TARGET_DURATION_MS, gt=0, le=MAX_TARGET_DURATION_MS)
     aspect_ratio: str | None = None
     fps: Rational | None = None
     width: int | None = Field(default=None, ge=64, le=16384)
@@ -60,6 +61,24 @@ class ProjectUpdateRequest(BaseModel):
     expected_revision: int = Field(ge=1)
 
 
+class ProjectTargetDurationUpdateRequest(BaseModel):
+    """Explicitly update a project's default without touching episodes."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target_duration_ms: int = Field(gt=0, le=MAX_TARGET_DURATION_MS)
+    expected_revision: int = Field(ge=1)
+
+
+class ProjectTargetDurationApplyRequest(BaseModel):
+    """Explicitly resolve the current project default into chosen episodes."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    episode_ids: list[str] = Field(min_length=1, max_length=200)
+    expected_revision: int = Field(ge=1)
+
+
 class ProjectEpisodeAppendRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -67,7 +86,7 @@ class ProjectEpisodeAppendRequest(BaseModel):
     create_new_season: bool = False
     season_title: str | None = Field(default=None, max_length=200)
     episode_title: str = Field(min_length=1, max_length=200)
-    target_duration_ms: int = Field(gt=0, le=86_400_000)
+    target_duration_ms: int | None = Field(default=None, gt=0, le=MAX_TARGET_DURATION_MS)
 
     @model_validator(mode="after")
     def validate_season_target(self) -> "ProjectEpisodeAppendRequest":
@@ -156,6 +175,7 @@ class DirectorIntentV3(BaseModel):
     transition_plan: dict[str, Any] | None = None
     sound_plan: dict[str, Any] | None = None
     creative_intent: str | None = None
+    prompt_modifiers: list[str] = Field(default_factory=list, max_length=20)
     staging: dict[str, Any] | None = None
     staging_3d: dict[str, Any] | None = None
 

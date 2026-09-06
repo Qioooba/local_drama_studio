@@ -17,14 +17,14 @@ var canonicalModelDirectories = []string{
 	"quarantine",
 	"libraries/comfyui",
 	"libraries/pytorch",
-	"libraries/ollama",
+	"libraries/gguf",
 	"libraries/audio",
 }
 
 var canonicalModelLibraryRoots = []any{
 	"${MODEL_ROOT}/libraries/comfyui",
 	"${MODEL_ROOT}/libraries/pytorch",
-	"${MODEL_ROOT}/libraries/ollama",
+	"${MODEL_ROOT}/libraries/gguf",
 	"${MODEL_ROOT}/libraries/audio",
 }
 

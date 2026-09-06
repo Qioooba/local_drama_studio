@@ -22,11 +22,7 @@ from local_drama.infrastructure.database.sqlite import Database
 
 
 def character_anchor_rows(connection: Any, shot_id: str) -> list[dict[str, Any]]:
-    """Return ACTIVE CHARACTER story assets bound to a shot, ordered deterministically.
-
-    Ordering is by ``role_in_shot`` then asset ``name`` (both stable keys) so a
-    given binding state always yields the same anchor text.
-    """
+    """Return ACTIVE CHARACTER story assets bound to a shot, ordered deterministically."""
     rows = connection.execute(
         """SELECT a.id AS asset_id, a.name, a.description, a.canonical_media_version_id
         FROM shot_asset_bindings b JOIN story_assets a ON a.id = b.asset_id
@@ -37,9 +33,34 @@ def character_anchor_rows(connection: Any, shot_id: str) -> list[dict[str, Any]]
     return [dict(row) for row in rows]
 
 
+def asset_anchor_rows(connection: Any, shot_id: str, kind: str | None = None) -> list[dict[str, Any]]:
+    """Return ACTIVE story assets (CHARACTER/SCENE/PROP) bound to a shot."""
+    clause = " AND a.kind = ?" if kind else ""
+    params = [shot_id, kind] if kind else [shot_id]
+    rows = connection.execute(
+        f"""SELECT a.id AS asset_id, a.kind, a.name, a.description, a.canonical_media_version_id, b.role_in_shot
+        FROM shot_asset_bindings b JOIN story_assets a ON a.id = b.asset_id
+        WHERE b.shot_id = ? AND a.status = 'ACTIVE'{clause}
+        ORDER BY a.kind, b.role_in_shot, a.name""",
+        params,
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def character_anchor_line(name: str, description: str, canonical_media_version_id: str | None) -> str:
     """Format one anchor line: ``角色锚点 · {name}：{description}（参考图 {id}）``."""
     line = f"角色锚点 · {name}"
+    if description:
+        line += f"：{description}"
+    if canonical_media_version_id:
+        line += f"（参考图 {canonical_media_version_id}）"
+    return line
+
+
+def asset_anchor_line(kind: str, name: str, description: str, canonical_media_version_id: str | None) -> str:
+    """Format an asset anchor line based on its kind."""
+    prefix = "场景环境锚点" if kind == "SCENE" else "关键物资道具锚点" if kind == "PROP" else "角色锚点"
+    line = f"{prefix} · {name}"
     if description:
         line += f"：{description}"
     if canonical_media_version_id:
@@ -57,6 +78,19 @@ def character_anchor_text(rows: list[dict[str, Any]]) -> str:
     )
 
 
+def full_asset_anchor_text(rows: list[dict[str, Any]]) -> str:
+    """Join all asset anchor rows (characters, scenes, props) into multi-line text."""
+    return "\n".join(
+        asset_anchor_line(
+            str(item.get("kind", "CHARACTER")),
+            str(item["name"]),
+            str(item.get("description") or ""),
+            item.get("canonical_media_version_id") or None,
+        )
+        for item in rows
+    )
+
+
 class PromptAnchorService:
     def __init__(self, database: Database) -> None:
         self.database = database
@@ -65,7 +99,7 @@ class PromptAnchorService:
         with self.database.connect() as connection:
             if connection.execute("SELECT 1 FROM shots WHERE id=?", (shot_id,)).fetchone() is None:
                 raise DomainRuleError("SHOT_NOT_FOUND", "镜头不存在", {"shot_id": shot_id})
-            rows = character_anchor_rows(connection, shot_id)
+            all_rows = asset_anchor_rows(connection, shot_id)
         characters = [
             {
                 "asset_id": str(item["asset_id"]),
@@ -73,6 +107,30 @@ class PromptAnchorService:
                 "description": str(item["description"] or ""),
                 "canonical_media_version_id": str(item["canonical_media_version_id"]) if item["canonical_media_version_id"] else None,
             }
-            for item in rows
+            for item in all_rows if item.get("kind") == "CHARACTER"
         ]
-        return {"shot_id": shot_id, "anchor": character_anchor_text(rows), "characters": characters}
+        scenes = [
+            {
+                "asset_id": str(item["asset_id"]),
+                "name": str(item["name"]),
+                "description": str(item["description"] or ""),
+                "canonical_media_version_id": str(item["canonical_media_version_id"]) if item["canonical_media_version_id"] else None,
+            }
+            for item in all_rows if item.get("kind") == "SCENE"
+        ]
+        props = [
+            {
+                "asset_id": str(item["asset_id"]),
+                "name": str(item["name"]),
+                "description": str(item["description"] or ""),
+                "canonical_media_version_id": str(item["canonical_media_version_id"]) if item["canonical_media_version_id"] else None,
+            }
+            for item in all_rows if item.get("kind") == "PROP"
+        ]
+        return {
+            "shot_id": shot_id,
+            "anchor": full_asset_anchor_text(all_rows) if all_rows else character_anchor_text(characters),
+            "characters": characters,
+            "scenes": scenes,
+            "props": props,
+        }

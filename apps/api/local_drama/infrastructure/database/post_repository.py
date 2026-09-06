@@ -153,10 +153,11 @@ class SqlitePostReadRepository:
         }
 
     def review_target_facts(self, episode_id: str, *, cursor: int, limit: int,
-                            target_kinds: set[str], include_resolved: bool) -> dict[str, Any]:
+                            target_kinds: set[str], include_resolved: bool,
+                            target_id: str | None = None) -> dict[str, Any]:
         with self.database.connect() as connection:
             self._episode(connection, episode_id)
-            rows = self._review_rows(connection, episode_id, target_kinds, include_resolved)
+            rows = self._review_rows(connection, episode_id, target_kinds, include_resolved, target_id=target_id)
         selected = rows[cursor: cursor + limit]
         return {
             "items": selected,
@@ -172,12 +173,21 @@ class SqlitePostReadRepository:
     def _is_pending(row: dict[str, Any]) -> bool:
         return row["latest_decision"] not in {"APPROVED", "REJECTED"} or bool(row["latest_decision_stale"])
 
+    @classmethod
+    def _include_review_target(cls, row: dict[str, Any], *, include_resolved: bool,
+                               target_id: str | None) -> bool:
+        """Keep deep links addressable while the default queue stays pending-only."""
+        if target_id is not None:
+            return row["target_id"] == target_id
+        return include_resolved or cls._is_pending(row)
+
     @staticmethod
     def _blocker(code: str, message: str, owner: str, action: str) -> dict[str, str]:
         return {"code": code, "message": message, "owner_route": owner, "repair_action": action}
 
     def _review_rows(self, connection: sqlite3.Connection, episode_id: str,
-                     target_kinds: set[str], include_resolved: bool) -> list[dict[str, Any]]:
+                     target_kinds: set[str], include_resolved: bool,
+                     *, target_id: str | None = None) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         if not target_kinds or "MEDIA_VERSION" in target_kinds:
             media = connection.execute(
@@ -186,6 +196,14 @@ class SqlitePostReadRepository:
                 COALESCE(direct_shot.code,generation_shot.code,dialogue_shot.code,mv.id) AS label,
                 ma.media_kind,mv.stage,mv.duration_ms,ma.revision AS subject_revision,mv.integrity_status,mv.created_at,
                 COALESCE(mc.status,'NOT_RUN') AS machine_status,
+                CASE WHEN ma.media_kind='AUDIO' AND EXISTS (
+                  SELECT 1 FROM dialogue_candidate_selections dcs
+                  JOIN tts_candidates tc ON tc.id=dcs.tts_candidate_id
+                  WHERE tc.media_version_id=mv.id
+                    AND dcs.id=(SELECT latest.id FROM dialogue_candidate_selections latest
+                      WHERE latest.dialogue_line_id=dcs.dialogue_line_id
+                      ORDER BY latest.created_at DESC,latest.id DESC LIMIT 1)
+                ) THEN 1 ELSE 0 END AS is_adopted,
                 template.id AS template_version_id,template.code AS template_code,template.items_json AS template_items_json,
                 rd.id AS latest_decision_id,rd.decision AS latest_decision,rd.revision AS latest_decision_revision,
                 COALESCE(rd.is_stale,0) AS latest_decision_stale
@@ -227,7 +245,7 @@ class SqlitePostReadRepository:
                 item = {**row, "target_kind": "MEDIA_VERSION", "latest_decision_stale": bool(row["latest_decision_stale"]),
                         "template_items": template_items,
                         "blocker_codes": blockers, "allowed_actions": allowed_actions}
-                if include_resolved or self._is_pending(item):
+                if self._include_review_target(item, include_resolved=include_resolved, target_id=target_id):
                     rows.append(item)
         if not target_kinds or "EPISODE_RENDER_VERSION" in target_kinds:
             renders = connection.execute(
@@ -258,7 +276,12 @@ class SqlitePostReadRepository:
                 item = {**row, "target_kind": "EPISODE_RENDER_VERSION", "latest_decision_stale": bool(row["latest_decision_stale"]),
                         "template_items": template_items,
                         "blocker_codes": blockers, "allowed_actions": ["SUBMIT_REVIEW_DECISION"]}
-                if include_resolved or self._is_pending(item):
+                if self._include_review_target(item, include_resolved=include_resolved, target_id=target_id):
                     rows.append(item)
-        rows.sort(key=lambda item: (str(item["created_at"]), str(item["target_id"])))
+        # Review operators need the newest pending material first.  The list is
+        # still bounded by the caller, so ordering here is what makes the first
+        # page useful when a project has more targets than the page limit.  Keep
+        # the target id as a deterministic tie-breaker for equal timestamps;
+        # target_id is also sufficient for the separate deep-link lookup below.
+        rows.sort(key=lambda item: (str(item["created_at"]), str(item["target_id"])), reverse=True)
         return rows

@@ -19,5 +19,17 @@ export function MediaThumbnail({ src, fallbackLabel = "缩略图待生成", clas
     );
   }
 
-  return <img {...imageProps} className={className} src={src} onError={() => setFailed(true)} />;
+  return (
+    <img
+      loading="eager"
+      decoding="async"
+      {...imageProps}
+      className={className}
+      src={src}
+      onError={(e) => {
+        e.currentTarget.style.display = "none";
+        setFailed(true);
+      }}
+    />
+  );
 }

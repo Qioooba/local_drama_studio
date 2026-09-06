@@ -6,6 +6,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+from local_drama.application.audio_requirements import canonical_audio_requirements
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
 
@@ -49,18 +50,20 @@ class TimelineStatusService:
             audio_rows = connection.execute(
                 "SELECT source_license_status,license_evidence_json FROM audio_bindings WHERE episode_id=?", (episode_id,)
             ).fetchall()
+            audio_requirements = canonical_audio_requirements(connection, episode_id)
             render = connection.execute(
                 """SELECT erv.id, erv.timeline_revision_id, erv.revision, erv.integrity_status AS status, erv.duration_ms, erv.mime_type, erv.sha256,
                 erv.input_snapshot_json, erv.ffmpeg_command_json, erv.execution_log_text, erv.created_at
-                FROM episode_render_versions erv WHERE erv.episode_id=? ORDER BY erv.created_at DESC LIMIT 1""", (episode_id,)
+                FROM episode_render_versions erv WHERE erv.episode_id=? ORDER BY erv.created_at DESC, erv.id DESC LIMIT 1""", (episode_id,)
             ).fetchone()
             render_count = int(connection.execute("SELECT COUNT(*) FROM episode_render_versions WHERE episode_id=?", (episode_id,)).fetchone()[0])
             render_verified_count = int(connection.execute("SELECT COUNT(*) FROM episode_render_versions WHERE episode_id=? AND integrity_status='VERIFIED'", (episode_id,)).fetchone()[0])
             delivery = connection.execute(
-                """SELECT dp.id, dp.episode_render_version_id, dp.status, dp.rel_path, dp.manifest_sha256, dp.created_at,
+                """SELECT dp.id, dp.episode_render_version_id, dp.target_version_id, dp.status, dp.rel_path, dp.manifest_sha256,
+                dp.human_review_status, dp.platform_review_status, dp.created_at,
                 erv.timeline_revision_id
                 FROM delivery_packages dp JOIN episode_render_versions erv ON erv.id=dp.episode_render_version_id
-                WHERE erv.episode_id=? ORDER BY dp.created_at DESC LIMIT 1""", (episode_id,)
+                WHERE erv.episode_id=? ORDER BY dp.created_at DESC, dp.id DESC LIMIT 1""", (episode_id,)
             ).fetchone()
             delivery_count = int(connection.execute("SELECT COUNT(*) FROM delivery_packages dp JOIN episode_render_versions erv ON erv.id=dp.episode_render_version_id WHERE erv.episode_id=?", (episode_id,)).fetchone()[0])
             delivery_verified = int(connection.execute("SELECT COUNT(*) FROM delivery_packages dp JOIN episode_render_versions erv ON erv.id=dp.episode_render_version_id WHERE erv.episode_id=? AND dp.status='VERIFIED'", (episode_id,)).fetchone()[0])
@@ -98,6 +101,10 @@ class TimelineStatusService:
             "subtitles": {"revision_count": subtitle_count, "latest": latest_subtitle},
             "audio": {
                 "binding_count": len(audio_rows),
+                "required_tracks": audio_requirements["required_tracks"],
+                "requirements": audio_requirements["counts"],
+                "subtitle_required": audio_requirements["subtitle_required"],
+                "requirement_source": audio_requirements["source"],
                 "verified_local_count": sum(
                     1
                     for row in audio_rows

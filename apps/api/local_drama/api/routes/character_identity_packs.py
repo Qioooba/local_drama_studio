@@ -173,6 +173,17 @@ async def bind_shot_pack(shot_id: str, payload: BindShotIdentityPackRequest, req
         raise api_error_from_domain(error) from error
 
 
+@router.post(
+    "/episodes/{episode_id}/character-identity-packs:sync",
+    operation_id="syncEpisodeCharacterIdentityPacks",
+)
+async def sync_episode_packs(episode_id: str, request: Request) -> dict[str, object]:
+    try:
+        return {"sync": service(request).sync_episode_identity_packs(episode_id)}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.get("/shots/{shot_id}/character-identity-packs", operation_id="getShotCharacterIdentityPacks")
 async def get_shot_packs(shot_id: str, request: Request) -> dict[str, object]:
     try:

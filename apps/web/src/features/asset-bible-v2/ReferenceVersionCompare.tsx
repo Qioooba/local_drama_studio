@@ -41,7 +41,7 @@ function VersionPane({ side, item, loading, error, onRetry }: { side: "A" | "B";
     <div className="reference-compare-media">
       {isVideo
         ? <video controls preload="none" poster={thumbnailUrl(item.id)} src={mediaProxyUrl(item.id)} data-original-src={mediaContentUrl(item.id)} onError={fallbackToOriginalVideo} aria-label={`版本 ${side} 视频，按播放后优先读取低码率 proxy`} />
-        : <img src={thumbnailUrl(item.id)} alt={`版本 ${side} 参考缩略图`} loading="lazy" decoding="async" />}
+        : <img src={thumbnailUrl(item.id)} alt={`版本 ${side} 参考缩略图`} loading="eager" decoding="async" onError={(e) => { e.currentTarget.style.display = "none"; }} />}
     </div>
     <dl>
       <div><dt>不可变版本</dt><dd>v{item.version_no}{item.take_no ? ` · Take ${item.take_no}` : ""}</dd></div>

@@ -54,7 +54,7 @@
 
 .shell-context-field > span {
   flex: 0 0 auto;
-  color: #7f899c;
+  color: var(--text-muted);
   font-size: 9px;
   font-weight: 800;
   letter-spacing: .08em;
@@ -66,7 +66,7 @@
   padding: 0 26px 0 0;
   border: 0;
   border-radius: 0;
-  color: #edf0f6;
+  color: var(--text);
   background-color: transparent;
   font-size: 12px;
   font-weight: 620;
@@ -89,7 +89,7 @@
   justify-content: center;
   gap: 7px;
   padding: 0 12px;
-  color: #cbd1dc;
+  color: var(--text-muted);
   font-size: 12px;
   font-weight: 650;
   text-decoration: none;
@@ -98,7 +98,7 @@
 }
 
 .shell-system-action svg { width: 17px; height: 17px; flex: 0 0 17px; }
-.shell-system-action:hover { color: #fff; background: rgba(124, 92, 255, .1); }
+.shell-system-action:hover { color: var(--text); background: var(--surface-hover); }
 .shell-system-action:focus-visible { position: relative; z-index: 2; border-radius: 9px; outline: 3px solid var(--focus-ring); outline-offset: -3px; }
 
 @media (max-width: 1180px) {
@@ -109,7 +109,7 @@
 
 @media (max-width: 900px) {
   .shell-system-action { min-width: 44px; width: 44px; padding: 0; }
-  .shell-system-action span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .shell-system-action span { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: clip; clip-path: inset(50%); clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 }
 
 @media (max-width: 760px) {

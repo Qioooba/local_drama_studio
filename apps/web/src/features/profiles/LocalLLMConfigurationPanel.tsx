@@ -24,7 +24,7 @@ import "./local-llm-configuration.css";
 interface PresetOption {
   id: string;
   name: string;
-  provider: "OPENAI_COMPAT" | "OLLAMA_LOOPBACK";
+  provider: "OPENAI_COMPAT" | "OLLAMA_LOOPBACK" | "LLAMA_CPP_MANAGED";
   baseUrl: string;
   model: string;
   description: string;
@@ -33,8 +33,16 @@ interface PresetOption {
 
 const BASE_PRESETS: PresetOption[] = [
   {
+    id: "llama-cpp-managed",
+    name: "托管 llama.cpp（本机进程）",
+    provider: "LLAMA_CPP_MANAGED",
+    baseUrl: "http://127.0.0.1:28088",
+    model: "",
+    description: "由服务端拉起/终止的 llama-server 子进程；GGUF 模型路径与启动参数在服务端配置。",
+  },
+  {
     id: "ollama-local",
-    name: "Ollama 当前服务端模型（离线）",
+    name: "Ollama 服务端模型（旧版兼容）",
     provider: "OLLAMA_LOOPBACK",
     baseUrl: "http://127.0.0.1:11434",
     model: "",
@@ -46,7 +54,7 @@ const BASE_PRESETS: PresetOption[] = [
     provider: "OPENAI_COMPAT",
     baseUrl: "",
     model: "",
-    description: "手动指定任意兼容 OpenAI 协议或 Ollama 的地址与模型。",
+    description: "手动指定任意兼容 OpenAI 协议的地址与模型。",
   },
 ];
 
@@ -75,10 +83,13 @@ export function LocalLLMConfigurationPanel({
   onPublished?: (receipt: ProfilePublicationReceiptData) => void;
   projectId?: string;
 }) {
-  const [selectedPreset, setSelectedPreset] = useState<string>("ollama-local");
-  const [provider, setProvider] = useState<"OPENAI_COMPAT" | "OLLAMA_LOOPBACK">("OLLAMA_LOOPBACK");
-  const [baseUrl, setBaseUrl] = useState("http://127.0.0.1:11434");
+  const [selectedPreset, setSelectedPreset] = useState<string>("llama-cpp-managed");
+  const [provider, setProvider] = useState<"OPENAI_COMPAT" | "OLLAMA_LOOPBACK" | "LLAMA_CPP_MANAGED">("LLAMA_CPP_MANAGED");
+  const [baseUrl, setBaseUrl] = useState("http://127.0.0.1:28088");
   const [model, setModel] = useState("");
+  const [customModel, setCustomModel] = useState("");
+  const [customBaseUrl, setCustomBaseUrl] = useState("");
+  const [customProvider, setCustomProvider] = useState<"OPENAI_COMPAT" | "OLLAMA_LOOPBACK" | "LLAMA_CPP_MANAGED">("OPENAI_COMPAT");
   const [apiKey, setApiKey] = useState("");
   const [rememberApiKey, setRememberApiKey] = useState(true);
   const [capability, setCapability] = useState("LLM_STORY_PARSE");
@@ -109,21 +120,30 @@ export function LocalLLMConfigurationPanel({
       description: `来自 Provider 连接中心 · ${connection.provider_kind} · revision ${connection.revision}`,
       connectionId: connection.id,
     }));
-    return [BASE_PRESETS[0], ...connections, BASE_PRESETS.at(-1)!];
+    return [BASE_PRESETS[0], BASE_PRESETS[1], ...connections, BASE_PRESETS.at(-1)!];
   }, [providerConnections.data?.items]);
   const initializedFromRuntime = useRef(false);
 
   useEffect(() => {
     const runtime = statusQuery.data?.status;
     if (initializedFromRuntime.current || !runtime?.provider || !runtime.base_url) return;
-    const runtimeProvider = runtime.provider === "OLLAMA_LOOPBACK" ? "OLLAMA_LOOPBACK" : "OPENAI_COMPAT";
+    const runtimeProvider = runtime.provider === "OLLAMA_LOOPBACK"
+      ? "OLLAMA_LOOPBACK"
+      : runtime.provider === "LLAMA_CPP_MANAGED"
+        ? "LLAMA_CPP_MANAGED"
+        : "OPENAI_COMPAT";
     const runtimeModel = runtime.model ?? "";
-    const exactPreset = presets.find((preset) => preset.id !== "ollama-local" && preset.id !== "custom"
+    const exactPreset = presets.find((preset) => preset.id !== "custom"
       && preset.provider === runtimeProvider && preset.baseUrl === runtime.base_url && preset.model === runtimeModel);
     setProvider(runtimeProvider);
     setBaseUrl(runtime.base_url);
     setModel(runtimeModel);
-    setSelectedPreset(exactPreset?.id ?? (runtimeProvider === "OLLAMA_LOOPBACK" ? "ollama-local" : "custom"));
+    if (runtimeProvider === "OPENAI_COMPAT" || exactPreset?.id === "custom") {
+      setCustomModel(runtimeModel);
+      setCustomBaseUrl(runtime.base_url);
+      setCustomProvider(runtimeProvider);
+    }
+    setSelectedPreset(exactPreset?.id ?? (runtimeProvider === "OLLAMA_LOOPBACK" ? "ollama-local" : runtimeProvider === "LLAMA_CPP_MANAGED" ? "llama-cpp-managed" : "custom"));
     initializedFromRuntime.current = true;
   }, [presets, statusQuery.data]);
 
@@ -149,7 +169,20 @@ export function LocalLLMConfigurationPanel({
       setModel(runtime?.provider === "OLLAMA_LOOPBACK" ? runtime.model ?? "" : "");
       return;
     }
-    if (preset && preset.id !== "custom") {
+    if (preset?.id === "llama-cpp-managed") {
+      const runtime = statusQuery.data?.status;
+      setProvider("LLAMA_CPP_MANAGED");
+      setBaseUrl(runtime?.provider === "LLAMA_CPP_MANAGED" && runtime.base_url ? runtime.base_url : preset.baseUrl);
+      setModel(runtime?.provider === "LLAMA_CPP_MANAGED" ? runtime.model ?? "" : "");
+      return;
+    }
+    if (preset?.id === "custom") {
+      setProvider(customProvider || "OPENAI_COMPAT");
+      setBaseUrl(customBaseUrl || (statusQuery.data?.status.provider === "OPENAI_COMPAT" ? statusQuery.data.status.base_url : ""));
+      setModel(customModel || (statusQuery.data?.status.provider === "OPENAI_COMPAT" ? statusQuery.data.status.model ?? "" : ""));
+      return;
+    }
+    if (preset) {
       setProvider(preset.provider);
       setBaseUrl(preset.baseUrl);
       setModel(preset.model);
@@ -352,11 +385,13 @@ export function LocalLLMConfigurationPanel({
         <div className="llm-safety-note"><span aria-hidden="true" />只读扫描，不加载模型、不复制权重、不连接公网</div>
       </div>
 
-      <OllamaModelCatalog
-        selectedModel={model}
-        selectedProvider={provider}
-        onSelect={(item, catalogBaseUrl) => selectDiscoveredModel(item.name, catalogBaseUrl)}
-      />
+      {provider === "OLLAMA_LOOPBACK" ? (
+        <OllamaModelCatalog
+          selectedModel={model}
+          selectedProvider={provider}
+          onSelect={(item, catalogBaseUrl) => selectDiscoveredModel(item.name, catalogBaseUrl)}
+        />
+      ) : null}
 
       <div className="llm-config-layout">
         {/* Left column: Form controls */}
@@ -381,7 +416,7 @@ export function LocalLLMConfigurationPanel({
             </small>
           </div>
 
-          {selectedPreset !== "custom" && <div className="llm-preset-facts"><span>当前配置</span><strong>{model || (provider === "OLLAMA_LOOPBACK" ? "请从上方选择模型" : "由服务自动选择模型")}</strong><small>{provider === "OLLAMA_LOOPBACK" ? "本机 Ollama" : "OpenAI 兼容远端服务"} · {baseUrl}</small></div>}
+          {selectedPreset !== "custom" && <div className="llm-preset-facts"><span>当前配置</span><strong>{model || (provider === "OLLAMA_LOOPBACK" ? "请从上方选择模型" : "由服务自动选择模型")}</strong><small>{provider === "OLLAMA_LOOPBACK" ? "本机 Ollama" : provider === "LLAMA_CPP_MANAGED" ? "托管 llama.cpp 本机进程" : "OpenAI 兼容远端服务"} · {baseUrl}</small></div>}
 
           {selectedPreset === "custom" && <div className="form-group">
             <label htmlFor="llm-provider-select">
@@ -390,10 +425,17 @@ export function LocalLLMConfigurationPanel({
             <select
               id="llm-provider-select"
               value={provider}
-              onChange={(e) => { invalidateVerification(); setSelectedPreset("custom"); setProvider(e.target.value as "OPENAI_COMPAT" | "OLLAMA_LOOPBACK"); }}
+              onChange={(e) => {
+                const val = e.target.value as "OPENAI_COMPAT" | "OLLAMA_LOOPBACK" | "LLAMA_CPP_MANAGED";
+                invalidateVerification();
+                setSelectedPreset("custom");
+                setProvider(val);
+                setCustomProvider(val);
+              }}
             >
               <option value="OPENAI_COMPAT">OpenAI 兼容接口（含 DeepSeek 等远程服务）</option>
               <option value="OLLAMA_LOOPBACK">Windows 服务端 Ollama（回环访问）</option>
+              <option value="LLAMA_CPP_MANAGED">托管 llama.cpp（服务端进程，回环访问）</option>
             </select>
           </div>}
 
@@ -422,7 +464,12 @@ export function LocalLLMConfigurationPanel({
               id="llm-base-url-input"
               type="text"
               value={baseUrl}
-              onChange={(e) => { invalidateVerification(); setSelectedPreset("custom"); setBaseUrl(e.target.value); }}
+              onChange={(e) => {
+                invalidateVerification();
+                setSelectedPreset("custom");
+                setBaseUrl(e.target.value);
+                setCustomBaseUrl(e.target.value);
+              }}
               placeholder="https://api.deepseek.com"
             />
           </div>}
@@ -435,7 +482,12 @@ export function LocalLLMConfigurationPanel({
               id="llm-model-input"
               type="text"
               value={model}
-              onChange={(e) => { invalidateVerification(); setSelectedPreset("custom"); setModel(e.target.value); }}
+              onChange={(e) => {
+                invalidateVerification();
+                setSelectedPreset("custom");
+                setModel(e.target.value);
+                setCustomModel(e.target.value);
+              }}
               placeholder="deepseek-v4-flash-vision-exp"
               list="local-llm-discovered-models"
             />

@@ -1,0 +1,3942 @@
+{
+  "started_at": "2026-09-02T16:20:06.633Z",
+  "completed_at": "2026-09-02T16:23:23.014Z",
+  "base_url": "http://127.0.0.1:5173",
+  "total_routes": 24,
+  "total_screenshots": 144,
+  "total_buttons_audited": 84,
+  "total_inputs_audited": 54,
+  "total_selects_audited": 23,
+  "total_tabs_audited": 15,
+  "summary_metrics": {
+    "critical_issues": 0,
+    "high_issues": 0,
+    "medium_issues": 42,
+    "low_issues": 7
+  },
+  "routes": [
+    {
+      "id": "P01_home",
+      "name": "全局首页 (Home)",
+      "url": "/",
+      "visited_at": "2026-09-02T16:20:07.042Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P01_home\\P01_home_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P01_home\\P01_home_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P01_home\\P01_home_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P01_home\\P01_home_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P01_home\\P01_home_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P01_home\\P01_home_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 1221,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 1221,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 1337,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 2223,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [],
+      "select_audit": [
+        {
+          "index": 0,
+          "status": "ERROR",
+          "error": "elementHandle.selectOption: Element is not attached to the DOM\nCall log:\n\u001b[2m  - attempting select option action\u001b[22m\n\u001b[2m    - waiting for element to be visible and enabled\u001b[22m\n"
+        }
+      ],
+      "tab_audit": [],
+      "defects": [
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 24 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 23 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P02_projects",
+      "name": "项目管理 (Projects)",
+      "url": "/projects",
+      "visited_at": "2026-09-02T16:20:13.462Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P02_projects\\P02_projects_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P02_projects\\P02_projects_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P02_projects\\P02_projects_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P02_projects\\P02_projects_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P02_projects\\P02_projects_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P02_projects\\P02_projects_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 1986,
+          "clippedCount": 2,
+          "clippedSamples": [
+            {
+              "tag": "P",
+              "text": "zhao_gu_deng_duan_dao_duan_zhe",
+              "scrollWidth": 373,
+              "clientWidth": 278
+            },
+            {
+              "tag": "P",
+              "text": "zhao_gu_deng_quan_liu_cheng_sh",
+              "scrollWidth": 345,
+              "clientWidth": 278
+            }
+          ],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 3070,
+          "clippedCount": 2,
+          "clippedSamples": [
+            {
+              "tag": "P",
+              "text": "zhao_gu_deng_duan_dao_duan_zhe",
+              "scrollWidth": 373,
+              "clientWidth": 339
+            },
+            {
+              "tag": "P",
+              "text": "zhao_gu_deng_quan_liu_cheng_sh",
+              "scrollWidth": 345,
+              "clientWidth": 339
+            }
+          ],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 3070,
+          "clippedCount": 2,
+          "clippedSamples": [
+            {
+              "tag": "P",
+              "text": "zhao_gu_deng_duan_dao_duan_zhe",
+              "scrollWidth": 373,
+              "clientWidth": 286
+            },
+            {
+              "tag": "P",
+              "text": "zhao_gu_deng_quan_liu_cheng_sh",
+              "scrollWidth": 345,
+              "clientWidth": 286
+            }
+          ],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 7055,
+          "clippedCount": 2,
+          "clippedSamples": [
+            {
+              "tag": "P",
+              "text": "zhao_gu_deng_duan_dao_duan_zhe",
+              "scrollWidth": 373,
+              "clientWidth": 317
+            },
+            {
+              "tag": "P",
+              "text": "zhao_gu_deng_quan_liu_cheng_sh",
+              "scrollWidth": 345,
+              "clientWidth": 317
+            }
+          ],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "全部收起",
+          "size": "80x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "紧凑",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "标准",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "大图",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [
+        {
+          "name": "Input_1",
+          "type": "text",
+          "placeholder": "输入标题或项目编号",
+          "status": "INTERACTIVE_VERIFIED"
+        }
+      ],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [],
+      "defects": [
+        {
+          "severity": "LOW",
+          "type": "TEXT_CLIPPED",
+          "detail": "在 桌面 (1920x1080) 发现 2 处文本截断 (示例: \"zhao_gu_deng_duan_dao_duan_zhe\", \"zhao_gu_deng_quan_liu_cheng_sh\")"
+        },
+        {
+          "severity": "LOW",
+          "type": "TEXT_CLIPPED",
+          "detail": "在 笔记本 (1440x900) 发现 2 处文本截断 (示例: \"zhao_gu_deng_duan_dao_duan_zhe\", \"zhao_gu_deng_quan_liu_cheng_sh\")"
+        },
+        {
+          "severity": "LOW",
+          "type": "TEXT_CLIPPED",
+          "detail": "在 平板 (1024x768) 发现 2 处文本截断 (示例: \"zhao_gu_deng_duan_dao_duan_zhe\", \"zhao_gu_deng_quan_liu_cheng_sh\")"
+        },
+        {
+          "severity": "LOW",
+          "type": "TEXT_CLIPPED",
+          "detail": "在 移动端 (375x812) 发现 2 处文本截断 (示例: \"zhao_gu_deng_duan_dao_duan_zhe\", \"zhao_gu_deng_quan_liu_cheng_sh\")"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P03_quick_create",
+      "name": "极速生成台 (Quick Create)",
+      "url": "/quick-create",
+      "visited_at": "2026-09-02T16:20:21.178Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P03_quick_create\\P03_quick_create_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P03_quick_create\\P03_quick_create_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P03_quick_create\\P03_quick_create_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P03_quick_create\\P03_quick_create_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P03_quick_create\\P03_quick_create_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P03_quick_create\\P03_quick_create_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 1957,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 1954,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 2055,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 3093,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "配置生产",
+          "size": "1562x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "全部收起",
+          "size": "80x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "紧凑",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "标准",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "大图",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "SEASON_001 · 第 1 季\n展开本季分集",
+          "size": "1562x57",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [
+        {
+          "name": "one-sentence-mode",
+          "type": "radio",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "one-sentence-mode",
+          "type": "radio",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "one-sentence-mode",
+          "type": "radio",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "你想看到什么？",
+          "type": "text",
+          "placeholder": "例如：雨夜霓虹灯下，一只橘猫撑着透明雨伞穿过街道，镜头缓慢推进。",
+          "status": "INTERACTIVE_VERIFIED"
+        }
+      ],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [],
+      "defects": [
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 72 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 71 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P04_models",
+      "name": "系统模型库 (Models)",
+      "url": "/system/capabilities",
+      "visited_at": "2026-09-02T16:20:32.792Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P04_models\\P04_models_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P04_models\\P04_models_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P04_models\\P04_models_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P04_models\\P04_models_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P04_models\\P04_models_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P04_models\\P04_models_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 7943,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 8011,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 10632,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 16610,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [
+        {
+          "index": 0,
+          "name": "模型平台",
+          "status": "CLICKED_SUCCESS"
+        },
+        {
+          "index": 1,
+          "name": "已发布目录",
+          "status": "CLICKED_SUCCESS"
+        },
+        {
+          "index": 2,
+          "name": "接入与验证",
+          "status": "CLICKED_SUCCESS"
+        }
+      ],
+      "defects": [
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 57 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 56 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P05_jobs",
+      "name": "系统任务队列 (Jobs)",
+      "url": "/system/jobs",
+      "visited_at": "2026-09-02T16:20:40.315Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P05_jobs\\P05_jobs_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P05_jobs\\P05_jobs_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P05_jobs\\P05_jobs_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P05_jobs\\P05_jobs_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P05_jobs\\P05_jobs_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P05_jobs\\P05_jobs_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 2023,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 1904,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 2015,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 2663,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [],
+      "defects": [
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 15 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 14 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P06_diagnostics",
+      "name": "系统诊断面板 (Diagnostics)",
+      "url": "/system/diagnostics",
+      "visited_at": "2026-09-02T16:20:59.765Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P06_diagnostics\\P06_diagnostics_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P06_diagnostics\\P06_diagnostics_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P06_diagnostics\\P06_diagnostics_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P06_diagnostics\\P06_diagnostics_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P06_diagnostics\\P06_diagnostics_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P06_diagnostics\\P06_diagnostics_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 1454,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 1450,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 1447,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 1714,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [
+        {
+          "name": "Input_1",
+          "type": "search",
+          "placeholder": "例如：北方小院、EP03、S12、失败任务",
+          "status": "INTERACTIVE_VERIFIED"
+        }
+      ],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [
+        {
+          "index": 0,
+          "name": "环境状态",
+          "status": "CLICKED_SUCCESS"
+        },
+        {
+          "index": 1,
+          "name": "操作记录",
+          "status": "CLICKED_SUCCESS"
+        },
+        {
+          "index": 2,
+          "name": "跨项目查找",
+          "status": "CLICKED_SUCCESS"
+        }
+      ],
+      "defects": [
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 12 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 11 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P07_workflows",
+      "name": "系统工作流 (Workflows)",
+      "url": "/system/workflows",
+      "visited_at": "2026-09-02T16:21:07.310Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P07_workflows\\P07_workflows_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P07_workflows\\P07_workflows_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P07_workflows\\P07_workflows_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P07_workflows\\P07_workflows_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P07_workflows\\P07_workflows_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P07_workflows\\P07_workflows_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 3938,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 3934,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 5559,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 8966,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [
+        {
+          "name": "撤销原因 ace-step-15-xl-sft-smoke v1",
+          "type": "text",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "撤销原因 h3-i2v v1",
+          "type": "text",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "撤销原因 minimax-h3-fl2va-production v1",
+          "type": "text",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "撤销原因 minimax-h3-fl2va-smoke v1",
+          "type": "text",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "撤销原因 minimax-h3-ref2va-smoke v1",
+          "type": "text",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "撤销原因 qwen-image-2512-production v1",
+          "type": "text",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "撤销原因 qwen-image-2512-q5-smoke v1",
+          "type": "text",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "撤销原因 qwen-image-edit-2511-multiple-angles-smoke v4",
+          "type": "text",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "撤销原因 qwen-image-edit-2511-q5-smoke v1",
+          "type": "text",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "撤销原因 sdxl-t2i-keyframe v1",
+          "type": "text",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_11",
+          "type": "text",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_12",
+          "type": "text",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_13",
+          "type": "text",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_14",
+          "type": "text",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        }
+      ],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [],
+      "defects": [
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 54 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 53 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P08_project_home",
+      "name": "项目总览看板 (Project Home)",
+      "url": "/projects/7e60549f-5253-49b0-b055-9f5ee64bfa24",
+      "visited_at": "2026-09-02T16:21:16.207Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P08_project_home\\P08_project_home_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P08_project_home\\P08_project_home_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P08_project_home\\P08_project_home_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P08_project_home\\P08_project_home_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P08_project_home\\P08_project_home_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P08_project_home\\P08_project_home_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 1494,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 1492,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 1501,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 1821,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "全部收起",
+          "size": "80x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "紧凑",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "标准",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "大图",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [],
+      "defects": [
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 26 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 24 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P09_story",
+      "name": "故事工作区 (Story)",
+      "url": "/projects/7e60549f-5253-49b0-b055-9f5ee64bfa24/story",
+      "visited_at": "2026-09-02T16:21:23.343Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P09_story\\P09_story_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P09_story\\P09_story_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P09_story\\P09_story_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P09_story\\P09_story_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P09_story\\P09_story_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P09_story\\P09_story_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 1080,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 1024,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 1009,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 1198,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "配置生产",
+          "size": "1562x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "全部收起",
+          "size": "80x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "紧凑",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "标准",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "大图",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "SEASON_001 · 第 1 季\n展开本季分集",
+          "size": "1562x57",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [
+        {
+          "name": "Input_1",
+          "type": "text",
+          "placeholder": "粘贴小说正文或剧本内容",
+          "status": "INTERACTIVE_VERIFIED"
+        }
+      ],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [
+        {
+          "index": 0,
+          "name": "上传文档",
+          "status": "CLICKED_SUCCESS"
+        },
+        {
+          "index": 1,
+          "name": "已有原稿",
+          "status": "CLICKED_SUCCESS"
+        },
+        {
+          "index": 2,
+          "name": "粘贴正文",
+          "status": "CLICKED_SUCCESS"
+        }
+      ],
+      "defects": [
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 21 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 19 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P10_story_plans",
+      "name": "改编策划列表 (Story Plans)",
+      "url": "/projects/5bf496fd-6f60-4f24-8a6a-e54b0be0f0ec/story/plans",
+      "visited_at": "2026-09-02T16:21:31.727Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P10_story_plans\\P10_story_plans_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P10_story_plans\\P10_story_plans_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P10_story_plans\\P10_story_plans_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P10_story_plans\\P10_story_plans_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P10_story_plans\\P10_story_plans_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P10_story_plans\\P10_story_plans_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 1352,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 1366,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 1490,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 1838,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "全部收起",
+          "size": "80x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "紧凑",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "标准",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "大图",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [
+        {
+          "name": "adaptation-source",
+          "type": "radio",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "adaptation-source",
+          "type": "radio",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "adaptation-source",
+          "type": "radio",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "adaptation-mode",
+          "type": "radio",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "adaptation-mode",
+          "type": "radio",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "adaptation-mode",
+          "type": "radio",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        }
+      ],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [],
+      "defects": [
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 24 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 22 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P11_plan_workspace",
+      "name": "改编策划详情 (Plan Workspace)",
+      "url": "/projects/5bf496fd-6f60-4f24-8a6a-e54b0be0f0ec/story/plans/7b7039ef-ceb3-4f3e-b963-c97005081782",
+      "visited_at": "2026-09-02T16:21:39.456Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P11_plan_workspace\\P11_plan_workspace_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P11_plan_workspace\\P11_plan_workspace_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P11_plan_workspace\\P11_plan_workspace_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P11_plan_workspace\\P11_plan_workspace_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P11_plan_workspace\\P11_plan_workspace_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P11_plan_workspace\\P11_plan_workspace_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 1629,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 1626,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 2266,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 2783,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "全部收起",
+          "size": "80x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "紧凑",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "标准",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "大图",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [],
+      "defects": [
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 12 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P12_asset_bible",
+      "name": "资产圣经 (Asset Bible)",
+      "url": "/projects/7e60549f-5253-49b0-b055-9f5ee64bfa24/assets",
+      "visited_at": "2026-09-02T16:21:46.490Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P12_asset_bible\\P12_asset_bible_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P12_asset_bible\\P12_asset_bible_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P12_asset_bible\\P12_asset_bible_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P12_asset_bible\\P12_asset_bible_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P12_asset_bible\\P12_asset_bible_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P12_asset_bible\\P12_asset_bible_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 1130,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 1130,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 1237,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 1474,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "全部收起",
+          "size": "80x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "紧凑",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "标准",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "大图",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [
+        {
+          "index": 0,
+          "name": "人物",
+          "status": "CLICKED_SUCCESS"
+        },
+        {
+          "index": 1,
+          "name": "场景",
+          "status": "CLICKED_SUCCESS"
+        },
+        {
+          "index": 2,
+          "name": "道具",
+          "status": "CLICKED_SUCCESS"
+        }
+      ],
+      "defects": [
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 15 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 13 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P13_settings_production",
+      "name": "生产设置 (Settings Production)",
+      "url": "/projects/7e60549f-5253-49b0-b055-9f5ee64bfa24/settings/production",
+      "visited_at": "2026-09-02T16:21:54.255Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P13_settings_production\\P13_settings_production_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P13_settings_production\\P13_settings_production_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P13_settings_production\\P13_settings_production_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P13_settings_production\\P13_settings_production_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P13_settings_production\\P13_settings_production_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P13_settings_production\\P13_settings_production_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 1453,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 1449,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 1463,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 2376,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [],
+      "defects": [
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 26 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 24 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P14_settings_directing",
+      "name": "导演配方设置 (Settings Directing)",
+      "url": "/projects/7e60549f-5253-49b0-b055-9f5ee64bfa24/settings/directing",
+      "visited_at": "2026-09-02T16:22:01.083Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P14_settings_directing\\P14_settings_directing_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P14_settings_directing\\P14_settings_directing_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P14_settings_directing\\P14_settings_directing_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P14_settings_directing\\P14_settings_directing_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P14_settings_directing\\P14_settings_directing_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P14_settings_directing\\P14_settings_directing_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 1898,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 1894,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 1891,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 2942,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [
+        {
+          "name": "Input_1",
+          "type": "text",
+          "placeholder": "为什么绑定或升级？",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_2",
+          "type": "text",
+          "placeholder": "竖屏都市漫剧",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_3",
+          "type": "number",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_4",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_5",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_6",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_7",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_8",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_9",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_10",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_11",
+          "type": "text",
+          "placeholder": "记录本版本改变了什么；旧版本不会被覆盖。",
+          "status": "INTERACTIVE_VERIFIED"
+        }
+      ],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [],
+      "defects": [
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 26 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 24 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P15_settings_quality",
+      "name": "质检策略设置 (Settings Quality)",
+      "url": "/projects/7e60549f-5253-49b0-b055-9f5ee64bfa24/settings/quality",
+      "visited_at": "2026-09-02T16:22:09.603Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P15_settings_quality\\P15_settings_quality_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P15_settings_quality\\P15_settings_quality_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P15_settings_quality\\P15_settings_quality_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P15_settings_quality\\P15_settings_quality_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P15_settings_quality\\P15_settings_quality_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P15_settings_quality\\P15_settings_quality_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 1770,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 1835,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 1874,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 3522,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [
+        {
+          "name": "Input_1",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_2",
+          "type": "number",
+          "placeholder": "",
+          "status": "DISABLED"
+        },
+        {
+          "name": "Input_3",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_4",
+          "type": "number",
+          "placeholder": "",
+          "status": "DISABLED"
+        },
+        {
+          "name": "Input_5",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_6",
+          "type": "number",
+          "placeholder": "",
+          "status": "DISABLED"
+        },
+        {
+          "name": "Input_7",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_8",
+          "type": "number",
+          "placeholder": "",
+          "status": "DISABLED"
+        },
+        {
+          "name": "Input_9",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_10",
+          "type": "number",
+          "placeholder": "",
+          "status": "DISABLED"
+        },
+        {
+          "name": "Input_11",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_12",
+          "type": "number",
+          "placeholder": "",
+          "status": "DISABLED"
+        },
+        {
+          "name": "Input_13",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_14",
+          "type": "number",
+          "placeholder": "",
+          "status": "DISABLED"
+        },
+        {
+          "name": "Input_15",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_16",
+          "type": "number",
+          "placeholder": "",
+          "status": "DISABLED"
+        },
+        {
+          "index": 17,
+          "status": "ERROR",
+          "error": "elementHandle.fill: Error: Malformed value\nCall log:\n\u001b[2m    - fill(\"UI审核测试_BoundaryText\")\u001b[22m\n\u001b[2m  - attempting fill action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and editable\u001b[22m\n"
+        },
+        {
+          "name": "Input_18",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "DISABLED"
+        },
+        {
+          "name": "Input_19",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "DISABLED"
+        },
+        {
+          "name": "Input_20",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "DISABLED"
+        },
+        {
+          "name": "Input_21",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "DISABLED"
+        },
+        {
+          "name": "Input_22",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "DISABLED"
+        },
+        {
+          "name": "Input_23",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "DISABLED"
+        },
+        {
+          "name": "Input_24",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "DISABLED"
+        },
+        {
+          "name": "Input_25",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "DISABLED"
+        },
+        {
+          "name": "Input_26",
+          "type": "text",
+          "placeholder": "为什么调整阈值或自动重抽范围？",
+          "status": "INTERACTIVE_VERIFIED"
+        }
+      ],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [
+        {
+          "index": 0,
+          "name": "图像",
+          "status": "CLICKED_SUCCESS"
+        }
+      ],
+      "defects": [
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 55 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 53 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P16_labs",
+      "name": "视觉实验室列表 (Visual Labs)",
+      "url": "/projects/5bf496fd-6f60-4f24-8a6a-e54b0be0f0ec/labs",
+      "visited_at": "2026-09-02T16:22:18.712Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P16_labs\\P16_labs_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P16_labs\\P16_labs_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P16_labs\\P16_labs_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P16_labs\\P16_labs_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P16_labs\\P16_labs_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P16_labs\\P16_labs_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 1080,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 900,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 768,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 812,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "全部收起",
+          "size": "80x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "紧凑",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "标准",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "大图",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [],
+      "defects": [
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 11 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P17_lab_workspace",
+      "name": "视觉实验室工作台 (Visual Lab Detail)",
+      "url": "/projects/5bf496fd-6f60-4f24-8a6a-e54b0be0f0ec/labs/3726019a-bda8-4aed-a425-4c49a9d5ab8f",
+      "visited_at": "2026-09-02T16:22:25.706Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P17_lab_workspace\\P17_lab_workspace_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P17_lab_workspace\\P17_lab_workspace_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P17_lab_workspace\\P17_lab_workspace_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P17_lab_workspace\\P17_lab_workspace_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P17_lab_workspace\\P17_lab_workspace_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P17_lab_workspace\\P17_lab_workspace_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 1080,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 900,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 768,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 812,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "全部收起",
+          "size": "80x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "紧凑",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "标准",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "大图",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [],
+      "defects": [],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P18_episode_plan",
+      "name": "分集策划台 (Episode Plan)",
+      "url": "/projects/7e60549f-5253-49b0-b055-9f5ee64bfa24/episodes/8c9c0efa-8c16-4d46-ae53-db206c5ee6a5/plan",
+      "visited_at": "2026-09-02T16:22:32.556Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P18_episode_plan\\P18_episode_plan_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P18_episode_plan\\P18_episode_plan_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P18_episode_plan\\P18_episode_plan_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P18_episode_plan\\P18_episode_plan_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P18_episode_plan\\P18_episode_plan_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P18_episode_plan\\P18_episode_plan_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 1080,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 914,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 1222,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 1888,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "全部收起",
+          "size": "80x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "紧凑",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "标准",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "大图",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [],
+      "defects": [
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 20 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 19 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P19_director_desk",
+      "name": "导演镜头工作台 (Director Desk)",
+      "url": "/projects/7e60549f-5253-49b0-b055-9f5ee64bfa24/episodes/8c9c0efa-8c16-4d46-ae53-db206c5ee6a5/studio",
+      "visited_at": "2026-09-02T16:22:39.742Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P19_director_desk\\P19_director_desk_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P19_director_desk\\P19_director_desk_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P19_director_desk\\P19_director_desk_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P19_director_desk\\P19_director_desk_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P19_director_desk\\P19_director_desk_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P19_director_desk\\P19_director_desk_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 1080,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 900,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 832,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 981,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "全部收起",
+          "size": "80x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "紧凑",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "标准",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "大图",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [],
+      "defects": [
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 13 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 12 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P20_shot_detail",
+      "name": "镜头精修视图 (Shot Detail)",
+      "url": "/projects/7e60549f-5253-49b0-b055-9f5ee64bfa24/episodes/8c9c0efa-8c16-4d46-ae53-db206c5ee6a5/studio/cd0a399d-0cee-4d0c-98cf-d161262d7be6",
+      "visited_at": "2026-09-02T16:22:46.805Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P20_shot_detail\\P20_shot_detail_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P20_shot_detail\\P20_shot_detail_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P20_shot_detail\\P20_shot_detail_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P20_shot_detail\\P20_shot_detail_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P20_shot_detail\\P20_shot_detail_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P20_shot_detail\\P20_shot_detail_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 1220,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 1040,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 1126,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 1337,
+          "clippedCount": 1,
+          "clippedSamples": [
+            {
+              "tag": "SPAN",
+              "text": "镜头 cd0a399d-0cee-4d0c-98cf-d16",
+              "scrollWidth": 245,
+              "clientWidth": 210
+            }
+          ],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "全部收起",
+          "size": "80x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "紧凑",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "标准",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "大图",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [
+        {
+          "name": "Input_1",
+          "type": "search",
+          "placeholder": "搜索镜号或内容",
+          "status": "INTERACTIVE_VERIFIED"
+        }
+      ],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [
+        {
+          "index": 0,
+          "name": "AI 生成",
+          "status": "CLICKED_SUCCESS"
+        },
+        {
+          "index": 1,
+          "name": "候选与证据",
+          "status": "CLICKED_SUCCESS"
+        }
+      ],
+      "defects": [
+        {
+          "severity": "LOW",
+          "type": "TEXT_CLIPPED",
+          "detail": "在 移动端 (375x812) 发现 1 处文本截断 (示例: \"镜头 cd0a399d-0cee-4d0c-98cf-d16\")"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 24 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 13 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P21_post_review",
+      "name": "后期审核中心 (Post Review)",
+      "url": "/projects/7e60549f-5253-49b0-b055-9f5ee64bfa24/episodes/8c9c0efa-8c16-4d46-ae53-db206c5ee6a5/post/review",
+      "visited_at": "2026-09-02T16:22:54.772Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P21_post_review\\P21_post_review_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P21_post_review\\P21_post_review_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P21_post_review\\P21_post_review_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P21_post_review\\P21_post_review_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P21_post_review\\P21_post_review_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P21_post_review\\P21_post_review_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 1080,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 930,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 1175,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 1561,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "全部收起",
+          "size": "80x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "紧凑",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "标准",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "大图",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [
+        {
+          "name": "Input_1",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        }
+      ],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [],
+      "defects": [
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 15 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 14 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P22_post_audio",
+      "name": "声音工作区 (Post Audio)",
+      "url": "/projects/7e60549f-5253-49b0-b055-9f5ee64bfa24/episodes/8c9c0efa-8c16-4d46-ae53-db206c5ee6a5/post/audio",
+      "visited_at": "2026-09-02T16:23:02.106Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P22_post_audio\\P22_post_audio_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P22_post_audio\\P22_post_audio_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P22_post_audio\\P22_post_audio_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P22_post_audio\\P22_post_audio_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P22_post_audio\\P22_post_audio_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P22_post_audio\\P22_post_audio_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 1080,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 900,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 1023,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 1176,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [],
+      "defects": [
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 14 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 13 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P23_post_edit",
+      "name": "时间线剪辑台 (Timeline)",
+      "url": "/projects/7e60549f-5253-49b0-b055-9f5ee64bfa24/episodes/8c9c0efa-8c16-4d46-ae53-db206c5ee6a5/post/edit",
+      "visited_at": "2026-09-02T16:23:08.588Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P23_post_edit\\P23_post_edit_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P23_post_edit\\P23_post_edit_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P23_post_edit\\P23_post_edit_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P23_post_edit\\P23_post_edit_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P23_post_edit\\P23_post_edit_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P23_post_edit\\P23_post_edit_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 1533,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 1533,
+          "clippedCount": 1,
+          "clippedSamples": [
+            {
+              "tag": "H3",
+              "text": "PROFILE_I2V_EVIDENCE_001",
+              "scrollWidth": 222,
+              "clientWidth": 197
+            }
+          ],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 1585,
+          "clippedCount": 1,
+          "clippedSamples": [
+            {
+              "tag": "H3",
+              "text": "PROFILE_I2V_EVIDENCE_001",
+              "scrollWidth": 222,
+              "clientWidth": 184
+            }
+          ],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 2353,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [
+        {
+          "index": 1,
+          "status": "ERROR",
+          "error": "elementHandle.fill: Error: Malformed value\nCall log:\n\u001b[2m    - fill(\"UI审核测试_BoundaryText\")\u001b[22m\n\u001b[2m  - attempting fill action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and editable\u001b[22m\n"
+        },
+        {
+          "name": "Input_2",
+          "type": "number",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_3",
+          "type": "number",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_4",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_5",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        },
+        {
+          "name": "Input_6",
+          "type": "checkbox",
+          "placeholder": "",
+          "status": "INTERACTIVE_VERIFIED"
+        }
+      ],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [],
+      "defects": [
+        {
+          "severity": "LOW",
+          "type": "TEXT_CLIPPED",
+          "detail": "在 笔记本 (1440x900) 发现 1 处文本截断 (示例: \"PROFILE_I2V_EVIDENCE_001\")"
+        },
+        {
+          "severity": "LOW",
+          "type": "TEXT_CLIPPED",
+          "detail": "在 平板 (1024x768) 发现 1 处文本截断 (示例: \"PROFILE_I2V_EVIDENCE_001\")"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 25 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 24 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    },
+    {
+      "id": "P24_delivery",
+      "name": "成片交付中心 (Delivery)",
+      "url": "/projects/7e60549f-5253-49b0-b055-9f5ee64bfa24/episodes/8c9c0efa-8c16-4d46-ae53-db206c5ee6a5/delivery",
+      "visited_at": "2026-09-02T16:23:15.779Z",
+      "screenshots": [
+        {
+          "resolution": "desktop_1080p",
+          "theme": "dark",
+          "file": "screenshots\\P24_delivery\\P24_delivery_desktop_1080p_dark.png"
+        },
+        {
+          "resolution": "laptop_900p",
+          "theme": "dark",
+          "file": "screenshots\\P24_delivery\\P24_delivery_laptop_900p_dark.png"
+        },
+        {
+          "resolution": "tablet_768p",
+          "theme": "dark",
+          "file": "screenshots\\P24_delivery\\P24_delivery_tablet_768p_dark.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "dark",
+          "file": "screenshots\\P24_delivery\\P24_delivery_mobile_375p_dark.png"
+        },
+        {
+          "resolution": "desktop_1080p",
+          "theme": "light_sim",
+          "file": "screenshots\\P24_delivery\\P24_delivery_desktop_1080p_light.png"
+        },
+        {
+          "resolution": "mobile_375p",
+          "theme": "light_sim",
+          "file": "screenshots\\P24_delivery\\P24_delivery_mobile_375p_light.png"
+        }
+      ],
+      "resolution_evaluations": {
+        "desktop_1080p": {
+          "scrollWidth": 1920,
+          "clientWidth": 1920,
+          "overflowX": 0,
+          "scrollHeight": 1097,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "laptop_900p": {
+          "scrollWidth": 1440,
+          "clientWidth": 1440,
+          "overflowX": 0,
+          "scrollHeight": 1167,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "tablet_768p": {
+          "scrollWidth": 1024,
+          "clientWidth": 1024,
+          "overflowX": 0,
+          "scrollHeight": 1415,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        },
+        "mobile_375p": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "overflowX": 0,
+          "scrollHeight": 2151,
+          "clippedCount": 0,
+          "clippedSamples": [],
+          "misalignmentsCount": 0,
+          "misalignmentsSamples": [],
+          "brokenImagesCount": 0,
+          "brokenImages": []
+        }
+      },
+      "theme_evaluations": {},
+      "button_audit": [
+        {
+          "text": "搜索命令与实体\nCtrl K",
+          "size": "240x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "全部收起",
+          "size": "80x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "紧凑",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "标准",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        },
+        {
+          "text": "大图",
+          "size": "56x44",
+          "disabled": false,
+          "destructive": false,
+          "status": "AUDITED_OK"
+        }
+      ],
+      "input_audit": [],
+      "select_audit": [
+        {
+          "index": 0,
+          "optionsCount": 19,
+          "status": "ALL_OPTIONS_VERIFIED"
+        }
+      ],
+      "tab_audit": [],
+      "defects": [
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 15 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        },
+        {
+          "severity": "MEDIUM",
+          "type": "LOW_CONTRAST_RATIO",
+          "detail": "在浅色模式下检测到 14 处文本色彩对比度低于 WCAG AA 3.0:1 阈值"
+        }
+      ],
+      "console_errors": [],
+      "network_errors": []
+    }
+  ]
+}

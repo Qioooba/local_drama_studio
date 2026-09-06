@@ -518,6 +518,23 @@ def test_local_llm_json_parser_unwraps_common_result_envelope() -> None:
     ) == payload
 
 
+def test_local_llm_json_parser_preserves_complete_episode_over_nested_scene_key() -> None:
+    payload = {
+        "title": "第一集",
+        "summary": "主角踏入山门。",
+        "core_conflict": "主角必须通过考验。",
+        "ending_hook": "古灯突然亮起。",
+        "source_evidence": ["踏入山门"],
+        "entity_observations": {
+            "characters": [{"name": "林照", "observation": "本集主角"}],
+            "scenes": [{"name": "山门", "observation": "入门考验地点"}],
+            "props": [{"name": "照骨灯", "observation": "结尾亮起"}],
+        },
+    }
+
+    assert LocalLLMClient._parse_json_content(json.dumps(payload, ensure_ascii=False)) == payload
+
+
 def test_request_script_breakdown_flow(workspace, database, monkeypatch) -> None:
     project = ProjectService(database, workspace.projects_root).create_project(
         code="bk_flow",
@@ -742,7 +759,7 @@ def test_durable_breakdown_freezes_and_enforces_episode_duration_contract(worksp
         assert invalid_range.json()["error"]["code"] == "BREAKDOWN_SOURCE_RANGE_INVALID"
 
     persisted = JobService(database, workspace).get_job(job_id)
-    assert persisted["input_snapshot"]["schema_version"] == "localdrama.script-breakdown-job.v3"
+    assert persisted["input_snapshot"]["schema_version"] == "localdrama.script-breakdown-job.v4"
     assert persisted["input_snapshot"]["target_episode_id"] == episode["id"]
     assert persisted["input_snapshot"]["target_duration_seconds"] == 60
     assert persisted["input_snapshot"]["source_paragraph_start"] == 1
@@ -751,6 +768,7 @@ def test_durable_breakdown_freezes_and_enforces_episode_duration_contract(worksp
     outcome = LocalMediaWorker(database, workspace).run_once("duration-contract-worker", ["CPU"])
     assert outcome is not None and outcome["result"]["job_state"] == "SUCCEEDED"
     assert "目标成片时长为 60 秒" in str(captured_call["prompt"])
+    assert "至少返回 4 个镜头" in str(captured_call["prompt"])
     assert "必须覆盖的 P 编号全集是 [1]" in str(captured_call["prompt"])
     schema = captured_call["schema"]
     assert isinstance(schema, dict)
@@ -812,6 +830,62 @@ def test_draft_timings_are_audibly_normalized_without_changing_shot_content() ->
     assert evidence["duration_adjustment_status"] == "NORMALIZED_TO_TARGET"
     assert evidence["model_total_duration_seconds"] == 20
     assert evidence["normalized_total_duration_seconds"] == 60
+
+
+@pytest.mark.parametrize(
+    ("target_duration_seconds", "model_shot_durations"),
+    [
+        # A model can return a result inside the historical +/-20% acceptance
+        # window while still missing the configured target.  The persisted
+        # replan must use the target whenever the shot-count bounds allow it.
+        (120, [14.25] * 8),
+        (90, [10.625] * 8),
+    ],
+)
+def test_breakdown_timings_honor_configured_target_inside_tolerance(
+    target_duration_seconds: int,
+    model_shot_durations: list[float],
+) -> None:
+    model_output = _duration_matched_breakdown_output()
+    scenes = model_output["scenes"]
+    assert isinstance(scenes, list) and isinstance(scenes[0], dict)
+    scenes[0]["shots"] = [
+        {
+            "shot_no": shot_no,
+            "visual": f"书房镜头 {shot_no}",
+            "action": "侦探检查钥匙",
+            "dialogue": "",
+            "duration_seconds": duration,
+        }
+        for shot_no, duration in enumerate(model_shot_durations, start=1)
+    ]
+
+    normalized, evidence = _normalize_breakdown_durations(model_output, target_duration_seconds)
+
+    normalized_shots = normalized["scenes"][0]["shots"]
+    assert isinstance(normalized_shots, list)
+    total = sum(float(shot["duration_seconds"]) for shot in normalized_shots)
+    assert total == pytest.approx(target_duration_seconds)
+    assert evidence["model_total_duration_seconds"] == pytest.approx(sum(model_shot_durations))
+    assert evidence["normalized_total_duration_seconds"] == pytest.approx(target_duration_seconds)
+    assert evidence["duration_adjustment_target_seconds"] == target_duration_seconds
+
+
+def test_draft_timings_use_the_nearest_feasible_duration_inside_tolerance() -> None:
+    model_output = _duration_matched_breakdown_output()
+    scenes = model_output["scenes"]
+    assert isinstance(scenes, list) and isinstance(scenes[0], dict)
+    shots = scenes[0]["shots"]
+    assert isinstance(shots, list)
+    for shot in shots:
+        shot["duration_seconds"] = 5
+
+    normalized, evidence = _normalize_breakdown_durations(model_output, 70)
+
+    normalized_shots = normalized["scenes"][0]["shots"]
+    assert [shot["duration_seconds"] for shot in normalized_shots] == [15, 15, 15, 15]
+    assert evidence["normalized_total_duration_seconds"] == 60
+    assert evidence["duration_adjustment_target_seconds"] == 60
 
 
 def test_durable_breakdown_rejects_duration_mismatch_without_persisting_draft(workspace, database, monkeypatch) -> None:

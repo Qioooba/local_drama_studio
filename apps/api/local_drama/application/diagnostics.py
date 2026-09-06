@@ -14,6 +14,7 @@ from typing import Any, Protocol, cast
 from urllib.error import URLError
 from urllib.request import Request
 
+from local_drama.application.capacity import CapacitySnapshotService
 from local_drama.application.h3_workflows import H3WorkflowFactory
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
@@ -201,7 +202,23 @@ class DiagnosticService:
             "runtime",
             str(llm.get("status", "BLOCKED")),
             llm,
-            remediation={"action": "显式配置 LOCAL_DRAMA_LLM_MODEL 并启动本机 Ollama；禁止远程 fallback"},
+            remediation={"action": "显式配置托管 llama.cpp 模型并启动 llama-server；禁止远程 fallback"},
+        )
+        capacity = CapacitySnapshotService(self.database, self.settings).inspect()
+        queued_without_executor = capacity["queued_count"] > 0 and capacity["active_worker_count"] == 0
+        add(
+            "LOCAL_EXECUTOR",
+            "runtime",
+            "BLOCKED" if queued_without_executor else "PASS",
+            {
+                "queued_count": capacity["queued_count"],
+                "active_worker_count": capacity["active_worker_count"],
+                "active_attempt_count": capacity["active_attempt_count"],
+                "oldest_queued_age_seconds": capacity["oldest_queued_age_seconds"],
+            },
+            {
+                "action": "本机应用服务恢复后会自动接管已排队任务；若持续没有执行器，请重新启动应用服务后回到此处重新检查。页面不会要求输入命令。"
+            },
         )
         ffmpeg_status, ffmpeg_observed = _run_version(ffmpeg_path)
         add("FFMPEG", "media", ffmpeg_status, ffmpeg_observed, {"action": "安装或配置本机 FFmpeg；不下载"})

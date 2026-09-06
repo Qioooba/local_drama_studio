@@ -176,7 +176,7 @@ describe("Episode Plan Data Contract & Shared QueryClient Integration", () => {
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByText(/DRAFT_READY · NOT_APPLIED/)).toBeTruthy();
+    expect(await screen.findByText(/^待审核$/)).toBeTruthy();
     expect(screen.getByText("第一幕草稿")).toBeTruthy();
 
     rerender(
@@ -219,7 +219,7 @@ describe("Episode Plan Data Contract & Shared QueryClient Integration", () => {
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByText(/DRAFT_READY · NOT_APPLIED/)).toBeTruthy();
+    expect(await screen.findByText(/^待审核$/)).toBeTruthy();
     expect(screen.getByText("2 个建议场次 · 3 个建议镜头")).toBeTruthy();
   });
 
@@ -307,7 +307,7 @@ describe("Episode Plan Data Contract & Shared QueryClient Integration", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "重新读取草稿" }));
 
-    expect(await screen.findByText(/DRAFT_READY · NOT_APPLIED/)).toBeTruthy();
+    expect(await screen.findByText(/^待审核$/)).toBeTruthy();
     expect(screen.getByText("第一幕草稿")).toBeTruthy();
   });
 

@@ -74,6 +74,14 @@ async def instantiate_definition(
         raise api_error_from_domain(error) from error
 
 
+@router.get("/workflow-definitions/{definition_code}/runtime-options", operation_id="getWorkflowDefinitionRuntimeOptions")
+def definition_runtime_options(definition_code: str, request: Request) -> dict[str, object]:
+    try:
+        return definition_service(request).runtime_options(definition_code, comfy_client(request))
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.post("/workflow-packages", status_code=201, operation_id="registerWorkflowPackage")
 async def register_package(payload: WorkflowPackageRequest, request: Request) -> dict[str, object]:
     try:
@@ -162,7 +170,7 @@ async def compile_inputs(version_id: str, payload: WorkflowCompileRequest, reque
 
 
 @router.post("/workflow-versions/{version_id}:validate-local", operation_id="validateWorkflowLocal")
-async def validate_local(version_id: str, request: Request) -> dict[str, object]:
+def validate_local(version_id: str, request: Request) -> dict[str, object]:
     try:
         return {"validation": workflow_service(request).validate_against_comfy(version_id, comfy_client(request))}
     except DomainRuleError as error:

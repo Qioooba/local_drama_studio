@@ -397,6 +397,19 @@ def test_cancelling_keyframe_batch_syncs_candidate_rows(workspace, database, mon
     assert stale == 0
     assert [str(row["state"]) for row in job_states] == ["CANCELLED"]
 
+    # A terminal run may retain its last generation stage after a runtime
+    # failure. Reading recent history must never reconcile or touch it again,
+    # otherwise an old failure repeatedly jumps to the top of the list.
+    frozen_updated_at = "2026-01-01T00:00:00+00:00"
+    with database.transaction() as connection:
+        connection.execute(
+            "UPDATE quick_generation_runs SET state='FAILED',stage='IMAGE_GENERATING',updated_at=? WHERE id=?",
+            (frozen_updated_at, planned["id"]),
+        )
+    terminal = service.get(planned["id"])["run"]
+    assert terminal["state"] == "FAILED"
+    assert terminal["updated_at"] == frozen_updated_at
+
 
 def test_image_first_candidates_become_approved_keyframe_and_real_i2v_binding(workspace, database, monkeypatch) -> None:
     llm_id, _ = _profiles(workspace, database, monkeypatch)
@@ -553,3 +566,68 @@ def test_model_catalog_groups_one_video_model_under_both_actions() -> None:
     assert catalog[0]["name"] == "Wan 2.2"
     assert catalog[0]["actions"] == ["IMAGE_TO_VIDEO", "TEXT_TO_VIDEO"]
     assert {route["profile_version_id"] for route in catalog[0]["routes"]} == {"t2v-v1", "i2v-v1"}
+
+
+def test_model_catalog_marks_published_text_provider_executable_without_comfy_workflow() -> None:
+    catalog = build_generation_model_catalog(
+        [
+            {
+                "id": "llm-profile",
+                "version_id": "llm-v1",
+                "version_no": 1,
+                "title": "Local LLM story planner",
+                "capability": "LLM_STORY_PARSE",
+                "status": "PUBLISHED",
+                "workflow_version_id": None,
+                "model_bundle": {"provider": "OLLAMA_LOOPBACK", "model": "qwen3.8:27b"},
+            }
+        ]
+    )
+
+    assert len(catalog) == 1
+    assert catalog[0]["executable"] is True
+    assert catalog[0]["routes"][0]["action"] == "TEXT_PLANNING"
+    assert catalog[0]["routes"][0]["executable"] is True
+
+
+def test_model_catalog_prefers_configured_text_model_and_rejects_explicitly_unverified_media_route() -> None:
+    profiles = [
+        {
+            "id": "stale-llm",
+            "version_id": "stale-llm-v1",
+            "version_no": 1,
+            "title": "Old planner",
+            "capability": "LLM_STORY_PARSE",
+            "status": "PUBLISHED",
+            "workflow_version_id": None,
+            "model_bundle": {"provider": "OLLAMA_LOOPBACK", "model": "old:14b"},
+        },
+        {
+            "id": "current-llm",
+            "version_id": "current-llm-v1",
+            "version_no": 1,
+            "title": "Current planner",
+            "capability": "LLM_STORY_PARSE",
+            "status": "PUBLISHED",
+            "workflow_version_id": None,
+            "model_bundle": {"provider": "OLLAMA_LOOPBACK", "model": "current:27b"},
+        },
+        {
+            "id": "retired-image",
+            "version_id": "retired-image-v1",
+            "version_no": 1,
+            "title": "Retired image route",
+            "capability": "IMAGE_CONCEPT",
+            "status": "PUBLISHED",
+            "workflow_version_id": "old-workflow",
+            "model_bundle": {"model_family": "Retired image", "route_status": "static_workflow_present_runtime_unverified"},
+        },
+    ]
+
+    catalog = build_generation_model_catalog(profiles, preferred_llm_model="current:27b")
+
+    text_models = [model for model in catalog if model["category"] == "TEXT"]
+    assert text_models[0]["name"] == "current:27b"
+    retired = next(model for model in catalog if model["category"] == "IMAGE")
+    assert retired["executable"] is False
+    assert retired["routes"][0]["executable"] is False

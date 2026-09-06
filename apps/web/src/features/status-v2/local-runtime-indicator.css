@@ -6,10 +6,10 @@
   align-items: center;
   gap: 8px;
   padding: 0 12px;
-  border: 1px solid #5f7971;
+  border: 1px solid color-mix(in srgb, var(--creative) 40%, var(--border));
   border-radius: 10px;
-  color: #c9f0e5;
-  background: #29403a;
+  color: var(--creative);
+  background: color-mix(in srgb, var(--creative) 12%, var(--surface-muted));
   cursor: pointer;
   list-style: none;
 }
@@ -18,13 +18,13 @@
 .local-runtime-indicator summary > svg { width: 14px; height: 14px; flex: 0 0 14px; }
 
 .local-runtime-indicator__copy { display: grid; gap: 1px; line-height: 1.05; white-space: nowrap; }
-.local-runtime-indicator__copy small { color: currentColor; font-size: 8px; font-weight: 650; letter-spacing: .06em; opacity: .68; }
+.local-runtime-indicator__copy small { color: currentColor; font-size: 8px; font-weight: 650; letter-spacing: .06em; opacity: .82; }
 .local-runtime-indicator__copy strong { color: currentColor; font-size: 11px; font-weight: 760; letter-spacing: .02em; }
-.local-runtime-indicator__full-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.local-runtime-indicator__full-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: clip; clip-path: inset(50%); clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 .local-runtime-indicator.degraded summary,
-.local-runtime-indicator.lan-warning summary { border-color: #8a5a1e; color: #f5c488; background: #3b2c12; }
-.local-runtime-indicator.checking summary { border-color: #53605c; color: #d6ddd9; background: #37413e; }
+.local-runtime-indicator.lan-warning summary { border-color: color-mix(in srgb, var(--warning) 45%, var(--border)); color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, var(--surface-muted)); }
+.local-runtime-indicator.checking summary { border-color: var(--border); color: var(--text-muted); background: var(--surface-muted); }
 
 .local-runtime-popover {
   position: absolute;
@@ -50,3 +50,14 @@
 .local-runtime-popover dd.warning { color: var(--warning); }
 .local-runtime-popover a { color: var(--selected); font-size: 10px; font-weight: 850; }
 .local-runtime-indicator :focus-visible { outline: 3px solid color-mix(in srgb, var(--info) 40%, transparent); outline-offset: 2px; }
+
+@media (max-width: 520px) {
+  .local-runtime-indicator summary {
+    width: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+  .local-runtime-indicator__copy {
+    display: none;
+  }
+}

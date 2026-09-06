@@ -39,6 +39,16 @@ describe("DiagnosticsOverview", () => {
     expect(issueRegion).not.toHaveTextContent("视频处理");
   });
 
+  it("does not label production healthy when queued work has no executor", () => {
+    render(<DiagnosticsOverview run={run({
+      status: "DEGRADED",
+      checks: [{ code: "LOCAL_EXECUTOR", category: "runtime", status: "BLOCKED", observed: { queued_count: 1, active_worker_count: 0, active_attempt_count: 0 } }],
+    })} running={false} onRun={vi.fn()} />);
+    expect(screen.getByRole("heading", { name: "有 1 项影响生产" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "本机任务执行器" })).toBeInTheDocument();
+    expect(screen.getByText("有 1 个任务排队，但没有可用执行器")).toBeInTheDocument();
+  });
+
   it("does not turn missing GPU capacity into a false zero", () => {
     render(<DiagnosticsOverview run={run({
       status: "DEGRADED",

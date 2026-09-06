@@ -35,15 +35,26 @@ def frozen_generation_contract(
     profile: Mapping[str, Any],
     workflow: Mapping[str, Any],
     plan: VariantPlan,
+    *,
+    effective_workflow_bindings: Mapping[str, Any] | None = None,
+    effective_workflow_contract: Mapping[str, Any] | None = None,
 ) -> FrozenGenerationContract:
-    bindings = _json_object(
-        workflow["node_bindings_json"], code="WORKFLOW_BINDING_INVALID", message="Workflow semantic binding 契约无效",
+    bindings = (
+        dict(effective_workflow_bindings)
+        if isinstance(effective_workflow_bindings, Mapping)
+        else _json_object(
+            workflow["node_bindings_json"], code="WORKFLOW_BINDING_INVALID", message="Workflow semantic binding 契约无效",
+        )
     )
     content = _json_object(
         workflow["content_json"], code="WORKFLOW_BINDING_INVALID", message="Workflow content 契约无效",
     )
-    contract = _json_object(
-        workflow["contract_json"], code="WORKFLOW_CONTRACT_INVALID", message="Workflow contract 契约无效",
+    contract = (
+        dict(effective_workflow_contract)
+        if isinstance(effective_workflow_contract, Mapping)
+        else _json_object(
+            workflow["contract_json"], code="WORKFLOW_CONTRACT_INVALID", message="Workflow contract 契约无效",
+        )
     )
     required_roles = set()
     if isinstance(plan.parameter_set.get("PROMPT"), str) and str(plan.parameter_set["PROMPT"]).strip():

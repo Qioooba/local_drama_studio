@@ -13,6 +13,14 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ShotReadinessFact(StrictModel):
+    """Shot-level generation readiness, separate from episode-stage progress."""
+
+    status: str
+    ready: bool
+    allowed_actions: list[str]
+
+
 class LocalArtifactReference(StrictModel):
     scope: Literal["PROJECT", "DATA"]
     kind: Literal["FILE", "DIRECTORY"]

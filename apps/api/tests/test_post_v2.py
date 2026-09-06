@@ -50,6 +50,21 @@ def test_post_v2_overview_and_review_targets_are_typed_bounded_and_path_safe(wor
         assert "rel_path" not in page["items"][0]
         assert page["items"][0]["allowed_actions"] == ["SUBMIT_REVIEW_DECISION"]
 
+        deep_link = client.get(
+            f"/api/v2/episodes/{episode['id']}/review-targets",
+            params={"target_kind": "MEDIA_VERSION", "target_id": media_id, "limit": 1},
+        )
+        assert deep_link.status_code == 200, deep_link.text
+        assert deep_link.json()["total"] == 1
+        assert deep_link.json()["items"][0]["target_id"] == media_id
+        missing = client.get(
+            f"/api/v2/episodes/{episode['id']}/review-targets",
+            params={"target_kind": "MEDIA_VERSION", "target_id": "missing-media", "limit": 1},
+        )
+        assert missing.status_code == 200, missing.text
+        assert missing.json()["items"] == []
+        assert missing.json()["total"] == 0
+
         paths = client.get("/api/v1/openapi.json").json()["paths"]
         assert paths["/api/v2/episodes/{episode_id}/post/overview"]["get"]["operationId"] == "getEpisodePostOverviewV2"
         assert paths["/api/v2/episodes/{episode_id}/review-targets"]["get"]["operationId"] == "listEpisodeReviewTargetsV2"
@@ -77,6 +92,46 @@ def test_post_v2_rejects_unknown_episode_and_target_kind(workspace, database) ->
             params={"target_kind": "SHOT"},
         )
         assert invalid.status_code == 422
+
+
+def test_review_targets_prioritize_newest_material_and_keep_older_targets_paginable(workspace, database) -> None:
+    project, episode, shot = _episode(workspace, database)
+    oldest = _keyframe(workspace, database, str(project["id"]), str(shot["id"]), "oldest")
+    middle = _keyframe(workspace, database, str(project["id"]), str(shot["id"]), "middle")
+    newest = _keyframe(workspace, database, str(project["id"]), str(shot["id"]), "newest")
+    with database.connect() as connection:
+        for media_id, created_at in (
+            (oldest, "2026-01-01T00:00:01+00:00"),
+            (middle, "2026-01-01T00:00:02+00:00"),
+            (newest, "2026-01-01T00:00:03+00:00"),
+        ):
+            connection.execute("UPDATE media_versions SET created_at=? WHERE id=?", (created_at, media_id))
+
+    with TestClient(create_app(workspace)) as client:
+        first_page = client.get(
+            f"/api/v2/episodes/{episode['id']}/review-targets",
+            params={"target_kind": "MEDIA_VERSION", "cursor": 0, "limit": 2},
+        )
+        assert first_page.status_code == 200, first_page.text
+        assert first_page.json()["total"] == 3
+        assert [item["target_id"] for item in first_page.json()["items"]] == [newest, middle]
+        assert first_page.json()["next_cursor"] == 2
+
+        second_page = client.get(
+            f"/api/v2/episodes/{episode['id']}/review-targets",
+            params={"target_kind": "MEDIA_VERSION", "cursor": 2, "limit": 2},
+        )
+        assert second_page.status_code == 200, second_page.text
+        assert [item["target_id"] for item in second_page.json()["items"]] == [oldest]
+        assert second_page.json()["next_cursor"] is None
+
+        deep_link = client.get(
+            f"/api/v2/episodes/{episode['id']}/review-targets",
+            params={"target_kind": "MEDIA_VERSION", "target_id": oldest, "limit": 1},
+        )
+        assert deep_link.status_code == 200, deep_link.text
+        assert deep_link.json()["total"] == 1
+        assert deep_link.json()["items"][0]["target_id"] == oldest
 
 
 def test_review_decision_v2_is_revision_safe_idempotent_audited_and_revocable(workspace, database) -> None:

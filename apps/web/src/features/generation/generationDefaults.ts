@@ -36,5 +36,9 @@ export function composePromptFromIntent(fields: Record<string, unknown>, shotCod
         : "").filter(Boolean).join("；")
     : typeof fields.dialogue === "string" ? fields.dialogue : "";
   if (dialogue) parts.push(`对白：${dialogue}`);
+  const modifiers = Array.isArray(fields.prompt_modifiers)
+    ? fields.prompt_modifiers.map((item) => typeof item === "string" ? item.trim() : "").filter(Boolean)
+    : [];
+  if (modifiers.length) parts.push(`统一视觉修饰：${modifiers.join("，")}`);
   return parts.filter(Boolean).join("，");
 }

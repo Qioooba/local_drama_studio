@@ -439,20 +439,39 @@ class WorkerSupervisor:
                 try:
                     requested_channels = channels or ["CPU"]
                     result = None
-                    if "GPU_H3" in requested_channels:
+                    cpu_channels = [item for item in requested_channels if item != "GPU_H3"]
+                    # A verified media version is not usable in the creator UI
+                    # until its small preview exists.  Drain these lightweight
+                    # CPU jobs before starting another long GPU decode so a
+                    # batch does not leave every completed image visually
+                    # blank for hours.
+                    if cpu_channels:
+                        result = worker.run_media_derivative_once(
+                            worker_id,
+                            cpu_channels,
+                            worker_session_id=session_id,
+                        )
+                    if result is None and "GPU_H3" in requested_channels:
                         result = comfy_worker.run_once(
                             worker_id,
                             worker_session_id=session_id,
                             sleep=self._sleep,
                         )
                     if result is None:
-                        # ComfyGenerationService explicitly excludes V2 model
-                        # executions.  Keep GPU_H3 here so LocalMediaWorker can
-                        # claim the frozen V2 snapshot after legacy Comfy jobs
-                        # have had their dedicated consumer opportunity.
-                        local_channels = requested_channels
-                        if local_channels:
-                            result = worker.run_once(worker_id, local_channels, worker_session_id=session_id)
+                        # CPU work belongs to LocalMediaWorker.  GPU_H3 work is
+                        # owned by ComfyGenerationService except for immutable
+                        # V2 model-platform snapshots; never let the generic
+                        # dispatcher steal a Comfy evidence/generation job and
+                        # reject it as an unsupported type.
+                        if cpu_channels:
+                            result = worker.run_once(worker_id, cpu_channels, worker_session_id=session_id)
+                        if result is None and "GPU_H3" in requested_channels:
+                            result = worker.run_once(
+                                worker_id,
+                                ["GPU_H3"],
+                                worker_session_id=session_id,
+                                job_types=["MODEL_PLATFORM_EXECUTION"],
+                            )
                 except Exception as error:
                     restarts += 1
                     needs_success_reset = True
@@ -502,9 +521,10 @@ class WorkerSupervisor:
             self.sessions.stop(session_id, exit_code=1)
             raise
         except BaseException:
-            # A normal exception is persisted above.  KeyboardInterrupt,
-            # termination and hard process kill are intentionally recovered by
-            # the expiry reconciler instead of being mislabeled as clean stop.
+            # Console interrupts still execute Python cleanup and therefore
+            # must release the durable lease immediately.  A hard process kill
+            # cannot reach this branch and remains covered by expiry reconcile.
             heartbeat_stop.set()
             heartbeat_thread.join(timeout=2.0)
+            self.sessions.stop(session_id, exit_code=130)
             raise

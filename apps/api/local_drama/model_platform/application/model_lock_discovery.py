@@ -59,6 +59,7 @@ class ModelLockDiscoveryOrchestrator:
         node_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"localdramastudio:node:{self.settings.instance_id}"))
         library_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"localdramastudio:library:{self.settings.instance_id}:{index}"))
         now = _utc_now()
+        resolved_root = str(root.resolve())
         with self.database.transaction() as connection:
             connection.execute(
                 """INSERT OR IGNORE INTO mp_compute_nodes
@@ -70,13 +71,24 @@ class ModelLockDiscoveryOrchestrator:
                 """INSERT OR IGNORE INTO mp_model_libraries
                 (id,node_id,code,kind,root_path_local,managed,read_only,scan_policy_json,created_at,updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                (library_id, node_id, f"model-library-{index}", "MODEL_ROOT", str(root.resolve()), False, False, "{}", now, now),
+                (library_id, node_id, f"model-library-{index}", "MODEL_ROOT", resolved_root, False, False, "{}", now, now),
+            )
+            # The library id represents a configured service slot, not a
+            # physical path.  A Host configuration migration keeps the slot
+            # stable while its private local root changes.  Reconcile that
+            # root during an explicit scan so integrity checks and newly
+            # discovered evidence use the same current service identity.
+            connection.execute(
+                """UPDATE mp_model_libraries
+                   SET root_path_local=?,updated_at=?
+                   WHERE id=? AND root_path_local<>?""",
+                (resolved_root, now, library_id, resolved_root),
             )
         return library_id
 
     def _ensure_runtime_version(self, library_id: str, kind: RuntimeKind, index: int) -> str:
         runtime_name = "comfyui" if kind is RuntimeKind.COMFYUI else "pytorch"
-        runtime_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"localdramastudio:{runtime_name}:{self.settings.instance_id}:{index}"))
+        runtime_id = _runtime_installation_id(self.settings, kind, index)
         configuration = {"library_id": library_id, "discovery_source": "MODEL_LOCK"}
         fingerprint = hashlib.sha256(_json({"kind": kind.value, **configuration}).encode("utf-8")).hexdigest()
         now = _utc_now()
@@ -122,6 +134,20 @@ def _runtime_bindings_for_library(root: Path) -> tuple[RuntimeKind, ...]:
     # Existing administrator-owned aggregate libraries stay readable without
     # guessing a new layout. They may contain both legacy path families.
     return (RuntimeKind.COMFYUI, RuntimeKind.PYTORCH_PROCESS)
+
+
+def configured_model_lock_runtime_ids(settings: Settings) -> tuple[str, ...]:
+    """Return only runtime identities represented by the current Host layout."""
+    return tuple(
+        _runtime_installation_id(settings, kind, index)
+        for index, root in enumerate(settings.model_library_roots, start=1)
+        for kind in _runtime_bindings_for_library(root)
+    )
+
+
+def _runtime_installation_id(settings: Settings, kind: RuntimeKind, index: int) -> str:
+    runtime_name = "comfyui" if kind is RuntimeKind.COMFYUI else "pytorch"
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"localdramastudio:{runtime_name}:{settings.instance_id}:{index}"))
 
 
 def _json(value: object) -> str:

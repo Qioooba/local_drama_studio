@@ -1,0 +1,122 @@
+/* jobs-panel.css - Task Center toolbar, batch actions, and selection styles */
+
+.job-row {
+  grid-template-columns: 28px 1.3fr .6fr .8fr 1fr;
+}
+
+@media (min-width: 1360px) {
+  #root .shell .job-row {
+    grid-template-columns: 28px minmax(140px, 1fr) minmax(72px, .45fr) auto minmax(140px, .9fr) minmax(400px, 1.8fr);
+    align-items: center;
+  }
+}
+
+.status-pill.state-paused {
+  border-color: color-mix(in srgb, #f59e0b 40%, transparent);
+  color: #f59e0b;
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+}
+
+.job-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-subtle);
+}
+
+.job-global-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.job-global-actions button {
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.job-batch-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--selected) 40%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--selected) 8%, var(--surface));
+}
+
+.job-batch-bar > span {
+  font-weight: 700;
+  margin-right: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.job-batch-bar button {
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.job-row-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.job-row-checkbox input[type="checkbox"],
+.job-select-all input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--selected);
+}
+
+.job-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.job-row.selected {
+  background: color-mix(in srgb, var(--selected) 6%, var(--surface)) !important;
+  border-color: color-mix(in srgb, var(--selected) 35%, var(--border)) !important;
+}
+
+.btn-start {
+  color: #10b981;
+  border-color: color-mix(in srgb, #10b981 50%, var(--border));
+}
+
+.btn-start:hover:not(:disabled) {
+  border-color: #10b981;
+  background: color-mix(in srgb, #10b981 12%, transparent);
+}
+
+.btn-pause {
+  color: #f59e0b;
+  border-color: color-mix(in srgb, #f59e0b 50%, var(--border));
+}
+
+.btn-pause:hover:not(:disabled) {
+  border-color: #f59e0b;
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+}

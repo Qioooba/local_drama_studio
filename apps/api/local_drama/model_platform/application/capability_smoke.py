@@ -8,13 +8,18 @@ import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Callable, Protocol
 
+from local_drama.application.gpu_runtime import GpuRuntimeCoordinator
+from local_drama.application.job_resources import GpuRuntime
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.local_ai_subprocess import LocalAiSubprocessRuntime
 from local_drama.infrastructure.local_llm import LocalLLMClient
+from local_drama.model_platform.application.llama_cpp_discovery import verify_managed_llama_runtime_configuration
+from local_drama.model_platform.application.offering_readiness import reconcile_offering_readiness
 
 _OLLAMA_TEXT_CAPABILITIES = frozenset({
     "LLM_STORY_PARSE",
@@ -57,16 +62,22 @@ class CapabilitySmokeService:
         *,
         ollama_client_factory: Callable[[str, str], OllamaProbeClient] | None = None,
         embedding_smoke_factory: Callable[[], dict[str, object]] | None = None,
+        llama_client_factory: Callable[[str, str], OllamaProbeClient] | None = None,
+        gpu_coordinator: GpuRuntimeCoordinator | None = None,
     ) -> None:
         self.database = database
         self.settings = settings
         self.ollama_client_factory = ollama_client_factory or self._default_ollama_client
         self.embedding_smoke_factory = embedding_smoke_factory or self._default_embedding_smoke
+        self.llama_client_factory = llama_client_factory or self._default_llama_client
+        self.gpu_coordinator = gpu_coordinator
 
     def smoke(self, runtime_model_installation_id: str, capability_code: str) -> CapabilitySmokeResult:
         candidate = self._candidate(runtime_model_installation_id, capability_code)
         if candidate["runtime_kind"] == "OLLAMA" and candidate["capability_code"] in _OLLAMA_TEXT_CAPABILITIES:
             return self._smoke_ollama(candidate)
+        if candidate["runtime_kind"] == "LLAMA_CPP_MANAGED" and candidate["capability_code"] in _OLLAMA_TEXT_CAPABILITIES:
+            return self._smoke_llama_cpp(candidate)
         if (
             candidate["runtime_kind"] == "PYTORCH_PROCESS"
             and candidate["capability_code"] == "EMBEDDING_TEXT"
@@ -83,6 +94,35 @@ class CapabilitySmokeService:
         base_url = self._verified_ollama_base_url(str(candidate["configuration_json"]))
         try:
             probe = self.ollama_client_factory(base_url, str(candidate["native_locator"])).probe(load_test=True)
+        except DomainRuleError as error:
+            return self._record(
+                candidate,
+                status="FAILED",
+                result={"error_code": error.code, "probe": {"network": False, "model": False, "inference": False}},
+            )
+        status = "SMOKE_PASSED" if probe.get("status") == "PASS" else "FAILED"
+        return self._record(candidate, status=status, result=_redacted_probe(probe))
+
+    def _smoke_llama_cpp(self, candidate: sqlite3.Row) -> CapabilitySmokeResult:
+        """Probe the managed child under the single-GPU lease; activation starts it."""
+
+        base_url = self._verified_llama_base_url(str(candidate["configuration_json"]))
+        model_locator = str(candidate["native_locator"])
+        model_alias = Path(model_locator).stem
+        try:
+            coordinator = self.gpu_coordinator or GpuRuntimeCoordinator(self.database, self.settings)
+
+            def run_probe() -> dict[str, object]:
+                return self.llama_client_factory(base_url, model_alias).probe(load_test=True)
+
+            with coordinator.session(
+                GpuRuntime.LLAMA_CPP,
+                owner_kind="MP_LLAMA_CAPABILITY_SMOKE",
+                owner_ref=str(candidate["runtime_model_installation_id"]),
+                retain_if_same_runtime_waiting=True,
+                activation_context={"model_locator": model_locator},
+            ):
+                probe = run_probe()
         except DomainRuleError as error:
             return self._record(
                 candidate,
@@ -138,6 +178,9 @@ class CapabilitySmokeService:
             )
         return service_url
 
+    def _verified_llama_base_url(self, configuration_json: str) -> str:
+        return verify_managed_llama_runtime_configuration(self.settings, configuration_json)
+
     def _record(self, candidate: sqlite3.Row, *, status: str, result: dict[str, object]) -> CapabilitySmokeResult:
         now = _utc_now()
         validation_run_id = str(uuid.uuid4())
@@ -158,39 +201,14 @@ class CapabilitySmokeService:
                 "UPDATE mp_capability_offerings SET validation_status=?,updated_at=? WHERE id=?",
                 (status, now, candidate["offering_id"]),
             )
-            remaining = connection.execute(
-                """SELECT COUNT(*) FROM mp_capability_offerings
-                   WHERE runtime_model_installation_id=? AND validation_status!='SMOKE_PASSED'""",
-                (candidate["runtime_model_installation_id"],),
-            ).fetchone()[0]
-            installation_ready = status == "SMOKE_PASSED" and int(remaining) == 0
-            runtime_active = False
-            if installation_ready:
-                connection.execute(
-                    "UPDATE mp_runtime_model_installations SET install_state='READY',updated_at=? WHERE id=?",
-                    (now, candidate["runtime_model_installation_id"]),
-                )
-                runtime_remaining = connection.execute(
-                    """SELECT COUNT(*) FROM mp_capability_offerings offering
-                       JOIN mp_runtime_model_installations installation ON installation.id=offering.runtime_model_installation_id
-                       WHERE installation.runtime_installation_version_id=? AND offering.validation_status!='SMOKE_PASSED'""",
-                    (candidate["runtime_installation_version_id"],),
-                ).fetchone()[0]
-                runtime_active = int(runtime_remaining) == 0
-                if runtime_active:
-                    connection.execute(
-                        "UPDATE mp_runtime_installation_versions SET status='ACTIVE',updated_at=? WHERE id=?",
-                        (now, candidate["runtime_installation_version_id"]),
-                    )
-            elif status == "FAILED":
-                connection.execute(
-                    "UPDATE mp_runtime_model_installations SET install_state='VALIDATION_FAILED',updated_at=? WHERE id=?",
-                    (now, candidate["runtime_model_installation_id"]),
-                )
-                connection.execute(
-                    "UPDATE mp_runtime_installation_versions SET status='DEGRADED',updated_at=? WHERE id=?",
-                    (now, candidate["runtime_installation_version_id"]),
-                )
+            installation_ready, runtime_active = reconcile_offering_readiness(
+                connection,
+                runtime_model_installation_id=str(candidate["runtime_model_installation_id"]),
+                runtime_installation_version_id=str(candidate["runtime_installation_version_id"]),
+                runtime_kind=str(candidate["runtime_kind"]),
+                latest_status=status,
+                updated_at=now,
+            )
         return CapabilitySmokeResult(
             validation_run_id=validation_run_id,
             runtime_model_installation_id=str(candidate["runtime_model_installation_id"]),
@@ -205,6 +223,14 @@ class CapabilitySmokeService:
             base_url,
             model,
             provider="OLLAMA_LOOPBACK",
+            allow_private_network=self.settings.network_mode.value == "LAN_SERVICE",
+        )
+
+    def _default_llama_client(self, base_url: str, model: str) -> LocalLLMClient:
+        return LocalLLMClient(
+            base_url,
+            model,
+            provider="LLAMA_CPP_MANAGED",
             allow_private_network=self.settings.network_mode.value == "LAN_SERVICE",
         )
 

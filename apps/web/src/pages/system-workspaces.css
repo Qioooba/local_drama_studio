@@ -17,6 +17,20 @@
 .system-scope-bar label { display: grid; gap: 6px; min-width: min(100%, 280px); color: var(--text-muted); font-size: 12px; }
 .system-scope-bar select { min-height: 40px; }
 .system-scope-bar > span { color: var(--text-muted); font-size: 12px; }
+.settings-scope-note {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+  padding: 13px 15px;
+  border: 1px solid color-mix(in srgb, var(--creative) 34%, var(--border));
+  border-left: 3px solid var(--creative);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--creative) 7%, var(--surface));
+}
+.settings-scope-note > div { display: grid; gap: 3px; }
+.settings-scope-note .eyebrow { margin: 0; }
+.settings-scope-note h4 { margin: 0; font-size: 14px; }
+.settings-scope-note p:not(.eyebrow) { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.55; }
 
 .diagnostics-overview { display: grid; gap: 18px; }
 .diagnostics-summary {

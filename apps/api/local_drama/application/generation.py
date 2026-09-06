@@ -6,6 +6,7 @@ import json
 import math
 import shutil
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -15,6 +16,8 @@ from local_drama.domain.generation import VariantPlan
 from local_drama.domain.generation_contracts import CameraPlan, MotionMask, PerformanceBinding, TimedDirection, resolve_camera_plan
 from local_drama.domain.generation_planning import effective_configuration_snapshot, frozen_generation_contract
 from local_drama.domain.policies import VariantInput
+from local_drama.domain.production_spec import resolve_production_spec
+from local_drama.domain.shot_prompt_bundle import apply_prompt_bundle_to_parameters, compile_shot_prompt_bundle
 from local_drama.infrastructure.database.sqlite import Database
 
 from .character_identity_packs import CharacterIdentityPackService
@@ -23,6 +26,7 @@ from .jobs import JobService
 from .media import MediaService
 from .prompt_anchors import character_anchor_line, character_anchor_rows
 from .queries.generation_style_context import build_generation_style_context
+from .workflow_contracts import effective_workflow_contract
 
 
 def _now() -> str:
@@ -211,6 +215,32 @@ class GenerationService:
         "PERFORMANCE_DRIVEN": ("performance", "character_driving", "driving_video"),
     }
 
+    # ``input_contract.input_slots`` is shared by two profile generations in
+    # existing local databases: older profiles use it for workflow scalar
+    # values, while newer profiles also use it for immutable media bindings.
+    # VariantInput can only represent MediaVersion references, so scalar
+    # workflow roles must be validated/injected through ``parameter_set`` and
+    # must never be counted as missing media.
+    _WORKFLOW_SCALAR_INPUT_ROLES: frozenset[str] = frozenset(
+        {
+            "PROMPT",
+            "NEGATIVE_PROMPT",
+            "SEED",
+            "WIDTH",
+            "HEIGHT",
+            "FRAME_COUNT",
+            "FPS",
+            "STEPS",
+            "SAMPLER_STEPS",
+            "CFG",
+            "DENOISE",
+            "SAMPLER",
+            "SAMPLER_NAME",
+            "SCHEDULER",
+            "OUTPUT_PREFIX",
+        }
+    )
+
     @classmethod
     def _validate_variant_capability(cls, variant_type: str, capabilities: dict[str, Any], roles: set[str]) -> None:
         """Gate advanced variant modes on an explicit Published Profile capability.
@@ -288,6 +318,23 @@ class GenerationService:
                     {"role": role, "min": minimum, "max": maximum},
                 )
         return {str(role): value for role, value in slots.items()}
+
+    @classmethod
+    def _media_input_slots(cls, input_contract: object) -> dict[str, Any]:
+        """Project a mixed Profile input contract to Variant media slots.
+
+        Explicit media-kind declarations always win.  The reserved scalar
+        workflow roles remain parameters even when a legacy profile assigned
+        them min/max cardinality, which is the shape used by the published
+        local Qwen Image profile.
+        """
+
+        slots = cls._input_slots(input_contract)
+        return {
+            role: spec
+            for role, spec in slots.items()
+            if cls._slot_media_kinds(spec) or role.strip().upper() not in cls._WORKFLOW_SCALAR_INPUT_ROLES
+        }
 
     @staticmethod
     def _slot_media_kinds(spec: dict[str, Any]) -> set[str]:
@@ -494,6 +541,29 @@ class GenerationService:
             rows = connection.execute("SELECT id FROM generation_variants WHERE intent_id=? ORDER BY variant_no", (intent_id,)).fetchall()
         return [self.get_variant(str(row["id"])) for row in rows]
 
+    def _prepare_prompt_plan(self, plan: VariantPlan) -> VariantPlan:
+        """Compile a shot PromptBundle against the selected published workflow.
+
+        The page may only provide editable fields.  This method resolves the
+        workflow binding at preflight time, derives the executable PROMPT (and
+        NEGATIVE_PROMPT where supported), and returns a plan whose normalized
+        bundle and parameter set are included in the plan/job hashes.
+        """
+        if plan.prompt_bundle is None:
+            return plan
+        with self.database.connect() as connection:
+            profile = connection.execute(
+                "SELECT workflow_version_id FROM execution_profile_versions WHERE id=?",
+                (plan.profile_version_id,),
+            ).fetchone()
+            workflow_bindings: dict[str, Any] = {}
+            if profile is not None and profile["workflow_version_id"]:
+                effective = effective_workflow_contract(connection, str(profile["workflow_version_id"]))
+                workflow_bindings = effective["workflow_bindings"]
+        bundle = compile_shot_prompt_bundle(plan.prompt_bundle, workflow_bindings=workflow_bindings)
+        parameters = apply_prompt_bundle_to_parameters(plan.parameter_set, bundle, workflow_bindings)
+        return replace(plan, parameter_set=parameters, prompt_bundle=bundle)
+
     def _plan_context(self, intent_id: str, plan: VariantPlan) -> tuple[set[str], set[str], dict[str, Any]]:
         with self.database.connect() as connection:
             intent = connection.execute("SELECT * FROM generation_intents WHERE id=?", (intent_id,)).fetchone()
@@ -514,15 +584,55 @@ class GenerationService:
                 raise DomainRuleError("WORKFLOW_VERSION_NOT_FOUND", "Profile 引用的 WorkflowVersion 不存在")
             if workflow["status"] != "PUBLISHED":
                 raise DomainRuleError("WORKFLOW_NOT_PUBLISHED", "生成 Profile 不能引用未发布 WorkflowVersion")
-            frozen_contract = frozen_generation_contract(profile, workflow, plan)
+            effective_workflow = effective_workflow_contract(connection, str(profile["workflow_version_id"]), workflow)
+            frozen_contract = frozen_generation_contract(
+                profile,
+                workflow,
+                plan,
+                effective_workflow_bindings=effective_workflow["workflow_bindings"],
+                effective_workflow_contract=effective_workflow["workflow_contract"],
+            )
             workflow_bindings = frozen_contract.workflow_bindings
             workflow_content = frozen_contract.workflow_content
+            production_plan = None
+            production_spec: dict[str, Any] | None = None
+            if str(profile["capability"]).upper().startswith("VIDEO_"):
+                production_plan = connection.execute(
+                    """SELECT ppv.id AS version_id, ppv.version_no, ppv.plan_json
+                    FROM projects p JOIN production_plan_versions ppv ON ppv.id=p.production_plan_version_id
+                    WHERE p.id=?""",
+                    (intent["project_id"],),
+                ).fetchone()
+                if production_plan is None:
+                    raise DomainRuleError(
+                        "PRODUCTION_PLAN_NOT_BOUND",
+                        "项目尚未绑定生产计划；请先在生产设置中选择 2K 交付规格",
+                        {"project_id": str(intent["project_id"]), "required_action": "BIND_PRODUCTION_PLAN"},
+                    )
+                try:
+                    persisted_plan = json.loads(str(production_plan["plan_json"] or "{}"))
+                except json.JSONDecodeError as error:
+                    raise DomainRuleError("PRODUCTION_SPEC_INVALID", "项目生产计划 JSON 无效") from error
+                if not isinstance(persisted_plan, dict):
+                    raise DomainRuleError("PRODUCTION_SPEC_INVALID", "项目生产计划必须是对象")
+                production_spec = resolve_production_spec(persisted_plan, workflow_bindings, workflow_content)
+                if production_spec["status"] != "READY":
+                    raise DomainRuleError(
+                        "PRODUCTION_SPEC_BLOCKED",
+                        "当前生产规格无法由已发布 VIDEO workflow 安全执行",
+                        {
+                            "project_id": str(intent["project_id"]),
+                            "production_plan_version_id": str(production_plan["version_id"]),
+                            "production_spec": production_spec,
+                        },
+                        suggested_action="按页面提示补齐 VIDEO workflow 语义绑定，或配置可审计的 COMPOSE_QC 放大路径",
+                    )
             model_bundle = frozen_contract.model_bundle
             input_contract = frozen_contract.input_contract
             parameter_schema = frozen_contract.parameter_schema
             resource_policy = frozen_contract.resource_policy
             resource_estimate = self._resource_estimate(resource_policy)
-            input_slots = self._input_slots(input_contract)
+            input_slots = self._media_input_slots(input_contract)
             seed_contract = parameter_schema.get("seed", {}) if isinstance(parameter_schema, dict) else {}
             if not isinstance(seed_contract, dict):
                 raise DomainRuleError("PROFILE_SEED_CONTRACT_INVALID", "Profile seed 契约无效")
@@ -790,14 +900,21 @@ class GenerationService:
                     visual_dimensions[(binding.role, binding.ordinal)] = (int(visual["width"]), int(visual["height"]))
                 if str(intent["purpose"]) in {"I2V_PROXY", "I2V_FORMAL"} and binding.role == "FIRST_FRAME":
                     approval = connection.execute(
-                        """SELECT rd.id FROM media_versions mv JOIN media_assets ma ON ma.id=mv.media_asset_id
+                        """SELECT rd.id FROM media_versions mv
+                        JOIN media_assets ma ON ma.id=mv.media_asset_id
                         JOIN review_decisions rd ON rd.subject_type='MEDIA_VERSION' AND rd.subject_id=mv.id
-                        WHERE mv.id=? AND ma.project_id=? AND ma.owner_type='SHOT' AND ma.owner_id=?
-                        AND ma.purpose='KEYFRAME' AND ma.media_kind='IMAGE' AND ma.approved_version_id=mv.id
+                        LEFT JOIN generation_variants gv ON ma.owner_type='GENERATION_VARIANT' AND gv.id=ma.owner_id
+                        LEFT JOIN generation_intents gi ON gi.id=gv.intent_id
+                        WHERE mv.id=? AND ma.project_id=?
+                        AND (
+                            (ma.owner_type='SHOT' AND ma.owner_id=?)
+                            OR (ma.owner_type='GENERATION_VARIANT' AND gi.owner_type='SHOT' AND gi.owner_id=?)
+                        )
+                        AND ma.purpose='KEYFRAME' AND ma.media_kind='IMAGE'
                         AND mv.stage='KEYFRAME' AND mv.integrity_status='VERIFIED'
                         AND rd.decision='APPROVED' AND rd.is_stale=0
                         ORDER BY rd.created_at DESC LIMIT 1""",
-                        (binding.media_version_id, intent["project_id"], intent["owner_id"]),
+                        (binding.media_version_id, intent["project_id"], intent["owner_id"], intent["owner_id"]),
                     ).fetchone()
                     if approval is None:
                         raise DomainRuleError(
@@ -1028,6 +1145,8 @@ class GenerationService:
                 (intent["project_id"],),
             ).fetchone()
             identity_pack_snapshot = CharacterIdentityPackService.generation_snapshot_for_intent(connection, intent)
+            if plan.expected_identity_pack_snapshot_hash is not None and plan.expected_identity_pack_snapshot_hash != (identity_pack_snapshot or {}).get("snapshot_hash"):
+                raise DomainRuleError("VARIANT_PLAN_STALE", "人物身份包已变化，请重新检查关键帧生成计划")
             intent_project_id = str(intent["project_id"])
             intent_owner_type = str(intent["owner_type"] or "")
             intent_owner_id = str(intent["owner_id"] or "")
@@ -1074,6 +1193,7 @@ class GenerationService:
             "project_id": str(intent["project_id"]),
             "intent_updated_at": intent["updated_at"],
             "profile_version_id": plan.profile_version_id,
+            "prompt_bundle": plan.prompt_bundle,
             "profile_revision": profile["revision"],
             "profile_status": profile["status"],
             "seed_support": seed_support,
@@ -1081,6 +1201,18 @@ class GenerationService:
             "workflow_version_id": profile["workflow_version_id"],
             "workflow_content_hash": workflow["content_hash"],
             "workflow_revision": workflow["revision"],
+            "workflow_contract_source": effective_workflow["source"],
+            "workflow_contract_id": effective_workflow["contract_id"],
+            "workflow_runtime_bound": effective_workflow["published_contract_bound"],
+            # Keep the exact published App Contract bindings resolved by
+            # ``effective_workflow_contract`` alongside the dependency
+            # snapshot.  Submit-time compilation and the audit snapshot must
+            # describe the same binding set; callers must not re-read the raw
+            # profile/workflow fallback here.
+            "workflow_bindings": workflow_bindings,
+            "production_plan_version_id": str(production_plan["version_id"]) if production_plan else None,
+            "production_plan_version_no": int(production_plan["version_no"]) if production_plan else None,
+            "production_spec": production_spec,
             "model_bundle": model_bundle,
             "model_bundle_hash": _digest(model_bundle),
             "runtime_version_id": profile["runtime_version_id"],
@@ -1183,6 +1315,7 @@ class GenerationService:
             "explicit_seed": plan.explicit_seed,
             "provider_random_nonce": plan.provider_random_nonce,
             "expected_effective_configuration_fingerprint": plan.expected_effective_configuration_fingerprint,
+            "prompt_bundle": plan.prompt_bundle,
             "bindings": [GenerationService._binding_dict(binding) for binding in plan.bindings],
         }
 
@@ -1196,10 +1329,12 @@ class GenerationService:
             "explicit_seed": plan.explicit_seed,
             "provider_random_nonce": plan.provider_random_nonce,
             "expected_effective_configuration_fingerprint": plan.expected_effective_configuration_fingerprint,
+            "prompt_bundle": plan.prompt_bundle,
             "bindings": [GenerationService._binding_dict(binding) for binding in plan.bindings],
         }
 
     def preflight_variant(self, intent_id: str, plan: VariantPlan) -> dict[str, Any]:
+        plan = self._prepare_prompt_plan(plan)
         _ancestors, _allowed_roles, dependencies = self._plan_context(intent_id, plan)
         recipe = self._recipe(plan)
         execution_recipe = self._execution_recipe(plan)
@@ -1226,6 +1361,8 @@ class GenerationService:
             "disk_gate": disk_gate,
             "blockers": blockers,
             "effective_configuration": effective_snapshot,
+            "production_spec": dependencies.get("production_spec"),
+            "prompt_bundle": dependencies.get("prompt_bundle"),
             "would_persist_variant": False,
             "would_create_job": False,
             "reproducibility": {
@@ -1661,6 +1798,7 @@ class GenerationService:
         stage_code: str,
     ) -> dict[str, Any]:
         """Produce a read-only, shot-scoped confirmation token for BASE generation."""
+        plan = self._prepare_prompt_plan(plan)
         self._validate_shot_base_plan(plan)
         if stage_code not in {"SHOT_IMAGE", "VIDEO"}:
             raise DomainRuleError("SHOT_GENERATION_STAGE_INVALID", "Shot 生成阶段必须是 SHOT_IMAGE 或 VIDEO")
@@ -1729,6 +1867,7 @@ class GenerationService:
         idempotency_key: str,
     ) -> dict[str, Any]:
         """Submit a BASE variant under the URL Shot and recover exact command replays."""
+        plan = self._prepare_prompt_plan(plan)
         self._validate_shot_base_plan(plan)
         # Owner scope is always enforced, while a successful replay deliberately
         # survives later Shot revisions: clients may safely retry a lost response.
@@ -1895,6 +2034,7 @@ class GenerationService:
         )
 
     def create_confirmed_variant(self, intent_id: str, plan: VariantPlan, plan_hash: str) -> dict[str, Any]:
+        plan = self._prepare_prompt_plan(plan)
         preflight = self.preflight_variant(intent_id, plan)
         if preflight["status"] != "READY":
             raise DomainRuleError(
@@ -1915,6 +2055,7 @@ class GenerationService:
         *,
         job_scope: dict[str, str] | None = None,
     ) -> dict[str, Any]:
+        plan = self._prepare_prompt_plan(plan)
         preflight = self.preflight_variant(intent_id, plan)
         if preflight["status"] != "READY":
             raise DomainRuleError(
@@ -1930,7 +2071,16 @@ class GenerationService:
         now = _now()
         recipe = self._execution_recipe(plan)
         workflow_version_id = str(dependencies["workflow_version_id"])
+        # Reuse the effective published App Contract bindings frozen by
+        # _plan_context.  This is also the binding set used by prompt/workflow
+        # compilation, so the job audit cannot drift back to raw profile data.
+        workflow_bindings = dict(dependencies.get("workflow_bindings") or {})
         semantic_inputs = dict(plan.parameter_set)
+        production_spec = dependencies.get("production_spec")
+        generation_spec = production_spec.get("generation") if isinstance(production_spec, dict) else None
+        production_semantic_inputs = generation_spec.get("semantic_inputs") if isinstance(generation_spec, dict) else None
+        if isinstance(production_semantic_inputs, dict):
+            semantic_inputs.update(production_semantic_inputs)
         approval_by_slot = {(str(item["role"]), int(item["ordinal"])): str(item["source_approval_id"]) for item in dependencies.get("approvals", [])}
         media_bindings_snapshot = [
             {**self._binding_dict(binding), "source_approval_id": approval_by_slot.get((binding.role, binding.ordinal))} for binding in plan.bindings
@@ -2063,13 +2213,24 @@ class GenerationService:
                     "runtime_version_id": dependencies["runtime_version_id"],
                     "workflow_version_id": workflow_version_id,
                     "workflow_content_hash": dependencies["workflow_content_hash"],
+                    "workflow_contract": {
+                        "source": dependencies["workflow_contract_source"],
+                        "contract_id": dependencies["workflow_contract_id"],
+                        "runtime_bound": dependencies["workflow_runtime_bound"],
+                        "semantic_roles": sorted(str(role) for role in workflow_bindings),
+                    },
                     "model_bundle": dependencies["model_bundle"],
                     "model_bundle_hash": dependencies["model_bundle_hash"],
                     "manifest_sha256": dependencies["profile_manifest_sha256"],
                     "snapshot_hash": dependencies["profile_execution_snapshot_hash"],
                     "effective_configuration": dependencies["effective_configuration"],
+                    "production_plan_version_id": dependencies["production_plan_version_id"],
+                    "production_plan_version_no": dependencies["production_plan_version_no"],
+                    "production_spec": production_spec,
                 },
                 "semantic_inputs": semantic_inputs,
+                "prompt_bundle": plan.prompt_bundle,
+                "production_spec": production_spec,
                 "media_bindings": media_bindings_snapshot,
                 "recipe_hash": recipe_hash,
             }

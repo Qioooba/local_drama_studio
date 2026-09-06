@@ -33,7 +33,7 @@ def test_chapters_start_after_prose_line_and_never_overlap() -> None:
     starts = [int(chapter["start_paragraph"]) for chapter in chapters]
     ends = [int(chapter["end_paragraph"]) for chapter in chapters]
     assert starts == sorted(starts)
-    assert all(start <= end for start, end in zip(starts, ends))
+    assert all(start <= end for start, end in zip(starts, ends, strict=True))
     assert chapters[0]["end_paragraph"] < chapters[1]["start_paragraph"]
 
 

@@ -86,7 +86,7 @@ class ProjectKnowledgeIndexPreparationService:
             connection.execute(
                 """INSERT INTO mp_project_knowledge_index_runs
                 (id,project_id,source_document_version_id,capability_definition_id,execution_profile_version_id,source_text_hash,chunk_count,attempt_no,retry_of_index_run_id,status,created_at,updated_at,created_by)
-                SELECT ?,?,?,id,?,?,?,?,?,?,?,? FROM mp_capability_definitions WHERE code='EMBEDDING_TEXT'""",
+                SELECT ?,?,?,id,?,?,?,?,?,?,?,?,? FROM mp_capability_definitions WHERE code='EMBEDDING_TEXT'""",
                 (run_id, project_id, source_document_version_id, first.execution_profile_version_id, source_hash, len(chunks), attempt_no, retry_of, "PREPARED", now, now, actor),
             )
             for ordinal, batch in enumerate(_batches(chunks), start=1):

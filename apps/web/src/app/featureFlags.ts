@@ -1,5 +1,6 @@
 import { createElement, type ReactNode } from "react";
-import { Navigate, useParams } from "react-router-dom";
+import { Navigate, useLocation, useParams } from "react-router-dom";
+import { parseRouteContext } from "./routeRegistry";
 
 export type LocalFeatureFlag = "DIRECTOR_DESK_V2" | "ASSET_BIBLE_V2" | "EPISODE_AGENT_RUN_V2";
 
@@ -25,9 +26,15 @@ export function featureEnabled(flag: LocalFeatureFlag): boolean {
 }
 
 export function FeatureFlagRoute({ flag, children, fallbackView }: { flag: LocalFeatureFlag; children: ReactNode; fallbackView: "projects" | "generation" }) {
-  const { projectId, episodeId, shotId } = useParams();
+  const params = useParams();
+  const location = useLocation();
+  const context = parseRouteContext(location.pathname);
+  const projectId = context.projectId ?? params.projectId;
+  // Once a canonical project route is recognized, an episode belongs only to
+  // an episode-scoped path.  This prevents an episode fallback from leaking
+  // into project-level routes after an SPA navigation.
+  const episodeId = context.routeId ? context.episodeId : params.episodeId;
   if (featureEnabled(flag)) return children;
-  void shotId;
   const projectHome = projectId ? `/projects/${encodeURIComponent(projectId)}` : "/projects";
   const episodePlan = projectId && episodeId ? `${projectHome}/episodes/${encodeURIComponent(episodeId)}/plan` : projectHome;
   return createElement(Navigate, { replace: true, to: fallbackView === "generation" ? episodePlan : episodeId ? episodePlan : projectHome });

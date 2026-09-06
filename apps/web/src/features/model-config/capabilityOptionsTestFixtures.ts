@@ -18,6 +18,9 @@ export function capabilityOptionFixture(
     blockers: [],
     warnings: [],
     execution_fingerprint: `sha256:${profileVersionId}`,
+    input_slots: ["PROMPT"],
+    requires_reference_image: false,
+    supports_text_to_image: true,
   };
 }
 

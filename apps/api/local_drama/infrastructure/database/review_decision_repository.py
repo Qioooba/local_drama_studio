@@ -159,8 +159,8 @@ class SqliteReviewDecisionCommandRepository:
             if decision == "APPROVED" and kind == "MEDIA_VERSION":
                 connection.execute(
                     """UPDATE media_assets SET approved_version_id=?,revision=revision+1,updated_at=?
-                    WHERE id=? AND revision=?""",
-                    (target_id, now, target["asset_id"], actual),
+                    WHERE id=?""",
+                    (target_id, now, target["asset_id"]),
                 )
             connection.execute(
                 """INSERT INTO audit_events

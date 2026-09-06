@@ -54,10 +54,13 @@ class TimelineStatusRender(_TimelineResponse):
 class TimelineStatusDelivery(_TimelineResponse):
     id: str
     episode_render_version_id: str
+    target_version_id: str
     timeline_revision_id: str
     status: str
     rel_path: str
     manifest_sha256: str | None
+    human_review_status: str
+    platform_review_status: str
     created_at: str
 
 
@@ -431,6 +434,7 @@ class ComposePreflight(_TimelineResponse):
     status: Literal["READY", "BLOCKED"]
     disk_gate: dict[str, Any]
     blockers: list[dict[str, Any]]
+    production_spec: dict[str, Any] | None = None
 
 
 class ComposePreflightEnvelope(_TimelineResponse):
@@ -453,6 +457,8 @@ class SegmentedComposePreflight(_TimelineResponse):
     existing_render: EpisodeRender | None
     read_only: bool
     writes_performed: int
+    production_spec: dict[str, Any] | None = None
+    blockers: list[dict[str, Any]] | None = None
 
 
 class SegmentedComposeSubmissionResponse(_TimelineResponse):

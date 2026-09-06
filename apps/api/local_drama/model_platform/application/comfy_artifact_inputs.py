@@ -17,11 +17,12 @@ from typing import Any, Mapping, cast
 
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.image_input_roles import COMFY_IMAGE_INPUT_ROLES
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.atomic import replace_path
 from local_drama.infrastructure.filesystem.path_policy import controlled_path
 
-_IMAGE_ARTIFACT_ROLES = frozenset({"FIRST_FRAME", "END_FRAME", "MIDDLE_KEYFRAME", "REFERENCE_IMAGE"})
+_IMAGE_ARTIFACT_ROLES = COMFY_IMAGE_INPUT_ROLES
 
 
 def materialize_v2_comfy_artifact_inputs(

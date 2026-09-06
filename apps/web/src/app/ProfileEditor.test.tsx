@@ -167,8 +167,40 @@ function renderWorkflowsView() {
 }
 
 describe("Profile contract editor interactions", () => {
+  it("keeps an explicitly selected image evidence workflow instead of restoring the old frozen workflow", async () => {
+    const first = { ...workflows[0], id: "image-old", contract: { capability: "IMAGE_CONCEPT" } };
+    const second = { ...first, id: "image-new", title: "Identity workflow" };
+    vi.mocked(api.listWorkflowVersions).mockResolvedValue({ items: [first, second], runtime_contacted: false });
+    vi.mocked(api.listProfiles).mockResolvedValue({ items: [{ ...draft, capability: "IMAGE_CONCEPT" }] });
+    vi.mocked(api.getProfileVersion).mockResolvedValue({ profile_version: { ...draftDetail, capability: "IMAGE_CONCEPT", execution: { ...publishedDetail.execution!, workflow: { id: "image-old", version_no: 1 } } } });
+    renderProjectProfilesView();
+    const select = await screen.findByRole("combobox", { name: "验证工作流版本" });
+    await waitFor(() => expect((select as HTMLSelectElement).value).toBe("image-old"));
+    fireEvent.change(select, { target: { value: "image-new" } });
+    await waitFor(() => expect((select as HTMLSelectElement).value).toBe("image-new"));
+  });
+  it("restores the workflow frozen in a recovered job and detaches it when choosing a new workflow", async () => {
+    const oldWorkflow = { ...workflows[0], id: "image-old", contract: { capability: "IMAGE_CONCEPT" } };
+    const frozenWorkflow = { ...oldWorkflow, id: "image-frozen", title: "Frozen identity workflow" };
+    vi.mocked(api.listWorkflowVersions).mockResolvedValue({ items: [oldWorkflow, frozenWorkflow], runtime_contacted: false });
+    vi.mocked(api.listProfiles).mockResolvedValue({ items: [{ ...draft, capability: "IMAGE_CONCEPT" }] });
+    vi.mocked(api.getProfileVersion).mockResolvedValue({ profile_version: { ...draftDetail, capability: "IMAGE_CONCEPT", execution: { ...publishedDetail.execution!, workflow: { id: "image-old", version_no: 1 } } } });
+    const job = { id: "recovered-job", type: "PROFILE_EVIDENCE_PROBE", subject_id: "v-draft", state: "SUCCEEDED", input_snapshot: { workflow_version_id: "image-frozen", media_bindings: [] } };
+    vi.mocked(api.listJobs).mockResolvedValue({ items: [job] } as never);
+    vi.mocked(api.getJob).mockResolvedValue({ job } as never);
+    renderProjectProfilesView();
+    const select = await screen.findByRole("combobox", { name: "验证工作流版本" });
+    await waitFor(() => expect((select as HTMLSelectElement).value).toBe("image-old"));
+    fireEvent.change(screen.getByRole("combobox", { name: /验证任务（恢复）/ }), { target: { value: "recovered-job" } });
+    await waitFor(() => expect((select as HTMLSelectElement).value).toBe("image-frozen"));
+    expect((screen.getByRole("button", { name: "登记证据并发布" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.change(select, { target: { value: "image-old" } });
+    await waitFor(() => expect((screen.getByRole("combobox", { name: /验证任务（恢复）/ }) as HTMLSelectElement).value).toBe(""));
+    expect((screen.getByRole("button", { name: "登记证据并发布" }) as HTMLButtonElement).disabled).toBe(true);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(api.listJobs).mockResolvedValue({ items: [] });
     window.history.replaceState({}, "", "/?view=profile-contracts");
     draftValidation = null;
     validationResult = null;
@@ -282,14 +314,15 @@ describe("Profile contract editor interactions", () => {
     expect(await screen.findByText(/必须转入真实媒体证据发布/)).toBeTruthy();
   });
 
-  it("shows the global catalog destination after a contract version is published", async () => {
+  it("keeps the new publication selected and its receipt visible while the catalogue is stale", async () => {
     const validatedDraft = {
       ...draftDetail,
       validation: { id: "att-publish", status: "PASS" as const, contract_hash: draftDetail.contract_hash, checks: [{ code: "CONTRACT", passed: true }] },
     };
     vi.mocked(api.listProfiles).mockResolvedValue({ items: [draft] });
-    vi.mocked(api.getProfileVersion).mockResolvedValue({ profile_version: validatedDraft });
-    vi.mocked(api.publishProfileContractVersion).mockResolvedValue({ profile_version: { ...validatedDraft, status: "PUBLISHED" } });
+    const newPublication = { ...validatedDraft, id: "v-new-publication", version_no: 6, status: "PUBLISHED" };
+    vi.mocked(api.getProfileVersion).mockImplementation(async (id) => ({ profile_version: id === newPublication.id ? newPublication : validatedDraft }));
+    vi.mocked(api.publishProfileContractVersion).mockResolvedValue({ profile_version: newPublication });
 
     renderProfilesView();
     const publishButton = await screen.findByRole("button", { name: "发布到全局能力目录" });
@@ -299,6 +332,8 @@ describe("Profile contract editor interactions", () => {
     expect(await screen.findByRole("heading", { name: "发布完成" })).toBeTruthy();
     expect(screen.getByText("系统 / 能力与模型 / 能力目录")).toBeTruthy();
     expect(screen.getByText("本机全局 · 所有项目可选")).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole("button", { name: /v6 PUBLISHED/, pressed: true })).toBeTruthy());
+    expect(api.getProfileVersion).toHaveBeenCalledWith("v-new-publication");
   });
 
   it("uses an accessible confirmation dialog before queuing one real I2V evidence job", async () => {

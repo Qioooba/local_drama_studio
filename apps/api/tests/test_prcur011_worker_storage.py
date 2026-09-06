@@ -111,7 +111,7 @@ def test_worker_kill_expires_session_requeues_job_and_releases_gpu_lease(workspa
 def test_supervisor_persists_restart_backoff_and_recovers(workspace, database, monkeypatch) -> None:
     calls = 0
 
-    def unstable_run_once(self, worker_id, channels=None, *, worker_session_id=None):
+    def unstable_run_once(self, worker_id, channels=None, *, worker_session_id=None, job_types=None):
         nonlocal calls
         calls += 1
         if calls == 1:
@@ -131,7 +131,7 @@ def test_supervisor_watch_mode_stays_alive_across_empty_polls(workspace, databas
     calls = 0
     stop_checks = 0
 
-    def empty_run_once(self, worker_id, channels=None, *, worker_session_id=None):
+    def empty_run_once(self, worker_id, channels=None, *, worker_session_id=None, job_types=None):
         nonlocal calls
         calls += 1
         return None
@@ -149,11 +149,33 @@ def test_supervisor_watch_mode_stays_alive_across_empty_polls(workspace, databas
         should_stop=should_stop,
     )
 
-    assert calls == 2
     assert result["processed"] == 0
     assert result["status"] == "STOPPED"
     assert result["session"]["status"] == "STOPPED"
-    assert calls == 2
+    assert calls == 4
+
+
+def test_supervisor_console_interrupt_releases_session_without_waiting_for_lease(workspace, database, monkeypatch) -> None:
+    def interrupted_derivative(self, worker_id, channels=None, *, worker_session_id=None):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(LocalMediaWorker, "run_media_derivative_once", interrupted_derivative)
+    with pytest.raises(KeyboardInterrupt):
+        WorkerSupervisor(database, workspace, sleep=lambda _seconds: None).run_until_idle(
+            "interrupted-worker",
+            max_jobs=None,
+            idle_poll_seconds=0.05,
+        )
+
+    sessions = WorkerSessionService(database, workspace).list_sessions()
+    interrupted = next(item for item in sessions if item["worker_id"] == "interrupted-worker")
+    assert interrupted["status"] == "STOPPED"
+    replacement = WorkerSessionService(database, workspace).start_session(
+        "interrupted-worker",
+        worker_version=workspace.app_version,
+        api_version=workspace.app_version,
+    )
+    assert replacement["status"] == "RUNNING"
 
 
 def test_storage_finalize_is_idempotent_and_streaming(workspace, database, monkeypatch) -> None:

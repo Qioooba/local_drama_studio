@@ -2,7 +2,10 @@
 
 Defaults to loopback-only Ollama client; supports explicitly configured
 OpenAI-compatible remote providers (e.g. DeepSeek) with Bearer token authentication,
-4-level connection probing, and multimodal vision inputs.
+4-level connection probing, and multimodal vision inputs.  The
+LLAMA_CPP_MANAGED provider targets the loopback llama-server child spawned by
+the GPU runtime coordinator: OpenAI-compatible transport, no credentials, and
+JSON-schema constrained output with thinking disabled by default.
 """
 
 from __future__ import annotations
@@ -18,6 +21,11 @@ from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.network_policy import parse_runtime_endpoint
 from local_drama.infrastructure.local_http import open_local
 
+_SUPPORTED_PROVIDERS = frozenset({"OLLAMA_LOOPBACK", "OPENAI_COMPAT", "LLAMA_CPP_MANAGED"})
+# Providers whose endpoint must stay on the operator-owned loopback service
+# and therefore use the proxy-free, redirect-blocking local opener.
+_LOOPBACK_PROVIDERS = frozenset({"OLLAMA_LOOPBACK", "LLAMA_CPP_MANAGED"})
+
 
 class LocalLLMClient:
     def __init__(
@@ -25,16 +33,16 @@ class LocalLLMClient:
         base_url: str,
         model: str | None,
         timeout_seconds: float = 30.0,
-        provider: str = "OLLAMA_LOOPBACK",
+        provider: str = "LLAMA_CPP_MANAGED",
         api_key: str | None = None,
         allow_private_network: bool = False,
     ) -> None:
-        normalized_provider = (provider or "OLLAMA_LOOPBACK").strip().upper()
-        if normalized_provider not in {"OLLAMA_LOOPBACK", "OPENAI_COMPAT"}:
+        normalized_provider = (provider or "LLAMA_CPP_MANAGED").strip().upper()
+        if normalized_provider not in _SUPPORTED_PROVIDERS:
             raise DomainRuleError("LLM_PROVIDER_UNSUPPORTED", f"不支持的 LLM Provider: {provider}")
 
         parsed = urlparse(base_url)
-        if normalized_provider == "OLLAMA_LOOPBACK":
+        if normalized_provider in _LOOPBACK_PROVIDERS:
             if parsed.username or parsed.password or parsed.query or parsed.fragment:
                 raise DomainRuleError("LOCAL_ONLY_ENDPOINT_AMBIGUOUS", "LLM endpoint 不得在 URL 中携带凭据、query 或 fragment")
             if (
@@ -51,6 +59,12 @@ class LocalLLMClient:
                 raise DomainRuleError("LLM_ENDPOINT_INVALID", "OpenAI 兼容 LLM 只允许 http 或 https endpoint")
             if parsed.username or parsed.password or parsed.query or parsed.fragment:
                 raise DomainRuleError("LOCAL_ONLY_ENDPOINT_AMBIGUOUS", "LLM endpoint 不得在 URL 中携带凭据、query 或 fragment")
+
+        if normalized_provider == "LLAMA_CPP_MANAGED" and api_key and api_key.strip():
+            raise DomainRuleError(
+                "LLAMA_CPP_API_KEY_FORBIDDEN",
+                "托管 llama.cpp Runtime 是本地 loopback 服务，不接受 API Key",
+            )
 
         if not model or not model.strip():
             raise DomainRuleError("LOCAL_LLM_MODEL_REQUIRED", "LLM 必须显式配置模型名")
@@ -83,7 +97,7 @@ class LocalLLMClient:
         request = Request(url, data=body, method="POST" if body else "GET", headers=headers)
         timeout = timeout_seconds or self.timeout_seconds
         try:
-            if self.provider == "OLLAMA_LOOPBACK":
+            if self.provider in _LOOPBACK_PROVIDERS:
                 with open_local(request, timeout=timeout) as response:
                     raw = response.read()
             else:
@@ -92,10 +106,10 @@ class LocalLLMClient:
         except HTTPError as error:
             if error.code in {401, 403}:
                 raise DomainRuleError("LLM_AUTH_FAILED", "LLM 认证失败，请检查 API Key", {"status_code": error.code}) from error
-            error_code = "LOCAL_LLM_LOOPBACK_UNAVAILABLE" if self.provider == "OLLAMA_LOOPBACK" else "LLM_PROVIDER_UNAVAILABLE"
+            error_code = "LOCAL_LLM_LOOPBACK_UNAVAILABLE" if self.provider in _LOOPBACK_PROVIDERS else "LLM_PROVIDER_UNAVAILABLE"
             raise DomainRuleError(error_code, "LLM 请求失败", {"status_code": error.code, "reason": type(error).__name__}) from error
         except (URLError, TimeoutError, OSError) as error:
-            error_code = "LOCAL_LLM_LOOPBACK_UNAVAILABLE" if self.provider == "OLLAMA_LOOPBACK" else "LLM_PROVIDER_UNAVAILABLE"
+            error_code = "LOCAL_LLM_LOOPBACK_UNAVAILABLE" if self.provider in _LOOPBACK_PROVIDERS else "LLM_PROVIDER_UNAVAILABLE"
             raise DomainRuleError(error_code, "LLM 网络连接失败", {"reason": type(error).__name__}) from error
 
         try:
@@ -191,6 +205,63 @@ class LocalLLMClient:
                         "detail": "样例推理执行成功" if load_test_passed else "模型未返回有效生成内容",
                     }
                     if not load_test_passed:
+                        error_code = "LOCAL_LLM_EMPTY_RESPONSE"
+                except DomainRuleError as error:
+                    error_code = error.code
+                    probe_levels["level_4_inference"] = {"passed": False, "detail": f"样例推理失败: {error.message}"}
+            elif probe_levels["level_1_network"]["passed"] and model_present and not load_test:
+                probe_levels["level_4_inference"] = {"passed": True, "detail": "候选同步跳过负载推理"}
+        elif self.provider == "LLAMA_CPP_MANAGED":
+            try:
+                # tags() tolerates transport errors for remote providers;
+                # the managed probe must not report a stopped child as
+                # reachable, so hit /v1/models directly.
+                value = self._request("/v1/models")
+                probe_levels["level_1_network"] = {"passed": True, "detail": "托管 llama-server 进程可达"}
+                probe_levels["level_2_auth"] = {"passed": True, "detail": "本地托管 Runtime 免密"}
+                data = value.get("data")
+                rows = data if isinstance(data, list) else []
+                names = {
+                    str(item.get("id"))
+                    for item in rows
+                    if isinstance(item, dict) and item.get("id")
+                }
+                available_models = sorted(names)
+                model_present = self.model in names
+                probe_levels["level_3_model"] = {
+                    "passed": model_present,
+                    "detail": f"托管模型别名 {self.model} 已加载" if model_present else f"llama-server 未报告模型别名 {self.model}",
+                }
+            except DomainRuleError as error:
+                error_code = error.code
+                probe_levels["level_1_network"] = {
+                    "passed": False,
+                    "detail": f"托管 llama-server 不可达（进程可能未启动）: {error.message}",
+                }
+
+            if probe_levels["level_1_network"]["passed"] and model_present and load_test:
+                try:
+                    resp = self._request(
+                        "/v1/chat/completions",
+                        {
+                            "model": self.model,
+                            "messages": [
+                                {"role": "system", "content": "You are a test assistant. Output strictly JSON."},
+                                {"role": "user", "content": 'Return exactly JSON: {"ready":true}'},
+                            ],
+                            "temperature": 0,
+                            "stream": False,
+                            "response_format": {"type": "json_object"},
+                            "chat_template_kwargs": {"enable_thinking": False},
+                        },
+                    )
+                    choices = resp.get("choices", [])
+                    valid_resp = bool(choices and isinstance(choices, list) and choices[0].get("message", {}).get("content"))
+                    probe_levels["level_4_inference"] = {
+                        "passed": valid_resp,
+                        "detail": "最小样例推理执行成功" if valid_resp else "模型未返回有效 choices 内容",
+                    }
+                    if not valid_resp:
                         error_code = "LOCAL_LLM_EMPTY_RESPONSE"
                 except DomainRuleError as error:
                     error_code = error.code
@@ -315,10 +386,12 @@ class LocalLLMClient:
             if images:
                 msg_payload["messages"][1]["images"] = images
             response = self._request("/api/chat", msg_payload, timeout_seconds=600)
+            finish_reason = response.get("done_reason")
             message = response.get("message")
             content = message.get("content") if isinstance(message, dict) else None
         else:
-            # OPENAI_COMPAT
+            # OPENAI_COMPAT and LLAMA_CPP_MANAGED share the chat-completions
+            # transport; only the managed child gets grammar-level constraints.
             user_content: Any = user
             if images:
                 formatted_images = []
@@ -329,27 +402,48 @@ class LocalLLMClient:
                     formatted_images.append({"type": "image_url", "image_url": {"url": url}})
                 user_content = [{"type": "text", "text": user}, *formatted_images]
 
-            response = self._request(
-                "/v1/chat/completions",
-                {
-                    "model": self.model,
-                    "stream": False,
-                    "temperature": temperature,
-                    "top_p": top_p,
-                    "max_tokens": max_tokens,
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": user_content},
-                    ],
-                },
-                timeout_seconds=600,
-            )
+            payload: dict[str, Any] = {
+                "model": self.model,
+                "stream": False,
+                "temperature": temperature,
+                "top_p": top_p,
+                "max_tokens": max_tokens,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user_content},
+                ],
+            }
+            if self.provider == "LLAMA_CPP_MANAGED":
+                # llama-server enforces the schema at decode time, which makes
+                # the transport output reliably parseable and lets MTP
+                # speculative decoding verify drafts against the grammar.
+                # The context window is fixed at launch (-c); per-call num_ctx
+                # is an Ollama concept and is intentionally not forwarded.
+                if json_schema:
+                    payload["response_format"] = {
+                        "type": "json_schema",
+                        "json_schema": {"name": "local_drama_response", "schema": json_schema},
+                    }
+                else:
+                    payload["response_format"] = {"type": "json_object"}
+                # Mirrors the Ollama "think": false contract: hybrid reasoning
+                # models must spend the output budget on the JSON payload.
+                payload["chat_template_kwargs"] = {"enable_thinking": bool(options.get("enable_thinking", False))}
+
+            response = self._request("/v1/chat/completions", payload, timeout_seconds=600)
             choices = response.get("choices")
             if not isinstance(choices, list) or not choices:
                 raise DomainRuleError("LOCAL_LLM_EMPTY_RESPONSE", "OpenAI 兼容 LLM 没有返回 choices 内容")
+            finish_reason = choices[0].get("finish_reason")
             message = choices[0].get("message")
             content = message.get("content") if isinstance(message, dict) else None
 
+        if finish_reason in {"length", "max_tokens"}:
+            raise DomainRuleError(
+                "LOCAL_LLM_OUTPUT_TRUNCATED",
+                "模型输出达到长度上限，方案尚未完整生成。请在项目生成偏好中提高最大输出长度后重新生成。",
+                {"max_tokens": max_tokens, "finish_reason": finish_reason},
+            )
         if not isinstance(content, str) or not content.strip():
             raise DomainRuleError("LOCAL_LLM_EMPTY_RESPONSE", "LLM 没有返回结构化内容")
         result = self._parse_json_content(content)
@@ -364,11 +458,14 @@ class LocalLLMClient:
         cleaned = re.sub(r"<think>[\s\S]*?</think>", "", content, flags=re.IGNORECASE).strip()
         fenced_values = [item.strip() for item in re.findall(r"```(?:json)?\s*([\s\S]*?)```", cleaned, flags=re.IGNORECASE)]
         sources = [*fenced_values, cleaned]
+        complete_values: list[Any] = []
         values: list[Any] = []
         decoder = json.JSONDecoder()
         for candidate in sources:
             try:
-                values.append(json.loads(candidate))
+                complete = json.loads(candidate)
+                complete_values.append(complete)
+                values.append(complete)
             except json.JSONDecodeError:
                 pass
             # Reasoning models sometimes emit a small JSON example before the
@@ -397,7 +494,12 @@ class LocalLLMClient:
             # envelopes; otherwise preserve the object's real shape.
             return value
 
-        normalized = [unwrap(value) for value in values]
+        # A complete JSON document is authoritative.  Do not let a nested
+        # brace-delimited object win merely because it happens to contain a
+        # domain-specific key such as ``scenes``.  That previously turned a
+        # valid episode object into its inner ``entity_observations`` object.
+        authoritative = complete_values or values
+        normalized = [unwrap(value) for value in authoritative]
         if normalized:
 
             def score(value: Any) -> int:

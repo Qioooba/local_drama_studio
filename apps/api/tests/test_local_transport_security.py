@@ -47,6 +47,24 @@ class _SinkHandler(BaseHTTPRequestHandler):
         del format, args
 
 
+class _ComfyRejectHandler(BaseHTTPRequestHandler):
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
+        body = json.dumps({
+            "error": {"type": "prompt_outputs_failed_validation", "message": "secret provider detail"},
+            "node_errors": {
+                "17": {"class_type": "CheckpointLoaderSimple", "errors": [{"type": "value_not_in_list", "message": "secret path"}]},
+            },
+        }).encode("utf-8")
+        self.send_response(400)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format: str, *args: object) -> None:
+        del format, args
+
+
 def _server(handler: type[BaseHTTPRequestHandler]) -> ThreadingHTTPServer:
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     server.daemon_threads = True
@@ -97,6 +115,28 @@ def test_local_clients_do_not_follow_redirects_or_use_provider_payload_details(r
         client.queue_prompt({"1": {"class_type": "Safe", "inputs": {}}})
     assert reject_error.value.details == {"provider_response": "rejected", "node_errors": []}
     assert "secret" not in json.dumps(reject_error.value.details)
+
+
+def test_comfy_prompt_http_validation_error_is_not_reported_as_runtime_unavailable(monkeypatch) -> None:
+    monkeypatch.setenv("LOCAL_DRAMA_COMFY_ACCESS", "enabled")
+    server = _server(_ComfyRejectHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with pytest.raises(DomainRuleError) as caught:
+            ComfyClient(f"http://127.0.0.1:{server.server_port}").queue_prompt({"17": {"class_type": "Safe", "inputs": {}}})
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert caught.value.code == "COMFY_PROMPT_REJECTED"
+    assert caught.value.details == {
+        "provider_response": "rejected",
+        "http_status": 400,
+        "error_type": "prompt_outputs_failed_validation",
+        "node_errors": [{"node_id": "17", "class_type": "CheckpointLoaderSimple", "error_types": ["value_not_in_list"]}],
+    }
+    assert "secret" not in json.dumps(caught.value.details)
 
 
 @pytest.mark.parametrize(

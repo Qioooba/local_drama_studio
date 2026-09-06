@@ -21,7 +21,7 @@ describe("ProjectStructureAppendPanel", () => {
   it("creates the first season and episode from an empty project and exposes the real next step", async () => {
     mount([]);
     fireEvent.click(screen.getByRole("button", { name: "创建季度与首集" }));
-    await waitFor(() => expect(appendProjectEpisode).toHaveBeenCalledWith("project-1", { create_new_season: true, episode_title: "第 1 集", target_duration_ms: 60000 }));
+    await waitFor(() => expect(appendProjectEpisode).toHaveBeenCalledWith("project-1", { create_new_season: true, episode_title: "第 1 集", season_title: undefined, target_duration_ms: 120000 }));
     expect(await screen.findByRole("link", { name: "进入新分集规划" })).toHaveAttribute("href", "/projects/project-1/episodes/episode-new/plan");
   });
 
@@ -32,6 +32,6 @@ describe("ProjectStructureAppendPanel", () => {
     fireEvent.change(screen.getByLabelText("追加分集目标季度"), { target: { value: "season-2" } });
     fireEvent.change(screen.getByLabelText("分集标题"), { target: { value: "特别篇" } });
     fireEvent.click(screen.getByRole("button", { name: "追加分集" }));
-    await waitFor(() => expect(appendProjectEpisode).toHaveBeenCalledWith("project-1", { season_id: "season-2", create_new_season: false, episode_title: "特别篇", target_duration_ms: 60000 }));
+    await waitFor(() => expect(appendProjectEpisode).toHaveBeenCalledWith("project-1", { season_id: "season-2", create_new_season: false, episode_title: "特别篇", target_duration_ms: 120000 }));
   });
 });

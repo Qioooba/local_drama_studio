@@ -49,11 +49,14 @@ class ExecutionSnapshotService:
         capability_code = draft.capability_code.strip().upper()
         profile = connection.execute(
                 """SELECT cap.id AS capability_id,cap.code AS capability_code,profile.payload_hash,profile.payload_json,
-                   runtime.id AS runtime_id,runtime.fingerprint,runtime.adapter_code,runtime.adapter_version,runtime.configuration_json,
+                   runtime.id AS runtime_id,runtime.fingerprint,runtime.configuration_json,
+                   binding.adapter_code,('v' || binding.version_no) AS adapter_version,
                    parameter.id AS parameter_id,parameter.content_hash AS parameter_hash,resource.policy_json
                 FROM mp_execution_profile_versions profile
                 JOIN mp_capability_definitions cap ON cap.id=profile.capability_definition_id
                 JOIN mp_runtime_installation_versions runtime ON runtime.id=profile.runtime_installation_version_id
+                JOIN mp_adapter_binding_contract_versions binding
+                  ON binding.id=profile.adapter_binding_contract_version_id
                 JOIN mp_parameter_contract_versions parameter ON parameter.id=profile.parameter_contract_version_id
                 JOIN mp_resource_policy_versions resource ON resource.id=profile.resource_policy_version_id
                 JOIN mp_profile_publications publication ON publication.execution_profile_version_id=profile.id

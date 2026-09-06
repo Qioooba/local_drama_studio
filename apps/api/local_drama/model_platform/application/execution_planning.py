@@ -128,6 +128,7 @@ class ExecutionPlanningService:
                 "execution_profile_version_id": str(profile["profile_id"]),
                 "profile_payload_hash": str(profile["payload_hash"]),
                 "runtime_fingerprint": str(profile["runtime_fingerprint"]),
+                "adapter_binding_hash": str(profile["adapter_binding_hash"]),
                 "parameter_contract_hash": str(profile["parameter_contract_hash"]),
                 "assignment_chain": list(resolution.assignment_chain),
                 "assignment_overrides": dict(resolution.assignment_overrides),
@@ -187,12 +188,15 @@ class ExecutionPlanningService:
                           parameter.schema_json,parameter.ui_schema_json,parameter.content_hash AS parameter_contract_hash,
                           resource.policy_json AS resource_policy_json,
                           runtime.status AS runtime_status,runtime.fingerprint AS runtime_fingerprint,
-                          runtime.adapter_code,runtime.adapter_version
+                          binding.adapter_code,('v' || binding.version_no) AS adapter_version,
+                          binding.content_hash AS adapter_binding_hash
                    FROM mp_execution_profile_versions profile
                    JOIN mp_capability_definitions capability ON capability.id=profile.capability_definition_id
                    JOIN mp_profile_publications publication ON publication.execution_profile_version_id=profile.id
                    JOIN mp_parameter_contract_versions parameter ON parameter.id=profile.parameter_contract_version_id
                    JOIN mp_resource_policy_versions resource ON resource.id=profile.resource_policy_version_id
+                   JOIN mp_adapter_binding_contract_versions binding
+                     ON binding.id=profile.adapter_binding_contract_version_id
                    JOIN mp_runtime_installation_versions runtime ON runtime.id=profile.runtime_installation_version_id
                    WHERE profile.id=? AND capability.code=? AND publication.status='PUBLISHED'""",
                 (profile_id, capability_code),

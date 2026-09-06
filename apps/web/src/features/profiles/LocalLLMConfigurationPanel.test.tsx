@@ -127,6 +127,25 @@ describe("LocalLLMConfigurationPanel", () => {
     expect(screen.queryByText(/安全警示：数据将离开本机/)).not.toBeInTheDocument();
   });
 
+  it("uses the configured managed llama.cpp identity instead of preset defaults", async () => {
+    vi.mocked(getLocalLLMStatus).mockResolvedValueOnce({
+      status: {
+        status: "PASS",
+        provider: "LLAMA_CPP_MANAGED",
+        base_url: "http://127.0.0.1:8222",
+        model: "Qwen3.8-27B-UD-Q4_K_XL",
+        has_api_key: false,
+      },
+    });
+    renderWithClient(<LocalLLMConfigurationPanel />);
+    await waitFor(() => expect(screen.getByText("当前配置").parentElement).toHaveTextContent(
+      "Qwen3.8-27B-UD-Q4_K_XL托管 llama.cpp 本机进程 · http://127.0.0.1:8222",
+    ));
+    expect((screen.getByLabelText("预设模板 (Preset)") as HTMLSelectElement).value).toBe("llama-cpp-managed");
+    expect(screen.queryByLabelText(/API Key/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/安全警示：数据将离开本机/)).not.toBeInTheDocument();
+  });
+
   it("automatically lists, categorizes, searches, and selects Ollama models", async () => {
     vi.mocked(getLocalLLMStatus).mockResolvedValueOnce({
       status: { status: "CONFIGURED", provider: "OLLAMA_LOOPBACK", base_url: "http://127.0.0.1:11434", model: "gemma2:9b", has_api_key: false },
@@ -154,8 +173,11 @@ describe("LocalLLMConfigurationPanel", () => {
   it("shows a recoverable Ollama connection error without hiding existing configuration", async () => {
     vi.mocked(discoverOllamaModels).mockRejectedValueOnce(new Error("LOCAL_LLM_LOOPBACK_UNAVAILABLE"));
     renderWithClient(<LocalLLMConfigurationPanel />);
+    expect(await screen.findByLabelText("Model 名称")).toHaveValue("deepseek-v4-flash-vision-exp");
+    fireEvent.change(screen.getByLabelText("预设模板 (Preset)"), { target: { value: "ollama-local" } });
     expect(await screen.findByText("暂时无法读取本机 Ollama")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "重试连接" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("预设模板 (Preset)"), { target: { value: "custom" } });
     expect(await screen.findByLabelText("Model 名称")).toHaveValue("deepseek-v4-flash-vision-exp");
   });
 

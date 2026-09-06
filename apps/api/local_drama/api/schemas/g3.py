@@ -76,6 +76,25 @@ class DocumentImportResponse(BaseModel):
     import_result: DocumentImportResult = Field(alias="import")
 
 
+class DocumentImportSelectedRange(BaseModel):
+    source_paragraph_start: int = Field(ge=1)
+    source_paragraph_end: int = Field(ge=1)
+    source_paragraph_count: int = Field(ge=1)
+    selection_mode: Literal["EXPLICIT", "FULL_DOCUMENT_DEFAULT"]
+
+
+class LatestDocumentImport(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    import_result: DocumentImportResult = Field(alias="import")
+    source_name: str = Field(min_length=1)
+    selected_range: DocumentImportSelectedRange | None
+
+
+class LatestDocumentImportResponse(BaseModel):
+    latest: LatestDocumentImport | None
+
+
 class SourceParagraphItem(BaseModel):
     number: int = Field(ge=1)
     text: str
@@ -157,6 +176,17 @@ class I2VEvidenceProbeSubmitRequest(BaseModel):
     workflow_version_id: str = Field(min_length=1)
     plan_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     idempotency_key: str = Field(min_length=1, max_length=200)
+
+
+class T2IEvidenceProbeSubmitRequest(I2VEvidenceProbeSubmitRequest):
+    source_media_version_id: str | None = Field(default=None, min_length=1)
+    reference_media_version_ids: dict[str, str] = Field(default_factory=dict, max_length=7)
+
+
+class T2IEvidenceProbePlanRequest(BaseModel):
+    profile_version_id: str = Field(min_length=1)
+    workflow_version_id: str = Field(min_length=1)
+    reference_media_version_ids: dict[str, str] = Field(default_factory=dict, max_length=7)
 
 
 class I2VEvidenceKeyframePrepareRequest(BaseModel):

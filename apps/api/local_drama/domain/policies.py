@@ -26,7 +26,7 @@ VALID_PROJECT_TRANSITIONS: dict[str, set[str]] = {
 }
 
 VALID_SHOT_TRANSITIONS: dict[str, set[str]] = {
-    "DRAFT": {"DIRECTED"},
+    "DRAFT": {"DIRECTED", "READY"},
     "DIRECTED": {"READY"},
     "READY": {"GENERATING"},
     "GENERATING": {"REVIEW", "BLOCKED"},
@@ -34,6 +34,24 @@ VALID_SHOT_TRANSITIONS: dict[str, set[str]] = {
     "BLOCKED": {"READY"},
     "APPROVED": {"READY"},
 }
+
+# Shot-level production readiness is deliberately narrower than the episode
+# production aggregate.  A shot can be ready for generation while its working
+# media is stale, its video is awaiting review, or its video is not yet on the
+# timeline.  Consumers that need the full production state must use the
+# episode stages/overall state instead of re-deriving this predicate.
+SHOT_PRODUCTION_READY_STATUSES = frozenset(
+    {
+        "READY",
+        "GENERATING",
+        "REVIEW",
+        "APPROVED",
+        "PRODUCING",
+        "PROXY_SELECTED",
+        "FORMAL_APPROVED",
+    }
+)
+SHOT_READINESS_ACTIONS = ("OPEN_SHOT_STUDIO",)
 
 
 def require_transition(graph: dict[str, set[str]], current: str, target: str, entity: str) -> None:
@@ -92,6 +110,20 @@ def missing_shot_fields(fields: dict[str, object]) -> list[str]:
         elif isinstance(value, str) and not value.strip() and field not in {"dialogue", "environment"}:
             missing.append(field)
     return missing
+
+
+def is_shot_production_ready(
+    status: object,
+    current_revision_id: object,
+    fields: dict[str, object],
+) -> bool:
+    """Return the canonical shot-level readiness used by read and command paths."""
+
+    return (
+        bool(current_revision_id)
+        and not missing_shot_fields(fields)
+        and str(status) in SHOT_PRODUCTION_READY_STATUSES
+    )
 
 
 def validate_shot_ready(fields: dict[str, object]) -> None:

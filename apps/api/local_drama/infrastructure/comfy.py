@@ -14,6 +14,7 @@ from urllib.request import Request
 
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.network_policy import parse_runtime_endpoint
+from local_drama.infrastructure.comfy_diagnostics import summarize_node_errors
 from local_drama.infrastructure.local_http import open_local
 
 
@@ -54,6 +55,22 @@ class ComfyClient:
                     error_body = error.read().decode("utf-8", errors="replace")
                 except Exception:
                     pass
+                if path == "/prompt" and error.code in {400, 409, 422}:
+                    redacted: dict[str, Any] = {"provider_response": "rejected", "http_status": error.code}
+                    try:
+                        parsed_body = json.loads(error_body)
+                    except json.JSONDecodeError:
+                        parsed_body = {}
+                    if isinstance(parsed_body, dict):
+                        provider_error = parsed_body.get("error")
+                        if isinstance(provider_error, dict):
+                            redacted["error_type"] = str(provider_error.get("type") or "UNKNOWN")[:120]
+                        redacted["node_errors"] = summarize_node_errors(parsed_body.get("node_errors"))
+                    raise DomainRuleError(
+                        "COMFY_PROMPT_REJECTED",
+                        "ComfyUI 拒绝 workflow",
+                        redacted,
+                    ) from error
                 raise DomainRuleError("COMFY_LOOPBACK_UNAVAILABLE", f"ComfyUI loopback 请求失败 (HTTP {error.code}): {error_body[:300]}", {"reason": "HTTPError", "code": error.code, "path": path, "body": error_body}) from error
             except (URLError, TimeoutError, OSError) as error:
                 reason = getattr(error, "reason", error)
@@ -98,14 +115,7 @@ class ComfyClient:
             payload["extra_data"] = extra_data
         result = self._request("POST", "/prompt", payload)
         if result.get("error") or not result.get("prompt_id"):
-            # Keep actionable node/type evidence while never forwarding node
-            # values, paths, prompts or provider traceback text.
-            node_errors = []
-            for node_id, item in (result.get("node_errors") or {}).items():
-                if not isinstance(item, dict):
-                    continue
-                error_types = [str(error.get("type")) for error in item.get("errors", []) if isinstance(error, dict) and error.get("type")]
-                node_errors.append({"node_id": str(node_id), "class_type": str(item.get("class_type") or "UNKNOWN"), "error_types": error_types[:8]})
+            node_errors = summarize_node_errors(result.get("node_errors"))
             raise DomainRuleError(
                 "COMFY_PROMPT_REJECTED",
                 "ComfyUI 拒绝 workflow",

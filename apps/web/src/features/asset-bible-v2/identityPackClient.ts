@@ -227,3 +227,16 @@ export function bindShotCharacterPack(
     body: JSON.stringify(payload),
   });
 }
+
+export function syncEpisodeCharacterPacks(episodeId: string): Promise<{
+  sync: {
+    episode_id: string;
+    project_id: string;
+    updated_binding_count: number;
+    character_count: number;
+  };
+}> {
+  return requestJson(`/episodes/${encodeURIComponent(episodeId)}/character-identity-packs:sync`, {
+    method: "POST",
+  });
+}

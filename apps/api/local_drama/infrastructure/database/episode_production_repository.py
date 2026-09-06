@@ -12,8 +12,14 @@ import sqlite3
 from collections import defaultdict
 from typing import Any, Iterable
 
+from local_drama.application.production_spec_resolution import effective_video_profile
+from local_drama.domain.duration import TARGET_DURATION_TECHNICAL_TOLERANCE_MS
 from local_drama.domain.errors import DomainRuleError
-from local_drama.domain.policies import missing_shot_fields
+from local_drama.domain.policies import (
+    SHOT_READINESS_ACTIONS,
+    is_shot_production_ready,
+)
+from local_drama.domain.production_spec import canonical_production_plan, resolve_production_spec
 from local_drama.infrastructure.database.sqlite import Database
 
 STAGES = ("SHOT_PLANNING", "SHOT_IMAGE", "VIDEO", "AUDIO_SUBTITLE", "COMPOSE_QC")
@@ -41,8 +47,10 @@ class SqliteEpisodeProductionReadRepository:
     @staticmethod
     def _episode(connection: sqlite3.Connection, episode_id: str) -> dict[str, Any]:
         row = connection.execute(
-            """SELECT e.id,e.code,e.title,e.production_status,se.project_id
-            FROM episodes e JOIN seasons se ON se.id=e.season_id WHERE e.id=?""",
+            """SELECT e.id,e.code,e.title,e.production_status,e.target_duration_ms,e.revision,
+            e.source_range_json,se.project_id,p.production_plan_version_id
+            FROM episodes e JOIN seasons se ON se.id=e.season_id JOIN projects p ON p.id=se.project_id
+            WHERE e.id=?""",
             (episode_id,),
         ).fetchone()
         if row is None:
@@ -53,14 +61,25 @@ class SqliteEpisodeProductionReadRepository:
         with self.database.connect() as connection:
             episode = self._episode(connection, episode_id)
             rows = connection.execute(
-                """SELECT s.id,s.code,s.order_key,s.status,s.revision,s.current_revision_id,
+                """SELECT s.id,s.code,s.order_key,s.status,s.revision,s.current_revision_id,s.target_duration_ms,s.updated_at,
                 sr.id AS shot_revision_id,sr.revision_no,sr.fields_json
                 FROM shots s LEFT JOIN shot_revisions sr ON sr.id=s.current_revision_id
                 WHERE s.episode_id=? AND s.archived_at IS NULL
                 ORDER BY CAST(s.order_key AS REAL),s.code,s.id""",
                 (episode_id,),
             ).fetchall()
+            episode_summary, key_characters, key_scenes = self._episode_creative_context(
+                connection, episode_id, rows
+            )
             projected = self._project(connection, episode, rows)
+            planning_row = connection.execute(
+                """SELECT id,state,last_error_code AS error_code,
+                last_error_detail_redacted AS error_message FROM jobs
+                WHERE scope_episode_id=? AND scope_shot_id IS NULL AND stage_code='SHOT_PLANNING'
+                ORDER BY created_at DESC,rowid DESC LIMIT 1""",
+                (episode_id,),
+            ).fetchone()
+            planning_job = dict(planning_row) if planning_row else None
             active_jobs = int(
                 connection.execute(
                     f"""SELECT COUNT(*) FROM jobs WHERE scope_episode_id=?
@@ -69,12 +88,17 @@ class SqliteEpisodeProductionReadRepository:
                     (episode_id, *STAGES),
                 ).fetchone()[0]
             )
-            run = self._active_run(connection, episode_id)
+            run = self._active_run(connection, episode_id, str(episode["project_id"]))
+            contract = self._episode_contract(connection, episode, rows)
         counts: dict[str, int] = defaultdict(int)
         for item in projected:
             counts[str(item["overall_state"])] += 1
         attention_count = sum(counts.get(state, 0) for state in ATTENTION_STATES)
-        if attention_count:
+        if not projected and planning_job and planning_job["state"] in FAILED_JOB_STATES:
+            attention_count += 1
+        if contract["replan_required"]:
+            next_action = "REPLAN_EPISODE"
+        elif attention_count:
             next_action = "RESOLVE_ATTENTION"
         elif active_jobs:
             next_action = "MONITOR_ACTIVE_JOBS"
@@ -85,6 +109,8 @@ class SqliteEpisodeProductionReadRepository:
         else:
             next_action = "OPEN_SHOT_PLANNING"
         allowed = ["START_PRODUCTION_RUN"] if run is None else []
+        if contract["replan_required"] and run is None:
+            allowed = ["REQUEST_REPLAN", "REVIEW_REPLAN"]
         if run is not None:
             status = str(run["status"])
             if status == "RUNNING":
@@ -93,17 +119,183 @@ class SqliteEpisodeProductionReadRepository:
                 allowed.extend(["RESUME_RUN", "CANCEL_RUN"])
         return {
             "episode_id": episode_id,
+            "episode_revision": int(episode["revision"]),
             "project_id": str(episode["project_id"]),
             "episode_code": str(episode["code"]),
             "episode_title": episode.get("title"),
+            "episode_summary": episode_summary,
+            "key_characters": key_characters,
+            "key_scenes": key_scenes,
             "shot_count": len(projected),
             "attention_count": attention_count,
             "active_job_count": active_jobs,
+            "planning_job": planning_job,
             "next_action": next_action,
             "state_counts": dict(sorted(counts.items())),
             "active_run": run,
             "allowed_actions": allowed,
+            **contract,
         }
+
+    @staticmethod
+    def _episode_contract(
+        connection: sqlite3.Connection,
+        episode: dict[str, Any],
+        shot_rows: list[sqlite3.Row],
+    ) -> dict[str, Any]:
+        """Resolve the episode contract and explain why a replan is needed.
+
+        The projection intentionally uses persisted project bindings and
+        immutable timestamps only.  It never infers a duration from another
+        episode and never mutates a project while reading it.
+        """
+        target_ms = int(episode.get("target_duration_ms") or 0)
+        planned_ms = sum(int(row["target_duration_ms"] or 0) for row in shot_rows)
+        production_plan_version_id = episode.get("production_plan_version_id")
+        production_plan_version_no: int | None = None
+        presentation: dict[str, Any] | None = None
+        resolved_spec: dict[str, Any] | None = None
+        plan_updated_at: str | None = None
+        if production_plan_version_id:
+            plan_row = connection.execute(
+                "SELECT version_no,plan_json,updated_at FROM production_plan_versions WHERE id=?",
+                (production_plan_version_id,),
+            ).fetchone()
+            if plan_row is not None:
+                production_plan_version_no = int(plan_row["version_no"])
+                plan_updated_at = str(plan_row["updated_at"] or "")
+                raw_plan = _json(plan_row["plan_json"])
+                if isinstance(raw_plan, dict):
+                    try:
+                        canonical = canonical_production_plan(raw_plan)
+                        presentation = canonical["presentation"]
+                    except DomainRuleError:
+                        canonical = None
+                    profile = effective_video_profile(connection, str(episode["project_id"]))
+                    if canonical is not None and profile is not None:
+                        workflow = connection.execute(
+                            "SELECT status,content_json,node_bindings_json FROM workflow_versions WHERE id=?",
+                            (profile.get("workflow_version_id"),),
+                        ).fetchone()
+                        if workflow is not None and str(workflow["status"]) == "PUBLISHED":
+                            try:
+                                resolved_spec = resolve_production_spec(
+                                    canonical,
+                                    _json(workflow["node_bindings_json"]),
+                                    _json(workflow["content_json"]),
+                                )
+                            except DomainRuleError:
+                                resolved_spec = None
+
+        reasons: list[dict[str, Any]] = []
+        tolerance_ms = TARGET_DURATION_TECHNICAL_TOLERANCE_MS
+        if shot_rows and target_ms <= 0:
+            reasons.append({"code": "TARGET_DURATION_INVALID", "message": "本集目标时长无效", "blocking": True})
+        elif shot_rows and abs(planned_ms - target_ms) > tolerance_ms:
+            reasons.append({
+                "code": "TARGET_DURATION_MISMATCH",
+                "message": "当前分镜总时长与本集目标时长不匹配",
+                "blocking": True,
+                "target_duration_ms": target_ms,
+                "planned_duration_ms": planned_ms,
+                "tolerance_ms": tolerance_ms,
+            })
+        latest_shot_at = max((str(row["updated_at"] or "") for row in shot_rows), default="")
+        if shot_rows and plan_updated_at and latest_shot_at and plan_updated_at > latest_shot_at:
+            reasons.append({
+                "code": "PRODUCTION_PLAN_CHANGED",
+                "message": "项目生产计划版本在当前镜头计划之后发生变化",
+                "blocking": True,
+                "production_plan_version_id": str(production_plan_version_id),
+                "production_plan_version_no": production_plan_version_no,
+            })
+        replan_required = bool(reasons)
+        return {
+            "target_duration_ms": target_ms,
+            "planned_duration_ms": planned_ms,
+            "production_plan_version_id": str(production_plan_version_id) if production_plan_version_id else None,
+            "production_plan_version_no": production_plan_version_no,
+            "resolved_presentation": (resolved_spec or {}).get("delivery") or presentation,
+            "resolved_production_spec": resolved_spec,
+            "plan_stale": any(item["code"] == "PRODUCTION_PLAN_CHANGED" for item in reasons),
+            "replan_required": replan_required,
+            "replan_reasons": reasons,
+            "replan_draft": None,
+            "replan_job": None,
+        }
+
+    @staticmethod
+    def _episode_creative_context(
+        connection: sqlite3.Connection,
+        episode_id: str,
+        shot_rows: list[sqlite3.Row],
+    ) -> tuple[str | None, list[str], list[str]]:
+        """Return a compact creator-facing projection from committed episode facts."""
+        summary_parts: list[str] = []
+        for row in shot_rows:
+            fields = _json(row["fields_json"])
+            value = next(
+                (
+                    str(fields[key]).strip()
+                    for key in ("summary", "creative_intent", "subject_action", "action", "visual")
+                    if fields.get(key) and str(fields[key]).strip()
+                ),
+                "",
+            )
+            if value and value not in summary_parts:
+                summary_parts.append(value)
+            if len(summary_parts) >= 3:
+                break
+
+        bound_characters = [
+            str(row["name"])
+            for row in connection.execute(
+                """SELECT DISTINCT sa.name FROM story_assets sa
+                JOIN shot_asset_bindings sab ON sab.asset_id=sa.id
+                JOIN shots s ON s.id=sab.shot_id
+                WHERE s.episode_id=? AND s.archived_at IS NULL
+                AND sa.status='ACTIVE' AND sa.kind='CHARACTER'
+                ORDER BY sa.name LIMIT 8""",
+                (episode_id,),
+            ).fetchall()
+        ]
+        dialogue_characters = [
+            str(row["speaker"])
+            for row in connection.execute(
+                """SELECT DISTINCT dl.speaker FROM dialogue_lines dl
+                WHERE dl.episode_id=? AND TRIM(dl.speaker)<>''
+                AND dl.speaker NOT IN ('旁白','NARRATOR')
+                ORDER BY dl.speaker LIMIT 8""",
+                (episode_id,),
+            ).fetchall()
+        ]
+        characters = list(dict.fromkeys([*bound_characters, *dialogue_characters]))[:8]
+        asset_scenes = [
+            str(row["name"])
+            for row in connection.execute(
+                """SELECT DISTINCT sa.name FROM story_assets sa
+                JOIN shot_asset_bindings sab ON sab.asset_id=sa.id
+                JOIN shots s ON s.id=sab.shot_id
+                WHERE s.episode_id=? AND s.archived_at IS NULL
+                AND sa.status='ACTIVE' AND sa.kind='SCENE'
+                ORDER BY sa.name LIMIT 8""",
+                (episode_id,),
+            ).fetchall()
+        ]
+        master_scenes = [
+            str(row["title"])
+            for row in connection.execute(
+                """SELECT DISTINCT sc.title FROM episode_scene_ranges esr
+                JOIN scenes sc ON sc.id=esr.scene_id
+                WHERE esr.episode_id=? ORDER BY esr.ordinal LIMIT 8""",
+                (episode_id,),
+            ).fetchall()
+        ]
+        scenes = list(dict.fromkeys([*asset_scenes, *master_scenes]))[:8]
+        summary = "；".join(part.rstrip("；。") for part in summary_parts)
+        if summary:
+            summary += "。"
+        return (summary[:600] or None), characters, scenes
 
     def shot_facts(
         self,
@@ -171,16 +363,23 @@ class SqliteEpisodeProductionReadRepository:
         }
 
     @staticmethod
-    def _active_run(connection: sqlite3.Connection, episode_id: str) -> dict[str, Any] | None:
+    def _active_run(connection: sqlite3.Connection, episode_id: str, project_id: str) -> dict[str, Any] | None:
         row = connection.execute(
-            """SELECT r.id,r.status,r.revision,r.updated_at
+            """SELECT r.id,r.status,r.revision,r.updated_at,
+            r.pending_gate_json,r.machine_context_json
             FROM automation_workflow_runs r JOIN automation_workflows w ON w.id=r.workflow_id
-            WHERE json_extract(w.definition_json,'$.nodes[0].metadata.episode_id')=?
+            WHERE r.project_id=?
+            AND json_extract(w.definition_json,'$.nodes[0].metadata.episode_id')=?
             AND r.status IN ('RUNNING','PAUSED_HITL')
             ORDER BY r.updated_at DESC,r.id DESC LIMIT 1""",
-            (episode_id,),
+            (project_id, episode_id),
         ).fetchone()
-        return dict(row) if row is not None else None
+        if row is None:
+            return None
+        result = dict(row)
+        result["pending_gate"] = _json(result.pop("pending_gate_json", "{}"))
+        result["machine_context"] = _json(result.pop("machine_context_json", "{}"))
+        return result
 
     def _project(
         self,
@@ -439,14 +638,13 @@ class SqliteEpisodeProductionReadRepository:
         stages: list[dict[str, Any]] = []
         blockers: list[dict[str, str]] = []
 
-        missing = missing_shot_fields(fields)
-        planning_ready = bool(shot.get("current_revision_id")) and not missing and str(shot["status"]) in {
-            "READY", "GENERATING", "REVIEW", "APPROVED", "PRODUCING", "PROXY_SELECTED", "FORMAL_APPROVED"
-        }
+        planning_ready = is_shot_production_ready(
+            shot.get("status"), shot.get("current_revision_id"), fields
+        )
         if planning_ready:
-            stages.append(self._stage("SHOT_PLANNING", "READY", "SHOT_REVISION_READY", None, ["OPEN_SHOT_STUDIO"]))
+            stages.append(self._stage("SHOT_PLANNING", "READY", "SHOT_REVISION_READY", None, list(SHOT_READINESS_ACTIONS)))
         else:
-            stages.append(self._stage("SHOT_PLANNING", "BLOCKED", "SHOT_INTENT_INCOMPLETE", None, ["OPEN_SHOT_STUDIO"]))
+            stages.append(self._stage("SHOT_PLANNING", "BLOCKED", "SHOT_INTENT_INCOMPLETE", None, list(SHOT_READINESS_ACTIONS)))
             blockers.append(self._blocker("SHOT_INTENT_INCOMPLETE", "镜头意图尚未达到可生产状态。", "SHOT_STUDIO", "OPEN_DESIGN"))
 
         material_slots: list[dict[str, Any]] = []
@@ -549,6 +747,11 @@ class SqliteEpisodeProductionReadRepository:
             "shot_id": shot_id,
             "shot_code": str(shot["code"]),
             "order_key": str(shot["order_key"]),
+            "shot_readiness": {
+                "status": str(shot["status"]),
+                "ready": planning_ready,
+                "allowed_actions": list(SHOT_READINESS_ACTIONS),
+            },
             "overall_state": overall,
             "next_action": next_action,
             "stages": stages,

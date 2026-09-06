@@ -18,13 +18,19 @@ from urllib.parse import urlparse
 from local_drama.application.job_resources import GpuRuntime
 from local_drama.application.jobs import JobService
 from local_drama.application.media import MediaService
+from local_drama.application.workflow_contracts import effective_workflow_contract
 from local_drama.application.workflows import WorkflowService
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.image_input_roles import COMFY_IMAGE_INPUT_ROLES
 from local_drama.infrastructure.comfy import ComfyClient
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.atomic import replace_path
 from local_drama.infrastructure.filesystem.path_policy import controlled_path
+from local_drama.infrastructure.service_composition import (
+    build_asset_image_completion,
+    build_shot_keyframe_completion,
+)
 
 
 def _object_dict(value: object) -> dict[str, Any]:
@@ -96,12 +102,14 @@ class ComfyGenerationService:
             raise DomainRuleError("WORKFLOW_NOT_PUBLISHED", "Comfy Job 只能执行已通过本机验证并发布的 workflow")
         runtime_binding = self._runtime_binding(workflow_version_id)
         semantic_inputs = dict(snapshot.get("semantic_inputs", {}))
+        with self.database.connect() as connection:
+            effective_workflow = effective_workflow_contract(connection, workflow_version_id)
         # Only roles the published workflow actually declares are compiled into
         # the execution graph.  Metadata parameters frozen by the variant
         # (camera_plan, timed_directions, performance_bindings, motion_masks,
         # ...) stay in the immutable job snapshot for audit but must never be
         # written into a node input they do not belong to.
-        declared_roles = set(workflow_version["node_bindings"])
+        declared_roles = set(effective_workflow["workflow_bindings"])
         snapshot_only_roles = sorted(str(role) for role in set(semantic_inputs) - declared_roles)
         semantic_inputs = {role: value for role, value in semantic_inputs.items() if role in declared_roles}
         for binding in snapshot.get("media_bindings", []):
@@ -109,7 +117,7 @@ class ComfyGenerationService:
                 raise DomainRuleError("COMFY_MEDIA_BINDING_INVALID", "Comfy Job 的媒体绑定快照无效")
             role = str(binding["role"])
             media_version_id = str(binding["media_version_id"])
-            if role not in {"FIRST_FRAME", "END_FRAME", "MIDDLE_KEYFRAME", "REFERENCE_IMAGE"}:
+            if role not in COMFY_IMAGE_INPUT_ROLES:
                 raise DomainRuleError("COMFY_MEDIA_ROLE_UNSUPPORTED", "Comfy 输入物化不支持该媒体角色", {"role": role})
             if self.settings.comfy_input_root is None:
                 raise DomainRuleError("COMFY_INPUT_ROOT_REQUIRED", "媒体输入需要显式隔离的 Comfy input root")
@@ -146,7 +154,7 @@ class ComfyGenerationService:
                 raise DomainRuleError("COMFY_ARTIFACT_BINDING_INVALID", "Comfy Job 的快捷作品输入快照无效")
             role = str(binding["role"])
             artifact_id = str(binding["artifact_id"])
-            if role not in {"FIRST_FRAME", "END_FRAME", "MIDDLE_KEYFRAME", "REFERENCE_IMAGE"}:
+            if role not in COMFY_IMAGE_INPUT_ROLES:
                 raise DomainRuleError("COMFY_MEDIA_ROLE_UNSUPPORTED", "Comfy 输入物化不支持该媒体角色", {"role": role})
             if self.settings.comfy_input_root is None:
                 raise DomainRuleError("COMFY_INPUT_ROOT_REQUIRED", "媒体输入需要显式隔离的 Comfy input root")
@@ -203,9 +211,9 @@ class ComfyGenerationService:
                 ).hexdigest()
             compiled["runtime_overrides"] = runtime_evidence
         client_id = f"local-drama-{worker_id}"
-        if before_queue_prompt is not None:
-            before_queue_prompt(job, attempt)
         try:
+            if before_queue_prompt is not None:
+                before_queue_prompt(job, attempt)
             response = self.comfy.queue_prompt(
                 compiled["workflow"],
                 client_id=client_id,
@@ -226,6 +234,28 @@ class ComfyGenerationService:
                     error_code="COMFY_RUNTIME_UNAVAILABLE",
                     error_detail_redacted="Comfy loopback unavailable; attempt closed locally",
                 )
+            else:
+                safe_detail = error.message
+                if error.code == "COMFY_PROMPT_REJECTED" and error.details:
+                    safe_detail = f"{safe_detail} · {json.dumps(error.details, ensure_ascii=False, sort_keys=True)}"
+                self.jobs.complete(
+                    str(attempt["id"]),
+                    token,
+                    worker_id,
+                    success=False,
+                    error_code=error.code,
+                    error_detail_redacted=safe_detail,
+                )
+            raise
+        except Exception as error:
+            self.jobs.complete(
+                str(attempt["id"]),
+                token,
+                worker_id,
+                success=False,
+                error_code="COMFY_RUNTIME_PREPARE_FAILED",
+                error_detail_redacted=type(error).__name__,
+            )
             raise
         prompt_id = str(response["prompt_id"])
         self._persist_job_execution_evidence(str(job["id"]), compiled, prompt_id)
@@ -375,14 +405,27 @@ class ComfyGenerationService:
                 changed = True
 
         acceleration = str(settings.get("acceleration") or "OFF").upper()
-        lora_nodes = [str(node_id) for node_id, node in workflow.items() if isinstance(node, dict) and node.get("class_type") == "LoraLoaderModelOnly"]
+        # ``acceleration`` controls only the optional MiniMax H3 Turbo LoRA.
+        # Published workflows may contain authored LoRAs that are essential to
+        # their capability (for example a Qwen multi-angle adapter).  Treating
+        # every LoraLoaderModelOnly node as acceleration state made OFF delete
+        # those required nodes and left downstream model links dangling.
+        from local_drama.application.h3_workflows import H3WorkflowFactory
+
+        turbo_lora_asset = H3WorkflowFactory(self.settings).loader_assets()["turbo_lora_name"]
+
+        def _is_turbo_lora(node: object) -> bool:
+            if not isinstance(node, dict) or node.get("class_type") != "LoraLoaderModelOnly":
+                return False
+            name = str(_object_dict(node.get("inputs")).get("lora_name") or "")
+            return name.replace("\\", "/").rsplit("/", 1)[-1].casefold() == turbo_lora_asset.casefold()
+
+        lora_nodes = [str(node_id) for node_id, node in workflow.items() if _is_turbo_lora(node)]
         lora_strength = settings.get("lora_strength", 1.0)
         lora_asset = None
         if acceleration == "TURBO_LORA":
             if not lora_nodes:
-                from local_drama.application.h3_workflows import H3WorkflowFactory
-
-                lora_asset = H3WorkflowFactory(self.settings).loader_assets()["turbo_lora_name"]
+                lora_asset = turbo_lora_asset
                 numeric_ids = [int(node_id) for node_id in workflow if str(node_id).isdigit()]
                 lora_id = str(max(numeric_ids, default=0) + 1)
                 workflow[lora_id] = {
@@ -483,12 +526,22 @@ class ComfyGenerationService:
         with ExitStack() as runtime_stack:
             def prepare_runtime(job: dict[str, Any], attempt: dict[str, Any]) -> None:
                 if self.gpu_coordinator is not None:
+                    def wait_for_gpu() -> None:
+                        heartbeat = self.jobs.heartbeat(
+                            str(attempt["id"]), str(attempt["lease_token"]), worker_id,
+                            progress={"phase": "WAITING_FOR_GPU"},
+                            lease_seconds=self.GPU_LEASE_SECONDS,
+                        )
+                        if heartbeat.get("cancel_requested"):
+                            raise DomainRuleError("JOB_CANCELLED", "等待显卡时任务已取消")
+
                     runtime_stack.enter_context(
                         self.gpu_coordinator.session(
                             GpuRuntime.COMFY,
                             owner_kind="JOB_ATTEMPT",
                             owner_ref=str(attempt["id"]),
                             retain_if_same_runtime_waiting=True,
+                            on_wait=wait_for_gpu,
                         )
                     )
 
@@ -740,6 +793,34 @@ class ComfyGenerationService:
             relative = target.relative_to(self.settings.work_root).as_posix()
             artifacts.append(self.jobs.register_artifact(str(attempt["id"]), "COMFY_OUTPUT", relative))
         result = self.jobs.complete(str(attempt["id"]), str(attempt["lease_token"]), worker_id, success=True, provider_job_id=prompt_id)
+        completion = build_asset_image_completion(self.database, self.settings)
+        try:
+            completion.finalize_job(str(attempt["job_id"]), artifacts)
+        except DomainRuleError as error:
+            completion.record_finalization_failure(str(attempt["job_id"]), error)
+        keyframe_completion = build_shot_keyframe_completion(self.database, self.settings)
+        try:
+            keyframe_completion.finalize_job(str(attempt["job_id"]), artifacts)
+        except DomainRuleError as error:
+            keyframe_completion.record_failure(str(attempt["job_id"]), error)
+        with self.database.connect() as connection:
+            job_row = connection.execute("SELECT subject_type, subject_id FROM jobs WHERE id=?", (attempt["job_id"],)).fetchone()
+        if job_row and job_row["subject_type"] == "GENERATION_VARIANT":
+            from local_drama.application.media import MediaService
+            media_svc = MediaService(self.database, self.settings)
+            for artifact in artifacts:
+                try:
+                    promoted = media_svc.promote_job_artifact(
+                        str(artifact["id"]), purpose="SHOT_VIDEO_CANDIDATE", stage="PROXY"
+                    )
+                    # Generation artifacts become creator-facing media versions
+                    # here.  Queue their read-only playback derivatives as part
+                    # of the same completion path; otherwise the task artifact
+                    # is playable while the Director/Edit surfaces only receive
+                    # a MEDIA_DERIVATIVE_NOT_READY response from the proxy API.
+                    media_svc.submit_default_derivatives(str(promoted["media_version_id"]))
+                except Exception:
+                    pass
         self._record_provider_event(attempt_id, prompt_id, "SUCCEEDED", {"artifact_count": len(artifacts)}, progress=1.0)
         return {"status": "SUCCEEDED", "prompt_id": prompt_id, "artifacts": artifacts, "result": result}
 

@@ -531,6 +531,9 @@
 .workspace-section-head { display: flex; align-items: end; justify-content: space-between; gap: 20px; }
 .workspace-section-head h2 { margin: 2px 0 0; }
 .workspace-section-head > p { max-width: 680px; margin: 0; color: var(--text-secondary, #9ca3af); }
+.workspace-section-head--compact { align-items: center; }
+.workspace-section-head--compact h2 { font-size: 18px; }
+.workspace-section-head--compact > p { max-width: 520px; font-size: 12px; line-height: 1.55; }
 .workspace-section-nav { display: flex; gap: 6px; padding: 5px; overflow-x: auto; border: 1px solid var(--border-subtle, rgba(148,163,184,.18)); border-radius: 12px; background: var(--surface-raised, rgba(15,23,42,.72)); }
 .workspace-section-nav a { flex: 0 0 auto; padding: 9px 14px; border-radius: 8px; color: var(--text-secondary, #a7b0bf); text-decoration: none; font-weight: 650; }
 .workspace-section-nav a:hover { color: var(--text-primary, #f8fafc); background: rgba(148,163,184,.10); }

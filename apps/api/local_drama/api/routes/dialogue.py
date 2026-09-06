@@ -7,6 +7,7 @@ from local_drama.api.schemas.dialogue import (
     DialogueLineRequest,
     DialogueTextRevisionRequest,
     EpisodeTTSBatchRequest,
+    ProjectSapiVoiceProfileRequest,
     SapiTTSProfilePublishRequest,
     TTSCandidateRequest,
     TTSJobRequest,
@@ -67,6 +68,14 @@ async def create_dialogue_text_revision(line_id: str, payload: DialogueTextRevis
 async def create_voice_profile(project_id: str, payload: VoiceProfileRequest, request: Request) -> dict[str, object]:
     try:
         return {"voice_profile": service(request).create_voice_profile(project_id, **payload.model_dump())}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post("/projects/{project_id}/voice-profile-versions:publish-local-sapi", status_code=201, operation_id="publishProjectLocalSapiVoiceProfile")
+async def publish_project_local_sapi_voice_profile(project_id: str, payload: ProjectSapiVoiceProfileRequest, request: Request) -> dict[str, object]:
+    try:
+        return {"voice_profile": service(request).publish_project_local_sapi_profile(project_id, **payload.model_dump())}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

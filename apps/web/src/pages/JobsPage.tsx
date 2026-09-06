@@ -4,6 +4,7 @@ import { routes } from "../app/routeRegistry";
 import { ErrorState } from "../components/ui";
 import { useProjectEventInvalidation } from "../features/events/useProjectEventInvalidation";
 import { CapacitySnapshotPanel, JobsPanel } from "../features/jobs/JobsPanel";
+import { projectDisplayLabels } from "../features/shared/projectLabels";
 import { getCapacitySnapshot, listJobsPage, listProjects } from "../generated/api";
 import { queryKeys } from "../query/queryKeys";
 
@@ -30,7 +31,7 @@ export function JobsPage() {
   });
   useProjectEventInvalidation(
     projectId ?? "",
-    ["JOB_QUEUED", "JOB_CLAIMED", "JOB_HEARTBEAT", "JOB_FINISHED", "JOB_RECONCILED", "JOB_REQUEUED", "JOB_CANCEL_REQUESTED", "ARTIFACT_REGISTERED"],
+    ["JOB_QUEUED", "JOB_CLAIMED", "JOB_HEARTBEAT", "JOB_FINISHED", "JOB_RECONCILED", "JOB_REQUEUED", "JOB_CANCEL_REQUESTED", "JOB_PAUSED", "ARTIFACT_REGISTERED"],
     [queryKeys.jobs.scope(projectId), queryKeys.capacity.scope(projectId)],
     (event) => event.type === "JOB_HEARTBEAT"
       ? [queryKeys.jobs.scope(projectId)]
@@ -43,8 +44,9 @@ export function JobsPage() {
     setSearchParams(next, { replace: true });
   };
   const jobItems = jobs.data?.pages.flatMap((page) => page.items) ?? [];
-  const projectTitles = Object.fromEntries((projects.data?.items ?? []).map((project) => [project.id, project.title]));
-  const selectedProjectTitle = projectId ? projectTitles[projectId] ?? "所选项目" : "全部任务（含独立生成）";
+  const projectLabels = projectDisplayLabels(projects.data?.items ?? []);
+  const projectTitles = Object.fromEntries((projects.data?.items ?? []).map((project) => [project.id, projectLabels.get(project.id) ?? project.title]));
+  const selectedProjectTitle = projectId ? projectLabels.get(projectId) ?? "所选项目" : "全部任务（含独立生成）";
   return (
     <div className="v2-page">
       <div className="panel-heading">
@@ -69,7 +71,7 @@ export function JobsPage() {
             }}
           >
             <option value="">全部任务（含独立生成）</option>
-            {projects.data?.items.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}
+            {projects.data?.items.map((project) => <option key={project.id} value={project.id}>{projectLabels.get(project.id) ?? project.title}</option>)}
           </select>
           <small className="muted jobs-scope-summary" role="status">当前范围：{selectedProjectTitle} · 已读取 {jobItems.length} 个任务{jobs.hasNextPage ? "（还有更早任务）" : ""}</small>
         </label>

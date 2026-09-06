@@ -58,6 +58,7 @@ async def review_targets(
     episode_id: str,
     request: Request,
     target_kind: list[ReviewTargetKind] = Query(default=[]),  # noqa: B008
+    target_id: str | None = Query(default=None, min_length=1, max_length=200),
     cursor: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
     include_resolved: bool = False,
@@ -69,6 +70,7 @@ async def review_targets(
             limit=limit,
             target_kinds=set(target_kind),
             include_resolved=include_resolved,
+            target_id=target_id,
         ))
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error

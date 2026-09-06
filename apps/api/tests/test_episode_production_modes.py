@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from local_drama.application.automation_workflows import AutomationWorkflowService
@@ -94,6 +96,91 @@ def test_video_action_resolves_shot_preference_instead_of_legacy_project_binding
     assert resolved["id"] == "version-current"
 
 
+def test_episode_preflight_uses_effective_project_auto_video_profile(
+    workspace, database,
+) -> None:
+    project, episode = _episode(workspace, database, "episode_profile_auto_preflight")
+    project_id = str(project["id"])
+    profile_id = "version-auto-preflight"
+    with database.transaction() as connection:
+        connection.execute(
+            """INSERT INTO execution_profiles
+            (id,code,title,created_at,updated_at,created_by,revision,schema_version)
+            VALUES ('profile-auto-preflight','auto-preflight','Auto preflight',
+                    '2026-08-21T00:00:00Z','2026-08-21T00:00:00Z','test',1,'v2')"""
+        )
+        connection.execute(
+            """INSERT INTO execution_profile_versions
+            (id,execution_profile_id,version_no,capability,model_bundle_json,input_contract_json,
+             parameter_schema_json,status,created_at,updated_at,created_by,revision,schema_version,
+             capability_json,output_contract_json,resource_policy_json,workflow_version_id)
+            VALUES (?,'profile-auto-preflight',1,'VIDEO_I2V','{}','{}','{}','PUBLISHED',
+                    '2026-08-21T00:00:00Z','2026-08-21T00:00:00Z','test',1,'v2','{}','{}','{}',
+                    'workflow-auto-preflight')""",
+            (profile_id,),
+        )
+        GenerationPreferenceCommandService(SqliteGenerationPreferenceRepository(connection)).put(
+            project_id=project_id,
+            owner_type="PROJECT",
+            owner_id=project_id,
+            capability="VIDEO_I2V",
+            resolution_mode="AUTO",
+            reason="use the project's automatic video profile",
+        )
+        assert connection.execute(
+            "SELECT COUNT(*) FROM project_profile_bindings WHERE project_id=?", (project_id,),
+        ).fetchone()[0] == 0
+
+    preflight = EpisodeProductionRunService(database, workspace).preflight(
+        str(episode["id"]), tts_enabled=False, min_free_disk_bytes=1,
+    )
+    profile_check = next(item for item in preflight["checks"] if item["code"] == "PROFILE_CAPABILITY_MISSING")
+    assert profile_check["status"] == "PASS"
+    assert profile_check["evidence"]["effective_profile_version_id"] == profile_id
+    assert profile_check["evidence"]["resolution_source"] == "EFFECTIVE_VIDEO_PROFILE"
+
+
+def test_episode_preflight_keeps_effective_video_profile_project_scoped(
+    workspace, database,
+) -> None:
+    project_a, _episode_a = _episode(workspace, database, "episode_profile_scope_a")
+    project_b, episode_b = _episode(workspace, database, "episode_profile_scope_b")
+    profiles = (
+        (str(project_a["id"]), "profile-scope-a", "version-scope-a"),
+        (str(project_b["id"]), "profile-scope-b", "version-scope-b"),
+    )
+    with database.transaction() as connection:
+        for project_id, profile_id, version_id in profiles:
+            connection.execute(
+                """INSERT INTO execution_profiles
+                (id,code,title,created_at,updated_at,created_by,revision,schema_version)
+                VALUES (?,?,?, '2026-08-21T00:00:00Z','2026-08-21T00:00:00Z','test',1,'v2')""",
+                (profile_id, profile_id, profile_id),
+            )
+            connection.execute(
+                """INSERT INTO execution_profile_versions
+                (id,execution_profile_id,version_no,capability,model_bundle_json,input_contract_json,
+                 parameter_schema_json,status,created_at,updated_at,created_by,revision,schema_version,
+                 capability_json,output_contract_json,resource_policy_json,workflow_version_id)
+                VALUES (?,?,1,'VIDEO_I2V','{}','{}','{}','PUBLISHED',
+                        '2026-08-21T00:00:00Z','2026-08-21T00:00:00Z','test',1,'v2','{}','{}','{}',?)""",
+                (version_id, profile_id, f"workflow-{version_id}"),
+            )
+            connection.execute(
+                """INSERT INTO project_profile_bindings
+                (id,project_id,capability,execution_profile_version_id,status,created_at,updated_at,created_by,revision,schema_version)
+                VALUES (?,?, 'VIDEO_I2V',?,'ACTIVE','2026-08-21T00:00:00Z','2026-08-21T00:00:00Z','test',1,'v2')""",
+                (f"binding-{project_id}", project_id, version_id),
+            )
+
+    preflight = EpisodeProductionRunService(database, workspace).preflight(
+        str(episode_b["id"]), tts_enabled=False, min_free_disk_bytes=1,
+    )
+    profile_check = next(item for item in preflight["checks"] if item["code"] == "PROFILE_CAPABILITY_MISSING")
+    assert profile_check["status"] == "PASS"
+    assert profile_check["evidence"]["effective_profile_version_id"] == "version-scope-b"
+
+
 def test_episode_preflight_uses_live_comfy_probe_over_stale_registered_status(
     workspace, database, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -180,6 +267,78 @@ def test_video_action_submits_mode_target_candidate_count(
     assert report["status"] == "PASS"
     assert report["machine_check"]["target_take_count"] == target_take_count
     assert submitted_take_indexes == list(range(target_take_count)), mode
+
+
+def test_video_action_force_new_take_filters_selected_shots_and_ignores_existing_candidate(
+    workspace, database, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = EpisodeWorkerActionService(database, workspace)
+    shots = [
+        {"id": "shot-a", "code": "SHOT-A"},
+        {"id": "shot-b", "code": "SHOT-B"},
+        {"id": "shot-c", "code": "SHOT-C"},
+    ]
+    submitted: list[tuple[str, str | None]] = []
+    monkeypatch.setattr(service, "_episode", lambda _episode_id: ("project-mode", shots))
+    monkeypatch.setattr(service, "_variant_jobs", lambda _shot_id: [{"id": "old-job", "state": "SUCCEEDED"}])
+    monkeypatch.setattr(service, "_promote_completed_outputs", lambda _jobs: ["old-media"])
+    monkeypatch.setattr(service, "_shot_video", lambda _shot_id: {"media_version_id": "existing-video"})
+    monkeypatch.setattr(service, "_shot_video_count", lambda _shot_id: 1)
+
+    def submit(_project_id, shot, _run_id, _task_id, *, take_index=0, previous_shot=None):
+        submitted.append((str(shot["id"]), str(previous_shot["id"]) if previous_shot else None))
+        return {"shot_id": shot["id"], "shot_code": shot["code"], "status": "SUBMITTED", "job_id": "job-new", "variant_id": "variant-new"}
+
+    monkeypatch.setattr(service, "_submit_shot", submit)
+    report, _ = service.video_generation(
+        "episode-mode",
+        "run-mode",
+        "task-mode",
+        target_shot_ids=("shot-b",),
+        force_new_take=True,
+    )
+
+    assert submitted == [("shot-b", "shot-a")]
+    assert report["produced"]["items"][0]["forced_new_take"] is True
+    assert report["machine_check"]["target_shot_ids"] == ["shot-b"]
+
+
+def test_selected_shot_video_preflight_compiles_persisted_modifiers_without_runtime_contact(
+    workspace, database, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = EpisodeWorkerActionService(database, workspace)
+    fields = {
+        "schema_version": "director-intent.v3",
+        "shot_type": "MEDIUM",
+        "composition": {"preset": "RULE_OF_THIRDS", "framing": "FULL", "subject_position": "CENTER", "depth_plan": "MID"},
+        "subject_action": "主角推门进入",
+        "performance": {"emotion": "警惕"},
+        "camera_plan": {"mode": "NATIVE", "shot_type": "MEDIUM", "movement": "DOLLY_IN", "direction": "FORWARD", "intensity": 0.5, "curve": "LINEAR", "profile_version_id": "profile-ready"},
+        "target_duration_ms": 4_000,
+        "dialogue": "有人吗？",
+        "environment": "废弃车站",
+        "continuity": "承接前镜",
+        "creative_intent": "压迫感",
+        "prompt_modifiers": ["雨夜", "冷色调"],
+    }
+    shot = {
+        "id": "shot-ready", "code": "SHOT-READY", "revision": 7,
+        "current_revision_id": "revision-7", "fields_json": json.dumps(fields, ensure_ascii=False),
+    }
+    monkeypatch.setattr(service, "_episode", lambda _episode_id: ("project-ready", [shot]))
+    monkeypatch.setattr(service, "_approved_keyframe", lambda _shot_id: {"media_version_id": "keyframe-ready"})
+    monkeypatch.setattr(
+        service,
+        "_video_profile",
+        lambda _project_id, _shot_id: {"id": "profile-ready", "input_contract_json": '{"input_slots":{"FIRST_FRAME":{"max":1}}}'},
+    )
+
+    preflight = service.video_generation_preflight("episode-ready", target_shot_ids=("shot-ready",))
+
+    assert preflight["status"] == "READY"
+    assert preflight["mutated"] is False
+    assert preflight["runtime_contacted"] is False
+    assert preflight["items"][0]["prompt"].endswith("统一视觉修饰：雨夜，冷色调")
 
 
 def test_recover_uses_original_quality_mode_snapshot(workspace, database) -> None:

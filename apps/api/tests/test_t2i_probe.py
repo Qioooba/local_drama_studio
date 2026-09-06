@@ -19,7 +19,7 @@ _PNG_1X1 = base64.b64decode(
 )
 
 
-def _insert_image_profile(database, *, status: str = "DRAFT") -> str:
+def _insert_image_profile(database, *, status: str = "DRAFT", capability: str = "IMAGE_CONCEPT") -> str:
     profile_id = str(uuid.uuid4())
     version_id = str(uuid.uuid4())
     now = "2026-08-23T00:00:00+00:00"
@@ -48,10 +48,11 @@ def _insert_image_profile(database, *, status: str = "DRAFT") -> str:
             (id, execution_profile_id, version_no, capability, model_bundle_json, input_contract_json,
              parameter_schema_json, output_contract_json, resource_policy_json, status, manifest_sha256,
              capability_json, worker_policy, created_at, updated_at, created_by, revision, schema_version)
-            VALUES (?, ?, 1, 'IMAGE_CONCEPT', '{}', ?, ?, ?, ?, ?, ?, '{}', 'ONE_H3_WORKER_ONE_GPU_TASK', ?, ?, ?, 1, 'v2')""",
+            VALUES (?, ?, 1, ?, '{}', ?, ?, ?, ?, ?, ?, '{}', 'ONE_H3_WORKER_ONE_GPU_TASK', ?, ?, ?, 1, 'v2')""",
             (
                 version_id,
                 profile_id,
+                capability,
                 json.dumps(contracts["input_contract"]),
                 json.dumps(contracts["parameter_schema"]),
                 json.dumps(contracts["output_contract"]),
@@ -66,7 +67,7 @@ def _insert_image_profile(database, *, status: str = "DRAFT") -> str:
     return version_id
 
 
-def _insert_published_t2i_workflow(database) -> str:
+def _insert_published_t2i_workflow(database, *, capability: str = "SDXL_T2I_CANDIDATE", include_first_frame: bool = False) -> str:
     workflow_id = str(uuid.uuid4())
     now = "2026-08-23T00:00:00+00:00"
     with database.transaction() as connection:
@@ -85,11 +86,12 @@ def _insert_published_t2i_workflow(database) -> str:
                 workflow_id,
                 parent_id,
                 "4" * 64,
-                json.dumps({"capability": "SDXL_T2I_CANDIDATE", "input_slots": {}}),
+                json.dumps({"capability": capability, "input_slots": {}}),
                 json.dumps({
                     "PROMPT": {"node_id": "2", "input": "text"},
                     "SEED": {"node_id": "4", "input": "seed"},
                     "OUTPUT_PREFIX": {"node_id": "6", "input": "filename_prefix"},
+                    **({"FIRST_FRAME": {"node_id": "7", "input": "image"}} if include_first_frame else {}),
                 }),
                 json.dumps({"transport": "LOOPBACK_HTTP"}),
                 now,
@@ -98,6 +100,72 @@ def _insert_published_t2i_workflow(database) -> str:
             ),
         )
     return workflow_id
+
+
+def test_multi_view_probe_uses_explicit_turnaround_prompt(workspace, database) -> None:
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="multi_view_probe", title="Multi view probe", episode_count=1, aspect_ratio="16:9",
+        fps_num=24, fps_den=1, target_duration_ms=60_000, allow_unconfigured_capabilities=True,
+    )
+    profiles = ProfileService(database, workspace.manifest_path)
+    draft_id = _insert_image_profile(database, capability="IMAGE_MULTI_VIEW")
+    workflow_id = _insert_published_t2i_workflow(
+        database, capability="IMAGE_MULTI_VIEW", include_first_frame=True,
+    )
+    profiles.validate_contract_version(draft_id)
+    profiles.validate_compatibility(draft_id)
+    source_path = workspace.work_root / "character.png"
+    source_path.write_bytes(_PNG_1X1)
+    source = MediaService(database, workspace).import_file(
+        str(project["id"]), source_path, purpose="ASSET_REFERENCE", media_kind="IMAGE",
+    )
+
+    plan = T2IProbePlanService(database).plan(
+        str(project["id"]), draft_id, workflow_id, str(source["media_version_id"]),
+    )
+
+    assert plan["status"] == "READY"
+    prompt = plan["snapshot"]["semantic_inputs"]["PROMPT"]
+    assert "exactly three separate full-body views" in prompt
+    assert "front view, left side profile, and back view" in prompt
+    assert "no extra person" in prompt
+
+
+@pytest.mark.parametrize("count", [1, 2, 3])
+def test_identity_probe_requires_every_explicit_image_and_freezes_each_role(workspace, database, count):
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="identity_probe", title="Identity probe", episode_count=1, aspect_ratio="9:16",
+        fps_num=24, fps_den=1, target_duration_ms=120_000, allow_unconfigured_capabilities=True)
+    project_id = str(project["id"])
+    profile_id = _insert_image_profile(database)
+    workflow_id = _insert_published_t2i_workflow(database, capability="IMAGE_CONCEPT")
+    refs = {}
+    for i in range(1, count + 1):
+        source = workspace.work_root / f"identity-{i}.png"
+        source.write_bytes(_PNG_1X1 + bytes([i]))
+        refs[f"REFERENCE_IMAGE_{i}"] = MediaService(database, workspace).import_file(project_id, source, media_kind="IMAGE")["media_version_id"]
+    with database.transaction() as connection:
+        bindings = {"PROMPT": {"node_id": "5", "input": "prompt"}, "NEGATIVE_PROMPT": {"node_id": "6", "input": "prompt"}}
+        bindings.update({role: {"node_id": str(11 + i), "input": "image"} for i, role in enumerate(refs)})
+        connection.execute("UPDATE workflow_versions SET node_bindings_json=? WHERE id=?", (json.dumps(bindings), workflow_id))
+    profiles = ProfileService(database, workspace.manifest_path)
+    profiles.validate_contract_version(profile_id)
+    profiles.validate_compatibility(profile_id)
+    service = T2IProbePlanService(database, workspace)
+    missing = service.plan(project_id, profile_id, workflow_id, reference_media_version_ids=dict(list(refs.items())[:-1]))
+    assert missing["status"] == "BLOCKED"
+    assert f"VERIFIED_PROJECT_REFERENCE_IMAGE_REQUIRED:REFERENCE_IMAGE_{count}" in missing["blockers"]
+    ready = service.plan(project_id, profile_id, workflow_id, reference_media_version_ids=refs)
+    assert ready["status"] == "READY", ready
+    assert f"exactly {count} human figure(s)" in ready["snapshot"]["semantic_inputs"]["PROMPT"]
+    if count == 1:
+        assert "exactly one person, alone" in ready["snapshot"]["semantic_inputs"]["PROMPT"]
+    submitted = service.submit(project_id, profile_id, workflow_id, ready["plan_hash"], "identity-proof", reference_media_version_ids=refs)
+    assert {x["role"]: x["media_version_id"] for x in submitted["job"]["input_snapshot"]["media_bindings"]} == refs
+    assert "NEGATIVE_PROMPT" in submitted["job"]["input_snapshot"]["semantic_inputs"]
+    if count > 1:
+        swapped = {**refs, "REFERENCE_IMAGE_1": refs["REFERENCE_IMAGE_2"], "REFERENCE_IMAGE_2": refs["REFERENCE_IMAGE_1"]}
+        assert service.plan(project_id, profile_id, workflow_id, reference_media_version_ids=swapped)["plan_hash"] != ready["plan_hash"]
 
 
 def _run_probe_job_to_success(workspace, database, job_id: str, key: str) -> dict:

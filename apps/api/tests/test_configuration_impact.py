@@ -74,3 +74,33 @@ def test_creating_or_selecting_a_target_keeps_one_project_wide_current_version(w
             (project_id,),
         ).fetchone()[0]
     assert active == 1
+
+
+def test_reusing_a_project_target_code_creates_an_active_version_instead_of_a_duplicate(workspace, database) -> None:
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="target_code_reuse", title="Target code reuse", episode_count=1, aspect_ratio="16:9",
+        fps_num=24, fps_den=1, target_duration_ms=60_000, allow_unconfigured_capabilities=True,
+    )
+    project_id = str(project["id"])
+    service = ConfigurationService(database)
+    first = service.create_delivery_target(
+        project_id, "custom-render", "自定义规格", "LOCAL_FILESYSTEM",
+        {"path_rel": "06_delivery/custom-render", "width": 480, "height": 854, "fps": 24},
+    )
+    second = service.create_delivery_target(
+        project_id, "custom-render", "自定义规格更新", "LOCAL_FILESYSTEM",
+        {"path_rel": "06_delivery/custom-render-v2", "width": 720, "height": 1280, "fps": 24},
+    )
+
+    assert second["id"] == first["id"]
+    assert second["version_id"] != first["version_id"]
+    assert second["version_no"] == 2
+    snapshot = service.inspect_project_configuration(project_id)
+    assert snapshot["selected_delivery_target_version_id"] == second["version_id"]
+    versions = [item for item in snapshot["delivery_targets"] if item["target_id"] == first["id"]]
+    assert {item["version_no"] for item in versions} == {1, 2}
+    assert next(item for item in versions if item["version_no"] == 2)["spec"]["width"] == 720
+    with database.connect() as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM delivery_targets WHERE project_id=? AND code=?", (project_id, "custom-render"),
+        ).fetchone()[0] == 1

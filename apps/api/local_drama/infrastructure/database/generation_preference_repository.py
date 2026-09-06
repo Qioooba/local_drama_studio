@@ -57,7 +57,7 @@ class SqliteGenerationPreferenceRepository:
         try:
             row = self.connection.execute(
                 """SELECT v.id, v.version_no, v.capability, v.status, v.capability_json,
-                v.model_bundle_json, v.parameter_schema_json, p.code, p.title
+                v.model_bundle_json, v.parameter_schema_json, v.workflow_version_id, p.code, p.title
                 FROM execution_profile_versions v JOIN execution_profiles p ON p.id=v.execution_profile_id
                 WHERE v.id=?""",
                 (profile_version_id,),
@@ -76,6 +76,7 @@ class SqliteGenerationPreferenceRepository:
         item = dict(row)
         capability_json = json.loads(str(item.pop("capability_json") or "{}"))
         item["capability_contract"] = capability_json if isinstance(capability_json, dict) else {}
+        item.setdefault("workflow_version_id", None)
         item["resources"] = capability_json.get("resources", {})
         bundle = json.loads(str(item.pop("model_bundle_json", "{}") or "{}"))
         parameter_schema = json.loads(str(item.pop("parameter_schema_json", "{}") or "{}"))

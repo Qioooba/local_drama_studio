@@ -24,6 +24,7 @@ from local_drama.application.automation_workflows import AutomationWorkflowServi
 from local_drama.application.configuration import ConfigurationService
 from local_drama.application.dialogue import DialogueService
 from local_drama.application.projects import ProjectService
+from local_drama.application.reviews import ReviewService
 from local_drama.application.timeline import TimelineService
 from local_drama.application.worker import LocalMediaWorker
 from local_drama.domain.errors import DomainRuleError
@@ -67,8 +68,14 @@ def _start_and_first_step(service: AutomationWorkflowService, workflow_id: str) 
 def _approve_keyframe(database, project_id: str, shot_id: str) -> str:
     asset_id = str(uuid.uuid4())
     version_id = str(uuid.uuid4())
+    decision_id = str(uuid.uuid4())
     now = _now()
+    ReviewService(database).ensure_templates()
     with database.transaction() as connection:
+        template = connection.execute(
+            "SELECT id FROM review_templates WHERE code='image_asset' ORDER BY version_no DESC LIMIT 1"
+        ).fetchone()
+        assert template is not None
         connection.execute(
             """INSERT INTO media_assets
             (id, project_id, owner_type, owner_id, purpose, media_kind, approved_version_id, version_counter,
@@ -82,6 +89,13 @@ def _approve_keyframe(database, project_id: str, shot_id: str) -> str:
              integrity_status, created_at, updated_at, created_by, revision, schema_version)
             VALUES (?, ?, 1, 1, 'KEYFRAME', 'media/kf.png', 'image/png', 0, ?, 'VERIFIED', ?, ?, 'test', 1, 'v2')""",
             (version_id, asset_id, "0" * 64, now, now),
+        )
+        connection.execute(
+            """INSERT INTO review_decisions
+            (id, subject_type, subject_id, review_template_version_id, decision, comment,
+             subject_revision, is_stale, created_at, updated_at, created_by, revision, schema_version)
+            VALUES (?, 'MEDIA_VERSION', ?, ?, 'APPROVED', 'test approval', 1, 0, ?, ?, 'test', 1, 'v2')""",
+            (decision_id, version_id, template["id"], now, now),
         )
     return version_id
 
@@ -247,6 +261,8 @@ def test_automation_worker_keyframe_check_needs_hitl_pauses_run(workspace, datab
     assert report["action"] == "KEYFRAME_CHECK"
     assert report["status"] == "NEEDS_HITL"
     assert report["schema_version"] == "localdrama.automation-task-report.v1"
+    assert report["machine_check"]["code"] == "APPROVED_KEYFRAME_REQUIRED"
+    assert report["machine_check"]["detail"] == "镜头缺少未过期的人工批准关键帧"
     assert [item["shot_code"] for item in report["machine_check"]["missing_shots"]] == ["SH-001", "SH-002"]
     assert report["machine_check"]["checked_shots"] == 2
     advanced = service.get_run(str(run["id"]))
@@ -271,6 +287,7 @@ def test_automation_worker_keyframe_check_pass_advances_run(workspace, database)
     outcome = LocalMediaWorker(database, workspace).run_once("worker-keyframe-pass")
     report = _read_report(workspace, outcome)
     assert report["status"] == "PASS"
+    assert report["machine_check"]["code"] == "APPROVED_KEYFRAMES_VERIFIED"
     assert report["machine_check"]["missing_shots"] == []
     advanced = service.get_run(str(run["id"]))
     assert advanced["status"] == "RUNNING"

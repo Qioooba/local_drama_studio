@@ -27,6 +27,7 @@ const statusLabel: Record<string, string> = {
   DELIVERED: "已交付",
   APPROVED: "已批准",
   IN_PROGRESS: "制作中",
+  NEEDS_UPDATE: "需更新",
 };
 
 const statusClass: Record<string, string> = {
@@ -36,6 +37,7 @@ const statusClass: Record<string, string> = {
   DELIVERED: "state-delivered",
   APPROVED: "state-approved",
   IN_PROGRESS: "state-running",
+  NEEDS_UPDATE: "state-needs_update",
 };
 
 function isComplete(status: string) {

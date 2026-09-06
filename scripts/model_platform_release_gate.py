@@ -56,7 +56,7 @@ def verify(*, config_path: Path, release_root: Path, instance_root: Path, databa
     libraries = config.runtime.model_library_roots
     root_ok = root is not None and root.is_absolute() and not str(root).startswith("\\\\") and root.is_dir() and not is_reparse_point(root)
     checks.append(_check("MODEL_ROOT", root_ok, "configured local directory" if root_ok else "模型根目录未配置、不可用、UNC 或 reparse"))
-    expected_libraries = {"comfyui", "pytorch", "ollama", "audio"}
+    expected_libraries = {"comfyui", "pytorch", "gguf", "audio"}
     library_names = {path.name.casefold() for path in libraries}
     libraries_ok = root is not None and expected_libraries <= library_names and all(path.is_dir() and not is_reparse_point(path) for path in libraries)
     checks.append(_check("MODEL_LIBRARIES", libraries_ok, "four managed libraries present" if libraries_ok else "四类受管模型库不完整或不安全"))

@@ -13,6 +13,7 @@ import hmac
 import json
 from typing import Any
 
+from local_drama.application.episode_render_approval import require_latest_episode_render_approval
 from local_drama.application.jobs import JobService
 from local_drama.application.timeline import TimelineService
 from local_drama.config import Settings
@@ -82,6 +83,13 @@ class BackgroundOperationService:
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         plan = self.timeline.preflight_segmented_episode_render(timeline_revision_id, segments)
+        production_spec = plan.get("production_spec")
+        if isinstance(production_spec, dict) and str(production_spec.get("status")) != "READY":
+            raise DomainRuleError(
+                "COMPOSE_PRODUCTION_SPEC_BLOCKED",
+                "分段合成被项目生产规格阻塞；请先修复交付画布或 VIDEO workflow 能力",
+                {"timeline_revision_id": timeline_revision_id, "production_spec": production_spec},
+            )
         if plan["existing_render"] is not None and not force_rerender:
             return {"preflight": plan, "job": None, "render": plan["existing_render"], "idempotent_replay": True}
         if force_rerender and not idempotency_key:
@@ -92,6 +100,7 @@ class BackgroundOperationService:
             "timeline_revision_id": timeline_revision_id,
             "segments": plan["input_snapshot"]["segments"],
             "compose_fingerprint": fingerprint,
+            "renderer_contract": plan["input_snapshot"].get("renderer_contract"),
             "force_rerender": force_rerender,
             "local_only": True,
             "network_contacted": False,
@@ -122,7 +131,7 @@ class BackgroundOperationService:
     ) -> dict[str, Any]:
         with self.database.connect() as connection:
             render = connection.execute(
-                """SELECT erv.id, erv.sha256, erv.revision, erv.integrity_status, s.project_id
+                """SELECT erv.id, erv.episode_id, erv.sha256, erv.revision, erv.integrity_status, s.project_id
                 FROM episode_render_versions erv JOIN episodes e ON e.id=erv.episode_id
                 JOIN seasons s ON s.id=e.season_id WHERE erv.id=?""",
                 (episode_render_version_id,),
@@ -132,12 +141,6 @@ class BackgroundOperationService:
                 FROM delivery_target_versions dtv JOIN delivery_targets dt ON dt.id=dtv.delivery_target_id
                 WHERE dtv.id=?""",
                 (target_version_id,),
-            ).fetchone()
-            approval = connection.execute(
-                """SELECT id, decision, is_stale, subject_revision FROM review_decisions
-                WHERE subject_type='EPISODE_RENDER_VERSION' AND subject_id=?
-                ORDER BY created_at DESC, id DESC LIMIT 1""",
-                (episode_render_version_id,),
             ).fetchone()
         if render is None:
             raise DomainRuleError("EPISODE_RENDER_NOT_FOUND", "整集渲染版本不存在")
@@ -151,10 +154,8 @@ class BackgroundOperationService:
             raise DomainRuleError("REMOTE_TRANSPORT_DISABLED", "LOCAL_ONLY 首版只允许本地文件交付")
         if str(target["status"]) != "ACTIVE":
             raise DomainRuleError("DELIVERY_TARGET_VERSION_INACTIVE", "只能使用当前 ACTIVE 的交付目标版本创建新候选")
-        if approval is None or str(approval["decision"]) != "APPROVED" or int(approval["is_stale"] or 0) != 0:
-            raise DomainRuleError("EPISODE_RENDER_APPROVAL_REQUIRED", "只有最新、未过期的整集批准版本才能创建交付候选")
-        if int(approval["subject_revision"]) != int(render["revision"]):
-            raise DomainRuleError("EPISODE_RENDER_APPROVAL_STALE", "整集批准基于旧 revision，不能创建交付候选")
+        with self.database.connect() as connection:
+            approval = require_latest_episode_render_approval(connection, dict(render))
         inputs = {
             "episode_render_version_id": episode_render_version_id,
             "render_sha256": str(render["sha256"]),

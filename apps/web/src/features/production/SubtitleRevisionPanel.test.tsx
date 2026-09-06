@@ -50,7 +50,8 @@ describe("SubtitleRevisionPanel source authority", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("仍可沿用当前本集字幕权威版本");
     expect(screen.getByRole("option", { name: "当前本集字幕权威版本" })).toBeTruthy();
     expect(document.body.textContent).not.toContain("current-secret");
-    expect((screen.getByRole("button", { name: "创建字幕 revision" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "创建字幕 revision" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("请填写第 1 条字幕文本")).toBeTruthy();
   });
 
   it("loads a reviewable draft from current TTS selections without creating a revision", async () => {

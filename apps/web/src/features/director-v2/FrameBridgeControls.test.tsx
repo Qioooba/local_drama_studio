@@ -27,7 +27,7 @@ describe("FrameBridgeControls tail extraction", () => {
     expect(screen.getByAltText("上一镜尾帧缩略图").getAttribute("src")).toContain("/thumbnail?size=small&frame=poster");
     expect(screen.getByAltText("上一镜尾帧缩略图").getAttribute("src")).not.toContain("/content");
     expect(screen.getByText("建议继承").closest("aside")?.textContent).toContain("同场连续镜");
-    fireEvent.click(screen.getByRole("button", { name: "从当前视频提取尾帧" }));
+    fireEvent.click(screen.getByRole("button", { name: "将当前候选设为尾帧" }));
     await waitFor(() => expect(createFrameAnchor).toHaveBeenCalledWith("video-current", { position_mode: "LAST_FRAME", role_hint: "LAST_FRAME" }));
     await waitFor(() => expect(setFrameBridgeSourceFrameV2).toHaveBeenCalledWith("next", expect.objectContaining({ expected_boundary_revision: 1, frame_anchor_id: "new-tail-anchor", idempotency_key: expect.any(String) })));
   });

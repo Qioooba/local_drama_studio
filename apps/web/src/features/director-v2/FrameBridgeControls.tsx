@@ -37,6 +37,12 @@ function shortId(value: string | null | undefined) {
   return value ? `${value.slice(0, 8)}…` : "未设置";
 }
 
+const BRIDGE_STATUS_LABELS: Record<string, string> = {
+  MISSING: "未设置", STALE: "已失效", VERIFIED: "已验证", READY: "可用", GENERATED: "已生成",
+  COMPATIBLE: "兼容", CONFLICT: "有冲突", UNKNOWN: "待确认",
+};
+const bridgeStatusLabel = (value: string | null | undefined) => BRIDGE_STATUS_LABELS[String(value ?? "MISSING").toUpperCase()] ?? "待确认";
+
 function commandKey(transitionId: string, operation: string, revision: number, source = "none") {
   return `shot-studio:frame-bridge:${transitionId}:${operation}:${revision}:${source}`;
 }
@@ -68,10 +74,10 @@ export function FrameBridgeControls({ frameBridge, currentCandidate, currentShot
   }, [currentCandidate]);
   const endFrameIssue = useMemo(() => {
     if (!nextBoundary) return "这是本集最后一个镜头，没有下游 Frame Bridge";
-    if (!currentCandidate) return "请先在候选区选择当前视频";
-    if (currentCandidate.media_kind !== "VIDEO") return "尾帧只能从视频候选提取";
-    if (currentCandidate.integrity_status !== "VERIFIED") return "当前视频尚未通过完整性校验";
-    if (currentCandidate.is_stale) return "当前视频已失效，不能作为尾帧来源";
+    if (!currentCandidate) return "请先在候选区选择图片或视频";
+    if (!currentCandidate.media_kind || !["IMAGE", "VIDEO"].includes(currentCandidate.media_kind)) return "尾帧只接受图片或视频候选";
+    if (currentCandidate.integrity_status !== "VERIFIED") return "当前候选尚未通过完整性校验";
+    if (currentCandidate.is_stale) return "当前候选已失效，不能作为尾帧来源";
     return null;
   }, [currentCandidate, nextBoundary]);
 
@@ -119,7 +125,7 @@ export function FrameBridgeControls({ frameBridge, currentCandidate, currentShot
         }
       } else if (operation === "extract-end") {
         const candidate = droppedCandidate ?? currentCandidate;
-        if (!candidate || !nextBoundary || frameCandidateIssue(candidate) || candidate.media_kind !== "VIDEO") return;
+        if (!candidate || !nextBoundary || frameCandidateIssue(candidate)) return;
         const extracted = await createFrameAnchor(candidate.media_version_id, { position_mode: "LAST_FRAME", role_hint: "LAST_FRAME" });
         result = (await setFrameBridgeSourceFrameV2(nextBoundary.transition_id, {
           expected_boundary_revision: nextBoundary.boundary_revision,
@@ -141,7 +147,7 @@ export function FrameBridgeControls({ frameBridge, currentCandidate, currentShot
         : operation === "candidate"
           ? "已将当前候选帧设为本镜首帧；旧锚点未被删除。"
           : operation === "extract-end"
-            ? "已从当前视频真实尾帧注册 FrameAnchor，并连接到下一镜；旧锚点仍可追溯。"
+            ? `已从当前${(droppedCandidate ?? currentCandidate)?.media_kind === "IMAGE" ? "图片" : "视频尾帧"}建立 FrameAnchor，并连接到下一镜；旧锚点仍可追溯。`
           : operation === "lock" ? "Frame Bridge 已锁定。" : "Frame Bridge 已解除锁定。");
       await onChanged?.(result);
     } catch (error) {
@@ -160,7 +166,7 @@ export function FrameBridgeControls({ frameBridge, currentCandidate, currentShot
     setDropActive(null);
     const candidate = readFrameCandidate(dataTransfer);
     const issue = candidate ? frameCandidateIssue(candidate) : "拖拽数据不是可识别的媒体候选";
-    const targetIssue = target === "start" ? (!boundary ? "本镜没有上游首帧边界" : null) : (!nextBoundary ? "本镜没有下游尾帧边界" : candidate?.media_kind !== "VIDEO" ? "尾帧目标只接受视频候选" : null);
+    const targetIssue = target === "start" ? (!boundary ? "本镜没有上游首帧边界" : null) : (!nextBoundary ? "本镜没有下游尾帧边界" : null);
     if (!canEdit || issue || targetIssue) {
       setMessage(`候选帧不可用：${!canEdit ? "当前权限只读" : issue ?? targetIssue}`);
       return;
@@ -170,21 +176,22 @@ export function FrameBridgeControls({ frameBridge, currentCandidate, currentShot
 
   const dropTarget = (target: DropTarget) => <div
     className={`frame-candidate-drop${dropActive === target ? " is-active" : ""}`}
-    aria-label={target === "start" ? "拖放候选到本镜首帧" : "拖放视频候选到本镜尾帧"}
+    aria-label={target === "start" ? "拖放候选到本镜首帧" : "拖放候选到本镜尾帧"}
     onDragEnter={(event) => { event.preventDefault(); setDropActive(target); }}
     onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }}
     onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropActive(null); }}
     onDrop={(event) => { event.preventDefault(); requestDrop(target, event.dataTransfer); }}
-  ><strong>{target === "start" ? "拖到这里设为首帧" : "拖到这里提取尾帧"}</strong><span>{target === "start" ? "IMAGE 直接绑定；VIDEO 提取 FIRST_FRAME" : "VIDEO 提取 LAST_FRAME 并连接下一镜"}</span></div>;
+  ><strong>{target === "start" ? "拖到这里设为首帧" : "拖到这里设为尾帧"}</strong><span>{target === "start" ? "图片直接绑定；视频提取首帧" : "图片直接建锚；视频提取真实尾帧"}</span></div>;
 
   if (!boundary) {
     return <section className="frame-bridge-controls frame-bridge-empty" aria-label="Frame Bridge 连贯性操作">
       <strong>{previousShotId ? "尚未创建上游 Frame Bridge" : "这是本集第一个镜头"}</strong>
       <span>{previousShotId ? "先创建与上一镜的边界，再继承或指定本镜首帧。" : "没有上一镜边界，因此无需继承首帧。仍可为下一镜提取本镜真实尾帧。"}</span>
+      {frameBridge.current_start && <article className="frame-bridge-working-start"><small>本镜首帧</small><strong>已采用工作关键帧</strong><span>{bridgeStatusLabel(frameBridge.current_start.status)}</span></article>}
       {previousShotId && <button type="button" disabled={!canEdit || busy !== null} onClick={() => void run("create-previous")}>{busy === "create-previous" ? "正在创建…" : "创建上游 Frame Bridge"}</button>}
       {nextShotId && !nextBoundary && <button type="button" disabled={!canEdit || busy !== null} onClick={() => void run("create-next")}>{busy === "create-next" ? "正在创建…" : "创建下游 Frame Bridge"}</button>}
       {nextBoundary && dropTarget("end")}
-      {nextBoundary && <button type="button" title={endFrameIssue ?? "提取真实视频尾帧并连接下一镜"} disabled={!canEdit || busy !== null || Boolean(endFrameIssue)} onClick={() => void run("extract-end")}>{busy === "extract-end" ? "正在解析真实尾帧…" : "从当前视频提取尾帧"}</button>}
+      {nextBoundary && <button type="button" title={endFrameIssue ?? "将当前图片或视频尾帧连接到下一镜"} disabled={!canEdit || busy !== null || Boolean(endFrameIssue)} onClick={() => void run("extract-end")}>{busy === "extract-end" ? "正在建立尾帧…" : "将当前候选设为尾帧"}</button>}
       {endFrameIssue && nextBoundary && <span>尾帧来源不可用：{endFrameIssue}</span>}
       {message && <p className={message.startsWith("操作失败") ? "frame-bridge-message error" : "frame-bridge-message"} role="status">{message}</p>}
       {pendingDrop && nextBoundary && <div className="frame-bridge-drop-dialog" role="alertdialog" aria-modal="true" aria-labelledby="frame-drop-title-first">
@@ -197,13 +204,13 @@ export function FrameBridgeControls({ frameBridge, currentCandidate, currentShot
   return <section className={`frame-bridge-controls${stale ? " is-stale" : ""}`} aria-labelledby="frame-bridge-controls-title">
     <header className="frame-bridge-controls-head">
       <div><span>FRAME BRIDGE</span><h4 id="frame-bridge-controls-title">{boundary.from_shot_code} → {boundary.to_shot_code}</h4></div>
-      <div className="frame-bridge-state"><strong>{stale ? "STALE" : boundary.compatibility}</strong><span>boundary revision {boundary.boundary_revision}</span></div>
+      <div className="frame-bridge-state"><strong>{stale ? "已失效" : bridgeStatusLabel(boundary.compatibility)}</strong><span>边界版本 {boundary.boundary_revision}</span></div>
     </header>
 
     <div className="frame-bridge-flow" aria-label="上一镜尾帧到本镜首帧">
-      <article>{boundary.previous_end && <img src={`/api/v1/media-versions/${encodeURIComponent(boundary.previous_end.media_version_id)}/thumbnail?size=small&frame=poster`} alt="上一镜尾帧缩略图" loading="lazy" decoding="async" />}<small>上一镜尾帧</small><strong>{shortId(boundary.previous_end?.anchor_id)}</strong><span>{boundary.previous_end?.status ?? "MISSING"}</span></article>
+      <article>{boundary.previous_end && <img src={`/api/v1/media-versions/${encodeURIComponent(boundary.previous_end.media_version_id)}/thumbnail?size=small&frame=poster`} alt="上一镜尾帧缩略图" loading="eager" decoding="async" onError={(e) => { e.currentTarget.style.display = "none"; }} />}<small>上一镜尾帧</small><strong>{shortId(boundary.previous_end?.anchor_id)}</strong><span>{bridgeStatusLabel(boundary.previous_end?.status)}</span></article>
       <span className="frame-bridge-arrow" aria-hidden="true">→</span>
-      <article>{boundary.current_start && <img src={`/api/v1/media-versions/${encodeURIComponent(boundary.current_start.media_version_id)}/thumbnail?size=small&frame=poster`} alt="本镜首帧缩略图" loading="lazy" decoding="async" />}<small>本镜首帧</small><strong>{shortId(boundary.current_start?.anchor_id)}</strong><span>{boundary.current_start?.status ?? "MISSING"}</span></article>
+      <article>{boundary.current_start && <img src={`/api/v1/media-versions/${encodeURIComponent(boundary.current_start.media_version_id)}/thumbnail?size=small&frame=poster`} alt="本镜首帧缩略图" loading="eager" decoding="async" onError={(e) => { e.currentTarget.style.display = "none"; }} />}<small>本镜首帧</small><strong>{shortId(boundary.current_start?.anchor_id)}</strong><span>{bridgeStatusLabel(boundary.current_start?.status)}</span></article>
     </div>
 
     {stale && <aside className="frame-bridge-stale" role="alert">
@@ -227,10 +234,10 @@ export function FrameBridgeControls({ frameBridge, currentCandidate, currentShot
         {busy === "candidate" ? "设置中…" : "用当前候选帧"}
       </button>
       </div>
-      <div><strong>本镜尾帧来源</strong><span>从当前选中的真实视频解析最后一帧，并连接下一镜。</span></div>
+      <div><strong>本镜尾帧来源</strong><span>使用 AI 生成的尾帧图片，或从当前视频解析最后一帧，再连接下一镜。</span></div>
       {nextShotId && !nextBoundary && <button type="button" disabled={!canEdit || busy !== null} onClick={() => void run("create-next")}>{busy === "create-next" ? "正在创建…" : "创建下游 Frame Bridge"}</button>}
-      <button type="button" title={endFrameIssue ?? "提取真实视频尾帧并连接下一镜"} disabled={!canEdit || busy !== null || Boolean(endFrameIssue)} onClick={() => void run("extract-end")}>
-        {busy === "extract-end" ? "正在解析真实尾帧…" : frameBridge.current_end ? "重新提取当前视频尾帧" : "从当前视频提取尾帧"}
+      <button type="button" title={endFrameIssue ?? "将当前图片或视频尾帧连接下一镜"} disabled={!canEdit || busy !== null || Boolean(endFrameIssue)} onClick={() => void run("extract-end")}>
+        {busy === "extract-end" ? "正在建立尾帧…" : frameBridge.current_end ? "重新设置当前尾帧" : "将当前候选设为尾帧"}
       </button>
       <div><strong>本镜首帧边界策略</strong><span>锁定后 stale 来源必须先重新继承。</span></div>
       <button type="button" disabled={!canEdit || busy !== null || (stale && !locked)} onClick={() => void run(locked ? "unlock" : "lock")}>
