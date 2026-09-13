@@ -71,7 +71,7 @@ export function AppShell() {
   const [draftDirty, setDraftDirty] = useState(false);
   const [draftActionPending, setDraftActionPending] = useState<"save" | "discard" | null>(null);
   const [draftActionError, setDraftActionError] = useState<string | null>(null);
-  const draftStateRef = useRef<DraftStateChange | null>(null);
+  const draftRegistryRef = useRef(new Map<string, DraftStateChange>());
   const mobileNavTriggerRef = useRef<HTMLButtonElement>(null);
   const mobileNavRef = useRef<HTMLElement>(null);
   const workspaceRef = useRef<HTMLElement>(null);
@@ -145,9 +145,17 @@ export function AppShell() {
   useEffect(() => {
     const onDraftState = (event: Event) => {
       const detail = (event as CustomEvent<DraftStateChange>).detail;
-      draftStateRef.current = detail.dirty ? detail : null;
-      setDraftDirty(detail.dirty);
-      if (!detail.dirty) setDraftActionError(null);
+      const current = draftRegistryRef.current.get(detail.ownerId);
+      if (!detail.dirty) {
+        if (!current || current.registrationToken === detail.registrationToken) {
+          draftRegistryRef.current.delete(detail.ownerId);
+        }
+      } else if (!current || current.registrationToken === detail.registrationToken || detail.version >= current.version) {
+        draftRegistryRef.current.set(detail.ownerId, detail);
+      }
+      const hasDirtyDraft = Array.from(draftRegistryRef.current.values()).some((owner) => owner.dirty);
+      setDraftDirty(hasDirtyDraft);
+      if (!hasDirtyDraft) setDraftActionError(null);
     };
     window.addEventListener(DRAFT_STATE_EVENT, onDraftState);
     return () => window.removeEventListener(DRAFT_STATE_EVENT, onDraftState);
@@ -185,16 +193,30 @@ export function AppShell() {
   }, [mobileNavOpen]);
 
   const finishBlockedNavigation = async (action: "save" | "discard") => {
-    const callback = action === "save" ? draftStateRef.current?.save : draftStateRef.current?.discard;
+    const snapshots = Array.from(draftRegistryRef.current.values()).filter((owner) => owner.dirty);
     setDraftActionPending(action);
     setDraftActionError(null);
     try {
-      const result = await callback?.();
-      if (result === false) {
-        setDraftActionError(action === "save" ? "保存未完成，请处理页面中的错误后重试。" : "未能放弃当前修改，请在页面内处理后重试。");
-        return;
+      for (const snapshot of snapshots) {
+        const callback = action === "save" ? snapshot.save : snapshot.discard;
+        if (!callback) {
+          setDraftActionError(action === "save" ? "有草稿不支持在此处保存，请返回编辑器完成保存。" : "有草稿不支持在此处放弃，请返回编辑器处理。");
+          return;
+        }
+        const result = await callback();
+        if (result === false || (typeof result === "object" && result?.status === "blocked")) {
+          setDraftActionError(typeof result === "object" && result?.status === "blocked"
+            ? result.reason
+            : action === "save" ? "保存未完成，请处理页面中的错误后重试。" : "未能放弃当前修改，请在页面内处理后重试。");
+          return;
+        }
+        const current = draftRegistryRef.current.get(snapshot.ownerId);
+        if (current && (current.registrationToken !== snapshot.registrationToken || current.version !== snapshot.version)) {
+          setDraftActionError(`“${current.entityKey}”在${action === "save" ? "保存" : "放弃"}过程中出现了新修改，请复核后再切换。`);
+          return;
+        }
+        if (current) draftRegistryRef.current.delete(snapshot.ownerId);
       }
-      draftStateRef.current = null;
       setDraftDirty(false);
       blocker.proceed?.();
     } catch (error) {
@@ -299,7 +321,7 @@ export function AppShell() {
         <Outlet key={`${location.pathname}${location.search}`} />
       </section>
     </div>
-    <Dialog open={blocker.state === "blocked"} title="当前页面有未保存内容" onClose={() => blocker.reset?.()} footer={<><button type="button" className="secondary" disabled={draftActionPending !== null} onClick={() => blocker.reset?.()}>取消切换</button><button type="button" className="secondary danger-outline" disabled={draftActionPending !== null} onClick={() => void finishBlockedNavigation("discard")}>{draftActionPending === "discard" ? "正在放弃…" : "放弃并切换"}</button><button type="button" className="primary-action" disabled={draftActionPending !== null} onClick={() => void finishBlockedNavigation("save")}>{draftActionPending === "save" ? "正在保存…" : "保存并切换"}</button></>}>
+    <Dialog open={blocker.state === "blocked"} title="当前页面有未保存内容" onClose={() => { if (!draftActionPending) blocker.reset?.(); }} footer={<><button type="button" className="secondary" disabled={draftActionPending !== null} onClick={() => blocker.reset?.()}>取消切换</button><button type="button" className="secondary danger-outline" disabled={draftActionPending !== null || Array.from(draftRegistryRef.current.values()).some((owner) => owner.dirty && !owner.discard)} onClick={() => void finishBlockedNavigation("discard")}>{draftActionPending === "discard" ? "正在放弃…" : "放弃并切换"}</button><button type="button" className="primary-action" disabled={draftActionPending !== null || Array.from(draftRegistryRef.current.values()).some((owner) => owner.dirty && !owner.save)} onClick={() => void finishBlockedNavigation("save")}>{draftActionPending === "save" ? "正在保存…" : "保存并切换"}</button></>}>
       <p>“保存并切换”会先调用当前工作台的正式保存动作；“放弃并切换”会清理当前实体的本地草稿并恢复最近一次正式版本。</p>
       {draftActionError && <p className="inline-error" role="alert">{draftActionError}</p>}
     </Dialog>

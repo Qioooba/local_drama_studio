@@ -1,9 +1,10 @@
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { createMemoryRouter, Link, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "./AppShell";
+import { notifyDraftDirty } from "../features/drafts/draftGuard";
 
 vi.mock("../generated/api", () => ({
   listProjects: vi.fn().mockResolvedValue({ items: [{ id: "project-1", title: "测试项目" }] }),
@@ -40,6 +41,18 @@ describe("AppShell collapsible sidebar", () => {
         <RouterProvider router={router} />
       </QueryClientProvider>,
     );
+  };
+
+  const renderDraftShell = () => {
+    const router = createMemoryRouter([{
+      path: "/projects/:projectId",
+      element: <AppShell />,
+      children: [
+        { index: true, element: <><button onClick={() => notifyDraftDirty(true, { ownerId: "a", entityKey: "草稿 A", registrationToken: "a1", version: 1, save: async () => ({ status: "saved", savedVersion: 1 }), discard: () => true })}>注册 A</button><button onClick={() => notifyDraftDirty(true, { ownerId: "b", entityKey: "草稿 B", registrationToken: "b1", version: 1, discard: () => true })}>注册 B</button><Link to="next">下一页</Link></> },
+        { path: "next", element: <div>下一页内容</div> },
+      ],
+    }], { initialEntries: ["/projects/project-1"] });
+    return render(<QueryClientProvider client={queryClient}><RouterProvider router={router} /></QueryClientProvider>);
   };
 
   it("renders with sidebar expanded by default with topbar toggle button", async () => {
@@ -109,5 +122,24 @@ describe("AppShell collapsible sidebar", () => {
     const workspace = document.getElementById("v2-workspace-content")!;
     expect(workspace).toBeInTheDocument();
     expect(workspace).toHaveClass("studio-desk-mode");
+  });
+
+  it("aggregates multiple draft owners and does not let an old cleanup clear a newer registration", async () => {
+    renderDraftShell();
+    fireEvent.click(screen.getByRole("button", { name: "注册 A" }));
+    notifyDraftDirty(true, { ownerId: "a", entityKey: "草稿 A", registrationToken: "a2", version: 2, save: async () => ({ status: "saved", savedVersion: 2 }), discard: () => true });
+    notifyDraftDirty(false, { ownerId: "a", entityKey: "草稿 A", registrationToken: "a1", version: 1 });
+    fireEvent.click(screen.getByRole("link", { name: "下一页" }));
+    expect(await screen.findByRole("dialog", { name: "当前页面有未保存内容" })).toBeInTheDocument();
+  });
+
+  it("keeps save-and-switch unavailable when any dirty owner has no formal save", async () => {
+    renderDraftShell();
+    fireEvent.click(screen.getByRole("button", { name: "注册 A" }));
+    fireEvent.click(screen.getByRole("button", { name: "注册 B" }));
+    fireEvent.click(screen.getByRole("link", { name: "下一页" }));
+    const dialog = await screen.findByRole("dialog", { name: "当前页面有未保存内容" });
+    expect(within(dialog).getByRole("button", { name: "保存并切换" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "放弃并切换" })).toBeEnabled();
   });
 });

@@ -190,6 +190,11 @@ function ChoiceGrid({ label, value, options, onChange }: { label: string; value:
 export function DirectorIntentEditor({ shotId, shotCode, currentRevision, targetDurationMs, shotType, shotStatus, cameraProfiles = [], stagingParticipants = [], intentSuggestions, blockers = [], canEdit = true, onSaved, onReloadRequested, keyboardShortcutsEnabled = true }: DirectorIntentEditorProps) {
   const initial = useMemo(() => normalizeDirectorIntent(currentRevision?.fields ?? {}, { shotType, targetDurationMs }), [currentRevision?.id, shotType, targetDurationMs]);
   const [draft, setDraft] = useState(initial);
+  const [draftVersion, setDraftVersion] = useState(0);
+  const draftRegistrationToken = useMemo(
+    () => globalThis.crypto?.randomUUID?.() ?? `director-intent-${shotId}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    [shotId],
+  );
   const [baseline, setBaseline] = useState(JSON.stringify(initial));
   const [freeze, setFreeze] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -210,6 +215,7 @@ export function DirectorIntentEditor({ shotId, shotCode, currentRevision, target
       : "浏览器本地草稿存储不可用；当前编辑仍可手动保存到服务端。"); }
   }, [currentRevision?.revision_no, initial, shotId]);
   const dirty = JSON.stringify(draft) !== baseline;
+  useEffect(() => { setDraftVersion((version) => version + 1); }, [draft]);
   const change = <K extends keyof DirectorIntentV3>(key: K, value: DirectorIntentV3[K]) => { setDraft((old) => ({ ...old, [key]: value })); setMessage(null); };
   const changeComposition = (value: Partial<DirectorIntentV3["composition"]>) => change("composition", { ...draft.composition, ...value });
   const changePerformance = (value: Partial<DirectorIntentV3["performance"]>) => change("performance", { ...draft.performance, ...value });
@@ -306,7 +312,7 @@ export function DirectorIntentEditor({ shotId, shotCode, currentRevision, target
     try {
       if (storageKey) window.localStorage.removeItem(storageKey);
       setStorageError(null);
-      return true;
+      return { status: "saved" as const, savedVersion: draftVersion };
     } catch {
       setStorageError("修改已在表单中放弃，但浏览器未能清理本地草稿。");
       return false;
@@ -332,12 +338,20 @@ export function DirectorIntentEditor({ shotId, shotCode, currentRevision, target
       } else setMessage(`保存失败：${error instanceof Error ? error.message : String(error)}`);
       return false;
     } finally { setSaving(false); }
-  }, [canEdit, currentRevision?.revision_no, dirty, draft, freeze, onSaved, saving, shotId]);
+  }, [canEdit, currentRevision?.revision_no, dirty, draft, draftVersion, freeze, onSaved, saving, shotId]);
 
   useEffect(() => {
-    notifyDraftDirty(dirty, { save, discard: discardCurrentDraft });
-    return () => notifyDraftDirty(false);
-  }, [dirty, discardCurrentDraft, save, shotId]);
+    const registration = {
+      ownerId: `director-intent:${shotId}`,
+      entityKey: `镜头 ${shotCode} 的导演意图`,
+      registrationToken: draftRegistrationToken,
+      version: draftVersion,
+      save,
+      discard: discardCurrentDraft,
+    };
+    notifyDraftDirty(dirty, registration);
+    return () => notifyDraftDirty(false, registration);
+  }, [dirty, discardCurrentDraft, draftRegistrationToken, draftVersion, save, shotCode, shotId]);
 
   const resolveCamera = useCallback(async () => {
     if (!draft.camera_plan.profile_version_id || !draft.shot_type || !draft.camera_plan.movement || resolvingCamera) return;
