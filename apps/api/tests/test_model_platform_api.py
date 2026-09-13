@@ -545,7 +545,10 @@ def test_model_platform_discovery_list_returns_only_the_latest_observation_per_r
 
 
 def test_model_platform_registered_candidates_expose_readiness_not_runtime_wiring(workspace, database) -> None:
-    run = OllamaDiscoveryOrchestrator(database, workspace).scan(_CandidateCatalog())
+    ollama_settings = workspace.model_copy(
+        update={"llm_provider": "OLLAMA_LOOPBACK", "llm_base_url": workspace.ollama_base_url}
+    )
+    run = OllamaDiscoveryOrchestrator(database, ollama_settings).scan(_CandidateCatalog())
     with database.connect() as connection:
         observation = connection.execute(
             "SELECT id FROM mp_discovery_observations WHERE discovery_run_id=?", (run.id,)
@@ -573,7 +576,10 @@ def test_model_platform_registered_candidates_expose_readiness_not_runtime_wirin
 
 
 def test_model_platform_validation_history_is_installation_scoped_and_redacts_evidence_payload(workspace, database) -> None:
-    run = OllamaDiscoveryOrchestrator(database, workspace).scan(_CandidateCatalog())
+    ollama_settings = workspace.model_copy(
+        update={"llm_provider": "OLLAMA_LOOPBACK", "llm_base_url": workspace.ollama_base_url}
+    )
+    run = OllamaDiscoveryOrchestrator(database, ollama_settings).scan(_CandidateCatalog())
     with database.connect() as connection:
         observation = connection.execute(
             "SELECT id FROM mp_discovery_observations WHERE discovery_run_id=?", (run.id,)

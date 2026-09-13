@@ -23,13 +23,17 @@ from typing import Any, cast
 
 from local_drama.application.breakdown_contracts import director_intent_fields
 from local_drama.application.breakdown_revisions import load_effective_breakdown_draft
+from local_drama.application.episode_source_binding import (
+    resolve_episode_source_binding,
+    validate_episode_source_binding,
+)
 from local_drama.application.local_llm import LocalLLMService
+from local_drama.application.ports.database import DatabaseUnitOfWork
 from local_drama.application.production_spec_resolution import effective_video_profile
 from local_drama.config import Settings
 from local_drama.domain.duration import TARGET_DURATION_TECHNICAL_TOLERANCE_MS
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.production_spec import canonical_production_plan
-from local_drama.infrastructure.database.sqlite import Database
 
 
 def _now() -> str:
@@ -73,7 +77,7 @@ class EpisodeReplanStorageError(RuntimeError):
 class EpisodeReplanService:
     """Build and apply a whole-episode replan without touching history."""
 
-    def __init__(self, database: Database, settings: Settings) -> None:
+    def __init__(self, database: DatabaseUnitOfWork, settings: Settings) -> None:
         self.database = database
         self.settings = settings
 
@@ -107,6 +111,19 @@ class EpisodeReplanService:
             raise DomainRuleError("EPISODE_SOURCE_RANGE_REQUIRED", "本集还没有已确认的原文范围，请先完成分集大纲。")
         return start, end
 
+    def _bound_source_scope(
+        self, connection: sqlite3.Connection, episode_id: str
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        binding = resolve_episode_source_binding(connection, episode_id)
+        validate_episode_source_binding(self.settings, binding)
+        return binding, {
+            "start_paragraph": binding["start_paragraph"],
+            "end_paragraph": binding["end_paragraph"],
+            "source_document_version_id": binding["source_document_version_id"],
+            "import_session_id": binding["import_session_id"],
+            "text_sha256": binding["text_sha256"],
+        }
+
     @staticmethod
     def _current_shots(connection: sqlite3.Connection, episode_id: str) -> list[dict[str, Any]]:
         rows = connection.execute(
@@ -123,15 +140,6 @@ class EpisodeReplanService:
         return result
 
     def _project_context(self, connection: sqlite3.Connection, project_id: str) -> dict[str, Any]:
-        source = connection.execute(
-            """SELECT i.id AS import_session_id
-            FROM import_sessions i
-            WHERE i.project_id=? AND i.status IN ('COMMITTED','BREAKDOWN_READY')
-            AND EXISTS (SELECT 1 FROM audit_events ae WHERE ae.action='IMPORT_SESSION_COMMITTED'
-              AND ae.subject_type='import_session' AND ae.subject_id=i.id)
-            ORDER BY i.updated_at DESC,i.id DESC LIMIT 1""",
-            (project_id,),
-        ).fetchone()
         # Prefer the project's explicit story-parse profile.  The fallback is
         # kept for legacy projects whose profile predates project bindings.
         profile = connection.execute(
@@ -149,10 +157,7 @@ class EpisodeReplanService:
                 WHERE capability='LLM_STORY_PARSE' AND status='PUBLISHED'
                 ORDER BY updated_at DESC,version_no DESC,id DESC LIMIT 1"""
             ).fetchone()
-        return {
-            "import_session_id": str(source["import_session_id"]) if source else None,
-            "profile_version_id": str(profile["id"]) if profile else None,
-        }
+        return {"profile_version_id": str(profile["id"]) if profile else None}
 
     @staticmethod
     def _plan_snapshot(connection: sqlite3.Connection, project_id: str) -> dict[str, Any]:
@@ -226,6 +231,12 @@ class EpisodeReplanService:
                 start = source_scope.get("start_paragraph") or source_scope.get("source_paragraph_start")
                 end = source_scope.get("end_paragraph") or source_scope.get("source_paragraph_end")
                 if confidence.get("source_paragraph_start") != start or confidence.get("source_paragraph_end") != end:
+                    continue
+                source_version_id = str(source_scope.get("source_document_version_id") or "")
+                import_session_id = str(source_scope.get("import_session_id") or "")
+                if source_version_id and str(row["source_document_version_id"]) != source_version_id:
+                    continue
+                if import_session_id and str(row["import_session_id"]) != import_session_id:
                     continue
             return row
         return None
@@ -334,10 +345,11 @@ class EpisodeReplanService:
     def overview(self, episode_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
             episode = self._episode(connection, episode_id)
+            _source_binding, source_scope = self._bound_source_scope(connection, episode_id)
             shots = self._current_shots(connection, episode_id)
             draft = self._latest_ready_draft(
                 connection, str(episode["project_id"]), episode_id,
-                int(episode["target_duration_ms"] or 0), _decode(episode["source_range_json"], {}),
+                int(episode["target_duration_ms"] or 0), source_scope,
             )
             latest_applied = connection.execute(
                 """SELECT metadata_redacted_json FROM audit_events
@@ -409,13 +421,13 @@ class EpisodeReplanService:
         with self.database.connect() as connection:
             episode = self._episode(connection, episode_id)
             context = self._project_context(connection, str(episode["project_id"]))
-        if not context["import_session_id"]:
-            raise DomainRuleError("EPISODE_SOURCE_COMMIT_REQUIRED", "没有已确认提交的原文，无法生成本集重规划草稿。")
+            source_binding, _source_scope = self._bound_source_scope(connection, episode_id)
         if not context["profile_version_id"]:
             raise DomainRuleError("EPISODE_BREAKDOWN_MODEL_REQUIRED", "没有可用的项目 LLM_STORY_PARSE 能力，请先配置模型。")
-        start, end = self._source_scope(episode["source_range_json"])
+        start = int(source_binding["start_paragraph"])
+        end = int(source_binding["end_paragraph"])
         job = LocalLLMService(self.database, self.settings).enqueue_breakdown(
-            context["import_session_id"],
+            source_binding["import_session_id"],
             context["profile_version_id"],
             idempotency_key,
             target_episode_id=episode_id,
@@ -430,14 +442,16 @@ class EpisodeReplanService:
             "job_id": str(job["id"]),
             "idempotent_replay": bool(job.get("idempotent_replay")),
             "target_duration_ms": int(episode["target_duration_ms"] or 0),
+            "source_binding": source_binding,
         }
 
     def plan(self, episode_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
             episode = self._episode(connection, episode_id)
+            _source_binding, source_scope = self._bound_source_scope(connection, episode_id)
             draft = self._latest_ready_draft(
                 connection, str(episode["project_id"]), episode_id,
-                int(episode["target_duration_ms"] or 0), _decode(episode["source_range_json"], {}),
+                int(episode["target_duration_ms"] or 0), source_scope,
             )
             if draft is None:
                 active = connection.execute(
@@ -479,11 +493,15 @@ class EpisodeReplanService:
                 episode = self._storage_stage("episode_read", lambda: self._episode(connection, episode_id))
                 if int(episode["revision"]) != expected_episode_revision:
                     raise DomainRuleError("EPISODE_REPLAN_REVISION_CONFLICT", "本集已变化，请重新生成并审核重规划差异", {"expected_revision": expected_episode_revision, "actual_revision": int(episode["revision"])})
+                _source_binding, source_scope = self._storage_stage(
+                    "source_binding",
+                    lambda: self._bound_source_scope(connection, episode_id),
+                )
                 draft = self._storage_stage(
                     "draft_lookup",
                     lambda: self._latest_ready_draft(
                         connection, str(episode["project_id"]), episode_id,
-                        int(episode["target_duration_ms"] or 0), _decode(episode["source_range_json"], {}),
+                        int(episode["target_duration_ms"] or 0), source_scope,
                     ),
                 )
                 if draft is None:

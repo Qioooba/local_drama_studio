@@ -88,8 +88,6 @@ def run(artifact: Path) -> dict[str, Any]:
             expected_subject_revision=2,
             checks=_checks(formal_template),
         )
-        plan = reviews.formal_selection_preflight(project_id, [media_id])
-        committed = reviews.commit_formal_selection(project_id, [media_id], str(plan["plan_hash"]))
         with database.connect() as connection:
             integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
             project_root = connection.execute("SELECT root_rel FROM projects WHERE id=?", (project_id,)).fetchone()[0]
@@ -115,8 +113,7 @@ def run(artifact: Path) -> dict[str, Any]:
                 "formal_machine_qc": machine,
                 "formal_selection": selected,
                 "human_review": {"decision": approved["decision"], "template_code": formal_template["code"]},
-                "formal_selection_preflight": plan,
-                "formal_selection_commit": committed,
+                "formal_selection_current": selected,
             },
             "limitations": [
                 "这是隔离 SQLite/项目根中的平台接入验收，不写入生产数据库。",

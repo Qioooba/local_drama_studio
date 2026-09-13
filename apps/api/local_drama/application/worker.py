@@ -35,6 +35,7 @@ from local_drama.application.worker_handlers.local_llm_probe import run_local_ll
 from local_drama.application.worker_handlers.media_derivative import run_media_job
 from local_drama.application.worker_handlers.script_breakdown import run_script_breakdown_job
 from local_drama.application.worker_handlers.segmented_compose import run_segmented_compose_job
+from local_drama.application.worker_handlers.story_pipeline_apply import run_story_pipeline_apply_job
 from local_drama.application.worker_handlers.story_pipeline_draft import run_story_pipeline_draft_job
 from local_drama.application.worker_handlers.tts_job import run_tts_job
 from local_drama.application.worker_handlers.video_enhancement import run_video_enhancement_job
@@ -273,6 +274,23 @@ def _make_story_pipeline_draft_handler(
     return handler
 
 
+def _make_story_pipeline_apply_handler(
+    worker: LocalMediaWorker,
+) -> Callable[[dict[str, Any], Path], tuple[str, str]]:
+    """Invoke the normal application command from a queue-owned continuation."""
+
+    def handler(job: dict[str, Any], output_root: Path) -> tuple[str, str]:
+        return run_story_pipeline_apply_job(
+            job,
+            output_root,
+            work_root=worker.settings.work_root,
+            pipeline=build_pipeline_orchestrator(worker.database, worker.settings),
+            atomic_writer=worker._atomic_file,
+        )
+
+    return handler
+
+
 # Declarative registry: job type -> business handler factory.
 # Every queue-dispatched job family's business flow lives under
 # application/worker_handlers; the runner binds each flow to its ports through
@@ -291,6 +309,7 @@ _EXTRACTED_HANDLER_PROVIDERS: dict[str, Callable[[LocalMediaWorker], Callable[[d
     "LIPSYNC_GENERATION": _make_lipsync_job_handler,
     "EXPERIMENT_CELL": _make_experiment_cell_handler,
     "STORY_PIPELINE_DRAFT": _make_story_pipeline_draft_handler,
+    "STORY_PIPELINE_APPLY": _make_story_pipeline_apply_handler,
 }
 
 

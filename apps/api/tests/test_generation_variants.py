@@ -4,6 +4,7 @@ import hashlib
 import json
 import subprocess
 import uuid
+from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -240,6 +241,126 @@ def test_list_profiles_exposes_fixed_workflow_production_tier(workspace, databas
     selected = next(item for item in listed if item["version_id"] == profile_version_id)
     assert selected["workflow_tier"] == "FAST"
     assert selected["dynamic_production_tiers"] is False
+
+
+def test_single_and_automatic_h3_plans_freeze_the_same_model_inputs_and_timing(workspace, database) -> None:
+    project = _project(workspace, database, "variant_h3_actual_inputs")
+    projects = ProjectService(database, workspace.projects_root)
+    season = projects.list_seasons(str(project["id"]))[0]
+    episode = projects.list_episodes(str(season["id"]))[0]
+    shot = projects.create_shot(str(episode["id"]), "S001", 4_000)
+    frame_id = _real_image(workspace, database, str(project["id"]), "h3-actual-first.png", "160x90")
+    profile_id = _published_profile(workspace, database)
+    with database.transaction() as connection:
+        workflow_id = connection.execute(
+            "SELECT workflow_version_id FROM execution_profile_versions WHERE id=?",
+            (profile_id,),
+        ).fetchone()["workflow_version_id"]
+        workflow = {
+            "1": {
+                "class_type": "MiniMaxH3ImageToVideo",
+                "inputs": {"first_frame": "", "noise_seed": 999, "width": 864, "height": 480, "length": 90},
+            },
+            "2": {"class_type": "CreateVideo", "inputs": {"images": ["1", 0], "fps": 24.0}},
+        }
+        bindings = {
+            "FIRST_FRAME": {"node_id": "1", "input": "first_frame"},
+            "SEED": {"node_id": "1", "input": "noise_seed"},
+            "FRAME_COUNT": {"node_id": "1", "input": "length"},
+        }
+        connection.execute(
+            "UPDATE workflow_versions SET content_json=?,node_bindings_json=? WHERE id=?",
+            (json.dumps(workflow), json.dumps(bindings), workflow_id),
+        )
+    service = GenerationService(database, workspace)
+    intent = service.create_intent(str(project["id"]), "SHOT", str(shot["id"]), "TEST", "same model inputs")
+
+    def plan(*, automatic: bool) -> VariantPlan:
+        parameters: dict[str, object] = {"SEED": 0}
+        if automatic:
+            parameters.update({"DURATION_SECONDS": 4.0, "production_tier": "MASTER"})
+        return VariantPlan(
+            variant_type="BASE",
+            parent_variant_id=None,
+            branch_reason="automatic" if automatic else "single",
+            prompt_revision_id=None,
+            profile_version_id=profile_id,
+            parameter_set=parameters,
+            seed_policy="EXPLICIT",
+            explicit_seed=0,
+            bindings=(VariantInput("FIRST_FRAME", frame_id),),
+        )
+
+    single = service.preflight_variant(str(intent["id"]), plan(automatic=False))
+    automatic = service.preflight_variant(str(intent["id"]), plan(automatic=True))
+    assert single["actual_execution_inputs"]["compiled_semantic_inputs"] == {
+        "SEED": 0,
+        "FRAME_COUNT": 107,
+    }
+    assert automatic["actual_execution_inputs"]["compiled_semantic_inputs"] == single["actual_execution_inputs"]["compiled_semantic_inputs"]
+    assert automatic["actual_execution_inputs"]["timing"] == single["actual_execution_inputs"]["timing"]
+    assert single["actual_execution_inputs"]["timing"] == {
+        "schema_version": "localdrama.h3-timing.v1",
+        "narrative_target_duration_ms": 4000,
+        "requested_duration_seconds": 4.0,
+        "frame_count": 107,
+        "generation_fps": 24,
+        "planned_render_duration_ms": 4458,
+        "timeline_use_range_ms": {"start_ms": 0, "end_ms": 4000},
+        "measured_output_duration_ms": None,
+    }
+    assert single["actual_execution_inputs"]["media_bindings"][0]["sha256"]
+    assert single["actual_execution_inputs"]["media_bindings"][0]["probe"] == {
+        "width": 160,
+        "height": 90,
+        "duration_ms": None,
+    }
+
+    submitted = service.submit_confirmed_variant(
+        str(intent["id"]),
+        plan(automatic=False),
+        str(single["plan_hash"]),
+        "h3-actual-input-submit",
+    )
+    snapshot = submitted["job"]["input_snapshot"]
+    assert snapshot["semantic_inputs"] == single["actual_execution_inputs"]["compiled_semantic_inputs"]
+    assert snapshot["timing"] == single["actual_execution_inputs"]["timing"]
+
+
+def test_reference_duplicate_and_overflow_fail_before_submission(workspace, database) -> None:
+    project = _project(workspace, database, "variant_reference_cardinality")
+    first_id = _real_image(workspace, database, str(project["id"]), "reference-first.png", "160x90")
+    second_id = _real_image(workspace, database, str(project["id"]), "reference-second.png", "160x90")
+    profile_id = _published_profile(workspace, database)
+    service = GenerationService(database, workspace)
+    intent = service.create_intent(str(project["id"]), "SHOT", str(project["id"]), "TEST", "reference cardinality")
+    base = _plan(profile_id, first_id)
+
+    duplicate = replace(
+        base,
+        bindings=(
+            VariantInput("FIRST_FRAME", first_id, 0),
+            VariantInput("FIRST_FRAME", second_id, 0),
+        ),
+    )
+    with pytest.raises(DomainRuleError) as duplicate_error:
+        service.preflight_variant(str(intent["id"]), duplicate)
+    assert duplicate_error.value.code == "DUPLICATE_INPUT_BINDING"
+
+    overflow = replace(
+        base,
+        bindings=(
+            VariantInput("FIRST_FRAME", first_id, 0),
+            VariantInput("FIRST_FRAME", second_id, 1),
+        ),
+    )
+    with pytest.raises(DomainRuleError) as overflow_error:
+        service.preflight_variant(str(intent["id"]), overflow)
+    assert overflow_error.value.code == "PROFILE_INPUT_CARDINALITY_INVALID"
+    with database.connect() as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM generation_variants WHERE intent_id=?", (intent["id"],)
+        ).fetchone()[0] == 0
 
 
 def test_resource_estimate_only_uses_explicit_profile_policy_values() -> None:
@@ -730,7 +851,40 @@ def test_submitted_variant_freezes_workflow_and_local_model_execution_snapshot(w
     preflight = generation.preflight_variant(str(intent["id"]), plan)
     submitted = generation.submit_confirmed_variant(str(intent["id"]), plan, str(preflight["plan_hash"]), "execution-snapshot-submit")
 
+    replay = GenerationService(database, workspace).submit_confirmed_variant(
+        str(intent["id"]), plan, str(preflight["plan_hash"]), "execution-snapshot-submit"
+    )
+    assert replay["idempotent_replay"] is True
+    assert replay["variant"]["id"] == submitted["variant"]["id"]
+    assert replay["job"]["id"] == submitted["job"]["id"]
+    changed_plan = _plan(profile_version_id, media_version_id, seed=8)
+    changed_preflight = generation.preflight_variant(str(intent["id"]), changed_plan)
+    with pytest.raises(DomainRuleError) as idempotency_mismatch:
+        generation.submit_confirmed_variant(
+            str(intent["id"]),
+            changed_plan,
+            str(changed_preflight["plan_hash"]),
+            "execution-snapshot-submit",
+        )
+    assert idempotency_mismatch.value.code == "IDEMPOTENCY_PAYLOAD_MISMATCH"
+    with database.connect() as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM generation_variants WHERE intent_id=?", (intent["id"],)
+        ).fetchone()[0] == 1
+    explicit_next_take = generation.submit_confirmed_variant(
+        str(intent["id"]),
+        changed_plan,
+        str(changed_preflight["plan_hash"]),
+        "execution-snapshot-next-explicit-take",
+    )
+    assert explicit_next_take["variant"]["id"] != submitted["variant"]["id"]
+    with database.connect() as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM generation_variants WHERE intent_id=?", (intent["id"],)
+        ).fetchone()[0] == 2
+
     snapshot = submitted["job"]["input_snapshot"]["execution_snapshot"]
+    assert submitted["job"]["input_snapshot"]["submission_plan_hash"] == preflight["plan_hash"]
     assert snapshot["workflow_version_id"] == preflight["dependencies"]["workflow_version_id"]
     assert snapshot["workflow_content_hash"] == preflight["dependencies"]["workflow_content_hash"]
     assert snapshot["model_bundle_hash"] == preflight["dependencies"]["model_bundle_hash"]
@@ -841,7 +995,7 @@ def test_camera_plan_must_match_profile_and_is_frozen_in_job_snapshot(workspace,
     submitted = generation.submit_confirmed_variant(str(intent["id"]), plan, str(preflight["plan_hash"]), "camera-variant-submit")
     with database.connect() as connection:
         snapshot = json.loads(connection.execute("SELECT input_snapshot_json FROM jobs WHERE id=?", (submitted["job"]["id"],)).fetchone()[0])
-    assert snapshot["semantic_inputs"]["camera_plan"] == camera
+    assert snapshot["execution_metadata"]["camera_plan"] == camera
 
     stale_camera = {**camera, "mode": "PROMPT_FALLBACK", "prompt_text": "camera: push in"}
     stale = VariantPlan(**{**base.__dict__, "parameter_set": {**base.parameter_set, "camera_plan": stale_camera}})

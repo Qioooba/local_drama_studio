@@ -12304,6 +12304,67 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/pipeline/{run_id}:apply-preview": {
+      "post": {
+        "tags": [
+          "pipeline"
+        ],
+        "summary": "Preview Pipeline Apply",
+        "operationId": "previewPipelineApply",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewPipelineApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineApplyPreviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/quick-generations:plan": {
       "post": {
         "tags": [
@@ -28432,6 +28493,58 @@
         }
       }
     },
+    "/api/v2/episodes/{episode_id}/production:operation-impact": {
+      "post": {
+        "tags": [
+          "episode-production-v2"
+        ],
+        "summary": "Preview Operation Impact",
+        "operationId": "previewEpisodeProductionOperationV2",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EpisodeOperationImpactRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EpisodeOperationImpactResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/episodes/{episode_id}/production:replan": {
       "post": {
         "tags": [
@@ -28947,6 +29060,15 @@
             "schema": {
               "type": "string",
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Idempotency-Key"
             }
           }
         ],
@@ -29905,6 +30027,12 @@
             "minimum": 1.0,
             "title": "Expected Revision"
           },
+          "expected_impact_sha256": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Expected Impact Sha256"
+          },
           "sections": {
             "items": {
               "type": "string"
@@ -29918,6 +30046,7 @@
         "type": "object",
         "required": [
           "expected_revision",
+          "expected_impact_sha256",
           "sections"
         ],
         "title": "ApplyPipelineRequest"
@@ -37820,6 +37949,56 @@
         ],
         "title": "EpisodeEditWorkspaceResponse"
       },
+      "EpisodeOperationImpactRequest": {
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": [
+              "CONTINUE_UNFINISHED",
+              "RETRY_ORIGINAL",
+              "NEW_TAKE",
+              "RECOMPOSE_ONLY"
+            ],
+            "title": "Operation"
+          },
+          "target_shot_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Target Shot Ids"
+          },
+          "target_take_count": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Target Take Count",
+            "default": 1
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "operation"
+        ],
+        "title": "EpisodeOperationImpactRequest"
+      },
+      "EpisodeOperationImpactResponse": {
+        "properties": {
+          "impact": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Impact"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "impact"
+        ],
+        "title": "EpisodeOperationImpactResponse"
+      },
       "EpisodePlanningJobFact": {
         "properties": {
           "id": {
@@ -38133,6 +38312,22 @@
             "type": "object",
             "title": "State Counts"
           },
+          "stage_summary": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ProductionStageSummaryFact"
+            },
+            "propertyNames": {
+              "enum": [
+                "SHOT_PLANNING",
+                "SHOT_IMAGE",
+                "VIDEO",
+                "AUDIO_SUBTITLE",
+                "COMPOSE_QC"
+              ]
+            },
+            "type": "object",
+            "title": "Stage Summary"
+          },
           "active_run": {
             "anyOf": [
               {
@@ -38250,6 +38445,14 @@
               }
             ],
             "title": "Replan Job"
+          },
+          "available_mode_policies": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Available Mode Policies"
           }
         },
         "additionalProperties": false,
@@ -39231,6 +39434,11 @@
             "maxLength": 200,
             "minLength": 1,
             "title": "Idempotency Key"
+          },
+          "auto_heal": {
+            "type": "boolean",
+            "title": "Auto Heal",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -43318,6 +43526,53 @@
         ],
         "title": "OverviewBlocker"
       },
+      "PipelineApplicationAuthorization": {
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "title": "Endpoint",
+            "description": "DRAFT_ONLY 或 APPLY_SELECTED_SECTIONS"
+          },
+          "sections": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Sections"
+          }
+        },
+        "type": "object",
+        "required": [
+          "endpoint"
+        ],
+        "title": "PipelineApplicationAuthorization"
+      },
+      "PipelineApplyPreviewResponse": {
+        "properties": {
+          "impact": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Impact"
+          },
+          "quality_report": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Quality Report"
+          },
+          "can_apply": {
+            "type": "boolean",
+            "title": "Can Apply"
+          }
+        },
+        "type": "object",
+        "required": [
+          "impact",
+          "quality_report",
+          "can_apply"
+        ],
+        "title": "PipelineApplyPreviewResponse"
+      },
       "PipelinePreflightRequest": {
         "properties": {
           "source_document_version_id": {
@@ -43853,6 +44108,30 @@
         ],
         "title": "PostReviewSummary"
       },
+      "PreviewPipelineApplyRequest": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          },
+          "sections": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Sections"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "sections"
+        ],
+        "title": "PreviewPipelineApplyRequest"
+      },
       "ProductionBlockerFact": {
         "properties": {
           "code": {
@@ -44072,6 +44351,51 @@
           "allowed_actions"
         ],
         "title": "ProductionStageFact"
+      },
+      "ProductionStageSummaryFact": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total"
+          },
+          "completed": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Completed"
+          },
+          "running": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Running"
+          },
+          "attention": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Attention"
+          },
+          "stale": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Stale"
+          },
+          "requires_confirmation": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Requires Confirmation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "total",
+          "completed",
+          "running",
+          "attention",
+          "stale",
+          "requires_confirmation"
+        ],
+        "title": "ProductionStageSummaryFact"
       },
       "ProfileBindingRequest": {
         "properties": {
@@ -48319,6 +48643,13 @@
             ],
             "title": "Prompt Bundle"
           },
+          "actual_execution_inputs": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Actual Execution Inputs"
+          },
           "would_persist_variant": {
             "type": "boolean",
             "const": false,
@@ -48366,6 +48697,7 @@
           "disk_gate",
           "blockers",
           "effective_configuration",
+          "actual_execution_inputs",
           "would_persist_variant",
           "would_create_job",
           "reproducibility"
@@ -50014,6 +50346,25 @@
             "type": "integer",
             "exclusiveMinimum": 0.0,
             "title": "First Duration Ms"
+          },
+          "dialogue_destination": {
+            "type": "string",
+            "enum": [
+              "FIRST",
+              "SECOND",
+              "SOURCE_ONLY"
+            ],
+            "title": "Dialogue Destination"
+          },
+          "action_destination": {
+            "type": "string",
+            "enum": [
+              "FIRST",
+              "SECOND",
+              "BOTH",
+              "SOURCE_ONLY"
+            ],
+            "title": "Action Destination"
           }
         },
         "type": "object",
@@ -50022,7 +50373,9 @@
           "expected_revision",
           "first_code",
           "second_code",
-          "first_duration_ms"
+          "first_duration_ms",
+          "dialogue_destination",
+          "action_destination"
         ],
         "title": "ShotSplitCommand"
       },
@@ -50712,6 +51065,10 @@
               }
             ],
             "description": "选定的 AI 大模型参数配置"
+          },
+          "application_authorization": {
+            "$ref": "#/components/schemas/PipelineApplicationAuthorization",
+            "description": "本次运行的具体应用终点；旧客户端默认只生成草案"
           }
         },
         "type": "object",
@@ -55147,6 +55504,22 @@
       },
       "WholeDramaRunRequest": {
         "properties": {
+          "episode_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Episode Ids"
+          },
           "tts_enabled": {
             "type": "boolean",
             "title": "Tts Enabled",
@@ -55200,6 +55573,30 @@
           "dispatched_count": {
             "type": "integer",
             "title": "Dispatched Count"
+          },
+          "blocked_count": {
+            "type": "integer",
+            "title": "Blocked Count"
+          },
+          "dispatch_status": {
+            "type": "string",
+            "title": "Dispatch Status"
+          },
+          "dispatch_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispatch Reason"
+          },
+          "idempotent_replay": {
+            "type": "boolean",
+            "title": "Idempotent Replay",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -55209,7 +55606,9 @@
           "preparation",
           "dispatched_runs",
           "total_episodes",
-          "dispatched_count"
+          "dispatched_count",
+          "blocked_count",
+          "dispatch_status"
         ],
         "title": "WholeDramaRunResponse"
       },
@@ -55230,6 +55629,13 @@
           "overall_status": {
             "type": "string",
             "title": "Overall Status"
+          },
+          "state_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "State Counts"
           },
           "total_episodes": {
             "type": "integer",

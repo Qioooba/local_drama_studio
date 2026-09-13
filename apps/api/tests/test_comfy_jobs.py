@@ -18,7 +18,7 @@ class _OfflineWorkflowNodes:
         return {"LoadImage": {}, "SaveImage": {}}
 
 
-def test_quick_generation_parameters_rewrite_only_the_per_job_graph(workspace, database) -> None:
+def test_scalar_parameters_require_explicit_semantic_bindings(workspace, database) -> None:
     service = ComfyGenerationService(database, workspace)
     workflow = {
         "1": {"class_type": "EmptyLatentImage", "inputs": {"width": 768, "height": 1344}},
@@ -43,17 +43,88 @@ def test_quick_generation_parameters_rewrite_only_the_per_job_graph(workspace, d
             "fingerprint": "sha256:test",
         },
     )
-    assert evidence["changed"] is True
-    assert workflow["1"]["inputs"] == {"width": 832, "height": 480}
+    assert evidence["changed"] is False
+    assert workflow["1"]["inputs"] == {"width": 768, "height": 1344}
     assert workflow["2"]["inputs"] == {
-        "steps": 32,
-        "cfg": 5.5,
-        "sampler_name": "dpmpp_2m",
-        "scheduler": "karras",
-        "denoise": 0.8,
+        "steps": 20,
+        "cfg": 7.0,
+        "sampler_name": "euler",
+        "scheduler": "normal",
+        "denoise": 1.0,
     }
-    assert workflow["3"]["inputs"] == {"width": 832, "height": 480, "length": 121}
-    assert workflow["4"]["inputs"]["fps"] == 30.0
+    assert workflow["3"]["inputs"] == {"width": 480, "height": 832, "length": 107}
+    assert workflow["4"]["inputs"]["fps"] == 24.0
+
+
+def test_runtime_settings_resolve_only_declared_roles_and_preserve_seed_zero(workspace, database) -> None:
+    service = ComfyGenerationService(database, workspace)
+    semantic, evidence = service._runtime_semantic_inputs(
+        {
+            "effective_settings": {"steps": 31, "width": 864, "seed": 0, "reference_scale": 0.25},
+            "runtime_bindings": {
+                "steps": "SAMPLER_STEPS",
+                "width": "WIDTH",
+                "seed": "SEED",
+                "reference_scale": "REFERENCE_SCALE",
+            },
+        },
+        {"SAMPLER_STEPS", "WIDTH", "SEED"},
+    )
+    assert semantic == {"SAMPLER_STEPS": 31, "WIDTH": 864, "SEED": 0}
+    assert evidence == {"steps": "SAMPLER_STEPS", "width": "WIDTH", "seed": "SEED"}
+
+
+def test_runtime_semantic_compilation_does_not_touch_second_sampler_or_reference_scale(workspace, database) -> None:
+    workflow = {
+        "1": {
+            "class_type": "KSampler",
+            "inputs": {"steps": 20, "cfg": 7.0, "sampler_name": "euler"},
+        },
+        "2": {
+            "class_type": "KSampler",
+            "inputs": {"steps": 9, "cfg": 1.25, "sampler_name": "euler_ancestral"},
+        },
+        "3": {
+            "class_type": "ImageScale",
+            "inputs": {"width": 320, "height": 180, "scale": 0.25},
+        },
+        "4": {
+            "class_type": "MiniMaxH3ImageToVideo",
+            "inputs": {"width": 480, "height": 832, "length": 90},
+        },
+    }
+    version = WorkflowService(database, workspace).register_package(
+        "runtime-target-sentinel",
+        "Runtime target sentinel",
+        workflow,
+        {},
+        {
+            "SAMPLER_STEPS": {"node_id": "1", "input": "steps"},
+            "CFG": {"node_id": "1", "input": "cfg"},
+            "WIDTH": {"node_id": "4", "input": "width"},
+            "HEIGHT": {"node_id": "4", "input": "height"},
+            "FRAME_COUNT": {"node_id": "4", "input": "length"},
+        },
+    )
+    semantic, _evidence = ComfyGenerationService._runtime_semantic_inputs(
+        {
+            "effective_settings": {"steps": 31, "cfg": 5.5, "width": 864, "height": 480, "frame_count": 107},
+            "runtime_bindings": {
+                "steps": "SAMPLER_STEPS",
+                "cfg": "CFG",
+                "width": "WIDTH",
+                "height": "HEIGHT",
+                "frame_count": "FRAME_COUNT",
+            },
+        },
+        {"SAMPLER_STEPS", "CFG", "WIDTH", "HEIGHT", "FRAME_COUNT"},
+    )
+    compiled = WorkflowService(database, workspace).compile_semantic_inputs(str(version["id"]), semantic)
+    graph = compiled["workflow"]
+    assert graph["1"]["inputs"] == {"steps": 31, "cfg": 5.5, "sampler_name": "euler"}
+    assert graph["2"]["inputs"] == {"steps": 9, "cfg": 1.25, "sampler_name": "euler_ancestral"}
+    assert graph["3"]["inputs"] == {"width": 320, "height": 180, "scale": 0.25}
+    assert graph["4"]["inputs"] == {"width": 864, "height": 480, "length": 107}
 
 
 def _publish_offline(service: WorkflowService, version_id: str) -> None:
@@ -97,6 +168,109 @@ def _active_attempt(workspace, database) -> tuple[ComfyGenerationService, str]:
     return ComfyGenerationService(database, workspace), str(claim["attempt"]["id"])
 
 
+def _queued_comfy_job(workspace, database, *, suffix: str) -> dict[str, object]:
+    safe_suffix = suffix.replace("-", "_")
+    workflows = WorkflowService(database)
+    version = workflows.register_package(
+        f"comfy_queue_{safe_suffix}",
+        f"Comfy queue {suffix}",
+        {"1": {"class_type": "SaveImage", "inputs": {"filename_prefix": suffix}}},
+        {},
+        {},
+    )
+    _publish_offline(workflows, str(version["id"]))
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code=f"comfy_queue_project_{safe_suffix}",
+        title=f"Comfy queue project {suffix}",
+        episode_count=1,
+        aspect_ratio="16:9",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=60_000,
+        allow_unconfigured_capabilities=True,
+    )
+    return JobService(database, workspace).create_job(
+        str(project["id"]),
+        "COMFY_STATE_TEST",
+        "WORKFLOW_VERSION",
+        str(version["id"]),
+        "GPU_H3",
+        {"workflow_version_id": str(version["id"]), "semantic_inputs": {}},
+        f"comfy-queue-{suffix}",
+    )
+
+
+def test_ambiguous_submit_is_quarantined_and_never_blindly_resubmitted(workspace, database, monkeypatch) -> None:
+    job = _queued_comfy_job(workspace, database, suffix="ambiguous")
+    service = ComfyGenerationService(database, workspace)
+    submits = 0
+
+    def lost_response(*_args, **_kwargs):
+        nonlocal submits
+        submits += 1
+        raise DomainRuleError(
+            "COMFY_LOOPBACK_UNAVAILABLE",
+            "response lost",
+            {"reason": "URLError", "cause": "TimeoutError", "path": "/prompt"},
+        )
+
+    monkeypatch.setattr(service.comfy, "queue_prompt", lost_response)
+    with pytest.raises(DomainRuleError) as failed:
+        service.submit_next("worker-ambiguous")
+    assert failed.value.code == "COMFY_LOOPBACK_UNAVAILABLE"
+    assert service.submit_next("worker-ambiguous") is None
+    assert submits == 1
+    with database.connect() as connection:
+        row = connection.execute(
+            """SELECT a.state AS attempt_state,a.error_code,a.progress_json,j.state AS job_state
+            FROM job_attempts a JOIN jobs j ON j.id=a.job_id WHERE j.id=?""",
+            (job["id"],),
+        ).fetchone()
+    assert row["attempt_state"] == "NEEDS_ATTENTION"
+    assert row["job_state"] == "NEEDS_ATTENTION"
+    assert row["error_code"] == "COMFY_PROVIDER_ACCEPTANCE_UNKNOWN"
+    assert "PROVIDER_ACCEPTANCE_UNKNOWN" in row["progress_json"]
+    with pytest.raises(DomainRuleError) as retry_blocked:
+        JobService(database, workspace).retry(str(job["id"]))
+    assert retry_blocked.value.code == "PROVIDER_ACCEPTANCE_RECONCILIATION_REQUIRED"
+
+
+def test_crash_during_provider_submit_is_reconciled_as_uncertain(workspace, database) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    job = _queued_comfy_job(workspace, database, suffix="crash-window")
+    jobs = JobService(database, workspace)
+    claim = jobs.claim("worker-crash", ["GPU_H3"], lease_seconds=5)
+    assert claim is not None
+    attempt = claim["attempt"]
+    jobs.heartbeat(
+        str(attempt["id"]), str(attempt["lease_token"]), "worker-crash",
+        progress={"phase": "SUBMITTING_TO_PROVIDER"}, lease_seconds=5,
+    )
+
+    result = jobs.reconcile(now=datetime.now(UTC) + timedelta(seconds=10))
+
+    item = next(entry for entry in result["items"] if entry["job_id"] == job["id"])
+    assert item["uncertain_side_effect"] is True
+    assert item["job_state"] == "NEEDS_ATTENTION"
+
+
+def test_production_wait_budget_allows_success_after_301_seconds(workspace, database, monkeypatch) -> None:
+    service = ComfyGenerationService(database, workspace)
+    attempt = {"id": "attempt-301"}
+    submission = {"attempt": attempt, "prompt_id": "prompt-301", "client_id": "client-301"}
+    polls = iter([{"status": "RUNNING"}, {"status": "SUCCEEDED", "result": {"job_state": "SUCCEEDED"}}])
+    clock = iter([0.0, 301.0])
+    monkeypatch.setattr(service, "submit_next", lambda *_args, **_kwargs: submission)
+    monkeypatch.setattr(service, "poll_attempt", lambda *_args, **_kwargs: next(polls))
+    monkeypatch.setattr("local_drama.application.comfy_jobs.time.monotonic", lambda: next(clock))
+
+    result = service.run_once("worker-301", timeout_seconds=600, sleep=lambda _seconds: None)
+
+    assert result is not None
+    assert result["poll"]["status"] == "SUCCEEDED"
+
+
 def test_poll_maps_live_comfy_queue_state_before_history_exists(workspace, database, monkeypatch) -> None:
     service, attempt_id = _active_attempt(workspace, database)
     monkeypatch.setattr(service.comfy, "history", lambda _prompt_id: {})
@@ -106,6 +280,88 @@ def test_poll_maps_live_comfy_queue_state_before_history_exists(workspace, datab
     assert service.poll_attempt(attempt_id, "worker-1")["status"] == "QUEUED"
     monkeypatch.setattr(service.comfy, "queue", lambda: {"queue_running": [], "queue_pending": []})
     assert service.poll_attempt(attempt_id, "worker-1")["status"] == "PROVIDER_UNCONFIRMED"
+
+
+def test_interrupt_refuses_shared_runtime_and_late_success_cannot_finalize(workspace, database, monkeypatch) -> None:
+    service, attempt_id = _active_attempt(workspace, database)
+    interrupts = 0
+
+    monkeypatch.setattr(
+        service.comfy,
+        "queue",
+        lambda: {"queue_running": [[1, "prompt-1", {}, {}], [2, "other-prompt", {}, {}]], "queue_pending": []},
+    )
+    monkeypatch.setattr(service.comfy, "interrupt", lambda: pytest.fail("unsafe global interrupt"))
+    with pytest.raises(DomainRuleError) as unsafe:
+        service.interrupt_attempt(attempt_id, "worker-1")
+    assert unsafe.value.code == "COMFY_INTERRUPT_OWNERSHIP_UNSAFE"
+
+    def interrupt():
+        nonlocal interrupts
+        interrupts += 1
+        return {"interrupted": True}
+
+    monkeypatch.setattr(service.comfy, "queue", lambda: {"queue_running": [[1, "prompt-1", {}, {}]], "queue_pending": []})
+    monkeypatch.setattr(service.comfy, "interrupt", interrupt)
+    cancelled = service.interrupt_attempt(attempt_id, "worker-1")
+    assert cancelled["provider_action"] == "INTERRUPT_OWNED_RUNNING"
+    assert interrupts == 1
+
+    output = workspace.work_root / "late-provider-output.png"
+    output.write_bytes(b"late")
+    monkeypatch.setattr(
+        service.comfy,
+        "history",
+        lambda prompt_id: {prompt_id: {"status": {"status_str": "success"}}},
+    )
+    monkeypatch.setattr(service.comfy, "collect_outputs", lambda _item: [output])
+    late = service.poll_attempt(attempt_id, "worker-1")
+    assert late["status"] == "CANCELLED"
+    assert late["late_provider_success"] is True
+    with database.connect() as connection:
+        state = connection.execute(
+            "SELECT state FROM jobs WHERE id=(SELECT job_id FROM job_attempts WHERE id=?)",
+            (attempt_id,),
+        ).fetchone()[0]
+        promoted = connection.execute(
+            "SELECT COUNT(*) FROM media_assets WHERE owner_type='GENERATION_VARIANT'"
+        ).fetchone()[0]
+    assert state == "CANCELLED"
+    assert promoted == 0
+
+
+def test_output_collection_failure_reuses_original_prompt_without_resampling(workspace, database, monkeypatch) -> None:
+    service, attempt_id = _active_attempt(workspace, database)
+    history_calls = 0
+    output = workspace.work_root / "retry-download.png"
+    output.write_bytes(b"provider-output")
+
+    def succeeded(prompt_id: str):
+        nonlocal history_calls
+        history_calls += 1
+        return {prompt_id: {"status": {"status_str": "success"}}}
+
+    monkeypatch.setattr(service.comfy, "history", succeeded)
+    monkeypatch.setattr(
+        service.comfy,
+        "collect_outputs",
+        lambda _item: (_ for _ in ()).throw(DomainRuleError("COMFY_OUTPUT_INVALID", "download failed")),
+    )
+    with pytest.raises(DomainRuleError) as first:
+        service.poll_attempt(attempt_id, "worker-1")
+    assert first.value.code == "COMFY_OUTPUT_INVALID"
+    with database.connect() as connection:
+        receipt = connection.execute(
+            "SELECT state,provider_job_id FROM job_attempts WHERE id=?", (attempt_id,)
+        ).fetchone()
+    assert receipt["state"] in {"CLAIMED", "RUNNING"}
+    assert receipt["provider_job_id"] == "prompt-1"
+
+    monkeypatch.setattr(service.comfy, "collect_outputs", lambda _item: [output])
+    recovered = service.poll_attempt(attempt_id, "worker-1")
+    assert recovered["status"] == "SUCCEEDED"
+    assert recovered["prompt_id"] == "prompt-1"
+    assert history_calls == 2
 
 
 def _iso_utc_minutes_ago(minutes: int) -> str:
@@ -277,7 +533,10 @@ def test_submit_materializes_verified_media_binding_inside_isolated_input_root(w
         {
             "workflow_version_id": str(version["id"]),
             "semantic_inputs": {},
-            "media_bindings": [{"role": role, "media_version_id": media_id, "ordinal": 0} for role, media_id in zip(roles, media_ids)],
+            "media_bindings": [
+                {"role": role, "media_version_id": media_id, "ordinal": 0}
+                for role, media_id in zip(roles, media_ids, strict=True)
+            ],
         },
         "comfy-media-binding",
     )
@@ -447,5 +706,11 @@ def test_run_once_binds_worker_session_and_polls_to_success(workspace, database,
     assert result is not None and result["poll"]["status"] == "SUCCEEDED"
     assert runtime_events == ["acquired", "released"]
     with database.connect() as connection:
-        attempt = connection.execute("SELECT worker_session_id FROM job_attempts WHERE job_id=?", (job["id"],)).fetchone()
+        attempt = connection.execute(
+            "SELECT worker_session_id,provider_job_id,comfy_prompt_id FROM job_attempts WHERE job_id=?",
+            (job["id"],),
+        ).fetchone()
+        stored_job = connection.execute("SELECT input_snapshot_json FROM jobs WHERE id=?", (job["id"],)).fetchone()
     assert attempt is not None and attempt["worker_session_id"] == session["id"]
+    assert attempt["provider_job_id"] == attempt["comfy_prompt_id"] == "bridge-prompt"
+    assert json.loads(stored_job["input_snapshot_json"])["execution_snapshot"]["comfy_prompt_id"] == "bridge-prompt"

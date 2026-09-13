@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import subprocess
-import pytest
 
+import pytest
 from fastapi.testclient import TestClient
 
 from local_drama.application.media import MediaService
@@ -234,7 +234,17 @@ def test_assemble_episode_timeline_places_selected_dialogue_audio(workspace, dat
             (selection_id, str(line["id"]), candidate_id, text_revision_id, now, now, "test"),
         )
 
-    created = TimelineService(database, workspace).assemble_episode_timeline(episode_id, actor="automation-run")
+    timeline_service = TimelineService(database, workspace)
+    silent_plan = timeline_service._timeline_assembly_plan(
+        episode_id,
+        require_stale_revision=False,
+        audio_strategy="SILENT",
+    )
+    assert silent_plan["audio_strategy"] == "SILENT"
+    assert not [item for item in silent_plan["items"] if item["track_type"] == "DIALOGUE"]
+    assert silent_plan["audio_binding_ids"] == []
+
+    created = timeline_service.assemble_episode_timeline(episode_id, actor="automation-run")
     if audio_seconds > 2:
         assert created["status"] == "BLOCKED"
         issue = next(item for item in created["blockers"] if item["code"] == "DIALOGUE_EXCEEDS_SHOT_DURATION")

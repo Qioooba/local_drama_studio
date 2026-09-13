@@ -108,6 +108,45 @@ def test_worker_kill_expires_session_requeues_job_and_releases_gpu_lease(workspa
     assert lease is not None and lease["released_at"] is not None
 
 
+def test_stopped_worker_session_immediately_orphans_provider_accepted_attempt(workspace, database) -> None:
+    project = _project(database, workspace, "worker_graceful_stop")
+    sessions = WorkerSessionService(database, workspace)
+    session = sessions.start_session(
+        "stopped-worker",
+        worker_version=workspace.app_version,
+        api_version=workspace.app_version,
+        channels=["GPU_H3"],
+    )
+    jobs = JobService(database, workspace)
+    job = jobs.create_job(
+        str(project["id"]), "CPU_TEST", "PROJECT", str(project["id"]), "GPU_H3", {}, "worker-stop-job",
+    )
+    claim = jobs.claim(
+        "stopped-worker", ["GPU_H3"], lease_seconds=3600, worker_session_id=str(session["id"]),
+    )
+    assert claim is not None
+    jobs.attach_provider(
+        str(claim["attempt"]["id"]),
+        str(claim["attempt"]["lease_token"]),
+        "stopped-worker",
+        "provider-prompt-after-stop",
+    )
+    sessions.stop(str(session["id"]), exit_code=130)
+
+    result = sessions.reconcile()
+
+    assert str(session["id"]) in result["abandoned_session_ids"]
+    recovered = jobs.get_job(str(job["id"]))
+    assert recovered["state"] == "NEEDS_ATTENTION"
+    assert recovered["attempts"][0]["state"] == "ORPHANED"
+    assert recovered["attempts"][0]["provider_job_id"] == "provider-prompt-after-stop"
+    with database.connect() as connection:
+        lease = connection.execute(
+            "SELECT released_at FROM job_resource_leases WHERE attempt_id=?", (claim["attempt"]["id"],),
+        ).fetchone()
+    assert lease is not None and lease["released_at"] is not None
+
+
 def test_supervisor_persists_restart_backoff_and_recovers(workspace, database, monkeypatch) -> None:
     calls = 0
 
@@ -205,6 +244,36 @@ def test_storage_finalize_is_idempotent_and_streaming(workspace, database, monke
     with pytest.raises(DomainRuleError) as mismatched_replay:
         _stage(service, str(project["id"]), source, key="storage-happy")
     assert mismatched_replay.value.code == "STORAGE_IDEMPOTENCY_PAYLOAD_MISMATCH"
+
+
+def test_storage_finalize_uses_a_bounded_atomic_copy_name(workspace, database) -> None:
+    project = _project(database, workspace, "storage_long_source")
+    source = workspace.work_root / "round2-uat-story-2026-09-13.txt"
+    source.write_text("bounded atomic staging name", encoding="utf-8")
+    observed: list[str] = []
+
+    def capture_after_copy(name, operation):
+        if name == "after_copy_before_replace":
+            destination = (
+                workspace.projects_root
+                / str(project["root_rel"])
+                / str(operation["destination_rel_path"])
+            )
+            partials = list(destination.parent.glob(".partial-*"))
+            assert len(partials) == 1
+            observed.append(partials[0].name)
+
+    service = StorageOperationService(database, workspace, fault_injector=capture_after_copy)
+    operation = _stage(service, str(project["id"]), source, key="storage-bounded-partial")
+    service.set_media_probe(
+        str(operation["id"]), {"probe_status": "NOT_APPLICABLE"},
+        duration_ms=None, fps_num=None, fps_den=None,
+    )
+
+    result = service.finalize_media_ingest(str(operation["id"]))
+
+    assert result["sha256"] == operation["actual_sha256"]
+    assert observed == [f".partial-{operation['id']}"]
 
 
 def test_media_service_import_is_backed_by_committed_storage_ledger(workspace, database) -> None:

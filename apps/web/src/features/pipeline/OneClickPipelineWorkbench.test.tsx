@@ -5,7 +5,6 @@ import { MemoryRouter } from "react-router-dom";
 import * as apiGenerated from "../../generated/api";
 import { OneClickPipelineWorkbench } from "./OneClickPipelineWorkbench";
 import * as pipelineClient from "./pipelineClient";
-import { queryKeys } from "../../query/queryKeys";
 
 vi.mock("./pipelineClient", () => ({
   applyPipelineRun: vi.fn(),
@@ -14,7 +13,10 @@ vi.mock("./pipelineClient", () => ({
   getLatestPipeline: vi.fn(),
   listPipelineRuns: vi.fn(),
   preflightStoryPipeline: vi.fn(),
+  previewPipelineApply: vi.fn(),
   retryPipelineRun: vi.fn(),
+  getWholeDramaStatus: vi.fn(),
+  runWholeDrama: vi.fn(),
   startOneClickPipeline: vi.fn(),
 }));
 vi.mock("../../generated/api", () => ({ getProjectOverviewV2: vi.fn(), uploadScriptDocument: vi.fn() }));
@@ -42,6 +44,8 @@ function completedRun(status: "READY" | "REVIEW_REQUIRED" = "READY"): pipelineCl
     stage: "REVIEW_READY", stage_label: "全剧规划完成", progress_pct: 100, revision: 7,
     visual_style: "国风仙侠 电影级写实 (Cinematic Realistic)", target_episode_duration_seconds: 120,
     voice_preset: "DEFAULT_VOX_CPM2", auto_run_rendering: false, source_document_version_id: "ver-1",
+    application_authorization: { endpoint: "DRAFT_ONLY", sections: [] },
+    apply_continuation: { state: "NOT_AUTHORIZED", job_id: null, last_error_code: null },
     episodes_count: 2, characters_count: 1, scenes_count: 1, props_count: 1, shots_count: 0,
     episodes: [{ number: 1, code: "EP01", title: "归来", summary: "主角回到宗门。" }],
     assets: {
@@ -73,6 +77,18 @@ function completedRun(status: "READY" | "REVIEW_REQUIRED" = "READY"): pipelineCl
   };
 }
 
+function applyImpact(requiresConfirmation = false): pipelineClient.PipelineApplyImpact {
+  return {
+    schema_version: "pipeline-apply-impact/v1", project_id: "proj-1", run_id: "pipe-456", run_revision: 7,
+    sections: ["STORY_PLAN", "STORY_BIBLE", "ASSET_PROPOSALS"],
+    episodes: { add: [{ number: 2, code: "EP02", title: "试炼" }], update: [], preserve: requiresConfirmation ? [{ number: 1, code: "EP01", title: "归来", reason: "已有制作镜头；标题、范围和镜头保持不变" }] : [], skip: [] },
+    story_bible: { will_create: !requiresConfirmation, will_switch_current_revision: requiresConfirmation, previous_revision_id: requiresConfirmation ? "bible-v1" : null },
+    assets: { reuse: requiresConfirmation ? ["CHARACTER:韩立"] : [], add: ["PROP:掌天瓶"] },
+    produced_episode_context_changes: requiresConfirmation ? ["EP01"] : [], requires_confirmation: requiresConfirmation,
+    writes_performed: false, impact_sha256: "a".repeat(64),
+  };
+}
+
 describe("OneClickPipelineWorkbench", () => {
   let queryClient: QueryClient;
 
@@ -80,6 +96,13 @@ describe("OneClickPipelineWorkbench", () => {
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
     vi.mocked(pipelineClient.listPipelineRuns).mockResolvedValue({ runs: [] });
     vi.mocked(apiGenerated.getProjectOverviewV2).mockResolvedValue({ seasons: [] } as never);
+    vi.mocked(pipelineClient.getWholeDramaStatus).mockResolvedValue({
+      project_id: "proj-1", project_code: "P1", project_title: "Project",
+      overall_status: "NOT_STARTED", state_counts: {}, total_episodes: 0, episodes: [],
+    });
+    vi.mocked(pipelineClient.previewPipelineApply).mockResolvedValue({
+      impact: applyImpact(false), quality_report: completedRun().quality_report, can_apply: true,
+    });
   });
 
   afterEach(() => {
@@ -115,7 +138,14 @@ describe("OneClickPipelineWorkbench", () => {
     await waitFor(() => expect(pipelineClient.preflightStoryPipeline).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(pipelineClient.startOneClickPipeline).toHaveBeenCalledWith(
       "proj-1",
-      expect.objectContaining({ source_document_version_id: "ver-1", target_episode_duration_seconds: 120 }),
+      expect.objectContaining({
+        source_document_version_id: "ver-1",
+        target_episode_duration_seconds: 120,
+        application_authorization: {
+          endpoint: "APPLY_SELECTED_SECTIONS",
+          sections: ["STORY_PLAN", "STORY_BIBLE", "ASSET_PROPOSALS"],
+        },
+      }),
     ));
   });
 
@@ -146,26 +176,15 @@ describe("OneClickPipelineWorkbench", () => {
     await waitFor(() => expect(pipelineClient.startOneClickPipeline).toHaveBeenCalledWith("proj-1", expect.objectContaining({ target_episode_duration_seconds: 120 })));
   });
 
-  it("automatically adopts a READY plan without section checkboxes", async () => {
-    queryClient.setQueryData(queryKeys.seasons.catalog("proj-1"), { catalog: { seasons: [] } });
-    queryClient.setQueryData(queryKeys.episodes.list("season-1"), { items: [{ title: "第 1 集" }] });
+  it("does not implicitly apply a READY historical run when the page mounts", async () => {
     const run = completedRun();
     vi.mocked(pipelineClient.getLatestPipeline).mockResolvedValue({ run });
-    vi.mocked(pipelineClient.applyPipelineRun).mockResolvedValue({
-      run: { ...run, revision: 8, apply_state: "APPLIED", applied_sections: ["STORY_PLAN", "STORY_BIBLE", "ASSET_PROPOSALS"] },
-      created: { episodes: 2, bible_revisions: 1, asset_proposals: 0, creative_dossiers: 3, breakdown_drafts: 0 },
-      sections: ["STORY_PLAN", "STORY_BIBLE", "ASSET_PROPOSALS"],
-    });
 
     renderWorkbench(queryClient);
     expect(await screen.findByRole("heading", { name: "AI 分析摘要" })).toBeTruthy();
-    await waitFor(() => expect(pipelineClient.applyPipelineRun).toHaveBeenCalledWith(
-      "proj-1", "pipe-456", 7, ["STORY_PLAN", "STORY_BIBLE", "ASSET_PROPOSALS"],
-    ));
-    expect(screen.queryByText(/应用已选内容/)).toBeNull();
-    expect(await screen.findByRole("link", { name: "进入分集制作" })).toBeTruthy();
-    expect(queryClient.getQueryState(queryKeys.seasons.catalog("proj-1"))?.isInvalidated).toBe(true);
-    expect(queryClient.getQueryState(queryKeys.episodes.list("season-1"))?.isInvalidated).toBe(true);
+    expect(pipelineClient.previewPipelineApply).not.toHaveBeenCalled();
+    expect(pipelineClient.applyPipelineRun).not.toHaveBeenCalled();
+    expect(await screen.findByRole("button", { name: "查看应用影响" })).toBeTruthy();
   });
 
   it("pauses only when quality checking requests attention", async () => {
@@ -175,12 +194,90 @@ describe("OneClickPipelineWorkbench", () => {
       run: { ...run, revision: 8, apply_state: "APPLIED" },
       created: { episodes: 2, bible_revisions: 1, asset_proposals: 0, creative_dossiers: 3, breakdown_drafts: 0 },
       sections: ["STORY_PLAN", "STORY_BIBLE", "ASSET_PROPOSALS"],
+      impact: { ...applyImpact(true), writes_performed: true },
+    });
+    vi.mocked(pipelineClient.previewPipelineApply).mockResolvedValue({
+      impact: applyImpact(true), quality_report: run.quality_report, can_apply: true,
     });
 
     renderWorkbench(queryClient);
     expect(await screen.findByText("需要你确认")).toBeTruthy();
     expect(pipelineClient.applyPipelineRun).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "确认并进入分集制作" }));
+    fireEvent.click(screen.getByRole("button", { name: "查看应用影响" }));
+    expect(await screen.findByRole("heading", { name: "应用影响预览" })).toBeTruthy();
+    expect(screen.getByText(/EP01 已保留/)).toBeTruthy();
+    expect(pipelineClient.applyPipelineRun).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "取消预览" }));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "应用影响预览" })).toBeNull());
+    expect(pipelineClient.applyPipelineRun).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "查看应用影响" }));
+    expect(await screen.findByRole("heading", { name: "应用影响预览" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "确认以上影响并进入分集制作" }));
     await waitFor(() => expect(pipelineClient.applyPipelineRun).toHaveBeenCalledTimes(1));
+  });
+
+  it("shows partial source coverage and the exact continuation point", async () => {
+    const base = completedRun("REVIEW_REQUIRED");
+    const run: pipelineClient.PipelineRun = {
+      ...base,
+      stage_label: "本次原稿分析部分完成；请按续接位置继续",
+      draft: {
+        ...base.draft,
+        source_coverage: {
+          schema_version: "pipeline.source-coverage.v1",
+          source_sha256: "source-hash",
+          status: "PARTIAL",
+          authorized_range: { start_paragraph: 1, end_paragraph: 242, paragraph_count: 242 },
+          covered_paragraph_count: 120,
+          authorized_paragraph_count: 242,
+          completed_ranges: [],
+          unprocessed_ranges: [{ start_paragraph: 121, end_paragraph: 242, reason: "BATCH_EPISODE_LIMIT", resume_unit_number: 61 }],
+          resume: { start_paragraph: 121, end_paragraph: 242, reason: "BATCH_EPISODE_LIMIT", resume_unit_number: 61 },
+        },
+      },
+    };
+    vi.mocked(pipelineClient.getLatestPipeline).mockResolvedValue({ run });
+
+    renderWorkbench(queryClient);
+
+    expect(await screen.findByText("原稿部分完成")).toBeTruthy();
+    expect(screen.getByText("已完整覆盖 120 / 242 个授权段落。")).toBeTruthy();
+    expect(screen.getByText(/续接位置：第 121 段（第 61 个分析单元）/)).toBeTruthy();
+    expect(pipelineClient.applyPipelineRun).not.toHaveBeenCalled();
+  });
+
+  it("reports a 0/N whole-drama response as not started instead of success", async () => {
+    const run = { ...completedRun(), apply_state: "APPLIED" as const };
+    vi.mocked(pipelineClient.getLatestPipeline).mockResolvedValue({ run });
+    vi.mocked(pipelineClient.getWholeDramaStatus).mockResolvedValue({
+      project_id: "proj-1", project_code: "P1", project_title: "Project",
+      overall_status: "NOT_STARTED", state_counts: { NOT_STARTED: 3 }, total_episodes: 3,
+      episodes: [
+        { episode_id: "ep-1", code: "E01", title: "第一集", production_status: "DRAFT", total_shots: 1, ready_shots: 1, draft_shots: 0, keyframes_count: 0, videos_count: 0, dialogue_lines: 0, voiced_lines: 0, timeline_status: "MISSING", workflow_run_status: "NOT_STARTED" },
+        { episode_id: "ep-2", code: "E02", title: "第二集", production_status: "DRAFT", total_shots: 1, ready_shots: 1, draft_shots: 0, keyframes_count: 0, videos_count: 0, dialogue_lines: 0, voiced_lines: 0, timeline_status: "MISSING", workflow_run_status: "NOT_STARTED" },
+        { episode_id: "ep-3", code: "E03", title: "第三集", production_status: "DRAFT", total_shots: 1, ready_shots: 1, draft_shots: 0, keyframes_count: 0, videos_count: 0, dialogue_lines: 0, voiced_lines: 0, timeline_status: "MISSING", workflow_run_status: "NOT_STARTED" },
+      ],
+    });
+    vi.mocked(pipelineClient.runWholeDrama).mockResolvedValue({
+      project_id: "proj-1", preparation: {}, dispatched_runs: [], total_episodes: 3,
+      dispatched_count: 0, blocked_count: 3, dispatch_status: "NOT_STARTED",
+      dispatch_reason: "ALL_EPISODES_BLOCKED",
+      idempotent_replay: false,
+    });
+    renderWorkbench(queryClient);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /E01/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /E02/ }));
+    expect((screen.getByRole("checkbox", { name: /E03/ }) as HTMLInputElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /启动所选分集小样/ }));
+
+    await waitFor(() => expect(pipelineClient.runWholeDrama).toHaveBeenCalledWith(
+      "proj-1",
+      { production_mode: "BALANCED", episode_ids: ["ep-1", "ep-2"] },
+      expect.any(String),
+    ));
+    expect(await screen.findByText(/未启动：0 \/ 3 集已调度/)).toBeTruthy();
+    expect(screen.queryByText(/已成功调度全剧/)).toBeNull();
+    expect(await screen.findByText(/NOT_STARTED 3/)).toBeTruthy();
   });
 });

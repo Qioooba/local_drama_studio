@@ -8,9 +8,11 @@ import {
   getEpisodeProductionReplanV2, listEpisodeProductionShotsV2,
   markEpisodeProductionShotsReadyV2,
   prepareEpisodeProductionV2, requestEpisodeProductionReplanV2,
+  previewEpisodeProductionOperationV2,
   startEpisodeProductionRunV2, transitionEpisodeProductionRunV2,
   type EpisodeProductionBlocker, type EpisodeProductionMode,
   type EpisodeProductionRunStartCommand, type EpisodeProductionShot,
+  type EpisodeOperationImpact, type EpisodeProductionOperation,
   type EpisodeProductionStage, type ProductionState,
 } from "../../generated/api";
 import { useProjectEventInvalidation } from "../events/useProjectEventInvalidation";
@@ -228,6 +230,8 @@ export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId
   const [confirmShotsReady, setConfirmShotsReady] = useState(false);
   const [cancelRunConfirmOpen, setCancelRunConfirmOpen] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [operation, setOperation] = useState<EpisodeProductionOperation>("CONTINUE_UNFINISHED");
+  const [operationImpact, setOperationImpact] = useState<EpisodeOperationImpact | null>(null);
   const overviewKey = ["episode-production-v2", episodeId, "overview"] as const;
   const shotsKey = ["episode-production-v2", episodeId, "shots", "all"] as const;
   const replanKey = ["episode-production-v2", episodeId, "replan"] as const;
@@ -237,6 +241,14 @@ export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId
     refetchInterval: (query) => (query.state.data?.overview.active_job_count ?? 0) > 0 ? 3000 : false,
   });
   const shots = useQuery({ queryKey: shotsKey, queryFn: () => listEpisodeProductionShotsV2(episodeId, { cursor: 0, limit: 100 }) });
+  const attentionShots = useQuery({
+    queryKey: ["episode-production-v2", episodeId, "shots", "attention"],
+    queryFn: () => listEpisodeProductionShotsV2(episodeId, {
+      cursor: 0,
+      limit: 100,
+      states: ["BLOCKED", "FAILED", "NEEDS_REVIEW", "STALE"],
+    }),
+  });
   const replan = useQuery({
     queryKey: replanKey,
     queryFn: () => getEpisodeProductionReplanV2(episodeId),
@@ -296,6 +308,13 @@ export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId
         : "本集方案已生成，正在更新制作阶段。");
       await refresh();
     },
+  });
+  const previewOperation = useMutation({
+    mutationFn: () => previewEpisodeProductionOperationV2(episodeId, {
+      operation,
+      target_take_count: 1,
+    }),
+    onSuccess: ({ impact }) => setOperationImpact(impact),
   });
   const requestReplan = useMutation({
     mutationFn: () => {
@@ -360,21 +379,34 @@ export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId
   });
 
   const allShots = shots.data?.items ?? [];
-  const attentionShots = useMemo(() => allShots.filter((item) => ATTENTION.has(item.overall_state)), [allShots]);
-  const attentionGroups = useMemo(() => groupAttention(attentionShots), [attentionShots]);
-  if (overview.isPending || shots.isPending) return <section className="episode-agent-loading" role="status">正在整理本集方案与生产进度…</section>;
-  if (overview.error || shots.error) return <section className="episode-agent-error" role="alert"><strong>暂时无法读取本集</strong><span>{String(overview.error ?? shots.error)}</span><button type="button" onClick={() => { void overview.refetch(); void shots.refetch(); }}>重试</button></section>;
+  const attentionItems = (attentionShots.data?.items ?? []).filter((item) => ATTENTION.has(item.overall_state));
+  const attentionGroups = useMemo(() => groupAttention(attentionItems), [attentionItems]);
+  if (overview.isPending || shots.isPending || attentionShots.isPending) return <section className="episode-agent-loading" role="status">正在整理本集方案与生产进度…</section>;
+  if (overview.error || shots.error || attentionShots.error) return <section className="episode-agent-error" role="alert"><strong>暂时无法读取本集</strong><span>{String(overview.error ?? shots.error ?? attentionShots.error)}</span><button type="button" onClick={() => { void overview.refetch(); void shots.refetch(); void attentionShots.refetch(); }}>重试</button></section>;
 
   const summary = overview.data.overview;
+  const selectedModePolicy = summary.available_mode_policies?.[mode];
+  const effectiveTakeCount = Number(selectedModePolicy?.target_take_count ?? ({ DRAFT: 1, BALANCED: 2, QUALITY: 4 }[mode]));
+  const requestedTakeCount = Number(selectedModePolicy?.requested_target_take_count ?? effectiveTakeCount);
   const planningJob = summary.shot_count === 0 ? summary.planning_job : null;
   const planningFailure = planningJob && ["FAILED", "DEAD", "ORPHANED", "NEEDS_ATTENTION", "CANCELLED"].includes(planningJob.state) ? planningJob : null;
   const planningRunning = planningJob && ["QUEUED", "CLAIMED", "RUNNING", "CANCEL_REQUESTED"].includes(planningJob.state);
-  const stageFacts = STAGES.map((stage) => ({ ...stage, ...aggregate(allShots, stage.code),
+  const stageFacts = STAGES.map((stage) => {
+    const authoritative = summary.stage_summary?.[stage.code];
+    const fact = authoritative
+      ? {
+          ...authoritative,
+          requiresConfirmation: authoritative.requires_confirmation,
+          state: authoritative.attention ? "attention" : authoritative.running ? "running" : authoritative.total > 0 && authoritative.completed === authoritative.total ? "complete" : "pending",
+        }
+      : aggregate(allShots, stage.code);
+    return ({ ...stage, ...fact,
     ...(stage.code === "SHOT_PLANNING" && planningJob ? {
       state: planningFailure ? "attention" : planningRunning ? "running" : "pending",
       statusLabel: planningFailure ? "未完成" : planningRunning ? "生成中" : "等待方案应用",
     } : { statusLabel: null }),
-  }));
+    });
+  });
   const run = summary.active_run;
   const complete = summary.shot_count > 0 && summary.state_counts.READY === summary.shot_count;
   const mutationError = syncIdentityPacks.error ?? prepare.error ?? requestReplan.error ?? applyReplan.error ?? markShotsReady.error ?? start.error ?? transition.error;
@@ -460,6 +492,29 @@ export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId
       <div><span>解析后交付规格</span><strong>{resolvedPresentation && resolvedPresentation.width != null && resolvedPresentation.height != null ? `${String(resolvedPresentation.width)}×${String(resolvedPresentation.height)}` : "未配置"}</strong><small>{fpsValue} fps · 计划 v{summary.production_plan_version_no ?? "—"}</small></div>
     </section>
 
+    {summary.shot_count > 0 && <section className="episode-agent-operation-impact" aria-label="操作与影响预览">
+      <div className="episode-agent-section-heading"><div><h3>选择这次要做什么</h3><p>预览只读；修改镜头语义请先保存新修订，再重新预览。</p></div></div>
+      <label><span>操作</span><select aria-label="本集操作" value={operation} onChange={(event) => { setOperation(event.target.value as EpisodeProductionOperation); setOperationImpact(null); }}>
+        <option value="CONTINUE_UNFINISHED">继续未完成</option>
+        <option value="RETRY_ORIGINAL">按原输入重试失败任务</option>
+        <option value="NEW_TAKE">新拍一个候选</option>
+        <option value="RECOMPOSE_ONLY">仅重新合成</option>
+      </select></label>
+      <button type="button" className="secondary" disabled={previewOperation.isPending} onClick={() => previewOperation.mutate()}>{previewOperation.isPending ? "正在核对…" : "预览影响"}</button>
+      {operationImpact && <div className="episode-agent-operation-summary" role="status">
+        <strong>计划 {operationImpact.plan_hash.slice(0, 8)}</strong>
+        <span>复用 {operationImpact.sets.reused?.length ?? 0}</span>
+        <span>等待在途 {operationImpact.sets.waiting_in_flight?.length ?? 0}</span>
+        <span>原输入重试 {operationImpact.sets.retry_original?.length ?? 0}</span>
+        <span>需生成 {operationImpact.sets.needs_generation?.length ?? 0}</span>
+        <span>硬依赖阻塞 {operationImpact.sets.blocked_by_dependency?.length ?? 0}</span>
+        <span>人工确认 {operationImpact.sets.requires_manual_confirmation?.length ?? 0}</span>
+        <span>仅重合成 {operationImpact.sets.compose_only?.length ?? 0}</span>
+        <small>预计新增 GPU 视频任务 {operationImpact.gpu_video_job_count}；提交前若镜头 revision 或依赖变化，必须重新预览。</small>
+      </div>}
+      {previewOperation.isError && <p className="pipeline-alert error">{errorText(previewOperation.error)}</p>}
+    </section>}
+
     {summary.replan_required && <section className="episode-agent-replan" id="episode-agent-replan" aria-label="本集重规划审核">
       <div className="episode-agent-section-heading"><div><h3>本集计划需要更新</h3><p>AI 只读取本集已确认原文范围和项目故事拆解能力；旧镜头、媒体和时间线不会被删除。</p></div><span>{summary.replan_reasons?.length ?? 0}</span></div>
       <ul className="episode-agent-replan-reasons">{(summary.replan_reasons ?? []).map((reason) => <li key={String(reason.code)}><strong>{String(reason.code)}</strong><span>{String(reason.message)}</span></li>)}</ul>
@@ -484,7 +539,7 @@ export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId
     <section className="episode-agent-run" aria-label="Agent 运行">
       <div><span className={`episode-agent-run-state is-${run?.status.toLowerCase() ?? "idle"}`}>{run?.status === "RUNNING" ? "自动制作中" : run?.status === "PAUSED_HITL" ? "等待确认" : complete ? "本集已完成" : "尚未开始新的制作"}</span><p>{run ? `运行 ${run.id.slice(0, 8)} · 仅在异常或所选关键节点暂停` : "开始后按当前方案与项目设置推进，角色、场景和历史素材仍保留。"}</p></div>
       {run?.status === "RUNNING" && <button type="button" className="secondary" disabled={transition.isPending} onClick={() => transition.mutate({ action: "pause", revision: run.revision })}>暂停</button>}
-      {!run && !complete && <details className="episode-agent-options"><summary>本集生成设置</summary><div><label><span>质量</span><select aria-label="本集质量" value={mode} onChange={(event) => setMode(event.target.value as EpisodeProductionMode)}><option value="DRAFT">预览</option><option value="BALANCED">标准</option><option value="QUALITY">精品</option></select></label><label><input type="checkbox" checked={tts} onChange={(event) => setTts(event.target.checked)} />生成对白与字幕</label><label><input type="checkbox" checked={pauseBeforeMedia} onChange={(event) => setPauseBeforeMedia(event.target.checked)} />批量生成视频前暂停确认</label><Link to={routes.settings(projectId)}>画幅、分辨率和模型使用项目设置</Link></div></details>}
+      {!run && !complete && <details className="episode-agent-options"><summary>本集生成设置</summary><div><label><span>质量</span><select aria-label="本集质量" value={mode} onChange={(event) => setMode(event.target.value as EpisodeProductionMode)}><option value="DRAFT">预览</option><option value="BALANCED">标准</option><option value="QUALITY">精品</option></select><small>每镜生效 {effectiveTakeCount} 个视频候选{requestedTakeCount > effectiveTakeCount ? `（Profile 请求 ${requestedTakeCount} 个，按产品上限 4 个执行）` : ""}；候选数不代表 GPU 并发数。</small></label><label><input type="checkbox" checked={tts} onChange={(event) => setTts(event.target.checked)} />生成对白与字幕</label><label><input type="checkbox" checked={pauseBeforeMedia} onChange={(event) => setPauseBeforeMedia(event.target.checked)} />批量生成视频前暂停确认</label><Link to={routes.settings(projectId)}>画幅、分辨率和模型使用项目设置</Link></div></details>}
     </section>
     {run?.status === "PAUSED_HITL" && gate && <section className={`episode-agent-run-gate${gate.isMachine ? " is-machine" : ""}`} aria-label="本次暂停原因">
       <div className="episode-agent-run-gate-copy">

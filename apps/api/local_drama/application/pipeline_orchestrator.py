@@ -26,6 +26,9 @@ from local_drama.infrastructure.filesystem.path_policy import controlled_path
 logger = logging.getLogger(__name__)
 
 PIPELINE_JOB_TYPE = "STORY_PIPELINE_DRAFT"
+PIPELINE_APPLY_JOB_TYPE = "STORY_PIPELINE_APPLY"
+PIPELINE_EPISODE_BATCH_LIMIT = 60
+PIPELINE_EPISODE_SOURCE_CHARACTER_LIMIT = 24_000
 PIPELINE_SECTIONS = {"STORY_PLAN", "STORY_BIBLE", "ASSET_PROPOSALS", "SCRIPT_BREAKDOWN"}
 ALLOWED_VISUAL_STYLES = {
     "国风仙侠 电影级写实 (Cinematic Realistic)",
@@ -67,6 +70,44 @@ def _creative_asset_code(kind: str, name: str) -> str:
     return f"AI_{kind}_{_sha(name.casefold())[:12].upper()}"
 
 
+def _pipeline_quality_report(draft: dict[str, Any]) -> dict[str, Any]:
+    source = draft.get("source") if isinstance(draft.get("source"), dict) else {}
+    coverage = draft.get("source_coverage") if isinstance(draft.get("source_coverage"), dict) else {}
+    assets = draft.get("assets") if isinstance(draft.get("assets"), dict) else {}
+    story_plan = draft.get("story_plan") if isinstance(draft.get("story_plan"), dict) else {}
+    generation = draft.get("generation") if isinstance(draft.get("generation"), dict) else {}
+    rules = [
+        ("SOURCE_FROZEN", "原稿快照已冻结", "BLOCKER", bool(source.get("sha256"))),
+        ("SOURCE_COVERAGE_COMPLETE", "授权原稿范围已完整处理", "WARNING", coverage.get("status") == "FULL"),
+        ("AI_GENERATION_CONFIRMED", "分集与核心资产由已配置大模型生成", "BLOCKER", bool(generation.get("model") and generation.get("provider"))),
+        ("EPISODES_PRESENT", "已生成分集规划和原文范围", "BLOCKER", bool(story_plan.get("episodes"))),
+        ("CORE_CHARACTERS", "已识别可复用核心人物", "BLOCKER", bool(assets.get("characters"))),
+        ("CORE_SCENES", "已识别可复用核心场景", "WARNING", bool(assets.get("scenes"))),
+        ("EPISODE_DETAILS_DEFERRED", "分场与镜头将在制作每集时按需生成", "INFO", True),
+        ("TEXT_ONLY", "未启动图片、视频或媒体生成", "BLOCKER", generation.get("media_generation_started") is False),
+        ("NO_PRODUCTION_WRITES", "生成阶段未写入正式镜头或资产", "BLOCKER", True),
+    ]
+    checks = [
+        {
+            "code": code,
+            "label": label,
+            "severity": severity,
+            "applicable": True,
+            "passed": passed,
+        }
+        for code, label, severity, passed in rules
+    ]
+    blockers = [item[1] for item in rules if item[2] == "BLOCKER" and not item[3]]
+    warnings = [item[1] for item in rules if item[2] == "WARNING" and not item[3]]
+    return {
+        "rule_version": "pipeline-quality/v2",
+        "status": "BLOCKED" if blockers else "REVIEW_REQUIRED" if warnings else "READY",
+        "blockers": blockers,
+        "warnings": warnings,
+        "checks": checks,
+    }
+
+
 class PipelineOrchestratorService:
     """Generate isolated story drafts and materialize them only after review."""
 
@@ -88,6 +129,10 @@ class PipelineOrchestratorService:
     def _row_to_run(self, row: Any) -> dict[str, Any]:
         draft = _parse_json(_safe_col(row, "draft_json", "{}"), {})
         assets = _parse_json(row["assets_json"], {"characters": [], "scenes": [], "props": []})
+        input_snapshot = _parse_json(_safe_col(row, "input_snapshot_json", "{}"), {})
+        authorization = input_snapshot.get("application_authorization")
+        if not isinstance(authorization, dict):
+            authorization = {"endpoint": "DRAFT_ONLY", "sections": []}
         return {
             "run_id": str(row["id"]),
             "project_id": str(row["project_id"]),
@@ -124,7 +169,25 @@ class PipelineOrchestratorService:
             "updated_at": str(row["updated_at"]),
             "error_message": str(row["error_message"]) if row["error_message"] else None,
             "auto_run_rendering": False,
+            "application_authorization": authorization,
         }
+
+    def _attach_apply_continuation(self, run: dict[str, Any]) -> dict[str, Any]:
+        job_id = str(run["application_authorization"].get("continuation_job_id") or "")
+        if not job_id:
+            run["apply_continuation"] = {"state": "NOT_AUTHORIZED", "job_id": None, "last_error_code": None}
+            return run
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT state,last_error_code,last_error_detail_redacted FROM jobs WHERE id=?", (job_id,)
+            ).fetchone()
+        run["apply_continuation"] = {
+            "state": str(row["state"]) if row else "MISSING",
+            "job_id": job_id,
+            "last_error_code": str(row["last_error_code"]) if row and row["last_error_code"] else None,
+            "last_error_detail": str(row["last_error_detail_redacted"]) if row and row["last_error_detail_redacted"] else None,
+        }
+        return run
 
     @staticmethod
     def _row_to_summary(row: Any) -> dict[str, Any]:
@@ -230,6 +293,42 @@ class PipelineOrchestratorService:
         self.documents.commit(session_id, str(session["preview_hash"]), actor=actor)
         return session_id
 
+    def _authorized_source_range(
+        self, project_id: str, source_version_id: str, paragraph_count: int
+    ) -> dict[str, Any]:
+        """Read the creator-confirmed body range; unknown legacy scope is never widened."""
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """SELECT i.id,item.payload_json FROM import_sessions i
+                LEFT JOIN import_session_items item ON item.session_id=i.id
+                  AND item.item_type='SOURCE_BODY_RANGE' AND item.validation_status='VALID'
+                WHERE i.project_id=? AND i.source_document_version_id=?
+                  AND EXISTS (SELECT 1 FROM audit_events ae
+                    WHERE ae.action='IMPORT_SESSION_COMMITTED'
+                    AND ae.subject_type='import_session' AND ae.subject_id=i.id)
+                ORDER BY i.updated_at DESC,item.created_at DESC,item.id DESC LIMIT 1""",
+                (project_id, source_version_id),
+            ).fetchone()
+        if row is None:
+            raise DomainRuleError(
+                "PIPELINE_SOURCE_SCOPE_REQUIRED", "原稿尚无已确认的授权正文范围。"
+            )
+        payload = _parse_json(row["payload_json"], {})
+        start = payload.get("source_paragraph_start") if isinstance(payload, dict) else None
+        end = payload.get("source_paragraph_end") if isinstance(payload, dict) else None
+        if not isinstance(start, int) or not isinstance(end, int) or start < 1 or end < start:
+            raise DomainRuleError(
+                "PIPELINE_SOURCE_SCOPE_REQUIRED", "已提交原稿缺少可验证的授权正文范围。"
+            )
+        if end > paragraph_count:
+            raise DomainRuleError("PIPELINE_SOURCE_SCOPE_INVALID", "授权正文范围超出当前原稿。")
+        return {
+            "import_session_id": str(row["id"]),
+            "start_paragraph": start,
+            "end_paragraph": end,
+            "paragraph_count": end - start + 1,
+        }
+
     def preflight(
         self,
         project_id: str,
@@ -294,12 +393,23 @@ class PipelineOrchestratorService:
         target_episode_duration_seconds: int = 120,
         voice_preset: str = "DEFAULT_VOX_CPM2",
         auto_run_rendering: bool = False,
+        application_authorization: dict[str, Any] | None = None,
         capability_profile_version_id: str | None = None,
         llm_config: dict[str, Any] | None = None,
         actor: str = "local-user",
         supersedes_run_id: str | None = None,
     ) -> dict[str, Any]:
         del auto_run_rendering
+        authorization = dict(application_authorization or {"endpoint": "DRAFT_ONLY", "sections": []})
+        endpoint = str(authorization.get("endpoint") or "DRAFT_ONLY").upper()
+        sections = list(dict.fromkeys(str(item).upper() for item in authorization.get("sections") or []))
+        if endpoint not in {"DRAFT_ONLY", "APPLY_SELECTED_SECTIONS"}:
+            raise DomainRuleError("PIPELINE_AUTHORIZATION_INVALID", "规划应用授权终点无效")
+        if endpoint == "DRAFT_ONLY":
+            sections = []
+        elif not sections or set(sections) - PIPELINE_SECTIONS:
+            raise DomainRuleError("PIPELINE_AUTHORIZATION_INVALID", "自动应用必须明确授权有效的文本 sections")
+        authorization = {"schema_version": "pipeline-application-authorization/v1", "endpoint": endpoint, "sections": sections}
         self._project(project_id)
         source_id, text = self._validate_input(source_document_version_id, raw_text, target_episode_duration_seconds)
         if len(visual_style) > 200:
@@ -334,6 +444,10 @@ class PipelineOrchestratorService:
         # complete source.  Downstream per-episode generation can therefore
         # reuse this immutable committed source without another import gate.
         self._ensure_source_committed(project_id, source_id, actor)
+        paragraphs = source_paragraphs(self._read_source_version(project_id, source_id)[0])
+        authorized_scope = self._authorized_source_range(
+            project_id, source_id, len(paragraphs)
+        )
         capability_profile_version_id = preflight["ai"].get("profile_version_id") or capability_profile_version_id
         with self.database.transaction() as connection:
             running = connection.execute(
@@ -355,11 +469,13 @@ class PipelineOrchestratorService:
                 "schema_version": "pipeline.input.v1",
                 "source_sha256": preflight["source"]["sha256"],
                 "source_document_version_id": source_id,
+                "authorized_source_scope": authorized_scope,
                 "visual_style": visual_style,
                 "target_episode_duration_seconds": target_episode_duration_seconds,
                 "voice_preset": voice_preset,
                 "capability_profile_version_id": capability_profile_version_id,
                 "llm_config": {key: value for key, value in (llm_config or {}).items() if key != "api_key"},
+                "application_authorization": authorization,
             }
             connection.execute(
                 """INSERT INTO pipeline_runs
@@ -394,6 +510,29 @@ class PipelineOrchestratorService:
                 max_attempts=1,
             )
             connection.execute("UPDATE pipeline_runs SET job_id=? WHERE id=?", (job["id"], run_id))
+            if endpoint == "APPLY_SELECTED_SECTIONS":
+                continuation = self.jobs.create_job_in_transaction(
+                    connection,
+                    project_id,
+                    PIPELINE_APPLY_JOB_TYPE,
+                    "PIPELINE_RUN",
+                    run_id,
+                    "CPU",
+                    {"run_id": run_id, "project_id": project_id, "authorized_sections": sections},
+                    f"pipeline-apply:{run_id}",
+                    actor=actor,
+                    subject_kind="PIPELINE_RUN",
+                    scope_kind="PROJECT",
+                    scope_project_id=project_id,
+                    stage_code="STORY_PIPELINE",
+                    max_attempts=3,
+                    depends_on_job_ids=[str(job["id"])],
+                )
+                authorization["continuation_job_id"] = str(continuation["id"])
+                input_snapshot["application_authorization"] = authorization
+                connection.execute(
+                    "UPDATE pipeline_runs SET input_snapshot_json=? WHERE id=?", (_json(input_snapshot), run_id)
+                )
         return self.get_pipeline(project_id, run_id)
 
     def get_pipeline(self, project_id: str, run_id: str) -> dict[str, Any]:
@@ -403,7 +542,7 @@ class PipelineOrchestratorService:
             ).fetchone()
         if row is None:
             raise DomainRuleError("PIPELINE_RUN_NOT_FOUND", "草案运行记录不存在", {"run_id": run_id})
-        return self._row_to_run(row)
+        return self._attach_apply_continuation(self._row_to_run(row))
 
     def get_latest_pipeline(self, project_id: str) -> dict[str, Any] | None:
         self._project(project_id)
@@ -412,7 +551,7 @@ class PipelineOrchestratorService:
                 "SELECT * FROM pipeline_runs WHERE project_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1",
                 (project_id,),
             ).fetchone()
-        return self._row_to_run(row) if row else None
+        return self._attach_apply_continuation(self._row_to_run(row)) if row else None
 
     def list_pipelines(self, project_id: str, limit: int = 20) -> list[dict[str, Any]]:
         self._project(project_id)
@@ -436,6 +575,21 @@ class PipelineOrchestratorService:
 
     def cancel_pipeline(self, project_id: str, run_id: str) -> dict[str, Any]:
         run = self.get_pipeline(project_id, run_id)
+        continuation = run.get("apply_continuation") or {}
+        if run["state"] == "SUCCEEDED" and continuation.get("state") in {"QUEUED", "CLAIMED", "RUNNING"}:
+            self.jobs.cancel(str(continuation["job_id"]))
+            with self.database.transaction() as connection:
+                row = connection.execute("SELECT input_snapshot_json FROM pipeline_runs WHERE id=?", (run_id,)).fetchone()
+                snapshot = _parse_json(row["input_snapshot_json"], {})
+                authorization = dict(snapshot.get("application_authorization") or {})
+                authorization["revoked_at"] = _now()
+                authorization["endpoint"] = "DRAFT_ONLY"
+                snapshot["application_authorization"] = authorization
+                connection.execute(
+                    "UPDATE pipeline_runs SET input_snapshot_json=?,updated_at=?,revision=revision+1 WHERE id=?",
+                    (_json(snapshot), _now(), run_id),
+                )
+            return self.get_pipeline(project_id, run_id)
         if run["state"] != "RUNNING":
             raise DomainRuleError("PIPELINE_STATE_INVALID", "只有生成中的草案可以取消")
         if run["job_id"]:
@@ -447,6 +601,45 @@ class PipelineOrchestratorService:
                 (_now(), run_id, project_id),
             )
         return self.get_pipeline(project_id, run_id)
+
+    def continue_authorized_application(self, run_id: str) -> dict[str, Any]:
+        """Replay the original apply command from a durable, explicitly scoped authorization."""
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT * FROM pipeline_runs WHERE id=?", (run_id,)).fetchone()
+        if row is None:
+            raise DomainRuleError("PIPELINE_RUN_NOT_FOUND", "草案运行记录不存在")
+        run = self._row_to_run(row)
+        authorization = run["application_authorization"]
+        if authorization.get("endpoint") != "APPLY_SELECTED_SECTIONS" or authorization.get("revoked_at"):
+            raise DomainRuleError("PIPELINE_APPLICATION_NOT_AUTHORIZED", "本次运行未授权自动应用")
+        if run["apply_state"] == "APPLIED":
+            return {"run": self._attach_apply_continuation(run), "idempotent_replay": True}
+        if run["state"] != "SUCCEEDED":
+            raise DomainRuleError("PIPELINE_STATE_INVALID", "草案生成尚未成功，不能续接应用")
+        authorized_draft_sha256 = str(authorization.get("authorized_draft_sha256") or "")
+        if not authorized_draft_sha256 or authorized_draft_sha256 != _sha(_json(run["draft"])):
+            raise DomainRuleError(
+                "PIPELINE_AUTHORIZED_DRAFT_CHANGED",
+                "草案在生成完成后发生变化，原授权不能继续应用",
+            )
+        sections = list(authorization.get("sections") or [])
+        preview = self.preview_pipeline_apply(
+            run["project_id"], run_id, expected_revision=run["revision"], sections=sections
+        )
+        if not preview["can_apply"]:
+            raise DomainRuleError(
+                "PIPELINE_QUALITY_BLOCKED",
+                "授权续接已暂停：草案当前未通过应用门禁",
+                {"blockers": preview["quality_report"].get("blockers", [])},
+            )
+        return self.apply_pipeline(
+            run["project_id"],
+            run_id,
+            expected_revision=run["revision"],
+            sections=sections,
+            expected_impact_sha256=preview["impact"]["impact_sha256"],
+            actor="pipeline-authorized-continuation",
+        )
 
     def retry_pipeline(self, project_id: str, run_id: str, expected_revision: int) -> dict[str, Any]:
         run = self.get_pipeline(project_id, run_id)
@@ -484,17 +677,36 @@ class PipelineOrchestratorService:
             connection.execute(f"UPDATE pipeline_runs SET {','.join(sets)} WHERE id=?", params)
 
     @staticmethod
-    def _episode_specs(text: str) -> list[dict[str, Any]]:
+    def _episode_specs(
+        text: str, *, start_paragraph: int = 1, end_paragraph: int | None = None
+    ) -> list[dict[str, Any]]:
         paragraphs = source_paragraphs(text)
-        chapters = source_chapters(paragraphs)
+        last_paragraph = end_paragraph if end_paragraph is not None else len(paragraphs)
+        selected_paragraphs = [
+            item for item in paragraphs if start_paragraph <= int(item.number) <= last_paragraph
+        ]
+        chapters = []
+        for chapter in source_chapters(paragraphs):
+            chapter_start = int(chapter["start_paragraph"])
+            chapter_end = int(chapter["end_paragraph"])
+            if chapter_end < start_paragraph or chapter_start > last_paragraph:
+                continue
+            chapters.append(
+                {
+                    **chapter,
+                    "start_paragraph": max(start_paragraph, chapter_start),
+                    "end_paragraph": min(last_paragraph, chapter_end),
+                }
+            )
         specs: list[dict[str, Any]] = []
         if chapters:
-            for index, chapter in enumerate(chapters[:60], start=1):
+            for index, chapter in enumerate(chapters, start=1):
                 start = int(chapter["start_paragraph"])
                 end = int(chapter["end_paragraph"])
                 # Source ranges are the same 1-based, inclusive paragraph
                 # numbers exposed by the import API.
-                body = "\n".join(item.text for item in paragraphs[start - 1:end])
+                group = [item for item in selected_paragraphs if start <= int(item.number) <= end]
+                body = "\n".join(item.text for item in group)
                 specs.append({
                     "number": index,
                     "code": f"EP{index:02d}",
@@ -509,7 +721,7 @@ class PipelineOrchestratorService:
             current: list[Any] = []
             current_chars = 0
             group_start = 1
-            for paragraph in paragraphs:
+            for paragraph in selected_paragraphs:
                 if not current:
                     group_start = int(paragraph.number)
                 current.append(paragraph)
@@ -519,8 +731,10 @@ class PipelineOrchestratorService:
                     current, current_chars = [], 0
             if current:
                 paragraph_groups.append((group_start, int(current[-1].number), current))
-            fallback_groups = paragraph_groups or [(1, max(1, len(paragraphs)), paragraphs)]
-            for index, (start, end, group) in enumerate(fallback_groups[:60], start=1):
+            fallback_groups = paragraph_groups or [
+                (start_paragraph, max(start_paragraph, last_paragraph), selected_paragraphs)
+            ]
+            for index, (start, end, group) in enumerate(fallback_groups, start=1):
                 body = "\n".join(item.text for item in group)
                 specs.append({
                     "number": index, "code": f"EP{index:02d}", "title": f"第 {index} 集",
@@ -530,8 +744,102 @@ class PipelineOrchestratorService:
                 })
         return specs or [{
             "number": 1, "code": "EP01", "title": "第 1 集", "summary": text[:320],
-            "source_start_paragraph": 1, "source_end_paragraph": max(1, len(paragraphs)), "source_text": text,
+            "source_start_paragraph": start_paragraph,
+            "source_end_paragraph": max(start_paragraph, last_paragraph),
+            "source_text": "\n".join(item.text for item in selected_paragraphs),
         }]
+
+    @staticmethod
+    def _source_coverage(
+        *,
+        source_sha256: str,
+        authorized_scope: dict[str, Any],
+        all_specs: list[dict[str, Any]],
+        selected_specs: list[dict[str, Any]],
+        completed_count: int,
+    ) -> dict[str, Any]:
+        completed_specs = selected_specs[: max(0, min(completed_count, len(selected_specs)))]
+        completed_ranges: list[dict[str, Any]] = []
+        unprocessed_ranges: list[dict[str, Any]] = []
+        fully_covered: list[tuple[int, int]] = []
+        for spec in completed_specs:
+            character_count = len(str(spec.get("source_text") or ""))
+            submitted_count = min(character_count, PIPELINE_EPISODE_SOURCE_CHARACTER_LIMIT)
+            truncated = submitted_count < character_count
+            completed_ranges.append(
+                {
+                    "unit_number": int(spec["number"]),
+                    "start_paragraph": int(spec["source_start_paragraph"]),
+                    "end_paragraph": int(spec["source_end_paragraph"]),
+                    "authorized_character_count": character_count,
+                    "submitted_character_count": submitted_count,
+                    "status": "PARTIAL" if truncated else "COMPLETED",
+                }
+            )
+            if not truncated:
+                fully_covered.append(
+                    (int(spec["source_start_paragraph"]), int(spec["source_end_paragraph"]))
+                )
+            else:
+                unprocessed_ranges.append(
+                    {
+                        "start_paragraph": int(spec["source_start_paragraph"]),
+                        "end_paragraph": int(spec["source_end_paragraph"]),
+                        "reason": "EPISODE_INPUT_CHARACTER_LIMIT",
+                        "unit_number": int(spec["number"]),
+                        "resume_character_offset_in_unit": submitted_count,
+                        "unprocessed_character_count": character_count - submitted_count,
+                    }
+                )
+        for spec in selected_specs[len(completed_specs):]:
+            unprocessed_ranges.append(
+                {
+                    "start_paragraph": int(spec["source_start_paragraph"]),
+                    "end_paragraph": int(spec["source_end_paragraph"]),
+                    "reason": "WINDOW_NOT_COMPLETED",
+                    "unit_number": int(spec["number"]),
+                }
+            )
+        if len(all_specs) > len(selected_specs):
+            tail = all_specs[len(selected_specs):]
+            unprocessed_ranges.append(
+                {
+                    "start_paragraph": int(tail[0]["source_start_paragraph"]),
+                    "end_paragraph": int(tail[-1]["source_end_paragraph"]),
+                    "reason": "BATCH_EPISODE_LIMIT",
+                    "resume_unit_number": int(tail[0]["number"]),
+                    "unprocessed_unit_count": len(tail),
+                }
+            )
+        merged: list[list[int]] = []
+        for start, end in sorted(fully_covered):
+            if merged and start <= merged[-1][1] + 1:
+                merged[-1][1] = max(merged[-1][1], end)
+            else:
+                merged.append([start, end])
+        covered_paragraph_count = sum(end - start + 1 for start, end in merged)
+        authorized_count = int(authorized_scope["paragraph_count"])
+        status = (
+            "FULL"
+            if completed_count == len(all_specs) == len(selected_specs) and not unprocessed_ranges
+            else "PARTIAL"
+            if completed_count > 0
+            else "NOT_STARTED"
+        )
+        return {
+            "schema_version": "pipeline.source-coverage.v1",
+            "source_sha256": source_sha256,
+            "status": status,
+            "authorized_range": dict(authorized_scope),
+            "completed_ranges": completed_ranges,
+            "completed_paragraph_intervals": [
+                {"start_paragraph": start, "end_paragraph": end} for start, end in merged
+            ],
+            "covered_paragraph_count": covered_paragraph_count,
+            "authorized_paragraph_count": authorized_count,
+            "unprocessed_ranges": unprocessed_ranges,
+            "resume": unprocessed_ranges[0] if unprocessed_ranges else None,
+        }
 
     @staticmethod
     def _dialogues(text: str) -> list[dict[str, str]]:
@@ -599,7 +907,18 @@ class PipelineOrchestratorService:
             text, _ = self._read_source_version(run["project_id"], source_id)
             if _sha(text) != snapshot.get("source_sha256"):
                 raise DomainRuleError("PIPELINE_SOURCE_CHANGED", "原稿内容与启动时快照不一致")
-            episode_specs = self._episode_specs(text)
+            authorized_scope = snapshot.get("authorized_source_scope")
+            if not isinstance(authorized_scope, dict):
+                raise DomainRuleError(
+                    "PIPELINE_SOURCE_SCOPE_REQUIRED",
+                    "该旧任务没有可验证的授权正文范围，请重新发起分析。",
+                )
+            all_episode_specs = self._episode_specs(
+                text,
+                start_paragraph=int(authorized_scope["start_paragraph"]),
+                end_paragraph=int(authorized_scope["end_paragraph"]),
+            )
+            episode_specs = all_episode_specs[:PIPELINE_EPISODE_BATCH_LIMIT]
             saved_episodes = _parse_json(_safe_col(row, "episodes_json", "[]"), [])
             saved_episodes = saved_episodes if isinstance(saved_episodes, list) else []
             completed = min(len(saved_episodes), len(episode_specs))
@@ -616,6 +935,13 @@ class PipelineOrchestratorService:
 
             def episode_checkpoint(items: list[dict[str, Any]], done: int, total: int) -> None:
                 percent = 18 + round(57 * done / max(1, total))
+                checkpoint_coverage = self._source_coverage(
+                    source_sha256=str(snapshot["source_sha256"]),
+                    authorized_scope=authorized_scope,
+                    all_specs=all_episode_specs,
+                    selected_specs=episode_specs,
+                    completed_count=done,
+                )
                 self._update_run(
                     run_id,
                     stage="STORY_PLANNING",
@@ -623,6 +949,7 @@ class PipelineOrchestratorService:
                     progress_pct=percent,
                     episodes_count=done,
                     episodes_json=items,
+                    draft_json={"source_coverage": checkpoint_coverage},
                 )
 
             generated = self.ai_generation.generate(
@@ -651,28 +978,17 @@ class PipelineOrchestratorService:
             # per-episode Agent, which receives only the selected source range.
             breakdowns: list[dict[str, Any]] = []
             shot_count = 0
-            blockers: list[str] = []
-            warnings: list[str] = []
-            if len(episode_specs) >= 60:
-                warnings.append("分集数量达到单次上限 60 集，请重点核对原稿章节边界。")
-            quality = {
-                "status": "BLOCKED" if blockers else "REVIEW_REQUIRED" if warnings else "READY",
-                "blockers": blockers,
-                "warnings": warnings,
-                "checks": [
-                    {"code": "SOURCE_FROZEN", "label": "原稿快照已冻结", "passed": True},
-                    {"code": "AI_GENERATION_CONFIRMED", "label": "分集与核心资产由已配置大模型生成", "passed": True},
-                    {"code": "EPISODES_PRESENT", "label": "已生成分集规划和原文范围", "passed": bool(plan_episodes)},
-                    {"code": "CORE_CHARACTERS", "label": "已识别可复用核心人物", "passed": bool(assets["characters"])},
-                    {"code": "CORE_SCENES", "label": "已识别可复用核心场景", "passed": isinstance(assets["scenes"], list)},
-                    {"code": "EPISODE_DETAILS_DEFERRED", "label": "分场与镜头将在制作每集时按需生成", "passed": True},
-                    {"code": "TEXT_ONLY", "label": "未启动图片、视频或媒体生成", "passed": True},
-                    {"code": "NO_PRODUCTION_WRITES", "label": "生成阶段未写入正式镜头或资产", "passed": True},
-                ],
-            }
+            source_coverage = self._source_coverage(
+                source_sha256=str(snapshot["source_sha256"]),
+                authorized_scope=authorized_scope,
+                all_specs=all_episode_specs,
+                selected_specs=episode_specs,
+                completed_count=len(plan_episodes),
+            )
             draft = {
                 "schema_version": "pipeline.story-plan.v3",
                 "source": {"document_version_id": source_id, "sha256": _sha(text), "character_count": len(text)},
+                "source_coverage": source_coverage,
                 "settings": {
                     "visual_style": run["visual_style"],
                     "target_episode_duration_seconds": run["target_episode_duration_seconds"],
@@ -684,11 +1000,16 @@ class PipelineOrchestratorService:
                 "breakdowns": breakdowns,
                 "generation": generated["metadata"],
             }
+            quality = _pipeline_quality_report(draft)
             self._update_run(
                 run_id,
                 state="SUCCEEDED",
                 stage="REVIEW_READY",
-                stage_label="全剧规划完成，正在准备分集制作",
+                stage_label=(
+                    "本次原稿分析部分完成；请按续接位置继续"
+                    if source_coverage["status"] == "PARTIAL"
+                    else "授权原稿范围规划完成，正在准备分集制作"
+                ),
                 progress_pct=100,
                 episodes_count=len(plan_episodes),
                 characters_count=len(assets["characters"]),
@@ -705,11 +1026,76 @@ class PipelineOrchestratorService:
                 llm_error=None,
                 error_message=None,
             )
+            # The dependent apply Job cannot be claimed until this draft Job
+            # succeeds. Freeze the exact generated draft now, so later edits
+            # cannot silently widen the launch-time authorization.
+            if snapshot.get("application_authorization", {}).get("endpoint") == "APPLY_SELECTED_SECTIONS":
+                with self.database.transaction() as connection:
+                    current = connection.execute(
+                        "SELECT input_snapshot_json FROM pipeline_runs WHERE id=?", (run_id,)
+                    ).fetchone()
+                    current_snapshot = _parse_json(current["input_snapshot_json"], {})
+                    current_authorization = dict(current_snapshot.get("application_authorization") or {})
+                    current_authorization["authorized_draft_sha256"] = _sha(_json(draft))
+                    current_snapshot["application_authorization"] = current_authorization
+                    connection.execute(
+                        "UPDATE pipeline_runs SET input_snapshot_json=? WHERE id=?",
+                        (_json(current_snapshot), run_id),
+                    )
             if report_progress:
-                report_progress({"phase": "REVIEW_READY", "detail": "全剧规划完成", "percent": 100})
+                report_progress(
+                    {
+                        "phase": "REVIEW_READY",
+                        "detail": (
+                            "本次原稿分析部分完成"
+                            if source_coverage["status"] == "PARTIAL"
+                            else "授权原稿范围规划完成"
+                        ),
+                        "percent": 100,
+                    }
+                )
             return self.get_pipeline(run["project_id"], run_id)
         except DomainRuleError as error:
             if error.code != "JOB_CANCELLED":
+                if (
+                    "authorized_scope" in locals()
+                    and "all_episode_specs" in locals()
+                    and "episode_specs" in locals()
+                    and "snapshot" in locals()
+                ):
+                    with self.database.connect() as connection:
+                        checkpoint_row = connection.execute(
+                            "SELECT episodes_json FROM pipeline_runs WHERE id=?", (run_id,)
+                        ).fetchone()
+                    checkpoint_items = (
+                        _parse_json(checkpoint_row["episodes_json"], []) if checkpoint_row else []
+                    )
+                    completed_count = (
+                        len(checkpoint_items) if isinstance(checkpoint_items, list) else 0
+                    )
+                    failed_coverage = self._source_coverage(
+                        source_sha256=str(snapshot["source_sha256"]),
+                        authorized_scope=authorized_scope,
+                        all_specs=all_episode_specs,
+                        selected_specs=episode_specs,
+                        completed_count=completed_count,
+                    )
+                    self._update_run(
+                        run_id,
+                        draft_json={"source_coverage": failed_coverage},
+                        quality_report_json={
+                            "status": "BLOCKED",
+                            "blockers": ["当前分析窗口失败；失败窗口未计入已完成覆盖。"],
+                            "warnings": [],
+                            "checks": [
+                                {
+                                    "code": "SOURCE_COVERAGE_COMPLETE",
+                                    "label": "授权原稿范围已完整处理",
+                                    "passed": False,
+                                }
+                            ],
+                        },
+                    )
                 self._update_run(
                     run_id, state="FAILED", stage="FAILED", stage_label="草案生成失败，可安全重试",
                     error_message=error.message,
@@ -785,6 +1171,190 @@ class PipelineOrchestratorService:
         )
         return True
 
+    @staticmethod
+    def _pipeline_application_impact(
+        connection: Any,
+        *,
+        project_id: str,
+        run_id: str,
+        run_revision: int,
+        draft: dict[str, Any],
+        selected: list[str],
+    ) -> dict[str, Any]:
+        episode_rows = connection.execute(
+            """SELECT e.id,e.code,e.number,e.title,e.revision,
+                      (SELECT COUNT(*) FROM shots sh WHERE sh.episode_id=e.id AND sh.archived_at IS NULL) AS shot_count
+               FROM episodes e JOIN seasons s ON s.id=e.season_id
+               WHERE s.project_id=? ORDER BY e.number,e.id""",
+            (project_id,),
+        ).fetchall()
+        existing_by_number = {int(item["number"]): item for item in episode_rows}
+        proposed = draft.get("story_plan", {}).get("episodes", []) if isinstance(draft.get("story_plan"), dict) else []
+        proposed_numbers = {int(item["number"]) for item in proposed if isinstance(item, dict) and item.get("number")}
+        episodes = {"add": [], "update": [], "preserve": [], "skip": []}
+        if "STORY_PLAN" in selected:
+            for item in proposed:
+                number = int(item["number"])
+                existing = existing_by_number.get(number)
+                if existing is None:
+                    episodes["add"].append({"number": number, "code": str(item.get("code") or ""), "title": str(item.get("title") or "")})
+                elif int(existing["shot_count"] or 0) > 0:
+                    episodes["preserve"].append(
+                        {
+                            "number": number,
+                            "code": str(existing["code"]),
+                            "title": str(existing["title"]),
+                            "reason": "已有制作镜头；标题、范围和镜头保持不变",
+                        }
+                    )
+                else:
+                    episodes["update"].append(
+                        {
+                            "number": number,
+                            "code": str(existing["code"]),
+                            "from_title": str(existing["title"]),
+                            "to_title": str(item.get("title") or ""),
+                        }
+                    )
+            episodes["skip"] = [
+                {"number": int(item["number"]), "code": str(item["code"]), "title": str(item["title"])}
+                for item in episode_rows
+                if int(item["number"]) not in proposed_numbers
+            ]
+
+        bible = connection.execute(
+            """SELECT current_revision_id,revision FROM creative_entries
+               WHERE project_id=? AND kind='SERIES_BIBLE' AND code='SERIES_BIBLE_MAIN'""",
+            (project_id,),
+        ).fetchone()
+        asset_reuse: list[str] = []
+        asset_add: list[str] = []
+        if "ASSET_PROPOSALS" in selected:
+            for kind_key, kind in (("characters", "CHARACTER"), ("scenes", "SCENE"), ("props", "PROP")):
+                for item in draft.get("assets", {}).get(kind_key, []):
+                    name = str(item.get("name") or "").strip()
+                    if not name:
+                        continue
+                    existing = connection.execute(
+                        """SELECT 1 FROM story_assets WHERE project_id=? AND kind=?
+                           AND status='ACTIVE' AND lower(name)=lower(?) LIMIT 1""",
+                        (project_id, kind, name),
+                    ).fetchone()
+                    (asset_reuse if existing else asset_add).append(f"{kind}:{name}")
+        produced = [str(item["code"]) for item in episode_rows if int(item["shot_count"] or 0) > 0]
+        context_changes = produced if produced and ({"STORY_BIBLE", "ASSET_PROPOSALS"} & set(selected)) else []
+        payload = {
+            "schema_version": "pipeline-apply-impact/v1",
+            "project_id": project_id,
+            "run_id": run_id,
+            "run_revision": run_revision,
+            "sections": selected,
+            "episodes": episodes,
+            "story_bible": {
+                "will_create": "STORY_BIBLE" in selected and bible is None,
+                "will_switch_current_revision": "STORY_BIBLE" in selected and bible is not None,
+                "previous_revision_id": str(bible["current_revision_id"]) if bible else None,
+            },
+            "assets": {"reuse": sorted(asset_reuse), "add": sorted(asset_add)},
+            "produced_episode_context_changes": context_changes,
+            "requires_confirmation": bool(
+                episodes["preserve"]
+                or ("STORY_BIBLE" in selected and bible is not None)
+                or context_changes
+            ),
+            "writes_performed": False,
+        }
+        payload["impact_sha256"] = _sha(_json(payload))
+        return payload
+
+    def preview_pipeline_apply(
+        self,
+        project_id: str,
+        run_id: str,
+        *,
+        expected_revision: int,
+        sections: list[str],
+    ) -> dict[str, Any]:
+        selected = list(dict.fromkeys(section.upper() for section in sections))
+        if not selected or set(selected) - PIPELINE_SECTIONS:
+            raise DomainRuleError("PIPELINE_APPLY_SECTIONS_INVALID", "请选择至少一个可应用内容")
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM pipeline_runs WHERE id=? AND project_id=?", (run_id, project_id)
+            ).fetchone()
+            if row is None:
+                raise DomainRuleError("PIPELINE_RUN_NOT_FOUND", "草案运行记录不存在")
+            if int(row["revision"]) != expected_revision:
+                raise DomainRuleError("PIPELINE_REVISION_CONFLICT", "草案已更新，请刷新后再预览")
+            if str(row["state"]) != "SUCCEEDED" or str(_safe_col(row, "apply_state", "NOT_APPLIED")) != "NOT_APPLIED":
+                raise DomainRuleError("PIPELINE_STATE_INVALID", "当前草案不能预览应用")
+            draft = _parse_json(_safe_col(row, "draft_json", "{}"), {})
+            quality = _pipeline_quality_report(draft)
+            stored_quality = _parse_json(_safe_col(row, "quality_report_json", "{}"), {})
+            if stored_quality.get("rule_version") != "pipeline-quality/v2":
+                quality["checks"].append(
+                    {
+                        "code": "QUALITY_RULE_CURRENT",
+                        "label": "草案使用当前质量规则复核",
+                        "severity": "BLOCKER",
+                        "applicable": True,
+                        "passed": False,
+                    }
+                )
+                quality["blockers"].append("旧版质量报告需要重新生成草案")
+                quality["status"] = "BLOCKED"
+            source_version_id = str(row["source_document_version_id"] or "")
+            source = connection.execute(
+                """SELECT v.text_sha256,v.extracted_text_rel,p.root_rel
+                   FROM source_document_versions v
+                   JOIN source_documents d ON d.id=v.source_document_id
+                   JOIN projects p ON p.id=d.project_id
+                   WHERE v.id=? AND d.project_id=?""",
+                (source_version_id, project_id),
+            ).fetchone()
+            input_snapshot = _parse_json(row["input_snapshot_json"], {})
+            draft_source = draft.get("source") if isinstance(draft.get("source"), dict) else {}
+            expected_source_sha = str(input_snapshot.get("source_sha256") or "")
+            source_current = bool(
+                source is not None
+                and str(draft_source.get("document_version_id") or "") == source_version_id
+                and str(draft_source.get("sha256") or "") == expected_source_sha
+                and str(source["text_sha256"] or "") == expected_source_sha
+            )
+            if source_current:
+                try:
+                    source_path = controlled_path(
+                        self.settings.projects_root / str(source["root_rel"]),
+                        str(source["extracted_text_rel"] or ""),
+                        must_exist=True,
+                        require_file=True,
+                        code="PIPELINE_SOURCE_CHANGED",
+                    )
+                    source_current = hashlib.sha256(source_path.read_bytes()).hexdigest() == expected_source_sha
+                except (DomainRuleError, OSError):
+                    source_current = False
+            quality["checks"].append(
+                {
+                    "code": "SOURCE_CURRENT",
+                    "label": "当前原稿仍与草案冻结版本一致",
+                    "severity": "BLOCKER",
+                    "applicable": True,
+                    "passed": source_current,
+                }
+            )
+            if not source_current:
+                quality["blockers"].append("当前原稿已变化，不能应用旧草案")
+                quality["status"] = "BLOCKED"
+            impact = self._pipeline_application_impact(
+                connection,
+                project_id=project_id,
+                run_id=run_id,
+                run_revision=expected_revision,
+                draft=draft,
+                selected=selected,
+            )
+        return {"impact": impact, "quality_report": quality, "can_apply": not quality["blockers"]}
+
     def apply_pipeline(
         self,
         project_id: str,
@@ -792,6 +1362,7 @@ class PipelineOrchestratorService:
         *,
         expected_revision: int,
         sections: list[str],
+        expected_impact_sha256: str,
         actor: str = "local-user",
     ) -> dict[str, Any]:
         selected = list(dict.fromkeys(section.upper() for section in sections))
@@ -819,11 +1390,70 @@ class PipelineOrchestratorService:
             if str(_safe_col(row, "apply_state", "NOT_APPLIED")) == "APPLIED":
                 raise DomainRuleError("PIPELINE_ALREADY_APPLIED", "该草案已经应用过")
             draft = _parse_json(_safe_col(row, "draft_json", "{}"), {})
-            quality = _parse_json(_safe_col(row, "quality_report_json", "{}"), {})
+            stored_quality = _parse_json(_safe_col(row, "quality_report_json", "{}"), {})
             if draft.get("schema_version") not in {"pipeline.story-draft.v2", "pipeline.story-plan.v3"}:
                 raise DomainRuleError("PIPELINE_DRAFT_VERSION_UNSUPPORTED", "旧版草案不能安全应用，请生成新版本")
+            if stored_quality.get("rule_version") != "pipeline-quality/v2":
+                raise DomainRuleError("PIPELINE_QUALITY_VERSION_UNSUPPORTED", "旧版质量报告不能用于当前应用，请重新生成草案")
+            quality = _pipeline_quality_report(draft)
             if quality.get("blockers"):
                 raise DomainRuleError("PIPELINE_QUALITY_BLOCKED", "草案仍有阻断问题，暂不能应用")
+            impact = self._pipeline_application_impact(
+                connection,
+                project_id=project_id,
+                run_id=run_id,
+                run_revision=expected_revision,
+                draft=draft,
+                selected=selected,
+            )
+            if impact["impact_sha256"] != expected_impact_sha256:
+                raise DomainRuleError("PIPELINE_APPLY_IMPACT_CONFLICT", "应用影响已变化，请重新预览后确认")
+
+            source_version_id = str(row["source_document_version_id"] or "").strip()
+            source = connection.execute(
+                """SELECT v.text_sha256,v.extracted_text_rel,p.root_rel FROM source_document_versions v
+                JOIN source_documents d ON d.id=v.source_document_id
+                JOIN projects p ON p.id=d.project_id
+                WHERE v.id=? AND d.project_id=?""",
+                (source_version_id, project_id),
+            ).fetchone()
+            committed_import = connection.execute(
+                """SELECT i.id FROM import_sessions i
+                WHERE i.project_id=? AND i.source_document_version_id=?
+                AND EXISTS (SELECT 1 FROM audit_events ae
+                  WHERE ae.action='IMPORT_SESSION_COMMITTED'
+                  AND ae.subject_type='import_session' AND ae.subject_id=i.id)
+                ORDER BY i.updated_at DESC,i.id DESC LIMIT 1""",
+                (project_id, source_version_id),
+            ).fetchone()
+            if source is None or committed_import is None:
+                raise DomainRuleError(
+                    "PIPELINE_SOURCE_BINDING_REQUIRED",
+                    "规划草案缺少可验证的已提交原稿版本，不能写入分集。",
+                )
+            input_snapshot = _parse_json(row["input_snapshot_json"], {})
+            draft_source = draft.get("source") if isinstance(draft.get("source"), dict) else {}
+            expected_source_sha = str(input_snapshot.get("source_sha256") or "")
+            if (
+                str(draft_source.get("document_version_id") or "") != source_version_id
+                or str(draft_source.get("sha256") or "") != expected_source_sha
+                or str(source["text_sha256"] or "") != expected_source_sha
+            ):
+                raise DomainRuleError("PIPELINE_SOURCE_CHANGED", "规划草案的原稿身份已变化，不能应用")
+            source_path = controlled_path(
+                self.settings.projects_root / str(source["root_rel"]),
+                str(source["extracted_text_rel"] or ""),
+                must_exist=True,
+                require_file=True,
+                code="PIPELINE_SOURCE_CHANGED",
+            )
+            if hashlib.sha256(source_path.read_bytes()).hexdigest() != expected_source_sha:
+                raise DomainRuleError("PIPELINE_SOURCE_CHANGED", "规划草案的原稿文件已变化，不能应用")
+            source_binding = {
+                "source_document_version_id": source_version_id,
+                "import_session_id": str(committed_import["id"]),
+                "text_sha256": str(source["text_sha256"] or ""),
+            }
 
             episode_ids: dict[int, str] = {}
             if "STORY_PLAN" in selected or "SCRIPT_BREAKDOWN" in selected:
@@ -856,7 +1486,7 @@ class PipelineOrchestratorService:
                                     WHERE id=?""",
                                     (
                                         str(item["title"])[:200], int(row["target_episode_duration_seconds"]) * 1000,
-                                        _json({"start_paragraph": item.get("source_start_paragraph"), "end_paragraph": item.get("source_end_paragraph")}),
+                                        _json({"start_paragraph": item.get("source_start_paragraph"), "end_paragraph": item.get("source_end_paragraph"), **source_binding}),
                                         now, episode_id,
                                     ),
                                 )
@@ -871,7 +1501,7 @@ class PipelineOrchestratorService:
                         (
                             episode_id, season_id, number, number, str(item["code"]), str(item["title"])[:200],
                             int(row["target_episode_duration_seconds"]) * 1000,
-                            _json({"start_paragraph": item.get("source_start_paragraph"), "end_paragraph": item.get("source_end_paragraph")}),
+                            _json({"start_paragraph": item.get("source_start_paragraph"), "end_paragraph": item.get("source_end_paragraph"), **source_binding}),
                             now, now, actor,
                         ),
                     )
@@ -1015,4 +1645,9 @@ class PipelineOrchestratorService:
                 VALUES (?,'writer','STORY_PIPELINE_APPLIED','pipeline_run',?,'质量检查后应用全剧规划',?)""",
                 (actor, run_id, _json({"sections": selected, "created": created})),
             )
-        return {"run": self.get_pipeline(project_id, run_id), "created": created, "sections": selected}
+        return {
+            "run": self.get_pipeline(project_id, run_id),
+            "created": created,
+            "sections": selected,
+            "impact": {**impact, "writes_performed": True},
+        }

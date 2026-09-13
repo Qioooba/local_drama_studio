@@ -134,7 +134,14 @@ class NetworkE2EService:
                 comfy.object_info()
                 comfy.queue()
                 comfy.history("local-network-harness")
-                llm = LocalLLMClient(base_url=base_url, model="local-test-model")
+                # This harness advertises the Ollama-native tags/generate
+                # contract.  Keep the transport explicit so a default-provider
+                # change cannot silently reduce the zero-egress coverage.
+                llm = LocalLLMClient(
+                    base_url=base_url,
+                    model="local-test-model",
+                    provider="OLLAMA_LOOPBACK",
+                )
                 llm.probe(load_test=True)
                 status, details = _probe_loopback(base_url)
                 if status != "PASS":

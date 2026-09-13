@@ -60,6 +60,26 @@ class LLMProbeResponse(BaseModel):
     available_models: list[str] = Field(default_factory=list, description="Available models returned by endpoint")
 
 
+class PipelineApplicationAuthorization(BaseModel):
+    endpoint: str = Field(description="DRAFT_ONLY 或 APPLY_SELECTED_SECTIONS")
+    sections: list[str] = Field(default_factory=list, max_length=4)
+
+    @model_validator(mode="after")
+    def validate_authorization(self) -> "PipelineApplicationAuthorization":
+        endpoint = self.endpoint.strip().upper()
+        allowed = {"STORY_PLAN", "STORY_BIBLE", "ASSET_PROPOSALS", "SCRIPT_BREAKDOWN"}
+        sections = list(dict.fromkeys(item.strip().upper() for item in self.sections))
+        if endpoint not in {"DRAFT_ONLY", "APPLY_SELECTED_SECTIONS"}:
+            raise ValueError("endpoint 必须是 DRAFT_ONLY 或 APPLY_SELECTED_SECTIONS")
+        if endpoint == "DRAFT_ONLY" and sections:
+            raise ValueError("DRAFT_ONLY 不能授权应用 sections")
+        if endpoint == "APPLY_SELECTED_SECTIONS" and (not sections or any(item not in allowed for item in sections)):
+            raise ValueError("自动应用必须明确授权至少一个有效 section")
+        self.endpoint = endpoint
+        self.sections = sections
+        return self
+
+
 class StartPipelineRequest(BaseModel):
     source_document_version_id: str | None = Field(default=None, description="已导入原稿版本ID")
     raw_text: str | None = Field(default=None, description="直接提交的原始文本内容")
@@ -69,6 +89,10 @@ class StartPipelineRequest(BaseModel):
     auto_run_rendering: bool = Field(default=False, description="已废弃：是否全自动渲染（忽略）")
     capability_profile_version_id: str | None = Field(default=None, description="选定的本机 LLM 方案版本ID")
     llm_config: LLMConfig | None = Field(default=None, description="选定的 AI 大模型参数配置")
+    application_authorization: PipelineApplicationAuthorization = Field(
+        default_factory=lambda: PipelineApplicationAuthorization(endpoint="DRAFT_ONLY"),
+        description="本次运行的具体应用终点；旧客户端默认只生成草案",
+    )
 
     @field_validator("visual_style")
     @classmethod
@@ -130,6 +154,7 @@ class PipelinePreflightRequest(BaseModel):
 
 class ApplyPipelineRequest(BaseModel):
     expected_revision: int = Field(ge=1)
+    expected_impact_sha256: str = Field(min_length=64, max_length=64)
     sections: list[str] = Field(min_length=1, max_length=4)
 
     @field_validator("sections")
@@ -140,6 +165,26 @@ class ApplyPipelineRequest(BaseModel):
         if not normalized or any(item not in allowed for item in normalized):
             raise ValueError("sections 包含不支持的应用内容")
         return normalized
+
+
+class PreviewPipelineApplyRequest(BaseModel):
+    expected_revision: int = Field(ge=1)
+    sections: list[str] = Field(min_length=1, max_length=4)
+
+    @field_validator("sections")
+    @classmethod
+    def validate_sections(cls, value: list[str]) -> list[str]:
+        allowed = {"STORY_PLAN", "STORY_BIBLE", "ASSET_PROPOSALS", "SCRIPT_BREAKDOWN"}
+        normalized = list(dict.fromkeys(item.strip().upper() for item in value))
+        if not normalized or any(item not in allowed for item in normalized):
+            raise ValueError("sections 包含不支持的应用内容")
+        return normalized
+
+
+class PipelineApplyPreviewResponse(BaseModel):
+    impact: dict[str, object]
+    quality_report: dict[str, object]
+    can_apply: bool
 
 
 class RetryPipelineRequest(BaseModel):

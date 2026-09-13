@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="30" time="77.380" timestamp="2026-09-13T19:47:50.542234+08:00" hostname="x99"><testcase classname="tests.test_comfy_jobs" name="test_scalar_parameters_require_explicit_semantic_bindings" time="2.044" /><testcase classname="tests.test_comfy_jobs" name="test_runtime_settings_resolve_only_declared_roles_and_preserve_seed_zero" time="1.860" /><testcase classname="tests.test_comfy_jobs" name="test_runtime_semantic_compilation_does_not_touch_second_sampler_or_reference_scale" time="1.832" /><testcase classname="tests.test_comfy_jobs" name="test_ambiguous_submit_is_quarantined_and_never_blindly_resubmitted" time="2.265" /><testcase classname="tests.test_comfy_jobs" name="test_crash_during_provider_submit_is_reconciled_as_uncertain" time="2.103" /><testcase classname="tests.test_comfy_jobs" name="test_production_wait_budget_allows_success_after_301_seconds" time="2.060" /><testcase classname="tests.test_comfy_jobs" name="test_poll_maps_live_comfy_queue_state_before_history_exists" time="2.120" /><testcase classname="tests.test_comfy_jobs" name="test_interrupt_refuses_shared_runtime_and_late_success_cannot_finalize" time="2.288" /><testcase classname="tests.test_comfy_jobs" name="test_output_collection_failure_reuses_original_prompt_without_resampling" time="2.146" /><testcase classname="tests.test_comfy_jobs" name="test_poll_closes_attempt_when_comfy_runtime_dies" time="2.320" /><testcase classname="tests.test_comfy_jobs" name="test_poll_survives_busy_comfy_runtime_within_grace" time="2.569" /><testcase classname="tests.test_comfy_jobs" name="test_busy_grace_clock_resets_after_runtime_responds" time="2.318" /><testcase classname="tests.test_comfy_jobs" name="test_poll_closes_attempt_immediately_on_connection_refused" time="2.346" /><testcase classname="tests.test_comfy_jobs" name="test_background_recovery_finds_provider_success_without_manual_attempt_id" time="2.325" /><testcase classname="tests.test_comfy_jobs" name="test_submit_materializes_verified_media_binding_inside_isolated_input_root[roles0]" time="3.118" /><testcase classname="tests.test_comfy_jobs" name="test_submit_materializes_verified_media_binding_inside_isolated_input_root[roles1]" time="3.488" /><testcase classname="tests.test_comfy_jobs" name="test_submit_drops_undeclared_metadata_roles_but_compiles_declared_ones" time="2.641" /><testcase classname="tests.test_comfy_jobs" name="test_run_once_binds_worker_session_and_polls_to_success" time="2.548" /><testcase classname="tests.test_episode_worker_actions" name="test_keyframe_action_dispatches_shared_batch_and_preserves_job_dependencies" time="2.157" /><testcase classname="tests.test_episode_worker_actions" name="test_keyframe_action_reuses_approval_and_blocks_partial_plan" time="2.184" /><testcase classname="tests.test_episode_worker_actions" name="test_video_action_retries_only_the_failed_shot_job" time="2.178" /><testcase classname="tests.test_episode_worker_actions" name="test_video_action_refreshes_stale_working_media_instead_of_reusing_verified_history" time="2.080" /><testcase classname="tests.test_episode_worker_actions" name="test_operation_impact_distinguishes_retry_new_take_and_recompose_without_writes" time="2.088" /><testcase classname="tests.test_episode_worker_actions" name="test_qc_pass_with_adoption_blocker_pauses_production" time="1.894" /><testcase classname="tests.test_episode_worker_actions" name="test_older_qc_pass_candidate_beats_newer_failed_candidate" time="1.910" /><testcase classname="tests.test_episode_worker_actions" name="test_shot_video_queries_ignore_stale_variants_without_cross_project_candidate_leakage" time="2.225" /><testcase classname="tests.test_episode_worker_actions" name="test_qc_action_persists_machine_evidence_without_human_approval" time="2.248" /><testcase classname="tests.test_episode_worker_actions" name="test_qc_reroll_limit_resolver_defaults_to_one_and_is_bounded" time="1.736" /><testcase classname="tests.test_frame_bridge_source_frame" name="test_frame_bridge_binds_real_last_frame_to_outgoing_boundary" time="5.964"><failure message="assert 404 == 405&#10; +  where 404 = &lt;Response [404 Not Found]&gt;.status_code">workspace = Settings(app_name='LocalDramaStudio', app_version='0.1.0', environment='development', instance_id='default', install_p...al_drama_studio'), instance_root=WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/local_drama_studio'), config_path=None)
+database = &lt;local_drama.infrastructure.database.sqlite.Database object at 0x000001F9D6E9E1B0&gt;
+
+    def test_frame_bridge_binds_real_last_frame_to_outgoing_boundary(workspace, database) -&gt; None:
+        projects = ProjectService(database, workspace.projects_root)
+        project = projects.create_project(code="bridge_tail", title="Bridge tail", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1, target_duration_ms=2000, allow_unconfigured_capabilities=True)
+        season = projects.list_seasons(str(project["id"]))[0]
+        episode = projects.list_episodes(str(season["id"]))[0]
+        first = projects.create_shot(str(episode["id"]), "S001", 1000)
+        second = projects.create_shot(str(episode["id"]), "S002", 1000)
+        source = workspace.work_root / "bridge-tail.mp4"
+        subprocess.run([workspace.ffmpeg_path, "-f", "lavfi", "-i", "color=c=navy:s=32x32:d=1", "-pix_fmt", "yuv420p", "-y", str(source)], check=True, capture_output=True)
+        media = MediaService(database, workspace).import_file(str(project["id"]), source, owner_type="SHOT", owner_id=str(first["id"]), media_kind="VIDEO", purpose="SHOT_VIDEO")
+        current_source = workspace.work_root / "bridge-current.png"
+        subprocess.run([workspace.ffmpeg_path, "-f", "lavfi", "-i", "color=c=red:s=32x32", "-frames:v", "1", "-y", str(current_source)], check=True, capture_output=True)
+        current_media = MediaService(database, workspace).import_file(str(project["id"]), current_source, owner_type="SHOT", owner_id=str(second["id"]), media_kind="IMAGE", purpose="KEYFRAME")
+        timeline = TimelineService(database, workspace)
+        last = timeline.create_frame_anchor(str(media["media_version_id"]), position_mode="LAST_FRAME", role_hint="LAST_FRAME")
+        first_frame = timeline.create_frame_anchor(str(media["media_version_id"]), position_mode="FIRST_FRAME", role_hint="FIRST_FRAME")
+        static_end = timeline.create_frame_anchor(str(current_media["media_version_id"]), position_mode="LAST_FRAME", role_hint="LAST_FRAME")
+        assert static_end["source_media_version_id"] == current_media["media_version_id"]
+        assert static_end["extracted_media_version_id"] == current_media["media_version_id"]
+        assert static_end["extraction_method"] == "STATIC_IMAGE_REFERENCE"
+        transition = timeline.create_transition_constraint(str(first["id"]), str(second["id"]), "START_FROM_PREVIOUS_LAST", enforcement="ADVISORY")
+        commands = FrameBridgeCommandService(database)
+
+        with TestClient(create_app(workspace)) as client:
+            response = client.post(
+                f"/api/v2/frame-bridges/{transition['id']}:set-source-frame",
+                json={"expected_boundary_revision": 1, "frame_anchor_id": last["id"], "idempotency_key": "bridge-source-1"},
+            )
+            replay = client.post(
+                f"/api/v2/frame-bridges/{transition['id']}:set-source-frame",
+                json={"expected_boundary_revision": 1, "frame_anchor_id": last["id"], "idempotency_key": "bridge-source-1"},
+            )
+            mismatch = client.post(
+                f"/api/v2/frame-bridges/{transition['id']}:set-source-frame",
+                json={"expected_boundary_revision": 1, "frame_anchor_id": first_frame["id"], "idempotency_key": "bridge-source-1"},
+            )
+            retired = client.post(
+                f"/api/v1/frame-bridges/{transition['id']}/source-frame",
+                json={"expected_boundary_revision": 1, "frame_anchor_id": last["id"]},
+            )
+        assert response.status_code == 200, response.text
+        result = response.json()["frame_bridge"]
+
+        assert result["from_anchor_id"] == last["id"]
+        assert result["boundary_revision"] == 2
+        assert result["compatibility_status"] == "PENDING_REVIEW"
+        assert result["idempotent_replay"] is False
+        assert replay.status_code == 200, replay.text
+        assert replay.json()["frame_bridge"]["idempotent_replay"] is True
+        assert replay.json()["frame_bridge"]["boundary_revision"] == 2
+        assert mismatch.status_code == 409, mismatch.text
+        assert mismatch.json()["error"]["code"] == "FRAME_BRIDGE_IDEMPOTENCY_MISMATCH"
+&gt;       assert retired.status_code == 405
+E       assert 404 == 405
+E        +  where 404 = &lt;Response [404 Not Found]&gt;.status_code
+
+apps\api\tests\test_frame_bridge_source_frame.py:70: AssertionError</failure></testcase><testcase classname="tests.test_frame_bridge_source_frame" name="test_frame_bridge_projects_first_working_keyframe_and_prioritizes_explicit_transition" time="3.991" /></testsuite></testsuites>

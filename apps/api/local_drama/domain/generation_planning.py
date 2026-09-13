@@ -110,6 +110,16 @@ def frozen_generation_contract(
 def effective_configuration_snapshot(configuration: Mapping[str, Any]) -> dict[str, Any]:
     profile = configuration.get("profile")
     override_schema = profile.get("override_schema") if isinstance(profile, dict) else None
+    runtime_bindings: dict[str, str] = {}
+    if isinstance(override_schema, dict):
+        fields = override_schema.get("fields")
+        if isinstance(fields, dict):
+            for setting_name, raw_field in fields.items():
+                if not isinstance(raw_field, dict):
+                    continue
+                role = raw_field.get("runtime_binding")
+                if isinstance(role, str) and role.strip():
+                    runtime_bindings[str(setting_name)] = role.strip()
     return {
         "schema_version": "localdrama.effective-configuration-snapshot.v1",
         "fingerprint": configuration["fingerprint"],
@@ -120,4 +130,8 @@ def effective_configuration_snapshot(configuration: Mapping[str, Any]) -> dict[s
         "warnings": configuration.get("warnings", []),
         "runtime_status": configuration.get("runtime_status", "UNKNOWN"),
         "override_schema_version": override_schema.get("schema_version") if isinstance(override_schema, dict) else None,
+        # Freeze the setting -> semantic role mapping used by the published
+        # Profile.  The worker must not rediscover this from a newer schema or
+        # scan arbitrary graph fields by name.
+        "runtime_bindings": runtime_bindings,
     }

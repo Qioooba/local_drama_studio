@@ -9,12 +9,12 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, cast
 
+from local_drama.application.ports.database import DatabaseUnitOfWork
 from local_drama.application.production_spec_resolution import effective_video_profile
 from local_drama.domain.director_intent import normalize_director_intent_v3, validate_director_intent_v3_payload
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.generation_contracts import CameraPlan, resolve_camera_plan
 from local_drama.domain.policies import validate_shot_ready
-from local_drama.infrastructure.database.sqlite import Database
 
 
 def _now() -> str:
@@ -45,7 +45,7 @@ class EpisodeShotReadyService:
     the existing revision or media history.
     """
 
-    def __init__(self, database: Database) -> None:
+    def __init__(self, database: DatabaseUnitOfWork) -> None:
         self.database = database
 
     @staticmethod
@@ -64,15 +64,13 @@ class EpisodeShotReadyService:
         parameter_schema = profile.get("parameter_schema")
         capabilities = parameter_schema.get("capabilities", {}) if isinstance(parameter_schema, dict) else {}
         camera = capabilities.get("camera", {}) if isinstance(capabilities, dict) else {}
-        support = str(
-            camera.get("support", "PROMPT_FALLBACK" if "camera" not in capabilities else "UNSUPPORTED")
-        ) if isinstance(camera, dict) else "UNSUPPORTED"
+        support = (
+            str(camera.get("support", "PROMPT_FALLBACK" if "camera" not in capabilities else "UNSUPPORTED")) if isinstance(camera, dict) else "UNSUPPORTED"
+        )
         if support not in {"NATIVE", "PROMPT_FALLBACK", "UNSUPPORTED"}:
             raise DomainRuleError("PROFILE_CAMERA_CONTRACT_INVALID", "Profile camera capability support 无效")
         fallback = support == "PROMPT_FALLBACK" and (
-            camera.get("prompt_fallback", True)
-            if "prompt_fallback" not in camera
-            else camera.get("prompt_fallback") is True
+            camera.get("prompt_fallback", True) if "prompt_fallback" not in camera else camera.get("prompt_fallback") is True
         )
         if support == "PROMPT_FALLBACK" and not fallback:
             raise DomainRuleError("PROFILE_CAMERA_FALLBACK_INVALID", "Camera prompt fallback 必须由 Profile 显式声明")
@@ -113,19 +111,6 @@ class EpisodeShotReadyService:
             curve=current_camera.curve,
             profile_version_id=profile_id,
         )
-        if resolved.mode == "UNSUPPORTED":
-            # If native camera control is unsupported by this profile, fallback to prompt-based camera control
-            resolved = CameraPlan(
-                mode="PROMPT_FALLBACK",
-                shot_type=current_camera.shot_type,
-                movement=current_camera.movement,
-                prompt_text=current_camera.prompt_text or f"平稳运镜 {current_camera.movement}，聚焦主体与场景光影",
-                direction=current_camera.direction,
-                intensity=current_camera.intensity,
-                curve=current_camera.curve,
-                profile_version_id=profile_id,
-            )
-            resolved.validate()
         normalized["camera_plan"] = resolved.to_dict()
         validate_shot_ready(normalized)
         return normalized
@@ -191,19 +176,23 @@ class EpisodeShotReadyService:
                     fields = _decode(shot["fields_json"], None)
                     normalized = self._resolve_fields(fields, profile, auto_heal=auto_heal)
                 except DomainRuleError as error:
-                    failures.append({
-                        "shot_id": str(shot["id"]),
-                        "shot_code": str(shot["code"]),
-                        "code": error.code,
-                        "message": error.message,
-                    })
+                    failures.append(
+                        {
+                            "shot_id": str(shot["id"]),
+                            "shot_code": str(shot["code"]),
+                            "code": error.code,
+                            "message": error.message,
+                        }
+                    )
                 except (TypeError, ValueError, json.JSONDecodeError) as error:
-                    failures.append({
-                        "shot_id": str(shot["id"]),
-                        "shot_code": str(shot["code"]),
-                        "code": "SHOT_REVISION_INVALID",
-                        "message": f"镜头导演意图无法解析：{type(error).__name__}",
-                    })
+                    failures.append(
+                        {
+                            "shot_id": str(shot["id"]),
+                            "shot_code": str(shot["code"]),
+                            "code": "SHOT_REVISION_INVALID",
+                            "message": f"镜头导演意图无法解析：{type(error).__name__}",
+                        }
+                    )
                 else:
                     validated.append((shot, normalized))
             if failures:
@@ -217,10 +206,12 @@ class EpisodeShotReadyService:
             ready_ids: list[str] = []
             for shot, fields in validated:
                 revision_id = str(uuid.uuid4())
-                revision_no = int(connection.execute(
-                    "SELECT COALESCE(MAX(revision_no),0)+1 FROM shot_revisions WHERE shot_id=?",
-                    (str(shot["id"]),),
-                ).fetchone()[0])
+                revision_no = int(
+                    connection.execute(
+                        "SELECT COALESCE(MAX(revision_no),0)+1 FROM shot_revisions WHERE shot_id=?",
+                        (str(shot["id"]),),
+                    ).fetchone()[0]
+                )
                 connection.execute(
                     """INSERT INTO shot_revisions
                     (id,shot_id,revision_no,fields_json,is_frozen,created_at,updated_at,created_by,revision,schema_version)
@@ -257,17 +248,31 @@ class EpisodeShotReadyService:
                 "failed_shots": [],
                 "idempotent_replay": False,
             }
+            role_context = "automation" if auto_heal else "director"
+            audit_action = "EPISODE_SHOTS_AUTO_HEALED_READY" if auto_heal else "EPISODE_SHOTS_MARKED_READY"
+            decision_kind = "AUTOMATED_TECHNICAL_COMPLETION" if auto_heal else "HUMAN_CONFIRMATION"
+            summary = "自动补齐缺失技术字段后批量标记本集当前分镜方案为可生产" if auto_heal else "人工确认后批量标记本集当前分镜方案为可生产"
             connection.execute(
                 """INSERT INTO audit_events
                 (actor,role_context,action,subject_type,subject_id,before_revision,after_revision,summary,metadata_redacted_json)
-                VALUES (?,'director','EPISODE_SHOTS_MARKED_READY','episode',?,?,?,?,?)""",
+                VALUES (?,?,?,?,?,?,?,?,?)""",
                 (
                     actor,
+                    role_context,
+                    audit_action,
+                    "episode",
                     episode_id,
                     expected_episode_revision,
                     expected_episode_revision + 1,
-                    "人工确认后批量标记本集当前分镜方案为可生产",
-                    _json({"episode_id": episode_id, "ready_shot_count": len(ready_ids), "profile_version_id": profile["id"]}),
+                    summary,
+                    _json(
+                        {
+                            "episode_id": episode_id,
+                            "ready_shot_count": len(ready_ids),
+                            "profile_version_id": profile["id"],
+                            "decision_kind": decision_kind,
+                        }
+                    ),
                 ),
             )
             connection.execute(

@@ -1,0 +1,24 @@
+{
+  "schema_version": "g10.h3_comfy_job_uat.v1",
+  "status": "BLOCKED",
+  "runtime": {
+    "endpoint": "http://127.0.0.1:8188",
+    "endpoint_local": true,
+    "runtime_contacted": true,
+    "network_contacted": false,
+    "production_database_contacted": false,
+    "production_mutated": false
+  },
+  "failure": {
+    "type": "AttributeError",
+    "stage": "platform_comfy_job"
+  },
+  "diagnostic": {
+    "message": "'ReviewService' object has no attribute 'formal_selection_preflight'",
+    "traceback": "Traceback (most recent call last):\n  File \"F:\\AI_Projects\\h3\\local_drama_studio\\scripts\\h3_comfy_job_uat.py\", line 288, in main\n    payload = run(\n              ^^^^\n  File \"F:\\AI_Projects\\h3\\local_drama_studio\\scripts\\h3_comfy_job_uat.py\", line 241, in run\n    plan = reviews.formal_selection_preflight(project_id, [media_id])\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'ReviewService' object has no attribute 'formal_selection_preflight'\n"
+  },
+  "limitations": [
+    "本次平台 Comfy Job UAT 在真实本机运行时失败，未将失败伪装成生成成功。",
+    "请检查隔离 Comfy stderr/runtime 资源后重跑；外部 native 节点生成与平台正式媒体链证据仍分别保留。"
+  ]
+}

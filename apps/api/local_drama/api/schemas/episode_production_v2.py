@@ -84,6 +84,15 @@ class EpisodePlanningJobFact(StrictModel):
     error_message: str | None = None
 
 
+class ProductionStageSummaryFact(StrictModel):
+    total: int = Field(ge=0)
+    completed: int = Field(ge=0)
+    running: int = Field(ge=0)
+    attention: int = Field(ge=0)
+    stale: int = Field(ge=0)
+    requires_confirmation: int = Field(ge=0)
+
+
 class EpisodeProductionOverviewFact(StrictModel):
     episode_id: str
     episode_revision: int = Field(ge=1)
@@ -99,6 +108,7 @@ class EpisodeProductionOverviewFact(StrictModel):
     planning_job: EpisodePlanningJobFact | None = None
     next_action: str
     state_counts: dict[str, int]
+    stage_summary: dict[ProductionStageCode, ProductionStageSummaryFact] = Field(default_factory=dict)
     active_run: EpisodeProductionRunSummary | None = None
     allowed_actions: list[str]
     # Resolved episode contract.  These fields are optional for compatibility
@@ -114,6 +124,7 @@ class EpisodeProductionOverviewFact(StrictModel):
     replan_reasons: list[JsonObject] = []
     replan_draft: JsonObject | None = None
     replan_job: JsonObject | None = None
+    available_mode_policies: dict[str, JsonObject] = Field(default_factory=dict)
 
 
 class EpisodeProductionOverviewResponse(StrictModel):
@@ -164,6 +175,16 @@ class EpisodeProductionPrepareFact(StrictModel):
 
 class EpisodeProductionPrepareResponse(StrictModel):
     preparation: EpisodeProductionPrepareFact
+
+
+class EpisodeOperationImpactRequest(StrictModel):
+    operation: Literal["CONTINUE_UNFINISHED", "RETRY_ORIGINAL", "NEW_TAKE", "RECOMPOSE_ONLY"]
+    target_shot_ids: list[str] = Field(default_factory=list, max_length=100)
+    target_take_count: int = Field(default=1, ge=1, le=4)
+
+
+class EpisodeOperationImpactResponse(StrictModel):
+    impact: JsonObject
 
 
 class EpisodeProductionReplanRequest(StrictModel):
@@ -298,6 +319,7 @@ class WholeDramaStatusResponse(StrictModel):
     project_code: str
     project_title: str
     overall_status: str
+    state_counts: dict[str, int] = Field(default_factory=dict)
     total_episodes: int
     episodes: list[WholeDramaEpisodeStatusFact]
 
@@ -323,6 +345,7 @@ class WholeDramaPrepareResponse(StrictModel):
 
 
 class WholeDramaRunRequest(StrictModel):
+    episode_ids: list[str] | None = Field(default=None, min_length=1, max_length=2)
     tts_enabled: bool = True
     production_mode: str = "BALANCED"
     checkpoint_policy: str = "ON_EXCEPTION"
@@ -346,4 +369,7 @@ class WholeDramaRunResponse(StrictModel):
     dispatched_runs: list[WholeDramaDispatchedRunFact]
     total_episodes: int
     dispatched_count: int
-
+    blocked_count: int
+    dispatch_status: str
+    dispatch_reason: str | None = None
+    idempotent_replay: bool = False

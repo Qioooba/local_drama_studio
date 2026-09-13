@@ -29,6 +29,24 @@ def _workflow(service: EpisodeProductionRunService, project: dict, episode: dict
     )
 
 
+def _complete_first_task_and_step(service, workspace, database, run, worker: str):
+    jobs = JobService(database, workspace)
+    first_job_id = str(run["tasks"][0]["job_id"])
+    claim = jobs.claim(worker, ["CPU"])
+    assert claim is not None and claim["job"]["id"] == first_job_id
+    jobs.complete(
+        str(claim["attempt"]["id"]),
+        str(claim["attempt"]["lease_token"]),
+        worker,
+        success=True,
+    )
+    return service.automation.step_run(
+        str(run["id"]),
+        machine_context={"status": "PASS", "machine_check": {"status": "PASS"}},
+        expected_completed_job_id=first_job_id,
+    )
+
+
 def test_checkpoint_policy_is_validated_fingerprinted_and_frozen(workspace, database) -> None:
     project, episode = _episode(workspace, database, "checkpoint_snapshot")
     service = EpisodeProductionRunService(database, workspace)
@@ -59,28 +77,32 @@ def test_creator_checkpoint_gates_first_production_task_and_resume_consumes_once
         str(workflow["id"]), plan_hash=str(workflow["plan_hash"]), idempotency_key=f"run-{policy}",
     )
 
-    assert run["status"] == "PAUSED_HITL"
-    assert run["pending_gate"] == {
+    assert run["status"] == "RUNNING"
+    assert run["tasks"][0]["item"]["payload"]["action"] == "KEYFRAME_GENERATION"
+    gated = _complete_first_task_and_step(service, workspace, database, run, f"checkpoint-{policy}")
+
+    assert gated["status"] == "PAUSED_HITL"
+    assert gated["pending_gate"] == {
         "reason": "CONFIGURED_CREATOR_CHECKPOINT",
         "checkpoint_policy": policy,
         "next_action": "KEYFRAME_CHECK",
         "source": "workflow_snapshot",
         "ai_score_ignored": True,
     }
-    assert len(run["tasks"]) == 1
-    assert run["tasks"][0]["job_state"] == "NEEDS_ATTENTION"
+    assert len(gated["tasks"]) == 2
+    assert gated["tasks"][1]["job_state"] == "NEEDS_ATTENTION"
 
     resumed = service.automation.resume_run(
-        str(run["id"]), decision="HUMAN_APPROVED", note=f"approve {policy}",
+        str(gated["id"]), decision="HUMAN_APPROVED", note=f"approve {policy}",
     )
     assert resumed["status"] == "RUNNING"
-    assert resumed["tasks"][0]["job_state"] == "QUEUED"
+    assert resumed["tasks"][1]["job_state"] == "QUEUED"
     with pytest.raises(DomainRuleError) as second_resume:
         service.automation.resume_run(
-            str(run["id"]), decision="HUMAN_APPROVED", note="must not consume twice",
+            str(gated["id"]), decision="HUMAN_APPROVED", note="must not consume twice",
         )
     assert second_resume.value.code == "AUTOMATION_HITL_NOT_PENDING"
-    assert service.automation.get_run(str(run["id"]))["task_count"] == 1
+    assert service.automation.get_run(str(gated["id"]))["task_count"] == 2
 
 
 def test_before_video_checkpoint_parks_video_job_then_continues_to_qc_once(workspace, database) -> None:
@@ -91,25 +113,28 @@ def test_before_video_checkpoint_parks_video_job_then_continues_to_qc_once(works
         str(workflow["id"]), plan_hash=str(workflow["plan_hash"]), idempotency_key="run-before-video",
     )
     jobs = JobService(database, workspace)
-    first_job_id = str(run["tasks"][0]["job_id"])
-    claim = jobs.claim("checkpoint-keyframe", ["CPU"])
-    assert claim is not None and claim["job"]["id"] == first_job_id
+    after_generation = _complete_first_task_and_step(
+        service, workspace, database, run, "checkpoint-keyframe-generation",
+    )
+    keyframe_check_job_id = str(after_generation["tasks"][1]["job_id"])
+    claim = jobs.claim("checkpoint-keyframe-check", ["CPU"])
+    assert claim is not None and claim["job"]["id"] == keyframe_check_job_id
     jobs.complete(
-        str(claim["attempt"]["id"]), str(claim["attempt"]["lease_token"]), "checkpoint-keyframe", success=True,
+        str(claim["attempt"]["id"]), str(claim["attempt"]["lease_token"]), "checkpoint-keyframe-check", success=True,
     )
     gated = service.automation.step_run(
         str(run["id"]), machine_context={"status": "PASS", "machine_check": {"status": "PASS"}},
-        expected_completed_job_id=first_job_id,
+        expected_completed_job_id=keyframe_check_job_id,
     )
 
     assert gated["status"] == "PAUSED_HITL"
     assert gated["pending_gate"]["checkpoint_policy"] == "BEFORE_VIDEO"
     assert gated["pending_gate"]["next_action"] == "VIDEO_GENERATION"
-    assert gated["tasks"][1]["job_state"] == "NEEDS_ATTENTION"
+    assert gated["tasks"][2]["job_state"] == "NEEDS_ATTENTION"
     resumed = service.automation.resume_run(
         str(run["id"]), decision="HUMAN_APPROVED", note="approve video generation",
     )
-    video_job_id = str(resumed["tasks"][1]["job_id"])
+    video_job_id = str(resumed["tasks"][2]["job_id"])
     claim = jobs.claim("checkpoint-video", ["CPU"])
     assert claim is not None and claim["job"]["id"] == video_job_id
     jobs.complete(
@@ -120,8 +145,8 @@ def test_before_video_checkpoint_parks_video_job_then_continues_to_qc_once(works
         expected_completed_job_id=video_job_id,
     )
     assert continued["status"] == "RUNNING"
-    assert continued["task_count"] == 3
-    assert continued["tasks"][2]["item"]["payload"]["action"] == "QC"
+    assert continued["task_count"] == 4
+    assert continued["tasks"][3]["item"]["payload"]["action"] == "QC"
 
 
 def test_recovery_preserves_checkpoint_gate_and_resume_does_not_duplicate_task(workspace, database) -> None:
@@ -131,16 +156,17 @@ def test_recovery_preserves_checkpoint_gate_and_resume_does_not_duplicate_task(w
     run = service.automation.start_run(
         str(workflow["id"]), plan_hash=str(workflow["plan_hash"]), idempotency_key="run-checkpoint-recovery",
     )
+    gated = _complete_first_task_and_step(service, workspace, database, run, "checkpoint-recovery")
 
-    recovered = service.recover(str(run["id"]))
+    recovered = service.recover(str(gated["id"]))
     assert recovered["run"]["status"] == "PAUSED_HITL"
     assert recovered["run"]["checkpoint_policy"] == "AFTER_SHOT_PLAN"
     assert recovered["run"]["pending_gate"]["checkpoint_policy"] == "AFTER_SHOT_PLAN"
     assert recovered["run"]["input_fingerprint"] == recovered["recovery"]["input_fingerprint"]
-    resumed = service.resume(str(run["id"]), note="resume frozen checkpoint")
+    resumed = service.resume(str(gated["id"]), note="resume frozen checkpoint")
     assert resumed["status"] == "RUNNING"
     assert resumed["checkpoint_policy"] == "AFTER_SHOT_PLAN"
-    assert len(service.automation.get_run(str(run["id"]))["tasks"]) == 1
+    assert len(service.automation.get_run(str(gated["id"]))["tasks"]) == 2
 
 
 def test_recovery_treats_legacy_workflow_without_checkpoint_snapshot_as_on_exception(workspace, database) -> None:

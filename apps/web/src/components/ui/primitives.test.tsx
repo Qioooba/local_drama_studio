@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -44,16 +44,26 @@ function ToastTestConsumer() {
 }
 
 describe("shared UI primitives", () => {
-  it("keeps cached thumbnails visible and resets failures only for a different source", () => {
+  it("retries a newly materialized thumbnail before keeping a stable failure state", () => {
+    vi.useFakeTimers();
     const { rerender } = render(<MediaThumb src="/api/v1/media-versions/a/thumbnail" alt="角色图" />);
-    expect(screen.getByRole("img", { name: "角色图" })).toBeVisible();
-    fireEvent.error(screen.getByRole("img", { name: "角色图" }));
+    let image = screen.getByRole("img", { name: "角色图" });
+    fireEvent.error(image);
+    act(() => { vi.advanceTimersByTime(400); });
+    image = screen.getByRole("img", { name: "角色图" });
+    expect(image).toHaveAttribute("src", "/api/v1/media-versions/a/thumbnail?thumbnail_retry=1");
+    fireEvent.error(image);
+    act(() => { vi.advanceTimersByTime(400); });
+    image = screen.getByRole("img", { name: "角色图" });
+    expect(image).toHaveAttribute("src", "/api/v1/media-versions/a/thumbnail?thumbnail_retry=2");
+    fireEvent.error(image);
     expect(screen.getByRole("img", { name: "角色图：缩略图加载失败" })).toBeVisible();
     rerender(<MediaThumb src="/api/v1/media-versions/a/thumbnail" alt="角色图" />);
     expect(screen.getByText("缩略图加载失败")).toBeVisible();
     rerender(<MediaThumb src="/api/v1/media-versions/b/thumbnail" alt="角色图" />);
     expect(screen.getByRole("img", { name: "角色图" })).toBeVisible();
     expect(screen.queryByText("缩略图加载失败")).toBeNull();
+    vi.useRealTimers();
   });
   it("never lets MediaThumb request an original content endpoint", () => {
     const { rerender } = render(<MediaThumb src="/api/v1/media-versions/mv-1/content" alt="镜头图" />);

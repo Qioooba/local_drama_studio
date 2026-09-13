@@ -1,0 +1,1248 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="18" skipped="0" tests="116" time="245.156" timestamp="2026-09-13T19:42:16.232035+08:00" hostname="x99"><testcase classname="tests.test_comfy_jobs" name="test_scalar_parameters_require_explicit_semantic_bindings" time="3.358"><failure message="local_drama.domain.errors.DomainRuleError: H3 workflow 需要有效的本机 model_manifest.json">self = &lt;local_drama.application.h3_workflows.H3WorkflowFactory object at 0x000001DE6DDC7C20&gt;
+
+    def _manifest(self) -&gt; dict[str, Any]:
+        try:
+&gt;           manifest = json.loads(self.settings.manifest_path.read_text(encoding="utf-8"))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\local_drama\application\h3_workflows.py:134:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+E:\Tools\Python\Lib\pathlib.py:1027: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+mode = 'r', buffering = -1, encoding = 'utf-8', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+&gt;       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Qi\\.codex\\worktrees\\3a00\\model_manifest.json'
+
+E:\Tools\Python\Lib\pathlib.py:1013: FileNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+workspace = Settings(app_name='LocalDramaStudio', app_version='0.1.0', environment='development', instance_id='default', install_p...al_drama_studio'), instance_root=WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/local_drama_studio'), config_path=None)
+database = &lt;local_drama.infrastructure.database.sqlite.Database object at 0x000001DE6F92B440&gt;
+
+    def test_scalar_parameters_require_explicit_semantic_bindings(workspace, database) -&gt; None:
+        service = ComfyGenerationService(database, workspace)
+        workflow = {
+            "1": {"class_type": "EmptyLatentImage", "inputs": {"width": 768, "height": 1344}},
+            "2": {"class_type": "KSampler", "inputs": {"steps": 20, "cfg": 7.0, "sampler_name": "euler", "scheduler": "normal", "denoise": 1.0}},
+            "3": {"class_type": "MiniMaxH3ImageToVideo", "inputs": {"width": 480, "height": 832, "length": 107}},
+            "4": {"class_type": "CreateVideo", "inputs": {"fps": 24.0}},
+        }
+&gt;       evidence = service._apply_effective_configuration(
+            workflow,
+            {
+                "effective_settings": {
+                    "width": 832,
+                    "height": 480,
+                    "frame_count": 121,
+                    "fps": 30,
+                    "steps": 32,
+                    "cfg": 5.5,
+                    "sampler_name": "dpmpp_2m",
+                    "scheduler": "karras",
+                    "denoise": 0.8,
+                },
+                "fingerprint": "sha256:test",
+            },
+        )
+
+apps\api\tests\test_comfy_jobs.py:29:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+apps\api\local_drama\application\comfy_jobs.py:431: in _apply_effective_configuration
+    turbo_lora_asset = H3WorkflowFactory(self.settings).loader_assets()["turbo_lora_name"]
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps\api\local_drama\application\h3_workflows.py:143: in loader_assets
+    manifest = self._manifest()
+               ^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;local_drama.application.h3_workflows.H3WorkflowFactory object at 0x000001DE6DDC7C20&gt;
+
+    def _manifest(self) -&gt; dict[str, Any]:
+        try:
+            manifest = json.loads(self.settings.manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+&gt;           raise DomainRuleError("MANIFEST_INVALID", "H3 workflow 需要有效的本机 model_manifest.json") from error
+E           local_drama.domain.errors.DomainRuleError: H3 workflow 需要有效的本机 model_manifest.json
+
+apps\api\local_drama\application\h3_workflows.py:136: DomainRuleError</failure></testcase><testcase classname="tests.test_comfy_jobs" name="test_runtime_settings_resolve_only_declared_roles_and_preserve_seed_zero" time="1.901" /><testcase classname="tests.test_comfy_jobs" name="test_runtime_semantic_compilation_does_not_touch_second_sampler_or_reference_scale" time="1.853"><failure message="local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json">path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+&gt;           raw = resolved.read_bytes()
+                  ^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\local_drama\infrastructure\manifest.py:76:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+E:\Tools\Python\Lib\pathlib.py:1019: in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+&gt;       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Qi\\.codex\\worktrees\\3a00\\model_manifest.json'
+
+E:\Tools\Python\Lib\pathlib.py:1013: FileNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+workspace = Settings(app_name='LocalDramaStudio', app_version='0.1.0', environment='development', instance_id='default', install_p...al_drama_studio'), instance_root=WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/local_drama_studio'), config_path=None)
+database = &lt;local_drama.infrastructure.database.sqlite.Database object at 0x000001DE6FAF90D0&gt;
+
+    def test_runtime_semantic_compilation_does_not_touch_second_sampler_or_reference_scale(workspace, database) -&gt; None:
+        workflow = {
+            "1": {
+                "class_type": "KSampler",
+                "inputs": {"steps": 20, "cfg": 7.0, "sampler_name": "euler"},
+            },
+            "2": {
+                "class_type": "KSampler",
+                "inputs": {"steps": 9, "cfg": 1.25, "sampler_name": "euler_ancestral"},
+            },
+            "3": {
+                "class_type": "ImageScale",
+                "inputs": {"width": 320, "height": 180, "scale": 0.25},
+            },
+            "4": {
+                "class_type": "MiniMaxH3ImageToVideo",
+                "inputs": {"width": 480, "height": 832, "length": 90},
+            },
+        }
+&gt;       version = WorkflowService(database, workspace).register_package(
+            "runtime-target-sentinel",
+            "Runtime target sentinel",
+            workflow,
+            {},
+            {
+                "SAMPLER_STEPS": {"node_id": "1", "input": "steps"},
+                "CFG": {"node_id": "1", "input": "cfg"},
+                "WIDTH": {"node_id": "4", "input": "width"},
+                "HEIGHT": {"node_id": "4", "input": "height"},
+                "FRAME_COUNT": {"node_id": "4", "input": "length"},
+            },
+        )
+
+apps\api\tests\test_comfy_jobs.py:96:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+apps\api\local_drama\application\workflows.py:212: in register_package
+    supply_chain = self._validate_node_supply_chain(workflow)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps\api\local_drama\application\workflows.py:106: in _validate_node_supply_chain
+    manifest = load_manifest(self.settings.manifest_path)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+            raw = resolved.read_bytes()
+            data = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+&gt;           raise ManifestValidationError(f"无法读取本机 model_manifest.json: {resolved}") from error
+E           local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json
+
+apps\api\local_drama\infrastructure\manifest.py:79: ManifestValidationError</failure></testcase><testcase classname="tests.test_comfy_jobs" name="test_ambiguous_submit_is_quarantined_and_never_blindly_resubmitted" time="1.892"><failure message="local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json">path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+&gt;           raw = resolved.read_bytes()
+                  ^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\local_drama\infrastructure\manifest.py:76:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+E:\Tools\Python\Lib\pathlib.py:1019: in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+&gt;       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Qi\\.codex\\worktrees\\3a00\\model_manifest.json'
+
+E:\Tools\Python\Lib\pathlib.py:1013: FileNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+workspace = Settings(app_name='LocalDramaStudio', app_version='0.1.0', environment='development', instance_id='default', install_p...al_drama_studio'), instance_root=WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/local_drama_studio'), config_path=None)
+database = &lt;local_drama.infrastructure.database.sqlite.Database object at 0x000001DE6DF5BBF0&gt;
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x000001DE6FB5B950&gt;
+
+    def test_ambiguous_submit_is_quarantined_and_never_blindly_resubmitted(workspace, database, monkeypatch) -&gt; None:
+&gt;       job = _queued_comfy_job(workspace, database, suffix="ambiguous")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\tests\test_comfy_jobs.py:204:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+apps\api\tests\test_comfy_jobs.py:174: in _queued_comfy_job
+    version = workflows.register_package(
+apps\api\local_drama\application\workflows.py:212: in register_package
+    supply_chain = self._validate_node_supply_chain(workflow)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps\api\local_drama\application\workflows.py:106: in _validate_node_supply_chain
+    manifest = load_manifest(self.settings.manifest_path)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+            raw = resolved.read_bytes()
+            data = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+&gt;           raise ManifestValidationError(f"无法读取本机 model_manifest.json: {resolved}") from error
+E           local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json
+
+apps\api\local_drama\infrastructure\manifest.py:79: ManifestValidationError</failure></testcase><testcase classname="tests.test_comfy_jobs" name="test_crash_during_provider_submit_is_reconciled_as_uncertain" time="1.863"><failure message="local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json">path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+&gt;           raw = resolved.read_bytes()
+                  ^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\local_drama\infrastructure\manifest.py:76:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+E:\Tools\Python\Lib\pathlib.py:1019: in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+&gt;       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Qi\\.codex\\worktrees\\3a00\\model_manifest.json'
+
+E:\Tools\Python\Lib\pathlib.py:1013: FileNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+workspace = Settings(app_name='LocalDramaStudio', app_version='0.1.0', environment='development', instance_id='default', install_p...al_drama_studio'), instance_root=WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/local_drama_studio'), config_path=None)
+database = &lt;local_drama.infrastructure.database.sqlite.Database object at 0x000001DE6DD57410&gt;
+
+    def test_crash_during_provider_submit_is_reconciled_as_uncertain(workspace, database) -&gt; None:
+        from datetime import UTC, datetime, timedelta
+
+&gt;       job = _queued_comfy_job(workspace, database, suffix="crash-window")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\tests\test_comfy_jobs.py:241:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+apps\api\tests\test_comfy_jobs.py:174: in _queued_comfy_job
+    version = workflows.register_package(
+apps\api\local_drama\application\workflows.py:212: in register_package
+    supply_chain = self._validate_node_supply_chain(workflow)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps\api\local_drama\application\workflows.py:106: in _validate_node_supply_chain
+    manifest = load_manifest(self.settings.manifest_path)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+            raw = resolved.read_bytes()
+            data = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+&gt;           raise ManifestValidationError(f"无法读取本机 model_manifest.json: {resolved}") from error
+E           local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json
+
+apps\api\local_drama\infrastructure\manifest.py:79: ManifestValidationError</failure></testcase><testcase classname="tests.test_comfy_jobs" name="test_production_wait_budget_allows_success_after_301_seconds" time="1.924" /><testcase classname="tests.test_comfy_jobs" name="test_poll_maps_live_comfy_queue_state_before_history_exists" time="1.925"><failure message="local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json">path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+&gt;           raw = resolved.read_bytes()
+                  ^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\local_drama\infrastructure\manifest.py:76:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+E:\Tools\Python\Lib\pathlib.py:1019: in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+&gt;       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Qi\\.codex\\worktrees\\3a00\\model_manifest.json'
+
+E:\Tools\Python\Lib\pathlib.py:1013: FileNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+workspace = Settings(app_name='LocalDramaStudio', app_version='0.1.0', environment='development', instance_id='default', install_p...al_drama_studio'), instance_root=WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/local_drama_studio'), config_path=None)
+database = &lt;local_drama.infrastructure.database.sqlite.Database object at 0x000001DE6DD30AA0&gt;
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x000001DE6F7486E0&gt;
+
+    def test_poll_maps_live_comfy_queue_state_before_history_exists(workspace, database, monkeypatch) -&gt; None:
+&gt;       service, attempt_id = _active_attempt(workspace, database)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\tests\test_comfy_jobs.py:275:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+apps\api\tests\test_comfy_jobs.py:137: in _active_attempt
+    version = workflows.register_package(
+apps\api\local_drama\application\workflows.py:212: in register_package
+    supply_chain = self._validate_node_supply_chain(workflow)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps\api\local_drama\application\workflows.py:106: in _validate_node_supply_chain
+    manifest = load_manifest(self.settings.manifest_path)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+            raw = resolved.read_bytes()
+            data = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+&gt;           raise ManifestValidationError(f"无法读取本机 model_manifest.json: {resolved}") from error
+E           local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json
+
+apps\api\local_drama\infrastructure\manifest.py:79: ManifestValidationError</failure></testcase><testcase classname="tests.test_comfy_jobs" name="test_interrupt_refuses_shared_runtime_and_late_success_cannot_finalize" time="1.769"><failure message="local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json">path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+&gt;           raw = resolved.read_bytes()
+                  ^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\local_drama\infrastructure\manifest.py:76:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+E:\Tools\Python\Lib\pathlib.py:1019: in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+&gt;       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Qi\\.codex\\worktrees\\3a00\\model_manifest.json'
+
+E:\Tools\Python\Lib\pathlib.py:1013: FileNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+workspace = Settings(app_name='LocalDramaStudio', app_version='0.1.0', environment='development', instance_id='default', install_p...al_drama_studio'), instance_root=WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/local_drama_studio'), config_path=None)
+database = &lt;local_drama.infrastructure.database.sqlite.Database object at 0x000001DE6F6862A0&gt;
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x000001DE6F6373E0&gt;
+
+    def test_interrupt_refuses_shared_runtime_and_late_success_cannot_finalize(workspace, database, monkeypatch) -&gt; None:
+&gt;       service, attempt_id = _active_attempt(workspace, database)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\tests\test_comfy_jobs.py:286:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+apps\api\tests\test_comfy_jobs.py:137: in _active_attempt
+    version = workflows.register_package(
+apps\api\local_drama\application\workflows.py:212: in register_package
+    supply_chain = self._validate_node_supply_chain(workflow)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps\api\local_drama\application\workflows.py:106: in _validate_node_supply_chain
+    manifest = load_manifest(self.settings.manifest_path)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+            raw = resolved.read_bytes()
+            data = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+&gt;           raise ManifestValidationError(f"无法读取本机 model_manifest.json: {resolved}") from error
+E           local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json
+
+apps\api\local_drama\infrastructure\manifest.py:79: ManifestValidationError</failure></testcase><testcase classname="tests.test_comfy_jobs" name="test_output_collection_failure_reuses_original_prompt_without_resampling" time="1.894"><failure message="local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json">path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+&gt;           raw = resolved.read_bytes()
+                  ^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\local_drama\infrastructure\manifest.py:76:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+E:\Tools\Python\Lib\pathlib.py:1019: in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+&gt;       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Qi\\.codex\\worktrees\\3a00\\model_manifest.json'
+
+E:\Tools\Python\Lib\pathlib.py:1013: FileNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+workspace = Settings(app_name='LocalDramaStudio', app_version='0.1.0', environment='development', instance_id='default', install_p...al_drama_studio'), instance_root=WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/local_drama_studio'), config_path=None)
+database = &lt;local_drama.infrastructure.database.sqlite.Database object at 0x000001DE6F36E000&gt;
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x000001DE6F442660&gt;
+
+    def test_output_collection_failure_reuses_original_prompt_without_resampling(workspace, database, monkeypatch) -&gt; None:
+&gt;       service, attempt_id = _active_attempt(workspace, database)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\tests\test_comfy_jobs.py:334:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+apps\api\tests\test_comfy_jobs.py:137: in _active_attempt
+    version = workflows.register_package(
+apps\api\local_drama\application\workflows.py:212: in register_package
+    supply_chain = self._validate_node_supply_chain(workflow)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps\api\local_drama\application\workflows.py:106: in _validate_node_supply_chain
+    manifest = load_manifest(self.settings.manifest_path)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+            raw = resolved.read_bytes()
+            data = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+&gt;           raise ManifestValidationError(f"无法读取本机 model_manifest.json: {resolved}") from error
+E           local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json
+
+apps\api\local_drama\infrastructure\manifest.py:79: ManifestValidationError</failure></testcase><testcase classname="tests.test_comfy_jobs" name="test_poll_closes_attempt_when_comfy_runtime_dies" time="1.820"><failure message="local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json">path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+&gt;           raw = resolved.read_bytes()
+                  ^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\local_drama\infrastructure\manifest.py:76:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+E:\Tools\Python\Lib\pathlib.py:1019: in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+&gt;       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Qi\\.codex\\worktrees\\3a00\\model_manifest.json'
+
+E:\Tools\Python\Lib\pathlib.py:1013: FileNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+workspace = Settings(app_name='LocalDramaStudio', app_version='0.1.0', environment='development', instance_id='default', install_p...al_drama_studio'), instance_root=WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/local_drama_studio'), config_path=None)
+database = &lt;local_drama.infrastructure.database.sqlite.Database object at 0x000001DE6FB09880&gt;
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x000001DE6FB08D70&gt;
+
+    def test_poll_closes_attempt_when_comfy_runtime_dies(workspace, database, monkeypatch) -&gt; None:
+&gt;       service, attempt_id = _active_attempt(workspace, database)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\tests\test_comfy_jobs.py:374:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+apps\api\tests\test_comfy_jobs.py:137: in _active_attempt
+    version = workflows.register_package(
+apps\api\local_drama\application\workflows.py:212: in register_package
+    supply_chain = self._validate_node_supply_chain(workflow)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps\api\local_drama\application\workflows.py:106: in _validate_node_supply_chain
+    manifest = load_manifest(self.settings.manifest_path)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+            raw = resolved.read_bytes()
+            data = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+&gt;           raise ManifestValidationError(f"无法读取本机 model_manifest.json: {resolved}") from error
+E           local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json
+
+apps\api\local_drama\infrastructure\manifest.py:79: ManifestValidationError</failure></testcase><testcase classname="tests.test_comfy_jobs" name="test_poll_survives_busy_comfy_runtime_within_grace" time="1.970"><failure message="local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json">path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+&gt;           raw = resolved.read_bytes()
+                  ^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\local_drama\infrastructure\manifest.py:76:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+E:\Tools\Python\Lib\pathlib.py:1019: in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+&gt;       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Qi\\.codex\\worktrees\\3a00\\model_manifest.json'
+
+E:\Tools\Python\Lib\pathlib.py:1013: FileNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+workspace = Settings(app_name='LocalDramaStudio', app_version='0.1.0', environment='development', instance_id='default', install_p...al_drama_studio'), instance_root=WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/local_drama_studio'), config_path=None)
+database = &lt;local_drama.infrastructure.database.sqlite.Database object at 0x000001DE6F2BA090&gt;
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x000001DE6DD947A0&gt;
+
+    def test_poll_survives_busy_comfy_runtime_within_grace(workspace, database, monkeypatch) -&gt; None:
+&gt;       service, attempt_id = _active_attempt(workspace, database)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\tests\test_comfy_jobs.py:395:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+apps\api\tests\test_comfy_jobs.py:137: in _active_attempt
+    version = workflows.register_package(
+apps\api\local_drama\application\workflows.py:212: in register_package
+    supply_chain = self._validate_node_supply_chain(workflow)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps\api\local_drama\application\workflows.py:106: in _validate_node_supply_chain
+    manifest = load_manifest(self.settings.manifest_path)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+            raw = resolved.read_bytes()
+            data = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+&gt;           raise ManifestValidationError(f"无法读取本机 model_manifest.json: {resolved}") from error
+E           local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json
+
+apps\api\local_drama\infrastructure\manifest.py:79: ManifestValidationError</failure></testcase><testcase classname="tests.test_comfy_jobs" name="test_busy_grace_clock_resets_after_runtime_responds" time="2.067"><failure message="local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json">path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+&gt;           raw = resolved.read_bytes()
+                  ^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\local_drama\infrastructure\manifest.py:76:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+E:\Tools\Python\Lib\pathlib.py:1019: in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+&gt;       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Qi\\.codex\\worktrees\\3a00\\model_manifest.json'
+
+E:\Tools\Python\Lib\pathlib.py:1013: FileNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+workspace = Settings(app_name='LocalDramaStudio', app_version='0.1.0', environment='development', instance_id='default', install_p...al_drama_studio'), instance_root=WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/local_drama_studio'), config_path=None)
+database = &lt;local_drama.infrastructure.database.sqlite.Database object at 0x000001DE6F625DF0&gt;
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x000001DE6F624EF0&gt;
+
+    def test_busy_grace_clock_resets_after_runtime_responds(workspace, database, monkeypatch) -&gt; None:
+&gt;       service, attempt_id = _active_attempt(workspace, database)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\tests\test_comfy_jobs.py:427:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+apps\api\tests\test_comfy_jobs.py:137: in _active_attempt
+    version = workflows.register_package(
+apps\api\local_drama\application\workflows.py:212: in register_package
+    supply_chain = self._validate_node_supply_chain(workflow)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps\api\local_drama\application\workflows.py:106: in _validate_node_supply_chain
+    manifest = load_manifest(self.settings.manifest_path)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+            raw = resolved.read_bytes()
+            data = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+&gt;           raise ManifestValidationError(f"无法读取本机 model_manifest.json: {resolved}") from error
+E           local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json
+
+apps\api\local_drama\infrastructure\manifest.py:79: ManifestValidationError</failure></testcase><testcase classname="tests.test_comfy_jobs" name="test_poll_closes_attempt_immediately_on_connection_refused" time="1.819"><failure message="local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json">path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+&gt;           raw = resolved.read_bytes()
+                  ^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\local_drama\infrastructure\manifest.py:76:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+E:\Tools\Python\Lib\pathlib.py:1019: in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+&gt;       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Qi\\.codex\\worktrees\\3a00\\model_manifest.json'
+
+E:\Tools\Python\Lib\pathlib.py:1013: FileNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+workspace = Settings(app_name='LocalDramaStudio', app_version='0.1.0', environment='development', instance_id='default', install_p...al_drama_studio'), instance_root=WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/local_drama_studio'), config_path=None)
+database = &lt;local_drama.infrastructure.database.sqlite.Database object at 0x000001DE6F81CD40&gt;
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x000001DE6F7CD4C0&gt;
+
+    def test_poll_closes_attempt_immediately_on_connection_refused(workspace, database, monkeypatch) -&gt; None:
+&gt;       service, attempt_id = _active_attempt(workspace, database)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\tests\test_comfy_jobs.py:453:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+apps\api\tests\test_comfy_jobs.py:137: in _active_attempt
+    version = workflows.register_package(
+apps\api\local_drama\application\workflows.py:212: in register_package
+    supply_chain = self._validate_node_supply_chain(workflow)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps\api\local_drama\application\workflows.py:106: in _validate_node_supply_chain
+    manifest = load_manifest(self.settings.manifest_path)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+            raw = resolved.read_bytes()
+            data = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+&gt;           raise ManifestValidationError(f"无法读取本机 model_manifest.json: {resolved}") from error
+E           local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json
+
+apps\api\local_drama\infrastructure\manifest.py:79: ManifestValidationError</failure></testcase><testcase classname="tests.test_comfy_jobs" name="test_background_recovery_finds_provider_success_without_manual_attempt_id" time="1.859"><failure message="local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json">path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+&gt;           raw = resolved.read_bytes()
+                  ^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\local_drama\infrastructure\manifest.py:76:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+E:\Tools\Python\Lib\pathlib.py:1019: in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+&gt;       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Qi\\.codex\\worktrees\\3a00\\model_manifest.json'
+
+E:\Tools\Python\Lib\pathlib.py:1013: FileNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+workspace = Settings(app_name='LocalDramaStudio', app_version='0.1.0', environment='development', instance_id='default', install_p...al_drama_studio'), instance_root=WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/local_drama_studio'), config_path=None)
+database = &lt;local_drama.infrastructure.database.sqlite.Database object at 0x000001DE6DBFFEF0&gt;
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x000001DE6A76C200&gt;
+
+    def test_background_recovery_finds_provider_success_without_manual_attempt_id(workspace, database, monkeypatch) -&gt; None:
+&gt;       service, attempt_id = _active_attempt(workspace, database)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\tests\test_comfy_jobs.py:467:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+apps\api\tests\test_comfy_jobs.py:137: in _active_attempt
+    version = workflows.register_package(
+apps\api\local_drama\application\workflows.py:212: in register_package
+    supply_chain = self._validate_node_supply_chain(workflow)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps\api\local_drama\application\workflows.py:106: in _validate_node_supply_chain
+    manifest = load_manifest(self.settings.manifest_path)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+            raw = resolved.read_bytes()
+            data = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+&gt;           raise ManifestValidationError(f"无法读取本机 model_manifest.json: {resolved}") from error
+E           local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json
+
+apps\api\local_drama\infrastructure\manifest.py:79: ManifestValidationError</failure></testcase><testcase classname="tests.test_comfy_jobs" name="test_submit_materializes_verified_media_binding_inside_isolated_input_root[roles0]" time="1.937"><failure message="local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json">path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+&gt;           raw = resolved.read_bytes()
+                  ^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\local_drama\infrastructure\manifest.py:76:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+E:\Tools\Python\Lib\pathlib.py:1019: in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+&gt;       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Qi\\.codex\\worktrees\\3a00\\model_manifest.json'
+
+E:\Tools\Python\Lib\pathlib.py:1013: FileNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+workspace = Settings(app_name='LocalDramaStudio', app_version='0.1.0', environment='development', instance_id='default', install_p...al_drama_studio'), instance_root=WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/local_drama_studio'), config_path=None)
+database = &lt;local_drama.infrastructure.database.sqlite.Database object at 0x000001DE6DD21D00&gt;
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x000001DE6F8BF140&gt;
+roles = ('FIRST_FRAME',)
+
+    @pytest.mark.parametrize("roles", [("FIRST_FRAME",), ("REFERENCE_IMAGE_1", "REFERENCE_IMAGE_2", "REFERENCE_IMAGE_3")])
+    def test_submit_materializes_verified_media_binding_inside_isolated_input_root(workspace, database, monkeypatch, roles) -&gt; None:
+        workspace = workspace.model_copy(update={"comfy_input_root": workspace.work_root / "comfy-production" / "input"})
+        workflow_service = WorkflowService(database, workspace)
+&gt;       version = workflow_service.register_package(
+            "comfy_media_binding",
+            "Comfy media binding",
+            {str(i): {"class_type": "LoadImage", "inputs": {"image": "pending.png"}} for i, _ in enumerate(roles, 1)},
+            {},
+            {role: {"node_id": str(i), "input": "image"} for i, role in enumerate(roles, 1)},
+        )
+
+apps\api\tests\test_comfy_jobs.py:495:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+apps\api\local_drama\application\workflows.py:212: in register_package
+    supply_chain = self._validate_node_supply_chain(workflow)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps\api\local_drama\application\workflows.py:106: in _validate_node_supply_chain
+    manifest = load_manifest(self.settings.manifest_path)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+            raw = resolved.read_bytes()
+            data = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+&gt;           raise ManifestValidationError(f"无法读取本机 model_manifest.json: {resolved}") from error
+E           local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json
+
+apps\api\local_drama\infrastructure\manifest.py:79: ManifestValidationError</failure></testcase><testcase classname="tests.test_comfy_jobs" name="test_submit_materializes_verified_media_binding_inside_isolated_input_root[roles1]" time="1.857"><failure message="local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json">path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+&gt;           raw = resolved.read_bytes()
+                  ^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\local_drama\infrastructure\manifest.py:76:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+E:\Tools\Python\Lib\pathlib.py:1019: in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+&gt;       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Qi\\.codex\\worktrees\\3a00\\model_manifest.json'
+
+E:\Tools\Python\Lib\pathlib.py:1013: FileNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+workspace = Settings(app_name='LocalDramaStudio', app_version='0.1.0', environment='development', instance_id='default', install_p...al_drama_studio'), instance_root=WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/local_drama_studio'), config_path=None)
+database = &lt;local_drama.infrastructure.database.sqlite.Database object at 0x000001DE6E00D6D0&gt;
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x000001DE6E00C560&gt;
+roles = ('REFERENCE_IMAGE_1', 'REFERENCE_IMAGE_2', 'REFERENCE_IMAGE_3')
+
+    @pytest.mark.parametrize("roles", [("FIRST_FRAME",), ("REFERENCE_IMAGE_1", "REFERENCE_IMAGE_2", "REFERENCE_IMAGE_3")])
+    def test_submit_materializes_verified_media_binding_inside_isolated_input_root(workspace, database, monkeypatch, roles) -&gt; None:
+        workspace = workspace.model_copy(update={"comfy_input_root": workspace.work_root / "comfy-production" / "input"})
+        workflow_service = WorkflowService(database, workspace)
+&gt;       version = workflow_service.register_package(
+            "comfy_media_binding",
+            "Comfy media binding",
+            {str(i): {"class_type": "LoadImage", "inputs": {"image": "pending.png"}} for i, _ in enumerate(roles, 1)},
+            {},
+            {role: {"node_id": str(i), "input": "image"} for i, role in enumerate(roles, 1)},
+        )
+
+apps\api\tests\test_comfy_jobs.py:495:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+apps\api\local_drama\application\workflows.py:212: in register_package
+    supply_chain = self._validate_node_supply_chain(workflow)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps\api\local_drama\application\workflows.py:106: in _validate_node_supply_chain
+    manifest = load_manifest(self.settings.manifest_path)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+            raw = resolved.read_bytes()
+            data = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+&gt;           raise ManifestValidationError(f"无法读取本机 model_manifest.json: {resolved}") from error
+E           local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json
+
+apps\api\local_drama\infrastructure\manifest.py:79: ManifestValidationError</failure></testcase><testcase classname="tests.test_comfy_jobs" name="test_submit_drops_undeclared_metadata_roles_but_compiles_declared_ones" time="1.930"><failure message="local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json">path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+&gt;           raw = resolved.read_bytes()
+                  ^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\local_drama\infrastructure\manifest.py:76:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+E:\Tools\Python\Lib\pathlib.py:1019: in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+&gt;       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Qi\\.codex\\worktrees\\3a00\\model_manifest.json'
+
+E:\Tools\Python\Lib\pathlib.py:1013: FileNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+workspace = Settings(app_name='LocalDramaStudio', app_version='0.1.0', environment='development', instance_id='default', install_p...al_drama_studio'), instance_root=WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/local_drama_studio'), config_path=None)
+database = &lt;local_drama.infrastructure.database.sqlite.Database object at 0x000001DE6DBFFEF0&gt;
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x000001DE6A8AADE0&gt;
+
+    def test_submit_drops_undeclared_metadata_roles_but_compiles_declared_ones(workspace, database, monkeypatch) -&gt; None:
+        """The variant workbench freezes camera_plan/timed_directions/... metadata into
+        the job snapshot; those roles must never be compiled into workflow node inputs
+        unless the published workflow declares them (FR-CTL-001 integration)."""
+        workspace = workspace.model_copy(update={"comfy_input_root": workspace.work_root / "comfy-production" / "input"})
+        workflow_service = WorkflowService(database, workspace)
+&gt;       version = workflow_service.register_package(
+            "comfy_metadata_roles",
+            "Comfy metadata roles",
+            {"1": {"class_type": "LoadImage", "inputs": {"image": "pending.png"}}},
+            {},
+            {"FIRST_FRAME": {"node_id": "1", "input": "image"}},
+        )
+
+apps\api\tests\test_comfy_jobs.py:569:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+apps\api\local_drama\application\workflows.py:212: in register_package
+    supply_chain = self._validate_node_supply_chain(workflow)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps\api\local_drama\application\workflows.py:106: in _validate_node_supply_chain
+    manifest = load_manifest(self.settings.manifest_path)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+            raw = resolved.read_bytes()
+            data = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+&gt;           raise ManifestValidationError(f"无法读取本机 model_manifest.json: {resolved}") from error
+E           local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json
+
+apps\api\local_drama\infrastructure\manifest.py:79: ManifestValidationError</failure></testcase><testcase classname="tests.test_comfy_jobs" name="test_run_once_binds_worker_session_and_polls_to_success" time="1.790"><failure message="local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json">path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+&gt;           raw = resolved.read_bytes()
+                  ^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\local_drama\infrastructure\manifest.py:76:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+E:\Tools\Python\Lib\pathlib.py:1019: in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+&gt;       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Qi\\.codex\\worktrees\\3a00\\model_manifest.json'
+
+E:\Tools\Python\Lib\pathlib.py:1013: FileNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+workspace = Settings(app_name='LocalDramaStudio', app_version='0.1.0', environment='development', instance_id='default', install_p...al_drama_studio'), instance_root=WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/local_drama_studio'), config_path=None)
+database = &lt;local_drama.infrastructure.database.sqlite.Database object at 0x000001DE6DF54650&gt;
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x000001DE6F457B30&gt;
+
+    def test_run_once_binds_worker_session_and_polls_to_success(workspace, database, monkeypatch) -&gt; None:
+        import json
+        from contextlib import contextmanager
+&gt;       service, _unused_attempt_id = _active_attempt(workspace, database)
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\tests\test_comfy_jobs.py:633:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+apps\api\tests\test_comfy_jobs.py:137: in _active_attempt
+    version = workflows.register_package(
+apps\api\local_drama\application\workflows.py:212: in register_package
+    supply_chain = self._validate_node_supply_chain(workflow)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps\api\local_drama\application\workflows.py:106: in _validate_node_supply_chain
+    manifest = load_manifest(self.settings.manifest_path)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+            raw = resolved.read_bytes()
+            data = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+&gt;           raise ManifestValidationError(f"无法读取本机 model_manifest.json: {resolved}") from error
+E           local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json
+
+apps\api\local_drama\infrastructure\manifest.py:79: ManifestValidationError</failure></testcase><testcase classname="tests.test_episode_production_runs" name="test_stage_definitions_and_front_half_action_mapping" time="0.001" /><testcase classname="tests.test_episode_production_runs" name="test_episode_start_replays_before_preflight_and_rejects_payload_mismatch" time="1.952" /><testcase classname="tests.test_episode_production_runs" name="test_front_half_dag_workflow_generation" time="1.864" /><testcase classname="tests.test_episode_production_runs" name="test_full_preflight_uses_authoritative_asset_completion_gate" time="2.151" /><testcase classname="tests.test_episode_production_runs" name="test_runtime_capacity_and_disk_changes_do_not_change_creative_fingerprints" time="2.062" /><testcase classname="tests.test_episode_production_runs" name="test_front_half_snapshot_ignores_other_episode_draft" time="2.655" /><testcase classname="tests.test_episode_production_runs" name="test_front_half_only_start_is_fail_closed_and_idempotent" time="3.393" /><testcase classname="tests.test_episode_production_runs" name="test_run_view_exposes_exact_shot_issues_from_durable_task_context" time="3.127" /><testcase classname="tests.test_episode_production_runs" name="test_real_front_half_worker_reports_and_parks_missing_human_decision" time="3.838" /><testcase classname="tests.test_episode_production_runs" name="test_front_half_recovery_marks_old_reports_stale_and_preserves_them" time="4.132" /><testcase classname="tests.test_episode_production_runs" name="test_asset_identity_handler_never_auto_decides_pending_proposal" time="2.962" /><testcase classname="tests.test_episode_production_runs" name="test_every_front_half_action_has_a_real_idempotent_worker_handler[STORY_PARSE]" time="2.115" /><testcase classname="tests.test_episode_production_runs" name="test_every_front_half_action_has_a_real_idempotent_worker_handler[SCRIPT_BREAKDOWN]" time="2.291" /><testcase classname="tests.test_episode_production_runs" name="test_every_front_half_action_has_a_real_idempotent_worker_handler[ASSET_IDENTITY]" time="2.005" /><testcase classname="tests.test_episode_production_runs" name="test_every_front_half_action_has_a_real_idempotent_worker_handler[ASSET_COMPLETION]" time="2.112" /><testcase classname="tests.test_episode_production_runs" name="test_every_front_half_action_has_a_real_idempotent_worker_handler[EPISODE_PLAN]" time="1.888" /><testcase classname="tests.test_episode_production_runs" name="test_every_front_half_action_has_a_real_idempotent_worker_handler[KEYFRAME_CHECK]" time="2.147" /><testcase classname="tests.test_episode_production_runs" name="test_one_failed_shot_retry_does_not_replay_ready_shot" time="1.915" /><testcase classname="tests.test_episode_production_runs" name="test_timeline_assembly_action_assembles_then_skips" time="4.266" /><testcase classname="tests.test_episode_production_runs" name="test_qc_auto_select_fills_empty_selection_and_never_overrides" time="2.939" /><testcase classname="tests.test_episode_production_runs" name="test_frame_bridge_dependency_uses_scene_ids_and_waits_for_explicit_hard_predecessor" time="1.897" /><testcase classname="tests.test_episode_production_runs" name="test_end_frame_role_detects_slot_from_profile_contract" time="0.001" /><testcase classname="tests.test_episode_production_runs" name="test_last_frame_anchor_reuses_fresh_anchor_before_extracting" time="3.173" /><testcase classname="tests.test_episode_production_runs" name="test_tts_finalize_handler_reports_pass_and_fail" time="2.087" /><testcase classname="tests.test_episode_worker_actions" name="test_keyframe_action_dispatches_shared_batch_and_preserves_job_dependencies" time="2.071" /><testcase classname="tests.test_episode_worker_actions" name="test_keyframe_action_reuses_approval_and_blocks_partial_plan" time="1.912" /><testcase classname="tests.test_episode_worker_actions" name="test_video_action_retries_only_the_failed_shot_job" time="2.202" /><testcase classname="tests.test_episode_worker_actions" name="test_video_action_refreshes_stale_working_media_instead_of_reusing_verified_history" time="1.808" /><testcase classname="tests.test_episode_worker_actions" name="test_operation_impact_distinguishes_retry_new_take_and_recompose_without_writes" time="1.943" /><testcase classname="tests.test_episode_worker_actions" name="test_qc_pass_with_adoption_blocker_pauses_production" time="1.904" /><testcase classname="tests.test_episode_worker_actions" name="test_older_qc_pass_candidate_beats_newer_failed_candidate" time="2.071" /><testcase classname="tests.test_episode_worker_actions" name="test_shot_video_queries_ignore_stale_variants_without_cross_project_candidate_leakage" time="1.969"><failure message="local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json">path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+&gt;           raw = resolved.read_bytes()
+                  ^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\local_drama\infrastructure\manifest.py:76:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+E:\Tools\Python\Lib\pathlib.py:1019: in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+&gt;       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Qi\\.codex\\worktrees\\3a00\\model_manifest.json'
+
+E:\Tools\Python\Lib\pathlib.py:1013: FileNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+workspace = Settings(app_name='LocalDramaStudio', app_version='0.1.0', environment='development', instance_id='default', install_p...al_drama_studio'), instance_root=WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/local_drama_studio'), config_path=None)
+database = &lt;local_drama.infrastructure.database.sqlite.Database object at 0x000001DE6DC7B200&gt;
+
+    def test_shot_video_queries_ignore_stale_variants_without_cross_project_candidate_leakage(workspace, database) -&gt; None:
+        projects = ProjectService(database, workspace.projects_root)
+        project_a = projects.create_project(
+            code="stale_query_a", title="stale-query-a", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1,
+            target_duration_ms=60_000, allow_unconfigured_capabilities=True,
+        )
+        project_b = projects.create_project(
+            code="stale_query_b", title="stale-query-b", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1,
+            target_duration_ms=60_000, allow_unconfigured_capabilities=True,
+        )
+        episode_a = projects.list_episodes(str(projects.list_seasons(str(project_a["id"]))[0]["id"]))[0]
+        episode_b = projects.list_episodes(str(projects.list_seasons(str(project_b["id"]))[0]["id"]))[0]
+        shot_a = projects.create_shot(str(episode_a["id"]), "SH-A", 4_000)
+        shot_b = projects.create_shot(str(episode_b["id"]), "SH-B", 4_000)
+        generation = GenerationService(database, workspace)
+        intent_a = generation.create_intent(str(project_a["id"]), "SHOT", str(shot_a["id"]), "I2V_FORMAL", "stale query A")
+        intent_b = generation.create_intent(str(project_b["id"]), "SHOT", str(shot_b["id"]), "I2V_FORMAL", "stale query B")
+&gt;       profile_id = _published_camera_profile(workspace, database, "NATIVE")
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\tests\test_episode_worker_actions.py:289:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+apps\api\tests\test_director_fields.py:17: in _published_camera_profile
+    source = ProfileService(database, workspace.manifest_path).sync_manifest()["profiles"][0]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps\api\local_drama\application\profiles.py:176: in sync_manifest
+    manifest = self.load()
+               ^^^^^^^^^^^
+apps\api\local_drama\application\profiles.py:173: in load
+    return load_manifest(self.manifest_path)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/model_manifest.json')
+
+    def load_manifest(path: Path) -&gt; ManifestSnapshot:
+        resolved = path.resolve()
+        try:
+            raw = resolved.read_bytes()
+            data = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+&gt;           raise ManifestValidationError(f"无法读取本机 model_manifest.json: {resolved}") from error
+E           local_drama.infrastructure.manifest.ManifestValidationError: 无法读取本机 model_manifest.json: C:\Users\Qi\.codex\worktrees\3a00\model_manifest.json
+
+apps\api\local_drama\infrastructure\manifest.py:79: ManifestValidationError</failure></testcase><testcase classname="tests.test_episode_worker_actions" name="test_qc_action_persists_machine_evidence_without_human_approval" time="2.377" /><testcase classname="tests.test_episode_worker_actions" name="test_qc_reroll_limit_resolver_defaults_to_one_and_is_bounded" time="2.060" /><testcase classname="tests.test_whole_drama_orchestrator" name="test_whole_drama_status_truth_table[statuses0-EMPTY]" time="0.001" /><testcase classname="tests.test_whole_drama_orchestrator" name="test_whole_drama_status_truth_table[statuses1-NOT_STARTED]" time="0.001" /><testcase classname="tests.test_whole_drama_orchestrator" name="test_whole_drama_status_truth_table[statuses2-COMPLETED]" time="0.001" /><testcase classname="tests.test_whole_drama_orchestrator" name="test_whole_drama_status_truth_table[statuses3-CANCELLED]" time="0.001" /><testcase classname="tests.test_whole_drama_orchestrator" name="test_whole_drama_status_truth_table[statuses4-PAUSED_HITL]" time="0.001" /><testcase classname="tests.test_whole_drama_orchestrator" name="test_whole_drama_status_truth_table[statuses5-FAILED]" time="0.001" /><testcase classname="tests.test_whole_drama_orchestrator" name="test_whole_drama_status_truth_table[statuses6-RUNNING]" time="0.001" /><testcase classname="tests.test_whole_drama_orchestrator" name="test_whole_drama_status_truth_table[statuses7-PARTIAL]" time="0.001" /><testcase classname="tests.test_whole_drama_orchestrator" name="test_inspect_associates_episode_from_run_task_not_first_workflow_node" time="1.950" /><testcase classname="tests.test_whole_drama_orchestrator" name="test_whole_drama_run_reports_zero_partial_and_full_dispatch_truthfully[0-NOT_STARTED]" time="2.080" /><testcase classname="tests.test_whole_drama_orchestrator" name="test_whole_drama_run_reports_zero_partial_and_full_dispatch_truthfully[1-PARTIALLY_DISPATCHED]" time="1.905" /><testcase classname="tests.test_whole_drama_orchestrator" name="test_whole_drama_run_reports_zero_partial_and_full_dispatch_truthfully[3-DISPATCHED]" time="2.038" /><testcase classname="tests.test_whole_drama_orchestrator" name="test_whole_drama_pilot_scope_dispatches_only_two_selected_episodes" time="1.889" /><testcase classname="tests.test_whole_drama_orchestrator" name="test_whole_drama_parent_command_replays_and_rejects_payload_mismatch" time="2.129" /><testcase classname="tests.test_whole_drama_orchestrator" name="test_whole_drama_prepare_does_not_invent_missing_creative_decisions" time="2.123" /><testcase classname="tests.test_whole_drama_orchestrator" name="test_whole_drama_api_routes" time="3.121" /><testcase classname="tests.test_pipeline_orchestrator" name="test_episode_specs_keep_import_api_paragraph_numbering" time="0.001" /><testcase classname="tests.test_pipeline_orchestrator" name="test_source_coverage_marks_units_after_batch_60_unprocessed[61]" time="0.003" /><testcase classname="tests.test_pipeline_orchestrator" name="test_source_coverage_marks_units_after_batch_60_unprocessed[120]" time="0.006" /><testcase classname="tests.test_pipeline_orchestrator" name="test_source_coverage_marks_units_after_batch_60_unprocessed[121]" time="0.008" /><testcase classname="tests.test_pipeline_orchestrator" name="test_source_coverage_exposes_24000_character_tail[long_chapter]" time="0.006" /><testcase classname="tests.test_pipeline_orchestrator" name="test_source_coverage_exposes_24000_character_tail[long_paragraph]" time="0.004" /><testcase classname="tests.test_pipeline_orchestrator" name="test_episode_prompt_submits_exactly_24000_unicode_characters" time="0.001" /><testcase classname="tests.test_pipeline_orchestrator" name="test_source_coverage_merges_overlap_and_respects_authorized_first_ten_chapters" time="0.001" /><testcase classname="tests.test_pipeline_orchestrator" name="test_pipeline_rejects_checkpoint_when_source_sha_snapshot_changes" time="2.795" /><testcase classname="tests.test_pipeline_orchestrator" name="test_story_pipeline_generates_lightweight_plan_then_auto_ready_records" time="4.173" /><testcase classname="tests.test_pipeline_orchestrator" name="test_authorized_pipeline_apply_continues_in_backend_after_restart_and_replays" time="3.224" /><testcase classname="tests.test_pipeline_orchestrator" name="test_authorized_pipeline_apply_can_be_cancelled_before_application" time="3.139" /><testcase classname="tests.test_pipeline_orchestrator" name="test_pipeline_apply_preview_preserves_produced_episode_and_reports_context_changes" time="2.123" /><testcase classname="tests.test_audio_requirements" name="test_audio_requirements_only_read_current_revisions_of_active_shots" time="2.262" /><testcase classname="tests.test_audio_requirements" name="test_audio_requirements_report_missing_current_revision" time="1.786" /><testcase classname="tests.test_audio_requirements" name="test_tts_requirements_only_check_speakers_that_need_generation" time="2.418" /><testcase classname="tests.test_audio_requirements" name="test_tts_requirements_reuse_current_verified_audio_without_voice_generation" time="2.522" /><testcase classname="tests.test_dialogue_timing" name="test_multiple_lines_cannot_spill_into_the_next_shot_or_episode_tail" time="0.001" /><testcase classname="tests.test_dialogue_timing" name="test_intentional_mix_bindings_are_not_mistaken_for_shot_dialogue" time="0.001" /><testcase classname="tests.test_compose_duration_guard" name="test_worker_rejects_short_clip_before_ffmpeg" time="0.001" /><testcase classname="tests.test_compose_duration_guard" name="test_segment_concat_cannot_fill_episode_with_frozen_tail" time="0.001" /><testcase classname="tests.test_compose_duration_guard" name="test_compose_submission_reports_coverage_not_disk_failure" time="0.001" /><testcase classname="tests.test_compose_duration_guard" name="test_preflight_returns_source_deficit_without_execution" time="0.001" /><testcase classname="tests.test_frame_bridge_source_frame" name="test_frame_bridge_binds_real_last_frame_to_outgoing_boundary" time="6.013"><failure message="assert 404 == 405&#10; +  where 404 = &lt;Response [404 Not Found]&gt;.status_code">workspace = Settings(app_name='LocalDramaStudio', app_version='0.1.0', environment='development', instance_id='default', install_p...al_drama_studio'), instance_root=WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/local_drama_studio'), config_path=None)
+database = &lt;local_drama.infrastructure.database.sqlite.Database object at 0x000001DE6DCBAB40&gt;
+
+    def test_frame_bridge_binds_real_last_frame_to_outgoing_boundary(workspace, database) -&gt; None:
+        projects = ProjectService(database, workspace.projects_root)
+        project = projects.create_project(code="bridge_tail", title="Bridge tail", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1, target_duration_ms=2000, allow_unconfigured_capabilities=True)
+        season = projects.list_seasons(str(project["id"]))[0]
+        episode = projects.list_episodes(str(season["id"]))[0]
+        first = projects.create_shot(str(episode["id"]), "S001", 1000)
+        second = projects.create_shot(str(episode["id"]), "S002", 1000)
+        source = workspace.work_root / "bridge-tail.mp4"
+        subprocess.run([workspace.ffmpeg_path, "-f", "lavfi", "-i", "color=c=navy:s=32x32:d=1", "-pix_fmt", "yuv420p", "-y", str(source)], check=True, capture_output=True)
+        media = MediaService(database, workspace).import_file(str(project["id"]), source, owner_type="SHOT", owner_id=str(first["id"]), media_kind="VIDEO", purpose="SHOT_VIDEO")
+        current_source = workspace.work_root / "bridge-current.png"
+        subprocess.run([workspace.ffmpeg_path, "-f", "lavfi", "-i", "color=c=red:s=32x32", "-frames:v", "1", "-y", str(current_source)], check=True, capture_output=True)
+        current_media = MediaService(database, workspace).import_file(str(project["id"]), current_source, owner_type="SHOT", owner_id=str(second["id"]), media_kind="IMAGE", purpose="KEYFRAME")
+        timeline = TimelineService(database, workspace)
+        last = timeline.create_frame_anchor(str(media["media_version_id"]), position_mode="LAST_FRAME", role_hint="LAST_FRAME")
+        first_frame = timeline.create_frame_anchor(str(media["media_version_id"]), position_mode="FIRST_FRAME", role_hint="FIRST_FRAME")
+        static_end = timeline.create_frame_anchor(str(current_media["media_version_id"]), position_mode="LAST_FRAME", role_hint="LAST_FRAME")
+        assert static_end["source_media_version_id"] == current_media["media_version_id"]
+        assert static_end["extracted_media_version_id"] == current_media["media_version_id"]
+        assert static_end["extraction_method"] == "STATIC_IMAGE_REFERENCE"
+        transition = timeline.create_transition_constraint(str(first["id"]), str(second["id"]), "START_FROM_PREVIOUS_LAST", enforcement="ADVISORY")
+        commands = FrameBridgeCommandService(database)
+
+        with TestClient(create_app(workspace)) as client:
+            response = client.post(
+                f"/api/v2/frame-bridges/{transition['id']}:set-source-frame",
+                json={"expected_boundary_revision": 1, "frame_anchor_id": last["id"], "idempotency_key": "bridge-source-1"},
+            )
+            replay = client.post(
+                f"/api/v2/frame-bridges/{transition['id']}:set-source-frame",
+                json={"expected_boundary_revision": 1, "frame_anchor_id": last["id"], "idempotency_key": "bridge-source-1"},
+            )
+            mismatch = client.post(
+                f"/api/v2/frame-bridges/{transition['id']}:set-source-frame",
+                json={"expected_boundary_revision": 1, "frame_anchor_id": first_frame["id"], "idempotency_key": "bridge-source-1"},
+            )
+            retired = client.post(
+                f"/api/v1/frame-bridges/{transition['id']}/source-frame",
+                json={"expected_boundary_revision": 1, "frame_anchor_id": last["id"]},
+            )
+        assert response.status_code == 200, response.text
+        result = response.json()["frame_bridge"]
+
+        assert result["from_anchor_id"] == last["id"]
+        assert result["boundary_revision"] == 2
+        assert result["compatibility_status"] == "PENDING_REVIEW"
+        assert result["idempotent_replay"] is False
+        assert replay.status_code == 200, replay.text
+        assert replay.json()["frame_bridge"]["idempotent_replay"] is True
+        assert replay.json()["frame_bridge"]["boundary_revision"] == 2
+        assert mismatch.status_code == 409, mismatch.text
+        assert mismatch.json()["error"]["code"] == "FRAME_BRIDGE_IDEMPOTENCY_MISMATCH"
+&gt;       assert retired.status_code == 405
+E       assert 404 == 405
+E        +  where 404 = &lt;Response [404 Not Found]&gt;.status_code
+
+apps\api\tests\test_frame_bridge_source_frame.py:70: AssertionError</failure></testcase><testcase classname="tests.test_frame_bridge_source_frame" name="test_frame_bridge_projects_first_working_keyframe_and_prioritizes_explicit_transition" time="3.945" /><testcase classname="tests.test_frame_chaining" name="test_frame_chaining_same_scene_inherits" time="2.599" /><testcase classname="tests.test_frame_chaining" name="test_frame_chaining_scene_cut_detected" time="2.128" /><testcase classname="tests.test_frame_chaining" name="test_frame_chaining_no_successor" time="2.026" /><testcase classname="tests.test_frame_chaining" name="test_frame_chaining_unknown_scene_does_not_assume_continuity" time="2.080" /><testcase classname="tests.test_frame_chaining" name="test_adopt_video_does_not_invent_frame_chaining_without_explicit_tail" time="2.636" /><testcase classname="tests.test_episode_source_binding" name="test_episode_keeps_explicit_source_a_after_project_imports_source_b" time="3.253" /><testcase classname="tests.test_episode_source_binding" name="test_legacy_episode_with_multiple_committed_sources_is_ambiguous" time="2.963" /><testcase classname="tests.test_episode_source_binding" name="test_bound_source_content_change_blocks_preparation" time="2.671" /><testcase classname="tests.test_episode_source_binding" name="test_one_manual_shot_does_not_claim_the_episode_plan_is_complete" time="1.879" /><testcase classname="tests.test_episode_source_binding" name="test_explicit_cross_project_and_missing_source_versions_are_rejected" time="2.538" /><testcase classname="tests.test_shot_editing" name="test_semantic_reorder_and_split_preserve_lineage" time="3.070" /><testcase classname="tests.test_shot_editing" name="test_shot_edit_rejects_stale_ordering_token" time="3.023" /><testcase classname="tests.test_shot_editing" name="test_split_cannot_copy_revoked_state_or_unapproved_identity_pack" time="2.817" /><testcase classname="tests.test_beat_replan" name="test_selected_beat_replan_plan_apply_is_safe_idempotent_and_audited" time="3.175" /><testcase classname="tests.test_beat_replan" name="test_selected_beat_replan_stale_hash_cannot_apply" time="3.507" /><testcase classname="tests.test_beat_replan" name="test_middle_insert_and_reorder_keep_stable_shot_ids_and_revisions" time="3.148" /><testcase classname="tests.test_beat_replan" name="test_forged_or_omitted_shot_identity_produces_non_applicable_diff" time="3.315" /><testcase classname="tests.test_contact_sheet_export" name="test_contact_sheet_requires_a_current_selection" time="2.108" /><testcase classname="tests.test_contact_sheet_export" name="test_contact_sheet_exports_verified_original_and_small_thumbnail_without_database_writes" time="3.086" /><testcase classname="tests.test_contact_sheet_export" name="test_contact_sheet_uses_v2_working_slot_without_legacy_selection" time="3.787" /><testcase classname="tests.test_contact_sheet_export" name="test_contact_sheet_working_slot_suppresses_legacy_selection_for_same_slot" time="4.181" /><testcase classname="tests.test_contact_sheet_export" name="test_contact_sheet_rejects_changed_source_and_tampered_existing_export" time="2.678" /><testcase classname="tests.test_contact_sheet_export" name="test_contact_sheet_http_route_returns_real_export" time="3.511" /></testsuite></testsuites>

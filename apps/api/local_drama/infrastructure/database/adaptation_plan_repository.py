@@ -680,6 +680,39 @@ class SqliteAdaptationPlanRepository:
                        FROM adaptation_episode_source_spans WHERE plan_episode_id=? ORDER BY ordinal""",
                     (candidate["plan_episode_id"],),
                 ).fetchall()
+                if any(
+                    str(item["source_document_version_id"])
+                    != context["source_document_version_id"]
+                    for item in source_ranges
+                ):
+                    raise DomainRuleError(
+                        "ADAPTATION_SOURCE_BINDING_INVALID",
+                        "候选分集的来源证据不属于规划冻结的原稿版本",
+                    )
+                bounds = connection.execute(
+                    """SELECT MIN(unit.ordinal) AS start_paragraph,MAX(unit.ordinal) AS end_paragraph
+                       FROM source_document_units unit
+                       WHERE unit.source_document_version_id=? AND EXISTS (
+                         SELECT 1 FROM adaptation_episode_source_spans span
+                         WHERE span.plan_episode_id=?
+                           AND unit.source_start<span.unicode_end
+                           AND unit.source_end>span.unicode_start
+                       )""",
+                    (context["source_document_version_id"], candidate["plan_episode_id"]),
+                ).fetchone()
+                if bounds is None or bounds["start_paragraph"] is None or bounds["end_paragraph"] is None:
+                    raise DomainRuleError(
+                        "ADAPTATION_SOURCE_BINDING_INVALID",
+                        "候选分集来源证据无法映射到冻结原稿段落",
+                    )
+                source_binding = {
+                    "source_document_version_id": context["source_document_version_id"],
+                    "import_session_id": context["import_session_id"],
+                    "text_sha256": context["text_sha256"],
+                    "start_paragraph": int(bounds["start_paragraph"]),
+                    "end_paragraph": int(bounds["end_paragraph"]),
+                    "adaptation_source_spans": [dict(item) for item in source_ranges],
+                }
                 connection.execute(
                     """INSERT INTO episodes (id,season_id,number,display_order,code,title,narrative_status,production_status,
                        target_duration_ms,source_range_json,created_at,updated_at,created_by)
@@ -692,7 +725,7 @@ class SqliteAdaptationPlanRepository:
                         f"EPISODE_{next_global_episode_number:03d}",
                         str(candidate["title"]),
                         int(candidate["target_duration_ms"]),
-                        _json([dict(item) for item in source_ranges]),
+                        _json(source_binding),
                         now,
                         now,
                         actor,
@@ -727,12 +760,23 @@ class SqliteAdaptationPlanRepository:
 
     def _materialization_context(self, connection: Any, *, plan_id: str) -> dict[str, Any]:
         row = connection.execute(
-            """SELECT p.id AS plan_id,p.project_id,p.artifact_status,r.id AS revision_id,r.content_sha256,
+            """SELECT p.id AS plan_id,p.project_id,p.source_document_version_id,p.artifact_status,
+                      r.id AS revision_id,r.content_sha256,sdv.text_sha256,
+                      (SELECT imported.id FROM import_sessions imported
+                       WHERE imported.project_id=p.project_id
+                         AND imported.source_document_version_id=p.source_document_version_id
+                         AND EXISTS (SELECT 1 FROM audit_events ae
+                           WHERE ae.action='IMPORT_SESSION_COMMITTED'
+                             AND ae.subject_type='import_session' AND ae.subject_id=imported.id)
+                       ORDER BY imported.created_at DESC,imported.id DESC LIMIT 1) AS import_session_id,
                       (SELECT COUNT(*) FROM seasons season WHERE season.project_id=p.project_id) AS season_count,
                       (SELECT COALESCE(MAX(season.number),0) FROM seasons season WHERE season.project_id=p.project_id) AS max_season_number,
                       (SELECT COALESCE(MAX(season.display_order),0) FROM seasons season WHERE season.project_id=p.project_id) AS max_season_display_order,
                       (SELECT COUNT(*) FROM episodes episode JOIN seasons season ON season.id=episode.season_id WHERE season.project_id=p.project_id) AS episode_count
-               FROM adaptation_plans p JOIN adaptation_plan_revisions r ON r.id=p.current_revision_id WHERE p.id=?""",
+               FROM adaptation_plans p
+               JOIN adaptation_plan_revisions r ON r.id=p.current_revision_id
+               JOIN source_document_versions sdv ON sdv.id=p.source_document_version_id
+               WHERE p.id=?""",
             (plan_id,),
         ).fetchone()
         if row is None:
@@ -750,6 +794,13 @@ class SqliteAdaptationPlanRepository:
             blockers.append({"code": "ADAPTATION_PLAN_NOT_APPROVED", "message": "只有已批准的规划才可以发布真实项目结构"})
         if not candidates:
             blockers.append({"code": "ADAPTATION_REVIEW_NO_EPISODES", "message": "规划没有可发布的候选分集"})
+        if not row["import_session_id"]:
+            blockers.append(
+                {
+                    "code": "ADAPTATION_SOURCE_COMMIT_REQUIRED",
+                    "message": "规划原稿尚未确认提交，不能创建无法追溯来源的分集",
+                }
+            )
         unsupported = connection.execute(
             """SELECT COUNT(*) FROM adaptation_episode_items item WHERE item.plan_revision_id=? AND NOT EXISTS
                (SELECT 1 FROM adaptation_episode_source_spans span WHERE span.plan_episode_id=item.id)""",
@@ -776,6 +827,9 @@ class SqliteAdaptationPlanRepository:
         return {
             "plan_id": str(row["plan_id"]),
             "project_id": str(row["project_id"]),
+            "source_document_version_id": str(row["source_document_version_id"]),
+            "import_session_id": str(row["import_session_id"] or ""),
+            "text_sha256": str(row["text_sha256"] or ""),
             "revision_id": str(row["revision_id"]),
             "content_sha256": str(row["content_sha256"]),
             "artifact_status": str(row["artifact_status"]),
@@ -1151,10 +1205,50 @@ class SqliteAdaptationPlanRepository:
                 """INSERT INTO llm_invocations
                    (id,job_attempt_id,run_node_id,profile_version_id,provider,model,prompt_contract_version,request_sha256,status,
                     uncertain_side_effect,created_at,updated_at,created_by,revision,schema_version)
-                   VALUES (?,?,?,?,?,?, 'adaptation-analysis/v1',?,'PENDING',0,?,?,?,1,'v1')""",
+                   VALUES (?,?,?,?,?,?, 'adaptation-analysis/v2',?,'PENDING',0,?,?,?,1,'v1')""",
                 (invocation_id, attempt["id"] if attempt else None, run_node_id, profile_version_id, provider, model, request_sha256, _utc_now(), _utc_now(), "local-worker"),
             )
         return invocation_id
+
+    def freeze_analysis_request(
+        self,
+        *,
+        run_node_id: str,
+        source_text_sha256: str,
+        request: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Persist the first exact request envelope so explicit retries cannot drift."""
+        with self.database.transaction() as connection:
+            row = connection.execute(
+                """SELECT n.output_json,p.source_document_version_id,sdv.text_sha256
+                   FROM adaptation_plan_run_nodes n
+                   JOIN adaptation_plan_runs r ON r.id=n.run_id
+                   JOIN adaptation_plans p ON p.id=r.plan_id
+                   JOIN source_document_versions sdv ON sdv.id=p.source_document_version_id
+                   WHERE n.id=?""",
+                (run_node_id,),
+            ).fetchone()
+            if row is None or str(row["text_sha256"] or "") != source_text_sha256:
+                raise DomainRuleError("ADAPTATION_JOB_SNAPSHOT_STALE", "分析请求对应的原稿版本已变化")
+            descriptor = _loads(row["output_json"], {})
+            frozen = descriptor.get("request_checkpoint") if isinstance(descriptor, dict) else None
+            if frozen is not None:
+                if not isinstance(frozen, dict) or frozen.get("schema_version") != "adaptation-analysis-request/v2":
+                    raise DomainRuleError("ADAPTATION_REQUEST_CHECKPOINT_INVALID", "分析请求检查点格式无效")
+                return frozen
+            frozen = {
+                "schema_version": "adaptation-analysis-request/v2",
+                "source_document_version_id": str(row["source_document_version_id"]),
+                "source_text_sha256": source_text_sha256,
+                **request,
+            }
+            descriptor["request_checkpoint"] = frozen
+            connection.execute(
+                """UPDATE adaptation_plan_run_nodes
+                   SET output_json=?,updated_at=?,revision=revision+1 WHERE id=?""",
+                (_json(descriptor), _utc_now(), run_node_id),
+            )
+        return frozen
 
     def persist_analysis_node_success(self, *, snapshot: dict[str, Any], output: dict[str, Any], latency_ms: int, invocation_id: str) -> None:
         """Persist one node output, its stage artifacts, and run/plan progression atomically."""

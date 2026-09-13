@@ -140,7 +140,10 @@ export function DirectorDeskPage() {
   const batchParam = searchParams.get("batch") ?? "";
   const batchDoneParam = searchParams.get("batchDone") ?? "";
   const batchState = useMemo(() => readDirectorBatch(batchParam, episodeId ?? "", batchDoneParam), [batchDoneParam, batchParam, episodeId]);
-  const batchShotIds = useMemo(() => batchState.shotIds.filter((id) => shots.some((shot) => shot.id === id)), [batchState.shotIds, shots]);
+  // The URL/session batch is the confirmed collection. `shots` is only the
+  // bounded navigator window around the current item and cannot validate or
+  // shrink that collection.
+  const batchShotIds = batchState.shotIds;
   const batchDoneIds = useMemo(() => batchState.doneIds.filter((id) => batchShotIds.includes(id)), [batchShotIds, batchState.doneIds]);
   const batchIndex = selected ? batchShotIds.indexOf(selected.id) : -1;
   const batchActive = batchShotIds.length > 0 && batchIndex >= 0;
@@ -325,7 +328,7 @@ export function DirectorDeskPage() {
     },
   }), [episodeId, modalOpen, navigate, next, projectId, searchParams]));
   useStudioCommand(useMemo(() => ({ id: "shot.generate", label: "打开当前镜头生成设置", description: "先检查模型、资产与资源预检", group: "当前页面" as const, shortcut: "G", enabled: () => Boolean(!modalOpen && selected && desk.data?.allowed_actions.generate), run: () => { setInspectorContext("generate"); setNavDrawerOpen(false); setInspectorDrawerOpen(true); } }), [desk.data?.allowed_actions.generate, modalOpen, selected, setInspectorContext]));
-  useStudioCommand(useMemo(() => ({ id: "shot.reroll", label: "重新生成当前镜头", description: "沿用当前能力并自动更换随机条件", group: "当前页面" as const, shortcut: "R", enabled: () => Boolean(!modalOpen && parentVariantId && desk.data?.allowed_actions.generate), run: () => rerollMutation.mutate() }), [desk.data?.allowed_actions.generate, modalOpen, parentVariantId, rerollMutation]));
+  useStudioCommand(useMemo(() => ({ id: "shot.reroll", label: "新拍当前镜头候选", description: "保留当前结果与语义输入，显式更换随机条件", group: "当前页面" as const, shortcut: "R", enabled: () => Boolean(!modalOpen && parentVariantId && desk.data?.allowed_actions.generate), run: () => rerollMutation.mutate() }), [desk.data?.allowed_actions.generate, modalOpen, parentVariantId, rerollMutation]));
   useStudioCommand(useMemo(() => ({ id: "shot.compare", label: "并排比较候选", description: "支持 2-up / 4-up 与统一视频播放", group: "当前页面" as const, shortcut: "C", enabled: () => candidates.length > 1 && !modalOpen, run: () => setCompareOpen(true) }), [candidates.length, modalOpen]));
   useStudioCommand(useMemo(() => ({ id: "shot.candidate.1", label: "聚焦候选 1", group: "当前页面" as const, shortcut: "1", enabled: () => Boolean(!modalOpen && candidates[0]), run: () => { if (candidates[0]) setActiveCandidateId(candidates[0].media_version_id); } }), [candidates, modalOpen]));
   useStudioCommand(useMemo(() => ({ id: "shot.candidate.2", label: "聚焦候选 2", group: "当前页面" as const, shortcut: "2", enabled: () => Boolean(!modalOpen && candidates[1]), run: () => { if (candidates[1]) setActiveCandidateId(candidates[1].media_version_id); } }), [candidates, modalOpen]));
@@ -362,7 +365,7 @@ export function DirectorDeskPage() {
               {markReadyMutation.isPending ? "正在标记就绪…" : "标记就绪"}
             </button>
           )}
-          <button type="button" className="director-button primary" disabled={!parentVariantId || !desk.data?.allowed_actions.generate || rerollMutation.isPending || desk.isPlaceholderData} title={!desk.data?.allowed_actions.generate ? "当前镜头尚未满足生成条件" : !parentVariantId ? "当前没有可作为父节点的候选" : undefined} onClick={activeIsKeyframeImage ? openGenerationInspector : () => rerollMutation.mutate()}>{activeIsKeyframeImage ? "重生成首尾帧" : rerollMutation.isPending ? "正在重新生成…" : desk.isPlaceholderData ? "正在载入镜头…" : "重新生成当前镜头"}</button>
+          <button type="button" className="director-button primary" disabled={!parentVariantId || !desk.data?.allowed_actions.generate || rerollMutation.isPending || desk.isPlaceholderData} title={!desk.data?.allowed_actions.generate ? "当前镜头尚未满足生成条件" : !parentVariantId ? "当前没有可作为父节点的候选" : undefined} onClick={activeIsKeyframeImage ? openGenerationInspector : () => rerollMutation.mutate()}>{activeIsKeyframeImage ? "重生成首尾帧" : rerollMutation.isPending ? "正在新拍候选…" : desk.isPlaceholderData ? "正在载入镜头…" : "新拍候选"}</button>
         </div>
       </header>
 
@@ -423,7 +426,7 @@ export function DirectorDeskPage() {
           </div>
           <div className="director-inspector-body">
             {inspectorContext === "generate" && (parentVariantId && !activeIsKeyframeImage
-              ? <><div className="director-section-head"><strong>继续生成</strong><span>沿用当前 AI 配置</span></div><button type="button" className="director-button primary wide" disabled={!desk.data?.allowed_actions.generate || rerollMutation.isPending} onClick={() => rerollMutation.mutate()}>{rerollMutation.isPending ? "正在重新生成…" : "再生成一个候选"}</button><p className="director-help">AI 自动更换随机条件并保留当前结果，不需要重新设置参数。</p></>
+              ? <><div className="director-section-head"><strong>新拍候选</strong><span>沿用当前语义输入</span></div><button type="button" className="director-button primary wide" disabled={!desk.data?.allowed_actions.generate || rerollMutation.isPending} onClick={() => rerollMutation.mutate()}>{rerollMutation.isPending ? "正在新拍候选…" : "新拍一个候选"}</button><p className="director-help">保留当前结果与版本化提示输入，仅显式更换随机条件；失败任务的原输入重试请在任务中心执行。</p></>
               : <ShotGenerationInspector
                 episodeId={episodeId}
                 shotId={selected.id}
@@ -502,7 +505,7 @@ export function DirectorDeskPage() {
             renderSecondaryAction={(candidate) => candidate.stage === "FORMAL" && candidate.media_kind === "VIDEO" ? <button type="button" onClick={() => navigate(routes.postReview(projectId, episodeId))}>前往审核</button> : candidate.stage === "PROXY" && candidate.selected ? <button type="button" title="在当前镜头生成正式版本" onClick={openGenerationInspector}>生成正式版</button> : null}
           />}
           {candidates.length === 0 && <div className="director-take-empty"><strong>还没有候选</strong><span>生成后可在这里同屏比较；选择与批准始终是两个动作。</span></div>}
-          {activeIsKeyframeImage ? <button type="button" className="director-new-take" onClick={openGenerationInspector}>+ 重生成首尾帧</button> : parentVariantId ? <button type="button" className="director-new-take" disabled={rerollMutation.isPending} onClick={() => rerollMutation.mutate()}>+ 再生成一个</button> : candidates.length ? <button type="button" className="director-new-take" disabled>+ 先选择候选</button> : <Link className="director-new-take" to={generationHref} onClick={openGenerationInspector}>+ 生成首个候选</Link>}
+          {activeIsKeyframeImage ? <button type="button" className="director-new-take" onClick={openGenerationInspector}>+ 重生成首尾帧</button> : parentVariantId ? <button type="button" className="director-new-take" disabled={rerollMutation.isPending} onClick={() => rerollMutation.mutate()}>+ 新拍候选</button> : candidates.length ? <button type="button" className="director-new-take" disabled>+ 先选择候选</button> : <Link className="director-new-take" to={generationHref} onClick={openGenerationInspector}>+ 生成首个候选</Link>}
         </div>}
         {timelineOpen && timelineTab === "timeline" && <div className="director-timeline-preview-pane">
           <DirectorTimelinePreview

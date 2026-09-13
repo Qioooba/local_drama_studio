@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from local_drama.application.character_identity_packs import CharacterIdentityPackService
+from local_drama.application.episode_front_half_actions import EpisodeFrontHalfActionService
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
 from local_drama.application.story_assets import StoryAssetService
@@ -302,6 +303,31 @@ def test_shot_binding_and_stale_detection(workspace, database) -> None:
     assert packs_on_shot_after[0]["identity_pack_version_id"] == v1["id"]
     assert packs_on_shot_after[0]["latest_approved_version_id"] == v2["id"]
     assert packs_on_shot_after[0]["is_stale"] is True
+
+
+def test_front_half_fingerprint_ignores_unadopted_pack_but_tracks_shot_binding(workspace, database) -> None:
+    ctx = _setup_character_and_media(workspace, database)
+    pack_svc = CharacterIdentityPackService(database)
+    pack, v1 = _create_approved_pack(ctx, database, code="FINGERPRINT_PACK")
+    shot_id = _create_shot(database, ctx["project_id"], "S_FINGERPRINT")
+    StoryAssetService(database, workspace).bind_asset_to_shot(
+        shot_id, str(ctx["character"]["id"]), "main",
+    )
+    pack_svc.bind_shot_identity_pack(shot_id, ctx["character"]["id"], v1["id"])
+    with database.connect() as connection:
+        episode_id = str(connection.execute("SELECT episode_id FROM shots WHERE id=?", (shot_id,)).fetchone()[0])
+    front_half = EpisodeFrontHalfActionService(database, workspace)
+    before = front_half.snapshot(episode_id)
+
+    draft = pack_svc.create_version_draft(pack["id"], from_version_id=v1["id"])
+    after_unadopted = front_half.snapshot(episode_id)
+    assert after_unadopted == before
+
+    v2 = pack_svc.approve_pack_version(draft["id"], comment="人工确认切换版本")
+    pack_svc.bind_shot_identity_pack(shot_id, ctx["character"]["id"], v2["id"])
+    after_binding = front_half.snapshot(episode_id)
+    assert after_binding != before
+    assert {str(item["id"]) for item in after_binding["identity_pack_versions"]} == {str(v2["id"])}
 
 
 def test_unbound_shot_character_exposes_approved_pack_choices(workspace, database) -> None:

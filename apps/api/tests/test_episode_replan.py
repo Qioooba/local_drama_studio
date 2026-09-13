@@ -80,11 +80,36 @@ def _context(workspace, database):
     episode = projects.list_episodes(str(season["id"]))[0]
     source = workspace.work_root / f"episode-replan-{uuid.uuid4().hex[:8]}.md"
     source.write_text("# 本集原文\n\n角色进入房间。", encoding="utf-8")
-    imported = DocumentImportService(database, workspace).import_document(str(project["id"]), source)
+    documents = DocumentImportService(database, workspace)
+    imported = documents.import_document(str(project["id"]), source)
+    documents.commit(
+        str(imported["import_session_id"]),
+        str(imported["preview_hash"]),
+        source_paragraph_start=1,
+        source_paragraph_end=1,
+    )
+    with database.connect() as connection:
+        source_hash = str(
+            connection.execute(
+                "SELECT text_sha256 FROM source_document_versions WHERE id=?",
+                (imported["source_document_version_id"],),
+            ).fetchone()[0]
+        )
     with database.transaction() as connection:
         connection.execute(
             "UPDATE episodes SET target_duration_ms=120000,source_range_json=? WHERE id=?",
-            (json.dumps({"start_paragraph": 1, "end_paragraph": 1}), str(episode["id"])),
+            (
+                json.dumps(
+                    {
+                        "start_paragraph": 1,
+                        "end_paragraph": 1,
+                        "source_document_version_id": imported["source_document_version_id"],
+                        "import_session_id": imported["import_session_id"],
+                        "text_sha256": source_hash,
+                    }
+                ),
+                str(episode["id"]),
+            ),
         )
     return project, episode, imported
 

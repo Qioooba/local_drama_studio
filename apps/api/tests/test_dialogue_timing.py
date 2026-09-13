@@ -1,8 +1,8 @@
 import pytest
 
+from local_drama.application.timeline import TimelineService
 from local_drama.domain.dialogue_timing import dialogue_timing_issues
 from local_drama.domain.errors import DomainRuleError
-from local_drama.application.timeline import TimelineService
 
 
 def _items():

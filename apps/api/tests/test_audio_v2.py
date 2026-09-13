@@ -4,9 +4,9 @@ import subprocess
 
 from fastapi.testclient import TestClient
 
+from local_drama.application.dialogue import DialogueService
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
-from local_drama.application.dialogue import DialogueService
 from local_drama.main import create_app
 
 

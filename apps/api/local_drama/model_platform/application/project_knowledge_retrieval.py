@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import math
-import json
 import hashlib
+import json
+import math
 import struct
 import uuid
 from dataclasses import dataclass

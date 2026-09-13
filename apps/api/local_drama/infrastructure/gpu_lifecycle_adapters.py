@@ -270,11 +270,10 @@ def build_gpu_lifecycle_components(
     # Eviction order: the managed llama-server child dies first so the ComfyUI
     # VRAM gate that follows verifies its ~20 GB release before anything new
     # claims the device.
-    ollama_client = ollama or (
-        OllamaRuntimeClient(settings.ollama_base_url, timeout_seconds=10)
-        if settings.llm_provider.strip().upper() == "OLLAMA_LOOPBACK"
-        else None
-    )
+    # Ollama is an independently managed GPU runtime.  Its lifecycle endpoint
+    # must remain available for eviction even when inference currently routes
+    # through llama.cpp or an OpenAI-compatible provider.
+    ollama_client = ollama or OllamaRuntimeClient(settings.ollama_base_url, timeout_seconds=10)
     adapters = GpuLifecycleAdapterRegistry(
         (
             ManagedLlamaCppGpuLifecycleAdapter(

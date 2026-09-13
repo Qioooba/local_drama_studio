@@ -59,6 +59,31 @@ class ComfyGenerationService:
         )
         self.gpu_coordinator = gpu_coordinator
 
+    @staticmethod
+    def _runtime_semantic_inputs(snapshot: dict[str, Any], declared_roles: set[str]) -> tuple[dict[str, Any], dict[str, str]]:
+        """Resolve only Profile-declared settings that target bound roles."""
+
+        settings = _object_dict(snapshot.get("effective_settings"))
+        raw_bindings = snapshot.get("runtime_bindings")
+        if not isinstance(raw_bindings, dict):
+            return {}, {}
+        semantic: dict[str, Any] = {}
+        applied: dict[str, str] = {}
+        for setting_name, raw_role in raw_bindings.items():
+            role = str(raw_role or "").strip()
+            if setting_name not in settings or role not in declared_roles:
+                continue
+            value = settings[setting_name]
+            if role in semantic and semantic[role] != value:
+                raise DomainRuleError(
+                    "RUNTIME_SEMANTIC_BINDING_CONFLICT",
+                    "多个运行参数为同一 Workflow 语义槽提供了不同值",
+                    {"role": role, "settings": [*applied, str(setting_name)]},
+                )
+            semantic[role] = value
+            applied[str(setting_name)] = role
+        return semantic, applied
+
     def submit_next(
         self,
         worker_id: str,
@@ -110,6 +135,14 @@ class ComfyGenerationService:
         # ...) stay in the immutable job snapshot for audit but must never be
         # written into a node input they do not belong to.
         declared_roles = set(effective_workflow["workflow_bindings"])
+        effective_snapshot = snapshot.get("execution_snapshot", {}).get("effective_configuration")
+        runtime_setting_roles: dict[str, str] = {}
+        if isinstance(effective_snapshot, dict):
+            runtime_semantic, runtime_setting_roles = self._runtime_semantic_inputs(
+                effective_snapshot,
+                declared_roles,
+            )
+            semantic_inputs.update(runtime_semantic)
         snapshot_only_roles = sorted(str(role) for role in set(semantic_inputs) - declared_roles)
         semantic_inputs = {role: value for role, value in semantic_inputs.items() if role in declared_roles}
         for binding in snapshot.get("media_bindings", []):
@@ -192,9 +225,9 @@ class ComfyGenerationService:
             semantic_inputs[role] = target_name
         compiled = self.workflows.compile_semantic_inputs(workflow_version_id, semantic_inputs)
         compiled["effect_report"]["snapshot_only_roles"] = snapshot_only_roles
-        effective_snapshot = snapshot.get("execution_snapshot", {}).get("effective_configuration")
         if isinstance(effective_snapshot, dict):
             runtime_evidence = self._apply_effective_configuration(compiled["workflow"], effective_snapshot)
+            runtime_evidence["semantic_setting_roles"] = runtime_setting_roles
             if runtime_evidence["changed"]:
                 compiled["compiled_hash"] = hashlib.sha256(
                     json.dumps(
@@ -214,6 +247,13 @@ class ComfyGenerationService:
         try:
             if before_queue_prompt is not None:
                 before_queue_prompt(job, attempt)
+            self.jobs.heartbeat(
+                str(attempt["id"]),
+                token,
+                worker_id,
+                progress={"phase": "SUBMITTING_TO_PROVIDER", "client_id": client_id},
+                lease_seconds=self.GPU_LEASE_SECONDS,
+            )
             response = self.comfy.queue_prompt(
                 compiled["workflow"],
                 client_id=client_id,
@@ -226,14 +266,21 @@ class ComfyGenerationService:
             )
         except DomainRuleError as error:
             if error.code == "COMFY_LOOPBACK_UNAVAILABLE":
-                self.jobs.complete(
-                    str(attempt["id"]),
-                    token,
-                    worker_id,
-                    success=False,
-                    error_code="COMFY_RUNTIME_UNAVAILABLE",
-                    error_detail_redacted="Comfy loopback unavailable; attempt closed locally",
-                )
+                cause = str((error.details or {}).get("cause") or "")
+                if cause in {"TimeoutError", "URLError"}:
+                    self.jobs.mark_provider_acceptance_unknown(
+                        str(attempt["id"]), token, worker_id,
+                        error_code="COMFY_PROVIDER_ACCEPTANCE_UNKNOWN",
+                    )
+                else:
+                    self.jobs.complete(
+                        str(attempt["id"]),
+                        token,
+                        worker_id,
+                        success=False,
+                        error_code="COMFY_RUNTIME_UNAVAILABLE",
+                        error_detail_redacted="Comfy loopback unavailable before acceptance",
+                    )
             else:
                 safe_detail = error.message
                 if error.code == "COMFY_PROMPT_REJECTED" and error.details:
@@ -258,9 +305,17 @@ class ComfyGenerationService:
             )
             raise
         prompt_id = str(response["prompt_id"])
-        self._persist_job_execution_evidence(str(job["id"]), compiled, prompt_id)
         self.jobs.attach_provider(
-            str(attempt["id"]), token, worker_id, prompt_id, comfy_prompt_id=prompt_id, comfy_client_id=client_id, sandbox_rel_path=f"jobs/{job['id']}/comfy"
+            str(attempt["id"]), token, worker_id, prompt_id,
+            comfy_prompt_id=prompt_id,
+            comfy_client_id=client_id,
+            sandbox_rel_path=f"jobs/{job['id']}/comfy",
+            execution_evidence={
+                "compiled_workflow_sha256": compiled.get("compiled_hash"),
+                "runtime_overrides_evidence": compiled.get("runtime_overrides", {}),
+                "parameter_effect_report": compiled.get("effect_report", {}),
+                "comfy_prompt_id": prompt_id,
+            },
         )
         self._record_provider_event(str(attempt["id"]), prompt_id, "QUEUED", {"client_id": client_id})
         return {
@@ -358,51 +413,12 @@ class ComfyGenerationService:
         settings = _object_dict(snapshot.get("effective_settings"))
         sigma_points = settings.get("steps", settings.get("sigma_points"))
         changed = False
+        # Scalar overrides are applied by compile_semantic_inputs using the
+        # frozen Profile setting -> workflow semantic-role mapping.  Never
+        # scan the graph for matching field names: unrelated samplers and
+        # reference-scaling nodes often expose the same keys.
         sigma_nodes: list[str] = []
-        if isinstance(sigma_points, int) and not isinstance(sigma_points, bool):
-            for node_id, node in workflow.items():
-                if not isinstance(node, dict) or node.get("class_type") not in {"BasicScheduler", "KSampler", "KSamplerAdvanced"}:
-                    continue
-                inputs = node.get("inputs")
-                if isinstance(inputs, dict) and "steps" in inputs:
-                    inputs["steps"] = sigma_points
-                    sigma_nodes.append(str(node_id))
-                    changed = True
-
-        parameter_nodes: dict[str, list[str]] = {
-            "cfg": [],
-            "sampler_name": [],
-            "scheduler": [],
-            "denoise": [],
-            "width": [],
-            "height": [],
-            "frame_count": [],
-            "fps": [],
-        }
-        for node_id, node in workflow.items():
-            if not isinstance(node, dict):
-                continue
-            raw_inputs = node.get("inputs")
-            if not isinstance(raw_inputs, dict):
-                continue
-            inputs = raw_inputs
-            class_type = str(node.get("class_type") or "")
-            for key in ("cfg", "sampler_name", "scheduler", "denoise", "width", "height"):
-                value = settings.get(key)
-                if value is not None and key in inputs:
-                    inputs[key] = value
-                    parameter_nodes[key].append(str(node_id))
-                    changed = True
-            frame_count = settings.get("frame_count")
-            if isinstance(frame_count, int) and "Video" in class_type and "length" in inputs:
-                inputs["length"] = frame_count
-                parameter_nodes["frame_count"].append(str(node_id))
-                changed = True
-            fps = settings.get("fps")
-            if isinstance(fps, (int, float)) and not isinstance(fps, bool) and class_type == "CreateVideo" and "fps" in inputs:
-                inputs["fps"] = float(fps)
-                parameter_nodes["fps"].append(str(node_id))
-                changed = True
+        parameter_nodes: dict[str, list[str]] = {}
 
         acceleration = str(settings.get("acceleration") or "OFF").upper()
         # ``acceleration`` controls only the optional MiniMax H3 Turbo LoRA.
@@ -437,6 +453,11 @@ class ComfyGenerationService:
             else:
                 lora_asset = str(_object_dict(workflow[lora_nodes[0]].get("inputs")).get("lora_name") or "") or None
             model_ref = [lora_nodes[0], 0]
+            for lora_id in lora_nodes:
+                turbo_inputs = _object_dict(workflow[lora_id].get("inputs"))
+                turbo_inputs["strength_model"] = float(lora_strength)
+                workflow[lora_id]["inputs"] = turbo_inputs
+                changed = True
             for node in workflow.values():
                 if not isinstance(node, dict):
                     continue
@@ -444,9 +465,7 @@ class ComfyGenerationService:
                 if not isinstance(raw_inputs, dict):
                     continue
                 inputs = raw_inputs
-                if node.get("class_type") == "LoraLoaderModelOnly":
-                    inputs["strength_model"] = float(lora_strength)
-                elif node.get("class_type") in {"BasicScheduler", "BasicGuider"} and inputs.get("model") == ["1", 0]:
+                if node.get("class_type") in {"BasicScheduler", "BasicGuider"} and inputs.get("model") == ["1", 0]:
                     inputs["model"] = model_ref
                     changed = True
         elif acceleration == "OFF" and lora_nodes:
@@ -793,16 +812,22 @@ class ComfyGenerationService:
             relative = target.relative_to(self.settings.work_root).as_posix()
             artifacts.append(self.jobs.register_artifact(str(attempt["id"]), "COMFY_OUTPUT", relative))
         result = self.jobs.complete(str(attempt["id"]), str(attempt["lease_token"]), worker_id, success=True, provider_job_id=prompt_id)
-        completion = build_asset_image_completion(self.database, self.settings)
-        try:
-            completion.finalize_job(str(attempt["job_id"]), artifacts)
-        except DomainRuleError as error:
-            completion.record_finalization_failure(str(attempt["job_id"]), error)
-        keyframe_completion = build_shot_keyframe_completion(self.database, self.settings)
-        try:
-            keyframe_completion.finalize_job(str(attempt["job_id"]), artifacts)
-        except DomainRuleError as error:
-            keyframe_completion.record_failure(str(attempt["job_id"]), error)
+        if str(result.get("job_state")) != "SUCCEEDED":
+            self._record_provider_event(
+                attempt_id,
+                prompt_id,
+                "LATE_SUCCESS_IGNORED",
+                {"job_state": result.get("job_state"), "artifact_count": len(artifacts)},
+                progress=1.0,
+            )
+            return {
+                "status": str(result.get("job_state") or "CANCELLED"),
+                "prompt_id": prompt_id,
+                "artifacts": artifacts,
+                "result": result,
+                "late_provider_success": True,
+            }
+        self._finalize_business_outputs(str(attempt["job_id"]), artifacts)
         with self.database.connect() as connection:
             job_row = connection.execute("SELECT subject_type, subject_id FROM jobs WHERE id=?", (attempt["job_id"],)).fetchone()
         if job_row and job_row["subject_type"] == "GENERATION_VARIANT":
@@ -875,7 +900,94 @@ class ComfyGenerationService:
             replace_path(partial, target)
             artifacts.append(self.jobs.register_artifact(str(row["id"]), "COMFY_OUTPUT", target.relative_to(self.settings.work_root).as_posix()))
         result = self.jobs.recover_provider_success(attempt_id, provider_job_id)
-        return {"status": "SUCCEEDED", "prompt_id": provider_job_id, "artifacts": artifacts, "result": result}
+        business_outputs = self._finalize_business_outputs(str(row["job_id"]), artifacts)
+        return {
+            "status": "SUCCEEDED",
+            "prompt_id": provider_job_id,
+            "artifacts": artifacts,
+            "result": result,
+            "business_outputs": business_outputs,
+        }
+
+    def _finalize_business_outputs(self, job_id: str, artifacts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        outcomes: list[dict[str, Any]] = []
+        asset_completion = build_asset_image_completion(self.database, self.settings)
+        try:
+            result = asset_completion.finalize_job(job_id, artifacts)
+            if result is not None:
+                outcomes.append({"kind": "ASSET_IMAGE", "status": "FINALIZED", "result": result})
+        except DomainRuleError as error:
+            asset_completion.record_finalization_failure(job_id, error)
+            outcomes.append({"kind": "ASSET_IMAGE", "status": "FAILED", "error_code": error.code})
+        keyframe_completion = build_shot_keyframe_completion(self.database, self.settings)
+        try:
+            result = keyframe_completion.finalize_job(job_id, artifacts)
+            if result is not None:
+                outcomes.append({"kind": "SHOT_KEYFRAME", "status": "FINALIZED", "result": result})
+        except DomainRuleError as error:
+            keyframe_completion.record_failure(job_id, error)
+            outcomes.append({"kind": "SHOT_KEYFRAME", "status": "FAILED", "error_code": error.code})
+        return outcomes
+
+    def reconcile_succeeded_business_outputs(self, *, limit: int = 50) -> dict[str, Any]:
+        """Finish idempotent asset/keyframe adoption after a process restart.
+
+        A crash can occur after the durable Job is marked SUCCEEDED but before
+        its output is promoted into the owning production batch.  Provider
+        recovery cannot see that state because the attempt is no longer
+        orphaned, so startup performs this separate bounded reconciliation.
+        """
+
+        bounded_limit = max(1, min(int(limit), 100))
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """SELECT DISTINCT j.id
+                FROM jobs j
+                LEFT JOIN asset_image_generation_batch_items ai ON ai.job_id=j.id
+                LEFT JOIN shot_keyframe_generation_batch_items ki ON ki.job_id=j.id
+                WHERE j.state='SUCCEEDED'
+                  AND (
+                    (ai.id IS NOT NULL AND ai.status NOT IN ('SUCCEEDED','SUPERSEDED','FAILED','CANCELLED'))
+                    OR (ki.id IS NOT NULL AND ki.status NOT IN ('SUCCEEDED','SUPERSEDED','FAILED','CANCELLED'))
+                  )
+                ORDER BY j.updated_at,j.id LIMIT ?""",
+                (bounded_limit,),
+            ).fetchall()
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            job_id = str(row["id"])
+            with self.database.connect() as connection:
+                artifact_rows = connection.execute(
+                    """SELECT ar.* FROM artifacts ar
+                    JOIN job_attempts a ON a.id=ar.job_attempt_id
+                    WHERE a.job_id=? ORDER BY ar.created_at,ar.id""",
+                    (job_id,),
+                ).fetchall()
+            artifacts = [dict(artifact) for artifact in artifact_rows]
+            outcomes = self._finalize_business_outputs(job_id, artifacts)
+            failed = [outcome for outcome in outcomes if outcome["status"] == "FAILED"]
+            finalized = [outcome for outcome in outcomes if outcome["status"] == "FINALIZED"]
+            if failed:
+                items.append(
+                    {
+                        "job_id": job_id,
+                        "status": "DEFERRED",
+                        "artifact_count": len(artifacts),
+                        "outcomes": outcomes,
+                    }
+                )
+            elif finalized:
+                items.append(
+                    {
+                        "job_id": job_id,
+                        "status": "FINALIZED",
+                        "artifact_count": len(artifacts),
+                        "outcomes": outcomes,
+                    }
+                )
+            else:
+                items.append({"job_id": job_id, "status": "NO_MATCH", "artifact_count": len(artifacts)})
+        return {"inspected": len(rows), "finalized": sum(item["status"] == "FINALIZED" for item in items), "items": items}
 
     def recover_uncertain_successes(self, *, limit: int = 20) -> dict[str, Any]:
         """Recover provider-confirmed work without asking for attempt identifiers.

@@ -60,6 +60,36 @@ def test_stage_definitions_and_front_half_action_mapping() -> None:
     assert ACTION_STAGE["DELIVERY"] == "COMPOSE_QC"
 
 
+def test_episode_start_replays_before_preflight_and_rejects_payload_mismatch(
+    workspace, database, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _project, episode = _episode(workspace, database, "episode_parent_identity")
+    service = EpisodeProductionRunService(database, workspace)
+    calls = 0
+
+    def start_once(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return {"id": "run-stable"}
+
+    monkeypatch.setattr(service, "_start_once", start_once)
+    monkeypatch.setattr(service.automation, "get_run", lambda _run_id: {"id": "run-stable"})
+    monkeypatch.setattr(service, "_view", lambda run, **_kwargs: dict(run))
+
+    first = service.start(str(episode["id"]), idempotency_key="episode-command", min_free_disk_bytes=1)
+    replay = service.start(str(episode["id"]), idempotency_key="episode-command", min_free_disk_bytes=1)
+
+    assert first == {"id": "run-stable", "idempotent_replay": False}
+    assert replay == {"id": "run-stable", "idempotent_replay": True}
+    assert calls == 1
+    with pytest.raises(DomainRuleError) as mismatch:
+        service.start(
+            str(episode["id"]), idempotency_key="episode-command",
+            production_mode="QUALITY", min_free_disk_bytes=1,
+        )
+    assert mismatch.value.code == "IDEMPOTENCY_PAYLOAD_MISMATCH"
+
+
 def test_front_half_dag_workflow_generation(workspace, database) -> None:
     projects = ProjectService(database, workspace.projects_root)
     project = projects.create_project(
@@ -92,6 +122,19 @@ def test_front_half_dag_workflow_generation(workspace, database) -> None:
     assert actions[4] == "EPISODE_PLAN"
     assert actions[5:] == ["KEYFRAME_GENERATION", "KEYFRAME_CHECK", "VIDEO_GENERATION", "QC", "TTS_BATCH", "TTS_FINALIZE", "SUBTITLE", "TIMELINE_ASSEMBLY", "RENDER", "DELIVERY"]
     assert "_V2_" in workflow["code"]
+    assert {item["payload"]["audio_strategy"] for item in batch_items} == {"EXTERNAL_TTS"}
+
+    silent = service._workflow_for_snapshot(
+        episode_context,
+        {**preflight, "tts_enabled": False, "input_fingerprint": "c" * 64},
+        actor="test",
+    )
+    silent_items = silent["definition"]["batch_items"]
+    assert not {"TTS_BATCH", "TTS_FINALIZE", "SUBTITLE"}.intersection(
+        item["payload"]["action"] for item in silent_items
+    )
+    assert {item["payload"]["audio_strategy"] for item in silent_items} == {"SILENT"}
+    assert silent["definition"]["nodes"][0]["metadata"]["audio_strategy"] == "SILENT"
 
     readonly = service._workflow_for_snapshot(
         episode_context, {**preflight, "front_half_only": True, "input_fingerprint": "b" * 64}, actor="test",
@@ -150,11 +193,75 @@ def test_full_preflight_uses_authoritative_asset_completion_gate(
     assert "ASSET_COMPLETION_REQUIRED" in {item["code"] for item in result["blockers"]}
 
 
+def test_runtime_capacity_and_disk_changes_do_not_change_creative_fingerprints(
+    workspace, database, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _project, episode = _episode(workspace, database, "runtime_not_creative")
+    observations = iter([
+        {"name": "GPU", "total_bytes": 8_000_000_000, "source": "TEST"},
+        {"name": "GPU", "total_bytes": 24_000_000_000, "source": "TEST"},
+    ])
+
+    def capacity(_self, _project_id):
+        return {
+            "gpu": next(observations),
+            "gpu_active_count": 0,
+            "gpu_concurrency_limit": 1,
+        }
+
+    free_values = iter([20_000_000_000, 10_000_000_000])
+    monkeypatch.setattr("local_drama.application.episode_production_runs.CapacitySnapshotService.inspect", capacity)
+    monkeypatch.setattr(
+        "local_drama.application.episode_production_runs.shutil.disk_usage",
+        lambda _path: type("Usage", (), {"free": next(free_values)})(),
+    )
+    monkeypatch.setattr(
+        "local_drama.application.episode_production_runs._probe_loopback",
+        lambda *_args, **_kwargs: ("FAIL", {"reason": "test"}),
+    )
+    service = EpisodeProductionRunService(database, workspace)
+    first = service.preflight(str(episode["id"]), tts_enabled=False, min_free_disk_bytes=1)
+    second = service.preflight(str(episode["id"]), tts_enabled=False, min_free_disk_bytes=1)
+
+    assert first["generation_input_fingerprint"] == second["generation_input_fingerprint"]
+    assert first["compose_input_fingerprint"] == second["compose_input_fingerprint"]
+    assert first["input_fingerprint"] == second["input_fingerprint"]
+
+
 def _commit_source(workspace, database, project_id: str, source_path: Path) -> dict:
     source_path.write_text("第一场\n\n角色甲走进房间。", encoding="utf-8")
     documents = DocumentImportService(database, workspace)
     imported = documents.import_document(project_id, source_path)
     return documents.commit(str(imported["import_session_id"]), str(imported["preview_hash"]))
+
+
+def test_front_half_snapshot_ignores_other_episode_draft(workspace, database, tmp_path: Path) -> None:
+    projects = ProjectService(database, workspace.projects_root)
+    project = projects.create_project(
+        code="episode_scoped_fingerprint", title="Episode scoped fingerprint", episode_count=2,
+        aspect_ratio="16:9", fps_num=24, fps_den=1, target_duration_ms=60_000,
+        allow_unconfigured_capabilities=True,
+    )
+    episodes = projects.list_episodes(str(projects.list_seasons(str(project["id"]))[0]["id"]))
+    committed = _commit_source(workspace, database, str(project["id"]), tmp_path / "scoped-source.md")
+    service = EpisodeFrontHalfActionService(database, workspace)
+    before = service.snapshot(str(episodes[0]["id"]))
+    now = datetime.now(UTC).isoformat()
+    with database.transaction() as connection:
+        connection.execute(
+            """INSERT INTO script_breakdown_drafts
+            (id,project_id,source_document_version_id,import_session_id,draft_json,confidence_json,
+             status,created_at,updated_at,created_by,revision,schema_version)
+            VALUES (?,?,?,?,?,?,'DRAFT_READY',?,?,'test',1,'v2')""",
+            (
+                str(uuid.uuid4()), project["id"], committed["source_document_version_id"], committed["id"],
+                json.dumps({"scenes": []}),
+                json.dumps({"target_episode_id": str(episodes[1]["id"])}),
+                now, now,
+            ),
+        )
+
+    assert service.snapshot(str(episodes[0]["id"])) == before
 
 
 def test_front_half_only_start_is_fail_closed_and_idempotent(
@@ -311,7 +418,13 @@ def test_front_half_recovery_marks_old_reports_stale_and_preserves_them(
                 committed["source_document_version_id"],
                 committed["id"],
                 json.dumps({"scenes": []}),
-                json.dumps({}),
+                json.dumps(
+                    {
+                        "target_episode_id": str(episode["id"]),
+                        "source_paragraph_start": 1,
+                        "source_paragraph_end": 2,
+                    }
+                ),
                 now,
                 now,
             ),
@@ -663,42 +776,38 @@ def test_qc_auto_select_fills_empty_selection_and_never_overrides(workspace, dat
         assert connection.execute("SELECT COUNT(*) FROM selections WHERE media_version_id=?", (media_version_id,)).fetchone()[0] == 1
 
 
-def test_end_frame_chain_skips_scene_cuts_and_chains_same_scene(workspace, database) -> None:
+def test_frame_bridge_dependency_uses_scene_ids_and_waits_for_explicit_hard_predecessor(workspace, database) -> None:
     service = EpisodeWorkerActionService(database, workspace)
-    current = {"id": "shot-2", "code": "S002", "fields_json": None}
-    previous = {"id": "shot-1", "code": "S001"}
+    current = {"id": "shot-2", "code": "S002", "scene_id": None, "fields_json": None}
+    previous = {"id": "shot-1", "code": "S001", "scene_id": None}
 
     assert service._end_frame_chain(current, None, {})["reason"] == "NO_PREDECESSOR"
+    assert service._end_frame_chain(current, previous, {}) == {"status": "SKIPPED", "reason": "SCENE_ID_UNKNOWN"}
 
-    current_fields = {"environment": "雨夜霓虹街头"}
-    previous_fields = {"environment": "废墟实验室"}
-    result = service._end_frame_chain(current, previous, current_fields)
+    current["scene_id"] = "scene-b"
+    previous["scene_id"] = "scene-a"
+    result = service._end_frame_chain(current, previous, {"environment": "同名文本不能覆盖 scene id"})
     assert result["status"] == "SKIPPED"
     assert result["reason"] == "SCENE_CUT"
 
-    same_scene_fields = {"environment": "废墟实验室"}
-    service._fields = lambda _shot: previous_fields  # type: ignore[method-assign]
-    result = service._end_frame_chain(current, previous, same_scene_fields)
-    assert result["status"] == "SKIPPED"
-    assert result["reason"] == "PREDECESSOR_VIDEO_MISSING"
-
-    service._shot_video = lambda _shot_id: {"media_version_id": "prev-video-1"}  # type: ignore[method-assign]
-    extracted: list[str] = []
-
-    def _fake_anchor(source_media_version_id: str) -> dict:
-        extracted.append(source_media_version_id)
-        return {"id": "anchor-1", "extracted_media_version_id": "anchor-image-1", "reused": False}
-
-    service._last_frame_anchor = _fake_anchor  # type: ignore[method-assign]
-    chained = service._end_frame_chain(current, previous, same_scene_fields)
-    assert chained == {
-        "status": "CHAINED",
-        "frame_anchor_id": "anchor-1",
-        "media_version_id": "anchor-image-1",
-        "source_media_version_id": "prev-video-1",
-        "anchor_reused": False,
+    projects = ProjectService(database, workspace.projects_root)
+    project, episode = _episode(workspace, database, "hard_bridge_wait")
+    first = projects.create_shot(str(episode["id"]), "S001", 2_000)
+    second = projects.create_shot(str(episode["id"]), "S002", 2_000)
+    with database.transaction() as connection:
+        connection.execute("UPDATE shots SET scene_id='stable-scene' WHERE id IN (?,?)", (first["id"], second["id"]))
+    transition = TimelineService(database, workspace).create_transition_constraint(
+        str(first["id"]), str(second["id"]), "START_FROM_PREVIOUS_LAST", enforcement="HARD"
+    )
+    episode_shots = service._episode(str(episode["id"]))[1]
+    waiting = service._end_frame_chain(
+        episode_shots[1], episode_shots[0], {}, {"media_version_id": "current-first"}
+    )
+    assert waiting == {
+        "status": "WAITING",
+        "reason": "PREDECESSOR_VIDEO_MISSING",
+        "transition_id": transition["id"],
     }
-    assert extracted == ["prev-video-1"]
 
 
 def test_end_frame_role_detects_slot_from_profile_contract() -> None:

@@ -372,7 +372,10 @@ def test_director_desk_100_shots_has_bounded_queries_and_latency(workspace, data
     assert result["shot_nav"]["total"] == 100
     assert len(result["shot_nav"]["items"]) == 25
     assert result["shot_nav"]["selected_index"] == 50
-    assert len(statements) <= 40, statements
+    # The aggregate now includes current-media qualification, production-spec,
+    # and actionable diagnostic facts.  Keep the budget constant for 100 shots
+    # (no N+1) while allowing those bounded facets.
+    assert len(statements) <= 48, statements
     assert elapsed_ms < 700, f"Director aggregate took {elapsed_ms:.1f}ms"
 
     statements.clear()

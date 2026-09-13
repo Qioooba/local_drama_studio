@@ -43,3 +43,32 @@ def h3_render_duration_ms(frame_count: int) -> int:
     """Return the effective render duration for a snapped H3 frame count."""
 
     return round(int(frame_count) / H3_FPS * 1000)
+
+
+def h3_timing_snapshot(narrative_target_duration_ms: int) -> dict[str, object]:
+    """Freeze distinct story, model-grid, render and timeline durations.
+
+    Production tiers may change quality/resolution settings, but never the
+    authored shot length.  H3's legal frame grid can make the rendered file a
+    little longer; that difference remains explicit instead of being hidden by
+    a generic tail crop.
+    """
+
+    narrative_ms = int(narrative_target_duration_ms)
+    if narrative_ms <= 0:
+        raise DomainRuleError(
+            "H3_NARRATIVE_DURATION_INVALID",
+            "镜头叙事目标时长必须大于 0",
+            {"narrative_target_duration_ms": narrative_target_duration_ms},
+        )
+    frame_count = h3_frame_count(narrative_ms / 1000)
+    return {
+        "schema_version": "localdrama.h3-timing.v1",
+        "narrative_target_duration_ms": narrative_ms,
+        "requested_duration_seconds": narrative_ms / 1000,
+        "frame_count": frame_count,
+        "generation_fps": H3_FPS,
+        "planned_render_duration_ms": h3_render_duration_ms(frame_count),
+        "timeline_use_range_ms": {"start_ms": 0, "end_ms": narrative_ms},
+        "measured_output_duration_ms": None,
+    }

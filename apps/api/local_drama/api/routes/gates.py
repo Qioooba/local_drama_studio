@@ -9,8 +9,8 @@ from local_drama.api.schemas.g3 import (
     I2VEvidenceKeyframePrepareRequest,
     I2VEvidenceProbeFinalizeRequest,
     I2VEvidenceProbeSubmitRequest,
-    T2IEvidenceProbeSubmitRequest,
     T2IEvidenceProbePlanRequest,
+    T2IEvidenceProbeSubmitRequest,
 )
 from local_drama.api.schemas.g7 import (
     BrandKitRequest,

@@ -266,6 +266,22 @@ class WorkerSessionService:
                     WHERE id IN ({placeholders})""",
                     [_iso(observed), *stale_ids],
                 )
+            # A graceful process shutdown marks its WorkerSession STOPPED, but
+            # the process may have been interrupted while waiting on an already
+            # accepted provider job.  Such an Attempt must not retain its much
+            # longer lease until expiry; the stopped owner can no longer finish
+            # it, and provider reconciliation is the only safe next step.
+            stopped_with_active_attempt_ids = [
+                str(row["id"])
+                for row in connection.execute(
+                    """SELECT DISTINCT ws.id
+                    FROM worker_sessions ws
+                    JOIN job_attempts a ON a.worker_session_id=ws.id
+                    WHERE ws.status IN ('STOPPED','STALE','INCOMPATIBLE')
+                      AND a.state IN ('CLAIMED','RUNNING')"""
+                ).fetchall()
+            ]
+        abandoned_session_ids = list(dict.fromkeys([*stale_ids, *stopped_with_active_attempt_ids]))
         # A dead session is stronger evidence than a still-unexpired attempt
         # lease: the owning process can no longer heartbeat or complete it.
         # Orphan session-bound attempts immediately so a killed GPU worker does
@@ -274,17 +290,18 @@ class WorkerSessionService:
 
         session_recovered: list[dict[str, Any]] = []
         jobs = JobService(self.database, self.settings)
-        if stale_ids:
-            placeholders = ",".join("?" for _ in stale_ids)
+        if abandoned_session_ids:
+            placeholders = ",".join("?" for _ in abandoned_session_ids)
             with self.database.transaction() as connection:
                 attempts = connection.execute(
-                    f"""SELECT a.id,a.job_id,a.attempt_no,a.provider_job_id,j.project_id,j.max_attempts
+                    f"""SELECT a.id,a.job_id,a.attempt_no,a.provider_job_id,a.progress_json,j.project_id,j.max_attempts
                     FROM job_attempts a JOIN jobs j ON j.id=a.job_id
                     WHERE a.worker_session_id IN ({placeholders}) AND a.state IN ('CLAIMED','RUNNING')""",
-                    stale_ids,
+                    abandoned_session_ids,
                 ).fetchall()
                 for attempt in attempts:
-                    uncertain = bool(attempt["provider_job_id"])
+                    progress = json.loads(str(attempt["progress_json"] or "{}"))
+                    uncertain = bool(attempt["provider_job_id"]) or progress.get("phase") == "SUBMITTING_TO_PROVIDER"
                     next_job_state = "NEEDS_ATTENTION" if uncertain or int(attempt["attempt_no"]) >= int(attempt["max_attempts"]) else "QUEUED"
                     connection.execute(
                         """UPDATE job_attempts SET state='ORPHANED',error_code='WORKER_SESSION_STALE',
@@ -333,6 +350,7 @@ class WorkerSessionService:
         job_result = jobs.reconcile(now=observed, actor="worker-session-reconciler")
         return {
             "stale_session_ids": stale_ids,
+            "abandoned_session_ids": abandoned_session_ids,
             "session_attempt_reconcile": {"reconciled": len(session_recovered), "items": session_recovered},
             "job_reconcile": job_result,
         }
@@ -380,10 +398,13 @@ class WorkerSupervisor:
 
         episode_runs = EpisodeProductionRunService(self.database, self.settings)
         session_reconcile = self.sessions.reconcile()
-        provider_reconcile = ComfyGenerationService(self.database, self.settings).recover_uncertain_successes() if "GPU_H3" in (channels or ["CPU"]) else {"inspected": 0, "recovered": 0, "items": []}
+        comfy_recovery = ComfyGenerationService(self.database, self.settings)
+        provider_reconcile = comfy_recovery.recover_uncertain_successes() if "GPU_H3" in (channels or ["CPU"]) else {"inspected": 0, "recovered": 0, "items": []}
+        business_output_reconcile = comfy_recovery.reconcile_succeeded_business_outputs()
         startup_reconcile = {
             "worker_sessions": session_reconcile,
             "provider_successes": provider_reconcile,
+            "business_outputs": business_output_reconcile,
             "storage_operations": StorageOperationService(self.database, self.settings).reconcile(),
             "episode_runs": episode_runs.watchdog(stale_seconds=0, actor="worker-startup-watchdog"),
         }

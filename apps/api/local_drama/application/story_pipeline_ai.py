@@ -8,6 +8,7 @@ source range instead of becoming a large, stale dossier up front.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import UTC, datetime
@@ -21,6 +22,7 @@ from local_drama.domain.story_entities import assess_entity_name
 from local_drama.infrastructure.local_llm import LocalLLMClient
 
 logger = logging.getLogger(__name__)
+EPISODE_SOURCE_CHARACTER_LIMIT = 24_000
 
 
 def _now() -> str:
@@ -126,6 +128,18 @@ SYNTHESIS_COMPONENT_SCHEMAS = {
 }
 
 
+class _CountingLLMClient:
+    """Count the transport calls actually made, including repair/fallback calls."""
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+        self.call_count = 0
+
+    def chat_json(self, *args: Any, **kwargs: Any) -> Any:
+        self.call_count += 1
+        return self._client.chat_json(*args, **kwargs)
+
+
 class FullStoryAIGenerationService:
     """Create only the global plan and reusable production memory."""
 
@@ -156,7 +170,7 @@ class FullStoryAIGenerationService:
                     """SELECT epv.id FROM execution_profile_versions epv
                     JOIN execution_profiles ep ON ep.id=epv.execution_profile_id
                     WHERE epv.capability='LLM_STORY_PARSE' AND epv.status='PUBLISHED'
-                    ORDER BY epv.updated_at DESC,epv.version_no DESC LIMIT 1"""
+                    ORDER BY epv.updated_at DESC,epv.version_no DESC,epv.id ASC LIMIT 1"""
                 ).fetchone()
             selected_id = _text(row["id"]) if row else None
         try:
@@ -193,7 +207,7 @@ class FullStoryAIGenerationService:
 
     @staticmethod
     def _episode_prompt(spec: dict[str, Any], visual_style: str, target_seconds: int) -> str:
-        source = _text(spec.get("source_text"))[:24_000]
+        source = _text(spec.get("source_text"))[:EPISODE_SOURCE_CHARACTER_LIMIT]
         return (
             f"请为第 {spec['number']} 集生成轻量制作提纲。单集目标约 {target_seconds} 秒；视觉方向：{visual_style}。\n"
             "只输出本集标题、摘要、核心冲突、开场钩子、结尾钩子、主题与原文证据；"
@@ -203,6 +217,28 @@ class FullStoryAIGenerationService:
             "不确定事实保持不确定，不得自行补写人物经历。\n\n"
             f"原稿：\n{source}"
         )
+
+    @classmethod
+    def _episode_checkpoint_identity(
+        cls, spec: dict[str, Any], visual_style: str, target_seconds: int
+    ) -> str:
+        request = {
+            "contract": "pipeline-episode-outline/v2",
+            "number": int(spec["number"]),
+            "code": _text(spec.get("code")),
+            "source_start_paragraph": spec.get("source_start_paragraph"),
+            "source_end_paragraph": spec.get("source_end_paragraph"),
+            "prompt": cls._episode_prompt(spec, visual_style, target_seconds),
+            "inference_options": {
+                "temperature": 0.2,
+                "top_p": 0.9,
+                "max_tokens": 1800,
+                "num_ctx": 32768,
+            },
+        }
+        return hashlib.sha256(
+            json.dumps(request, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
 
     @staticmethod
     def _validate_episode(value: dict[str, Any], number: int, target_seconds: int | None = None) -> None:
@@ -388,7 +424,7 @@ class FullStoryAIGenerationService:
                 if repair_no >= 2:
                     raise
                 if cancel_check and cancel_check():
-                    raise DomainRuleError("JOB_CANCELLED", "故事分析已取消")
+                    raise DomainRuleError("JOB_CANCELLED", "故事分析已取消") from None
                 repair_prompt = (
                     f"第 {spec['number']} 集提纲未通过结构校验。请修复下列 JSON，保留已有有效内容，"
                     "补齐所有必填文本；entity_observations 必须包含 characters、scenes、props 三个数组，"
@@ -424,14 +460,19 @@ class FullStoryAIGenerationService:
         resume_episodes: list[dict[str, Any]] | None = None,
         on_episode_checkpoint: Callable[[list[dict[str, Any]], int, int], None] | None = None,
     ) -> dict[str, Any]:
-        client, model_info = self.resolve_client(profile_version_id)
+        resolved_client, model_info = self.resolve_client(profile_version_id)
+        client = _CountingLLMClient(resolved_client)
         system = (
             "你是 AI 漫剧的故事规划 Agent。只输出符合 JSON Schema 的中文对象。"
             "全剧阶段只做轻量规划，不提前生成逐镜制作细节，也不编造原稿没有的事实。"
         )
         episodes: list[dict[str, Any]] = []
-        for spec, saved in zip(episode_specs, resume_episodes or []):
+        for spec, saved in zip(episode_specs, resume_episodes or [], strict=False):
             if not isinstance(saved, dict) or int(saved.get("number") or 0) != int(spec["number"]):
+                break
+            if saved.get("request_identity_sha256") != self._episode_checkpoint_identity(
+                spec, visual_style, target_seconds
+            ):
                 break
             # Checkpoints created by the removed source-fill fallback are not
             # model output and must never be accepted as production evidence.
@@ -444,6 +485,7 @@ class FullStoryAIGenerationService:
             episodes.append(dict(saved))
         if episodes and on_episode:
             on_episode(len(episodes), len(episode_specs))
+        reused_episode_count = len(episodes)
         for index, spec in enumerate(episode_specs[len(episodes):], start=len(episodes) + 1):
             if cancel_check and cancel_check():
                 raise DomainRuleError("JOB_CANCELLED", "故事分析已取消")
@@ -459,6 +501,9 @@ class FullStoryAIGenerationService:
                     "code": _text(spec["code"]),
                     "source_start_paragraph": spec.get("source_start_paragraph"),
                     "source_end_paragraph": spec.get("source_end_paragraph"),
+                    "request_identity_sha256": self._episode_checkpoint_identity(
+                        spec, visual_style, target_seconds
+                    ),
                 }
             )
             episodes.append(result)
@@ -501,7 +546,8 @@ class FullStoryAIGenerationService:
                 "profile_version_id": model_info["profile_version_id"],
                 "provider": model_info["provider"],
                 "model": model_info["model"],
-                "llm_call_count": len(episodes) + 1,
+                "llm_call_count": client.call_count,
+                "reused_episode_checkpoint_count": reused_episode_count,
                 "generated_at": _now(),
                 "media_generation_started": False,
                 "coverage": ["EPISODE_PLAN", "STORY_MEMORY", "CORE_VISUAL_ASSETS"],

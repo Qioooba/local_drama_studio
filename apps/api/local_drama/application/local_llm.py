@@ -175,6 +175,86 @@ def _numbered_source_paragraphs(
     return "\n".join(labels), offsets
 
 
+def _bounded_numbered_source_segments(
+    source_text: str,
+    *,
+    paragraph_start: int,
+    paragraph_end: int,
+    maximum_characters: int = _BREAKDOWN_MAX_SOURCE_CHARACTERS,
+) -> list[dict[str, Any]]:
+    """Split selected prose into exact, numbered inputs without losing offsets."""
+    pieces: list[tuple[int, int, int, str]] = []
+    label_reserve = len("[P001] ")
+    maximum_body = maximum_characters - label_reserve
+    if maximum_body < 1:
+        raise ValueError("maximum_characters is too small for paragraph labels")
+    for paragraph in source_paragraphs(source_text):
+        if not paragraph_start <= paragraph.number <= paragraph_end:
+            continue
+        if looks_like_source_heading(paragraph.text):
+            continue
+        cursor = 0
+        while cursor < len(paragraph.text):
+            limit = min(len(paragraph.text), cursor + maximum_body)
+            end = limit
+            if limit < len(paragraph.text):
+                tail = paragraph.text[cursor:limit]
+                boundary = max(tail.rfind(mark) for mark in "。！？；.!?;\n")
+                if boundary >= maximum_body // 2:
+                    end = cursor + boundary + 1
+            value = paragraph.text[cursor:end]
+            pieces.append(
+                (
+                    paragraph.number,
+                    paragraph.start + cursor,
+                    paragraph.start + end,
+                    value,
+                )
+            )
+            cursor = end
+
+    segments: list[dict[str, Any]] = []
+    current: list[tuple[int, int, int, str]] = []
+
+    def flush() -> None:
+        if not current:
+            return
+        labels: list[str] = []
+        offsets: dict[int, tuple[int, int]] = {}
+        source_paragraph_nos: list[int] = []
+        for local_number, (source_number, start, end, value) in enumerate(current, start=1):
+            labels.append(f"[P{local_number:03d}] {value}")
+            offsets[local_number] = (start, end)
+            source_paragraph_nos.append(source_number)
+        numbered_text = "\n".join(labels)
+        segments.append(
+            {
+                "ordinal": len(segments) + 1,
+                "numbered_text": numbered_text,
+                "paragraph_offsets": offsets,
+                "source_paragraph_nos": source_paragraph_nos,
+                "source_start": min(item[1] for item in current),
+                "source_end": max(item[2] for item in current),
+                "input_character_count": len(numbered_text),
+                "input_sha256": hashlib.sha256(numbered_text.encode("utf-8")).hexdigest(),
+            }
+        )
+        current.clear()
+
+    for piece in pieces:
+        next_number = len(current) + 1
+        addition = len(f"[P{next_number:03d}] {piece[3]}") + (1 if current else 0)
+        current_size = sum(len(item[3]) + len(f"[P{index:03d}] ") for index, item in enumerate(current, start=1))
+        current_size += max(0, len(current) - 1)
+        if current and current_size + addition > maximum_characters:
+            flush()
+        current.append(piece)
+    flush()
+    if any(int(item["input_character_count"]) > maximum_characters for item in segments):
+        raise AssertionError("bounded source segment exceeded its character contract")
+    return segments
+
+
 def _align_source_quote(quote: str, source_text: str) -> dict[str, Any] | None:
     """Return an exact source span for a conservatively aligned model quote.
 
@@ -766,7 +846,7 @@ def _normalize_breakdown_durations(
     normalized = json.loads(_json(value))
     shots = [shot for scene in normalized.get("scenes", []) if isinstance(scene, dict) for shot in scene.get("shots", []) if isinstance(shot, dict)]
     durations: list[float] = []
-    for index, shot in enumerate(shots, start=1):
+    for _index, shot in enumerate(shots, start=1):
         raw_duration = shot.get("duration_seconds")
         if isinstance(raw_duration, str):
             try:
@@ -904,8 +984,75 @@ class LocalLLMService:
         base_url: str | None = None,
         api_key: str | None = None,
         provider_connection_id: str | None = None,
+        profile_version_id: str | None = None,
     ) -> LocalLLMClient:
-        if provider_connection_id:
+        if profile_version_id:
+            if any(value is not None for value in (model, provider, base_url, api_key, provider_connection_id)):
+                raise DomainRuleError(
+                    "LOCAL_LLM_PROFILE_OVERRIDE_FORBIDDEN",
+                    "按 Profile 创建 LLM 客户端时不能同时覆盖模型、连接或密钥",
+                )
+            with self.database.connect() as connection:
+                row = connection.execute(
+                    """SELECT status,capability,capability_json,model_bundle_json
+                    FROM execution_profile_versions WHERE id=?""",
+                    (profile_version_id,),
+                ).fetchone()
+            if row is None:
+                raise DomainRuleError("PROFILE_NOT_FOUND", "Profile 版本不存在")
+            if str(row["status"] or "").upper() != "PUBLISHED":
+                raise DomainRuleError("PROFILE_NOT_PUBLISHED", "只有已发布的 LLM Profile 才能用于执行")
+            try:
+                profile_capability = normalize_capability(str(row["capability"] or ""))
+            except ValueError as error:
+                raise DomainRuleError("PROFILE_CAPABILITY_MISMATCH", "Profile 不是可执行的 LLM 能力") from error
+            if profile_capability not in {"LLM_STORY_PARSE", "QC_VISUAL", "QC_FACE", "QC_IDENTITY"}:
+                raise DomainRuleError("PROFILE_CAPABILITY_MISMATCH", "Profile 不是可执行的 LLM 能力")
+            try:
+                capability_config = json.loads(str(row["capability_json"] or "{}"))
+                model_bundle = json.loads(str(row["model_bundle_json"] or "{}"))
+            except (TypeError, ValueError) as error:
+                raise DomainRuleError("LOCAL_LLM_PROFILE_CONFIG_MISMATCH", "已发布 Profile 的配置不是有效 JSON") from error
+            if not isinstance(capability_config, dict) or not isinstance(model_bundle, dict):
+                raise DomainRuleError("LOCAL_LLM_PROFILE_CONFIG_MISMATCH", "已发布 Profile 的配置格式无效")
+
+            selected_connection_id = str(
+                model_bundle.get("provider_connection_id")
+                or capability_config.get("provider_connection_id")
+                or ""
+            ).strip() or None
+            if selected_connection_id:
+                from local_drama.application.provider_connections import ProviderConnectionService
+
+                selected_connection = ProviderConnectionService(self.database, self.settings).resolve_for_execution(
+                    selected_connection_id
+                )
+                resolved_provider = (
+                    "OLLAMA_LOOPBACK"
+                    if str(selected_connection["protocol"]).upper() == "OLLAMA"
+                    else "OPENAI_COMPAT"
+                )
+                resolved_base_url = str(selected_connection["base_url"] or "").strip()
+                resolved_model = str(model_bundle.get("model") or selected_connection.get("model") or "").strip()
+                resolved_key = selected_connection.get("secret")
+            else:
+                resolved_provider = str(
+                    model_bundle.get("provider") or capability_config.get("provider") or ""
+                ).strip().upper()
+                resolved_base_url = str(
+                    model_bundle.get("base_url") or capability_config.get("base_url") or ""
+                ).strip()
+                resolved_model = str(
+                    model_bundle.get("model") or capability_config.get("model") or ""
+                ).strip()
+                resolved_key = self._resolve_api_key(capability_config, provider=resolved_provider)
+            if not resolved_provider or not resolved_base_url or not resolved_model:
+                raise DomainRuleError(
+                    "LOCAL_LLM_PROFILE_CONFIG_MISMATCH",
+                    "已发布 Profile 未完整冻结 Provider、endpoint 与模型",
+                    {"profile_version_id": profile_version_id},
+                )
+        elif provider_connection_id:
             from local_drama.application.provider_connections import ProviderConnectionService
 
             connection = ProviderConnectionService(self.database, self.settings).resolve_for_execution(provider_connection_id)
@@ -1775,6 +1922,118 @@ class LocalLLMService:
             "target_duration_seconds": target_duration_ms / 1000,
         }
 
+    def _freeze_breakdown_analysis_contexts(
+        self,
+        *,
+        project_id: str,
+        source_document_version_id: str,
+        segments: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Freeze bounded context from the latest matching existing CHUNK_MAP run."""
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """SELECT n.id,n.run_id,n.node_key,n.core_source_start,n.core_source_end,
+                          n.input_fingerprint,n.output_sha256,n.output_json,r.created_at
+                   FROM adaptation_plan_run_nodes n
+                   JOIN adaptation_plan_runs r ON r.id=n.run_id
+                   JOIN adaptation_plans p ON p.id=r.plan_id
+                   WHERE p.project_id=? AND p.source_document_version_id=?
+                     AND n.stage='CHUNK_MAP'
+                     AND json_extract(n.output_json,'$.planning_state')='SUCCEEDED'
+                   ORDER BY r.created_at DESC,n.core_source_start,n.node_key""",
+                (project_id, source_document_version_id),
+            ).fetchall()
+        frozen: list[dict[str, Any]] = []
+        for segment in segments:
+            overlapping = [
+                row
+                for row in rows
+                if int(row["core_source_start"] or 0) < int(segment["source_end"])
+                and int(row["core_source_end"] or 0) > int(segment["source_start"])
+            ]
+            if not overlapping:
+                continue
+            latest_run_id = str(overlapping[0]["run_id"])
+            selected = [row for row in overlapping if str(row["run_id"]) == latest_run_id]
+            context_lines: list[str] = []
+            refs: list[dict[str, Any]] = []
+            for row in selected:
+                descriptor = json.loads(str(row["output_json"] or "{}"))
+                result = descriptor.get("result") if isinstance(descriptor, dict) else None
+                result = result if isinstance(result, dict) else {}
+                summary = str(result.get("summary") or "").strip()
+                events = result.get("events") if isinstance(result.get("events"), list) else []
+                line = f"{row['node_key']} 摘要：{summary}"
+                if events:
+                    line += f"；事件：{_json(events)}"
+                context_lines.append(line)
+                refs.append(
+                    {
+                        "id": str(row["id"]),
+                        "run_id": str(row["run_id"]),
+                        "node_key": str(row["node_key"]),
+                        "core_source_start": int(row["core_source_start"]),
+                        "core_source_end": int(row["core_source_end"]),
+                        "input_fingerprint": str(row["input_fingerprint"]),
+                        "output_sha256": str(row["output_sha256"] or ""),
+                    }
+                )
+            context_text = "\n".join(context_lines)[:1_200]
+            frozen.append(
+                {
+                    "segment_ordinal": int(segment["ordinal"]),
+                    "analysis_node_refs": refs,
+                    "context_text": context_text,
+                    "context_sha256": hashlib.sha256(context_text.encode("utf-8")).hexdigest(),
+                }
+            )
+        return frozen
+
+    def _validated_breakdown_analysis_contexts(
+        self,
+        *,
+        source_document_version_id: str,
+        frozen: Any,
+    ) -> dict[int, dict[str, Any]]:
+        if not isinstance(frozen, list):
+            return {}
+        contexts: dict[int, dict[str, Any]] = {}
+        with self.database.connect() as connection:
+            for item in frozen:
+                if not isinstance(item, dict):
+                    raise DomainRuleError("BREAKDOWN_ANALYSIS_CONTEXT_INVALID", "拆解分析上下文快照无效")
+                context_text = str(item.get("context_text") or "")
+                if hashlib.sha256(context_text.encode("utf-8")).hexdigest() != item.get("context_sha256"):
+                    raise DomainRuleError("BREAKDOWN_ANALYSIS_CONTEXT_INVALID", "拆解分析上下文摘要已损坏")
+                refs = item.get("analysis_node_refs")
+                if not isinstance(refs, list):
+                    raise DomainRuleError("BREAKDOWN_ANALYSIS_CONTEXT_INVALID", "拆解分析节点引用无效")
+                for ref in refs:
+                    row = connection.execute(
+                        """SELECT n.run_id,n.node_key,n.core_source_start,n.core_source_end,n.input_fingerprint,
+                                  p.source_document_version_id
+                           FROM adaptation_plan_run_nodes n
+                           JOIN adaptation_plan_runs r ON r.id=n.run_id
+                           JOIN adaptation_plans p ON p.id=r.plan_id WHERE n.id=?""",
+                        (ref.get("id"),),
+                    ).fetchone()
+                    expected = {
+                        "run_id": str(row["run_id"]) if row else None,
+                        "node_key": str(row["node_key"]) if row else None,
+                        "core_source_start": int(row["core_source_start"]) if row else None,
+                        "core_source_end": int(row["core_source_end"]) if row else None,
+                        "input_fingerprint": str(row["input_fingerprint"]) if row else None,
+                    }
+                    if row is None or str(row["source_document_version_id"]) != source_document_version_id or any(
+                        ref.get(key) != value for key, value in expected.items()
+                    ):
+                        raise DomainRuleError(
+                            "BREAKDOWN_ANALYSIS_CONTEXT_STALE",
+                            "拆解引用的同源分析节点已变化，请重新发起任务。",
+                        )
+                contexts[int(item["segment_ordinal"])] = item
+        return contexts
+
     def enqueue_breakdown(
         self,
         session_id: str,
@@ -1821,28 +2080,23 @@ class LocalLLMService:
             require_file=True,
             code="SOURCE_TEXT_NOT_FOUND",
         )
-        selected_source, selected_offsets = _numbered_source_paragraphs(
-            text_path.read_text(encoding="utf-8"),
-            skip_headings=True,
+        source_text = text_path.read_text(encoding="utf-8")
+        segments = _bounded_numbered_source_segments(
+            source_text,
             paragraph_start=selected_start,
             paragraph_end=selected_end,
         )
-        if not selected_offsets:
+        if not segments:
             raise DomainRuleError("BREAKDOWN_SOURCE_RANGE_EMPTY", "所选原文范围只有空行或章节标题，无法生成本集草稿")
-        if len(selected_source) > _BREAKDOWN_MAX_SOURCE_CHARACTERS:
-            raise DomainRuleError(
-                "BREAKDOWN_SOURCE_RANGE_TOO_LARGE",
-                f"本次选择约 {len(selected_source)} 字，超过单次 AI 拆解上限 {_BREAKDOWN_MAX_SOURCE_CHARACTERS} 字；请按一个章节或更小段落范围提交",
-                {
-                    "selected_character_count": len(selected_source),
-                    "selected_paragraph_count": len(selected_offsets),
-                    "maximum_character_count": _BREAKDOWN_MAX_SOURCE_CHARACTERS,
-                },
-            )
         from local_drama.application.breakdown_execution import resolve_breakdown_execution
 
         with self.database.connect() as connection:
             execution = resolve_breakdown_execution(connection, str(row["project_id"]), target_episode_id, profile_version_id)
+        analysis_contexts = self._freeze_breakdown_analysis_contexts(
+            project_id=str(row["project_id"]),
+            source_document_version_id=str(row["source_document_version_id"]),
+            segments=segments,
+        )
         snapshot = {
             "schema_version": "localdrama.script-breakdown-job.v4",
             "inference_options": execution["inference_options"],
@@ -1860,10 +2114,40 @@ class LocalLLMService:
             "source_paragraph_start": selected_start,
             "source_paragraph_end": selected_end,
             "source_paragraph_count": paragraph_count,
-            "selected_source_character_count": len(selected_source),
-            "selected_source_paragraph_count": len(selected_offsets),
+            "selected_source_character_count": sum(
+                int(segment["input_character_count"]) for segment in segments
+            ),
+            "selected_source_paragraph_count": len(
+                {
+                    number
+                    for segment in segments
+                    for number in segment["source_paragraph_nos"]
+                }
+            ),
+            "breakdown_segments": [
+                {
+                    key: segment[key]
+                    for key in (
+                        "ordinal",
+                        "source_start",
+                        "source_end",
+                        "source_paragraph_nos",
+                        "input_character_count",
+                        "input_sha256",
+                    )
+                }
+                for segment in segments
+            ],
+            "breakdown_segment_count": len(segments),
+            "analysis_contexts": analysis_contexts,
             **(target or {}),
         }
+        snapshot["request_identity_sha256"] = _sha256_json(
+            {
+                "prompt_contract_version": "script-breakdown/v4",
+                **snapshot,
+            }
+        )
         return JobService(self.database, self.settings).create_job(
             str(row["project_id"]),
             "SCRIPT_BREAKDOWN_LOCAL_LLM",
@@ -1919,6 +2203,19 @@ class LocalLLMService:
         """
         row, capability = self._breakdown_context(session_id, profile_version_id)
         execution_snapshot = input_snapshot or {}
+        frozen_request_identity = execution_snapshot.get("request_identity_sha256")
+        if frozen_request_identity:
+            identity_payload = {
+                key: value
+                for key, value in execution_snapshot.items()
+                if key != "request_identity_sha256"
+            }
+            if frozen_request_identity != _sha256_json(
+                {"prompt_contract_version": "script-breakdown/v4", **identity_payload}
+            ):
+                raise DomainRuleError(
+                    "LOCAL_LLM_JOB_SNAPSHOT_STALE", "AI 拆解请求身份快照已损坏"
+                )
         model = str(capability["model"])
         base_url = str(capability.get("base_url") or self.settings.llm_base_url)
         runtime_contract = _profile_runtime_contract(capability, self.settings.llm_base_url)
@@ -1974,6 +2271,139 @@ class LocalLLMService:
         source_text = source_bytes.decode("utf-8")
         selected_paragraph_start = int(execution_snapshot.get("source_paragraph_start") or 1)
         selected_paragraph_end = int(execution_snapshot.get("source_paragraph_end") or int(execution_snapshot.get("source_paragraph_count") or 0)) or None
+        segments = _bounded_numbered_source_segments(
+            source_text,
+            paragraph_start=selected_paragraph_start,
+            paragraph_end=selected_paragraph_end or len(source_paragraphs(source_text)),
+        )
+        if not segments:
+            raise DomainRuleError("BREAKDOWN_SOURCE_RANGE_EMPTY", "所选原文范围只有空行或章节标题，无法生成本集草稿")
+        snapshot_segments = execution_snapshot.get("breakdown_segments")
+        if isinstance(snapshot_segments, list):
+            actual_descriptors = [
+                {
+                    key: segment[key]
+                    for key in (
+                        "ordinal",
+                        "source_start",
+                        "source_end",
+                        "source_paragraph_nos",
+                        "input_character_count",
+                        "input_sha256",
+                    )
+                }
+                for segment in segments
+            ]
+            if snapshot_segments != actual_descriptors:
+                raise DomainRuleError(
+                    "LOCAL_LLM_JOB_SNAPSHOT_STALE",
+                    "AI 拆解的有界子范围与冻结快照不一致。",
+                )
+        elif len(segments) > 1:
+            raise DomainRuleError(
+                "BREAKDOWN_SOURCE_RANGE_TOO_LARGE",
+                "旧版拆解任务没有有界子范围快照，请重新发起。",
+            )
+        analysis_contexts = self._validated_breakdown_analysis_contexts(
+            source_document_version_id=str(row["source_document_version_id"]),
+            frozen=execution_snapshot.get("analysis_contexts"),
+        )
+        if len(segments) > 1:
+            if not job_id:
+                raise DomainRuleError(
+                    "BREAKDOWN_SEGMENT_JOB_REQUIRED", "长范围拆解必须通过可恢复 Job 执行。"
+                )
+            draft, evidence, _duration_adjustment = self._segmented_breakdown(
+                segments=segments,
+                source_text=source_text,
+                row=row,
+                session_id=session_id,
+                profile_version_id=profile_version_id,
+                model=model,
+                base_url=base_url,
+                capability=capability,
+                execution_snapshot=execution_snapshot,
+                analysis_contexts=analysis_contexts,
+                job_id=job_id,
+                target=target,
+                on_progress=on_progress,
+            )
+            evidence.update(
+                {
+                    "source_paragraph_start": selected_paragraph_start,
+                    "source_paragraph_end": selected_paragraph_end,
+                    "source_paragraph_count": execution_snapshot.get("source_paragraph_count"),
+                    "model": model,
+                    "profile_version_id": profile_version_id,
+                    "job_id": job_id,
+                    "request_identity_sha256": execution_snapshot.get(
+                        "request_identity_sha256"
+                    ),
+                }
+            )
+            now = _now()
+            with self.database.transaction() as connection:
+                persisted_job = connection.execute(
+                    "SELECT state FROM jobs WHERE id=?", (job_id,)
+                ).fetchone()
+                if persisted_job is None or str(persisted_job["state"]) == "CANCEL_REQUESTED":
+                    raise DomainRuleError("JOB_CANCELLED", "AI 拆解已请求取消；不会保存模型输出")
+                if str(persisted_job["state"]) not in {"CLAIMED", "RUNNING"}:
+                    raise DomainRuleError(
+                        "LOCAL_LLM_JOB_NOT_RUNNING", "AI 拆解 Job 状态已变化，拒绝保存模型输出"
+                    )
+                connection.execute(
+                    """INSERT OR IGNORE INTO script_breakdown_drafts
+                    (id,project_id,source_document_version_id,import_session_id,draft_json,
+                     confidence_json,status,created_at,updated_at,created_by,revision,schema_version)
+                    VALUES (?,?,?,?,?,?,'DRAFT_READY',?,?,'local-llm',1,'v2')""",
+                    (
+                        draft_id,
+                        row["project_id"],
+                        row["source_document_version_id"],
+                        session_id,
+                        _json(draft),
+                        _json(evidence),
+                        now,
+                        now,
+                    ),
+                )
+                connection.execute(
+                    "UPDATE import_sessions SET status='BREAKDOWN_READY',updated_at=?,revision=revision+1 WHERE id=?",
+                    (now, session_id),
+                )
+                connection.execute(
+                    """INSERT INTO audit_events
+                    (actor,role_context,action,subject_type,subject_id,job_id,summary,metadata_redacted_json)
+                    VALUES ('local-llm','producer','SCRIPT_BREAKDOWN_COMPLETED',
+                    'script_breakdown_draft',?,?,?,?)""",
+                    (
+                        draft_id,
+                        job_id,
+                        "本地 LLM 完成有界分段剧本拆解草稿",
+                        _json(
+                            {
+                                "session_id": session_id,
+                                "profile_version_id": profile_version_id,
+                                "model": model,
+                                "job_id": job_id,
+                                "automatic_apply": automatic_apply,
+                                "segment_count": len(segments),
+                            }
+                        ),
+                    ),
+                )
+            if on_progress:
+                on_progress({"phase": "DRAFT_READY", "percent": 95, "draft_id": draft_id})
+            return {
+                "id": draft_id,
+                "status": "DRAFT_READY",
+                "profile_version_id": profile_version_id,
+                "draft": draft,
+                "idempotent_replay": False,
+                "automatic_apply": automatic_apply,
+                "requires_human_action": not automatic_apply,
+            }
         numbered_source_text, paragraph_offsets = _numbered_source_paragraphs(
             source_text,
             skip_headings=True,
@@ -2005,6 +2435,13 @@ class LocalLLMService:
             "num_ctx": _BREAKDOWN_CONTEXT_TOKENS,
             **(execution_snapshot.get("inference_options") or {}),
         }
+        short_analysis = analysis_contexts.get(1)
+        analysis_instruction = (
+            " 以下是已冻结的同源 CHUNK_MAP 分析，仅用于帮助理解；任何事实仍须由当前编号原文支持：\n"
+            + str(short_analysis["context_text"])
+            if short_analysis and short_analysis.get("context_text")
+            else ""
+        )
         output = LocalLLMClient(
             base_url,
             model,
@@ -2014,7 +2451,8 @@ class LocalLLMService:
         ).chat_json(
             "你是本地剧本拆解器。最终答案只输出 JSON 对象，顶层必须包含 scenes、confidence、questions。输入已排除章节标题，每个 P 段都是本集必须覆盖的叙事正文；必须按原文顺序拆场，并让全部 P 段至少被一个 scene 引用。每个 scene 必须包含 scene_no、title、summary、characters、source_paragraph_nos、shots；source_paragraph_nos 必须至少列出一个实际描述该场内容的原文 P 编号，只能填写输入中真实存在的编号，不得把 P 编号当作场次序号盲填，不要返回顶层 source_passages，不要返回 quote。每个 shot 必须包含 shot_no、visual、action、dialogue、duration_seconds。confidence 必须是 {overall:0到1,notes:字符串数组}；questions 是待人工确认的字符串数组。P 编号只用于引用，不得写进场景正文、镜头或对白。每条非空 dialogue 只能逐字摘录自该 scene 的 source_paragraph_nos 所指原文；可以添加说话人前缀，但不得转述、改写或补写。原文没有明确对白时必须返回空字符串。不得臆造原文不存在的关键事实。"
             + required_paragraph_instruction
-            + duration_contract,
+            + duration_contract
+            + analysis_instruction,
             numbered_source_text,
             json_schema=response_schema,
             inference_options=merged_inference_options,
@@ -2055,6 +2493,9 @@ class LocalLLMService:
                 "model": model,
                 "profile_version_id": profile_version_id,
                 "job_id": job_id,
+                "request_identity_sha256": execution_snapshot.get(
+                    "request_identity_sha256"
+                ),
             }
         )
         now = _now()
@@ -2100,6 +2541,220 @@ class LocalLLMService:
             "requires_human_action": not automatic_apply,
         }
 
+    def _segmented_breakdown(
+        self,
+        *,
+        segments: list[dict[str, Any]],
+        source_text: str,
+        row: Any,
+        session_id: str,
+        profile_version_id: str,
+        model: str,
+        base_url: str,
+        capability: dict[str, Any],
+        execution_snapshot: dict[str, Any],
+        analysis_contexts: dict[int, dict[str, Any]],
+        job_id: str,
+        target: dict[str, Any] | None,
+        on_progress: Any | None,
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        """Run/reuse bounded child checkpoints and return one aggregate draft."""
+        provider = str(capability.get("provider") or "OLLAMA_LOOPBACK")
+        client = LocalLLMClient(
+            base_url,
+            model,
+            provider=provider,
+            api_key=self._resolve_api_key(capability),
+            allow_private_network=self.settings.allows_private_network,
+        )
+        merged_scenes: list[dict[str, Any]] = []
+        merged_questions: list[str] = []
+        merged_notes: list[str] = []
+        confidence_values: list[float] = []
+        segment_evidence: list[dict[str, Any]] = []
+        for index, segment in enumerate(segments, start=1):
+            self._assert_job_can_persist(job_id, session_id)
+            checkpoint_id = _stable_id(f"breakdown-chunk:{job_id}:{index}")
+            with self.database.connect() as connection:
+                checkpoint = connection.execute(
+                    "SELECT draft_json,confidence_json,status FROM script_breakdown_drafts WHERE id=?",
+                    (checkpoint_id,),
+                ).fetchone()
+            checkpoint_meta = json.loads(str(checkpoint["confidence_json"])) if checkpoint else {}
+            if (
+                checkpoint is not None
+                and str(checkpoint["status"]) == "CHUNK_READY"
+                and checkpoint_meta.get("segment_input_sha256") == segment["input_sha256"]
+            ):
+                chunk_draft = json.loads(str(checkpoint["draft_json"]))
+                evidence = checkpoint_meta
+            else:
+                paragraph_offsets = segment["paragraph_offsets"]
+                response_schema = json.loads(_json(_BREAKDOWN_RESPONSE_SCHEMA))
+                response_schema["properties"]["source_passages"]["items"]["properties"]["paragraph_no"]["maximum"] = len(paragraph_offsets)
+                response_schema["properties"]["scenes"]["items"]["properties"]["source_paragraph_nos"]["items"]["maximum"] = len(paragraph_offsets)
+                required = sorted(paragraph_offsets)
+                system_prompt = (
+                    "你是本地剧本拆解器。最终答案只输出 JSON 对象，顶层必须包含 scenes、confidence、questions。"
+                    "这是同一集确认原文的一个有界子范围；只拆当前输入，不补写前后文。每个 scene 必须包含 "
+                    "scene_no、title、summary、characters、source_paragraph_nos、shots；每个 shot 必须包含 "
+                    "shot_no、visual、action、dialogue、duration_seconds。非空 dialogue 只能逐字摘录当前 P 编号原文。"
+                    f" 必须覆盖的 P 编号全集是 {required}，不得缺号或越界。"
+                )
+                analysis_context = analysis_contexts.get(index)
+                if analysis_context and analysis_context.get("context_text"):
+                    system_prompt += (
+                        " 以下是已冻结的同源 CHUNK_MAP 分析，仅用于帮助理解；"
+                        "任何事实仍须由当前编号原文支持：\n"
+                        + str(analysis_context["context_text"])
+                    )
+                output = client.chat_json(
+                    system_prompt,
+                    str(segment["numbered_text"]),
+                    json_schema=response_schema,
+                    inference_options={
+                        "num_ctx": _BREAKDOWN_CONTEXT_TOKENS,
+                        **(execution_snapshot.get("inference_options") or {}),
+                    },
+                )
+                chunk_draft, evidence = _validate_breakdown_output(
+                    _normalize_scene_source_passages(output, required_paragraphs=set(paragraph_offsets)),
+                    source_text,
+                    target_episode_id=str(target["target_episode_id"]) if target else None,
+                    target_duration_seconds=None,
+                    sanitize_ungrounded_dialogue=True,
+                    paragraph_offsets=paragraph_offsets,
+                    required_source_paragraph_nos=set(paragraph_offsets),
+                    minimum_scene_source_similarity=0.15,
+                    sanitize_ungrounded_scenes=True,
+                )
+                for passage in evidence.get("source_passages") or []:
+                    local_number = passage.get("paragraph_no") if isinstance(passage, dict) else None
+                    if isinstance(local_number, int) and 1 <= local_number <= len(segment["source_paragraph_nos"]):
+                        passage["source_paragraph_no"] = segment["source_paragraph_nos"][local_number - 1]
+                        passage["segment_ordinal"] = index
+                evidence.update(
+                    {
+                        "schema_version": "localdrama.script-breakdown-chunk-evidence.v1",
+                        "parent_job_id": job_id,
+                        "segment_ordinal": index,
+                        "segment_count": len(segments),
+                        "segment_input_sha256": segment["input_sha256"],
+                        "source_start": segment["source_start"],
+                        "source_end": segment["source_end"],
+                        "source_paragraph_nos": segment["source_paragraph_nos"],
+                        "analysis_context_sha256": (
+                            analysis_contexts.get(index, {}).get("context_sha256")
+                        ),
+                        "analysis_node_refs": (
+                            analysis_contexts.get(index, {}).get("analysis_node_refs") or []
+                        ),
+                    }
+                )
+                now = _now()
+                with self.database.transaction() as connection:
+                    connection.execute(
+                        """INSERT OR IGNORE INTO script_breakdown_drafts
+                        (id,project_id,source_document_version_id,import_session_id,draft_json,
+                         confidence_json,status,created_at,updated_at,created_by,revision,schema_version)
+                        VALUES (?,?,?,?,?,?,'CHUNK_READY',?,?,'local-llm',1,'v2')""",
+                        (
+                            checkpoint_id,
+                            row["project_id"],
+                            row["source_document_version_id"],
+                            session_id,
+                            _json(chunk_draft),
+                            _json(evidence),
+                            now,
+                            now,
+                        ),
+                    )
+            scene_number_map: dict[int, int] = {}
+            for scene in chunk_draft.get("scenes") or []:
+                if not isinstance(scene, dict):
+                    continue
+                copied = dict(scene)
+                original_scene_no = int(copied.get("scene_no") or 0)
+                copied["scene_no"] = len(merged_scenes) + 1
+                scene_number_map[original_scene_no] = int(copied["scene_no"])
+                copied["shots"] = [
+                    {**shot, "shot_no": shot_index}
+                    for shot_index, shot in enumerate(copied.get("shots") or [], start=1)
+                    if isinstance(shot, dict)
+                ]
+                merged_scenes.append(copied)
+            evidence = dict(evidence)
+            evidence["source_passages"] = [
+                {
+                    **passage,
+                    "scene_no": scene_number_map.get(
+                        int(passage.get("scene_no") or 0), int(passage.get("scene_no") or 0)
+                    ),
+                }
+                for passage in (evidence.get("source_passages") or [])
+                if isinstance(passage, dict)
+            ]
+            confidence = chunk_draft.get("confidence")
+            if isinstance(confidence, dict):
+                try:
+                    confidence_values.append(float(confidence.get("overall")))
+                except (TypeError, ValueError):
+                    pass
+                merged_notes.extend(str(item) for item in confidence.get("notes") or [] if str(item))
+            merged_questions.extend(str(item) for item in chunk_draft.get("questions") or [] if str(item))
+            segment_evidence.append(evidence)
+            if on_progress:
+                on_progress(
+                    {
+                        "phase": "CALLING_LOCAL_LLM",
+                        "percent": 20 + round(55 * index / len(segments)),
+                        "segment": index,
+                        "segment_count": len(segments),
+                    }
+                )
+        merged = {
+            "scenes": merged_scenes,
+            "confidence": {
+                "overall": min(confidence_values) if confidence_values else 0.0,
+                "notes": list(dict.fromkeys(merged_notes)),
+            },
+            "questions": list(dict.fromkeys(merged_questions)),
+        }
+        duration_adjustment: dict[str, Any] = {}
+        if target:
+            merged, duration_adjustment = _normalize_breakdown_durations(
+                merged, float(target["target_duration_seconds"])
+            )
+        evidence = {
+            "schema_version": "localdrama.script-breakdown-evidence.v2",
+            "source": "bounded_segment_model_outputs",
+            "segment_count": len(segments),
+            "segment_input_sha256": [item["input_sha256"] for item in segments],
+            "segment_evidence": segment_evidence,
+            "confidence": merged["confidence"],
+            "questions": merged["questions"],
+            "source_passages": [
+                passage
+                for item in segment_evidence
+                for passage in (item.get("source_passages") or [])
+                if isinstance(passage, dict)
+            ],
+            "dialogue_grounding_status": (
+                "PASS"
+                if all(item.get("dialogue_grounding_status") == "PASS" for item in segment_evidence)
+                else "REVIEW_REQUIRED"
+            ),
+            "source_grounding_status": (
+                "PASS"
+                if all(item.get("source_grounding_status") == "PASS" for item in segment_evidence)
+                else "REVIEW_REQUIRED"
+            ),
+            "source_coverage_status": "PASS",
+            "target_episode_id": target.get("target_episode_id") if target else None,
+            **duration_adjustment,
+        }
+        return merged, evidence, duration_adjustment
+
     def list_breakdown_drafts(self, project_id: str) -> list[dict[str, Any]]:
         from local_drama.application.breakdown_revisions import load_effective_breakdown_draft
 
@@ -2111,7 +2766,8 @@ class LocalLLMService:
                 FROM script_breakdown_drafts d
                 JOIN source_document_versions sdv ON sdv.id=d.source_document_version_id
                 JOIN source_documents sd ON sd.id=sdv.source_document_id
-                WHERE d.project_id=? ORDER BY d.created_at DESC,d.id""",
+                WHERE d.project_id=? AND d.status<>'CHUNK_READY'
+                ORDER BY d.created_at DESC,d.id""",
                 (project_id,),
             ).fetchall()
             application_rows = connection.execute(

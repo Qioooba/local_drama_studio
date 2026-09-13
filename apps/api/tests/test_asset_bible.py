@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from local_drama.application.asset_image_generation import AssetImageGenerationBatchService
+from local_drama.application.comfy_jobs import ComfyGenerationService
 from local_drama.application.asset_multiview import AssetDetailService, AssetExpressionService, AssetMultiViewService
 from local_drama.application.commands.asset_bible import AssetBibleCommandService
 from local_drama.application.jobs import JobService
@@ -452,12 +453,17 @@ def test_multiview_left_prompt_requires_pure_orthographic_profile(workspace, dat
     )
 
     prompt = plan.parameter_set["PROMPT"]
-    assert "strict orthographic left profile" in prompt
+    assert "strict orthographic profile facing image-left" in prompt
     assert "exactly minus 90 degrees" in prompt
     assert "not three-quarter" in prompt
     assert "no crouching" in prompt
     assert "arms relaxed straight beside the body" in prompt
     assert "both hands empty" in prompt
+    assert "both shoes completely visible" in prompt
+    assert "margin above the hair and below the soles" in prompt
+    assert "subject occupies at most 80 percent" in prompt
+    assert "nose pointing image-right" in plan.parameter_set["NEGATIVE_PROMPT"]
+    assert "cropped feet" in plan.parameter_set["NEGATIVE_PROMPT"]
 
 
 def test_multiview_accepts_only_complete_local_llm_prompt_bundles() -> None:
@@ -514,7 +520,11 @@ def test_multiview_variant_freezes_positive_and_negative_prompts(workspace, data
         seed_index=2,
     )
     assert "model generated positive" in plan.parameter_set["PROMPT"]
-    assert plan.parameter_set["NEGATIVE_PROMPT"] == "model generated negative"
+    assert "strict orthographic profile facing image-right" in plan.parameter_set["PROMPT"]
+    assert "only the right side visible" not in plan.parameter_set["PROMPT"]
+    assert plan.parameter_set["NEGATIVE_PROMPT"].endswith("model generated negative")
+    assert "nose pointing image-left" in plan.parameter_set["NEGATIVE_PROMPT"]
+    assert "shoes outside frame" in plan.parameter_set["NEGATIVE_PROMPT"]
 
     reroll = service._variant_plan(
         kind="RIGHT", yaw=90.0, prompt="model generated positive", negative_prompt="model generated negative",
@@ -719,6 +729,98 @@ def test_asset_image_completion_promotes_and_auto_binds_first_hero(workspace, da
     assert derivative["state"] == "QUEUED"
 
 
+def test_asset_image_completion_reconciles_success_recorded_before_process_restart(workspace, database) -> None:
+    _, project, _, _ = _project(workspace, database, "bible_asset_image_restart_completion")
+    project_id = str(project["id"])
+    asset = StoryAssetService(database, workspace).create_asset(
+        project_id, "CHARACTER", "CHAR_RESTART_HERO", "重启主图"
+    )
+    profile_version_id = _published_asset_image_profile(workspace, database)
+    batch_service = build_asset_image_batch(database, workspace)
+    plan = batch_service.plan(
+        project_id,
+        asset_kind="CHARACTER",
+        asset_ids=[str(asset["id"])],
+        profile_version_id=profile_version_id,
+    )
+    batch = batch_service.submit(
+        project_id,
+        asset_kind="CHARACTER",
+        asset_ids=[str(asset["id"])],
+        profile_version_id=profile_version_id,
+        expected_plan_hash=str(plan["plan_hash"]),
+        idempotency_key="asset-image-restart-completion",
+    )
+    job_id = str(batch["items"][0]["job_id"])
+    jobs = JobService(database, workspace)
+    claim = jobs.claim("asset-image-restart-worker", ["GPU_H3"])
+    assert claim is not None and claim["job"]["id"] == job_id
+    output = workspace.work_root / "jobs" / job_id / "generated-after-restart.png"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(PNG)
+    jobs.register_artifact(
+        str(claim["attempt"]["id"]), "COMFY_OUTPUT", output.relative_to(workspace.work_root).as_posix()
+    )
+    jobs.complete(
+        str(claim["attempt"]["id"]),
+        str(claim["attempt"]["lease_token"]),
+        "asset-image-restart-worker",
+        success=True,
+    )
+
+    reconciled = ComfyGenerationService(database, workspace).reconcile_succeeded_business_outputs()
+    detail = _query_service(database, lambda query: query.asset_detail(str(asset["id"])))
+
+    assert reconciled["inspected"] == reconciled["finalized"] == 1
+    assert detail["asset"]["canonical_media_version_id"] is not None
+    assert detail["base_references"][0]["reference_kind"] == "HERO"
+
+
+def test_asset_image_completion_reports_deferred_when_restart_output_is_missing(workspace, database) -> None:
+    _, project, _, _ = _project(workspace, database, "bible_asset_image_restart_missing_output")
+    project_id = str(project["id"])
+    asset = StoryAssetService(database, workspace).create_asset(
+        project_id, "CHARACTER", "CHAR_RESTART_MISSING_OUTPUT", "重启缺失输出"
+    )
+    profile_version_id = _published_asset_image_profile(workspace, database)
+    batch_service = build_asset_image_batch(database, workspace)
+    plan = batch_service.plan(
+        project_id,
+        asset_kind="CHARACTER",
+        asset_ids=[str(asset["id"])],
+        profile_version_id=profile_version_id,
+    )
+    batch = batch_service.submit(
+        project_id,
+        asset_kind="CHARACTER",
+        asset_ids=[str(asset["id"])],
+        profile_version_id=profile_version_id,
+        expected_plan_hash=str(plan["plan_hash"]),
+        idempotency_key="asset-image-restart-missing-output",
+    )
+    job_id = str(batch["items"][0]["job_id"])
+    jobs = JobService(database, workspace)
+    claim = jobs.claim("asset-image-restart-worker", ["GPU_H3"])
+    assert claim is not None and claim["job"]["id"] == job_id
+    jobs.complete(
+        str(claim["attempt"]["id"]),
+        str(claim["attempt"]["lease_token"]),
+        "asset-image-restart-worker",
+        success=True,
+    )
+
+    reconciled = ComfyGenerationService(database, workspace).reconcile_succeeded_business_outputs()
+    detail = _query_service(database, lambda query: query.asset_detail(str(asset["id"])))
+
+    assert reconciled["inspected"] == 1
+    assert reconciled["finalized"] == 0
+    assert reconciled["items"][0]["job_id"] == job_id
+    assert reconciled["items"][0]["status"] == "DEFERRED"
+    assert reconciled["items"][0]["artifact_count"] == 0
+    assert reconciled["items"][0]["outcomes"][0]["error_code"] == "ASSET_IMAGE_OUTPUT_MISSING"
+    assert detail["asset"]["canonical_media_version_id"] is None
+
+
 def test_asset_image_batch_auto_chooses_text_to_image_profile_over_reference_profile(workspace, database) -> None:
     _, project, _, _ = _project(workspace, database, "bible_asset_image_text_only")
     project_id = str(project["id"])
@@ -750,6 +852,43 @@ def test_asset_image_batch_auto_chooses_text_to_image_profile_over_reference_pro
     assert plan["profile_version_id"] == text_to_image_profile_id
     assert reference_profile_id != text_to_image_profile_id
     assert plan["profile_resolution"]["source"] == "TEXT_TO_IMAGE_AUTO"
+
+
+def test_asset_image_batch_auto_skips_profile_with_missing_seed_workflow_binding(workspace, database) -> None:
+    _, project, _, _ = _project(workspace, database, "bible_asset_image_semantic_fallback")
+    project_id = str(project["id"])
+    asset = StoryAssetService(database, workspace).create_asset(
+        project_id, "CHARACTER", "CHAR_SEMANTIC_FALLBACK", "语义回退角色"
+    )
+    valid_profile_id = _published_image_profile_by_contract(
+        workspace,
+        database,
+        "asset-image-semantic-valid",
+        capability="IMAGE_CHARACTER",
+        input_slots={"PROMPT": {"min": 1, "max": 1}},
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    invalid_profile_id = _published_image_profile_by_contract(
+        workspace,
+        database,
+        "asset-image-semantic-invalid",
+        capability="IMAGE_CHARACTER",
+        input_slots={"PROMPT": {"min": 1, "max": 1}},
+        updated_at="2026-02-01T00:00:00+00:00",
+    )
+    with database.transaction() as connection:
+        connection.execute(
+            "UPDATE workflow_versions SET node_bindings_json=? WHERE id=(SELECT workflow_version_id FROM execution_profile_versions WHERE id=?)",
+            (json.dumps({"PROMPT": {"node_id": "1", "input": "prompt"}}), invalid_profile_id),
+        )
+
+    plan = build_asset_image_batch(database, workspace).plan(
+        project_id, asset_kind="CHARACTER", asset_ids=[str(asset["id"])]
+    )
+
+    assert plan["valid"] is True
+    assert plan["profile_version_id"] == valid_profile_id
+    assert plan["profile_version_id"] != invalid_profile_id
 
 
 def test_asset_image_batch_rejects_explicit_reference_image_profile(workspace, database) -> None:

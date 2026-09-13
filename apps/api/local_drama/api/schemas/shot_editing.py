@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -22,6 +24,8 @@ class ShotSplitCommand(BaseModel):
     first_code: str = Field(min_length=1, max_length=64)
     second_code: str = Field(min_length=1, max_length=64)
     first_duration_ms: int = Field(gt=0)
+    dialogue_destination: Literal["FIRST", "SECOND", "SOURCE_ONLY"]
+    action_destination: Literal["FIRST", "SECOND", "BOTH", "SOURCE_ONLY"]
 
 
 class ShotEditPlanRequest(BaseModel):

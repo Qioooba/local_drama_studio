@@ -105,7 +105,9 @@ def test_local_clients_do_not_follow_redirects_or_use_provider_payload_details(r
     assert _SinkHandler.requests == 0
 
     with pytest.raises(DomainRuleError) as llm_error:
-        LocalLLMClient(f"http://127.0.0.1:{redirect.server_port}", "local-model").tags()
+        LocalLLMClient(
+            f"http://127.0.0.1:{redirect.server_port}", "local-model", provider="OLLAMA_LOOPBACK"
+        ).tags()
     assert llm_error.value.code == "LOCAL_LLM_LOOPBACK_UNAVAILABLE"
     assert _SinkHandler.requests == 0
 

@@ -270,7 +270,7 @@ def test_one_click_auto_continue_run_produces_rough_cut(workspace, database, mon
     # Pre-seeded video candidate so no Comfy job is dispatched.
     video_source = workspace.work_root / "one-click-shot.mp4"
     subprocess.run(
-        [workspace.ffmpeg_path, "-f", "lavfi", "-i", "color=c=navy:s=160x90:d=2", "-pix_fmt", "yuv420p", "-an", "-y", str(video_source)],
+        [workspace.ffmpeg_path, "-f", "lavfi", "-i", "color=c=navy:s=160x90:d=4", "-pix_fmt", "yuv420p", "-an", "-y", str(video_source)],
         check=True, capture_output=True,
     )
     video_media = media_service.import_file(

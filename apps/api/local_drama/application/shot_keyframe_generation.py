@@ -10,17 +10,18 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from local_drama.application.dialogue_facts import fields_with_current_dialogue
 from local_drama.application.ports.creative_generation import (
     GenerationCommandPort,
     GenerationPreferenceResolverFactory,
     MediaPromotionPort,
 )
 from local_drama.application.ports.database import DatabaseUnitOfWork
+from local_drama.application.shot_identity_references import shot_identity_references
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.generation import VariantPlan
 from local_drama.domain.policies import VariantInput
-from local_drama.application.shot_identity_references import shot_identity_references
 from local_drama.domain.shot_keyframe_route import SHOT_KEYFRAME_SINGLE_FRAME, validate_shot_keyframe_route
 from local_drama.domain.shot_prompt import compose_shot_prompt
 from local_drama.domain.shot_prompt_bundle import (
@@ -305,6 +306,9 @@ class ShotKeyframeGenerationBatchService:
                     issues.append({"code": "SHOT_NOT_FOUND", "shot_id": target["shot_id"], "message": "镜头不存在或不属于当前分集"})
                     continue
                 fields = json.loads(str(row["fields_json"] or "{}"))
+                fields, dialogue_facts = fields_with_current_dialogue(
+                    connection, str(row["id"]), fields
+                )
                 # A shot code is an identifier, not creative content.  Keep it
                 # in the emitted prompt, but do not let it satisfy the
                 # no-prompt guard by itself.
@@ -361,6 +365,16 @@ class ShotKeyframeGenerationBatchService:
                 workflow_route = self._workflow_route(connection, profile)
                 workflow_bindings = workflow_route["bindings"] if isinstance(workflow_route.get("bindings"), dict) else {}
                 shot_blockers: list[dict[str, Any]] = []
+                if dialogue_facts["unresolved_speaker_line_ids"]:
+                    shot_blockers.append(
+                        {
+                            "code": "DIALOGUE_SPEAKER_CONFIRMATION_REQUIRED",
+                            "message": "对白说话人尚未确认",
+                            "dialogue_line_ids": dialogue_facts[
+                                "unresolved_speaker_line_ids"
+                            ],
+                        }
+                    )
                 if int(row["revision"]) != target["expected_revision"]:
                     shot_blockers.append({"code": "SHOT_REVISION_CONFLICT", "message": "镜头已变化，请重新检查", "current_revision": int(row["revision"])})
                 if not prompt_base.strip():

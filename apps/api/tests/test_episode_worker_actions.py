@@ -26,6 +26,7 @@ def _project_and_shot(workspace, database, code: str) -> tuple[dict, dict, dict]
 
 def test_keyframe_action_dispatches_shared_batch_and_preserves_job_dependencies(workspace, database, monkeypatch):
     from unittest.mock import Mock
+
     from local_drama.application.worker_handlers.automation_task import advance_automation_run
 
     _, episode, shot = _project_and_shot(workspace, database, "keyframe_dispatch")
@@ -49,6 +50,7 @@ def test_keyframe_action_dispatches_shared_batch_and_preserves_job_dependencies(
 
 def test_keyframe_action_reuses_approval_and_blocks_partial_plan(workspace, database, monkeypatch):
     from unittest.mock import Mock
+
     import local_drama.application.episode_worker_actions as module
 
     _, episode, shot = _project_and_shot(workspace, database, "keyframe_block")
@@ -146,6 +148,125 @@ def test_video_action_refreshes_stale_working_media_instead_of_reusing_verified_
     assert item["forced_new_take"] is True
     assert item["stale_working_media"] is True
     assert item["refresh_reason"] == "WORKING_MEDIA_DEPENDENCY_CHANGED"
+
+
+def test_operation_impact_distinguishes_retry_new_take_and_recompose_without_writes(
+    workspace, database, monkeypatch,
+) -> None:
+    project, episode, persisted_shot = _project_and_shot(workspace, database, "operation_impact")
+    service = EpisodeWorkerActionService(database, workspace)
+    shot = {"id": str(persisted_shot["id"]), "code": "SH-001", "revision": 3}
+    monkeypatch.setattr(service, "_episode", lambda _episode_id: (str(project["id"]), [shot]))
+    monkeypatch.setattr(
+        service,
+        "video_generation_preflight",
+        lambda *_args, **_kwargs: {
+            "items": [{"shot_id": shot["id"], "status": "READY", "blockers": []}]
+        },
+    )
+    monkeypatch.setattr(service, "_stale_working_media_shots", lambda *_args: set())
+    monkeypatch.setattr(
+        service,
+        "_variant_jobs",
+        lambda _shot_id: [{
+            "id": "failed-job",
+            "state": "FAILED",
+            "variant_id": "variant-1",
+            "explicit_seed": 77,
+        }],
+    )
+    monkeypatch.setattr(service, "_shot_video_count", lambda _shot_id: 0)
+
+    retry = service.operation_impact(
+        str(episode["id"]), operation="RETRY_ORIGINAL", target_shot_ids=(shot["id"],)
+    )
+    assert retry["sets"]["retry_original"] == [{
+        "shot_id": shot["id"],
+        "shot_code": "SH-001",
+        "shot_revision": 3,
+        "reason": "FAILED_JOB_SAME_FROZEN_INPUTS",
+        "job_id": "failed-job",
+        "variant_id": "variant-1",
+        "seed": 77,
+    }]
+    assert retry["mutated"] is False
+
+    new_take = service.operation_impact(
+        str(episode["id"]), operation="NEW_TAKE", target_shot_ids=(shot["id"],)
+    )
+    assert new_take["sets"]["needs_generation"][0]["reason"] == "EXPLICIT_NEW_CANDIDATE"
+    assert new_take["gpu_video_job_count"] == 1
+    assert new_take["plan_hash"] != retry["plan_hash"]
+
+    recompose = service.operation_impact(str(episode["id"]), operation="RECOMPOSE_ONLY")
+    assert recompose["gpu_video_job_count"] == 0
+    assert recompose["sets"]["blocked_by_dependency"][0]["reason"] == "TIMELINE_REQUIRED"
+
+
+def test_qc_pass_with_adoption_blocker_pauses_production(workspace, database, monkeypatch) -> None:
+    service = EpisodeWorkerActionService(database, workspace)
+    shot = {"id": "shot-adoption-block", "code": "S001"}
+    monkeypatch.setattr(service, "_episode", lambda _episode_id: ("project-1", [shot]))
+    monkeypatch.setattr(service, "_variant_jobs", lambda _shot_id: [])
+    monkeypatch.setattr(
+        service,
+        "_shot_video",
+        lambda _shot_id: {
+            "media_version_id": "video-pass",
+            "media_asset_id": "asset-pass",
+            "stage": "PROXY",
+            "selected_version_id": None,
+            "approved_version_id": None,
+            "variant_id": None,
+        },
+    )
+    monkeypatch.setattr(service.reviews, "machine_check", lambda *_args, **_kwargs: {"id": "qc-1", "status": "PASS"})
+    monkeypatch.setattr(service, "_auto_select_video", lambda *_args: {"status": "BLOCKED", "code": "SELECTION_CONFLICT"})
+
+    report, _ = service.qc("episode-1", "run-1", "task-1", auto_select=True)
+
+    assert report["status"] == "NEEDS_HITL"
+    item = report["produced"]["items"][0]
+    assert item["status"] == "PASS"
+    assert item["production_status"] == "BLOCKED"
+    assert item["auto_selection"] == {"status": "BLOCKED", "code": "SELECTION_CONFLICT"}
+
+
+def test_older_qc_pass_candidate_beats_newer_failed_candidate(workspace, database) -> None:
+    project, _episode_row, shot = _project_and_shot(workspace, database, "qc_candidate_order")
+    now_a = "2026-09-13T00:00:00+00:00"
+    now_b = "2026-09-13T00:00:01+00:00"
+    candidate_ids: list[str] = []
+    with database.transaction() as connection:
+        for ordinal, (created_at, status) in enumerate(((now_a, "PASS"), (now_b, "FAIL")), start=1):
+            asset_id = str(uuid.uuid4())
+            media_id = str(uuid.uuid4())
+            candidate_ids.append(media_id)
+            connection.execute(
+                """INSERT INTO media_assets
+                (id,project_id,owner_type,owner_id,purpose,media_kind,version_counter,metadata_json,
+                 created_at,updated_at,created_by,revision,schema_version)
+                VALUES (?,?,'SHOT',?,'SHOT_VIDEO_CANDIDATE','VIDEO',1,'{}',?,?,'test',1,'v2')""",
+                (asset_id, project["id"], shot["id"], created_at, created_at),
+            )
+            connection.execute(
+                """INSERT INTO media_versions
+                (id,media_asset_id,version_no,take_no,stage,rel_path,mime_type,byte_size,sha256,probe_json,
+                 integrity_status,created_at,updated_at,created_by,revision,schema_version)
+                VALUES (?,?,1,?,'PROXY',?,'video/mp4',1,?,'{}','VERIFIED',?,?,'test',1,'v2')""",
+                (media_id, asset_id, ordinal, f"candidate-{ordinal}.mp4", str(ordinal) * 64, created_at, created_at),
+            )
+            connection.execute(
+                """INSERT INTO machine_check_runs
+                (id,subject_type,subject_id,policy_version,status,created_at,updated_at,created_by,revision,schema_version)
+                VALUES (?,'MEDIA_VERSION',?,'g4_media_qc_v1',?,?,?,'test',1,'v2')""",
+                (str(uuid.uuid4()), media_id, status, created_at, created_at),
+            )
+
+    selected = EpisodeWorkerActionService(database, workspace)._shot_video(str(shot["id"]))
+    assert selected is not None
+    assert selected["media_version_id"] == candidate_ids[0]
+    assert selected["machine_check_status"] == "PASS"
 
 
 def test_shot_video_queries_ignore_stale_variants_without_cross_project_candidate_leakage(workspace, database) -> None:

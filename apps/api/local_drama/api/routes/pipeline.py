@@ -9,7 +9,9 @@ from local_drama.api.schemas.pipeline import (
     ApplyPipelineRequest,
     LLMProbeRequest,
     LLMProbeResponse,
+    PipelineApplyPreviewResponse,
     PipelinePreflightRequest,
+    PreviewPipelineApplyRequest,
     RetryPipelineRequest,
     StartPipelineRequest,
 )
@@ -82,6 +84,7 @@ async def start_pipeline(
                 auto_run_rendering=False,  # deprecated
                 capability_profile_version_id=payload.capability_profile_version_id,
                 llm_config=payload.llm_config.model_dump() if payload.llm_config else None,
+                application_authorization=payload.application_authorization.model_dump(),
             )
         )
         return {"run": run}
@@ -220,6 +223,32 @@ async def apply_pipeline_run(
         service = _pipeline(request)
         return await run_in_threadpool(
             lambda: service.apply_pipeline(
+                project_id,
+                run_id,
+                expected_revision=payload.expected_revision,
+                sections=payload.sections,
+                expected_impact_sha256=payload.expected_impact_sha256,
+            )
+        )
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post(
+    "/projects/{project_id}/pipeline/{run_id}:apply-preview",
+    operation_id="previewPipelineApply",
+    response_model=PipelineApplyPreviewResponse,
+)
+async def preview_pipeline_apply(
+    project_id: str,
+    run_id: str,
+    payload: PreviewPipelineApplyRequest,
+    request: Request,
+) -> dict[str, Any]:
+    try:
+        service = _pipeline(request)
+        return await run_in_threadpool(
+            lambda: service.preview_pipeline_apply(
                 project_id,
                 run_id,
                 expected_revision=payload.expected_revision,

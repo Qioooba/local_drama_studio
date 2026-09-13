@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 import hashlib
 import json
+from contextlib import contextmanager
 from types import MappingProxyType
 
 from local_drama.model_platform.application.execution_planning import ExecutionPreview

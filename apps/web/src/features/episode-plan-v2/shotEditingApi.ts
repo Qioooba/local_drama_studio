@@ -9,6 +9,8 @@ export type ShotReorderCommand = {
 };
 export type ShotSplitCommand = {
   shot_id: string; expected_revision: number; first_code: string; second_code: string; first_duration_ms: number;
+  dialogue_destination: "FIRST" | "SECOND" | "SOURCE_ONLY";
+  action_destination: "FIRST" | "SECOND" | "BOTH" | "SOURCE_ONLY";
 };
 export type ShotEditPayload = {
   ordering_token: string; reorder: ShotReorderCommand | null; splits: ShotSplitCommand[];
@@ -16,7 +18,7 @@ export type ShotEditPayload = {
 export type ShotEditPlan = {
   plan_hash: string; valid: boolean; issues: Array<{ code: string; message: string }>;
   summary: { reordered: boolean; split: number };
-  effects: { timeline: string; selected_results: string; asset_bindings: string };
+  effects: { timeline: string; selected_results: string; asset_bindings: string; dialogue: string };
   ordered_shot_ids: string[];
 };
 

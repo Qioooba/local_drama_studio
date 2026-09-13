@@ -41,6 +41,17 @@ export type PipelineAssetCandidate = {
 export type PipelineDraft = {
   schema_version?: string;
   source?: { document_version_id: string; sha256: string; character_count: number };
+  source_coverage?: {
+    schema_version: "pipeline.source-coverage.v1";
+    source_sha256: string;
+    status: "FULL" | "PARTIAL" | "NOT_STARTED";
+    authorized_range: { start_paragraph: number; end_paragraph: number; paragraph_count: number; import_session_id?: string };
+    covered_paragraph_count: number;
+    authorized_paragraph_count: number;
+    completed_ranges: Array<{ unit_number: number; start_paragraph: number; end_paragraph: number; authorized_character_count: number; submitted_character_count: number; status: "COMPLETED" | "PARTIAL" }>;
+    unprocessed_ranges: Array<{ start_paragraph: number; end_paragraph: number; reason: string; resume_unit_number?: number; resume_character_offset_in_unit?: number; unprocessed_character_count?: number }>;
+    resume?: { start_paragraph: number; end_paragraph: number; reason: string; resume_unit_number?: number; resume_character_offset_in_unit?: number } | null;
+  };
   settings?: { visual_style: string; target_episode_duration_seconds: number; voice_preset: string };
   story_plan?: {
     episodes: Array<{
@@ -102,10 +113,31 @@ export type PipelineDraft = {
 };
 
 export type PipelineQualityReport = {
+  rule_version?: "pipeline-quality/v2";
   status?: "READY" | "REVIEW_REQUIRED" | "BLOCKED";
   blockers?: string[];
   warnings?: string[];
-  checks?: Array<{ code: string; label: string; passed: boolean }>;
+  checks?: Array<{ code: string; label: string; severity?: "BLOCKER" | "WARNING" | "INFO"; applicable?: boolean; passed: boolean }>;
+};
+
+export type PipelineApplyImpact = {
+  schema_version: "pipeline-apply-impact/v1";
+  project_id: string;
+  run_id: string;
+  run_revision: number;
+  sections: string[];
+  episodes: {
+    add: Array<{ number: number; code: string; title: string }>;
+    update: Array<{ number: number; code: string; from_title: string; to_title: string }>;
+    preserve: Array<{ number: number; code: string; title: string; reason: string }>;
+    skip: Array<{ number: number; code: string; title: string }>;
+  };
+  story_bible: { will_create: boolean; will_switch_current_revision: boolean; previous_revision_id?: string | null };
+  assets: { reuse: string[]; add: string[] };
+  produced_episode_context_changes: string[];
+  requires_confirmation: boolean;
+  writes_performed: boolean;
+  impact_sha256: string;
 };
 
 export type PipelineRun = {
@@ -121,6 +153,19 @@ export type PipelineRun = {
   target_episode_duration_seconds: number;
   voice_preset: string;
   auto_run_rendering: boolean;
+  application_authorization: {
+    schema_version?: "pipeline-application-authorization/v1";
+    endpoint: "DRAFT_ONLY" | "APPLY_SELECTED_SECTIONS";
+    sections: string[];
+    continuation_job_id?: string;
+    revoked_at?: string;
+  };
+  apply_continuation?: {
+    state: string;
+    job_id?: string | null;
+    last_error_code?: string | null;
+    last_error_detail?: string | null;
+  };
   source_document_version_id?: string | null;
   source_label?: string;
   capability_profile_version_id?: string | null;
@@ -171,6 +216,10 @@ export type StartPipelinePayload = {
   voice_preset?: string;
   capability_profile_version_id?: string;
   llm_config?: LLMConfigPayload;
+  application_authorization?: {
+    endpoint: "DRAFT_ONLY" | "APPLY_SELECTED_SECTIONS";
+    sections: string[];
+  };
 };
 
 export type PipelinePreflight = {
@@ -243,12 +292,27 @@ export async function applyPipelineRun(
   runId: string,
   expectedRevision: number,
   sections: string[],
+  expectedImpactSha256: string,
 ): Promise<{
   run: PipelineRun;
   created: { episodes: number; bible_revisions: number; asset_proposals: number; creative_dossiers: number; breakdown_drafts: number };
   sections: string[];
+  impact: PipelineApplyImpact;
 }> {
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/pipeline/${encodeURIComponent(runId)}:apply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expected_revision: expectedRevision, sections, expected_impact_sha256: expectedImpactSha256 }),
+  });
+}
+
+export async function previewPipelineApply(
+  projectId: string,
+  runId: string,
+  expectedRevision: number,
+  sections: string[],
+): Promise<{ impact: PipelineApplyImpact; quality_report: PipelineQualityReport; can_apply: boolean }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/pipeline/${encodeURIComponent(runId)}:apply-preview`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ expected_revision: expectedRevision, sections }),
@@ -281,6 +345,7 @@ export type WholeDramaStatus = {
   project_code: string;
   project_title: string;
   overall_status: string;
+  state_counts: Record<string, number>;
   total_episodes: number;
   episodes: WholeDramaEpisodeStatus[];
 };
@@ -291,24 +356,29 @@ export async function getWholeDramaStatus(projectId: string): Promise<WholeDrama
 
 export async function runWholeDrama(
   projectId: string,
-  payload?: {
+  payload: {
+    episode_ids?: string[];
     tts_enabled?: boolean;
     production_mode?: string;
     checkpoint_policy?: string;
     min_free_disk_bytes?: number;
     actor?: string;
   },
+  idempotencyKey: string,
 ): Promise<{
   project_id: string;
   preparation: unknown;
   dispatched_runs: Array<{ episode_id: string; code: string; status: string; run_id?: string }>;
   total_episodes: number;
   dispatched_count: number;
+  blocked_count: number;
+  dispatch_status: "NOT_STARTED" | "PARTIALLY_DISPATCHED" | "DISPATCHED";
+  dispatch_reason?: string | null;
+  idempotent_replay: boolean;
 }> {
   return requestJson(`/api/v2/projects/${encodeURIComponent(projectId)}/whole-drama:run`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload ?? {}),
+    headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify(payload),
   });
 }
-

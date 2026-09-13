@@ -384,18 +384,29 @@ class Settings(BaseModel):
             # typed settings and may not be overridden here.
             values["llama_server_args"] = tuple(shlex.split(os.environ["LOCAL_DRAMA_LLAMA_SERVER_ARGS"]))
         # Support alternative/convenience environment variable aliases for OpenAI compatibility
-        if "LOCAL_DRAMA_OPENAI_COMPAT_BASE_URL" in os.environ and "llm_base_url" not in values:
+        if "LOCAL_DRAMA_OPENAI_COMPAT_BASE_URL" in os.environ and "LOCAL_DRAMA_LLM_BASE_URL" not in os.environ:
             values["llm_base_url"] = os.environ["LOCAL_DRAMA_OPENAI_COMPAT_BASE_URL"]
             values.setdefault("llm_provider", "OPENAI_COMPAT")
-        if "LOCAL_DRAMA_OPENAI_COMPAT_MODEL" in os.environ and "llm_model" not in values:
+        if "LOCAL_DRAMA_OPENAI_COMPAT_MODEL" in os.environ and "LOCAL_DRAMA_LLM_MODEL" not in os.environ:
             values["llm_model"] = os.environ["LOCAL_DRAMA_OPENAI_COMPAT_MODEL"]
             values.setdefault("llm_provider", "OPENAI_COMPAT")
-        if "LOCAL_DRAMA_OPENAI_COMPAT_API_KEY" in os.environ and "llm_api_key" not in values:
+        if "LOCAL_DRAMA_OPENAI_COMPAT_API_KEY" in os.environ and "LOCAL_DRAMA_LLM_API_KEY" not in os.environ:
             values["llm_api_key"] = os.environ["LOCAL_DRAMA_OPENAI_COMPAT_API_KEY"]
-        elif "DEEPSEEK_API_KEY" in os.environ and "llm_api_key" not in values:
+        elif "DEEPSEEK_API_KEY" in os.environ and "LOCAL_DRAMA_LLM_API_KEY" not in os.environ:
             values["llm_api_key"] = os.environ["DEEPSEEK_API_KEY"]
-        elif "OPENAI_API_KEY" in os.environ and "llm_api_key" not in values:
+        elif "OPENAI_API_KEY" in os.environ and "LOCAL_DRAMA_LLM_API_KEY" not in os.environ:
             values["llm_api_key"] = os.environ["OPENAI_API_KEY"]
+        compat_alias_active = any(
+            name in os.environ
+            for name in (
+                "LOCAL_DRAMA_OPENAI_COMPAT_BASE_URL",
+                "LOCAL_DRAMA_OPENAI_COMPAT_MODEL",
+                "LOCAL_DRAMA_OPENAI_COMPAT_API_KEY",
+                "DEEPSEEK_API_KEY",
+            )
+        )
+        if compat_alias_active and "LOCAL_DRAMA_LLM_PROVIDER" not in os.environ:
+            values["llm_provider"] = "OPENAI_COMPAT"
 
         if "LOCAL_DRAMA_PORT" in os.environ:
             values["port"] = int(os.environ["LOCAL_DRAMA_PORT"])

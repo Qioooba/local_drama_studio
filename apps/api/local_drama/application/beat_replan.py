@@ -222,9 +222,57 @@ class BeatReplanService:
         if int(group["revision"]) != expected_group_revision:
             issues.append({"code": "SHOT_GROUP_REVISION_CONFLICT", "message": "选定 Beat 已变化，请刷新"})
         diff: list[dict[str, Any]] = []
-        paired = min(len(current), len(proposals))
-        for index in range(paired):
-            row, proposal = current[index], proposals[index]
+        current_by_id = {str(row["id"]): row for row in current}
+        current_by_source_ref: dict[str, list[sqlite3.Row]] = {}
+        for row in current:
+            source_ref = self._source_ref(self._before(row)["fields"])
+            if source_ref:
+                current_by_source_ref.setdefault(source_ref, []).append(row)
+        matched_ids: set[str] = set()
+        for proposal in proposals:
+            claimed_id = str(proposal.get("claimed_shot_id") or "").strip()
+            source_ref = str(proposal.get("source_ref") or "").strip()
+            row = None
+            if claimed_id:
+                row = current_by_id.get(claimed_id)
+                if row is None:
+                    issues.append({
+                        "code": "SHOT_ID_OUT_OF_SCOPE",
+                        "message": "建议引用的 shot_id 不属于当前选定 Beat",
+                        "shot_id": claimed_id,
+                    })
+                elif claimed_id in matched_ids:
+                    issues.append({
+                        "code": "SHOT_ID_DUPLICATED",
+                        "message": "同一 shot_id 在建议中被重复引用",
+                        "shot_id": claimed_id,
+                    })
+                    row = None
+            elif source_ref:
+                candidates = [item for item in current_by_source_ref.get(source_ref, []) if str(item["id"]) not in matched_ids]
+                if len(candidates) == 1:
+                    row = candidates[0]
+                else:
+                    issues.append({
+                        "code": "SHOT_SOURCE_REF_AMBIGUOUS",
+                        "message": "稳定来源引用无法唯一匹配当前 Beat 镜头",
+                        "source_ref": source_ref,
+                    })
+            elif not proposal.get("declared_new"):
+                issues.append({
+                    "code": "SHOT_MATCH_ID_REQUIRED",
+                    "message": "既有镜头建议必须携带当前 Beat 的 shot_id 或唯一稳定来源引用；新增项必须显式声明",
+                    "proposal_shot_no": proposal["shot_no"],
+                })
+            if row is None:
+                code = f"{group['code']}-AI-{int(proposal['shot_no']):02d}"
+                diff.append({
+                    "action": "ADD", "shot_id": None, "expected_revision": None, "before": None,
+                    "after": {**proposal, "code": code},
+                    "reason": "明确新增镜头" if proposal.get("declared_new") else "身份无法确认；仅供预览，禁止自动应用",
+                })
+                continue
+            matched_ids.add(str(row["id"]))
             before = self._before(row)
             after = {**proposal, "code": str(row["code"]), "fields": {**before["fields"], **proposal["fields"]}}
             changed = self._comparable(before) != self._comparable(after)
@@ -238,14 +286,16 @@ class BeatReplanService:
         existing_codes = {str(row["code"]).casefold() for row in connection.execute(
             "SELECT code FROM shots WHERE episode_id=? AND archived_at IS NULL", (episode_id,),
         )}
-        for proposal in proposals[paired:]:
-            code = f"{group['code']}-AI-{int(proposal['shot_no']):02d}"
+        for item in diff:
+            if item["action"] != "ADD":
+                continue
+            code = str(item["after"]["code"])
             if code.casefold() in existing_codes:
                 issues.append({"code": "SHOT_CODE_CONFLICT", "message": f"建议镜头编号冲突：{code}"})
             existing_codes.add(code.casefold())
-            diff.append({"action": "ADD", "shot_id": None, "expected_revision": None, "before": None,
-                         "after": {**proposal, "code": code}, "reason": None})
-        for row in current[paired:]:
+        for row in current:
+            if str(row["id"]) in matched_ids:
+                continue
             before = self._before(row)
             protected = bool(row["is_frozen"])
             diff.append({
@@ -281,8 +331,28 @@ class BeatReplanService:
             "dialogue": item.get("dialogue", ""), "summary": summary,
             "ai_replan_evidence": {"proposal_shot_no": int(item.get("shot_no") or 0)},
         }
-        return {"shot_no": int(item.get("shot_no") or 0), "target_duration_ms": duration_ms,
-                "shot_type": shot_type[:32] or "STANDARD", "fields": fields}
+        return {
+            "shot_no": int(item.get("shot_no") or 0),
+            "target_duration_ms": duration_ms,
+            "shot_type": shot_type[:32] or "STANDARD",
+            "fields": fields,
+            "claimed_shot_id": str(item.get("shot_id") or "").strip() or None,
+            "source_ref": BeatReplanService._source_ref(item),
+            "declared_new": item.get("operation") == "ADD" or item.get("is_new") is True,
+        }
+
+    @staticmethod
+    def _source_ref(value: dict[str, Any]) -> str | None:
+        for key in ("source_ref", "source_shot_ref", "beat_ref"):
+            candidate = str(value.get(key) or "").strip()
+            if candidate:
+                return candidate
+        evidence = value.get("ai_replan_evidence")
+        if isinstance(evidence, dict):
+            candidate = str(evidence.get("source_ref") or "").strip()
+            if candidate:
+                return candidate
+        return None
 
     @staticmethod
     def _before(row: sqlite3.Row) -> dict[str, Any]:

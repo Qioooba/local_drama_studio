@@ -13,18 +13,28 @@ from local_drama.model_platform.application.discovery_registration import Discov
 from local_drama.model_platform.application.execution_planning import ExecutionPlanningService, ExecutionPreviewRequest
 from local_drama.model_platform.application.installation_integrity import InstallationIntegrityService
 from local_drama.model_platform.application.model_lock_discovery import ModelLockDiscoveryOrchestrator
-from local_drama.model_platform.application.project_knowledge_indexing import (
-    ProjectKnowledgeIndexPreparationService,
-    ProjectKnowledgeIndexQueueService,
-)
 from local_drama.model_platform.application.ollama_discovery import OllamaDiscoveryOrchestrator
 from local_drama.model_platform.application.ollama_text_profiles import OllamaTextProfileService
 from local_drama.model_platform.application.profile_catalog import ProfileCatalogService
 from local_drama.model_platform.application.profile_publication import ProfilePublicationService
+from local_drama.model_platform.application.project_knowledge_indexing import (
+    ProjectKnowledgeIndexPreparationService,
+    ProjectKnowledgeIndexQueueService,
+)
 from local_drama.model_platform.application.pytorch_embedding_profiles import PyTorchEmbeddingProfileService
 from local_drama.model_platform.application.runtime_adapters import ModelLockRuntimeAdapter, OllamaRuntimeAdapter
 from local_drama.model_platform.domain.models import RuntimeKind
 from local_drama.model_platform.domain.states import PresenceStatus, RuntimeStatus
+
+
+def _ollama_settings(workspace):
+    return workspace.model_copy(
+        update={"llm_provider": "OLLAMA_LOOPBACK", "llm_base_url": workspace.ollama_base_url}
+    )
+
+
+def _ollama_discovery(database, workspace) -> OllamaDiscoveryOrchestrator:
+    return OllamaDiscoveryOrchestrator(database, _ollama_settings(workspace))
 
 
 class _Catalog:
@@ -157,7 +167,7 @@ def test_discovery_service_persists_only_immutable_discovery_evidence(database) 
 
 
 def test_ollama_orchestrator_registers_service_runtime_and_records_only_discovery(workspace, database) -> None:
-    orchestrator = OllamaDiscoveryOrchestrator(database, workspace)
+    orchestrator = _ollama_discovery(database, workspace)
 
     first = orchestrator.scan(_Catalog())
     second = orchestrator.scan(_Catalog())
@@ -179,7 +189,7 @@ def test_ollama_orchestrator_registers_service_runtime_and_records_only_discover
 
 
 def test_discovery_registration_creates_only_an_unvalidated_candidate(workspace, database) -> None:
-    run = OllamaDiscoveryOrchestrator(database, workspace).scan(_Catalog())
+    run = _ollama_discovery(database, workspace).scan(_Catalog())
     with database.connect() as connection:
         observation = connection.execute(
             "SELECT id FROM mp_discovery_observations WHERE discovery_run_id=? AND native_id='qwen3.8:27b'",
@@ -205,7 +215,7 @@ def test_discovery_registration_creates_only_an_unvalidated_candidate(workspace,
 
 
 def test_registered_candidate_readiness_is_capability_scoped_and_fails_closed(workspace, database) -> None:
-    run = OllamaDiscoveryOrchestrator(database, workspace).scan(_Catalog())
+    run = _ollama_discovery(database, workspace).scan(_Catalog())
     with database.connect() as connection:
         observation = connection.execute(
             "SELECT id FROM mp_discovery_observations WHERE discovery_run_id=? AND native_id='nomic-embed-text'",
@@ -230,11 +240,13 @@ def test_registered_candidate_readiness_is_capability_scoped_and_fails_closed(wo
 
 
 def test_ollama_text_capability_smoke_records_redacted_evidence_and_only_marks_complete_installation_ready(workspace, database) -> None:
-    run = OllamaDiscoveryOrchestrator(database, workspace).scan(_TextCatalog())
+    run = _ollama_discovery(database, workspace).scan(_TextCatalog())
     with database.connect() as connection:
         observation = connection.execute("SELECT id FROM mp_discovery_observations WHERE discovery_run_id=?", (run.id,)).fetchone()
     registered = DiscoveryRegistrationService(database).register(str(observation["id"]))
-    service = CapabilitySmokeService(database, workspace, ollama_client_factory=lambda _url, _model: _PassingOllamaProbe())
+    service = CapabilitySmokeService(
+        database, _ollama_settings(workspace), ollama_client_factory=lambda _url, _model: _PassingOllamaProbe()
+    )
 
     first = service.smoke(registered.runtime_model_installation_id, "LLM_STORY_PARSE")
     assert first.status == "SMOKE_PASSED"
@@ -271,7 +283,7 @@ def test_ollama_text_capability_smoke_records_redacted_evidence_and_only_marks_c
 
 
 def test_unimplemented_native_vision_offering_does_not_deadlock_validated_text_profiles(workspace, database) -> None:
-    run = OllamaDiscoveryOrchestrator(database, workspace).scan(_VisionTextCatalog())
+    run = _ollama_discovery(database, workspace).scan(_VisionTextCatalog())
     with database.connect() as connection:
         observation = connection.execute(
             "SELECT id FROM mp_discovery_observations WHERE discovery_run_id=?", (run.id,)
@@ -279,7 +291,7 @@ def test_unimplemented_native_vision_offering_does_not_deadlock_validated_text_p
     registered = DiscoveryRegistrationService(database).register(str(observation["id"]))
     service = CapabilitySmokeService(
         database,
-        workspace,
+        _ollama_settings(workspace),
         ollama_client_factory=lambda _url, _model: _PassingOllamaProbe(),
     )
 
@@ -313,15 +325,19 @@ def test_unimplemented_native_vision_offering_does_not_deadlock_validated_text_p
 
 
 def test_verified_ollama_offering_becomes_publishable_profile_and_executable_preview(workspace, database) -> None:
-    run = OllamaDiscoveryOrchestrator(database, workspace).scan(_TextCatalog())
+    run = _ollama_discovery(database, workspace).scan(_TextCatalog())
     with database.connect() as connection:
         observation = connection.execute("SELECT id FROM mp_discovery_observations WHERE discovery_run_id=?", (run.id,)).fetchone()
     registered = DiscoveryRegistrationService(database).register(str(observation["id"]))
-    capability_smoke = CapabilitySmokeService(database, workspace, ollama_client_factory=lambda _url, _model: _PassingOllamaProbe())
+    capability_smoke = CapabilitySmokeService(
+        database, _ollama_settings(workspace), ollama_client_factory=lambda _url, _model: _PassingOllamaProbe()
+    )
     for capability in ("LLM_STORY_PARSE", "LLM_EPISODE_PLAN", "LLM_STORYBOARD", "LLM_PROMPT_REWRITE"):
         capability_smoke.smoke(registered.runtime_model_installation_id, capability)
 
-    profiles = OllamaTextProfileService(database, workspace, ollama_client_factory=lambda _url, _model: _PassingProfileClient())
+    profiles = OllamaTextProfileService(
+        database, _ollama_settings(workspace), ollama_client_factory=lambda _url, _model: _PassingProfileClient()
+    )
     provisioned = profiles.provision(registered.runtime_model_installation_id, "LLM_STORY_PARSE")
     replay = profiles.provision(registered.runtime_model_installation_id, "LLM_STORY_PARSE")
     validation = profiles.smoke(provisioned.profile_version_id)
@@ -357,7 +373,7 @@ def test_verified_ollama_offering_becomes_publishable_profile_and_executable_pre
 
 
 def test_capability_smoke_refuses_to_relabel_embedding_as_text_inference(workspace, database) -> None:
-    run = OllamaDiscoveryOrchestrator(database, workspace).scan(_Catalog())
+    run = _ollama_discovery(database, workspace).scan(_Catalog())
     with database.connect() as connection:
         observation = connection.execute(
             "SELECT id FROM mp_discovery_observations WHERE discovery_run_id=? AND native_id='nomic-embed-text'",
@@ -366,7 +382,11 @@ def test_capability_smoke_refuses_to_relabel_embedding_as_text_inference(workspa
     registered = DiscoveryRegistrationService(database).register(str(observation["id"]))
 
     try:
-        CapabilitySmokeService(database, workspace, ollama_client_factory=lambda _url, _model: _PassingOllamaProbe()).smoke(
+        CapabilitySmokeService(
+            database,
+            _ollama_settings(workspace),
+            ollama_client_factory=lambda _url, _model: _PassingOllamaProbe(),
+        ).smoke(
             registered.runtime_model_installation_id,
             "EMBEDDING_TEXT",
         )

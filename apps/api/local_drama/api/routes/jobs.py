@@ -11,8 +11,8 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.routing import APIRoute
 
 from local_drama.api.schemas.jobs import (
-    ArtifactPromoteRequest,
     ArtifactImageTransformRequest,
+    ArtifactPromoteRequest,
     ArtifactRegisterRequest,
     JobBatchActionRequest,
     JobBatchDeleteRequest,

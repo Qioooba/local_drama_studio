@@ -25,6 +25,26 @@ def _episode() -> dict:
     }
 
 
+def _synthesis() -> dict:
+    return {
+        "story_bible": {
+            "title": "照骨灯",
+            "logline": "凡人执灯照骨。",
+            "synopsis": "凡人修行故事。",
+            "central_conflict": "凡人与仙途冲突。",
+            "world_rules": ["修行有代价"],
+            "visual_style": "国风仙侠",
+            "continuity_facts": ["照骨灯贯穿全剧"],
+        },
+        "characters": [{
+            "name": "沈砚", "aliases": [], "role": "主角", "introduction": "执灯者",
+            "appearance": "青年修士", "visual_prompt": "青年修士，执灯", "importance": "CORE",
+        }],
+        "scenes": [],
+        "props": [],
+    }
+
+
 def test_episode_plan_accepts_lightweight_outline_without_shots() -> None:
     assert FullStoryAIGenerationService._validate_episode(_episode(), 1, 120) is None
 
@@ -210,6 +230,114 @@ def test_generation_rejects_checkpoints_from_removed_source_fill_fallback() -> N
     assert len(result["episodes"]) == 1
     assert "normalization_warnings" not in result["episodes"][0]
     assert checkpoints and "normalization_warnings" not in checkpoints[0][0]
+
+
+def test_generation_reuses_only_exact_request_checkpoint_and_counts_real_calls() -> None:
+    spec = {
+        "number": 1,
+        "code": "E001",
+        "source_text": "林枫在雾中醒来。",
+        "source_start_paragraph": 2,
+        "source_end_paragraph": 2,
+    }
+    saved = {
+        **_episode(),
+        "number": 1,
+        "code": "E001",
+        "source_start_paragraph": 2,
+        "source_end_paragraph": 2,
+        "request_identity_sha256": FullStoryAIGenerationService._episode_checkpoint_identity(
+            spec, "国风仙侠", 60
+        ),
+    }
+    assert saved["request_identity_sha256"] != FullStoryAIGenerationService._episode_checkpoint_identity(
+        {**spec, "source_end_paragraph": 3}, "国风仙侠", 60
+    )
+    assert saved["request_identity_sha256"] != FullStoryAIGenerationService._episode_checkpoint_identity(
+        spec, "现代写实", 60
+    )
+
+    class SynthesisOnlyClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def chat_json(self, *_args, **_kwargs):
+            self.calls += 1
+            return _synthesis()
+
+    client = SynthesisOnlyClient()
+    service = object.__new__(FullStoryAIGenerationService)
+    service.resolve_client = lambda _profile: (
+        client,
+        {"profile_version_id": "p1", "provider": "LOCAL", "model": "m1"},
+    )
+    result = service.generate(
+        episode_specs=[spec],
+        visual_style="国风仙侠",
+        target_seconds=60,
+        resume_episodes=[saved],
+    )
+    assert client.calls == 1
+    assert result["metadata"]["llm_call_count"] == 1
+    assert result["metadata"]["reused_episode_checkpoint_count"] == 1
+
+    class ChangedSourceClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def chat_json(self, *_args, **_kwargs):
+            self.calls += 1
+            return _episode() if self.calls == 1 else _synthesis()
+
+    changed_client = ChangedSourceClient()
+    changed = object.__new__(FullStoryAIGenerationService)
+    changed.resolve_client = lambda _profile: (
+        changed_client,
+        {"profile_version_id": "p1", "provider": "LOCAL", "model": "m1"},
+    )
+    changed_result = changed.generate(
+        episode_specs=[{**spec, "source_text": "另一版原稿"}],
+        visual_style="国风仙侠",
+        target_seconds=60,
+        resume_episodes=[saved],
+    )
+    assert changed_client.calls == 2
+    assert changed_result["metadata"]["llm_call_count"] == 2
+    assert changed_result["metadata"]["reused_episode_checkpoint_count"] == 0
+
+
+def test_generation_call_count_includes_repairs_and_split_synthesis() -> None:
+    complete = _synthesis()
+
+    class RepairAndSplitClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def chat_json(self, *_args, **_kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return {"title": "缺字段"}
+            if self.calls == 2:
+                return _episode()
+            if self.calls == 3:
+                return {"story_bible": {}}
+            key = ("story_bible", "characters", "scenes", "props")[self.calls - 4]
+            return {key: complete[key]}
+
+    client = RepairAndSplitClient()
+    service = object.__new__(FullStoryAIGenerationService)
+    service.resolve_client = lambda _profile: (
+        client,
+        {"profile_version_id": "p1", "provider": "LOCAL", "model": "m1"},
+    )
+    result = service.generate(
+        episode_specs=[{"number": 1, "code": "E001", "source_text": "原稿"}],
+        visual_style="国风仙侠",
+        target_seconds=60,
+    )
+    assert client.calls == 7
+    assert result["metadata"]["llm_call_count"] == 7
+    assert result["metadata"]["reused_episode_checkpoint_count"] == 0
 
 
 @pytest.mark.parametrize(

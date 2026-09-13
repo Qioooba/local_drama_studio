@@ -41,7 +41,10 @@ def test_ollama_handler_uses_only_frozen_local_contract_and_writes_controlled_ar
 
     output_root = workspace.work_root / "model-platform-execution"
     handler = make_ollama_text_handler(workspace, client_factory=lambda model: _Client())
-    artifact_kind, relative = handler(_snapshot(), output_root)
+    artifact_kind, relative = handler(
+        _snapshot(runtime_configuration={"base_url": workspace.llm_base_url}),
+        output_root,
+    )
 
     assert artifact_kind == "OLLAMA_TEXT_RESULT"
     assert relative == "model-platform-execution/ollama/result.json"
