@@ -49,20 +49,39 @@ class ContactSheetExportService:
             if episode is None:
                 raise DomainRuleError("EPISODE_NOT_FOUND", "集不存在", {"episode_id": episode_id})
             rows = connection.execute(
-                """SELECT sh.id AS shot_id, sh.code AS shot_code, sh.order_key, ma.id AS media_asset_id,
-                ma.purpose, ma.media_kind, sl.selection_type, mv.id AS media_version_id, mv.version_no,
-                mv.rel_path, mv.mime_type, mv.byte_size, mv.sha256
-                FROM shots sh
-                JOIN media_assets ma ON ma.project_id=? AND ma.owner_type='SHOT' AND ma.owner_id=sh.id
-                JOIN media_versions mv ON mv.id=ma.selected_version_id
-                JOIN selections sl ON sl.id=(
+                """WITH current_working AS (
+                  SELECT sh.id AS shot_id,sh.code AS shot_code,sh.order_key,ma.id AS media_asset_id,
+                  ma.purpose,ma.media_kind,
+                  CASE ws.slot_type WHEN 'KEYFRAME' THEN 'KEYFRAME' ELSE 'PROXY_WINNER' END AS selection_type,
+                  mv.id AS media_version_id,mv.version_no,mv.rel_path,mv.mime_type,mv.byte_size,mv.sha256,
+                  ws.slot_type,0 AS source_rank
+                  FROM shots sh JOIN shot_working_media_slots ws ON ws.shot_id=sh.id
+                  JOIN media_versions mv ON mv.id=ws.media_version_id
+                  JOIN media_assets ma ON ma.id=mv.media_asset_id AND ma.project_id=?
+                  WHERE sh.episode_id=? AND sh.archived_at IS NULL
+                    AND ws.slot_type IN ('KEYFRAME','VIDEO') AND mv.integrity_status='VERIFIED'
+                ), legacy_selection AS (
+                  SELECT sh.id,sh.code,sh.order_key,ma.id,ma.purpose,ma.media_kind,sl.selection_type,
+                  mv.id,mv.version_no,mv.rel_path,mv.mime_type,mv.byte_size,mv.sha256,
+                  CASE WHEN ma.media_kind='IMAGE' THEN 'KEYFRAME' ELSE 'VIDEO' END,1
+                  FROM shots sh
+                  JOIN media_assets ma ON ma.project_id=? AND ma.owner_type='SHOT' AND ma.owner_id=sh.id
+                  JOIN media_versions mv ON mv.id=ma.selected_version_id AND mv.integrity_status='VERIFIED'
+                  JOIN selections sl ON sl.id=(
                     SELECT sl2.id FROM selections sl2
                     WHERE sl2.media_asset_id=ma.id AND sl2.media_version_id=ma.selected_version_id
-                    ORDER BY sl2.created_at DESC, sl2.id DESC LIMIT 1
+                    ORDER BY sl2.created_at DESC,sl2.id DESC LIMIT 1)
+                  WHERE sh.episode_id=? AND sh.archived_at IS NULL AND ma.media_kind IN ('IMAGE','VIDEO')
+                    AND NOT EXISTS (
+                      SELECT 1 FROM shot_working_media_slots current
+                      WHERE current.shot_id=sh.id AND current.slot_type=CASE
+                        WHEN ma.media_kind='IMAGE' THEN 'KEYFRAME' ELSE 'VIDEO' END)
                 )
-                WHERE sh.episode_id=? AND ma.media_kind IN ('IMAGE','VIDEO')
-                ORDER BY CAST(sh.order_key AS REAL), sh.code, ma.purpose, sl.selection_type""",
-                (episode["project_id"], episode_id),
+                SELECT shot_id,shot_code,order_key,media_asset_id,purpose,media_kind,selection_type,
+                media_version_id,version_no,rel_path,mime_type,byte_size,sha256
+                FROM (SELECT * FROM current_working UNION ALL SELECT * FROM legacy_selection)
+                ORDER BY CAST(order_key AS REAL),shot_code,slot_type,source_rank""",
+                (episode["project_id"], episode_id, episode["project_id"], episode_id),
             ).fetchall()
         return dict(episode), [dict(row) for row in rows]
 

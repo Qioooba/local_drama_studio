@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiRequestError } from "../../generated/api";
 import { EpisodeProductionWorkspace } from "./EpisodeProductionWorkspace";
 
-const api = vi.hoisted(() => ({ overview: vi.fn(), shots: vi.fn(), replan: vi.fn(), requestReplan: vi.fn(), apply: vi.fn(), ready: vi.fn(), prepare: vi.fn(), start: vi.fn(), transition: vi.fn(), syncIdentityPacks: vi.fn() }));
+const api = vi.hoisted(() => ({ overview: vi.fn(), shots: vi.fn(), replan: vi.fn(), requestReplan: vi.fn(), apply: vi.fn(), ready: vi.fn(), prepare: vi.fn(), previewOperation: vi.fn(), start: vi.fn(), transition: vi.fn(), syncIdentityPacks: vi.fn() }));
 vi.mock("../../generated/api", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../generated/api")>(),
   getEpisodeProductionOverviewV2: api.overview,
@@ -15,6 +15,7 @@ vi.mock("../../generated/api", async (importOriginal) => ({
   applyEpisodeProductionReplanV2: api.apply,
   markEpisodeProductionShotsReadyV2: api.ready,
   prepareEpisodeProductionV2: api.prepare,
+  previewEpisodeProductionOperationV2: api.previewOperation,
   startEpisodeProductionRunV2: api.start,
   transitionEpisodeProductionRunV2: api.transition,
 }));
@@ -52,6 +53,13 @@ describe("EpisodeProductionWorkspace", () => {
     api.shots.mockResolvedValue({ items: [blockedShot], cursor: 0, limit: 100, total: 1, next_cursor: null, filters: [], read_only: true, request_shape: "bounded_episode_production_shots_v2" });
     api.start.mockResolvedValue({ run: { id: "run-1", episode_id: "e1", project_id: "p1", status: "RUNNING", revision: 1, updated_at: null, outcome: "STARTED", affected_job_count: 0, idempotent_replay: false } });
     api.prepare.mockResolvedValue({ preparation: { status: "QUEUED", episode_id: "e1", shot_count: 0, job_id: "job-1" } });
+    api.previewOperation.mockResolvedValue({ impact: {
+      schema_version: "episode-operation-impact/v1", episode_id: "e1", project_id: "p1",
+      operation: "CONTINUE_UNFINISHED", target_shot_ids: ["shot-1"], target_take_count: 1,
+      sets: { reused: [], waiting_in_flight: [], retry_original: [], needs_generation: [{ shot_id: "shot-1" }], blocked_by_dependency: [], requires_manual_confirmation: [], compose_only: [] },
+      gpu_video_job_count: 1, mutated: false, runtime_contacted: false, network_contacted: false,
+      plan_hash: "a".repeat(64),
+    } });
     api.transition.mockResolvedValue({ run: { id: "run-1", episode_id: "e1", project_id: "p1", status: "PAUSED_HITL", revision: 4, updated_at: null, outcome: "PAUSED", affected_job_count: 0, idempotent_replay: false } });
     api.replan.mockResolvedValue({ replan: { status: "NOT_READY", episode_id: "e1", job: null } });
     api.requestReplan.mockResolvedValue({ replan: { status: "QUEUED", episode_id: "e1", job_id: "job-replan", idempotent_replay: false, target_duration_ms: 120000 } });
@@ -78,6 +86,55 @@ describe("EpisodeProductionWorkspace", () => {
     }));
     expect(screen.queryByRole("tablist")).toBeNull();
     expect(api.shots).toHaveBeenCalledWith("e1", { cursor: 0, limit: 100 });
+    expect(api.shots).toHaveBeenCalledWith("e1", {
+      cursor: 0,
+      limit: 100,
+      states: ["BLOCKED", "FAILED", "NEEDS_REVIEW", "STALE"],
+    });
+  });
+
+  it("previews four explicit operations without treating the preview as execution", async () => {
+    api.overview.mockResolvedValue(overview({ attention_count: 0, state_counts: { READY: 1 } }));
+    mount();
+
+    fireEvent.click(await screen.findByRole("button", { name: "预览影响" }));
+    await waitFor(() => expect(api.previewOperation).toHaveBeenCalledWith("e1", {
+      operation: "CONTINUE_UNFINISHED", target_take_count: 1,
+    }));
+    expect(await screen.findByText("预计新增 GPU 视频任务 1；提交前若镜头 revision 或依赖变化，必须重新预览。")).toBeTruthy();
+    expect(api.start).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "本集操作" }), { target: { value: "RECOMPOSE_ONLY" } });
+    fireEvent.click(screen.getByRole("button", { name: "预览影响" }));
+    await waitFor(() => expect(api.previewOperation).toHaveBeenLastCalledWith("e1", {
+      operation: "RECOMPOSE_ONLY", target_take_count: 1,
+    }));
+  });
+
+  it("renders full-episode stage counts from overview instead of the first 100 details", async () => {
+    api.overview.mockResolvedValue(overview({
+      shot_count: 137,
+      attention_count: 1,
+      stage_summary: {
+        SHOT_PLANNING: { total: 137, completed: 137, running: 0, attention: 0, stale: 0, requires_confirmation: 0 },
+        SHOT_IMAGE: { total: 137, completed: 137, running: 0, attention: 0, stale: 0, requires_confirmation: 0 },
+        VIDEO: { total: 137, completed: 136, running: 0, attention: 1, stale: 0, requires_confirmation: 1 },
+        AUDIO_SUBTITLE: { total: 137, completed: 137, running: 0, attention: 0, stale: 0, requires_confirmation: 0 },
+        COMPOSE_QC: { total: 137, completed: 137, running: 0, attention: 0, stale: 0, requires_confirmation: 0 },
+      },
+    }));
+    api.shots.mockImplementation((_episodeId, options) => Promise.resolve({
+      items: options?.states ? [blockedShot] : Array.from({ length: 100 }, (_, index) => ({ ...blockedShot, shot_id: `shot-${index + 1}` })),
+      cursor: 0, limit: 100, total: options?.states ? 1 : 137, next_cursor: options?.states ? null : 100,
+      filters: options?.states ?? [], read_only: true, request_shape: "bounded_episode_production_shots_v2",
+    }));
+
+    const { container } = mount();
+    await screen.findByRole("heading", { name: "EP01 · 第一集" });
+    const videoStage = [...container.querySelectorAll(".episode-agent-stages li")]
+      .find((item) => item.textContent?.includes("动态视频"));
+    expect(videoStage?.textContent).toContain("1 项待确认");
+    expect(videoStage?.textContent).not.toContain("100/100");
   });
 
   it("starts the automatic path with one low-distraction checkpoint option", async () => {
@@ -87,6 +144,23 @@ describe("EpisodeProductionWorkspace", () => {
     mount();
     fireEvent.click(await screen.findByRole("button", { name: "开始本集" }));
     await waitFor(() => expect(api.start).toHaveBeenCalledWith("e1", expect.objectContaining({ production_mode: "BALANCED", tts_enabled: true, checkpoint_policy: "AUTO_CONTINUE", idempotency_key: expect.any(String) })));
+  });
+
+  it("shows the effective candidate count and explicit product-limit adjustment", async () => {
+    api.overview.mockResolvedValue(overview({
+      available_mode_policies: {
+        DRAFT: { requested_target_take_count: 4, target_take_count: 4, max_target_take_count: 4 },
+        BALANCED: { requested_target_take_count: 8, target_take_count: 4, max_target_take_count: 4, adjustment_reason: "PRODUCT_MAX_VIDEO_TAKES_PER_SHOT" },
+        QUALITY: { requested_target_take_count: 16, target_take_count: 4, max_target_take_count: 4, adjustment_reason: "PRODUCT_MAX_VIDEO_TAKES_PER_SHOT" },
+      },
+    }));
+    mount();
+
+    expect(await screen.findByText(/每镜生效 4 个视频候选/)).toBeTruthy();
+    expect(screen.getByText(/Profile 请求 8 个，按产品上限 4 个执行/)).toBeTruthy();
+    fireEvent.change(screen.getByRole("combobox", { name: "本集质量" }), { target: { value: "QUALITY" } });
+    expect(screen.getByText(/Profile 请求 16 个，按产品上限 4 个执行/)).toBeTruthy();
+    expect(screen.getByText(/候选数不代表 GPU 并发数/)).toBeTruthy();
   });
 
   it("lets the episode run regenerate stale working media without per-shot confirmation", async () => {

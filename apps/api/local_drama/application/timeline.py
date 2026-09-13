@@ -31,6 +31,7 @@ from local_drama.application.ports.timeline import TimelineMediaPort, TimelineUn
 from local_drama.application.production_spec_resolution import effective_video_profile
 from local_drama.application.subtitle_styles import DEFAULT_SUBTITLE_STYLE, validate_style
 from local_drama.config import Settings
+from local_drama.domain.dialogue_timing import assert_dialogue_timing, dialogue_timing_issues
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.production_spec import (
     PRODUCTION_PLAN_SCHEMA_VERSION,
@@ -51,7 +52,6 @@ from local_drama.domain.timeline_formatting import (
     subtitle_time,
 )
 from local_drama.domain.video_duration import video_duration_budget
-from local_drama.domain.dialogue_timing import assert_dialogue_timing, dialogue_timing_issues
 from local_drama.infrastructure.filesystem.atomic import replace_path
 from local_drama.infrastructure.filesystem.path_policy import canonical_relative_path, controlled_path
 
@@ -781,7 +781,13 @@ class TimelineService:
         """
         return self._timeline_assembly_plan(episode_id, require_stale_revision=True)
 
-    def assemble_episode_timeline(self, episode_id: str, *, actor: str = "local-user") -> dict[str, Any]:
+    def assemble_episode_timeline(
+        self,
+        episode_id: str,
+        *,
+        audio_strategy: str = "EXTERNAL_TTS",
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
         """Create or refresh the frozen timeline from current adopted facts.
 
         Used by the episode production run's TIMELINE_ASSEMBLY action so a run
@@ -790,7 +796,11 @@ class TimelineService:
         already current the call is an idempotent SKIPPED no-op instead of
         creating a duplicate revision.
         """
-        plan = self._timeline_assembly_plan(episode_id, require_stale_revision=False)
+        plan = self._timeline_assembly_plan(
+            episode_id,
+            require_stale_revision=False,
+            audio_strategy=audio_strategy,
+        )
         if plan["status"] != "READY":
             return {"status": "BLOCKED", "blockers": plan["blockers"], "warnings": plan["warnings"], "mutated": False}
         with self.database.connect() as connection:
@@ -817,6 +827,7 @@ class TimelineService:
                 "refreshed_from_timeline_revision_hash": source.get("revision_hash"),
                 "selected_videos": plan["selected_videos"],
                 "audio_binding_ids": plan["audio_binding_ids"],
+                "audio_strategy": plan["audio_strategy"],
                 "subtitle_revision_id": plan["subtitle_revision_id"],
                 "requires_human_confirmation": False,
             },
@@ -830,8 +841,21 @@ class TimelineService:
             )
         return {"status": "CREATED", "timeline": revision, "plan_hash": plan["plan_hash"], "source_timeline_revision_id": source.get("id"), "mutated": True}
 
-    def _timeline_assembly_plan(self, episode_id: str, *, require_stale_revision: bool) -> dict[str, Any]:
+    def _timeline_assembly_plan(
+        self,
+        episode_id: str,
+        *,
+        require_stale_revision: bool,
+        audio_strategy: str = "EXTERNAL_TTS",
+    ) -> dict[str, Any]:
         """Shared read-only assembly plan for stale refresh and run assembly."""
+        audio_strategy = str(audio_strategy).strip().upper()
+        if audio_strategy not in {"EXTERNAL_TTS", "SILENT"}:
+            raise DomainRuleError(
+                "AUDIO_STRATEGY_INVALID",
+                "声音策略必须是 EXTERNAL_TTS 或 SILENT",
+                {"audio_strategy": audio_strategy},
+            )
         episode = self._episode(episode_id)
         with self.database.connect() as connection:
             latest = connection.execute(
@@ -901,7 +925,7 @@ class TimelineService:
             selected_videos.append({"shot_id": shot_id, "media_version_id": media_version_id, "sha256": str(media["sha256"])})
             cursor_us += duration_us
 
-        audio_bindings = self._audio_bindings_for_render(episode_id)
+        audio_bindings = self._audio_bindings_for_render(episode_id) if audio_strategy != "SILENT" else []
         audio_items: list[dict[str, Any]] = []
         for binding in audio_bindings:
             try:
@@ -928,7 +952,7 @@ class TimelineService:
                 }
             )
 
-        dialogue_lines = self._dialogue_selection_rows(episode_id)
+        dialogue_lines = self._dialogue_selection_rows(episode_id) if audio_strategy == "EXTERNAL_TTS" else []
         dialogue_items: list[dict[str, Any]] = []
         dialogue_missing: list[dict[str, Any]] = []
         shot_clip_start_us = {str(item["parameters"]["shot_id"]): int(item["start_us"]) for item in video_items}
@@ -943,6 +967,9 @@ class TimelineService:
                 continue
             if not row["media_version_id"] or str(row["integrity_status"] or "") != "VERIFIED":
                 dialogue_missing.append({"line_id": line_id, "code": str(row["code"]), "reason": "TTS_MEDIA_UNVERIFIED"})
+                continue
+            if row["duration_ms"] is None or int(row["duration_ms"]) <= 0:
+                dialogue_missing.append({"line_id": line_id, "code": str(row["code"]), "reason": "TTS_DURATION_UNMEASURED"})
                 continue
             shot_id = str(row["shot_id"] or "")
             if shot_id not in shot_clip_start_us:
@@ -986,6 +1013,21 @@ class TimelineService:
             dialogue_cursor[shot_id] = end_us - shot_clip_start_us[shot_id]
 
         blockers.extend(dialogue_timing_issues([*video_items, *dialogue_items]))
+        if audio_strategy == "EXTERNAL_TTS" and dialogue_missing:
+            blockers.append({
+                "code": "CURRENT_TTS_SELECTIONS_REQUIRED",
+                "message": f"{len(dialogue_missing)} 条对白缺少当前、完整且实测时长的配音。",
+                "missing": dialogue_missing,
+            })
+        bound_dialogue_tracks = [
+            item for item in audio_items if str(item.get("track_type") or "").upper() == "DIALOGUE"
+        ]
+        if dialogue_items and bound_dialogue_tracks:
+            blockers.append({
+                "code": "DIALOGUE_AUDIO_SOURCE_CONFLICT",
+                "message": "同一时间线同时存在逐句 TTS 与整轨对白绑定，请明确保留一个主声音来源。",
+                "audio_binding_ids": [item["parameters"]["audio_binding_id"] for item in bound_dialogue_tracks],
+            })
 
         source_timeline = dict(latest) if latest is not None else None
         subtitle_snapshot = (
@@ -999,6 +1041,7 @@ class TimelineService:
             "selected_videos": selected_videos,
             "audio_bindings": self._binding_snapshot(audio_bindings),
             "subtitle_revision": subtitle_snapshot,
+            "audio_strategy": audio_strategy,
             "items": [*video_items, *audio_items, *dialogue_items],
         }
         plan_hash = _hash(snapshot)
@@ -1011,6 +1054,7 @@ class TimelineService:
             "items": [*video_items, *audio_items, *dialogue_items],
             "selected_videos": selected_videos,
             "audio_binding_ids": [str(binding["id"]) for binding in audio_bindings],
+            "audio_strategy": audio_strategy,
             "subtitle_revision_id": str(subtitle["id"]) if subtitle else None,
             "dialogue_missing": dialogue_missing,
             "blockers": blockers,
@@ -3743,3 +3787,18 @@ class TimelineService:
         format_data = data.get("format", {})
         duration = float(format_data.get("duration", 0) or 0)
         return {"duration_ms": round(duration * 1000), "format": format_data, "streams": data.get("streams", [])}
+
+
+class _TimelineRenderPreflight(TimelineService):
+    """Internal implementation for the read-only render-preflight function."""
+
+
+def preflight_timeline_render(
+    database: TimelineUnitOfWork,
+    settings: Settings,
+    timeline_revision_id: str,
+) -> dict[str, Any]:
+    """Read one exact render plan without composing TimelineService upstream."""
+    return _TimelineRenderPreflight(database, settings).preflight_episode_render(
+        timeline_revision_id
+    )

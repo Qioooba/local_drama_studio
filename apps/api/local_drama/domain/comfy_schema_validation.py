@@ -40,8 +40,23 @@ def validate_comfy_inputs(
                     prefix = template.get("prefix") if isinstance(template, dict) else None
                     if isinstance(prefix, str) and prefix:
                         dynamic_prefixes.append(f"{name}.{prefix}")
-        def report(name: str, error: str, **details: Any) -> None:
-            errors.append({"node_id": str(node_id), "class_type": class_type, "input": name, "error": error, **details})
+        def report(
+            name: str,
+            error: str,
+            *,
+            _node_id: Any = node_id,
+            _class_type: str = class_type,
+            **details: Any,
+        ) -> None:
+            errors.append(
+                {
+                    "node_id": str(_node_id),
+                    "class_type": _class_type,
+                    "input": name,
+                    "error": error,
+                    **details,
+                }
+            )
 
         required = groups.get("required", {})
         if isinstance(required, dict):

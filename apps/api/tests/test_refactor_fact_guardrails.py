@@ -11,6 +11,7 @@ import json
 import subprocess
 import uuid
 
+from local_drama.application.configuration import ConfigurationService
 from local_drama.application.generation import GenerationService
 from local_drama.application.media import MediaService
 from local_drama.application.profiles import ProfileService
@@ -22,7 +23,7 @@ from local_drama.domain.policies import VariantInput
 
 
 def _project(workspace, database, code: str) -> dict[str, object]:
-    return ProjectService(database, workspace.projects_root).create_project(
+    project = ProjectService(database, workspace.projects_root).create_project(
         code=code,
         title=code,
         episode_count=1,
@@ -32,6 +33,31 @@ def _project(workspace, database, code: str) -> dict[str, object]:
         target_duration_ms=60000,
         allow_unconfigured_capabilities=True,
     )
+    ConfigurationService(database).create_plan_binding(
+        str(project["id"]),
+        f"{code}-production-plan",
+        f"{code} production plan",
+        {
+            "schema_version": "localdrama.production-plan.v2",
+            "presentation": {
+                "aspect_ratio": "16:9",
+                "width": 1280,
+                "height": 720,
+                "fps": {"numerator": 24, "denominator": 1},
+            },
+            "generation": {
+                "upscale": {
+                    "enabled": False,
+                    "required": False,
+                    "stage": "COMPOSE_QC",
+                    "executor": "builtin:ffmpeg",
+                    "target": "PRESENTATION_SPEC",
+                    "fit": "LETTERBOX",
+                }
+            },
+        },
+    )
+    return project
 
 
 def _real_image(workspace, database, project_id: str, name: str, color: str = "blue") -> str:
@@ -64,11 +90,21 @@ def _published_profile(workspace, database) -> str:
                 workflow_version_id,
                 workflow_id,
                 "b" * 64,
-                json.dumps({"1": {"class_type": "LoadImage", "inputs": {"image": "", "seed": 0}}}),
+                json.dumps(
+                    {
+                        "1": {
+                            "class_type": "LoadImage",
+                            "inputs": {"image": "", "seed": 0, "width": 1280, "height": 720, "fps": 24},
+                        }
+                    }
+                ),
                 json.dumps(
                     {
                         "FIRST_FRAME": {"node_id": "1", "input": "image", "type": "image"},
                         "SEED": {"node_id": "1", "input": "seed", "type": "integer"},
+                        "WIDTH": {"node_id": "1", "input": "width", "type": "integer"},
+                        "HEIGHT": {"node_id": "1", "input": "height", "type": "integer"},
+                        "FPS": {"node_id": "1", "input": "fps", "type": "number"},
                     }
                 ),
                 now,

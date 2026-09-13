@@ -74,7 +74,9 @@ def test_recover_advances_completed_report_once_and_unchanged_success_is_skipped
     assert first["recovery"]["advanced_completed_job"] is True
     assert first["recovery"]["skipped_task_ids"] == [run["tasks"][0]["id"]]
     shot_image_stage = next(stage for stage in first["run"]["stages"] if stage["code"] == "SHOT_IMAGE")
-    assert len(shot_image_stage["jobs"]) == 1  # keyframe task retained as evidence
+    # Generation and human keyframe checking are separate durable tasks; both
+    # remain visible as recovery evidence in the creator-facing image stage.
+    assert len(shot_image_stage["jobs"]) == 2
     automation_after_first = service.automation.get_run(str(run["id"]))
     assert automation_after_first["task_count"] == 2
     assert automation_after_first["tasks"][0]["job_id"] == job_id

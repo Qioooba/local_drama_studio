@@ -155,7 +155,7 @@ def run_uat(sandbox_root: Path) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
     with _loopback_harness() as (base_url, server_requests), _egress_guard() as (observed, blocked), _hostile_proxy_environment():
         comfy_system = ComfyClient(base_url).system_stats()
-        llm_tags = LocalLLMClient(base_url, "local-transport-uat-model").tags()
+        llm_tags = LocalLLMClient(base_url, "local-transport-uat-model", provider="OLLAMA_LOOPBACK").tags()
 
         redirect_comfy_code: str | None = None
         try:
@@ -165,7 +165,9 @@ def run_uat(sandbox_root: Path) -> dict[str, Any]:
 
         redirect_llm_code: str | None = None
         try:
-            LocalLLMClient(f"{base_url}/redirect", "local-transport-uat-model").tags()
+            LocalLLMClient(
+                f"{base_url}/redirect", "local-transport-uat-model", provider="OLLAMA_LOOPBACK"
+            ).tags()
         except DomainRuleError as error:
             redirect_llm_code = error.code
 
@@ -178,7 +180,9 @@ def run_uat(sandbox_root: Path) -> dict[str, Any]:
         public_endpoint_codes: list[str] = []
         for factory in (
             lambda: ComfyClient("http://203.0.113.77:8188"),
-            lambda: LocalLLMClient("http://203.0.113.77:11434", "local-transport-uat-model"),
+            lambda: LocalLLMClient(
+                "http://203.0.113.77:11434", "local-transport-uat-model", provider="OLLAMA_LOOPBACK"
+            ),
             lambda: ComfyClient("http://user:pass@127.0.0.1:8188?token=forbidden"),
         ):
             try:

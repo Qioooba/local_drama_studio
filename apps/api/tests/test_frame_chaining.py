@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import subprocess
-import pytest
 
 from local_drama.application.frame_chaining import FrameChainingService
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
+from local_drama.application.timeline import TimelineService
 
 
 def test_frame_chaining_same_scene_inherits(workspace, database) -> None:
@@ -44,12 +44,27 @@ def test_frame_chaining_same_scene_inherits(workspace, database) -> None:
         purpose="KEYFRAME",
     )
 
+    TimelineService(database, workspace).create_transition_constraint(
+        str(shot1["id"]), str(shot2["id"]), "START_FROM_PREVIOUS_LAST", enforcement="ADVISORY"
+    )
+
     chaining = FrameChainingService(database)
     res = chaining.auto_chain_shot_tail_to_next(str(shot1["id"]), tail_media_version_id=str(media["media_version_id"]))
     assert res["chained"] is True
     assert res["from_shot_id"] == str(shot1["id"])
     assert res["to_shot_id"] == str(shot2["id"])
     assert res["anchor_id"] is not None
+    assert res["source_position"] == "LAST_FRAME"
+    assert res["source_sha256"] == media["sha256"]
+    replay = chaining.auto_chain_shot_tail_to_next(
+        str(shot1["id"]), tail_media_version_id=str(media["media_version_id"])
+    )
+    assert replay["chained"] is True
+    assert replay["inherited"]["idempotent_replay"] is True
+    with database.connect() as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM frame_anchors WHERE extraction_method='INHERITED_FRAME_ANCHOR'"
+        ).fetchone()[0] == 1
 
 
 def test_frame_chaining_scene_cut_detected(workspace, database) -> None:
@@ -102,7 +117,23 @@ def test_frame_chaining_no_successor(workspace, database) -> None:
     assert res["reason"] == "NO_SUCCESSOR_SHOT"
 
 
-def test_adopt_video_triggers_frame_chaining(workspace, database) -> None:
+def test_frame_chaining_unknown_scene_does_not_assume_continuity(workspace, database) -> None:
+    projects = ProjectService(database, workspace.projects_root)
+    project = projects.create_project(
+        code="chain_unknown", title="Chain Unknown", episode_count=1, aspect_ratio="16:9",
+        fps_num=24, fps_den=1, target_duration_ms=4000, allow_unconfigured_capabilities=True,
+    )
+    season = projects.list_seasons(str(project["id"]))[0]
+    episode = projects.list_episodes(str(season["id"]))[0]
+    shot1 = projects.create_shot(str(episode["id"]), "S001", 2000)
+    projects.create_shot(str(episode["id"]), "S002", 2000)
+    result = FrameChainingService(database).auto_chain_shot_tail_to_next(
+        str(shot1["id"]), tail_media_version_id="not-read"
+    )
+    assert result == {"chained": False, "reason": "SCENE_ID_UNKNOWN"}
+
+
+def test_adopt_video_does_not_invent_frame_chaining_without_explicit_tail(workspace, database) -> None:
     from local_drama.infrastructure.database.shot_studio_command_repository import SqliteShotStudioCommandRepository
 
     projects = ProjectService(database, workspace.projects_root)
@@ -146,12 +177,10 @@ def test_adopt_video_triggers_frame_chaining(workspace, database) -> None:
     assert res["status"] == "ADOPTED"
     assert res["slot_type"] == "VIDEO"
 
-    # Verify shot_transition_constraints was created connecting shot1 -> shot2
+    # Video adoption alone is not an instruction to create a long-take chain.
     with database.connect() as conn:
         constraint = conn.execute(
             "SELECT * FROM shot_transition_constraints WHERE from_shot_id = ? AND to_shot_id = ?",
             (shot1["id"], shot2["id"]),
         ).fetchone()
-        assert constraint is not None
-        assert constraint["from_anchor_id"] is not None
-
+        assert constraint is None

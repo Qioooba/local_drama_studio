@@ -9,26 +9,57 @@ Coordinates end-to-end multi-episode drama production:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
-import uuid
+import threading
 from typing import Any
 
 from local_drama.application.automation_workflows import AutomationWorkflowService
 from local_drama.application.episode_production_runs import EpisodeProductionRunService
 from local_drama.application.episode_shot_ready import EpisodeShotReadyService
+from local_drama.application.ports.database import DatabaseUnitOfWork
 from local_drama.domain.errors import DomainRuleError
-from local_drama.infrastructure.database.sqlite import Database
 
 logger = logging.getLogger(__name__)
+_RUN_LOCKS: dict[str, threading.Lock] = {}
+_RUN_LOCKS_GUARD = threading.Lock()
+
+
+def _run_lock(scope: str) -> threading.Lock:
+    with _RUN_LOCKS_GUARD:
+        return _RUN_LOCKS.setdefault(scope, threading.Lock())
 
 
 class WholeDramaOrchestratorService:
-    def __init__(self, database: Database, settings: Any) -> None:
+    def __init__(self, database: DatabaseUnitOfWork, settings: Any) -> None:
         self.database = database
         self.settings = settings
         self.run_service = EpisodeProductionRunService(database, settings)
         self.shot_ready_service = EpisodeShotReadyService(database)
         self.automation = AutomationWorkflowService(database)
+
+    @staticmethod
+    def _summarize_run_states(statuses: list[str]) -> tuple[str, dict[str, int]]:
+        counts: dict[str, int] = {}
+        for status in statuses:
+            counts[status] = counts.get(status, 0) + 1
+        total = len(statuses)
+        if total == 0:
+            return "EMPTY", counts
+        if counts.get("NOT_STARTED", 0) == total:
+            return "NOT_STARTED", counts
+        if counts.get("SUCCEEDED", 0) == total:
+            return "COMPLETED", counts
+        if counts.get("CANCELLED", 0) == total:
+            return "CANCELLED", counts
+        if any(counts.get(status, 0) for status in ("RUNNING", "WAITING_ON_TASK")):
+            return "RUNNING", counts
+        if counts.get("PAUSED_HITL", 0):
+            return "PAUSED_HITL", counts
+        if any(counts.get(status, 0) for status in ("FAILED", "LIMIT_REACHED", "STOPPED")):
+            return "FAILED", counts
+        return "PARTIAL", counts
 
     def _get_project_and_episodes(self, project_id: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         with self.database.connect() as conn:
@@ -51,14 +82,35 @@ class WholeDramaOrchestratorService:
 
         return dict(project), [dict(ep) for ep in episodes]
 
+    @staticmethod
+    def _select_episodes(
+        episodes: list[dict[str, Any]], episode_ids: list[str] | None,
+    ) -> list[dict[str, Any]]:
+        if episode_ids is None:
+            return episodes
+        normalized = [episode_id.strip() for episode_id in episode_ids]
+        if not normalized or any(not episode_id for episode_id in normalized):
+            raise DomainRuleError("EPISODE_SCOPE_REQUIRED", "所选分集范围不能为空")
+        if len(normalized) > 2:
+            raise DomainRuleError("EPISODE_SCOPE_TOO_LARGE", "小样运行一次最多选择 2 集")
+        if len(set(normalized)) != len(normalized):
+            raise DomainRuleError("EPISODE_SCOPE_DUPLICATED", "所选分集不能重复")
+        selected = [episode for episode in episodes if str(episode["id"]) in normalized]
+        found = {str(episode["id"]) for episode in selected}
+        missing = [episode_id for episode_id in normalized if episode_id not in found]
+        if missing:
+            raise DomainRuleError(
+                "EPISODE_SCOPE_INVALID",
+                "所选分集不属于当前项目",
+                {"episode_ids": missing},
+            )
+        return selected
+
     def inspect(self, project_id: str) -> dict[str, Any]:
         """Inspect the current production state across all episodes of a drama."""
         project, episodes = self._get_project_and_episodes(project_id)
 
         episode_reports: list[dict[str, Any]] = []
-        has_running = False
-        all_completed = len(episodes) > 0
-
         with self.database.connect() as conn:
             for ep in episodes:
                 ep_id = str(ep["id"])
@@ -115,10 +167,19 @@ class WholeDramaOrchestratorService:
                     FROM automation_workflow_runs r
                     JOIN automation_workflows w ON w.id = r.workflow_id
                     WHERE r.project_id = ?
-                    AND (json_extract(w.definition_json, '$.nodes[0].metadata.episode_id') = ?
-                         OR w.code LIKE ?)
+                    AND (
+                      EXISTS (
+                        SELECT 1 FROM automation_workflow_run_tasks t
+                        WHERE t.run_id=r.id
+                        AND json_extract(t.item_json, '$.payload.episode_id')=?
+                      )
+                      OR EXISTS (
+                        SELECT 1 FROM json_each(w.definition_json, '$.nodes') node
+                        WHERE json_extract(node.value, '$.metadata.episode_id')=?
+                      )
+                    )
                     ORDER BY r.updated_at DESC, r.id DESC LIMIT 1""",
-                    (project_id, ep_id, f"%{ep_id.replace('-', '')[:16]}%"),
+                    (project_id, ep_id, ep_id),
                 ).fetchone()
 
                 total_shots = int(shot_stats["total_shots"] or 0) if shot_stats else 0
@@ -127,11 +188,6 @@ class WholeDramaOrchestratorService:
                 keyframes_count = int(working_slots["keyframes_count"] or 0) if working_slots else 0
                 videos_count = int(working_slots["videos_count"] or 0) if working_slots else 0
                 run_status = str(workflow_run["status"]) if workflow_run else "NOT_STARTED"
-
-                if run_status in ("RUNNING", "WAITING_ON_TASK"):
-                    has_running = True
-                if run_status != "SUCCEEDED":
-                    all_completed = False
 
                 ep_report = {
                     "episode_id": ep_id,
@@ -151,13 +207,16 @@ class WholeDramaOrchestratorService:
                 }
                 episode_reports.append(ep_report)
 
-        summary_status = "COMPLETED" if all_completed else "RUNNING" if has_running else "READY"
+        summary_status, state_counts = self._summarize_run_states(
+            [str(item["workflow_run_status"]) for item in episode_reports]
+        )
 
         return {
             "project_id": project_id,
             "project_code": project["code"],
             "project_title": project["title"],
             "overall_status": summary_status,
+            "state_counts": state_counts,
             "total_episodes": len(episodes),
             "episodes": episode_reports,
         }
@@ -166,11 +225,13 @@ class WholeDramaOrchestratorService:
         self,
         project_id: str,
         *,
+        episode_ids: list[str] | None = None,
         actor: str = "whole-drama-orchestrator",
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         """Auto-heal and confirm production readiness across all episodes."""
-        project, episodes = self._get_project_and_episodes(project_id)
+        project, all_episodes = self._get_project_and_episodes(project_id)
+        episodes = self._select_episodes(all_episodes, episode_ids)
         results: list[dict[str, Any]] = []
 
         for ep in episodes:
@@ -227,27 +288,90 @@ class WholeDramaOrchestratorService:
         self,
         project_id: str,
         *,
+        episode_ids: list[str] | None = None,
         tts_enabled: bool = True,
         production_mode: str = "BALANCED",
         checkpoint_policy: str = "ON_EXCEPTION",
         min_free_disk_bytes: int = 5 * 1024 * 1024 * 1024,
         actor: str = "whole-drama-orchestrator",
-        idempotency_key: str | None = None,
+        idempotency_key: str,
     ) -> dict[str, Any]:
-        """Dispatch end-to-end automated generation across all episodes."""
-        # 1. First ensure all shots across all episodes are healed and confirmed ready
-        prep = self.prepare_all_episodes(project_id, actor=actor, idempotency_key=idempotency_key)
+        """Dispatch one durable parent command across all episodes."""
+        key = idempotency_key.strip()
+        if not key or len(key) > 200:
+            raise DomainRuleError("IDEMPOTENCY_KEY_REQUIRED", "整剧启动必须提供有效 Idempotency-Key")
+        scope = f"whole-drama-run:{project_id}"
+        payload = {
+            "project_id": project_id,
+            "episode_ids": episode_ids,
+            "tts_enabled": tts_enabled,
+            "production_mode": production_mode,
+            "checkpoint_policy": checkpoint_policy,
+            "min_free_disk_bytes": min_free_disk_bytes,
+        }
+        payload_hash = hashlib.sha256(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        with _run_lock(scope):
+            with self.database.connect() as connection:
+                prior = connection.execute(
+                    "SELECT payload_hash,response_json FROM command_idempotencies WHERE scope=? AND idempotency_key=?",
+                    (scope, key),
+                ).fetchone()
+            if prior is not None:
+                if str(prior["payload_hash"]) != payload_hash:
+                    raise DomainRuleError(
+                        "IDEMPOTENCY_PAYLOAD_MISMATCH",
+                        "相同 Idempotency-Key 不能启动不同的整剧生产请求",
+                    )
+                replay = json.loads(str(prior["response_json"]))
+                replay["idempotent_replay"] = True
+                return replay
+            result = self._run_once(
+                project_id,
+                episode_ids=episode_ids,
+                tts_enabled=tts_enabled,
+                production_mode=production_mode,
+                checkpoint_policy=checkpoint_policy,
+                min_free_disk_bytes=min_free_disk_bytes,
+                actor=actor,
+                idempotency_key=key,
+            )
+            stored = {**result, "idempotent_replay": False}
+            with self.database.transaction() as connection:
+                connection.execute(
+                    "INSERT INTO command_idempotencies (scope,idempotency_key,payload_hash,response_json) VALUES (?,?,?,?)",
+                    (scope, key, payload_hash, json.dumps(stored, ensure_ascii=False, separators=(",", ":"))),
+                )
+            return stored
 
-        project, episodes = self._get_project_and_episodes(project_id)
+    def _run_once(
+        self,
+        project_id: str,
+        *,
+        episode_ids: list[str] | None,
+        tts_enabled: bool,
+        production_mode: str,
+        checkpoint_policy: str,
+        min_free_disk_bytes: int,
+        actor: str,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        # 1. First ensure all shots across all episodes are healed and confirmed ready
+        prep = self.prepare_all_episodes(
+            project_id,
+            episode_ids=episode_ids,
+            actor=actor,
+            idempotency_key=idempotency_key,
+        )
+
+        project, all_episodes = self._get_project_and_episodes(project_id)
+        episodes = self._select_episodes(all_episodes, episode_ids)
         dispatched_runs: list[dict[str, Any]] = []
 
         for ep in episodes:
             ep_id = str(ep["id"])
-            run_key = (
-                f"{idempotency_key}-run-{ep_id}"
-                if idempotency_key
-                else f"whole-drama-run-{ep_id}-{uuid.uuid4().hex[:12]}"
-            )
+            run_key = f"{idempotency_key}:episode:{ep_id}"
             try:
                 run_view = self.run_service.start(
                     ep_id,
@@ -276,10 +400,24 @@ class WholeDramaOrchestratorService:
                     "message": err.message,
                 })
 
+        dispatched_count = sum(1 for result in dispatched_runs if result["status"] == "DISPATCHED")
+        total_episodes = len(episodes)
+        if total_episodes == 0 or dispatched_count == 0:
+            dispatch_status = "NOT_STARTED"
+            dispatch_reason = "NO_EPISODES" if total_episodes == 0 else "ALL_EPISODES_BLOCKED"
+        elif dispatched_count == total_episodes:
+            dispatch_status = "DISPATCHED"
+            dispatch_reason = None
+        else:
+            dispatch_status = "PARTIALLY_DISPATCHED"
+            dispatch_reason = "SOME_EPISODES_BLOCKED"
         return {
             "project_id": project_id,
             "preparation": prep,
             "dispatched_runs": dispatched_runs,
-            "total_episodes": len(episodes),
-            "dispatched_count": sum(1 for r in dispatched_runs if r["status"] == "DISPATCHED"),
+            "total_episodes": total_episodes,
+            "dispatched_count": dispatched_count,
+            "blocked_count": total_episodes - dispatched_count,
+            "dispatch_status": dispatch_status,
+            "dispatch_reason": dispatch_reason,
         }

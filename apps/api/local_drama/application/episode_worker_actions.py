@@ -30,14 +30,16 @@ from local_drama.infrastructure.database.qc_policy_repository import SqliteQcPol
 from local_drama.infrastructure.database.sqlite import Database
 
 from .commands.qc_policies import QcPolicyCommandService
+from .dialogue_facts import current_shot_dialogue
 from .generation import GenerationService
 from .jobs import JobService
 from .keyframe_references import approved_keyframe_for_shot, approved_keyframes_for_shots
-from .shot_keyframe_generation import ShotKeyframeGenerationBatchService
 from .media import MediaService, infer_media_kind
 from .queries.generation_preferences import GenerationPreferenceQueryService
+from .queries.media_eligibility import best_current_video, eligible_candidate_counts
 from .queries.qc_policies import QcPolicyQueryService
 from .reviews import ReviewService
+from .shot_keyframe_generation import ShotKeyframeGenerationBatchService
 from .timeline import TimelineService
 
 ACTIVE_JOB_STATES = {"QUEUED", "CLAIMED", "RUNNING", "CANCEL_REQUESTED"}
@@ -154,12 +156,17 @@ class EpisodeWorkerActionService:
             if episode is None:
                 raise DomainRuleError("EPISODE_NOT_FOUND", "集不存在", {"episode_id": episode_id})
             rows = connection.execute(
-                """SELECT s.id,s.code,s.target_duration_ms,s.status,s.revision,s.current_revision_id,sr.fields_json
+                """SELECT s.id,s.code,s.scene_id,s.target_duration_ms,s.status,s.revision,s.current_revision_id,sr.fields_json
                 FROM shots s LEFT JOIN shot_revisions sr ON sr.id=s.current_revision_id
                 WHERE s.episode_id=? AND s.archived_at IS NULL ORDER BY CAST(s.order_key AS REAL),s.code""",
                 (episode_id,),
             ).fetchall()
-        return str(episode["project_id"]), [dict(row) for row in rows]
+            shots = []
+            for row in rows:
+                shot = dict(row)
+                shot["dialogue_facts"] = current_shot_dialogue(connection, str(row["id"]))
+                shots.append(shot)
+        return str(episode["project_id"]), shots
 
     def video_generation_preflight(
         self,
@@ -187,6 +194,16 @@ class EpisodeWorkerActionService:
             shot = by_id[shot_id]
             fields = self._fields(shot)
             blockers: list[dict[str, Any]] = []
+            unresolved_speakers = list(
+                (shot.get("dialogue_facts") or {}).get("unresolved_speaker_line_ids") or []
+            )
+            if unresolved_speakers:
+                blockers.append(
+                    {
+                        "code": "DIALOGUE_SPEAKER_CONFIRMATION_REQUIRED",
+                        "dialogue_line_ids": unresolved_speakers,
+                    }
+                )
             missing = missing_shot_fields(fields)
             if missing:
                 blockers.append({"code": "SHOT_NOT_PRODUCTION_READY", "missing_fields": missing})
@@ -198,6 +215,8 @@ class EpisodeWorkerActionService:
                 profile = self._video_profile(project_id, shot_id)
             except DomainRuleError as error:
                 blockers.append({"code": error.code})
+            if profile is not None:
+                blockers.extend(self._video_profile_dependency_blockers(profile))
             first_frame_role = self._first_frame_role(profile) if profile is not None else None
             if profile is not None and first_frame_role is None:
                 blockers.append({"code": "FIRST_FRAME_SLOT_REQUIRED"})
@@ -232,58 +251,148 @@ class EpisodeWorkerActionService:
             "mutated": False,
         }
 
+    def operation_impact(
+        self,
+        episode_id: str,
+        *,
+        operation: str,
+        target_shot_ids: tuple[str, ...] = (),
+        target_take_count: int = 1,
+    ) -> dict[str, Any]:
+        """Preview creator-visible operations without submitting or retrying work."""
+        operation = str(operation or "").strip().upper()
+        allowed = {"CONTINUE_UNFINISHED", "RETRY_ORIGINAL", "NEW_TAKE", "RECOMPOSE_ONLY"}
+        if operation not in allowed:
+            raise DomainRuleError("EPISODE_OPERATION_INVALID", "不支持的本集操作", {"operation": operation})
+        project_id, shots = self._episode(episode_id)
+        requested = tuple(dict.fromkeys(str(item).strip() for item in target_shot_ids if str(item).strip()))
+        by_id = {str(shot["id"]): shot for shot in shots}
+        unknown = sorted(set(requested) - set(by_id))
+        if unknown:
+            raise DomainRuleError("SHOT_BATCH_SCOPE_INVALID", "操作包含不属于当前集的镜头", {"shot_ids": unknown})
+        selected = [shot for shot in shots if not requested or str(shot["id"]) in requested]
+        sets: dict[str, list[dict[str, Any]]] = {
+            "reused": [],
+            "waiting_in_flight": [],
+            "retry_original": [],
+            "needs_generation": [],
+            "blocked_by_dependency": [],
+            "requires_manual_confirmation": [],
+            "compose_only": [],
+        }
+        if operation == "RECOMPOSE_ONLY":
+            with self.database.connect() as connection:
+                timeline = connection.execute(
+                    "SELECT id,revision_no,status FROM timeline_revisions WHERE episode_id=? ORDER BY revision_no DESC,id DESC LIMIT 1",
+                    (episode_id,),
+                ).fetchone()
+            if timeline is None:
+                sets["blocked_by_dependency"].append(
+                    {"owner_type": "EPISODE", "owner_id": episode_id, "reason": "TIMELINE_REQUIRED"}
+                )
+            else:
+                sets["compose_only"].append(
+                    {
+                        "timeline_revision_id": str(timeline["id"]),
+                        "timeline_revision_no": int(timeline["revision_no"]),
+                        "reason": "REUSE_CURRENT_TIMELINE_INPUTS",
+                    }
+                )
+        else:
+            preflight = self.video_generation_preflight(
+                episode_id, target_shot_ids=tuple(str(shot["id"]) for shot in selected)
+            )
+            preflight_by_id = {str(item["shot_id"]): item for item in preflight["items"]}
+            stale = self._stale_working_media_shots(episode_id, set(preflight_by_id))
+            for shot in selected:
+                shot_id = str(shot["id"])
+                item = preflight_by_id[shot_id]
+                base = {
+                    "shot_id": shot_id,
+                    "shot_code": str(shot["code"]),
+                    "shot_revision": int(shot["revision"]),
+                }
+                if item["status"] != "READY":
+                    sets["blocked_by_dependency"].append(
+                        {**base, "reason": "HARD_DEPENDENCY_BLOCKED", "blockers": item["blockers"]}
+                    )
+                    continue
+                jobs = self._variant_jobs(shot_id)
+                available = self._shot_video_count(shot_id)
+                active = [job for job in jobs if str(job["state"]) in ACTIVE_JOB_STATES]
+                failed = next((job for job in jobs if str(job["state"]) in FAILED_JOB_STATES), None)
+                if operation == "NEW_TAKE":
+                    sets["needs_generation"].append({**base, "reason": "EXPLICIT_NEW_CANDIDATE", "new_candidate_count": 1})
+                elif active:
+                    sets["waiting_in_flight"].append(
+                        {**base, "reason": "EXISTING_JOB_IN_FLIGHT", "job_ids": [str(job["id"]) for job in active]}
+                    )
+                elif failed is not None:
+                    sets["retry_original"].append(
+                        {
+                            **base,
+                            "reason": "FAILED_JOB_SAME_FROZEN_INPUTS",
+                            "job_id": str(failed["id"]),
+                            "variant_id": str(failed["variant_id"]),
+                            "seed": failed["explicit_seed"],
+                        }
+                    )
+                elif operation == "RETRY_ORIGINAL":
+                    sets["reused"].append({**base, "reason": "NO_FAILED_ORIGINAL_INPUT_JOB"})
+                elif shot_id in stale or available < target_take_count:
+                    sets["needs_generation"].append(
+                        {
+                            **base,
+                            "reason": "WORKING_MEDIA_DEPENDENCY_CHANGED" if shot_id in stale else "CANDIDATE_TARGET_NOT_MET",
+                            "new_candidate_count": 1 if shot_id in stale else max(0, target_take_count - available),
+                        }
+                    )
+                else:
+                    sets["reused"].append({**base, "reason": "VALID_CURRENT_CANDIDATE", "candidate_count": available})
+        snapshot = {
+            "schema_version": "episode-operation-impact/v1",
+            "episode_id": episode_id,
+            "project_id": project_id,
+            "operation": operation,
+            "target_shot_ids": [str(shot["id"]) for shot in selected],
+            "target_take_count": target_take_count,
+            "sets": sets,
+            "gpu_video_job_count": 0 if operation == "RECOMPOSE_ONLY" else sum(
+                int(item.get("new_candidate_count") or 0) for item in sets["needs_generation"]
+            ),
+            "mutated": False,
+            "runtime_contacted": False,
+            "network_contacted": False,
+        }
+        snapshot["plan_hash"] = hashlib.sha256(
+            json.dumps(snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        return snapshot
+
     @staticmethod
     def _fields(shot: dict[str, Any]) -> dict[str, Any]:
         try:
             value = json.loads(str(shot.get("fields_json") or "{}"))
         except (TypeError, ValueError):
             return {}
-        return value if isinstance(value, dict) else {}
+        fields = value if isinstance(value, dict) else {}
+        dialogue_facts = shot.get("dialogue_facts")
+        if isinstance(dialogue_facts, dict):
+            fields = {**fields, "dialogue": list(dialogue_facts.get("lines") or [])}
+        return fields
 
     def _shot_video(self, shot_id: str) -> dict[str, Any] | None:
-        """Return the newest usable video, including GenerationVariant output."""
+        """Return the best current verified video, preserving human/QC facts."""
         with self.database.connect() as connection:
-            row = connection.execute(
-                """SELECT mv.id AS media_version_id,mv.media_asset_id,mv.stage,mv.integrity_status,
-                ma.owner_type,ma.owner_id,ma.selected_version_id,ma.approved_version_id,gv.id AS variant_id
-                FROM generation_intents gi JOIN generation_variants gv ON gv.intent_id=gi.id
-                JOIN media_assets ma ON ma.owner_type='GENERATION_VARIANT' AND ma.owner_id=gv.id
-                JOIN media_versions mv ON mv.media_asset_id=ma.id
-                WHERE gi.owner_type='SHOT' AND gi.owner_id=? AND ma.media_kind='VIDEO'
-                AND gv.is_stale=0 AND mv.integrity_status='VERIFIED'
-                ORDER BY CASE WHEN ma.approved_version_id=mv.id THEN 0 WHEN ma.selected_version_id=mv.id THEN 1 ELSE 2 END,
-                mv.created_at DESC,mv.id DESC LIMIT 1""",
-                (shot_id,),
-            ).fetchone()
-            if row is None:
-                row = connection.execute(
-                    """SELECT mv.id AS media_version_id,mv.media_asset_id,mv.stage,mv.integrity_status,
-                    ma.owner_type,ma.owner_id,ma.selected_version_id,ma.approved_version_id,NULL AS variant_id
-                    FROM media_assets ma JOIN media_versions mv ON mv.media_asset_id=ma.id
-                    WHERE ma.owner_type='SHOT' AND ma.owner_id=? AND ma.media_kind='VIDEO'
-                    AND mv.integrity_status='VERIFIED'
-                    ORDER BY CASE WHEN ma.approved_version_id=mv.id THEN 0 WHEN ma.selected_version_id=mv.id THEN 1 ELSE 2 END,
-                    mv.created_at DESC,mv.id DESC LIMIT 1""",
-                    (shot_id,),
-                ).fetchone()
-        return dict(row) if row else None
+            row = best_current_video(connection, shot_id)
+        if row is not None:
+            row["machine_check_status"] = row.pop("current_qc_status", None)
+        return row
 
     def _shot_video_count(self, shot_id: str) -> int:
         """Count verified candidates, not merely jobs that reported success."""
         with self.database.connect() as connection:
-            return int(connection.execute(
-                """SELECT COUNT(DISTINCT media_version_id) FROM (
-                SELECT mv.id AS media_version_id FROM generation_intents gi
-                JOIN generation_variants gv ON gv.intent_id=gi.id
-                JOIN media_assets ma ON ma.owner_type='GENERATION_VARIANT' AND ma.owner_id=gv.id
-                JOIN media_versions mv ON mv.media_asset_id=ma.id
-                WHERE gi.owner_type='SHOT' AND gi.owner_id=? AND ma.media_kind='VIDEO'
-                AND gv.is_stale=0 AND mv.integrity_status='VERIFIED'
-                UNION SELECT mv.id FROM media_assets ma JOIN media_versions mv ON mv.media_asset_id=ma.id
-                WHERE ma.owner_type='SHOT' AND ma.owner_id=? AND ma.media_kind='VIDEO'
-                AND mv.integrity_status='VERIFIED')""",
-                (shot_id, shot_id),
-            ).fetchone()[0])
+            return eligible_candidate_counts(connection, [shot_id]).get((shot_id, "VIDEO"), 0)
 
     def _stale_working_media_shots(self, episode_id: str, shot_ids: set[str]) -> set[str]:
         """Resolve dynamic working-media staleness from the episode read model.
@@ -414,6 +523,66 @@ class EpisodeWorkerActionService:
             )
         return dict(row)
 
+    def _video_profile_dependency_blockers(self, profile: dict[str, Any]) -> list[dict[str, Any]]:
+        """Reuse immutable publication attestations; never hash model weights here."""
+
+        if "workflow_version_id" not in profile:
+            return []  # compact test/adapter compatibility
+        workflow_version_id = str(profile.get("workflow_version_id") or "").strip()
+        if not workflow_version_id:
+            return [{"code": "VIDEO_WORKFLOW_REQUIRED"}]
+        with self.database.connect() as connection:
+            workflow = connection.execute(
+                "SELECT status,content_hash FROM workflow_versions WHERE id=?",
+                (workflow_version_id,),
+            ).fetchone()
+            attestation = connection.execute(
+                """SELECT status,workflow_content_hash,evidence_json FROM workflow_validation_attestations
+                WHERE workflow_version_id=? ORDER BY created_at DESC,id DESC LIMIT 1""",
+                (workflow_version_id,),
+            ).fetchone()
+        if workflow is None or str(workflow["status"]) != "PUBLISHED":
+            return [{"code": "VIDEO_WORKFLOW_NOT_PUBLISHED", "workflow_version_id": workflow_version_id}]
+        if (
+            attestation is None
+            or str(attestation["status"]) != "PASS"
+            or str(attestation["workflow_content_hash"]) != str(workflow["content_hash"])
+        ):
+            return [{"code": "VIDEO_WORKFLOW_VALIDATION_REQUIRED", "workflow_version_id": workflow_version_id}]
+        try:
+            evidence = json.loads(str(attestation["evidence_json"] or "{}"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            evidence = {}
+        missing_nodes = list(evidence.get("missing_nodes") or []) if isinstance(evidence, dict) else []
+        schema_errors = list(evidence.get("schema_errors") or []) if isinstance(evidence, dict) else []
+        blockers: list[dict[str, Any]] = []
+        if missing_nodes:
+            blockers.append(
+                {
+                    "code": "VIDEO_WORKFLOW_NODES_MISSING",
+                    "workflow_version_id": workflow_version_id,
+                    "missing_nodes": missing_nodes,
+                }
+            )
+        if schema_errors:
+            blockers.append(
+                {
+                    "code": "VIDEO_WORKFLOW_INPUT_SCHEMA_INVALID",
+                    "workflow_version_id": workflow_version_id,
+                    "schema_errors": schema_errors,
+                }
+            )
+        runtime_layout = evidence.get("runtime_layout") if isinstance(evidence, dict) else None
+        if isinstance(runtime_layout, dict) and str(runtime_layout.get("status") or "") != "PASS":
+            blockers.append(
+                {
+                    "code": "VIDEO_MODEL_COMPONENTS_MISSING",
+                    "workflow_version_id": workflow_version_id,
+                    "missing_model_files": list(runtime_layout.get("missing_model_files") or []),
+                }
+            )
+        return blockers
+
     @staticmethod
     def _first_frame_role(profile: dict[str, Any]) -> str | None:
         try:
@@ -457,28 +626,77 @@ class EpisodeWorkerActionService:
         )
         return {"id": str(anchor["id"]), "extracted_media_version_id": str(anchor["extracted_media_version_id"]), "reused": False}
 
-    def _end_frame_chain(self, shot: dict[str, Any], previous_shot: dict[str, Any] | None, fields: dict[str, Any]) -> dict[str, Any]:
-        """Resolve the previous shot's last frame as this shot's END_FRAME input.
+    def _end_frame_chain(
+        self,
+        shot: dict[str, Any],
+        previous_shot: dict[str, Any] | None,
+        fields: dict[str, Any],
+        current_keyframe: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Assess an explicit predecessor-tail -> current-start dependency.
 
-        Scene cuts break the chain on purpose: a new environment must not
-        inherit the previous scene's closing frame.  Anything that prevents a
-        trustworthy chain is a SKIPPED reason, never a blocker.
+        The legacy name remains for compatibility, but the result is never an
+        END_FRAME binding.  A predecessor tail can only constrain the current
+        FIRST_FRAME, and a HARD bridge must already be frozen and agree with
+        the approved current keyframe before submission.
         """
+        del fields
         if previous_shot is None:
             return {"status": "SKIPPED", "reason": "NO_PREDECESSOR"}
-        previous_fields = self._fields(previous_shot)
-        if str(fields.get("environment") or "").strip() != str(previous_fields.get("environment") or "").strip():
+        previous_scene = str(previous_shot.get("scene_id") or "").strip()
+        current_scene = str(shot.get("scene_id") or "").strip()
+        if not previous_scene or not current_scene:
+            return {"status": "SKIPPED", "reason": "SCENE_ID_UNKNOWN"}
+        if previous_scene != current_scene:
             return {"status": "SKIPPED", "reason": "SCENE_CUT"}
+        with self.database.connect() as connection:
+            transition = connection.execute(
+                """SELECT * FROM shot_transition_constraints
+                WHERE from_shot_id=? AND to_shot_id=? AND is_stale=0
+                ORDER BY created_at DESC,id DESC LIMIT 1""",
+                (previous_shot["id"], shot["id"]),
+            ).fetchone()
+            if transition is None:
+                return {"status": "SKIPPED", "reason": "NO_EXPLICIT_TRANSITION"}
+            if str(transition["constraint_type"]) not in {
+                "START_FROM_PREVIOUS_LAST",
+                "LAST_TO_FIRST",
+                "SHARED_BOUNDARY_FRAME",
+            }:
+                return {"status": "SKIPPED", "reason": "CUT_TRANSITION"}
+            if str(transition["enforcement"]).upper() not in {"HARD", "LOCKED"}:
+                return {"status": "SKIPPED", "reason": "ADVISORY_CONTINUITY", "transition_id": str(transition["id"])}
         previous_video = self._shot_video(str(previous_shot["id"]))
         if previous_video is None:
-            return {"status": "SKIPPED", "reason": "PREDECESSOR_VIDEO_MISSING"}
-        anchor = self._last_frame_anchor(str(previous_video["media_version_id"]))
+            return {"status": "WAITING", "reason": "PREDECESSOR_VIDEO_MISSING", "transition_id": str(transition["id"])}
+        if not transition["from_anchor_id"] or not transition["to_anchor_id"]:
+            return {"status": "WAITING", "reason": "HARD_BRIDGE_NOT_FROZEN", "transition_id": str(transition["id"])}
+        with self.database.connect() as connection:
+            source = connection.execute("SELECT * FROM frame_anchors WHERE id=?", (transition["from_anchor_id"],)).fetchone()
+            current = connection.execute("SELECT * FROM frame_anchors WHERE id=?", (transition["to_anchor_id"],)).fetchone()
+        if source is None or current is None or int(source["is_stale"]) or int(current["is_stale"]):
+            return {"status": "WAITING", "reason": "HARD_BRIDGE_STALE", "transition_id": str(transition["id"])}
+        if str(source["source_media_version_id"]) != str(previous_video["media_version_id"]):
+            return {"status": "WAITING", "reason": "PREDECESSOR_WORKING_VERSION_CHANGED", "transition_id": str(transition["id"])}
+        current_media_id = str((current_keyframe or {}).get("media_version_id") or "")
+        if str(current["extracted_media_version_id"]) != current_media_id:
+            return {
+                "status": "CONFLICT",
+                "reason": "LOCKED_CURRENT_START_MISMATCH",
+                "transition_id": str(transition["id"]),
+                "approved_keyframe_media_version_id": current_media_id,
+                "bridge_media_version_id": str(current["extracted_media_version_id"]),
+            }
         return {
-            "status": "CHAINED",
-            "frame_anchor_id": anchor["id"],
-            "media_version_id": anchor["extracted_media_version_id"],
+            "status": "SATISFIED",
+            "transition_id": str(transition["id"]),
+            "source_anchor_id": str(source["id"]),
+            "current_anchor_id": str(current["id"]),
+            "media_version_id": current_media_id,
             "source_media_version_id": str(previous_video["media_version_id"]),
-            "anchor_reused": anchor["reused"],
+            "source_sha256": str(source["source_sha256"] or ""),
+            "source_frame_index": source["source_frame_index"],
+            "source_time_us": source["source_time_us"],
         }
 
     @staticmethod
@@ -488,8 +706,20 @@ class EpisodeWorkerActionService:
     def _submit_shot(
         self, project_id: str, shot: dict[str, Any], run_id: str, task_id: str, *,
         take_index: int = 0, previous_shot: dict[str, Any] | None = None,
+        expected_profile_version_id: str | None = None,
     ) -> dict[str, Any]:
         shot_id = str(shot["id"])
+        unresolved_speakers = list(
+            (shot.get("dialogue_facts") or {}).get("unresolved_speaker_line_ids") or []
+        )
+        if unresolved_speakers:
+            return {
+                "shot_id": shot_id,
+                "shot_code": str(shot["code"]),
+                "status": "BLOCKED",
+                "code": "DIALOGUE_SPEAKER_CONFIRMATION_REQUIRED",
+                "dialogue_line_ids": unresolved_speakers,
+            }
         keyframe = self._approved_keyframe(shot_id)
         if keyframe is None:
             return {"shot_id": shot_id, "shot_code": str(shot["code"]), "status": "BLOCKED", "code": "APPROVED_KEYFRAME_REQUIRED"}
@@ -497,17 +727,29 @@ class EpisodeWorkerActionService:
             profile = self._video_profile(project_id, shot_id)
         except DomainRuleError as error:
             return {"shot_id": shot_id, "shot_code": str(shot["code"]), "status": "BLOCKED", "code": error.code}
+        if expected_profile_version_id and str(profile["id"]) != expected_profile_version_id:
+            return {
+                "shot_id": shot_id,
+                "shot_code": str(shot["code"]),
+                "status": "BLOCKED",
+                "code": "VIDEO_PROFILE_SNAPSHOT_STALE",
+                "expected_profile_version_id": expected_profile_version_id,
+                "actual_profile_version_id": str(profile["id"]),
+            }
         role = self._first_frame_role(profile)
         if role is None:
             return {"shot_id": shot_id, "shot_code": str(shot["code"]), "status": "BLOCKED", "code": "FIRST_FRAME_SLOT_REQUIRED"}
 
         fields = self._fields(shot)
-        end_frame_chain: dict[str, Any] = {"status": "SLOT_ABSENT"}
-        end_bindings: tuple[VariantInput, ...] = ()
-        if self._end_frame_role(profile) is not None:
-            end_frame_chain = self._end_frame_chain(shot, previous_shot, fields)
-            if end_frame_chain["status"] == "CHAINED":
-                end_bindings = (VariantInput("END_FRAME", str(end_frame_chain["media_version_id"]), 0, None),)
+        frame_bridge = self._end_frame_chain(shot, previous_shot, fields, keyframe)
+        if frame_bridge["status"] in {"WAITING", "CONFLICT"}:
+            return {
+                "shot_id": shot_id,
+                "shot_code": str(shot["code"]),
+                "status": "BLOCKED",
+                "code": "HARD_FRAME_BRIDGE_WAITING" if frame_bridge["status"] == "WAITING" else "HARD_FRAME_BRIDGE_CONFLICT",
+                "frame_bridge": frame_bridge,
+            }
         with self.database.connect() as connection:
             intent = connection.execute(
                 """SELECT * FROM generation_intents WHERE project_id=? AND owner_type='SHOT' AND owner_id=?
@@ -517,16 +759,23 @@ class EpisodeWorkerActionService:
         if intent is None:
             intent = self.generation.create_intent(project_id, "SHOT", shot_id, "I2V_FORMAL", "Episode production shot video")
         seed = (self._seed(run_id, shot_id) + take_index) % 2_147_483_647
+        base_prompt = compose_shot_prompt(fields, shot_code=str(shot["code"]))
         parameters: dict[str, object] = {
-            "PROMPT": compose_shot_prompt(fields, shot_code=str(shot["code"])),
+            "PROMPT": base_prompt,
             "SEED": seed,
             "DURATION_SECONDS": round(float(fields.get("target_duration_ms") or shot.get("target_duration_ms") or 4000) / 1000, 3),
         }
+        if isinstance(fields.get("camera_plan"), dict):
+            parameters["camera_plan"] = fields["camera_plan"]
         plan = VariantPlan(
             variant_type="BASE", parent_variant_id=None, branch_reason=f"EPISODE_PRODUCTION_RUN_TAKE_{take_index + 1}",
             prompt_revision_id=None, profile_version_id=str(profile["id"]), parameter_set=parameters,
             seed_policy="EXPLICIT", explicit_seed=seed,
-            bindings=(VariantInput(role, str(keyframe["media_version_id"]), 0, None), *end_bindings),
+            bindings=(VariantInput(role, str(keyframe["media_version_id"]), 0, None),),
+            # Use the same canonical prompt compiler as the Shot Studio entry;
+            # this freezes the default negative constraints even when no page
+            # override exists.
+            prompt_bundle={"base_prompt": base_prompt},
         )
         try:
             preflight = self.generation.preflight_variant(str(intent["id"]), plan)
@@ -538,7 +787,7 @@ class EpisodeWorkerActionService:
         return {
             "shot_id": shot_id, "shot_code": str(shot["code"]), "status": "SUBMITTED",
             "variant_id": str(submitted["variant"]["id"]), "job_id": str(submitted["job"]["id"]), "take_index": take_index,
-            "end_frame_chain": end_frame_chain,
+            "frame_bridge": frame_bridge,
         }
 
     def video_generation(
@@ -550,8 +799,24 @@ class EpisodeWorkerActionService:
         target_take_count: int = 1,
         target_shot_ids: tuple[str, ...] | None = None,
         force_new_take: bool = False,
+        expected_profile_version_ids: dict[str, str] | None = None,
     ) -> tuple[dict[str, Any], int]:
-        target_take_count = max(1, min(int(target_take_count), 4))
+        if isinstance(target_take_count, bool):
+            raise DomainRuleError(
+                "VIDEO_TARGET_TAKE_COUNT_INVALID", "单镜视频候选目标必须是 1—4 的整数"
+            )
+        try:
+            target_take_count = int(target_take_count)
+        except (TypeError, ValueError) as error:
+            raise DomainRuleError(
+                "VIDEO_TARGET_TAKE_COUNT_INVALID", "单镜视频候选目标必须是 1—4 的整数"
+            ) from error
+        if target_take_count not in {1, 2, 3, 4}:
+            raise DomainRuleError(
+                "VIDEO_TARGET_TAKE_COUNT_INVALID",
+                "单镜视频候选目标必须是 1—4 的整数",
+                {"target_take_count": target_take_count, "max_target_take_count": 4},
+            )
         project_id, episode_shots = self._episode(episode_id)
         requested_ids = tuple(dict.fromkeys(str(item).strip() for item in (target_shot_ids or ()) if str(item).strip()))
         episode_ids = {str(shot["id"]) for shot in episode_shots}
@@ -569,6 +834,11 @@ class EpisodeWorkerActionService:
         )
         items: list[dict[str, Any]] = []
         episode_index = {str(shot["id"]): index for index, shot in enumerate(episode_shots)}
+        frozen_profiles = {
+            str(shot_id): str(profile_id)
+            for shot_id, profile_id in (expected_profile_version_ids or {}).items()
+            if str(shot_id).strip() and str(profile_id).strip()
+        }
         for shot in shots:
             index = episode_index[str(shot["id"])]
             previous_shot = episode_shots[index - 1] if index > 0 else None
@@ -579,14 +849,23 @@ class EpisodeWorkerActionService:
             active_jobs = [item for item in jobs if str(item["state"]) in ACTIVE_JOB_STATES]
             available_count = self._shot_video_count(shot_id)
             stale_working_media = shot_id in stale_working_media_shots
+            frozen_profile_kwargs = (
+                {"expected_profile_version_id": frozen_profiles[shot_id]}
+                if shot_id in frozen_profiles
+                else {}
+            )
             if force_new_take or stale_working_media:
                 submission = self._submit_shot(
                     project_id,
                     shot,
                     run_id,
                     task_id,
-                    take_index=len(jobs),
+                    # The task identity already distinguishes a creator's next
+                    # explicit take.  A retry of this same task must keep slot
+                    # zero even after its first Job becomes visible.
+                    take_index=0,
                     previous_shot=previous_shot,
+                    **frozen_profile_kwargs,
                 )
                 items.append(
                     {
@@ -618,7 +897,15 @@ class EpisodeWorkerActionService:
                     continue
             missing = target_take_count - available_count - len(active_jobs) - len(dispatched_for_shot)
             submissions = [
-                self._submit_shot(project_id, shot, run_id, task_id, take_index=len(jobs) + offset, previous_shot=previous_shot)
+                self._submit_shot(
+                    project_id,
+                    shot,
+                    run_id,
+                    task_id,
+                    take_index=len(jobs) + offset,
+                    previous_shot=previous_shot,
+                    **frozen_profile_kwargs,
+                )
                 for offset in range(missing)
             ]
             submission_blockers = [item for item in submissions if item["status"] == "BLOCKED"]
@@ -640,6 +927,19 @@ class EpisodeWorkerActionService:
         blocked = [item for item in items if item["status"] == "BLOCKED"]
         dispatched = [item for item in items if item["status"] in {"SUBMITTED", "RETRIED", "ACTIVE"}]
         ready = [item for item in items if item["status"] == "READY_FOR_QC"]
+        valid_candidate_count = sum(int(item.get("candidate_count") or 0) for item in items)
+        active_candidate_count = sum(
+            len(item.get("submissions") or [])
+            + len(item.get("dependency_job_ids") or [])
+            + (1 if item["status"] in {"SUBMITTED", "RETRIED"} and not item.get("submissions") else 0)
+            for item in items
+        )
+        technical_retry_count = sum(1 for item in items if item["status"] == "RETRIED") + sum(
+            1
+            for item in items
+            for candidate in item.get("submissions") or []
+            if candidate.get("status") == "RETRIED"
+        )
         status = "NEEDS_HITL" if blocked else "PASS"
         evidence = {
             "status": status, "ok": not blocked, "checked_shots": len(shots), "ready_for_qc": len(ready),
@@ -647,7 +947,12 @@ class EpisodeWorkerActionService:
             "evidence_type": "GENERATION_DISPATCH", "human_approval_created": False,
             "target_take_count": target_take_count,
             "target_shot_ids": list(requested_ids),
+            "expected_profile_version_ids": frozen_profiles,
             "force_new_take": force_new_take,
+            "target_candidate_count": len(shots) * target_take_count,
+            "valid_candidate_count": valid_candidate_count,
+            "active_candidate_count": active_candidate_count,
+            "technical_retry_count": technical_retry_count,
         }
         summary = f"逐镜视频调度：可 QC {len(ready)}，已调度/运行 {len(dispatched)}，阻塞 {len(blocked)}"
         return self._report(status, evidence, {"items": items}, summary), 0
@@ -723,6 +1028,8 @@ class EpisodeWorkerActionService:
             }
             if str(check["status"]) == "PASS" and auto_select:
                 item["auto_selection"] = self._auto_select_video(video, media_version_id)
+                if item["auto_selection"].get("status") == "BLOCKED":
+                    item["production_status"] = "BLOCKED"
             if str(check["status"]) != "PASS" and video.get("variant_id"):
                 policy_decision = self._qc_policy_decision(str(video["variant_id"]), str(check["id"]))
                 if policy_decision is not None and str(policy_decision["disposition"]) != "AUTO_REROLL_ALLOWED":
@@ -737,7 +1044,11 @@ class EpisodeWorkerActionService:
             items.append(item)
 
         passed = [item for item in items if item["status"] == "PASS"]
-        attention = [item for item in items if item["status"] != "PASS"]
+        attention = [
+            item
+            for item in items
+            if item["status"] != "PASS" or item.get("production_status") == "BLOCKED"
+        ]
         status = "PASS" if not attention else "NEEDS_HITL"
         auto_selected = [item for item in items if isinstance(item.get("auto_selection"), dict) and item["auto_selection"].get("status") == "SELECTED"]
         evidence = {

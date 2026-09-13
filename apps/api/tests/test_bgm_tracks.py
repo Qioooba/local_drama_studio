@@ -181,11 +181,11 @@ def test_render_without_bindings_honors_timeline_duration_contract(workspace, da
     assert stale.value.code == "TIMELINE_STALE"
 
 
-def test_render_extends_short_source_and_burns_selected_subtitle(workspace, database) -> None:
+def test_render_burns_selected_subtitle_when_source_covers_timeline(workspace, database) -> None:
     project, episode = _project_and_episode(workspace, database)
     media = MediaService(database, workspace).import_file(
         str(project["id"]),
-        _video(workspace, "short-subtitle-source.mp4", seconds=0.35),
+        _video(workspace, "subtitle-source.mp4", seconds=1.25),
         purpose="SHOT_VIDEO",
         media_kind="VIDEO",
     )

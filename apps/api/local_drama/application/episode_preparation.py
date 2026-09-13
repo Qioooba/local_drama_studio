@@ -5,10 +5,14 @@ from typing import Any
 
 from local_drama.application.breakdown_apply import BreakdownApplyService
 from local_drama.application.breakdown_execution import resolve_breakdown_execution
+from local_drama.application.episode_source_binding import (
+    resolve_episode_source_binding,
+    validate_episode_source_binding,
+)
 from local_drama.application.local_llm import LocalLLMService
+from local_drama.application.ports.database import DatabaseUnitOfWork
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
-from local_drama.infrastructure.database.sqlite import Database
 
 
 class EpisodePreparationService:
@@ -20,7 +24,7 @@ class EpisodePreparationService:
     source range already stored on the episode outline.
     """
 
-    def __init__(self, database: Database, settings: Settings) -> None:
+    def __init__(self, database: DatabaseUnitOfWork, settings: Settings) -> None:
         self.database = database
         self.settings = settings
 
@@ -42,39 +46,71 @@ class EpisodePreparationService:
     def _context(self, episode_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
             episode = connection.execute(
-                """SELECT e.id,e.source_range_json,s.project_id,
+                """SELECT e.id,e.source_range_json,e.target_duration_ms,s.project_id,
                 (SELECT COUNT(*) FROM shots sh WHERE sh.episode_id=e.id AND sh.archived_at IS NULL) AS shot_count
                 FROM episodes e JOIN seasons s ON s.id=e.season_id WHERE e.id=?""",
                 (episode_id,),
             ).fetchone()
             if episode is None:
                 raise DomainRuleError("EPISODE_NOT_FOUND", "集不存在", {"episode_id": episode_id})
-            source = connection.execute(
-                """SELECT i.id AS import_session_id
-                FROM import_sessions i
-                WHERE i.project_id=? AND i.status IN ('COMMITTED','BREAKDOWN_READY')
-                AND EXISTS (SELECT 1 FROM audit_events ae
-                  WHERE ae.action='IMPORT_SESSION_COMMITTED'
-                  AND ae.subject_type='import_session' AND ae.subject_id=i.id)
-                ORDER BY i.updated_at DESC,i.id DESC LIMIT 1""",
-                (episode["project_id"],),
-            ).fetchone()
+            source = resolve_episode_source_binding(connection, episode_id)
+            validate_episode_source_binding(self.settings, source)
+            try:
+                execution = resolve_breakdown_execution(
+                    connection, str(episode["project_id"]), episode_id
+                )
+            except DomainRuleError as error:
+                if error.code != "EPISODE_BREAKDOWN_MODEL_REQUIRED":
+                    raise
+                execution = {
+                    "profile_version_id": None,
+                    "error_code": error.code,
+                    "error_message": error.message,
+                    "error_details": error.details,
+                }
             draft = connection.execute(
                 """SELECT id FROM script_breakdown_drafts
                 WHERE project_id=? AND status='DRAFT_READY'
                 AND json_extract(confidence_json,'$.target_episode_id')=?
+                AND source_document_version_id=? AND import_session_id=?
+                AND json_extract(confidence_json,'$.source_paragraph_start')=?
+                AND json_extract(confidence_json,'$.source_paragraph_end')=?
+                AND json_extract(confidence_json,'$.target_duration_seconds')=?
+                AND json_extract(confidence_json,'$.profile_version_id')=?
+                AND json_extract(confidence_json,'$.request_identity_sha256') IS NOT NULL
                 ORDER BY updated_at DESC,id DESC LIMIT 1""",
-                (episode["project_id"], episode_id),
+                (
+                    episode["project_id"],
+                    episode_id,
+                    source["source_document_version_id"],
+                    source["import_session_id"],
+                    source["start_paragraph"],
+                    source["end_paragraph"],
+                    int(episode["target_duration_ms"]) / 1000,
+                    execution["profile_version_id"],
+                ),
             ).fetchone()
+            applied_plan_count = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM script_breakdown_scene_applications WHERE episode_id=?",
+                    (episode_id,),
+                ).fetchone()[0]
+            )
         return {
             **dict(episode),
-            "import_session_id": str(source["import_session_id"]) if source else None,
+            "source_binding": source,
+            "import_session_id": source["import_session_id"],
             "ready_draft_id": str(draft["id"]) if draft else None,
+            "execution": execution,
+            "applied_plan_count": applied_plan_count,
         }
 
     def prepare(self, episode_id: str, *, idempotency_key: str) -> dict[str, Any]:
         context = self._context(episode_id)
-        if int(context["shot_count"]) > 0:
+        # A single hand-authored shot is not evidence that the episode plan is
+        # complete. Only a previously applied breakdown gives the preparation
+        # command authority to treat the current shot set as an episode plan.
+        if int(context["shot_count"]) > 0 and int(context["applied_plan_count"]) > 0:
             return {"status": "READY", "episode_id": episode_id, "shot_count": int(context["shot_count"])}
 
         if context["ready_draft_id"]:
@@ -91,8 +127,13 @@ class EpisodePreparationService:
         start, end = self._source_scope(context["source_range_json"])
         if not context["import_session_id"]:
             raise DomainRuleError("EPISODE_SOURCE_COMMIT_REQUIRED", "没有已确认提交的原文，无法生成本集方案。")
-        with self.database.connect() as connection:
-            execution = resolve_breakdown_execution(connection, str(context["project_id"]), episode_id)
+        execution = context["execution"]
+        if not execution.get("profile_version_id"):
+            raise DomainRuleError(
+                str(execution.get("error_code") or "EPISODE_BREAKDOWN_MODEL_REQUIRED"),
+                str(execution.get("error_message") or "当前项目没有可用的故事拆解模型。"),
+                dict(execution.get("error_details") or {}),
+            )
         job = LocalLLMService(self.database, self.settings).enqueue_breakdown(
             str(context["import_session_id"]),
             execution["profile_version_id"],

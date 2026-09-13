@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import json
+import uuid
+from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
+from local_drama.application.commands.generation_preferences import GenerationPreferenceCommandService
 from local_drama.application.documents import DocumentImportService
 from local_drama.application.local_llm import LocalLLMService
 from local_drama.application.projects import ProjectService
 from local_drama.application.worker import LocalMediaWorker
-from local_drama.application.commands.generation_preferences import GenerationPreferenceCommandService
 from local_drama.infrastructure.database.generation_preference_repository import SqliteGenerationPreferenceRepository
 from local_drama.main import create_app
 
@@ -108,3 +110,87 @@ def test_zero_shot_episode_breakdown_is_generated_and_applied_automatically(
             "SELECT status FROM script_breakdown_drafts WHERE project_id=?", (project["id"],)
         ).fetchone()
     assert draft is not None and draft["status"] == "APPLIED"
+
+
+def test_preparation_does_not_reuse_draft_from_different_range_or_profile(
+    workspace, database, monkeypatch,
+) -> None:
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="episode_prepare_draft_identity",
+        title="Episode prepare draft identity",
+        episode_count=1,
+        aspect_ratio="16:9",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=60_000,
+        allow_unconfigured_capabilities=True,
+    )
+    season = ProjectService(database, workspace.projects_root).list_seasons(str(project["id"]))[0]
+    episode = ProjectService(database, workspace.projects_root).list_episodes(str(season["id"]))[0]
+    source = workspace.work_root / "episode-prepare-draft-identity.md"
+    source.write_text("第一段。\n\n第二段。", encoding="utf-8")
+    documents = DocumentImportService(database, workspace)
+    imported = documents.import_document(str(project["id"]), source)
+    documents.commit(
+        str(imported["import_session_id"]),
+        str(imported["preview_hash"]),
+        source_paragraph_start=1,
+        source_paragraph_end=1,
+    )
+    monkeypatch.setattr(
+        "local_drama.infrastructure.local_llm.LocalLLMClient.probe",
+        lambda self, load_test=False: {"status": "PASS", "model": "qwen2.5:7b", "runtime": "ollama"},
+    )
+    llm = LocalLLMService(database, workspace)
+    profile = llm.sync_candidate("qwen2.5:7b")
+    llm.publish(str(profile["profile_version_id"]))
+    now = datetime.now(UTC).isoformat()
+    draft_id = str(uuid.uuid4())
+    with database.transaction() as connection:
+        connection.execute(
+            "UPDATE episodes SET source_range_json=? WHERE id=?",
+            (
+                json.dumps({"start_paragraph": 1, "end_paragraph": 1}),
+                episode["id"],
+            ),
+        )
+        connection.execute(
+            """INSERT INTO script_breakdown_drafts
+               (id,project_id,source_document_version_id,import_session_id,draft_json,
+                confidence_json,status,created_at,updated_at,created_by,revision,schema_version)
+               VALUES (?,?,?,?,?,?,'DRAFT_READY',?,?,'test',1,'v2')""",
+            (
+                draft_id,
+                project["id"],
+                imported["source_document_version_id"],
+                imported["import_session_id"],
+                json.dumps({"scenes": [{"scene_no": 1, "title": "错误范围", "shots": []}]}),
+                json.dumps(
+                    {
+                        "target_episode_id": episode["id"],
+                        "source_paragraph_start": 1,
+                        "source_paragraph_end": 2,
+                        "target_duration_seconds": 60,
+                        "profile_version_id": "different-profile",
+                        "request_identity_sha256": "different-request",
+                    }
+                ),
+                now,
+                now,
+            ),
+        )
+
+    with TestClient(create_app(workspace)) as client:
+        response = client.post(
+            f"/api/v2/episodes/{episode['id']}/production:prepare",
+            json={"idempotency_key": "prepare-exact-draft-identity"},
+        )
+    assert response.status_code == 202
+    assert response.json()["preparation"]["status"] == "QUEUED"
+    with database.connect() as connection:
+        assert connection.execute(
+            "SELECT status FROM script_breakdown_drafts WHERE id=?", (draft_id,)
+        ).fetchone()["status"] == "DRAFT_READY"
+        assert connection.execute(
+            "SELECT COUNT(*) FROM shots WHERE episode_id=?", (episode["id"],)
+        ).fetchone()[0] == 0

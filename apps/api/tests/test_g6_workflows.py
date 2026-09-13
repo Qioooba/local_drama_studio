@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 
 from local_drama.application.h3_workflows import H3WorkflowFactory
 from local_drama.application.local_llm import LocalLLMService
-from local_drama.application.workflows import WorkflowService
 from local_drama.application.workflow_definitions import WorkflowDefinitionService
+from local_drama.application.workflows import WorkflowService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.generation_contracts import CameraPlan, PerformanceBinding, TimedDirection, resolve_camera_plan
 from local_drama.infrastructure.comfy import ComfyClient
@@ -21,7 +21,10 @@ def _workflow() -> tuple[dict[str, object], dict[str, object]]:
         "1": {"class_type": "LoadImage", "inputs": {"image": "fixture.png"}},
         "2": {"class_type": "SaveImage", "inputs": {"images": ["1", 0], "filename_prefix": "g6_fixture"}},
     }
-    bindings = {"OUTPUT_PREFIX": {"node_id": "2", "input": "filename_prefix"}}
+    bindings = {
+        "FIRST_FRAME": {"node_id": "1", "input": "image"},
+        "OUTPUT_PREFIX": {"node_id": "2", "input": "filename_prefix"},
+    }
     return workflow, bindings
 
 
@@ -96,7 +99,7 @@ def test_real_loopback_comfy_workflow_capture_compile_and_publish(workspace, dat
     compiled = service.compile_semantic_inputs(str(version["id"]), {"OUTPUT_PREFIX": "g6_compiled"})
     assert compiled["workflow"]["2"]["inputs"]["filename_prefix"] == "g6_compiled"
     validation = service.validate_against_comfy(str(version["id"]), ComfyClient())
-    assert validation["status"] == "PASS"
+    assert validation["status"] == "PASS", json.dumps(validation, ensure_ascii=False)
     published = service.publish(str(version["id"]), str(validation["validation_id"]))
     assert published["status"] == "PUBLISHED"
     assert published["content_hash"] == version["content_hash"]

@@ -73,7 +73,10 @@ def test_job_compiler_applies_frozen_runtime_snapshot_to_graph(workspace, databa
         },
     )
     lora_id = evidence["lora_nodes"][0]
-    assert workflow["7"]["inputs"]["steps"] == 31
+    # Scalar sampling values are compiled through an explicit Workflow
+    # semantic binding; the structural override phase must not scan all nodes.
+    assert workflow["7"]["inputs"]["steps"] == 50
+    assert evidence["sigma_nodes"] == []
     assert workflow["7"]["inputs"]["model"] == [lora_id, 0]
     assert workflow["9"]["inputs"]["model"] == [lora_id, 0]
     assert workflow[lora_id]["inputs"]["strength_model"] == 0.6
@@ -104,3 +107,34 @@ def test_acceleration_off_preserves_workflow_authored_lora_chain(workspace, data
     assert "2" in workflow
     assert workflow["5"]["inputs"]["model"] == ["2", 0]
     assert evidence["lora_nodes"] == []
+
+
+def test_turbo_strength_only_changes_identified_turbo_lora(workspace, database) -> None:
+    turbo_name = H3WorkflowFactory(workspace).loader_assets()["turbo_lora_name"]
+    workflow = {
+        "1": {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": "h3.gguf"}},
+        "2": {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {"model": ["1", 0], "lora_name": "character-identity.safetensors", "strength_model": 0.33},
+        },
+        "3": {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {"model": ["1", 0], "lora_name": turbo_name, "strength_model": 1.0},
+        },
+        "7": {"class_type": "BasicScheduler", "inputs": {"model": ["1", 0], "steps": 30}},
+        "8": {"class_type": "BasicScheduler", "inputs": {"model": ["2", 0], "steps": 18}},
+        "9": {"class_type": "EmptyHunyuanLatentVideo", "inputs": {"width": 768, "height": 432, "length": 49}},
+    }
+    untouched = {key: dict(value["inputs"]) for key, value in workflow.items() if key in {"2", "8", "9"}}
+
+    evidence = ComfyGenerationService(database, workspace)._apply_effective_configuration(
+        workflow,
+        {"effective_settings": {"acceleration": "TURBO_LORA", "lora_strength": 0.77}},
+    )
+
+    assert evidence["lora_nodes"] == ["3"]
+    assert workflow["3"]["inputs"]["strength_model"] == 0.77
+    assert workflow["7"]["inputs"]["model"] == ["3", 0]
+    assert workflow["2"]["inputs"] == untouched["2"]
+    assert workflow["8"]["inputs"] == untouched["8"]
+    assert workflow["9"]["inputs"] == untouched["9"]

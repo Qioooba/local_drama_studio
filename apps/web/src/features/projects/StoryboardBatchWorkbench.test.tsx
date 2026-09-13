@@ -71,7 +71,7 @@ describe("StoryboardBatchWorkbench creator-safe structure editing", () => {
       valid: true,
       issues: [],
       summary: { reordered: false, split: 1 },
-      effects: { timeline: "STALE", selected_results: "UNCHANGED", asset_bindings: "COPIED" },
+      effects: { timeline: "STALE", selected_results: "UNCHANGED", asset_bindings: "COPIED", dialogue: "EXPLICIT" },
       ordered_shot_ids: ["shot-1", "shot-2"],
     });
     vi.mocked(planStoryboardBatch).mockResolvedValue({
@@ -104,7 +104,7 @@ describe("StoryboardBatchWorkbench creator-safe structure editing", () => {
     fireEvent.click(screen.getByRole("button", { name: "预览重排 / 拆分" }));
     await waitFor(() => expect(planShotEdit).toHaveBeenCalledWith("episode-1", expect.objectContaining({
       ordering_token: "order-token",
-      splits: [expect.objectContaining({ shot_id: "shot-1", first_code: "SH-001-A", second_code: "SH-001-B", first_duration_ms: 2100 })],
+      splits: [expect.objectContaining({ shot_id: "shot-1", first_code: "SH-001-A", second_code: "SH-001-B", first_duration_ms: 2100, dialogue_destination: "SOURCE_ONLY", action_destination: "BOTH" })],
     })));
 
     fireEvent.click(screen.getByRole("button", { name: "撤销" }));

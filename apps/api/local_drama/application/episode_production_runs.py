@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -20,9 +21,16 @@ from local_drama.domain.capabilities import (
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.policies import missing_shot_fields
 from local_drama.infrastructure.adapters import AdapterContractRegistry
+from local_drama.infrastructure.database.episode_production_repository import (
+    SqliteEpisodeProductionReadRepository,
+)
+from local_drama.infrastructure.database.generation_preference_repository import (
+    SqliteGenerationPreferenceRepository,
+)
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.path_policy import controlled_path
 
+from .audio_requirements import canonical_tts_requirements
 from .automation_workflows import AutomationWorkflowService
 from .capacity import CapacitySnapshotService
 from .diagnostics import _probe_loopback
@@ -30,6 +38,8 @@ from .episode_front_half_actions import EpisodeFrontHalfActionService
 from .jobs import JobService
 from .keyframe_references import approved_keyframes_for_shots
 from .production_spec_resolution import effective_video_profile
+from .queries.generation_preferences import resolve_generation_preference
+from .timeline import preflight_timeline_render
 
 STAGE_DEFINITIONS = (
     ("STORY_ANALYSIS", "故事解析", ("STORY_READY",)),
@@ -68,17 +78,45 @@ FRONT_HALF_ACTIONS = (
 )
 BACK_HALF_ACTIONS = ("VIDEO_GENERATION", "QC")
 FRONT_HALF_REPORT_BUDGET_BYTES = 8 * 1024 * 1024
+_START_LOCKS: dict[str, threading.Lock] = {}
+_START_LOCKS_GUARD = threading.Lock()
+
+
+def _start_lock(scope: str) -> threading.Lock:
+    with _START_LOCKS_GUARD:
+        return _START_LOCKS.setdefault(scope, threading.Lock())
 TERMINAL_JOB_STATES = {"SUCCEEDED", "FAILED", "CANCELLED"}
 PRODUCTION_MODE_POLICIES: dict[str, dict[str, Any]] = {
     "DRAFT": {"target_take_count": 1, "label": "草稿", "intent": "快速验证叙事与节奏", "auto_select_videos": True},
     "BALANCED": {"target_take_count": 2, "label": "平衡", "intent": "兼顾候选空间与本机耗时", "auto_select_videos": True},
     "QUALITY": {"target_take_count": 4, "label": "精品", "intent": "为正式选择保留更多候选", "auto_select_videos": False},
 }
+MAX_VIDEO_TAKES_PER_SHOT = 4
 CHECKPOINT_POLICIES = frozenset({"AUTO_CONTINUE", "AFTER_ASSETS", "AFTER_SHOT_PLAN", "BEFORE_VIDEO", "ON_EXCEPTION"})
 
 
 def _canonical(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _declared_model_refs(value: Any, *, parent_key: str = "") -> set[str]:
+    """Extract explicit model component references without fuzzy matching."""
+
+    component_keys = ("model", "artifact", "checkpoint", "unet", "vae", "lora", "encoder")
+    if isinstance(value, dict):
+        result: set[str] = set()
+        for key, item in value.items():
+            result.update(_declared_model_refs(item, parent_key=str(key)))
+        return result
+    if isinstance(value, (list, tuple)):
+        result = set()
+        for item in value:
+            result.update(_declared_model_refs(item, parent_key=parent_key))
+        return result
+    if isinstance(value, str) and any(token in parent_key.casefold() for token in component_keys):
+        ref = value.strip()
+        return {ref} if ref else set()
+    return set()
 
 
 def _now() -> str:
@@ -136,14 +174,37 @@ class EpisodeProductionRunService:
             # take-count override; only the take count itself is negotiable.
             policy = dict(PRODUCTION_MODE_POLICIES[mode])
             if mode == "DRAFT":
-                policy["target_take_count"] = max(1, round(base / 2))
+                requested = max(1, round(base / 2))
             elif mode == "BALANCED":
-                policy["target_take_count"] = base
+                requested = base
             else:
-                policy["target_take_count"] = min(16, max(base + 1, base * 2))
+                requested = min(16, max(base + 1, base * 2))
+            effective = min(requested, MAX_VIDEO_TAKES_PER_SHOT)
+            policy["requested_target_take_count"] = requested
+            policy["target_take_count"] = effective
+            policy["max_target_take_count"] = MAX_VIDEO_TAKES_PER_SHOT
+            policy["adjustment_reason"] = (
+                "PRODUCT_MAX_VIDEO_TAKES_PER_SHOT" if effective != requested else None
+            )
             policy["source"] = source
             policies[mode] = policy
         return policies
+
+    def available_mode_policies(self, episode_id: str) -> dict[str, dict[str, Any]]:
+        """Resolve creator-visible candidate counts without running production preflight."""
+
+        episode = self._episode(episode_id)
+        with self.database.connect() as connection:
+            resolved = effective_video_profile(connection, str(episode["project_id"]))
+            profiles: list[dict[str, Any]] = []
+            if resolved is not None:
+                row = connection.execute(
+                    "SELECT resource_policy_json FROM execution_profile_versions WHERE id=? AND status='PUBLISHED'",
+                    (str(resolved["id"]),),
+                ).fetchone()
+                if row is not None:
+                    profiles.append(dict(row))
+        return self._resolved_mode_policies(profiles)
 
     @staticmethod
     def _checkpoint_policy(checkpoint_policy: str) -> str:
@@ -178,6 +239,26 @@ class EpisodeProductionRunService:
                 WHERE s.episode_id=? AND s.archived_at IS NULL ORDER BY CAST(s.order_key AS REAL),s.code""",
                 (episode_id,),
             ).fetchall()
+            reusable_video_counts = {
+                str(row["shot_id"]): int(row["candidate_count"])
+                for row in connection.execute(
+                    """SELECT shot_id,COUNT(DISTINCT media_version_id) AS candidate_count FROM (
+                    SELECT gi.owner_id AS shot_id,mv.id AS media_version_id FROM generation_intents gi
+                    JOIN generation_variants gv ON gv.intent_id=gi.id
+                    JOIN media_assets ma ON ma.owner_type='GENERATION_VARIANT' AND ma.owner_id=gv.id
+                    JOIN media_versions mv ON mv.media_asset_id=ma.id
+                    WHERE gi.owner_type='SHOT' AND gv.is_stale=0 AND ma.media_kind='VIDEO'
+                      AND mv.integrity_status='VERIFIED'
+                    UNION
+                    SELECT ma.owner_id AS shot_id,mv.id AS media_version_id FROM media_assets ma
+                    JOIN media_versions mv ON mv.media_asset_id=ma.id
+                    WHERE ma.owner_type='SHOT' AND ma.media_kind='VIDEO'
+                      AND mv.integrity_status='VERIFIED') existing
+                    WHERE shot_id IN (SELECT id FROM shots WHERE episode_id=? AND archived_at IS NULL)
+                    GROUP BY shot_id""",
+                    (episode_id,),
+                ).fetchall()
+            }
             bindings = connection.execute(
                 """SELECT sab.shot_id,sa.id,sa.code,sa.kind,sa.canonical_media_version_id,sa.status,
                 COALESCE(sab.asset_state_id,easb.asset_state_id) AS effective_asset_state_id,
@@ -192,8 +273,14 @@ class EpisodeProductionRunService:
             references = connection.execute(
                 """SELECT r.story_asset_id,r.asset_state_id,r.media_version_id,r.reference_kind,r.is_locked,r.status,
                 mv.integrity_status FROM story_asset_references r
-                JOIN media_versions mv ON mv.id=r.media_version_id WHERE r.project_id=?""",
-                (project_id,),
+                JOIN media_versions mv ON mv.id=r.media_version_id
+                WHERE r.project_id=? AND EXISTS (
+                  SELECT 1 FROM shot_asset_bindings sab
+                  JOIN shots sh ON sh.id=sab.shot_id
+                  WHERE sh.episode_id=? AND sh.archived_at IS NULL
+                    AND sab.asset_id=r.story_asset_id
+                )""",
+                (project_id, episode_id),
             ).fetchall()
             recipe = connection.execute(
                 """SELECT drv.id,drv.recipe_hash,drv.recipe_json FROM project_director_recipe_bindings b
@@ -205,34 +292,157 @@ class EpisodeProductionRunService:
             # published profile without a project_profile_bindings row; the
             # old binding-only query incorrectly treated that valid setup as a
             # missing production capability.
-            resolved_profile = effective_video_profile(connection, project_id)
-            profiles: list[dict[str, Any]] = []
-            if resolved_profile is not None:
-                profile = dict(resolved_profile)
-                profile["binding_status"] = "EFFECTIVE"
-                # The shared resolver returns the canonical parsed profile. A
-                # preflight snapshot also needs the persisted resource/model
-                # policy fields used for capacity and mode calculations.
+            preference_repository = SqliteGenerationPreferenceRepository(connection)
+            shot_profile_resolutions: list[dict[str, Any]] = []
+            profiles_by_id: dict[str, dict[str, Any]] = {}
+            for shot in shots:
+                resolution = resolve_generation_preference(
+                    preference_repository,
+                    project_id=project_id,
+                    episode_id=episode_id,
+                    shot_id=str(shot["id"]),
+                    capability="VIDEO_I2V",
+                )
+                profile_version_id = resolution.get("profile_version_id")
+                snapshot = {
+                    "shot_id": str(shot["id"]),
+                    "shot_code": str(shot["code"]),
+                    "profile_version_id": str(profile_version_id) if profile_version_id else None,
+                    "source": str(resolution.get("source") or "AUTO"),
+                    "blocked_reason": resolution.get("blocked_reason"),
+                    "resolution_fingerprint": str(resolution.get("resolution_fingerprint") or ""),
+                }
+                shot_profile_resolutions.append(snapshot)
+                if not profile_version_id:
+                    continue
                 profile_row = connection.execute(
-                    """SELECT model_bundle_json,resource_policy_json
-                    FROM execution_profile_versions
+                    """SELECT * FROM execution_profile_versions
                     WHERE id=? AND status='PUBLISHED'""",
-                    (str(profile["id"]),),
+                    (str(profile_version_id),),
                 ).fetchone()
-                if profile_row is not None:
-                    profile.update(dict(profile_row))
-                profile.setdefault("model_bundle_json", _canonical(profile.get("model_bundle") or {}))
-                profile.setdefault("resource_policy_json", _canonical(profile.get("resources") or {}))
-                profiles.append(profile)
+                if profile_row is None:
+                    snapshot["blocked_reason"] = "PROFILE_UNAVAILABLE"
+                    continue
+                profile = dict(profile_row)
+                if str(profile.get("capability") or "").upper() not in VIDEO_GENERATION_CAPABILITIES:
+                    snapshot["blocked_reason"] = "CAPABILITY_MISMATCH"
+                    continue
+                profile["binding_status"] = "EFFECTIVE"
+                profiles_by_id[str(profile["id"])] = profile
+            if not shots:
+                # Keep the configuration projection useful before a shot plan
+                # exists. This does not stand in for per-shot resolution once
+                # production shots are present.
+                configured = effective_video_profile(connection, project_id)
+                if configured is not None:
+                    configured_row = connection.execute(
+                        """SELECT * FROM execution_profile_versions
+                        WHERE id=? AND status='PUBLISHED'""",
+                        (str(configured["id"]),),
+                    ).fetchone()
+                    if configured_row is not None:
+                        profile = dict(configured_row)
+                        profile["binding_status"] = "EFFECTIVE"
+                        profiles_by_id[str(profile["id"])] = profile
+            all_resolved_profiles = list(profiles_by_id.values())
+            fingerprint_shot_profile_resolutions = [
+                {
+                    "shot_id": item["shot_id"],
+                    "profile_version_id": item["profile_version_id"],
+                    "source": item["source"],
+                    "resolution_fingerprint": item["resolution_fingerprint"],
+                }
+                for item in shot_profile_resolutions
+            ]
+            fingerprint_profile_dependencies = []
+            for profile in all_resolved_profiles:
+                workflow_version_id = str(profile.get("workflow_version_id") or "").strip()
+                workflow_identity = connection.execute(
+                    "SELECT content_hash FROM workflow_versions WHERE id=?",
+                    (workflow_version_id,),
+                ).fetchone() if workflow_version_id else None
+                fingerprint_profile_dependencies.append(
+                    {
+                        "profile_version_id": str(profile["id"]),
+                        "workflow_version_id": workflow_version_id or None,
+                        "workflow_content_hash": (
+                            str(workflow_identity["content_hash"])
+                            if workflow_identity is not None
+                            else None
+                        ),
+                    }
+                )
+            resolved_policy = self._resolved_mode_policies(all_resolved_profiles)[production_mode]
+            required_candidate_count = int(resolved_policy["target_take_count"])
+            pending_video_shot_ids = {
+                str(shot["id"])
+                for shot in shots
+                if reusable_video_counts.get(str(shot["id"]), 0) < required_candidate_count
+            }
+            pending_video_shots = [
+                shot for shot in shots if str(shot["id"]) in pending_video_shot_ids
+            ]
+            shot_profile_resolutions = [
+                item for item in shot_profile_resolutions
+                if str(item["shot_id"]) in pending_video_shot_ids
+            ]
+            required_profile_ids = {
+                str(item["profile_version_id"])
+                for item in shot_profile_resolutions
+                if item.get("profile_version_id")
+            }
+            profiles = [
+                profile for profile in all_resolved_profiles
+                if not shots or str(profile["id"]) in required_profile_ids
+            ]
             runtimes = connection.execute("SELECT code,status,transport,base_url FROM local_runtimes ORDER BY code").fetchall()
-            models = connection.execute("SELECT code,machine_path_ref,status FROM model_artifacts ORDER BY code").fetchall()
-            dialogue_count = int(connection.execute("SELECT COUNT(*) FROM dialogue_lines WHERE episode_id=?", (episode_id,)).fetchone()[0])
-            voice_count = int(connection.execute(
-                """SELECT COUNT(*) FROM character_voice_bindings cvb
-                JOIN voice_profile_versions vpv ON vpv.id=cvb.voice_profile_version_id
-                WHERE cvb.project_id=? AND vpv.status IN ('ACTIVE','PUBLISHED')""",
-                (project_id,),
-            ).fetchone()[0])
+            models = connection.execute("SELECT id,code,machine_path_ref,status FROM model_artifacts ORDER BY code").fetchall()
+            profile_dependencies: list[dict[str, Any]] = []
+            for profile in profiles:
+                workflow_version_id = str(profile.get("workflow_version_id") or "").strip()
+                workflow = connection.execute(
+                    """SELECT id,status,content_hash,contract_json
+                    FROM workflow_versions WHERE id=?""",
+                    (workflow_version_id,),
+                ).fetchone() if workflow_version_id else None
+                attestation = None
+                if workflow is not None:
+                    attestation = connection.execute(
+                        """SELECT status,evidence_json,workflow_content_hash,created_at
+                        FROM workflow_validation_attestations
+                        WHERE workflow_version_id=? ORDER BY created_at DESC,id DESC LIMIT 1""",
+                        (workflow_version_id,),
+                    ).fetchone()
+                try:
+                    validation = json.loads(str(attestation["evidence_json"])) if attestation else {}
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    validation = {}
+                validation = validation if isinstance(validation, dict) else {}
+                workflow_ready = bool(
+                    workflow is not None
+                    and str(workflow["status"]) == "PUBLISHED"
+                    and attestation is not None
+                    and str(attestation["status"]) == "PASS"
+                    and str(attestation["workflow_content_hash"]) == str(workflow["content_hash"])
+                    and str(validation.get("status") or "") == "PASS"
+                    and not validation.get("missing_nodes")
+                    and not validation.get("schema_errors")
+                )
+                profile_dependencies.append(
+                    {
+                        "profile_version_id": str(profile["id"]),
+                        "workflow_version_id": workflow_version_id or None,
+                        "workflow_status": str(workflow["status"]) if workflow is not None else "MISSING",
+                        "workflow_content_hash": str(workflow["content_hash"]) if workflow is not None else None,
+                        "validation_status": str(attestation["status"]) if attestation is not None else "MISSING",
+                        "validation_created_at": str(attestation["created_at"]) if attestation is not None else None,
+                        "missing_nodes": list(validation.get("missing_nodes") or []),
+                        "schema_errors": list(validation.get("schema_errors") or []),
+                        "runtime_layout": validation.get("runtime_layout"),
+                        "ready": workflow_ready,
+                    }
+                )
+            tts_requirements = canonical_tts_requirements(connection, episode_id)
 
         incomplete_shots: list[dict[str, Any]] = []
         for row in shots:
@@ -274,6 +484,25 @@ class EpisodeProductionRunService:
             missing = sorted(set(required_character_refs) - available)
             if missing:
                 missing_required_references.append({"shot_id": str(binding["shot_id"]), "asset_id": str(binding["id"]), "asset_code": str(binding["code"]), "effective_asset_state_id": effective_state_id, "missing_reference_kinds": missing})
+        effective_states_by_asset: dict[str, set[str | None]] = {}
+        for binding in bindings:
+            effective_states_by_asset.setdefault(str(binding["id"]), set()).add(
+                str(binding["effective_asset_state_id"])
+                if binding["effective_asset_state_id"]
+                else None
+            )
+        consumed_references = [
+            reference
+            for reference in references
+            if str(reference["status"]) == "ACTIVE"
+            and str(reference["integrity_status"]) == "VERIFIED"
+            and str(reference["reference_kind"]).upper() in set(required_character_refs)
+            and (
+                reference["asset_state_id"] is None
+                or str(reference["asset_state_id"])
+                in effective_states_by_asset.get(str(reference["story_asset_id"]), set())
+            )
+        ]
         video_profiles = [
             row for row in profiles
             if str(row.get("capability") or "").upper() in VIDEO_GENERATION_CAPABILITIES
@@ -287,9 +516,36 @@ class EpisodeProductionRunService:
                 bundle = json.loads(str(profile["model_bundle_json"] or "{}"))
             except (TypeError, ValueError):
                 bundle = {}
-            values = bundle.values() if isinstance(bundle, dict) else bundle if isinstance(bundle, list) else []
-            declared_model_refs.update(str(value) for value in values if isinstance(value, (str, int)))
-        usable_models = [row for row in models if str(row["status"]) in {"ACTIVE", "READY", "AVAILABLE", "VERIFIED"} and Path(str(row["machine_path_ref"])).is_file()]
+            declared_model_refs.update(_declared_model_refs(bundle))
+        available_model_refs: set[str] = set()
+        usable_models: list[Any] = []
+        for row in models:
+            path = Path(str(row["machine_path_ref"]))
+            if str(row["status"]) not in {"ACTIVE", "READY", "AVAILABLE", "VERIFIED"} or not path.is_file():
+                continue
+            usable_models.append(row)
+            available_model_refs.update(
+                {str(row["id"]), str(row["code"]), str(row["machine_path_ref"]), path.name}
+            )
+        attested_component_names = {
+            Path(str(component)).name
+            for dependency in profile_dependencies
+            for component in (
+                (dependency.get("runtime_layout") or {}).get("resolved_components", {}).values()
+                if isinstance(dependency.get("runtime_layout"), dict)
+                else []
+            )
+        }
+        missing_declared_model_refs = sorted(
+            ref
+            for ref in declared_model_refs
+            if ref not in available_model_refs and Path(ref).name not in attested_component_names
+        )
+        unresolved_shot_profiles = [
+            item for item in shot_profile_resolutions
+            if not item.get("profile_version_id") or item.get("blocked_reason")
+        ]
+        invalid_profile_dependencies = [item for item in profile_dependencies if not item["ready"]]
 
         adapter = AdapterContractRegistry(self.settings).inspect()
         comfy_contract = next((item for item in adapter["contracts"] if item["kind"] == "COMFY"), None)
@@ -315,6 +571,11 @@ class EpisodeProductionRunService:
             comfy_message = f"Comfy 本地 loopback 实时探测为 {comfy_probe_status}（{reason}）"
         else:
             comfy_message = f"Comfy adapter 已声明，loopback 实时探测可用（登记状态 {comfy_runtime_status}）"
+        probe_skipped_reasons = {"access_disabled", "base_url_missing", "runtime_endpoint_rejected"}
+        comfy_probe_contacted = bool(
+            comfy_base_url
+            and str(comfy_probe_evidence.get("reason") or "") not in probe_skipped_reasons
+        )
         capacity = CapacitySnapshotService(self.database, self.settings).inspect(project_id)
         gpu_ok = capacity["gpu"].get("source") != "UNAVAILABLE" and bool(capacity["gpu"].get("name") or capacity["gpu"].get("total_bytes"))
         project_root = self.settings.resolve_project_root(str(episode["root_rel"]))
@@ -350,23 +611,58 @@ class EpisodeProductionRunService:
             self._check(
                 "PROFILE_CAPABILITY_MISSING",
                 "生成 Profile 能力",
-                bool(valid_profiles),
-                "已解析项目生效的已发布视频生成 Profile" if valid_profiles else "项目没有可用的已发布视频生成 Profile",
+                not unresolved_shot_profiles and (bool(valid_profiles) or not pending_video_shots),
+                "每个待生产镜头均解析到精确的已发布视频 Profile" if not unresolved_shot_profiles and (valid_profiles or not pending_video_shots) else "部分待生产镜头没有可执行的视频 Profile",
                 {
                     "profile_version_ids": [str(row["id"]) for row in valid_profiles],
                     "effective_profile_version_id": str(valid_profiles[0]["id"]) if valid_profiles else None,
                     "effective_profile_capability": str(valid_profiles[0]["capability"]) if valid_profiles else None,
                     "resolution_source": "EFFECTIVE_VIDEO_PROFILE",
+                    "resolution_strategy": "SHOT_EPISODE_PROJECT_PREFERENCE",
+                    "shot_resolutions": shot_profile_resolutions,
+                    "unresolved_shots": unresolved_shot_profiles,
                 },
             ),
-            self._check("LOCAL_MODEL_FILES_MISSING", "本地模型文件", bool(usable_models), "已发现可用的本地模型文件" if usable_models else "未发现状态有效且文件存在的本地模型", {"declared_model_refs": sorted(declared_model_refs), "usable_model_codes": [str(row["code"]) for row in usable_models]}),
+            self._check(
+                "PROFILE_WORKFLOW_DEPENDENCIES_MISSING",
+                "当前 Profile / Workflow 依赖",
+                not invalid_profile_dependencies and (bool(profile_dependencies) or not pending_video_shots),
+                "当前逐镜 Profile 的已发布 Workflow 均有匹配的通过验证证据" if not invalid_profile_dependencies and (profile_dependencies or not pending_video_shots) else "当前逐镜 Profile 缺少已发布 Workflow、节点/输入验证或匹配的验证证据",
+                {
+                    "pending_shot_ids": [str(row["id"]) for row in pending_video_shots],
+                    "reusable_video_candidate_counts": reusable_video_counts,
+                    "required_candidate_count": required_candidate_count,
+                    "profiles": profile_dependencies,
+                    "invalid": invalid_profile_dependencies,
+                },
+            ),
+            self._check(
+                "LOCAL_MODEL_FILES_MISSING",
+                "当前 Profile 所需本地模型文件",
+                not missing_declared_model_refs,
+                "当前逐镜 Profile 声明的模型组件均可精确解析" if not missing_declared_model_refs else "当前逐镜 Profile 声明的模型组件存在精确缺项",
+                {
+                    "declared_model_refs": sorted(declared_model_refs),
+                    "missing_declared_model_refs": missing_declared_model_refs,
+                    "usable_model_codes": [str(row["code"]) for row in usable_models],
+                    "matching_policy": "EXACT_ID_CODE_PATH_OR_BASENAME",
+                },
+            ),
             self._check("COMFY_ADAPTER_UNAVAILABLE", "Comfy/Adapter", comfy_ok, comfy_message, {"contract_status": comfy_contract_status, "registered_runtime_status": comfy_runtime_status, "probe_status": comfy_probe_status, "probe": comfy_probe_evidence}),
             self._check("GPU_CAPACITY_UNAVAILABLE", "GPU/容量", gpu_ok, "本机 GPU 容量信息可用" if gpu_ok else "本地 manifest 未提供 GPU 容量", {"gpu": capacity["gpu"], "gpu_active_count": capacity["gpu_active_count"], "gpu_concurrency_limit": capacity["gpu_concurrency_limit"]}),
             self._check("DISK_SPACE_LOW", "磁盘", isinstance(free_bytes, int) and free_bytes >= required_free_bytes, "可用磁盘空间满足冻结输出估算与运行阈值" if isinstance(free_bytes, int) and free_bytes >= required_free_bytes else "可用磁盘空间低于冻结输出估算/阈值或无法读取", {"free_bytes": free_bytes, "required_free_bytes": required_free_bytes, "operator_min_free_bytes": min_free_disk_bytes, "estimated_output_bytes": estimated_output_bytes, "disk_bytes_per_take": disk_per_take, "take_count": len(shots) * int(mode_policy["target_take_count"]), "estimate_source": "FROZEN_PROFILE_RESOURCE_POLICY" if disk_per_take is not None else "UNKNOWN"}),
             self._check("FFMPEG_UNAVAILABLE", "FFmpeg", bool(ffmpeg_ref and Path(ffmpeg_ref).is_file()), "FFmpeg 可执行文件存在" if ffmpeg_ref else "未配置 FFmpeg", {"executable_ref": str(ffmpeg_ref) if ffmpeg_ref else None}),
         ]
         if tts_enabled:
-            checks.append(self._check("TTS_CONFIGURATION_MISSING", "TTS", dialogue_count == 0 or voice_count > 0, "TTS 未发现阻塞项" if dialogue_count == 0 or voice_count > 0 else "存在对白但未绑定有效角色音色", {"dialogue_count": dialogue_count, "voice_binding_count": voice_count}))
+            checks.append(
+                self._check(
+                    "TTS_CONFIGURATION_MISSING",
+                    "当前对白 TTS",
+                    not tts_requirements["blockers"],
+                    "现有有效配音可复用，且待生成对白均有精确可执行音色" if not tts_requirements["blockers"] else "部分确需生成的对白或旁白缺少精确可执行音色",
+                    tts_requirements,
+                )
+            )
         front_half_snapshot: dict[str, Any] | None = None
         if include_front_half:
             # A normal Episode Production Run executes ASSET_COMPLETION before
@@ -400,13 +696,28 @@ class EpisodeProductionRunService:
         # gates, not creative inputs.  A retry with the same idempotency key
         # must resolve to the same immutable workflow snapshot even if disk
         # usage changes by a few bytes between requests.
-        fingerprint_source = {
+        tts_identity = {
+            "items": [
+                {
+                    "line_id": item["line_id"],
+                    "shot_id": item["shot_id"],
+                    "text_revision_id": item["text_revision_id"],
+                    "reusable_media_version_id": item["reusable_media_version_id"],
+                    "generation_required": item["generation_required"],
+                    "character_asset_id": item["character_asset_id"],
+                    "voice_profile_version_id": item["voice_profile_version_id"],
+                    "provider_profile_version_id": item["provider_profile_version_id"],
+                }
+                for item in tts_requirements["items"]
+            ],
+            "resolution_policy": tts_requirements["resolution_policy"],
+        } if tts_enabled else None
+        generation_fingerprint_source = {
+            "dependency_schema": "episode-generation-inputs.v2",
             "episode_id": episode_id,
-            "tts_enabled": tts_enabled,
             "production_mode": production_mode,
             "mode_policy": mode_policy,
-            "available_mode_policies": available_mode_policies,
-            "shots": [{"id": str(row["id"]), "revision_id": row["current_revision_id"], "status": str(row["status"])} for row in shots],
+            "shots": [{"id": str(row["id"]), "revision_id": row["current_revision_id"]} for row in shots],
             "assets": [{"shot_id": str(row["shot_id"]), "id": str(row["id"]), "canonical_media_version_id": row["canonical_media_version_id"], "status": str(row["status"])} for row in bindings],
             "asset_states": [{"shot_id": str(row["shot_id"]), "asset_id": str(row["id"]), "state_id": row["effective_asset_state_id"], "state_status": row["effective_state_status"]} for row in bindings],
             "asset_references": [
@@ -420,7 +731,7 @@ class EpisodeProductionRunService:
                     "integrity_status": str(row["integrity_status"]),
                 }
                 for row in sorted(
-                    references,
+                    consumed_references,
                     key=lambda item: (
                         str(item["story_asset_id"]),
                         str(item["asset_state_id"] or ""),
@@ -430,26 +741,46 @@ class EpisodeProductionRunService:
                 )
             ],
             "asset_reference_requirements": {"required": required_character_refs, "missing": missing_required_references, "recipe_hash": str(recipe["recipe_hash"]) if recipe else None},
-            "profiles": [{"id": str(row["id"]), "capability": str(row["capability"]), "status": str(row["status"]), "binding_status": str(row["binding_status"])} for row in profiles],
-            "effective_video_profile": {
-                "id": str(valid_profiles[0]["id"]) if valid_profiles else None,
-                "capability": str(valid_profiles[0]["capability"]) if valid_profiles else None,
-                "status": str(valid_profiles[0]["status"]) if valid_profiles else None,
-                "workflow_version_id": str(valid_profiles[0].get("workflow_version_id")) if valid_profiles and valid_profiles[0].get("workflow_version_id") else None,
-            },
-            "models": [{"code": str(row["code"]), "path": str(row["machine_path_ref"]), "status": str(row["status"])} for row in models],
+            "profiles": [
+                {"id": str(row["id"]), "capability": str(row["capability"])}
+                for row in all_resolved_profiles
+            ],
+            "shot_profile_resolutions": fingerprint_shot_profile_resolutions,
+            "profile_dependencies": fingerprint_profile_dependencies,
         }
         if _include_checkpoint_in_fingerprint:
-            fingerprint_source["checkpoint_policy"] = checkpoint_policy
+            generation_fingerprint_source["checkpoint_policy"] = checkpoint_policy
         if include_front_half:
-            fingerprint_source["front_half"] = front_half_snapshot
-        fingerprint = hashlib.sha256(_canonical(fingerprint_source).encode("utf-8")).hexdigest()
+            generation_fingerprint_source["front_half"] = front_half_snapshot
+        generation_fingerprint = hashlib.sha256(
+            _canonical(generation_fingerprint_source).encode("utf-8")
+        ).hexdigest()
+        compose_fingerprint = hashlib.sha256(
+            _canonical(
+                {
+                    "dependency_schema": "episode-compose-prerequisites.v1",
+                    "episode_id": episode_id,
+                    "tts_enabled": tts_enabled,
+                    "tts": tts_identity,
+                }
+            ).encode("utf-8")
+        ).hexdigest()
+        fingerprint = hashlib.sha256(
+            _canonical(
+                {
+                    "generation_input_fingerprint": generation_fingerprint,
+                    "compose_input_fingerprint": compose_fingerprint,
+                }
+            ).encode("utf-8")
+        ).hexdigest()
         return {
             "episode": episode,
             "status": "PASS" if not blockers else "BLOCKED",
             "checks": checks,
             "blockers": blockers,
             "input_fingerprint": fingerprint,
+            "generation_input_fingerprint": generation_fingerprint,
+            "compose_input_fingerprint": compose_fingerprint,
             "tts_enabled": tts_enabled,
             "production_mode": production_mode,
             "mode_policy": mode_policy,
@@ -459,9 +790,12 @@ class EpisodeProductionRunService:
             "front_half_snapshot": front_half_snapshot,
             "front_half_only": False,
             "would_create_jobs": False,
-            "runtime_contacted": False,
-            "network_contacted": False,
+            "runtime_contacted": comfy_probe_contacted,
+            "network_contacted": comfy_probe_contacted,
             "mutated": False,
+            "shot_profile_resolutions": shot_profile_resolutions,
+            "profile_dependencies": profile_dependencies,
+            "tts_requirements": tts_requirements if tts_enabled else None,
         }
 
     def front_half_preflight(
@@ -551,21 +885,30 @@ class EpisodeProductionRunService:
         production_mode = str(preflight.get("production_mode") or "BALANCED")
         mode_policy = dict(preflight.get("mode_policy") or PRODUCTION_MODE_POLICIES[production_mode])
         checkpoint_policy = self._checkpoint_policy(str(preflight.get("checkpoint_policy") or "ON_EXCEPTION"))
-        items = [
-            {
-                "key": f"{episode['code']}:{action}",
-                "payload": {
-                    "action": action,
-                    "episode_id": episode_id,
-                    "input_fingerprint": preflight["input_fingerprint"],
-                    "production_mode": production_mode,
-                    "mode_policy": mode_policy,
-                    "checkpoint_policy": checkpoint_policy,
-                    "front_half_managed": include_front_half,
-                },
+        items = []
+        frozen_video_profiles = {
+            str(item["shot_id"]): str(item["profile_version_id"])
+            for item in preflight.get("shot_profile_resolutions", [])
+            if item.get("shot_id") and item.get("profile_version_id")
+        }
+        for action in actions:
+            audio_strategy = "EXTERNAL_TTS" if preflight.get("tts_enabled", True) else "SILENT"
+            payload: dict[str, Any] = {
+                "action": action,
+                "episode_id": episode_id,
+                "input_fingerprint": preflight["input_fingerprint"],
+                "production_mode": production_mode,
+                "mode_policy": mode_policy,
+                "checkpoint_policy": checkpoint_policy,
+                "front_half_managed": include_front_half,
+                "audio_strategy": audio_strategy,
             }
-            for action in actions
-        ]
+            if action == "VIDEO_GENERATION":
+                payload["expected_profile_version_ids"] = frozen_video_profiles
+            items.append({
+                "key": f"{episode['code']}:{action}",
+                "payload": payload,
+            })
         task_cap = len(items) + 1
         disk_check = next((item for item in preflight["checks"] if item.get("code") == "DISK_SPACE_LOW"), None)
         if disk_check is None:
@@ -575,7 +918,7 @@ class EpisodeProductionRunService:
             required_free_bytes = max(required_free_bytes, FRONT_HALF_REPORT_BUDGET_BYTES)
         return self.automation.create_workflow(
             str(episode["project_id"]), code=code, title=f"{episode['code']} 整集生产",
-            mode="BATCH_AUTOMATED", nodes=[{"id": "episode-production", "type": "EPISODE_PRODUCTION_TASK", "metadata": {"episode_id": episode_id, "input_fingerprint": preflight["input_fingerprint"], "production_mode": production_mode, "mode_policy": mode_policy, "checkpoint_policy": checkpoint_policy, "include_front_half": include_front_half, "front_half_only": front_half_only}}],
+            mode="BATCH_AUTOMATED", nodes=[{"id": "episode-production", "type": "EPISODE_PRODUCTION_TASK", "metadata": {"episode_id": episode_id, "input_fingerprint": preflight["input_fingerprint"], "production_mode": production_mode, "mode_policy": mode_policy, "checkpoint_policy": checkpoint_policy, "include_front_half": include_front_half, "front_half_only": front_half_only, "audio_strategy": "EXTERNAL_TTS" if preflight.get("tts_enabled", True) else "SILENT"}}],
             batch_items=items,
             conditions=[{"field": "machine_check.status", "operator": "IN", "value": ["FAIL", "FAILED", "BLOCKED", "NEEDS_HITL"], "action": "PAUSE_HITL"}],
             max_iterations=task_cap, max_tasks=task_cap, max_disk_bytes=max(1, required_free_bytes),
@@ -583,6 +926,64 @@ class EpisodeProductionRunService:
         )
 
     def start(
+        self,
+        episode_id: str,
+        *,
+        idempotency_key: str,
+        tts_enabled: bool = True,
+        production_mode: str = "BALANCED",
+        checkpoint_policy: str = "ON_EXCEPTION",
+        min_free_disk_bytes: int = 5 * 1024 * 1024 * 1024,
+        front_half_only: bool = False,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        key = idempotency_key.strip()
+        if not key or len(key) > 200:
+            raise DomainRuleError("IDEMPOTENCY_KEY_REQUIRED", "整集启动必须提供有效 Idempotency-Key")
+        scope = f"episode-production-start:{episode_id}"
+        payload_hash = hashlib.sha256(_canonical({
+            "episode_id": episode_id,
+            "tts_enabled": tts_enabled,
+            "production_mode": production_mode,
+            "checkpoint_policy": checkpoint_policy,
+            "min_free_disk_bytes": min_free_disk_bytes,
+            "front_half_only": front_half_only,
+        }).encode("utf-8")).hexdigest()
+        with _start_lock(scope):
+            with self.database.connect() as connection:
+                prior = connection.execute(
+                    "SELECT payload_hash,response_json FROM command_idempotencies WHERE scope=? AND idempotency_key=?",
+                    (scope, key),
+                ).fetchone()
+            if prior is not None:
+                if str(prior["payload_hash"]) != payload_hash:
+                    raise DomainRuleError(
+                        "IDEMPOTENCY_PAYLOAD_MISMATCH",
+                        "相同 Idempotency-Key 不能启动不同的整集生产请求",
+                    )
+                stored = json.loads(str(prior["response_json"]))
+                replay = self._view(self.automation.get_run(str(stored["run_id"])), include_jobs=True)
+                replay["idempotent_replay"] = True
+                return replay
+            result = self._start_once(
+                episode_id,
+                idempotency_key=key,
+                tts_enabled=tts_enabled,
+                production_mode=production_mode,
+                checkpoint_policy=checkpoint_policy,
+                min_free_disk_bytes=min_free_disk_bytes,
+                front_half_only=front_half_only,
+                actor=actor,
+            )
+            with self.database.transaction() as connection:
+                connection.execute(
+                    "INSERT INTO command_idempotencies (scope,idempotency_key,payload_hash,response_json) VALUES (?,?,?,?)",
+                    (scope, key, payload_hash, json.dumps({"run_id": result["id"]}, separators=(",", ":"))),
+                )
+            result["idempotent_replay"] = False
+            return result
+
+    def _start_once(
         self,
         episode_id: str,
         *,
@@ -664,33 +1065,43 @@ class EpisodeProductionRunService:
                 (str(row["id"]) for row in keyframe_shots),
                 project_id=str(run["project_id"]),
             ))
-            videos = int(connection.execute(
-                """SELECT COUNT(DISTINCT shot_id) FROM (
-                SELECT ma.owner_id AS shot_id FROM media_assets ma JOIN media_versions mv ON mv.media_asset_id=ma.id
-                JOIN shots s ON s.id=ma.owner_id WHERE s.episode_id=? AND s.archived_at IS NULL AND ma.owner_type='SHOT'
-                AND ma.media_kind='VIDEO' AND mv.integrity_status='VERIFIED'
-                UNION SELECT gi.owner_id FROM generation_intents gi JOIN generation_variants gv ON gv.intent_id=gi.id
-                JOIN media_assets ma ON ma.owner_type='GENERATION_VARIANT' AND ma.owner_id=gv.id
-                JOIN media_versions mv ON mv.media_asset_id=ma.id JOIN shots s ON s.id=gi.owner_id
-                WHERE s.episode_id=? AND s.archived_at IS NULL AND gi.owner_type='SHOT' AND ma.media_kind='VIDEO' AND mv.integrity_status='VERIFIED')""",
-                (episode_id, episode_id),
-            ).fetchone()[0])
-            qc_passed = int(connection.execute(
-                """SELECT COUNT(DISTINCT shot_id) FROM (
-                SELECT ma.owner_id AS shot_id,mcr.status FROM machine_check_runs mcr
-                JOIN media_versions mv ON mv.id=mcr.subject_id JOIN media_assets ma ON ma.id=mv.media_asset_id
-                JOIN shots s ON s.id=ma.owner_id WHERE mcr.subject_type='MEDIA_VERSION' AND ma.owner_type='SHOT'
-                AND s.episode_id=? AND s.archived_at IS NULL AND mcr.status='PASS'
-                UNION SELECT gi.owner_id,mcr.status FROM machine_check_runs mcr
-                JOIN media_versions mv ON mv.id=mcr.subject_id JOIN media_assets ma ON ma.id=mv.media_asset_id
-                JOIN generation_variants gv ON ma.owner_type='GENERATION_VARIANT' AND gv.id=ma.owner_id
-                JOIN generation_intents gi ON gi.id=gv.intent_id JOIN shots s ON s.id=gi.owner_id
-                WHERE mcr.subject_type='MEDIA_VERSION' AND gi.owner_type='SHOT' AND s.episode_id=? AND s.archived_at IS NULL AND mcr.status='PASS')""",
-                (episode_id, episode_id),
-            ).fetchone()[0])
             audio_total = int(connection.execute("SELECT COUNT(*) FROM dialogue_lines WHERE episode_id=?", (episode_id,)).fetchone()[0])
             audio_done = int(connection.execute("SELECT COUNT(DISTINCT dl.id) FROM dialogue_lines dl JOIN dialogue_candidate_selections dcs ON dcs.dialogue_line_id=dl.id WHERE dl.episode_id=?", (episode_id,)).fetchone()[0])
-            compose_done = int(connection.execute("SELECT COUNT(*) FROM episode_render_versions WHERE episode_id=?", (episode_id,)).fetchone()[0])
+            current_timeline = connection.execute(
+                "SELECT id FROM timeline_revisions WHERE episode_id=? ORDER BY revision_no DESC LIMIT 1",
+                (episode_id,),
+            ).fetchone()
+
+        compose_done = 0
+        if current_timeline is not None:
+            try:
+                compose_done = int(
+                    preflight_timeline_render(
+                        self.database, self.settings, str(current_timeline["id"])
+                    )["existing_render"]
+                    is not None
+                )
+            except DomainRuleError:
+                # An incomplete/stale current timeline is not a completed
+                # render. Historical render rows remain auditable.
+                compose_done = 0
+
+        production_items = SqliteEpisodeProductionReadRepository(self.database).shot_facts(
+            episode_id,
+            cursor=0,
+            limit=max(shot_count, 1),
+            states=set(),
+        )["items"]
+        videos = sum(
+            1 for item in production_items
+            if next(stage for stage in item["stages"] if stage["stage_code"] == "VIDEO")["state"] == "READY"
+        )
+        qc_passed = sum(
+            1 for item in production_items
+            if next(
+                slot for slot in item["material_slots"] if slot["kind"] == "VIDEO"
+            )["machine_qc_state"] == "PASS"
+        )
 
         tasks_by_stage: dict[str, list[dict[str, Any]]] = {code: [] for code, _, _ in STAGE_DEFINITIONS}
         for task in run["tasks"]:

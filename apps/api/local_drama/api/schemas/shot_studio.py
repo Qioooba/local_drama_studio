@@ -370,6 +370,7 @@ class ShotGenerationPreflightFact(StrictModel):
     # production-spec read model returned by GenerationService.
     production_spec: JsonObject | None = None
     prompt_bundle: JsonObject | None = None
+    actual_execution_inputs: JsonObject
     would_persist_variant: Literal[False]
     would_create_job: Literal[False]
     reproducibility: JsonObject

@@ -13,7 +13,10 @@ import json
 import sqlite3
 from typing import Any
 
+from local_drama.domain.errors import DomainRuleError
+
 _AUDIO_TRACKS = ("DIALOGUE", "BGM", "SFX")
+_NARRATOR_SPEAKERS = frozenset({"旁白", "画外音", "NARRATOR"})
 
 
 def _table_exists(connection: sqlite3.Connection, table: str) -> bool:
@@ -37,9 +40,7 @@ def _has_value(value: Any) -> bool:
     if isinstance(value, str):
         return bool(value.strip())
     if isinstance(value, (list, tuple, set, dict)):
-        return any(_has_value(item) for item in value) if not isinstance(value, dict) else any(
-            _has_value(item) for item in value.values()
-        )
+        return any(_has_value(item) for item in value) if not isinstance(value, dict) else any(_has_value(item) for item in value.values())
     return True
 
 
@@ -54,10 +55,11 @@ def _field_cue_counts(connection: sqlite3.Connection, episode_id: str) -> dict[s
 
     counts = {"caption_cues": 0, "music_cues": 0, "sfx_cues": 0}
     rows = connection.execute(
-        """SELECT sr.fields_json
-           FROM shot_revisions sr
-           JOIN shots sh ON sh.id=sr.shot_id
-          WHERE sh.episode_id=?""",
+        """SELECT sh.id AS shot_id,sh.current_revision_id,sr.id AS revision_id,sr.fields_json
+           FROM shots sh
+           LEFT JOIN shot_revisions sr
+             ON sr.id=sh.current_revision_id AND sr.shot_id=sh.id
+          WHERE sh.episode_id=? AND sh.archived_at IS NULL""",
         (episode_id,),
     ).fetchall()
     keys = {
@@ -66,6 +68,16 @@ def _field_cue_counts(connection: sqlite3.Connection, episode_id: str) -> dict[s
         "sfx_cues": ("sfx_cue", "sfx_cues"),
     }
     for row in rows:
+        if row["current_revision_id"] is None or row["revision_id"] is None:
+            raise DomainRuleError(
+                "SHOT_CURRENT_REVISION_MISSING",
+                "当前有效镜头缺少可读取的 current revision，无法判定音轨需求",
+                {
+                    "episode_id": episode_id,
+                    "shot_id": str(row["shot_id"]),
+                    "current_revision_id": row["current_revision_id"],
+                },
+            )
         try:
             fields = json.loads(str(row["fields_json"] or "{}"))
         except (TypeError, ValueError, json.JSONDecodeError):
@@ -96,6 +108,143 @@ def _table_cue_count(connection: sqlite3.Connection, table: str, episode_id: str
         return 0
     row = connection.execute(f"SELECT COUNT(*) FROM {table} WHERE episode_id=?", (episode_id,)).fetchone()
     return int(row[0] or 0) if row is not None else 0
+
+
+def canonical_tts_requirements(connection: sqlite3.Connection, episode_id: str) -> dict[str, Any]:
+    """Resolve only current dialogue lines that still need generated audio.
+
+    This projection intentionally mirrors the execution contract: a unique
+    character bound to the shot wins, otherwise an exact normalized speaker
+    code/name match is used. Existing current, verified AUDIO selections are
+    reusable and therefore need neither a voice nor an external TTS check.
+    """
+
+    episode = connection.execute(
+        """SELECT se.project_id FROM episodes e JOIN seasons se ON se.id=e.season_id
+        WHERE e.id=?""",
+        (episode_id,),
+    ).fetchone()
+    if episode is None:
+        raise DomainRuleError("EPISODE_NOT_FOUND", "集不存在", {"episode_id": episode_id})
+    project_id = str(episode["project_id"])
+    rows = connection.execute(
+        """SELECT dl.id,dl.code,dl.shot_id,dl.speaker,
+        (SELECT dtr.id FROM dialogue_text_revisions dtr WHERE dtr.dialogue_line_id=dl.id
+         ORDER BY dtr.revision_no DESC,dtr.id DESC LIMIT 1) AS text_revision_id,
+        (SELECT dtr.text FROM dialogue_text_revisions dtr WHERE dtr.dialogue_line_id=dl.id
+         ORDER BY dtr.revision_no DESC,dtr.id DESC LIMIT 1) AS text,
+        dcs.source_text_revision_id,tc.status AS candidate_status,tc.media_version_id,
+        ma.media_kind,mv.integrity_status
+        FROM dialogue_lines dl
+        LEFT JOIN dialogue_candidate_selections dcs ON dcs.id=(
+          SELECT latest.id FROM dialogue_candidate_selections latest
+          WHERE latest.dialogue_line_id=dl.id ORDER BY latest.created_at DESC,latest.id DESC LIMIT 1)
+        LEFT JOIN tts_candidates tc ON tc.id=dcs.tts_candidate_id
+        LEFT JOIN media_versions mv ON mv.id=tc.media_version_id
+        LEFT JOIN media_assets ma ON ma.id=mv.media_asset_id
+        WHERE dl.episode_id=? ORDER BY dl.code,dl.id""",
+        (episode_id,),
+    ).fetchall()
+    characters = connection.execute(
+        """SELECT id,code,name FROM story_assets
+        WHERE project_id=? AND kind='CHARACTER' AND status='ACTIVE' ORDER BY code,id""",
+        (project_id,),
+    ).fetchall()
+    bindings = connection.execute(
+        """SELECT cvb.character_asset_id,cvb.voice_profile_version_id,
+        vpv.voice_ref,vpv.status,epv.id AS provider_profile_version_id,
+        epv.status AS provider_status,epv.capability AS provider_capability
+        FROM character_voice_bindings cvb
+        JOIN voice_profile_versions vpv ON vpv.id=cvb.voice_profile_version_id
+        LEFT JOIN execution_profile_versions epv ON epv.id=vpv.provider_profile_version_id
+        WHERE cvb.project_id=?""",
+        (project_id,),
+    ).fetchall()
+    shot_ids = sorted({str(row["shot_id"]) for row in rows if row["shot_id"]})
+    shot_characters: dict[str, list[str]] = {}
+    if shot_ids:
+        marks = ",".join("?" for _ in shot_ids)
+        for row in connection.execute(
+            f"""SELECT sab.shot_id,sa.id AS asset_id FROM shot_asset_bindings sab
+            JOIN story_assets sa ON sa.id=sab.asset_id
+            WHERE sab.shot_id IN ({marks}) AND sa.kind='CHARACTER' AND sa.status='ACTIVE'
+            ORDER BY sab.shot_id,sa.id""",
+            shot_ids,
+        ).fetchall():
+            shot_characters.setdefault(str(row["shot_id"]), []).append(str(row["asset_id"]))
+
+    def normalize(value: object) -> str:
+        return str(value or "").strip().replace("\u3000", "").replace(" ", "")
+
+    characters_by_name: dict[str, str] = {}
+    for character in characters:
+        for value in (character["name"], character["code"]):
+            key = normalize(value)
+            if key:
+                characters_by_name[key] = str(character["id"])
+    voice_by_character = {str(row["character_asset_id"]): row for row in bindings}
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        text_revision_id = str(row["text_revision_id"] or "")
+        if not text_revision_id or not str(row["text"] or "").strip():
+            continue
+        reusable = bool(
+            str(row["source_text_revision_id"] or "") == text_revision_id
+            and str(row["candidate_status"] or "") == "READY"
+            and str(row["media_kind"] or "") == "AUDIO"
+            and str(row["integrity_status"] or "") == "VERIFIED"
+        )
+        speaker = str(row["speaker"] or "").strip()
+        narrator = speaker.upper() in _NARRATOR_SPEAKERS
+        character_asset_id = None
+        candidates = shot_characters.get(str(row["shot_id"] or ""), [])
+        if not narrator and len(candidates) == 1:
+            character_asset_id = candidates[0]
+        if character_asset_id is None and not narrator:
+            character_asset_id = characters_by_name.get(normalize(speaker))
+        voice = voice_by_character.get(str(character_asset_id)) if character_asset_id else None
+        eligible = bool(
+            voice is not None
+            and str(voice["status"]) == "ACTIVE"
+            and str(voice["provider_status"] or "") == "PUBLISHED"
+            and "TTS" in str(voice["provider_capability"] or "").upper()
+            and str(voice["voice_ref"] or "").startswith("sapi:")
+        )
+        reason = None
+        if not reusable and not eligible:
+            reason = (
+                "NARRATOR_VOICE_REQUIRED"
+                if narrator
+                else "VOICE_UNRESOLVED" if character_asset_id is None or voice is None
+                else "VOICE_NOT_JOB_ELIGIBLE"
+            )
+        items.append(
+            {
+                "line_id": str(row["id"]),
+                "code": str(row["code"]),
+                "shot_id": str(row["shot_id"]) if row["shot_id"] else None,
+                "speaker": speaker,
+                "text_revision_id": text_revision_id,
+                "reusable_media_version_id": str(row["media_version_id"]) if reusable else None,
+                "generation_required": not reusable,
+                "character_asset_id": character_asset_id,
+                "voice_profile_version_id": str(voice["voice_profile_version_id"]) if voice is not None else None,
+                "provider_profile_version_id": str(voice["provider_profile_version_id"]) if voice is not None and voice["provider_profile_version_id"] else None,
+                "eligible": reusable or eligible,
+                "blocked_reason": reason,
+            }
+        )
+    pending = [item for item in items if item["generation_required"]]
+    blockers = [item for item in pending if not item["eligible"]]
+    return {
+        "items": items,
+        "pending": pending,
+        "blockers": blockers,
+        "generation_required_count": len(pending),
+        "reusable_count": len(items) - len(pending),
+        "status": "PASS" if not blockers else "BLOCKED",
+        "resolution_policy": "UNIQUE_SHOT_CHARACTER_THEN_EXACT_SPEAKER",
+    }
 
 
 def canonical_audio_requirements(connection: sqlite3.Connection, episode_id: str) -> dict[str, Any]:
@@ -138,4 +287,3 @@ def canonical_audio_requirements(connection: sqlite3.Connection, episode_id: str
         "counts": counts,
         "source": "CANONICAL_DIALOGUE_AND_CUE_FACTS",
     }
-

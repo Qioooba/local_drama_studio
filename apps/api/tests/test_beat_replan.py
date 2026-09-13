@@ -28,10 +28,10 @@ def _context(workspace, database):
     imported = DocumentImportService(database, workspace).import_document(str(project["id"]), source)
     draft_id, now = str(uuid.uuid4()), datetime.now(UTC).isoformat()
     draft = {"scenes": [{"scene_no": 1, "summary": "重排场景", "shots": [
-        {"shot_no": 1, "visual": "固定开场", "action": "", "dialogue": "", "duration_seconds": 3},
-        {"shot_no": 2, "visual": "冲进门", "action": "快速推进", "dialogue": "", "duration_seconds": 2},
-        {"shot_no": 3, "visual": "AI 想覆盖冻结镜头", "action": "", "dialogue": "", "duration_seconds": 2},
-        {"shot_no": 4, "visual": "新增反应", "action": "回头", "dialogue": "", "duration_seconds": 2},
+        {"shot_no": 1, "shot_id": shots[0]["id"], "visual": "固定开场", "action": "", "dialogue": "", "duration_seconds": 3},
+        {"shot_no": 2, "shot_id": shots[1]["id"], "visual": "冲进门", "action": "快速推进", "dialogue": "", "duration_seconds": 2},
+        {"shot_no": 3, "shot_id": shots[2]["id"], "visual": "AI 想覆盖冻结镜头", "action": "", "dialogue": "", "duration_seconds": 2},
+        {"shot_no": 4, "operation": "ADD", "visual": "新增反应", "action": "回头", "dialogue": "", "duration_seconds": 2},
     ]}]}
     with database.transaction() as connection:
         connection.execute(
@@ -119,3 +119,93 @@ def test_selected_beat_replan_stale_hash_cannot_apply(workspace, database) -> No
         })
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "BEAT_REPLAN_PLAN_STALE"
+
+
+def test_middle_insert_and_reorder_keep_stable_shot_ids_and_revisions(workspace, database) -> None:
+    _, episode, scene, shots, draft_id = _context(workspace, database)
+    episode_id = str(episode["id"])
+    stable_fields = [
+        {"visual": f"stable-{index}", "action": "", "dialogue": "", "summary": "重排场景"}
+        for index in range(1, 4)
+    ]
+    proposal = {
+        "scenes": [{
+            "scene_no": 1,
+            "summary": "重排场景",
+            "shots": [
+                {"shot_no": 1, "shot_id": shots[0]["id"], "shot_type": "STANDARD", **stable_fields[0], "duration_seconds": 3},
+                {"shot_no": 2, "operation": "ADD", "visual": "middle-new", "action": "", "dialogue": "", "duration_seconds": 1},
+                {"shot_no": 3, "shot_id": shots[2]["id"], "shot_type": "CLOSE", **stable_fields[2], "duration_seconds": 1},
+                {"shot_no": 4, "shot_id": shots[1]["id"], "shot_type": "CLOSE", **stable_fields[1], "duration_seconds": 1},
+            ],
+        }],
+    }
+    with database.transaction() as connection:
+        for shot, fields in zip(shots, stable_fields, strict=True):
+            connection.execute(
+                "UPDATE shot_revisions SET fields_json=?,is_frozen=0 WHERE id=?",
+                (json.dumps(fields), shot["current_revision_id"]),
+            )
+        connection.execute(
+            "UPDATE script_breakdown_drafts SET draft_json=?,revision=revision+1 WHERE id=?",
+            (json.dumps(proposal), draft_id),
+        )
+    original_revisions = {str(shot["id"]): str(shot["current_revision_id"]) for shot in shots}
+
+    with TestClient(create_app(workspace)) as client:
+        group = client.post(f"/api/v1/episodes/{episode_id}/shot-groups", json={
+            "kind": "BEAT", "code": "BEAT_STABLE", "title": "稳定匹配", "scene_id": scene["id"],
+        }).json()["group"]
+        group = client.put(f"/api/v1/shot-groups/{group['id']}/members", json={
+            "shot_ids": [shot["id"] for shot in shots], "expected_revision": group["revision"],
+        }).json()["group"]
+        request = {"draft_id": draft_id, "proposal_scene_no": 1, "expected_group_revision": group["revision"]}
+        plan = client.post(
+            f"/api/v1/episodes/{episode_id}/shot-groups/{group['id']}/replan:plan", json=request,
+        ).json()["plan"]
+        assert plan["valid"] is True
+        assert [item["shot_id"] for item in plan["diff"]] == [
+            shots[0]["id"], None, shots[2]["id"], shots[1]["id"],
+        ]
+        assert plan["summary"] == {"KEEP": 3, "ADD": 1, "MODIFY": 0, "DELETE": 0, "PROTECTED": 0}
+        applied = client.post(
+            f"/api/v1/episodes/{episode_id}/shot-groups/{group['id']}/replan:apply",
+            json={**request, "expected_plan_hash": plan["plan_hash"], "idempotency_key": "stable-middle-insert"},
+        ).json()["apply"]
+
+    assert applied["ordered_member_shot_ids"][0] == shots[0]["id"]
+    assert applied["ordered_member_shot_ids"][2:] == [shots[2]["id"], shots[1]["id"]]
+    with database.connect() as connection:
+        current = connection.execute(
+            "SELECT id,current_revision_id FROM shots WHERE id IN (?,?,?) ORDER BY id",
+            tuple(original_revisions),
+        ).fetchall()
+    assert {str(row["id"]): str(row["current_revision_id"]) for row in current} == original_revisions
+
+
+def test_forged_or_omitted_shot_identity_produces_non_applicable_diff(workspace, database) -> None:
+    _, episode, scene, shots, draft_id = _context(workspace, database)
+    forged_id = str(uuid.uuid4())
+    proposal = {"scenes": [{"scene_no": 1, "summary": "重排场景", "shots": [
+        {"shot_no": 1, "shot_id": forged_id, "visual": "伪造引用", "duration_seconds": 1},
+        {"shot_no": 2, "visual": "模型漏掉身份", "duration_seconds": 1},
+    ]}]}
+    with database.transaction() as connection:
+        connection.execute(
+            "UPDATE script_breakdown_drafts SET draft_json=?,revision=revision+1 WHERE id=?",
+            (json.dumps(proposal), draft_id),
+        )
+    with TestClient(create_app(workspace)) as client:
+        group = client.post(f"/api/v1/episodes/{episode['id']}/shot-groups", json={
+            "kind": "BEAT", "code": "BEAT_INVALID_IDS", "title": "非法身份", "scene_id": scene["id"],
+        }).json()["group"]
+        group = client.put(f"/api/v1/shot-groups/{group['id']}/members", json={
+            "shot_ids": [shot["id"] for shot in shots], "expected_revision": group["revision"],
+        }).json()["group"]
+        plan = client.post(
+            f"/api/v1/episodes/{episode['id']}/shot-groups/{group['id']}/replan:plan",
+            json={"draft_id": draft_id, "proposal_scene_no": 1, "expected_group_revision": group["revision"]},
+        ).json()["plan"]
+
+    assert plan["valid"] is False
+    assert {issue["code"] for issue in plan["issues"]} >= {"SHOT_ID_OUT_OF_SCOPE", "SHOT_MATCH_ID_REQUIRED"}

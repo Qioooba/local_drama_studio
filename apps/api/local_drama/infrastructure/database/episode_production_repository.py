@@ -13,6 +13,10 @@ from collections import defaultdict
 from typing import Any, Iterable
 
 from local_drama.application.production_spec_resolution import effective_video_profile
+from local_drama.application.queries.media_eligibility import (
+    eligible_candidate_counts,
+    eligible_shot_media,
+)
 from local_drama.domain.duration import TARGET_DURATION_TECHNICAL_TOLERANCE_MS
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.policies import (
@@ -132,10 +136,35 @@ class SqliteEpisodeProductionReadRepository:
             "planning_job": planning_job,
             "next_action": next_action,
             "state_counts": dict(sorted(counts.items())),
+            "stage_summary": self._stage_summary(projected),
             "active_run": run,
             "allowed_actions": allowed,
             **contract,
         }
+
+    @staticmethod
+    def _stage_summary(items: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+        """Aggregate the complete episode projection, never a detail page."""
+        summary: dict[str, dict[str, int]] = {}
+        for code in STAGES:
+            facts = [
+                stage
+                for item in items
+                for stage in item.get("stages", [])
+                if stage.get("stage_code") == code
+            ]
+            summary[code] = {
+                "total": len(facts),
+                "completed": sum(stage.get("state") == "READY" for stage in facts),
+                "running": sum(stage.get("state") == "RUNNING" for stage in facts),
+                "attention": sum(stage.get("state") in ATTENTION_STATES for stage in facts),
+                "stale": sum(stage.get("state") == "STALE" for stage in facts),
+                "requires_confirmation": sum(
+                    stage.get("state") in {"BLOCKED", "FAILED", "NEEDS_REVIEW"}
+                    for stage in facts
+                ),
+            }
+        return summary
 
     @staticmethod
     def _episode_contract(
@@ -413,34 +442,34 @@ class SqliteEpisodeProductionReadRepository:
             slots_by_shot[str(row["shot_id"])][str(row["slot_type"])] = dict(row)
             selected_ids.append(str(row["media_version_id"]))
 
+        eligible_rows = eligible_shot_media(connection, shot_ids)
+        eligible_by_media = {str(row["media_version_id"]): row for row in eligible_rows}
+        for shot_slots in slots_by_shot.values():
+            for slot in shot_slots.values():
+                qualification = eligible_by_media.get(str(slot["media_version_id"]))
+                slot["is_eligible"] = qualification is not None
+                slot["current_qc_status"] = (
+                    qualification.get("current_qc_status") if qualification is not None else None
+                )
+
         working_lineage_by_shot: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for row in self._working_lineage(connection, shot_ids):
             working_lineage_by_shot[str(row["shot_id"])].append(row)
 
         candidate_counts: dict[tuple[str, str], int] = defaultdict(int)
-        media_rows = connection.execute(
-            f"""SELECT resolved.shot_id,ma.media_kind,mv.stage,COUNT(*) AS candidate_count
-            FROM media_assets ma JOIN media_versions mv ON mv.media_asset_id=ma.id
-            JOIN (
-              SELECT id AS owner_id,id AS shot_id,'SHOT' AS owner_type FROM shots WHERE id IN ({marks})
-              UNION ALL
-              SELECT gv.id,gi.owner_id,'GENERATION_VARIANT' FROM generation_variants gv
-              JOIN generation_intents gi ON gi.id=gv.intent_id
-              WHERE gi.owner_type='SHOT' AND gi.owner_id IN ({marks})
-            ) resolved ON resolved.owner_type=ma.owner_type AND resolved.owner_id=ma.owner_id
-            GROUP BY resolved.shot_id,ma.media_kind,mv.stage""",
-            (*shot_ids, *shot_ids),
-        ).fetchall()
-        for row in media_rows:
-            kind = "KEYFRAME" if str(row["media_kind"]) == "IMAGE" and str(row["stage"]) == "KEYFRAME" else None
-            if str(row["media_kind"]) == "VIDEO" and str(row["stage"]) in {"PROXY", "FORMAL"}:
-                kind = "VIDEO"
-            if kind:
-                candidate_counts[(str(row["shot_id"]), kind)] += int(row["candidate_count"])
+        candidate_counts.update(eligible_candidate_counts(connection, shot_ids))
 
         qc_by_media: dict[str, str] = {}
         reviews_by_media: dict[str, str] = {}
         self._load_quality(connection, selected_ids, qc_by_media, reviews_by_media)
+        for media_id in selected_ids:
+            eligible = eligible_by_media.get(media_id)
+            if eligible is not None and eligible.get("slot_type") == "VIDEO":
+                current_qc = eligible.get("current_qc_status")
+                if current_qc is None:
+                    qc_by_media.pop(media_id, None)
+                else:
+                    qc_by_media[media_id] = str(current_qc)
 
         dialogue_by_shot: dict[str, dict[str, Any]] = defaultdict(lambda: {"lines": 0, "candidates": 0, "selected": []})
         for row in connection.execute(
@@ -663,12 +692,20 @@ class SqliteEpisodeProductionReadRepository:
             material_stage = self._material_stage(stage_code, jobs[(shot_id, stage_code)], slot, count, planning_ready)
             lineage_rows = [row for row in working_lineage[shot_id] if row["slot_type"] == kind]
             lineage_edges = self._lineage_edges(lineage_rows)
-            if material_stage["state"] == "READY" and any(edge["state"] == "STALE" for edge in lineage_edges):
+            lineage_stale = any(edge["state"] == "STALE" for edge in lineage_edges)
+            if lineage_stale:
                 material_stage = self._stage(
                     stage_code, "STALE", "WORKING_MEDIA_DEPENDENCY_CHANGED", None, ["OPEN_SHOT_STUDIO"]
                 )
                 blockers.append(self._blocker(
                     "WORKING_MEDIA_STALE", "当前工作媒体的生成依赖已经变化。", "SHOT_STUDIO", "REGENERATE_WORKING_MEDIA"
+                ))
+            elif slot and not bool(slot.get("is_eligible")):
+                blockers.append(self._blocker(
+                    "WORKING_MEDIA_INELIGIBLE",
+                    "当前工作媒体已失效、损坏或不属于可生产阶段。",
+                    "SHOT_STUDIO",
+                    "SELECT_CURRENT_MEDIA",
                 ))
             stages.append(material_stage)
             if slot:
@@ -707,7 +744,7 @@ class SqliteEpisodeProductionReadRepository:
         elif video_id and qc.get(video_id) in {"FAIL", "FAILED", "BLOCKED", "NEEDS_HITL"}:
             compose = self._stage("COMPOSE_QC", "BLOCKED", "MACHINE_QC_REQUIRES_ATTENTION", None, ["OPEN_REVIEW"])
             blockers.append(self._blocker("MACHINE_QC_REQUIRES_ATTENTION", "当前工作视频未通过机器质检。", "REVIEW", "OPEN_SELECTED_VIDEO"))
-        elif video_id and timeline is not None and video_id in timeline_media:
+        elif video_id and qc.get(video_id) == "PASS" and timeline is not None and video_id in timeline_media:
             compose = self._stage("COMPOSE_QC", "READY", "CURRENT_VIDEO_IN_TIMELINE", None, ["OPEN_POST_EDIT"])
         elif video_id:
             compose = self._stage("COMPOSE_QC", "STALE", "TIMELINE_MISSING_CURRENT_VIDEO", None, ["OPEN_POST_EDIT"])
@@ -837,10 +874,12 @@ class SqliteEpisodeProductionReadRepository:
         failed = latest if latest and str(latest["state"]) in FAILED_JOB_STATES else None
         if active:
             return self._stage(code, "RUNNING", "CANONICAL_JOB_ACTIVE", str(active["id"]), ["OPEN_SYSTEM_JOBS"])
+        if slot:
+            if not bool(slot.get("is_eligible")):
+                return self._stage(code, "STALE", "WORKING_MEDIA_INELIGIBLE", None, ["OPEN_SHOT_STUDIO"])
+            return self._stage(code, "READY", "WORKING_SLOT_SELECTED", None, ["OPEN_SHOT_STUDIO"])
         if failed:
             return self._stage(code, "FAILED", str(failed.get("last_error_code") or "CANONICAL_JOB_FAILED"), str(failed["id"]), ["OPEN_SYSTEM_JOBS", "OPEN_SHOT_STUDIO"])
-        if slot:
-            return self._stage(code, "READY", "WORKING_SLOT_SELECTED", None, ["OPEN_SHOT_STUDIO"])
         if count:
             return self._stage(code, "NEEDS_REVIEW", "CANDIDATES_REQUIRE_WORKING_SELECTION", None, ["OPEN_SHOT_STUDIO", "OPEN_REVIEW"])
         if prerequisite:

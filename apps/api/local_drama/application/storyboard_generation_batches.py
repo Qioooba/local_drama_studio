@@ -130,6 +130,9 @@ class StoryboardGenerationBatchService:
                     "mode_policy": {"target_take_count": 1, "auto_select_videos": False},
                     "input_fingerprint": plan["input_fingerprint"],
                     "batch_plan_hash": expected_plan_hash,
+                    "expected_profile_version_ids": {
+                        str(item["shot_id"]): str(item["profile_version_id"])
+                    },
                 },
             }
             for item in plan["items"]

@@ -61,6 +61,7 @@ class EpisodeWorkerActionsPort(Protocol):
         target_take_count: int = 1,
         target_shot_ids: tuple[str, ...] | None = None,
         force_new_take: bool = False,
+        expected_profile_version_ids: dict[str, str] | None = None,
     ) -> tuple[dict[str, Any], int]:  # pragma: no cover - protocol boundary
         ...
 
@@ -98,7 +99,11 @@ class AutomationTimelinePort(Protocol):
     """Timeline render/delivery/subtitle capabilities for automation actions."""
 
     def assemble_episode_timeline(
-        self, episode_id: str, *, actor: str = "local-user"
+        self,
+        episode_id: str,
+        *,
+        audio_strategy: str = "EXTERNAL_TTS",
+        actor: str = "local-user",
     ) -> dict[str, Any]:  # pragma: no cover - protocol boundary
         ...
 
@@ -241,6 +246,7 @@ def _automation_tts_batch(dialogue: AutomationDialoguePort, episode_id: str, run
 def _automation_timeline_assembly(
     timeline_factory: Callable[[], AutomationTimelinePort],
     episode_id: str,
+    payload: dict[str, Any],
 ) -> tuple[dict[str, Any], int]:
     """Assemble (or reuse) the frozen episode timeline from adopted facts.
 
@@ -249,7 +255,11 @@ def _automation_timeline_assembly(
     pause the run per its checkpoint policy instead of rendering a broken cut.
     """
     try:
-        result = timeline_factory().assemble_episode_timeline(episode_id, actor="local-user")
+        result = timeline_factory().assemble_episode_timeline(
+            episode_id,
+            audio_strategy=str(payload.get("audio_strategy") or "EXTERNAL_TTS"),
+            actor="local-user",
+        )
     except DomainRuleError as error:
         return _automation_failure(error.code, error.message), 0
     status = str(result.get("status"))
@@ -486,6 +496,17 @@ def run_automation_task(
     elif action == "VIDEO_GENERATION":
         mode_policy = payload.get("mode_policy", {})
         target_take_count = int(mode_policy.get("target_take_count", 2)) if isinstance(mode_policy, dict) else 2
+        frozen_profiles = {
+            str(shot_id): str(profile_id)
+            for shot_id, profile_id in (
+                payload.get("expected_profile_version_ids", {}).items()
+                if isinstance(payload.get("expected_profile_version_ids"), dict)
+                else []
+            )
+        }
+        frozen_profile_kwargs = (
+            {"expected_profile_version_ids": frozen_profiles} if frozen_profiles else {}
+        )
         report, produced_extra = episode_worker_actions_factory().video_generation(
             episode_id,
             run_id,
@@ -493,6 +514,7 @@ def run_automation_task(
             target_take_count=target_take_count,
             target_shot_ids=tuple(str(item) for item in payload.get("target_shot_ids", []) if str(item).strip()),
             force_new_take=bool(payload.get("force_new_take", False)),
+            **frozen_profile_kwargs,
         )
     elif action == "QC":
         mode_policy = payload.get("mode_policy", {})
@@ -503,7 +525,7 @@ def run_automation_task(
     elif action == "TTS_FINALIZE":
         report, produced_extra = _automation_tts_finalize(dialogue_factory(), episode_id, payload)
     elif action == "TIMELINE_ASSEMBLY":
-        report, produced_extra = _automation_timeline_assembly(timeline_factory, episode_id)
+        report, produced_extra = _automation_timeline_assembly(timeline_factory, episode_id, payload)
     elif action == "RENDER":
         report, produced_extra = _automation_render(database, timeline_factory, episode_id)
     elif action == "DELIVERY":

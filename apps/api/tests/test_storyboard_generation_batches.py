@@ -91,6 +91,10 @@ def test_batch_plan_and_submit_create_recoverable_selected_shot_workflow(workspa
     batch_items = workflow["definition"]["batch_items"]
     assert [item["payload"]["target_shot_ids"] for item in batch_items] == [[str(shots[0]["id"])], [str(shots[1]["id"])]]
     assert all(item["payload"]["force_new_take"] is True for item in batch_items)
+    assert [item["payload"]["expected_profile_version_ids"] for item in batch_items] == [
+        {str(shots[0]["id"]): "profile-video"},
+        {str(shots[1]["id"]): "profile-video"},
+    ]
     assert workflow["definition"]["nodes"][0]["metadata"]["workflow_scope"] == "STORYBOARD_SELECTED_SHOTS"
 
 

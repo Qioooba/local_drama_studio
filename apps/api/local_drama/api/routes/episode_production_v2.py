@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Header, Query, Request
 
 from local_drama.api.schemas.episode_production_v2 import (
+    EpisodeOperationImpactRequest,
+    EpisodeOperationImpactResponse,
     EpisodeProductionChangesResponse,
     EpisodeProductionOverviewResponse,
     EpisodeProductionPrepareCommand,
@@ -21,9 +23,6 @@ from local_drama.api.schemas.episode_production_v2 import (
     EpisodeProductionShotsReadyRequest,
     EpisodeProductionShotsReadyResponse,
     ProductionState,
-    WholeDramaDispatchedRunFact,
-    WholeDramaEpisodePrepareFact,
-    WholeDramaEpisodeStatusFact,
     WholeDramaPrepareRequest,
     WholeDramaPrepareResponse,
     WholeDramaRunRequest,
@@ -36,6 +35,7 @@ from local_drama.application.episode_production_commands import EpisodeProductio
 from local_drama.application.episode_production_runs import EpisodeProductionRunService
 from local_drama.application.episode_replan import EpisodeReplanService
 from local_drama.application.episode_shot_ready import EpisodeShotReadyService
+from local_drama.application.episode_worker_actions import EpisodeWorkerActionService
 from local_drama.application.errors import api_error_from_domain
 from local_drama.application.whole_drama_orchestrator import WholeDramaOrchestratorService
 from local_drama.domain.errors import DomainRuleError
@@ -73,7 +73,11 @@ def _commands(request: Request) -> EpisodeProductionCommandService:
 )
 async def overview(episode_id: str, request: Request) -> EpisodeProductionOverviewResponse:
     try:
-        return EpisodeProductionOverviewResponse.model_validate(_queries(request).overview(episode_id))
+        payload = _queries(request).overview(episode_id)
+        payload["overview"]["available_mode_policies"] = EpisodeProductionRunService(
+            request.app.state.database, request.app.state.settings
+        ).available_mode_policies(episode_id)
+        return EpisodeProductionOverviewResponse.model_validate(payload)
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -154,6 +158,30 @@ async def prepare_episode(
             request.app.state.database, request.app.state.settings
         ).prepare(episode_id, idempotency_key=payload.idempotency_key)
         return EpisodeProductionPrepareResponse.model_validate({"preparation": preparation})
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post(
+    "/episodes/{episode_id}/production:operation-impact",
+    response_model=EpisodeOperationImpactResponse,
+    operation_id="previewEpisodeProductionOperationV2",
+)
+async def preview_operation_impact(
+    episode_id: str,
+    payload: EpisodeOperationImpactRequest,
+    request: Request,
+) -> EpisodeOperationImpactResponse:
+    try:
+        impact = EpisodeWorkerActionService(
+            request.app.state.database, request.app.state.settings
+        ).operation_impact(
+            episode_id,
+            operation=payload.operation,
+            target_shot_ids=tuple(payload.target_shot_ids),
+            target_take_count=payload.target_take_count,
+        )
+        return EpisodeOperationImpactResponse.model_validate({"impact": impact})
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -331,7 +359,10 @@ async def whole_drama_prepare(
     operation_id="runWholeDramaV2",
 )
 async def whole_drama_run(
-    project_id: str, payload: WholeDramaRunRequest, request: Request
+    project_id: str,
+    payload: WholeDramaRunRequest,
+    request: Request,
+    idempotency_key: str = Header(..., alias="Idempotency-Key"),
 ) -> WholeDramaRunResponse:
     try:
         service = WholeDramaOrchestratorService(
@@ -340,13 +371,14 @@ async def whole_drama_run(
         return WholeDramaRunResponse.model_validate(
             service.run(
                 project_id,
+                episode_ids=payload.episode_ids,
                 tts_enabled=payload.tts_enabled,
                 production_mode=payload.production_mode,
                 checkpoint_policy=payload.checkpoint_policy,
                 min_free_disk_bytes=payload.min_free_disk_bytes,
                 actor=payload.actor,
+                idempotency_key=idempotency_key,
             )
         )
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
-

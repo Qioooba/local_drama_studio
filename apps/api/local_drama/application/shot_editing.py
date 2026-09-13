@@ -69,16 +69,26 @@ class ShotEditingService:
                 if not isinstance(source_fields, dict):
                     source_fields = {}
                 child_ids: list[str] = []
+                dialogue_destination = str(split["dialogue_destination"])
+                action_destination = str(split["action_destination"])
+                dialogue_segment = {"FIRST": "A", "SECOND": "B"}.get(dialogue_destination)
+                action_segment = {"FIRST": "A", "SECOND": "B"}.get(action_destination)
                 for segment, code, duration in (
                     ("A", str(split["first_code"]), int(split["first_duration_ms"])),
                     ("B", str(split["second_code"]), int(split["second_duration_ms"])),
                 ):
                     child_id, revision_id = str(uuid.uuid4()), str(uuid.uuid4())
                     child_fields = dict(source_fields)
+                    if dialogue_segment != segment:
+                        child_fields["dialogue"] = ""
+                    if action_destination != "BOTH" and action_segment != segment:
+                        child_fields["action"] = ""
                     child_fields["split_lineage"] = {
                         "source_shot_id": source_id, "segment": segment,
                         "source_revision_id": str(source["current_revision_id"]),
                         "source_revision": int(source["revision"]),
+                        "dialogue_destination": dialogue_destination,
+                        "action_destination": action_destination,
                     }
                     connection.execute(
                         """INSERT INTO shots
@@ -99,6 +109,16 @@ class ShotEditingService:
                     self._copy_asset_bindings(connection, source_id, child_id, now, actor)
                     child_ids.append(child_id)
                     created.append({"id": child_id, "code": code, "source_shot_id": source_id, "segment": segment})
+                dialogue_child_id = (
+                    child_ids[0] if dialogue_destination == "FIRST"
+                    else child_ids[1] if dialogue_destination == "SECOND"
+                    else None
+                )
+                if dialogue_child_id:
+                    connection.execute(
+                        "UPDATE dialogue_lines SET shot_id=?,updated_at=?,revision=revision+1 WHERE shot_id=?",
+                        (dialogue_child_id, now, source_id),
+                    )
                 self._replace_group_memberships(connection, source_id, child_ids, now, actor)
                 connection.execute("UPDATE shots SET archived_at=?,updated_at=? WHERE id=?", (now, now, source_id))
                 position = active_ids.index(source_id)
@@ -198,7 +218,10 @@ class ShotEditingService:
                 "first_code": first_code, "second_code": second_code,
                 "first_duration_ms": first_duration, "second_duration_ms": duration - first_duration,
                 "source_duration_ms": duration,
+                "dialogue_destination": str(raw.get("dialogue_destination") or ""),
+                "action_destination": str(raw.get("action_destination") or ""),
             })
+            issues.extend(self._binding_copy_issues(connection, shot_id, index))
         snapshot = [self._snapshot_item(row) for row in rows]
         canonical = {
             "episode_id": episode_id, "ordering_token": supplied_token, "snapshot": snapshot,
@@ -210,7 +233,12 @@ class ShotEditingService:
             "ordered_shot_ids": ordered_ids, "splits": normalized_splits,
             "source_snapshot": snapshot, "plan_hash": plan_hash, "valid": not issues, "issues": issues,
             "summary": {"reordered": bool(reorder), "split": len(normalized_splits)},
-            "effects": {"timeline": "MARK_STALE", "selected_results": "NOT_COPIED", "asset_bindings": "COPY"},
+            "effects": {
+                "timeline": "MARK_STALE",
+                "selected_results": "NOT_COPIED",
+                "asset_bindings": "COPY_DECLARATIVE_IDENTITY_AND_STATE_ONLY",
+                "dialogue": "EXPLICIT_SINGLE_DESTINATION",
+            },
         }
 
     @staticmethod
@@ -243,14 +271,50 @@ class ShotEditingService:
         connection: sqlite3.Connection, source_id: str, child_id: str, now: str, actor: str,
     ) -> None:
         rows = connection.execute(
-            "SELECT asset_id,role_in_shot FROM shot_asset_bindings WHERE shot_id=?", (source_id,),
+            """SELECT asset_id,role_in_shot,asset_state_id,identity_pack_version_id
+            FROM shot_asset_bindings WHERE shot_id=?""", (source_id,),
         ).fetchall()
         connection.executemany(
             """INSERT INTO shot_asset_bindings
-            (id,shot_id,asset_id,role_in_shot,created_at,created_by,revision,schema_version)
-            VALUES (?,?,?,?,?,?,1,'v2')""",
-            [(str(uuid.uuid4()), child_id, row["asset_id"], row["role_in_shot"], now, actor) for row in rows],
+            (id,shot_id,asset_id,role_in_shot,asset_state_id,identity_pack_version_id,
+             created_at,created_by,revision,schema_version)
+            VALUES (?,?,?,?,?,?,?,?,1,'v2')""",
+            [(
+                str(uuid.uuid4()), child_id, row["asset_id"], row["role_in_shot"],
+                row["asset_state_id"], row["identity_pack_version_id"], now, actor,
+            ) for row in rows],
         )
+
+    @staticmethod
+    def _binding_copy_issues(
+        connection: sqlite3.Connection, source_id: str, item_index: int,
+    ) -> list[dict[str, Any]]:
+        rows = connection.execute(
+            """SELECT sab.asset_id,sab.asset_state_id,sab.identity_pack_version_id,
+            sa.status AS asset_status,sas.status AS state_status,sas.story_asset_id AS state_asset_id,
+            ipv.status AS pack_status,ipv.story_asset_id AS pack_asset_id
+            FROM shot_asset_bindings sab
+            JOIN story_assets sa ON sa.id=sab.asset_id
+            LEFT JOIN story_asset_states sas ON sas.id=sab.asset_state_id
+            LEFT JOIN character_identity_pack_versions ipv ON ipv.id=sab.identity_pack_version_id
+            WHERE sab.shot_id=?""",
+            (source_id,),
+        ).fetchall()
+        issues: list[dict[str, Any]] = []
+        for row in rows:
+            if str(row["asset_status"]) != "ACTIVE":
+                issues.append({"code": "SHOT_SPLIT_ASSET_INACTIVE", "subject_id": source_id, "item_index": item_index, "asset_id": row["asset_id"], "message": "拆镜来源含非 ACTIVE 资产绑定"})
+            if row["asset_state_id"] and (
+                str(row["state_status"] or "") != "ACTIVE"
+                or str(row["state_asset_id"] or "") != str(row["asset_id"])
+            ):
+                issues.append({"code": "SHOT_SPLIT_ASSET_STATE_INVALID", "subject_id": source_id, "item_index": item_index, "asset_id": row["asset_id"], "message": "拆镜来源的显式资产状态已失效或不属于该资产"})
+            if row["identity_pack_version_id"] and (
+                str(row["pack_status"] or "") not in {"APPROVED", "SUPERSEDED"}
+                or str(row["pack_asset_id"] or "") != str(row["asset_id"])
+            ):
+                issues.append({"code": "SHOT_SPLIT_IDENTITY_PACK_INVALID", "subject_id": source_id, "item_index": item_index, "asset_id": row["asset_id"], "message": "拆镜来源的身份包版本未批准或不属于该角色"})
+        return issues
 
     @staticmethod
     def _replace_group_memberships(

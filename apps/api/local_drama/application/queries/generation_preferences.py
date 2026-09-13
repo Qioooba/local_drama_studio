@@ -248,3 +248,26 @@ class GenerationPreferenceQueryService:
             "profile": None, "recommendation": None,
             "resolution_fingerprint": fingerprint,
         }
+
+
+class _GenerationPreferenceResolver(GenerationPreferenceQueryService):
+    """Internal resolver behind the application-level function port."""
+
+
+def resolve_generation_preference(
+    repository: GenerationPreferenceRepository,
+    *,
+    project_id: str,
+    capability: str,
+    episode_id: str | None = None,
+    shot_id: str | None = None,
+    requirements: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Resolve one capability without composing a query service in its caller."""
+    return _GenerationPreferenceResolver(repository).resolve(
+        project_id=project_id,
+        capability=capability,
+        episode_id=episode_id,
+        shot_id=shot_id,
+        requirements=requirements,
+    )

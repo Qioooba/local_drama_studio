@@ -69,6 +69,20 @@ class FrameBridgeCommandService:
             source = self._anchor(connection, str(selected_source_id))
             self._require_fresh_anchor(source, side="from")
             self._require_anchor_shot(connection, source, str(transition["from_shot_id"]), side="from")
+            if str(source["role_hint"] or "").upper() != "LAST_FRAME":
+                raise DomainRuleError(
+                    "FRAME_BRIDGE_SOURCE_ROLE_INVALID",
+                    "镜头桥继承来源必须是上一镜 LAST_FRAME FrameAnchor",
+                    {"anchor_id": source["id"], "role_hint": source["role_hint"]},
+                )
+            if str(transition["enforcement"]).upper() in {"HARD", "LOCKED"} and transition["to_anchor_id"]:
+                current = self._anchor(connection, str(transition["to_anchor_id"]))
+                if str(current["extracted_media_version_id"]) != str(source["extracted_media_version_id"]):
+                    raise DomainRuleError(
+                        "FRAME_BRIDGE_LOCKED_CURRENT_CONFLICT",
+                        "本镜已有锁定首帧，与上一镜尾帧不同；请由导演明确选择后再提交",
+                        {"transition_id": transition_id, "current_anchor_id": current["id"], "source_anchor_id": source["id"]},
+                    )
 
             inherited_id = str(uuid.uuid4())
             now = _now()

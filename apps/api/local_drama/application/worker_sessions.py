@@ -278,13 +278,14 @@ class WorkerSessionService:
             placeholders = ",".join("?" for _ in stale_ids)
             with self.database.transaction() as connection:
                 attempts = connection.execute(
-                    f"""SELECT a.id,a.job_id,a.attempt_no,a.provider_job_id,j.project_id,j.max_attempts
+                    f"""SELECT a.id,a.job_id,a.attempt_no,a.provider_job_id,a.progress_json,j.project_id,j.max_attempts
                     FROM job_attempts a JOIN jobs j ON j.id=a.job_id
                     WHERE a.worker_session_id IN ({placeholders}) AND a.state IN ('CLAIMED','RUNNING')""",
                     stale_ids,
                 ).fetchall()
                 for attempt in attempts:
-                    uncertain = bool(attempt["provider_job_id"])
+                    progress = json.loads(str(attempt["progress_json"] or "{}"))
+                    uncertain = bool(attempt["provider_job_id"]) or progress.get("phase") == "SUBMITTING_TO_PROVIDER"
                     next_job_state = "NEEDS_ATTENTION" if uncertain or int(attempt["attempt_no"]) >= int(attempt["max_attempts"]) else "QUEUED"
                     connection.execute(
                         """UPDATE job_attempts SET state='ORPHANED',error_code='WORKER_SESSION_STALE',

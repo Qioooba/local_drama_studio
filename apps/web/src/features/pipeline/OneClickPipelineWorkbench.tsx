@@ -13,10 +13,12 @@ import {
   getWholeDramaStatus,
   listPipelineRuns,
   preflightStoryPipeline,
+  previewPipelineApply,
   retryPipelineRun,
   runWholeDrama,
   startOneClickPipeline,
   type PipelineAssetCandidate,
+  type PipelineApplyImpact,
   type PipelineRun,
   type StartPipelinePayload,
 } from "./pipelineClient";
@@ -32,6 +34,13 @@ const VISUAL_STYLES = [
 const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
 const PIPELINE_SECTIONS = ["STORY_PLAN", "STORY_BIBLE", "ASSET_PROPOSALS"];
 const DURATION_OPTIONS_SECONDS = [60, 90, 120, 180];
+
+function makeCommandKey() {
+  try {
+    if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  } catch { /* use a local fallback in restricted browser contexts */ }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
 
 type SourceMode = "upload" | "existing" | "paste";
 type ActiveSource = { versionId: string; name: string; charCount?: number; paragraphCount?: number };
@@ -76,7 +85,7 @@ export function OneClickPipelineWorkbench({
 }) {
   const queryClient = useQueryClient();
   const fileInputId = useId();
-  const autoApplyRun = useRef<string | null>(null);
+  const wholeDramaCommandKey = useRef<string | null>(null);
   const [sourceMode, setSourceMode] = useState<SourceMode>(sourceDocumentVersionId ? "existing" : "upload");
   const [activeSource, setActiveSource] = useState<ActiveSource | null>(null);
   const [rawText, setRawText] = useState("");
@@ -87,6 +96,9 @@ export function OneClickPipelineWorkbench({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [configuring, setConfiguring] = useState(false);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [applyPreview, setApplyPreview] = useState<PipelineApplyImpact | null>(null);
+  const [authorizeAutomaticApply, setAuthorizeAutomaticApply] = useState(true);
+  const [selectedPilotEpisodeIds, setSelectedPilotEpisodeIds] = useState<string[]>([]);
 
   const capabilityOptions = useCapabilityOptions("LLM_STORY_PARSE", { projectId });
   const resolvedCapability = effectiveCapabilityProfile(capabilityOptions, selectedProfileId);
@@ -142,6 +154,9 @@ export function OneClickPipelineWorkbench({
     visual_style: visualStyle,
     target_episode_duration_seconds: targetDuration,
     capability_profile_version_id: selectedProfileId || resolvedCapability?.profileVersionId || undefined,
+    application_authorization: authorizeAutomaticApply
+      ? { endpoint: "APPLY_SELECTED_SECTIONS", sections: PIPELINE_SECTIONS }
+      : { endpoint: "DRAFT_ONLY", sections: [] },
   });
 
   const launchMutation = useMutation({
@@ -181,14 +196,14 @@ export function OneClickPipelineWorkbench({
     },
   });
   const applyMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: (impact: PipelineApplyImpact) => {
       if (!run) throw new Error("没有可写入的 AI 分析结果");
-      return applyPipelineRun(projectId, run.run_id, run.revision, PIPELINE_SECTIONS);
+      return applyPipelineRun(projectId, run.run_id, run.revision, PIPELINE_SECTIONS, impact.impact_sha256);
     },
     onSuccess: ({ run: nextRun }) => {
       queryClient.setQueryData(latestKey, { run: nextRun });
       setSelectedRunId(null);
-      autoApplyRun.current = null;
+      setApplyPreview(null);
       void queryClient.invalidateQueries({ queryKey: historyKey });
       void queryClient.invalidateQueries({ queryKey: ["story-assets", projectId] });
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects.overview(projectId) });
@@ -202,8 +217,14 @@ export function OneClickPipelineWorkbench({
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.episodes.lists() });
     },
-    onError: () => {
-      autoApplyRun.current = null;
+  });
+  const previewApplyMutation = useMutation({
+    mutationFn: () => {
+      if (!run) throw new Error("没有可预览的 AI 分析结果");
+      return previewPipelineApply(projectId, run.run_id, run.revision, PIPELINE_SECTIONS);
+    },
+    onSuccess: (result) => {
+      setApplyPreview(result.impact);
     },
   });
 
@@ -215,24 +236,19 @@ export function OneClickPipelineWorkbench({
   });
 
   const wholeDramaMutation = useMutation({
-    mutationFn: () => runWholeDrama(projectId, { production_mode: "BALANCED" }),
+    mutationFn: () => {
+      wholeDramaCommandKey.current ??= makeCommandKey();
+      return runWholeDrama(
+        projectId,
+        { production_mode: "BALANCED", episode_ids: selectedPilotEpisodeIds },
+        wholeDramaCommandKey.current,
+      );
+    },
     onSuccess: () => {
+      wholeDramaCommandKey.current = null;
       void queryClient.invalidateQueries({ queryKey: ["whole-drama-status", projectId] });
     },
   });
-
-  useEffect(() => {
-    if (
-      selectedRunId
-      || !run
-      || run.state !== "SUCCEEDED"
-      || run.apply_state === "APPLIED"
-      || run.quality_report?.status !== "READY"
-      || autoApplyRun.current === run.run_id
-    ) return;
-    autoApplyRun.current = run.run_id;
-    applyMutation.mutate();
-  }, [run?.run_id, run?.state, run?.apply_state, run?.quality_report?.status, selectedRunId]);
 
   const selectMode = (mode: SourceMode) => {
     setSourceMode(mode);
@@ -284,6 +300,15 @@ export function OneClickPipelineWorkbench({
   const needsAttention = run?.state === "SUCCEEDED"
     && run.apply_state !== "APPLIED"
     && run.quality_report?.status !== "READY";
+  const automaticContinuation = run?.application_authorization?.endpoint === "APPLY_SELECTED_SECTIONS";
+  const continuationPending = automaticContinuation
+    && ["QUEUED", "CLAIMED", "RUNNING"].includes(run?.apply_continuation?.state ?? "");
+  const sourceCoverage = run?.draft?.source_coverage;
+  const coveragePartial = sourceCoverage?.status === "PARTIAL";
+
+  useEffect(() => {
+    setApplyPreview(null);
+  }, [run?.run_id, run?.revision]);
 
   return (
     <section className="story-draft-workbench" aria-labelledby="story-draft-heading">
@@ -383,11 +408,22 @@ export function OneClickPipelineWorkbench({
             <summary>模型设置（通常无需修改）</summary>
             <CapabilityPicker capability="LLM_STORY_PARSE" value={selectedProfileId} onChange={(value) => { setSelectedProfileId(value); launchMutation.reset(); }} query={capabilityOptions} label="故事解析模型" description="未指定时自动使用当前可用方案。" />
           </details>
+          <label className="pipeline-field">
+            <span>草案完成后的处理</span>
+            <select
+              value={authorizeAutomaticApply ? "APPLY" : "DRAFT_ONLY"}
+              onChange={(event) => { setAuthorizeAutomaticApply(event.target.value === "APPLY"); launchMutation.reset(); }}
+            >
+              <option value="APPLY">授权后台应用分集规划、创作记忆和核心资产</option>
+              <option value="DRAFT_ONLY">只生成草案，完成后由我预览并应用</option>
+            </select>
+            <small>这项选择会作为本次运行的持久授权保存；不会授权媒体生成、审核或发布。</small>
+          </label>
           <div className="pipeline-launch">
             <button type="button" className="pipeline-button primary" disabled={!canStart || isUploading || launchMutation.isPending} onClick={() => launchMutation.mutate()}>
               {launchMutation.isPending ? "AI 正在检查并启动…" : "开始 AI 制作"}
             </button>
-            <small>无需逐项审核文字档案；识别可靠时会自动进入分集制作。</small>
+            <small>{authorizeAutomaticApply ? "关页后后台仍会按上面的明确范围续接。" : "完成后停在草案，不会自动写入项目。"}</small>
           </div>
           {launchMutation.isError && <p className="pipeline-alert error" role="alert">{errorText(launchMutation.error)}</p>}
           {launchMutation.isError && <Link className="pipeline-text-link" to="/system/capabilities?view=resources">检查 AI 模型配置</Link>}
@@ -410,14 +446,32 @@ export function OneClickPipelineWorkbench({
         <div className="pipeline-review-main pipeline-result-summary">
           <div className="review-heading">
             <div>
-              <span className={`quality-pill ${needsAttention ? "review_required" : ""}`}>{run.apply_state === "APPLIED" ? "已准备完成" : needsAttention ? "需要你确认" : "正在写入项目"}</span>
+              <span className={`quality-pill ${needsAttention ? "review_required" : ""}`}>{coveragePartial ? "原稿部分完成" : run.apply_state === "APPLIED" ? "已准备完成" : needsAttention ? "需要你确认" : continuationPending ? "后台续接中" : "草案待应用"}</span>
               <h4>AI 分析摘要</h4>
-              <p>{needsAttention ? "AI 发现了少量不确定项，请看完提示后决定是否继续。" : "详细创作记忆已在后台保存，后续会按集按需生成。"}</p>
+              <p>{coveragePartial ? "本次没有覆盖完整授权原稿；未处理区间和续接位置如下。" : needsAttention ? "AI 发现了少量不确定项，请看完提示后决定是否继续。" : "详细创作记忆已在后台保存，后续会按集按需生成。"}</p>
             </div>
             <div className="review-counts"><strong>{run.episodes_count}<small>集</small></strong><strong>{run.characters_count}<small>核心人物</small></strong><strong>{run.scenes_count}<small>核心场景</small></strong></div>
           </div>
           {(run.quality_report.warnings ?? []).map((warning) => <p key={warning} className="pipeline-alert warning">{warning}</p>)}
           {(run.quality_report.blockers ?? []).map((blocker) => <p key={blocker} className="pipeline-alert error">{blocker}</p>)}
+          {run.apply_continuation?.state === "FAILED" || run.apply_continuation?.state === "NEEDS_ATTENTION" ? (
+            <p className="pipeline-alert error" role="alert">
+              草案已生成，但授权应用暂停：{run.apply_continuation.last_error_detail || run.apply_continuation.last_error_code || "请检查冲突后手动预览。"}
+            </p>
+          ) : null}
+          {sourceCoverage && (
+            <section className="draft-preview-section" aria-label="原稿覆盖">
+              <h5>原稿覆盖：{sourceCoverage.status === "FULL" ? "完整" : sourceCoverage.status === "PARTIAL" ? "部分完成" : "尚未完成"}</h5>
+              <p>已完整覆盖 {sourceCoverage.covered_paragraph_count} / {sourceCoverage.authorized_paragraph_count} 个授权段落。</p>
+              {sourceCoverage.resume && (
+                <small>
+                  续接位置：第 {sourceCoverage.resume.start_paragraph} 段
+                  {sourceCoverage.resume.resume_unit_number ? `（第 ${sourceCoverage.resume.resume_unit_number} 个分析单元）` : ""}
+                  {sourceCoverage.resume.resume_character_offset_in_unit != null ? `，单元内字符偏移 ${sourceCoverage.resume.resume_character_offset_in_unit}` : ""}。
+                </small>
+              )}
+            </section>
+          )}
           <section className="draft-preview-section">
             <h5>分集结果</h5>
             <div className="episode-draft-list">
@@ -430,23 +484,73 @@ export function OneClickPipelineWorkbench({
             <div className="pipeline-asset-chips">{assetCandidates.slice(0, 18).map((asset) => <AssetChip key={`${asset.kind}-${asset.name}`} asset={asset} />)}</div>
             {assetCandidates.length > 18 && <small>另有 {assetCandidates.length - 18} 项由 AI 后台管理。</small>}
           </section>
+          {applyPreview && run.apply_state !== "APPLIED" && (
+            <section className="draft-preview-section" aria-label="应用影响预览">
+              <h5>应用影响预览</h5>
+              <p>
+                新增 {applyPreview.episodes.add.length} 集；更新 {applyPreview.episodes.update.length} 集；
+                保留 {applyPreview.episodes.preserve.length} 集；跳过 {applyPreview.episodes.skip.length} 集。
+              </p>
+              <p>
+                核心资产新增 {applyPreview.assets.add.length} 项、复用 {applyPreview.assets.reuse.length} 项；
+                {applyPreview.story_bible.will_switch_current_revision ? "当前总纲指针会切换到新修订。" : "不会替换已有总纲指针。"}
+              </p>
+              {applyPreview.episodes.preserve.map((episode) => (
+                <small key={episode.code}>{episode.code} 已保留：{episode.reason}</small>
+              ))}
+              {applyPreview.produced_episode_context_changes.length > 0 && (
+                <p className="pipeline-alert warning">
+                  已制作分集内容不会被改写，但这些分集的后续上下文会变化：{applyPreview.produced_episode_context_changes.join("、")}。
+                </p>
+              )}
+            </section>
+          )}
           {run.apply_state === "APPLIED" ? (
             <div className="pipeline-applied-flow">
+              <section className="pipeline-state-card" aria-label="选择小样分集">
+                <span>小样发布闸门</span>
+                <h4>选择 1—2 集有限推进</h4>
+                <p>这里只启动明确勾选的分集；未选分集不会准备，也不会派发 GPU 任务。</p>
+                <div className="pipeline-checkbox-list">
+                  {(wholeDramaStatusQuery.data?.episodes ?? []).map((episode) => {
+                    const selected = selectedPilotEpisodeIds.includes(episode.episode_id);
+                    return (
+                      <label key={episode.episode_id}>
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          disabled={!selected && selectedPilotEpisodeIds.length >= 2}
+                          onChange={() => setSelectedPilotEpisodeIds((current) => (
+                            selected
+                              ? current.filter((id) => id !== episode.episode_id)
+                              : [...current, episode.episode_id]
+                          ))}
+                        />
+                        {episode.code} · {episode.title}
+                      </label>
+                    );
+                  })}
+                </div>
+              </section>
               <div className="pipeline-next-actions">
                 <button
                   type="button"
                   className="pipeline-button primary"
-                  disabled={wholeDramaMutation.isPending}
+                  disabled={wholeDramaMutation.isPending || selectedPilotEpisodeIds.length === 0}
                   onClick={() => wholeDramaMutation.mutate()}
                 >
-                  {wholeDramaMutation.isPending ? "正在自愈并启动全剧生产…" : "🚀 一键启动全剧自动成片"}
+                  {wholeDramaMutation.isPending ? "正在准备并启动所选分集…" : "🚀 启动所选分集小样"}
                 </button>
                 <Link className="pipeline-button secondary" to={`/projects/${projectId}`}>进入分集制作</Link>
                 <Link className="pipeline-text-link" to={`/projects/${projectId}/assets`}>查看核心资产</Link>
               </div>
               {wholeDramaMutation.isSuccess && (
-                <p className="pipeline-alert success" role="status">
-                  已成功调度全剧自动生产，共调度 {wholeDramaMutation.data.dispatched_count} / {wholeDramaMutation.data.total_episodes} 集！
+                <p className={`pipeline-alert ${wholeDramaMutation.data.dispatch_status === "DISPATCHED" ? "success" : "error"}`} role="status">
+                  {wholeDramaMutation.data.dispatch_status === "DISPATCHED"
+                    ? `已调度 ${wholeDramaMutation.data.dispatched_count} / ${wholeDramaMutation.data.total_episodes} 集；这表示任务已启动，不表示视频已生成。`
+                    : wholeDramaMutation.data.dispatch_status === "PARTIALLY_DISPATCHED"
+                      ? `部分启动：已调度 ${wholeDramaMutation.data.dispatched_count} / ${wholeDramaMutation.data.total_episodes} 集，${wholeDramaMutation.data.blocked_count} 集被阻塞。`
+                      : `未启动：0 / ${wholeDramaMutation.data.total_episodes} 集已调度（${wholeDramaMutation.data.dispatch_reason === "NO_EPISODES" ? "项目没有分集" : "所有分集均有阻塞项"}）。`}
                 </p>
               )}
               {wholeDramaMutation.isError && (
@@ -456,17 +560,24 @@ export function OneClickPipelineWorkbench({
               )}
               {wholeDramaStatusQuery.data && (
                 <div className="whole-drama-status-summary">
-                  <small>全剧状态：{wholeDramaStatusQuery.data.overall_status}（共 {wholeDramaStatusQuery.data.total_episodes} 集）</small>
+                  <small>全剧状态：{wholeDramaStatusQuery.data.overall_status}（共 {wholeDramaStatusQuery.data.total_episodes} 集；{Object.entries(wholeDramaStatusQuery.data.state_counts).map(([state, count]) => `${state} ${count}`).join(" · ") || "无运行"}）</small>
                 </div>
               )}
             </div>
-          ) : needsAttention ? (
+          ) : continuationPending ? (
+            <div className="pipeline-state-card"><span>后台续接</span><h4>已按本次授权等待应用；可以安全关页</h4></div>
+          ) : (
             <div className="pipeline-next-actions">
-              <button type="button" className="pipeline-button primary" disabled={applyMutation.isPending || (run.quality_report.blockers?.length ?? 0) > 0} onClick={() => applyMutation.mutate()}>{applyMutation.isPending ? "正在继续…" : "确认并进入分集制作"}</button>
+              {applyPreview ? (
+                <>
+                  <button type="button" className="pipeline-button primary" disabled={applyMutation.isPending || (run.quality_report.blockers?.length ?? 0) > 0} onClick={() => applyMutation.mutate(applyPreview)}>{applyMutation.isPending ? "正在继续…" : "确认以上影响并进入分集制作"}</button>
+                  <button type="button" className="pipeline-button secondary" onClick={() => setApplyPreview(null)}>取消预览</button>
+                </>
+              ) : (
+                <button type="button" className="pipeline-button primary" disabled={previewApplyMutation.isPending || (run.quality_report.blockers?.length ?? 0) > 0} onClick={() => previewApplyMutation.mutate()}>{previewApplyMutation.isPending ? "正在检查影响…" : "查看应用影响"}</button>
+              )}
               <button type="button" className="pipeline-button secondary" onClick={() => setConfiguring(true)}>重新分析</button>
             </div>
-          ) : (
-            <div className="pipeline-state-card"><span>自动继续</span><h4>{applyMutation.isPending ? "正在把结果写入项目…" : "正在准备分集制作…"}</h4>{applyMutation.isError && <><p className="pipeline-alert error">{errorText(applyMutation.error)}</p><button type="button" className="pipeline-button primary" onClick={() => { autoApplyRun.current = run.run_id; applyMutation.mutate(); }}>重试写入</button></>}</div>
           )}
         </div>
       ) : run ? (

@@ -13,6 +13,7 @@ import shutil
 import sys
 import tempfile
 import time
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -235,10 +236,8 @@ def run(
         formal_template = next(item for item in reviews.templates() if item["code"] == "formal_video")
         media_id = str(promoted["media_version_id"])
         machine = reviews.machine_check(media_id)
-        reviews.select_version(media_id, "FORMAL_SELECTION")
+        selected = reviews.select_version(media_id, "FORMAL_SELECTION")
         approved = reviews.submit_review(media_id, str(formal_template["id"]), "APPROVED", 2, _checks(formal_template))
-        plan = reviews.formal_selection_preflight(project_id, [media_id])
-        committed = reviews.commit_formal_selection(project_id, [media_id], str(plan["plan_hash"]))
         with database.connect() as connection:
             integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
         artifact_path = (settings.work_root / str(artifact["sandbox_rel_path"])).resolve()
@@ -263,7 +262,7 @@ def run(
                 "exists": artifact_path.is_file(),
                 "sha256": _sha256(artifact_path) if artifact_path.is_file() else None,
             },
-            "platform_pipeline": {"promoted_media_version_id": media_id, "machine_qc": machine, "human_decision": approved["decision"], "selection": committed},
+            "platform_pipeline": {"promoted_media_version_id": media_id, "machine_qc": machine, "human_decision": approved["decision"], "selection": selected},
             "isolated": {"project_id": project_id, "shot_id": shot_id, "database_integrity": integrity, "runtime_contacted": True, "network_contacted": False, "production_mutated": False},
             "limitations": ["隔离项目已跑通平台 Job→Artifact→Media→QC→审核→选择，但未进入正式整集交付包/下载审计；整体保持 PARTIAL。"],
         }
@@ -310,6 +309,10 @@ def main() -> int:
                 "production_mutated": False,
             },
             "failure": {"type": type(error).__name__, "stage": "platform_comfy_job"},
+            "diagnostic": {
+                "message": str(error)[:1000],
+                "traceback": traceback.format_exc(limit=8),
+            },
             "limitations": [
                 "本次平台 Comfy Job UAT 在真实本机运行时失败，未将失败伪装成生成成功。",
                 "请检查隔离 Comfy stderr/runtime 资源后重跑；外部 native 节点生成与平台正式媒体链证据仍分别保留。",

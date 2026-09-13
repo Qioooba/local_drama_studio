@@ -251,7 +251,6 @@ class T2IProbePlanService:
         snapshot = plan["snapshot"]
         workflow = snapshot["workflow"]
         candidate = snapshot["candidate_profile"]
-        source_reference = snapshot.get("source_reference")
         job_snapshot = {
             "purpose": "T2I_PROFILE_EVIDENCE_PROBE",
             "workflow_version_id": workflow["id"],

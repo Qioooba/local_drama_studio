@@ -7,6 +7,7 @@ import uuid
 
 import pytest
 
+from local_drama.application.configuration import ConfigurationService
 from local_drama.application.generation import GenerationService
 from local_drama.application.media import MediaService
 from local_drama.application.profiles import ProfileService
@@ -17,7 +18,7 @@ from local_drama.domain.policies import VariantInput
 
 
 def _project(workspace, database, code: str) -> dict[str, object]:
-    return ProjectService(database, workspace.projects_root).create_project(
+    project = ProjectService(database, workspace.projects_root).create_project(
         code=code,
         title=code,
         episode_count=1,
@@ -27,6 +28,31 @@ def _project(workspace, database, code: str) -> dict[str, object]:
         target_duration_ms=60_000,
         allow_unconfigured_capabilities=True,
     )
+    ConfigurationService(database).create_plan_binding(
+        str(project["id"]),
+        "test-production-plan",
+        "CTL multimodal test plan",
+        {
+            "schema_version": "localdrama.production-plan.v2",
+            "presentation": {
+                "aspect_ratio": "16:9",
+                "width": 1280,
+                "height": 720,
+                "fps": {"numerator": 24, "denominator": 1},
+            },
+            "generation": {
+                "upscale": {
+                    "enabled": False,
+                    "required": False,
+                    "stage": "COMPOSE_QC",
+                    "executor": "builtin:ffmpeg",
+                    "target": "PRESENTATION_SPEC",
+                    "fit": "LETTERBOX",
+                }
+            },
+        },
+    )
+    return project
 
 
 def _published_profile(workspace, database) -> str:
@@ -67,7 +93,10 @@ def _driving_profile(workspace, database) -> str:
                     {
                         "1": {"class_type": "LoadVideo", "inputs": {"video": ""}},
                         "2": {"class_type": "LoadImage", "inputs": {"image": ""}},
-                        "3": {"class_type": "GenerationInputs", "inputs": {"prompt": "", "seed": 0}},
+                        "3": {
+                            "class_type": "GenerationInputs",
+                            "inputs": {"prompt": "", "seed": 0, "width": 1280, "height": 720, "fps": 24},
+                        },
                     }
                 ),
                 json.dumps(
@@ -76,6 +105,9 @@ def _driving_profile(workspace, database) -> str:
                         "CHARACTER_REFERENCE": {"node_id": "2", "input": "image"},
                         "PROMPT": {"node_id": "3", "input": "prompt"},
                         "SEED": {"node_id": "3", "input": "seed"},
+                        "WIDTH": {"node_id": "3", "input": "width"},
+                        "HEIGHT": {"node_id": "3", "input": "height"},
+                        "FPS": {"node_id": "3", "input": "fps"},
                     }
                 ),
                 now,
@@ -191,8 +223,9 @@ def test_ctl003_driving_variant_is_local_immutable_and_persists_weighted_binding
         job = connection.execute("SELECT input_snapshot_json FROM jobs WHERE id=?", (submitted["job"]["id"],)).fetchone()
     assert row["weight"] == 0.7
     snapshot = json.loads(job["input_snapshot_json"])
-    assert snapshot["semantic_inputs"]["performance_bindings"][0]["source_role"] == "DRIVING_VIDEO"
-    assert snapshot["media_bindings"][0]["weight"] == 0.7
+    assert snapshot["execution_metadata"]["performance_bindings"][0]["source_role"] == "DRIVING_VIDEO"
+    snapshot_bindings = {item["role"]: item for item in snapshot["media_bindings"]}
+    assert snapshot_bindings["DRIVING_VIDEO"]["weight"] == 0.7
 
 
 def test_ctl004_rejects_wrong_kind_order_and_weight_contract(workspace, database) -> None:

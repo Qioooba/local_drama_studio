@@ -11,8 +11,8 @@ import json
 import sqlite3
 from typing import Any
 
-from local_drama.application.queries.generation_preferences import GenerationPreferenceQueryService
 from local_drama.application.production_spec_resolution import project_production_spec
+from local_drama.application.queries.generation_preferences import GenerationPreferenceQueryService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.policies import (
     SHOT_READINESS_ACTIONS,

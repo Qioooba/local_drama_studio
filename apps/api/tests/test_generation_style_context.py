@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from local_drama.application.configuration import ConfigurationService
 from local_drama.application.creative_entries import CreativeEntryService
 from local_drama.application.generation import GenerationService
 from local_drama.application.profiles import ProfileService
@@ -26,6 +27,30 @@ def _subject(workspace, database, code: str) -> tuple[dict, dict]:
         target_duration_ms=60_000,
         allow_unconfigured_capabilities=True,
     )
+    ConfigurationService(database).create_plan_binding(
+        str(project["id"]),
+        "project-production-plan",
+        f"{code} production plan",
+        {
+            "schema_version": "localdrama.production-plan.v2",
+            "presentation": {
+                "aspect_ratio": "16:9",
+                "width": 2560,
+                "height": 1440,
+                "fps": {"numerator": 24, "denominator": 1},
+            },
+            "generation": {
+                "upscale": {
+                    "enabled": True,
+                    "required": True,
+                    "stage": "COMPOSE_QC",
+                    "executor": "builtin:ffmpeg",
+                    "target": "PRESENTATION_SPEC",
+                    "fit": "LETTERBOX",
+                }
+            },
+        },
+    )
     season = projects.list_seasons(str(project["id"]))[0]
     episode = projects.list_episodes(str(season["id"]))[0]
     shot = projects.create_shot(str(episode["id"]), "S001", 4_000)
@@ -38,13 +63,20 @@ def _profile(workspace, database) -> str:
         for item in ProfileService(database, workspace.manifest_path).sync_manifest()["profiles"]
         if item["capability"] == "VIDEO_T2V"
     )
-    workflow = {"1": {"class_type": "LoadImage", "inputs": {"prompt": "", "seed": 0}}}
+    workflow = {
+        "1": {
+            "class_type": "MiniMaxH3ImageToVideo",
+            "inputs": {"prompt": "", "width": 864, "height": 480, "length": 107},
+        },
+        "2": {"class_type": "RandomNoise", "inputs": {"noise_seed": 0}},
+        "3": {"class_type": "CreateVideo", "inputs": {"fps": 24.0}},
+    }
     version = WorkflowService(database, workspace).register_package(
         "style_context_workflow",
         "Style context",
         workflow,
         {},
-        {"PROMPT": {"node_id": "1", "input": "prompt"}, "SEED": {"node_id": "1", "input": "seed"}},
+        {"PROMPT": {"node_id": "1", "input": "prompt"}, "SEED": {"node_id": "2", "input": "noise_seed"}},
     )
     with database.transaction() as connection:
         connection.execute("UPDATE workflow_versions SET status='PUBLISHED' WHERE id=?", (version["id"],))

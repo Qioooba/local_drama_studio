@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 import json
 
 from fastapi.testclient import TestClient
 
 from local_drama.application.documents import DocumentImportService
+from local_drama.application.episode_source_binding import resolve_episode_source_binding
 from local_drama.application.generation_model_catalog import action_for_capability
 from local_drama.application.projects import ProjectService
 from local_drama.application.worker import LocalMediaWorker
+from local_drama.infrastructure.database.adaptation_plan_repository import SqliteAdaptationPlanRepository
 from local_drama.infrastructure.local_llm import LocalLLMClient
 from local_drama.main import create_app
 
@@ -235,7 +238,9 @@ def test_episode_plan_capability_is_a_text_planning_route() -> None:
 def test_analysis_dag_rechecks_inputs_records_invocations_and_writes_review_draft(workspace, database, monkeypatch) -> None:
     project = _project(workspace, database)
     profile_version_id = _published_analysis_profile(database)
-    imported = DocumentImportService(database, workspace).import_document(str(project["id"]), _long_source(workspace))
+    documents = DocumentImportService(database, workspace)
+    imported = documents.import_document(str(project["id"]), _long_source(workspace))
+    documents.commit(str(imported["import_session_id"]), str(imported["preview_hash"]))
     with TestClient(create_app(workspace)) as client:
         created = client.post(
             f"/api/v2/projects/{project['id']}/adaptation-plans",
@@ -258,7 +263,12 @@ def test_analysis_dag_rechecks_inputs_records_invocations_and_writes_review_draf
         )
         assert submitted.status_code == 202, submitted.text
 
+    actual_calls: list[dict[str, object]] = []
+
     def fake_analysis_response(self, system_prompt, user_prompt, **kwargs):
+        actual_calls.append(
+            {"system_prompt": system_prompt, "user_prompt": user_prompt, "options": kwargs.get("inference_options")}
+        )
         if "events（数组）" in system_prompt:
             return {
                 "summary": "雨夜中的人物行动。",
@@ -318,6 +328,7 @@ def test_analysis_dag_rechecks_inputs_records_invocations_and_writes_review_draf
         assert materialized.status_code == 201, materialized.text
         assert materialized.json()["strategy"] == "APPEND_NEW"
         assert len(materialized.json()["items"]) == 1
+        materialized_episode_id = str(materialized.json()["items"][0]["episode_id"])
         repeated_materialized = client.post(
             f"/api/v2/adaptation-plans/{plan_id}/materializations",
             json={"expected_content_sha256": review_workspace.json()["revision"]["content_sha256"], "confirm_append": True},
@@ -326,6 +337,10 @@ def test_analysis_dag_rechecks_inputs_records_invocations_and_writes_review_draf
         assert repeated_materialized.status_code == 201, repeated_materialized.text
         assert repeated_materialized.json()["idempotent"] is True
     with database.connect() as connection:
+        binding = resolve_episode_source_binding(connection, materialized_episode_id)
+        assert binding["source_document_version_id"] == imported["source_document_version_id"]
+        assert binding["import_session_id"] == imported["import_session_id"]
+        assert binding["start_paragraph"] <= binding["end_paragraph"]
         node = connection.execute(
             "SELECT output_json FROM adaptation_plan_run_nodes WHERE job_id=?",
             (outcome["job"]["id"],),
@@ -333,10 +348,33 @@ def test_analysis_dag_rechecks_inputs_records_invocations_and_writes_review_draf
         assert node is not None
         assert '"planning_state":"SUCCEEDED"' in str(node["output_json"])
         invocation = connection.execute(
-            "SELECT status,run_node_id FROM llm_invocations WHERE run_node_id IS NOT NULL ORDER BY created_at DESC LIMIT 1"
+            """SELECT status,run_node_id,prompt_contract_version FROM llm_invocations
+               WHERE run_node_id IS NOT NULL ORDER BY created_at DESC LIMIT 1"""
         ).fetchone()
         assert invocation is not None
         assert invocation["status"] == "SUCCEEDED"
+        assert invocation["prompt_contract_version"] == "adaptation-analysis/v2"
+        assert connection.execute("SELECT COUNT(*) FROM llm_invocations").fetchone()[0] == len(actual_calls)
+        assert connection.execute(
+            "SELECT COUNT(*) FROM llm_invocations WHERE input_tokens IS NOT NULL OR output_tokens IS NOT NULL"
+        ).fetchone()[0] == 0
+        assert all("request_checkpoint" not in str(call["user_prompt"]) for call in actual_calls)
+        checkpoint_node = connection.execute(
+            """SELECT id,output_json FROM adaptation_plan_run_nodes
+               WHERE stage='CHUNK_MAP' ORDER BY node_key LIMIT 1"""
+        ).fetchone()
+        checkpoint = json.loads(str(checkpoint_node["output_json"]))["request_checkpoint"]
+        expected_request_sha = hashlib.sha256(
+            json.dumps(
+                checkpoint, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).hexdigest()
+        persisted_request = connection.execute(
+            """SELECT request_sha256 FROM llm_invocations
+               WHERE run_node_id=? ORDER BY created_at LIMIT 1""",
+            (checkpoint_node["id"],),
+        ).fetchone()
+        assert persisted_request["request_sha256"] == expected_request_sha
         assert connection.execute("SELECT COUNT(*) FROM adaptation_story_arcs").fetchone()[0] == 1
         assert connection.execute("SELECT COUNT(*) FROM adaptation_season_groups").fetchone()[0] == 1
         assert connection.execute("SELECT COUNT(*) FROM adaptation_episode_items").fetchone()[0] == 1
@@ -346,6 +384,14 @@ def test_analysis_dag_rechecks_inputs_records_invocations_and_writes_review_draf
         assert connection.execute("SELECT COUNT(*) FROM episodes").fetchone()[0] == 2
         assert connection.execute("SELECT COUNT(*) FROM audit_events WHERE action='ADAPTATION_PLAN_APPROVED'").fetchone()[0] == 1
         assert connection.execute("SELECT COUNT(*) FROM audit_events WHERE action='ADAPTATION_PLAN_MATERIALIZED'").fetchone()[0] == 1
+
+    frozen_again = SqliteAdaptationPlanRepository(database, workspace).freeze_analysis_request(
+        run_node_id=str(checkpoint_node["id"]),
+        source_text_sha256=str(checkpoint["source_text_sha256"]),
+        request={"system_prompt": "漂移后的提示", "user_input": "漂移后的检索内容"},
+    )
+    assert frozen_again == checkpoint
+    assert "漂移后的检索内容" not in frozen_again["user_input"]
 
 
 def test_analysis_knowledge_block_filters_and_fails_open(database, workspace, monkeypatch) -> None:

@@ -8,6 +8,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, cast
 
+from local_drama.application.audio_requirements import canonical_tts_requirements
 from local_drama.application.ports.dialogue import DialogueJobPort, DialogueMediaPort, DialogueUnitOfWork
 from local_drama.application.reviews import ReviewService
 from local_drama.config import Settings
@@ -1237,53 +1238,12 @@ class DialogueService:
             ).fetchone()
         if episode is None:
             raise DomainRuleError("EPISODE_NOT_FOUND", "集不存在")
-        project_id = str(episode["project_id"])
         lines = self.list_lines(episode_id)
         with self.database.connect() as connection:
-            characters = connection.execute(
-                "SELECT id,code,name FROM story_assets WHERE project_id=? AND kind='CHARACTER' AND status='ACTIVE' ORDER BY code",
-                (project_id,),
-            ).fetchall()
-            binding_rows = connection.execute(
-                """SELECT cvb.character_asset_id, cvb.voice_profile_version_id, vpv.voice_ref, vpv.status
-                FROM character_voice_bindings cvb
-                JOIN voice_profile_versions vpv ON vpv.id=cvb.voice_profile_version_id
-                WHERE cvb.project_id=?""",
-                (project_id,),
-            ).fetchall()
-            voice_rows: list[Any] = []
-            profiles_by_id: dict[str, Any] = {}
-            voice_ids = [str(row["voice_profile_version_id"]) for row in binding_rows]
-            if voice_ids:
-                placeholders = ",".join("?" for _ in voice_ids)
-                voice_rows = connection.execute(
-                    f"SELECT id,provider_profile_version_id FROM voice_profile_versions WHERE id IN ({placeholders})",
-                    voice_ids,
-                ).fetchall()
-                provider_ids = [str(row["provider_profile_version_id"]) for row in voice_rows if row["provider_profile_version_id"]]
-                if provider_ids:
-                    profile_placeholders = ",".join("?" for _ in provider_ids)
-                    for profile in connection.execute(
-                        f"SELECT id,status,capability FROM execution_profile_versions WHERE id IN ({profile_placeholders})",
-                        provider_ids,
-                    ).fetchall():
-                        profiles_by_id[str(profile["id"])] = profile
-            shot_character_by_shot: dict[str, list[dict[str, Any]]] = {}
-            shot_ids = [str(line["shot_id"]) for line in lines if line.get("shot_id")]
-            if shot_ids:
-                shot_placeholders = ",".join("?" for _ in shot_ids)
-                for row in connection.execute(
-                    f"""SELECT sab.shot_id, sa.id AS asset_id FROM shot_asset_bindings sab
-                    JOIN story_assets sa ON sa.id=sab.asset_id
-                    WHERE sab.shot_id IN ({shot_placeholders}) AND sa.kind='CHARACTER' AND sa.status='ACTIVE'""",
-                    shot_ids,
-                ).fetchall():
-                    shot_character_by_shot.setdefault(str(row["shot_id"]), []).append(dict(row))
-        provider_by_voice_id = {str(row["id"]): row["provider_profile_version_id"] for row in voice_rows}
-        voice_by_character = {str(row["character_asset_id"]): row for row in binding_rows}
-
-        def _normalize(value: str) -> str:
-            return value.strip().replace("\u3000", "").replace(" ", "")
+            requirements = canonical_tts_requirements(connection, episode_id)
+        resolution_by_line = {
+            str(item["line_id"]): item for item in requirements["items"]
+        }
 
         submitted: list[dict[str, Any]] = []
         skipped: list[dict[str, Any]] = []
@@ -1297,41 +1257,29 @@ class DialogueService:
                 skipped.append({"line_id": line_id, "code": code, "speaker": speaker, "reason": "NO_TEXT_REVISION"})
                 continue
             text_revision = revisions[-1]
-            character_asset_id: str | None = None
-            shot_id = line.get("shot_id")
-            if shot_id:
-                shot_characters = shot_character_by_shot.get(str(shot_id), [])
-                if len(shot_characters) == 1:
-                    character_asset_id = str(shot_characters[0]["asset_id"])
-            if character_asset_id is None:
-                normalized_speaker = _normalize(speaker)
-                for character in characters:
-                    if normalized_speaker and normalized_speaker in {
-                        _normalize(str(character["name"])),
-                        _normalize(str(character["code"])),
-                    }:
-                        character_asset_id = str(character["id"])
-                        break
-            if character_asset_id is None:
-                skipped.append({"line_id": line_id, "code": code, "speaker": speaker, "reason": "VOICE_UNRESOLVED"})
+            resolution = resolution_by_line.get(line_id)
+            if resolution is None:
+                skipped.append({"line_id": line_id, "code": code, "speaker": speaker, "reason": "NO_TEXT_REVISION"})
                 continue
-            voice = voice_by_character.get(character_asset_id)
-            if voice is None or str(voice["status"]) != "ACTIVE":
-                skipped.append({"line_id": line_id, "code": code, "speaker": speaker, "reason": "VOICE_UNRESOLVED"})
+            if resolution.get("reusable_media_version_id"):
+                skipped.append({
+                    "line_id": line_id,
+                    "code": code,
+                    "speaker": speaker,
+                    "reason": "CURRENT_AUDIO_REUSABLE",
+                    "media_version_id": resolution["reusable_media_version_id"],
+                })
                 continue
-            voice_profile_version_id = str(voice["voice_profile_version_id"])
-            provider_profile_version_id = provider_by_voice_id.get(voice_profile_version_id)
-            profile = profiles_by_id.get(str(provider_profile_version_id)) if provider_profile_version_id else None
-            eligible = (
-                provider_profile_version_id is not None
-                and profile is not None
-                and str(profile["status"]) == "PUBLISHED"
-                and "TTS" in str(profile["capability"]).upper()
-                and str(voice["voice_ref"]).startswith("sapi:")
-            )
-            if not eligible:
-                skipped.append({"line_id": line_id, "code": code, "speaker": speaker, "reason": "VOICE_NOT_JOB_ELIGIBLE"})
+            if not resolution.get("eligible"):
+                skipped.append({
+                    "line_id": line_id,
+                    "code": code,
+                    "speaker": speaker,
+                    "reason": str(resolution.get("blocked_reason") or "VOICE_UNRESOLVED"),
+                })
                 continue
+            character_asset_id = str(resolution["character_asset_id"])
+            voice_profile_version_id = str(resolution["voice_profile_version_id"])
             try:
                 job = self.submit_tts_job(
                     str(text_revision["id"]),

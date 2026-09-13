@@ -23,5 +23,25 @@ def test_prompt_modifiers_are_normalized_and_compiled_as_a_final_layer() -> None
     assert fields["prompt_modifiers"] == ["雨夜", "冷色调"]
     assert compose_shot_prompt(fields, shot_code="S001") == (
         "镜头 S001，主角推门进入，情绪基调：压迫感，景别 MEDIUM，构图 RULE_OF_THIRDS，"
-        "运镜 DOLLY_IN，情绪 警惕，环境：废弃车站，对白：有人吗？，统一视觉修饰：雨夜，冷色调"
+        "运镜 DOLLY_IN，情绪 警惕，环境：废弃车站，对白：主角：有人吗？，统一视觉修饰：雨夜，冷色调"
     )
+
+
+def test_structured_dialogue_preserves_speaker_and_verbatim_text() -> None:
+    dialogue = [
+        {"speaker": "A", "text": "别走。"},
+        {"speaker": "B", "text": '"我会回来：明天。"\n不要等我。'},
+        {"speaker": "旁白", "text": "雨仍在下。"},
+        {"speaker": "A", "text": "A：已有标签。"},
+        {"speaker": "", "text": "说话人待确认，但正文不能变化。"},
+        {"speaker": "不能成为对白", "text": ""},
+    ]
+
+    prompt = compose_shot_prompt({"dialogue": dialogue})
+
+    assert prompt == ('对白：A：别走。；B："我会回来：明天。"\n不要等我。；旁白：雨仍在下。；A：已有标签。；说话人待确认，但正文不能变化。')
+
+
+def test_empty_dialogue_does_not_create_prompt_text() -> None:
+    assert compose_shot_prompt({"dialogue": []}) == ""
+    assert compose_shot_prompt({"dialogue": [{"speaker": "A", "text": ""}]}) == ""

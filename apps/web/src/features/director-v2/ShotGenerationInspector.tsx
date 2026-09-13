@@ -8,6 +8,7 @@ import {
   resolveProfileCameraPlan,
   submitShotGenerationV2,
   type ShotBaseGenerationPreflightCommand,
+  type ShotGenerationPreflight,
   type ShotStudio,
 } from "../../generated/api";
 import { composePromptFromIntent, deriveShotSeed } from "../generation/generationDefaults";
@@ -146,6 +147,7 @@ export function ShotGenerationInspector({ episodeId, shotId, shotCode, shotRevis
   const [candidateCount, setCandidateCount] = useState(4);
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null);
   const [plannedFrameDraw, setPlannedFrameDraw] = useState<PlannedFrameDraw | null>(null);
+  const [lastVideoPreflight, setLastVideoPreflight] = useState<ShotGenerationPreflight | null>(null);
   const prompt = useMemo(() => compilePromptPreview(defaultPrompt, positiveOverride, negativePrompt), [defaultPrompt, negativePrompt, positiveOverride]);
   const promptBundle = useMemo<ShotPromptBundleRequest>(() => ({
     base_prompt: defaultPrompt,
@@ -274,6 +276,7 @@ export function ShotGenerationInspector({ episodeId, shotId, shotCode, shotRevis
         prompt_bundle: promptBundle,
       };
       const { preflight } = await preflightShotGenerationV2(shotId, command);
+      setLastVideoPreflight(preflight);
       if (preflight.status !== "READY") throw new Error(preflight.blockers?.map((item) => String(item.message ?? item.code)).join("；") || "视频生成条件未满足");
       return submitShotGenerationV2(shotId, { ...command, plan_hash: preflight.plan_hash, idempotency_key: commandKey("shot-video-draw") });
     },
@@ -413,6 +416,16 @@ export function ShotGenerationInspector({ episodeId, shotId, shotCode, shotRevis
         <p>页面正/反提示词会随本次提交冻结；视频只能使用已通过人工审核且技术完整性合格的首帧。</p>
       </div> : null}
     </div>
+    {lastVideoPreflight && <details className="shot-draw-debug-details" open>
+      <summary>本次视频实际执行输入（只读）</summary>
+      <p>以下内容来自服务端预检，并已用同一计划哈希冻结到生成任务。</p>
+      <label>模型语义输入</label>
+      <pre>{JSON.stringify(lastVideoPreflight.actual_execution_inputs?.compiled_semantic_inputs ?? {}, null, 2)}</pre>
+      <label>媒体角色 / 顺序 / SHA / 探测规格</label>
+      <pre>{JSON.stringify(lastVideoPreflight.actual_execution_inputs?.media_bindings ?? [], null, 2)}</pre>
+      <label>叙事时长 / 合法帧数 / 预计输出 / 时间线区间</label>
+      <pre>{JSON.stringify(lastVideoPreflight.actual_execution_inputs?.timing ?? {}, null, 2)}</pre>
+    </details>}
     {actionFeedback && <p className={`shot-draw-feedback ${actionFeedback.kind}`} role={actionFeedback.kind === "error" ? "alert" : "status"} aria-live="polite">{actionFeedback.message}</p>}
     {!actionFeedback && error && <p className="shot-draw-error" role="alert">{errorText(error)}</p>}
     {!canGenerate && <p className="shot-draw-error">当前镜头尚未达到可生成状态。</p>}

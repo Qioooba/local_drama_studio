@@ -620,6 +620,7 @@ class JobService:
         comfy_prompt_id: str | None = None,
         comfy_client_id: str | None = None,
         sandbox_rel_path: str | None = None,
+        execution_evidence: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not provider_job_id:
             raise DomainRuleError("PROVIDER_JOB_ID_REQUIRED", "provider_job_id 不能为空")
@@ -629,6 +630,16 @@ class JobService:
                 "UPDATE job_attempts SET provider_job_id=?, comfy_prompt_id=?, comfy_client_id=?, sandbox_rel_path=?, updated_at=?, revision=revision+1 WHERE id=?",
                 (provider_job_id, comfy_prompt_id, comfy_client_id, sandbox_rel_path, _iso(_utc_now()), attempt_id),
             )
+            if execution_evidence is not None:
+                job_row = connection.execute(
+                    "SELECT input_snapshot_json FROM jobs WHERE id=?", (row["job_id"],)
+                ).fetchone()
+                snapshot = _parse_json(str(job_row["input_snapshot_json"] or "{}"))
+                snapshot.setdefault("execution_snapshot", {}).update(execution_evidence)
+                connection.execute(
+                    "UPDATE jobs SET input_snapshot_json=?,updated_at=?,revision=revision+1 WHERE id=?",
+                    (_json(snapshot), _iso(_utc_now()), row["job_id"]),
+                )
             return {
                 "attempt_id": attempt_id,
                 "job_id": row["job_id"],
@@ -636,6 +647,54 @@ class JobService:
                 "comfy_prompt_id": comfy_prompt_id,
                 "comfy_client_id": comfy_client_id,
                 "sandbox_rel_path": sandbox_rel_path,
+            }
+
+    def mark_provider_acceptance_unknown(
+        self,
+        attempt_id: str,
+        lease_token: str,
+        worker_id: str,
+        *,
+        error_code: str = "PROVIDER_ACCEPTANCE_UNKNOWN",
+    ) -> dict[str, Any]:
+        """Quarantine an ambiguous provider submit instead of retrying it."""
+
+        now = _iso(_utc_now())
+        with self.database.transaction() as connection:
+            row = self._leased_attempt(connection, attempt_id, lease_token, worker_id)
+            progress = _parse_json(str(row["progress_json"] or "{}"))
+            progress.update({"phase": "PROVIDER_ACCEPTANCE_UNKNOWN", "acceptance_unknown": True})
+            connection.execute(
+                """UPDATE job_attempts SET state='NEEDS_ATTENTION',error_code=?,
+                error_detail_redacted='provider submit may have been accepted; reconcile before retry',
+                progress_json=?,lease_token=NULL,lease_expires_at=NULL,finished_at=?,updated_at=?,revision=revision+1
+                WHERE id=?""",
+                (error_code, _json(progress), now, now, attempt_id),
+            )
+            connection.execute(
+                """UPDATE jobs SET state='NEEDS_ATTENTION',next_run_at=NULL,last_error_code=?,
+                last_error_detail_redacted='provider submit may have been accepted; reconcile before retry',
+                progress_json=?,progress_updated_at=?,updated_at=?,revision=revision+1 WHERE id=?""",
+                (error_code, _json(progress), now, now, row["job_id"]),
+            )
+            connection.execute(
+                "UPDATE job_resource_leases SET released_at=? WHERE attempt_id=? AND released_at IS NULL",
+                (now, attempt_id),
+            )
+            self._emit(
+                connection,
+                "JOB_PROVIDER_ACCEPTANCE_UNKNOWN",
+                row["project_id"],
+                "JOB_ATTEMPT",
+                attempt_id,
+                {"job_id": row["job_id"], "error_code": error_code},
+            )
+            self._last_automatic_reconcile_at = None
+            return {
+                "job_id": row["job_id"],
+                "attempt_id": attempt_id,
+                "attempt_state": NEEDS_ATTENTION,
+                "job_state": NEEDS_ATTENTION,
             }
 
     @staticmethod
@@ -812,6 +871,15 @@ class JobService:
                 raise DomainRuleError("JOB_NOT_FOUND", "Job 不存在")
             if row["state"] not in {FAILED, NEEDS_ATTENTION, ORPHANED}:
                 raise DomainRuleError("JOB_NOT_RETRYABLE", "只有失败、孤儿或需人工关注的 Job 可以 retry")
+            if str(row["last_error_code"] or "") in {
+                "COMFY_PROVIDER_ACCEPTANCE_UNKNOWN",
+                "PROVIDER_ACCEPTANCE_UNKNOWN",
+            }:
+                raise DomainRuleError(
+                    "PROVIDER_ACCEPTANCE_RECONCILIATION_REQUIRED",
+                    "外部受理状态未知；完成对账或明确新建任务前不能直接重试",
+                    {"job_id": job_id},
+                )
             connection.execute(
                 "UPDATE jobs SET state='QUEUED', next_run_at=?, cancel_requested_at=NULL, progress_json='{}', progress_updated_at=NULL, last_error_code=NULL, last_error_detail_redacted=NULL, finished_at=NULL, updated_at=?, revision=revision+1 WHERE id=?",
                 (now, now, job_id),
@@ -1035,7 +1103,8 @@ class JobService:
                 (current_iso,),
             ).fetchall()
             for row in rows:
-                uncertain = bool(row["provider_job_id"])
+                progress = _parse_json(str(row["progress_json"] or "{}"))
+                uncertain = bool(row["provider_job_id"]) or progress.get("phase") == "SUBMITTING_TO_PROVIDER"
                 next_job_state = NEEDS_ATTENTION if uncertain else (QUEUED if int(row["attempt_no"]) < int(row["max_attempts"]) else NEEDS_ATTENTION)
                 connection.execute(
                     "UPDATE job_attempts SET state='ORPHANED', error_code='WORKER_LEASE_EXPIRED', error_detail_redacted='lease expired; reconciled locally', lease_token=NULL, updated_at=?, revision=revision+1 WHERE id=?",

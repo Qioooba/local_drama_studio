@@ -643,10 +643,10 @@ def test_deepseek_story_breakdown_full_pipeline(workspace, database, monkeypatch
 
 
 def test_system_runs_normally_without_cloud_key(workspace, database) -> None:
-    # When no remote key is set, local LLM service status fails gracefully with model required/not configured
-    # without making any outbound requests or crashing
+    # When no remote key is set, the configured local provider fails gracefully
+    # with model required/not configured without outbound requests or crashing.
     llm_svc = LocalLLMService(database, workspace)
     status = llm_svc.status()
     assert status["status"] == "BLOCKED"
-    assert status["provider"] == "OLLAMA_LOOPBACK"
+    assert status["provider"] == workspace.llm_provider
     assert status["has_api_key"] is False

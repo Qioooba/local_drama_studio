@@ -163,6 +163,27 @@ describe("DirectorDeskPage (PR-CUR-002)", () => {
     expect((screen.getByRole("button", { name: "已到最后一项" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("keeps confirmed batch members that are outside the bounded navigator window", async () => {
+    const first = mockDeskData("shot-201", "EP01_S01", 0);
+    first.shot_nav = { ...first.shot_nav, total: 100, selected_index: 0, items: [first.shot_nav.items[0]] };
+    const distant = mockDeskData("shot-260", "EP01_S60", 59);
+    distant.shot_nav = {
+      ...distant.shot_nav,
+      total: 100,
+      selected_index: 59,
+      items: [{ ...distant.shot_nav.items[0], id: "shot-260", code: "EP01_S60" }],
+    };
+    vi.mocked(getShotStudioV2)
+      .mockResolvedValueOnce(first as never)
+      .mockResolvedValueOnce(distant as never);
+
+    renderDesk("/projects/proj-1/episodes/ep-1/studio/shot-201?batch=shot-201%2Cshot-260&batchIndex=0");
+    expect(await screen.findByText("1 / 2")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "下一项" }));
+    expect(await screen.findByText(/EP01_S60 · 主角登场/)).toBeTruthy();
+    expect(screen.getByText("2 / 2")).toBeTruthy();
+  });
+
   it("toggles responsive Shot Navigator drawer and Inspector drawer via buttons", async () => {
     const { container } = renderDesk();
 
@@ -252,7 +273,7 @@ describe("DirectorDeskPage (PR-CUR-002)", () => {
     vi.mocked(submitShotGenerationV2).mockResolvedValue({ operation: "REROLL", variant: { id: "variant-2", intent_id: "intent-1", status: "PLANNED", variant_no: 2 }, job: { id: "job-2", state: "QUEUED" }, reroll: { retry: false, parent_variant_id: "variant-1" } });
     renderDesk();
     await screen.findByText(/Take 1/);
-    fireEvent.click(screen.getByRole("button", { name: "重新生成当前镜头" }));
+    fireEvent.click(screen.getByRole("button", { name: "新拍候选" }));
     await waitFor(() => expect(submitShotGenerationV2).toHaveBeenCalled());
     const generatedSeed = vi.mocked(submitShotGenerationV2).mock.calls[0][1].explicit_seed;
     expect(Number.isInteger(generatedSeed)).toBe(true);

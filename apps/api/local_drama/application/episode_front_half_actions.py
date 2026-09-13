@@ -20,6 +20,7 @@ from local_drama.domain.policies import missing_shot_fields
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.path_policy import controlled_path
 
+from .episode_source_binding import resolve_episode_source_binding
 from .keyframe_references import approved_keyframes_for_shots
 
 
@@ -93,23 +94,9 @@ class EpisodeFrontHalfActionService:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def _committed_source(self, project_id: str) -> dict[str, Any] | None:
+    def _committed_source(self, episode_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
-            row = connection.execute(
-                """SELECT i.id AS import_session_id,i.status AS import_status,
-                v.id AS source_document_version_id,v.parse_status,v.extracted_text_rel,
-                v.text_sha256,v.sha256,v.source_document_id
-                FROM import_sessions i
-                JOIN source_document_versions v ON v.id=i.source_document_version_id
-                WHERE i.project_id=? AND EXISTS (
-                  SELECT 1 FROM audit_events ae
-                  WHERE ae.action='IMPORT_SESSION_COMMITTED'
-                  AND ae.subject_type='import_session' AND ae.subject_id=i.id
-                )
-                ORDER BY i.updated_at DESC,i.id DESC LIMIT 1""",
-                (project_id,),
-            ).fetchone()
-        return dict(row) if row else None
+            return resolve_episode_source_binding(connection, episode_id)
 
     def _validate_source_file(self, episode: dict[str, Any], source: dict[str, Any]) -> tuple[bool, str]:
         if str(source.get("parse_status")) != "PARSED":
@@ -133,7 +120,9 @@ class EpisodeFrontHalfActionService:
             return False, "提交的不可变剧本文本 hash 已变化"
         return True, "剧本源提交与不可变解析文本完整"
 
-    def _applied_breakdowns(self, project_id: str, episode_id: str) -> list[dict[str, Any]]:
+    def _applied_breakdowns(
+        self, project_id: str, episode_id: str, source: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
         with self.database.connect() as connection:
             rows = connection.execute(
                 """SELECT d.id,d.source_document_version_id,d.import_session_id,d.status,d.revision
@@ -143,18 +132,31 @@ class EpisodeFrontHalfActionService:
                   WHERE ae.action='SCRIPT_BREAKDOWN_APPLIED'
                   AND ae.subject_type='script_breakdown_draft' AND ae.subject_id=d.id
                   AND json_extract(ae.metadata_redacted_json,'$.episode_id')=?
-                ) ORDER BY d.updated_at DESC,d.id DESC""",
-                (project_id, episode_id),
+                ) AND (? IS NULL OR d.source_document_version_id=?)
+                AND (? IS NULL OR d.import_session_id=?)
+                ORDER BY d.updated_at DESC,d.id DESC""",
+                (
+                    project_id,
+                    episode_id,
+                    source.get("source_document_version_id") if source else None,
+                    source.get("source_document_version_id") if source else None,
+                    source.get("import_session_id") if source else None,
+                    source.get("import_session_id") if source else None,
+                ),
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def _ready_breakdowns(self, project_id: str) -> list[dict[str, Any]]:
+    def _ready_breakdowns(
+        self, project_id: str, episode_id: str, source: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         with self.database.connect() as connection:
             rows = connection.execute(
                 """SELECT id,source_document_version_id,import_session_id,status,revision
                 FROM script_breakdown_drafts WHERE project_id=? AND status='DRAFT_READY'
+                AND source_document_version_id=? AND import_session_id=?
+                AND json_extract(confidence_json,'$.target_episode_id')=?
                 ORDER BY updated_at DESC,id DESC""",
-                (project_id,),
+                (project_id, source["source_document_version_id"], source["import_session_id"], episode_id),
             ).fetchall()
         return [dict(row) for row in rows]
 
@@ -162,14 +164,30 @@ class EpisodeFrontHalfActionService:
         """Return a bounded fingerprint input for recovery/stale detection."""
         episode = self._episode(episode_id)
         project_id = str(episode["project_id"])
-        source = self._committed_source(project_id)
-        applied = self._applied_breakdowns(project_id, episode_id)
+        source_error: DomainRuleError | None = None
+        try:
+            source = self._committed_source(episode_id)
+        except DomainRuleError as error:
+            source = None
+            source_error = error
+        applied = self._applied_breakdowns(project_id, episode_id, source) if source else []
+        source_version_id = (
+            str(source["source_document_version_id"]) if source else "__UNRESOLVED__"
+        )
+        import_session_id = str(source["import_session_id"]) if source else "__UNRESOLVED__"
         with self.database.connect() as connection:
             drafts = connection.execute(
                 """SELECT id,status,revision,source_document_version_id,import_session_id
                 FROM script_breakdown_drafts WHERE project_id=?
-                ORDER BY id""",
-                (project_id,),
+                AND json_extract(confidence_json,'$.target_episode_id')=?
+                AND source_document_version_id=? AND import_session_id=?
+                ORDER BY 1""",
+                (
+                    project_id,
+                    episode_id,
+                    source_version_id,
+                    import_session_id,
+                ),
             ).fetchall()
             proposals = connection.execute(
                 """SELECT p.id,p.status,p.resolved_asset_id,p.revision
@@ -181,14 +199,15 @@ class EpisodeFrontHalfActionService:
                     AND ae.subject_id=d.id
                     AND json_extract(ae.metadata_redacted_json,'$.episode_id')=?
                   )
+                  AND d.source_document_version_id=? AND d.import_session_id=?
                 ) ORDER BY p.id""",
-                (project_id, episode_id),
+                (project_id, episode_id, source_version_id, import_session_id),
             ).fetchall()
             packs = connection.execute(
                 """SELECT DISTINCT v.id,v.status,v.revision,p.current_version_id
-                FROM character_identity_pack_versions v
-                JOIN character_identity_packs p ON p.id=v.pack_id
-                WHERE v.story_asset_id IN (
+                FROM character_identity_packs p
+                JOIN character_identity_pack_versions v ON v.id=p.current_version_id
+                WHERE p.story_asset_id IN (
                   SELECT DISTINCT sab.asset_id FROM shot_asset_bindings sab
                   JOIN shots s ON s.id=sab.shot_id WHERE s.episode_id=? AND s.archived_at IS NULL
                   UNION SELECT DISTINCT p2.resolved_asset_id FROM story_asset_proposals p2
@@ -199,10 +218,26 @@ class EpisodeFrontHalfActionService:
                       AND ae.subject_id=d.id
                       AND json_extract(ae.metadata_redacted_json,'$.episode_id')=?
                     )
+                    AND d.source_document_version_id=? AND d.import_session_id=?
                   )
-                ) ORDER BY v.id""",
-                (episode_id, project_id, episode_id),
+                )
+                UNION
+                SELECT DISTINCT selected.id,selected.status,selected.revision,p.current_version_id
+                FROM shot_asset_bindings sab
+                JOIN shots s ON s.id=sab.shot_id
+                JOIN character_identity_pack_versions selected ON selected.id=sab.identity_pack_version_id
+                JOIN character_identity_packs p ON p.id=selected.pack_id
+                WHERE s.episode_id=? AND s.archived_at IS NULL""",
+                (
+                    episode_id,
+                    project_id,
+                    episode_id,
+                    source_version_id,
+                    import_session_id,
+                    episode_id,
+                ),
             ).fetchall()
+            packs = sorted(packs, key=lambda row: str(row["id"]))
             identity_bindings = connection.execute(
                 """SELECT sab.shot_id,sab.asset_id,sab.identity_pack_version_id,sab.revision
                 FROM shot_asset_bindings sab JOIN shots s ON s.id=sab.shot_id
@@ -241,6 +276,10 @@ class EpisodeFrontHalfActionService:
                 "text_sha256": source.get("text_sha256"),
                 "parse_status": source.get("parse_status"),
             } if source else None,
+            "source_error": {
+                "code": source_error.code,
+                "details": source_error.details or {},
+            } if source_error else None,
             "applied_breakdowns": [
                 {"id": row["id"], "revision": row["revision"], "status": row["status"]} for row in applied
             ],
@@ -252,7 +291,6 @@ class EpisodeFrontHalfActionService:
             "shots": [
                 {
                     "id": row["id"],
-                    "status": row["status"],
                     "current_revision_id": row["current_revision_id"],
                 }
                 for row in self._shots(episode_id)
@@ -261,8 +299,9 @@ class EpisodeFrontHalfActionService:
 
     def story_parse(self, episode_id: str) -> tuple[dict[str, Any], int]:
         episode = self._episode(episode_id)
-        source = self._committed_source(str(episode["project_id"]))
-        if source is None:
+        try:
+            source = self._committed_source(episode_id)
+        except DomainRuleError as error:
             shots = self._shots(episode_id)
             if shots:
                 return self._report(
@@ -273,9 +312,9 @@ class EpisodeFrontHalfActionService:
                 )
             return self._report(
                 "NEEDS_HITL",
-                "SOURCE_COMMIT_REQUIRED",
-                "没有已人工确认提交的剧本源；请先导入、核对并提交预览",
-                {"project_id": str(episode["project_id"]), "fact_refs": []},
+                error.code,
+                error.message,
+                {"project_id": str(episode["project_id"]), **(error.details or {}), "fact_refs": []},
             )
         valid, detail = self._validate_source_file(episode, source)
         status = "PASS" if valid else "NEEDS_HITL"
@@ -294,7 +333,11 @@ class EpisodeFrontHalfActionService:
     def script_breakdown(self, episode_id: str) -> tuple[dict[str, Any], int]:
         episode = self._episode(episode_id)
         project_id = str(episode["project_id"])
-        applied = self._applied_breakdowns(project_id, episode_id)
+        try:
+            source = self._committed_source(episode_id)
+        except DomainRuleError:
+            source = None
+        applied = self._applied_breakdowns(project_id, episode_id, source) if source else []
         if applied:
             return self._report(
                 "PASS",
@@ -312,7 +355,8 @@ class EpisodeFrontHalfActionService:
         source_report, _ = self.story_parse(episode_id)
         if str(source_report["machine_check"]["status"]) == "NEEDS_HITL":
             return source_report, 0
-        ready = self._ready_breakdowns(project_id)
+        source = self._committed_source(episode_id)
+        ready = self._ready_breakdowns(project_id, episode_id, source)
         if ready:
             return self._report(
                 "NEEDS_HITL",

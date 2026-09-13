@@ -138,6 +138,8 @@ def test_episode_preflight_uses_effective_project_auto_video_profile(
     assert profile_check["status"] == "PASS"
     assert profile_check["evidence"]["effective_profile_version_id"] == profile_id
     assert profile_check["evidence"]["resolution_source"] == "EFFECTIVE_VIDEO_PROFILE"
+    assert preflight["runtime_contacted"] is False
+    assert preflight["network_contacted"] is False
 
 
 def test_episode_preflight_keeps_effective_video_profile_project_scoped(
@@ -181,6 +183,160 @@ def test_episode_preflight_keeps_effective_video_profile_project_scoped(
     assert profile_check["evidence"]["effective_profile_version_id"] == "version-scope-b"
 
 
+def test_episode_preflight_does_not_hide_unavailable_shot_override_with_project_default(
+    workspace, database,
+) -> None:
+    project, episode = _episode(workspace, database, "episode_profile_shot_fail_closed")
+    project_id = str(project["id"])
+    shot = ProjectService(database, workspace.projects_root).create_shot(
+        str(episode["id"]), "SHOT-001", 4_000
+    )
+    with database.transaction() as connection:
+        for suffix in ("project", "shot"):
+            connection.execute(
+                """INSERT INTO execution_profiles
+                (id,code,title,created_at,updated_at,created_by,revision,schema_version)
+                VALUES (?,?,?,'now','now','test',1,'v2')""",
+                (f"profile-{suffix}-override", f"profile-{suffix}-override", suffix),
+            )
+            connection.execute(
+                """INSERT INTO execution_profile_versions
+                (id,execution_profile_id,version_no,capability,model_bundle_json,input_contract_json,
+                 parameter_schema_json,status,created_at,updated_at,created_by,revision,schema_version,
+                 capability_json,output_contract_json,resource_policy_json)
+                VALUES (?,?,1,'VIDEO_I2V','{}','{}','{}','PUBLISHED','now','now','test',1,'v2','{}','{}','{}')""",
+                (f"version-{suffix}-override", f"profile-{suffix}-override"),
+            )
+        commands = GenerationPreferenceCommandService(
+            SqliteGenerationPreferenceRepository(connection)
+        )
+        commands.put(
+            project_id=project_id,
+            owner_type="PROJECT",
+            owner_id=project_id,
+            capability="VIDEO_I2V",
+            resolution_mode="EXPLICIT",
+            execution_profile_version_id="version-project-override",
+            reason="usable project default",
+        )
+        commands.put(
+            project_id=project_id,
+            owner_type="SHOT",
+            owner_id=str(shot["id"]),
+            capability="VIDEO_I2V",
+            resolution_mode="EXPLICIT",
+            execution_profile_version_id="version-shot-override",
+            reason="shot-specific selection",
+        )
+        connection.execute(
+            "UPDATE execution_profile_versions SET status='RETIRED' WHERE id='version-shot-override'"
+        )
+
+    before = {}
+    with database.connect() as connection:
+        before["jobs"] = int(connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0])
+        before["media"] = int(connection.execute("SELECT COUNT(*) FROM media_versions").fetchone()[0])
+    preflight = EpisodeProductionRunService(database, workspace).preflight(
+        str(episode["id"]), tts_enabled=False, min_free_disk_bytes=1
+    )
+    check = next(item for item in preflight["checks"] if item["code"] == "PROFILE_CAPABILITY_MISSING")
+    with database.connect() as connection:
+        after = {
+            "jobs": int(connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]),
+            "media": int(connection.execute("SELECT COUNT(*) FROM media_versions").fetchone()[0]),
+        }
+
+    assert check["status"] == "BLOCKED"
+    assert len(check["evidence"]["unresolved_shots"]) == 1
+    unresolved = check["evidence"]["unresolved_shots"][0]
+    assert unresolved["shot_id"] == str(shot["id"])
+    assert unresolved["profile_version_id"] is None
+    assert unresolved["source"] == "SHOT"
+    assert unresolved["blocked_reason"] == "PROFILE_UNAVAILABLE"
+    assert before == after
+
+
+def test_episode_preflight_reports_exact_profile_model_and_workflow_node_gaps(
+    workspace, database,
+) -> None:
+    project, episode = _episode(workspace, database, "episode_exact_dependencies")
+    project_id = str(project["id"])
+    shot = ProjectService(database, workspace.projects_root).create_shot(
+        str(episode["id"]), "SHOT-001", 4_000
+    )
+    unrelated = workspace.work_root / "unrelated-model.bin"
+    unrelated.write_bytes(b"not the selected vae")
+    with database.transaction() as connection:
+        connection.execute(
+            """INSERT INTO workflows
+            (id,code,title,created_at,updated_at,created_by,revision,schema_version)
+            VALUES ('workflow-exact','workflow-exact','Exact','now','now','test',1,'v2')"""
+        )
+        connection.execute(
+            """INSERT INTO workflow_versions
+            (id,workflow_id,version_no,content_hash,status,contract_json,created_at,updated_at,
+             created_by,revision,schema_version,content_json,node_bindings_json,runtime_contract_json)
+            VALUES ('workflow-version-exact','workflow-exact',1,'hash-exact','PUBLISHED','{}',
+                    'now','now','test',1,'v2','{}','{}','{}')"""
+        )
+        connection.execute(
+            """INSERT INTO workflow_validation_attestations
+            (id,workflow_version_id,workflow_content_hash,status,evidence_json,evidence_hash,created_at,created_by)
+            VALUES ('attestation-exact','workflow-version-exact','hash-exact','BLOCKED',?,
+                    'evidence-hash','now','test')""",
+            (json.dumps({"status": "BLOCKED", "missing_nodes": ["MiniMaxH3VideoVAE"]}),),
+        )
+        connection.execute(
+            """INSERT INTO execution_profiles
+            (id,code,title,created_at,updated_at,created_by,revision,schema_version)
+            VALUES ('profile-exact','profile-exact','Exact','now','now','test',1,'v2')"""
+        )
+        connection.execute(
+            """INSERT INTO execution_profile_versions
+            (id,execution_profile_id,version_no,capability,model_bundle_json,input_contract_json,
+             parameter_schema_json,status,created_at,updated_at,created_by,revision,schema_version,
+             capability_json,output_contract_json,resource_policy_json,workflow_version_id)
+            VALUES ('profile-version-exact','profile-exact',1,'VIDEO_I2V',?,'{}','{}','PUBLISHED',
+                    'now','now','test',1,'v2','{}','{}','{}','workflow-version-exact')""",
+            (json.dumps({"video_vae_name": "required-vae.safetensors"}),),
+        )
+        connection.execute(
+            """INSERT INTO model_artifacts
+            (id,code,kind,machine_path_ref,status,created_at,updated_at,created_by,revision,schema_version)
+            VALUES ('unrelated-artifact','unrelated-model','VIDEO_DIFFUSION',?,'ACTIVE',
+                    'now','now','test',1,'v1')""",
+            (str(unrelated),),
+        )
+        GenerationPreferenceCommandService(
+            SqliteGenerationPreferenceRepository(connection)
+        ).put(
+            project_id=project_id,
+            owner_type="SHOT",
+            owner_id=str(shot["id"]),
+            capability="VIDEO_I2V",
+            resolution_mode="EXPLICIT",
+            execution_profile_version_id="profile-version-exact",
+            reason="exact selected route",
+        )
+
+    preflight = EpisodeProductionRunService(database, workspace).preflight(
+        str(episode["id"]), tts_enabled=False, min_free_disk_bytes=1
+    )
+    workflow_check = next(
+        item for item in preflight["checks"]
+        if item["code"] == "PROFILE_WORKFLOW_DEPENDENCIES_MISSING"
+    )
+    model_check = next(
+        item for item in preflight["checks"] if item["code"] == "LOCAL_MODEL_FILES_MISSING"
+    )
+
+    assert workflow_check["status"] == "BLOCKED"
+    assert workflow_check["evidence"]["invalid"][0]["missing_nodes"] == ["MiniMaxH3VideoVAE"]
+    assert model_check["status"] == "BLOCKED"
+    assert model_check["evidence"]["missing_declared_model_refs"] == ["required-vae.safetensors"]
+    assert model_check["evidence"]["usable_model_codes"] == ["unrelated-model"]
+
+
 def test_episode_preflight_uses_live_comfy_probe_over_stale_registered_status(
     workspace, database, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -205,6 +361,8 @@ def test_episode_preflight_uses_live_comfy_probe_over_stale_registered_status(
     assert check["detail"] == "Comfy adapter 已声明，loopback 实时探测可用（登记状态 BLOCKED）"
     assert check["evidence"]["registered_runtime_status"] == "BLOCKED"
     assert check["evidence"]["probe_status"] == "PASS"
+    assert preflight["runtime_contacted"] is True
+    assert preflight["network_contacted"] is True
 
 
 def test_mode_is_fingerprinted_and_frozen_in_workflow_snapshot(workspace, database) -> None:
@@ -232,6 +390,41 @@ def test_mode_is_fingerprinted_and_frozen_in_workflow_snapshot(workspace, databa
     # Creating another mode-specific workflow never mutates the prior frozen definition.
     reread_draft = service.automation.get_workflow(str(draft_workflow["id"]))
     assert reread_draft["definition"]["nodes"][0]["metadata"]["mode_policy"]["target_take_count"] == 1
+
+
+@pytest.mark.parametrize("configured_takes", (1, 2, 4, 6, 8, 16))
+def test_profile_candidate_request_is_resolved_once_to_product_limit(
+    configured_takes: int,
+) -> None:
+    policies = EpisodeProductionRunService._resolved_mode_policies(
+        [{"resource_policy_json": json.dumps({"default_takes": configured_takes})}]
+    )
+
+    for policy in policies.values():
+        assert 1 <= policy["target_take_count"] <= 4
+        assert policy["max_target_take_count"] == 4
+        assert policy["target_take_count"] == min(
+            policy["requested_target_take_count"], 4
+        )
+        assert policy["adjustment_reason"] == (
+            "PRODUCT_MAX_VIDEO_TAKES_PER_SHOT"
+            if policy["requested_target_take_count"] > 4
+            else None
+        )
+
+
+@pytest.mark.parametrize("invalid_count", (0, 5, 6, 8, 16, True))
+def test_video_worker_rejects_unfrozen_candidate_count(
+    workspace, database, invalid_count: int,
+) -> None:
+    service = EpisodeWorkerActionService(database, workspace)
+
+    with pytest.raises(DomainRuleError) as error:
+        service.video_generation(
+            "episode-invalid", "run-invalid", "task-invalid", target_take_count=invalid_count
+        )
+
+    assert error.value.code == "VIDEO_TARGET_TAKE_COUNT_INVALID"
 
 
 @pytest.mark.parametrize(("mode", "target_take_count"), (("DRAFT", 1), ("BALANCED", 2), ("QUALITY", 4)))
@@ -269,6 +462,39 @@ def test_video_action_submits_mode_target_candidate_count(
     assert submitted_take_indexes == list(range(target_take_count)), mode
 
 
+def test_video_action_counts_valid_active_and_only_fills_the_remaining_gap(
+    workspace, database, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = EpisodeWorkerActionService(database, workspace)
+    shot = {"id": "shot-gap", "code": "SHOT-GAP"}
+    submitted_take_indexes: list[int] = []
+    monkeypatch.setattr(service, "_episode", lambda _episode_id: ("project-gap", [shot]))
+    monkeypatch.setattr(
+        service,
+        "_variant_jobs",
+        lambda _shot_id: [{"id": "active-job", "variant_id": "active-variant", "state": "RUNNING"}],
+    )
+    monkeypatch.setattr(service, "_promote_completed_outputs", lambda _jobs: [])
+    monkeypatch.setattr(service, "_shot_video", lambda _shot_id: {"media_version_id": "valid-1"})
+    monkeypatch.setattr(service, "_shot_video_count", lambda _shot_id: 3)
+    monkeypatch.setattr(
+        service,
+        "_submit_shot",
+        lambda *_args, **kwargs: submitted_take_indexes.append(kwargs["take_index"]),
+    )
+
+    report, _ = service.video_generation(
+        "episode-gap", "run-gap", "task-gap", target_take_count=4
+    )
+
+    assert submitted_take_indexes == []
+    assert report["produced"]["items"][0]["status"] == "ACTIVE"
+    assert report["machine_check"]["target_candidate_count"] == 4
+    assert report["machine_check"]["valid_candidate_count"] == 3
+    assert report["machine_check"]["active_candidate_count"] == 1
+    assert report["machine_check"]["technical_retry_count"] == 0
+
+
 def test_video_action_force_new_take_filters_selected_shots_and_ignores_existing_candidate(
     workspace, database, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -278,7 +504,7 @@ def test_video_action_force_new_take_filters_selected_shots_and_ignores_existing
         {"id": "shot-b", "code": "SHOT-B"},
         {"id": "shot-c", "code": "SHOT-C"},
     ]
-    submitted: list[tuple[str, str | None]] = []
+    submitted: list[tuple[str, str | None, int]] = []
     monkeypatch.setattr(service, "_episode", lambda _episode_id: ("project-mode", shots))
     monkeypatch.setattr(service, "_variant_jobs", lambda _shot_id: [{"id": "old-job", "state": "SUCCEEDED"}])
     monkeypatch.setattr(service, "_promote_completed_outputs", lambda _jobs: ["old-media"])
@@ -286,7 +512,13 @@ def test_video_action_force_new_take_filters_selected_shots_and_ignores_existing
     monkeypatch.setattr(service, "_shot_video_count", lambda _shot_id: 1)
 
     def submit(_project_id, shot, _run_id, _task_id, *, take_index=0, previous_shot=None):
-        submitted.append((str(shot["id"]), str(previous_shot["id"]) if previous_shot else None))
+        submitted.append(
+            (
+                str(shot["id"]),
+                str(previous_shot["id"]) if previous_shot else None,
+                take_index,
+            )
+        )
         return {"shot_id": shot["id"], "shot_code": shot["code"], "status": "SUBMITTED", "job_id": "job-new", "variant_id": "variant-new"}
 
     monkeypatch.setattr(service, "_submit_shot", submit)
@@ -298,9 +530,26 @@ def test_video_action_force_new_take_filters_selected_shots_and_ignores_existing
         force_new_take=True,
     )
 
-    assert submitted == [("shot-b", "shot-a")]
+    assert submitted == [("shot-b", "shot-a", 0)]
     assert report["produced"]["items"][0]["forced_new_take"] is True
     assert report["machine_check"]["target_shot_ids"] == ["shot-b"]
+
+    service.video_generation(
+        "episode-mode",
+        "run-mode",
+        "task-mode",
+        target_shot_ids=("shot-b",),
+        force_new_take=True,
+    )
+    assert submitted == [("shot-b", "shot-a", 0), ("shot-b", "shot-a", 0)]
+    service.video_generation(
+        "episode-mode",
+        "run-mode",
+        "task-mode-new-explicit-take",
+        target_shot_ids=("shot-b",),
+        force_new_take=True,
+    )
+    assert submitted[-1] == ("shot-b", "shot-a", 0)
 
 
 def test_selected_shot_video_preflight_compiles_persisted_modifiers_without_runtime_contact(
@@ -339,6 +588,39 @@ def test_selected_shot_video_preflight_compiles_persisted_modifiers_without_runt
     assert preflight["mutated"] is False
     assert preflight["runtime_contacted"] is False
     assert preflight["items"][0]["prompt"].endswith("统一视觉修饰：雨夜，冷色调")
+
+
+def test_video_execution_rejects_profile_drift_from_frozen_preflight(
+    workspace, database, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = EpisodeWorkerActionService(database, workspace)
+    shot = {"id": "shot-frozen-profile", "code": "SHOT-FROZEN"}
+    monkeypatch.setattr(
+        service,
+        "_approved_keyframe",
+        lambda _shot_id: {"media_version_id": "keyframe-frozen"},
+    )
+    monkeypatch.setattr(
+        service,
+        "_video_profile",
+        lambda _project_id, _shot_id: {
+            "id": "profile-now-selected",
+            "input_contract_json": '{"input_slots":{"FIRST_FRAME":{"max":1}}}',
+        },
+    )
+
+    result = service._submit_shot(
+        "project-frozen",
+        shot,
+        "run-frozen",
+        "task-frozen",
+        expected_profile_version_id="profile-frozen-at-preflight",
+    )
+
+    assert result["status"] == "BLOCKED"
+    assert result["code"] == "VIDEO_PROFILE_SNAPSHOT_STALE"
+    assert result["expected_profile_version_id"] == "profile-frozen-at-preflight"
+    assert result["actual_profile_version_id"] == "profile-now-selected"
 
 
 def test_recover_uses_original_quality_mode_snapshot(workspace, database) -> None:

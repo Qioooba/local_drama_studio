@@ -265,6 +265,11 @@ describe("ShotGenerationInspector", () => {
         dependencies: {},
         disk_gate: { blocking: false },
         reproducibility: {},
+        actual_execution_inputs: {
+          compiled_semantic_inputs: { PROMPT: "模型最终提示", SEED: 0, FRAME_COUNT: 107 },
+          media_bindings: [{ role: "FIRST_FRAME", ordinal: 0, media_version_id: "frame-1", sha256: "f".repeat(64) }],
+          timing: { narrative_target_duration_ms: 4000, frame_count: 107, planned_render_duration_ms: 4458 },
+        },
         would_persist_variant: false,
         would_create_job: false,
       },
@@ -292,6 +297,10 @@ describe("ShotGenerationInspector", () => {
       plan_hash: "a".repeat(64),
     })));
     expect(onSubmitted).toHaveBeenCalledWith("视频候选已排队（任务 job-1）。");
+    expect(screen.getByText("本次视频实际执行输入（只读）")).toBeTruthy();
+    expect(screen.getByText(/"SEED": 0/)).toBeTruthy();
+    expect(screen.getByText(/"sha256": "ffffffff/)).toBeTruthy();
+    expect(screen.getByText(/"planned_render_duration_ms": 4458/)).toBeTruthy();
     expect(planShotKeyframeBatch).not.toHaveBeenCalled();
   });
 

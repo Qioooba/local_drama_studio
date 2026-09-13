@@ -9,11 +9,11 @@ import pytest
 from local_drama.application.character_identity_packs import CharacterIdentityPackService
 from local_drama.application.media import MediaService
 from local_drama.application.story_assets import StoryAssetService
-from local_drama.application.workspace_assets import WorkspaceAssetService
+from local_drama.application.workflow_contracts import latest_bound_profile_for_capability
 from local_drama.application.workflow_definitions import WorkflowDefinitionService
 from local_drama.application.workflow_runtime import WorkflowRuntimeService
-from local_drama.application.workflow_contracts import latest_bound_profile_for_capability
 from local_drama.application.workflows import WorkflowService
+from local_drama.application.workspace_assets import WorkspaceAssetService
 from local_drama.infrastructure.service_composition import build_shot_keyframe_batch
 from tests.test_shot_keyframe_generation import _setup
 

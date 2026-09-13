@@ -44,33 +44,53 @@ class AdaptationAnalysisExecutionService:
         on_progress({"phase": "VERIFYING_INPUT", "percent": 10})
         context = self._load_context(job, snapshot)
         user_input = self._user_input(snapshot, context)
+        knowledge_block = None
         if str(snapshot["stage"]) in {"CHUNK_MAP", "ARC_REDUCE", "EPISODE_BOUNDARY"}:
             knowledge_block = self._knowledge_block(snapshot, context, user_input)
             if knowledge_block:
                 user_input = f"{user_input}\n\n{knowledge_block}"
-        request_hash = hashlib.sha256(
-            _json({"snapshot": snapshot, "model": context["model"], "provider": context["provider"]}).encode("utf-8")
-        ).hexdigest()
+        candidate_request = {
+            "prompt_contract_version": "adaptation-analysis/v2",
+            "system_prompt": self._system_prompt(str(snapshot["stage"])),
+            "user_input": user_input,
+            "inference_options": {"num_ctx": 8192},
+            "retrieval_applied": bool(knowledge_block),
+            "runtime": {
+                "provider": context["provider"],
+                "model": context["model"],
+                "base_url": context["base_url"],
+                "provider_connection_id": context["provider_connection_id"],
+            },
+        }
+        frozen_request = self.repository.freeze_analysis_request(
+            run_node_id=str(snapshot["run_node_id"]),
+            source_text_sha256=str(snapshot["source_text_sha256"]),
+            request=candidate_request,
+        )
+        request_hash = hashlib.sha256(_json(frozen_request).encode("utf-8")).hexdigest()
+        runtime = frozen_request.get("runtime")
+        if not isinstance(runtime, dict):
+            raise DomainRuleError("ADAPTATION_REQUEST_CHECKPOINT_INVALID", "分析请求缺少运行时快照")
         invocation_id = self.repository.record_analysis_invocation(
             job_id=str(job["id"]),
             run_node_id=str(snapshot["run_node_id"]),
             profile_version_id=str(snapshot["profile_version_id"]),
-            provider=context["provider"],
-            model=context["model"],
+            provider=str(runtime["provider"]),
+            model=str(runtime["model"]),
             request_sha256=request_hash,
         )
         started = time.monotonic()
         try:
             on_progress({"phase": "CALLING_LLM", "percent": 25})
             output = self.llm.client(
-                model=context["model"],
-                provider=context["provider"],
-                base_url=context["base_url"],
-                provider_connection_id=context["provider_connection_id"],
+                model=str(runtime["model"]),
+                provider=str(runtime["provider"]),
+                base_url=str(runtime["base_url"]),
+                provider_connection_id=runtime.get("provider_connection_id"),
             ).chat_json(
-                self._system_prompt(str(snapshot["stage"])),
-                user_input,
-                inference_options={"num_ctx": 8192},
+                str(frozen_request["system_prompt"]),
+                str(frozen_request["user_input"]),
+                inference_options=dict(frozen_request["inference_options"]),
             )
             if not isinstance(output, dict):
                 raise DomainRuleError("ADAPTATION_LLM_OUTPUT_INVALID", "分层分析模型没有返回 JSON 对象")
@@ -173,6 +193,17 @@ class AdaptationAnalysisExecutionService:
             base_url = str(capability.get("base_url") or self.settings.llm_base_url).strip()
         if not model:
             raise DomainRuleError("LOCAL_LLM_PROFILE_CONFIG_MISMATCH", "分层分析 Profile 未冻结模型")
+        frozen_profile = snapshot.get("profile")
+        expected_profile = {
+            "provider": provider,
+            "model": model,
+            "base_url": base_url,
+            "provider_connection_id": provider_connection_id,
+        }
+        if not isinstance(frozen_profile, dict) or any(
+            frozen_profile.get(key) != value for key, value in expected_profile.items()
+        ):
+            raise DomainRuleError("ADAPTATION_JOB_SNAPSHOT_STALE", "分层分析 Profile 运行合同已变化")
         source_path = controlled_path(
             self.settings.projects_root / str(source["root_rel"]),
             str(source["extracted_text_rel"] or ""),
@@ -187,7 +218,15 @@ class AdaptationAnalysisExecutionService:
             "node_descriptor": _loads(node["output_json"], {}),
             "source_text": source_text,
             "upstream": [
-                {"stage": item["stage"], "node_key": item["node_key"], "output": _loads(item["output_json"], {})}
+                {
+                    "stage": item["stage"],
+                    "node_key": item["node_key"],
+                    "output": {
+                        key: value
+                        for key, value in _loads(item["output_json"], {}).items()
+                        if key in {"planning_state", "result"}
+                    },
+                }
                 for item in rows["upstream"]
             ],
             "provider": provider,

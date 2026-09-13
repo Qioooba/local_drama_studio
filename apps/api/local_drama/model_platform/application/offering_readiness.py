@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import sqlite3
 
-
 _TEXT_CAPABILITIES = frozenset(
     {
         "LLM_STORY_PARSE",

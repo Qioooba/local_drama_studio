@@ -78,6 +78,14 @@ class AdaptationPlanningRepository(Protocol):
 
     def active_provider_connection(self, *, connection_id: str) -> dict[str, Any]: ...
 
+    def freeze_analysis_request(
+        self,
+        *,
+        run_node_id: str,
+        source_text_sha256: str,
+        request: dict[str, Any],
+    ) -> dict[str, Any]: ...
+
     def record_analysis_invocation(
         self,
         *,

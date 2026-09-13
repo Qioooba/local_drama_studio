@@ -1,19 +1,20 @@
 from __future__ import annotations
 
+import json
 import uuid
 
 import pytest
 from fastapi.testclient import TestClient
 
 import local_drama.application.episode_shot_ready as ready_module
+from local_drama.application.breakdown_apply import BreakdownApplyService
 from local_drama.application.episode_replan import EpisodeReplanService
 from local_drama.application.episode_shot_ready import EpisodeShotReadyService
 from local_drama.application.projects import ProjectService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.main import create_app
-from tests.test_episode_replan import _context, _draft_row
 from tests.test_breakdown_apply import _persisted_draft
-from local_drama.application.breakdown_apply import BreakdownApplyService
+from tests.test_episode_replan import _context, _draft_row
 
 
 def _profile(profile_id: str) -> dict[str, object]:
@@ -21,12 +22,22 @@ def _profile(profile_id: str) -> dict[str, object]:
         "id": profile_id,
         "status": "PUBLISHED",
         "workflow_version_id": f"workflow-{profile_id}",
-        "parameter_schema": {
-            "capabilities": {
-                "camera": {"support": "PROMPT_FALLBACK", "prompt_fallback": True}
-            }
-        },
+        "parameter_schema": {"capabilities": {"camera": {"support": "PROMPT_FALLBACK", "prompt_fallback": True}}},
     }
+
+
+def test_auto_heal_does_not_override_unsupported_camera_profile() -> None:
+    profile = _profile("video-no-camera")
+    profile["parameter_schema"] = {"capabilities": {"camera": {"support": "UNSUPPORTED"}}}
+
+    with pytest.raises(DomainRuleError) as caught:
+        EpisodeShotReadyService._resolve_fields(
+            {"action": "推门进入房间", "continuity": "延续上一镜服装与站位"},
+            profile,
+            auto_heal=True,
+        )
+
+    assert caught.value.code == "CAMERA_PLAN_UNSUPPORTED"
 
 
 def _materialize_directed_plan(workspace, database, *, shot_count: int = 11):
@@ -55,10 +66,78 @@ def _materialize_directed_plan(workspace, database, *, shot_count: int = 11):
         idempotency_key=f"apply-{uuid.uuid4()}",
     )
     with database.connect() as connection:
-        revision = int(connection.execute(
-            "SELECT revision FROM episodes WHERE id=?", (str(episode["id"]),)
-        ).fetchone()[0])
+        revision = int(connection.execute("SELECT revision FROM episodes WHERE id=?", (str(episode["id"]),)).fetchone()[0])
     return project, episode, revision
+
+
+def test_auto_heal_preserves_frozen_creative_fields_and_records_automation_decision(workspace, database, monkeypatch) -> None:
+    project, episode, revision = _materialize_directed_plan(workspace, database, shot_count=1)
+    episode_id = str(episode["id"])
+    profile = _profile(f"video-{project['id']}")
+    monkeypatch.setattr(ready_module, "effective_video_profile", lambda _connection, _project_id: profile)
+    with database.transaction() as connection:
+        shot = connection.execute(
+            "SELECT id,current_revision_id FROM shots WHERE episode_id=?",
+            (episode_id,),
+        ).fetchone()
+        frozen_revision_id = str(shot["current_revision_id"])
+        row = connection.execute(
+            "SELECT fields_json FROM shot_revisions WHERE id=?",
+            (frozen_revision_id,),
+        ).fetchone()
+        fields = json.loads(str(row["fields_json"]))
+        fields["dialogue"] = "母亲：这句台词必须保留。"
+        fields["continuity"] = "青色长衫，左肩破损"
+        fields["wardrobe"] = "青色长衫"
+        fields["performance"] = {"emotion": "克制", "intensity": 0}
+        frozen_json = json.dumps(fields, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        connection.execute(
+            "UPDATE shot_revisions SET fields_json=?,is_frozen=1 WHERE id=?",
+            (frozen_json, frozen_revision_id),
+        )
+
+    result = EpisodeShotReadyService(database).confirm(
+        episode_id,
+        expected_episode_revision=revision,
+        idempotency_key="frozen-auto-heal",
+        actor="whole-drama-orchestrator",
+        auto_heal=True,
+    )
+
+    with database.connect() as connection:
+        current = connection.execute(
+            "SELECT current_revision_id FROM shots WHERE episode_id=?",
+            (episode_id,),
+        ).fetchone()
+        frozen = connection.execute(
+            "SELECT fields_json,is_frozen FROM shot_revisions WHERE id=?",
+            (frozen_revision_id,),
+        ).fetchone()
+        current_fields = json.loads(
+            str(
+                connection.execute(
+                    "SELECT fields_json FROM shot_revisions WHERE id=?",
+                    (str(current["current_revision_id"]),),
+                ).fetchone()["fields_json"]
+            )
+        )
+        audit = connection.execute(
+            "SELECT actor,role_context,action,metadata_redacted_json FROM audit_events WHERE subject_id=? ORDER BY event_id DESC LIMIT 1",
+            (episode_id,),
+        ).fetchone()
+
+    assert result["ready_shot_count"] == 1
+    assert str(current["current_revision_id"]) != frozen_revision_id
+    assert frozen["fields_json"] == frozen_json
+    assert frozen["is_frozen"] == 1
+    assert current_fields["dialogue"] == fields["dialogue"]
+    assert current_fields["continuity"] == fields["continuity"]
+    assert current_fields["wardrobe"] == fields["wardrobe"]
+    assert current_fields["performance"]["intensity"] == 0
+    assert audit["actor"] == "whole-drama-orchestrator"
+    assert audit["role_context"] == "automation"
+    assert audit["action"] == "EPISODE_SHOTS_AUTO_HEALED_READY"
+    assert json.loads(str(audit["metadata_redacted_json"]))["decision_kind"] == "AUTOMATED_TECHNICAL_COMPLETION"
 
 
 @pytest.mark.parametrize("with_invalid_draft", [False, True])
@@ -71,13 +150,18 @@ def test_confirm_fresh_breakdown_drafts_validates_every_shot_atomically(workspac
     monkeypatch.setattr(ready_module, "effective_video_profile", lambda _connection, _project_id: _profile("video-own-project"))
     with database.connect() as connection:
         revision = int(connection.execute("SELECT revision FROM episodes WHERE id=?", (episode_id,)).fetchone()[0])
-        before = [tuple(row) for row in connection.execute("SELECT id,status,current_revision_id,revision FROM shots WHERE episode_id=? ORDER BY id", (episode_id,))]
+        before = [
+            tuple(row) for row in connection.execute("SELECT id,status,current_revision_id,revision FROM shots WHERE episode_id=? ORDER BY id", (episode_id,))
+        ]
     if with_invalid_draft:
         with pytest.raises(DomainRuleError) as captured:
             EpisodeShotReadyService(database).confirm(episode_id, expected_episode_revision=revision, idempotency_key="fresh-invalid")
         assert captured.value.code == "EPISODE_SHOTS_READY_VALIDATION_FAILED"
         with database.connect() as connection:
-            assert [tuple(row) for row in connection.execute("SELECT id,status,current_revision_id,revision FROM shots WHERE episode_id=? ORDER BY id", (episode_id,))] == before
+            assert [
+                tuple(row)
+                for row in connection.execute("SELECT id,status,current_revision_id,revision FROM shots WHERE episode_id=? ORDER BY id", (episode_id,))
+            ] == before
     else:
         result = EpisodeShotReadyService(database).confirm(episode_id, expected_episode_revision=revision, idempotency_key="fresh-valid")
         assert result["ready_shot_count"] == 4
@@ -91,12 +175,8 @@ def test_confirm_eleven_shots_ready_via_route_is_idempotent(workspace, database,
     payload = {"expected_episode_revision": revision, "idempotency_key": "ready-eleven"}
 
     with TestClient(create_app(workspace)) as client:
-        first = client.post(
-            f"/api/v2/episodes/{episode['id']}/production:shots:ready", json=payload
-        )
-        replay = client.post(
-            f"/api/v2/episodes/{episode['id']}/production:shots:ready", json=payload
-        )
+        first = client.post(f"/api/v2/episodes/{episode['id']}/production:shots:ready", json=payload)
+        replay = client.post(f"/api/v2/episodes/{episode['id']}/production:shots:ready", json=payload)
 
     assert first.status_code == 200, first.text
     assert replay.status_code == 200, replay.text
@@ -128,10 +208,13 @@ def test_confirm_shots_requires_project_video_profile(workspace, database, monke
 
     assert captured.value.code == "VIDEO_PROFILE_REQUIRED"
     with database.connect() as connection:
-        assert connection.execute(
-            "SELECT COUNT(*) FROM shots WHERE episode_id=? AND status='READY'",
-            (str(episode["id"]),),
-        ).fetchone()[0] == 0
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM shots WHERE episode_id=? AND status='READY'",
+                (str(episode["id"]),),
+            ).fetchone()[0]
+            == 0
+        )
 
 
 def test_confirm_shots_uses_each_projects_own_profile(workspace, database, monkeypatch) -> None:
@@ -143,12 +226,8 @@ def test_confirm_shots_uses_each_projects_own_profile(workspace, database, monke
     }
     monkeypatch.setattr(ready_module, "effective_video_profile", lambda _connection, project_id: profile_by_project[project_id])
 
-    first = EpisodeShotReadyService(database).confirm(
-        str(first_episode["id"]), expected_episode_revision=first_revision, idempotency_key="first"
-    )
-    second = EpisodeShotReadyService(database).confirm(
-        str(second_episode["id"]), expected_episode_revision=second_revision, idempotency_key="second"
-    )
+    first = EpisodeShotReadyService(database).confirm(str(first_episode["id"]), expected_episode_revision=first_revision, idempotency_key="first")
+    second = EpisodeShotReadyService(database).confirm(str(second_episode["id"]), expected_episode_revision=second_revision, idempotency_key="second")
 
     assert first["profile_version_id"] == "video-first"
     assert second["profile_version_id"] == "video-second"

@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from local_drama.application.configuration import ConfigurationService
 from local_drama.application.generation import GenerationService
 from local_drama.application.profiles import ProfileService
 from local_drama.domain.errors import DomainRuleError
@@ -26,15 +27,47 @@ def test_confirmed_variant_and_gpu_job_are_atomic(workspace, database) -> None:
         project_value = str(project["id"])
     else:
         project_value = str(project_id[0])
+    ConfigurationService(database).create_plan_binding(
+        project_value,
+        "variant-submit-plan",
+        "Variant submit production plan",
+        {
+            "schema_version": "localdrama.production-plan.v2",
+            "presentation": {
+                "aspect_ratio": "16:9",
+                "width": 1280,
+                "height": 720,
+                "fps": {"numerator": 24, "denominator": 1},
+            },
+            "generation": {
+                "upscale": {
+                    "enabled": False,
+                    "required": False,
+                    "stage": "COMPOSE_QC",
+                    "executor": "builtin:ffmpeg",
+                    "target": "PRESENTATION_SPEC",
+                    "fit": "LETTERBOX",
+                }
+            },
+        },
+    )
     workflow = {
-        "1": {"class_type": "LoadImage", "inputs": {"prompt": "", "seed": 0}}
+        "1": {
+            "class_type": "LoadImage",
+            "inputs": {"prompt": "", "seed": 0, "width": 1280, "height": 720, "fps": 24},
+        }
+    }
+    geometry_bindings = {
+        "WIDTH": {"node_id": "1", "input": "width"},
+        "HEIGHT": {"node_id": "1", "input": "height"},
+        "FPS": {"node_id": "1", "input": "fps"},
     }
     from local_drama.application.workflows import WorkflowService
 
     workflows = WorkflowService(database, workspace)
     version = workflows.register_package(
         "variant_submit_workflow", "Variant submit", workflow, {},
-        {"PROMPT": {"node_id": "1", "input": "prompt"}, "SEED": {"node_id": "1", "input": "seed"}},
+        {"PROMPT": {"node_id": "1", "input": "prompt"}, "SEED": {"node_id": "1", "input": "seed"}, **geometry_bindings},
     )
     with database.transaction() as connection:
         connection.execute("UPDATE workflow_versions SET status='PUBLISHED' WHERE id=?", (version["id"],))
@@ -83,7 +116,7 @@ def test_confirmed_variant_and_gpu_job_are_atomic(workspace, database) -> None:
         "Variant unbound prompt",
         workflow,
         {},
-        {"SEED": {"node_id": "1", "input": "seed"}},
+        {"SEED": {"node_id": "1", "input": "seed"}, **geometry_bindings},
     )
     with database.transaction() as connection:
         connection.execute("UPDATE workflow_versions SET status='PUBLISHED' WHERE id=?", (unbound["id"],))
@@ -100,7 +133,7 @@ def test_confirmed_variant_and_gpu_job_are_atomic(workspace, database) -> None:
         "Variant wrong tier",
         workflow,
         {"production_tier": "SCREEN"},
-        {"PROMPT": {"node_id": "1", "input": "prompt"}, "SEED": {"node_id": "1", "input": "seed"}},
+        {"PROMPT": {"node_id": "1", "input": "prompt"}, "SEED": {"node_id": "1", "input": "seed"}, **geometry_bindings},
     )
     with database.transaction() as connection:
         connection.execute("UPDATE workflow_versions SET status='PUBLISHED' WHERE id=?", (wrong_tier["id"],))

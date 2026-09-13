@@ -9,8 +9,8 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.dialogue_timing import assert_dialogue_timing, dialogue_timing_issues
+from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
 
 

@@ -18,6 +18,7 @@ from local_drama.domain.generation_planning import effective_configuration_snaps
 from local_drama.domain.policies import VariantInput
 from local_drama.domain.production_spec import resolve_production_spec
 from local_drama.domain.shot_prompt_bundle import apply_prompt_bundle_to_parameters, compile_shot_prompt_bundle
+from local_drama.domain.video_geometry import h3_timing_snapshot
 from local_drama.infrastructure.database.sqlite import Database
 
 from .character_identity_packs import CharacterIdentityPackService
@@ -633,6 +634,12 @@ class GenerationService:
             resource_policy = frozen_contract.resource_policy
             resource_estimate = self._resource_estimate(resource_policy)
             input_slots = self._media_input_slots(input_contract)
+            binding_keys = [(binding.role, binding.ordinal) for binding in plan.bindings]
+            if len(binding_keys) != len(set(binding_keys)):
+                raise DomainRuleError(
+                    "DUPLICATE_INPUT_BINDING",
+                    "同一语义角色和 ordinal 只能绑定一个输入",
+                )
             seed_contract = parameter_schema.get("seed", {}) if isinstance(parameter_schema, dict) else {}
             if not isinstance(seed_contract, dict):
                 raise DomainRuleError("PROFILE_SEED_CONTRACT_INVALID", "Profile seed 契约无效")
@@ -867,6 +874,19 @@ class GenerationService:
                     }
                 if media["integrity_status"] != "VERIFIED":
                     raise DomainRuleError("SOURCE_INTEGRITY_FAILED", "Variant 输入完整性未通过")
+                try:
+                    probe = json.loads(str(media["probe_json"] or "{}"))
+                except json.JSONDecodeError:
+                    probe = {}
+                streams = probe.get("streams", []) if isinstance(probe, dict) else []
+                visual = next(
+                    (
+                        stream
+                        for stream in streams
+                        if isinstance(stream, dict) and stream.get("width") and stream.get("height")
+                    ),
+                    None,
+                )
                 slot = input_slots[binding.role]
                 allowed_media_kinds = self._slot_media_kinds(slot)
                 if allowed_media_kinds and str(media["media_kind"]).upper() not in allowed_media_kinds:
@@ -889,12 +909,6 @@ class GenerationService:
                 if binding.role in {"FIRST_FRAME", "END_FRAME", "MIDDLE_KEYFRAME"}:
                     if media["media_kind"] != "IMAGE":
                         raise DomainRuleError("FRAME_INPUT_MEDIA_KIND_INVALID", "首尾/关键帧语义槽只能绑定 IMAGE MediaVersion")
-                    probe = json.loads(media["probe_json"] or "{}")
-                    streams = probe.get("streams", []) if isinstance(probe, dict) else []
-                    visual = next(
-                        (stream for stream in streams if isinstance(stream, dict) and stream.get("width") and stream.get("height")),
-                        None,
-                    )
                     if visual is None:
                         raise DomainRuleError("FRAME_DIMENSIONS_REQUIRED", "首尾/关键帧必须先完成可验证的宽高 probe", {"role": binding.role})
                     visual_dimensions[(binding.role, binding.ordinal)] = (int(visual["width"]), int(visual["height"]))
@@ -940,6 +954,18 @@ class GenerationService:
                         "selected_version_id": media["selected_version_id"],
                         "sha256": verified_media["sha256"],
                         "integrity_status": "VERIFIED",
+                        "media_kind": str(media["media_kind"]),
+                        "probe": {
+                            "width": int(visual["width"]) if visual is not None else None,
+                            "height": int(visual["height"]) if visual is not None else None,
+                            "duration_ms": (
+                                round(float(probe["format"]["duration"]) * 1000)
+                                if isinstance(probe, dict)
+                                and isinstance(probe.get("format"), dict)
+                                and probe["format"].get("duration") is not None
+                                else None
+                            ),
+                        },
                         "source_approval_id": approval_dependencies.get((binding.role, binding.ordinal)),
                         **({"project_asset_grant": grant_snapshot} if grant_snapshot else {}),
                     }
@@ -1193,6 +1219,7 @@ class GenerationService:
             "project_id": str(intent["project_id"]),
             "intent_updated_at": intent["updated_at"],
             "profile_version_id": plan.profile_version_id,
+            "profile_capability": str(profile["capability"]),
             "prompt_bundle": plan.prompt_bundle,
             "profile_revision": profile["revision"],
             "profile_status": profile["status"],
@@ -1210,6 +1237,10 @@ class GenerationService:
             # describe the same binding set; callers must not re-read the raw
             # profile/workflow fallback here.
             "workflow_bindings": workflow_bindings,
+            "h3_workflow": any(
+                isinstance(node, dict) and "MINIMAXH3" in str(node.get("class_type") or "").upper()
+                for node in workflow_content.values()
+            ),
             "production_plan_version_id": str(production_plan["version_id"]) if production_plan else None,
             "production_plan_version_no": int(production_plan["version_no"]) if production_plan else None,
             "production_spec": production_spec,
@@ -1333,16 +1364,110 @@ class GenerationService:
             "bindings": [GenerationService._binding_dict(binding) for binding in plan.bindings],
         }
 
+    def _actual_execution_inputs(
+        self,
+        intent_id: str,
+        plan: VariantPlan,
+        dependencies: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Compile the exact prompt/scalars shown by preflight and submitted to Comfy."""
+
+        semantic_inputs = dict(plan.parameter_set)
+        production_spec = dependencies.get("production_spec")
+        generation_spec = production_spec.get("generation") if isinstance(production_spec, dict) else None
+        production_inputs = generation_spec.get("semantic_inputs") if isinstance(generation_spec, dict) else None
+        if isinstance(production_inputs, dict):
+            semantic_inputs.update(production_inputs)
+        with self.database.connect() as connection:
+            intent = connection.execute(
+                "SELECT * FROM generation_intents WHERE id=?", (intent_id,)
+            ).fetchone()
+            if intent is None:
+                raise DomainRuleError("GENERATION_INTENT_NOT_FOUND", "GenerationIntent 不存在")
+            style_context = build_generation_style_context(connection, str(intent["project_id"]))
+            anchor_lines = _character_anchor_lines(connection, intent)
+            shot = None
+            if str(intent["owner_type"]) == "SHOT" and intent["owner_id"]:
+                shot = connection.execute(
+                    "SELECT target_duration_ms FROM shots WHERE id=?",
+                    (str(intent["owner_id"]),),
+                ).fetchone()
+        timing = None
+        if dependencies.get("h3_workflow") is True and shot is not None:
+            timing = h3_timing_snapshot(int(shot["target_duration_ms"]))
+            workflow_roles = set(dependencies.get("workflow_bindings") or {})
+            if "FRAME_COUNT" in workflow_roles:
+                semantic_inputs["FRAME_COUNT"] = timing["frame_count"]
+            if "FPS" in workflow_roles:
+                semantic_inputs["FPS"] = timing["generation_fps"]
+            if "DURATION_SECONDS" in workflow_roles:
+                semantic_inputs["DURATION_SECONDS"] = timing["requested_duration_seconds"]
+        prompt_context = style_context.get("prompt_context") if style_context is not None else None
+        prompt_value = semantic_inputs.get("PROMPT")
+        if isinstance(prompt_context, str) and prompt_context and isinstance(prompt_value, str):
+            semantic_inputs["PROMPT"] = prompt_value.rstrip() + "\n\n" + prompt_context
+        negative_context = style_context.get("negative_prompt_context") if style_context is not None else None
+        negative_value = semantic_inputs.get("NEGATIVE_PROMPT")
+        if isinstance(negative_context, str) and negative_context and isinstance(negative_value, str):
+            semantic_inputs["NEGATIVE_PROMPT"] = negative_value.rstrip() + "\n\n" + negative_context
+        story_assets_snapshot: dict[str, str] | None = None
+        if anchor_lines and isinstance(semantic_inputs.get("PROMPT"), str) and str(semantic_inputs["PROMPT"]).strip():
+            anchor_text = "\n".join(anchor_lines)
+            semantic_inputs["PROMPT"] = str(semantic_inputs["PROMPT"]) + "\n\n" + anchor_text
+            story_assets_snapshot = {
+                "anchor": anchor_text,
+                "anchor_sha256": hashlib.sha256(anchor_text.encode("utf-8")).hexdigest(),
+            }
+        media_by_id = {
+            str(item.get("id")): item
+            for item in dependencies.get("media", [])
+            if isinstance(item, dict) and item.get("id")
+        }
+        resolved_media_bindings = []
+        for binding in sorted(plan.bindings, key=lambda item: (item.role, item.ordinal, item.media_version_id)):
+            evidence = media_by_id.get(binding.media_version_id, {})
+            resolved_media_bindings.append(
+                {
+                    **self._binding_dict(binding),
+                    "sha256": evidence.get("sha256"),
+                    "integrity_status": evidence.get("integrity_status"),
+                    "media_kind": evidence.get("media_kind"),
+                    "probe": evidence.get("probe"),
+                    "source_approval_id": evidence.get("source_approval_id"),
+                }
+            )
+        declared_roles = set(dependencies.get("workflow_bindings") or {})
+        compiled_semantic_inputs = {
+            role: value for role, value in semantic_inputs.items() if role in declared_roles
+        }
+        return {
+            "semantic_inputs": semantic_inputs,
+            "compiled_semantic_inputs": compiled_semantic_inputs,
+            "execution_metadata": {
+                role: value for role, value in semantic_inputs.items() if role not in declared_roles
+            },
+            "style_context": style_context,
+            "story_assets": story_assets_snapshot,
+            "media_bindings": resolved_media_bindings,
+            "timing": timing,
+        }
+
     def preflight_variant(self, intent_id: str, plan: VariantPlan) -> dict[str, Any]:
         plan = self._prepare_prompt_plan(plan)
         _ancestors, _allowed_roles, dependencies = self._plan_context(intent_id, plan)
+        actual_inputs = self._actual_execution_inputs(intent_id, plan, dependencies)
         recipe = self._recipe(plan)
         execution_recipe = self._execution_recipe(plan)
         evidence_recipe = {"execution": execution_recipe, "approvals": dependencies.get("approvals", [])}
         with self.database.connect() as connection:
             intent = connection.execute("SELECT project_id FROM generation_intents WHERE id=?", (intent_id,)).fetchone()
             style_context = build_generation_style_context(connection, str(intent["project_id"])) if intent is not None else None
-        plan_evidence: dict[str, Any] = {"intent_id": intent_id, "recipe": recipe, "dependencies": dependencies}
+        plan_evidence: dict[str, Any] = {
+            "intent_id": intent_id,
+            "recipe": recipe,
+            "dependencies": dependencies,
+            "actual_execution_inputs": actual_inputs,
+        }
         if style_context is not None:
             style_context_hash = str(style_context["context_hash"])
             evidence_recipe["style_context_hash"] = style_context_hash
@@ -1363,6 +1488,7 @@ class GenerationService:
             "effective_configuration": effective_snapshot,
             "production_spec": dependencies.get("production_spec"),
             "prompt_bundle": dependencies.get("prompt_bundle"),
+            "actual_execution_inputs": actual_inputs,
             "would_persist_variant": False,
             "would_create_job": False,
             "reproducibility": {
@@ -2075,20 +2201,48 @@ class GenerationService:
         # _plan_context.  This is also the binding set used by prompt/workflow
         # compilation, so the job audit cannot drift back to raw profile data.
         workflow_bindings = dict(dependencies.get("workflow_bindings") or {})
-        semantic_inputs = dict(plan.parameter_set)
         production_spec = dependencies.get("production_spec")
-        generation_spec = production_spec.get("generation") if isinstance(production_spec, dict) else None
-        production_semantic_inputs = generation_spec.get("semantic_inputs") if isinstance(generation_spec, dict) else None
-        if isinstance(production_semantic_inputs, dict):
-            semantic_inputs.update(production_semantic_inputs)
+        actual_inputs = preflight.get("actual_execution_inputs")
+        if not isinstance(actual_inputs, dict) or not isinstance(actual_inputs.get("compiled_semantic_inputs"), dict):
+            raise DomainRuleError("VARIANT_EXECUTION_INPUTS_MISSING", "预检缺少冻结的实际执行输入")
+        semantic_inputs = dict(actual_inputs["compiled_semantic_inputs"])
         approval_by_slot = {(str(item["role"]), int(item["ordinal"])): str(item["source_approval_id"]) for item in dependencies.get("approvals", [])}
-        media_bindings_snapshot = [
-            {**self._binding_dict(binding), "source_approval_id": approval_by_slot.get((binding.role, binding.ordinal))} for binding in plan.bindings
-        ]
+        raw_media_bindings = actual_inputs.get("media_bindings")
+        if not isinstance(raw_media_bindings, list):
+            raise DomainRuleError("VARIANT_EXECUTION_INPUTS_MISSING", "预检缺少冻结的媒体输入")
+        media_bindings_snapshot = []
+        for item in raw_media_bindings:
+            if not isinstance(item, dict):
+                raise DomainRuleError("VARIANT_EXECUTION_INPUTS_MISSING", "预检媒体输入格式无效")
+            role = str(item.get("role") or "")
+            ordinal = int(item.get("ordinal", 0))
+            media_bindings_snapshot.append(
+                {**item, "source_approval_id": approval_by_slot.get((role, ordinal)) or item.get("source_approval_id")}
+            )
         with self.database.transaction() as connection:
             intent = connection.execute("SELECT * FROM generation_intents WHERE id=?", (intent_id,)).fetchone()
             if intent is None:
                 raise DomainRuleError("GENERATION_INTENT_NOT_FOUND", "GenerationIntent 不存在")
+            replay_job = connection.execute(
+                """SELECT j.* FROM jobs j
+                JOIN generation_variants gv ON gv.id=j.subject_id
+                WHERE gv.intent_id=? AND j.subject_type='GENERATION_VARIANT'
+                AND j.idempotency_key=? AND j.deleted_at IS NULL
+                ORDER BY j.created_at,j.id LIMIT 1""",
+                (intent_id, idempotency_key),
+            ).fetchone()
+            if replay_job is not None:
+                replay_snapshot = json.loads(str(replay_job["input_snapshot_json"] or "{}"))
+                if replay_snapshot.get("submission_plan_hash") != preflight["plan_hash"]:
+                    raise DomainRuleError(
+                        "IDEMPOTENCY_PAYLOAD_MISMATCH",
+                        "相同 Idempotency-Key 的生成计划不一致",
+                    )
+                return {
+                    "variant": self.get_variant(str(replay_job["subject_id"])),
+                    "job": JobService(self.database)._job_response(replay_job, replay=True),
+                    "idempotent_replay": True,
+                }
             style_context = build_generation_style_context(connection, str(intent["project_id"]))
             preflight_style_hash = (preflight.get("style_context") or {}).get("context_hash")
             current_style_hash = style_context.get("context_hash") if style_context is not None else None
@@ -2175,37 +2329,10 @@ class GenerationService:
                         approval_by_slot.get((binding.role, binding.ordinal)),
                     ),
                 )
-            # G11 P0-1: inject the shot's bound CHARACTER appearance anchors into
-            # the *executed* PROMPT semantic input. This deliberately mutates
-            # only the ephemeral job input snapshot — never plan.parameter_set,
-            # the frozen variant row, or plan_hash — so preflight / EXACT_REPLAY
-            # semantics stay intact. Derivation replays from the parent's
-            # parameter_set (anchor-free) and re-injects from the *current*
-            # binding state at submit time; the original anchor text + sha256
-            # are frozen into the job snapshot and audit trail below, keeping
-            # every execution auditable even when the story library changes
-            # later. With no bound characters the snapshot is byte-identical to
-            # the pre-injection behaviour (no story_assets key).
-            if style_context is not None:
-                prompt_context = style_context.get("prompt_context")
-                prompt_value = semantic_inputs.get("PROMPT")
-                if isinstance(prompt_context, str) and prompt_context and isinstance(prompt_value, str):
-                    semantic_inputs["PROMPT"] = prompt_value.rstrip() + "\n\n" + prompt_context
-                negative_context = style_context.get("negative_prompt_context")
-                negative_value = semantic_inputs.get("NEGATIVE_PROMPT")
-                if isinstance(negative_context, str) and negative_context and isinstance(negative_value, str):
-                    semantic_inputs["NEGATIVE_PROMPT"] = negative_value.rstrip() + "\n\n" + negative_context
-            anchor_lines = _character_anchor_lines(connection, intent)
-            story_assets_snapshot: dict[str, str] | None = None
-            if anchor_lines and "PROMPT" in semantic_inputs and isinstance(semantic_inputs["PROMPT"], str) and semantic_inputs["PROMPT"].strip():
-                anchor_text = "\n".join(anchor_lines)
-                semantic_inputs["PROMPT"] = semantic_inputs["PROMPT"] + "\n\n" + anchor_text
-                story_assets_snapshot = {
-                    "anchor": anchor_text,
-                    "anchor_sha256": hashlib.sha256(anchor_text.encode("utf-8")).hexdigest(),
-                }
+            story_assets_snapshot = actual_inputs.get("story_assets")
             job_input_snapshot: dict[str, Any] = {
                 "variant_id": variant_id,
+                "submission_plan_hash": preflight["plan_hash"],
                 "workflow_version_id": workflow_version_id,
                 "execution_snapshot": {
                     "profile_version_id": plan.profile_version_id,
@@ -2229,8 +2356,10 @@ class GenerationService:
                     "production_spec": production_spec,
                 },
                 "semantic_inputs": semantic_inputs,
+                "execution_metadata": actual_inputs.get("execution_metadata", {}),
                 "prompt_bundle": plan.prompt_bundle,
                 "production_spec": production_spec,
+                "timing": actual_inputs.get("timing"),
                 "media_bindings": media_bindings_snapshot,
                 "recipe_hash": recipe_hash,
             }
@@ -2285,7 +2414,7 @@ class GenerationService:
                             {
                                 "job_id": job["id"],
                                 "character_anchor_sha256": story_assets_snapshot["anchor_sha256"],
-                                "character_anchor_lines": len(anchor_lines),
+                                "character_anchor_lines": len(str(story_assets_snapshot["anchor"]).splitlines()),
                             }
                         ),
                     ),

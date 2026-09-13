@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import errno
+import hashlib
 import json
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -12,9 +14,11 @@ from local_drama.application.documents import DocumentImportService
 from local_drama.application.jobs import JobService
 from local_drama.application.local_llm import (
     LocalLLMService,
+    _bounded_numbered_source_segments,
     _normalize_breakdown_durations,
     _normalize_scene_source_passages,
     _numbered_source_paragraphs,
+    _stable_id,
     _validate_breakdown_output,
     validate_scene_distinctness,
     validate_scene_source_grounding,
@@ -76,6 +80,43 @@ def _persisted_draft(workspace, database):
             ),
         )
     return project, draft_id
+
+
+@pytest.mark.parametrize(
+    ("numbered_size", "expected_segments"),
+    [(3_999, 1), (4_000, 1), (4_001, 2)],
+)
+def test_bounded_breakdown_segments_measure_actual_numbered_input(
+    numbered_size: int, expected_segments: int
+) -> None:
+    source = "甲" * (numbered_size - len("[P001] "))
+    segments = _bounded_numbered_source_segments(
+        source, paragraph_start=1, paragraph_end=1
+    )
+    assert len(segments) == expected_segments
+    assert max(item["input_character_count"] for item in segments) <= 4_000
+    if expected_segments == 1:
+        assert segments[0]["input_character_count"] == numbered_size
+
+
+def test_bounded_breakdown_splits_5001_character_paragraph_with_exact_tail_mapping() -> None:
+    source = ("前段动作。" * 500) + "林默说：边界对白不能重复。" + ("尾段证据。" * 500)
+    segments = _bounded_numbered_source_segments(
+        source, paragraph_start=1, paragraph_end=1
+    )
+    assert len(source) > 5_001
+    assert len(segments) > 1
+    ranges = [
+        offsets
+        for segment in segments
+        for offsets in segment["paragraph_offsets"].values()
+    ]
+    assert ranges[0][0] == 0
+    assert ranges[-1][1] == len(source)
+    assert all(left[1] == right[0] for left, right in zip(ranges, ranges[1:], strict=False))
+    reconstructed = "".join(source[start:end] for start, end in ranges)
+    assert reconstructed == source
+    assert reconstructed.count("边界对白不能重复") == 1
 
 
 def test_breakdown_draft_projection_never_applies_or_overwrites_authority(workspace, database) -> None:
@@ -766,7 +807,9 @@ def test_durable_breakdown_freezes_and_enforces_episode_duration_contract(worksp
     assert persisted["input_snapshot"]["source_paragraph_end"] == 2
     assert persisted["input_snapshot"]["source_paragraph_count"] == 2
     outcome = LocalMediaWorker(database, workspace).run_once("duration-contract-worker", ["CPU"])
-    assert outcome is not None and outcome["result"]["job_state"] == "SUCCEEDED"
+    assert outcome is not None and outcome["result"]["job_state"] == "SUCCEEDED", json.dumps(
+        outcome, ensure_ascii=False, default=str
+    )
     assert "目标成片时长为 60 秒" in str(captured_call["prompt"])
     assert "至少返回 4 个镜头" in str(captured_call["prompt"])
     assert "必须覆盖的 P 编号全集是 [1]" in str(captured_call["prompt"])
@@ -781,7 +824,9 @@ def test_durable_breakdown_freezes_and_enforces_episode_duration_contract(worksp
     assert draft["confidence"]["duration_contract_status"] == "PASS"
 
 
-def test_durable_breakdown_rejects_an_oversized_single_model_request(workspace, database, monkeypatch) -> None:
+def test_durable_breakdown_plans_oversized_range_as_bounded_recoverable_segments(
+    workspace, database, monkeypatch,
+) -> None:
     long_source = "# 长篇原文\n\n" + "\n\n".join(f"第 {index} 段：" + "山河故人" * 25 for index in range(1, 61))
     _, imported, profile_version_id = _durable_breakdown_setup(
         workspace,
@@ -798,8 +843,340 @@ def test_durable_breakdown_rejects_an_oversized_single_model_request(workspace, 
             json={"profile_version_id": profile_version_id},
         )
 
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "BREAKDOWN_SOURCE_RANGE_TOO_LARGE"
+    assert response.status_code == 202
+    job = JobService(database, workspace).get_job(str(response.json()["job"]["id"]))
+    snapshot = job["input_snapshot"]
+    assert snapshot["breakdown_segment_count"] > 1
+    assert len(snapshot["breakdown_segments"]) == snapshot["breakdown_segment_count"]
+    assert all(
+        segment["input_character_count"] <= 4_000
+        for segment in snapshot["breakdown_segments"]
+    )
+
+
+def test_segmented_breakdown_resumes_from_checkpoint_and_exposes_one_ordered_draft(
+    workspace, database, monkeypatch,
+) -> None:
+    tail_marker = "尾段追溯证据"
+    long_source = "# 长篇原文\n\n" + "甲说：守住城门。" + ("山河故人" * 1_100) + tail_marker
+    project, imported, profile_version_id = _durable_breakdown_setup(
+        workspace,
+        database,
+        monkeypatch,
+        "durable_breakdown_segment_resume",
+        long_source,
+    )
+    calls: list[str] = []
+
+    def output_for_numbered_text(text: str) -> dict[str, object]:
+        paragraphs = [
+            (int(match.group(1)), match.group(2))
+            for match in re.finditer(r"^\[P(\d+)\] (.*)$", text, re.MULTILINE)
+        ]
+        return {
+            "scenes": [
+                {
+                    "scene_no": index,
+                    "title": body[:30],
+                    "summary": body,
+                    "characters": [],
+                    "source_paragraph_nos": [paragraph_no],
+                    "shots": [{
+                        "shot_no": 1,
+                        "visual": body,
+                        "action": body,
+                        "dialogue": "",
+                        "duration_seconds": 3,
+                    }],
+                }
+                for index, (paragraph_no, body) in enumerate(paragraphs, start=1)
+            ],
+            "confidence": {"overall": 0.9, "notes": []},
+            "questions": [],
+        }
+
+    def fail_second_segment(self, prompt, text, **_kwargs):
+        calls.append(text)
+        if len(calls) == 2:
+            raise DomainRuleError("LOCAL_LLM_TEST_FAILURE", "模拟中段失败")
+        return output_for_numbered_text(text)
+
+    monkeypatch.setattr(
+        "local_drama.infrastructure.local_llm.LocalLLMClient.chat_json",
+        fail_second_segment,
+    )
+    with TestClient(create_app(workspace)) as client:
+        queued = client.post(
+            f"/api/v1/import-sessions/{imported['import_session_id']}:request-breakdown",
+            headers={"Idempotency-Key": "segmented-resume"},
+            json={"profile_version_id": profile_version_id},
+        )
+        assert queued.status_code == 202
+    job_id = str(queued.json()["job"]["id"])
+    segment_count = int(JobService(database, workspace).get_job(job_id)["input_snapshot"]["breakdown_segment_count"])
+    assert segment_count == 2
+
+    first = LocalMediaWorker(database, workspace).run_once("segmented-breakdown-worker", ["CPU"])
+    assert first is not None and first["result"]["job_state"] == "FAILED"
+    assert len(calls) == 2
+    assert LocalLLMService(database, workspace).list_breakdown_drafts(str(project["id"])) == []
+    with database.connect() as connection:
+        checkpoints = connection.execute(
+            "SELECT status FROM script_breakdown_drafts WHERE project_id=? ORDER BY id",
+            (project["id"],),
+        ).fetchall()
+    assert [row["status"] for row in checkpoints] == ["CHUNK_READY"]
+
+    JobService(database, workspace).retry(job_id)
+    resumed_calls: list[str] = []
+
+    def succeed_remaining(self, prompt, text, **_kwargs):
+        resumed_calls.append(text)
+        return output_for_numbered_text(text)
+
+    monkeypatch.setattr(
+        "local_drama.infrastructure.local_llm.LocalLLMClient.chat_json",
+        succeed_remaining,
+    )
+    second = LocalMediaWorker(database, workspace).run_once("segmented-breakdown-worker", ["CPU"])
+    assert second is not None and second["result"]["job_state"] == "SUCCEEDED"
+    assert len(resumed_calls) == 1
+    assert tail_marker in resumed_calls[0]
+
+    visible = LocalLLMService(database, workspace).list_breakdown_drafts(str(project["id"]))
+    assert len(visible) == 1
+    assert visible[0]["status"] == "DRAFT_READY"
+    assert visible[0]["confidence"]["segment_count"] == segment_count
+    assert tail_marker in visible[0]["confidence"]["source_passages"][-1]["quote"]
+    assert [scene["scene_no"] for scene in visible[0]["draft"]["scenes"]] == [1, 2]
+    with database.connect() as connection:
+        statuses = connection.execute(
+            "SELECT status,COUNT(*) AS count FROM script_breakdown_drafts "
+            "WHERE project_id=? GROUP BY status",
+            (project["id"],),
+        ).fetchall()
+    assert {row["status"]: row["count"] for row in statuses} == {
+        "CHUNK_READY": 2,
+        "DRAFT_READY": 1,
+    }
+
+
+def test_breakdown_reuses_frozen_same_source_chunk_analysis_without_retry_drift(
+    workspace, database, monkeypatch,
+) -> None:
+    project, imported, profile_version_id = _durable_breakdown_setup(
+        workspace, database, monkeypatch, "breakdown_analysis_context",
+    )
+    with TestClient(create_app(workspace)) as client:
+        created = client.post(
+            f"/api/v2/projects/{project['id']}/adaptation-plans",
+            headers={"Idempotency-Key": "breakdown-analysis-plan"},
+            json={
+                "source_document_version_id": imported["source_document_version_id"],
+                "mode": "COMPLETE_WORK",
+                "target_duration_ms": 60_000,
+                "episode_strategy": "AI_ESTIMATE",
+                "season_strategy": "AI_SUGGESTED",
+            },
+        )
+        assert created.status_code == 201, created.text
+        plan_id = str(created.json()["plan_id"])
+        manifested = client.post(f"/api/v2/adaptation-plans/{plan_id}/analysis-manifest")
+        assert manifested.status_code == 200, manifested.text
+
+    old_result = {"summary": "冻结的书房线索摘要", "events": ["侦探找到钥匙"]}
+    old_sha = hashlib.sha256(
+        json.dumps(old_result, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    with database.transaction() as connection:
+        node = connection.execute(
+            """SELECT n.id FROM adaptation_plan_run_nodes n
+               JOIN adaptation_plan_runs r ON r.id=n.run_id
+               WHERE r.plan_id=? AND n.stage='CHUNK_MAP' ORDER BY n.node_key LIMIT 1""",
+            (plan_id,),
+        ).fetchone()
+        assert node is not None
+        connection.execute(
+            "UPDATE adaptation_plan_run_nodes SET output_json=?,output_sha256=? WHERE id=?",
+            (
+                json.dumps(
+                    {"planning_state": "SUCCEEDED", "result": old_result},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                old_sha,
+                node["id"],
+            ),
+        )
+
+    with TestClient(create_app(workspace)) as client:
+        queued = client.post(
+            f"/api/v1/import-sessions/{imported['import_session_id']}:request-breakdown",
+            headers={"Idempotency-Key": "breakdown-frozen-analysis"},
+            json={"profile_version_id": profile_version_id},
+        )
+        assert queued.status_code == 202, queued.text
+    job_id = str(queued.json()["job"]["id"])
+    snapshot = JobService(database, workspace).get_job(job_id)["input_snapshot"]
+    assert snapshot["analysis_contexts"][0]["analysis_node_refs"][0]["output_sha256"] == old_sha
+    assert "冻结的书房线索摘要" in snapshot["analysis_contexts"][0]["context_text"]
+
+    with database.transaction() as connection:
+        connection.execute(
+            "UPDATE adaptation_plan_run_nodes SET output_json=?,output_sha256='new-analysis' WHERE id=?",
+            ('{"planning_state":"SUCCEEDED","result":{"summary":"后来的摘要"}}', node["id"]),
+        )
+    captured_prompt: list[str] = []
+
+    def capture_frozen_context(self, prompt, text, **_kwargs):
+        captured_prompt.append(prompt)
+        return _valid_breakdown_output()
+
+    monkeypatch.setattr(
+        "local_drama.infrastructure.local_llm.LocalLLMClient.chat_json",
+        capture_frozen_context,
+    )
+    outcome = LocalMediaWorker(database, workspace).run_once("frozen-analysis-worker", ["CPU"])
+    assert outcome is not None and outcome["result"]["job_state"] == "SUCCEEDED"
+    assert len(captured_prompt) == 1
+    assert "冻结的书房线索摘要" in captured_prompt[0]
+    assert "后来的摘要" not in captured_prompt[0]
+
+
+def test_out_of_order_segment_checkpoint_is_merged_and_applied_exactly_once(
+    workspace, database, monkeypatch,
+) -> None:
+    source_text = "# 边界测试\n\n" + ("第一段行动。" * 750) + "尾声落幕。"
+    project, imported, profile_version_id = _durable_breakdown_setup(
+        workspace, database, monkeypatch, "breakdown_out_of_order", source_text,
+    )
+    season = ProjectService(database, workspace.projects_root).list_seasons(str(project["id"]))[0]
+    episode = ProjectService(database, workspace.projects_root).list_episodes(str(season["id"]))[0]
+    with database.transaction() as connection:
+        connection.execute(
+            "UPDATE episodes SET target_duration_ms=6000,source_range_json=? WHERE id=?",
+            (
+                json.dumps(
+                    {
+                        "source_document_version_id": imported["source_document_version_id"],
+                        "import_session_id": imported["import_session_id"],
+                        "text_sha256": hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
+                        "start_paragraph": 1,
+                        "end_paragraph": 2,
+                    }
+                ),
+                episode["id"],
+            ),
+        )
+    service = LocalLLMService(database, workspace)
+    job = service.enqueue_breakdown(
+        str(imported["import_session_id"]),
+        profile_version_id,
+        "out-of-order-apply",
+        target_episode_id=str(episode["id"]),
+        automatic_apply=True,
+    )
+    job_id = str(job["id"])
+    segments = _bounded_numbered_source_segments(
+        source_text, paragraph_start=1, paragraph_end=2,
+    )
+    assert len(segments) == 2
+
+    def one_scene(segment: dict[str, object], title: str) -> tuple[dict[str, object], dict[str, object]]:
+        offsets = segment["paragraph_offsets"]
+        assert isinstance(offsets, dict)
+        local_number = min(offsets)
+        start, end = offsets[local_number]
+        body = source_text[start:end]
+        output = {
+            "scenes": [{
+                "scene_no": 1,
+                "title": title,
+                "summary": body,
+                "characters": [],
+                "source_paragraph_nos": [local_number],
+                "shots": [{
+                    "shot_no": 1,
+                    "visual": body,
+                    "action": body,
+                    "dialogue": "",
+                    "duration_seconds": 3,
+                }],
+            }],
+            "confidence": {"overall": 0.9, "notes": []},
+            "questions": [],
+        }
+        return _validate_breakdown_output(
+            _normalize_scene_source_passages(output, required_paragraphs=set(offsets)),
+            source_text,
+            target_episode_id=str(episode["id"]),
+            paragraph_offsets=offsets,
+            required_source_paragraph_nos=set(offsets),
+            minimum_scene_source_similarity=0.15,
+            sanitize_ungrounded_dialogue=True,
+            sanitize_ungrounded_scenes=True,
+        )
+
+    second_draft, second_evidence = one_scene(segments[1], "后完成顺序中的第二场")
+    second_evidence.update(
+        {
+            "segment_input_sha256": segments[1]["input_sha256"],
+            "segment_ordinal": 2,
+            "segment_count": 2,
+        }
+    )
+    now = datetime.now(UTC).isoformat()
+    with database.transaction() as connection:
+        connection.execute(
+            """INSERT INTO script_breakdown_drafts
+               (id,project_id,source_document_version_id,import_session_id,draft_json,
+                confidence_json,status,created_at,updated_at,created_by,revision,schema_version)
+               VALUES (?,?,?,?,?,?,'CHUNK_READY',?,?,'test',1,'v2')""",
+            (
+                _stable_id(f"breakdown-chunk:{job_id}:2"),
+                project["id"],
+                imported["source_document_version_id"],
+                imported["import_session_id"],
+                json.dumps(second_draft, ensure_ascii=False),
+                json.dumps(second_evidence, ensure_ascii=False),
+                now,
+                now,
+            ),
+        )
+
+    model_calls: list[str] = []
+
+    def first_segment_only(self, prompt, text, **_kwargs):
+        model_calls.append(text)
+        draft, _evidence = one_scene(segments[0], "按来源顺序的第一场")
+        draft["scenes"][0]["source_paragraph_nos"] = [1]
+        draft["confidence"] = {"overall": 0.9, "notes": []}
+        draft["questions"] = []
+        return draft
+
+    monkeypatch.setattr(
+        "local_drama.infrastructure.local_llm.LocalLLMClient.chat_json",
+        first_segment_only,
+    )
+    outcome = LocalMediaWorker(database, workspace).run_once("out-of-order-worker", ["CPU"])
+    assert outcome is not None and outcome["result"]["job_state"] == "SUCCEEDED", json.dumps(
+        outcome, ensure_ascii=False, default=str
+    )
+    assert len(model_calls) == 1
+    with database.connect() as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE action='SCRIPT_BREAKDOWN_APPLIED' "
+            "AND json_extract(metadata_redacted_json,'$.episode_id')=?",
+            (episode["id"],),
+        ).fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT COUNT(*) FROM episode_scene_ranges WHERE episode_id=?", (episode["id"],)
+        ).fetchone()[0] == 2
+        assert connection.execute(
+            "SELECT COUNT(*) FROM shots WHERE episode_id=?",
+            (episode["id"],),
+        ).fetchone()[0] == 2
 
 
 def test_scene_local_source_ids_produce_complete_exact_passage_coverage() -> None:

@@ -35,7 +35,7 @@ def _episode_with_shot(workspace, database, code: str) -> tuple[dict[str, object
     return project, episode, shot
 
 
-def _real_video(workspace, name: str = "contact-sheet.mp4") -> Path:
+def _real_video(workspace, name: str = "contact-sheet.mp4", color: str = "blue") -> Path:
     output = workspace.work_root / name
     output.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
@@ -44,7 +44,7 @@ def _real_video(workspace, name: str = "contact-sheet.mp4") -> Path:
             "-f",
             "lavfi",
             "-i",
-            "color=c=blue:s=160x90:d=1",
+            f"color=c={color}:s=160x90:d=1",
             "-pix_fmt",
             "yuv420p",
             "-an",
@@ -126,6 +126,53 @@ def test_contact_sheet_exports_verified_original_and_small_thumbnail_without_dat
     assert reused["rel_path"] == exported["rel_path"]
     assert reused["reused"] is True
     assert _row_counts(database) == before
+
+
+def test_contact_sheet_uses_v2_working_slot_without_legacy_selection(workspace, database) -> None:
+    project, episode, shot = _episode_with_shot(workspace, database, "contact_v2_slot")
+    media = MediaService(database, workspace).import_file(
+        str(project["id"]),
+        _real_video(workspace, "contact-v2-slot.mp4"),
+        purpose="SHOT_VIDEO",
+        owner_type="SHOT",
+        owner_id=str(shot["id"]),
+        media_kind="VIDEO",
+        stage="PROXY",
+    )
+    media_id = str(media["media_version_id"])
+    with TestClient(create_app(workspace)) as client:
+        adopted = client.post(f"/api/v2/media-versions/{media_id}:adopt")
+        assert adopted.status_code == 200, adopted.text
+    with database.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM selections WHERE media_version_id=?", (media_id,)).fetchone()[0] == 0
+
+    exported = ContactSheetExportService(database, workspace).export_episode(str(episode["id"]))
+    project_root = workspace.projects_root / str(project["root_rel"])
+    manifest = json.loads((project_root / str(exported["manifest_rel_path"])).read_text(encoding="utf-8"))
+    assert [item["media_version_id"] for item in manifest["items"]] == [media_id]
+    assert manifest["items"][0]["selection_type"] == "PROXY_WINNER"
+
+
+def test_contact_sheet_working_slot_suppresses_legacy_selection_for_same_slot(workspace, database) -> None:
+    project, episode, shot = _episode_with_shot(workspace, database, "contact_slot_authority")
+    legacy = _selected_video(workspace, database, project, shot)
+    current = MediaService(database, workspace).import_file(
+        str(project["id"]),
+        _real_video(workspace, "contact-current-slot.mp4", "red"),
+        purpose="SHOT_VIDEO",
+        owner_type="SHOT",
+        owner_id=str(shot["id"]),
+        media_kind="VIDEO",
+        stage="PROXY",
+    )
+    with TestClient(create_app(workspace)) as client:
+        adopted = client.post(f"/api/v2/media-versions/{current['media_version_id']}:adopt")
+        assert adopted.status_code == 200, adopted.text
+
+    episode_fact, items = ContactSheetExportService(database, workspace)._selected_items(str(episode["id"]))
+    assert episode_fact["id"] == episode["id"]
+    assert [item["media_version_id"] for item in items] == [current["media_version_id"]]
+    assert legacy["media_version_id"] not in {item["media_version_id"] for item in items}
 
 
 def test_contact_sheet_rejects_changed_source_and_tampered_existing_export(workspace, database) -> None:

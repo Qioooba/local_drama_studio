@@ -7,8 +7,8 @@ from typing import Any
 
 from local_drama.application.ports.override_schema import effective_schema
 from local_drama.application.queries.generation_preferences import GenerationPreferenceQueryService
-from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.capabilities import normalize_capability
+from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.generation_preference_repository import SqliteGenerationPreferenceRepository
 
 

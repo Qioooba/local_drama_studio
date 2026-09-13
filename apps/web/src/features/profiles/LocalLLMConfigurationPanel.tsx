@@ -178,14 +178,14 @@ export function LocalLLMConfigurationPanel({
     }
     if (preset?.id === "custom") {
       setProvider(customProvider || "OPENAI_COMPAT");
-      setBaseUrl(customBaseUrl || (statusQuery.data?.status.provider === "OPENAI_COMPAT" ? statusQuery.data.status.base_url : ""));
+      setBaseUrl(customBaseUrl || (statusQuery.data?.status.provider === "OPENAI_COMPAT" ? statusQuery.data.status.base_url ?? "" : ""));
       setModel(customModel || (statusQuery.data?.status.provider === "OPENAI_COMPAT" ? statusQuery.data.status.model ?? "" : ""));
       return;
     }
     if (preset) {
       setProvider(preset.provider);
       setBaseUrl(preset.baseUrl);
-      setModel(preset.model);
+      setModel(preset.model ?? "");
     }
   };
 

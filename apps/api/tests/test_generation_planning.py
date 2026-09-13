@@ -31,6 +31,21 @@ def test_frozen_generation_contract_rejects_missing_semantic_binding() -> None:
 
 
 def test_effective_configuration_snapshot_keeps_only_replay_authority() -> None:
-    snapshot = effective_configuration_snapshot({"fingerprint": "abc", "profile": {"override_schema": {"schema_version": "v2"}}, "secret": "omit"})
+    snapshot = effective_configuration_snapshot(
+        {
+            "fingerprint": "abc",
+            "profile": {
+                "override_schema": {
+                    "schema_version": "v2",
+                    "fields": {
+                        "steps": {"runtime_binding": "SAMPLER_STEPS"},
+                        "label": {"type": "string"},
+                    },
+                }
+            },
+            "secret": "omit",
+        }
+    )
     assert snapshot["override_schema_version"] == "v2"
+    assert snapshot["runtime_bindings"] == {"steps": "SAMPLER_STEPS"}
     assert "secret" not in snapshot

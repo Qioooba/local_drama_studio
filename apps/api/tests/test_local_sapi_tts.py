@@ -235,8 +235,8 @@ def test_real_windows_sapi_job_artifact_promotion_and_formal_candidate(workspace
     assert worker_result["artifact"]["kind"] == "TTS_AUDIO"
     output = workspace.work_root / str(worker_result["artifact"]["sandbox_rel_path"])
     assert output.is_file() and output.stat().st_size > 44
-    from local_drama.infrastructure.database.shot_studio_repository import SqliteShotStudioReadRepository
     from local_drama.api.schemas.shot_studio import ShotDialogueProjection
+    from local_drama.infrastructure.database.shot_studio_repository import SqliteShotStudioReadRepository
     with database.connect() as connection:
         pending = ShotDialogueProjection.model_validate(SqliteShotStudioReadRepository._dialogue(connection, project_id, str(shot["id"])))
     assert pending.lines[0].jobs[0].state == "SUCCEEDED"

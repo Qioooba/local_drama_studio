@@ -8,12 +8,12 @@ preserving all original narrative and visual facts.
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
-from local_drama.domain.director_intent import normalize_director_intent_v3, validate_director_intent_v3_payload
+from local_drama.domain.director_intent import validate_director_intent_v3_payload
+from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.generation_contracts import CameraPlan
-from local_drama.domain.policies import REQUIRED_SHOT_FIELDS, missing_shot_fields, validate_shot_ready
+from local_drama.domain.policies import validate_shot_ready
 
 # Mapping of common Chinese and English shot types to standard cinematic framing
 SHOT_TYPE_MAP: dict[str, str] = {
@@ -97,7 +97,7 @@ class ShotProductionSpecNormalizer:
             if key in text_hints:
                 return tuple_val
 
-        return "SLOW_PUSH", "FORWARD", "电影级缓推运镜，聚焦主体与场景光影"
+        return "STATIC", "UNSPECIFIED", "固定机位，保持构图稳定"
 
     @classmethod
     def normalize_fields(
@@ -111,15 +111,9 @@ class ShotProductionSpecNormalizer:
         raw: dict[str, Any] = dict(fields or {})
 
         # 1. Subject Action & Visual Context
-        subject_action = str(
-            raw.get("subject_action")
-            or raw.get("action")
-            or raw.get("visual")
-            or raw.get("description")
-            or "主体动作与场景环境交互"
-        ).strip()
+        subject_action = str(raw.get("subject_action") or raw.get("action") or raw.get("visual") or raw.get("description") or "").strip()
 
-        combined_text_hints = f"{subject_action} {str(raw.get('visual') or '')} {str(raw.get('camera_plan') or '')}"
+        combined_text_hints = f"{subject_action} {str(raw.get('visual') or '')}"
 
         # 2. Shot Type
         shot_type = cls.infer_shot_type(raw.get("shot_type"), combined_text_hints)
@@ -138,8 +132,10 @@ class ShotProductionSpecNormalizer:
         }
 
         # 4. Camera Plan
-        movement, direction, prompt_text = cls.infer_camera_movement(raw.get("camera_plan"), combined_text_hints)
         camera_raw = raw.get("camera_plan")
+        if camera_raw is None:
+            camera_raw = raw.get("camera_movement") or raw.get("movement")
+        movement, direction, prompt_text = cls.infer_camera_movement(camera_raw)
         camera_dict = dict(camera_raw) if isinstance(camera_raw, dict) else {}
 
         camera_mode = str(camera_dict.get("mode") or "PROMPT_FALLBACK").upper()
@@ -193,37 +189,32 @@ class ShotProductionSpecNormalizer:
             dialogue = str(dialogue)
 
         # 7. Environment
-        environment = str(
-            raw.get("environment")
-            or raw.get("scene")
-            or raw.get("location")
-            or "自然光照环境，纵深与空间层次分明"
-        ).strip()
+        environment = str(raw.get("environment") or raw.get("scene") or raw.get("location") or "").strip()
 
         # 8. Continuity
-        continuity = str(
-            raw.get("continuity")
-            or "保持场景光线、角色服装与视觉基准的一致性"
-        ).strip()
+        continuity = str(raw.get("continuity") or "").strip()
 
         # 9. Creative Intent
-        creative_intent = str(
-            raw.get("creative_intent")
-            or raw.get("summary")
-            or subject_action
-            or "推进主线情节发展与角色情绪张力"
-        ).strip()
+        creative_intent = str(raw.get("creative_intent") or raw.get("summary") or subject_action or "").strip()
 
         # 10. Performance
         perf_raw = raw.get("performance")
         perf_dict = dict(perf_raw) if isinstance(perf_raw, dict) else {}
+        performance_intensity = perf_dict.get("intensity")
+        if performance_intensity is None:
+            performance_intensity = raw.get("emotion_intensity")
+        if performance_intensity is None:
+            performance_intensity = 0.5
+        elif isinstance(performance_intensity, bool) or not isinstance(performance_intensity, (int, float)) or not 0 <= float(performance_intensity) <= 1:
+            raise DomainRuleError("DIRECTOR_INTENT_INTENSITY_INVALID", "表演强度必须在 0—1 之间")
+
         performance = {
             "emotion": str(perf_dict.get("emotion") or raw.get("emotion") or "专注").strip(),
-            "intensity": 0.5,
+            "intensity": float(performance_intensity),
             "body_action": str(perf_dict.get("body_action") or raw.get("body_action") or subject_action).strip(),
-            "facial_action": str(perf_dict.get("facial_action") or raw.get("facial_action") or "表情自然").strip(),
-            "eye_line": str(perf_dict.get("eye_line") or raw.get("eye_line") or "视线专注目标").strip(),
-            "blocking_summary": str(perf_dict.get("blocking_summary") or raw.get("blocking_summary") or "主体位于画面稳定机位").strip(),
+            "facial_action": str(perf_dict.get("facial_action") or raw.get("facial_action") or "").strip(),
+            "eye_line": str(perf_dict.get("eye_line") or raw.get("eye_line") or "").strip(),
+            "blocking_summary": str(perf_dict.get("blocking_summary") or raw.get("blocking_summary") or "").strip(),
         }
 
         normalized: dict[str, Any] = {
@@ -242,9 +233,8 @@ class ShotProductionSpecNormalizer:
             "prompt_modifiers": list(raw.get("prompt_modifiers") or []),
         }
 
-        # Validate with existing schemas
+        # Normalize shape without claiming missing creative decisions are production-ready.
         validate_director_intent_v3_payload(normalized)
-        validate_shot_ready(normalized)
 
         return normalized
 
@@ -257,7 +247,5 @@ class ShotProductionSpecNormalizer:
     ) -> dict[str, Any]:
         """Convenience method that normalizes and asserts zero missing fields."""
         normalized = cls.normalize_fields(fields, profile_version_id=profile_version_id)
-        missing = missing_shot_fields(normalized)
-        if missing:
-            raise RuntimeError(f"Unexpected missing fields after normalization: {missing}")
+        validate_shot_ready(normalized)
         return normalized

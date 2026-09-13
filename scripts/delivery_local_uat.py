@@ -124,8 +124,6 @@ def run(artifact: Path, sandbox_root: Path) -> dict[str, Any]:
         checks=_review_checks(formal_template),
         comment="真实 H3 本地媒体整集交付 UAT 批准",
     )
-    formal_plan = reviews.formal_selection_preflight(project_id, [media_version_id])
-    formal_commit = reviews.commit_formal_selection(project_id, [media_version_id], str(formal_plan["plan_hash"]))
 
     with TestClient(create_app(settings)) as client:
         timeline_payload = {
@@ -140,7 +138,7 @@ def run(artifact: Path, sandbox_root: Path) -> dict[str, Any]:
             ],
             "input_snapshot": {
                 "source": "h3_formal_pipeline_uat",
-                "formal_selection_id": formal_commit["items"][0]["id"],
+                "formal_selection_id": selected["id"],
                 "media_version_id": media_version_id,
             },
         }
@@ -256,18 +254,21 @@ def run(artifact: Path, sandbox_root: Path) -> dict[str, Any]:
         render_template = next(item for item in client.get("/api/v1/review-templates").json()["items"] if item["code"] == "episode_render")
         render_review = _expect(
             client.post(
-                f"/api/v1/subjects/EPISODE_RENDER_VERSION/{render['id']}/reviews",
+                "/api/v2/review-decisions",
                 json={
+                    "target_kind": "EPISODE_RENDER_VERSION",
+                    "target_id": render["id"],
                     "template_version_id": render_template["id"],
                     "decision": "APPROVED",
-                    "expected_subject_revision": int(render["revision"]),
+                    "expected_revision": int(render["revision"]),
                     "checks": _review_checks(render_template),
                     "comment": "整集最新渲染版本已通过本地人工检查",
+                    "idempotency_key": f"delivery-uat-review:{render['id']}",
                 },
             ),
             201,
             "approve latest episode render",
-        )["review"]
+        )["decision"]
         delivery = _expect(
             client.post(
                 "/api/v1/delivery-packages",
@@ -345,8 +346,7 @@ def run(artifact: Path, sandbox_root: Path) -> dict[str, Any]:
             "formal_media_machine_qc": machine,
             "formal_media_selection": selected,
             "formal_media_review": media_review,
-            "formal_selection_preflight": formal_plan,
-            "formal_selection_commit": formal_commit,
+            "formal_selection_current": selected,
             "timeline_revision": timeline,
             "episode_render": render,
             "pre_approval_delivery_gate": {"status_code": blocked.status_code, "error_code": blocked_code},

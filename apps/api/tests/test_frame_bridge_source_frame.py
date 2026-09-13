@@ -97,34 +97,62 @@ def test_frame_bridge_binds_real_last_frame_to_outgoing_boundary(workspace, data
         )
         assert current.status_code == 200, current.text
         assert current.json()["frame_bridge"]["boundary_revision"] == 3
-        assert current.json()["frame_bridge"]["to_anchor_id"]
+        explicit_current_anchor_id = current.json()["frame_bridge"]["to_anchor_id"]
+        assert explicit_current_anchor_id
+
+        hard = client.post(
+            f"/api/v2/frame-bridges/{transition['id']}:set-lock",
+            json={"expected_boundary_revision": 3, "locked": True, "idempotency_key": "bridge-pre-inherit-lock"},
+        )
+        assert hard.status_code == 200, hard.text
+        conflict = client.post(
+            f"/api/v2/frame-bridges/{transition['id']}:inherit",
+            json={"expected_boundary_revision": 4, "idempotency_key": "bridge-inherit-conflict"},
+        )
+        assert conflict.status_code == 422, conflict.text
+        assert conflict.json()["error"]["code"] == "FRAME_BRIDGE_LOCKED_CURRENT_CONFLICT"
+        with database.connect() as connection:
+            unchanged = connection.execute(
+                "SELECT boundary_revision,to_anchor_id FROM shot_transition_constraints WHERE id=?",
+                (transition["id"],),
+            ).fetchone()
+            assert int(unchanged["boundary_revision"]) == 4
+            assert unchanged["to_anchor_id"] == explicit_current_anchor_id
+            assert connection.execute(
+                "SELECT COUNT(*) FROM frame_anchors WHERE extraction_method='INHERITED_FRAME_ANCHOR'"
+            ).fetchone()[0] == 0
+        unlocked = client.post(
+            f"/api/v2/frame-bridges/{transition['id']}:set-lock",
+            json={"expected_boundary_revision": 4, "locked": False, "idempotency_key": "bridge-pre-inherit-unlock"},
+        )
+        assert unlocked.status_code == 200, unlocked.text
 
         inherited = client.post(
             f"/api/v2/frame-bridges/{transition['id']}:inherit",
-            json={"expected_boundary_revision": 3, "idempotency_key": "bridge-inherit-1"},
+            json={"expected_boundary_revision": 5, "idempotency_key": "bridge-inherit-1"},
         )
         assert inherited.status_code == 200, inherited.text
-        assert inherited.json()["frame_bridge"]["boundary_revision"] == 4
+        assert inherited.json()["frame_bridge"]["boundary_revision"] == 6
         assert inherited.json()["frame_bridge"]["inherited_from_anchor_id"] == last["id"]
 
         locked = client.post(
             f"/api/v2/frame-bridges/{transition['id']}:set-lock",
-            json={"expected_boundary_revision": 4, "locked": True, "idempotency_key": "bridge-lock-1"},
+            json={"expected_boundary_revision": 6, "locked": True, "idempotency_key": "bridge-lock-1"},
         )
         lock_replay = client.post(
             f"/api/v2/frame-bridges/{transition['id']}:set-lock",
-            json={"expected_boundary_revision": 4, "locked": True, "idempotency_key": "bridge-lock-1"},
+            json={"expected_boundary_revision": 6, "locked": True, "idempotency_key": "bridge-lock-1"},
         )
     assert locked.status_code == 200, locked.text
     assert locked.json()["frame_bridge"]["locked"] is True
-    assert locked.json()["frame_bridge"]["boundary_revision"] == 5
+    assert locked.json()["frame_bridge"]["boundary_revision"] == 7
     assert lock_replay.status_code == 200, lock_replay.text
     assert lock_replay.json()["frame_bridge"]["idempotent_replay"] is True
     with database.connect() as connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM outbox_events WHERE type='FrameBridgeChanged' AND subject_id=?",
             (transition["id"],),
-        ).fetchone()[0] == 4
+        ).fetchone()[0] == 6
 
 
 def test_frame_bridge_projects_first_working_keyframe_and_prioritizes_explicit_transition(workspace, database) -> None:

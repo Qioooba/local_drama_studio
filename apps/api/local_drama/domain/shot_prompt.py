@@ -12,6 +12,20 @@ def _mapping(value: object) -> dict[str, Any]:
     return cast(dict[str, Any], value) if isinstance(value, dict) else {}
 
 
+def _dialogue_line(value: object) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if not isinstance(value, dict):
+        return ""
+    text = _text(value.get("text"))
+    if not text:
+        return ""
+    speaker = _text(value.get("speaker"))
+    if not speaker or text.startswith((f"{speaker}：", f"{speaker}:")):
+        return text
+    return f"{speaker}：{text}"
+
+
 def normalize_prompt_modifiers(value: object) -> list[str]:
     """Return stable, unique prompt modifiers without inventing semantics."""
     if isinstance(value, str):
@@ -70,13 +84,10 @@ def compose_shot_prompt(fields: dict[str, Any], *, shot_code: str | None = None)
     dialogue_value = fields.get("dialogue")
     dialogue_parts: list[str] = []
     if isinstance(dialogue_value, str):
-        dialogue_parts.append(dialogue_value.strip())
+        dialogue_parts.append(_dialogue_line(dialogue_value))
     elif isinstance(dialogue_value, list):
         for line in dialogue_value:
-            if isinstance(line, str):
-                dialogue_parts.append(line.strip())
-            elif isinstance(line, dict):
-                dialogue_parts.append(_text(line.get("text")) or _text(line.get("speaker")))
+            dialogue_parts.append(_dialogue_line(line))
     dialogue = "；".join(item for item in dialogue_parts if item)
     if dialogue:
         parts.append(f"对白：{dialogue}")

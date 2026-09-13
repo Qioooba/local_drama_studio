@@ -1,0 +1,497 @@
+{
+  "schema_version": "g10.h3_comfy_job_uat.v1",
+  "status": "PARTIAL",
+  "runtime": {
+    "endpoint": "http://127.0.0.1:8188",
+    "endpoint_local": true,
+    "network_contacted": false,
+    "production_database_contacted": false
+  },
+  "source": {
+    "path": "F:\\AI_Projects\\h3\\local_drama_studio\\work\\uat\\h3-sample-review\\story-keyframe.png",
+    "sha256": "afedcdfa16d146a88b56ef34d9a3e58b67f177c34597e2c77c8b5e51852c2aab",
+    "bytes": 414511
+  },
+  "workflow": {
+    "id": "d44c901c-1b48-4207-81a6-1bd36689ddc5",
+    "status": "PUBLISHED",
+    "validation": {
+      "workflow_version_id": "d44c901c-1b48-4207-81a6-1bd36689ddc5",
+      "status": "PASS",
+      "required_nodes": [
+        "BasicGuider",
+        "BasicScheduler",
+        "CLIPLoader",
+        "CreateVideo",
+        "ImageScale",
+        "KSamplerSelect",
+        "LoadImage",
+        "MiniMaxH3ImageToVideo",
+        "RandomNoise",
+        "SamplerCustomAdvanced",
+        "SaveVideo",
+        "UNETLoader",
+        "VAEDecode",
+        "VAEDecodeAudio",
+        "VAELoader"
+      ],
+      "missing_nodes": [],
+      "schema_errors": [],
+      "graph_structure": {
+        "node_count": 16,
+        "link_count": 19,
+        "links": [
+          {
+            "source_node_id": "1",
+            "target_node_id": "10",
+            "input": "model"
+          },
+          {
+            "source_node_id": "7",
+            "target_node_id": "11",
+            "input": "conditioning"
+          },
+          {
+            "source_node_id": "1",
+            "target_node_id": "11",
+            "input": "model"
+          },
+          {
+            "source_node_id": "11",
+            "target_node_id": "12",
+            "input": "guider"
+          },
+          {
+            "source_node_id": "7",
+            "target_node_id": "12",
+            "input": "latent_image"
+          },
+          {
+            "source_node_id": "8",
+            "target_node_id": "12",
+            "input": "noise"
+          },
+          {
+            "source_node_id": "9",
+            "target_node_id": "12",
+            "input": "sampler"
+          },
+          {
+            "source_node_id": "10",
+            "target_node_id": "12",
+            "input": "sigmas"
+          },
+          {
+            "source_node_id": "12",
+            "target_node_id": "13",
+            "input": "samples"
+          },
+          {
+            "source_node_id": "3",
+            "target_node_id": "13",
+            "input": "vae"
+          },
+          {
+            "source_node_id": "12",
+            "target_node_id": "14",
+            "input": "samples"
+          },
+          {
+            "source_node_id": "4",
+            "target_node_id": "14",
+            "input": "vae"
+          },
+          {
+            "source_node_id": "14",
+            "target_node_id": "15",
+            "input": "audio"
+          },
+          {
+            "source_node_id": "13",
+            "target_node_id": "15",
+            "input": "images"
+          },
+          {
+            "source_node_id": "15",
+            "target_node_id": "16",
+            "input": "video"
+          },
+          {
+            "source_node_id": "5",
+            "target_node_id": "6",
+            "input": "image"
+          },
+          {
+            "source_node_id": "2",
+            "target_node_id": "7",
+            "input": "clip"
+          },
+          {
+            "source_node_id": "6",
+            "target_node_id": "7",
+            "input": "first_frame"
+          },
+          {
+            "source_node_id": "3",
+            "target_node_id": "7",
+            "input": "vae"
+          }
+        ]
+      },
+      "validation_scope": "STRUCTURE_NODE_SCHEMA_AND_RUNTIME_LAYOUT",
+      "execution_verified": false,
+      "comfy_url": "http://127.0.0.1:8188",
+      "runtime_layout": {
+        "status": "PASS",
+        "release_root": "F:\\AI_Models\\LocalDramaStudio\\ComfyUI",
+        "search_roots": [
+          "E:\\AI\\ComfyDesktop\\ComfyUI\\ComfyUI\\models",
+          "F:\\AI_Models\\LocalDramaStudio\\ComfyUI"
+        ],
+        "selected_components": {
+          "model_root": "MiniMax-H3",
+          "fl2va_unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+          "text_encoder_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+          "video_vae_name": "minimax_h3_video_vae_fp16.safetensors",
+          "audio_vae_name": "minimax_h3_audio_vae_fp32.safetensors",
+          "turbo_lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors"
+        },
+        "resolved_components": {
+          "fl2va_unet_name": "E:\\AI\\ComfyDesktop\\ComfyUI\\ComfyUI\\models\\diffusion_models\\minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+          "text_encoder_name": "E:\\AI\\ComfyDesktop\\ComfyUI\\ComfyUI\\models\\text_encoders\\qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+          "video_vae_name": "E:\\AI\\ComfyDesktop\\ComfyUI\\ComfyUI\\models\\vae\\minimax_h3_video_vae_fp16.safetensors",
+          "audio_vae_name": "E:\\AI\\ComfyDesktop\\ComfyUI\\ComfyUI\\models\\vae\\minimax_h3_audio_vae_fp32.safetensors",
+          "turbo_lora_name": "E:\\AI\\ComfyDesktop\\ComfyUI\\ComfyUI\\models\\loras\\minimax_h3_turbo_v4_step600_ema.safetensors"
+        },
+        "missing_model_files": [],
+        "node_family": "comfy_extras.MiniMaxH3ImageToVideo",
+        "manifest_sha256": null
+      },
+      "node_supply_chain": {
+        "required_nodes": [
+          "BasicGuider",
+          "BasicScheduler",
+          "CLIPLoader",
+          "CreateVideo",
+          "ImageScale",
+          "KSamplerSelect",
+          "LoadImage",
+          "MiniMaxH3ImageToVideo",
+          "RandomNoise",
+          "SamplerCustomAdvanced",
+          "SaveVideo",
+          "UNETLoader",
+          "VAEDecode",
+          "VAEDecodeAudio",
+          "VAELoader"
+        ],
+        "trusted_custom_nodes": [],
+        "trusted_builtin_nodes": [
+          "BasicGuider",
+          "BasicScheduler",
+          "CLIPLoader",
+          "CreateVideo",
+          "ImageScale",
+          "KSamplerSelect",
+          "LoadImage",
+          "MiniMaxH3ImageToVideo",
+          "RandomNoise",
+          "SamplerCustomAdvanced",
+          "SaveVideo",
+          "UNETLoader",
+          "VAEDecode",
+          "VAEDecodeAudio",
+          "VAELoader"
+        ],
+        "trusted_plugins": [
+          "ComfyUI_RH_MinMaxH3",
+          "ComfyUI-GGUF"
+        ],
+        "plugin_hashes": [
+          "a45c99a3a884aeed6a05ac8e5254494742b5d869b7f33cd0340daa2400fb3a6c",
+          "fda92dc0f88ba42a99837deb149a96e9841226de2ccfbdbbd7c8439b7977888a",
+          "6d64d9ffa5e0e0107805cef67a2e3b1329d4cc613505f5cba8e8c08b2131580a",
+          "16be3b08b13de6279fc432addc628320019fcb24963cbc6b52b248de8f06316e"
+        ],
+        "manifest_sha256": "407e1e0a605826e8c9e3a26d1866bac992c7f62cb1ecd00cf7b72c8f82c0f03f"
+      },
+      "validation_id": "0797d14d-d769-4e21-9b4b-e1d88e4d8e63",
+      "evidence_hash": "621cd3a68ea37f0268131fdc1e6b0c942d415bf7811850039ab0dfabbceaf1e4"
+    }
+  },
+  "effective_configuration": {
+    "schema_version": "localdrama.effective-configuration-snapshot.v1",
+    "fingerprint": "sha256:1a0308ac9bb01d1f0e14c1b0237ee4823c73dbd09128bac91c3e97ad20eaf329",
+    "profile_version_id": null,
+    "effective_settings": {
+      "production_tier": "DRAFT",
+      "sigma_points": 10,
+      "acceleration": "OFF",
+      "lora_strength": 0.6,
+      "native_audio": true,
+      "take_count": 1
+    },
+    "setting_sources": {
+      "production_tier": "UAT_REQUEST",
+      "sigma_points": "UAT_REQUEST",
+      "acceleration": "UAT_REQUEST",
+      "lora_strength": "UAT_REQUEST",
+      "native_audio": "UAT_REQUEST",
+      "take_count": "UAT_REQUEST"
+    },
+    "blocking_errors": [],
+    "warnings": [],
+    "runtime_status": "READY"
+  },
+  "execution": {
+    "compiled_workflow_sha256": "7b3a572bcee37201326a7e0b4a9f80f196a0ac7ad5d0617cd7d88bfa72135b92",
+    "runtime_overrides": {
+      "changed": false,
+      "sigma_points": 10,
+      "sigma_nodes": [],
+      "parameter_nodes": {},
+      "acceleration": "OFF",
+      "lora_nodes": [],
+      "lora_asset": null,
+      "lora_strength": null,
+      "native_audio": true,
+      "audio_vae_nodes_removed": [],
+      "audio_decode_nodes_removed": [],
+      "effective_configuration_fingerprint": "sha256:1a0308ac9bb01d1f0e14c1b0237ee4823c73dbd09128bac91c3e97ad20eaf329",
+      "semantic_setting_roles": {}
+    },
+    "nodes": [
+      {
+        "id": "1",
+        "class_type": "UNETLoader",
+        "inputs": {
+          "unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+          "weight_dtype": "default"
+        }
+      },
+      {
+        "id": "10",
+        "class_type": "BasicScheduler",
+        "inputs": {
+          "denoise": 1.0,
+          "model": [
+            "1",
+            0
+          ],
+          "scheduler": "simple",
+          "steps": 10
+        }
+      },
+      {
+        "id": "11",
+        "class_type": "BasicGuider",
+        "inputs": {
+          "conditioning": [
+            "7",
+            0
+          ],
+          "model": [
+            "1",
+            0
+          ]
+        }
+      },
+      {
+        "id": "14",
+        "class_type": "VAEDecodeAudio",
+        "inputs": {
+          "samples": [
+            "12",
+            0
+          ],
+          "vae": [
+            "4",
+            0
+          ]
+        }
+      },
+      {
+        "id": "15",
+        "class_type": "CreateVideo",
+        "inputs": {
+          "audio": [
+            "14",
+            0
+          ],
+          "bit_depth": 8,
+          "fps": 24.0,
+          "images": [
+            "13",
+            0
+          ]
+        }
+      },
+      {
+        "id": "16",
+        "class_type": "SaveVideo",
+        "inputs": {
+          "codec": "h264",
+          "filename_prefix": "h3_platform_uat/SHOT_001",
+          "format": "mp4",
+          "video": [
+            "15",
+            0
+          ]
+        }
+      },
+      {
+        "id": "2",
+        "class_type": "CLIPLoader",
+        "inputs": {
+          "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+          "device": "default",
+          "type": "minimax"
+        }
+      },
+      {
+        "id": "3",
+        "class_type": "VAELoader",
+        "inputs": {
+          "vae_name": "minimax_h3_video_vae_fp16.safetensors"
+        }
+      },
+      {
+        "id": "4",
+        "class_type": "VAELoader",
+        "inputs": {
+          "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+        }
+      }
+    ]
+  },
+  "job": {
+    "id": "868b57d9-d03e-47f0-a88e-8fad2f5f8bc9",
+    "attempt_id": "2a0cccb7-455e-44b6-8173-f4a5150ab591",
+    "prompt_id": "e7f8261c-5766-4caf-bb41-be9b23d682b5",
+    "poll_states": [
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "RUNNING",
+      "SUCCEEDED"
+    ]
+  },
+  "artifact": {
+    "id": "da335c13-1f4e-4988-a422-8048a933d745",
+    "job_attempt_id": "2a0cccb7-455e-44b6-8173-f4a5150ab591",
+    "kind": "COMFY_OUTPUT",
+    "sandbox_rel_path": "jobs/868b57d9-d03e-47f0-a88e-8fad2f5f8bc9/comfy/SHOT_001_00003_.mp4",
+    "sha256": "627662516ed86063e79f5869f39c7661199d9f318c1fb7889170c80e4d7c2b49",
+    "byte_size": 934639,
+    "status": "VERIFIED",
+    "idempotent_replay": false,
+    "path": "E:\\AI\\Temp\\h3-comfy-job-ymaocw_m\\work\\jobs\\868b57d9-d03e-47f0-a88e-8fad2f5f8bc9\\comfy\\SHOT_001_00003_.mp4",
+    "preserved_path": "F:\\AI_Projects\\h3\\local_drama_studio\\work\\uat\\phase6-h3-real-story-sample-pass.mp4",
+    "exists": true
+  },
+  "platform_pipeline": {
+    "promoted_media_version_id": "98b7896f-b6fd-45ea-bce4-308d08df76e4",
+    "machine_qc": {
+      "id": "05a664d9-7a7d-4c30-861b-22f107823745",
+      "subject_type": "MEDIA_VERSION",
+      "subject_id": "98b7896f-b6fd-45ea-bce4-308d08df76e4",
+      "policy_version": "g6_formal_video_qc_v1",
+      "status": "PASS",
+      "results": [
+        {
+          "item_id": "file_integrity",
+          "result": "PASS",
+          "details": {
+            "exists": true,
+            "byte_size": 934639
+          }
+        },
+        {
+          "item_id": "decode",
+          "result": "PASS",
+          "details": {
+            "probe_status": "PASS"
+          }
+        },
+        {
+          "item_id": "dimensions",
+          "result": "PASS",
+          "details": {
+            "width": 480,
+            "height": 832,
+            "source": "ffprobe"
+          }
+        },
+        {
+          "item_id": "fps",
+          "result": "PASS",
+          "details": {
+            "numerator": 24,
+            "denominator": 1,
+            "value": 24.0,
+            "source": "ffprobe"
+          }
+        },
+        {
+          "item_id": "duration",
+          "result": "PASS",
+          "details": {
+            "duration_ms": 5167,
+            "source": "ffprobe"
+          }
+        },
+        {
+          "item_id": "codec",
+          "result": "PASS",
+          "details": {
+            "codec_name": "h264",
+            "source": "ffprobe"
+          }
+        }
+      ],
+      "idempotent_replay": false
+    },
+    "human_decision": "APPROVED",
+    "selection": {
+      "id": "62459495-6055-4510-b4ea-9275526a6444",
+      "media_asset_id": "a32f8e85-d23e-44ae-8ab6-90c3ed5e2031",
+      "media_version_id": "98b7896f-b6fd-45ea-bce4-308d08df76e4",
+      "selection_type": "FORMAL_SELECTION",
+      "status": "SELECTED"
+    }
+  },
+  "isolated": {
+    "project_id": "4535c297-9280-4316-89f7-8da9eabfa1e9",
+    "shot_id": "93f0c487-fdaa-43c3-8eb0-0eab09e2dd43",
+    "database_integrity": "ok",
+    "runtime_contacted": true,
+    "network_contacted": false,
+    "production_mutated": false
+  },
+  "limitations": [
+    "隔离项目已跑通平台 Job→Artifact→Media→QC→审核→选择，但未进入正式整集交付包/下载审计；整体保持 PARTIAL。"
+  ]
+}
