@@ -1726,10 +1726,10 @@ SHA-256：`7c81fc03d395fd574dd98a4917ef5658e3c9f86113e2932a28d380d13a876c12`\
 
 ## 最终执行结论
 
-截至 2026-09-13，Phase 0—6 与 K01—K30 已有第一轮实现和测试记录，第二轮正在逐项核对覆盖并修复真实缺口。目标仍为：**读对并冻结原稿范围、保护人工内容、准确执行已确认输入、复用有效成果而不重复花算力、正确显示当前状态、把单集推进到可审阅/正式采用/交付，并验证所选两集独立推进。** 尚不能由全量测试数量和单镜小样推定所有验收断言完成。
+截至 2026-09-14，Phase 0—6 与 K01—K30 的第二轮实现复核、真实缺口修复和代表性 UAT 已收尾。目标仍为：**读对并冻结原稿范围、保护人工内容、准确执行已确认输入、复用有效成果而不重复花算力、正确显示当前状态、把单集推进到可审阅/正式采用/交付，并验证所选两集独立推进。** 第二轮没有由测试数量推定模型审美通过：6 镜样例中镜头 5/6 仍因生成质量被人工拒绝，EP2 保持 0 镜以证明隔离而非冒充完整交付。逐项证据、对标 F01—F08 处置和最终测试限制见 `docs/evidence/round2-final-uat-and-benchmark-closure-2026-09-14.md`。
 
 真实环境已验证本地 LLM、ComfyUI/H3、H264 + AAC 媒体、机器 QC、人工批准、正式采用、FFmpeg 合成、交付 manifest/核验/下载；代表性视频只抽查三帧，并主动否决了错误 UI 首帧输入。隔离浏览器已验证两集有限选择、集中阻塞、跨集切换、“继续未完成”与“仅重新合成”影响预览，以及 API 真实重启后的状态恢复。生产数据库和现有生产服务未被改写。
 
-最终全量门禁：API 242 个测试文件、1,423 项测试中 1,422 项通过，1 项为 Windows 主机按条件跳过的 POSIX 权限合同，零失败；Web 138 个测试文件、578 项全部通过；TypeScript/Vite 生产构建、bundle budget、Ruff、架构债务阻断与 `git diff --check` 全部通过。完整记录见 `docs/evidence/final-full-regression-and-runtime-closure-2026-09-13.md`。
+第一轮最终全量门禁：API 242 个测试文件、1,423 项测试中 1,422 项通过，1 项为 Windows 主机按条件跳过的 POSIX 权限合同，零失败；Web 138 个测试文件、578 项全部通过；TypeScript/Vite 生产构建、bundle budget、Ruff、架构债务阻断与 `git diff --check` 全部通过。完整记录见 `docs/evidence/final-full-regression-and-runtime-closure-2026-09-13.md`。第二轮收尾时按用户“不要过度测试”的要求中止了约 60% 的 API 全量运行，Web 两次 594 项全量分别暴露一个测试 state 同步问题并以聚焦测试修复；因此第一轮全量结果不冒充第二轮最终全量通过，详见上述 2026-09-14 闭环记录。
 
 E01—E09 已逐项按启动条件裁决：E01/E07/E09 由已有能力覆盖或部分覆盖，其余没有真实触发样本，按第 6 节停止线不扩大开发。详细证据见 `docs/evidence/conditional-enhancements-e01-e09-disposition-2026-09-13.md`、`docs/evidence/phase6-user-perspective-browser-and-restart-uat-2026-09-13.md`、`docs/evidence/phase6-h3-real-platform-uat-pass-2026-09-13.json` 与 `docs/evidence/phase6-delivery-real-v2-2026-09-13.json`。
