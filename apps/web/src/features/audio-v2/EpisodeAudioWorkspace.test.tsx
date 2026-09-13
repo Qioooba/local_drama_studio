@@ -47,6 +47,7 @@ describe("EpisodeAudioWorkspace v2", () => {
     mount("/?focus=music-sfx");
     expect(await screen.findByDisplayValue("-3")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("音量（dB）"), { target: { value: "-5" } });
+    await waitFor(() => expect((screen.getByLabelText("音量（dB）") as HTMLInputElement).value).toBe("-5"));
     fireEvent.click(screen.getByRole("button", { name: "保存混音调整" }));
     await waitFor(() => expect(updateEpisodeAudioTrackV2).toHaveBeenCalledWith("track-1", expect.objectContaining({ gain_db: -5, expected_revision: 2, expected_mix_revision: 4, idempotency_key: expect.stringMatching(/^audio-update:/) })));
   });
