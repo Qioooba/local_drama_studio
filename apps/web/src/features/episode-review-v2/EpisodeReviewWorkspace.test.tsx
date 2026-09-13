@@ -211,7 +211,7 @@ describe("EpisodeReviewWorkspace v2", () => {
     const save = await screen.findByRole("button", { name: "保存批准" });
     expect((save as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("checkbox", { name: "人物身份 *" }));
-    expect((save as HTMLButtonElement).disabled).toBe(false);
+    await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(save);
     await waitFor(() => expect(createReviewDecisionV2).toHaveBeenCalled());
     expect(vi.mocked(createReviewDecisionV2).mock.calls[0][0]).toMatchObject({
