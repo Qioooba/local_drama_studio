@@ -4,6 +4,8 @@ import { Link } from "react-router-dom";
 import { parseRouteContext, routes } from "../app/routeRegistry";
 import { getEpisodePostOverviewV2, getEpisodeProductionOverviewV2 } from "../generated/api";
 import { useCapabilityOptions } from "../features/model-config/CapabilityPicker";
+import { episodeProductionKeys } from "../features/episode-production-v2/episodeProductionKeys";
+import { useProjectEventInvalidation } from "../features/events/useProjectEventInvalidation";
 import { EpisodeTaskDrawer } from "./EpisodeTaskDrawer";
 import { selectEpisodeStageFacts, type EpisodeStageId } from "./episodeContextSelectors";
 import "./episode-context-bar.css";
@@ -29,8 +31,15 @@ function currentStage(pathname: string): EpisodeStageId {
 
 export function EpisodeContextBar({ episodeId, onEpisodeChange, pathname, projectId, seasons }: EpisodeContextBarProps) {
   const [taskDrawerOpen, setTaskDrawerOpen] = useState(false);
-  const overview = useQuery({ queryKey: ["episode-production-v2", episodeId, "overview"], queryFn: () => getEpisodeProductionOverviewV2(episodeId), staleTime: 5_000 });
-  const post = useQuery({ queryKey: ["episode-post-v2", episodeId, "overview"], queryFn: () => getEpisodePostOverviewV2(episodeId), staleTime: 5_000 });
+  const overviewKey = episodeProductionKeys.overview(episodeId);
+  const postKey = ["episode-post-v2", episodeId, "overview"] as const;
+  const overview = useQuery({ queryKey: overviewKey, queryFn: () => getEpisodeProductionOverviewV2(episodeId), staleTime: 5_000 });
+  const post = useQuery({ queryKey: postKey, queryFn: () => getEpisodePostOverviewV2(episodeId), staleTime: 5_000 });
+  useProjectEventInvalidation(
+    projectId,
+    ["EpisodeProductionRunChanged", "JOB_QUEUED", "JOB_FINISHED", "SHOT_REVISION_CREATED", "AudioWorkingCandidateChanged", "TimelineRevisionChanged", "ReviewDecisionChanged"],
+    [overviewKey, postKey],
+  );
   const textCapability = useCapabilityOptions("LLM_EPISODE_PLAN", { projectId, episodeId });
   const imageCapability = useCapabilityOptions("IMAGE_CHARACTER", { projectId, episodeId });
   const videoCapability = useCapabilityOptions("VIDEO_I2V", { projectId, episodeId });

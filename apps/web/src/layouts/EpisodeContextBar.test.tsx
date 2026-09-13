@@ -11,6 +11,7 @@ vi.mock("../generated/api", () => ({
   requestJson: vi.fn().mockResolvedValue({ items: [] }),
   retryJob: vi.fn(),
 }));
+vi.mock("../features/events/useProjectEventInvalidation", () => ({ useProjectEventInvalidation: vi.fn() }));
 
 const seasons = [{
   id: "season-1",
