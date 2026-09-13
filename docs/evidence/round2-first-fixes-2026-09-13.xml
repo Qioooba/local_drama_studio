@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="20" time="55.859" timestamp="2026-09-13T20:01:06.590286+08:00" hostname="x99"><testcase classname="tests.test_capability_options" name="test_capability_options_explain_configured_but_unpublished_runtime" time="1.884" /><testcase classname="tests.test_capability_options" name="test_capability_options_route_returns_same_server_owned_resolution" time="2.680" /><testcase classname="tests.test_capability_options" name="test_capability_options_route_accepts_an_unconfigured_default_llm" time="2.638" /><testcase classname="tests.test_capability_options" name="test_capability_options_keep_unpublished_profile_visible_but_unselectable" time="1.985" /><testcase classname="tests.test_prcur011_worker_storage" name="test_worker_session_version_handshake_heartbeat_and_attempt_binding" time="2.099" /><testcase classname="tests.test_prcur011_worker_storage" name="test_worker_kill_expires_session_requeues_job_and_releases_gpu_lease" time="2.244" /><testcase classname="tests.test_prcur011_worker_storage" name="test_supervisor_persists_restart_backoff_and_recovers" time="1.981" /><testcase classname="tests.test_prcur011_worker_storage" name="test_supervisor_watch_mode_stays_alive_across_empty_polls" time="2.110" /><testcase classname="tests.test_prcur011_worker_storage" name="test_supervisor_console_interrupt_releases_session_without_waiting_for_lease" time="2.022" /><testcase classname="tests.test_prcur011_worker_storage" name="test_storage_finalize_is_idempotent_and_streaming" time="2.470" /><testcase classname="tests.test_prcur011_worker_storage" name="test_storage_finalize_uses_a_bounded_atomic_copy_name" time="2.027"><failure message="local_drama.domain.errors.DomainRuleError: StorageOperation finalize 文件阶段失败">self = &lt;local_drama.application.storage_operations.StorageOperationService object at 0x0000025A17FF7590&gt;
+operation_id = 'fca370b8-1da3-45b7-ad88-e9d3821e9b7b'
+
+    def finalize_media_ingest(self, operation_id: str) -&gt; dict[str, Any]:
+        operation = self.get_operation(operation_id)
+        if operation["status"] == "COMMITTED":
+            return self._committed_result(operation, replay=True)
+        if operation["status"] in {"FAILED", "QUARANTINED"}:
+            raise DomainRuleError(
+                "STORAGE_OPERATION_NOT_FINALIZABLE",
+                "StorageOperation 当前不能 finalize",
+                {"status": operation["status"], "last_error_code": operation.get("last_error_code")},
+            )
+        if operation["status"] not in RECOVERABLE_STATES:
+            raise DomainRuleError("STORAGE_OPERATION_STATE_INVALID", "StorageOperation 状态无效")
+        with self.database.connect() as connection:
+            duplicate_before_copy = connection.execute(
+                """SELECT ma.id AS media_asset_id,mv.id AS media_version_id
+                FROM media_assets ma JOIN media_versions mv ON mv.media_asset_id=ma.id
+                WHERE ma.project_id=? AND mv.sha256=? ORDER BY mv.version_no,mv.id LIMIT 1""",
+                (operation["project_id"], operation["actual_sha256"]),
+            ).fetchone()
+        if duplicate_before_copy is not None:
+            now = _utc_now()
+            with self.database.transaction() as connection:
+                connection.execute(
+                    """UPDATE storage_operations SET status='COMMITTED',destination_rel_path=NULL,
+                    media_asset_id=?,media_version_id=?,finalized_at=?,updated_at=?,
+                    last_error_code=NULL,last_error_redacted=NULL,revision=revision+1 WHERE id=?""",
+                    (
+                        duplicate_before_copy["media_asset_id"],
+                        duplicate_before_copy["media_version_id"],
+                        now,
+                        now,
+                        operation_id,
+                    ),
+                )
+            try:
+                self.staging_path(operation_id).unlink()
+            except (OSError, DomainRuleError):
+                pass
+            return self._committed_result(self.get_operation(operation_id), replay=False)
+        relative, destination = self._destination(operation)
+        operation = self.get_operation(operation_id)
+        expected_hash = str(operation.get("actual_sha256") or "")
+        expected_size = int(operation.get("actual_byte_size") or -1)
+        try:
+            if destination.exists():
+                if destination.is_symlink() or not destination.is_file():
+                    raise DomainRuleError("STORAGE_DESTINATION_INVALID", "destination 不是普通文件")
+                actual_hash, actual_size = _stream_hash(destination)
+            else:
+                staged = self.staging_path(operation_id)
+                # Keep the atomic-copy name bounded.  The destination already
+                # contains both the operation id and the user-controlled source
+                # name, so repeating both can cross MAX_PATH on otherwise valid
+                # Windows project roots before replace_path gets a chance to use
+                # its long-path handling.
+                partial = destination.with_name(f".partial-{operation_id}")
+                partial.unlink(missing_ok=True)
+                actual_hash, actual_size = _stream_copy(staged, partial)
+                if actual_hash != expected_hash or actual_size != expected_size:
+                    self._quarantine(operation_id, partial, "STORAGE_FINALIZE_HASH_MISMATCH")
+                    raise DomainRuleError("STORAGE_FINALIZE_HASH_MISMATCH", "finalize copy hash/大小不一致")
+                self._checkpoint("after_copy_before_replace", operation)
+&gt;               replace_path(partial, destination)
+
+apps\api\local_drama\application\storage_operations.py:514:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+source = WindowsPath('E:/AI/Temp/pytest-of-Qi/pytest-3075/test_storage_finalize_uses_a_b0/projects/storage_long_source/00_admin/imports/.partial-fca370b8-1da3-45b7-ad88-e9d3821e9b7b')
+destination = WindowsPath('E:/AI/Temp/pytest-of-Qi/pytest-3075/test_storage_finalize_uses_a_b0/projects/storage_long_source/00_admin...er-file-name-long-user-file-name-long-user-file-name-long-user-file-name-long-user-file-name-long-user-file-name-.txt')
+
+    def replace_path(source: Path, destination: Path) -&gt; None:
+        """Atomically move *source* onto *destination*, tolerating transient
+        Windows handle contention with bounded linear backoff.
+
+        Retries only the rename — the source content is already durable at this
+        point — and re-raises any non-transient error immediately.
+        """
+        for attempt in range(_ATTEMPTS):
+            try:
+&gt;               os.replace(source, destination)
+E               FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\AI\\Temp\\pytest-of-Qi\\pytest-3075\\test_storage_finalize_uses_a_b0\\projects\\storage_long_source\\00_admin\\imports\\.partial-fca370b8-1da3-45b7-ad88-e9d3821e9b7b' -&gt; 'E:\\AI\\Temp\\pytest-of-Qi\\pytest-3075\\test_storage_finalize_uses_a_b0\\projects\\storage_long_source\\00_admin\\imports\\fca370b8-1da3-45b7-ad88-e9d3821e9b7b-long-user-file-name-long-user-file-name-long-user-file-name-long-user-file-name-long-user-file-name-long-user-file-name-.txt'
+
+apps\api\local_drama\infrastructure\filesystem\atomic.py:44: FileNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+workspace = Settings(app_name='LocalDramaStudio', app_version='0.1.0', environment='development', instance_id='default', install_p...al_drama_studio'), instance_root=WindowsPath('C:/Users/Qi/.codex/worktrees/3a00/local_drama_studio'), config_path=None)
+database = &lt;local_drama.infrastructure.database.sqlite.Database object at 0x0000025A16E9CF50&gt;
+
+    def test_storage_finalize_uses_a_bounded_atomic_copy_name(workspace, database) -&gt; None:
+        project = _project(database, workspace, "storage_long_source")
+        source = workspace.work_root / (("long-user-file-name-" * 6) + ".txt")
+        source.write_text("bounded atomic staging name", encoding="utf-8")
+        observed: list[str] = []
+
+        def capture_after_copy(name, operation):
+            if name == "after_copy_before_replace":
+                destination = (
+                    workspace.projects_root
+                    / str(project["root_rel"])
+                    / str(operation["destination_rel_path"])
+                )
+                partials = list(destination.parent.glob(".partial-*"))
+                assert len(partials) == 1
+                observed.append(partials[0].name)
+
+        service = StorageOperationService(database, workspace, fault_injector=capture_after_copy)
+        operation = _stage(service, str(project["id"]), source, key="storage-bounded-partial")
+        service.set_media_probe(
+            str(operation["id"]), {"probe_status": "NOT_APPLICABLE"},
+            duration_ms=None, fps_num=None, fps_den=None,
+        )
+
+&gt;       result = service.finalize_media_ingest(str(operation["id"]))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+apps\api\tests\test_prcur011_worker_storage.py:234:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;local_drama.application.storage_operations.StorageOperationService object at 0x0000025A17FF7590&gt;
+operation_id = 'fca370b8-1da3-45b7-ad88-e9d3821e9b7b'
+
+    def finalize_media_ingest(self, operation_id: str) -&gt; dict[str, Any]:
+        operation = self.get_operation(operation_id)
+        if operation["status"] == "COMMITTED":
+            return self._committed_result(operation, replay=True)
+        if operation["status"] in {"FAILED", "QUARANTINED"}:
+            raise DomainRuleError(
+                "STORAGE_OPERATION_NOT_FINALIZABLE",
+                "StorageOperation 当前不能 finalize",
+                {"status": operation["status"], "last_error_code": operation.get("last_error_code")},
+            )
+        if operation["status"] not in RECOVERABLE_STATES:
+            raise DomainRuleError("STORAGE_OPERATION_STATE_INVALID", "StorageOperation 状态无效")
+        with self.database.connect() as connection:
+            duplicate_before_copy = connection.execute(
+                """SELECT ma.id AS media_asset_id,mv.id AS media_version_id
+                FROM media_assets ma JOIN media_versions mv ON mv.media_asset_id=ma.id
+                WHERE ma.project_id=? AND mv.sha256=? ORDER BY mv.version_no,mv.id LIMIT 1""",
+                (operation["project_id"], operation["actual_sha256"]),
+            ).fetchone()
+        if duplicate_before_copy is not None:
+            now = _utc_now()
+            with self.database.transaction() as connection:
+                connection.execute(
+                    """UPDATE storage_operations SET status='COMMITTED',destination_rel_path=NULL,
+                    media_asset_id=?,media_version_id=?,finalized_at=?,updated_at=?,
+                    last_error_code=NULL,last_error_redacted=NULL,revision=revision+1 WHERE id=?""",
+                    (
+                        duplicate_before_copy["media_asset_id"],
+                        duplicate_before_copy["media_version_id"],
+                        now,
+                        now,
+                        operation_id,
+                    ),
+                )
+            try:
+                self.staging_path(operation_id).unlink()
+            except (OSError, DomainRuleError):
+                pass
+            return self._committed_result(self.get_operation(operation_id), replay=False)
+        relative, destination = self._destination(operation)
+        operation = self.get_operation(operation_id)
+        expected_hash = str(operation.get("actual_sha256") or "")
+        expected_size = int(operation.get("actual_byte_size") or -1)
+        try:
+            if destination.exists():
+                if destination.is_symlink() or not destination.is_file():
+                    raise DomainRuleError("STORAGE_DESTINATION_INVALID", "destination 不是普通文件")
+                actual_hash, actual_size = _stream_hash(destination)
+            else:
+                staged = self.staging_path(operation_id)
+                # Keep the atomic-copy name bounded.  The destination already
+                # contains both the operation id and the user-controlled source
+                # name, so repeating both can cross MAX_PATH on otherwise valid
+                # Windows project roots before replace_path gets a chance to use
+                # its long-path handling.
+                partial = destination.with_name(f".partial-{operation_id}")
+                partial.unlink(missing_ok=True)
+                actual_hash, actual_size = _stream_copy(staged, partial)
+                if actual_hash != expected_hash or actual_size != expected_size:
+                    self._quarantine(operation_id, partial, "STORAGE_FINALIZE_HASH_MISMATCH")
+                    raise DomainRuleError("STORAGE_FINALIZE_HASH_MISMATCH", "finalize copy hash/大小不一致")
+                self._checkpoint("after_copy_before_replace", operation)
+                replace_path(partial, destination)
+                self._checkpoint("after_destination_replace", operation)
+            if actual_hash != expected_hash or actual_size != expected_size:
+                self._quarantine(operation_id, destination, "STORAGE_DESTINATION_HASH_MISMATCH")
+                raise DomainRuleError("STORAGE_DESTINATION_HASH_MISMATCH", "destination hash/大小不一致")
+            with self.database.transaction() as connection:
+                connection.execute(
+                    """UPDATE storage_operations SET status='FILE_COMMITTED',destination_rel_path=?,
+                    last_error_code=NULL,last_error_redacted=NULL,updated_at=?,revision=revision+1 WHERE id=?""",
+                    (relative, _utc_now(), operation_id),
+                )
+            operation = self.get_operation(operation_id)
+            self._checkpoint("after_file_state_commit", operation)
+        except DomainRuleError:
+            raise
+        except OSError as error:
+            code = "DISK_FULL" if error.errno in {errno.ENOSPC, getattr(errno, "EDQUOT", -1)} else "STORAGE_FINALIZE_IO_FAILED"
+            self._set_error(operation_id, "NEEDS_ATTENTION", code, type(error).__name__)
+&gt;           raise DomainRuleError(code, "StorageOperation finalize 文件阶段失败") from error
+E           local_drama.domain.errors.DomainRuleError: StorageOperation finalize 文件阶段失败
+
+apps\api\local_drama\application\storage_operations.py:532: DomainRuleError</failure></testcase><testcase classname="tests.test_prcur011_worker_storage" name="test_media_service_import_is_backed_by_committed_storage_ledger" time="2.566" /><testcase classname="tests.test_prcur011_worker_storage" name="test_copy_then_database_failure_is_resumed_by_reconciler" time="2.198" /><testcase classname="tests.test_prcur011_worker_storage" name="test_database_commit_then_process_crash_replays_without_duplicate" time="2.409" /><testcase classname="tests.test_prcur011_worker_storage" name="test_storage_disk_full_hash_mismatch_path_and_symlink_fail_closed" time="2.102" /><testcase classname="tests.test_prcur011_worker_storage" name="test_storage_reconciler_quarantines_unclassified_orphan_without_deleting" time="2.006" /><testcase classname="tests.test_prcur011_worker_storage" name="test_storage_reconciler_quarantines_tampered_committed_media_and_marks_corrupt" time="2.234" /><testcase classname="tests.test_prcur011_worker_storage" name="test_0050_through_0052_upgrade_downgrade_reupgrade" time="1.412" /><testcase classname="tests.test_frame_bridge_source_frame" name="test_frame_bridge_binds_real_last_frame_to_outgoing_boundary" time="8.294" /><testcase classname="tests.test_frame_bridge_source_frame" name="test_frame_bridge_projects_first_working_keyframe_and_prioritizes_explicit_transition" time="3.993" /></testsuite></testsuites>

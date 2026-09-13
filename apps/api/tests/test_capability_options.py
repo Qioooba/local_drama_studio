@@ -112,6 +112,17 @@ def test_capability_options_route_returns_same_server_owned_resolution(workspace
     assert payload["configured_runtime"]["publication_status"] == "PUBLISHED"
 
 
+def test_capability_options_route_accepts_an_unconfigured_default_llm(workspace, database) -> None:
+    with TestClient(create_app(workspace.model_copy(update={"llm_model": None}))) as client:
+        response = client.get(
+            "/api/v1/capability-options",
+            params={"capability": "LLM_STORY_PARSE"},
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["configured_runtime"] is None
+
+
 def test_capability_options_keep_unpublished_profile_visible_but_unselectable(workspace, database) -> None:
     project_id, candidate_id = _project_and_llm_profile(database, model="qwen3.8:27b", status="CANDIDATE_UNVERIFIED")
     configured = workspace.model_copy(update={"llm_model": "qwen3.8:27b", "llm_provider": "OLLAMA_LOOPBACK"})

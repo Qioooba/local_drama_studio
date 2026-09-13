@@ -181,5 +181,11 @@ class PreviewPipelineApplyRequest(BaseModel):
         return normalized
 
 
+class PipelineApplyPreviewResponse(BaseModel):
+    impact: dict[str, object]
+    quality_report: dict[str, object]
+    can_apply: bool
+
+
 class RetryPipelineRequest(BaseModel):
     expected_revision: int = Field(ge=1)

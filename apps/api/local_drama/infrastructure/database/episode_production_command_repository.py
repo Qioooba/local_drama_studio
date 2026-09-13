@@ -141,10 +141,14 @@ class SqliteEpisodeProductionTransitionRepository:
                 if str(row["status"]) in TERMINAL_RUN_STATES:
                     raise DomainRuleError("EPISODE_PRODUCTION_RUN_NOT_CANCELLABLE", "已结束的整集生产不能取消")
                 jobs = connection.execute(
-                    """SELECT j.id,j.project_id,j.state FROM automation_workflow_run_tasks t
-                    JOIN jobs j ON j.id=t.job_id WHERE t.run_id=?
-                    AND j.state NOT IN ('SUCCEEDED','FAILED','CANCELLED')""",
-                    (run_id,),
+                    """SELECT DISTINCT j.id,j.project_id,j.state FROM jobs j
+                    WHERE j.state NOT IN ('SUCCEEDED','FAILED','CANCELLED')
+                    AND (
+                      EXISTS (SELECT 1 FROM automation_workflow_run_tasks t
+                              WHERE t.run_id=? AND t.job_id=j.id)
+                      OR (j.scope_episode_id=? AND j.idempotency_key LIKE 'episode-%:' || ? || ':%')
+                    )""",
+                    (run_id, row["episode_id"], run_id),
                 ).fetchall()
                 for job in jobs:
                     target = "CANCELLED" if str(job["state"]) in {"QUEUED", "NEEDS_ATTENTION", "ORPHANED"} else "CANCEL_REQUESTED"

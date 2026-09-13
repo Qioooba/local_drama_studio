@@ -80,13 +80,13 @@ class CapabilityOptionService:
         *,
         configured_llm_provider: str,
         configured_llm_base_url: str,
-        configured_llm_model: str,
+        configured_llm_model: str | None,
     ) -> None:
         self.profiles = profiles
         self.preference_resolver = preference_resolver
         self.configured_llm_provider = configured_llm_provider.strip().upper()
         self.configured_llm_base_url = configured_llm_base_url.strip()
-        self.configured_llm_model = configured_llm_model.strip()
+        self.configured_llm_model = _text(configured_llm_model)
 
     def list_options(
         self,

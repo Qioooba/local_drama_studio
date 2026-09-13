@@ -827,16 +827,7 @@ class ComfyGenerationService:
                 "result": result,
                 "late_provider_success": True,
             }
-        completion = build_asset_image_completion(self.database, self.settings)
-        try:
-            completion.finalize_job(str(attempt["job_id"]), artifacts)
-        except DomainRuleError as error:
-            completion.record_finalization_failure(str(attempt["job_id"]), error)
-        keyframe_completion = build_shot_keyframe_completion(self.database, self.settings)
-        try:
-            keyframe_completion.finalize_job(str(attempt["job_id"]), artifacts)
-        except DomainRuleError as error:
-            keyframe_completion.record_failure(str(attempt["job_id"]), error)
+        self._finalize_business_outputs(str(attempt["job_id"]), artifacts)
         with self.database.connect() as connection:
             job_row = connection.execute("SELECT subject_type, subject_id FROM jobs WHERE id=?", (attempt["job_id"],)).fetchone()
         if job_row and job_row["subject_type"] == "GENERATION_VARIANT":
@@ -909,7 +900,94 @@ class ComfyGenerationService:
             replace_path(partial, target)
             artifacts.append(self.jobs.register_artifact(str(row["id"]), "COMFY_OUTPUT", target.relative_to(self.settings.work_root).as_posix()))
         result = self.jobs.recover_provider_success(attempt_id, provider_job_id)
-        return {"status": "SUCCEEDED", "prompt_id": provider_job_id, "artifacts": artifacts, "result": result}
+        business_outputs = self._finalize_business_outputs(str(row["job_id"]), artifacts)
+        return {
+            "status": "SUCCEEDED",
+            "prompt_id": provider_job_id,
+            "artifacts": artifacts,
+            "result": result,
+            "business_outputs": business_outputs,
+        }
+
+    def _finalize_business_outputs(self, job_id: str, artifacts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        outcomes: list[dict[str, Any]] = []
+        asset_completion = build_asset_image_completion(self.database, self.settings)
+        try:
+            result = asset_completion.finalize_job(job_id, artifacts)
+            if result is not None:
+                outcomes.append({"kind": "ASSET_IMAGE", "status": "FINALIZED", "result": result})
+        except DomainRuleError as error:
+            asset_completion.record_finalization_failure(job_id, error)
+            outcomes.append({"kind": "ASSET_IMAGE", "status": "FAILED", "error_code": error.code})
+        keyframe_completion = build_shot_keyframe_completion(self.database, self.settings)
+        try:
+            result = keyframe_completion.finalize_job(job_id, artifacts)
+            if result is not None:
+                outcomes.append({"kind": "SHOT_KEYFRAME", "status": "FINALIZED", "result": result})
+        except DomainRuleError as error:
+            keyframe_completion.record_failure(job_id, error)
+            outcomes.append({"kind": "SHOT_KEYFRAME", "status": "FAILED", "error_code": error.code})
+        return outcomes
+
+    def reconcile_succeeded_business_outputs(self, *, limit: int = 50) -> dict[str, Any]:
+        """Finish idempotent asset/keyframe adoption after a process restart.
+
+        A crash can occur after the durable Job is marked SUCCEEDED but before
+        its output is promoted into the owning production batch.  Provider
+        recovery cannot see that state because the attempt is no longer
+        orphaned, so startup performs this separate bounded reconciliation.
+        """
+
+        bounded_limit = max(1, min(int(limit), 100))
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """SELECT DISTINCT j.id
+                FROM jobs j
+                LEFT JOIN asset_image_generation_batch_items ai ON ai.job_id=j.id
+                LEFT JOIN shot_keyframe_generation_batch_items ki ON ki.job_id=j.id
+                WHERE j.state='SUCCEEDED'
+                  AND (
+                    (ai.id IS NOT NULL AND ai.status NOT IN ('SUCCEEDED','SUPERSEDED','FAILED','CANCELLED'))
+                    OR (ki.id IS NOT NULL AND ki.status NOT IN ('SUCCEEDED','SUPERSEDED','FAILED','CANCELLED'))
+                  )
+                ORDER BY j.updated_at,j.id LIMIT ?""",
+                (bounded_limit,),
+            ).fetchall()
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            job_id = str(row["id"])
+            with self.database.connect() as connection:
+                artifact_rows = connection.execute(
+                    """SELECT ar.* FROM artifacts ar
+                    JOIN job_attempts a ON a.id=ar.job_attempt_id
+                    WHERE a.job_id=? ORDER BY ar.created_at,ar.id""",
+                    (job_id,),
+                ).fetchall()
+            artifacts = [dict(artifact) for artifact in artifact_rows]
+            outcomes = self._finalize_business_outputs(job_id, artifacts)
+            failed = [outcome for outcome in outcomes if outcome["status"] == "FAILED"]
+            finalized = [outcome for outcome in outcomes if outcome["status"] == "FINALIZED"]
+            if failed:
+                items.append(
+                    {
+                        "job_id": job_id,
+                        "status": "DEFERRED",
+                        "artifact_count": len(artifacts),
+                        "outcomes": outcomes,
+                    }
+                )
+            elif finalized:
+                items.append(
+                    {
+                        "job_id": job_id,
+                        "status": "FINALIZED",
+                        "artifact_count": len(artifacts),
+                        "outcomes": outcomes,
+                    }
+                )
+            else:
+                items.append({"job_id": job_id, "status": "NO_MATCH", "artifact_count": len(artifacts)})
+        return {"inspected": len(rows), "finalized": sum(item["status"] == "FINALIZED" for item in items), "items": items}
 
     def recover_uncertain_successes(self, *, limit: int = 20) -> dict[str, Any]:
         """Recover provider-confirmed work without asking for attempt identifiers.

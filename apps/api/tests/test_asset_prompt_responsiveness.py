@@ -51,4 +51,8 @@ def test_revision_guidance_is_preserved_in_frozen_prompt_bundle():
     first = AssetMultiViewService._normalize_prompt_bundle(original, ["LEFT"])
     second = AssetMultiViewService._normalize_prompt_bundle(revised, ["LEFT"])
     assert second["revision_guidance"] == "keep the short haircut"
+    assert second["items"]["LEFT"]["positive_prompt"].endswith(
+        "mandatory reviewer correction: keep the short haircut"
+    )
+    assert AssetMultiViewService._normalize_prompt_bundle(second, ["LEFT"]) == second
     assert _digest(first) != _digest(second)

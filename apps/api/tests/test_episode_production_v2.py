@@ -492,6 +492,18 @@ def test_episode_production_v2_run_transitions_are_revision_safe_and_idempotent(
         assert resumed.json()["run"]["status"] == "RUNNING"
         assert resumed.json()["run"]["affected_job_count"] == 0
 
+        child = JobService(database).create_job(
+            str(project["id"]),
+            "GENERATION_VARIANT",
+            "EPISODE",
+            str(episode["id"]),
+            "GPU_H3",
+            {},
+            f"episode-keyframes:{run['id']}:task:shot",
+            scope_episode_id=str(episode["id"]),
+            stage_code="SHOT_IMAGE",
+        )
+
         cancelled = client.post(
             f"/api/v2/production-runs/{run['id']}:cancel",
             json={
@@ -501,6 +513,9 @@ def test_episode_production_v2_run_transitions_are_revision_safe_and_idempotent(
         )
         assert cancelled.status_code == 200, cancelled.text
         assert cancelled.json()["run"]["status"] == "CANCELLED"
+        with database.connect() as connection:
+            child_state = connection.execute("SELECT state FROM jobs WHERE id=?", (child["id"],)).fetchone()[0]
+        assert child_state == "CANCELLED"
         with database.connect() as connection:
             events = connection.execute(
                 "SELECT COUNT(*) FROM outbox_events WHERE type='EpisodeProductionRunChanged' AND subject_id=?",

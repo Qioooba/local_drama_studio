@@ -67,7 +67,8 @@ def test_frame_bridge_binds_real_last_frame_to_outgoing_boundary(workspace, data
     assert replay.json()["frame_bridge"]["boundary_revision"] == 2
     assert mismatch.status_code == 409, mismatch.text
     assert mismatch.json()["error"]["code"] == "FRAME_BRIDGE_IDEMPOTENCY_MISMATCH"
-    assert retired.status_code == 405
+    # The retired v1 route is absent rather than mounted with the wrong method.
+    assert retired.status_code == 404
     with database.connect() as connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM audit_events WHERE action='FRAME_BRIDGE_SOURCE_FRAME_SET' AND subject_id=?",

@@ -771,6 +771,7 @@ class DialogueTtsCandidateFact(StrictModel):
     status: str
     created_at: str
     is_stale: bool
+    stale_reason: str | None = None
     selected: bool
 
 
@@ -780,6 +781,7 @@ class DialogueWorkingSelectionFact(StrictModel):
     media_version_id: str
     source_text_revision_id: str
     is_stale: bool
+    stale_reason: str | None = None
     created_at: str
 
 

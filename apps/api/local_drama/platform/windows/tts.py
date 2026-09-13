@@ -15,14 +15,21 @@ class WindowsSapiRuntime:
 
     @property
     def available(self) -> bool:
-        return bool(shutil.which("powershell.exe") or shutil.which("powershell"))
+        return bool(self._powershell())
 
     def capability_summary(self) -> dict[str, object]:
         return {"status": "AVAILABLE" if self.available else "UNAVAILABLE", "runtime": self.name}
 
     @staticmethod
     def _powershell() -> str | None:
-        return shutil.which("powershell.exe") or shutil.which("powershell") or shutil.which("pwsh")
+        # PowerShell 7 can expose modern OneCore voices that Windows
+        # PowerShell 5.1 omits from System.Speech on the same machine.
+        return (
+            shutil.which("pwsh")
+            or shutil.which("pwsh.exe")
+            or shutil.which("powershell.exe")
+            or shutil.which("powershell")
+        )
 
     def discover_voices(self) -> dict[str, object]:
         powershell = self._powershell()

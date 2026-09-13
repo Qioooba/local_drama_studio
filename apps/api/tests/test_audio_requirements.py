@@ -238,3 +238,59 @@ def test_tts_requirements_reuse_current_verified_audio_without_voice_generation(
     assert requirements["generation_required_count"] == 0
     assert requirements["reusable_count"] == 1
     assert requirements["items"][0]["reusable_media_version_id"] == media["media_version_id"]
+
+
+def test_tts_requirements_invalidate_selected_audio_after_character_voice_rebind(
+    workspace, database,
+) -> None:
+    _projects, episode = _episode_with_project(workspace, database, "tts_voice_rebind")
+    with database.connect() as connection:
+        project = connection.execute(
+            """SELECT p.id,p.root_rel FROM projects p JOIN seasons se ON se.project_id=p.id
+            JOIN episodes e ON e.season_id=se.id WHERE e.id=?""",
+            (str(episode["id"]),),
+        ).fetchone()
+    project_id = str(project["id"])
+    character_id = _insert_asset(database, project_id, "ALICE", "Alice")
+    dialogue = DialogueService(database, workspace, media=MediaService(database, workspace))
+    voices = []
+    for suffix in ("OLD", "NEW"):
+        evidence = workspace.projects_root / str(project["root_rel"]) / "00_admin" / f"voice-{suffix}.json"
+        evidence.write_text('{"owner":"test"}\n', encoding="utf-8")
+        voice = dialogue.create_voice_profile(
+            project_id, code=f"ALICE-{suffix}", title=suffix, voice_ref=f"sapi:Alice{suffix}",
+            license_status="USER_OWNED", license_evidence_path_rel=f"00_admin/voice-{suffix}.json",
+        )
+        _bind_tts_profile(database, str(voice["id"]), f"tts-alice-{suffix.lower()}")
+        voices.append(voice)
+    dialogue.bind_character_voice(project_id, character_id, str(voices[0]["id"]))
+    line = dialogue.create_line(str(episode["id"]), code="DLG-A", speaker="Alice", text="Hello.", pronunciation={})
+    wav = workspace.work_root / "tts-voice-rebind.wav"
+    subprocess.run([workspace.ffmpeg_path, "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono", "-t", "3", "-y", str(wav)], check=True, capture_output=True)
+    media = MediaService(database, workspace).import_file(project_id, wav, media_kind="AUDIO")
+    candidate = dialogue.register_candidate(
+        str(line["text_revisions"][-1]["id"]), voice_profile_version_id=str(voices[0]["id"]),
+        media_version_id=str(media["media_version_id"]), emotion="NEUTRAL", speech_rate=1.0,
+        seed=None, model_ref="IMPORTED_LOCAL_AUDIO", candidate_kind="PREVIEW",
+    )
+    with database.transaction() as connection:
+        connection.execute(
+            """INSERT INTO dialogue_candidate_selections
+            (id,dialogue_line_id,tts_candidate_id,source_text_revision_id,created_at,updated_at,created_by,revision,schema_version)
+            VALUES (?,?,?,?, 'now','now','test',1,'v2')""",
+            (str(uuid.uuid4()), str(line["id"]), str(candidate["id"]), str(line["text_revisions"][-1]["id"])),
+        )
+    with database.connect() as connection:
+        binding_id = connection.execute(
+            "SELECT id FROM character_voice_bindings WHERE project_id=? AND character_asset_id=?",
+            (project_id, character_id),
+        ).fetchone()["id"]
+    dialogue.unbind_character_voice(str(binding_id))
+    dialogue.bind_character_voice(project_id, character_id, str(voices[1]["id"]))
+
+    with database.connect() as connection:
+        requirements = canonical_tts_requirements(connection, str(episode["id"]))
+    assert requirements["generation_required_count"] == 1
+    assert requirements["reusable_count"] == 0
+    assert requirements["items"][0]["voice_profile_version_id"] == voices[1]["id"]
+    assert requirements["items"][0]["reusable_media_version_id"] is None

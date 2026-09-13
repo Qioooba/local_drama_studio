@@ -69,6 +69,12 @@ function MediaThumbImage({
   loading = "lazy",
 }: MediaThumbProps) {
   const [failed, setFailed] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const retryTimer = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (retryTimer.current !== null) window.clearTimeout(retryTimer.current);
+  }, []);
 
   const isApiMedia = Boolean(src && /\/(?:media-versions|episode-renders)\//i.test(src));
   const safeSrc =
@@ -77,6 +83,9 @@ function MediaThumbImage({
     (!isApiMedia || /\/thumbnail(?:[/?#]|$)/i.test(src))
       ? src
       : null;
+  const requestSrc = safeSrc && retryCount > 0
+    ? `${safeSrc}${safeSrc.includes("?") ? "&" : "?"}thumbnail_retry=${retryCount}`
+    : safeSrc;
 
   if (!safeSrc || failed) {
     return (
@@ -99,7 +108,7 @@ function MediaThumbImage({
     >
       <img
         className={`ui-media-thumb ${className}`.trim()}
-        src={safeSrc}
+        src={requestSrc ?? undefined}
         alt={alt}
         loading={loading}
         decoding="async"
@@ -109,7 +118,17 @@ function MediaThumbImage({
           width: "100%",
           height: "100%",
         }}
-        onError={() => setFailed(true)}
+        onError={() => {
+          if (retryCount >= 2) {
+            setFailed(true);
+            return;
+          }
+          if (retryTimer.current !== null) window.clearTimeout(retryTimer.current);
+          retryTimer.current = window.setTimeout(() => {
+            retryTimer.current = null;
+            setRetryCount((value) => value + 1);
+          }, 400);
+        }}
       />
     </div>
   );

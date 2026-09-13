@@ -36,7 +36,7 @@ const dialogue: ShotDialogueProjection = {
     current_text: { id: "text-1", revision_no: 1, text: "快走。", pronunciation: {}, text_hash: "hash", created_at: "now" },
     voice_binding: { character_asset_id: "char-1", character_code: "ANING", character_name: "阿宁", voice_profile_version_id: "voice-1", voice_code: "VOICE_ANING", voice_title: "阿宁青年声线", voice_ref: "sapi:test", provider_profile_version_id: "profile-1" },
     candidates: [{ id: "candidate-1", dialogue_text_revision_id: "text-1", voice_profile_version_id: "voice-1", media_version_id: "audio-1", emotion: "neutral", speech_rate: 1, seed: null, model_ref: "WINDOWS_SAPI_LOCAL", candidate_kind: "FORMAL", status: "READY", created_at: "now", is_stale: false, selected: false }],
-    working_selection: null,
+  working_selection: null,
   }],
 };
 
@@ -69,6 +69,29 @@ describe("DirectorSoundInspector", () => {
     expect(screen.getByLabelText("DLG-012 TTS 候选试听").getAttribute("src")).toBe("/api/v1/media-versions/audio-1/content");
     expect(screen.getByText(/BGM、环境声和音效属于后期音频时间线/)).not.toBeNull();
     expect(container.textContent).not.toContain("分集音频轨道");
+  });
+
+  it("labels a selected candidate stale after its character voice changes", () => {
+    renderInspector({
+      ...dialogue,
+      lines: [{
+        ...dialogue.lines[0],
+        candidates: [{
+          ...dialogue.lines[0].candidates[0],
+          selected: true,
+          is_stale: true,
+          stale_reason: "character voice binding changed",
+        }],
+        working_selection: {
+          id: "selection-1", tts_candidate_id: "candidate-1", media_version_id: "audio-1",
+          source_text_revision_id: "text-1", is_stale: true,
+          stale_reason: "character voice binding changed", created_at: "now",
+        },
+      }],
+    });
+    expect(screen.getByText("候选已失效：character voice binding changed")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "候选已失效" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByText("当前工作声音")).toBeNull();
   });
 
   it("registers completed speech jobs without generating speech again", async () => {

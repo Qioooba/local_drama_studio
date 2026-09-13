@@ -75,6 +75,40 @@ def test_bounded_loop_pauses_on_machine_failure_and_requires_human_approval(work
     assert set(states.values()) == {"CANCELLED"}
 
 
+def test_cancel_run_closes_run_scoped_generation_jobs(workspace, database) -> None:
+    project_id = _project(workspace, database)
+    service = AutomationWorkflowService(database)
+    definition = _definition(project_id)
+    definition["nodes"] = [{"id": "render", "type": "LOCAL_TASK"}]
+    definition["human_gate"] = "NONE"
+    workflow = service.create_workflow(**definition)
+    plan = service.plan_workflow(str(workflow["id"]))
+    run = service.start_run(str(workflow["id"]), plan_hash=str(plan["plan_hash"]), idempotency_key="cancel-child-run")
+    with database.connect() as connection:
+        episode_id = str(
+            connection.execute(
+                """SELECT e.id FROM episodes e JOIN seasons s ON s.id=e.season_id
+                WHERE s.project_id=?""",
+                (project_id,),
+            ).fetchone()[0]
+        )
+    child = JobService(database).create_job(
+        project_id,
+        "GENERATION_VARIANT",
+        "EPISODE",
+        episode_id,
+        "GPU_H3",
+        {},
+        f"episode-video:{run['id']}:task:shot:1",
+        scope_episode_id=episode_id,
+        stage_code="VIDEO",
+    )
+
+    service.cancel_run(str(run["id"]))
+
+    assert JobService(database).get_job(str(child["id"]))["state"] == "CANCELLED"
+
+
 def test_limits_and_declarative_validation(workspace, database) -> None:
     project_id = _project(workspace, database)
     service = AutomationWorkflowService(database)

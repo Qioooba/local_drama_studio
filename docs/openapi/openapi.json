@@ -12347,9 +12347,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Previewpipelineapply"
+                  "$ref": "#/components/schemas/PipelineApplyPreviewResponse"
                 }
               }
             }
@@ -43549,6 +43547,31 @@
           "endpoint"
         ],
         "title": "PipelineApplicationAuthorization"
+      },
+      "PipelineApplyPreviewResponse": {
+        "properties": {
+          "impact": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Impact"
+          },
+          "quality_report": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Quality Report"
+          },
+          "can_apply": {
+            "type": "boolean",
+            "title": "Can Apply"
+          }
+        },
+        "type": "object",
+        "required": [
+          "impact",
+          "quality_report",
+          "can_apply"
+        ],
+        "title": "PipelineApplyPreviewResponse"
       },
       "PipelinePreflightRequest": {
         "properties": {

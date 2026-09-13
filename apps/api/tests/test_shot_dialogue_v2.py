@@ -133,6 +133,20 @@ def test_shot_tts_job_has_canonical_scope_and_working_adoption_is_not_approval(w
         assert projected["working_selection"]["tts_candidate_id"] == candidate["id"]
         assert projected["candidates"][0]["selected"] is True
 
+        replacement = _create_voice(client, project_id, "voice-aning-new", "阿宁替换声线", "sapi:NewVoice")
+        unbound = client.delete(f"/api/v1/character-voice-bindings/{binding.json()['binding']['id']}")
+        assert unbound.status_code == 200, unbound.text
+        rebound = client.post(
+            f"/api/v1/projects/{project_id}/character-voice-bindings",
+            json={"character_asset_id": character_id, "voice_profile_version_id": replacement["id"]},
+        )
+        assert rebound.status_code == 201, rebound.text
+        refreshed = client.get(f"/api/v2/episodes/{episode['id']}/shots/{shot['id']}/studio").json()["current_shot"]["dialogue"]["lines"][0]
+        assert refreshed["voice_binding"]["voice_profile_version_id"] == replacement["id"]
+        assert refreshed["candidates"][0]["is_stale"] is True
+        assert refreshed["candidates"][0]["stale_reason"] == "character voice binding changed"
+        assert refreshed["working_selection"]["is_stale"] is True
+
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM dialogue_candidate_selections WHERE dialogue_line_id=?", (line["line_id"],)).fetchone()[0] == 1
         assert connection.execute("SELECT COUNT(*) FROM review_decisions WHERE subject_id=?", (media["media_version_id"],)).fetchone()[0] == 0

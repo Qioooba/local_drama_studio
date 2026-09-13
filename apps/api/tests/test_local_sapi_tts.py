@@ -12,6 +12,22 @@ from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
 from local_drama.application.worker import LocalMediaWorker
 from local_drama.main import create_app
+from local_drama.platform.windows.tts import WindowsSapiRuntime
+
+
+def test_windows_sapi_prefers_pwsh_for_modern_onecore_voices(monkeypatch) -> None:
+    discovered = {
+        "pwsh": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "pwsh.exe": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "powershell.exe": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+    }
+    monkeypatch.setattr(
+        "local_drama.platform.windows.tts.shutil.which",
+        lambda name: discovered.get(name),
+    )
+
+    assert WindowsSapiRuntime._powershell() == discovered["pwsh"]
+    assert WindowsSapiRuntime().available is True
 
 
 def test_local_sapi_voice_discovery_is_read_only(workspace, database, monkeypatch) -> None:

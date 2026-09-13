@@ -155,6 +155,28 @@ class AssetImageGenerationBatchService:
         return workflow is not None and str(workflow["status"]) == "PUBLISHED"
 
     @classmethod
+    def _supports_executable_semantics(cls, connection: Any, profile: Any) -> bool:
+        """Require every semantic role emitted by the fixed asset plan.
+
+        Profile input slots alone are insufficient: an older published
+        Workflow can advertise text-to-image while omitting the SEED binding.
+        Auto-selection must skip that candidate instead of selecting it and
+        failing every asset only after the batch is submitted.
+        """
+
+        workflow_id = profile["workflow_version_id"]
+        if not workflow_id:
+            return False
+        workflow = connection.execute(
+            "SELECT * FROM workflow_versions WHERE id=?", (workflow_id,)
+        ).fetchone()
+        if workflow is None or str(workflow["status"]) != "PUBLISHED":
+            return False
+        effective = effective_workflow_contract(connection, str(workflow_id), workflow)
+        bindings = effective.get("workflow_bindings")
+        return isinstance(bindings, dict) and {"PROMPT", "SEED"}.issubset(bindings)
+
+    @classmethod
     def _find_text_to_image_profile(cls, connection: Any, capability: str) -> Any | None:
         rows = connection.execute(
             """SELECT * FROM execution_profile_versions
@@ -163,7 +185,7 @@ class AssetImageGenerationBatchService:
             (capability,),
         ).fetchall()
         for row in rows:
-            if not cls._published_workflow(connection, row):
+            if not cls._published_workflow(connection, row) or not cls._supports_executable_semantics(connection, row):
                 continue
             if cls._supports_text_to_image(row):
                 return row
@@ -191,7 +213,7 @@ class AssetImageGenerationBatchService:
         if explicit_id is None:
             selected_profile = None
             selected_resolution = resolution
-            if profile is not None and str(profile["status"]) == "PUBLISHED" and self._published_workflow(connection, profile) and self._supports_text_to_image(profile) and self._profile_capability_allowed(str(profile["capability"]), capability):
+            if profile is not None and str(profile["status"]) == "PUBLISHED" and self._published_workflow(connection, profile) and self._supports_text_to_image(profile) and self._supports_executable_semantics(connection, profile) and self._profile_capability_allowed(str(profile["capability"]), capability):
                 selected_profile = profile
                 selected_resolution = resolution
             if selected_profile is None:

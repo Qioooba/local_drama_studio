@@ -499,7 +499,12 @@ class StorageOperationService:
                 actual_hash, actual_size = _stream_hash(destination)
             else:
                 staged = self.staging_path(operation_id)
-                partial = destination.with_name(f".partial-{operation_id}-{destination.name}")
+                # Keep the atomic-copy name bounded.  The destination already
+                # contains both the operation id and the user-controlled source
+                # name, so repeating both can cross MAX_PATH on otherwise valid
+                # Windows project roots before replace_path gets a chance to use
+                # its long-path handling.
+                partial = destination.with_name(f".partial-{operation_id}")
                 partial.unlink(missing_ok=True)
                 actual_hash, actual_size = _stream_copy(staged, partial)
                 if actual_hash != expected_hash or actual_size != expected_size:

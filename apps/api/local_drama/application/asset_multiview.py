@@ -27,8 +27,8 @@ from local_drama.infrastructure.database.sqlite import Database
 CAPABILITY = "IMAGE_MULTI_VIEW"
 VIEW_SPECS = (
     ("FRONT", 0.0, "strict orthographic front view, exactly 0 degrees, face and torso square to camera, upright symmetrical neutral A-pose, arms relaxed straight beside body, feet parallel and knees straight, not three-quarter, no action pose"),
-    ("LEFT", -90.0, "strict orthographic left profile, exactly minus 90 degrees, face nose torso hips and feet in pure side silhouette, character nose points horizontally toward image-left and back of head is on image-right, only the left side visible, upright neutral A-pose, arms relaxed straight beside body, feet parallel and knees straight, preserve the exact hairstyle silhouette from the input HERO, not three-quarter, do not turn toward camera, no action pose"),
-    ("RIGHT", 90.0, "strict orthographic right profile, exactly plus 90 degrees, face nose torso hips and feet in pure side silhouette, character nose points horizontally toward image-right and back of head is on image-left, only the right side visible, upright neutral A-pose, arms relaxed straight beside body, feet parallel and knees straight, preserve the exact hairstyle silhouette from the input HERO, not three-quarter, do not turn toward camera, no action pose"),
+    ("LEFT", -90.0, "strict orthographic profile facing image-left, exactly minus 90 degrees, face nose torso hips and feet in pure side silhouette, character nose points horizontally toward image-left and back of head is on image-right, upright neutral A-pose, arms relaxed straight beside body, feet parallel and knees straight, preserve the exact hairstyle silhouette from the input HERO, not three-quarter, do not turn toward camera, no action pose"),
+    ("RIGHT", 90.0, "strict orthographic profile facing image-right, exactly plus 90 degrees, face nose torso hips and feet in pure side silhouette, character nose points horizontally toward image-right and back of head is on image-left, upright neutral A-pose, arms relaxed straight beside body, feet parallel and knees straight, preserve the exact hairstyle silhouette from the input HERO, not three-quarter, do not turn toward camera, no action pose"),
     ("BACK", 180.0, "strict orthographic back view, exactly 180 degrees, face completely hidden, shoulders hips and heels seen from behind, upright symmetrical neutral A-pose, arms relaxed straight beside body, feet parallel and knees straight, preserve hairstyle and outfit construction, not three-quarter, no action pose"),
     ("TOP", 0.0, "top view, preserve silhouette and proportions"),
     ("BOTTOM", 0.0, "low underside view, preserve silhouette and proportions"),
@@ -56,7 +56,7 @@ class AssetMultiViewService:
     SPECS: ClassVar[tuple[tuple[str, float, str], ...]] = VIEW_SPECS
     PURPOSE = "ASSET_MULTI_VIEW"
     OUTPUT_REFERENCE_KIND: str | None = None
-    PROMPT_PREFIX = "professional character turnaround reference sheet, same exact person as input, preserve identity face age hair outfit materials body proportions and distinctive details, full body head-to-toe, upright neutral A-pose with arms relaxed straight beside the body and feet parallel, knees straight, both hands empty, preserve worn accessories but remove held props weapons and tools, centered on a clean plain background, no crouching, no running, no combat pose, no raised arms"
+    PROMPT_PREFIX = "professional character turnaround reference sheet, same exact person as input, preserve identity face age hair outfit materials body proportions and distinctive details, full body head-to-toe with both shoes completely visible, generous blank margin above the hair and below the soles, subject occupies at most 80 percent of image height, upright neutral A-pose with arms relaxed straight beside the body and feet parallel, knees straight, both hands empty, preserve worn accessories but remove held props weapons and tools, centered on a clean plain background, no crouching, no running, no combat pose, no raised arms"
     IDEMPOTENCY_SCOPE = "asset-multiview"
     AUDIT_ACTION = "ASSET_MULTI_VIEW_SUBMITTED"
 
@@ -345,6 +345,7 @@ class AssetMultiViewService:
         raw_items = prompt_bundle.get("items")
         if not isinstance(raw_items, dict):
             raise DomainRuleError("ASSET_MULTI_VIEW_PROMPT_BUNDLE_INVALID", "多视图提示词缺少槽位内容")
+        revision_guidance = " ".join(str(prompt_bundle.get("revision_guidance") or "").split()).strip()[:2000]
         items: dict[str, dict[str, str]] = {}
         for kind in slots:
             item = raw_items.get(kind)
@@ -360,13 +361,24 @@ class AssetMultiViewService:
             )
             if not positive or not negative:
                 raise DomainRuleError("ASSET_MULTI_VIEW_PROMPT_BUNDLE_INVALID", f"{kind} 缺少有效的正向或反向提示词")
+            # Reviewer corrections are authoritative production input.  A local
+            # model may summarize or accidentally omit part of that input, so
+            # freeze it into every affected positive prompt mechanically.  The
+            # substring guard keeps normalization idempotent when the bundle is
+            # validated again during preflight and submit.
+            if revision_guidance and revision_guidance.casefold() not in positive.casefold():
+                positive = AssetMultiViewService._normalize_prompt_text(
+                    f"{positive}, mandatory reviewer correction: {revision_guidance}",
+                    max_chars=2000,
+                    max_clauses=48,
+                )
             items[kind] = {"positive_prompt": positive, "negative_prompt": negative}
         return {
             "schema_version": "localdrama.asset-multiview-prompts.v1",
             "source": "LOCAL_LLM",
             "provider": str(prompt_bundle.get("provider") or "")[:120],
             "model": str(prompt_bundle.get("model") or "")[:200],
-            "revision_guidance": str(prompt_bundle.get("revision_guidance") or "").strip()[:2000],
+            "revision_guidance": revision_guidance,
             "items": items,
         }
 
@@ -531,6 +543,17 @@ class AssetMultiViewService:
             (constraint for view_kind, _view_yaw, constraint in self.SPECS if view_kind == kind),
             "",
         )
+        direction_negative = {
+            "LEFT": "nose pointing image-right, back of head on image-left, right-facing profile",
+            "RIGHT": "nose pointing image-left, back of head on image-right, left-facing profile",
+        }.get(kind, "")
+        required_negative = (
+            "cropped head, cropped legs, cropped feet, shoes outside frame, subject touching frame edge, "
+            "three-quarter view, wrong camera angle"
+        )
+        effective_negative = ", ".join(
+            part for part in (direction_negative, required_negative, negative_prompt.strip(" ,")) if part
+        )
         return VariantPlan(
             variant_type="BASE",
             parent_variant_id=None,
@@ -542,7 +565,7 @@ class AssetMultiViewService:
                 # prefix.  Image text encoders can heavily down-weight or truncate late
                 # clauses, which previously made LEFT and RIGHT converge on one profile.
                 "PROMPT": f"{view_constraint}, {self.PROMPT_PREFIX}, {prompt}, {background.lower()} background",
-                "NEGATIVE_PROMPT": negative_prompt,
+                "NEGATIVE_PROMPT": effective_negative,
                 "VIEW_KIND": kind,
                 "SLOT_KIND": kind,
                 "OUTPUT_REFERENCE_KIND": self._output_reference_kind(kind),

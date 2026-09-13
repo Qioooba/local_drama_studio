@@ -134,6 +134,7 @@ def canonical_tts_requirements(connection: sqlite3.Connection, episode_id: str) 
         (SELECT dtr.text FROM dialogue_text_revisions dtr WHERE dtr.dialogue_line_id=dl.id
          ORDER BY dtr.revision_no DESC,dtr.id DESC LIMIT 1) AS text,
         dcs.source_text_revision_id,tc.status AS candidate_status,tc.media_version_id,
+        tc.voice_profile_version_id AS candidate_voice_profile_version_id,
         ma.media_kind,mv.integrity_status
         FROM dialogue_lines dl
         LEFT JOIN dialogue_candidate_selections dcs ON dcs.id=(
@@ -188,12 +189,6 @@ def canonical_tts_requirements(connection: sqlite3.Connection, episode_id: str) 
         text_revision_id = str(row["text_revision_id"] or "")
         if not text_revision_id or not str(row["text"] or "").strip():
             continue
-        reusable = bool(
-            str(row["source_text_revision_id"] or "") == text_revision_id
-            and str(row["candidate_status"] or "") == "READY"
-            and str(row["media_kind"] or "") == "AUDIO"
-            and str(row["integrity_status"] or "") == "VERIFIED"
-        )
         speaker = str(row["speaker"] or "").strip()
         narrator = speaker.upper() in _NARRATOR_SPEAKERS
         character_asset_id = None
@@ -203,6 +198,21 @@ def canonical_tts_requirements(connection: sqlite3.Connection, episode_id: str) 
         if character_asset_id is None and not narrator:
             character_asset_id = characters_by_name.get(normalize(speaker))
         voice = voice_by_character.get(str(character_asset_id)) if character_asset_id else None
+        # A selected take belongs to both a text revision and a voice-profile
+        # version.  Rebinding the speaking character must therefore invalidate
+        # audio rendered with the former voice instead of silently reusing it.
+        voice_matches = bool(
+            voice is None
+            or str(row["candidate_voice_profile_version_id"] or "")
+            == str(voice["voice_profile_version_id"])
+        )
+        reusable = bool(
+            str(row["source_text_revision_id"] or "") == text_revision_id
+            and str(row["candidate_status"] or "") == "READY"
+            and str(row["media_kind"] or "") == "AUDIO"
+            and str(row["integrity_status"] or "") == "VERIFIED"
+            and voice_matches
+        )
         eligible = bool(
             voice is not None
             and str(voice["status"]) == "ACTIVE"

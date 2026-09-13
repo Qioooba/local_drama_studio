@@ -9,6 +9,7 @@ from local_drama.api.schemas.pipeline import (
     ApplyPipelineRequest,
     LLMProbeRequest,
     LLMProbeResponse,
+    PipelineApplyPreviewResponse,
     PipelinePreflightRequest,
     PreviewPipelineApplyRequest,
     RetryPipelineRequest,
@@ -236,6 +237,7 @@ async def apply_pipeline_run(
 @router.post(
     "/projects/{project_id}/pipeline/{run_id}:apply-preview",
     operation_id="previewPipelineApply",
+    response_model=PipelineApplyPreviewResponse,
 )
 async def preview_pipeline_apply(
     project_id: str,
