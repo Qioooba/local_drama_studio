@@ -318,6 +318,67 @@ def test_episode_production_freshness_follows_only_the_canonical_working_variant
         assert {blocker["code"] for blocker in stale["blockers"]} >= {"WORKING_MEDIA_STALE"}
 
 
+def test_current_media_qualification_separates_failed_action_and_policy_history(workspace, database) -> None:
+    project, episode, shot = _episode(workspace, database)
+    source = workspace.work_root / "current-media-qualification.mp4"
+    subprocess.run(
+        [
+            workspace.ffmpeg_path,
+            "-f", "lavfi", "-i", "color=c=green:s=160x90:d=1",
+            "-pix_fmt", "yuv420p", "-an", "-y", str(source),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    media = MediaService(database, workspace).import_file(
+        str(project["id"]),
+        source,
+        purpose="SHOT_VIDEO",
+        owner_type="SHOT",
+        owner_id=str(shot["id"]),
+        media_kind="VIDEO",
+        stage="PROXY",
+    )
+    media_id = str(media["media_version_id"])
+    with TestClient(create_app(workspace)) as client:
+        adopted = client.post(f"/api/v2/media-versions/{media_id}:adopt")
+        assert adopted.status_code == 200, adopted.text
+
+    job = JobService(database).create_job(
+        str(project["id"]), "VIDEO_GENERATION", "SHOT", str(shot["id"]), "GPU", {},
+        "current-media-failed-action", scope_episode_id=str(episode["id"]),
+        scope_shot_id=str(shot["id"]), stage_code="VIDEO",
+    )
+    now = "2026-09-13T01:00:00+00:00"
+    with database.transaction() as connection:
+        connection.execute(
+            """INSERT INTO machine_check_runs
+            (id,subject_type,subject_id,policy_version,status,created_at,updated_at,created_by,revision,schema_version)
+            VALUES (?,'MEDIA_VERSION',?,'obsolete_video_qc_v0','PASS',?,?,'test',1,'v2')""",
+            (str(uuid.uuid4()), media_id, now, now),
+        )
+        connection.execute(
+            "UPDATE jobs SET state='FAILED',last_error_code='REMOTE_TRANSIENT' WHERE id=?",
+            (job["id"],),
+        )
+
+    repository = SqliteEpisodeProductionReadRepository(database)
+    historical_only = repository.shot_facts(str(episode["id"]), cursor=0, limit=10, states=set())["items"][0]
+    assert next(slot for slot in historical_only["material_slots"] if slot["kind"] == "VIDEO")["machine_qc_state"] is None
+    assert next(stage for stage in historical_only["stages"] if stage["stage_code"] == "VIDEO")["state"] == "READY"
+
+    with database.transaction() as connection:
+        connection.execute(
+            """INSERT INTO machine_check_runs
+            (id,subject_type,subject_id,policy_version,status,created_at,updated_at,created_by,revision,schema_version)
+            VALUES (?,'MEDIA_VERSION',?,'g4_media_qc_v1','PASS',?,?,'test',1,'v2')""",
+            (str(uuid.uuid4()), media_id, now, now),
+        )
+    current = repository.shot_facts(str(episode["id"]), cursor=0, limit=10, states=set())["items"][0]
+    assert next(slot for slot in current["material_slots"] if slot["kind"] == "VIDEO")["machine_qc_state"] == "PASS"
+    assert next(stage for stage in current["stages"] if stage["stage_code"] == "VIDEO")["state"] == "READY"
+
+
 def test_working_lineage_edges_preserve_prompt_profile_reference_and_asset_state_reasons() -> None:
     row = {
         "media_version_id": "media-1", "media_revision": 4,
@@ -343,6 +404,31 @@ def test_working_lineage_edges_preserve_prompt_profile_reference_and_asset_state
         "state": "STALE",
         "reason": "PROMPT_CHANGED",
     }
+
+
+def test_stage_summary_uses_the_complete_projection_beyond_the_first_page() -> None:
+    items = []
+    for index in range(137):
+        state = "FAILED" if index == 136 else "READY"
+        items.append({
+            "shot_id": f"shot-{index + 1}",
+            "stages": [
+                {"stage_code": code, "state": state if code == "VIDEO" else "READY"}
+                for code in ("SHOT_PLANNING", "SHOT_IMAGE", "VIDEO", "AUDIO_SUBTITLE", "COMPOSE_QC")
+            ],
+        })
+
+    summary = SqliteEpisodeProductionReadRepository._stage_summary(items)
+
+    assert summary["VIDEO"] == {
+        "total": 137,
+        "completed": 136,
+        "running": 0,
+        "attention": 1,
+        "stale": 0,
+        "requires_confirmation": 1,
+    }
+    assert summary["COMPOSE_QC"]["completed"] == 137
 
 
 def test_episode_production_v2_run_transitions_are_revision_safe_and_idempotent(workspace, database) -> None:
@@ -406,6 +492,18 @@ def test_episode_production_v2_run_transitions_are_revision_safe_and_idempotent(
         assert resumed.json()["run"]["status"] == "RUNNING"
         assert resumed.json()["run"]["affected_job_count"] == 0
 
+        child = JobService(database).create_job(
+            str(project["id"]),
+            "GENERATION_VARIANT",
+            "EPISODE",
+            str(episode["id"]),
+            "GPU_H3",
+            {},
+            f"episode-keyframes:{run['id']}:task:shot",
+            scope_episode_id=str(episode["id"]),
+            stage_code="SHOT_IMAGE",
+        )
+
         cancelled = client.post(
             f"/api/v2/production-runs/{run['id']}:cancel",
             json={
@@ -415,6 +513,9 @@ def test_episode_production_v2_run_transitions_are_revision_safe_and_idempotent(
         )
         assert cancelled.status_code == 200, cancelled.text
         assert cancelled.json()["run"]["status"] == "CANCELLED"
+        with database.connect() as connection:
+            child_state = connection.execute("SELECT state FROM jobs WHERE id=?", (child["id"],)).fetchone()[0]
+        assert child_state == "CANCELLED"
         with database.connect() as connection:
             events = connection.execute(
                 "SELECT COUNT(*) FROM outbox_events WHERE type='EpisodeProductionRunChanged' AND subject_id=?",

@@ -838,8 +838,14 @@ class AutomationWorkflowService:
                 raise DomainRuleError("AUTOMATION_RUN_NOT_CANCELLABLE", "已结束的 workflow run 不能取消")
             now = _now()
             linked_jobs = connection.execute(
-                "SELECT j.id,j.project_id,j.state FROM automation_workflow_run_tasks t JOIN jobs j ON j.id=t.job_id WHERE t.run_id=? AND j.state NOT IN ('SUCCEEDED','FAILED','CANCELLED')",
-                (run_id,),
+                """SELECT DISTINCT j.id,j.project_id,j.state FROM jobs j
+                WHERE j.state NOT IN ('SUCCEEDED','FAILED','CANCELLED')
+                AND (
+                  EXISTS (SELECT 1 FROM automation_workflow_run_tasks t
+                          WHERE t.run_id=? AND t.job_id=j.id)
+                  OR j.idempotency_key LIKE 'episode-%:' || ? || ':%'
+                )""",
+                (run_id, run_id),
             ).fetchall()
             for job in linked_jobs:
                 target = "CANCELLED" if str(job["state"]) in {"QUEUED", "NEEDS_ATTENTION", "ORPHANED"} else "CANCEL_REQUESTED"

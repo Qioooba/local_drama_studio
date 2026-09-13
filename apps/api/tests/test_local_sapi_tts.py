@@ -12,6 +12,22 @@ from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
 from local_drama.application.worker import LocalMediaWorker
 from local_drama.main import create_app
+from local_drama.platform.windows.tts import WindowsSapiRuntime
+
+
+def test_windows_sapi_prefers_pwsh_for_modern_onecore_voices(monkeypatch) -> None:
+    discovered = {
+        "pwsh": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "pwsh.exe": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "powershell.exe": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+    }
+    monkeypatch.setattr(
+        "local_drama.platform.windows.tts.shutil.which",
+        lambda name: discovered.get(name),
+    )
+
+    assert WindowsSapiRuntime._powershell() == discovered["pwsh"]
+    assert WindowsSapiRuntime().available is True
 
 
 def test_local_sapi_voice_discovery_is_read_only(workspace, database, monkeypatch) -> None:
@@ -235,8 +251,8 @@ def test_real_windows_sapi_job_artifact_promotion_and_formal_candidate(workspace
     assert worker_result["artifact"]["kind"] == "TTS_AUDIO"
     output = workspace.work_root / str(worker_result["artifact"]["sandbox_rel_path"])
     assert output.is_file() and output.stat().st_size > 44
-    from local_drama.infrastructure.database.shot_studio_repository import SqliteShotStudioReadRepository
     from local_drama.api.schemas.shot_studio import ShotDialogueProjection
+    from local_drama.infrastructure.database.shot_studio_repository import SqliteShotStudioReadRepository
     with database.connect() as connection:
         pending = ShotDialogueProjection.model_validate(SqliteShotStudioReadRepository._dialogue(connection, project_id, str(shot["id"])))
     assert pending.lines[0].jobs[0].state == "SUCCEEDED"

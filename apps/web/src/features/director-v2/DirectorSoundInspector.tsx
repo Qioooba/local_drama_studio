@@ -246,11 +246,11 @@ export function DirectorSoundInspector({ projectId, shotId, shotCode, shotRevisi
         {!line.voice_binding && <small className="director-sound-warning">说话人须与本镜已绑定角色的名称或编码一致，并先绑定音色。</small>}
         {line.voice_binding && !line.voice_binding.provider_profile_version_id && <small className="director-sound-warning">该音色尚未绑定 Published 本地 TTS Profile。</small>}
         {line.candidates.length === 0 ? <p className="director-sound-state">尚无声音候选。</p> : <ul className="director-tts-candidates">
-          {line.candidates.map((candidate) => <li key={candidate.id} className={candidate.selected ? "selected" : undefined}>
-            <div><strong>{candidateLabel(candidate)}</strong><span>{candidate.selected ? "当前工作声音" : candidate.is_stale ? "基于旧文本" : candidate.status}</span></div>
+          {line.candidates.map((candidate) => <li key={candidate.id} className={candidate.selected && !candidate.is_stale ? "selected" : undefined}>
+            <div><strong>{candidateLabel(candidate)}</strong><span>{candidate.is_stale ? `候选已失效${candidate.stale_reason ? `：${candidate.stale_reason}` : ""}` : candidate.selected ? "当前工作声音" : candidate.status}</span></div>
             <audio controls preload="none" src={mediaContentUrl(candidate.media_version_id)} aria-label={`${line.code} TTS 候选试听`} />
             <small>{candidate.duration_ms == null ? "候选时长待登记" : `候选时长 ${(candidate.duration_ms / 1000).toFixed(2)} 秒`}</small>
-            <button type="button" className="director-button secondary" disabled={!canEdit || candidate.is_stale || candidate.selected || candidate.status !== "READY" || pendingAdoptionId !== null} onClick={() => void adoptCandidate(line, candidate)}>{pendingAdoptionId === candidate.id ? "采用中…" : candidate.selected ? "已采用" : candidate.is_stale ? "候选已失效" : "采用为工作声音"}</button>
+            <button type="button" className="director-button secondary" disabled={!canEdit || candidate.is_stale || candidate.selected || candidate.status !== "READY" || pendingAdoptionId !== null} onClick={() => void adoptCandidate(line, candidate)}>{pendingAdoptionId === candidate.id ? "采用中…" : candidate.is_stale ? "候选已失效" : candidate.selected ? "已采用" : "采用为工作声音"}</button>
           </li>)}
         </ul>}
       </article>)}

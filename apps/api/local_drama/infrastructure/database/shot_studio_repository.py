@@ -11,8 +11,8 @@ import json
 import sqlite3
 from typing import Any
 
-from local_drama.application.queries.generation_preferences import GenerationPreferenceQueryService
 from local_drama.application.production_spec_resolution import project_production_spec
+from local_drama.application.queries.generation_preferences import GenerationPreferenceQueryService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.policies import (
     SHOT_READINESS_ACTIONS,
@@ -598,6 +598,31 @@ class SqliteShotStudioReadRepository:
         lines: list[dict[str, Any]] = []
         for row in line_rows:
             line_id = str(row["id"])
+            voice_binding = voices.get(str(row["speaker"]).casefold())
+            current_voice_id = (
+                str(voice_binding["voice_profile_version_id"])
+                if voice_binding is not None
+                else None
+            )
+            line_candidates = candidates_by_line.get(line_id, [])[:20]
+            if current_voice_id is not None:
+                for candidate in line_candidates:
+                    if str(candidate.get("voice_profile_version_id") or "") != current_voice_id:
+                        candidate["is_stale"] = True
+                        candidate["stale_reason"] = "character voice binding changed"
+            working_selection = selections.get(line_id)
+            if working_selection is not None and current_voice_id is not None:
+                selected_candidate = next(
+                    (
+                        candidate
+                        for candidate in line_candidates
+                        if str(candidate.get("id")) == str(working_selection.get("tts_candidate_id"))
+                    ),
+                    None,
+                )
+                if selected_candidate is not None and selected_candidate["is_stale"]:
+                    working_selection["is_stale"] = True
+                    working_selection["stale_reason"] = selected_candidate.get("stale_reason")
             lines.append(
                 {
                     "id": line_id,
@@ -612,10 +637,10 @@ class SqliteShotStudioReadRepository:
                         "text_hash": row["text_hash"],
                         "created_at": row["text_created_at"],
                     },
-                    "voice_binding": voices.get(str(row["speaker"]).casefold()),
-                    "candidates": candidates_by_line.get(line_id, [])[:20],
+                    "voice_binding": voice_binding,
+                    "candidates": line_candidates,
                     "jobs": jobs_by_text.get(str(row["text_revision_id"]), []),
-                    "working_selection": selections.get(line_id),
+                    "working_selection": working_selection,
                 }
             )
         return {"lines": lines, "total": len(lines)}
