@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createShotGenerationIntentV2,
   preflightShotGenerationV2,
+  putShotDraftV2,
   submitShotGenerationV2,
   type ShotStudio,
 } from "../../generated/api";
@@ -14,6 +15,7 @@ import { planShotKeyframeBatch, submitShotKeyframeBatch } from "./shotKeyframeBa
 vi.mock("../../generated/api", () => ({
   createShotGenerationIntentV2: vi.fn(),
   preflightShotGenerationV2: vi.fn(),
+  putShotDraftV2: vi.fn(),
   submitShotGenerationV2: vi.fn(),
 }));
 
@@ -140,6 +142,35 @@ describe("ShotGenerationInspector", () => {
     fireEvent.change(screen.getByLabelText("每种帧候选数"), { target: { value: "2" } });
     expect((screen.getByRole("button", { name: "重新生成首尾帧" }) as HTMLButtonElement).disabled).toBe(true);
     expect(submitShotKeyframeBatch).not.toHaveBeenCalled();
+  });
+
+  it("stores selected shot-bound asset identities before generation", async () => {
+    const shot = currentShot(true) as NonNullable<ShotStudio["current_shot"]>;
+    shot.assets = [{
+      id: "asset-character-1",
+      binding_id: "binding-character-1",
+      effective_state_id: "state-character-1",
+      name: "阿青",
+      kind: "CHARACTER",
+      status: "ACTIVE",
+    }] as typeof shot.assets;
+    vi.mocked(putShotDraftV2).mockResolvedValue({} as never);
+    const onSubmitted = renderInspector(true, vi.fn(), shot);
+
+    fireEvent.change(screen.getByLabelText("资产引用补充（可选）"), { target: { value: "让 @阿" } });
+    fireEvent.click(screen.getByRole("option", { name: /阿青/ }));
+    expect(screen.getByText(/asset-ch/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "验证生成计划" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "保存资产引用到镜头修订" }));
+
+    await waitFor(() => expect(putShotDraftV2).toHaveBeenCalledWith("shot-1", expect.objectContaining({
+      expected_revision_no: 4,
+      fields: expect.objectContaining({
+        asset_reference_prompt: "让 @阿青 ",
+        asset_prompt_references: [expect.objectContaining({ assetId: "asset-character-1", bindingId: "binding-character-1", stateId: "state-character-1" })],
+      }),
+    })));
+    expect(onSubmitted).toHaveBeenCalled();
   });
 
   it("keeps approval distinct when no eligible first frame exists", () => {

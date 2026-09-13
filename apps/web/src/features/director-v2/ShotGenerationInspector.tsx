@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
   createShotGenerationIntentV2,
   markShotReadyV2,
+  putShotDraftV2,
   preflightShotGenerationV2,
   resolveProfileCameraPlan,
   submitShotGenerationV2,
@@ -12,6 +13,8 @@ import {
   type ShotStudio,
 } from "../../generated/api";
 import { composePromptFromIntent, deriveShotSeed } from "../generation/generationDefaults";
+import { notifyDraftDirty } from "../drafts/draftGuard";
+import { AssetMentionInput, type AssetMentionReference } from "./AssetMentionInput";
 import {
   planShotKeyframeBatch,
   submitShotKeyframeBatch,
@@ -62,6 +65,15 @@ export const DEFAULT_SHOT_NEGATIVE_PROMPT = "multi-panel, triptych, contact shee
 type FrameReframeMode = "NONE" | "SINGLE_MOMENT";
 export const DEFAULT_FRAME_REFRAME_MODE: FrameReframeMode = "SINGLE_MOMENT";
 type ActionFeedback = { kind: "pending" | "success" | "error"; message: string };
+
+function storedMentionReferences(fields: Record<string, unknown>): AssetMentionReference[] {
+  const raw = fields.asset_prompt_references;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((item): item is AssetMentionReference => Boolean(item && typeof item === "object"
+    && typeof (item as AssetMentionReference).assetId === "string"
+    && typeof (item as AssetMentionReference).bindingId === "string"
+    && typeof (item as AssetMentionReference).displayName === "string"));
+}
 
 function compilePromptPreview(basePrompt: string, positiveOverride: string, _negativePrompt: string): string {
   // This is intentionally labelled as an input draft in the UI.  The
@@ -148,14 +160,31 @@ export function ShotGenerationInspector({ episodeId, shotId, shotCode, shotRevis
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null);
   const [plannedFrameDraw, setPlannedFrameDraw] = useState<PlannedFrameDraw | null>(null);
   const [lastVideoPreflight, setLastVideoPreflight] = useState<ShotGenerationPreflight | null>(null);
-  const prompt = useMemo(() => compilePromptPreview(defaultPrompt, positiveOverride, negativePrompt), [defaultPrompt, negativePrompt, positiveOverride]);
+  const savedMentionPrompt = typeof fields.asset_reference_prompt === "string" ? fields.asset_reference_prompt : "";
+  const savedMentionReferences = useMemo(() => storedMentionReferences(fields), [fields]);
+  const [mentionPrompt, setMentionPrompt] = useState(savedMentionPrompt);
+  const [mentionReferences, setMentionReferences] = useState<AssetMentionReference[]>(savedMentionReferences);
+  const [mentionVersion, setMentionVersion] = useState(0);
+  const [savingMentions, setSavingMentions] = useState(false);
+  const mentionRegistrationToken = useMemo(() => globalThis.crypto?.randomUUID?.() ?? `asset-mentions-${shotId}-${Date.now()}`, [shotId]);
+  const mentionOptions = useMemo(() => (currentShot.assets ?? []).map((asset) => ({ assetId: asset.id, bindingId: asset.binding_id, stateId: asset.effective_state_id, name: asset.name, kind: asset.kind, status: asset.status })), [currentShot.assets]);
+  const mentionBaseline = useMemo(() => JSON.stringify({ prompt: savedMentionPrompt, references: savedMentionReferences }), [savedMentionPrompt, savedMentionReferences]);
+  const mentionDirty = JSON.stringify({ prompt: mentionPrompt, references: mentionReferences }) !== mentionBaseline;
+  const expiredMentionCount = mentionReferences.filter((reference) => {
+    const current = mentionOptions.find((option) => option.bindingId === reference.bindingId);
+    return !current || current.status !== "ACTIVE" || current.assetId !== reference.assetId || current.stateId !== reference.stateId;
+  }).length;
+  useEffect(() => { setMentionPrompt(savedMentionPrompt); setMentionReferences(savedMentionReferences); }, [savedMentionPrompt, savedMentionReferences, shotId, shotRevision]);
+  useEffect(() => { setMentionVersion((version) => version + 1); }, [mentionPrompt, mentionReferences]);
+  const effectivePositiveOverride = [positiveOverride.trim(), savedMentionPrompt.trim()].filter(Boolean).join("\n");
+  const prompt = useMemo(() => compilePromptPreview(defaultPrompt, effectivePositiveOverride, negativePrompt), [defaultPrompt, effectivePositiveOverride, negativePrompt]);
   const promptBundle = useMemo<ShotPromptBundleRequest>(() => ({
     base_prompt: defaultPrompt,
-    positive_override: positiveOverride,
+    positive_override: effectivePositiveOverride,
     negative_prompt: negativePrompt,
     provenance: promptProvenance,
     frame_reframe_mode: frameReframeMode,
-  }), [defaultPrompt, frameReframeMode, negativePrompt, positiveOverride, promptProvenance]);
+  }), [defaultPrompt, effectivePositiveOverride, frameReframeMode, negativePrompt, promptProvenance]);
   const firstFrame = useMemo(() => approvedStartFrames(currentShot)[0] ?? null, [currentShot]);
   const endFrame = currentShot.frame_bridge?.current_end ?? null;
   const profileOption = currentShot.capability_options?.find((item) => item.version_id === profileVersionId);
@@ -172,6 +201,29 @@ export function ShotGenerationInspector({ episodeId, shotId, shotCode, shotRevis
     && plannedFrameIsFresh
     && planHasExecutableContract(plannedFrameDraw.plan),
   );
+
+  const saveMentionDraft = useCallback(async () => {
+    if (!mentionDirty) return { status: "saved" as const, savedVersion: mentionVersion };
+    if (expiredMentionCount) return { status: "blocked" as const, reason: "资产引用已过期，请移除后重新选择。" };
+    setSavingMentions(true);
+    try {
+      await putShotDraftV2(shotId, {
+        fields: { ...fields, asset_reference_prompt: mentionPrompt, asset_prompt_references: mentionReferences },
+        expected_revision_no: shotRevision,
+      });
+      await onSubmitted("资产引用草稿已保存到新的镜头修订；生成前会再次校验当前绑定与身份包版本。");
+      return { status: "saved" as const, savedVersion: mentionVersion };
+    } catch (error) {
+      setActionFeedback({ kind: "error", message: `资产引用保存失败：${errorText(error)}` });
+      return { status: "blocked" as const, reason: `资产引用保存失败：${errorText(error)}` };
+    } finally { setSavingMentions(false); }
+  }, [expiredMentionCount, fields, mentionDirty, mentionPrompt, mentionReferences, mentionVersion, onSubmitted, shotId, shotRevision]);
+
+  useEffect(() => {
+    const registration = { ownerId: `shot-asset-mentions:${shotId}`, entityKey: `镜头 ${shotCode} 的资产引用`, registrationToken: mentionRegistrationToken, version: mentionVersion, save: saveMentionDraft, discard: () => { setMentionPrompt(savedMentionPrompt); setMentionReferences(savedMentionReferences); return true; } };
+    notifyDraftDirty(mentionDirty, registration);
+    return () => notifyDraftDirty(false, registration);
+  }, [mentionDirty, mentionRegistrationToken, mentionVersion, saveMentionDraft, savedMentionPrompt, savedMentionReferences, shotCode, shotId]);
 
   const readyMutation = useMutation({
     onMutate: () => setActionFeedback({ kind: "pending", message: "正在校验并提交镜头就绪状态…" }),
@@ -215,6 +267,7 @@ export function ShotGenerationInspector({ episodeId, shotId, shotCode, shotRevis
       setActionFeedback({ kind: "pending", message: "正在验证生成计划（只读）…" });
     },
     mutationFn: async () => {
+      if (mentionDirty) throw new Error("资产引用草稿尚未保存，请先保存到镜头修订");
       const target = [{ shot_id: shotId, expected_revision: shotRevision }];
       if (!hasShotFactsPrompt(defaultPrompt, shotCode)) throw new Error("当前镜头缺少 AI 基础提示词，不能生成首尾帧");
       const formFingerprint = promptFormFingerprint(shotRevision, promptBundle, frameStrategy, candidateCount);
@@ -259,6 +312,7 @@ export function ShotGenerationInspector({ episodeId, shotId, shotCode, shotRevis
   const videoDraw = useMutation({
     onMutate: () => setActionFeedback({ kind: "pending", message: "正在校验并提交视频候选…" }),
     mutationFn: async () => {
+      if (mentionDirty) throw new Error("资产引用草稿尚未保存，请先保存到镜头修订");
       if (!profileVersionId) throw new Error(videoResolution?.blocked_reason || "项目尚未配置视频生成能力");
       if (!firstFrame) throw new Error("请先生成并批准一组首尾帧");
       if (!hasShotFactsPrompt(defaultPrompt, shotCode)) throw new Error("当前镜头缺少 AI 基础提示词，不能生成视频");
@@ -288,11 +342,12 @@ export function ShotGenerationInspector({ episodeId, shotId, shotCode, shotRevis
     onError: (error) => setActionFeedback({ kind: "error", message: errorText(error) }),
   });
 
-  const busy = framePlan.isPending || frameDraw.isPending || videoDraw.isPending || readyMutation.isPending;
+  const busy = framePlan.isPending || frameDraw.isPending || videoDraw.isPending || readyMutation.isPending || savingMentions;
   const error = framePlan.error ?? frameDraw.error ?? videoDraw.error ?? readyMutation.error;
   return <section className="shot-draw-panel" aria-labelledby="shot-draw-title">
     <header><div><span>异常镜头局部修正</span><h3 id="shot-draw-title">根据首尾帧生成候选</h3></div><small>{videoResolution?.profile?.title ?? videoResolution?.profile?.code ?? "能力待配置"}</small></header>
     <div className="shot-draw-description">
+      <div className="shot-input-summary" aria-label="当前镜头输入摘要"><div><span>镜头修订</span><strong>v{shotRevision}</strong></div><div><span>已绑定资产</span><strong>{currentShot.assets?.length ?? 0}</strong></div><div><span>批准首帧</span><strong>{firstFrame ? "已就绪" : "缺少"}</strong></div><div><span>视频能力</span><strong>{videoResolution?.profile?.title ?? "待配置"}</strong></div></div>
       <div className="shot-draw-description-header"><span>AI 基础提示词（镜头事实）</span></div>
       <textarea className="shot-draw-prompt-input" value={defaultPrompt} rows={3} readOnly aria-label="AI 基础提示词" />
       <label className="shot-draw-field-label" htmlFor="shot-positive-override">正向提示词补充（页面编辑）</label>
@@ -305,6 +360,9 @@ export function ShotGenerationInspector({ episodeId, shotId, shotCode, shotRevis
         placeholder="补充构图、表演或氛围要求…"
         aria-label="正向提示词补充"
       />
+      <AssetMentionInput value={mentionPrompt} references={mentionReferences} options={mentionOptions} disabled={busy} onChange={(value, references) => { setMentionPrompt(value); setMentionReferences(references); setPromptProvenance("PAGE_USER_EDIT"); }} />
+      {mentionDirty ? <button type="button" className="secondary" disabled={busy || expiredMentionCount > 0} onClick={() => void saveMentionDraft()}>{savingMentions ? "正在保存资产引用…" : "保存资产引用到镜头修订"}</button> : null}
+      {expiredMentionCount ? <p className="shot-draw-error" role="alert">{expiredMentionCount} 个引用已归档、解绑或状态版本过期；请移除后重新选择。</p> : null}
       <label className="shot-draw-field-label" htmlFor="shot-negative-prompt">反向提示词（页面编辑）</label>
       <textarea
         id="shot-negative-prompt"
@@ -397,7 +455,7 @@ export function ShotGenerationInspector({ episodeId, shotId, shotCode, shotRevis
     </div>
     <div className="shot-draw-actions-sticky" aria-label="镜头生成操作">
       <div className="shot-draw-action">
-        <button type="button" className="director-button secondary wide" disabled={busy} onClick={() => framePlan.mutate()}>{framePlan.isPending ? "正在验证生成计划…" : "验证生成计划"}</button>
+        <button type="button" className="director-button secondary wide" disabled={busy || mentionDirty || expiredMentionCount > 0} onClick={() => framePlan.mutate()}>{framePlan.isPending ? "正在验证生成计划…" : "验证生成计划"}</button>
         <button type="button" className="director-button primary wide" disabled={!framePlanCanSubmit || busy} onClick={() => frameDraw.mutate()}>{frameDraw.isPending ? "正在重新生成首尾帧…" : "重新生成首尾帧"}</button>
         <p>先验证服务端计划，再按所选帧策略和数量生成候选并逐图审核；已有工作帧保留。</p><Link to={reviewHref}>查看或替换推荐结果</Link>
       </div>
@@ -412,7 +470,7 @@ export function ShotGenerationInspector({ episodeId, shotId, shotCode, shotRevis
             {readyMutation.isPending ? "正在标记就绪…" : "标记镜头就绪并允许生成"}
           </button>
         )}
-        <button type="button" className="director-button primary wide" disabled={!canGenerate || busy} onClick={() => videoDraw.mutate()}>{videoDraw.isPending ? "正在生成候选…" : "生成视频候选"}</button>
+        <button type="button" className="director-button primary wide" disabled={!canGenerate || busy || mentionDirty || expiredMentionCount > 0} onClick={() => videoDraw.mutate()}>{videoDraw.isPending ? "正在生成候选…" : "生成视频候选"}</button>
         <p>页面正/反提示词会随本次提交冻结；视频只能使用已通过人工审核且技术完整性合格的首帧。</p>
       </div> : null}
     </div>
